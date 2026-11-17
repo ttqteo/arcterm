@@ -9,6 +9,7 @@ import {
     initiativeTitle,
     initiativeTitleShown,
     modelShown,
+    nextHeaderLabels,
     runLink,
     runMenuSections,
     unlinkedText,
@@ -29,6 +30,31 @@ describe("headerWidth", () => {
 
     it("reads a header not laid out yet as wide", () => {
         expect(headerWidth(0)).toBe("wide");
+    });
+});
+
+describe("nextHeaderLabels", () => {
+    const shown = { shown: true, need: null };
+
+    it("keeps the words while everything fits, a sub-pixel overflow included", () => {
+        expect(nextHeaderLabels(shown, 900, 0)).toEqual(shown);
+        expect(nextHeaderLabels(shown, 900, 0.4)).toEqual(shown);
+    });
+
+    it("drops to icons once the left side runs under the buttons, and remembers the width the words need", () => {
+        expect(nextHeaderLabels(shown, 760, 42)).toEqual({ shown: false, need: 802 });
+    });
+
+    it("stays on icons until the header is as wide as the words need, a pixel to spare", () => {
+        const icons = { shown: false, need: 802 };
+        // whatever still overflows with the icons does not move the width the words need
+        expect(nextHeaderLabels(icons, 760, 10)).toEqual(icons);
+        expect(nextHeaderLabels(icons, 802, 0)).toEqual(icons);
+        expect(nextHeaderLabels(icons, 803, 0)).toEqual(shown);
+    });
+
+    it("ignores a header not laid out yet", () => {
+        expect(nextHeaderLabels(shown, 0, 50)).toEqual(shown);
     });
 });
 

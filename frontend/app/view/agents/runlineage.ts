@@ -27,6 +27,9 @@ export interface RunInfo {
     projectPath?: string;
     // whether the run has ever had a lead session, so a run with none in the roster can say which it is
     leadStarted?: boolean;
+    // the tabs the run names as its lead now (its phases' tab worker orefs). A relaunched lead runs in a new tab and the
+    // engine drops the old one from the phases, while the old tab lives on stamped with the run: this tells them apart
+    leadTabIds?: string[];
     // the tab of the session that started the run with `wsh runs start`, which the tree lists it under
     originId?: string;
     // when the run was created, which orders the runs one session started
@@ -79,6 +82,7 @@ export function runInfoOf(
         project: lastPathSegment(leadRun?.projectpath),
         projectPath: leadRun?.projectpath || undefined,
         leadStarted: (leadRun?.phases ?? []).some((p) => (p.workerorefs ?? []).length > 0),
+        leadTabIds: leadTabIdsOf(leadRun),
         originId: leadRun?.origintabid || undefined,
         createdTs: leadRun?.createdts,
         status: leadRun?.status,
@@ -92,6 +96,18 @@ export function runInfoOf(
         pausedBy: leadRun?.pause?.by || undefined,
         pausedUntil: leadRun?.pause?.noautoresumeuntil || undefined,
     };
+}
+
+// leadTabIdsOf is the tabs a run's phases name as its worker (an orchestrator's lead), as their bare ids; undefined for
+// a run not loaded yet, so the tree can tell "names none" from "not known"
+export function leadTabIdsOf(run: Pick<Run, "phases"> | undefined): string[] | undefined {
+    if (run == null) {
+        return undefined;
+    }
+    return (run.phases ?? [])
+        .flatMap((p) => p.workerorefs ?? [])
+        .filter((oref) => oref.startsWith("tab:"))
+        .map((oref) => oref.slice("tab:".length));
 }
 
 // leadPhaseFailed is whether the run's first open phase failed, the phase its status is derived from (jarvis
@@ -193,12 +209,20 @@ export function holdsTask(run: RunInfo, taskId: string, agent: Pick<AgentVM, "ru
     return task != null && agent.runId != null && (task.runid === agent.runId || task.reviewrunid === agent.runId);
 }
 
-// leadAgentOf finds the roster agent leading runId, if it is in the roster.
+// isCurrentLead is whether agent is the tab run names as its lead now. A run whose phases are not known names no one,
+// and then no tab is told apart from another.
+export function isCurrentLead(run: Pick<RunInfo, "leadTabIds"> | undefined, agent: { id: string }): boolean {
+    return run?.leadTabIds?.includes(agent.id) ?? false;
+}
+
+// leadAgentOf finds the roster agent leading runId, if it is in the roster: the tab the run names now before one a
+// relaunch left behind, which is stamped with the run too.
 export function leadAgentOf<T extends { id: string }>(lineage: Lineage, agents: T[], runId: string): T | undefined {
-    return agents.find((a) => {
+    const leads = agents.filter((a) => {
         const role = lineage.roles[a.id];
         return role?.kind === "lead" && role.runId === runId;
     });
+    return leads.find((a) => isCurrentLead(lineage.runs[runId], a)) ?? leads[0];
 }
 
 // agentProject is the project an agent is shown under. A worker's or stage session's own is an engine tree, so

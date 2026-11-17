@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // The run launcher's When row (docs/superpowers/specs/2026-11-16-run-start-choice-design.md, "The launcher row"): three
-// adjoining buttons, Run now, After run… and Queue, the one Jarvis suggests tagged, its reason on a line under them, and
+// pill badges, Run now, After run… and Queue, the one Jarvis suggests tagged, its reason on a line under them, and
 // for After the project's live runs to tick. The state and its words are launcherwhen.ts; the suggestion is asked here,
 // once when the row appears and again 400 ms after the goal, the plan, the project or the spec changes. Start never
 // waits for it: until an answer lands the row reads Run now.
@@ -139,28 +139,29 @@ export function WhenRow({ projectPath, channelId }: { projectPath: string; chann
     return (
         <div data-launcher-when className="flex shrink-0 flex-col gap-2">
             <ColumnLabel label="When" focused={false} className="pb-0" />
-            <div
-                role="group"
-                aria-label="When"
-                className="mx-2 grid grid-cols-3 gap-0.5 rounded-[8px] border border-border bg-surface p-0.5"
-            >
+            <div role="group" aria-label="When" className="mx-2 flex flex-wrap gap-1.5">
                 {CHOICES.map((c) => (
                     <button
                         key={c.id}
                         type="button"
                         data-when-choice={c.id}
                         aria-pressed={when.choice === c.id}
-                        title={c.hint}
+                        title={suggested === c.id ? `${c.hint} (Jarvis suggests it)` : c.hint}
                         onClick={() => pickWhen(c.id)}
                         className={cn(
-                            "flex min-w-0 cursor-pointer flex-col items-center justify-start gap-px rounded-[6px] px-1.5 py-1 text-center text-[11.5px] font-semibold",
-                            when.choice === c.id ? "bg-accentbg text-accent-soft" : "text-ink-mid hover:text-secondary"
+                            "inline-flex cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-full border px-2.5 py-[3px] text-[11.5px] font-semibold leading-[16px]",
+                            when.choice === c.id
+                                ? "border-accent-700 bg-accentbg text-accent-soft"
+                                : "border-border bg-surface text-ink-mid hover:border-edge-mid hover:text-secondary"
                         )}
                     >
                         {c.label}
                         {suggested === c.id ? (
-                            <span data-when-suggested className="text-[10.5px] font-normal leading-[1.2] text-muted">
-                                Jarvis suggests
+                            <span
+                                data-when-suggested
+                                className="rounded-full bg-pill px-1.5 text-[9.5px] font-medium leading-[14px] text-muted"
+                            >
+                                Jarvis
                             </span>
                         ) : null}
                     </button>

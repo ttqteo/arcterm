@@ -16442,8 +16442,14 @@ const agentTreeRail = {
                 const progress = row.querySelector("span.truncate.text-muted");
                 const ram = row.querySelector("[data-agent-ram]");
                 const tokens = row.querySelector('span[class*="min-w-[34px]"]');
+                const count = row.querySelector("[data-run-progress-count]");
                 return {
                     w: Math.round(line.getBoundingClientRect().width),
+                    // the stage word is left out of a line too narrow for it whole (agenttree.tsx RunSubline)
+                    hidden: progress ? getComputedStyle(progress).display === "none" : null,
+                    // what it shows: its "·" goes with the word
+                    count: count && count.clientWidth > 0 ? count.innerText.replace(/\\s+/g, " ").trim() : null,
+                    countTitled: count ? count.title.length > 0 : null,
                     whole: progress ? progress.scrollWidth <= progress.clientWidth : null,
                     // how much of it shows, and whether its tooltip holds it whole
                     shown: progress ? Math.round(progress.clientWidth) : null,
@@ -16469,11 +16475,11 @@ const agentTreeRail = {
         await h.ev(`window.__resmonFixture.clear()`);
         const runAt = runLine?.at ?? [];
         rec(
-            // the spec (2026-11-13-sidebar-declutter-design, "Bố cục dòng"): the words left of the columns shrink and cut
-            // with …, never the columns. At the tree's own 280px the three columns and the run's ↰ origin leave
-            // "Working · 0/3" little room, so it is cut there, but it shows, its tooltip has it whole, and it reads whole
-            // once the line has room
-            "7. the lead's run line carries its workers chip, its progress, its ↰ origin and the task strip; its tokens, age and the run's RAM stay on the line at every width; the progress shows at the tree's own width (whole in its tooltip) and reads whole from 300px; nothing spills out of the line",
+            // the spec (2026-11-13-sidebar-declutter-design, "Bố cục dòng"): the words left of the columns give way, never
+            // the columns. On a line under 240px the three columns and the run's ↰ origin leave "Working" no room whole,
+            // so the word goes (never "W…") and the count shows alone, its tone and tooltip saying the stage; from 240px
+            // "Working · 0/3" reads whole
+            "7. the lead's run line carries its workers chip, its progress, its ↰ origin and the task strip; its tokens, age and the run's RAM stay on the line at every width; under 240px the stage word is left out and the count shows alone with its tooltip, from 240px the word reads whole; nothing spills out of the line",
             nested != null &&
                 runAt.every((s) => s.origin === true) &&
                 /^\d+ of 3 tasks done/.test(nested.strip ?? "") &&
@@ -16485,10 +16491,12 @@ const agentTreeRail = {
                 runAt.every((s) => s.tokens === "132k") &&
                 // the RAM keeps its column at every width
                 runAt.every((s) => typeof s.ram === "string" && s.ram !== "") &&
-                // the progress shows at the tree's own width, its tooltip whole; from 300px it reads whole
-                (runAt[0].shown ?? 0) >= 20 &&
-                runAt[0].titled === true &&
-                runAt.filter((s) => s.w >= 300).every((s) => s.whole === true) &&
+                // the stage word is whole or left out, never cut; the count shows at every width with the stage in its
+                // tooltip, its "·" only beside the word
+                runAt.some((s) => s.w < 240) &&
+                runAt.every((s) => (s.w < 240 ? s.hidden === true : s.hidden === false && s.whole === true)) &&
+                runAt.every((s) => s.countTitled === true) &&
+                runAt.every((s) => (s.w < 240 ? /^\d+\/3$/ : /^· \d+\/3$/).test(s.count ?? "")) &&
                 runAt.every((s) => !s.overflow),
             JSON.stringify({ nested, runLine })
         );
@@ -22360,9 +22368,14 @@ const runRowStuckRead = (h) =>
         ${RUN_PAUSED_LIB}
         const row = () => treeRow(${JSON.stringify(RUN_ROW_STUCK_LEAD)});
         const progress = () => [...(row()?.querySelectorAll("span[title]") ?? [])].find((s) => text(s).startsWith("Working")) ?? null;
-        await until(() => text(progress()).includes("stuck"));
+        // the stage word and its count are sibling spans (agenttree.tsx RunSubline), so the count reads off the next one
+        const whole = (el) => {
+            const count = el?.nextElementSibling?.matches("[data-run-progress-count]") ? el.nextElementSibling : null;
+            return el ? text(el) + (count ? " " + text(count) : "") : "";
+        };
+        await until(() => whole(progress()).includes("stuck"));
         const el = progress();
-        return { row: row() != null, text: el ? text(el) : null, title: el ? el.getAttribute("title") : null };
+        return { row: row() != null, text: el ? whole(el) : null, title: el ? el.getAttribute("title") : null };
     })()`);
 
 const runRowStuck = {
@@ -43287,6 +43300,8 @@ const AC_PROSE_1 = "I will read the sync client first.";
 const AC_EDIT_ERROR = "String to replace not found in file.";
 const AC_TEST_COMMAND = "npm test -- client";
 const AC_TEST_DESCRIPTION = "Ran the client tests";
+const AC_STATUS_DESCRIPTION = "Checked the working tree after the edit";
+const AC_NOTES_TEXT = "# Retry policy\n\nThree tries with backoff.\n";
 const AC_TEST_OUTPUT = "✔ retries the request 3 times\nℹ tests 1\nℹ pass 1\nℹ fail 0";
 // its second sentence is what step 34 marks as a skim highlight; it holds non-ASCII letters so the store file's UTF-8 decode is exercised
 const AC_SKIM_SENTENCE = "Không mất request nào.";
@@ -43378,6 +43393,7 @@ function acWriteFixtures(dir) {
     const base = Date.now() - 3_600_000;
     const o = (sec) => ({ cwd: dir, ts: new Date(base + sec * 1000).toISOString() });
     const edited = join(dir, "src", "sync", "client.ts");
+    const notes = join(dir, "docs", "retry-notes.md");
     const workerPrompt = readFileSync(new URL("../../claude/arc-view-mod/testdata/worker.txt", import.meta.url), "utf8").trim();
     const pointer = `Your instructions are in the file ${join(dir, "run-prompt.md").replace(/\\/g, "/")} (too long for a command line). Read the whole file now and follow it exactly, as if it were this message.`;
     const main = AC.writeTranscript(dir, AC_SESSION, [
@@ -43410,12 +43426,21 @@ function acWriteFixtures(dir) {
         AC.toolUse("toolu_ac_test", "Bash", { command: AC_TEST_COMMAND, description: AC_TEST_DESCRIPTION }, o(100)),
         AC.toolResult("toolu_ac_test", AC_TEST_OUTPUT, o(104)),
         AC.assistantText("The retry test passes.", o(106)),
+        // step 5c (Calm.dc.html): a stretch of one described command reads as its description, with no time under 10 s;
+        // then a Write to a second file, so the turn ends in the card of its two files
+        AC.toolUse("toolu_ac_status", "Bash", { command: "git status --short", description: AC_STATUS_DESCRIPTION }, o(108)),
+        AC.toolResult("toolu_ac_status", " M src/sync/client.ts", o(109)),
+        AC.assistantText("Adding a note on the retry policy.", o(110)),
+        AC.toolUse("toolu_ac_notes", "Write", { file_path: notes, content: AC_NOTES_TEXT }, o(112)),
+        AC.toolResult("toolu_ac_notes", `File created successfully at: ${notes}`, o(113)),
+        AC.assistantText("The client retries, and the note says how.", o(115)),
     ]);
     const simple = (name, ask, answer) =>
         AC.writeTranscript(dir, name, [AC.userText(ask, o(0)), AC.assistantText(answer, o(2))]);
     return {
         main,
         edited,
+        notes,
         workerPrompt,
         second: simple("chat-second", "second agent question", "second agent answer"),
         asleep: simple("chat-asleep", "an earlier question", "an earlier answer before it slept"),
@@ -43945,6 +43970,12 @@ const acFileCards = (h, id, text) =>
             more: you.querySelector("[data-chat-file-more]")?.textContent.trim() ?? null,
         };
     })()`);
+// A computed 1px border or hairline, as the window draws it: at a fractional display scale Chromium snaps it to whole device
+// pixels, so it reads 0.909091px at 110%
+const acHairline = (w) => {
+    const n = parseFloat(w ?? "");
+    return n > 0.5 && n <= 1;
+};
 const acScrollTo = (h, expr) => h.ev(`(() => { const e = ${expr}; e?.scrollIntoView({ block: "center" }); return !!e; })()`);
 
 // A captured screen (rows of text) on the fixture terminal of one block: cleared, then each row written at its place so the
@@ -44105,7 +44136,7 @@ const agentChat = {
             })()`);
             await h.shot("cdp-shots/agent-chat-1-bubbles.png");
             rec(
-                "1a. a Claude cell opens in Chat: the control reads Chat | Terminal with Chat selected; your message is a bubble on the right, the agent's prose is a page column (step 31 reads its look), the stretch folds into the sentence Edited client.ts, read client.ts with its +/− counts and its time, no file chip follows any stretch, the run's launch prompt and a pointer line are sent cards",
+                "1a. a Claude cell opens in Chat: the control reads Chat | Terminal with Chat selected; your message is a bubble on the right, the agent's prose is a page column (step 31 reads its look), the stretch folds into the sentence Edited client.ts, read client.ts with its +/− counts and no time (its 6 s are under 10 s, Calm.dc.html), no file chip follows any stretch, the run's launch prompt and a pointer line are sent cards",
                 loaded &&
                     header1?.buttons?.map((b) => b.text).join("|") === "Chat|Terminal" &&
                     header1.buttons[0].pressed &&
@@ -44116,7 +44147,7 @@ const agentChat = {
                     bubbles.pill?.state === "done" &&
                     bubbles.pill.sentence === "Edited client.ts, read client.ts" &&
                     /^\+\d+(−\d+)?$/.test(bubbles.pill.counts ?? "") &&
-                    /^· \d+s$/.test(bubbles.pill.time ?? "") &&
+                    bubbles.pill.time === null &&
                     bubbles.fileChips === 0 &&
                     JSON.stringify(bubbles.sentFrom) === JSON.stringify(["run", "run"]) &&
                     bubbles.launchAsBubble === false,
@@ -44150,7 +44181,7 @@ const agentChat = {
             rec(
                 "1a2. a click opens the fold into a bordered box (radius 10px, 1px border) of two rows divided by a hairline, Read client.ts then Edited client.ts with its counts, each a muted verb and a chevron with no tool icon, under the same sentence with no caret in front; a second click folds it",
                 foldOpened && foldRefolded && foldOpen.expanded === "true" && foldOpen.sentence === "Edited client.ts, read client.ts" &&
-                    foldOpen.firstIsSentence && foldOpen.box?.radius === "10px" && foldOpen.box.border === "1px" && foldOpen.hairline === "1px" &&
+                    foldOpen.firstIsSentence && foldOpen.box?.radius === "10px" && acHairline(foldOpen.box.border) && acHairline(foldOpen.hairline) &&
                     JSON.stringify(foldOpen.verbs) === JSON.stringify(["Read", "Edited"]) &&
                     foldOpen.steps[0].includes("client.ts") && foldOpen.steps[1].includes("client.ts") &&
                     foldOpen.svgs.every((n) => n === 1),
@@ -44215,30 +44246,51 @@ const agentChat = {
                 { pasted, chipPath, withFile, trayAfter, inputs3 }
             );
 
-            // 4. the agent working: the working line shows its activity, and Stop sends Esc
+            // 4. the agent working: the working line reads Working with no " · <activity>" tail (Calm.dc.html: the running
+            // stretch's own line names the call), and Stop sends Esc
             await AC.setRoster(h, acRoster(ctx, { state: "working", activity: AC_ACTIVITY, activeMs: 30_000, idleSince: undefined }));
-            const working = await polishWaitFor(h, `(${acLayer(A)}?.querySelector("[data-chat-working]")?.textContent ?? "").includes(${JSON.stringify(AC_ACTIVITY)}) && !!${acLayer(A)}?.querySelector("[data-chat-stop]")`, AC_WAIT_MS);
+            const working = await polishWaitFor(h, `!!${acLayer(A)}?.querySelector("[data-chat-working]") && !!${acLayer(A)}?.querySelector("[data-chat-stop]")`, AC_WAIT_MS);
+            const workingLine4 = await h.ev(`(() => {
+                const w = ${acLayer(A)}?.querySelector("[data-chat-working]");
+                return w == null ? null : {
+                    words: w.querySelector(".shimmer-jarvis")?.textContent.trim() ?? null,
+                    text: w.textContent.replace(/\\s+/g, " ").trim(),
+                    // the turn under way (the last one) has no card of its files yet: only the first turn's shows
+                    cards: [...(${acLayer(A)}?.querySelectorAll("[data-chat-turn-files]") ?? [])].map((c) => c.getAttribute("data-chat-turn-files")),
+                };
+            })()`);
             await h.shot("cdp-shots/agent-chat-4-working.png");
-            // the working dot is a small Jarvis hologram: pulsedriver turns its rings (--spin) and flashes its sparks
+            // the working dot is a small Jarvis hologram live with current: pulsedriver turns its rings (--spin), jolts it
+            // (--jolt), flickers its core (--flick), and strikes each bolt at its own angle (--arc) as it flashes (--spark);
+            // the words beside it catch the jolt (--volt)
             const HOLO = `${acLayer(A)}?.querySelector("[data-chat-working] svg.holo-spin")`;
-            const spin0 = await h.ev(`${HOLO}?.style.getPropertyValue("--spin") ?? null`);
+            const readHolo = `(() => { const s = ${HOLO}; const v = (sel, p) => s?.querySelector(sel)?.style.getPropertyValue(p) ?? "";
+                return s == null ? null : {
+                    spin: s.style.getPropertyValue("--spin"), sparks: s.querySelectorAll("polyline").length,
+                    size: Math.round(s.getBoundingClientRect().width), jolt: v(".holo-jolt", "--jolt"),
+                    flick: v(".holo-core", "--flick"),
+                    arcs: [...s.querySelectorAll(".holo-arc, .holo-arc-slow")].map((g) => g.style.getPropertyValue("--arc")),
+                    volt: ${acLayer(A)}?.querySelector("[data-chat-working] .volt-text")?.style.getPropertyValue("--volt") ?? "" }; })()`;
+            const holo0 = await h.ev(readHolo);
             await polishNap(400);
-            const holo = await h.ev(`(() => { const s = ${HOLO}; return s == null ? null : {
-                spin: s.style.getPropertyValue("--spin"), sparks: s.querySelectorAll("polyline").length,
-                size: Math.round(s.getBoundingClientRect().width) }; })()`);
+            const holo = await h.ev(readHolo);
             rec(
-                "4a. the working line's dot is the hologram: its rings turn and it carries three sparks",
-                holo != null && holo.sparks === 3 && holo.size === 14 && holo.spin !== "" && holo.spin !== spin0,
-                { spin0, holo }
+                "4a. the working line's dot is the hologram live with current: its rings turn, it jolts and its core flickers, its four bolts each strike their own way, and its words catch the jolt",
+                holo != null && holo.sparks === 4 && holo.size === 14 && holo.spin !== "" && holo.spin !== holo0?.spin &&
+                    holo.jolt !== "" && holo.jolt !== holo0?.jolt && holo.flick !== "" && holo.flick !== holo0?.flick &&
+                    holo.arcs.length === 4 && new Set(holo.arcs).size === 4 && holo.volt !== "",
+                { holo0, holo }
             );
             const stopsBefore = (await acSettled(h, blockA)).length;
             await h.ev(`${acLayer(A)}?.querySelector("[data-chat-stop]")?.click()`);
             const stopped = await polishWaitFor(h, `window.${AC_MOCK_KEY}.calls.some((c) => c.command === "controllerinput" && c.data.input === "\\x1b")`, 3000);
             const afterStop = (await acInputs(h, blockA)).slice(stopsBefore);
             rec(
-                "4. with the agent working, the working line shows its activity and Stop sends Esc",
-                working && stopped && JSON.stringify(afterStop) === JSON.stringify(["\x1b"]),
-                { working, afterStop }
+                "4. with the agent working, the working line reads Working and names neither its activity (Reading chatpane.tsx) nor a running call; the turn under way shows no card of its files (only the first turn's one-file card is drawn); Stop sends Esc",
+                working && workingLine4?.words === "Working" && !workingLine4.text.includes(AC_ACTIVITY) &&
+                    /^Working ?(?:\(.*\))?$/.test(workingLine4.text) && JSON.stringify(workingLine4.cards) === JSON.stringify(["1"]) &&
+                    stopped && JSON.stringify(afterStop) === JSON.stringify(["\x1b"]),
+                { working, workingLine4, afterStop }
             );
 
             // 5. the second stretch (Main.dc.html, States.dc.html's failed call): it folds into Edited client.ts, ran a
@@ -44289,8 +44341,8 @@ const agentChat = {
             await polishNap(250);
             await h.shot("cdp-shots/agent-chat-5-box-opened.png");
             rec(
-                "5. the second stretch folds into Edited client.ts, ran a command with its +N and time and no red; opened, its box holds Edit failed client.ts in red with String to replace not found in file., Edited client.ts with its +N, and the command as Ran the client tests alone (no verb); the command opens to $ npm test -- client and its output inside the box, the failed edit to its diff, and no file chips follow",
-                fold5?.sentence === "Edited client.ts, ran a command" && /^\+\d+(−\d+)?$/.test(fold5.counts ?? "") && /^· \d+s$/.test(fold5.time ?? "") &&
+                "5. the second stretch folds into Edited client.ts, ran a command with its +N, no time (6 s, under 10 s) and no red; opened, its box holds Edit failed client.ts in red with String to replace not found in file., Edited client.ts with its +N, and the command as Ran the client tests alone (no verb); the command opens to $ npm test -- client and its output inside the box, the failed edit to its diff, and no file chips follow",
+                fold5?.sentence === "Edited client.ts, ran a command" && /^\+\d+(−\d+)?$/.test(fold5.counts ?? "") && fold5.time === null &&
                     fold5.red === false && opened5 && cmdOpen5 && failOpen5 &&
                     box5.failVerb === "Edit failed" && box5.failRed && box5.rows[0].includes("client.ts") && box5.rows[0].includes(AC_EDIT_ERROR) &&
                     box5.editVerb === "Edited" && /^\+\d+/.test(box5.editDiff ?? "") &&
@@ -44326,6 +44378,68 @@ const agentChat = {
             // folded again, so the steps below see the conversation as before
             await h.ev(`${W5}?.querySelector("[data-fold]")?.click()`);
             await polishWaitFor(h, `!${W5}?.querySelector("[data-chat-tools]")`, 3000);
+
+            // 5c. Calm.dc.html: a stretch of one described command reads as its description, with no counts and no time under
+            // 10 s; each finished turn ends in the card of the files its edits changed, the first turn's one file as a row
+            // alone (no header, no See all), the last turn's two as Edited 2 files, a row each in the order first touched with
+            // its folder and its +N, then See all with the turn's totals
+            // with the agent idle, so its last turn is finished; working again after, as the steps below expect
+            const W5c = `[...(${acLayer(A)}?.querySelectorAll("[data-chat-work]") ?? [])][2]`;
+            await AC.setRoster(h, acRoster(ctx));
+            const idle5c = await polishWaitFor(h, `!!${acLayer(A)}?.querySelector('[data-chat-turn-files="2"]')`, AC_WAIT_MS);
+            await polishNap(450);
+            const turn5c = await h.ev(`(() => {
+                const f = ${W5c}?.querySelector("[data-fold]");
+                const t = (el, sel) => el?.querySelector(sel)?.textContent.replace(/\\s+/g, " ").trim() ?? null;
+                const card = (n) => {
+                    const c = ${acLayer(A)}?.querySelector('[data-chat-turn-files="' + n + '"]');
+                    if (c == null) return null;
+                    const cs = getComputedStyle(c);
+                    const agent = c.closest("[data-chat-agent]");
+                    return {
+                        head: t(c, "[data-chat-turn-files-head]"),
+                        rows: [...c.querySelectorAll("[data-chat-turn-file]")].map((r) => ({
+                            path: r.getAttribute("data-chat-turn-file"),
+                            name: t(r, "[data-chat-turn-file-name]"),
+                            folder: t(r, "[data-chat-turn-file-folder]"),
+                            counts: t(r, "[data-chat-turn-files-counts]"),
+                            button: r.tagName === "BUTTON",
+                        })),
+                        all: t(c, "[data-chat-turn-files-all]"),
+                        radius: cs.borderTopLeftRadius,
+                        border: cs.borderTopWidth,
+                        // it follows the turn's last part
+                        last: agent?.lastElementChild?.contains(c) ?? false,
+                    };
+                };
+                return {
+                    fold: f == null ? null : { sentence: t(f, "[data-fold-sentence]"), counts: t(f, "[data-fold-counts]"), time: t(f, "[data-fold-time]"), state: f.getAttribute("data-fold-state") },
+                    one: card(1),
+                    two: card(2),
+                    cards: ${acLayer(A)}?.querySelectorAll("[data-chat-turn-files]").length ?? 0,
+                };
+            })()`);
+            await h.ev(`${acLayer(A)}?.querySelector('[data-chat-turn-files="2"]')?.scrollIntoView({ block: "center" })`);
+            await polishNap(250);
+            await h.shot("cdp-shots/agent-chat-5c-turn-files.png");
+            await AC.setRoster(h, acRoster(ctx, { state: "working", activity: AC_ACTIVITY, activeMs: 30_000, idleSince: undefined }));
+            const wantPaths5c = [ctx.files.edited, ctx.files.notes];
+            const sum5c = (turn5c.two?.rows ?? []).reduce((n, r) => n + Number(/^\+(\d+)/.exec(r.counts ?? "")?.[1] ?? NaN), 0);
+            rec(
+                "5c. the one-command stretch reads Checked the working tree after the edit, with no counts and no time; the first turn ends in a one-file card (client.ts, src/sync, +N, no header, no See all); the last turn ends in a card reading Edited 2 files, client.ts in src/sync then retry-notes.md in docs, each with its +N, then See all with the summed +N, in a 10px bordered box after the turn's last part",
+                idle5c && turn5c.fold?.sentence === AC_STATUS_DESCRIPTION && turn5c.fold.counts === null && turn5c.fold.time === null && turn5c.fold.state === "done" &&
+                    turn5c.cards === 2 &&
+                    turn5c.one?.head === null && turn5c.one.all === null && turn5c.one.rows.length === 1 &&
+                    turn5c.one.rows[0].path === ctx.files.edited && turn5c.one.rows[0].name === "client.ts" && turn5c.one.rows[0].folder === "src/sync" &&
+                    /^\+\d+(−\d+)?$/.test(turn5c.one.rows[0].counts ?? "") && turn5c.one.rows[0].button && turn5c.one.last &&
+                    turn5c.two?.head === "Edited 2 files" &&
+                    JSON.stringify(turn5c.two.rows.map((r) => r.path)) === JSON.stringify(wantPaths5c) &&
+                    JSON.stringify(turn5c.two.rows.map((r) => r.folder)) === JSON.stringify(["src/sync", "docs"]) &&
+                    turn5c.two.rows.every((r) => /^\+\d+(−\d+)?$/.test(r.counts ?? "") && r.button) &&
+                    new RegExp(`^See all ?\\+${sum5c}(−\\d+)?$`).test(turn5c.two.all ?? "") &&
+                    turn5c.two.radius === "10px" && acHairline(turn5c.two.border) && turn5c.two.last,
+                { idle5c, turn5c, sum5c }
+            );
 
             // 6. picking Terminal: the layer is gone, the xterm is the same element with focus, the rail has its Transcript
             // tab; picking Chat brings the layer back and focus to the box
@@ -45105,9 +45219,28 @@ const agentChat = {
             await AC.setRoster(h, acRoster(ctx, workingA));
             const lastFold = `[...(${acLayer(A)}?.querySelectorAll("[data-chat-work]") ?? [])].pop()?.querySelector("[data-fold]")`;
             const stretchUp = await polishWaitFor(h, `${lastFold}?.getAttribute("data-fold-state") === "running"`, 15000);
-            if (!(await h.ev(`!!${acLayer(A)}?.querySelector("[data-tool-running]")`))) {
-                await h.ev(`${lastFold}?.click()`);
-            }
+            // States.dc.html / Calm.dc.html: the running stretch stays one folded line (spinner, the call's words, its time
+            // counting) and does not open on its own
+            const timeUp26 = await polishWaitFor(h, `/^· \\d+s$/.test(${lastFold}?.querySelector("[data-fold-time]")?.textContent.trim() ?? "")`, 5000);
+            await polishNap(600);
+            const folded26 = await h.ev(`(() => {
+                const f = ${lastFold};
+                return {
+                    expanded: f?.getAttribute("aria-expanded") ?? null,
+                    rows: f?.parentElement?.querySelectorAll("[data-chat-step]").length ?? null,
+                    time: f?.querySelector("[data-fold-time]")?.textContent.trim() ?? null,
+                    sentence: f?.querySelector("[data-fold-sentence]")?.textContent.trim() ?? null,
+                };
+            })()`);
+            await h.ev(`${lastFold}?.scrollIntoView({ block: "center" })`);
+            await polishNap(200);
+            await h.shot("cdp-shots/agent-chat-26-running-folded.png");
+            rec(
+                "26a. a running stretch stays folded on its one line reading Reading client.ts, its time counting (· Ns), with no row shown until it is clicked",
+                stretchUp && timeUp26 && folded26.expanded === "false" && folded26.rows === 0 && folded26.sentence === "Reading client.ts",
+                { stretchUp, timeUp26, folded26 }
+            );
+            await h.ev(`${lastFold}?.click()`);
             const runningUp = await polishWaitFor(h, `!!${acLayer(A)}?.querySelector("[data-tool-running]")`, 5000);
             const running26 = await h.ev(`(() => {
                 const row = ${acLayer(A)}?.querySelector("[data-tool-running]");
@@ -47204,15 +47337,18 @@ const agentChat = {
             const picked86 = firstRef86.slice("ref:agent:".length);
             await acKey(h, acKeys.enter);
             const want86 = `đọc agent:${picked86.slice(0, 8)} `;
-            const written86 = await polishWaitFor(h, `${acVal(acBox(A))} === ${JSON.stringify(want86)}`, 3000);
+            // the reference draws as a badge (dcc9ed5aa), whose name is not the text: the box's text is read from Lexical's
+            // state (crbBoxText), where the badge is its token as written
+            const written86 = await polishWaitFor(h, `${crbBoxText(acBox(A))} === ${JSON.stringify(want86)}`, 3000);
+            const badges86 = await h.ev(`${acBox(A)}?.querySelectorAll("[data-chat-ref]").length ?? null`);
             const pills86 = await acPills(h, acBox(A));
             const shut86 = await polishWaitFor(h, `!document.querySelector("[data-chat-mentions]")`, 3000);
             await acClear(h, acBox(A));
             rec(
-                "86. @agent lists the other live agents (not the chat's own) as ref rows ahead of any file; Enter writes `agent:<8-char id> ` in place of @agent, with no pill, and the list closes",
+                "86. @agent lists the other live agents (not the chat's own) as ref rows ahead of any file; Enter writes `agent:<8-char id> ` in place of @agent, drawn as one reference badge with no file pill, and the list closes",
                 listed86 && keys86[0]?.startsWith("ref:") && !keys86.includes(`ref:agent:${A}`) &&
-                    [B, C, D, E, F].includes(picked86) && written86 && pills86.length === 0 && shut86,
-                { listed86, list86, picked86, want86, pills86, shut86 }
+                    [B, C, D, E, F].includes(picked86) && written86 && badges86 === 1 && pills86.length === 0 && shut86,
+                { listed86, list86, picked86, want86, written86, badges86, pills86, shut86 }
             );
 
             // 87. The chat's own project's agents lead the @ list: with A and the asleep F (last in the roster) moved to a
@@ -47235,7 +47371,7 @@ const agentChat = {
             const idRefs87 = (byId87?.rows ?? []).map((r) => r.key).filter((k) => k.startsWith("ref:"));
             await acKey(h, acKeys.enter);
             const want87 = `đọc agent:${F.slice(0, 8)} `;
-            const written87 = await polishWaitFor(h, `${acVal(acBox(A))} === ${JSON.stringify(want87)}`, 3000);
+            const written87 = await polishWaitFor(h, `${crbBoxText(acBox(A))} === ${JSON.stringify(want87)}`, 3000);
             await acClear(h, acBox(A));
             await AC.setRoster(h, acRoster(ctx));
             rec(
@@ -47243,6 +47379,58 @@ const agentChat = {
                 listed87 && refs87[0] === `ref:agent:${F}` && listedId87 && idRefs87.length === 1 &&
                     idRefs87[0] === `ref:agent:${F}` && written87,
                 { refs87, idRefs87, want87, written87 }
+            );
+
+            // 88. Calm.dc.html's card opens the Diff: with the fixture folder a git repo whose client.ts has changed since its
+            // commit, a click on the card's client.ts row switches to the Diff on agent A's working tree with
+            // src/sync/client.ts selected; back on the agent, See all opens the Diff on the same scope
+            // a git that fails says how (a Final once saw `git init -q` fail with no output), and is tried once more
+            let git88 = null;
+            for (let i = 0; i < 2 && git88 !== "ok"; i++) {
+                try {
+                    fstGitInit(ctx.dir);
+                    git88 = "ok";
+                } catch (e) {
+                    git88 = `${String(e?.message ?? e).split("\n")[0]} (exit ${e?.status}, signal ${e?.signal}): ${String(e?.stderr ?? "").trim()}`;
+                    await polishNap(1000);
+                }
+            }
+            writeFileSync(ctx.files.edited, "export const retries = 3;\nexport const backoff = true;\nexport const delayMs = 400;\n");
+            await showAgent(A);
+            const card88 = `${acLayer(A)}?.querySelector('[data-chat-turn-files="2"]')`;
+            const cardUp88 = await polishWaitFor(h, `!!${card88}`, AC_WAIT_MS);
+            const diffState88 = () =>
+                AC.agentPage(
+                    h,
+                    `const G = await mod("app/view/agents/githistorystore.ts");
+                    const model = agentsModel();
+                    const scope = globalStore.get(model.diffScopeAtom);
+                    return { surface: globalStore.get(model.surfaceAtom), origin: scope?.repo?.origin ?? null, file: globalStore.get(G.selectedFileAtom) };`
+                );
+            const diffUntil88 = async (ok) => {
+                let got = await diffState88();
+                for (let i = 0; i < 40 && !ok(got); i++) {
+                    await polishNap(250);
+                    got = await diffState88();
+                }
+                return got;
+            };
+            await h.ev(`(() => { const r = ${card88}?.querySelector("[data-chat-turn-file]"); r?.scrollIntoView({ block: "center" }); r?.click(); return !!r; })()`);
+            const row88 = await diffUntil88((s) => s?.surface === "files" && /(^|\/)src\/sync\/client\.ts$/.test(s.file ?? ""));
+            // the file's two sides load after the selection: give them time to draw for the shot
+            await polishNap(1500);
+            await h.shot("cdp-shots/agent-chat-88-card-row-diff.png");
+            await showAgent(A);
+            await polishWaitFor(h, `!!${card88}`, AC_WAIT_MS);
+            await h.ev(`(() => { const r = ${card88}?.querySelector("[data-chat-turn-files-all]"); r?.scrollIntoView({ block: "center" }); r?.click(); return !!r; })()`);
+            const all88 = await diffUntil88((s) => s?.surface === "files");
+            await h.goto("agent");
+            rec(
+                "88. a click on the card's client.ts row opens the Diff on agent A's working tree with src/sync/client.ts selected; See all opens the Diff on the same agent",
+                git88 === "ok" && cardUp88 && row88?.surface === "files" && row88.origin?.kind === "agent" && row88.origin.id === A &&
+                    /(^|\/)src\/sync\/client\.ts$/.test(row88.file ?? "") &&
+                    all88?.surface === "files" && all88.origin?.kind === "agent" && all88.origin.id === A,
+                { git88, cardUp88, row88, all88 }
             );
         } catch (e) {
             rec("the scenario ran to its end", false, String(e?.message ?? e));
@@ -48678,6 +48866,305 @@ const chatQuote = {
     },
 };
 
+// --- chat-focus-read: Focus read in Chat (chatfocusread.ts, chatfocusreadview.ts, chatfocusreadstore.ts). The toggle
+// beside Skim turns it on over a long reply: one block lit on the reading line, every other block dimmed to 32%, the
+// line's tick in the gutter, and the focus in the conversation. J steps the next block onto the line (the Agent tree's j
+// does not step agents there), Q puts the lit block in the box as a quote with the focus left in the conversation, a code
+// block quotes fenced and a table as a markdown table, J keeps stepping at the end of the conversation without pulling
+// the scroller off the bottom, and Alt+R turns it off again.
+
+const CFR_NAME = "focus read source";
+const CFR_QUESTION = "walk me through the release steps";
+const CFR_FIRST = "There are six steps, and the order matters because each one checks what the one before it left behind.";
+const CFR_REPLY = [
+    CFR_FIRST,
+    "First, make sure the tree is clean: an edit you forgot to commit would ride into the build, and nobody could tell which commit the installer came from.",
+    "Second, read the Unreleased lines of the changelog, since they decide the version the build takes.",
+    "## Build",
+    "Run the build from a commit, never from the working tree:",
+    "```sh\ntask tauri:build BUMP=auto\nls releases/\n```",
+    "- Check that the installer landed in releases.",
+    "- Check that its name carries the commit it was built from.",
+    "| Step | Who |\n|---|---|\n| Build | you |\n| Install | the person |",
+    "Third, hand the installer over with the one command that installs it, and say what to try first.",
+    "Fourth, keep the tag local: a bumped build tags its commit, and the tag is never pushed.",
+    "Fifth, write down what you could not check by hand, so the next build starts from it.",
+    "Sixth, close the loop: the release notes are the changelog lines, so a line that reads badly reads badly in the app too.",
+    "That is the whole of it. The build is the slow part; everything after it takes a minute.",
+    // the rest is long enough that every block above can be stepped onto the line
+    ...Array.from(
+        { length: 10 },
+        (_, i) =>
+            `Note ${i + 1}: a release that skips a step costs more later than the step costs now, so each one stays even when it looks like it has nothing to catch this time.`
+    ),
+].join("\n\n");
+// an earlier exchange above the reply, so the reply has room above it too
+const CFR_EARLIER_QUESTION = "what is left before the release?";
+const CFR_EARLIER = Array.from(
+    { length: 8 },
+    (_, i) => `Item ${i + 1}: one more thing to check before the build, written out as a full sentence so it wraps like a real paragraph does.`
+).join("\n\n");
+
+function cfrRoster(ctx) {
+    const now = Date.now();
+    return [
+        {
+            project: "arcterm",
+            state: "idle",
+            idleSince: now - 3_600_000,
+            task: "Release",
+            agent: "claude",
+            model: "opus",
+            id: ctx.tabs.main.tabId,
+            name: CFR_NAME,
+            blockId: ctx.tabs.main.blockId,
+            transcriptPath: ctx.transcript,
+            sleeping: { since: now - 3_600_000, freedBytes: 0 },
+        },
+    ];
+}
+
+const chatFocusRead = {
+    name: "chat-focus-read",
+    surface: "agent",
+    async arrange(h) {
+        const ctx = {
+            dir: mkdtempSync(join(tmpdir(), "verify-chat-focus-read-")),
+            prevGrid: await h.ev(`localStorage.getItem(${JSON.stringify(GRID_KEY)})`),
+            prevModes: await h.ev(`localStorage.getItem("agent.chatmode")`),
+            prevFocusRead: await h.ev(`localStorage.getItem("chat.focusRead")`),
+        };
+        let at = "writing the transcript";
+        try {
+            const base = Date.now() - 7_200_000;
+            const o = (sec) => ({ cwd: ctx.dir, ts: new Date(base + sec * 1000).toISOString() });
+            const lines = [
+                AC.userText(CFR_EARLIER_QUESTION, { ...o(0), uuid: "u0" }),
+                AC.assistantText(CFR_EARLIER, { ...o(2), uuid: "a0" }),
+                AC.userText(CFR_QUESTION, { ...o(10), uuid: "u1" }),
+                AC.assistantText(CFR_REPLY, { ...o(12), uuid: "a1" }),
+            ];
+            ctx.transcript = AC.writeTranscript(ctx.dir, "focus-read-source", lines);
+            at = "resetting the grid and focus read";
+            await h.ev(`localStorage.setItem(${JSON.stringify(GRID_KEY)}, ${JSON.stringify(JSON.stringify(GRID_EMPTY))})`);
+            await h.ev(`localStorage.removeItem("agent.chatmode")`);
+            await h.ev(`localStorage.removeItem("chat.focusRead")`);
+            if (!(await ahReload(h))) throw new Error("the page did not come back after the reload");
+            await h.goto("agent");
+            at = "making the tab";
+            ctx.tabs = { main: await acMakeTab(h, ctx, { label: CFR_NAME }) };
+            at = "setting the roster";
+            await AC.setRoster(h, cfrRoster(ctx));
+        } catch (e) {
+            ctx.arrangeError = `${at}: ${String(e?.message ?? e)}`;
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok: ok === true, detail: typeof detail === "string" ? detail : JSON.stringify(detail) });
+        if (ctx.arrangeError != null) {
+            rec("0. the fixture agent and its transcript", false, ctx.arrangeError);
+            return steps;
+        }
+        const A = ctx.tabs.main.tabId;
+        const pane = `document.querySelector('[data-agent-chat="${A}"]')`;
+        const scroller = `${pane}?.querySelector("[data-chat-scroller]")`;
+        const boxText = () =>
+            AC.agentPage(h, `const I = await mod("app/view/agents/chatinsert.ts"); return I.chatBoxText(${JSON.stringify(A)});`);
+        const focusId = () => AC.agentPage(h, `return globalStore.get(agentsModel().focusIdAtom);`);
+        // the blocks in order, which one is lit, where it sits against the reading line, and where the focus is
+        const state = () =>
+            h.ev(`(() => {
+                const s = ${scroller};
+                if (!s) return null;
+                const blocks = [...s.querySelectorAll("[data-fr-block]")];
+                const lit = blocks.findIndex((b) => b.hasAttribute("data-fr-lit"));
+                const sr = s.getBoundingClientRect();
+                const line = Math.round(s.clientHeight / 3);
+                const r = lit >= 0 ? blocks[lit].getBoundingClientRect() : null;
+                const dim = blocks.find((b) => !b.hasAttribute("data-fr-lit"));
+                const tick = ${pane}?.querySelector("[data-chat-focus-line]");
+                return {
+                    on: s.hasAttribute("data-focus-read"),
+                    count: blocks.length,
+                    litCount: blocks.filter((b) => b.hasAttribute("data-fr-lit")).length,
+                    lit,
+                    litText: lit >= 0 ? blocks[lit].innerText : null,
+                    litCode: lit >= 0 && !!blocks[lit].querySelector("[data-code-line]"),
+                    litTable: lit >= 0 && !!blocks[lit].querySelector("table"),
+                    // the lit block's top from the line (negative: above it) and its height
+                    litTop: r ? Math.round(r.top - sr.top - line) : null,
+                    litH: r ? Math.round(r.height) : null,
+                    litOpacity: lit >= 0 ? getComputedStyle(blocks[lit]).opacity : null,
+                    dimOpacity: dim ? getComputedStyle(dim).opacity : null,
+                    tick: tick ? getComputedStyle(tick).display : "absent",
+                    tickAtLine: tick ? Math.abs(tick.getBoundingClientRect().top + tick.offsetHeight / 2 - sr.top - line) <= 2 : false,
+                    focusIn: !!document.activeElement?.closest?.("[data-chat-scroller]"),
+                    scrollTop: Math.round(s.scrollTop),
+                    max: Math.round(s.scrollHeight - s.clientHeight),
+                };
+            })()`);
+        const press = async (key, code, keyCode, modifiers = 0) => {
+            for (const type of ["keyDown", "keyUp"]) {
+                await h.cdp("Input.dispatchKeyEvent", { type, key, code, modifiers, windowsVirtualKeyCode: keyCode });
+            }
+            // a step scrolls smoothly: let it land
+            await polishNap(700);
+        };
+        const J = () => press("j", "KeyJ", 74);
+        const K = () => press("k", "KeyK", 75);
+        const Q = () => press("q", "KeyQ", 81);
+        // the lit block sits on the line: its top TOP_ABOVE (12) px above it, half a short block, within a few px
+        const onLine = (s) => s != null && s.litTop != null && Math.abs(s.litTop + Math.min(s.litH / 2, 12)) <= 3;
+        try {
+            await h.cdp("Emulation.setFocusEmulationEnabled", { enabled: true });
+            await AC.focusAgent(h, A);
+            const loaded = await polishWaitFor(h, `!!${pane}?.querySelector("[data-chat-prose] p") && !!${pane}?.querySelector("[data-chat-focus-read-toggle]")`, 15000);
+
+            // 1. the toggle turns focus read on: one block lit, the rest at 32%, the tick on the line, the focus in Chat
+            const at1 = await h.ev(caCenter(`${pane}?.querySelector("[data-chat-focus-read-toggle]")`));
+            for (const type of ["mouseMoved", "mousePressed", "mouseReleased"]) {
+                await h.cdp("Input.dispatchMouseEvent", { type, x: Math.round(at1.x), y: Math.round(at1.y), button: "left", clickCount: 1 });
+            }
+            const on1 = await polishWaitFor(h, `!!${scroller}?.hasAttribute("data-focus-read")`, 3000);
+            await polishNap(400);
+            const s1 = await state();
+            const pressed1 = await h.ev(`${pane}?.querySelector("[data-chat-focus-read-toggle]")?.getAttribute("aria-pressed")`);
+            await h.shot("cdp-shots/chat-focus-read-1-on.png");
+            rec(
+                "1. the toggle beside Skim turns focus read on: every block but one dims to 32%, the lit one stays at 1, the accent tick marks the line, and the focus is in the conversation",
+                loaded && on1 && pressed1 === "true" && s1?.count >= 12 && s1.litCount === 1 && s1.litOpacity === "1" && s1.dimOpacity === "0.32" && s1.tick === "block" && s1.tickAtLine && s1.focusIn,
+                { loaded, on1, pressed1, s1 }
+            );
+
+            // 2. from the reply's first paragraph, J puts the next block on the line, and the Agent tree's j does not step
+            // agents
+            await h.ev(`(() => {
+                const s = ${scroller};
+                const p = [...s.querySelectorAll("[data-chat-prose] p")].find((el) => el.innerText.startsWith(${JSON.stringify(CFR_FIRST.slice(0, 30))}));
+                s.scrollTop += p.getBoundingClientRect().top - s.getBoundingClientRect().top - s.clientHeight / 3 + 4;
+                return true;
+            })()`);
+            await polishNap(500);
+            const s2a = await state();
+            const id2a = await focusId();
+            await J();
+            const s2 = await state();
+            const id2 = await focusId();
+            await h.shot("cdp-shots/chat-focus-read-2-step.png");
+            rec(
+                "2. J lights the next block and scrolls it onto the reading line (its top just above the line); the focused agent stays the same",
+                s2a?.lit >= 0 && s2?.lit === s2a.lit + 1 && onLine(s2) && s2.litCount === 1 && id2 === id2a && id2 === A,
+                { s2a, s2, id2a, id2 }
+            );
+
+            // 3. Q puts the lit block in the box as a quote, the caret's fresh line under it, and the focus stays in Chat
+            const before3 = await boxText();
+            await Q();
+            const text3 = await boxText();
+            const s3 = await state();
+            await h.shot("cdp-shots/chat-focus-read-3-quote.png");
+            rec(
+                "3. Q puts the lit block in the chat box as a `> ` quote with a blank line under it, and the focus stays in the conversation",
+                before3 === "" && typeof s2?.litText === "string" && text3 === `> ${s2.litText.trim()}\n\n` && s3?.focusIn === true,
+                { before3, litText: s2?.litText, text3, focusIn: s3?.focusIn }
+            );
+
+            // 4. a code block quotes fenced, with its language, under the first quote
+            let s4 = await state();
+            for (let i = 0; i < 15 && s4 != null && !s4.litCode; i++) {
+                await J();
+                s4 = await state();
+            }
+            await Q();
+            const text4 = await boxText();
+            await h.shot("cdp-shots/chat-focus-read-4-code.png");
+            rec(
+                "4. stepping on to the code block and pressing Q adds it as a fenced quote, its language kept, under the first quote",
+                s4?.litCode === true && onLine(s4) && text4 === `${text3}> \`\`\`sh\n> task tauri:build BUMP=auto\n> ls releases/\n> \`\`\`\n\n`,
+                { s4, text4 }
+            );
+
+            // 5. a table quotes as a markdown table rebuilt from its cells
+            let s5 = await state();
+            for (let i = 0; i < 15 && s5 != null && !s5.litTable; i++) {
+                await J();
+                s5 = await state();
+            }
+            await Q();
+            const text5 = await boxText();
+            rec(
+                "5. Q on the table adds it as a markdown table rebuilt from its cells",
+                s5?.litTable === true && text5 === `${text4}> | Step | Who |\n> | --- | --- |\n> | Build | you |\n> | Install | the person |\n\n`,
+                { s5, text5 }
+            );
+
+            // 6. at the end of the conversation J keeps stepping through the last blocks, which stay below the line, and the
+            // scroller stays at its end; K steps back
+            await h.ev(`(${scroller}).scrollTop = (${scroller}).scrollHeight`);
+            await polishNap(600);
+            const s6a = await state();
+            await J();
+            const s6 = await state();
+            await K();
+            const s6b = await state();
+            await h.shot("cdp-shots/chat-focus-read-6-end.png");
+            rec(
+                "6. at the end of the conversation J lights the next block below the line without moving the scroller off its end, and K steps back",
+                s6a != null && s6a.scrollTop >= s6a.max - 2 && s6?.lit === s6a.lit + 1 && s6.scrollTop >= s6.max - 2 && s6.litTop > 0 && s6b?.lit === s6a.lit,
+                { s6a, s6, s6b }
+            );
+
+            // 7. Alt+R turns it off: nothing dimmed, no tick, the toggle up
+            await press("r", "KeyR", 82, 1);
+            const off7 = await polishWaitFor(h, `!${scroller}?.hasAttribute("data-focus-read") && !${pane}?.querySelector("[data-fr-block]")`, 3000);
+            const pressed7 = await h.ev(`${pane}?.querySelector("[data-chat-focus-read-toggle]")?.getAttribute("aria-pressed")`);
+            const tick7 = await h.ev(`!!${pane}?.querySelector("[data-chat-focus-line]")`);
+            await h.shot("cdp-shots/chat-focus-read-7-off.png");
+            rec("7. Alt+R turns focus read off: no block dimmed, no tick, the toggle up", off7 && pressed7 === "false" && tick7 === false, {
+                off7,
+                pressed7,
+                tick7,
+            });
+        } catch (e) {
+            rec("x. the scenario ran to the end", false, String(e?.stack ?? e));
+        }
+        return steps;
+    },
+    async teardown(h, ctx) {
+        const step = async (what, fn) => {
+            try {
+                await fn();
+            } catch (e) {
+                console.error(`chat-focus-read teardown: ${what} failed: ${e?.message ?? e}`);
+            }
+        };
+        await step("clear the draft", () =>
+            AC.agentPage(
+                h,
+                `const S = await mod("app/view/agents/wakingstore.ts");
+                for (const id of ${JSON.stringify(ctx.tabIds ?? [])}) S.setWakeDraft(id, "");
+                return true;`
+            )
+        );
+        await step("restore the roster", () => AC.restoreRoster(h));
+        await step("close the fixture tab", () => acCloseTabs(h, ctx));
+        await step("restore the grid, the chat modes and focus read", () =>
+            h.ev(`(() => {
+                for (const [key, prev] of [[${JSON.stringify(GRID_KEY)}, ${JSON.stringify(ctx.prevGrid)}], ["agent.chatmode", ${JSON.stringify(ctx.prevModes)}], ["chat.focusRead", ${JSON.stringify(ctx.prevFocusRead)}]]) {
+                    if (prev == null) localStorage.removeItem(key);
+                    else localStorage.setItem(key, prev);
+                }
+                return true;
+            })()`)
+        );
+        await step("remove the fixture transcript", () => rmSync(ctx.dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 500 }));
+        await step("reload onto the live roster", () => ahReload(h));
+        await step("go home", () => h.goto("cockpit"));
+    },
+};
+
 // --- chat-math: formulas in Chat (markdownmessage.tsx, mathdollars.ts). A Claude reply holds inline `$…$` math, a `$$…$$`
 // display block, a one-line `$$…$$`, a price ("$5 and $10") and a code span with `$HOME`; Chat draws the three formulas with
 // KaTeX (two as display blocks) and leaves the price and the code as written.
@@ -48813,14 +49300,20 @@ const chatMath = {
     },
 };
 
-// --- chat-ref-badges: `agent:`, `run:` and `council:` references drawn as badges (refbadge.ts, chatrefbadge.tsx,
-// remarkrefmention.ts, chateditorrefpill.tsx; spec 2026-11-17-chat-ref-badges-design.md). The chat's agent A is in a registered
-// project whose run and council are put in the app's own stores; a second agent B is asking, on codex. A's bubble names B, the
-// run, the council and a run that is not there: the first three resolve (B's runtime mark and asking ring, the tints and names
-// of the run and the council), the fourth stays a dashed token with no role, and a click or Enter on B's badge focuses B. Then
-// `@agent` in A's box picks B: the box draws the same badge, Backspace beside it selects it, the next one takes the whole
-// token away. The text never changes: the box's text is read from Lexical's own state, since a badge draws a name. Last, back on
-// the bubble: a Ctrl-click on B's badge peeks B in the avatar popup (A stays focused), and the run badge lifts on hover.
+// --- chat-ref-badges: `agent:`, `run:`, `council:`, `session:` and `effort:` references drawn as badges (refbadge.ts,
+// chatrefbadge.tsx, remarkrefmention.ts, chateditorrefpill.tsx; spec 2026-11-17-chat-ref-badges-design.md). The chat's agent A is
+// in a registered project whose run and council are put in the app's own stores; a second agent B is asking, on codex. A's bubble
+// names B, the run, the council and a run that is not there: the first three resolve (B's runtime mark and asking ring, the tints
+// and names of the run and the council), the fourth stays a dashed token with no role, and a click or Enter on B's badge focuses B.
+// It also names a conversation (seeded into the archive's atom: its title, `2h`, a History mark), a real initiative (`0/2`, a Flag
+// mark; a click opens it in the Brief's sheet), a seeded finished initiative (`2/2` in the success colour) and a conversation and
+// an initiative that are not there (dashed, with their reasons as titles). Then `@agent` in A's box picks B: the box draws the same
+// badge, Backspace beside it selects it, the next one takes the whole token away and leaves one space; `@init` and `@conv` list the
+// initiative and the conversation. A `run:<id>` typed with key events becomes a badge once a space follows it, `agent:<id>` with
+// nothing after it stays text, and a typed `@path` becomes a file pill; a token made finished at the start of the box (Delete takes
+// the `x` off `xagent:<id> ` with the caret at 0) becomes a badge with the caret still before it. The text never changes: the box's text is read from
+// Lexical's own state, since a badge draws a name. Last, back on the bubble: a Ctrl-click on B's badge peeks B in the avatar popup
+// (A stays focused), and the run badge lifts on hover.
 
 const CRB_RUN_ID = "071a8e3b-5c4d-4e2f-9a10-3b7c1d2e4f56";
 const CRB_COUNCIL_ID = "c0ffee11-2233-4455-8677-99aabbccddee";
@@ -48829,6 +49322,14 @@ const CRB_RUN_NAME = "Close the tree's picked rows";
 const CRB_COUNCIL_FEATURE = "Chat compact work";
 const CRB_NAME_A = "ref badges main";
 const CRB_NAME_B = "ref badges asking";
+// the conversation seeded into the archive's atom, and the finished initiative seeded into the initiatives' atom (neither is on disk)
+const CRB_SESSION_ID = "9f31c2a4-7b58-4d06-8e1a-5c0d3b2a6f71";
+const CRB_SESSION_TASK = "Ref badges conversation\nmore";
+const CRB_SESSION_NAME = "Ref badges conversation";
+const CRB_DONE_EFFORT_ID = "d0e5b3a1-4c27-49f8-b6d1-8a3e7c5f2b90";
+const CRB_DONE_NAME = "Ref badges done";
+// the real initiative the arrange creates (two chunks, none done)
+const CRB_EFFORT_TITLE = "Ref badges initiative";
 
 function crbRoster(ctx) {
     const now = Date.now();
@@ -48853,34 +49354,92 @@ function crbRoster(ctx) {
     ];
 }
 
-// The project's run and council, put in the app's own stores (a non-null atom is not read again by useResolvedRef). projectRunsAtom
-// is keyed by the exact path string, so it is the one the page's config holds for the project, which is what the chat resolves with.
-// Typing `@` in the box reads both again over the seed (useRefItems), so a step that follows one seeds again.
-const crbSeed = (h, project) =>
+// What the badges resolve against, put in the app's own stores (a non-null atom is not read again by useResolvedRef):
+// - the project's run and council. projectRunsAtom is keyed by the exact path string, so it is the one the page's config holds for
+//   the project, which is what the chat resolves with;
+// - one conversation prepended to the archive's atom (`session:` and the `@conv` rows read it; the scan the Agent tree makes on
+//   its own would drop it, as it is not on disk), dated two hours before now so its age reads `2h` whenever the step runs;
+// - the real initiative `ctx.effortId` (the arrange made it) read into refEffortsAtom, with one finished initiative put in front
+//   of the real list (`2/2`; `effort:<id>` resolves it, and it is not in the store, so nothing opens it).
+// Typing `@` in the box reads the runs, the councils and the initiatives again over the seed (useRefItems), so a step that follows
+// one seeds again (crbReseedUntil when what it reads must hold for a moment).
+const crbSeed = (h, ctx) =>
     AC.agentPage(
         h,
         `const P = await mod("app/view/agents/projectsstore.ts");
-        const path = globalStore.get(P.projectsAtom)[${JSON.stringify(project)}]?.path;
-        if (!path) throw new Error("the page's config has no path for the project " + ${JSON.stringify(project)});
+        const path = globalStore.get(P.projectsAtom)[${JSON.stringify(ctx.project)}]?.path;
+        if (!path) throw new Error("the page's config has no path for the project " + ${JSON.stringify(ctx.project)});
         const H = await mod("app/view/agents/projecthistorystore.ts");
         const C = await mod("app/view/agents/councilstore.ts");
+        const S = await mod("app/view/agents/sessionsarchivestore.ts");
+        const E = await mod("app/view/agents/refmentionstore.ts");
         const now = Date.now();
         globalStore.set(H.projectRunsAtom(path), { runs: [{ oid: ${JSON.stringify(CRB_RUN_ID)}, goal: ${JSON.stringify(CRB_RUN_GOAL)} }], error: null });
         globalStore.set(C.councilListAtom(path), [
             { id: ${JSON.stringify(CRB_COUNCIL_ID)}, project: path, feature: ${JSON.stringify(CRB_COUNCIL_FEATURE)}, experts: [], state: "done", round: 1, tokens: 0, calls: 0, created: now, updated: now },
         ]);
+        const then = now - 2 * 3_600_000;
+        const conversation = {
+            id: ${JSON.stringify(CRB_SESSION_ID)}, runtime: "claude", projectpath: path, projectname: ${JSON.stringify(ctx.project)}, branch: "",
+            task: ${JSON.stringify(CRB_SESSION_TASK)}, model: "", tokenstotal: 0, lastactivets: then, resumecommand: "claude --resume ${CRB_SESSION_ID}", transcriptpath: "",
+            status: "done", startedts: then - 60_000, durationms: 60_000, events: [],
+        };
+        globalStore.set(S.sessionsArchiveAtom, [conversation, ...(globalStore.get(S.sessionsArchiveAtom) ?? []).filter((s) => s.id !== conversation.id)]);
+        // the real list first: loadRefEfforts makes no second request while one is on its way, so ask until the real one is in
+        const real = ${JSON.stringify(ctx.effortId ? `effort:${ctx.effortId}` : "")};
+        const holdsReal = () => real === "" || (globalStore.get(E.refEffortsAtom) ?? []).some((e) => e.oref === real);
+        for (let tries = 0; tries < 30 && !holdsReal(); tries++) {
+            await E.loadRefEfforts();
+            if (!holdsReal()) await nap(250);
+        }
+        if (!holdsReal()) throw new Error("the initiatives' list never held " + real);
+        const finished = { oref: "effort:" + ${JSON.stringify(CRB_DONE_EFFORT_ID)}, title: ${JSON.stringify(CRB_DONE_NAME)}, project: ${JSON.stringify(ctx.project)}, status: "active", done: 2, total: 2, updatedts: now };
+        globalStore.set(E.refEffortsAtom, [finished, ...(globalStore.get(E.refEffortsAtom) ?? []).filter((e) => e.oref !== finished.oref)]);
         return path;`
     );
 
+// the seed, again and again until an expression reads true: a read the page made after it (the picker's, a badge's) put the real
+// stores back over it, so what a step reads is seeded again between two looks. False when it never held.
+async function crbReseedUntil(h, ctx, expr, ms = 10000) {
+    const end = Date.now() + ms;
+    do {
+        await crbSeed(h, ctx);
+        if (await polishWaitFor(h, expr, 1500)) return true;
+    } while (Date.now() < end);
+    return false;
+}
+
 // What the box holds as the agent receives it, read from Lexical's own state: a badge draws a name, so the box's innerText (acVal)
-// is not the text. A ref node is its token as written (raw), a line break is a newline, paragraphs are lines.
+// is not the text. A ref node is its token as written (raw), a file pill is its mention (`@path`, `@"path"` when the path holds a
+// space: mentionText), a line break is a newline, paragraphs are lines.
 const crbBoxText = (boxExpr) =>
     `((e) => {
         const ed = e?.__lexicalEditor;
         if (!ed) return null;
-        const text = (n) => (n.type === "ref-mention" ? n.raw : n.type === "linebreak" ? "\\n" : typeof n.text === "string" ? n.text : (n.children ?? []).map(text).join(""));
+        const text = (n) =>
+            n.type === "ref-mention" ? n.raw
+            : n.type === "file-mention" ? (/\\s/.test(n.path) ? '@"' + n.path + '"' : "@" + n.path)
+            : n.type === "linebreak" ? "\\n"
+            : typeof n.text === "string" ? n.text
+            : (n.children ?? []).map(text).join("");
         return ed.getEditorState().toJSON().root.children.map(text).join("\\n");
     })(${boxExpr})`;
+
+// Text typed into a box with real key events, one key down and up per character (the box's own input path: Chrome turns a keyDown
+// with `text` into the insertion, as a person's key does), not a value set from outside. ASCII only. Nothing is pressed after
+// the last character: a token typed last has no space or punctuation after it yet.
+async function crbTypeKeys(h, boxExpr, text) {
+    await h.ev(`(${boxExpr})?.focus()`);
+    for (const ch of text) {
+        const letter = /[a-z]/i.test(ch);
+        const digit = /[0-9]/.test(ch);
+        const code = ch === " " ? "Space" : letter ? `Key${ch.toUpperCase()}` : digit ? `Digit${ch}` : undefined;
+        const windowsVirtualKeyCode = ch === " " ? 32 : letter ? ch.toUpperCase().charCodeAt(0) : digit ? ch.charCodeAt(0) : 0;
+        const key = { key: ch, ...(code ? { code } : {}), windowsVirtualKeyCode };
+        await h.cdp("Input.dispatchKeyEvent", { type: "keyDown", ...key, text: ch, unmodifiedText: ch });
+        await h.cdp("Input.dispatchKeyEvent", { type: "keyUp", ...key });
+    }
+}
 
 // what one badge shows, from the element carrying data-chat-ref (an expression that finds it); null when it is not there
 const crbReadBadge = (h, badgeExpr) =>
@@ -48888,11 +49447,14 @@ const crbReadBadge = (h, badgeExpr) =>
         const el = ${badgeExpr};
         if (!el) return null;
         const cs = getComputedStyle(el);
+        const meta = el.querySelector("[data-ref-meta]");
         return {
             state: el.getAttribute("data-ref-state"),
             mark: el.getAttribute("data-ref-mark"),
             selected: el.getAttribute("data-ref-selected"),
             name: el.querySelector("[data-ref-name]")?.textContent ?? null,
+            meta: meta?.textContent ?? null,
+            metaColor: meta ? getComputedStyle(meta).color : null,
             text: el.textContent,
             dots: [...el.querySelectorAll("[data-ref-dot]")].map((d) => d.getAttribute("data-ref-dot")),
             title: el.getAttribute("title"),
@@ -48919,6 +49481,15 @@ const chatRefBadges = {
             await h.rpc("createproject", { name: ctx.project, path: ctx.dir });
             ctx.projectMade = true;
             await waitForProjectInConfig(h, ctx.project);
+            // a real initiative (two chunks, none done), so a click on its badge has something to open; the teardown deletes it
+            at = "creating the initiative";
+            const made = await h.rpc("effortcreate", {
+                title: CRB_EFFORT_TITLE,
+                project: ctx.project,
+                chunks: [{ label: "Draw the badge" }, { label: "Check the badge" }],
+            });
+            ctx.effortId = made?.effortoid;
+            if (!ctx.effortId) throw new Error("effortcreate answered no initiative id");
             at = "resetting the grid";
             await h.ev(`localStorage.setItem(${JSON.stringify(GRID_KEY)}, ${JSON.stringify(JSON.stringify(GRID_EMPTY))})`);
             await h.ev(`localStorage.removeItem("agent.chatmode")`);
@@ -48935,15 +49506,17 @@ const chatRefBadges = {
             const o = (sec) => ({ cwd: ctx.dir, ts: new Date(base + sec * 1000).toISOString() });
             ctx.transcript = AC.writeTranscript(ctx.dir, "ref-badges", [
                 AC.userText(
-                    `Hỏi agent:${B.slice(0, 8)} xem run:${CRB_RUN_ID.slice(0, 8)} và council:${CRB_COUNCIL_ID.slice(0, 8)}, còn run:deadbeef thì sao.`,
+                    `Hỏi agent:${B.slice(0, 8)} xem run:${CRB_RUN_ID.slice(0, 8)} và council:${CRB_COUNCIL_ID.slice(0, 8)}, còn run:deadbeef thì sao. ` +
+                        `Rồi đọc session:${CRB_SESSION_ID.slice(0, 8)} và effort:${ctx.effortId.slice(0, 8)} và effort:${CRB_DONE_EFFORT_ID.slice(0, 8)}, ` +
+                        `rồi session:77aa01fe và effort:deadbeef.`,
                     { ...o(0), uuid: "u1" }
                 ),
                 AC.assistantText("Mình sẽ hỏi lại từng cái.", { ...o(2), uuid: "a1" }),
             ]);
             at = "setting the roster";
             await AC.setRoster(h, crbRoster(ctx));
-            at = "seeding the project's run and council";
-            ctx.projectPath = await crbSeed(h, ctx.project);
+            at = "seeding the project's run and council, the conversation and the initiatives";
+            ctx.projectPath = await crbSeed(h, ctx);
         } catch (e) {
             ctx.arrangeError = `${at}: ${String(e?.message ?? e)}`;
         }
@@ -48960,8 +49533,19 @@ const chatRefBadges = {
         const B = ctx.tabs.second.tabId;
         const B8 = B.slice(0, 8);
         const tokens = { agent: `agent:${B8}`, run: `run:${CRB_RUN_ID.slice(0, 8)}`, council: `council:${CRB_COUNCIL_ID.slice(0, 8)}`, missing: "run:deadbeef" };
+        // the conversation, the real initiative, the finished one, and a conversation and an initiative that are not there
+        const S8 = CRB_SESSION_ID.slice(0, 8);
+        const E8 = ctx.effortId.slice(0, 8);
+        const D8 = CRB_DONE_EFFORT_ID.slice(0, 8);
+        const more = { session: `session:${S8}`, effort: `effort:${E8}`, done: `effort:${D8}`, noSession: "session:77aa01fe", noEffort: "effort:deadbeef" };
         const inBubble = (token) => `document.querySelector('[data-agent-chat="${A}"] [data-chat-conversation] [data-chat-ref="${token}"]')`;
         const inBox = `${acBox(A)}?.querySelector('[data-chat-ref]')`;
+        // The `@` a step types reads the runs, councils and initiatives again over the seed, so the bubble behind a picker or a
+        // typed token shows the seeded run, council and finished initiative unresolved. Before such a shot, once the load has
+        // settled, the seed goes back and stays back until the bubble's seeded run badge reads resolved, so the shot shows what a
+        // person sees. True when it held.
+        const reseedForShot = () =>
+            crbReseedUntil(h, ctx, `${inBubble(tokens.run)}?.getAttribute("data-ref-state") === "resolved"`, 8000);
         const focused = () => AC.agentPage(h, `return globalStore.get(agentsModel().focusIdAtom);`);
         const waitFocus = async (id, ms = 8000) => {
             for (let waited = 0; waited < ms; waited += 250) {
@@ -48982,7 +49566,7 @@ const chatRefBadges = {
         try {
             const shown = await showChat();
             // anything that read the project's runs or councils since the arrange is put back under the seed
-            await crbSeed(h, ctx.project);
+            await crbSeed(h, ctx);
             const drawn = await polishWaitFor(
                 h,
                 `${Object.values(tokens).map((t) => `!!${inBubble(t)}`).join(" && ")} && ${inBubble(tokens.run)}.getAttribute("data-ref-state") === "resolved" && ${inBubble(tokens.council)}.getAttribute("data-ref-state") === "resolved"`,
@@ -49019,6 +49603,108 @@ const chatRefBadges = {
             // the bubble alone for the contact sheet, before `@` in the box reads the project's runs and councils again
             await polishNap(300);
             await h.shot("cdp-shots/chat-ref-badges.png");
+
+            // 4a-4e: the conversation and the initiatives in the same bubble. A scan or a read the page made since the seed puts the
+            // real stores back over it, so each look is under a fresh seed (crbReseedUntil), and each state has its own shot with
+            // its badge scrolled to the middle.
+            const stateOf = (token) => `${inBubble(token)}?.getAttribute("data-ref-state") === "resolved"`;
+            const bringIn = (token) => h.ev(`${inBubble(token)}?.scrollIntoView({ block: "center" })`);
+            // the colour text-success paints, read off a probe wearing the class: the finished initiative's chunk count wears it
+            const successColor = await h.ev(`(() => {
+                const p = document.createElement("span");
+                p.className = "text-success";
+                document.body.appendChild(p);
+                const c = getComputedStyle(p).color;
+                p.remove();
+                return c;
+            })()`);
+
+            const sessionReady = await crbReseedUntil(h, ctx, stateOf(more.session));
+            const session = await crbReadBadge(h, inBubble(more.session));
+            await bringIn(more.session);
+            await polishNap(300);
+            await h.shot("cdp-shots/chat-ref-badges-session.png");
+            rec(
+                "4a. session:<id> is a resolved conversation badge: its mark, the conversation's first line as the name, `2h` beside it, a title naming it and offering to open it, in a role=button (not clicked: opening a conversation reopens it as a live agent)",
+                sessionReady && session?.state === "resolved" && session.mark === "session" && session.name === CRB_SESSION_NAME && session.meta === "2h" &&
+                    session.title?.startsWith(`${CRB_SESSION_NAME} · conversation`) === true && session.title.includes(`conversation ${S8}`) &&
+                    session.title.endsWith("(click to open)") && session.parentRole === "button",
+                { sessionReady, session }
+            );
+
+            const effortReady = await crbReseedUntil(h, ctx, stateOf(more.effort));
+            const effort = await crbReadBadge(h, inBubble(more.effort));
+            await bringIn(more.effort);
+            await polishNap(300);
+            await h.shot("cdp-shots/chat-ref-badges-effort.png");
+            rec(
+                "4b. effort:<id> is a resolved initiative badge: its mark, the initiative's title as the name, `0/2` beside it (not in the success colour), a title with its chunks done and the offer to open it, in a role=button",
+                effortReady && effort?.state === "resolved" && effort.mark === "effort" && effort.name === CRB_EFFORT_TITLE && effort.meta === "0/2" &&
+                    typeof successColor === "string" && effort.metaColor !== successColor &&
+                    effort.title === `${CRB_EFFORT_TITLE} · initiative ${E8} · 0 of 2 chunks done (click to open)` && effort.parentRole === "button",
+                { effortReady, effort, successColor }
+            );
+
+            const doneReady = await crbReseedUntil(h, ctx, stateOf(more.done));
+            const done = await crbReadBadge(h, inBubble(more.done));
+            await bringIn(more.done);
+            await polishNap(300);
+            await h.shot("cdp-shots/chat-ref-badges-done.png");
+            rec(
+                "4c. an initiative with every chunk done shows `2/2` in the success colour (the computed colour of a text-success probe), unlike the unfinished one's",
+                doneReady && done?.state === "resolved" && done.mark === "effort" && done.name === CRB_DONE_NAME && done.meta === "2/2" &&
+                    typeof successColor === "string" && done.metaColor === successColor && done.metaColor !== effort?.metaColor &&
+                    done.title === `${CRB_DONE_NAME} · initiative ${D8} · 2 of 2 chunks done (click to open)`,
+                { doneReady, done, successColor, unfinishedMeta: effort?.metaColor }
+            );
+
+            await crbSeed(h, ctx);
+            const missingDrawn = await polishWaitFor(h, `!!${inBubble(more.noSession)} && !!${inBubble(more.noEffort)}`, 5000);
+            const noSession = await crbReadBadge(h, inBubble(more.noSession));
+            const noEffort = await crbReadBadge(h, inBubble(more.noEffort));
+            await bringIn(more.noEffort);
+            await polishNap(300);
+            await h.shot("cdp-shots/chat-ref-badges-unresolved.png");
+            rec(
+                "4d. session:77aa01fe and effort:deadbeef are unresolved: their tokens as the text, dashed, no role, titled \"No conversation 77aa01fe in the loaded history\" and \"No initiative deadbeef\"",
+                missingDrawn && noSession?.state === "unresolved" && noSession.text === more.noSession && noSession.borderStyle === "dashed" && noSession.role == null &&
+                    noSession.parentRole !== "button" && noSession.title === "No conversation 77aa01fe in the loaded history" &&
+                    noEffort?.state === "unresolved" && noEffort.text === more.noEffort && noEffort.borderStyle === "dashed" && noEffort.role == null &&
+                    noEffort.parentRole !== "button" && noEffort.title === "No initiative deadbeef",
+                { missingDrawn, noSession, noEffort }
+            );
+
+            // 4e. a click on the initiative's badge opens it in the Brief's sheet: the surface and the selected subject are the page's
+            // atoms (jarvis, effort:<oid>), read as the focus is for the agent badge's click. The sheet is put away and A's chat is
+            // brought back for the steps that follow.
+            await crbSeed(h, ctx);
+            const effortUp = await polishWaitFor(h, stateOf(more.effort), 5000);
+            const pressedEffort = effortUp && (await press(inBubble(more.effort)));
+            const sheetState = () =>
+                AC.agentPage(
+                    h,
+                    `const J = await mod("app/view/jarvis/jarvissubjectstore.ts");
+                    const B = await mod("app/view/jarvis/jarvisstore.ts");
+                    const subject = globalStore.get(J.activeSubjectAtom);
+                    return { surface: globalStore.get(agentsModel().surfaceAtom), kind: subject?.kind ?? null, id: subject?.id ?? null, sheet: globalStore.get(B.briefSheetOpenAtom) };`
+                );
+            let sheet = null;
+            for (let waited = 0; pressedEffort && waited < 10000; waited += 250) {
+                sheet = await sheetState();
+                if (sheet.surface === "jarvis" && sheet.id === ctx.effortId) break;
+                await polishNap(250);
+            }
+            const sheetDrawn = await polishWaitFor(h, `!!document.querySelector('[data-jarvis-brief-sheet="effort"]')`, 8000);
+            await polishNap(400);
+            await h.shot("cdp-shots/chat-ref-badges-effort-open.png");
+            await AC.agentPage(h, `const B = await mod("app/view/jarvis/jarvisstore.ts"); globalStore.set(B.briefSheetOpenAtom, false); return true;`);
+            await h.goto("agent");
+            const backShown = await showChat();
+            rec(
+                "4e. a click on the initiative's badge opens it: the Brief's surface shows with that initiative selected and its sheet open; the Agent surface and A's chat come back after",
+                pressedEffort && sheet?.surface === "jarvis" && sheet.kind === "effort" && sheet.id === ctx.effortId && sheet.sheet === true && backShown,
+                { effortUp, pressedEffort, sheet, sheetDrawn, backShown }
+            );
 
             const clicked = await press(inBubble(tokens.agent));
             const byClick = clicked && (await waitFocus(B));
@@ -49068,7 +49754,7 @@ const chatRefBadges = {
             const selected = await polishWaitFor(h, `${inBox}?.getAttribute("data-ref-selected") === "true"`, 3000);
             const kept = await h.ev(crbBoxText(acBox(A)));
             // the `@` read the project's runs and councils again over the seed: put back, so the shot's bubble badges resolve
-            await crbSeed(h, ctx.project);
+            await crbSeed(h, ctx);
             await polishWaitFor(h, `${inBubble(tokens.run)}?.getAttribute("data-ref-state") === "resolved"`, 5000);
             await polishNap(300);
             await h.shot("cdp-shots/chat-ref-badges-box.png");
@@ -49078,15 +49764,138 @@ const chatRefBadges = {
             const acValLeft = await h.ev(acVal(acBox(A)));
             await acClear(h, acBox(A));
             rec(
-                "7. with the caret right after the badge, Backspace selects it (data-ref-selected) and leaves the text as it was; Backspace again takes the whole token and its badge away",
-                selected && kept === want && gone && typeof left === "string" && !left.includes("agent:") && !left.includes(B8),
+                "7. with the caret right after the badge, Backspace selects it (data-ref-selected) and leaves the text as it was; Backspace again takes the whole token and its badge away and leaves one space where it was (`đọc `, not `đọc  `)",
+                selected && kept === want && gone && left === "đọc ",
                 { selected, kept, gone, left, acValLeft }
             );
 
-            // the bubble's badges again, with real mouse events at a badge's centre (the box is empty now, and step 7's `@` read the
-            // project's runs and councils over the seed, so put it back first)
+            // 7a-7f: part 2 in the box. The picker lists a conversation and an initiative, a reference or an `@path` typed with key
+            // events becomes a badge or a file pill once a space follows it, a token with nothing after it stays text, and the caret
+            // stays before a badge formed at the start of the box.
+            // The conversation and the initiatives are seeded first; typing `@` reads the initiatives again, so the seed goes back
+            // before each shot (reseedForShot: the typed badge below resolves a run, and that read the runs, too).
+            await crbSeed(h, ctx);
+            await acClear(h, acBox(A));
+            await acType(h, acBox(A), "đọc @init", false);
+            const effortKey = `ref:effort:${ctx.effortId}`;
+            const effortListed = await polishWaitFor(h, `!!document.querySelector('[data-chat-mention="${effortKey}"]')`, 8000);
+            const effortList = await acMentionState(h);
+            await polishNap(300);
+            const effortSeeded = await reseedForShot();
+            await polishNap(300);
+            await h.shot("cdp-shots/chat-ref-badges-picker-effort.png");
+            const effortRow = (effortList?.rows ?? []).find((r) => r.key === effortKey);
+            await acClear(h, acBox(A));
+            rec(
+                "7a. `@init` lists a row for the initiative, naming it",
+                effortListed && effortRow != null && effortRow.text.includes(CRB_EFFORT_TITLE),
+                { effortListed, effortSeeded, effortList }
+            );
+
+            await crbSeed(h, ctx);
+            await acType(h, acBox(A), "đọc @conv", false);
+            const sessionKey = `ref:session:${CRB_SESSION_ID}`;
+            const sessionListed = await polishWaitFor(h, `!!document.querySelector('[data-chat-mention="${sessionKey}"]')`, 8000);
+            const sessionList = await acMentionState(h);
+            await polishNap(300);
+            const sessionSeeded = await reseedForShot();
+            await polishNap(300);
+            await h.shot("cdp-shots/chat-ref-badges-picker-session.png");
+            const sessionRow = (sessionList?.rows ?? []).find((r) => r.key === sessionKey);
+            await acClear(h, acBox(A));
+            rec(
+                "7b. `@conv` lists a row for the conversation, naming it",
+                sessionListed && sessionRow != null && sessionRow.text.includes(CRB_SESSION_NAME),
+                { sessionListed, sessionSeeded, sessionList }
+            );
+
+            // 7c. the run is typed with key events into an empty box; typing `@` above read the runs again over the seed, so it goes
+            // back (and stays back until the badge has drawn the run's name)
+            await polishNap(500);
+            const runToken = tokens.run;
+            await crbSeed(h, ctx);
+            await crbTypeKeys(h, acBox(A), `xem ${runToken} `);
+            const typedBadge = await polishWaitFor(h, `!!${inBox}`, 3000);
+            const typedNamed = await crbReseedUntil(h, ctx, `${inBox}?.querySelector("[data-ref-name]")?.textContent === ${JSON.stringify(CRB_RUN_NAME)}`, 8000);
+            const typedBadgeRead = await crbReadBadge(h, inBox);
+            const typedText = await h.ev(crbBoxText(acBox(A)));
+            const typedCount = await h.ev(`${acBox(A)}?.querySelectorAll("[data-chat-ref]").length ?? -1`);
+            rec(
+                "7c. `xem run:<id> ` typed key by key becomes a badge when the space is typed: the box holds one badge, the run's resolved one, and its text is exactly what was typed",
+                typedBadge && typedNamed && typedBadgeRead?.state === "resolved" && typedBadgeRead.mark === "run" && typedBadgeRead.name === CRB_RUN_NAME &&
+                    typedCount === 1 && typedText === `xem ${runToken} `,
+                { typedBadge, typedNamed, typedBadgeRead, typedCount, typedText }
+            );
+
+            // 7d. `agent:<A>` typed last, with nothing after it, is still text: no second badge, and the text is the two tokens
+            await crbTypeKeys(h, acBox(A), `agent:${A.slice(0, 8)}`);
+            await polishNap(400);
+            const stillText = await h.ev(crbBoxText(acBox(A)));
+            const stillCount = await h.ev(`${acBox(A)}?.querySelectorAll("[data-chat-ref]").length ?? -1`);
+            const stillSeeded = await reseedForShot();
+            await polishNap(300);
+            await h.shot("cdp-shots/chat-ref-badges-typed.png");
+            rec(
+                "7d. `agent:<id>` typed after it, with no character after, adds no badge: the box still holds the run's one, and the token is text",
+                stillCount === 1 && stillText === `xem ${runToken} agent:${A.slice(0, 8)}`,
+                { stillCount, stillSeeded, stillText }
+            );
+            await acClear(h, acBox(A));
+
+            // 7e. an `@path` typed key by key becomes a file pill when the space is typed (it need not exist: the box reads the text)
+            const mention = "@../arcterm/cdp-shots";
+            await crbTypeKeys(h, acBox(A), `xem ${mention} `);
+            const pilled = await polishWaitFor(h, `${acBox(A)}?.querySelectorAll("[data-chat-pill]").length === 1`, 3000);
+            await polishNap(300);
+            const pills = await acPills(h, acBox(A));
+            const pillText = await h.ev(crbBoxText(acBox(A)));
+            const pillRefs = await h.ev(`${acBox(A)}?.querySelectorAll("[data-chat-ref]").length ?? -1`);
+            const pillSeeded = await reseedForShot();
+            await polishNap(300);
+            await h.shot("cdp-shots/chat-ref-badges-typed-pill.png");
+            await acClear(h, acBox(A));
+            rec(
+                "7e. `xem @../arcterm/cdp-shots ` typed key by key holds one file pill (no badge) and its text is exactly what was typed",
+                pilled && pills.length === 1 && pills[0].path === "../arcterm/cdp-shots" && pillRefs === 0 && pillText === `xem ${mention} `,
+                { pilled, pillSeeded, pills, pillRefs, pillText }
+            );
+
+            // 7f. the caret before a badge formed at it: `xagent:<A> ` is only text (the `x` makes it no reference), Home puts the caret
+            // at 0 and Delete takes the `x` away, which leaves a finished token starting at offset 0 with the caret at 0. The badge forms
+            // and the caret stays before it, as a typed token's caret goes back where it was in the text (a replaced node would carry it
+            // to the badge's far side). A `y` typed next stands before the badge: `y agent:<A> ` (the box's gap rule gives it a space
+            // against the badge) or `yagent:<A> `, never `agent:<A> y`.
+            const caretToken = `agent:${A.slice(0, 8)}`;
+            const homeKey = { key: "Home", code: "Home", windowsVirtualKeyCode: 36 };
+            const deleteKey = { key: "Delete", code: "Delete", windowsVirtualKeyCode: 46 };
+            await crbTypeKeys(h, acBox(A), `x${caretToken} `);
+            await polishNap(300);
+            const asText = await h.ev(crbBoxText(acBox(A)));
+            const asTextRefs = await h.ev(`${acBox(A)}?.querySelectorAll("[data-chat-ref]").length ?? -1`);
+            await acKey(h, homeKey);
+            await polishNap(150);
+            await acKey(h, deleteKey);
+            const formedAtStart = await polishWaitFor(h, `${acBox(A)}?.querySelectorAll("[data-chat-ref]").length === 1`, 3000);
+            const formedText = await h.ev(crbBoxText(acBox(A)));
+            await crbTypeKeys(h, acBox(A), "y");
+            await polishNap(300);
+            const caretText = await h.ev(crbBoxText(acBox(A)));
+            const caretRefs = await h.ev(`${acBox(A)}?.querySelectorAll("[data-chat-ref]").length ?? -1`);
+            const caretSeeded = await reseedForShot();
+            await polishNap(300);
+            await h.shot("cdp-shots/chat-ref-badges-caret.png");
+            await acClear(h, acBox(A));
+            rec(
+                "7f. `xagent:<id> ` is text; with the caret at the start, Delete takes the `x` away and the token becomes one badge with the caret still before it: a `y` typed next stands ahead of the badge (`y agent:<id> `), not after it",
+                asText === `x${caretToken} ` && asTextRefs === 0 && formedAtStart && formedText === `${caretToken} ` && caretRefs === 1 &&
+                    (caretText === `y ${caretToken} ` || caretText === `y${caretToken} `),
+                { asText, asTextRefs, formedAtStart, formedText, caretText, caretRefs, caretSeeded }
+            );
+
+            // the bubble's badges again, with real mouse events at a badge's centre (the box is empty now, and the steps above read
+            // the project's runs and councils over the seed, so put it back first)
             await showChat();
-            await crbSeed(h, ctx.project);
+            await crbSeed(h, ctx);
             const bubbleBadges = await polishWaitFor(
                 h,
                 `!!${inBubble(tokens.agent)} && ${inBubble(tokens.run)}?.getAttribute("data-ref-state") === "resolved"`,
@@ -49199,6 +50008,11 @@ const chatRefBadges = {
                 return true;
             })()`)
         );
+        // the real initiative the arrange made (the seeded conversation and finished initiative live in the page's atoms, which the
+        // reload below drops)
+        if (ctx.effortId) {
+            await step("delete the initiative", () => h.rpc("effortdelete", { effortoid: ctx.effortId }));
+        }
         if (ctx.projectMade) {
             // deleteproject leaves the channel createproject made, so that goes too
             await step("remove the project", async () => {
@@ -72352,6 +73166,7 @@ export const SCENARIOS = [
     chatAsleepAttachJump,
     chatFork,
     chatQuote,
+    chatFocusRead,
     chatMath,
     chatRefBadges,
     chatInitiative,

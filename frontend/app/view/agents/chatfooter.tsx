@@ -1,14 +1,16 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// The footer of the chat box, as pill chips: the agent's model and effort in one chip, as Claude Desktop has them
+// The line under the chat box, right-aligned plain text (chat-compact-composer/Main.dc.html): the agent's model and effort
+// in one control, as Claude Desktop has them
 // ("Opus 5.5 High"; its menu lists the current models, a pick types `/model <id>`, then Effort, Claude Code's levels
 // drawn as a five-bar meter, a pick typing `/effort <level>`, and More models, the earlier ones, as submenus),
 // Claude Code's permission mode (a menu of the modes; a pick presses Shift+Tab until Claude Code's footer names that
 // mode) and, at the right, how full the context is as a small ring with its percent. The mode is read off the terminal
 // that stays mounted under the chat (tuiscreen.ts). A dialog or a menu covers Claude Code's footer for a while: the
-// poll keeps the last mode seen, and until one is read the chip is not drawn. Asleep, the model is a plain label (a
-// wake takes no model), the ring is dimmed and there is no mode chip. The parts fold and crossfade in place when the
+// poll keeps the last mode seen, and until one is read the mode is not drawn. Asleep, the model is a muted label (a
+// wake takes no model), the ring is dimmed and there is no mode. Each menu opens upward, right-aligned to its control
+// (the line sits at the box's right), and a submenu opens to the menu's left. The parts fold and crossfade in place when the
 // agent sleeps or wakes (the one ChatComposer lives through both), so the caller wraps this in a MotionConfig.
 
 import { pushToast } from "@/app/cockpit/notificationstore";
@@ -20,7 +22,7 @@ import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { readTermLines } from "@/app/view/term/termpaste";
 import { formatChordString } from "@/util/keysym";
 import { cn, fireAndForget, stringToBase64 } from "@/util/util";
-import { Check, ChevronRight, ChevronUp, Lock } from "lucide-react";
+import { Check, ChevronRight } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useCallback, useEffect, useRef, useState, type FocusEvent, type KeyboardEvent, type ReactNode } from "react";
 import { submitToAgent } from "./agentsubmit";
@@ -230,16 +232,15 @@ function useChipMenu() {
 }
 type ChipMenuState = ReturnType<typeof useChipMenu>;
 
-// the board's pills: round, on the surface tone, a hairline edge that strengthens on hover and while the menu is open
+// the board's plain text: no pill or edge, the words bright, a faint ground on hover and while the menu is open
 const CHIP =
-    "flex h-[28px] max-w-[200px] cursor-pointer items-center gap-1.5 rounded-full border px-[10px] text-[12.5px] text-secondary transition-colors hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent motion-reduce:transition-none";
-const chipTone = (open: boolean) =>
-    open ? "border-edge-strong bg-surface-hover text-primary" : "border-edge-mid bg-surface hover:border-edge-strong";
+    "flex h-[22px] max-w-[200px] cursor-pointer items-center gap-1 rounded-[6px] px-1 text-[12.5px] text-primary transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent motion-reduce:transition-none";
+const chipTone = (open: boolean) => (open ? "bg-surface-hover" : "hover:bg-surface-hover");
 // A chip's menu is two layers: MENU_BOX, the box the menu stands in (above its chip, no fill of its own), holding the
 // main panel (MENU, frosted) and the submenus' panels (SUBMENU, frosted too) side by side. A submenu inside the main panel
 // would sit in a backdrop root (the panel's own backdrop-filter, and its reveal's fade) and blur only what that paints, so
 // each panel is a sibling and frosts the chat behind it.
-const MENU_BOX = "absolute bottom-[calc(100%+8px)] left-0 z-10";
+const MENU_BOX = "absolute bottom-[calc(100%+8px)] right-0 z-10";
 const MENU = "rounded-[10px] border border-edge-mid frost p-[6px] shadow-popover";
 const MENU_CAPTION = "px-2 pb-[6px] pt-1 text-[11.5px] text-muted";
 const MENU_FOOT = "px-2 pb-0.5 pt-1.5 text-[11.5px] text-ink-faint";
@@ -249,11 +250,11 @@ const row = (on: boolean) =>
         on && "bg-surface-selected"
     );
 
-// A submenu's panel, beside its menu's right edge with their bottoms level. It is placed against MENU_BOX, which has the
-// main panel's border box, where it was once placed against that panel's padding box (inside the 1px border): 5px past
-// the right edge and 6px below the bottom edge are the 6px / 7px it had from the padding box.
+// A submenu's panel, beside its menu's left edge with their bottoms level (the menus sit at the box's right, so there is
+// room on the left). It is placed against MENU_BOX, which has the main panel's border box: 5px past the left edge and
+// 6px below the bottom edge.
 const SUBMENU =
-    "absolute bottom-[-6px] left-[calc(100%+5px)] z-10 rounded-[10px] border border-edge-mid frost p-[6px] shadow-popover";
+    "absolute bottom-[-6px] right-[calc(100%+5px)] z-10 rounded-[10px] border border-edge-mid frost p-[6px] shadow-popover";
 
 // a chip with a menu opening upward from it; `onKey` sees a key first while the menu is open and answers whether it used it;
 // `submenus` are the panels of its submenus, drawn beside the main panel (see MENU_BOX)
@@ -293,7 +294,7 @@ function ChipMenu({
         >
             {chip(m)}
             <div className={cn(MENU_BOX, width)}>
-                <PopoverReveal open={m.open} origin="bottom left" className={MENU}>
+                <PopoverReveal open={m.open} origin="bottom right" className={MENU}>
                     <div role="menu" aria-label={menuLabel}>
                         {menu(m)}
                     </div>
@@ -418,7 +419,6 @@ function ModelChip({
                     {effort != null ? (
                         <span className="flex-none whitespace-nowrap text-muted">{effortChoice(effort).label}</span>
                     ) : null}
-                    <ChevronUp size={11} strokeWidth={2.2} aria-hidden className="flex-none" />
                 </button>
             )}
             menu={(m) => (
@@ -448,12 +448,12 @@ function ModelChip({
             )}
             submenus={(m) => (
                 <>
-                    <PopoverReveal open={m.sub === "effort"} origin="bottom left" className={cn(SUBMENU, "w-[260px]")}>
+                    <PopoverReveal open={m.sub === "effort"} origin="bottom right" className={cn(SUBMENU, "w-[260px]")}>
                         <div role="menu" aria-label="Effort" data-submenu="effort">
                             <EffortRows effort={effort} onPick={(level) => onPickEffort(level, m)} />
                         </div>
                     </PopoverReveal>
-                    <PopoverReveal open={m.sub === "more"} origin="bottom left" className={cn(SUBMENU, "w-[200px]")}>
+                    <PopoverReveal open={m.sub === "more"} origin="bottom right" className={cn(SUBMENU, "w-[200px]")}>
                         <div role="menu" aria-label="More models" data-submenu="more">
                             <div className={MENU_CAPTION}>More models</div>
                             {MORE_MODEL_CHOICES.map((c) => (
@@ -564,9 +564,7 @@ function ModeChip({ mode, onPick }: { mode: ClaudeMode; onPick: (target: ClaudeM
                     onClick={() => m.setOpen(!m.open)}
                     className={cn(CHIP, "whitespace-nowrap", chipTone(m.open))}
                 >
-                    <Lock size={12} strokeWidth={2} aria-hidden className="flex-none" />
                     <span>{modeLabel(mode)}</span>
-                    <ChevronUp size={11} strokeWidth={2.2} aria-hidden className="flex-none" />
                 </button>
             )}
             menu={(m) => (
@@ -611,7 +609,7 @@ function ContextRing({ pct, dim }: { pct: number; dim: boolean }) {
         <div
             data-chat-context={rounded}
             title={`Context ${rounded}%`}
-            className="flex flex-none items-center gap-[5px] text-[11.5px] tabular-nums text-muted"
+            className="flex flex-none items-center gap-[5px] text-[12.5px] tabular-nums text-muted"
         >
             <svg width="14" height="14" viewBox="0 0 36 36" aria-hidden>
                 <circle cx="18" cy="18" r="14" fill="none" strokeWidth="5" className="stroke-edge-strong" />
@@ -723,8 +721,8 @@ export function ChatFooter({ agent }: { agent: AgentVM }) {
     const pct = agent.usage?.contextpct;
     const hasModel = agent.model != null && agent.model !== "";
     return (
-        // the footer takes the row's free width, so Stop and Send stay at its far right
-        <div data-chat-footer className="flex min-w-0 flex-1 items-center gap-1.5">
+        // the line's free width, its parts at the right; the asleep words (chatcomposer.tsx) take its left
+        <div data-chat-footer className="flex min-w-0 flex-1 items-center justify-end gap-3.5">
             {/* the model chip and the label trade places in one grid cell, so the crossfade stays in place */}
             <div className="grid flex-none items-center">
                 <AnimatePresence initial={false}>
@@ -735,7 +733,7 @@ export function ChatFooter({ agent }: { agent: AgentVM }) {
                                 {...swap}
                                 data-chat-model-label
                                 title="The model it ran on"
-                                className="col-start-1 row-start-1 flex h-[28px] max-w-[200px] items-center rounded-full border border-border px-[10px] text-[12.5px] text-muted"
+                                className="col-start-1 row-start-1 flex h-[22px] max-w-[200px] items-center px-1 text-[12.5px] text-muted"
                             >
                                 <span className="truncate">{agent.model}</span>
                             </motion.span>
@@ -754,7 +752,6 @@ export function ChatFooter({ agent }: { agent: AgentVM }) {
                     </Fold>
                 ) : null}
             </AnimatePresence>
-            <div className="flex-1" />
             {pct != null ? <ContextRing pct={pct} dim={asleep} /> : null}
         </div>
     );

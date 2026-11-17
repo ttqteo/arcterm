@@ -261,7 +261,24 @@ export function requestFileLink(scope: string, path: string): void {
     pendingFileLink.path = path;
 }
 
-// Consumed only when `available` (the scope's loaded change set) actually holds the path. The Diff
+// Pure: the listed path a requested one names: itself, or for an absolute path (an agent's Edit names its file so; Chat's
+// card of a turn's files links it as it is) the longest listed path it ends in, which is relative to the change set's
+// directory. undefined when none matches.
+export function linkedPath(requested: string, available: string[]): string | undefined {
+    if (available.includes(requested)) {
+        return requested;
+    }
+    const norm = requested.replace(/\\/g, "/").toLowerCase();
+    let best: string | undefined;
+    for (const p of available) {
+        if (norm.endsWith(`/${p.replace(/\\/g, "/").toLowerCase()}`) && (best == null || p.length > best.length)) {
+            best = p;
+        }
+    }
+    return best;
+}
+
+// Consumed only when `available` (the scope's loaded change set) actually holds the path (linkedPath). The Diff
 // surface fires one history read per mount against the state captured in that render, which on a
 // remount is still the outgoing scope's — a request eaten by that read would never reach the load that
 // can honour it, and selecting a file the pane does not list would leave it blank.
@@ -269,10 +286,10 @@ export function consumeFileLink(scope: string, available: string[]): string | un
     if (!scope || pendingFileLink.scope !== scope || !pendingFileLink.path) {
         return undefined;
     }
-    if (!available.includes(pendingFileLink.path)) {
+    const path = linkedPath(pendingFileLink.path, available);
+    if (path == null) {
         return undefined;
     }
-    const path = pendingFileLink.path;
     pendingFileLink.scope = "";
     pendingFileLink.path = "";
     return path;

@@ -54,6 +54,7 @@ import { AnimatePresence, animate, motion, useReducedMotion } from "motion/react
 import { memo, useCallback, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { parseMarks } from "../../../../claude/skim-mod/hooks/highlight-core";
 import { getProcExitAtom } from "./agentcontrollerstore";
+import { agentDiffScope, openDiff } from "./agentdiffnav";
 import type { AgentsViewModel } from "./agents";
 import {
     conversationText,
@@ -116,8 +117,10 @@ import { withMarks } from "./chatskim";
 import { useSkimFold } from "./chatskimstore";
 import { placeStepLists, stepsPartKey, type AgentNow } from "./chatsteplist";
 import { ChatStepsHost, StepsPart } from "./chatsteplistview";
+import { turnFiles } from "./chatsteps";
 import { ChatSteps } from "./chatstepsview";
 import { TaggedPromptText } from "./chattagblock";
+import { ChatTurnFiles } from "./chatturnfiles";
 import { commitMode, type CommitMode } from "./chatcommit";
 import { ChatCommitCard } from "./chatcommitcard";
 import { VERDICT_TOPIC, verdictMode, type VerdictMode } from "./chatverdict";
@@ -840,6 +843,7 @@ export function ChatConversation({
     brainstorm,
     model,
     agent,
+    cwd,
     className,
 }: {
     entries: AgentEntry[];
@@ -871,6 +875,8 @@ export function ChatConversation({
     // there is no live agent to fork (an ended session, a subagent's interior), and then no item offers a fork
     model?: AgentsViewModel;
     agent?: AgentVM;
+    // the agent's working directory: the card of a finished turn's files names each one's folder relative to it
+    cwd?: string | null;
     className?: string;
 }) {
     const toolsLive = working ?? !!active;
@@ -1279,6 +1285,12 @@ export function ChatConversation({
     const forkRef = useRef<((p: ForkPoint) => void) | null>(null);
     forkRef.current = canFork ? (p) => forkFromChat(model!, agent!, p) : null;
     const forkHere = useCallback((p: ForkPoint) => forkRef.current?.(p), []);
+    // the card of a finished turn's files opens the Diff on the agent's working tree, on a file or on all of it; only with
+    // the cockpit and the agent around (a transcript of an ended session has no Diff to open), through a ref as above
+    const canOpenDiff = !!model && !!agent;
+    const diffRef = useRef<((path?: string) => void) | null>(null);
+    diffRef.current = canOpenDiff ? (path) => openDiff(model!, agentDiffScope(agent!.id, agent!.name), path) : null;
+    const openTurnDiff = useCallback((path?: string) => diffRef.current?.(path), []);
     // Add to initiative… is offered in a live Claude agent's Chat (a caller that passed the cockpit and the agent). It
     // opens a card after the last item as it is when asked, so the item key and the agent go through a ref as well
     const initiativeRef = useRef<{ agentId: string; anchor: string } | null>(null);
@@ -1407,6 +1419,10 @@ export function ChatConversation({
                 }
             }
         });
+        // the card of the turn's files: its folders read against the cwd, its rows open the Diff only with an agent
+        if (item.parts.some((part) => part.kind === "work")) {
+            out.push(`files:${cwd ?? ""}:${canOpenDiff}`);
+        }
         return out.length === 0
             ? ""
             : [
@@ -1476,35 +1492,11 @@ export function ChatConversation({
                     </div>
                 );
             }
-            case "work": {
-                // the work the agent is doing now: nothing but its cards (a verdict, a handoff, a Doc review, a run or a
-                // council it started) after it in the last item. It shows open, so a click on it folds it (a key of its
-                // own, which stops counting once the agent is done)
-                const autoOpen =
-                    !!active &&
-                    last &&
-                    item.parts
-                        .slice(p + 1)
-                        .every(
-                            (q) =>
-                                q.kind === "verdict" ||
-                                q.kind === "commit" ||
-                                q.kind === "handoff" ||
-                                q.kind === "docreview" ||
-                                q.kind === "runstart" ||
-                                q.kind === "councilstart"
-                        );
+            // a stretch of tools: folded, running or not, until the person opens it
+            case "work":
                 return (
-                    <ChatSteps
-                        work={part.work}
-                        open={opened.has(key)}
-                        closed={opened.has(`${key}^closed`)}
-                        autoOpen={autoOpen}
-                        live={toolsLive}
-                        onToggle={() => toggle(autoOpen ? `${key}^closed` : key)}
-                    />
+                    <ChatSteps work={part.work} open={opened.has(key)} live={toolsLive} onToggle={() => toggle(key)} />
                 );
-            }
             // a reviewer's verdict: a card while it waits on you (or the agent works, or has exited), its ✓ row once it folds
             case "verdict":
                 return (
@@ -1604,7 +1596,9 @@ export function ChatConversation({
             }
             case "sent":
                 return <SentCard item={item} model={model} />;
-            case "agent":
+            case "agent": {
+                // a finished turn (not the live last one) ends in a card of the files its edits changed (chatturnfiles.tsx)
+                const files = active && last ? [] : turnFiles(item.parts);
                 return (
                     <div data-chat-agent className="flex min-w-0 flex-col gap-2">
                         {/* a part landing in a row that was already there opens on the spring; one of a row that arrives
@@ -1626,8 +1620,24 @@ export function ChatConversation({
                                 </Arriving>
                             );
                         })}
+                        {/* it opens on the spring when the turn it closes ends in view */}
+                        {files.length > 0 ? (
+                            <Arriving
+                                key="files"
+                                gap={PART_GAP}
+                                arrive={!reduceMotion && drawnBefore.has(item.key)}
+                                className="min-w-0"
+                            >
+                                <ChatTurnFiles
+                                    files={files}
+                                    cwd={cwd}
+                                    onOpen={canOpenDiff ? openTurnDiff : undefined}
+                                />
+                            </Arriving>
+                        ) : null}
                     </div>
                 );
+            }
             case "marker":
                 return <Marker item={item.item} />;
         }
@@ -1756,8 +1766,8 @@ export function ChatConversation({
             )}
         >
             {/* the sticky row is a flex child of a gap-4 column: -mb-4 cancels the gap its zero-height row would add. The
-                card keeps clear of the Skim toggle in the pane's corner (mr-10), while the band under it spans the
-                column, so a reply scrolling beneath never shows beside the card */}
+                card keeps clear of the Focus read and Skim toggles in the pane's corner (mr-[70px]), while the band under
+                it spans the column, so a reply scrolling beneath never shows beside the card */}
             <PinnedPromptBar
                 rootRef={rootRef}
                 index={pinned}
@@ -1765,7 +1775,7 @@ export function ChatConversation({
                 prompts={prompts}
                 bg="bg-background"
                 className="-mb-4"
-                cardClassName="mr-10"
+                cardClassName="mr-[70px]"
             />
             {hidden > 0 || onLoadEarlier != null ? (
                 <button

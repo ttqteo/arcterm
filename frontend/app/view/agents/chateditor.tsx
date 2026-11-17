@@ -2,15 +2,16 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // The chat message box: a small Lexical editor that draws a file you @-mentioned as a pill (chateditorpill.tsx) and an
-// `agent:<id>`, `run:<id>` or `council:<id>` reference as a badge (chateditorrefpill.tsx). It is a VIEW of plain text,
-// not a second source of truth: `value` is the message as the agent receives it (a pill written `@<path>`, `@"<path>"`
-// when the path holds a space, a badge as the token was written), every edit is read back into that text and a caret
-// offset and handed to `onChange`, and a `value` that is not what the editor last said (a picker's pick, a recalled
-// message, an insert, a send) rebuilds the editor from it, a mention or a reference that is complete becoming a pill or
-// a badge (one typed or pasted by hand stays text until then). So the slash menu, the `@`
-// picker, recall and the send path go on working on a string and offsets, and the handle this editor gives its parent
-// (`EditorLike`) answers like the part of a `<textarea>` they use. The arithmetic (text <-> lines, caret <-> offset) is
-// chateditornodes.ts / chateditormodel.ts; this file is the Lexical wiring around it.
+// `agent:<id>`, `run:<id>`, `council:<id>`, `session:<id>` or `effort:<id>` reference as a badge (chateditorrefpill.tsx).
+// It is a VIEW of plain text, not a second source of truth: `value` is the message as the agent receives it (a pill
+// written `@<path>`, `@"<path>"` when the path holds a space, a badge as the token was written), every edit is read back
+// into that text and a caret offset and handed to `onChange`, and a `value` that is not what the editor last said (a
+// picker's pick, a recalled message, an insert, a send) rebuilds the editor from it, a mention or a reference that is
+// complete becoming a pill or a badge. One typed or pasted by hand becomes one too, in place, once it is finished (a space
+// or punctuation after it; `$settleTypedText`): the text does not change, so nothing is reported and no rebuild follows.
+// So the slash menu, the `@` picker, recall and the send path go on working on a string and offsets, and the handle this
+// editor gives its parent (`EditorLike`) answers like the part of a `<textarea>` they use. The arithmetic (text <-> lines,
+// caret <-> offset) is chateditornodes.ts / chateditormodel.ts; this file is the Lexical wiring around it.
 //
 // `onChange` fires when the text, the caret or whether the selection is on a pill (`EditorLike.onPill`) changed, so a click
 // that only moves the caret, or selects a pill, calls it with the same text.
@@ -60,7 +61,17 @@ import {
 } from "lexical";
 import { forwardRef, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { FENCED_TEXT_CLASS, FencedCode } from "./chateditorfences";
-import { bangSkip, fromShown, segmentLength, segmentsOf, shownText, type Segment } from "./chateditormodel";
+import {
+    atomRunsIn,
+    bangSkip,
+    caretAmongRuns,
+    fromShown,
+    gapToDrop,
+    segmentLength,
+    segmentsOf,
+    shownText,
+    type Segment,
+} from "./chateditormodel";
 import {
     adjacentPill,
     buildLine,
@@ -190,6 +201,85 @@ function $gapAroundPills(node: TextNode): void {
     node.setTextContent(`${front ? " " : ""}${text}${back ? " " : ""}`);
     if (front) {
         points.forEach((p, i) => p.set(key, offsets[i] + 1, "text"));
+    }
+}
+
+/** A file mention or a reference typed or pasted into a text node is a pill or a badge once it is finished (a space or
+ *  punctuation after it, `atomRunsIn`): the node is split at the ends of each one and its middle part replaced by the node
+ *  it stands for. The box's text does not change (a badge's text is its `raw`, a pill's `mentionText`), so the update
+ *  listener reports nothing and no outside rebuild follows. `splitText` carries a caret in the node to the part it falls
+ *  in and a caret at a token's end (still typing) never splits it, but `replace` moves a caret on the part it replaces to
+ *  the new node's far side: a caret at 0 with a token starting there would end up after its badge, so the caret is put
+ *  back at its offset in the text (`caretAmongRuns`) once the swaps are done. */
+function $atomsInTypedText(node: TextNode): void {
+    const selection = $getSelection();
+    const caret =
+        $isRangeSelection(selection) && selection.focus.type === "text" && selection.focus.key === node.getKey()
+            ? selection.focus.offset
+            : undefined;
+    const runs = atomRunsIn(node.getTextContent(), caret);
+    if (runs.length === 0) {
+        return;
+    }
+    const kept =
+        $isRangeSelection(selection) && selection.isCollapsed() && caret != null ? caretAmongRuns(runs, caret) : null;
+    // which part is which token, read before anything is replaced or given a gap (both change a part's size)
+    let at = 0;
+    const swaps = node.splitText(...runs.flatMap((r) => [r.start, r.end])).map((part) => {
+        const end = at + part.getTextContentSize();
+        const run = runs.find((r) => r.start === at && r.end === end);
+        at = end;
+        return { part, run };
+    });
+    const atoms: LexicalNode[] = [];
+    // the text part after run `n - 1` (0: before the first run), which is where a caret in the text between runs stays
+    const gaps: TextNode[] = [];
+    for (const { part, run } of swaps) {
+        if (run != null) {
+            atoms.push(
+                part.replace(
+                    run.seg.kind === "ref"
+                        ? $createRefMentionNode(run.seg.ref, run.seg.id, run.seg.raw)
+                        : $createFileMentionNode(run.seg.path)
+                )
+            );
+        } else {
+            gaps[atoms.length] = part;
+        }
+    }
+    // after the swaps the current selection is not the object read above (a headless check found them different): read it again
+    const now = $getSelection();
+    if (kept != null && $isRangeSelection(now)) {
+        const atom = "before" in kept ? atoms[kept.before] : undefined;
+        const text = "gap" in kept ? gaps[kept.gap] : undefined;
+        for (const point of [now.anchor, now.focus]) {
+            if (atom != null) {
+                // no text before the badge: the caret sits on the paragraph at its index, a decorator holds none
+                point.set(atom.getParentOrThrow().getKey(), atom.getIndexWithinParent(), "element");
+            } else if (text != null && "gap" in kept) {
+                point.set(text.getKey(), Math.min(kept.offset, text.getTextContentSize()), "text");
+            }
+        }
+    }
+    // the text now standing against a new pill or badge needs the gap rule too (`@"a b.md"x` leaves `x` against its pill)
+    for (const atom of atoms) {
+        for (const side of [atom.getPreviousSibling(), atom.getNextSibling()]) {
+            if ($isTextNode(side)) {
+                $gapAroundPills(side);
+            }
+        }
+    }
+}
+
+/** What the box does with a text node that was typed, pasted or left by an edit: the gap against a pill first (a token
+ *  pasted right after a pill gets its space before it is looked at, or `agent:aaaaaaaa` + `run:…` would join), then the
+ *  tokens in it that are finished become pills and badges. A bash command draws no pill or badge (`bash`: the shell knows
+ *  no `@` mention), so only the gap rule applies there, and it has no pill to be against. The new nodes' text neighbours are
+ *  dirty (`splitText` marks them), so the transform looks at them again and the gap rule covers them too. */
+function $settleTypedText(node: TextNode, bash: boolean): void {
+    $gapAroundPills(node);
+    if (!bash && node.isAttached()) {
+        $atomsInTypedText(node);
     }
 }
 
@@ -364,8 +454,19 @@ function keyLike(e: KeyboardEvent, target: EditorLike): KeyLike {
     };
 }
 
+/** a text node's new text, or no node at all when it is empty (an empty text node left in a line would sit under the
+ *  caret until Lexical's normalisation removes it) */
+function $setTextOrRemove(node: TextNode, text: string): void {
+    if (text === "") {
+        node.remove();
+    } else {
+        node.setTextContent(text);
+    }
+}
+
 /** Backspace (or Delete) beside a pill selects it, the next one deletes it whole; with a pill selected it deletes at
- *  once. True when the key was taken. */
+ *  once, and one of the two spaces the text typed around it left goes with it (`gapToDrop`). True when the key was
+ *  taken. */
 function $deletePill(event: KeyboardEvent, backward: boolean): boolean {
     const selection = $getSelection();
     const doc = $readDoc();
@@ -376,8 +477,30 @@ function $deletePill(event: KeyboardEvent, backward: boolean): boolean {
             return false;
         }
         event.preventDefault();
-        pills.forEach((p) => p.remove());
-        $selectOffsets($readDoc(), at.start, at.start);
+        // the text typed around a pill leaves a space on each side of it: one goes with the pill (`gapToDrop`), so
+        // `đọc @a/b.ts tiếp` reads `đọc tiếp`, not `đọc  tiếp`. A dropped space before the first pill moves the caret back one.
+        let caret = at.start;
+        pills
+            .slice()
+            .sort((a, b) => (a.isBefore(b) ? -1 : 1))
+            .forEach((p, i) => {
+                const prev = p.getPreviousSibling();
+                const next = p.getNextSibling();
+                const before = $isTextNode(prev) ? prev.getTextContent() : "";
+                const after = $isTextNode(next) ? next.getTextContent() : "";
+                const gap = gapToDrop(before, after);
+                // a pill right beside this one needs that space (the gap rule would put it back), so none is dropped there
+                const drop =
+                    (gap === "before" && $isPillNode(next)) || (gap === "after" && $isPillNode(prev)) ? null : gap;
+                p.remove();
+                if (drop === "after" && $isTextNode(next)) {
+                    $setTextOrRemove(next, after.slice(1));
+                } else if (drop === "before" && $isTextNode(prev)) {
+                    $setTextOrRemove(prev, before.slice(0, -1));
+                    caret -= i === 0 ? 1 : 0;
+                }
+            });
+        $selectOffsets($readDoc(), caret, caret);
         return true;
     }
     if (!$isRangeSelection(selection) || !selection.isCollapsed()) {
@@ -546,12 +669,14 @@ const Bridge = forwardRef<EditorLike, BridgeProps>(function Bridge({ props, said
         [editor]
     );
 
-    // a space between a pill and text typed against it ($gapAroundPills). Not while composing: changing the text under an
-    // IME drops the syllable being typed, so the text nodes are looked at again once the composition ends
+    // a space between a pill and text typed against it, and a finished `@path` or reference typed or pasted becoming a
+    // pill or a badge ($settleTypedText). Not while composing: changing the text under an IME drops the syllable being
+    // typed, so the text nodes are looked at again once the composition ends (a token finished through a Telex or Pinyin
+    // composition becomes its badge then, not on the next key)
     useLayoutEffect(() => {
         const offTransform = editor.registerNodeTransform(TextNode, (node) => {
             if (!editor.isComposing()) {
-                $gapAroundPills(node);
+                $settleTypedText(node, props.current.bash ?? false);
             }
         });
         const offComposed = editor.registerCommand(
@@ -559,9 +684,15 @@ const Bridge = forwardRef<EditorLike, BridgeProps>(function Bridge({ props, said
             () => {
                 queueMicrotask(() =>
                     editor.update(() => {
+                        const bash = props.current.bash ?? false;
                         for (const paragraph of $getRoot().getChildren()) {
                             if ($isElementNode(paragraph)) {
-                                paragraph.getChildren().filter($isTextNode).forEach($gapAroundPills);
+                                // a snapshot: a node a token was cut out of is gone, its parts are looked at by the transform
+                                for (const node of paragraph.getChildren().filter($isTextNode)) {
+                                    if (node.isAttached()) {
+                                        $settleTypedText(node, bash);
+                                    }
+                                }
                             }
                         }
                     })
@@ -574,7 +705,7 @@ const Bridge = forwardRef<EditorLike, BridgeProps>(function Bridge({ props, said
             offTransform();
             offComposed();
         };
-    }, [editor]);
+    }, [editor, props]);
 
     // what the user does in the editor goes out as text and a caret. Selecting a pill leaves both as they were (the caret is
     // the selection's end, the pill's end), so whether the selection is on a pill is told too: the `@` picker closes on it.

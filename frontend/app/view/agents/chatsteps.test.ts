@@ -3,7 +3,8 @@
 
 import { describe, expect, it } from "vitest";
 import type { AgentActionEntry, EditFile } from "./agentsviewmodel";
-import { editCounts, foldOf, MAX_STEP_CHIPS, stepElapsed, stepOf, stepRows } from "./chatsteps";
+import type { AgentPart } from "./chatmodel";
+import { editCounts, fileWhere, foldOf, MAX_STEP_CHIPS, stepElapsed, stepOf, stepRows, turnFiles } from "./chatsteps";
 
 const action = (verb: string, extra: Partial<AgentActionEntry> = {}): AgentActionEntry => ({
     kind: "action",
@@ -384,5 +385,80 @@ describe("editCounts", () => {
         });
         expect(editCounts(two)).toEqual({ adds: 5, dels: 5 });
         expect(editCounts(read("/r/a.ts"))).toBeNull();
+    });
+});
+
+describe("turnFiles", () => {
+    const changed = (path: string, adds: number, dels: number, extra: Partial<AgentActionEntry> = {}) =>
+        action("edited", {
+            path,
+            outcome: "ok",
+            detail: { kind: "edit", files: [{ path, badge: "M", adds, dels, lines: [] }] },
+            ...extra,
+        });
+    const work = (...actions: AgentActionEntry[]): AgentPart => ({
+        kind: "work",
+        work: { kind: "work", startIndex: 0, actions, durationMs: 0, failed: 0, files: [], adds: 0, dels: 0 },
+    });
+
+    it("one file", () => {
+        expect(turnFiles([work(changed("/r/a.ts", 3, 1))])).toEqual([{ path: "/r/a.ts", adds: 3, dels: 1 }]);
+    });
+
+    it("several files across stretches, in the order first touched, a file edited twice summed once", () => {
+        const parts: AgentPart[] = [
+            work(changed("/r/b.ts", 1, 0), action("read", { path: "/r/c.ts", outcome: "ok" })),
+            { kind: "prose", text: "next" },
+            work(changed("/r/a.ts", 2, 2), changed("\\r\\b.ts", 4, 1)),
+        ];
+        expect(turnFiles(parts)).toEqual([
+            { path: "/r/b.ts", adds: 5, dels: 1 },
+            { path: "/r/a.ts", adds: 2, dels: 2 },
+        ]);
+    });
+
+    it("a failed or refused edit adds nothing", () => {
+        const parts = [
+            work(
+                changed("/r/a.ts", 3, 0, { outcome: "fail" }),
+                changed("/r/b.ts", 3, 0, { outcome: "blocked" }),
+                changed("/r/c.ts", 1, 0)
+            ),
+        ];
+        expect(turnFiles(parts)).toEqual([{ path: "/r/c.ts", adds: 1, dels: 0 }]);
+    });
+
+    it("a create counts its lines as adds", () => {
+        const create = action("wrote", {
+            path: "/r/new.md",
+            outcome: "ok",
+            detail: { kind: "edit", files: [{ path: "/r/new.md", badge: "A", adds: 12, dels: 0, lines: [] }] },
+        });
+        expect(turnFiles([work(create)])).toEqual([{ path: "/r/new.md", adds: 12, dels: 0 }]);
+    });
+
+    it("commands and reads add nothing", () => {
+        expect(turnFiles([work(action("ran", { target: "touch x", outcome: "ok" }))])).toEqual([]);
+    });
+});
+
+describe("fileWhere", () => {
+    it("its folder relative to the working directory, none at its root", () => {
+        expect(fileWhere("/repo/pkg/orchestrate/fixround.go", "/repo")).toEqual({
+            name: "fixround.go",
+            folder: "pkg/orchestrate",
+        });
+        expect(fileWhere("/repo/CHANGELOG.md", "/repo/")).toEqual({ name: "CHANGELOG.md", folder: "" });
+        expect(fileWhere("D:\\Repo\\docs\\hand-checks.md", "d:\\repo")).toEqual({
+            name: "hand-checks.md",
+            folder: "docs",
+        });
+    });
+
+    it("outside the directory or with none known, the folder's own name; a relative path as written", () => {
+        expect(fileWhere("/other/lib/x.ts", "/repo")).toEqual({ name: "x.ts", folder: "lib" });
+        expect(fileWhere("/repo/pkg/x.go", null)).toEqual({ name: "x.go", folder: "pkg" });
+        expect(fileWhere("pkg/x.go", undefined)).toEqual({ name: "x.go", folder: "pkg" });
+        expect(fileWhere("x.go", undefined)).toEqual({ name: "x.go", folder: "" });
     });
 });

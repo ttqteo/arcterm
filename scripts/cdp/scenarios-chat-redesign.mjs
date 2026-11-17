@@ -2,7 +2,9 @@
 // a floating message box that changes shape by state, step lines that fold into one worded line, the frosted suggestion
 // panel, the type rhythm, the brainstorm question card in the conversation, the jump button, and frame timing while
 // blocks stream in. It is written against the spec's DOM contract ("Builder decisions"), not against the components:
-// [data-chat-box][data-chat-box-state], [data-chat-fade], [data-chat-send], [data-chat-stop],
+// [data-chat-box][data-chat-box-state], [data-chat-box-layout] (row or grown: the one-line box of
+// 2026-11-17-chat-calm-turn-design.md section 6, steps 1, 2, 6b, 18 and 18d), [data-chat-under] (the model, mode and
+// context under the box), [data-chat-fade], [data-chat-send], [data-chat-stop],
 // [data-chat-action-chip] (diff or terminal, each once it has something to show: steps 2, 6b, 20),
 // [data-chat-suggest-chip] (step 18, the suggested replies; window.__chatSuggestFake answers their model call),
 // [data-chat-suggest-panel], [data-chat-step][data-chat-step-running], [data-chat-step-chip], [data-chat-step-more],
@@ -133,6 +135,48 @@ const inputOf = (id) => `${layerOf(id)}?.querySelector("[data-chat-input]")`;
 const SEEN = `((el) => { if (!el) return false; const r = el.getBoundingClientRect(); const cs = getComputedStyle(el); return r.width > 0 && r.height > 0 && cs.visibility !== "hidden" && cs.display !== "none" && Number(cs.opacity) > 0.05; })`;
 const FLAT = `((el) => (el?.textContent ?? "").replace(/\\s+/g, " ").trim())`;
 const lastFold = (id) => `[...(${layerOf(id)}?.querySelectorAll("[data-chat-work]") ?? [])].pop()?.querySelector("[data-fold]")`;
+// The composer's geometry (chat-compact-composer/Main.dc.html): the box and its layout (row or grown), `+`, the well,
+// Send and Stop in it, the model, mode and context on the line under it, and the chips (actions or replies) over it
+const composerGeo = (id) => `(() => {
+    const layer = ${layerOf(id)};
+    const box = layer?.querySelector("[data-chat-box]");
+    if (!box) return null;
+    const R = (el) => { if (!el) return null; const r = el.getBoundingClientRect(); return { top: Math.round(r.top), bottom: Math.round(r.bottom), left: Math.round(r.left), right: Math.round(r.right), h: Math.round(r.height) }; };
+    const under = layer.querySelector("[data-chat-under]");
+    return {
+        layout: box.getAttribute("data-chat-box-layout"),
+        box: R(box),
+        plus: R(box.querySelector("[data-chat-plus]")),
+        well: R(box.querySelector("[data-chat-well]")),
+        send: R(box.querySelector("[data-chat-send]")),
+        stop: R(box.querySelector("[data-chat-stop]")),
+        under: R(under),
+        model: R(under?.querySelector("[data-chat-model], [data-chat-model-label]")),
+        mode: R(under?.querySelector("button[data-chat-mode]")),
+        context: R(under?.querySelector("[data-chat-context]")),
+        chips: [...layer.querySelectorAll("[data-chat-action-chip], [data-chat-suggest-chip]")].map(R),
+    };
+})()`;
+const mid = (r) => (r.top + r.bottom) / 2;
+// one row 44px high: + at the left, the well, Send (or Stop) at the right, on the box's middle line
+const oneRow = (g) => {
+    const ctl = g?.send ?? g?.stop;
+    return (
+        g?.layout === "row" && Math.abs(g.box.h - 44) <= 1 && g.plus != null && g.well != null && ctl != null &&
+        Math.abs(mid(g.plus) - mid(g.box)) <= 2 && Math.abs(mid(ctl) - mid(g.box)) <= 2 && g.plus.right <= g.well.left && g.well.right <= ctl.left
+    );
+};
+// the model and the context under the box, at its right; the mode, when Claude Code's footer was read, between them
+const underBox = (g) =>
+    g?.model != null && g.context != null && g.model.top >= g.box.bottom && g.context.top >= g.box.bottom &&
+    g.box.right - g.context.right <= 16 && g.model.right <= g.context.left &&
+    (g.mode == null || (g.model.right <= g.mode.left && g.mode.right <= g.context.left));
+// the chips over the box
+const chipsAbove = (g) => (g?.chips.length ?? 0) > 0 && g.chips.every((c) => c.bottom <= g.box.top);
+// grown: the well on top, + and Send under it in one row at the bottom
+const grownRows = (g) =>
+    g?.layout === "grown" && g.box.h > 44 && g.plus != null && g.send != null && g.well != null &&
+    g.plus.top >= g.well.bottom - 1 && g.send.top >= g.well.bottom - 1 && Math.abs(mid(g.plus) - mid(g.send)) <= 2 && g.plus.left < g.send.left;
 
 const KEYS = {
     escape: { key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 },
@@ -302,7 +346,8 @@ export default function (kit) {
             const toState = (want, ms = WAIT_MS) => polishWaitFor(h, `(${stateOf(A)}) === ${JSON.stringify(want)}`, ms);
             await h.cdp("Emulation.setFocusEmulationEnabled", { enabled: true });
 
-            // 1. the box, idle: the floating pill with its fade and Send
+            // 1. the box, idle: one row 44px high (+, the text, Send) with its fade, the model and context under it as
+            // plain text at its right (Main.dc.html, the first board)
             await run("1. box idle", async (name) => {
                 await AC.focusAgent(h, A);
                 await polishWaitFor(h, `(${layerOf(A)}?.querySelectorAll("[data-chat-item]").length ?? 0) >= 6`, WAIT_MS);
@@ -318,11 +363,14 @@ export default function (kit) {
                         send: !!layer?.querySelector("[data-chat-send]"),
                     };
                 })()`);
+                await polishWaitFor(h, `!!${layerOf(A)}?.querySelector("[data-chat-under] [data-chat-context]")`, SHORT_MS);
+                await polishNap(400);
+                const geo = await h.ev(composerGeo(A));
                 await shot(h, "1-box-idle");
                 rec(
-                    `${name}: [data-chat-box] is in state idle with radius 22px, the fade under it and a Send button`,
-                    idle && got.state === "idle" && got.radii?.every((r) => r === "22px") && got.fade && got.send,
-                    got
+                    `${name}: [data-chat-box] is in state idle with radius 14px and the fade under it, one row 44px high with + at its left, the text, and Send at its right; the model and the context ring sit under the box at its right, as plain text`,
+                    idle && got.state === "idle" && got.radii?.every((r) => r === "14px") && got.fade && got.send && oneRow(geo) && underBox(geo),
+                    { ...got, geo }
                 );
             });
 
@@ -342,11 +390,12 @@ export default function (kit) {
                         send: !!layer?.querySelector("[data-chat-send]"),
                     };
                 })()`);
+                const geo = await h.ev(composerGeo(A));
                 await shot(h, "2-box-running");
                 rec(
-                    `${name}: state running with Stop, and no [data-chat-action-chip] while the turn has edited nothing and runs no long command`,
-                    running && got.state === "running" && got.actions.length === 0 && got.stop,
-                    got
+                    `${name}: state running with Stop, still one row 44px high with Stop where Send was, and no [data-chat-action-chip] while the turn has edited nothing and runs no long command`,
+                    running && got.state === "running" && got.actions.length === 0 && got.stop && oneRow(geo) && geo.stop != null,
+                    { ...got, geo }
                 );
             });
 
@@ -478,6 +527,11 @@ export default function (kit) {
                 );
                 await setRoster(WORKING);
                 const up = await polishWaitFor(h, `${lastFold(A)}?.getAttribute("data-fold-state") === "running"`, WAIT_MS);
+                // a running stretch stays folded on its one line until it is clicked (spec 2026-11-17-chat-calm-turn-design.md
+                // section 2): no step line shows until then, and a click opens it
+                await polishNap(400);
+                const foldedFirst = await h.ev(`({ expanded: ${lastFold(A)}?.getAttribute("aria-expanded") ?? null, steps: ${layerOf(A)}?.querySelectorAll("[data-chat-tools] [data-chat-step]").length ?? 0 })`);
+                await h.ev(`${lastFold(A)}?.click()`);
                 const lines = await polishWaitFor(h, `${layerOf(A)}?.querySelectorAll("[data-chat-tools] [data-chat-step]").length >= 5`, SHORT_MS);
                 await h.ev(`(() => { const r = ${layerOf(A)}?.querySelector("[data-chat-step-running]"); r?.scrollIntoView({ block: "center" }); return true; })()`);
                 await polishNap(400);
@@ -496,9 +550,9 @@ export default function (kit) {
                 })()`);
                 await shot(h, "6-steps-running");
                 rec(
-                    `${name}: [data-chat-step] lines sit inside [data-chat-tools], exactly one [data-chat-step-running] also carries data-tool-running, and the [data-chat-work] [data-fold] header says what the call in flight is doing: Reading retry.ts, counting up`,
-                    up && lines && got.steps >= 5 && got.running === 1 && got.runningHasToolRunning && got.foldState === "running" && got.sentence === "Reading retry.ts" && /· \d+s$/.test(got.fold),
-                    got
+                    `${name}: the running stretch is folded with no step line until clicked; opened, [data-chat-step] lines sit inside [data-chat-tools], exactly one [data-chat-step-running] also carries data-tool-running, and the [data-chat-work] [data-fold] header says what the call in flight is doing: Reading retry.ts, counting up`,
+                    up && foldedFirst.expanded !== "true" && foldedFirst.steps === 0 && lines && got.steps >= 5 && got.running === 1 && got.runningHasToolRunning && got.foldState === "running" && got.sentence === "Reading retry.ts" && /· \d+s$/.test(got.fold),
+                    { foldedFirst, ...got }
                 );
             });
 
@@ -506,10 +560,13 @@ export default function (kit) {
             await run("6b. running chips diff", async (name) => {
                 const shown = await polishWaitFor(h, `!!${layerOf(A)}?.querySelector('[data-chat-action-chip="diff"]')`, SHORT_MS);
                 const actions = await h.ev(`[...(${layerOf(A)}?.querySelectorAll("[data-chat-action-chip]") ?? [])].map(${FLAT})`);
+                await polishNap(400);
+                const geo = await h.ev(composerGeo(A));
+                await shot(h, "6b-running-chips");
                 rec(
-                    `${name}: a working turn that edited files offers [data-chat-action-chip="diff"] Show the diff, and no Open the terminal while no command runs`,
-                    shown && actions.join(",") === "Show the diff",
-                    { shown, actions }
+                    `${name}: a working turn that edited files offers [data-chat-action-chip="diff"] Show the diff above the box, which stays one row with Stop, and no Open the terminal while no command runs`,
+                    shown && actions.join(",") === "Show the diff" && chipsAbove(geo) && oneRow(geo) && geo.stop != null,
+                    { shown, actions, geo }
                 );
             });
 
@@ -594,6 +651,11 @@ export default function (kit) {
             // 8. the tools finish and the reply lands: the stretch folds into its sentence
             await run("8. steps folded", async (name) => {
                 const u = (sec) => ts(ctx, sec * 1000);
+                // steps 6 to 7b opened the running stretch; folded again first, as a person who never opened it has it
+                if ((await h.ev(`${lastFold(A)}?.getAttribute("aria-expanded") ?? null`)) === "true") {
+                    await h.ev(`${lastFold(A)}?.click()`);
+                    await polishWaitFor(h, `${lastFold(A)}?.getAttribute("aria-expanded") === "false"`, SHORT_MS);
+                }
                 append(ctx, AC.toolResult("toolu_cr_inflight", "export const delay = 100;", u(0)), AC.assistantText(REPLY, u(1)));
                 await setRoster({});
                 // the fold flips with the roster, before the transcript re-read draws the reply row: wait for both, then for the arrival spring (0.35 s) to finish
@@ -890,14 +952,17 @@ export default function (kit) {
                     if (!j) return null;
                     const r = j.getBoundingClientRect();
                     const br = b?.getBoundingClientRect();
-                    return { w: Math.round(r.width), h: Math.round(r.height), aboveBox: br ? r.bottom <= br.top + 1 : null, key: j.querySelector("kbd")?.textContent ?? null };
+                    return { w: Math.round(r.width), h: Math.round(r.height), aboveBox: br ? r.bottom <= br.top + 1 : null, key: j.querySelector("kbd")?.textContent ?? null, title: j.getAttribute("title") ?? "" };
                 })()`);
                 await shot(h, "15-jump-visible");
                 await h.ev(`${layerOf(A)}?.querySelector("[data-chat-jump]")?.click()`);
                 const atEnd = await polishWaitFor(h, `(() => { const s = ${scrollerOf(A)}; return !!s && s.scrollHeight - s.scrollTop - s.clientHeight <= 8; })()`, SHORT_MS);
                 const gone = await polishWaitFor(h, `!${SEEN}(${layerOf(A)}?.querySelector("[data-chat-jump]"))`, SHORT_MS);
                 await shot(h, "15-jump-gone");
-                rec(`${name}: scrolled up [data-chat-jump] is visible (a 32px-high pill above the box naming its key); a click returns to the end and it leaves`, shown && geo?.h === 32 && geo.w > 32 && /↓/.test(geo.key ?? "") && geo.aboveBox === true && atEnd && gone, { scrolled, shown, geo, atEnd, gone });
+                // a key that is itself an arrow (Ctrl+↓ on Windows, ⌘↓ on a Mac) would say ↓ twice: the button is the round ↓
+                // alone then (32 px wide), its key in the tooltip; any other key is named in a kbd on a wider pill
+                const keyShown = geo == null ? false : geo.key == null ? geo.w === 32 && /↓/.test(geo.title) : geo.w > 32 && /↓/.test(geo.key);
+                rec(`${name}: scrolled up [data-chat-jump] is visible (32 px high, above the box, naming its key in a kbd or, for an arrow key, in its tooltip on the round ↓); a click returns to the end and it leaves`, shown && geo?.h === 32 && keyShown && geo.aboveBox === true && atEnd && gone, { scrolled, shown, geo, atEnd, gone });
             });
 
             // 16. frame timing while 30 blocks stream in
@@ -942,9 +1007,9 @@ export default function (kit) {
                 );
             });
 
-            // 17. an image pasted into the box: its chip opens it full size, and Escape closes it with the image still attached
-            await run("17. pasted image opens", async (name) => {
-                const pasted = await h.ev(`(() => {
+            // an image pasted into the box, as a person's Ctrl+V does
+            const pasteImage = () =>
+                h.ev(`(() => {
                     const box = ${inputOf(A)};
                     if (!box) return { ok: false, why: "no box" };
                     box.focus();
@@ -965,6 +1030,10 @@ export default function (kit) {
                     box.dispatchEvent(ev);
                     return { ok: true, taken: ev.defaultPrevented };
                 })()`);
+
+            // 17. an image pasted into the box: its chip opens it full size, and Escape closes it with the image still attached
+            await run("17. pasted image opens", async (name) => {
+                const pasted = await pasteImage();
                 const chip = await polishWaitFor(h, `!!${layerOf(A)}?.querySelector("[data-attachment-chip] [data-attachment-open]")`, SHORT_MS);
                 await h.ev(`${layerOf(A)}?.querySelector("[data-attachment-open]")?.click()`);
                 const opened = await polishWaitFor(h, `!!document.querySelector("[data-image-zoom] [data-image-zoom-img]")`, SHORT_MS);
@@ -1012,6 +1081,7 @@ export default function (kit) {
                 const shown = await polishWaitFor(h, `(${chipsNow}).length === 3`, WAIT_MS);
                 await polishNap(400);
                 const question = await h.ev(`({ chips: ${chipsNow}, asked: window.__crSuggestAsked.at(-1) ?? null })`);
+                const geo = await h.ev(composerGeo(A));
                 await shot(h, "18-suggest-question");
                 await h.ev(`${layerOf(A)}?.querySelector("[data-chat-suggest-chip]")?.click()`);
                 const sent = await polishWaitFor(
@@ -1031,8 +1101,10 @@ export default function (kit) {
                 await shot(h, "18-suggest-next");
                 const q = question.chips;
                 rec(
-                    `${name}: a question offers [data-chat-suggest-chip="model"] B, ẩn thẻ Pin · A · C, asked as a question with the person's last message; a click sends it (its bubble, pending or landed) and the chips go; a statement offers vẽ tôi xem`,
+                    `${name}: a question offers [data-chat-suggest-chip="model"] B, ẩn thẻ Pin · A · C above the one-row box, asked as a question with the person's last message; a click sends it (its bubble, pending or landed) and the chips go; a statement offers vẽ tôi xem`,
                     shown &&
+                        chipsAbove(geo) &&
+                        oneRow(geo) &&
                         q.map((c) => c.text).join(" · ") === "B, ẩn thẻ Pin · A · C" &&
                         q.every((c) => c.source === "model") &&
                         question.asked?.question === true &&
@@ -1041,7 +1113,7 @@ export default function (kit) {
                         next &&
                         statement.chips.length === 1 &&
                         statement.asked?.question !== true,
-                    { question, sent, statement }
+                    { question, geo, sent, statement }
                 );
             });
 
@@ -1057,7 +1129,8 @@ export default function (kit) {
                     AC.assistantText("Mỗi check là một kiểu giả. Bạn muốn mình mở bundle ca đầu và giải thích không?", ts(ctx, 0))
                 );
                 await setRoster({ idleSince: Date.now() + 2000 });
-                const BOX = `${layerOf(A)}?.querySelector("[data-chat-box]")`;
+                // the chips sit over the box, in the composer's wrapper: that is what a float window narrows
+                const BOX = `${layerOf(A)}?.querySelector("[data-agent-chat-composer]")`;
                 const up = await polishWaitFor(h, `${layerOf(A)}?.querySelectorAll("[data-chat-suggest-chip]").length === 3`, WAIT_MS);
                 // as narrow as the float window's box in the report (about 560 px)
                 await h.ev(`(() => { const b = ${BOX}; if (b) { b.dataset.crWas = b.style.maxWidth; b.style.maxWidth = "560px"; } return true; })()`);
@@ -1078,7 +1151,7 @@ export default function (kit) {
                 await shot(h, "18b-suggest-one-line");
                 await h.ev(`(() => { const b = ${BOX}; if (b) { b.style.maxWidth = b.dataset.crWas ?? ""; delete b.dataset.crWas; } delete window.__chatSuggestFake; return true; })()`);
                 rec(
-                    `${name}: in a 560 px box the three long answers share one line (one top, the row at most 30 px tall, the last chip inside the row), at least one ends in … and each keeps its whole text in its tooltip`,
+                    `${name}: over a 560 px box the three long answers share one line (one top, the row at most 30 px tall, the last chip inside the row), at least one ends in … and each keeps its whole text in its tooltip`,
                     up &&
                         line.tops.length === 3 &&
                         new Set(line.tops).size === 1 &&
@@ -1122,6 +1195,41 @@ export default function (kit) {
                     `${name}: hello in the box, Tab picks the first chip and Shift+Enter makes the box read hello ${FIRST}, nothing is sent and no chip stays picked`,
                     chipUp && picked && filled && after.text === want && !after.picked && after.sent === sentBefore,
                     { chipUp, picked, filled, after, sentBefore }
+                );
+            });
+
+            // 18d. two lines of text and an image: the box grows, the text and the attachment on top and + and Send in a
+            // row at the bottom (Main.dc.html, the fourth board); emptied, it is one row again
+            await run("18d. several lines grow the box", async (name) => {
+                await clearBox(h, A);
+                await typeInBox(h, A, "như này nhìn rất rối");
+                const before = await h.ev(composerGeo(A));
+                await key(h, KEYS.shiftEnter);
+                await h.cdp("Input.insertText", { text: "so với ảnh Desktop thì dòng nào nên bỏ trước?" });
+                const grewText = await polishWaitFor(h, `${boxOf(A)}?.getAttribute("data-chat-box-layout") === "grown"`, SHORT_MS);
+                await polishNap(700);
+                const lines = await h.ev(composerGeo(A));
+                const pasted = await pasteImage();
+                const chip = await polishWaitFor(h, `!!${boxOf(A)}?.querySelector("[data-attachment-chip]")`, SHORT_MS);
+                // past the height spring
+                await polishNap(900);
+                const grown = await h.ev(composerGeo(A));
+                const order = await h.ev(`(() => {
+                    const box = ${boxOf(A)};
+                    const a = box?.querySelector("[data-attachment-chip]")?.getBoundingClientRect();
+                    const w = box?.querySelector("[data-chat-well]")?.getBoundingClientRect();
+                    return a && w ? { chipAboveText: a.bottom <= w.top + 1 } : null;
+                })()`);
+                await shot(h, "18d-several-lines");
+                await h.ev(`${boxOf(A)}?.querySelector('[data-attachment-chip] button[title="Remove"]')?.click()`);
+                await clearBox(h, A);
+                const back = await polishWaitFor(h, `${boxOf(A)}?.getAttribute("data-chat-box-layout") === "row"`, SHORT_MS);
+                await polishNap(900);
+                const after = await h.ev(composerGeo(A));
+                rec(
+                    `${name}: one line typed keeps the box one row; a second line (Shift+Enter) grows it ([data-chat-box-layout] grown) with the text on top and + and Send in a row under it; a pasted image adds its chip above the text; emptied, the box is one row 44px high again`,
+                    oneRow(before) && grewText && grownRows(lines) && pasted.ok && chip && grownRows(grown) && grown.box.h > lines.box.h && order?.chipAboveText === true && back && oneRow(after),
+                    { before, lines, pasted, chip, grown, order, back, after }
                 );
             });
 

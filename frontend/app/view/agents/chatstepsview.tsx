@@ -2,13 +2,13 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // A stretch of the agent's tool calls in Chat, as Claude Desktop draws it: the "Edited server.js, ran 2 commands +5 −2 ·
-// 38s ›" line (chatstepsummary.ts), and under it, while the stretch is the one running now or was opened by a click, one
+// 38s ›" line (chatstepsummary.ts), and under it, once a click opened it (running or not), one
 // bordered box with a row per call (chatsteps.ts): a muted verb, what it touched in bright plain text, a muted meta and
 // its +N, then a chevron. A command row is its description alone (or its command's first line, in mono) and opens to
 // `$ command` and its output; any other row opens to its output or diff (ToolDetailBody, shared with the live feed); a file
 // name opens the file beside the agent. A run of calls with the same verb on the same file is one row that opens to its
-// calls, indented, in the same box. The rows open and fold on the spring (springReveal), so a stretch that ends folds into
-// its one line instead of vanishing. Design: .superpowers/design/chat-compact-work/project (Main, States).
+// calls, indented, in the same box. The rows open and fold on the spring (springReveal). Design:
+// .superpowers/design/chat-compact-work/project (Main, States, Calm).
 // Named chatstepsview, not chatsteps: chatsteps.ts holds the pure model, and `./chatsteps` resolves to the .ts first.
 
 import { springReveal } from "@/app/element/motiontokens";
@@ -17,7 +17,7 @@ import { cn } from "@/util/util";
 import { ArrowUpRight, ChevronDown, ChevronRight } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useState, type KeyboardEvent, type ReactNode } from "react";
-import { burstRenderMode, detailExceedsInline, type AgentActionEntry } from "./agentsviewmodel";
+import { detailExceedsInline, type AgentActionEntry } from "./agentsviewmodel";
 import { editCounts, foldOf, stepOf, stepRows, type StepChip } from "./chatsteps";
 import { stepSummary, stretchTime } from "./chatstepsummary";
 import { stretchMs, type WorkItem } from "./compacttimeline";
@@ -446,31 +446,27 @@ function StepList({ work, live }: { work: WorkItem; live: boolean }) {
 }
 
 // "Edited server.js, ran 2 commands +5 −2 · 38s ›": a stretch of tools as one muted line between the agent's paragraphs,
-// opening to its box of rows; "◌ Running npm test +2 · 12s ˅" while a call in it is in flight. A live session's last stretch
-// is open while the agent works (burstRenderMode), and folds on the spring into this line once the agent moves on; a click
-// opens it again.
+// opening to its box of rows on a click; "◌ Run the told tests +2 · 12s ›" while a call in it is in flight. A running
+// stretch stays folded too (Calm.dc.html): its line already names what runs, and a box growing under the paragraphs read
+// as noise. A finished stretch's line shows its time from 10 s up (stretchTime).
 export function ChatSteps({
     work,
     open,
-    closed,
-    autoOpen,
     live,
     onToggle,
 }: {
     work: WorkItem;
+    // the person opened it
     open: boolean;
-    // the user folded it while it was the auto-open one
-    closed: boolean;
-    autoOpen: boolean;
     // the session is working: a tool with no result is running, and the stretch counts up to now
     live: boolean;
     onToggle: () => void;
 }) {
-    const shown = burstRenderMode({ userOpened: open, autoOpen, userClosed: closed }) !== "collapsed";
+    const shown = open;
     const summary = stepSummary(work.actions, live);
     const running = summary.running;
     const now = useNow(running);
-    const time = stretchTime(running ? stretchMs(work, now, live) : work.durationMs);
+    const time = stretchTime(running ? stretchMs(work, now, live) : work.durationMs, running);
     return (
         <div data-chat-work className="flex flex-col">
             <button

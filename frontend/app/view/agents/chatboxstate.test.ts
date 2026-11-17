@@ -2,7 +2,15 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it } from "vitest";
-import { boxPlaceholder, boxState, boxTabPlaceholder, type BoxState, type BoxStateInput } from "./chatboxstate";
+import {
+    boxLayout,
+    boxPlaceholder,
+    boxState,
+    boxTabPlaceholder,
+    type BoxLayoutInput,
+    type BoxState,
+    type BoxStateInput,
+} from "./chatboxstate";
 
 const none: BoxStateInput = { asleep: false, running: false, dragging: false, suggesting: false, bash: false };
 const of = (patch: Partial<BoxStateInput>): BoxState => boxState({ ...none, ...patch });
@@ -125,5 +133,26 @@ describe("boxTabPlaceholder", () => {
             { key: "Tab" },
             " for suggestions… (Enter)",
         ]);
+    });
+});
+
+describe("boxLayout", () => {
+    const plain: BoxLayoutInput = { text: "", attachments: 0, bash: false, wrapped: false };
+    const layout = (patch: Partial<BoxLayoutInput>) => boxLayout({ ...plain, ...patch });
+
+    it("is one row when empty or holding one line", () => {
+        expect(layout({})).toBe("row");
+        expect(layout({ text: "merge it into main" })).toBe("row");
+    });
+
+    it("grows for several lines, an attachment or bash mode", () => {
+        expect(layout({ text: "first\nsecond" })).toBe("grown");
+        expect(layout({ attachments: 1 })).toBe("grown");
+        expect(layout({ text: "!ls", bash: true })).toBe("grown");
+    });
+
+    it("stays grown after the text wrapped, until the text is empty", () => {
+        expect(layout({ text: "a long line that wrapped", wrapped: true })).toBe("grown");
+        expect(layout({ text: "", wrapped: true })).toBe("row");
     });
 });

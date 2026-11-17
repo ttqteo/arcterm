@@ -13,6 +13,25 @@ const src: RefSources = {
     project: "D:\\projects\\arcterm",
 };
 
+const now = Date.parse("2026-11-17T12:00:00Z");
+const src2: RefSources = {
+    ...src,
+    sessions: [
+        {
+            id: "9f31d0b4-6666-4a4a-8b8b-000000000006",
+            runtime: "claude",
+            task: "Fix CDP fails\nand more",
+            projectname: "arcterm",
+            lastactivets: now - 3 * 86_400_000,
+        },
+    ],
+    efforts: [
+        { oref: "effort:e9b20f17-7777-4a4a-8b8b-000000000007", title: "Chat polish", done: 4, total: 9 },
+        { oref: "effort:4c0aa7d3-8888-4a4a-8b8b-000000000008", title: "RAM watch", done: 6, total: 6 },
+    ],
+    now,
+};
+
 describe("refSpans", () => {
     it("finds a token as its own word, after @ too, and keeps the text as written", () => {
         const text = "có gồm agent:7cd99627 không? @run:071a8e3b, (council:C41D9E02)";
@@ -26,9 +45,10 @@ describe("refSpans", () => {
         expect(refSpans("tab:7cd99627")[0].kind).toBe("agent");
     });
     it("leaves glued, too short, non-hex and other kinds as text", () => {
-        expect(
-            refSpans("xagent:7cd99627 agent:7cd agent:zzzz9999 session:9f31d0b4 effort:e9b20f17 agent:7cd99627x")
-        ).toEqual([]);
+        expect(refSpans("xagent:7cd99627 agent:7cd agent:zzzz9999 xsession:9f31d0b4 agent:7cd99627x")).toEqual([]);
+    });
+    it("finds session: and effort: tokens", () => {
+        expect(refSpans("đọc session:9f31d0b4 rồi effort:e9b20f17.").map((s) => s.kind)).toEqual(["session", "effort"]);
     });
     it("leaves the token the caret is in or at the end of", () => {
         expect(refSpans("agent:7cd99627", 14)).toEqual([]);
@@ -127,5 +147,87 @@ describe("badgeLook and refTitle", () => {
             "api-tests · agent 3fa1c2e0 · asking (click to open)"
         );
         expect(refTitle(resolveRef("agent", "deadbeef", src), { opens: false })).toBe("No agent deadbeef is open");
+    });
+});
+
+describe("session: and effort:", () => {
+    it("resolves a conversation by id prefix, with its age, and an initiative by its oid, with its chunks", () => {
+        expect(resolveRef("session", "9f31d0b4", src2)).toMatchObject({
+            status: "resolved",
+            name: "Fix CDP fails",
+            meta: "3d",
+            ageMs: 3 * 86_400_000,
+        });
+        expect(resolveRef("effort", "e9b20f17", src2)).toMatchObject({
+            status: "resolved",
+            id: "e9b20f17-7777-4a4a-8b8b-000000000007",
+            name: "Chat polish",
+            meta: "4/9",
+            metaDone: false,
+        });
+        expect(resolveRef("effort", "4c0aa7d3", src2)).toMatchObject({ meta: "6/6", metaDone: true });
+    });
+    it("resolves both without a project", () => {
+        expect(resolveRef("session", "9f31d0b4", { ...src2, project: "" }).status).toBe("resolved");
+        expect(resolveRef("effort", "e9b20f17", { ...src2, project: "" }).status).toBe("resolved");
+    });
+    it("says why it cannot resolve them", () => {
+        expect(resolveRef("session", "77aa01fe", src2)).toEqual({
+            status: "unresolved",
+            reason: "No conversation 77aa01fe in the loaded history",
+        });
+        expect(resolveRef("effort", "deadbeef", src2)).toEqual({
+            status: "unresolved",
+            reason: "No initiative deadbeef",
+        });
+    });
+    it("names the kind in the plural when an id starts several", () => {
+        const twin = {
+            ...src2,
+            sessions: [...(src2.sessions ?? []), { ...(src2.sessions ?? [])[0], id: "9f31d0b4-ffff" }],
+        };
+        expect(resolveRef("session", "9f31d0", twin)).toEqual({
+            status: "unresolved",
+            reason: "session:9f31d0 names 2 conversations",
+        });
+        const twins = {
+            ...src2,
+            efforts: [...(src2.efforts ?? []), { oref: "effort:e9b20f17-aaaa", title: "Other", done: 0, total: 0 }],
+        };
+        expect(resolveRef("effort", "e9b20f", twins)).toEqual({
+            status: "unresolved",
+            reason: "effort:e9b20f names 2 initiatives",
+        });
+    });
+    it("names a conversation by its project, then its id, when it has no task", () => {
+        const bare = (s: Partial<NonNullable<RefSources["sessions"]>[number]>): RefSources => ({
+            ...src2,
+            sessions: [{ ...(src2.sessions ?? [])[0], task: "", ...s }],
+        });
+        expect(resolveRef("session", "9f31d0b4", bare({}))).toMatchObject({ name: "arcterm" });
+        expect(resolveRef("session", "9f31d0b4", bare({ projectname: "" }))).toMatchObject({ name: "9f31d0b4" });
+    });
+    it("reads missing sources as none, so a caller that passes no history still compiles and resolves nothing", () => {
+        expect(resolveRef("session", "9f31d0b4", src).status).toBe("unresolved");
+        expect(resolveRef("effort", "e9b20f17", src).status).toBe("unresolved");
+    });
+    it("draws both neutral, told apart by mark", () => {
+        expect(badgeLook(resolveRef("session", "9f31d0b4", src2))).toEqual({
+            frame: "border-edge-mid bg-surface",
+            mark: "session",
+            dot: null,
+        });
+        expect(badgeLook(resolveRef("effort", "e9b20f17", src2)).mark).toBe("effort");
+    });
+    it("titles them", () => {
+        expect(refTitle(resolveRef("session", "9f31d0b4", src2))).toBe(
+            "Fix CDP fails · conversation 9f31d0b4 · claude · arcterm · 3d ago (click to open)"
+        );
+        expect(refTitle(resolveRef("effort", "e9b20f17", src2))).toBe(
+            "Chat polish · initiative e9b20f17 · 4 of 9 chunks done (click to open)"
+        );
+        expect(refTitle(resolveRef("effort", "e9b20f17", src2), { opens: false })).toBe(
+            "Chat polish · initiative e9b20f17 · 4 of 9 chunks done"
+        );
     });
 });

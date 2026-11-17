@@ -23,15 +23,16 @@ export function rowFieldsOf(raw: unknown): RowFields {
     return out;
 }
 
-// The Agent tree's width: 248px, widened to 280px only while all three number columns (RAM · tokens · age, rowcols.ts)
-// are on, the one layout that leaves line 2 too little room for its words at 248px. Any two fit at 248px, so turning a
-// column off gives the room back.
+// The Agent tree's width: 248px, widened to 280px while RAM and tokens are both on (age with them or not): those are the
+// two wide number columns (rowcols.ts), and together they leave line 2 too little room for its words at 248px (a
+// lead's `W… · 0/7`, a run cut to `buil…`). Age is narrow, so it with either one fits at 248px, and turning RAM or
+// tokens off gives the room back.
 export const AGENT_TREE_NARROW_PX = 248;
 export const AGENT_TREE_WIDE_PX = 280;
 
 /** Pure: the Agent tree's width in px for the fields the person keeps on. */
 export function agentTreeWidth(fields: Pick<RowFields, "ram" | "tokens" | "age">): number {
-    return fields.ram && fields.tokens && fields.age ? AGENT_TREE_WIDE_PX : AGENT_TREE_NARROW_PX;
+    return fields.ram && fields.tokens ? AGENT_TREE_WIDE_PX : AGENT_TREE_NARROW_PX;
 }
 
 /** The Settings row of each field: its id, title and what it shows. */

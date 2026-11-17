@@ -11,6 +11,7 @@ import {
     registerChatInsert,
     replaceChatBox,
     submitIntoChatBox,
+    writeChatBox,
 } from "./chatinsert";
 
 describe("insertAt", () => {
@@ -88,6 +89,7 @@ describe("the chat box registry (chatBoxText, submitIntoChatBox, appendToChatBox
         submit: vi.fn(() => true),
         append: vi.fn(() => true),
         replace: vi.fn(() => true),
+        write: vi.fn(() => true),
         focus: vi.fn(() => true),
         interrupt: vi.fn(() => true),
         ...over,
@@ -130,6 +132,16 @@ describe("the chat box registry (chatBoxText, submitIntoChatBox, appendToChatBox
         expect(b.replace).toHaveBeenCalledWith("/usage ");
         expect(b.submit).not.toHaveBeenCalled();
         off();
+    });
+    it("writes the text through the registered box without the focus, and says what it answered", () => {
+        const b = box();
+        const off = registerChatBox("cb-7", b);
+        expect(writeChatBox("cb-7", "> quoted\n\n")).toBe(true);
+        expect(b.write).toHaveBeenCalledWith("> quoted\n\n");
+        expect(b.replace).not.toHaveBeenCalled();
+        expect(b.focus).not.toHaveBeenCalled();
+        off();
+        expect(writeChatBox("cb-7", "x")).toBe(false);
     });
     it("reads the text of the registered box", () => {
         const b = box();

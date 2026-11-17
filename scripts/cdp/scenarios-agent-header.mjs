@@ -323,6 +323,39 @@ export default function (kit) {
                         more.includes("Float window"),
                     { narrow, more }
                 );
+
+                // 6e. the right side's words give way to their icons when the left side does not fit beside them, and
+                // nothing on the left runs under the buttons; with the room back the words return
+                const readFit = `(() => {
+                    const hd = ${HEADER};
+                    if (!hd) return null;
+                    const cl = hd.querySelector("[data-header-clusters]")?.getBoundingClientRect();
+                    const views = [...hd.querySelectorAll("[role=group] button")];
+                    const right = views[0]?.parentElement?.parentElement?.getBoundingClientRect();
+                    return {
+                        labels: hd.getAttribute("data-header-labels"),
+                        views: views.map((b) => b.textContent.trim()),
+                        clustersRight: cl ? Math.round(cl.right) : null,
+                        buttonsLeft: right ? Math.round(right.left) : null,
+                    };
+                })()`;
+                const icons = await h.ev(readFit);
+                await narrowTo(h, 1600);
+                await polishWaitFor(h, `${HEADER}?.getAttribute("data-header-labels") === "words"`, WAIT_MS);
+                await polishNap(200);
+                const roomy = await h.ev(readFit);
+                rec(
+                    "6e. narrow (560px): the view switch is its icons alone and the left side ends before the buttons; at 1600px the words are back (Terminal)",
+                    icons?.labels === "icons" &&
+                        icons.views.length > 0 &&
+                        icons.views.every((t) => t === "") &&
+                        icons.clustersRight != null &&
+                        icons.buttonsLeft != null &&
+                        icons.clustersRight <= icons.buttonsLeft &&
+                        roomy?.labels === "words" &&
+                        roomy.views.includes("Terminal"),
+                    { icons, roomy }
+                );
                 await narrowTo(h, null);
 
                 // 6c. wide, by default Split and Fullscreen sit in More and Float in the header; Settings → Appearance →

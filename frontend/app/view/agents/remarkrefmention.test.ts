@@ -76,12 +76,16 @@ describe("splitRefs", () => {
 });
 
 describe("remarkRefMention", () => {
-    it("turns agent:, run: and council: tokens into refmention nodes and leaves the rest as text", () => {
-        const tree = parse("agent:7cd99627 run:071a8e3b council:0123abcd, session:7cd99627 effort:7cd99627");
+    it("turns agent:, run:, council:, session: and effort: tokens into refmention nodes and leaves the rest as text", () => {
+        const tree = parse(
+            "agent:7cd99627 run:071a8e3b council:0123abcd, session:7cd99627 effort:7cd99627 plain:7cd99627"
+        );
         const found = refs(tree);
-        expect(found.map((n) => n.data.hProperties.kind)).toEqual(["agent", "run", "council"]);
-        expect(found.map((n) => n.data.hName)).toEqual(["refmention", "refmention", "refmention"]);
-        expect(flat(tree)).toBe("{agent:7cd99627} {run:071a8e3b} {council:0123abcd}, session:7cd99627 effort:7cd99627");
+        expect(found.map((n) => n.data.hProperties.kind)).toEqual(["agent", "run", "council", "session", "effort"]);
+        expect(found.map((n) => n.data.hName)).toEqual(Array(5).fill("refmention"));
+        expect(flat(tree)).toBe(
+            "{agent:7cd99627} {run:071a8e3b} {council:0123abcd}, {session:7cd99627} {effort:7cd99627} plain:7cd99627"
+        );
     });
 
     it("finds references in list items, headings, table cells and bold", () => {

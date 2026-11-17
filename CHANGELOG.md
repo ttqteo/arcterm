@@ -27,23 +27,47 @@ shows above the title: a 2:1 crop of a `task verify:ui` screenshot, as WebP, nam
 (`cwebp -q 82 -crop <x> <y> <w> <h> cdp-shots/<shot>.png -o public/whatsnew/<file>`). `whatsnew.test.ts` fails on a
 missing file, on one over 120 KB, and on a picture given to a line that is not big.
 
-## Unreleased
+## 1.3.0 — 2026-11-17
 
 ### Added
 
+- **Focus read in Chat**: turn it on with the button beside the highlighter (or Alt+R) and a reading line a third of
+  the way down lights one block of the conversation at a time and dims the rest. `J` / `K` or Space step block by
+  block, `Q` quotes the lit block into the box (a code block fenced, a table as a table), and scrolling settles the
+  nearest block onto the line. A reply still being written and anything waiting on you are never dimmed.
+  <!-- try: chat-focus-read --> <!-- big -->
 - An agent whose chat box holds a message you started and did not send shows a pencil after its name in the Agent
   tree, so you can find the one you were writing to.
 - The Agent tree shows a server's port (`:4321`) on the agent or terminal that runs it, and on its project's folder
   while the folder is folded or when no row of it holds the server, so you can tell which project has a server up.
 - Pick several agents in the Agent sidebar (Ctrl+click, Shift+click) and right-click one: Close N agents closes them
   together, asking first when one is working. Agents working for a run stay; close those from their run.
-- References to agents, runs and councils you write in Chat (`agent:7cd99627`, or picked from `@`) show as badges with
-  their name, tinted by kind, with a live agent's state; click one to open it.
+- References to agents, runs, councils, past conversations and initiatives you write in Chat (`agent:7cd99627`,
+  `session:9f31c2a4`, or picked from `@`) show as badges with their name, tinted by kind, with a live agent's state, a
+  conversation's age or an initiative's chunks done; click one to open it. <!-- big -->
 - A link in Chat shows a small copy button on its top-right corner when you hover it, over none of the words around
   it, and a right-click on it offers Copy link: either copies its url without selecting the text.
 
 ### Changed
 
+- A reference or an `@path` you type or paste into Chat's box becomes a badge or a file pill as soon as a space or
+  punctuation follows it, and deleting one leaves a single space.
+- The run launcher's When choices (Run now, After run…, Queue) are pill badges now, so none gets cut off, and the one
+  Jarvis suggests carries a small Jarvis badge.
+- A turn in Chat reads calmer: a stretch of one command reads as what the agent said it does ("Checked the working
+  tree") instead of "Ran a command", a running stretch stays one folded line with its spinner until you open it, the
+  Working line no longer repeats the running call, and a finished stretch shows its time only from 10 s up. A finished
+  turn that changed files ends in a card of those files with their +/− lines; click a file to open it in the Diff, or
+  See all for every change.
+- Chat's box is one line now: `+` at its left, your text, and Send (Stop while the agent works) at its right. It grows
+  for several lines, an attachment or a `!` command, with `+` and Send moving to a row at its bottom. The model and
+  effort, the permission mode and the context ring sit under the box as plain text, and the Show the diff / Open the
+  terminal chips and the suggested replies sit above it.
+- The second line of each row in the Agent tree (a run's workers chip and progress, an agent's model and badges, a
+  conversation's details) starts at the row's left edge, under its icon, so a narrow tree shows more of it: a run's
+  "Working · 0/3" now reads whole from a 240 px tree instead of 300 px. Narrower than that, the run's line leaves out
+  the stage word rather than cutting it to "W…": it shows the count alone, coloured by the stage, with the stage in its
+  tooltip.
 - Opening a run from an agent (a brainstorm's run line in the Agent tree, its Open run, or Open run on Chat's run card)
   shows it in the Agent tree first, its lead selected and its lanes unfolded, instead of switching to Jarvis; a run with
   no agent left in the tree still opens in Jarvis.
@@ -56,8 +80,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   once which one is yours.
 - The agent header no longer shows the Alt+C keycap, and Mark done no longer shows its `m` keycap (its tooltip still
   names it); both keys still work.
-- Selected text in Chat that wraps over several lines is highlighted as one shape: the corners where one line meets
-  the next are square, and only its outer corners are rounded.
+- Selected text in Chat is highlighted as one shape with slightly rounded outer corners, also when it wraps over
+  several lines: the corners where one line meets the next are square.
 - A project's Overview fits the screen: the header and Activity stay put, and Now and History each scroll on their
   own.
 - Close brainstorm in the agent's More (⋯) menu takes the brainstorm pane and its Chat card down so you can talk on
@@ -78,6 +102,16 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- The Agent sidebar widens to 280px whenever RAM and Tokens are both on, Age on or off, so a row's second line has
+  room for its words; turning RAM or Tokens off still narrows it to 248px.
+- Chat's Working dot crackles with current while the agent works: bolts strike out from its core at a new angle,
+  length and zigzag each time, the core flickers, and now and then the dot and the Working words jolt and flare. With
+  reduced motion it stays still, as before.
+- An agent with more than two servers running shows the first two ports and `+N` beside its server mark
+  (`:5175 :9230 +2`) instead of every port; hovering the mark still lists them all.
+- When an agent's header is too narrow for everything, its buttons on the right (Chat, Terminal, Ship, Close) show
+  only their icons, so the name, project and model keep their room and no longer run under the buttons; the words
+  come back once there is space. Hover a button for its name, and Close for the session's tokens.
 - Chat sums up each stretch of tools in words ("Edited server.js, ran 2 commands +5 −2 · 38s"), says what a running
   tool is doing, and shows a command by its description; the command itself shows when you open the line.
 - An opened stretch of tools in Chat is one bordered box with a plain row per tool ("Edited server.js +5"): a command
@@ -90,7 +124,6 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - The agent header's view switch carries an icon before each word (Chat, Terminal, Brainstorm, Canvas, Review), as
   does a split cell's Chat | Terminal switch, and the header's buttons read the switch, Split, then More (⋯) beside
   Close.
-- Selected text in Chat has slightly rounded corners, so the highlight looks softer.
 - The chat box's `@` list shows the agents of the chat's own project first, so one there is no longer pushed out by
   agents of other projects.
 - While an agent asks you a single question, a message sent from the chat box goes to it at once as your answer,
@@ -100,6 +133,16 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- An agent's header and its run chip in the Agent tree list the runs it started in a project opened after arcterm
+  launched, instead of missing them until a restart.
+- An agent's step list in Chat shows as a checklist when it writes its steps as a Markdown task list (`- [ ] …`),
+  instead of as a block of code.
+- A run whose lead was started again (after arcterm restarted, or when the lead's process died) keeps its new lead
+  on the run's row in the Agent tree, instead of the old lead's sleeping tab holding the row and the new lead showing
+  as a separate agent.
+- An agent whose run you cancelled and then queued again reads only the queued plan, not `cancelled` beside it.
+- The Heavy jobs popover stays where it opened after Run now, instead of jumping to the bottom right corner when the
+  queue tag you opened it from goes away.
 - A sleeping agent keeps its conversation's title after arcterm restarts, instead of now and then reading as its
   project's name until the next restart.
 - Selecting text in Chat that runs over a `code` span highlights it in the same colour as the words around it, instead
@@ -155,11 +198,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   its Working line and the roster its working state.
 - An agent started with Work on stays on the initiative you picked: reading or writing another initiative along the
   way no longer moves its header and initiative band to that one.
-- The Jarvis hologram no longer turns into the pixel pet for a few seconds after a long day of opening and closing
-  terminals: closed and hidden terminals now give their graphics slot back at once instead of holding it.
 - The Jarvis hologram no longer turns into the pixel pet for a few seconds when you close or switch agents after a
-  while of using many terminals: terminals give their graphics slot back at once, and the hologram is no longer the
-  first one dropped when they run short.
+  while of using many terminals: closed and hidden terminals give their graphics slot back at once, and the hologram
+  is no longer the first one dropped when they run short.
 - Typing or pasting `@agent:<id>` (or `@run:`, `@council:`) in the chat box now finds that agent, run or council in
   the `@` list.
 - Picking a whole paragraph in Chat no longer highlights the line number of a code block right below it.

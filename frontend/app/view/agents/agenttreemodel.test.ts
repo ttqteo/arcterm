@@ -400,6 +400,48 @@ describe("buildAgentTree with run lineage", () => {
             }
         });
 
+    // an app restart or a dead lead relaunches the lead in a new tab; the old tab lives on, asleep, stamped with the run
+    describe("a relaunched lead", () => {
+        const roles: Lineage["roles"] = {
+            old: { kind: "lead", runId: "run-1" },
+            fresh: { kind: "lead", runId: "run-1" },
+            w2: { kind: "worker", leadRunId: "run-1", taskId: "t-2" },
+        };
+        const relaunched = { ...run("run-1", [task("t-1", "done"), task("t-2", "running")]), leadTabIds: ["fresh"] };
+
+        it("leads its run from the tab the run names, and the tab it replaced gets no row of its own", () => {
+            const rows = buildAgentTree(
+                [agent("old", "idle"), agent("fresh", "working"), agent("w2", "working", "")],
+                ["old", "fresh", "w2"],
+                lineage([relaunched], roles)
+            );
+            const shown = shape(rows);
+            expect(shown).toContain("lead:run-1:1");
+            expect(rows.find((r) => r.kind === "lead")).toMatchObject({ agent: { id: "fresh" } });
+            expect(shown).not.toContain("parent:fresh");
+            expect(shown).not.toContain("parent:old");
+        });
+
+        it("keeps the old tab in view while it asks something", () => {
+            const rows = buildAgentTree(
+                [agent("old", "asking"), agent("fresh", "working"), agent("w2", "working", "")],
+                ["old", "fresh", "w2"],
+                lineage([relaunched], roles)
+            );
+            expect(shape(rows)).toContain("parent:old");
+        });
+
+        it("keeps the first tab as the lead while the run's phases are not known", () => {
+            const rows = buildAgentTree(
+                [agent("old", "idle"), agent("fresh", "working"), agent("w2", "working", "")],
+                ["old", "fresh", "w2"],
+                lineage([run("run-1", [task("t-1", "done"), task("t-2", "running")])], roles)
+            );
+            expect(rows.find((r) => r.kind === "lead")).toMatchObject({ agent: { id: "old" } });
+            expect(shape(rows)).toContain("parent:fresh");
+        });
+    });
+
     it("keeps a row for a task whose worker's tab was reaped while its merge verifies", () => {
         const r = run("run-1", [
             task("t-1", "verifying"),

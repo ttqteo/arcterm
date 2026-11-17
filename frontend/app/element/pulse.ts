@@ -17,6 +17,22 @@ export interface PulseSpec {
     /** a sweep instead of a breath: the value climbs 0 to 1 at an even pace each period, then starts again from 0
      *  (low and ease unused) */
     sweep?: boolean;
+    /** a jitter instead: a new random-looking value in [0, 1) every `noise` ms, held between (low, ease and sweep
+     *  unused). The same step always gives the same value, so it stays pure and testable */
+    noise?: number;
+}
+
+/** A value in [0, 1) for step `i`, scattered so neighbouring steps look unrelated (a 32-bit integer hash). `seed`
+ *  picks one of many such sequences: the driver gives each element its own, so two bolts, or the dot and its words,
+ *  never jitter in step. */
+export function noiseAt(i: number, seed = 0): number {
+    let x = Math.imul((i | 0) ^ 0x9e3779b9, 0x85ebca6b) ^ Math.imul((seed | 0) + 0x165667b1, 0x27d4eb2d);
+    x ^= x >>> 15;
+    x = Math.imul(x, 0x85ebca6b);
+    x ^= x >>> 13;
+    x = Math.imul(x, 0xc2b2ae35);
+    x ^= x >>> 16;
+    return (x >>> 0) / 2 ** 32;
 }
 
 /** CSS cubic-bezier(x1, y1, x2, y2) as a function of progress, solved by bisection on x. */
@@ -61,9 +77,20 @@ export const PULSES: Record<string, PulseSpec> = {
     // --spin as one turn of the outer ring and two the other way of the inner, every 4s
     "holo-spin": { periodMs: 4_000, low: 0, ease: (t) => t, prop: "--spin", sweep: true },
     // and its sparks: .holo-spark reads --spark as a flash at the top of each period that dies within a fifth of it;
-    // two periods, so the three sparks flash out of step
+    // two periods, so the sparks flash out of step
     "holo-spark": { periodMs: 1_100, low: 0, ease: (t) => t, prop: "--spark", sweep: true },
     "holo-spark-slow": { periodMs: 1_700, low: 0, ease: (t) => t, prop: "--spark", sweep: true },
+    // where each spark strikes: a new --arc as each flash starts (the step is the spark's period, and the group around
+    // it starts with it), which .holo-arc reads as a turn and .holo-spark as the bolt's length and zigzag, so no two
+    // flashes look alike
+    "holo-arc": { periodMs: 1_100, low: 0, ease: (t) => t, prop: "--arc", noise: 1_100 },
+    "holo-arc-slow": { periodMs: 1_700, low: 0, ease: (t) => t, prop: "--arc", noise: 1_700 },
+    // the electric crackle: the whole dot jolts a pixel and flares now and then (.holo-jolt, --jolt), and its core
+    // flickers (.holo-core, --flick)
+    "holo-jolt": { periodMs: 120, low: 0, ease: (t) => t, prop: "--jolt", noise: 120 },
+    "holo-core": { periodMs: 90, low: 0, ease: (t) => t, prop: "--flick", noise: 90 },
+    // the working line's words catch the jolt now and then: a flare and a sub-pixel kick (.volt-text, --volt)
+    "volt-text": { periodMs: 140, low: 0, ease: (t) => t, prop: "--volt", noise: 140 },
 };
 
 /** When a pulse that runs `lag` ms (an element's data-pulse-lag) behind one seen at `now` started: already that far
@@ -86,9 +113,13 @@ export function pulseOpacity(spec: PulseSpec, elapsedMs: number): number {
     return phase < 0.5 ? 1 - depth * spec.ease(phase * 2) : spec.low + depth * spec.ease((phase - 0.5) * 2);
 }
 
-/** What the driver writes `elapsedMs` into a pulse: a sweep's place in its period (0 to just under 1), or a breath's
- *  opacity (pulseOpacity). */
-export function pulseValue(spec: PulseSpec, elapsedMs: number): number {
+/** What the driver writes `elapsedMs` into a pulse: a jitter's value for its step (noiseAt), a sweep's place in its
+ *  period (0 to just under 1), or a breath's opacity (pulseOpacity). `seed` is the element's own, for a jitter. */
+export function pulseValue(spec: PulseSpec, elapsedMs: number, seed = 0): number {
+    if (spec.noise != null) {
+        const step = Number.isFinite(elapsedMs) && elapsedMs >= 0 ? Math.floor(elapsedMs / spec.noise) : 0;
+        return noiseAt(step, seed);
+    }
     if (!spec.sweep) {
         return pulseOpacity(spec, elapsedMs);
     }

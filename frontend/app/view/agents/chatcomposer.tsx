@@ -1,15 +1,20 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// The message box of the chat view (a Claude agent's cell in Chat, and its sleeping overlay): the board's floating pill
-// (chatpane.tsx lays it over the conversation) with the text on top and, under it, one row: the round `+` menu
-// (chatplusmenu.tsx: add files, a folder, a slash command, MCP servers, plugins) and the model, mode and context pills
-// (chatfooter.tsx) on the left, Stop and a round Send on the right. That row's parts fold in place when the agent sleeps
-// or wakes. The box is one object that changes shape by state (chatboxstate.ts: idle, running, drop, suggest, bash,
-// asleep): its root is `data-chat-box` carrying `data-chat-box-state`, its height springs to its content's measured height,
-// and the parts of a state cross-fade on the micro ease: a running agent adds a line of action chips and puts Stop where
-// Send was (Send stays beside it once there is a message to send), a finished turn's suggested replies take that line
-// while the person types too (chatsuggest.ts), a drag of files turns the box into a dashed drop zone.
+// The message box of the chat view (a Claude agent's cell in Chat, and its sleeping overlay), as
+// chat-compact-composer/Main.dc.html draws it (spec 2026-11-17-chat-calm-turn-design.md section 6): the floating box
+// (chatpane.tsx lays it over the conversation) is one row 44px high, the round `+` menu (chatplusmenu.tsx: add files, a
+// folder, a slash command, MCP servers, plugins) at its left, the text in the middle, Send (Stop while the agent works) at
+// its right. Several lines of text, an attachment or bash mode grow it (composerLayout): the text and the attachments take
+// the top and `+` and Send/Stop sit in a row at the bottom; the editor is never remounted between the two, only placed
+// (flex-wrap and order). Outside the box: the line of chips above it (the running agent's actions, a finished turn's
+// suggested replies, chatsuggest.ts), and under it, right-aligned plain text, the model and effort, the permission mode and
+// the context ring (chatfooter.tsx), with the asleep words at that line's left. The parts fold in place when the agent
+// sleeps or wakes. The box is one object that changes shape by state (chatboxstate.ts: idle, running, drop, suggest, bash,
+// asleep): its root is `data-chat-box` carrying `data-chat-box-state` and `data-chat-box-layout` (row or grown), its
+// height springs to its content's measured height, a running agent puts Stop where Send was (Send stays beside it once
+// there is a message to send), a drag of files turns the box into a dashed drop zone. The wrapper around the chips, the
+// box and the line under it carries `data-agent-chat-composer` (and the sleeping overlay's `data-sleeping-composer`).
 // What it sends and how a sleeping agent is woken is
 // useAgentSend's (agentcomposer.tsx), the same path as the compact composer; this adds attachments
 // (composerattachments.ts: a pasted or dropped image is kept and goes as the "Attached images:" block your bubble draws
@@ -39,9 +44,9 @@ import { cn, fireAndForget, stringToBase64 } from "@/util/util";
 import { atom, useAtomValue, type Atom } from "jotai";
 import {
     ArrowRight,
-    ArrowUp,
     ArrowUpFromLine,
     Check,
+    CornerDownLeft,
     Diamond,
     FileDiff,
     GitCommitHorizontal,
@@ -64,7 +69,7 @@ import { useBashComplete } from "./bashcomplete";
 import { bashGhost } from "./chatbash";
 import { noteBashRun, useBashHistory } from "./chatbashstore";
 import { ChatBgLine } from "./chatbgline";
-import { boxState, boxTabPlaceholder, type BoxState, type HintPart } from "./chatboxstate";
+import { boxLayout, boxState, boxTabPlaceholder, type BoxState, type HintPart } from "./chatboxstate";
 import { ChatEditor, type EditorLike, type KeyLike } from "./chateditor";
 import { ChatFooter, Fold, usePartMotion } from "./chatfooter";
 import { boxAnswersAsk } from "./chathandoff";
@@ -80,6 +85,7 @@ import {
 import { insertAt, registerChatBox, registerChatInsert } from "./chatinsert";
 import { answersInChat, localCommand, type LocalRoute } from "./chatlocal";
 import { clearLocalCards } from "./chatlocalstore";
+import { noteLostBash } from "./chatlostbashstore";
 import { bashMode } from "./chatmodel";
 import { setChatMode } from "./chatmodestore";
 import {
@@ -93,7 +99,6 @@ import {
     sendHold,
     type SendFailure,
 } from "./chatpending";
-import { noteLostBash } from "./chatlostbashstore";
 import {
     addPending,
     dropPending,
@@ -138,8 +143,8 @@ import { useRefItems } from "./refmentionstore";
 import { opensTui } from "./slashcommands";
 import { useSlashMenu } from "./slashmenu";
 
-// two lines, as the board's box; grows as the text wraps, then scrolls
-const ChatMinH = 38;
+// one line of the editor (14px at line-height 1.9): the one-row box's text; grows as the text wraps, then scrolls
+const ChatMinH = 27;
 const ChatMaxH = 200;
 // in bash mode the editor sits in a well with 8px of padding above and below, so one line of it is about the box's height
 const ChatBashMinH = 25;
@@ -416,8 +421,15 @@ function ComposerBox({
     const filesRoot = chatFilesRoot(cwd, agent.project, projects);
     // the files this agent read or wrote lead the `@` list, newest first
     const recentFiles = useMemo(() => recentMentionPaths(entries, filesRoot), [entries, filesRoot]);
-    // the live agents and the project's runs and councils an `@` can also name, read while the text holds one
-    const refItems = useRefItems(filesRoot, agent.id, !bash && text.includes("@"));
+    // the live agents, the project's runs and councils, the past conversations and the initiatives an `@` can also name,
+    // read while the text holds one; the project's path orders the conversations, its name the initiatives
+    const refItems = useRefItems(
+        filesRoot,
+        agent.project ?? "",
+        projects[agent.project ?? ""]?.path ?? "",
+        agent.id,
+        !bash && text.includes("@")
+    );
     const mention = useFileMention({
         // a bash command has no @mentions: the picker is shut while the text starts with `!`
         text: bash ? "" : text,
@@ -516,6 +528,17 @@ function ComposerBox({
                     caretAfter.current = t.length;
                     latest.current.setText(t, t.length);
                     box.focus({ preventScroll: true });
+                    return true;
+                },
+                // no caret asked for: the editor places none while it is not focused (a caret set in it would take the
+                // focus), and its focus() puts one at the end
+                write: (t) => {
+                    const box = editorRef.current;
+                    if (box == null || box.readOnly) {
+                        return false;
+                    }
+                    recalled.current = { at: null, shown: "" };
+                    latest.current.setText(t);
                     return true;
                 },
                 interrupt: () => interruptRef.current(),
@@ -1051,287 +1074,39 @@ function ComposerBox({
         ro.observe(el);
         return () => ro.disconnect();
     }, []);
+    // One row or grown (chatboxstate.ts boxLayout). `wrapped` latches once the editor measures past one line and lets go
+    // when the text is empty, so a line that fits only at the grown width does not flip the box back and forth.
+    const wellRef = useRef<HTMLDivElement>(null);
+    const [wrapped, setWrapped] = useState(false);
+    useLayoutEffect(() => {
+        const el = wellRef.current;
+        if (el == null) {
+            return;
+        }
+        const ro = new ResizeObserver(() => {
+            if (!bash && el.offsetHeight > ChatMinH + 2) {
+                setWrapped(true);
+            }
+        });
+        ro.observe(el);
+        return () => ro.disconnect();
+    }, [bash]);
+    useEffect(() => {
+        if (text === "") {
+            setWrapped(false);
+        }
+    }, [text]);
+    const grown = boxLayout({ text, attachments: att.attachments.length, bash, wrapped }) === "grown";
     return (
-        <motion.div
-            {...dataAttrs}
-            ref={boxRef}
-            data-chat-box=""
-            data-chat-box-state={state}
-            data-agent-chat-composer={agent.id}
-            data-chat-bash-mode={bash ? "" : undefined}
-            onDragEnter={onDragEnter}
-            onDragOver={onDragOver}
-            onDragLeave={onDragLeave}
-            onDrop={onDrop}
-            initial={false}
-            animate={{ height: contentH ?? "auto" }}
-            transition={contentH == null || reduceMotion ? { duration: 0 } : MOTION.spring}
-            onAnimationStart={() => setMoving(true)}
-            onAnimationComplete={() => setMoving(false)}
-            // box-content: the animated height is the content's, the border comes on top
-            className={cn(
-                "relative box-content flex w-full flex-col justify-end rounded-[22px] border border-edge-mid bg-surface-raised shadow-popover-soft transition-colors duration-[140ms] focus-within:border-edge-strong motion-reduce:transition-none",
-                moving && "overflow-hidden"
-            )}
-        >
-            <div
-                ref={innerRef}
-                aria-hidden={dragging ? true : undefined}
-                style={{ ...turnTransition, minHeight: dragging ? DropMinH : undefined }}
-                className={cn(
-                    "flex flex-none flex-col gap-2 pb-[10px] pl-[18px] pr-[12px] pt-[14px] transition-opacity motion-reduce:transition-none",
-                    dragging && "opacity-0"
-                )}
-            >
-                {/* a prompt holds the send: says so in the box itself (a disabled Send said it only in its tooltip), and once
-                Send was pressed, that the message waits for the answer */}
-                {holdText != null ? (
-                    <div
-                        data-chat-hold={held ? "queued" : "waiting"}
-                        role="status"
-                        className="flex items-center gap-1.5 whitespace-nowrap text-[12px] text-muted"
-                    >
-                        <span
-                            aria-hidden
-                            className={cn("h-[6px] w-[6px] flex-none rounded-full bg-asking", held && "pulse-dot")}
-                        />
-                        <span className="min-w-0 truncate">{holdText}</span>
-                        {held ? (
-                            <button
-                                type="button"
-                                data-chat-hold-cancel
-                                onClick={() => setHeldSend(agent.id, false)}
-                                className="ml-auto flex-none cursor-pointer text-accent-soft hover:underline"
-                            >
-                                Cancel
-                            </button>
-                        ) : null}
-                    </div>
-                ) : null}
-                {/* the agent's background work still running (chatbgline.tsx): under the queued-message line, which asks
-                the person to act */}
-                <ChatBgLine model={model} agent={agent} />
-                <AttachmentTray items={att.attachments} onRemove={att.remove} onRetry={att.retry} />
-                {/* a bash command says what it is above its well: it runs in the agent's shell, and its output joins the chat */}
-                {bash ? (
-                    <div data-chat-bash-caption="" className="flex items-center gap-1.5 whitespace-nowrap text-[12px]">
-                        <Terminal size={13} strokeWidth={2} aria-hidden className="flex-none text-accent" />
-                        <span className="font-medium text-primary">Bash</span>
-                        <span className="min-w-0 truncate text-muted">
-                            · runs in the agent's shell, output joins the chat
-                        </span>
-                        {ghost !== "" ? (
-                            <span data-chat-bash-accept="" className="ml-auto flex-none text-ink-faint">
-                                <span className="font-mono text-muted">→</span> or{" "}
-                                <span className="font-mono text-muted">Tab</span> accept
-                            </span>
-                        ) : null}
-                    </div>
-                ) : null}
-                {/* always this wrapper, so the editor is not remounted when the well comes and goes */}
-                <div data-chat-well="" className={cn("min-w-0", bash && "rounded-[8px] bg-surface-code px-2.5 py-2")}>
-                    <ChatEditor
-                        ref={editorRef}
-                        value={text}
-                        outsideCaret={outsideCaret.current}
-                        readOnly={waking || dozing}
-                        minHeight={bash ? ChatBashMinH : ChatMinH}
-                        maxHeight={ChatMaxH}
-                        placeholder={typeof hint === "string" ? hint : <HintLine parts={hint} />}
-                        bash={bash}
-                        ghost={ghost}
-                        // a shell command line is mono (DESIGN.md)
-                        className={cn("text-primary", bash ? "font-mono text-[13px]" : "text-[14px]")}
-                        // also called when only the caret moved (a click, an arrow), with the same text: that is no edit, so it
-                        // neither ends a recall nor sets the text again
-                        onChange={(t, caret) => {
-                            if (t !== recalled.current.shown) {
-                                recalled.current = { at: null, shown: "" };
-                            }
-                            if (t !== told.current) {
-                                told.current = t;
-                                setText(t);
-                                // typing lets go of a chip Tab picked: Enter is for the text again
-                                setPicked(null);
-                            }
-                            setSaidCaret((cur) => (cur.text === t && cur.caret === caret ? cur : { text: t, caret }));
-                            const box = editorRef.current;
-                            if (box != null) {
-                                slash.onCaret(box);
-                                mention.onCaret(box);
-                                bashList.onCaret(box);
-                            }
-                        }}
-                        // a click outside the box closes bash mode's Tab list (a click on a row keeps the focus here)
-                        onBlur={bashList.onBlur}
-                        onPasteFiles={(e) => {
-                            // att.onPaste takes the files and calls preventDefault, or leaves the paste to the editor
-                            att.onPaste(e as never);
-                            return e.defaultPrevented;
-                        }}
-                        onKeyDown={(e) => {
-                            // → or Tab at the end of a bash command with the ghost text showing takes it, as Claude Code's does;
-                            // the ghost is never shown while the Tab list is open, so this Tab is not a completion's
-                            if (
-                                ghost !== "" &&
-                                (e.key === "ArrowRight" || e.key === "Tab") &&
-                                !e.shiftKey &&
-                                !e.altKey &&
-                                !e.ctrlKey &&
-                                !e.metaKey &&
-                                !e.nativeEvent.isComposing
-                            ) {
-                                const box = e.currentTarget;
-                                if (
-                                    !box.readOnly &&
-                                    box.selectionStart === text.length &&
-                                    box.selectionEnd === text.length
-                                ) {
-                                    e.preventDefault();
-                                    recalled.current = { at: null, shown: "" };
-                                    setTextAt(text + ghost, text.length + ghost.length);
-                                    return;
-                                }
-                            }
-                            // the Tab list's keys (bash mode), the `/` menu's and the `@` picker's (↑↓, Enter and Tab to pick,
-                            // Escape to close) come first; at most one of them has a list open (the `/` and `@` lists are shut
-                            // while the text starts with `!`)
-                            if (bash) {
-                                bashList.onKeyDown(e);
-                            }
-                            if (!e.defaultPrevented) {
-                                slash.onKeyDown(e);
-                            }
-                            if (!e.defaultPrevented) {
-                                mention.onKeyDown(e);
-                            }
-                            if (e.defaultPrevented) {
-                                return;
-                            }
-                            // a Tab the Tab list had nothing to do with stays in the box: in bash mode
-                            // Tab is for completing, never for moving the focus out
-                            if (
-                                bash &&
-                                e.key === "Tab" &&
-                                !e.shiftKey &&
-                                !e.altKey &&
-                                !e.ctrlKey &&
-                                !e.metaKey &&
-                                !e.nativeEvent.isComposing
-                            ) {
-                                e.preventDefault();
-                                return;
-                            }
-                            // Tab and Shift+Tab walk the suggested replies; with one picked, Enter takes it as a click
-                            // does (asking first over typed text), Shift+Enter puts its text in the box to edit first (a
-                            // chip with no text to edit leaves Shift+Enter a new line), and Esc lets go of it
-                            if (
-                                tabChips.length > 0 &&
-                                !e.altKey &&
-                                !e.ctrlKey &&
-                                !e.metaKey &&
-                                !e.nativeEvent.isComposing
-                            ) {
-                                if (e.key === "Tab") {
-                                    e.preventDefault();
-                                    setPicked(stepPick(tabChips, pickedText, e.shiftKey));
-                                    return;
-                                }
-                                if (picked != null && e.key === "Enter" && !e.shiftKey) {
-                                    e.preventDefault();
-                                    setPicked(null);
-                                    activateChip(picked);
-                                    return;
-                                }
-                                if (picked != null && pickedEditable && e.key === "Enter" && e.shiftKey) {
-                                    e.preventDefault();
-                                    setPicked(null);
-                                    editChip(picked);
-                                    return;
-                                }
-                                if (picked != null && e.key === "Escape") {
-                                    e.preventDefault();
-                                    setPicked(null);
-                                    return;
-                                }
-                            }
-                            // Ctrl+U (Cmd+U on a Mac, where Ctrl+U is the text field's own delete-to-line-start) is Add files; an
-                            // open `/` or `@` list leaves it alone. Asleep it attaches too, though the + menu is not drawn.
-                            const addFilesKey =
-                                e.key.toLowerCase() === "u" &&
-                                !e.altKey &&
-                                !e.shiftKey &&
-                                (isMacOS() ? e.metaKey && !e.ctrlKey : e.ctrlKey && !e.metaKey);
-                            if (addFilesKey) {
-                                if (!waking && !slash.shown && !mention.shown) {
-                                    e.preventDefault();
-                                    attach();
-                                }
-                                return;
-                            }
-                            // the chat's permission card, while it can answer its prompt: from an empty box ↑ and ↓ move its
-                            // highlight and Enter sends the highlighted choice, as the prompt's own list does in the terminal
-                            const cardKey = permissionBoxKey(
-                                {
-                                    key: e.key,
-                                    shiftKey: e.shiftKey,
-                                    altKey: e.altKey,
-                                    ctrlKey: e.ctrlKey,
-                                    metaKey: e.metaKey,
-                                    isComposing: e.nativeEvent.isComposing,
-                                },
-                                text === ""
-                            );
-                            if (
-                                cardKey != null &&
-                                permissionOref != null &&
-                                !e.currentTarget.readOnly &&
-                                permissionCardKey(permissionOref, cardKey)
-                            ) {
-                                e.preventDefault();
-                                return;
-                            }
-                            if (recallKey(e)) {
-                                e.preventDefault();
-                                return;
-                            }
-                            if (
-                                onSendNow != null &&
-                                text.trim() === "" &&
-                                !e.nativeEvent.isComposing &&
-                                isSendNowKey(e, isMacOS())
-                            ) {
-                                e.preventDefault();
-                                onSendNow();
-                                return;
-                            }
-                            if (e.key === "Enter" && !e.shiftKey) {
-                                // Enter that commits an IME composition (Telex, Pinyin…) is not a send
-                                if (e.nativeEvent.isComposing) {
-                                    return;
-                                }
-                                e.preventDefault();
-                                submit();
-                            } else if (e.key === "Escape") {
-                                // while Claude works Esc stops the turn, as in Claude Code's box; else the box lets go of
-                                // the keys
-                                e.preventDefault();
-                                if (!interrupt()) {
-                                    e.currentTarget.blur();
-                                }
-                            }
-                        }}
-                    />
-                </div>
-                {slash.list}
-                {bashList.list}
-                {mention.list}
-                {/* A line of chips under the text (chatsuggest.ts): while the agent works, the two things Chat can show of
-                    it once they hold something (the diff of what it changed, the terminal of a command running a while);
-                    once its turn ends, the replies the person would
-                    likely send next, in their words, which a click sends (asking first over typed text). One
-                    line goes before the next comes, so the box never holds both, and the actions come and go only once
-                    the agent's state has held (useChipRow). */}
+        // the chips above the box, the box, the line under it: one wrapper, so the cell's input lookup
+        // (cellinput.ts) and the sleeping overlay's attribute reach all three
+        <div {...dataAttrs} data-agent-chat-composer={agent.id} className="flex w-full flex-col">
+            <MotionConfig reducedMotion="user">
+                {/* The line of chips above the box (chatsuggest.ts): while the agent works, the two things Chat can show
+                    of it once they hold something (the diff of what it changed, the terminal of a command running a
+                    while); once its turn ends, the replies the person would likely send next, in their words, which a
+                    click sends (asking first over typed text). One line goes before the next comes, and the actions come
+                    and go only once the agent's state has held (useChipRow). */}
                 <AnimatePresence initial={false} mode="wait">
                     {row.kind === "actions" ? (
                         <ActionChips
@@ -1353,145 +1128,451 @@ function ComposerBox({
                         />
                     ) : null}
                 </AnimatePresence>
-                {/* one row through a sleep and a wake: its parts fold and crossfade in place (reduced motion snaps them) */}
-                <MotionConfig reducedMotion="user">
-                    <div className="flex items-center gap-1.5">
-                        <AnimatePresence initial={false}>
-                            {asleep ? null : (
-                                <Fold key="attach">
-                                    <ChatPlusMenu
-                                        onAttach={attach}
-                                        onText={putText}
-                                        onSend={sendCommand}
-                                        onFocusBox={() => editorRef.current?.focus()}
-                                        disabled={waking || dozing}
-                                    />
-                                </Fold>
-                            )}
-                        </AnimatePresence>
-                        <AnimatePresence initial={false}>
-                            {/* one part from the Sleep to the wake, so going to sleep and asleep swap words in place */}
-                            {asleep || dozing ? (
-                                <Fold key="asleep">
-                                    <div
-                                        data-chat-asleep={asleep ? "" : undefined}
-                                        data-chat-falling-asleep={dozing && !asleep ? fallingAsleep : undefined}
-                                        role="status"
-                                        className="flex h-[28px] items-center gap-1.5 whitespace-nowrap pl-0.5 pr-1 text-[12px] text-muted"
+                <motion.div
+                    ref={boxRef}
+                    data-chat-box=""
+                    data-chat-box-state={state}
+                    data-chat-box-layout={grown ? "grown" : "row"}
+                    data-chat-bash-mode={bash ? "" : undefined}
+                    onDragEnter={onDragEnter}
+                    onDragOver={onDragOver}
+                    onDragLeave={onDragLeave}
+                    onDrop={onDrop}
+                    initial={false}
+                    animate={{ height: contentH ?? "auto" }}
+                    transition={contentH == null || reduceMotion ? { duration: 0 } : MOTION.spring}
+                    onAnimationStart={() => setMoving(true)}
+                    onAnimationComplete={() => setMoving(false)}
+                    // box-content: the animated height is the content's, the border comes on top
+                    className={cn(
+                        "relative box-content flex w-full flex-col justify-end rounded-[14px] border border-edge-mid bg-surface-raised shadow-popover-soft transition-colors duration-[140ms] focus-within:border-edge-strong motion-reduce:transition-none",
+                        moving && "overflow-hidden"
+                    )}
+                >
+                    {/* one row: 7px above and below the 28px controls make the board's 44px with the border */}
+                    <div
+                        ref={innerRef}
+                        aria-hidden={dragging ? true : undefined}
+                        style={{ ...turnTransition, minHeight: dragging ? DropMinH : undefined }}
+                        className={cn(
+                            "flex flex-none flex-col gap-2 pl-[10px] pr-[8px] transition-opacity motion-reduce:transition-none",
+                            grown ? "pb-[8px] pt-[10px]" : "py-[7px]",
+                            dragging && "opacity-0"
+                        )}
+                    >
+                        {/* a prompt holds the send: says so in the box itself (a disabled Send said it only in its tooltip), and once
+                Send was pressed, that the message waits for the answer */}
+                        {holdText != null ? (
+                            <div
+                                data-chat-hold={held ? "queued" : "waiting"}
+                                role="status"
+                                className="flex items-center gap-1.5 whitespace-nowrap text-[12px] text-muted"
+                            >
+                                <span
+                                    aria-hidden
+                                    className={cn(
+                                        "h-[6px] w-[6px] flex-none rounded-full bg-asking",
+                                        held && "pulse-dot"
+                                    )}
+                                />
+                                <span className="min-w-0 truncate">{holdText}</span>
+                                {held ? (
+                                    <button
+                                        type="button"
+                                        data-chat-hold-cancel
+                                        onClick={() => setHeldSend(agent.id, false)}
+                                        className="ml-auto flex-none cursor-pointer text-accent-soft hover:underline"
                                     >
-                                        <Moon
-                                            size={13}
-                                            strokeWidth={1.8}
-                                            aria-hidden
-                                            className={cn(!asleep && "pulse-dot")}
+                                        Cancel
+                                    </button>
+                                ) : null}
+                            </div>
+                        ) : null}
+                        {/* the agent's background work still running (chatbgline.tsx): under the queued-message line, which asks
+                the person to act */}
+                        <ChatBgLine model={model} agent={agent} />
+                        <AttachmentTray items={att.attachments} onRemove={att.remove} onRetry={att.retry} />
+                        {/* a bash command says what it is above its well: it runs in the agent's shell, and its output joins the chat */}
+                        {bash ? (
+                            <div
+                                data-chat-bash-caption=""
+                                className="flex items-center gap-1.5 whitespace-nowrap text-[12px]"
+                            >
+                                <Terminal size={13} strokeWidth={2} aria-hidden className="flex-none text-accent" />
+                                <span className="font-medium text-primary">Bash</span>
+                                <span className="min-w-0 truncate text-muted">
+                                    · runs in the agent's shell, output joins the chat
+                                </span>
+                                {ghost !== "" ? (
+                                    <span data-chat-bash-accept="" className="ml-auto flex-none text-ink-faint">
+                                        <span className="font-mono text-muted">→</span> or{" "}
+                                        <span className="font-mono text-muted">Tab</span> accept
+                                    </span>
+                                ) : null}
+                            </div>
+                        ) : null}
+                        {/* `+`, the text and Send/Stop. One row; grown, the well takes a line of its own first (order-first,
+                basis-full) and `+` and Send/Stop wrap under it. The well and its editor stay this element's child either
+                way, so the editor is never remounted, and its parts fold in place through a sleep and a wake. */}
+                        <div
+                            data-chat-row=""
+                            className={cn("flex flex-wrap items-center", grown ? "gap-y-2" : "gap-x-2.5")}
+                        >
+                            <AnimatePresence initial={false}>
+                                {asleep ? null : (
+                                    <Fold key="attach">
+                                        <ChatPlusMenu
+                                            onAttach={attach}
+                                            onText={putText}
+                                            onSend={sendCommand}
+                                            onFocusBox={() => editorRef.current?.focus()}
+                                            disabled={waking || dozing}
                                         />
-                                        {asleep
-                                            ? sleepingLine("Asleep", agent.sleeping!)
-                                            : fallAsleepLabel(fallingAsleep!)}
-                                    </div>
-                                </Fold>
-                            ) : null}
-                        </AnimatePresence>
-                        {/* takes the row's free width, so Stop and Send stay at the far right */}
-                        <ChatFooter agent={agent} />
-                        {/* the round Stop where Send is while the agent works; Send folds out beside it with nothing to send */}
-                        <AnimatePresence initial={false}>
-                            {showStop ? (
-                                <Fold key="stop">
-                                    <button
-                                        type="button"
-                                        data-chat-stop
-                                        aria-label="Stop (Esc)"
-                                        title="Stop the agent (sends Esc)"
-                                        // the Esc key's path, not a bare Esc: a turn with no answer yet is rewound,
-                                        // and Claude Code puts its message back in its own box, out of sight, where
-                                        // the next send was typed onto it ("làm đibáo council đi", 2026-11-16).
-                                        // interrupt() takes it back into this box; when it does nothing (the agent
-                                        // is not working), the plain Esc stops it as before
-                                        onClick={() => {
-                                            if (!interrupt()) {
-                                                stop();
-                                            }
-                                        }}
-                                        className="flex size-[34px] flex-none cursor-pointer items-center justify-center rounded-full bg-primary hover:opacity-90 focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-surface-raised"
-                                    >
-                                        <span aria-hidden className="size-[11px] rounded-[3px] bg-background" />
-                                    </button>
-                                </Fold>
-                            ) : null}
-                        </AnimatePresence>
-                        <AnimatePresence initial={false}>
-                            {showSend ? (
-                                <Fold key="send">
-                                    {/* Asleep (and while a wake is in flight) the button widens to its word, the arrow and the
-                                    word crossfading: Waking… is the one sign that the message was taken. The widths are the
-                                    board's (CSS cannot transition to auto). */}
-                                    <button
-                                        type="button"
-                                        data-chat-send
-                                        title={
-                                            blocker ??
-                                            (hold != null
-                                                ? held
-                                                    ? "Queued: sends once you answer"
-                                                    : `${hold}: Send queues your message until then`
-                                                : bash
-                                                  ? "Run in the agent's shell"
-                                                  : wakeOnly
-                                                    ? "Wake: relaunch the agent where its conversation left off"
-                                                    : "Send")
+                                    </Fold>
+                                )}
+                            </AnimatePresence>
+                            {/* always this wrapper, so the editor is not remounted when the well comes and goes */}
+                            <div
+                                ref={wellRef}
+                                data-chat-well=""
+                                className={cn(
+                                    "min-w-0",
+                                    grown ? "order-first basis-full px-1" : "flex-1",
+                                    bash && "rounded-[8px] bg-surface-code px-2.5 py-2"
+                                )}
+                            >
+                                <ChatEditor
+                                    ref={editorRef}
+                                    value={text}
+                                    outsideCaret={outsideCaret.current}
+                                    readOnly={waking || dozing}
+                                    minHeight={bash ? ChatBashMinH : ChatMinH}
+                                    maxHeight={ChatMaxH}
+                                    placeholder={typeof hint === "string" ? hint : <HintLine parts={hint} />}
+                                    bash={bash}
+                                    ghost={ghost}
+                                    // a shell command line is mono (DESIGN.md)
+                                    className={cn("text-primary", bash ? "font-mono text-[13px]" : "text-[14px]")}
+                                    // also called when only the caret moved (a click, an arrow), with the same text: that is no edit, so it
+                                    // neither ends a recall nor sets the text again
+                                    onChange={(t, caret) => {
+                                        if (t !== recalled.current.shown) {
+                                            recalled.current = { at: null, shown: "" };
                                         }
-                                        aria-label={hold != null ? "Queue" : showWord ? undefined : "Send"}
-                                        onClick={submit}
-                                        disabled={!(ready || wakeOnly) || held}
-                                        style={turnTransition}
-                                        className={cn(
-                                            "relative flex h-[34px] flex-none cursor-pointer items-center justify-center overflow-hidden rounded-full bg-accent text-background shadow-inset-highlight transition-[width] hover:opacity-90 focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-surface-raised disabled:cursor-default disabled:opacity-40 disabled:hover:opacity-40 motion-reduce:transition-none",
-                                            waking ? "w-[84px]" : asleep ? "w-[64px]" : "w-[34px]"
-                                        )}
-                                    >
-                                        <span
-                                            aria-hidden
-                                            style={turnTransition}
-                                            className={cn(
-                                                "absolute flex transition-opacity motion-reduce:transition-none",
-                                                showWord ? "opacity-0" : "opacity-100"
-                                            )}
-                                        >
-                                            <ArrowUp size={15} strokeWidth={2.4} aria-hidden />
-                                        </span>
-                                        <span
-                                            aria-hidden={!showWord}
-                                            style={turnTransition}
-                                            className={cn(
-                                                "whitespace-nowrap text-[12px] font-semibold transition-opacity motion-reduce:transition-none",
-                                                showWord ? "opacity-100" : "opacity-0"
-                                            )}
-                                        >
-                                            {sendWord.current}
-                                        </span>
-                                    </button>
-                                </Fold>
-                            ) : null}
-                        </AnimatePresence>
+                                        if (t !== told.current) {
+                                            told.current = t;
+                                            setText(t);
+                                            // typing lets go of a chip Tab picked: Enter is for the text again
+                                            setPicked(null);
+                                        }
+                                        setSaidCaret((cur) =>
+                                            cur.text === t && cur.caret === caret ? cur : { text: t, caret }
+                                        );
+                                        const box = editorRef.current;
+                                        if (box != null) {
+                                            slash.onCaret(box);
+                                            mention.onCaret(box);
+                                            bashList.onCaret(box);
+                                        }
+                                    }}
+                                    // a click outside the box closes bash mode's Tab list (a click on a row keeps the focus here)
+                                    onBlur={bashList.onBlur}
+                                    onPasteFiles={(e) => {
+                                        // att.onPaste takes the files and calls preventDefault, or leaves the paste to the editor
+                                        att.onPaste(e as never);
+                                        return e.defaultPrevented;
+                                    }}
+                                    onKeyDown={(e) => {
+                                        // → or Tab at the end of a bash command with the ghost text showing takes it, as Claude Code's does;
+                                        // the ghost is never shown while the Tab list is open, so this Tab is not a completion's
+                                        if (
+                                            ghost !== "" &&
+                                            (e.key === "ArrowRight" || e.key === "Tab") &&
+                                            !e.shiftKey &&
+                                            !e.altKey &&
+                                            !e.ctrlKey &&
+                                            !e.metaKey &&
+                                            !e.nativeEvent.isComposing
+                                        ) {
+                                            const box = e.currentTarget;
+                                            if (
+                                                !box.readOnly &&
+                                                box.selectionStart === text.length &&
+                                                box.selectionEnd === text.length
+                                            ) {
+                                                e.preventDefault();
+                                                recalled.current = { at: null, shown: "" };
+                                                setTextAt(text + ghost, text.length + ghost.length);
+                                                return;
+                                            }
+                                        }
+                                        // the Tab list's keys (bash mode), the `/` menu's and the `@` picker's (↑↓, Enter and Tab to pick,
+                                        // Escape to close) come first; at most one of them has a list open (the `/` and `@` lists are shut
+                                        // while the text starts with `!`)
+                                        if (bash) {
+                                            bashList.onKeyDown(e);
+                                        }
+                                        if (!e.defaultPrevented) {
+                                            slash.onKeyDown(e);
+                                        }
+                                        if (!e.defaultPrevented) {
+                                            mention.onKeyDown(e);
+                                        }
+                                        if (e.defaultPrevented) {
+                                            return;
+                                        }
+                                        // a Tab the Tab list had nothing to do with stays in the box: in bash mode
+                                        // Tab is for completing, never for moving the focus out
+                                        if (
+                                            bash &&
+                                            e.key === "Tab" &&
+                                            !e.shiftKey &&
+                                            !e.altKey &&
+                                            !e.ctrlKey &&
+                                            !e.metaKey &&
+                                            !e.nativeEvent.isComposing
+                                        ) {
+                                            e.preventDefault();
+                                            return;
+                                        }
+                                        // Tab and Shift+Tab walk the suggested replies; with one picked, Enter takes it as a click
+                                        // does (asking first over typed text), Shift+Enter puts its text in the box to edit first (a
+                                        // chip with no text to edit leaves Shift+Enter a new line), and Esc lets go of it
+                                        if (
+                                            tabChips.length > 0 &&
+                                            !e.altKey &&
+                                            !e.ctrlKey &&
+                                            !e.metaKey &&
+                                            !e.nativeEvent.isComposing
+                                        ) {
+                                            if (e.key === "Tab") {
+                                                e.preventDefault();
+                                                setPicked(stepPick(tabChips, pickedText, e.shiftKey));
+                                                return;
+                                            }
+                                            if (picked != null && e.key === "Enter" && !e.shiftKey) {
+                                                e.preventDefault();
+                                                setPicked(null);
+                                                activateChip(picked);
+                                                return;
+                                            }
+                                            if (picked != null && pickedEditable && e.key === "Enter" && e.shiftKey) {
+                                                e.preventDefault();
+                                                setPicked(null);
+                                                editChip(picked);
+                                                return;
+                                            }
+                                            if (picked != null && e.key === "Escape") {
+                                                e.preventDefault();
+                                                setPicked(null);
+                                                return;
+                                            }
+                                        }
+                                        // Ctrl+U (Cmd+U on a Mac, where Ctrl+U is the text field's own delete-to-line-start) is Add files; an
+                                        // open `/` or `@` list leaves it alone. Asleep it attaches too, though the + menu is not drawn.
+                                        const addFilesKey =
+                                            e.key.toLowerCase() === "u" &&
+                                            !e.altKey &&
+                                            !e.shiftKey &&
+                                            (isMacOS() ? e.metaKey && !e.ctrlKey : e.ctrlKey && !e.metaKey);
+                                        if (addFilesKey) {
+                                            if (!waking && !slash.shown && !mention.shown) {
+                                                e.preventDefault();
+                                                attach();
+                                            }
+                                            return;
+                                        }
+                                        // the chat's permission card, while it can answer its prompt: from an empty box ↑ and ↓ move its
+                                        // highlight and Enter sends the highlighted choice, as the prompt's own list does in the terminal
+                                        const cardKey = permissionBoxKey(
+                                            {
+                                                key: e.key,
+                                                shiftKey: e.shiftKey,
+                                                altKey: e.altKey,
+                                                ctrlKey: e.ctrlKey,
+                                                metaKey: e.metaKey,
+                                                isComposing: e.nativeEvent.isComposing,
+                                            },
+                                            text === ""
+                                        );
+                                        if (
+                                            cardKey != null &&
+                                            permissionOref != null &&
+                                            !e.currentTarget.readOnly &&
+                                            permissionCardKey(permissionOref, cardKey)
+                                        ) {
+                                            e.preventDefault();
+                                            return;
+                                        }
+                                        if (recallKey(e)) {
+                                            e.preventDefault();
+                                            return;
+                                        }
+                                        if (
+                                            onSendNow != null &&
+                                            text.trim() === "" &&
+                                            !e.nativeEvent.isComposing &&
+                                            isSendNowKey(e, isMacOS())
+                                        ) {
+                                            e.preventDefault();
+                                            onSendNow();
+                                            return;
+                                        }
+                                        if (e.key === "Enter" && !e.shiftKey) {
+                                            // Enter that commits an IME composition (Telex, Pinyin…) is not a send
+                                            if (e.nativeEvent.isComposing) {
+                                                return;
+                                            }
+                                            e.preventDefault();
+                                            submit();
+                                        } else if (e.key === "Escape") {
+                                            // while Claude works Esc stops the turn, as in Claude Code's box; else the box lets go of
+                                            // the keys
+                                            e.preventDefault();
+                                            if (!interrupt()) {
+                                                e.currentTarget.blur();
+                                            }
+                                        }
+                                    }}
+                                />
+                            </div>
+                            {/* Stop and Send at the row's right (grown, the bottom row's right): Stop where Send is while the agent
+                    works; Send folds out beside it with nothing to send */}
+                            <div className="ml-auto flex flex-none items-center gap-1.5">
+                                <AnimatePresence initial={false}>
+                                    {showStop ? (
+                                        <Fold key="stop">
+                                            <button
+                                                type="button"
+                                                data-chat-stop
+                                                aria-label="Stop (Esc)"
+                                                title="Stop the agent (sends Esc)"
+                                                // the Esc key's path, not a bare Esc: a turn with no answer yet is rewound,
+                                                // and Claude Code puts its message back in its own box, out of sight, where
+                                                // the next send was typed onto it ("làm đibáo council đi", 2026-11-16).
+                                                // interrupt() takes it back into this box; when it does nothing (the agent
+                                                // is not working), the plain Esc stops it as before
+                                                onClick={() => {
+                                                    if (!interrupt()) {
+                                                        stop();
+                                                    }
+                                                }}
+                                                className="flex size-[28px] flex-none cursor-pointer items-center justify-center rounded-full bg-primary hover:opacity-90 focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-surface-raised"
+                                            >
+                                                <span aria-hidden className="size-[9px] rounded-[2px] bg-background" />
+                                            </button>
+                                        </Fold>
+                                    ) : null}
+                                </AnimatePresence>
+                                <AnimatePresence initial={false}>
+                                    {showSend ? (
+                                        <Fold key="send">
+                                            {/* The return arrow, bright once there is something to send. Asleep (and while a wake
+                                    is in flight) the button widens to its word on the accent, the arrow and the word
+                                    crossfading: Waking… is the one sign that the message was taken. The widths are the
+                                    board's (CSS cannot transition to auto). */}
+                                            <button
+                                                type="button"
+                                                data-chat-send
+                                                title={
+                                                    blocker ??
+                                                    (hold != null
+                                                        ? held
+                                                            ? "Queued: sends once you answer"
+                                                            : `${hold}: Send queues your message until then`
+                                                        : bash
+                                                          ? "Run in the agent's shell"
+                                                          : wakeOnly
+                                                            ? "Wake: relaunch the agent where its conversation left off"
+                                                            : "Send")
+                                                }
+                                                aria-label={hold != null ? "Queue" : showWord ? undefined : "Send"}
+                                                onClick={submit}
+                                                disabled={!(ready || wakeOnly) || held}
+                                                style={turnTransition}
+                                                className={cn(
+                                                    "relative flex h-[28px] flex-none cursor-pointer items-center justify-center overflow-hidden rounded-full transition-[width,background-color,color] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-surface-raised disabled:cursor-default motion-reduce:transition-none",
+                                                    showWord
+                                                        ? "bg-accent text-background shadow-inset-highlight hover:opacity-90 disabled:opacity-40 disabled:hover:opacity-40"
+                                                        : "bg-transparent text-primary hover:bg-surface-hover disabled:text-ink-faint disabled:hover:bg-transparent",
+                                                    waking ? "w-[84px]" : asleep ? "w-[64px]" : "w-[28px]"
+                                                )}
+                                            >
+                                                <span
+                                                    aria-hidden
+                                                    style={turnTransition}
+                                                    className={cn(
+                                                        "absolute flex transition-opacity motion-reduce:transition-none",
+                                                        showWord ? "opacity-0" : "opacity-100"
+                                                    )}
+                                                >
+                                                    <CornerDownLeft size={16} strokeWidth={2} aria-hidden />
+                                                </span>
+                                                <span
+                                                    aria-hidden={!showWord}
+                                                    style={turnTransition}
+                                                    className={cn(
+                                                        "whitespace-nowrap text-[12px] font-semibold transition-opacity motion-reduce:transition-none",
+                                                        showWord ? "opacity-100" : "opacity-0"
+                                                    )}
+                                                >
+                                                    {sendWord.current}
+                                                </span>
+                                            </button>
+                                        </Fold>
+                                    ) : null}
+                                </AnimatePresence>
+                            </div>
+                        </div>
+                        {slash.list}
+                        {bashList.list}
+                        {mention.list}
                     </div>
-                </MotionConfig>
-            </div>
-            {/* the drop zone: the box's content fades out under it while files are dragged over (the content stays
+                    {/* the drop zone: the box's content fades out under it while files are dragged over (the content stays
                 mounted, so the text and the attachments are as they were when the drag ends) */}
-            <div
-                data-chat-drop=""
-                aria-hidden={dragging ? undefined : true}
-                style={turnTransition}
-                className={cn(
-                    "pointer-events-none absolute inset-2 flex flex-col items-center justify-center gap-1 rounded-[16px] border-[1.5px] border-dashed border-edge-strong bg-accent/6 px-4 text-center opacity-0 transition-opacity motion-reduce:transition-none",
-                    dragging && "opacity-100"
-                )}
-            >
-                <span className="text-[14px] font-medium text-primary">Drop files to attach</span>
-                <span className="text-[12px] text-muted">Images, text files, folders · they go in as @ mentions</span>
-            </div>
-        </motion.div>
+                    <div
+                        data-chat-drop=""
+                        aria-hidden={dragging ? undefined : true}
+                        style={turnTransition}
+                        className={cn(
+                            "pointer-events-none absolute inset-2 flex flex-col items-center justify-center gap-1 rounded-[16px] border-[1.5px] border-dashed border-edge-strong bg-accent/6 px-4 text-center opacity-0 transition-opacity motion-reduce:transition-none",
+                            dragging && "opacity-100"
+                        )}
+                    >
+                        <span className="text-[14px] font-medium text-primary">Drop files to attach</span>
+                        <span className="text-[12px] text-muted">
+                            Images, text files, folders · they go in as @ mentions
+                        </span>
+                    </div>
+                </motion.div>
+                {/* Under the box, right-aligned plain text: the model and effort, the permission mode, the context ring
+                    (chatfooter.tsx), each opening its menu; the asleep words at the line's left */}
+                <div data-chat-under="" className="flex min-h-[22px] min-w-0 items-center gap-3.5 pl-2.5 pr-2 pt-1.5">
+                    <AnimatePresence initial={false}>
+                        {/* one part from the Sleep to the wake, so going to sleep and asleep swap words in place */}
+                        {asleep || dozing ? (
+                            <Fold key="asleep">
+                                <div
+                                    data-chat-asleep={asleep ? "" : undefined}
+                                    data-chat-falling-asleep={dozing && !asleep ? fallingAsleep : undefined}
+                                    role="status"
+                                    className="flex h-[22px] items-center gap-1.5 whitespace-nowrap text-[12px] text-muted"
+                                >
+                                    <Moon
+                                        size={13}
+                                        strokeWidth={1.8}
+                                        aria-hidden
+                                        className={cn(!asleep && "pulse-dot")}
+                                    />
+                                    {asleep ? sleepingLine("Asleep", agent.sleeping!) : fallAsleepLabel(fallingAsleep!)}
+                                </div>
+                            </Fold>
+                        ) : null}
+                    </AnimatePresence>
+                    <ChatFooter agent={agent} />
+                </div>
+            </MotionConfig>
+        </div>
     );
 }
 
@@ -1522,11 +1603,11 @@ function useChipRow<T extends { kind: ChipRowKind }>(target: T): T {
 }
 
 // The running agent's actions: what Chat already offers (no new commands), as chips with their names, each drawn only
-// when given (it has something to show). They fade in on the micro ease; the box's own height spring makes room for them.
+// when given (it has something to show). They fade in on the micro ease, above the box.
 function ActionChips({ onShowDiff, onOpenTerminal }: { onShowDiff?: () => void; onOpenTerminal?: () => void }) {
     const part = usePartMotion(microFade);
     return (
-        <motion.div {...part} className="flex flex-wrap items-center gap-1.5">
+        <motion.div {...part} className="mb-2 flex flex-wrap items-center gap-1.5">
             <AnimatePresence initial={false}>
                 {onShowDiff != null ? (
                     <motion.div key="diff" {...part}>
@@ -1600,12 +1681,13 @@ function SuggestChips({
 }) {
     const part = usePartMotion(microFade);
     return (
-        // A box 560px wide or more (the Chat column) wraps the chips that do not fit onto a second line, so each shows
-        // whole up to its 340px; a narrower one (a float window, a cell of a split) keeps them on one line, where they
-        // shrink and a long one ends in …. A cut chip's whole text is in its tooltip and, once Tab picks it, in the
-        // box's line (pickedHint). The @container sits on the outer div: the row it queries is its own width.
-        <motion.div {...part} data-chat-suggest="" className="@container min-w-0">
-            <div className="flex min-w-0 flex-nowrap items-center gap-1.5 @min-[560px]:flex-wrap">
+        // A row wider than 600px (the Chat column) wraps the chips that do not fit onto a second line, so each shows
+        // whole up to its 340px; a narrower one (a float window's box of about 560px, a cell of a split) keeps them on
+        // one line, where they shrink and a long one ends in …. The row sits over the box and is as wide as it. A cut
+        // chip's whole text is in its tooltip and, once Tab picks it, in the box's line (pickedHint). The @container
+        // sits on the outer div: the row it queries is its own width.
+        <motion.div {...part} data-chat-suggest="" className="@container mb-2 min-w-0">
+            <div className="flex min-w-0 flex-nowrap items-center gap-1.5 @min-[600px]:flex-wrap">
                 <AnimatePresence initial={false}>
                     {chips.map((c) => {
                         const ticks = c.kind === "done" && c.chunk != null;
