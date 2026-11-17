@@ -1075,7 +1075,7 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
     };
 
     // A tool takes the centre, as an agent launch does. The folder is the project's (the tool's own "opens in" aside, see
-    // toolFolder); Home is no registered project, so it goes by its name and openTool resolves the home folder itself.
+    // toolFolder); Home is no registered project, so openTool is told so (`home`) and resolves the home folder itself.
     const openPickedTool = async (t: ToolStatus, p: { name: string }) => {
         if (!beginLauncherLaunch()) {
             return;
@@ -1083,7 +1083,7 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
         setError(null);
         try {
             const res = await openTool(model, t, {
-                project: toolAtHome ? HOME_NAME : p.name,
+                ...(toolAtHome ? { home: true } : { project: p.name }),
                 ...(atHome ? { folder: noFolder } : {}),
                 place: "centre",
             });

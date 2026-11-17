@@ -317,7 +317,7 @@ import { unreadLabel } from "./unreadagents";
 import { attentionAtom, splitAttention } from "./attentionstore";
 import { unreadAgentsAtom } from "./unreadagentsstore";
 import { showServiceMenu } from "./servicemenu";
-import { canRestart, serviceRowWords, treeServiceInput } from "./servicesmodel";
+import { canRestart, serviceHeaderLine, serviceRowWords, serviceTreeWords, treeServiceInput } from "./servicesmodel";
 import { ensureServicesFeed, openService, restartService, servicesAtom } from "./servicesstore";
 import { showTerminalMenu, splitCellMenuItems, ToolGlyph } from "./terminalsrail";
 import { PanelWeb, TreeSpider } from "./themedecorview";
@@ -3216,6 +3216,9 @@ function ServiceRow({
         return null;
     }
     const w = serviceRowWords(service, now);
+    // the narrow row's words; the whole sentence is the row's title
+    const words = serviceTreeWords(service, now);
+    const line = serviceHeaderLine(service, now);
     const tone = SERVICE_TONE[w.tone];
     const select = () => {
         if (service.tabid) {
@@ -3234,6 +3237,7 @@ function ServiceRow({
         <div
             data-service-row={service.id}
             data-service-state={service.state}
+            title={`${service.name} · ${line}`}
             onClick={select}
             onContextMenu={(e) => showServiceMenu(model, service, e)}
             className={cn(
@@ -3248,23 +3252,21 @@ function ServiceRow({
             </DigitHint>
             <span
                 data-service-name
-                title={service.name}
                 className={cn(
                     "truncate text-[13px]",
                     // the name keeps its width and the words give way; a row with no words lets the name fill it
-                    w.words !== "" ? "max-w-[60%] flex-none" : "min-w-0 flex-1",
+                    words !== "" ? "max-w-[60%] flex-none" : "min-w-0 flex-1",
                     selected ? "text-primary" : "text-secondary"
                 )}
             >
                 {service.name}
             </span>
-            {w.words !== "" ? (
+            {words !== "" ? (
                 <span
                     data-service-words
-                    title={w.words}
                     className={cn("min-w-0 flex-1 truncate whitespace-nowrap text-[11px]", tone.text)}
                 >
-                    {w.words}
+                    {words}
                 </span>
             ) : null}
             {w.port != null ? (

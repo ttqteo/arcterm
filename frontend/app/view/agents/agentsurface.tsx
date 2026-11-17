@@ -108,6 +108,7 @@ import { reportServicesSeen, serviceByTabAtom, servicesAtom } from "./servicesst
 import { SessionPane } from "./sessionpane";
 import {
     dockedTerminalAtom,
+    moveToDock,
     terminalDockDragAtom,
     terminalDockFoldedAtom,
     terminalDockHeightAtom,
@@ -855,6 +856,11 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
                                                     agent={a}
                                                     focused={cell.focused}
                                                     onRemove={() => onRemoveCell(a.id)}
+                                                    onMoveToPanel={
+                                                        a.kind === "terminal" && agents.some((x) => x.blockId != null)
+                                                            ? () => moveToDock(model, a.id)
+                                                            : undefined
+                                                    }
                                                 />
                                             ) : null}
                                             {/* one wrapper around every pane, so the folded dock can hide its pane (still

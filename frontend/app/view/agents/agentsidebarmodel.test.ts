@@ -725,6 +725,21 @@ describe("projectTree", () => {
         expect(shape(rows)).toEqual(["group:waveterm:1a:0t", "a:a", "group:ops:0a:2t", "t:t1", "t:t2"]);
     });
 
+    it("files an agent with no project in Home with the terminals that have none, one folder, last", () => {
+        const rows = build([agent("x", undefined, ""), agent("a")], [term("h", null), term("t1", "ops")]);
+        expect(shape(rows)).toEqual([
+            "group:waveterm:1a:0t",
+            "a:a",
+            "group:ops:0a:1t",
+            "t:t1",
+            `group:${HOME_PROJECT}:1a:1t`,
+            "a:x",
+            `divider:${HOME_PROJECT}`,
+            "t:h",
+        ]);
+        expect(rows.some((r) => r.project === UNGROUPED_PROJECT)).toBe(false);
+    });
+
     it("files a terminal with no project under Home, last", () => {
         const rows = build([agent("a")], [term("h", null), term("t1", "ops"), term("t2")]);
         expect(shape(rows)).toEqual([
@@ -2489,6 +2504,17 @@ describe("projectClose: what Close project closes", () => {
         lineage,
         serviceTabs: new Set(["svc"]),
     };
+
+    it("takes Home's agents with no project along with its terminals with none", () => {
+        const got = projectClose({
+            ...input,
+            project: HOME_PROJECT,
+            agents: [agent("loose", undefined, ""), agent("a1", undefined, "arc")],
+            terminals: [term("h", ""), term("t1")],
+        });
+        expect(got.agents.map((a) => a.id)).toEqual(["loose"]);
+        expect(got.terminals.map((t) => t.id)).toEqual(["h"]);
+    });
 
     it("takes the folder's agents with its run's workers and stage sessions, and its terminals but a service's", () => {
         const close = projectClose(input);

@@ -34,8 +34,17 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - Leaving the Transcript tab after reading a long session back to its start gives that memory back: arcterm keeps
   only the session's recent part for when you come back, as it does after a first read.
 
+### Changed
+
+- Agents with no project now sit in No folder in the Agent tree, with the terminals that have none, rather than in a
+  separate "ungrouped" folder.
+- An app's row in the Agent tree says its state in a word or two (external, port taken, no page, retry in 8s), so it
+  is no longer cut off. Hover the row for the full sentence.
+- A terminal in a split shows a terminal mark in its bar, and Move to the panel, as it does when it is the one in focus.
+
 ### Fixed
 
+- Picking No folder for a tool in the New dialog opens it in your home folder even when you have a project named Home.
 - A folded project folder that holds only apps says how many it holds, rather than looking empty.
 - Changing where a built-in tool opens (Setup → Tools) no longer fixes its command in `tools.json`, so a later
   arcterm that changes the tool's command still reaches you.

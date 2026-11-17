@@ -245,11 +245,13 @@ export type OpenToolResult = { ok: true; tabId: string } | { ok: false; reason: 
 // folder toolCwd picks, stamped with the project toolProjectName picks. "centre" takes the Agent surface's focus, as an
 // agent launch does; "panel" keeps the agent focused and docks the terminal under it. A tool whose command was not
 // found is not opened (openToolRefusal): the result carries why, for the caller to show, and nothing is spawned.
-// `folder` stands in for the project's root when it has none of its own: the New dialog's No folder.
+// `folder` stands in for the project's root when it has none of its own: the New dialog's No folder. `home` opens it in
+// Home (No folder), whatever is focused: Home is no registered project, so it is never looked up by its name, which a
+// project of the user's could also have.
 export async function openTool(
     model: AgentsViewModel,
     tool: ToolStatus,
-    opts: { project?: string; folder?: string; place: OpenToolPlace }
+    opts: { project?: string; home?: boolean; folder?: string; place: OpenToolPlace }
 ): Promise<OpenToolResult> {
     const reason = openToolRefusal(tool);
     if (reason != null) {
@@ -258,7 +260,7 @@ export async function openTool(
     if (isAppTool(tool)) {
         return openApp(model, tool);
     }
-    const ctx = toolContext(model, opts.project);
+    const ctx: ToolContext = opts.home ? {} : toolContext(model, opts.project);
     const tabId = await launchAgent(model, {
         runtime: "terminal",
         startupCommand: toolCommandLine(tool),

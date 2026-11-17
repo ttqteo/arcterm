@@ -10,6 +10,7 @@ import {
     serviceHeaderLine,
     serviceMenuChoices,
     serviceRowWords,
+    serviceTreeWords,
     treeServiceInput,
     upFor,
     withAutostart,
@@ -395,5 +396,21 @@ describe("withAutostart", () => {
         const given = { ...entry, autostart: true };
         withAutostart(given, false);
         expect(given.autostart).toBe(true);
+    });
+});
+
+describe("serviceTreeWords", () => {
+    it("says each state in a word or two that fits the narrow tree row", () => {
+        expect(serviceTreeWords(svc("elsewhere", { port: 8386 }), NOW)).toBe("external");
+        expect(serviceTreeWords(svc("retrying", { retryatms: NOW + 8_000 }), NOW)).toBe("retry in 8s");
+        expect(serviceTreeWords(svc("crashed", { exitcode: 1 }), NOW)).toBe("crashed");
+        expect(serviceTreeWords(svc("porttaken", { port: 8386, holder: "python3" }), NOW)).toBe("port taken");
+        expect(serviceTreeWords(svc("nopage"), NOW)).toBe("no page");
+    });
+    it("keeps the row words that are already short", () => {
+        expect(serviceTreeWords(svc("starting"), NOW)).toBe("starting…");
+        expect(serviceTreeWords(svc("sleeping"), NOW)).toBe("sleeping");
+        expect(serviceTreeWords(svc("sleeping", { off: true }), NOW)).toBe("stopped");
+        expect(serviceTreeWords(svc("running", { port: 8386 }), NOW)).toBe("");
     });
 });

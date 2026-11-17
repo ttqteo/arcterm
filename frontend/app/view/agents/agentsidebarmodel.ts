@@ -476,7 +476,8 @@ export function projectClose(input: {
     const folderOf = (a: AgentVM): string => {
         const role = lineage.roles[a.id];
         const run = role?.kind === "worker" || role?.kind === "stage" ? lineage.runs[role.leadRunId] : undefined;
-        return (run != null ? run.project : projectOf(a)) || UNGROUPED_PROJECT;
+        // as projectTree files them: an agent with no project is in No folder (Home), with the terminals that have none
+        return (run != null ? run.project : projectOf(a)) || HOME_PROJECT;
     };
     const agents = input.agents.filter((a) => folderOf(a) === project);
     const terminals = input.terminals.filter(
@@ -820,8 +821,11 @@ export function projectTree(input: {
         const project = termProject(t);
         byProject.set(project, [...(byProject.get(project) ?? []), t]);
     }
+    // an agent with no project shares No folder (Home) with the terminals that have none, as the grid files it
+    // (gridstore's cellProject): the tree builds it an "ungrouped" folder of its own, renamed here
     const bodies = new Map<string, { group: Extract<AgentTreeRow, { kind: "group" }>; body: AgentBodyRow[] }>();
-    for (const r of tree) {
+    for (const t of tree) {
+        const r = t.project === UNGROUPED_PROJECT ? ({ ...t, project: HOME_PROJECT } as AgentTreeRow) : t;
         if (r.kind === "group") {
             bodies.set(r.project, { group: r, body: [] });
         } else {
@@ -829,7 +833,7 @@ export function projectTree(input: {
         }
     }
     // the agents' projects in the tree's order, then the others in the order terminals, queued plans, services and
-    // councils came, Home last
+    // councils came, Home last whether it holds agents or not
     const councilFolders = [...(input.councils ?? [])].flatMap(([p, list]) =>
         list.length > 0 && hasCouncils(p) ? [p] : []
     );
@@ -848,7 +852,11 @@ export function projectTree(input: {
         .filter((p) => !seen.has(p))
         .sort((a, b) => Number(a === HOME_PROJECT) - Number(b === HOME_PROJECT));
     const out: ProjectTreeRow[] = [];
-    for (const project of [...order, ...others]) {
+    const folders = [...order, ...others];
+    for (const project of [
+        ...folders.filter((p) => p !== HOME_PROJECT),
+        ...folders.filter((p) => p === HOME_PROJECT),
+    ]) {
         const folder = bodies.get(project);
         const list = byProject.get(project) ?? [];
         const open = !collapsed.has(project);
