@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import {
     bangSkip,
     fromShown,
+    isAtom,
     locate,
     mentionText,
     plainOffset,
@@ -16,7 +17,8 @@ import {
 
 const text = (t: string): Segment => ({ kind: "text", text: t });
 const pill = (path: string): Segment => ({ kind: "pill", path });
-const join = (segments: Segment[]) => segments.map((s) => (s.kind === "text" ? s.text : mentionText(s.path))).join("");
+const join = (segments: Segment[]) =>
+    segments.map((s) => (s.kind === "text" ? s.text : s.kind === "ref" ? s.raw : mentionText(s.path))).join("");
 
 describe("mentionText", () => {
     it("writes @path", () => {
@@ -77,9 +79,62 @@ describe("segmentsOf", () => {
             'two @"x y/z.md" and @D:\\p\\q.pdf, then',
             'quoted plain @"src/a.ts" and @src/b.ts',
             "ask @alice about @README.md\nand @lib/",
+            "có gồm agent:7cd99627 không?",
+            "hỏi @agent:7cd99627, rồi run:071a8e3b\nvà (council:0c28ab12) @src/a.ts",
         ]) {
             expect(join(segmentsOf(t))).toBe(t);
         }
+    });
+});
+
+describe("segmentsOf and references", () => {
+    it("makes a ref segment for a finished reference, keeping it as written", () => {
+        expect(segmentsOf("có gồm agent:7cd99627 không?")).toEqual([
+            text("có gồm "),
+            { kind: "ref", ref: "agent", id: "7cd99627", raw: "agent:7cd99627" },
+            text(" không?"),
+        ]);
+    });
+    it("reads tab: as an agent, lowercases the id and keeps the `@` and the case in raw", () => {
+        expect(segmentsOf("@Tab:7CD99627 ok")).toEqual([
+            { kind: "ref", ref: "agent", id: "7cd99627", raw: "@Tab:7CD99627" },
+            text(" ok"),
+        ]);
+    });
+    it("keeps a reference still being typed as text", () => {
+        expect(segmentsOf("agent:7cd99627", 14)).toEqual([text("agent:7cd99627")]);
+        expect(segmentsOf("agent:7cd99627 x", 5)).toEqual([text("agent:7cd99627 x")]);
+        expect(segmentsOf("agent:7cd99627 ", 15)).toEqual([
+            { kind: "ref", ref: "agent", id: "7cd99627", raw: "agent:7cd99627" },
+            text(" "),
+        ]);
+    });
+    it("makes no ref segment with pills off", () => {
+        expect(segmentsOf("agent:7cd99627 x", undefined, { pills: false })).toEqual([text("agent:7cd99627 x")]);
+    });
+    it("puts files and references side by side in the order they stand", () => {
+        expect(segmentsOf("a @src/a.ts run:071a8e3b @b/c.ts council:0c28ab12")).toEqual([
+            text("a "),
+            pill("src/a.ts"),
+            text(" "),
+            { kind: "ref", ref: "run", id: "071a8e3b", raw: "run:071a8e3b" },
+            text(" "),
+            pill("b/c.ts"),
+            text(" "),
+            { kind: "ref", ref: "council", id: "0c28ab12", raw: "council:0c28ab12" },
+        ]);
+    });
+    it("leaves a reference inside a file mention to the file", () => {
+        expect(segmentsOf('see @"x agent:7cd99627 y.md" now')).toEqual([
+            text("see "),
+            pill("x agent:7cd99627 y.md"),
+            text(" now"),
+        ]);
+    });
+    it("makes nothing of a word that only looks like one", () => {
+        expect(segmentsOf("agent:7cd and xagent:7cd99627 and session:7cd99627")).toEqual([
+            text("agent:7cd and xagent:7cd99627 and session:7cd99627"),
+        ]);
     });
 });
 
@@ -88,6 +143,18 @@ describe("segmentLength", () => {
         expect(segmentLength(text("abc"))).toBe(3);
         expect(segmentLength(pill("src/a.ts"))).toBe(9);
         expect(segmentLength(pill("a b/c.ts"))).toBe(11);
+    });
+    it("is the raw text of a ref segment", () => {
+        expect(segmentLength({ kind: "ref", ref: "agent", id: "7cd99627", raw: "agent:7cd99627" })).toBe(14);
+        expect(segmentLength({ kind: "ref", ref: "run", id: "071a8e3b", raw: "@run:071a8e3b" })).toBe(13);
+    });
+});
+
+describe("isAtom", () => {
+    it("is true for what the caret steps over whole: a pill and a ref, not text", () => {
+        expect(isAtom(pill("a/b.ts"))).toBe(true);
+        expect(isAtom({ kind: "ref", ref: "agent", id: "7cd99627", raw: "agent:7cd99627" })).toBe(true);
+        expect(isAtom(text("a"))).toBe(false);
     });
 });
 
@@ -146,6 +213,33 @@ describe("plainOffset and locate", () => {
         expect(locate(segments, 999)).toEqual({ index: 4, offset: 4 });
         expect(locate([], 0)).toEqual({ index: 0, offset: 0 });
         expect(locate([], 7)).toEqual({ index: 0, offset: 0 });
+    });
+
+    describe("with a reference", () => {
+        const refText = "a @run:071a8e3b b";
+        const refs = segmentsOf(refText);
+        const refEnd = 2 + "@run:071a8e3b".length;
+
+        it("counts a ref segment as its raw text", () => {
+            expect(refs).toHaveLength(3);
+            expect(segmentLength(refs[1])).toBe("@run:071a8e3b".length);
+            expect(plainOffset(refs, 1, 0)).toBe(2);
+            expect(plainOffset(refs, 1, 1)).toBe(refEnd);
+            expect(plainOffset(refs, 2, 2)).toBe(refText.length);
+            expect(locate(refs, 5)).toEqual({ index: 1, offset: 1 });
+        });
+        it("puts a boundary on the earlier segment, a ref being stepped over whole like a pill", () => {
+            expect(locate(refs, 2)).toEqual({ index: 0, offset: 2 });
+            expect(locate(refs, refEnd)).toEqual({ index: 1, offset: 1 });
+            expect(locate(segmentsOf("run:071a8e3b"), 0)).toEqual({ index: 0, offset: 0 });
+            expect(locate(segmentsOf("x run:071a8e3b"), 99)).toEqual({ index: 1, offset: 1 });
+        });
+        it("round-trips every offset, snapping one inside the reference to its end", () => {
+            for (let p = 0; p <= refText.length; p++) {
+                const at = locate(refs, p);
+                expect(plainOffset(refs, at.index, at.offset)).toBe(p > 2 && p < refEnd ? refEnd : p);
+            }
+        });
     });
 });
 

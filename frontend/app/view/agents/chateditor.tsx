@@ -311,6 +311,9 @@ function $rebuild(segments: Segment[], caret: number | null): void {
     for (const seg of buildLine(segments)) {
         if (seg.kind === "pill") {
             paragraph.append($createFileMentionNode(seg.path));
+        } else if (seg.kind === "ref") {
+            // text for now: the box draws a reference as a badge once it has a node for it
+            paragraph.append($createTextNode(seg.raw));
         } else if (isBreak(seg)) {
             paragraph.append($createLineBreakNode());
         } else {
