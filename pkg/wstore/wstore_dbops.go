@@ -235,6 +235,9 @@ func DBDelete(ctx context.Context, otype string, id string) error {
 	if err != nil {
 		return err
 	}
+	if otype == waveobj.OType_Run {
+		runGen.Add(1)
+	}
 	go func() {
 		defer func() {
 			panichandler.PanicHandler("DBDelete:filestore.DeleteZone", recover())
@@ -260,7 +263,7 @@ func DBUpdate(ctx context.Context, val waveobj.WaveObj) error {
 	if err != nil {
 		return err
 	}
-	return WithTx(ctx, func(tx *TxWrap) error {
+	err = WithTx(ctx, func(tx *TxWrap) error {
 		table := waveObjTableName(val)
 		query := fmt.Sprintf("UPDATE %s SET data = ?, version = version+1 WHERE oid = ? RETURNING version", table)
 		newVersion := tx.GetInt(query, jsonData, oid)
@@ -268,6 +271,10 @@ func DBUpdate(ctx context.Context, val waveobj.WaveObj) error {
 		waveobj.ContextAddUpdate(ctx, waveobj.WaveObjUpdate{UpdateType: waveobj.UpdateType_Update, OType: val.GetOType(), OID: oid, Obj: val})
 		return nil
 	})
+	if err == nil && val.GetOType() == waveobj.OType_Run {
+		runGen.Add(1)
+	}
+	return err
 }
 
 func DBUpdateFn[T waveobj.WaveObj](ctx context.Context, id string, updateFn func(T)) error {
@@ -304,7 +311,7 @@ func DBInsert(ctx context.Context, val waveobj.WaveObj) error {
 	if err != nil {
 		return err
 	}
-	return WithTx(ctx, func(tx *TxWrap) error {
+	err = WithTx(ctx, func(tx *TxWrap) error {
 		table := waveObjTableName(val)
 		waveobj.SetVersion(val, 1)
 		query := fmt.Sprintf("INSERT INTO %s (oid, version, data) VALUES (?, ?, ?)", table)
@@ -312,6 +319,10 @@ func DBInsert(ctx context.Context, val waveobj.WaveObj) error {
 		waveobj.ContextAddUpdate(ctx, waveobj.WaveObjUpdate{UpdateType: waveobj.UpdateType_Update, OType: val.GetOType(), OID: oid, Obj: val})
 		return nil
 	})
+	if err == nil && val.GetOType() == waveobj.OType_Run {
+		runGen.Add(1)
+	}
+	return err
 }
 
 // dbUpsertObjTx writes val as a row AND queues a waveobj:update for its oref (published on the enclosing

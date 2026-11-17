@@ -33,6 +33,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 - Chat sums up each stretch of tools in words ("Edited server.js, ran 2 commands +5 −2 · 38s"), says what a running
   tool is doing, and shows a command by its description; the command itself shows when you open the line.
+- A council's Setup draws each seat's letter on a disc in its colour, as the Discussion and the map do, instead of a
+  coloured ring.
 - The agent header keeps Split and Fullscreen in its More (⋯) menu, so it shows only More, Float and Close beside the
   view control; Settings → Appearance → Agent header puts any of Split, Float and Fullscreen back in the header.
 - A Claude agent's header and a split cell's bar switch between Chat and Terminal with one icon button instead of
@@ -45,6 +47,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- arcterm no longer stalls for seconds at a time with many agents open on a store holding thousands of past runs:
+  each agent's asks, effort updates and the resource meter made the backend re-read every run (tens of MB) to find
+  the agent's run, which held up messages you sent and terminal output.
 - A council's Summary no longer offers Summarize when every idea in it is still a held draft or was dropped, as the
   Discussion already did: the summary had nothing to work from and could only fail.
 - What a council settled now reaches the project's CLAUDE.md even when an agent or an editor has the file open at that

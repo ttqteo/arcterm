@@ -173,7 +173,7 @@ export default function (kit) {
                     ctx.workerRunId = randomUUID();
                     const dagId = randomUUID();
                     await seedObjects(h, [
-                        { otype: "dag", oid: dagId, version: 1, runid: ctx.leadRunId, status: "executing", tasks: [{ id: "T3", label: "Write servicesmodel.ts", runid: ctx.workerRunId, status: "running" }] },
+                        { otype: "dag", oid: dagId, version: 1, runid: ctx.leadRunId, status: "executing", tasks: [{ id: "T3", label: "Write servicesmodel.ts", runid: ctx.workerRunId, state: "running" }] },
                         { otype: "run", oid: ctx.workerRunId, version: 1, id: ctx.workerRunId, goal: "T3", mode: "quick", status: "running", dagoref: dagId, workspaceid: ctx.workspaceId, projectpath: ctx.cwd, phases: [], createdts: Date.now() },
                     ]);
                     ctx.roster = agentHeader(Date.now(), { leadRunId: ctx.leadRunId, workerRunId: ctx.workerRunId, effortId: effort.effortoid });
