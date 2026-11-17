@@ -22360,9 +22360,14 @@ const runRowStuckRead = (h) =>
         ${RUN_PAUSED_LIB}
         const row = () => treeRow(${JSON.stringify(RUN_ROW_STUCK_LEAD)});
         const progress = () => [...(row()?.querySelectorAll("span[title]") ?? [])].find((s) => text(s).startsWith("Working")) ?? null;
-        await until(() => text(progress()).includes("stuck"));
+        // the stage word and its count are sibling spans (agenttree.tsx RunSubline), so the count reads off the next one
+        const whole = (el) => {
+            const count = el?.nextElementSibling?.matches("[data-run-progress-count]") ? el.nextElementSibling : null;
+            return el ? text(el) + (count ? " " + text(count) : "") : "";
+        };
+        await until(() => whole(progress()).includes("stuck"));
         const el = progress();
-        return { row: row() != null, text: el ? text(el) : null, title: el ? el.getAttribute("title") : null };
+        return { row: row() != null, text: el ? whole(el) : null, title: el ? el.getAttribute("title") : null };
     })()`);
 
 const runRowStuck = {

@@ -16,13 +16,20 @@ vi.mock("@/app/store/wps", () => ({
     },
 }));
 
-import { getStartErrorAtom, resyncController, setupControllerStatusSubscription } from "./agentcontrollerstore";
+import {
+    fixtureBlockMissing,
+    getStartErrorAtom,
+    resyncController,
+    setFixtureRoster,
+    setupControllerStatusSubscription,
+} from "./agentcontrollerstore";
 import { mergePendingLaunches, withStartError, workingCount } from "./agentsviewmodel";
 
 const data = { tabid: "tab-1", blockid: "blk-1" };
 
 afterEach(() => {
     resync.mockReset();
+    setFixtureRoster(false);
     globalStore.set(getStartErrorAtom("blk-1"), undefined);
 });
 
@@ -70,6 +77,28 @@ describe("resyncController", () => {
             startError: "remote connections are not supported",
         });
         expect(workingCount([failed])).toBe(0);
+    });
+});
+
+describe("a dev fixture roster's made-up blocks", () => {
+    it("is a missing block only while a fixture roster stands in", () => {
+        expect(fixtureBlockMissing(true, "error getting block: not found")).toBe(true);
+        expect(fixtureBlockMissing(false, "error getting block: not found")).toBe(false);
+        expect(fixtureBlockMissing(true, "remote connections are not supported")).toBe(false);
+    });
+
+    it("a start that finds no block under a fixture roster records no failure and does not throw", async () => {
+        setFixtureRoster(true);
+        resync.mockRejectedValue(new Error("error getting block: not found"));
+        await expect(resyncController(data)).resolves.toBeUndefined();
+        expect(globalStore.get(getStartErrorAtom("blk-1"))).toBeUndefined();
+    });
+
+    it("any other refusal under a fixture roster is still the agent failing to start", async () => {
+        setFixtureRoster(true);
+        resync.mockRejectedValue(new Error("remote connections are not supported"));
+        await expect(resyncController(data)).rejects.toThrow("remote connections are not supported");
+        expect(globalStore.get(getStartErrorAtom("blk-1"))).toBe("remote connections are not supported");
     });
 });
 

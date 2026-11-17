@@ -51,6 +51,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   Working line no longer repeats the running call, and a finished stretch shows its time only from 10 s up. A finished
   turn that changed files ends in a card of those files with their +/− lines; click a file to open it in the Diff, or
   See all for every change.
+- The second line of each row in the Agent tree (a run's workers chip and progress, an agent's model and badges, a
+  conversation's details) starts at the row's left edge, under its icon, so a narrow tree shows more of it: a run's
+  "Working · 0/3" now reads whole from a 240 px tree instead of 300 px.
 - Opening a run from an agent (a brainstorm's run line in the Agent tree, its Open run, or Open run on Chat's run card)
   shows it in the Agent tree first, its lead selected and its lanes unfolded, instead of switching to Jarvis; a run with
   no agent left in the tree still opens in Jarvis.
