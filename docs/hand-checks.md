@@ -16,6 +16,11 @@ list (its number is not reused).
 Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) ·
 [part 4](hand-checks-4.md) · [part 3](hand-checks-3.md) · [part 2](hand-checks-2.md) (oldest).
 
+- [ ] (arcterm) **Closing Sidecar frees its two window icons; a reopen still draws the badge.** Windows only; the code is
+  unit-tested but was never run in an app. Open Task Manager → Details, add the "GDI objects" and "USER objects"
+  columns, then open and close Sidecar (Ctrl+P → Open Sidecar) ten times → arcterm's counts come back to the same
+  level after each close instead of growing by two per cycle, and after each reopen the title bar and the taskbar
+  button still draw the screen-badge icon. Commit: fix(sidecar) free the window's icons when Sidecar closes
 - [ ] (arcterm) **Sidecar P/Q across a real day: the question heuristic's misses, the ping from across the room, RAM of
   P with 12 agents after a day.** The `sidecar-orbit` and `sidecar-compact` scenarios read fixtures: they cannot judge
   a real day. With real agents for a day: (1) a finished agent whose last message asks something gets a Needs you row
