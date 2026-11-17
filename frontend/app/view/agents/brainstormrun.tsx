@@ -10,7 +10,6 @@ import { globalStore } from "@/app/store/jotaiStore";
 import { modalsModel } from "@/app/store/modalmodel";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
-import { openTarget } from "@/app/view/jarvis/openref";
 import { cn } from "@/util/util";
 import { useAtomValue } from "jotai";
 import { closeSessions } from "./agentactions";
@@ -52,6 +51,7 @@ import {
 } from "./brainstormui";
 import { runAgentsOf } from "./runlineage";
 import { runInfoAtom, useRunInfo } from "./runlineagestore";
+import { openRunFromAgent } from "./runopen";
 import { RunSection, useRunAsks } from "./runrailsections";
 import { SWAP_BTN, SWAP_PRIMARY_BTN } from "./swapbar";
 
@@ -125,7 +125,7 @@ export function RunStep({
                                 <button
                                     type="button"
                                     data-brainstorm-open-run
-                                    onClick={() => void openTarget(model, { kind: "run", runId })}
+                                    onClick={() => void openRunFromAgent(model, runId)}
                                     className={cn("flex-none", view.merged ? SWAP_BTN : SWAP_PRIMARY_BTN)}
                                 >
                                     Open run {shortRunId(runId)}
