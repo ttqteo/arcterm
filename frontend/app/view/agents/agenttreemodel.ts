@@ -691,6 +691,29 @@ export function pickedRowIds(sel: RowSelection, focusId: string | null | undefin
     return focusId != null && rows.includes(focusId) ? [focusId] : [];
 }
 
+/** Pure: what Close on a multi-selection takes, in the order the rows were picked: the picked agents that work for no
+ *  run (a run's lead or worker is closed from its run, as the Resource Manager's Close leaves them too), each with the
+ *  fields its label and confirm read. Empty with fewer than two rows picked: one row's own menu has Close agent. */
+export function closablePicked<
+    T extends { id: string; name: string; state: string; runId?: string; sleeping?: unknown },
+>(
+    sel: RowSelection,
+    agents: readonly T[],
+    rows: readonly string[]
+): { vm: T; name: string; state: T["state"]; sleeping: boolean }[] {
+    const ids = sel.ids.filter((x) => rows.includes(x));
+    if (ids.length < 2) {
+        return [];
+    }
+    const byId = new Map(agents.map((a) => [a.id, a]));
+    return ids.flatMap((id) => {
+        const vm = byId.get(id);
+        return vm == null || vm.runId != null
+            ? []
+            : [{ vm, name: vm.name, state: vm.state, sleeping: vm.sleeping != null }];
+    });
+}
+
 /** Pure: an agent as a council seat, or null when it cannot sit in one: Setup's seat rule (`seatableAgents`: only a
  *  claude or pi agent can be messaged), and the council needs the path of the project it works in (the registered one in
  *  `roots`, project name -> root, else where it runs). No council exists yet, so an agent with no path is refused. */

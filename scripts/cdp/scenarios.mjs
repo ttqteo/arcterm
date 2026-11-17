@@ -55964,6 +55964,144 @@ const jobqueueRunTag = {
     },
 };
 
+// --- tree-multi-close: Close on the Agent tree's multi-selection. agent-tree-rail's fixture roster (a run's lead, two
+// askers, a scribe here made working) with the lead focused; Ctrl/Cmd+click picks rows, and the right-click menu of a
+// picked row offers Close N agents for the picked ones that work for no run, the lead staying. The confirm is only
+// read and cancelled: the fixture's tabs are not real, so nothing is closed.
+const TMC_TREE = `document.querySelector("[data-agent-tree]")`;
+const tmcRow = (id) => `${TMC_TREE}?.querySelector('[data-agent-row="${id}"]')`;
+
+const treeMultiClose = {
+    name: "tree-multi-close",
+    surface: "agent",
+    async arrange(h) {
+        const cwd = mkdtempSync(join(tmpdir(), "verify-tree-close-"));
+        const ctx = {
+            cwd,
+            prevRail: await h.ev(`localStorage.getItem(${JSON.stringify(RAIL_VISIBLE_KEY)})`),
+            prevSections: await h.ev(`localStorage.getItem(${JSON.stringify(RAIL_SECTIONS_KEY)})`),
+            prevCollapsed: await h.ev(`localStorage.getItem(${JSON.stringify(TREE_COLLAPSED_KEY)})`),
+        };
+        try {
+            await arrangeFixtureRun(h, ctx, "tree-close", TREE_RAIL_LEAD, { transcriptPath: writeLeadTranscript(cwd) });
+            // the scribe at work, so the label and the confirm name a working agent
+            const roster = treeRailRoster(ctx.runId, Date.now(), TREE_RAIL_LEAD, { transcriptPath: join(cwd, "lead.jsonl") }).map(
+                (a) => (a.id === "fx-idle" ? { ...a, state: "working", activeMs: 30_000 } : a)
+            );
+            writeFileSync(TREE_RAIL_FIXTURE, JSON.stringify(roster, null, 2));
+            await focusFixtureLead(h, ctx, TREE_RAIL_LEAD);
+        } catch (e) {
+            ctx.arrangeError = String(e?.message ?? e);
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok, detail });
+        rec("0. the fixture roster is up with its run's lead focused", ctx.arrangeError == null && ctx.leadFocused === true, ctx.arrangeError ?? "");
+        if (ctx.arrangeError != null) {
+            return steps;
+        }
+        // a real click on the row's name line, with the modifier held for a pick
+        const clickRow = async (id, { modifiers = 0, button = "left" } = {}) => {
+            const at = await h.ev(caCenter(`${tmcRow(id)}?.firstElementChild`));
+            if (at == null) return false;
+            await h.cdp("Input.dispatchMouseEvent", { type: "mouseMoved", x: Math.round(at.x), y: Math.round(at.y), modifiers });
+            for (const type of ["mousePressed", "mouseReleased"]) {
+                await h.cdp("Input.dispatchMouseEvent", { type, x: Math.round(at.x), y: Math.round(at.y), button, clickCount: 1, modifiers });
+            }
+            return true;
+        };
+        const picked = () => h.ev(`[...${TMC_TREE}.querySelectorAll("[data-agent-picked]")].map((r) => r.getAttribute("data-agent-row")).sort()`);
+        const menuOpen = `!!document.querySelector("[data-context-menu]")`;
+        const escape = async () => {
+            await h.cdp("Input.dispatchKeyEvent", { type: "keyDown", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 });
+            await h.cdp("Input.dispatchKeyEvent", { type: "keyUp", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 });
+        };
+        await h.goto("agent");
+        try {
+            // 1. Ctrl/Cmd+click on two rows picks them beside the focused lead
+            const c1 = (await clickRow("fx-ask-wave", { modifiers: MOD_BIT })) && (await clickRow("fx-idle", { modifiers: MOD_BIT }));
+            const up1 = await polishWaitFor(h, `${TMC_TREE}?.querySelectorAll("[data-agent-picked]").length === 3`, 3000);
+            const picked1 = await picked();
+            rec(
+                "1. Ctrl/Cmd+click on wave asker and idle scribe picks them with the focused lead: three rows read picked",
+                c1 && up1 && JSON.stringify(picked1) === JSON.stringify(["fx-ask-wave", "fx-idle", TREE_RAIL_LEAD_ID].sort()),
+                { c1, up1, picked1 }
+            );
+
+            // 2. the right-click menu of a picked row offers Close for the two that work for no run, the lead staying
+            const c2 = await clickRow("fx-idle", { button: "right" });
+            const open2 = await polishWaitFor(h, menuOpen, 3000);
+            const menu2 = await h.ev(`(() => {
+                const items = [...document.querySelectorAll("[data-context-menu] [data-menu-item]")];
+                const close = items.find((el) => (el.getAttribute("data-menu-item") || "").startsWith("Close 2"));
+                return { items: items.map((el) => el.getAttribute("data-menu-item")), close: close?.textContent.trim() ?? null };
+            })()`);
+            await polishNap(300);
+            await h.shot("cdp-shots/tree-multi-close-menu.png");
+            rec(
+                "2. the picked row's menu offers `Close 2 agents · 1 working` (sublabel `1 in a run stays`) beside Discuss together",
+                c2 && open2 && menu2.items.includes("Close 2 agents · 1 working") && /1 in a run stays/.test(menu2.close ?? ""),
+                { c2, open2, menu2 }
+            );
+
+            // 3. with the scribe working it asks first, naming it; Escape cancels and the picks stay
+            const pressed3 = await h.ev(`(() => {
+                const el = [...document.querySelectorAll("[data-context-menu] [data-menu-item]")].find((x) => x.getAttribute("data-menu-item") === "Close 2 agents · 1 working");
+                el?.click();
+                return !!el;
+            })()`);
+            const asked3 = await polishWaitFor(h, `[...document.querySelectorAll("[role=dialog]")].some((d) => d.textContent.includes("Close agents"))`, 3000);
+            const dialog3 = await h.ev(`(() => {
+                const d = [...document.querySelectorAll("[role=dialog]")].find((x) => x.textContent.includes("Close agents"));
+                return d ? { text: d.textContent.replace(/\\s+/g, " ").trim(), buttons: [...d.querySelectorAll("button")].map((b) => b.textContent.trim()) } : null;
+            })()`);
+            await polishNap(300);
+            await h.shot("cdp-shots/tree-multi-close-confirm.png");
+            await escape();
+            const gone3 = await polishWaitFor(h, `![...document.querySelectorAll("[role=dialog]")].some((d) => d.textContent.includes("Close agents"))`, 3000);
+            const picked3 = await picked();
+            rec(
+                "3. Close asks first: the dialog names idle scribe as working and its button reads `Close 2 agents · 1 working`; Escape cancels with the three rows still picked",
+                pressed3 &&
+                    asked3 &&
+                    /idle scribe is working/.test(dialog3?.text ?? "") &&
+                    (dialog3?.buttons ?? []).some((b) => b.startsWith("Close 2 agents · 1 working")) &&
+                    gone3 &&
+                    picked3.length === 3,
+                { pressed3, asked3, dialog3, gone3, picked3 }
+            );
+
+            // 4. a row's menu with no multi-selection has no Close N (one row's own menu has Close agent)
+            await clickRow("fx-ask-siem");
+            await polishWaitFor(h, `${TMC_TREE}?.querySelectorAll("[data-agent-picked]").length === 0`, 3000);
+            const c4 = await clickRow("fx-ask-siem", { button: "right" });
+            const open4 = await polishWaitFor(h, menuOpen, 3000);
+            const menu4 = await h.ev(`[...document.querySelectorAll("[data-context-menu] [data-menu-item]")].map((el) => el.getAttribute("data-menu-item"))`);
+            await escape();
+            rec(
+                "4. a plain click empties the picks, and that row's menu has Close agent and no Close N agents",
+                c4 && open4 && menu4.includes("Close agent") && !menu4.some((x) => /^Close \d+ agents/.test(x ?? "")),
+                { c4, open4, menu4 }
+            );
+        } catch (e) {
+            rec("a call failed before the steps finished", false, String(e?.stack ?? e));
+        }
+        return steps;
+    },
+    async teardown(h, ctx) {
+        await teardownFixtureRun(h, ctx, "tree-multi-close", {
+            what: "restore the rail and tree preferences",
+            fn: async () => {
+                await h.ev(restoreStorageKey(RAIL_VISIBLE_KEY, ctx.prevRail));
+                await h.ev(restoreStorageKey(RAIL_SECTIONS_KEY, ctx.prevSections));
+                await h.ev(restoreStorageKey(TREE_COLLAPSED_KEY, ctx.prevCollapsed));
+            },
+        });
+    },
+};
+
 // --- jobqueue-measured: each row of the Jobs popover says whether its RAM figure is measured or the table's estimate
 // (docs/superpowers/specs/2026-11-12-measured-job-peaks-design.md). No run and no real job: one running measured job and
 // one queued estimated one are set through the dev hook window.__jobQueueInject, the popover is opened from the app bar's
@@ -71682,6 +71820,7 @@ export const SCENARIOS = [
     jobqueueChip,
     jobqueueAgentTag,
     jobqueueRunTag,
+    treeMultiClose,
     hologramRecovers,
     jarvisHide,
     jobqueueMeasured,

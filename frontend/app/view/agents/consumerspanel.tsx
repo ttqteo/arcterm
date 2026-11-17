@@ -35,14 +35,13 @@ import { cn, fireAndForget } from "@/util/util";
 import { useAtom, useAtomValue } from "jotai";
 import { ArrowRight, ChevronRight, CircleAlert, Ellipsis, Moon, Square, TriangleAlert } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { closeSessions, confirmCloseSession } from "./agentactions";
+import { confirmCloseAgents, confirmCloseSession } from "./agentactions";
 import type { AgentsViewModel } from "./agents";
 import { sleepWithConfirm, wakeAgent, wakeErrorToast } from "./agentsleep";
 import { toggleInSet } from "./cockpitsurfacemodel";
 import {
     buildConsumers,
     canPick,
-    closePickedConfirm,
     closePickedLabel,
     COMPACT_WIDTH,
     holdOrder,
@@ -1008,33 +1007,7 @@ export function ConsumersPanel({ model }: { model: AgentsViewModel }) {
         toggle: (id) => setPicked((p) => toggleInSet(p, id)),
     };
     // the ticked agents close at once when none of them is working; their conversations stay under Conversations
-    const closePicked = () => {
-        const rows = chosen;
-        const closeNow = () => {
-            closeSessions(
-                rows.map((r) => r.vm),
-                "consumers panel (ticked)"
-            );
-            setPicked(new Set());
-            pushToast({
-                title: rows.length === 1 ? `Closed ${rows[0].name}` : `Closed ${rows.length} agents`,
-                message: "",
-                level: "info",
-            });
-        };
-        const ask = closePickedConfirm(rows);
-        if (ask == null) {
-            closeNow();
-            return;
-        }
-        modalsModel.pushModal("ConfirmModal", {
-            title: "Close agents",
-            message: ask,
-            confirmLabel: closePickedLabel(rows),
-            destructive: true,
-            onConfirm: closeNow,
-        });
-    };
+    const closePicked = () => confirmCloseAgents(chosen, "consumers panel (ticked)", () => setPicked(new Set()));
     return (
         <>
             {open ? <div data-consumers-backdrop className="fixed inset-0 z-50" onClick={close} /> : null}

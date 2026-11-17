@@ -79,7 +79,7 @@ import {
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { Fragment, memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { confirmCloseProject, confirmCloseRun, confirmCloseSession } from "./agentactions";
+import { confirmCloseAgents, confirmCloseProject, confirmCloseRun, confirmCloseSession } from "./agentactions";
 import { DONE_TITLE, doneSuggestion, ORIGIN_DONE_TITLE, startedRunLanded } from "./donesuggest";
 import { LandedClose } from "./landedclose";
 import { fallAsleepLabel, fallingAsleepOf } from "./fallasleepstore";
@@ -90,6 +90,7 @@ import {
     agentsInCouncil,
     backgroundTaskRows,
     buildAgentTree,
+    closablePicked,
     discussTogetherSeats,
     extendRow,
     NO_ROW_SELECTION,
@@ -288,7 +289,7 @@ import {
     useRunInfo,
 } from "./runlineagestore";
 import { useChristmasDecor } from "./christmasstore";
-import { canSleep } from "./consumers";
+import { canSleep, closePickedLabel } from "./consumers";
 import { LandLine } from "./landprogressview";
 import { dagProgressLabel, finishedRunLabel, runComplete, runStatusView, splitProgressText } from "./runmodel";
 import { openRunDag } from "./runrailsections";
@@ -4093,18 +4094,34 @@ export const AgentTree = memo(function AgentTree({ model }: { model: AgentsViewM
             );
         },
         menu: () => {
-            const picked = pickedRowIds(globalStore.get(rowSelectionAtom), shownFocus(), selectable);
-            const seats = picked.includes(id) ? discussTogetherSeats(picked, agents, roots) : [];
-            return seats.length === 0
-                ? []
-                : [
-                      {
-                          label: "Discuss together",
-                          icon: <MessagesSquare size={15} />,
-                          click: () => showCouncilSetupWithAgents(seats, model),
-                      },
-                      { type: "separator" },
-                  ];
+            const cur = globalStore.get(rowSelectionAtom);
+            const picked = pickedRowIds(cur, shownFocus(), selectable);
+            const onPicked = picked.includes(id);
+            const seats = onPicked ? discussTogetherSeats(picked, agents, roots) : [];
+            // the picked agents that work for no run close together; a lead or worker stays, closed from its run
+            const closable = onPicked ? closablePicked(cur, agents, selectable) : [];
+            const items: ContextMenuItem[] = [];
+            if (seats.length > 0) {
+                items.push({
+                    label: "Discuss together",
+                    icon: <MessagesSquare size={15} />,
+                    click: () => showCouncilSetupWithAgents(seats, model),
+                });
+            }
+            if (closable.length > 0) {
+                const kept = cur.ids.filter((x) => selectable.includes(x)).length - closable.length;
+                items.push({
+                    label: closePickedLabel(closable),
+                    sublabel: kept > 0 ? `${kept} in a run stay${kept === 1 ? "s" : ""}` : undefined,
+                    icon: <X size={15} />,
+                    danger: true,
+                    click: () =>
+                        confirmCloseAgents(closable, "agent tree (picked)", () =>
+                            globalStore.set(rowSelectionAtom, NO_ROW_SELECTION)
+                        ),
+                });
+            }
+            return items.length === 0 ? [] : [...items, { type: "separator" }];
         },
     });
     // the agents seated in a council that runs or waits on you: their rows read `in council`
