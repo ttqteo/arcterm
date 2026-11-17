@@ -44,10 +44,10 @@ const close = (srv) => new Promise((r) => srv.close(r));
 
 // spawn the real CLI: the engine only sees the exit code and the last stdout line. It runs from an empty dir: the
 // script unlinks the build links of its cwd, which would otherwise be the checkout running these tests
-function run(env) {
+function run(env, timeout = 30_000) {
     const cwd = mkdtempSync(join(tmpdir(), "final-cwd-"));
     return new Promise((resolve) => {
-        execFile(process.execPath, [SCRIPT], { env, cwd, timeout: 30_000 }, (err, stdout) => {
+        execFile(process.execPath, [SCRIPT], { env, cwd, timeout }, (err, stdout) => {
             rmSync(cwd, { recursive: true, force: true });
             const lines = stdout.trim().split(/\r?\n/);
             resolve({ code: err ? err.code : 0, killed: Boolean(err?.killed), last: lines[lines.length - 1] });
@@ -294,22 +294,31 @@ describe("final-verify.mjs build slots", () => {
         dir = undefined;
     });
 
-    // a dev app that logs its start and end to a shared file, records its env in its out dir and exits after holdMs
-    function fakeDevEnv(name, logFile, holdMs) {
+    // a dev app that logs its start and end to a shared file, records its env in its out dir and exits after holdMs, or,
+    // given peers, as soon as that many dev apps have started (holdMs then caps the wait): a fixed hold made two stages
+    // started together read as one after the other when a loaded machine took longer than it to start the second
+    function fakeDevEnv(name, logFile, holdMs, peers = 0) {
         const fakeDev = join(dir, "fake-dev.cjs");
         writeFileSync(
             fakeDev,
             `const fs = require("fs"), path = require("path");
-fs.appendFileSync(${JSON.stringify(logFile)}, "start\\n");
+const log = ${JSON.stringify(logFile)}, until = Date.now() + ${holdMs}, peers = ${peers};
+fs.appendFileSync(log, "start\\n");
 fs.writeFileSync(path.join(process.env.ARC_FINAL_OUT, "env.json"), JSON.stringify(process.env));
-setTimeout(() => fs.appendFileSync(${JSON.stringify(logFile)}, "end\\n"), ${holdMs});
+const started = () => fs.readFileSync(log, "utf8").split("start").length - 1;
+const tick = () => {
+    if (Date.now() >= until || (peers && started() >= peers)) fs.appendFileSync(log, "end\\n");
+    else setTimeout(tick, 20);
+};
+setTimeout(tick, peers ? 0 : ${holdMs});
 `
         );
         return {
             ...process.env,
             LOCALAPPDATA: join(dir, "localappdata"),
             ARC_FINAL_OUT: join(dir, name),
-            ARC_FINAL_BOOT_MS: "10000",
+            // past the longest hold: the fake must exit, not be given up on
+            ARC_FINAL_BOOT_MS: "60000",
             ARC_FINAL_DEV_CMD: `node "${fakeDev}"`,
             // these stages read the tauri config, which only the tauri mode writes, and Final picks the browser app off Windows
             ARC_FINAL_BROWSER: "0",
@@ -345,8 +354,12 @@ setTimeout(() => fs.appendFileSync(${JSON.stringify(logFile)}, "end\\n"), ${hold
         return held;
     }
 
-    async function runTwo(logFile) {
-        const stages = await Promise.all(["out-a", "out-b"].map((name) => run(fakeDevEnv(name, logFile, 1500))));
+    // each stage gets 60 s: these tests run in a full Verify, beside the Go suites, where two node processes that each
+    // start a third took past the 30 s they had
+    async function runTwo(logFile, holdMs, peers) {
+        const stages = await Promise.all(
+            ["out-a", "out-b"].map((name) => run(fakeDevEnv(name, logFile, holdMs, peers), 60_000))
+        );
         for (const r of stages) {
             expect(r.code).toBe(EXIT_UNVERIFIED);
             expect(r.last).toMatch(/^dev app exited with code 0 before answering on :\d+$/);
@@ -356,7 +369,8 @@ setTimeout(() => fs.appendFileSync(${JSON.stringify(logFile)}, "end\\n"), ${hold
 
     it("runs two final stages at once, each on its own target dir, stores and ports", async () => {
         makeBase();
-        expect(await runTwo(join(dir, "dev.log"))).toEqual(["start", "start", "end", "end"]);
+        // each dev app waits for the other to start, up to 20 s: stages kept apart would end the first before the second
+        expect(await runTwo(join(dir, "dev.log"), 20_000, 2)).toEqual(["start", "start", "end", "end"]);
 
         const read = (name, file) => JSON.parse(readFileSync(join(dir, name, file), "utf8"));
         const [a, b] = ["out-a", "out-b"].map((name) => ({
@@ -367,7 +381,7 @@ setTimeout(() => fs.appendFileSync(${JSON.stringify(logFile)}, "end\\n"), ${hold
         expect(dirname(a.env.ARC_DEV_DATA_DIR)).not.toBe(dirname(b.env.ARC_DEV_DATA_DIR));
         expect(a.env.WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS).not.toBe(b.env.WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS);
         expect(a.devUrl).not.toBe(b.devUrl);
-    }, 30_000);
+    }, 130_000);
 
     it("runs two final stages one after the other when one slot is free", async () => {
         const base = makeBase();
@@ -375,11 +389,11 @@ setTimeout(() => fs.appendFileSync(${JSON.stringify(logFile)}, "end\\n"), ${hold
         const held = await holdSlots(base, BUILD_SLOTS - 1);
         await close(first.lock);
         try {
-            expect(await runTwo(join(dir, "dev.log"))).toEqual(["start", "end", "start", "end"]);
+            expect(await runTwo(join(dir, "dev.log"), 1500)).toEqual(["start", "end", "start", "end"]);
         } finally {
             await Promise.all(held.map(close));
         }
-    }, 30_000);
+    }, 130_000);
 
     it("is unverified when other final stages keep every slot past the wait", async () => {
         const base = makeBase();
