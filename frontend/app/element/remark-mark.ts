@@ -60,15 +60,42 @@ function lastChar(node: PhrasingContent | undefined): string {
     return node.type === "text" ? node.value.slice(-1) : "x";
 }
 
+// a bare URL GFM made a link of ("http://localhost:4321/.==") swallows the == closing a mark around it, since GFM trims
+// only ?!.,:*_~ off a URL's end, not =. While a mark is open, such a link gives the == back, with the punctuation GFM
+// would have trimmed before it: the link, then the text it held after its URL ("" when it holds none).
+const LINK_TAIL = /[?!.,:;*_~]*==$/;
+
+function peelLink(child: PhrasingContent): { link: PhrasingContent; tail: string } | null {
+    if (child.type !== "link" || child.children.length !== 1 || child.children[0].type !== "text") {
+        return null;
+    }
+    const label = child.children[0].value;
+    // only a bare URL: its label is its address (a www. one gets "http://" put before it)
+    const m = LINK_TAIL.exec(label);
+    if (m == null || !child.url.endsWith(label) || m.index === 0) {
+        return null;
+    }
+    const keep = label.slice(0, m.index);
+    const url = child.url.slice(0, child.url.length - label.length) + keep;
+    return { link: { ...child, url, children: [text(keep)] }, tail: m[0] };
+}
+
 export function markChildren(children: PhrasingContent[]): PhrasingContent[] {
     const out: PhrasingContent[] = [];
     let open = -1; // where in `out` the open mark's content starts
-    children.forEach((child, i) => {
+    const items = [...children];
+    for (let i = 0; i < items.length; i++) {
+        const child = items[i];
         if (child.type !== "text") {
-            out.push(child);
-            return;
+            const peeled = open >= 0 ? peelLink(child) : null;
+            if (peeled != null) {
+                // the loop reads the tail next
+                items.splice(i + 1, 0, text(peeled.tail));
+            }
+            out.push(peeled?.link ?? child);
+            continue;
         }
-        const isNodeNext = children[i + 1] != null && children[i + 1]?.type !== "text";
+        const isNodeNext = items[i + 1] != null && items[i + 1]?.type !== "text";
         let rest = child.value;
         while (rest !== "") {
             if (open < 0) {
@@ -97,7 +124,7 @@ export function markChildren(children: PhrasingContent[]): PhrasingContent[] {
             open = -1;
             rest = rest.slice(at + 2);
         }
-    });
+    }
     if (open >= 0) {
         out.splice(open, 0, text(MARK));
     }

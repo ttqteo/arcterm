@@ -76,6 +76,20 @@ describe("remarkMark", () => {
         expect(marked("| a |\n|---|\n| ==b== |")).toBe("ab".replace("b", "[b]"));
     });
 
+    it("closes on the == a bare URL swallowed", () => {
+        // GFM's autolink does not trim =, so "http://localhost:4321/.==" was one link and the mark never closed
+        // (2026-11-17)
+        const tree = parse("==Đã chạy ở http://localhost:4321/.== xong");
+        expect(flat(tree)).toBe("[Đã chạy ở http://localhost:4321/.] xong");
+        const link = JSON.stringify(tree).match(/"type":"link","[^}]*?"url":"([^"]+)"/);
+        expect(link?.[1]).toBe("http://localhost:4321/");
+        expect(marked("==see www.x.com==")).toBe("[see www.x.com]");
+    });
+
+    it("leaves a URL ending in == alone outside a mark", () => {
+        expect(marked("token at http://x.com/?t=abc==")).toBe("token at http://x.com/?t=abc==");
+    });
+
     it("compiles a mark to a <mark> element", () => {
         const hast = toHast(parse("say ==this==")) as unknown as { children: any[] };
         const p = hast.children[0];

@@ -12,6 +12,7 @@ import {
     transformBlocks,
 } from "@/app/element/markdown-util";
 import { rehypeSrcLines, withSrcLineAttributes } from "@/app/element/rehype-srclines";
+import remarkLoneTags from "@/app/element/remark-lone-tags";
 import remarkMark from "@/app/element/remark-mark";
 import remarkMermaidToTag from "@/app/element/remark-mermaid-to-tag";
 import remarkQuoteBreaks from "@/app/element/remark-quote-breaks";
@@ -532,6 +533,7 @@ const Markdown = memo(function Markdown({
     const remarkPlugins: any = [
         remarkMermaidToTag,
         remarkGfm,
+        remarkLoneTags,
         remarkQuoteBreaks,
         remarkMark,
         [RemarkFlexibleToc, { tocRef: tocRef.current }],
