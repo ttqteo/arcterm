@@ -560,3 +560,7 @@ Older parts: [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) · [part 4
 - [ ] (arcterm) Canvas quick pick with a comma: have an agent draw A-/B-/C- option boards and end its reply with
   bullets like "**A, chip trầm** (…)" and a question → the quick pick card shows rows A, B, C instead of only the
   "A đi" chips. Unit-tested only (`chatcanvaspick.ts` `namedLetters`), not tried in the app.
+- [ ] (arcterm) A brainstorm's cards after its run: Approve a brainstorm and let the run finish, then, without
+  restarting arcterm, keep talking until the agent sets `run` back to null and asks again (a question or a builder
+  check) → Chat shows that card. Before, Approve's in-memory start mark brought the finished run back and its folded
+  card hid every later one. Unit-tested only (`brainstormpoller.ts` `settleBrainstorm`), not tried in the app.

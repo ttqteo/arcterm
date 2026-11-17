@@ -72,6 +72,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 - Chat's quick pick card now shows when an agent names its canvas options as "**A, chip trầm**", with a comma
   after the letter, instead of leaving you only the guessed reply chips.
+- A brainstorm you keep talking in after its run finished shows its cards in Chat again (a builder question, Confirm the
+  design), instead of none until arcterm restarted.
 - Chat no longer shows a "Waiting on you in the terminal" card quoting only Claude Code's mode line while an agent
   waits on you, and the mode chip under the chat box follows Shift+Tab again. A permission dialog's card also stops
   showing the dashed lines around a command as part of its text.
