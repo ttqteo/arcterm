@@ -16442,8 +16442,14 @@ const agentTreeRail = {
                 const progress = row.querySelector("span.truncate.text-muted");
                 const ram = row.querySelector("[data-agent-ram]");
                 const tokens = row.querySelector('span[class*="min-w-[34px]"]');
+                const count = row.querySelector("[data-run-progress-count]");
                 return {
                     w: Math.round(line.getBoundingClientRect().width),
+                    // the stage word is left out of a line too narrow for it whole (agenttree.tsx RunSubline)
+                    hidden: progress ? getComputedStyle(progress).display === "none" : null,
+                    // what it shows: its "·" goes with the word
+                    count: count && count.clientWidth > 0 ? count.innerText.replace(/\\s+/g, " ").trim() : null,
+                    countTitled: count ? count.title.length > 0 : null,
                     whole: progress ? progress.scrollWidth <= progress.clientWidth : null,
                     // how much of it shows, and whether its tooltip holds it whole
                     shown: progress ? Math.round(progress.clientWidth) : null,
@@ -16469,11 +16475,11 @@ const agentTreeRail = {
         await h.ev(`window.__resmonFixture.clear()`);
         const runAt = runLine?.at ?? [];
         rec(
-            // the spec (2026-11-13-sidebar-declutter-design, "Bố cục dòng"): the words left of the columns shrink and cut
-            // with …, never the columns. At the tree's own 280px the three columns and the run's ↰ origin leave
-            // "Working · 0/3" little room, so it is cut there, but it shows, its tooltip has it whole, and it reads whole
-            // once the line has room
-            "7. the lead's run line carries its workers chip, its progress, its ↰ origin and the task strip; its tokens, age and the run's RAM stay on the line at every width; the progress shows at the tree's own width (whole in its tooltip) and reads whole from 300px; nothing spills out of the line",
+            // the spec (2026-11-13-sidebar-declutter-design, "Bố cục dòng"): the words left of the columns give way, never
+            // the columns. On a line under 240px the three columns and the run's ↰ origin leave "Working" no room whole,
+            // so the word goes (never "W…") and the count shows alone, its tone and tooltip saying the stage; from 240px
+            // "Working · 0/3" reads whole
+            "7. the lead's run line carries its workers chip, its progress, its ↰ origin and the task strip; its tokens, age and the run's RAM stay on the line at every width; under 240px the stage word is left out and the count shows alone with its tooltip, from 240px the word reads whole; nothing spills out of the line",
             nested != null &&
                 runAt.every((s) => s.origin === true) &&
                 /^\d+ of 3 tasks done/.test(nested.strip ?? "") &&
@@ -16485,10 +16491,12 @@ const agentTreeRail = {
                 runAt.every((s) => s.tokens === "132k") &&
                 // the RAM keeps its column at every width
                 runAt.every((s) => typeof s.ram === "string" && s.ram !== "") &&
-                // the progress shows at the tree's own width, its tooltip whole; from 300px it reads whole
-                (runAt[0].shown ?? 0) >= 20 &&
-                runAt[0].titled === true &&
-                runAt.filter((s) => s.w >= 300).every((s) => s.whole === true) &&
+                // the stage word is whole or left out, never cut; the count shows at every width with the stage in its
+                // tooltip, its "·" only beside the word
+                runAt.some((s) => s.w < 240) &&
+                runAt.every((s) => (s.w < 240 ? s.hidden === true : s.hidden === false && s.whole === true)) &&
+                runAt.every((s) => s.countTitled === true) &&
+                runAt.every((s) => (s.w < 240 ? /^\d+\/3$/ : /^· \d+\/3$/).test(s.count ?? "")) &&
                 runAt.every((s) => !s.overflow),
             JSON.stringify({ nested, runLine })
         );
