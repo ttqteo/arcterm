@@ -82,6 +82,10 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   names it); both keys still work.
 - Selected text in Chat is highlighted as one shape with slightly rounded outer corners, also when it wraps over
   several lines: the corners where one line meets the next are square.
+- Leaving the Transcript tab after reading a long session back to its start gives that memory back: arcterm keeps
+  only the session's recent part for when you come back, as it does after a first read.
+- Selected text in Chat that wraps over several lines is highlighted as one shape: the corners where one line meets
+  the next are square, and only its outer corners are rounded.
 - A project's Overview fits the screen: the header and Activity stay put, and Now and History each scroll on their
   own.
 - Close brainstorm in the agent's More (⋯) menu takes the brainstorm pane and its Chat card down so you can talk on
