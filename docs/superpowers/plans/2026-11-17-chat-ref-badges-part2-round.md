@@ -18,8 +18,7 @@ and 7a-7e). Spec: `docs/superpowers/specs/2026-11-17-chat-ref-badges-design.md`,
 
 **Depends on:** none
 
-**Files:** `frontend/app/view/agents/chateditor.tsx`, `frontend/app/view/agents/chateditormodel.ts`,
-`frontend/app/view/agents/chateditormodel.test.ts`, `scripts/cdp/scenarios.mjs`
+**Files:** `frontend/app/view/agents/chateditor.tsx`, `frontend/app/view/agents/chateditormodel.ts`, `frontend/app/view/agents/chateditormodel.test.ts`, `scripts/cdp/scenarios.mjs`
 
 The spec's rule: a typed token becomes a badge and "the caret goes back where it was in the text". When a finished
 token starts at a text node's offset 0 and the caret sits at 0 (Delete or Backspace removes the `x` of
