@@ -265,7 +265,11 @@ func TestSetChannelProfileOmitsEmptyPatchAndDeletes(t *testing.T) {
 func withConfigHome(t *testing.T, dir string) {
 	t.Helper()
 	old := wavebase.ConfigHome_VarCache
-	t.Cleanup(func() { wavebase.ConfigHome_VarCache = old })
+	t.Cleanup(func() {
+		wavebase.ConfigHome_VarCache = old
+		// a project command reloads the watcher from dir; read the package's own config back for the next test
+		wconfig.GetWatcher().Reload()
+	})
 	wavebase.ConfigHome_VarCache = dir
 	// pin the vault inside dir: unset, it resolves to the real ~/.waveterm/vault, and portable settings
 	// writes land in its config layer

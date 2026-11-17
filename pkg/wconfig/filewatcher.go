@@ -30,6 +30,9 @@ type Watcher struct {
 	fullConfig  FullConfigType
 	// the watched <vault>/config dir; it moves when the vault path setting changes
 	vaultConfigDir string
+	// reloadMu serializes reloads, each a read, store and broadcast: the watcher's goroutine and a command reloading
+	// after its own write (Reload) run at once, and a slower older read must not land after a newer one
+	reloadMu sync.Mutex
 }
 
 type WatcherUpdate struct {
@@ -196,6 +199,16 @@ func isValidSubSettingsFileName(fileName string) bool {
 }
 
 func (w *Watcher) handleSettingsFileEvent(_ fsnotify.Event, _ string) {
+	w.Reload()
+}
+
+// Reload reads the config files now and publishes them, as a file event does. A command whose caller reads the
+// config as soon as it returns calls it after its write: the watcher's own reload waits for the file event and
+// every event queued before it, each a full read, and under load a project created by createproject was still
+// missing from getfullconfig 30 s later (council-tree's arrange, 2026-11-18).
+func (w *Watcher) Reload() {
+	w.reloadMu.Lock()
+	defer w.reloadMu.Unlock()
 	fullConfig := ReadFullConfig()
 	w.retargetVaultConfigDir()
 	w.mutex.Lock()

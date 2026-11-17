@@ -38,6 +38,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   after an hour re-read the whole conversation at the full rate.
 - An agent or terminal started in No folder from the New dialog sits in No folder in the Agent tree, rather than in a
   second folder named Home beside it. A project of yours named Home keeps its own folder.
+- A project you add or remove shows in the cockpit as soon as it is saved, also when the machine is busy: arcterm
+  waited for the config file's change event, which under load came half a minute or more later.
 
 ### Changed
 
