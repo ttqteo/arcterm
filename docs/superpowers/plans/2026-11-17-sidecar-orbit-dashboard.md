@@ -687,8 +687,7 @@ What changes where:
 ---
 
 ### Task 10: CDP scenarios for P and Q
-**Depends on:** Task 8 (its scenarios drive the P and Q page Task 8 switches the window over to), Task 9 (asserts the
-ping and `bg-errorbg` classes), Task 11 (asserts the Sidecar app id's log line)
+**Depends on:** Task 8 (its scenarios drive the P and Q page Task 8 switches the window over to), Task 9 (asserts the ping and `bg-errorbg` classes), Task 11 (asserts the Sidecar app id's log line)
 **Files:** `scripts/cdp/scenarios-sidecar.mjs`, `docs/hand-checks.md`, `docs/open-issues.md`
 
 What changes where:
