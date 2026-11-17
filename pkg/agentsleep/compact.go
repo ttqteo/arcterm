@@ -44,21 +44,27 @@ type CacheState struct {
 	Tokens    int       // the context the last main-thread request carried; 0 once a compaction followed it
 	LastTurn  time.Time // when that request ran: the cache's life counts from it
 	OneHour   bool      // the last cache write was the hour-long kind
-	Compacted bool      // a compaction landed after the last request
+	Compacted bool      // a compaction landed after the last request, or one found nothing left to compact
 }
+
+// nothingToCompact is what Claude Code's /compact answers when the conversation since the last compaction is too short
+// to summarize: the session is as compact as it gets, which counts as landed.
+const nothingToCompact = "Not enough messages to compact"
 
 // ReadCacheState reads a Claude transcript's JSONL records (a tail is enough) for its cache state. A line that does not
 // parse, a subagent's line and a request that reports no tokens (a synthetic error turn) are skipped.
 func ReadCacheState(lines []string) CacheState {
 	var st CacheState
 	for _, line := range lines {
-		// most lines are neither, and a full parse of every tool result would cost more than the rest of the read
-		if !strings.Contains(line, `"compact_boundary"`) && !strings.Contains(line, `"usage"`) {
+		// most lines are none of these, and a full parse of every tool result would cost more than the rest of the read
+		if !strings.Contains(line, `"compact_boundary"`) && !strings.Contains(line, `"usage"`) &&
+			!strings.Contains(line, nothingToCompact) {
 			continue
 		}
 		var rec struct {
 			Type        string `json:"type"`
 			Subtype     string `json:"subtype"`
+			Content     any    `json:"content"`
 			IsSidechain bool   `json:"isSidechain"`
 			Timestamp   string `json:"timestamp"`
 			Message     *struct {
@@ -78,6 +84,10 @@ func ReadCacheState(lines []string) CacheState {
 		switch {
 		case rec.Type == "system" && rec.Subtype == "compact_boundary":
 			st.Tokens, st.Compacted = 0, true
+		case rec.Type == "system" && rec.Subtype == "local_command":
+			if s, ok := rec.Content.(string); ok && strings.Contains(s, nothingToCompact) {
+				st.Tokens, st.Compacted = 0, true
+			}
 		case rec.Type == "assistant" && rec.Message != nil && rec.Message.Usage != nil:
 			u := rec.Message.Usage
 			tokens := u.Input + u.CacheRead + u.CacheCreate
@@ -109,10 +119,11 @@ func cacheLeft(c CacheState, now time.Time) time.Duration {
 }
 
 // compactWorth is whether a compaction pays off for c now: a Claude session that takes one over its stream, whose
-// context reaches the threshold, and whose cache is still warm (a cold one would be read at the full rate, which only
-// pays if the agent is ever resumed).
+// context reaches the threshold, whose cache is still warm (a cold one would be read at the full rate, which only
+// pays if the agent is ever resumed), and whose last compaction at this turn did not give up.
 func compactWorth(c Candidate, now time.Time, s Settings) bool {
-	return s.Compact && c.Harness == "claude" && c.HasStream && c.Cache.Tokens >= s.CompactAt && cacheLeft(c.Cache, now) > 0
+	return s.Compact && c.Harness == "claude" && c.HasStream && !c.CompactFailed && c.Cache.Tokens >= s.CompactAt &&
+		cacheLeft(c.Cache, now) > 0
 }
 
 // CompactBeforeSleep is whether the person's Sleep of c compacts it first.

@@ -729,3 +729,35 @@ func TestPublishEventDropsAToolReportAfterItsTurnEnded(t *testing.T) {
 		t.Fatalf("a tool report after an unnamed idle: state = %q, want idle", got)
 	}
 }
+
+// 2026-11-16: a session forked off the tab's (moved to the background) worked on while the first session's Stop was the
+// tab's last report. Its tool reports were dropped as out of turn, so the tab's status stayed on the first session's
+// transcript: the sleep loop read that one's cache and sent a compaction every 10 minutes, and the Sleep resumed it.
+func TestPublishEventTakesAnotherSessionsToolReportAfterAStop(t *testing.T) {
+	ctx := context.Background()
+	const block = "b0000000-0000-4000-8000-00000000057c"
+	oref := blockORef(block)
+	now := time.Now().UnixMilli()
+	first, fork := `C:\p\0cc4f466.jsonl`, `C:\p\37f08c74.jsonl`
+	publish := func(state, hook, transcript string, ts int64) baseds.AgentStatusData {
+		publishEvent(ctx, wps.WaveEvent{
+			Event:   wps.Event_AgentStatus,
+			Scopes:  []string{oref},
+			Persist: 1,
+			Data: baseds.AgentStatusData{
+				ORef: oref, State: state, Hook: hook, Agent: "claude", TranscriptPath: transcript, Ts: ts,
+			},
+		})
+		return orchestrate.LatestAgentStatus(block, "")
+	}
+	publish(baseds.AgentState_Idle, baseds.AgentHook_Stop, first, now)
+	// the same session's late tool report is still out of turn
+	if got := publish(baseds.AgentState_Working, baseds.AgentHook_PreToolUse, first, now+1000); got.State != baseds.AgentState_Idle {
+		t.Fatalf("the first session's tool report after its Stop: state = %q, want idle", got.State)
+	}
+	// the fork's is a turn of its own, and the status follows its transcript
+	got := publish(baseds.AgentState_Working, baseds.AgentHook_PreToolUse, fork, now+2000)
+	if got.State != baseds.AgentState_Working || got.TranscriptPath != fork {
+		t.Fatalf("the fork's tool report: state %q on %q, want working on the fork's transcript", got.State, got.TranscriptPath)
+	}
+}

@@ -42,26 +42,41 @@ const (
 type pendingCompact struct {
 	sent  time.Time
 	then  agentsleep.SleepAfter
-	force bool // the person confirmed the Sleep over running background work
+	force bool      // the person confirmed the Sleep over running background work
+	turn  time.Time // the last turn the transcript read showed when it was sent (CacheState.LastTurn)
 }
 
 // compacts holds the compactions waiting to land, by block id. The loop and a person's Sleep both write it.
+// compactsGaveUp holds, by block id, the last turn of a compaction that gave up without landing.
 var (
-	compactsMu sync.Mutex
-	compacts   = map[string]pendingCompact{}
+	compactsMu     sync.Mutex
+	compacts       = map[string]pendingCompact{}
+	compactsGaveUp = map[string]time.Time{}
 )
 
 // compactPending is blockId's compaction that has not landed, dropping one older than agentsleep.CompactGiveUp: a
-// compaction that never lands holds nothing up for longer.
+// compaction that never lands holds nothing up for longer, and none is sent again at that turn (compactFailed).
 func compactPending(blockId string, now time.Time) (pendingCompact, bool) {
 	compactsMu.Lock()
 	defer compactsMu.Unlock()
 	pc, ok := compacts[blockId]
 	if ok && now.Sub(pc.sent) > agentsleep.CompactGiveUp {
 		delete(compacts, blockId)
+		if !pc.turn.IsZero() {
+			compactsGaveUp[blockId] = pc.turn
+		}
 		return pendingCompact{}, false
 	}
 	return pc, ok
+}
+
+// compactFailed is whether a compaction sent to blockId at last turn lastTurn gave up: the transcript read has not
+// moved since, so another would only fail the same way.
+func compactFailed(blockId string, lastTurn time.Time) bool {
+	compactsMu.Lock()
+	defer compactsMu.Unlock()
+	turn, ok := compactsGaveUp[blockId]
+	return ok && !lastTurn.IsZero() && turn.Equal(lastTurn)
 }
 
 func setCompactPending(blockId string, pc pendingCompact) {
@@ -83,6 +98,11 @@ func forgetCompacts(keep map[string]bool) bool {
 	for id := range compacts {
 		if !keep[id] {
 			delete(compacts, id)
+		}
+	}
+	for id := range compactsGaveUp {
+		if !keep[id] {
+			delete(compactsGaveUp, id)
 		}
 	}
 	return len(compacts) > 0
@@ -358,6 +378,7 @@ func (l *sleepLoop) tick(ctx context.Context) {
 		if sleepFacts || cacheFacts {
 			l.readTranscriptFacts(ctx, row, &c, sleepFacts, cacheFacts)
 		}
+		c.CompactFailed = compactFailed(row.blockId, c.Cache.LastTurn)
 		if pending && pc.then == agentsleep.SleepAfterNone && c.Cache.Compacted {
 			// an awake agent's compaction landed, and no sleep waits on it
 			dropCompactPending(row.blockId)
@@ -377,13 +398,17 @@ func (l *sleepLoop) tick(ctx context.Context) {
 	}
 
 	plan := agentsleep.Decide(cands, now, s, free)
+	lastTurn := map[string]time.Time{} // by tab id
+	for _, c := range cands {
+		lastTurn[c.TabId] = c.Cache.LastTurn
+	}
 	for _, cp := range plan.Compact {
 		row := rows[cp.TabId]
 		if !sendCompact(row.blockId) {
 			log.Printf("agent sleep: %q (block %s) took no compaction over its stream\n", row.Name, row.blockId)
 			continue
 		}
-		pc := pendingCompact{sent: now}
+		pc := pendingCompact{sent: now, turn: lastTurn[cp.TabId]}
 		why := "its cache is about to go cold"
 		if cp.ThenSleep {
 			pc.then, why = agentsleep.SleepAfterLoop, "it sleeps"

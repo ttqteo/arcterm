@@ -404,6 +404,7 @@ func compactWorld(t *testing.T) (*loopWorld, *[]string) {
 		return agentsleep.Settings{Enabled: w.enabled, After: w.after, Compact: true, CompactAt: 100_000}
 	}
 	swap(t, &compacts, map[string]pendingCompact{})
+	swap(t, &compactsGaveUp, map[string]time.Time{})
 	sent := &[]string{}
 	swap(t, &sendCompact, func(blockId string) bool { *sent = append(*sent, blockId); return true })
 	return w, sent
@@ -441,6 +442,33 @@ func TestSleepTickCompactsThenSleeps(t *testing.T) {
 	}
 	if compactsWaiting() {
 		t.Errorf("compactions still waiting after the sleep: %v", compacts)
+	}
+}
+
+// 2026-11-16: the transcript the loop read never showed the compaction land (it landed in another session's), and the
+// loop sent another every CompactGiveUp until the cache went cold. One that gave up is not sent again at that turn.
+func TestSleepTickSleepsAfterACompactionThatNeverLands(t *testing.T) {
+	w, sent := compactWorld(t)
+	w.tickTo(30)
+	if len(*sent) != 1 {
+		t.Fatalf("at 30 min sent %v, want one compaction", *sent)
+	}
+	// nothing lands in the transcript the loop reads; past the give-up it sleeps instead of compacting again
+	// the first check past it (the world's sleep leaves the agent awake, so a later check would sleep it again)
+	w.tickTo(30 + int(agentsleep.CompactGiveUp/time.Minute) + 1)
+	if len(*sent) != 1 || !slices.Equal(w.slept, []string{agentsBlockA}) {
+		t.Fatalf("after the give-up sent %v, slept %v; want no second compaction and the agent asleep", *sent, w.slept)
+	}
+}
+
+func TestSleepTickSleepsWhenNothingWasLeftToCompact(t *testing.T) {
+	w, sent := compactWorld(t)
+	w.tickTo(30)
+	appendLine(t, w.facts.Tabs[0].Status.TranscriptPath,
+		`{"type":"system","subtype":"local_command","content":"<local-command-stdout>Not enough messages to compact.</local-command-stdout>","isSidechain":false}`)
+	w.tickAt(31)
+	if len(*sent) != 1 || !slices.Equal(w.slept, []string{agentsBlockA}) {
+		t.Fatalf("after nothing to compact sent %v, slept %v; want the agent asleep at once", *sent, w.slept)
 	}
 }
 

@@ -13,10 +13,11 @@
 import { ContextMenuModel } from "@/app/store/contextmenu";
 import { composerReveal } from "@/app/element/motiontokens";
 import { cn } from "@/util/util";
-import { Check, ChevronDown, ChevronRight, Copy, FileDiff } from "lucide-react";
+import { Check, ChevronDown, ChevronRight, Copy, FileDiff, Link } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { burstRenderMode, conversationText, isNearBottom, type AgentEntry, type EditFile } from "./agentsviewmodel";
+import { linkAt } from "./chatlink";
 import {
     filesChangedLabel,
     groupCompact,
@@ -522,9 +523,19 @@ export function CompactTranscript({
         return () => scroller?.removeEventListener("scroll", checkTop);
     }, [checkTop]);
 
-    const copyMenu = (text: string) => (e: React.MouseEvent) =>
+    const copyMenu = (text: string) => (e: React.MouseEvent) => {
+        const link = linkAt(e.target);
         ContextMenuModel.getInstance().showContextMenu(
             [
+                ...(link != null
+                    ? [
+                          {
+                              label: "Copy link",
+                              icon: <Link size={15} />,
+                              click: () => void navigator.clipboard.writeText(link),
+                          },
+                      ]
+                    : []),
                 { label: "Copy text", icon: <Copy size={15} />, click: () => void navigator.clipboard.writeText(text) },
                 {
                     label: "Copy conversation",
@@ -534,6 +545,7 @@ export function CompactTranscript({
             ],
             e
         );
+    };
     // a fold is kept by its key, not its entry index, so it stays with its item when entries are put in front
     const flip = (prev: Set<number>, key: number) => {
         const next = new Set(prev);

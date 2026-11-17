@@ -48183,10 +48183,12 @@ const chatFork = {
 const CQ_NAME = "quote source";
 const CQ_QUESTIONS = ["is the oracle checked by hand?", "how do I check it by hand?"];
 const CQ_REPLIES = [
-    "Not yet. Every number rests on it, so it is the one real gate.\n\nThe rest can wait.",
-    "Pick thirty cases at random and rerun each in a clean tree.",
+    // its first paragraph runs long enough to wrap, which step 8 selects across
+    "Not yet. Every number rests on it, so it is the one real gate: a wrong oracle passes a wrong fix and fails a right one, and no amount of later testing finds it, because every later test is scored against that same oracle.\n\nThe rest can wait.",
+    "Pick thirty cases at random and rerun each in a clean tree.\n\nThe steps are at https://example.com/oracle-check.",
 ];
 const CQ_PASSAGE = "Every number rests on it";
+const CQ_LINK = "https://example.com/oracle-check";
 
 function cqRoster(ctx) {
     const now = Date.now();
@@ -48394,6 +48396,97 @@ const chatQuote = {
                 "5. right-clicking a row with nothing selected opens the row's own menu (Copy text), with no Reply",
                 clicked5 && open5 && Array.isArray(menu5) && menu5.includes("Copy text") && !menu5.includes("Reply"),
                 { clicked5, open5, menu5 }
+            );
+
+            // 6. a right-click on a link in a reply offers Copy link first, which copies the link's url (no selecting)
+            await polishWaitFor(h, `!${menuOpen}`, 3000);
+            const link6 = `document.querySelector('[data-agent-chat="${A}"] [data-chat-prose] a[href=${JSON.stringify(CQ_LINK)}]')`;
+            const at6 = await h.ev(caCenter(link6));
+            const clicked6 = at6 != null && (await rightClickAt(at6));
+            const open6 = clicked6 && (await polishWaitFor(h, menuOpen, 3000));
+            const menu6 = await h.ev(
+                `[...document.querySelectorAll("[data-context-menu] [data-menu-item]")].map((el) => el.getAttribute("data-menu-item"))`
+            );
+            await polishNap(300);
+            await h.shot("cdp-shots/chat-quote-6-link.png");
+            // the copy itself: the item's click writes the url (the clipboard stand-in reads it back)
+            const copied6 = await h.ev(`(async () => {
+                let wrote = null;
+                const keep = navigator.clipboard.writeText;
+                navigator.clipboard.writeText = async (s) => { wrote = s; };
+                try {
+                    document.querySelector('[data-context-menu] [data-menu-item="Copy link"]')?.click();
+                    await new Promise((r) => setTimeout(r, 100));
+                } finally {
+                    navigator.clipboard.writeText = keep;
+                }
+                return wrote;
+            })()`);
+            // the item's click closed the menu; an Escape with no menu open would leave the Agent surface ("Esc back")
+            if (await h.ev(menuOpen)) {
+                await h.cdp("Input.dispatchKeyEvent", { type: "keyDown", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 });
+                await h.cdp("Input.dispatchKeyEvent", { type: "keyUp", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 });
+            }
+            rec(
+                "6. right-clicking a link in a reply opens Copy link first, then Copy text, and Copy link copies the link's url",
+                clicked6 && open6 && Array.isArray(menu6) && menu6[0] === "Copy link" && menu6.includes("Copy text") && copied6 === CQ_LINK,
+                { at6, clicked6, open6, menu6, copied6 }
+            );
+
+            // 7. hovering the link shows a copy button at its end, over no word of the line, and it copies the url
+            await polishWaitFor(h, `!${menuOpen}`, 3000);
+            const copyBox = `${link6}?.closest("[data-md-link]")?.querySelector("[data-md-link-copy]")`;
+            // the pointer is still on the link from step 6's right-click: move it off first
+            await h.cdp("Input.dispatchMouseEvent", { type: "mouseMoved", x: 5, y: 5 });
+            await polishNap(150);
+            const hidden7 = await h.ev(`getComputedStyle(${copyBox}).visibility`);
+            const at7 = await h.ev(caCenter(link6));
+            await h.cdp("Input.dispatchMouseEvent", { type: "mouseMoved", x: Math.round(at7.x), y: Math.round(at7.y) });
+            const shown7 = await polishWaitFor(h, `getComputedStyle(${copyBox}).visibility === "visible"`, 3000);
+            const place7 = await h.ev(`(() => {
+                const a = ${link6}.getBoundingClientRect();
+                const b = ${copyBox}.getBoundingClientRect();
+                return { linkRight: Math.round(a.right), btnLeft: Math.round(b.left), sameLine: b.top < a.bottom && b.bottom > a.top };
+            })()`);
+            await polishNap(300);
+            await h.shot("cdp-shots/chat-quote-7-copy-button.png");
+            // move onto the button (it must stay shown) and press it
+            const btnAt = await h.ev(caCenter(`${copyBox}?.querySelector("button")`));
+            const copied7 = await h.ev(`(() => {
+                window.__cqWrote = null;
+                window.__cqKeep = navigator.clipboard.writeText;
+                navigator.clipboard.writeText = async (s) => { window.__cqWrote = s; };
+                return true;
+            })()`);
+            for (const type of ["mouseMoved", "mousePressed", "mouseReleased"]) {
+                await h.cdp("Input.dispatchMouseEvent", { type, x: Math.round(btnAt.x), y: Math.round(btnAt.y), button: "left", clickCount: 1 });
+            }
+            await polishWaitFor(h, `window.__cqWrote != null`, 2000);
+            const wrote7 = await h.ev(`(() => { navigator.clipboard.writeText = window.__cqKeep; return window.__cqWrote; })()`);
+            rec(
+                "7. hovering a link shows its copy button (hidden before) right at the link's end on its line, and pressing it copies the link's url",
+                hidden7 === "hidden" && shown7 && place7.sameLine && Math.abs(place7.btnLeft - place7.linkRight) <= 4 && copied7 && wrote7 === CQ_LINK,
+                { hidden7, shown7, place7, wrote7 }
+            );
+
+            // 8. a selection over a wrapped paragraph paints its lines as one shape: square corners where lines meet
+            await h.cdp("Input.dispatchMouseEvent", { type: "mouseMoved", x: 5, y: 5 });
+            const sel8 = await select(`${prose(0)}?.querySelector("p")`, null);
+            await polishWaitFor(h, `${prose(0)}?.querySelectorAll(".md-selection-band").length >= 2`, 3000);
+            const bands8 = await h.ev(
+                `[...${prose(0)}.querySelectorAll(".md-selection-band")].map((b) => ({ top: Math.round(parseFloat(b.style.top)), radius: b.style.borderRadius }))`
+            );
+            await polishNap(200);
+            await h.shot("cdp-shots/chat-quote-8-selection.png");
+            await h.ev(`window.getSelection().removeAllRanges()`);
+            rec(
+                "8. selecting a paragraph that wraps paints a band per line whose corners meeting the next line are square (0) and whose outer corners stay round",
+                sel8 &&
+                    Array.isArray(bands8) &&
+                    bands8.length >= 2 &&
+                    bands8.some((b) => /(^|\s)0(px)?(\s|$)/.test(b.radius)) &&
+                    bands8.some((b) => b.radius.includes("3px")),
+                { sel8, bands8 }
             );
         } catch (e) {
             rec("the scenario threw", false, String(e?.stack ?? e));
@@ -55833,6 +55926,24 @@ const jobqueueRunTag = {
             "4. once its step runs, neither the run nor t-1 carries a tag, and t-1 no longer reads verify queued",
             ran.run == null && ran.worker?.tag == null && !/verify queued/.test(ran.worker?.sub ?? ""),
             JSON.stringify(ran)
+        );
+
+        // 5. the lead's own heavy command waits: its row draws one #1, not the run's tag and the lead's own side by side
+        await h.ev(`window.__jobQueueInject({ slots: 1, mode: "auto", jobs: [
+            { id: "jqr-lead", name: "task check:ts", bytes: 3221225472, position: 1, queuedts: Date.now() - 5_000,
+              blockid: "fx-blk-lead" },
+        ] })`);
+        await polishWaitFor(h, `!!${JQR_TREE}?.querySelector("[data-run-queued], [data-agent-queued]")`, 3000);
+        const leadTags = await h.ev(`(() => {
+            const row = ${JQR_TREE}?.querySelector('[data-agent-row="${TREE_RAIL_LEAD_ID}"]');
+            const tags = [...(row?.querySelectorAll("[data-run-queued], [data-agent-queued]") ?? [])];
+            return { row: !!row, tags: tags.map((t) => t.textContent.trim()) };
+        })()`);
+        await h.shot("cdp-shots/jobqueue-run-tag-lead.png");
+        rec(
+            "5. with the lead's own command queued, the lead's row carries exactly one #1 tag",
+            leadTags.row && leadTags.tags.length === 1 && leadTags.tags[0] === "#1",
+            JSON.stringify(leadTags)
         );
         return steps;
     },
@@ -70172,12 +70283,18 @@ const projectOverviewHistory = {
                     ratio: left && col && col.width > 0 ? Math.round((left.width / col.width) * 1000) / 1000 : null,
                     activityWidth: r(act?.width),
                     initials: initials == null ? "absent" : initials.getClientRects().length > 0 ? "shown" : "hidden",
+                    // the page fits the pane and each column scrolls on its own
+                    pageFits: page != null && page.scrollHeight <= page.clientHeight + 1,
+                    colsScroll: ["[data-overview-left]", "[data-overview-history-col]"].map((s) => {
+                        const el = document.querySelector(s);
+                        return el != null && getComputedStyle(el).overflowY === "auto";
+                    }),
                 };
             })()`);
             await shot("1");
             const minAct1 = geo1?.pageClient != null ? geo1.pageClient - 64 - 2 : null;
             rec(
-                "1. A's Overview, 1600px wide: History right of Now; the Branches card (worktree row and one commit row, no error, not busy) sits in [data-overview-left] below Now; the left column ends before History's column and is 0.55–0.8 of its width; the Activity card spans the page's inner width (≥ clientWidth − 66, and > 1120 when clientWidth ≥ 1185)",
+                "1. A's Overview, 1600px wide: History right of Now; the Branches card (worktree row and one commit row, no error, not busy) sits in [data-overview-left] below Now; the left column ends before History's column and is 0.55–0.8 of its width; the Activity card spans the page's inner width (≥ clientWidth − 66, and > 1120 when clientWidth ≥ 1185); the page fits the pane (no page scroll) and both columns scroll on their own (overflow-y auto)",
                 opened1 &&
                     both &&
                     graph1 &&
@@ -70193,7 +70310,9 @@ const projectOverviewHistory = {
                     geo1.ratio <= 0.8 &&
                     geo1.activityWidth != null &&
                     geo1.activityWidth >= minAct1 &&
-                    (geo1.pageClient < 1185 || geo1.activityWidth > 1120),
+                    (geo1.pageClient < 1185 || geo1.activityWidth > 1120) &&
+                    geo1.pageFits &&
+                    geo1.colsScroll.every(Boolean),
                 JSON.stringify({ opened1, both, graph1, minActivityWidth: minAct1, ...geo1 })
             );
 
@@ -70701,7 +70820,9 @@ const projectOverviewHistory = {
                         clientHeight: page?.clientHeight ?? null,
                     };
                 })()`);
-            const scrollDown = () => h.ev(`(() => { const p = document.querySelector("[data-project-overview]"); p.scrollTop = p.scrollHeight; return Math.round(p.scrollTop); })()`);
+            // the page (this short viewport leaves the columns their 320px floor, so it scrolls too), then History's column
+            const scrollDown = () =>
+                h.ev(`(() => { for (const s of ["[data-project-overview]", "[data-overview-history-col]"]) { const p = document.querySelector(s); p.scrollTop = p.scrollHeight; } return true; })()`);
             const first15 = await pageState();
             await scrollDown();
             const page15b = await polishWaitFor(h, `${ovhCount(OVH_TOP_ROWS)} >= 30`, 5000);
