@@ -64,7 +64,8 @@ The core's number and the Needs you rows are one list, built in the bridge:
    adds a 1–9 answer.
 3. **What waits on you in Jarvis**: `attentionAtom` (`view/agents/attentionstore.ts:18`, computed by
    `pkg/jarvis/attention.go` and polled) minus the asks (`splitAttention`'s `jarvis` half: gates, blocked tasks, runs
-   to confirm or land, escalations, due chunks). Each row says its kind and opens through `openTarget` on Enter. A run
+   to confirm or land, escalations, due chunks). Each row says its kind and, on Enter, opens the target the tray's
+   peek row opens (`rowPeekTarget`) through the router's `openAddress`. A run
    held at Final or with a failed task is a row with **Failed**: kind `run-unverified`, or `dag-blocked` with `retry`
    (what `kindWord` already words "failed").
 
@@ -156,6 +157,6 @@ lanes. Unit tests: `sidecarneeds.ts` (the three sources, the question heuristic,
 - The question heuristic will misfire on a rhetorical question at the end of a report. Measure on a week of real
   transcripts before trusting it; a miss only puts a row in Needs you, and answering or opening it clears it.
 - Whether a Jarvis row's Enter should also act in place (a gate's Approve). The first build opens it in the main window
-  through `openTarget`, nothing more.
+  through the router's `openAddress`, nothing more.
 - Which icon Windows draws for a window whose AppUserModelID has no shortcut: the window's own (`WM_SETICON`) or the
   exe's. Only a packaged build shows it (the dev app shares the exe's icon either way); a hand check.
