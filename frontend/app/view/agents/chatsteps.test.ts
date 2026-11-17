@@ -30,13 +30,53 @@ describe("stepElapsed", () => {
 });
 
 describe("stepOf", () => {
-    it("reads: the verb Read and a file chip on the full path", () => {
-        const s = stepOf(action("read", { target: "a.ts", path: "/repo/src/a.ts", outcome: "ok" }), false);
-        expect(s.verb).toBe("Read");
-        expect(s.icon).toBe("read");
-        expect(s.chips).toEqual([{ kind: "file", path: "/repo/src/a.ts" }]);
-        expect(s.more).toBe(0);
-        expect(s.running).toBe(false);
+    it("reads: the verb Read, a file chip on the full path, its summary as the meta", () => {
+        const s = stepOf(
+            action("read", { target: "a.ts", path: "/repo/src/a.ts", outcome: "ok", summary: "25 lines" }),
+            false
+        );
+        expect(s).toEqual({
+            verb: "Read",
+            chips: [{ kind: "file", path: "/repo/src/a.ts" }],
+            more: 0,
+            meta: "25 lines",
+            command: false,
+            running: false,
+            failed: false,
+        });
+    });
+
+    it("a running call says its verb in the present tense", () => {
+        expect(stepOf(action("read", { target: "a.ts" }), true).verb).toBe("Reading");
+        expect(stepOf(action("edited", { target: "a.ts" }), true).verb).toBe("Editing");
+        expect(stepOf(action("wrote", { target: "a.ts" }), true).verb).toBe("Creating");
+        expect(stepOf(action("mcp__x__y", { target: "" }), true).verb).toBe("Using");
+    });
+
+    it("a failed call says so in its verb, its error as the meta; a refused one is Blocked", () => {
+        const failed = stepOf(
+            action("edited", {
+                target: "server.js",
+                outcome: "fail",
+                note: "String to replace not found in file.",
+                summary: "x",
+            }),
+            false
+        );
+        expect(failed).toMatchObject({
+            verb: "Edit failed",
+            failed: true,
+            meta: "String to replace not found in file.",
+        });
+        expect(stepOf(action("read", { outcome: "fail", summary: "no such file" }), false)).toMatchObject({
+            verb: "Read failed",
+            meta: "no such file",
+        });
+        expect(stepOf(action("mcp__x__y", { outcome: "fail" }), false).verb).toBe("Tool failed");
+        expect(stepOf(action("edited", { outcome: "blocked" }), false)).toMatchObject({
+            verb: "Blocked",
+            failed: false,
+        });
     });
 
     it("falls back to the target as the file when the transcript gave no full path", () => {
@@ -49,8 +89,7 @@ describe("stepOf", () => {
             action("edited", { target: "a.ts", path: "/r/a.ts", detail: { kind: "edit", files: [file("/r/a.ts")] } }),
             false
         );
-        expect(one.verb).toBe("Edit");
-        expect(one.icon).toBe("edit");
+        expect(one.verb).toBe("Edited");
         expect(one.chips).toEqual([{ kind: "file", path: "/r/a.ts" }]);
         expect(one.more).toBe(0);
 
@@ -77,14 +116,13 @@ describe("stepOf", () => {
         expect(s.more).toBe(0);
     });
 
-    it("writes: the verb Write, a file chip", () => {
+    it("writes: the verb Created, a file chip", () => {
         const s = stepOf(action("wrote", { target: "n.ts", path: "/r/n.ts" }), false);
-        expect(s.verb).toBe("Write");
-        expect(s.icon).toBe("write");
+        expect(s.verb).toBe("Created");
         expect(s.chips).toEqual([{ kind: "file", path: "/r/n.ts" }]);
     });
 
-    it("runs: a command with no description is the verb Ran and its first line as a chip, before and after the result", () => {
+    it("runs: a command with no description is a command row of its first line, no verb, before and after the result", () => {
         const done = stepOf(
             action("ran", {
                 target: "npx vitest run sticktobottom",
@@ -93,13 +131,14 @@ describe("stepOf", () => {
             }),
             false
         );
-        expect(done.verb).toBe("Ran");
-        expect(done.icon).toBe("run");
+        expect(done.verb).toBe("");
+        expect(done.command).toBe(true);
         expect(done.chips).toEqual([{ kind: "command", text: "npx vitest run sticktobottom" }]);
 
         // before the result lands there is no detail: the target (pi, codex, opencode: the command) stands in
         const pending = stepOf(action("ran", { target: "go build ./..." }), true);
-        expect(pending.verb).toBe("Ran");
+        expect(pending.verb).toBe("");
+        expect(pending.command).toBe(true);
         expect(pending.chips).toEqual([{ kind: "command", text: "go build ./..." }]);
     });
 
@@ -114,7 +153,7 @@ describe("stepOf", () => {
             false
         );
         expect(done.verb).toBe("");
-        expect(done.icon).toBe("run");
+        expect(done.command).toBe(true);
         expect(done.chips).toEqual([
             { kind: "description", text: "Run the tests", command: "npx vitest run sticktobottom" },
         ]);
@@ -163,8 +202,7 @@ describe("stepOf", () => {
             { loc: "/r/e.ts:5", code: "x" },
         ];
         const s = stepOf(action("grep", { target: "pin", detail: { kind: "grep", matches } }), false);
-        expect(s.verb).toBe("Search");
-        expect(s.icon).toBe("search");
+        expect(s.verb).toBe("Searched");
         expect(s.chips).toEqual([
             { kind: "file", path: "/r/a.ts" },
             { kind: "file", path: "/r/b.ts" },
@@ -184,39 +222,53 @@ describe("stepOf", () => {
         expect(noLoc.more).toBe(0);
     });
 
-    it("finds: a glob is the verb Find with its pattern as a text chip", () => {
-        const s = stepOf(action("glob", { target: "src/**/*.tsx" }), false);
-        expect(s.verb).toBe("Find");
-        expect(s.icon).toBe("find");
+    it("finds: a glob is the verb Found with its pattern as a text chip", () => {
+        const s = stepOf(action("glob", { target: "src/**/*.tsx", summary: "8 lines" }), false);
+        expect(s.verb).toBe("Found");
         expect(s.chips).toEqual([{ kind: "text", text: "src/**/*.tsx" }]);
+        expect(s.meta).toBe("8 lines");
     });
 
-    it("an unknown tool keeps its own name, capitalised, with the target as a text chip", () => {
-        const s = stepOf(action("mytool", { target: "example.com" }), false);
-        expect(s.verb).toBe("Mytool");
-        expect(s.icon).toBe("tool");
-        expect(s.chips).toEqual([{ kind: "text", text: "example.com" }]);
+    it("an unknown tool is Used, its name as what the row names, its target as the meta", () => {
+        const s = stepOf(action("mcp__github__get_pull_request", { target: "PR 12" }), false);
+        expect(s.verb).toBe("Used");
+        expect(s.chips).toEqual([{ kind: "text", text: "mcp__github__get_pull_request" }]);
+        expect(s.meta).toBe("PR 12");
         expect(s.more).toBe(0);
-        // a verb written with underscores (antigravity's run_command) reads as words
-        expect(stepOf(action("run_command", { target: "ls" }), false).verb).toBe("Run command");
-    });
-
-    it("an unknown tool that names a file gets a file chip, and one with no target no chip", () => {
-        expect(stepOf(action("mytool", { target: "x.md", path: "/r/x.md" }), false).chips).toEqual([
-            { kind: "file", path: "/r/x.md" },
-        ]);
-        expect(stepOf(action("mytool", { target: "" }), false).chips).toEqual([]);
-    });
-
-    it("names the tools the transcripts call by other names", () => {
-        expect(stepOf(action("spawned", { target: "reviewer" }), false).icon).toBe("spawn");
-        expect(stepOf(action("webfetch", { target: "example.com" }), false)).toMatchObject({
-            verb: "Fetch",
-            icon: "web",
+        expect(stepOf(action("mytool", { target: "" }), false).meta).toBeUndefined();
+        // an unknown name whose detail says what it was (agy's edit_file) words it by the detail
+        expect(
+            stepOf(action("edit_file", { detail: { kind: "edit", files: [file("/r/a.ts")] } }), false)
+        ).toMatchObject({
+            verb: "Edited",
+            chips: [{ kind: "file", path: "/r/a.ts" }],
         });
-        expect(stepOf(action("skill", { target: "arc:design" }), false).icon).toBe("skill");
-        expect(stepOf(action("asked", { target: "Which one?" }), false).icon).toBe("ask");
-        expect(stepOf(action("blocked", { outcome: "blocked" }), false).icon).toBe("blocked");
+    });
+
+    it("a subagent is named by its type, its task as the meta; with no type, by its target", () => {
+        const s = stepOf(
+            action("spawned", {
+                target: "Find where the router registers routes",
+                subagent: { description: "Find where the router registers routes", subagentType: "Explore" },
+            }),
+            false
+        );
+        expect(s).toMatchObject({
+            verb: "Spawned",
+            chips: [{ kind: "text", text: "Explore" }],
+            meta: "Find where the router registers routes",
+        });
+        expect(stepOf(action("spawned", { target: "reviewer" }), false).chips).toEqual([
+            { kind: "text", text: "reviewer" },
+        ]);
+    });
+
+    it("words the other tools the transcripts name in the past tense", () => {
+        expect(stepOf(action("webfetch", { target: "example.com" }), false).verb).toBe("Fetched");
+        expect(stepOf(action("websearch", { target: "vitest" }), false).verb).toBe("Searched the web");
+        expect(stepOf(action("skill", { target: "arc:design" }), false).verb).toBe("Ran skill");
+        expect(stepOf(action("asked", { target: "Which one?" }), false).verb).toBe("Asked");
+        expect(stepOf(action("blocked", { target: "x", outcome: "blocked" }), false).verb).toBe("Blocked");
     });
 
     it("is running only for a call with no result in a session that is working", () => {
@@ -294,15 +346,11 @@ describe("stepRows", () => {
 });
 
 describe("foldOf", () => {
-    it("adds up the run: count, time, and an edit run's lines", () => {
-        const f = foldOf(
-            [edit("/r/rail.tsx", 0, 9, { durationMs: 5_700 }), edit("/r/rail.tsx", 1, 6, { durationMs: 5_100 })],
-            false
-        );
-        expect(f.step.verb).toBe("Edit");
+    it("adds up the run: count and an edit run's lines", () => {
+        const f = foldOf([edit("/r/rail.tsx", 0, 9), edit("/r/rail.tsx", 1, 6)], false);
+        expect(f.step.verb).toBe("Edited");
         expect(f.step.chips).toEqual([{ kind: "file", path: "/r/rail.tsx" }]);
         expect(f.count).toBe(2);
-        expect(f.durationMs).toBe(10_800);
         expect(f.edits).toEqual({ adds: 1, dels: 15 });
         expect(f.step.running).toBe(false);
     });
@@ -313,11 +361,11 @@ describe("foldOf", () => {
         expect(foldOf([read("/r/a.ts"), read("/r/a.ts")], false).edits).toBeUndefined();
     });
 
-    it("is running while its last call is in flight, counting from that call's start", () => {
+    it("is running while its last call is in flight, its verb in the present tense", () => {
         const pending = action("edited", { target: "a.ts", path: "/r/a.ts", startedAt: 1_000 });
-        const f = foldOf([edit("/r/a.ts", 1, 2, { durationMs: 900 }), pending], true);
+        const f = foldOf([edit("/r/a.ts", 1, 2), pending], true);
         expect(f.step.running).toBe(true);
-        expect(f.runningSince).toBe(1_000);
+        expect(f.step.verb).toBe("Editing");
         expect(f.edits).toEqual({ adds: 1, dels: 2 });
         expect(foldOf([edit("/r/a.ts", 1, 2), pending], false).step.running).toBe(false);
     });

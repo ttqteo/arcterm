@@ -25,7 +25,8 @@ type Tense = "past" | "base";
 // what a call did, as the sentence groups it: the changing kinds in the order they are said, then the looking ones
 type Kind = "edit" | "write" | "run" | "spawn" | "skill" | "ask" | "read" | "grep" | "glob" | "fetch" | "web" | "tool";
 
-const CHANGING: Kind[] = ["edit", "write", "run", "spawn", "skill", "ask"];
+// a skill is said after what only looked, as the canvas words it ("Read 3 files, searched for files, ran skill")
+const CHANGING: Kind[] = ["edit", "write", "run", "spawn", "ask"];
 const SEARCHING: Kind[] = ["grep", "glob", "fetch", "web"];
 
 const KIND_BY_VERB: Record<string, Kind> = {
@@ -45,10 +46,10 @@ const KIND_BY_VERB: Record<string, Kind> = {
 // the running line's verb, before what the call works on
 const DOING: Record<Kind, string> = {
     edit: "Editing",
-    write: "Writing",
+    write: "Creating",
     run: "Running",
     spawn: "Spawning",
-    skill: "Using skill",
+    skill: "Running skill",
     ask: "Asking",
     read: "Reading",
     grep: "Searching for",
@@ -101,14 +102,14 @@ function filesObject(calls: AgentActionEntry[]): string {
 
 const VERBS: Record<Kind, Record<Tense, string>> = {
     edit: { past: "edited", base: "edit" },
-    write: { past: "wrote", base: "write" },
+    write: { past: "created", base: "create" },
     run: { past: "ran", base: "run" },
     spawn: { past: "spawned", base: "spawn" },
-    skill: { past: "used", base: "use" },
+    skill: { past: "ran", base: "run" },
     ask: { past: "asked", base: "ask" },
     read: { past: "read", base: "read" },
     grep: { past: "searched", base: "search" },
-    glob: { past: "looked for files", base: "look for files" },
+    glob: { past: "searched for files", base: "search for files" },
     fetch: { past: "fetched", base: "fetch" },
     web: { past: "searched the web", base: "search the web" },
     tool: { past: "used", base: "use" },
@@ -127,10 +128,8 @@ function clause(kind: Kind, calls: AgentActionEntry[], tense: Tense): string {
             return `${verb} ${count(n, "a command", "commands")}`;
         case "spawn":
             return `${verb} ${count(n, "an agent", "agents")}`;
-        case "skill": {
-            const name = calls[0].target.trim();
-            return n === 1 && name !== "" ? `${verb} skill ${name}` : `${verb} ${count(n, "a skill", "skills")}`;
-        }
+        case "skill":
+            return `${verb} ${count(n, "skill", "skills")}`;
         case "ask":
             return `${verb} ${count(n, "a question", "questions")}`;
         case "fetch":
@@ -143,7 +142,7 @@ function clause(kind: Kind, calls: AgentActionEntry[], tense: Tense): string {
 }
 
 /** Pure: the calls as clauses, in the sentence's order: what changed something, then one clause for what only looked
- *  ("read 5 files and searched 3 times"), then any tool it has no word for ("used 2 tools"). */
+ *  ("read 5 files and searched 3 times"), then the skills it ran, then any tool it has no word for ("used 2 tools"). */
 function clauses(actions: AgentActionEntry[], tense: Tense): string[] {
     const byKind = new Map<Kind, AgentActionEntry[]>();
     for (const a of actions) {
@@ -166,6 +165,9 @@ function clauses(actions: AgentActionEntry[], tense: Tense): string[] {
     if (looked.length > 0) {
         out.push(looked.join(" and "));
     }
+    if (byKind.has("skill")) {
+        out.push(clause("skill", byKind.get("skill"), tense));
+    }
     if (byKind.has("tool")) {
         out.push(clause("tool", byKind.get("tool"), tense));
     }
@@ -180,11 +182,12 @@ function chipText(chip: StepChip): string {
 }
 
 /** Pure: what a call in flight is doing: "Running npm test", "Reading server.js"; a described command by its
- *  description alone ("Run the test suite"), which already says what it does. */
+ *  description, which already says what it does, its leading Run or Ran said as Running ("Ran tests to confirm…" →
+ *  "Running tests to confirm…", as the canvas draws it). */
 export function doingText(a: AgentActionEntry): string {
     const [chip] = chipsOf(a);
     if (chip?.kind === "description") {
-        return chip.text;
+        return chip.text.replace(/^(?:Run|Ran|Running)\b/i, "Running");
     }
     const kind = kindOf(a);
     const verb = kind === "tool" ? `${DOING.tool} ${plainVerb(a.verb).toLowerCase()}` : DOING[kind];

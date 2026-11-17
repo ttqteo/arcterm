@@ -53,6 +53,20 @@ export function bashNeverRan(body: string): boolean {
     return t !== "" && !/^Exit code \d+/.test(t) && !/^(Interrupted\b|\[Tool call interrupted)/.test(t);
 }
 
+const MAX_ERROR_LINE = 160;
+
+/** Pure: the first line of a failed tool's result, its `<tool_use_error>` tags dropped and cut at MAX_ERROR_LINE: "String
+ *  to replace not found in file.". "" for an empty result. */
+export function errorLine(body: string): string {
+    const line =
+        body
+            .replace(/<\/?tool_use_error>/g, "")
+            .split("\n")
+            .map((l) => l.trim())
+            .find((l) => l !== "") ?? "";
+    return line.length > MAX_ERROR_LINE ? `${line.slice(0, MAX_ERROR_LINE - 1)}…` : line;
+}
+
 function verbFor(name: string): string {
     return VERB_BY_TOOL[name] ?? name.toLowerCase();
 }
@@ -594,6 +608,12 @@ export function projectTranscript(lines: string[]): AgentEntry[] {
                 }
                 // a result that landed is an outcome, whatever the tool: a tool with none is still running (inFlight)
                 action.outcome = blocked ? "blocked" : block.is_error === true ? "fail" : "ok";
+                // a failed call's error, as Chat's row says it after the verb ("Edit failed · String to replace not
+                // found"); a command's output already says what went wrong
+                const error = action.outcome === "fail" && tool !== "Bash" ? errorLine(body) : "";
+                if (error !== "") {
+                    action.note = error;
+                }
             }
             if (images.length > 0) {
                 if (prompt != null) {

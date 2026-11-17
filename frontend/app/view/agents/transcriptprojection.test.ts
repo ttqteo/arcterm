@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
     bashNeverRan,
     compactSummaryText,
+    errorLine,
     extractAiTitle,
     extractBackgroundTasks,
     extractSubagentSpawns,
@@ -127,6 +128,24 @@ describe("projectTranscript", () => {
         ]);
         expect(out[0]).toMatchObject({ verb: "blocked", outcome: "blocked", detail: { kind: "bash", exit: null, output: refusal } });
         expect(out[1]).toMatchObject({ verb: "ran", outcome: "fail", detail: { kind: "bash", exit: 1 } });
+    });
+
+    it("keeps a failed tool's error, its first line without the tags, as the action's note; a command's stays in its output", () => {
+        const missed = "<tool_use_error>String to replace not found in file.\nString: const x = 1;</tool_use_error>";
+        const out = projectTranscript([
+            JSON.stringify({ type: "assistant", message: { content: [{ type: "tool_use", id: "e1", name: "Edit", input: { file_path: "/r/server.js", old_string: "const x = 1;", new_string: "const x = 2;" } }] } }),
+            JSON.stringify({ type: "user", message: { content: [{ type: "tool_result", tool_use_id: "e1", is_error: true, content: missed }] } }),
+            JSON.stringify({ type: "assistant", message: { content: [{ type: "tool_use", id: "b1", name: "Bash", input: { command: "false" } }] } }),
+            JSON.stringify({ type: "user", message: { content: [{ type: "tool_result", tool_use_id: "b1", is_error: true, content: "Exit code 1\n" }] } }),
+            JSON.stringify({ type: "assistant", message: { content: [{ type: "tool_use", id: "r1", name: "Read", input: { file_path: "/r/a.ts" } }] } }),
+            JSON.stringify({ type: "user", message: { content: [{ type: "tool_result", tool_use_id: "r1", content: "x" }] } }),
+        ]);
+        expect(out[0]).toMatchObject({ verb: "edited", outcome: "fail", note: "String to replace not found in file." });
+        expect(out[1]).toMatchObject({ outcome: "fail" });
+        expect(out[1]).not.toHaveProperty("note");
+        expect(out[2]).not.toHaveProperty("note");
+        expect(errorLine(`${"x".repeat(200)}\nmore`)).toHaveLength(160);
+        expect(errorLine("")).toBe("");
     });
 
     it("keeps the full path of a file tool beside its base name", () => {

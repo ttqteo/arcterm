@@ -1,10 +1,11 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// The step line of one tool call in Chat (chatstepsview.tsx): an icon, a verb ("Read", "Edit", "Ran", "Search"…) and a chip
-// for each thing the call touched, `+N` past the third. One step per call, as WorkItem.actions holds them (compacttimeline.ts),
-// built only from the transcript entry, with no Thought lines (the projection skips thinking blocks). stepRows folds a run of
-// calls with the same verb on the same one file into one line ("Edit a.ts ×4"), which opens to its calls. Pure.
+// The row of one tool call in an opened stretch in Chat (chatstepsview.tsx): a past-tense verb ("Read", "Edited", "Ran
+// skill"…), what the call touched (`+N` past the third) and a muted meta ("25 lines", a failed call's error); a command is
+// its description alone, or its first line. One step per call, as WorkItem.actions holds them (compacttimeline.ts), built
+// only from the transcript entry, with no Thought lines (the projection skips thinking blocks). stepRows folds a run of
+// calls with the same verb on the same one file into one row ("Edited a.ts ×4"), which opens to its calls. Pure.
 
 import type { AgentActionEntry } from "./agentsviewmodel";
 import { inFlight } from "./compacttimeline";
@@ -15,22 +16,8 @@ export const MAX_STEP_CHIPS = 3;
 // a command or pattern past this is cut with an ellipsis (the chip truncates by width too; this keeps the DOM small)
 const MAX_CHIP_TEXT = 160;
 
-export type StepIcon =
-    | "read"
-    | "edit"
-    | "write"
-    | "run"
-    | "search"
-    | "find"
-    | "web"
-    | "spawn"
-    | "skill"
-    | "ask"
-    | "blocked"
-    | "tool";
-
-// a command its call described ("Confirmed the server is no longer running") is a "description": the line shows those words
-// in place of the verb and the command, and the command shows when the line opens
+// a command its call described ("Confirmed the server is no longer running") is a "description": the row shows those words
+// alone, and the command shows when the row opens
 export type StepChip =
     | { kind: "file"; path: string }
     | { kind: "command"; text: string }
@@ -38,31 +25,43 @@ export type StepChip =
     | { kind: "text"; text: string };
 
 export interface Step {
-    verb: string; // "" for a described command: its description says what it did
-    icon: StepIcon;
+    verb: string; // "" for a command: its description or its first line says what it did
     chips: StepChip[]; // at most MAX_STEP_CHIPS
     more: number; // the things the call touched past the chips shown
+    meta?: string; // muted words after them: a read's "25 lines", a failed call's error, a subagent's task
+    command: boolean; // a command row: its text alone, no verb
     running: boolean; // its result has not landed in a session that is working
+    failed: boolean; // the verb reads "Edit failed", in red
 }
 
-// the verbs the transcripts write (lower case: transcriptprojection.ts VERB_BY_TOOL and the codex / pi / opencode ones),
-// each with its icon and the word the line shows; any other verb keeps its own name
-const KNOWN: Record<string, { verb: string; icon: StepIcon }> = {
-    read: { verb: "Read", icon: "read" },
-    edited: { verb: "Edit", icon: "edit" },
-    wrote: { verb: "Write", icon: "write" },
-    ran: { verb: "Ran", icon: "run" },
-    grep: { verb: "Search", icon: "search" },
-    glob: { verb: "Find", icon: "find" },
-    webfetch: { verb: "Fetch", icon: "web" },
-    websearch: { verb: "Web search", icon: "web" },
-    spawned: { verb: "Spawned", icon: "spawn" },
-    skill: { verb: "Skill", icon: "skill" },
-    asked: { verb: "Asked", icon: "ask" },
-    blocked: { verb: "Blocked", icon: "blocked" },
+// a verb in the three forms a row says it: done ("Edited"), running ("Editing"), and the stem a failure is worded on
+// ("Edit failed")
+interface Verb {
+    done: string;
+    doing: string;
+    stem: string;
+}
+
+// the verbs the transcripts write (lower case: transcriptprojection.ts VERB_BY_TOOL and the codex / pi / opencode ones)
+const KNOWN: Record<string, Verb> = {
+    read: { done: "Read", doing: "Reading", stem: "Read" },
+    edited: { done: "Edited", doing: "Editing", stem: "Edit" },
+    wrote: { done: "Created", doing: "Creating", stem: "Create" },
+    ran: { done: "Ran", doing: "Running", stem: "Run" },
+    grep: { done: "Searched", doing: "Searching", stem: "Search" },
+    glob: { done: "Found", doing: "Finding", stem: "Find" },
+    webfetch: { done: "Fetched", doing: "Fetching", stem: "Fetch" },
+    websearch: { done: "Searched the web", doing: "Searching the web", stem: "Web search" },
+    spawned: { done: "Spawned", doing: "Spawning", stem: "Spawn" },
+    skill: { done: "Ran skill", doing: "Running skill", stem: "Skill" },
+    asked: { done: "Asked", doing: "Asking", stem: "Ask" },
+    blocked: { done: "Blocked", doing: "Blocked", stem: "Blocked" },
 };
 
-/** Pure: a verb we have no word for, as the line says it: "run_command" → "Run command". */
+// any other tool: "Used mcp__github__get_pull_request", its name as what the row names
+const USED: Verb = { done: "Used", doing: "Using", stem: "Tool" };
+
+/** Pure: a verb we have no word for, as words: "run_command" → "Run command". */
 export function plainVerb(verb: string): string {
     const words = verb.replace(/[_-]+/g, " ").trim();
     return words === "" ? "Tool" : words[0].toUpperCase() + words.slice(1);
@@ -202,13 +201,11 @@ export function stepRows(actions: AgentActionEntry[]): StepRow[] {
 export interface StepFold {
     step: Step; // the run's verb and file, running while any call in it is
     count: number;
-    durationMs: number; // the calls that finished, added up
-    runningSince?: number; // the startedAt of the call in flight, when it carried one
     summary?: string; // a read's "25 lines", when every call in the run says the same
     edits?: { adds: number; dels: number }; // an edit run's lines, over the calls whose diff landed
 }
 
-/** Pure: a folded run as its one line. */
+/** Pure: a folded run as its one row. */
 export function foldOf(actions: AgentActionEntry[], live: boolean): StepFold {
     const running = actions.find((a) => inFlight(a, live));
     const summaries = new Set(actions.map((a) => a.summary ?? ""));
@@ -221,24 +218,61 @@ export function foldOf(actions: AgentActionEntry[], live: boolean): StepFold {
         }
     }
     return {
-        step: { ...stepOf(actions[0], live), running: running != null },
+        // the call in flight words the run's verb ("Editing"); every call in a run has the same verb and file
+        step: stepOf(running ?? actions[0], live),
         count: actions.length,
-        durationMs: actions.reduce((n, a) => n + (a.durationMs ?? 0), 0),
-        runningSince: running?.startedAt,
         summary: summaries.size === 1 && summary !== "" ? summary : undefined,
         edits,
     };
 }
 
-/** Pure: one tool call as a step line. `live`: the session is working, so a call with no result is running. */
+/** Pure: the verb a call's row says, or null for a tool we have no word for. A harness that names its tools its own way
+ *  (agy's run_command) still says what the call was by its detail. */
+function verbOf(a: AgentActionEntry): Verb | null {
+    return KNOWN[a.verb] ?? (a.detail?.kind === "edit" ? KNOWN.edited : a.detail?.kind === "bash" ? KNOWN.ran : null);
+}
+
+function rowVerb(verb: Verb, a: AgentActionEntry, running: boolean): string {
+    if (a.outcome === "blocked") {
+        return KNOWN.blocked.done;
+    }
+    if (a.outcome === "fail") {
+        return `${verb.stem} failed`;
+    }
+    return running ? verb.doing : verb.done;
+}
+
+/** Pure: one tool call as a row. `live`: the session is working, so a call with no result is running. */
 export function stepOf(action: AgentActionEntry, live: boolean): Step {
-    const known = KNOWN[action.verb];
-    const all = chipsOf(action);
+    const known = verbOf(action);
+    // a subagent is named by its type ("Explore"), its task after it; a tool we have no word for by its own name
+    const type = action.verb === "spawned" ? action.subagent?.subagentType : undefined;
+    let all: StepChip[];
+    if (type != null) {
+        all = [{ kind: "text", text: type }];
+    } else if (known != null) {
+        all = chipsOf(action);
+    } else {
+        all = [{ kind: "text", text: action.verb }];
+    }
+    const failed = action.outcome === "fail";
+    let meta = action.summary;
+    if (failed) {
+        meta = action.note ?? action.summary;
+    } else if (type != null) {
+        meta = action.subagent?.description;
+    } else if (known == null && action.target.trim() !== "") {
+        meta = firstLine(action.target);
+    }
+    const command = all[0]?.kind === "command" || all[0]?.kind === "description";
+    const running = inFlight(action, live);
     return {
-        verb: all[0]?.kind === "description" ? "" : (known?.verb ?? plainVerb(action.verb)),
-        icon: known?.icon ?? "tool",
+        verb: command ? "" : rowVerb(known ?? USED, action, running),
         chips: all.slice(0, MAX_STEP_CHIPS),
         more: Math.max(0, all.length - MAX_STEP_CHIPS),
-        running: inFlight(action, live),
+        meta: meta != null && meta !== "" ? meta : undefined,
+        command,
+        running,
+        failed,
     };
 }

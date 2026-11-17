@@ -585,8 +585,8 @@ export default function (kit) {
                 }
                 await shot(h, "7b-step-fold");
                 rec(
-                    `${name}: one [data-chat-step-fold]="3" line reads Edit config.ts ×3 with one chip, closed; a click opens [data-chat-step-calls] with its three calls, chipless`,
-                    before.count === "3" && /Edit\s*config\.ts\s*×3/.test(before.text) && before.chips === 1 && !before.calls && calls?.lines === 3 && calls.chips === 0 && calls.expanded === "true",
+                    `${name}: one [data-chat-step-fold]="3" row reads Edited config.ts ×3 with one chip, closed; a click opens [data-chat-step-calls] with its three calls, chipless`,
+                    before.count === "3" && /Edited\s*config\.ts\s*×3/.test(before.text) && before.chips === 1 && !before.calls && calls?.lines === 3 && calls.chips === 0 && calls.expanded === "true",
                     { before, calls }
                 );
             });
@@ -1181,9 +1181,9 @@ export default function (kit) {
                 })()`);
                 await shot(h, "21-described-command");
                 rec(
-                    `${name}: the stretch folds into Ran 2 commands; opened, npm test keeps Ran and its command chip, the described call reads Confirmed the server is no longer running with no Ran and no command chip, and opening it shows curl -s localhost:5174/health`,
+                    `${name}: the stretch folds into Ran 2 commands; opened, npm test is its command's first line alone (no verb), the described call reads Confirmed the server is no longer running with no Ran and no command chip, and opening it shows curl -s localhost:5174/health`,
                     folded && opened && detail &&
-                        got.plain.text.startsWith("Ran") && got.plain.command === "npm test" &&
+                        got.plain.text === "npm test" && got.plain.command === "npm test" &&
                         got.described.description === "Confirmed the server is no longer running" &&
                         got.described.command == null && !got.described.text.startsWith("Ran") &&
                         got.described.panel.includes("curl -s localhost:5174/health"),

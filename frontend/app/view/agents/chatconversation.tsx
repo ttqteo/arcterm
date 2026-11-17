@@ -32,7 +32,7 @@
 // the card is the dock's while the agent asks, and the ✓ row it folds into stands in place once answered).
 
 import { CopyButton } from "@/app/element/copybutton";
-import { MOTION, springReveal } from "@/app/element/motiontokens";
+import { MOTION } from "@/app/element/motiontokens";
 import { SkeletonLine } from "@/app/element/skeleton";
 import { ContextMenuModel } from "@/app/store/contextmenu";
 import { openOrPeek } from "@/app/view/jarvis/openref";
@@ -61,7 +61,6 @@ import {
     type AgentEntry,
     type AgentVM,
     type BtwAnswer,
-    type EditFile,
     type ShellResult,
 } from "./agentsviewmodel";
 import { procExited } from "./brainstormmodel";
@@ -124,14 +123,7 @@ import { ChatCommitCard } from "./chatcommitcard";
 import { VERDICT_TOPIC, verdictMode, type VerdictMode } from "./chatverdict";
 import { ChatVerdictCard } from "./chatverdictcard";
 import { CouncilText } from "./councilchat";
-import {
-    CompactionDivider,
-    InterruptedDivider,
-    PromptImages,
-    TaskNotificationRow,
-    ToolDetailBody,
-} from "./narrationtimeline";
-import { usePathOpener } from "./pathlinkcontext";
+import { CompactionDivider, InterruptedDivider, PromptImages, TaskNotificationRow } from "./narrationtimeline";
 import { pinnedLabel } from "./pinnedlabel";
 import { PinnedPromptBar, scrollParent, usePinnedPrompt } from "./pinnedpromptbar";
 import { useConversationRuns } from "./runoriginstore";
@@ -786,86 +778,6 @@ function openedFor(opened: ReadonlySet<string>, itemKey: string): string {
         }
     }
     return out;
-}
-
-// the files a stretch of work edited, a chip each ("session.ts +4 −1"), each opening its diff under the row. The arrow at
-// a chip's end opens the file itself where a path link in the terminal would (the agent's File tab, which previews HTML
-// and markdown); a transcript with no agent around it has no opener, and its chips only open their diff.
-function FileChips({
-    files,
-    openPaths,
-    onToggle,
-}: {
-    files: EditFile[];
-    openPaths: Set<string>;
-    onToggle: (path: string) => void;
-}) {
-    const opened = files.filter((f) => openPaths.has(f.path));
-    const opener = usePathOpener();
-    return (
-        <div data-chat-files className="flex flex-col gap-2">
-            <div className="flex flex-wrap gap-[6px]">
-                {files.map((f) => {
-                    const open = openPaths.has(f.path);
-                    const name = f.path.split(/[\\/]/).pop() || f.path;
-                    return (
-                        <span
-                            key={f.path}
-                            className={cn(
-                                "flex items-center rounded-full border bg-surface text-[12px] hover:border-edge-strong",
-                                open ? "border-edge-strong" : "border-edge-mid"
-                            )}
-                        >
-                            <button
-                                type="button"
-                                data-chat-file={f.path}
-                                aria-expanded={open}
-                                title={f.path}
-                                onClick={() => onToggle(f.path)}
-                                className={cn(
-                                    "flex cursor-pointer items-center gap-2 py-[3px] pl-[12px]",
-                                    opener != null ? "pr-[4px]" : "pr-[12px]"
-                                )}
-                            >
-                                <span className="max-w-[260px] truncate text-secondary">{name}</span>
-                                <span className="font-semibold tabular-nums text-diff-added">+{f.adds}</span>
-                                <span className="font-semibold tabular-nums text-diff-removed">−{f.dels}</span>
-                            </button>
-                            {opener != null ? (
-                                <button
-                                    type="button"
-                                    data-chat-file-open={f.path}
-                                    title={`Open ${name}`}
-                                    aria-label={`Open ${name}`}
-                                    onClick={() => opener.open(f.path)}
-                                    className="flex cursor-pointer items-center self-stretch rounded-r-full pl-[4px] pr-[10px] text-muted hover:text-primary"
-                                >
-                                    <ArrowUpRight size={13} strokeWidth={2.2} aria-hidden />
-                                </button>
-                            ) : null}
-                        </span>
-                    );
-                })}
-            </div>
-            <AnimatePresence initial={false}>
-                {opened.map((f) => (
-                    <motion.div
-                        key={f.path}
-                        data-chat-diff={f.path}
-                        variants={springReveal}
-                        initial="initial"
-                        animate="animate"
-                        exit="exit"
-                        className="overflow-hidden rounded-[8px] border border-edge-mid bg-surface-code"
-                    >
-                        <div className="max-h-[360px] overflow-auto">
-                            <ToolDetailBody detail={{ kind: "edit", files: [f] }} variant="inline" />
-                        </div>
-                    </motion.div>
-                ))}
-            </AnimatePresence>
-        </div>
-    );
 }
 
 // where a chunk's work begins: the message that moved the agent to it (the initiative band's Work on this) carries the
@@ -1565,9 +1477,9 @@ export function ChatConversation({
                 );
             }
             case "work": {
-                // the work the agent is doing now: nothing but its files chip and its cards (a verdict, a handoff, a Doc
-                // review, a run or a council it started) after it in the last item. It shows open, so a click on it folds
-                // it (a key of its own, which stops counting once the agent is done)
+                // the work the agent is doing now: nothing but its cards (a verdict, a handoff, a Doc review, a run or a
+                // council it started) after it in the last item. It shows open, so a click on it folds it (a key of its
+                // own, which stops counting once the agent is done)
                 const autoOpen =
                     !!active &&
                     last &&
@@ -1575,7 +1487,6 @@ export function ChatConversation({
                         .slice(p + 1)
                         .every(
                             (q) =>
-                                q.kind === "files" ||
                                 q.kind === "verdict" ||
                                 q.kind === "commit" ||
                                 q.kind === "handoff" ||
@@ -1592,12 +1503,6 @@ export function ChatConversation({
                         live={toolsLive}
                         onToggle={() => toggle(autoOpen ? `${key}^closed` : key)}
                     />
-                );
-            }
-            case "files": {
-                const openPaths = new Set(part.files.filter((f) => opened.has(`${key}:${f.path}`)).map((f) => f.path));
-                return (
-                    <FileChips files={part.files} openPaths={openPaths} onToggle={(path) => toggle(`${key}:${path}`)} />
                 );
             }
             // a reviewer's verdict: a card while it waits on you (or the agent works, or has exited), its ✓ row once it folds
