@@ -638,6 +638,11 @@ Older parts: [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) · [part 4
   with an agent that has Ship and Close, narrow the window or open a split until the header crowds; Chat, Terminal,
   Ship and Close become icons, the model and context (`opus 120k`) never draw under the Chat switch, and widening
   brings the words back without flicker. Hovering Close names the session's tokens.
+- [ ] (arcterm) A relaunched lead stays on its run's row (`isCurrentLead`, `staleLead`, `runlineage.ts` /
+  `agenttreemodel.ts`): with an orchestrator run executing, restart arcterm (or let its lead die so the engine
+  relaunches it); the run's row in the Agent tree is the new lead's, working, and the old lead's sleeping tab has no
+  row of its own. An agent whose brainstorm run was cancelled and queued again reads `plan queued #N` alone, with no
+  `cancelled · run …` beside it.
 - [ ] (arcterm) A server mark keeps two ports (`shortPortsLabel`, `devserversmodel.ts`): an agent or run row in the
   Agent tree whose background servers listen on four ports reads `:5175 :9230 +2` beside the green server glyph, and
   hovering it lists all four ports with their commands.

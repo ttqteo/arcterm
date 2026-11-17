@@ -3,6 +3,7 @@
 
 import { describe, expect, it } from "vitest";
 import {
+    brainstormRunSuperseded,
     finishedRun,
     HIDDEN_RUNS_CAP,
     hideableOriginRuns,
@@ -277,6 +278,28 @@ describe("originLinks", () => {
             title: "Title r2 · cancelled",
             target: { kind: "run", runId: "r2" },
         });
+    });
+});
+
+describe("brainstormRunSuperseded", () => {
+    const queued = {
+        label: "plan queued #1",
+        title: "Build section 6 · plan queued #1",
+        target: { kind: "queued", entryId: "q-1" },
+    } as const;
+    const other = { label: "2/5", title: "Build · 2/5", target: { kind: "run", runId: "run-new" } } as const;
+    const same = { label: "cancelled", title: "Build · cancelled", target: { kind: "run", runId: "run-old" } } as const;
+
+    it("drops a cancelled brainstorm run once the chip names a plan queued after it, or another run", () => {
+        expect(brainstormRunSuperseded("run-old", "cancelled", queued)).toBe(true);
+        expect(brainstormRunSuperseded("run-old", "cancelled", other)).toBe(true);
+    });
+
+    it("keeps it while it is all there is, or while it is still going", () => {
+        expect(brainstormRunSuperseded("run-old", "cancelled", same)).toBe(false);
+        expect(brainstormRunSuperseded("run-old", "cancelled", null)).toBe(false);
+        expect(brainstormRunSuperseded("run-old", "executing", queued)).toBe(false);
+        expect(brainstormRunSuperseded(undefined, "cancelled", queued)).toBe(false);
     });
 });
 

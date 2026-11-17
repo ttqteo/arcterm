@@ -128,7 +128,7 @@ import { dockedTerminalAtom } from "./railstore";
 import { renamingRowAtom } from "./rowrenameatom";
 import { cancellingRunIdsAtom, resumePausedRun, resumingRunIdsAtom } from "./runactions";
 import { runEventsAtom } from "./runeventstore";
-import { hideableOriginRuns, originLinks, type OriginLink } from "./runorigin";
+import { brainstormRunSuperseded, hideableOriginRuns, originLinks, type OriginLink } from "./runorigin";
 import {
     hiddenRunIdsAtom,
     hideStartedRuns,
@@ -739,9 +739,24 @@ function PaneTag({ model, id }: { model: AgentsViewModel; id: string }) {
 
 // replaces a row's model and branch while the agent brainstorms (its chip names it): the question it asks, or the
 // work it is at; once the person approved, the run it started, the run's own state leading, which links to it
-function BrainstormTreeLine({ model, f, asking }: { model: AgentsViewModel; f: BrainstormFile; asking: boolean }) {
+// A cancelled run gives way to the run chip once that names something newer (brainstormRunSuperseded): the line goes,
+// rather than read `cancelled` beside the plan queued to run again.
+function BrainstormTreeLine({
+    model,
+    f,
+    asking,
+    originLink,
+}: {
+    model: AgentsViewModel;
+    f: BrainstormFile;
+    asking: boolean;
+    originLink: OriginLink | null;
+}) {
     const info = useRunInfo(f.run);
     const view = f.run != null ? runStepView(f.run, info.run, info.loaded) : null;
+    if (brainstormRunSuperseded(f.run ?? undefined, info.run?.status, originLink)) {
+        return null;
+    }
     const line = treeLine(f, asking, view ? runTreeText(f.run!, view) : undefined);
     return (
         <span data-brainstorm-tree-line className="flex min-w-0 items-baseline">
@@ -1644,6 +1659,7 @@ function ParentRow({
                                 model={model}
                                 f={brainstormFile}
                                 asking={asking && waitsOnUser(brainstormFile)}
+                                originLink={originLink}
                             />
                         ) : (
                             <>

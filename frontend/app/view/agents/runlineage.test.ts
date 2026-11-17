@@ -26,6 +26,7 @@ import {
     leadPhaseFailed,
     leadRunTabIds,
     leadStandingBy,
+    leadTabIdsOf,
     lineageOf,
     mergeGateLine,
     runAgentsOf,
@@ -613,6 +614,7 @@ describe("runInfoOf", () => {
             project: "arc",
             projectPath: "C:\\code\\arc",
             leadStarted: true,
+            leadTabIds: [],
             status: "done",
             landPath: "C:\\code\\.arc-land\\r-1",
             base: "main",
@@ -620,6 +622,24 @@ describe("runInfoOf", () => {
             dag,
             digest,
         });
+    });
+
+    it("names the tabs the run's phases hold as its lead now, and no one for a run not loaded", () => {
+        // a relaunch drops the old lead's tab from the phases and adds the new one's
+        const run = {
+            phases: [{ workerorefs: ["run:x", "tab:fresh-tab"] }, { workerorefs: [] }, {}],
+        } as unknown as Run;
+        expect(leadTabIdsOf(run)).toEqual(["fresh-tab"]);
+        expect(leadTabIdsOf(undefined)).toBeUndefined();
+    });
+
+    it("finds the lead the run names now before a tab a relaunch left, both stamped with the run", () => {
+        const roles: Lineage["roles"] = { old: { kind: "lead", runId: "r" }, fresh: { kind: "lead", runId: "r" } };
+        const agents = [{ id: "old" }, { id: "fresh" }];
+        const named = { roles, runs: { r: { leadTabIds: ["fresh"] } as RunInfo } };
+        expect(leadAgentOf(named, agents, "r")?.id).toBe("fresh");
+        const unknown = { roles, runs: { r: {} as RunInfo } };
+        expect(leadAgentOf(unknown, agents, "r")?.id).toBe("old");
     });
 
     it("reads a run it has not loaded as an untitled run with no base", () => {
