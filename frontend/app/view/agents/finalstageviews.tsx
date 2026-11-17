@@ -274,7 +274,8 @@ export function FinalStepStrip({ view }: { view: FinalStageView }) {
     );
 }
 
-// A running command's output tail, its last `lines` lines when given. Draws nothing with no output.
+// A running command's output tail, its last `lines` lines when given. Draws nothing with no output. A line wider than
+// the box wraps, broken anywhere (a path has no space to break at): one cut at the edge hid where a dev app started.
 export function FinalOutput({ output, lines, className }: { output: string; lines?: number; className?: string }) {
     const text = lines == null ? output.trimEnd() : outputTail(output, lines);
     if (text === "") {
@@ -284,7 +285,7 @@ export function FinalOutput({ output, lines, className }: { output: string; line
         <div
             data-final-output
             className={cn(
-                "overflow-hidden whitespace-pre rounded-[6px] border border-edge-mid bg-surface-code px-[9px] py-[7px] font-mono text-[10.5px] leading-[1.55] text-ink-mid",
+                "whitespace-pre-wrap [overflow-wrap:anywhere] rounded-[6px] border border-edge-mid bg-surface-code px-[9px] py-[7px] font-mono text-[10.5px] leading-[1.55] text-ink-mid",
                 className
             )}
         >
