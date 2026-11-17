@@ -15,6 +15,9 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/wavetermdev/waveterm/pkg/util/jobobject"
+	"github.com/wavetermdev/waveterm/pkg/wshrpc"
+	"github.com/wavetermdev/waveterm/pkg/wshrpc/wshclient"
+	"github.com/wavetermdev/waveterm/pkg/wshutil"
 )
 
 var detachCmd = &cobra.Command{
@@ -82,6 +85,7 @@ func detachRun(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	pid := child.Process.Pid
+	startMs := time.Now().UnixMilli()
 	exited := make(chan error, 1)
 	go func() { exited <- child.Wait() }()
 	select {
@@ -95,7 +99,32 @@ func detachRun(cmd *cobra.Command, args []string) error {
 	case <-time.After(detachSettle):
 	}
 	WriteStdout("started pid %d: %s\nlog: %s\nstop: %s\n", pid, strings.Join(args, " "), logPath, detachStopHint(pid))
+	if err := recordDetached(pid, startMs, args, logPath); err != nil {
+		// the command runs either way; only the footer's Servers loses who started it
+		WriteStderr("arcterm was not told who started it (%v): Servers shows it with no owner\n", err)
+	}
 	return nil
+}
+
+// recordDetached tells wavesrv what this terminal started, so Servers names the block that ran it rather than "no
+// owner" (pkg/devservers/detached.go). Outside an arcterm terminal there is no one to tell, and nothing to do.
+func recordDetached(pid int, startMs int64, args []string, logPath string) error {
+	jwtToken := os.Getenv(wshutil.WaveJwtTokenVarName)
+	if jwtToken == "" {
+		return nil
+	}
+	if err := setupRpcClient(nil, jwtToken); err != nil {
+		return err
+	}
+	cwd, _ := os.Getwd()
+	return wshclient.RecordDetachedCommand(RpcClient, wshrpc.CommandRecordDetachedData{
+		Pid:     int32(pid),
+		StartMs: startMs,
+		BlockId: os.Getenv("WAVETERM_BLOCKID"),
+		Cmd:     strings.Join(args, " "),
+		Cwd:     cwd,
+		Log:     logPath,
+	}, &wshrpc.RpcOpts{Timeout: 3000})
 }
 
 func detachLogTail(path string, n int) string {

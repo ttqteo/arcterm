@@ -1392,6 +1392,12 @@ export class RpcApiType {
         return client.wshRpcCall("readvaultnote", data, opts);
     }
 
+    // command "recorddetached" [call]
+    RecordDetachedCommand(client: WshClient, data: CommandRecordDetachedData, opts?: RpcOpts): Promise<void> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "recorddetached", data, opts);
+        return client.wshRpcCall("recorddetached", data, opts);
+    }
+
     // command "refreshclaudequota" [call]
     RefreshClaudeQuotaCommand(client: WshClient, opts?: RpcOpts): Promise<CommandGetClaudeQuotaRtnData> {
         if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "refreshclaudequota", null, opts);

@@ -1387,6 +1387,12 @@ func ReadVaultNoteCommand(w *wshutil.WshRpc, data wshrpc.CommandReadVaultNoteDat
 	return resp, err
 }
 
+// command "recorddetached", wshserver.RecordDetachedCommand
+func RecordDetachedCommand(w *wshutil.WshRpc, data wshrpc.CommandRecordDetachedData, opts *wshrpc.RpcOpts) error {
+	_, err := sendRpcRequestCallHelper[any](w, "recorddetached", data, opts)
+	return err
+}
+
 // command "refreshclaudequota", wshserver.RefreshClaudeQuotaCommand
 func RefreshClaudeQuotaCommand(w *wshutil.WshRpc, opts *wshrpc.RpcOpts) (*wshrpc.CommandGetClaudeQuotaRtnData, error) {
 	resp, err := sendRpcRequestCallHelper[*wshrpc.CommandGetClaudeQuotaRtnData](w, "refreshclaudequota", nil, opts)

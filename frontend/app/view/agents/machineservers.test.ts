@@ -115,6 +115,27 @@ describe("buildMachineServers", () => {
         expect(buildMachineServers([daemonized], agents, { "tab-p": [stopped] }).noOwnerCount).toBe(1);
     });
 
+    it("a server started with wsh detach belongs to the agent or terminal that ran it, its log the file", () => {
+        const astro = row({
+            repo: "D:\\portfolio",
+            logfile: "C:\\tmp\\arc-detach\\npm.log",
+            owner: { kind: "agent", tabid: "tab-p", blockid: "b-p", name: "portal", harness: "claude", detached: true },
+        });
+        const byAgent = buildMachineServers([astro], agents, {}).groups[0].rows[0];
+        expect(byAgent.badge).toEqual({ kind: "agent", text: "claude · portal", tabId: "tab-p" });
+        expect(byAgent.fileLog).toBe("C:\\tmp\\arc-detach\\npm.log");
+        expect(byAgent.restart).toBeUndefined();
+        const byTerminal = buildMachineServers(
+            [{ ...astro, owner: { kind: "terminal", tabid: "tab-t", blockid: "b-t", name: "dev", detached: true } }],
+            agents,
+            {}
+        ).groups[0].rows[0];
+        expect(byTerminal.badge).toEqual({ kind: "terminal", text: "terminal · dev", tabId: "tab-t" });
+        // its output is in the file, not the terminal's pane
+        expect(byTerminal.termLog).toBeUndefined();
+        expect(byTerminal.fileLog).toBe("C:\\tmp\\arc-detach\\npm.log");
+    });
+
     it("a detached server no running task matches has no owner", () => {
         const v = buildMachineServers([portal], agents, { "tab-p": [{ ...pnpmTask, status: "stopped" }] });
         expect(v.groups[0].rows[0].badge).toEqual({ kind: "noowner", text: "no owner" });
