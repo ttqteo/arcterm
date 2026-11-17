@@ -31,6 +31,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Added
 
+- An agent whose chat box holds a message you started and did not send shows a pencil after its name in the Agent
+  tree, so you can find the one you were writing to.
 - The Agent tree shows a server's port (`:4321`) on the agent or terminal that runs it, and on its project's folder
   while the folder is folded or when no row of it holds the server, so you can tell which project has a server up.
 - Pick several agents in the Agent sidebar (Ctrl+click, Shift+click) and right-click one: Close N agents closes them

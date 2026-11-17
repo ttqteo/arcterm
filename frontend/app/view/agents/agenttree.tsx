@@ -62,6 +62,7 @@ import {
     MessagesSquare,
     Moon,
     Pencil,
+    PencilLine,
     PenTool,
     PinOff,
     Play,
@@ -81,6 +82,7 @@ import { AnimatePresence, motion } from "motion/react";
 import { Fragment, memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { confirmCloseAgents, confirmCloseProject, confirmCloseRun, confirmCloseSession } from "./agentactions";
 import { DONE_TITLE, doneSuggestion, ORIGIN_DONE_TITLE, startedRunLanded } from "./donesuggest";
+import { DRAFT_TITLE, draftAgentIdsAtom } from "./draftmarks";
 import { LandedClose } from "./landedclose";
 import { fallAsleepLabel, fallingAsleepOf } from "./fallasleepstore";
 import { beginAgentDrag, endAgentDrag } from "./agentdragstore";
@@ -1312,6 +1314,8 @@ function ParentRow({
     // the row shows no "n/m" part an agent stopped on: read off its last message, it caught any n/m in the prose
     // ("steps 14/14a" drew a 14/14 chip); an agent asking you is seen by its breathing row (.asking-tint) instead
     const unread = unreadCount > 0;
+    // a message you began in its box and left unsent (draftmarks.ts); not on the row you are on, whose box is in view
+    const drafted = useAtomValue(draftAgentIdsAtom).has(agent.id) && focusId !== agent.id;
     const asking = agent.state === "asking";
     const review = asking ? parseDocReview(agent.ask) : null;
     // the roster overlay already turned a question the file asks, or a design waiting on confirms, into state "asking";
@@ -1604,6 +1608,7 @@ function ParentRow({
                         </span>
                         <PaneTag model={model} id={agent.id} />
                         {laterAt != null ? <LaterMark title={laterTitle(laterAt, now, formatAgeShort)} /> : null}
+                        {drafted ? <DraftMark id={agent.id} /> : null}
                         {/* a lead's second line already holds its workers chip, progress and badges */}
                         {lead ? subsChip : null}
                         {lead ? tasksChip : null}
@@ -2392,6 +2397,21 @@ function LaterMark({ title }: { title: string }) {
     );
 }
 
+// The mark after a row's name for an agent whose chat box holds a message you have not sent (draftmarks.ts).
+function DraftMark({ id }: { id: string }) {
+    return (
+        <span
+            role="img"
+            aria-label={DRAFT_TITLE}
+            title={DRAFT_TITLE}
+            data-agent-draft={id}
+            className="flex flex-none text-accent"
+        >
+            <PencilLine size={11} aria-hidden />
+        </span>
+    );
+}
+
 // laterLabel is an ended conversation's later tooltip, or undefined when it is not marked (a run is never one)
 function laterLabel(marks: LaterMarks, row: ConversationEntry, now: number): string | undefined {
     const since = row.kind === "session" ? laterSince(marks, row.session.transcriptpath) : undefined;
@@ -3059,6 +3079,7 @@ function SplitCell({
     const renaming = useAtomValue(renamingRowAtom) === vm.id;
     const digit = useHeldDigit(navDigit);
     const unreadCount = useAtomValue(unreadAgentsAtom).get(vm.id) ?? 0;
+    const drafted = useAtomValue(draftAgentIdsAtom).has(vm.id) && !selected;
     const bgTasks = useAtomValue(backgroundTasksByIdAtom)[vm.id];
     const machineServers = useAtomValue(machineServersReadingAtom).servers;
     const laterAt = laterSince(useAtomValue(laterMarksAtom), vm.transcriptPath);
@@ -3113,6 +3134,7 @@ function SplitCell({
                     {name}
                 </span>
             )}
+            {drafted ? <DraftMark id={vm.id} /> : null}
             {asking ? (
                 <span aria-label="asking" className="h-[6px] w-[6px] flex-none rounded-full bg-warning" />
             ) : unreadCount > 0 ? (
