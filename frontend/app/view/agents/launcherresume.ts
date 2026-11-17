@@ -46,9 +46,28 @@ export function appendPage(prev: SessionInfo[], page: SessionInfo[]): SessionInf
 }
 
 // The store resets the pick on a runtime or project switch; this guard keeps a pick that is no longer on offer (a
-// rescan dropped it) from launching.
-export function pickedResume(choices: SessionInfo[], id: string | null): SessionInfo | null {
-    return id == null ? null : (choices.find((x) => x.id === id) ?? null);
+// rescan dropped it) from launching. `searched` is the session a search answer put on offer that no loaded page holds
+// (launcherSearchedAtom): it counts only for the scope the list is in, so a stale one from another project never launches.
+export function pickedResume(
+    choices: SessionInfo[],
+    id: string | null,
+    searched: SessionInfo | null = null,
+    scopeKey = ""
+): SessionInfo | null {
+    if (id == null) {
+        return null;
+    }
+    const loaded = choices.find((x) => x.id === id);
+    if (loaded != null || searched == null || searched.id !== id) {
+        return loaded ?? null;
+    }
+    return resumeScopeKey(searched.runtime as Runtime, searched.projectpath) === scopeKey ? searched : null;
+}
+
+// The agents whose sessions the content search reads (pkg/agentsessions digests claude and pi transcripts): the Session
+// column shows its magnifier for these and no other.
+export function sessionSearchable(runtime: string): boolean {
+    return runtime === "claude" || runtime === "pi";
 }
 
 export interface ResumeLaunch {
@@ -78,13 +97,26 @@ export type ResumeListAction =
     | { kind: "none" }
     | { kind: "pick"; index: number }
     | { kind: "move"; delta: 1 | -1 }
-    | { kind: "back" };
+    | { kind: "back" }
+    | { kind: "search" }
+    | { kind: "search-close" };
 
 // What a key does in the Session column: a digit picks the nth row (1 is New session), ↑↓ move, ← steps back to
-// Project. "none" leaves the key to the dialog: Enter launches, a letter goes to the Task box, Escape closes.
-export function resumeListKey(k: { key: string; mod: boolean }, ctx: { rows: number }): ResumeListAction {
+// Project, / opens the search box (an agent whose sessions can be searched), and Escape closes an open box before it
+// closes the dialog. "none" leaves the key to the dialog: Enter launches, a letter goes to the Task box, and Escape,
+// with no box open, closes.
+export function resumeListKey(
+    k: { key: string; mod: boolean },
+    ctx: { rows: number; searchable?: boolean; searchOpen?: boolean }
+): ResumeListAction {
     if (k.mod) {
         return { kind: "none" };
+    }
+    if (k.key === "/") {
+        return ctx.searchable ? { kind: "search" } : { kind: "none" };
+    }
+    if (k.key === "Escape") {
+        return ctx.searchOpen ? { kind: "search-close" } : { kind: "none" };
     }
     if (k.key === "ArrowDown" || k.key === "ArrowUp") {
         return { kind: "move", delta: k.key === "ArrowDown" ? 1 : -1 };

@@ -73,6 +73,16 @@ export const launcherPageAtom = atom({ key: "", cursor: "", loading: false }) as
 }>;
 // the session to resume, by id; honored only while it is among the choices (launcherresume.ts pickedResume)
 export const launcherResumeAtom = atom<string | null>(null) as PrimitiveAtom<string | null>;
+// The Session column's search box: whether it is open and what it holds. It lives here, not in the list, because picking
+// a Claude session draws the list again inside the resume step and the box must come along with its query. It ends with
+// the dialog, and with a switch of agent or project, which are the scope of the search.
+export const launcherSessionSearchAtom = atom({ open: false, query: "" }) as PrimitiveAtom<{
+    open: boolean;
+    query: string;
+}>;
+// A session picked from a search answer that none of the loaded pages holds, so the dialog can still find it to resume
+// (launcherresume.ts pickedResume). It lasts as the pick does.
+export const launcherSearchedAtom = atom<SessionInfo | null>(null) as PrimitiveAtom<SessionInfo | null>;
 // the images pasted or dropped into the Task box, each with its temp file once written (launcherimages.ts)
 export const launcherImagesAtom = atom<TaskImage[]>([]) as PrimitiveAtom<TaskImage[]>;
 // The parked launch (parkedstore.ts) the draft was filled from, so a start or a park from it settles that entry and adds
@@ -92,6 +102,18 @@ export const launcherHandbackAtom = atom<RunHandback | null>(null) as PrimitiveA
 export const launcherOwnProjectAtom = atom<string | null>(null) as PrimitiveAtom<string | null>;
 
 export type LauncherModel = { launcherAtom: PrimitiveAtom<LauncherKind | null> };
+
+export function openSessionSearch(): void {
+    globalStore.set(launcherSessionSearchAtom, (box) => (box.open ? box : { open: true, query: "" }));
+}
+
+export function setSessionSearchQuery(query: string): void {
+    globalStore.set(launcherSessionSearchAtom, { open: true, query });
+}
+
+export function closeSessionSearch(): void {
+    globalStore.set(launcherSessionSearchAtom, { open: false, query: "" });
+}
 
 function keptDraft() {
     return {
@@ -154,6 +176,7 @@ export function reopenLauncher(model: LauncherModel): void {
 // resume pick is kept only for RESUME_PICK_KEEP_MS, and a prefill's handback goes: the next New is no caller's run.
 export function closeLauncher(model: LauncherModel): void {
     closedAt = Date.now();
+    closeSessionSearch();
     globalStore.set(launcherFlagMenuAtom, false);
     globalStore.set(launcherBranchListAtom, false);
     globalStore.set(launcherAccountMenuAtom, false);
@@ -173,6 +196,7 @@ export function clearLauncherDraft(): void {
     globalStore.set(launcherWorktreeAtom, false);
     globalStore.set(launcherBranchAtom, null);
     globalStore.set(launcherResumeAtom, null);
+    globalStore.set(launcherSearchedAtom, null);
     globalStore.set(launcherAccountAtom, null);
     for (const img of globalStore.get(launcherImagesAtom)) {
         URL.revokeObjectURL(img.previewUrl);
@@ -272,6 +296,8 @@ export function pickLauncherProject(name: string, current: string): void {
     globalStore.set(launcherAccountAtom, null);
     // a session belongs to one project: coming back to this one starts on "New session"
     globalStore.set(launcherResumeAtom, null);
+    // the search is scoped to the project
+    closeSessionSearch();
 }
 
 // Another runtime offers other sessions, so the resume pick goes with the switch. The runtime already on show keeps it.
@@ -281,6 +307,8 @@ export function pickLauncherRuntime(runtime: Runtime): void {
     }
     globalStore.set(launcherRuntimeAtom, runtime);
     globalStore.set(launcherResumeAtom, null);
+    // the search is scoped to the agent
+    closeSessionSearch();
 }
 
 // The last tool picked is remembered for the next open, as the agent row is.
