@@ -33,6 +33,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 - Typing in the find bar of a long session no longer lags: each key took up to a few tenths of a second on a session
   with a million characters of conversation, and now takes a few milliseconds.
+- A Claude agent left idle on screen is compacted again before its prompt cache goes cold when Claude Code's own idle
+  compaction is off (auto-compact or `idleCompaction` turned off): since 1.0.7 nothing compacted it, and the next turn
+  after an hour re-read the whole conversation at the full rate.
 
 ### Changed
 

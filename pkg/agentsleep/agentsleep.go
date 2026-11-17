@@ -70,6 +70,9 @@ type Settings struct {
 	After     time.Duration
 	Compact   bool
 	CompactAt int // tokens
+	// CompactAwake is whether arcterm compacts an idle agent no sleep takes as its cache runs out: only when Claude
+	// Code's own idle compaction cannot run (ClaudeIdleCompacts)
+	CompactAwake bool
 }
 
 // canSleep is the whole eligibility rule: every condition holds.

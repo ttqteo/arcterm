@@ -481,6 +481,42 @@ func TestSleepTickLeavesAViewedAgentsCacheToClaudeCode(t *testing.T) {
 	}
 }
 
+// compactAwake makes w's settings those of a person whose Claude Code cannot compact an idle agent itself.
+func compactAwake(w *loopWorld) {
+	w.loop.settings = func() agentsleep.Settings {
+		return agentsleep.Settings{Enabled: w.enabled, After: w.after, Compact: true, CompactAt: 100_000, CompactAwake: true}
+	}
+}
+
+func TestSleepTickCompactsAViewedAgentWhenClaudeCodeCannot(t *testing.T) {
+	w, sent := compactWorld(t)
+	compactAwake(w)
+	swap(t, &viewing, viewingPush{tabs: []string{agentsTabA}, at: w.start.Add(2 * time.Hour)}) // on screen all along
+	w.tickTo(54)
+	if len(*sent) != 0 {
+		t.Fatalf("sent %v with 6 min of cache left, want nothing yet", *sent)
+	}
+	w.tickTo(56)
+	if !slices.Equal(*sent, []string{agentsBlockA}) || len(w.slept) != 0 {
+		t.Fatalf("5 min of cache left: sent %v, slept %v; want one compaction and no sleep", *sent, w.slept)
+	}
+	appendLine(t, w.facts.Tabs[0].Status.TranscriptPath, compactBoundaryLine)
+	w.tickTo(70)
+	if len(*sent) != 1 || len(w.slept) != 0 {
+		t.Fatalf("after it landed: sent %v, slept %v; want no second compaction and no sleep", *sent, w.slept)
+	}
+}
+
+func TestSleepTickCompactsWithSleepOffWhenClaudeCodeCannot(t *testing.T) {
+	w, sent := compactWorld(t)
+	compactAwake(w)
+	w.enabled = false
+	w.tickTo(56)
+	if !slices.Equal(*sent, []string{agentsBlockA}) || len(w.slept) != 0 {
+		t.Fatalf("sleep off: sent %v, slept %v; want the awake agent compacted, not slept", *sent, w.slept)
+	}
+}
+
 func TestSleepTickSendsNothingWithSleepOff(t *testing.T) {
 	w, sent := compactWorld(t)
 	w.enabled = false
