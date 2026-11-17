@@ -9,6 +9,7 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"sync"
@@ -40,6 +41,25 @@ type CommandOptsType struct {
 	BlockId     string                    `json:"-"` // registers the shell's job as owned by this block
 	// LowPriority runs the process and every descendant below normal CPU priority (jobobject.LowerPriority)
 	LowPriority bool `json:"-"`
+	// Argv is the program and its args as separate words, set for a cmd:shell=false block (an agent's launch), beside
+	// the command line quoted for the shell. See directProgram: it can start without the shell.
+	Argv []string `json:"-"`
+}
+
+// directProgram is the .exe to start Argv with, in place of `<shell> -c <line>`, or "" to run the line through the
+// shell. On Windows the shell is PowerShell, and it stays alive as the command's parent for as long as the command
+// runs: ~56 MB private for every agent. So only on Windows (a POSIX shell's -c already runs a lone command in its
+// place), only for a program given apart from its args (cmd:shell=false, nothing for a shell to expand), and only one
+// that resolves to an .exe: a .cmd or .bat shim, an alias or a profile function still goes through the shell.
+func directProgram(goos string, argv []string, lookPath func(string) (string, error)) string {
+	if goos != "windows" || len(argv) == 0 || argv[0] == "" {
+		return ""
+	}
+	path, err := lookPath(argv[0])
+	if err != nil || !strings.EqualFold(filepath.Ext(path), ".exe") {
+		return ""
+	}
+	return path
 }
 
 type ShellProc struct {
@@ -177,6 +197,11 @@ func StartLocalShellProc(logCtx context.Context, termSize waveobj.TermSize, cmdS
 		if shellType == shellutil.ShellType_zsh {
 			shellutil.UpdateCmdEnv(ecmd, map[string]string{"ZDOTDIR": shellutil.GetLocalZshZDotDir()})
 		}
+	} else if exe := directProgram(runtime.GOOS, cmdOpts.Argv, exec.LookPath); exe != "" {
+		isShell = false
+		blocklogger.Debugf(logCtx, "[conndebug] starting %s without a shell, args:%v\n", exe, cmdOpts.Argv[1:])
+		ecmd = exec.Command(exe, cmdOpts.Argv[1:]...)
+		ecmd.Env = os.Environ()
 	} else {
 		isShell = false
 		shellOpts = append(shellOpts, "-c", cmdStr)

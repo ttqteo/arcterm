@@ -45,6 +45,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   and resuming it brings the pane back.
 - An agent that must ask before committing shows a commit card in Chat: edit the message, untick a file, and press
   Commit to have the agent commit exactly that.
+- On Windows each Claude agent uses about 56 MB less memory: it now starts on its own instead of under a PowerShell
+  kept open for it. Agents installed as a `.cmd` (npm shims) still start through PowerShell.
 
 ### Changed
 
