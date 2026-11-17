@@ -256,7 +256,7 @@ git commit -m "feat(chat): a reference typed or pasted in the box becomes a badg
 
 ### Task 5: Scenario, changelog, hand check
 
-**Depends on:** Task 3, Task 4 (the scenario's picker step lists the rows Task 3 adds; its typing and delete steps show Task 4)
+**Depends on:** Task 3 (the scenario's picker step lists the conversation and initiative rows it adds), Task 4 (the scenario's typing and delete steps show the badge-while-typing and one-space delete it adds)
 
 **Files:** `scripts/cdp/scenarios.mjs`, `CHANGELOG.md`, `docs/hand-checks.md`
 
