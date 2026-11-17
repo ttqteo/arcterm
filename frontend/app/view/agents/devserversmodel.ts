@@ -142,6 +142,16 @@ export function portsLabel(ports: number[]): string {
     return ports.map((p) => `:${p}`).join(" ");
 }
 
+// The ports beside a server mark, kept short: the first two, then `+N` for the rest (":5175 :9230 +2"); the mark's
+// title lists every one
+export const PORTS_SHOWN = 2;
+export function shortPortsLabel(ports: number[]): string {
+    if (ports.length <= PORTS_SHOWN) {
+        return portsLabel(ports);
+    }
+    return `${portsLabel(ports.slice(0, PORTS_SHOWN))} +${ports.length - PORTS_SHOWN}`;
+}
+
 // who holds the server, as the row's second line says it. task is the background task of this agent that started it
 // (matchLogTask), which names the agent as its owner after the launcher exited.
 export function ownerLabel(row: DevServerRow, task?: unknown): string {
