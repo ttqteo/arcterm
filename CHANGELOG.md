@@ -33,13 +33,17 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 - Pick several agents in the Agent sidebar (Ctrl+click, Shift+click) and right-click one: Close N agents closes them
   together, asking first when one is working. Agents working for a run stay; close those from their run.
-- A link in Chat shows a copy button at its end when you hover it, and a right-click on it offers Copy link: either
-  copies its url without selecting the text.
 - References to agents, runs and councils you write in Chat (`agent:7cd99627`, or picked from `@`) show as badges with
   their name, tinted by kind, with a live agent's state; click one to open it.
+- A link in Chat shows a small copy button on its top-right corner when you hover it, over none of the words around
+  it, and a right-click on it offers Copy link: either copies its url without selecting the text.
 
 ### Changed
 
+- A queue tag in the Agent tree (`#1`, `×2`) opens the Heavy jobs popover with that row's jobs selected, so you see at
+  once which one is yours.
+- The agent header no longer shows the Alt+C keycap, and Mark done no longer shows its `m` keycap (its tooltip still
+  names it); both keys still work.
 - Selected text in Chat that wraps over several lines is highlighted as one shape: the corners where one line meets
   the next are square, and only its outer corners are rounded.
 - A project's Overview fits the screen: the header and Activity stay put, and Now and History each scroll on their
@@ -51,11 +55,17 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   Commit to have the agent commit exactly that.
 - On Windows each Claude agent uses about 56 MB less memory: it now starts on its own instead of under a PowerShell
   kept open for it. Agents installed as a `.cmd` (npm shims) still start through PowerShell.
+- Claude Code's "trust this folder?" prompt shows in Chat as a card with No, exit and Yes, I trust this folder, where
+  Chat used to stay on the agent's last step while the terminal waited for an answer. The agent reads asking and
+  counts in Needs you while the prompt waits, instead of staying "working".
 
 ### Changed
 
 - Chat sums up each stretch of tools in words ("Edited server.js, ran 2 commands +5 −2 · 38s"), says what a running
   tool is doing, and shows a command by its description; the command itself shows when you open the line.
+- An opened stretch of tools in Chat is one bordered box with a plain row per tool ("Edited server.js +5"): a command
+  opens to its command and output in the box, a file's name opens the file, and a failed tool says so in red on its
+  own row. The file chips under each stretch are gone: the edit rows carry the files and their counts.
 - A council's Setup draws each seat's letter on a disc in its colour, as the Discussion and the map do, instead of a
   coloured ring.
 - The agent header keeps Split and Fullscreen in its More (⋯) menu, so it shows only More, Float and Close beside the
@@ -72,8 +82,16 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- A highlighted sentence in Chat that ends on a bare link (`==… http://localhost:4321/.==`) is highlighted again,
+  instead of showing its `==` marks with the link running on into them.
+- A Markdown Preview that holds a placeholder in angle brackets (`<a complete script>`, `<name>`) shows it as written,
+  instead of turning everything after it into one link or hiding it.
+- Once a brainstorm's run is under way, its agent's row in the Agent sidebar drops the builder check and judge chip
+  and their rows; a check that still asks you, or that you have selected, stays.
 - Chat's quick pick card now shows when an agent names its canvas options as "**A, chip trầm**", with a comma
   after the letter, instead of leaving you only the guessed reply chips.
+- A brainstorm you keep talking in after its run finished shows its cards in Chat again (a builder question, Confirm the
+  design), instead of none until arcterm restarted.
 - Chat no longer shows a "Waiting on you in the terminal" card quoting only Claude Code's mode line while an agent
   waits on you, and the mode chip under the chat box follows Shift+Tab again. A permission dialog's card also stops
   showing the dashed lines around a command as part of its text.

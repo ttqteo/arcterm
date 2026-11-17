@@ -43274,6 +43274,11 @@ const AC_NAMES = {
 };
 const AC_USER_TEXT = "add a retry to the sync client";
 const AC_PROSE_1 = "I will read the sync client first.";
+// the main agent's second stretch of tools (acWriteFixtures, step 5)
+const AC_EDIT_ERROR = "String to replace not found in file.";
+const AC_TEST_COMMAND = "npm test -- client";
+const AC_TEST_DESCRIPTION = "Ran the client tests";
+const AC_TEST_OUTPUT = "✔ retries the request 3 times\nℹ tests 1\nℹ pass 1\nℹ fail 0";
 // its second sentence is what step 34 marks as a skim highlight; it holds non-ASCII letters so the store file's UTF-8 decode is exercised
 const AC_SKIM_SENTENCE = "Không mất request nào.";
 const AC_PROSE_2 = `The client now retries three times with backoff. ${AC_SKIM_SENTENCE}`;
@@ -43383,6 +43388,19 @@ function acWriteFixtures(dir) {
         AC.assistantText("Starting on task 3.", o(62)),
         AC.userText(pointer, o(90)),
         AC.assistantText("Reading the instructions file.", o(92)),
+        // the second stretch (step 5): an Edit that missed, the Edit that landed, and a command with a description
+        AC.toolUse("toolu_ac_missed", "Edit", { file_path: edited, old_string: "export const retries = 9;", new_string: "export const retries = 4;" }, o(94)),
+        AC.toolResult("toolu_ac_missed", `<tool_use_error>${AC_EDIT_ERROR}\nString: export const retries = 9;</tool_use_error>`, { ...o(95), isError: true }),
+        AC.toolUse(
+            "toolu_ac_edit2",
+            "Edit",
+            { file_path: edited, old_string: "export const backoff = true;", new_string: "export const backoff = true;\nexport const delayMs = 200;" },
+            o(97)
+        ),
+        AC.toolResult("toolu_ac_edit2", "The file has been updated successfully.", o(98)),
+        AC.toolUse("toolu_ac_test", "Bash", { command: AC_TEST_COMMAND, description: AC_TEST_DESCRIPTION }, o(100)),
+        AC.toolResult("toolu_ac_test", AC_TEST_OUTPUT, o(104)),
+        AC.assistantText("The retry test passes.", o(106)),
     ]);
     const simple = (name, ask, answer) =>
         AC.writeTranscript(dir, name, [AC.userText(ask, o(0)), AC.assistantText(answer, o(2))]);
@@ -44090,7 +44108,7 @@ const agentChat = {
                         const t = (sel) => f?.querySelector(sel)?.textContent.trim() ?? null;
                         return f == null ? null : { state: f.getAttribute("data-fold-state"), sentence: t("[data-fold-sentence]"), counts: t("[data-fold-counts]"), time: t("[data-fold-time]") };
                     })(),
-                    chip: layer?.querySelector("[data-chat-files] [data-chat-file]")?.getAttribute("data-chat-file") ?? null,
+                    fileChips: layer?.querySelectorAll("[data-chat-files], [data-chat-file]").length ?? null,
                     sentFrom: sent.map((s) => s.getAttribute("data-chat-from")),
                     sent: sent.map((s) => s.textContent.trim().slice(0, 100)),
                     launchAsBubble: [...(layer?.querySelectorAll("[data-chat-you]") ?? [])].some((e) => /You are the worker|Your instructions are in the file/.test(e.textContent)),
@@ -44098,7 +44116,7 @@ const agentChat = {
             })()`);
             await h.shot("cdp-shots/agent-chat-1-bubbles.png");
             rec(
-                "1a. a Claude cell opens in Chat: the header's toggle shows Chat and offers the terminal (its icon and Show terminal); your message is a bubble on the right, the agent's prose is a page column (step 31 reads its look), the stretch folds into the sentence Edited client.ts, read client.ts with its +/− counts and its time, a file chip shows, the run's launch prompt and a pointer line are sent cards",
+                "1a. a Claude cell opens in Chat: the header's toggle shows Chat and offers the terminal (its icon and Show terminal); your message is a bubble on the right, the agent's prose is a page column (step 31 reads its look), the stretch folds into the sentence Edited client.ts, read client.ts with its +/− counts and its time, no file chip follows any stretch, the run's launch prompt and a pointer line are sent cards",
                 loaded &&
                     header1?.toggle?.view === "chat" &&
                     header1.toggle.label === "Show terminal" &&
@@ -44111,7 +44129,7 @@ const agentChat = {
                     bubbles.pill.sentence === "Edited client.ts, read client.ts" &&
                     /^\+\d+(−\d+)?$/.test(bubbles.pill.counts ?? "") &&
                     /^· \d+s$/.test(bubbles.pill.time ?? "") &&
-                    (bubbles.chip ?? "").endsWith("client.ts") &&
+                    bubbles.fileChips === 0 &&
                     JSON.stringify(bubbles.sentFrom) === JSON.stringify(["run", "run"]) &&
                     bubbles.launchAsBubble === false,
                 { header1, bubbles }
@@ -44121,18 +44139,33 @@ const agentChat = {
             await h.ev(`${foldA}?.click()`);
             const foldOpened = await polishWaitFor(h, `(${acLayer(A)}?.querySelectorAll("[data-chat-work] [data-chat-step]").length ?? 0) === 2`, AC_WAIT_MS);
             await polishNap(450);
-            const foldOpen = await h.ev(`(() => ({
-                expanded: ${foldA}?.getAttribute("aria-expanded") ?? null,
-                sentence: ${foldA}?.querySelector("[data-fold-sentence]")?.textContent.trim() ?? null,
-                steps: [...(${acLayer(A)}?.querySelectorAll("[data-chat-work] [data-chat-step]") ?? [])].map((s) => s.textContent.trim().slice(0, 80)),
-            }))()`);
+            const foldOpen = await h.ev(`(() => {
+                const box = ${acLayer(A)}?.querySelector("[data-chat-work] [data-chat-tools] > div");
+                const cs = box ? getComputedStyle(box) : null;
+                const steps = [...(${acLayer(A)}?.querySelectorAll("[data-chat-work] [data-chat-step]") ?? [])];
+                return {
+                    expanded: ${foldA}?.getAttribute("aria-expanded") ?? null,
+                    sentence: ${foldA}?.querySelector("[data-fold-sentence]")?.textContent.trim() ?? null,
+                    // no caret in front of the line: its first child is the sentence, the chevron is its last
+                    firstIsSentence: ${foldA}?.firstElementChild?.hasAttribute("data-fold-sentence") ?? false,
+                    box: cs == null ? null : { radius: cs.borderTopLeftRadius, border: cs.borderTopWidth },
+                    steps: steps.map((s) => s.textContent.trim().slice(0, 80)),
+                    verbs: steps.map((s) => s.querySelector("[data-chat-step-verb]")?.textContent.trim() ?? null),
+                    // rows carry no tool icon and no time: their only svg is the chevron
+                    svgs: steps.map((s) => s.querySelectorAll("svg").length),
+                    hairline: steps[1] ? getComputedStyle(steps[1].parentElement.parentElement).borderTopWidth : null,
+                };
+            })()`);
             await h.shot("cdp-shots/agent-chat-1-fold-open.png");
             await h.ev(`${foldA}?.click()`);
             const foldRefolded = await polishWaitFor(h, `!${acLayer(A)}?.querySelector("[data-chat-work] [data-chat-step]")`, AC_WAIT_MS);
             rec(
-                "1a2. a click opens the fold into its two step lines (Read, then Edit with its counts) under the same sentence, and a second click folds it",
+                "1a2. a click opens the fold into a bordered box (radius 10px, 1px border) of two rows divided by a hairline, Read client.ts then Edited client.ts with its counts, each a muted verb and a chevron with no tool icon, under the same sentence with no caret in front; a second click folds it",
                 foldOpened && foldRefolded && foldOpen.expanded === "true" && foldOpen.sentence === "Edited client.ts, read client.ts" &&
-                    foldOpen.steps.length === 2 && foldOpen.steps[0].startsWith("Read") && foldOpen.steps[1].startsWith("Edit"),
+                    foldOpen.firstIsSentence && foldOpen.box?.radius === "10px" && foldOpen.box.border === "1px" && foldOpen.hairline === "1px" &&
+                    JSON.stringify(foldOpen.verbs) === JSON.stringify(["Read", "Edited"]) &&
+                    foldOpen.steps[0].includes("client.ts") && foldOpen.steps[1].includes("client.ts") &&
+                    foldOpen.svgs.every((n) => n === 1),
                 { foldOpened, foldRefolded, foldOpen }
             );
             // a codex agent has no Chat: its terminal shows, and the control (if any) has no Chat option
@@ -44220,47 +44253,91 @@ const agentChat = {
                 { working, afterStop }
             );
 
-            // 5. the work pill opens its tool lines, and the file chip opens the diff
-            const before5 = await h.ev(`({ tools: ${acLayer(A)}?.querySelectorAll("[data-chat-tools]").length ?? 0, diff: ${acLayer(A)}?.querySelectorAll("[data-chat-diff]").length ?? 0 })`);
-            await h.ev(`${acLayer(A)}?.querySelector("[data-chat-work] [data-fold]")?.click()`);
-            const toolsOpen = await polishWaitFor(h, `(${acLayer(A)}?.querySelector("[data-chat-tools]")?.textContent ?? "").length > 0`, 3000);
-            const tools = await h.ev(`${acLayer(A)}?.querySelector("[data-chat-tools]")?.textContent.replace(/\\s+/g, " ").trim() ?? null`);
-            await h.ev(`${acLayer(A)}?.querySelector("[data-chat-files] [data-chat-file]")?.click()`);
-            const diffOpen = await polishWaitFor(h, `!!${acLayer(A)}?.querySelector("[data-chat-diff]")`, 3000);
-            const diff = await h.ev(`${acLayer(A)}?.querySelector("[data-chat-diff]")?.textContent.replace(/\\s+/g, " ").trim() ?? null`);
-            await h.ev(`${acLayer(A)}?.querySelector("[data-chat-diff]")?.scrollIntoView({ block: "center" })`);
-            await h.shot("cdp-shots/agent-chat-5-work-and-diff.png");
+            // 5. the second stretch (Main.dc.html, States.dc.html's failed call): it folds into Edited client.ts, ran a
+            // command with no red; opened, a bordered box of three rows: Edit failed in red with its error, Edited client.ts
+            // with its +N, and the command by its description alone. The command opens to `$ command` and its output inside
+            // the box, the failed edit to its diff; no file chips follow the stretch
+            const W5 = `[...(${acLayer(A)}?.querySelectorAll("[data-chat-work]") ?? [])][1]`;
+            const rows5 = `[...(${W5}?.querySelectorAll("[data-chat-tools] [data-chat-step]") ?? [])]`;
+            const fold5 = await h.ev(`(() => {
+                const f = ${W5}?.querySelector("[data-fold]");
+                f?.scrollIntoView({ block: "center" });
+                const t = (sel) => f?.querySelector(sel)?.textContent.trim() ?? null;
+                return f == null ? null : {
+                    sentence: t("[data-fold-sentence]"), counts: t("[data-fold-counts]"), time: t("[data-fold-time]"),
+                    // the −N count is red by design; nothing else on the line is (the failed edit stays out of it)
+                    red: [...f.querySelectorAll(".text-error")].some((e) => !e.closest("[data-fold-counts]")),
+                    state: f.getAttribute("data-fold-state"),
+                };
+            })()`);
+            await h.ev(`${W5}?.querySelector("[data-fold]")?.click()`);
+            const opened5 = await polishWaitFor(h, `${rows5}.length === 3`, AC_WAIT_MS);
+            await polishNap(450);
+            await h.ev(`${rows5}[2]?.click()`);
+            const cmdOpen5 = await polishWaitFor(h, `!!${W5}?.querySelector("[data-chat-step-command]")`, 3000);
+            await h.ev(`${rows5}[0]?.click()`);
+            const failOpen5 = await polishWaitFor(h, `(${W5}?.querySelectorAll("[data-tool-panel]").length ?? 0) === 2`, 3000);
+            await polishNap(450);
+            const box5 = await h.ev(`(() => {
+                const rows = ${rows5};
+                const verb = (r) => r?.querySelector("[data-chat-step-verb]");
+                const flat = (e) => e?.textContent.replace(/\\s+/g, " ").trim() ?? null;
+                return {
+                    rows: rows.map((r) => flat(r).slice(0, 90)),
+                    failVerb: flat(verb(rows[0])),
+                    failRed: verb(rows[0])?.classList.contains("text-error") ?? false,
+                    editVerb: flat(verb(rows[1])),
+                    editDiff: flat(rows[1]?.querySelector("[data-chat-step-diff]")),
+                    description: flat(rows[2]?.querySelector('[data-chat-step-chip="description"]')),
+                    commandVerb: verb(rows[2]) != null,
+                    command: flat(${W5}?.querySelector("[data-chat-step-command]")),
+                    output: flat(${W5}?.querySelector("[data-chat-step-output]")),
+                    inBox: !!${W5}?.querySelector("[data-chat-tools] > div [data-chat-step-command]"),
+                    failPanel: flat(rows[0]?.parentElement?.querySelector("[data-tool-panel]")).slice(0, 200),
+                    fileChips: ${acLayer(A)}?.querySelectorAll("[data-chat-files], [data-chat-file]").length ?? null,
+                };
+            })()`);
+            await h.ev(`${W5}?.querySelector("[data-chat-tools]")?.scrollIntoView({ block: "center" })`);
+            await polishNap(250);
+            await h.shot("cdp-shots/agent-chat-5-box-opened.png");
             rec(
-                "5. the work pill opens its tool lines, the file chip opens the diff",
-                before5.tools === 0 && before5.diff === 0 && toolsOpen && /read/i.test(tools ?? "") && /edit/i.test(tools ?? "") && diffOpen &&
-                    (diff ?? "").includes("retries = 3"),
-                { before5, tools, diff }
+                "5. the second stretch folds into Edited client.ts, ran a command with its +N and time and no red; opened, its box holds Edit failed client.ts in red with String to replace not found in file., Edited client.ts with its +N, and the command as Ran the client tests alone (no verb); the command opens to $ npm test -- client and its output inside the box, the failed edit to its diff, and no file chips follow",
+                fold5?.sentence === "Edited client.ts, ran a command" && /^\+\d+(−\d+)?$/.test(fold5.counts ?? "") && /^· \d+s$/.test(fold5.time ?? "") &&
+                    fold5.red === false && opened5 && cmdOpen5 && failOpen5 &&
+                    box5.failVerb === "Edit failed" && box5.failRed && box5.rows[0].includes("client.ts") && box5.rows[0].includes(AC_EDIT_ERROR) &&
+                    box5.editVerb === "Edited" && /^\+\d+/.test(box5.editDiff ?? "") &&
+                    box5.description === AC_TEST_DESCRIPTION && box5.commandVerb === false &&
+                    box5.command === `$ ${AC_TEST_COMMAND}` && (box5.output ?? "").includes("retries the request 3 times") && box5.inBox &&
+                    box5.failPanel.includes("retries = 9") && box5.fileChips === 0,
+                { fold5, opened5, cmdOpen5, failOpen5, box5 }
             );
 
-            // 5b. the arrow at the chip's end opens the file itself in the agent's File tab, as a path link in the terminal
-            // does; the chip's own diff stays as it was
+            // 5b. a row's file name opens the file itself in the agent's File tab, as a path link in the terminal does; the
+            // click does not open the row, whose diff stays closed
             mkdirSync(dirname(ctx.files.edited), { recursive: true });
-            writeFileSync(ctx.files.edited, "export const retries = 3;\nexport const backoff = true;\n");
+            writeFileSync(ctx.files.edited, "export const retries = 3;\nexport const backoff = true;\nexport const delayMs = 200;\n");
             const wantFile5b = JSON.stringify(ctx.files.edited.split("\\").join("/").toLowerCase());
-            const arrow5b = await h.ev(`(() => {
-                const b = ${acLayer(A)}?.querySelector("[data-chat-files] [data-chat-file-open]");
-                return b ? { path: b.getAttribute("data-chat-file-open"), label: b.getAttribute("aria-label") } : null;
+            const link5b = await h.ev(`(() => {
+                const l = ${rows5}[1]?.querySelector("[data-path-link]");
+                l?.scrollIntoView({ block: "center" });
+                return l ? { path: l.getAttribute("data-path-link"), text: l.textContent.trim(), expanded: ${rows5}[1].getAttribute("aria-expanded") } : null;
             })()`);
-            await h.ev(`${acLayer(A)}?.querySelector("[data-chat-files] [data-chat-file-open]")?.scrollIntoView({ block: "center" })`);
-            await h.shot("cdp-shots/agent-chat-5b-chip-open.png");
-            await h.ev(`${acLayer(A)}?.querySelector("[data-chat-files] [data-chat-file-open]")?.click()`);
+            await h.ev(`${rows5}[1]?.querySelector("[data-path-link]")?.click()`);
             const file5b = await polishWaitFor(
                 h,
                 `((${RAIL_ASIDE}?.querySelector("[data-rail-file]")?.dataset.railFile ?? "").split("\\\\").join("/").toLowerCase()) === ${wantFile5b}`,
                 AC_WAIT_MS
             );
-            const diffKept5b = await h.ev(`!!${acLayer(A)}?.querySelector("[data-chat-diff]")`);
+            const rowShut5b = await h.ev(`${rows5}[1]?.getAttribute("aria-expanded") ?? null`);
             await h.shot("cdp-shots/agent-chat-5b-file-tab.png");
             rec(
-                "5b. the arrow at a file chip's end (Open client.ts) opens the file in the agent's File tab; the chip's diff stays open",
-                arrow5b?.path === ctx.files.edited && arrow5b.label === "Open client.ts" && file5b && diffKept5b,
-                { arrow5b, file5b, diffKept5b }
+                "5b. clicking the file name client.ts in the Edited row opens the file in the agent's File tab, and leaves the row closed",
+                link5b?.path === ctx.files.edited && link5b.text === "client.ts" && link5b.expanded === "false" && file5b && rowShut5b === "false",
+                { link5b, file5b, rowShut5b }
             );
+            // folded again, so the steps below see the conversation as before
+            await h.ev(`${W5}?.querySelector("[data-fold]")?.click()`);
+            await polishWaitFor(h, `!${W5}?.querySelector("[data-chat-tools]")`, 3000);
 
             // 6. picking Terminal: the layer is gone, the xterm is the same element with focus, the rail has its Transcript
             // tab; picking Chat brings the layer back and focus to the box
@@ -45028,7 +45105,17 @@ const agentChat = {
             const runningUp = await polishWaitFor(h, `!!${acLayer(A)}?.querySelector("[data-tool-running]")`, 5000);
             const running26 = await h.ev(`(() => {
                 const row = ${acLayer(A)}?.querySelector("[data-tool-running]");
-                return { text: row?.textContent.replace(/\\s+/g, " ").trim() ?? null, settled: !!${acLayer(A)}?.querySelector("[data-tool-settled]"), fold: ${lastFold}?.querySelector("[data-fold-sentence]")?.textContent.trim() ?? null };
+                const fold = ${lastFold};
+                return {
+                    text: row?.textContent.replace(/\\s+/g, " ").trim() ?? null,
+                    settled: !!${acLayer(A)}?.querySelector("[data-tool-settled]"),
+                    fold: fold?.querySelector("[data-fold-sentence]")?.textContent.trim() ?? null,
+                    // States.dc.html's running stretch: a spinner in front of the line, which reads in text-secondary, and
+                    // one at the running row's end in place of its chevron
+                    lineSpinner: fold?.firstElementChild?.tagName.toLowerCase() === "svg" && !!fold.firstElementChild.querySelector("circle"),
+                    lineSecondary: fold?.classList.contains("text-secondary") ?? false,
+                    rowSpinner: !!row?.lastElementChild?.querySelector("circle"),
+                };
             })()`);
             // the spinner row is in the live stretch at the chat's tail: bring it into view for the shot
             await h.ev(`(() => { ${acLayer(A)}?.querySelector("[data-tool-running]")?.scrollIntoView({ block: "center" }); return true; })()`);
@@ -45073,8 +45160,9 @@ const agentChat = {
             await h.shot("cdp-shots/agent-chat-26-copy.png");
             await h.cdp("Input.dispatchMouseEvent", { type: "mouseMoved", x: 2, y: 2 });
             rec(
-                "26. a tool with no result while the agent works draws as running (no check) in a stretch reading Reading client.ts, and neutral once the agent is idle; hovering an agent bubble shows Copy; a fenced code block shows its Copy",
-                stretchUp && runningUp && /read/i.test(running26.text ?? "") && running26.settled === false && running26.fold === "Reading client.ts" &&
+                "26. a tool with no result while the agent works draws as running (Reading client.ts, a spinner at the row's end) in a stretch reading Reading client.ts with a spinner in front, and neutral once the agent is idle; hovering an agent bubble shows Copy; a fenced code block shows its Copy",
+                stretchUp && runningUp && /^Reading/.test(running26.text ?? "") && running26.settled === false && running26.fold === "Reading client.ts" &&
+                    running26.lineSpinner && running26.lineSecondary && running26.rowSpinner &&
                     settledUp && spot != null && idleOpacity === "0" && hovered && code26.found && code26.shown && code26.button,
                 { stretchUp, runningUp, running26, settledUp, idleOpacity, hovered, code26 }
             );
@@ -48446,7 +48534,12 @@ const chatQuote = {
             const place7 = await h.ev(`(() => {
                 const a = ${link6}.getBoundingClientRect();
                 const b = ${copyBox}.getBoundingClientRect();
-                return { linkRight: Math.round(a.right), btnLeft: Math.round(b.left), sameLine: b.top < a.bottom && b.bottom > a.top };
+                // on the link's top-right corner: it rises over the line, its foot on the link's top half
+                return {
+                    linkRight: Math.round(a.right),
+                    btnLeft: Math.round(b.left),
+                    corner: b.top < a.top && b.bottom > a.top && b.bottom <= a.top + a.height / 2,
+                };
             })()`);
             await polishNap(300);
             await h.shot("cdp-shots/chat-quote-7-copy-button.png");
@@ -48464,8 +48557,8 @@ const chatQuote = {
             await polishWaitFor(h, `window.__cqWrote != null`, 2000);
             const wrote7 = await h.ev(`(() => { navigator.clipboard.writeText = window.__cqKeep; return window.__cqWrote; })()`);
             rec(
-                "7. hovering a link shows its copy button (hidden before) right at the link's end on its line, and pressing it copies the link's url",
-                hidden7 === "hidden" && shown7 && place7.sameLine && Math.abs(place7.btnLeft - place7.linkRight) <= 4 && copied7 && wrote7 === CQ_LINK,
+                "7. hovering a link shows its copy button (hidden before) on the link's top-right corner, over no word of its line, and pressing it copies the link's url",
+                hidden7 === "hidden" && shown7 && place7.corner && Math.abs(place7.btnLeft - place7.linkRight) <= 4 && copied7 && wrote7 === CQ_LINK,
                 { hidden7, shown7, place7, wrote7 }
             );
 
@@ -48663,7 +48756,7 @@ const chatMath = {
 };
 
 // --- chat-ref-badges: `agent:`, `run:` and `council:` references drawn as badges (refbadge.ts, chatrefbadge.tsx,
-// remarkrefmention.ts, chateditorrefpill.tsx; plan 2026-11-17-chat-ref-badges.md Task 7). The chat's agent A is in a registered
+// remarkrefmention.ts, chateditorrefpill.tsx; spec 2026-11-17-chat-ref-badges-design.md). The chat's agent A is in a registered
 // project whose run and council are put in the app's own stores; a second agent B is asking, on codex. A's bubble names B, the
 // run, the council and a run that is not there: the first three resolve (B's runtime mark and asking ring, the tints and names
 // of the run and the council), the fourth stays a dashed token with no role, and a click or Enter on B's badge focuses B. Then

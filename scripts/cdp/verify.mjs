@@ -100,6 +100,7 @@ for (const scenario of chosen) {
         continue;
     }
     const firstShot = h.shots.length;
+    const scenarioStart = Date.now();
     let ctx;
     try {
         // the last scenario's teardown may have reloaded the page: start once it can be driven again
@@ -125,6 +126,8 @@ for (const scenario of chosen) {
         await emulateFocus();
         if (inBrowser) console.log(`focus after ${scenario.name}: ${await h.ev("document.hasFocus()").catch(() => "unknown")}`);
         shotsByScenario[scenario.name] = shotsUnder(h.shots.slice(firstShot), SHOTS_DIR);
+        // a slow scenario, or one that ran out every wait after a failed step, shows here
+        console.log(`${scenario.name}: ${((Date.now() - scenarioStart) / 1000).toFixed(1)}s`);
     }
 }
 await h.cdp("Emulation.clearDeviceMetricsOverride").catch(() => {});

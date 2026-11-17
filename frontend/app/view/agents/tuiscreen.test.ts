@@ -230,6 +230,34 @@ const pausedDialog = [
     "",
 ];
 
+// Claude Code's folder trust prompt as a screenshot of it showed it (2026-11-17, a 130-column screen), the permission
+// list shortened
+const trustDialog = [
+    "",
+    "─".repeat(130),
+    " Accessing workspace:",
+    "",
+    " d:\\projects\\mit\\mit-thesis",
+    "",
+    " Quick safety check: Is this a project you created or one you trust? (Like your own code, a well-known open source project, or",
+    " work from your team). If not, take a moment to review what's in this folder first.",
+    "",
+    " Claude Code'll be able to read, edit, and execute files here.",
+    "",
+    " ⚠ This folder pre-approves 411 tool permissions in .claude/settings.json and .claude/settings.local.json:",
+    "   Bash(python -c \"import deltataint.orchestrator; print\\('impo…, Bash(ls -d */), and 367 more",
+    " These will apply without asking. Only proceed if you trust this configuration.",
+    "",
+    " Trusting this folder loads .claude/settings.json and .claude/settings.local.json.",
+    " Security guide",
+    "",
+    "   No, exit",
+    " ❯ Yes, I trust this folder",
+    "",
+    " Enter to confirm · Esc to cancel",
+    "",
+];
+
 describe("tuiDialog", () => {
     // fixtures.pausedDialog is the real screen: Claude Code 2.1.325's PTY output replayed through xterm (130x52,
     // alternate buffer), the prompt's words swapped out
@@ -284,6 +312,29 @@ describe("tuiDialog", () => {
                   : row
         );
         expect(tuiDialog(moved)?.cursor).toBe(2);
+    });
+    it("reads the folder trust prompt, whose options have no numbers", () => {
+        // the trust prompt a resumed agent met on 2026-11-17: Claude Code draws it before it loads any hook, so the
+        // agent kept its last state (working) and Chat showed nothing
+        const dialog = tuiDialog(trustDialog);
+        expect(dialog?.title).toBe("Accessing workspace:");
+        expect(dialog?.body[0]).toBe("d:\\projects\\mit\\mit-thesis");
+        expect(dialog?.body.at(-1)).toBe("Security guide");
+        expect(dialog?.options).toEqual([
+            { n: 1, label: "No, exit" },
+            { n: 2, label: "Yes, I trust this folder" },
+        ]);
+        expect(dialog?.cursor).toBe(2);
+        expect(dialog?.plain).toBe(true);
+    });
+    it("leaves the numbered dialogs unmarked plain", () => {
+        expect(tuiDialog(pausedDialog)?.plain).toBeUndefined();
+    });
+    it("never reads the input box's ❯ as a plain list", () => {
+        // a prompt typed over two rows sits at the label's column, under a rule, but the mode line shows
+        const box = [RULE, "❯ first line", "  second line", RULE, "  ⏵⏵ auto mode on (shift+tab to cycle)"];
+        expect(tuiDialog(box)).toBeNull();
+        expect(tuiDialog(box.slice(0, 4))).toBeNull();
     });
     it("is null on a screen with no dialog", () => {
         expect(tuiDialog(fixtures.idle)).toBeNull();

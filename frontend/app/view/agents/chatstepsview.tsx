@@ -1,90 +1,53 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// A stretch of the agent's tool calls in Chat (the A-floating board): the "Edited server.js, ran 2 commands +5 −2 · 38s"
-// line (chatstepsummary.ts), and under it, while the stretch is the one running now or was opened by a click, one compact
-// step line per call: an icon, a verb and a chip for each thing it touched (chatsteps.ts), a described command by its
-// description alone, and a run of calls with the same verb on the same file as one line that opens to them. A click on a
-// line opens that call's output or diff below it. The lines open and fold on the spring (springReveal), so a stretch that
-// ends folds into its one line instead of vanishing. The detail body is narrationtimeline.tsx's (ToolDetailBody), shared with the live feed; the rows around it are Chat's own.
+// A stretch of the agent's tool calls in Chat, as Claude Desktop draws it: the "Edited server.js, ran 2 commands +5 −2 ·
+// 38s ›" line (chatstepsummary.ts), and under it, while the stretch is the one running now or was opened by a click, one
+// bordered box with a row per call (chatsteps.ts): a muted verb, what it touched in bright plain text, a muted meta and
+// its +N, then a chevron. A command row is its description alone (or its command's first line, in mono) and opens to
+// `$ command` and its output; any other row opens to its output or diff (ToolDetailBody, shared with the live feed); a file
+// name opens the file beside the agent. A run of calls with the same verb on the same file is one row that opens to its
+// calls, indented, in the same box. The rows open and fold on the spring (springReveal), so a stretch that ends folds into
+// its one line instead of vanishing. Design: .superpowers/design/chat-compact-work/project (Main, States).
 // Named chatstepsview, not chatsteps: chatsteps.ts holds the pure model, and `./chatsteps` resolves to the .ts first.
 
-import { FileIcon } from "@/app/element/fileicon";
 import { springReveal } from "@/app/element/motiontokens";
 import { modalsModel } from "@/app/store/modalmodel";
 import { cn } from "@/util/util";
-import {
-    ArrowUpRight,
-    Ban,
-    Bot,
-    ChevronDown,
-    ChevronRight,
-    CircleHelp,
-    Eye,
-    FilePlus,
-    FolderSearch,
-    Globe,
-    Pencil,
-    Search,
-    Sparkles,
-    Terminal,
-    Wrench,
-    type LucideIcon,
-} from "lucide-react";
+import { ArrowUpRight, ChevronDown, ChevronRight } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
-import { useState, type KeyboardEvent } from "react";
+import { useState, type KeyboardEvent, type ReactNode } from "react";
 import { burstRenderMode, detailExceedsInline, type AgentActionEntry } from "./agentsviewmodel";
-import { editCounts, foldOf, stepElapsed, stepOf, stepRows, type StepChip, type StepIcon } from "./chatsteps";
+import { editCounts, foldOf, stepOf, stepRows, type StepChip } from "./chatsteps";
 import { stepSummary, stretchTime } from "./chatstepsummary";
 import { stretchMs, type WorkItem } from "./compacttimeline";
 import { ToolDetailBody, useNow } from "./narrationtimeline";
 import { PathLink } from "./pathlinkcontext";
-import { formatDuration } from "./tooldetail";
-
-const ICONS: Record<StepIcon, LucideIcon> = {
-    read: Eye,
-    edit: Pencil,
-    write: FilePlus,
-    run: Terminal,
-    search: Search,
-    find: FolderSearch,
-    web: Globe,
-    spawn: Bot,
-    skill: Sparkles,
-    ask: CircleHelp,
-    blocked: Ban,
-    tool: Wrench,
-};
 
 function baseName(path: string): string {
     return path.split(/[\\/]/).pop() || path;
 }
 
-// the caret sits in a slot as wide as a step's icon slot (StepLine), so the caret and the step icons under it share one
-// column
-function FoldCaret({ open }: { open: boolean }) {
+// `›` folded, `˅` open, after the line or the row it opens
+function Chevron({ open, size }: { open: boolean; size: number }) {
     const Icon = open ? ChevronDown : ChevronRight;
-    return (
-        <span className="flex h-[14px] w-[14px] shrink-0 items-center justify-center">
-            <Icon size={11} strokeWidth={2.2} aria-hidden />
-        </span>
-    );
+    return <Icon size={size} strokeWidth={2} aria-hidden className="shrink-0" />;
 }
 
-// a call with no result in a working session: a dashed ring whose dashes run round it, in the colour of a run that is
-// going well. The ring stays still and only the dash offset moves (tailwindsetup.css dashRun): spinning the svg itself
-// wobbled off its centre at fractional display scaling. pathLength 60 makes the 2 + 3 dash pattern close exactly, 12
-// dashes with no short one where the ring's ends meet.
-function StepSpinner() {
+// a call with no result in a working session, in the colour around it: a dashed ring whose dashes run round it. The ring
+// stays still and only the dash offset moves (tailwindsetup.css dashRun): spinning the svg itself wobbled off its centre at
+// fractional display scaling. pathLength 60 makes the 2 + 3 dash pattern close exactly, 12 dashes with no short one where
+// the ring's ends meet.
+function Spinner({ size }: { size: number }) {
     return (
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden className="text-success">
+        <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden className="shrink-0">
             <circle
                 cx="12"
                 cy="12"
                 r="9"
                 pathLength={60}
                 stroke="currentColor"
-                strokeWidth="2"
+                strokeWidth="2.4"
                 strokeLinecap="round"
                 strokeDasharray="2 3"
                 className="animate-[dashRun_1s_linear_infinite] motion-reduce:animate-none"
@@ -93,24 +56,16 @@ function StepSpinner() {
     );
 }
 
-const CHIP = "min-w-0 truncate rounded-[6px] px-2 py-[2px] text-[12px] text-ink-mid";
-const CHIP_FRAME = "border border-edge-mid bg-surface";
-
 // a path with a folder in it can be opened beside the agent; a bare name (the target of a call whose transcript gave no full
 // path) cannot be told from a file in some other folder, so it is not a link
 const hasFolder = (path: string) => /[\\/]/.test(path);
 
-// `count`: the calls a folded line stands for, "×4" inside the file's chip; `failed`: the call failed, so a described
-// command's words take the verb's red
-function Chip({ chip, count, failed }: { chip: StepChip; count?: number; failed?: boolean }) {
-    // a described command is the line's text, in the verb's colour; the command itself shows when the line opens
+// what a row names, as plain text: a file's name (a link to it, bright, underlined on hover), a command's description, a
+// command's first line in mono, or any other target
+function Target({ chip }: { chip: StepChip }) {
     if (chip.kind === "description") {
         return (
-            <span
-                data-chat-step-chip="description"
-                title={chip.command}
-                className={cn("min-w-0 truncate", failed ? "text-error" : "text-secondary")}
-            >
+            <span data-chat-step-chip="description" title={chip.command} className="min-w-0 truncate text-secondary">
                 {chip.text}
             </span>
         );
@@ -120,7 +75,7 @@ function Chip({ chip, count, failed }: { chip: StepChip; count?: number; failed?
             <span
                 data-chat-step-chip="command"
                 title={chip.text}
-                className="min-w-0 max-w-[420px] truncate rounded-[6px] bg-surface-code px-2 py-[2px] font-mono text-[11.5px] text-ink-mid"
+                className="min-w-0 truncate font-mono text-[12px] text-secondary"
             >
                 {chip.text}
             </span>
@@ -128,59 +83,54 @@ function Chip({ chip, count, failed }: { chip: StepChip; count?: number; failed?
     }
     if (chip.kind === "text") {
         return (
-            <span data-chat-step-chip="text" title={chip.text} className={cn(CHIP, CHIP_FRAME, "max-w-[260px]")}>
+            <span data-chat-step-chip="text" title={chip.text} className="min-w-0 truncate text-primary">
                 {chip.text}
             </span>
         );
     }
     const name = baseName(chip.path);
     return (
-        <span
-            data-chat-step-chip="file"
-            title={chip.path}
-            className={cn(CHIP, CHIP_FRAME, "inline-flex max-w-[260px] items-center gap-1.5")}
-        >
-            <FileIcon path={chip.path} size={14} />
+        <span data-chat-step-chip="file" title={chip.path} className="flex min-w-0 text-primary">
             {hasFolder(chip.path) ? (
-                <PathLink path={chip.path} className="max-w-full">
+                <PathLink path={chip.path} className="max-w-full hover:text-primary">
                     {name}
                 </PathLink>
             ) : (
                 <span className="min-w-0 truncate">{name}</span>
             )}
-            {count != null && count > 1 ? (
-                <span data-chat-step-count className="shrink-0 font-medium tabular-nums text-primary">
-                    ×{count}
-                </span>
-            ) : null}
         </span>
     );
 }
 
-// the lines an edit added and removed, as the diff chips under the stretch say them
-function EditCount({ edits }: { edits: { adds: number; dels: number } | null | undefined }) {
+// the lines an edit added and removed: +N in the add colour, −N only when something was removed
+function Counts({ edits, ...data }: { edits: { adds: number; dels: number } | null | undefined }) {
     if (edits == null) {
         return null;
     }
     return (
-        <span data-chat-step-diff className="inline-flex shrink-0 gap-1 text-[12px] tabular-nums">
+        <span {...data} className="inline-flex shrink-0 gap-1 tabular-nums">
             <span className="text-success">+{edits.adds}</span>
-            <span className="text-error">−{edits.dels}</span>
+            {edits.dels > 0 ? <span className="text-error">−{edits.dels}</span> : null}
         </span>
     );
 }
 
-// the exit code under a command's output, in the panel footer so it never scrolls away with the output
+function Meta({ text }: { text: string | undefined }) {
+    return text ? (
+        <span title={text} className="min-w-0 truncate text-muted">
+            · {text}
+        </span>
+    ) : null;
+}
+
+// a command's exit code at its row's end, when it did not pass: a command row has no verb to turn red
 function ExitMark({ exit }: { exit: number | null }) {
     return (
         <span
+            data-chat-step-exit
             className={cn(
-                "rounded-[4px] px-[7px] py-px text-[10.5px] font-semibold uppercase tabular-nums tracking-[0.06em]",
-                exit == null
-                    ? "bg-surface-hover text-muted"
-                    : exit
-                      ? "bg-error/15 text-error"
-                      : "bg-success/15 text-success"
+                "shrink-0 rounded-[4px] px-[7px] py-px text-[10.5px] font-semibold uppercase tabular-nums tracking-[0.06em]",
+                exit == null ? "bg-surface-hover text-muted" : "bg-error/15 text-error"
             )}
         >
             {exit == null ? "not run" : `exit ${exit}`}
@@ -188,12 +138,22 @@ function ExitMark({ exit }: { exit: number | null }) {
     );
 }
 
-function StepDetail({ action }: { action: AgentActionEntry }) {
-    const detail = action.detail;
-    if (detail == null) {
-        return null;
-    }
-    const long = detailExceedsInline(detail);
+function OpenFullView({ action }: { action: AgentActionEntry }) {
+    return (
+        <button
+            type="button"
+            aria-label="Open full view"
+            onClick={() => modalsModel.pushModal("AgentToolDetailModal", { action })}
+            className="inline-flex cursor-pointer items-center gap-1 self-start text-[11px] text-muted hover:text-secondary"
+        >
+            <ArrowUpRight size={12} strokeWidth={2.2} aria-hidden />
+            Open full view
+        </button>
+    );
+}
+
+// what an opened row shows under it, inside the box
+function Opened({ children }: { children: ReactNode }) {
     return (
         <motion.div
             data-tool-panel
@@ -201,66 +161,101 @@ function StepDetail({ action }: { action: AgentActionEntry }) {
             initial="initial"
             animate="animate"
             exit="exit"
-            // 28px = the line's 6px padding + the 14px icon + the 8px gap before the verb: the panel sits under the verb
-            className="mb-1.5 ml-[28px] mt-1 overflow-hidden rounded-[8px] border border-edge-mid bg-surface-code"
+            className="overflow-hidden"
         >
-            <div className={cn(long ? "max-h-[320px]" : "max-h-[200px]", "overflow-auto")}>
-                <ToolDetailBody detail={detail} variant="inline" />
-            </div>
-            <div className="flex items-center gap-2 border-t border-edge-faint px-1.5 py-[3px]">
-                {detail.kind === "bash" ? <ExitMark exit={detail.exit} /> : null}
-                <div className="flex-1" />
-                <button
-                    type="button"
-                    aria-label="Open full view"
-                    onClick={() => modalsModel.pushModal("AgentToolDetailModal", { action })}
-                    className="inline-flex cursor-pointer items-center gap-1.5 rounded-[5px] px-1.5 py-[3px] text-[10.5px] text-ink-mid hover:bg-lane hover:text-primary"
-                >
-                    <ArrowUpRight size={12} strokeWidth={2.2} aria-hidden />
-                    Open full view
-                </button>
-            </div>
+            <div className="flex flex-col gap-2 px-3 pb-3">{children}</div>
         </motion.div>
     );
 }
 
+// an opened command: `$ command` in a code block, then its output in a box that scrolls (Chat's own; the live feed keeps
+// ToolDetailBody's)
+function CommandDetail({ action, command }: { action: AgentActionEntry; command: string }) {
+    const output = action.detail?.kind === "bash" ? action.detail.output : "";
+    return (
+        <Opened>
+            <div
+                data-chat-step-command
+                className="whitespace-pre-wrap rounded-[6px] bg-surface-code px-3 py-2 font-mono text-[12px] text-primary [overflow-wrap:anywhere]"
+            >
+                <span className="select-none text-muted">$ </span>
+                {command}
+            </div>
+            {output !== "" ? (
+                <pre
+                    data-chat-step-output
+                    className="m-0 max-h-[320px] overflow-auto whitespace-pre-wrap px-3 py-1 font-mono text-[12px] leading-[1.6] text-secondary [overflow-wrap:anywhere]"
+                >
+                    {output}
+                </pre>
+            ) : null}
+            <OpenFullView action={action} />
+        </Opened>
+    );
+}
+
+// an opened read, edit, search…: its output or diff in a code panel
+function StepDetail({ action, detail }: { action: AgentActionEntry; detail: NonNullable<AgentActionEntry["detail"]> }) {
+    return (
+        <Opened>
+            <div
+                className={cn(
+                    detailExceedsInline(detail) ? "max-h-[320px]" : "max-h-[200px]",
+                    "overflow-auto rounded-[6px] bg-surface-code"
+                )}
+            >
+                <ToolDetailBody detail={detail} variant="inline" />
+            </div>
+            <OpenFullView action={action} />
+        </Opened>
+    );
+}
+
+const ROW = "flex min-w-0 items-center gap-2 px-3 py-[9px] text-[13px]";
+
+// a click on a row opens it, a drag that selected its text does not (it ends in a click too: it copies); Enter and Space
+// open it from the keyboard
+function rowHandlers(enabled: boolean, onToggle: () => void) {
+    return {
+        onClick: () => {
+            const sel = window.getSelection();
+            if (enabled && (sel == null || sel.isCollapsed)) {
+                onToggle();
+            }
+        },
+        onKeyDown: (e: KeyboardEvent<HTMLDivElement>) => {
+            if (enabled && e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) {
+                e.preventDefault();
+                onToggle();
+            }
+        },
+    };
+}
+
 // one tool call: `live` is the session working (a call with no result is running); a call a stopped session left without a
-// result is neither running nor passed (ToolLine's neutral), `data-tool-settled`
-function StepLine({
+// result is neither running nor passed, `data-tool-settled`
+function StepRow({
     action,
     live,
-    now,
     open,
     onToggle,
     bare,
 }: {
     action: AgentActionEntry;
     live: boolean;
-    now: number;
     open: boolean;
     onToggle: () => void;
-    // a call under a folded line, which already names its file: no chips
+    // a call under a folded row, which already names its file: indented, no target
     bare?: boolean;
 }) {
     const step = stepOf(action, live);
-    const neutral = !step.running && !live && action.outcome == null;
-    const failed = action.outcome === "fail";
-    const blocked = action.outcome === "blocked";
     const detail = action.detail;
-    const Icon = ICONS[step.icon];
-    const toggle = () => {
-        // a drag that selected the line's text ends in a click too: it copies, it does not open the line
-        const sel = window.getSelection();
-        if (detail != null && (sel == null || sel.isCollapsed)) {
-            onToggle();
-        }
-    };
-    const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
-        if (detail != null && e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) {
-            e.preventDefault();
-            onToggle();
-        }
-    };
+    const neutral = !step.running && !live && action.outcome == null;
+    const blocked = action.outcome === "blocked";
+    const exit = detail?.kind === "bash" ? detail.exit : 0;
+    // the command line an opened command row shows: the detail's once the result lands, else what its row was built from
+    const head = step.chips[0];
+    const command = head?.kind === "description" ? head.command : head?.kind === "command" ? head.text : undefined;
     return (
         <div>
             <div
@@ -272,71 +267,57 @@ function StepLine({
                 role={detail != null ? "button" : undefined}
                 tabIndex={detail != null ? 0 : undefined}
                 aria-expanded={detail != null ? open : undefined}
-                onClick={toggle}
-                onKeyDown={onKeyDown}
-                className={cn(
-                    "flex min-w-0 items-center gap-2 rounded-[6px] px-1.5 py-[3px] text-[13px]",
-                    detail != null && "cursor-pointer hover:bg-surface-hover"
-                )}
+                {...rowHandlers(detail != null, onToggle)}
+                className={cn(ROW, bare && "pl-9", detail != null && "cursor-pointer hover:bg-surface")}
             >
-                <span
-                    className={cn(
-                        "flex h-[14px] w-[14px] shrink-0 items-center justify-center",
-                        failed ? "text-error" : "text-muted"
-                    )}
-                >
-                    {step.running ? <StepSpinner /> : <Icon size={14} strokeWidth={1.8} aria-hidden />}
-                </span>
                 {step.verb !== "" ? (
-                    <span className={cn("shrink-0", failed ? "text-error" : "text-secondary")}>{step.verb}</span>
+                    <span data-chat-step-verb className={cn("shrink-0", step.failed ? "text-error" : "text-muted")}>
+                        {step.verb}
+                    </span>
                 ) : null}
-                {bare ? null : step.chips.map((chip, i) => <Chip key={i} chip={chip} failed={failed} />)}
+                {bare ? null : step.chips.map((chip, i) => <Target key={i} chip={chip} />)}
                 {!bare && step.more > 0 ? (
-                    <span data-chat-step-more className="shrink-0 text-[12px] tabular-nums text-muted">
+                    <span data-chat-step-more className="shrink-0 tabular-nums text-muted">
                         +{step.more}
                     </span>
                 ) : null}
-                {action.summary ? (
-                    <span className={cn("shrink-0 text-[12px] tabular-nums", failed ? "text-error" : "text-muted")}>
-                        {action.summary}
+                <Meta text={step.meta} />
+                {step.failed ? null : <Counts edits={editCounts(action)} data-chat-step-diff="" />}
+                {step.command && (blocked || exit !== 0) ? <ExitMark exit={exit} /> : null}
+                {step.running ? (
+                    <span className="flex text-muted">
+                        <Spinner size={12} />
                     </span>
-                ) : (
-                    <EditCount edits={editCounts(action)} />
-                )}
-                <div className="min-w-[6px] flex-1" />
-                {step.running && action.startedAt != null ? (
-                    <span className="shrink-0 text-[12px] tabular-nums text-muted">
-                        {stepElapsed(now - action.startedAt)}
-                    </span>
-                ) : action.durationMs && !blocked ? (
-                    <span className="shrink-0 text-[10.5px] tabular-nums text-muted">
-                        {formatDuration(action.durationMs)}
-                    </span>
-                ) : null}
-                {detail != null ? (
-                    <span className="flex shrink-0 text-muted">
-                        {open ? (
-                            <ChevronDown size={12} strokeWidth={2.2} aria-hidden />
-                        ) : (
-                            <ChevronRight size={12} strokeWidth={2.2} aria-hidden />
-                        )}
+                ) : detail != null ? (
+                    <span className="flex text-muted">
+                        <Chevron open={open} size={12} />
                     </span>
                 ) : null}
             </div>
             <AnimatePresence initial={false}>
-                {detail != null && open ? <StepDetail key="detail" action={action} /> : null}
+                {detail != null && open ? (
+                    step.command && command != null ? (
+                        <CommandDetail
+                            key="detail"
+                            action={action}
+                            command={(detail.kind === "bash" ? detail.command : undefined) ?? command}
+                        />
+                    ) : (
+                        <StepDetail key="detail" action={action} detail={detail} />
+                    )
+                ) : null}
             </AnimatePresence>
         </div>
     );
 }
 
-// a run of calls with the same verb on the same file as one line, "Edit rail.tsx ×4 +1 −24" (chatsteps.ts stepRows); a click
-// opens its calls under it on the spring, each still opening its own output. Running while its last call is.
-function FoldLine({
+// a run of calls with the same verb on the same file as one row, "Edited rail.tsx ×4 +1 −24" (chatsteps.ts stepRows); a
+// click opens its calls under it, indented, in the same box, each still opening its own output. Running while its last
+// call is.
+function FoldRow({
     actions,
     start,
     live,
-    now,
     open,
     onToggle,
     opened,
@@ -345,7 +326,6 @@ function FoldLine({
     actions: AgentActionEntry[];
     start: number; // the entry index of the run's first call
     live: boolean;
-    now: number;
     open: boolean;
     onToggle: () => void;
     opened: Set<number>;
@@ -353,21 +333,7 @@ function FoldLine({
 }) {
     const fold = foldOf(actions, live);
     const step = fold.step;
-    const Icon = ICONS[step.icon];
     const neutral = !step.running && !live && actions.every((a) => a.outcome == null);
-    const toggle = () => {
-        // a drag that selected the line's text ends in a click too: it copies, it does not open the line
-        const sel = window.getSelection();
-        if (sel == null || sel.isCollapsed) {
-            onToggle();
-        }
-    };
-    const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
-        if (e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) {
-            e.preventDefault();
-            onToggle();
-        }
-    };
     return (
         <div>
             <div
@@ -379,38 +345,22 @@ function FoldLine({
                 role="button"
                 tabIndex={0}
                 aria-expanded={open}
-                onClick={toggle}
-                onKeyDown={onKeyDown}
-                className="flex min-w-0 cursor-pointer items-center gap-2 rounded-[6px] px-1.5 py-[3px] text-[13px] hover:bg-surface-hover"
+                {...rowHandlers(true, onToggle)}
+                className={cn(ROW, "cursor-pointer hover:bg-surface")}
             >
-                <span className="flex h-[14px] w-[14px] shrink-0 items-center justify-center text-muted">
-                    {step.running ? <StepSpinner /> : <Icon size={14} strokeWidth={1.8} aria-hidden />}
+                <span data-chat-step-verb className="shrink-0 text-muted">
+                    {step.verb}
                 </span>
-                <span className="shrink-0 text-secondary">{step.verb}</span>
                 {step.chips.map((chip, i) => (
-                    <Chip key={i} chip={chip} count={fold.count} />
+                    <Target key={i} chip={chip} />
                 ))}
-                {fold.summary ? (
-                    <span className="shrink-0 text-[12px] tabular-nums text-muted">{fold.summary}</span>
-                ) : (
-                    <EditCount edits={fold.edits} />
-                )}
-                <div className="min-w-[6px] flex-1" />
-                {step.running && fold.runningSince != null ? (
-                    <span className="shrink-0 text-[12px] tabular-nums text-muted">
-                        {stepElapsed(now - fold.runningSince)}
-                    </span>
-                ) : !step.running && fold.durationMs > 0 ? (
-                    <span className="shrink-0 text-[10.5px] tabular-nums text-muted">
-                        {formatDuration(fold.durationMs)}
-                    </span>
-                ) : null}
-                <span className="flex shrink-0 text-muted">
-                    {open ? (
-                        <ChevronDown size={12} strokeWidth={2.2} aria-hidden />
-                    ) : (
-                        <ChevronRight size={12} strokeWidth={2.2} aria-hidden />
-                    )}
+                <span data-chat-step-count className="shrink-0 tabular-nums text-muted">
+                    ×{fold.count}
+                </span>
+                <Meta text={fold.summary} />
+                <Counts edits={fold.edits} data-chat-step-diff="" />
+                <span className="flex text-muted">
+                    {step.running ? <Spinner size={12} /> : <Chevron open={open} size={12} />}
                 </span>
             </div>
             <AnimatePresence initial={false}>
@@ -422,19 +372,18 @@ function FoldLine({
                         initial="initial"
                         animate="animate"
                         exit="exit"
-                        // 22px = the line's 14px icon + its 8px gap: the calls' icons sit under the fold's verb
-                        className="overflow-hidden pl-[22px]"
+                        className="overflow-hidden"
                     >
                         {actions.map((action, k) => (
-                            <StepLine
-                                key={start + k}
-                                action={action}
-                                live={live}
-                                now={now}
-                                open={opened.has(start + k)}
-                                onToggle={() => onToggleCall(start + k)}
-                                bare
-                            />
+                            <div key={start + k} className="border-t border-border">
+                                <StepRow
+                                    action={action}
+                                    live={live}
+                                    open={opened.has(start + k)}
+                                    onToggle={() => onToggleCall(start + k)}
+                                    bare
+                                />
+                            </div>
                         ))}
                     </motion.div>
                 ) : null}
@@ -451,16 +400,17 @@ function toggled(prev: Set<number>, index: number): Set<number> {
     return next;
 }
 
-// the lines of an open stretch. Its own component, so the lines opened are forgotten when the stretch folds, and the lines
-// the agent adds while it works open on the spring as they land (the ones there when it opens are drawn at once). A run of
-// calls on one file is one FoldLine, keyed by its first call, so a call joining the run grows its count in place.
-function StepList({ work, live, now }: { work: WorkItem; live: boolean; now: number }) {
+// the rows of an open stretch, divided by hairlines. Its own component, so the rows opened are forgotten when the stretch
+// folds, and the rows the agent adds while it works open on the spring as they land (the ones there when it opens are drawn
+// at once). A run of calls on one file is one FoldRow, keyed by its first call, so a call joining the run grows its count
+// in place.
+function StepList({ work, live }: { work: WorkItem; live: boolean }) {
     const [opened, setOpened] = useState<Set<number>>(new Set());
     const [folds, setFolds] = useState<Set<number>>(new Set());
     const toggle = (index: number) => setOpened((prev) => toggled(prev, index));
     return (
         <AnimatePresence initial={false}>
-            {stepRows(work.actions).map((row) => {
+            {stepRows(work.actions).map((row, i) => {
                 const index = work.startIndex + row.start;
                 return (
                     <motion.div
@@ -468,22 +418,20 @@ function StepList({ work, live, now }: { work: WorkItem; live: boolean; now: num
                         variants={springReveal}
                         initial="initial"
                         animate="animate"
-                        className="overflow-hidden"
+                        className={cn("overflow-hidden", i > 0 && "border-t border-border")}
                     >
                         {row.actions.length === 1 ? (
-                            <StepLine
+                            <StepRow
                                 action={row.actions[0]}
                                 live={live}
-                                now={now}
                                 open={opened.has(index)}
                                 onToggle={() => toggle(index)}
                             />
                         ) : (
-                            <FoldLine
+                            <FoldRow
                                 actions={row.actions}
                                 start={index}
                                 live={live}
-                                now={now}
                                 open={folds.has(index)}
                                 onToggle={() => setFolds((prev) => toggled(prev, index))}
                                 opened={opened}
@@ -497,9 +445,10 @@ function StepList({ work, live, now }: { work: WorkItem; live: boolean; now: num
     );
 }
 
-// "› Edited server.js, ran 2 commands +5 −2 · 38s": a stretch of tools as one plain line between the agent's paragraphs,
-// opening to its step lines; "› Running npm test +2 · 12s" while a call in it is in flight. A live session's last stretch is open while the agent works (burstRenderMode), and folds on the spring into this
-// line once the agent moves on; a click opens it again.
+// "Edited server.js, ran 2 commands +5 −2 · 38s ›": a stretch of tools as one muted line between the agent's paragraphs,
+// opening to its box of rows; "◌ Running npm test +2 · 12s ˅" while a call in it is in flight. A live session's last stretch
+// is open while the agent works (burstRenderMode), and folds on the spring into this line once the agent moves on; a click
+// opens it again.
 export function ChatSteps({
     work,
     open,
@@ -522,7 +471,6 @@ export function ChatSteps({
     const running = summary.running;
     const now = useNow(running);
     const time = stretchTime(running ? stretchMs(work, now, live) : work.durationMs);
-    const edits = running ? null : summary.edits;
     return (
         <div data-chat-work className="flex flex-col">
             <button
@@ -531,31 +479,32 @@ export function ChatSteps({
                 aria-expanded={shown}
                 onClick={onToggle}
                 data-fold-state={running ? "running" : "done"}
-                className="flex min-w-0 max-w-full cursor-pointer items-center gap-2 self-start px-1.5 py-[2px] text-[12px] text-muted hover:text-secondary"
+                className={cn(
+                    "flex min-w-0 max-w-full cursor-pointer items-center gap-1.5 self-start py-[2px] text-[13.5px] hover:text-secondary",
+                    running ? "text-secondary" : "text-muted"
+                )}
             >
-                <FoldCaret open={shown} />
+                {running ? <Spinner size={13} /> : null}
                 {/* only the sentence truncates: the counts and the time stay in view. No failed call is in the sentence
                     and no red is on this line: a tool that fails mid-turn is mostly the agent's own probe (a grep with no
-                    hit, a missing tool) that it gets past. A failed step keeps its red on its own line, once opened. */}
+                    hit, a missing tool) that it gets past. A failed call keeps its red on its own row, once opened. */}
                 <span data-fold-sentence className="min-w-0 truncate">
                     {summary.text}
                 </span>
                 {running && summary.more > 0 ? (
-                    <span data-fold-more className="-ml-1 shrink-0 tabular-nums">
+                    <span data-fold-more className="shrink-0 tabular-nums text-muted">
                         +{summary.more}
                     </span>
                 ) : null}
-                {edits != null ? (
-                    <span data-fold-counts className="inline-flex shrink-0 gap-1 tabular-nums">
-                        <span className="text-success">+{edits.adds}</span>
-                        {edits.dels > 0 ? <span className="text-error">−{edits.dels}</span> : null}
-                    </span>
-                ) : null}
+                {running ? null : <Counts edits={summary.edits} data-fold-counts="" />}
                 {time !== "" ? (
-                    <span data-fold-time className="shrink-0 tabular-nums">
+                    <span data-fold-time className="shrink-0 text-[12px] tabular-nums text-muted">
                         · {time}
                     </span>
                 ) : null}
+                <span className="flex text-muted">
+                    <Chevron open={shown} size={13} />
+                </span>
             </button>
             <AnimatePresence initial={false}>
                 {shown ? (
@@ -566,9 +515,11 @@ export function ChatSteps({
                         initial="initial"
                         animate="animate"
                         exit="exit"
-                        className="overflow-hidden pt-1"
+                        className="overflow-hidden"
                     >
-                        <StepList work={work} live={live} now={now} />
+                        <div className="mt-2 overflow-hidden rounded-[10px] border border-edge-mid">
+                            <StepList work={work} live={live} />
+                        </div>
                     </motion.div>
                 ) : null}
             </AnimatePresence>

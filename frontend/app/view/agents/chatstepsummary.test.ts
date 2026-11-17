@@ -51,7 +51,7 @@ describe("stepSummary: finished", () => {
             ],
             false
         );
-        expect(s.text).toBe("Edited 2 files, wrote c.ts, ran 2 commands, read 2 files and searched");
+        expect(s.text).toBe("Edited 2 files, created c.ts, ran 2 commands, read 2 files and searched");
         expect(s.edits).toEqual({ adds: 5, dels: 1 });
     });
 
@@ -69,9 +69,24 @@ describe("stepSummary: finished", () => {
         const searches = [action("grep"), action("glob"), action("grep"), action("webfetch")];
         expect(stepSummary(searches, false).text).toBe("Searched 4 times");
         expect(stepSummary([read("/r/a.ts"), ...searches], false).text).toBe("Read a.ts and searched 4 times");
-        expect(stepSummary([action("glob")], false).text).toBe("Looked for files");
+        expect(stepSummary([action("glob")], false).text).toBe("Searched for files");
         expect(stepSummary([action("webfetch"), action("webfetch")], false).text).toBe("Fetched 2 pages");
         expect(stepSummary([action("websearch")], false).text).toBe("Searched the web");
+    });
+
+    it("reads as the canvas words it: what looked, then the skill it ran", () => {
+        const s = stepSummary(
+            [
+                action("skill", { target: "/superpowers:test-driven-development" }),
+                read("/r/server.js"),
+                action("glob", { target: "**/*.{js,json}" }),
+                read("/r/package.json"),
+                read("/r/cart.test.js"),
+            ],
+            false
+        );
+        expect(s.text).toBe("Read 3 files and searched for files, ran skill");
+        expect(stepSummary([action("skill"), action("skill")], false).text).toBe("Ran 2 skills");
     });
 
     it("spawns, skills, questions and tools with no word never drop out", () => {
@@ -86,7 +101,7 @@ describe("stepSummary: finished", () => {
             ],
             false
         );
-        expect(s.text).toBe("Spawned an agent, used skill brainstorming, asked a question, read a.ts, used 2 tools");
+        expect(s.text).toBe("Spawned an agent, asked a question, read a.ts, ran skill, used 2 tools");
     });
 
     it("a harness's own tool names count by their detail (agy's run_command is a command)", () => {
@@ -141,12 +156,14 @@ describe("stepSummary: running", () => {
         expect(s).toEqual({ running: true, text: "Running npm test", more: 0, edits: null });
     });
 
-    it("a described command by its description", () => {
-        const s = stepSummary(
-            [action("ran", { target: "Run the test suite", command: "npm test", startedAt: 5 })],
-            true
-        );
-        expect(s.text).toBe("Run the test suite");
+    it("a described command by its description, a leading Run or Ran said as Running", () => {
+        const described = (target: string) =>
+            stepSummary([action("ran", { target, command: "npm test", startedAt: 5 })], true).text;
+        expect(described("Run the test suite")).toBe("Running the test suite");
+        expect(described("Ran tests to confirm new test fails")).toBe("Running tests to confirm new test fails");
+        expect(described("Install dependencies")).toBe("Install dependencies");
+        // a word that only starts with run is not the verb
+        expect(described("Runtime check")).toBe("Runtime check");
     });
 
     it("several in flight: the latest to start, and the rest as more", () => {

@@ -3,7 +3,7 @@
 
 import { globalStore } from "@/app/store/jotaiStore";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { jobQueueAtom, startJobQueueFeed } from "./jobqueuestore";
+import { jobQueueAtom, jobQueueFocusAtom, jobQueueOpenAtom, startJobQueueFeed, toggleJobQueue } from "./jobqueuestore";
 
 const reads: { resolve: (d: JobQueueData) => void }[] = [];
 let handler: ((e: { data: unknown }) => void) | null = null;
@@ -87,5 +87,19 @@ describe("startJobQueueFeed", () => {
         reads[0].resolve(snap(1));
         await flush();
         expect(globalStore.get(jobQueueAtom)).toBeNull();
+    });
+});
+
+describe("toggleJobQueue", () => {
+    afterEach(() => globalStore.set(jobQueueOpenAtom, false));
+
+    it("opens with the tag's jobs selected, and the chip's open selects none", () => {
+        toggleJobQueue(null, ["j-1", "j-2"]);
+        expect(globalStore.get(jobQueueOpenAtom)).toBe(true);
+        expect(globalStore.get(jobQueueFocusAtom)).toEqual(["j-1", "j-2"]);
+        toggleJobQueue(null);
+        expect(globalStore.get(jobQueueOpenAtom)).toBe(false);
+        toggleJobQueue(null);
+        expect(globalStore.get(jobQueueFocusAtom)).toEqual([]);
     });
 });

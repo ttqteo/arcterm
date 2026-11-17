@@ -241,6 +241,43 @@ describe("buildAgentTree with a builder check", () => {
         expect(shape(rows)).toEqual(["group:waveterm:2:0:1", "lead:bs", "parent:rv"]);
     });
 
+    it("drops the checks, chip and rows, once a run the brainstorm started after them is under way", () => {
+        const started = (createdTs: number): RunInfo => ({
+            runId: "run-1",
+            channelId: "ch",
+            title: "t",
+            project: "loom",
+            originId: "bs",
+            createdTs,
+        });
+        const lineage = (createdTs: number) => ({ roles: {}, runs: { "run-1": started(createdTs) } });
+        const after = buildAgentTree([brainstorm("answered"), reviewer("idle")], ["bs", "rv"], lineage(2));
+        expect(shape(after)).toEqual(["group:waveterm:1:0:0", "parent:bs"]);
+        expect(after[1]).not.toHaveProperty("checks");
+        // a run from before this check (an earlier brainstorm's) leaves it be
+        const before = buildAgentTree([brainstorm("answered"), reviewer("idle")], ["bs", "rv"], lineage(0));
+        expect(before[1]).toMatchObject({ checks: { states: ["answered"] } });
+    });
+
+    it("still shows a check behind a started run while it asks or holds the focus", () => {
+        const lineage = {
+            roles: {},
+            runs: {
+                "run-1": { runId: "run-1", channelId: "ch", title: "t", project: "loom", originId: "bs", createdTs: 2 },
+            },
+        };
+        const asking = buildAgentTree([brainstorm("answered"), reviewer("asking")], ["bs", "rv"], lineage);
+        expect(shape(asking)).toEqual(["group:waveterm:2:1:0", "parent:bs", "  check:rv:answered"]);
+        const focused = buildAgentTree(
+            [brainstorm("answered"), reviewer("idle")],
+            ["bs", "rv"],
+            lineage,
+            undefined,
+            "rv"
+        );
+        expect(shape(focused)).toEqual(["group:waveterm:2:0:0", "parent:bs", "  check:rv:answered"]);
+    });
+
     it("keeps the reviewer right under its brainstorm when that agent itself nests under one it waits on", () => {
         const agents = [vm("a", "idle", WAVE), brainstorm("reading"), reviewer()];
         const rows = buildAgentTree(agents, ["a", "bs", "rv"], undefined, undefined, undefined, new Map([["bs", "a"]]));

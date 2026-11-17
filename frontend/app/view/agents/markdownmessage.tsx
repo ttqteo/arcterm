@@ -62,10 +62,11 @@ function DisplayMath({ tex }: { tex: string }) {
     );
 }
 
-// A link, with a copy button that shows on hover so its url can be taken without selecting it. The button hangs off the
-// link's end from a zero-width anchor, over the text after it, so showing it moves no word; the anchor sits in the
-// link's hover group, the button's box joined to the link's, so moving onto it keeps it shown. Not selectable: a
-// selection over the line neither paints nor copies it.
+// A link, with a copy button that shows on hover so its url can be taken without selecting it. The button sits on the
+// link's top-right corner, like a footnote mark, from a zero-width anchor at the link's end: it covers no word on the
+// line, only the gap over it, and showing it moves no word. It is drawn as a reply's Copy is (small, muted, on the
+// surface). The anchor sits in the link's hover group and the button's foot overlaps the link's top, so moving onto it
+// keeps it shown. Not selectable: a selection over the line neither paints nor copies it.
 function MdLink({ href, children }: { href?: string; children?: ReactNode }) {
     const url = copyableHref(href);
     const link = (
@@ -86,12 +87,12 @@ function MdLink({ href, children }: { href?: string; children?: ReactNode }) {
     return (
         <span data-md-link className="group/link">
             {link}
-            <span className="relative inline-block w-0 select-none align-middle">
+            <span className="relative inline-block w-0 select-none align-text-top">
                 <span
                     data-md-link-copy
-                    className="invisible absolute top-1/2 left-0 z-10 -translate-y-1/2 rounded bg-surface-raised pl-0.5 text-[13px] group-hover/link:visible group-focus-within/link:visible"
+                    className="invisible absolute -bottom-[0.3em] left-0 z-10 flex rounded-md bg-surface group-hover/link:visible group-focus-within/link:visible"
                 >
-                    <CopyButton content={url} title="Copy link" />
+                    <CopyButton content={url} title="Copy link" className="p-0.5 text-[11px]" />
                 </span>
             </span>
         </span>

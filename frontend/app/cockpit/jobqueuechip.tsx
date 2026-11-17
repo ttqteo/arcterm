@@ -75,7 +75,7 @@ export function JobQueueChip({ compact = false }: { compact?: boolean } = {}) {
 export function QueuedJobTag({ job, short }: { job: JobQueueJob; short?: boolean }) {
     useWaitClock();
     const tag = short ? shortQueuedTag(job, Date.now()) : queuedTag(job, Date.now());
-    return <QueueTagButton tag={tag} attrs={{ "data-agent-queued": job.id }} />;
+    return <QueueTagButton tag={tag} focus={[job.id]} attrs={{ "data-agent-queued": job.id }} />;
 }
 
 // A run's tag while any of its jobs waits: its engine steps and its agents' commands, so a folded run still says it
@@ -84,7 +84,9 @@ export function QueuedJobTag({ job, short }: { job: JobQueueJob; short?: boolean
 export function RunQueuedTag({ runId, jobs }: { runId: string; jobs: readonly JobQueueJob[] }) {
     useWaitClock();
     const tag = runQueuedTag(jobs, Date.now());
-    return tag == null ? null : <QueueTagButton tag={tag} attrs={{ "data-run-queued": runId }} />;
+    return tag == null ? null : (
+        <QueueTagButton tag={tag} focus={jobs.map((j) => j.id)} attrs={{ "data-run-queued": runId }} />
+    );
 }
 
 // the tags keep their own clock, as the chip does, so they turn to the warning without their row ticking every second
@@ -96,12 +98,15 @@ function useWaitClock() {
     }, []);
 }
 
-// whole, never cut: in the Agent tree its label is short ("#1", "×2") and the words left of it shrink instead
+// whole, never cut: in the Agent tree its label is short ("#1", "×2") and the words left of it shrink instead. The
+// popover it opens draws its jobs (`focus`) selected, so the row the tag sits on is the one you find there
 function QueueTagButton({
     tag,
+    focus,
     attrs,
 }: {
     tag: { label: string; title: string; warn: boolean };
+    focus: readonly string[];
     attrs: Record<string, string>;
 }) {
     const Icon = tag.warn ? TriangleAlert : Layers;
@@ -113,7 +118,7 @@ function QueueTagButton({
             title={`${tag.title}. Click for Run now or Skip.`}
             onClick={(e) => {
                 e.stopPropagation();
-                toggleJobQueue(e.currentTarget);
+                toggleJobQueue(e.currentTarget, focus);
             }}
             className={cn(
                 "flex flex-none cursor-pointer items-center gap-[3px] whitespace-nowrap rounded-[5px] px-[3px] py-[1px] text-[10.5px] font-semibold tabular-nums hover:bg-surface-hover",

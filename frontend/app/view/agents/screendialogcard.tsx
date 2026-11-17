@@ -177,7 +177,7 @@ export function ScreenDialogCard({
                         className={cn(OPTION_BTN, o.n === dialog.cursor ? CURSOR_BTN : OTHER_BTN)}
                         onClick={() => pick(o.label, o.n)}
                     >
-                        <span className="flex-none tabular-nums opacity-70">{o.n}.</span>
+                        {!dialog.plain && <span className="flex-none tabular-nums opacity-70">{o.n}.</span>}
                         <span className="min-w-0 break-words">{o.label}</span>
                     </button>
                 ))}
