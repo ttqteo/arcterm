@@ -103,6 +103,8 @@ type AgentStatusData struct {
 	// Ended marks the report of a session's end: the agent exited and its shell keeps running, so the roster stops
 	// listing it. Idle, and set only by a Claude SessionEnd; the next prompt of a relaunched agent reports without it.
 	Ended bool `json:"ended,omitempty"`
+	// NotificationType is the notification_type of Claude Code's Notification hook; only that hook sets it
+	NotificationType string `json:"notificationtype,omitempty"`
 }
 
 // AgentPermissionRequest is one permission prompt Claude Code is showing in an agent's terminal.

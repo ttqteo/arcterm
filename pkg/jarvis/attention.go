@@ -655,6 +655,7 @@ func landHeldItem(ch AttentionChannel, run *waveobj.Run, dags []*waveobj.TaskGro
 		RunId:        run.ID,
 		Source:       goalHeadline(run.Goal),
 		Text:         text,
+		Reason:       run.Land.Reason,
 		Action:       "Review",
 		WaitingSince: run.CompletedTs,
 		EffortOID:    effortOID,

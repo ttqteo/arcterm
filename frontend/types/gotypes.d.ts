@@ -136,6 +136,7 @@ declare global {
         toolkey?: string;
         effort?: string;
         ended?: boolean;
+        notificationtype?: string;
     };
 
     // wshrpc.AgentSyncAction
@@ -253,6 +254,7 @@ declare global {
         runid?: string;
         source: string;
         text: string;
+        reason?: string;
         action: string;
         phaseidx: number;
         waitingsince: number;
@@ -2256,6 +2258,12 @@ declare global {
         streammeta: StreamMeta;
     };
 
+    // wshrpc.CommandRemoteHandData
+    type CommandRemoteHandData = {
+        tab?: string;
+        fromoref?: string;
+    };
+
     // wshrpc.CommandRemoteListEntriesData
     type CommandRemoteListEntriesData = {
         path: string;
@@ -2265,6 +2273,16 @@ declare global {
     // wshrpc.CommandRemoteListEntriesRtnData
     type CommandRemoteListEntriesRtnData = {
         fileinfo?: FileInfo[];
+    };
+
+    // wshrpc.CommandRemoteSetupData
+    type CommandRemoteSetupData = {
+        tunneltoken: string;
+        team: string;
+        aud: string;
+        email: string;
+        hostname: string;
+        port?: number;
     };
 
     // wshrpc.CommandRemoveBackgroundAgentData
@@ -4420,6 +4438,22 @@ declare global {
         model?: string;
         text: string;
         ts: number;
+    };
+
+    // wshrpc.RemoteStatusData
+    type RemoteStatusData = {
+        on: boolean;
+        missing?: string[];
+        team?: string;
+        aud?: string;
+        email?: string;
+        hostname?: string;
+        port?: number;
+        tunnel: string;
+        tunnelerror?: string;
+        subscriptions: number;
+        cloudflaredmissing?: boolean;
+        handed?: string[];
     };
 
     // wshrpc.ResMonGroup

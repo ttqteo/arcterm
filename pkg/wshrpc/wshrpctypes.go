@@ -65,6 +65,7 @@ type WshRpcInterface interface {
 	ShellCompleteCommands
 	NotifyCommands
 	TelegramCommands
+	RemoteCommands
 	VaultCommands
 	UiCommands
 	StreamCommands
