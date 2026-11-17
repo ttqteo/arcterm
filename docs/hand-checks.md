@@ -577,3 +577,8 @@ Older parts: [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) · [part 4
 - [ ] (arcterm) No keycaps beside the view switch and Mark done: open an agent with a canvas → no Alt+C keycap in the
   header, Alt+C still walks the views; an agent on an initiative chunk → the band's and the ◇ popover's Mark done show
   no `m`, and `m` still marks it done. Typecheck only, not tried in the app.
+- [ ] (arcterm) Chat's tool box in the real app: in a live Claude agent's Chat, open a finished stretch → one bordered
+  box, a plain row per tool with past-tense verbs and no icons; open a Bash row → `$ command`, its output, Open full
+  view; click an edited file's name → the File tab opens it; a stretch with a failed Edit → "Edit failed" in red on its
+  row, the folded line stays muted; no file chips under a stretch. Checked only in the headless-Chrome build
+  (`agent-chat` CDP), not in WebView2, and not in a light theme (`chatstepsview.tsx`).
