@@ -53,7 +53,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   See all for every change.
 - The second line of each row in the Agent tree (a run's workers chip and progress, an agent's model and badges, a
   conversation's details) starts at the row's left edge, under its icon, so a narrow tree shows more of it: a run's
-  "Working · 0/3" now reads whole from a 240 px tree instead of 300 px.
+  "Working · 0/3" now reads whole from a 240 px tree instead of 300 px. Narrower than that, the run's line leaves out
+  the stage word rather than cutting it to "W…": it shows the count alone, coloured by the stage, with the stage in its
+  tooltip.
 - Opening a run from an agent (a brainstorm's run line in the Agent tree, its Open run, or Open run on Chat's run card)
   shows it in the Agent tree first, its lead selected and its lanes unfolded, instead of switching to Jarvis; a run with
   no agent left in the tree still opens in Jarvis.

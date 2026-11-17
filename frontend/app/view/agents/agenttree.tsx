@@ -1094,10 +1094,13 @@ function RunSubline({
                     // two are siblings in the line itself, not one box holding both: a box that may shrink lets its
                     // count spill out under the next thing (the ↰), and one that may not keeps "Working" from cutting.
                     // The count pulls back over the line's gap and keeps its own space (a leading one would collapse).
+                    // Below 240px the word cannot show whole beside the columns, so it goes, with the count's "·",
+                    // rather than read "W…": the count's tone says the stage and its tooltip has it in words
+                    // (agent-tree-rail step 7 measures it).
                     <>
                         <span
                             data-run-paused={paused ? "" : undefined}
-                            className={cn("min-w-0 truncate", PROGRESS_TEXT[runStage(run).tone])}
+                            className={cn("hidden min-w-0 truncate @[240px]:block", PROGRESS_TEXT[runStage(run).tone])}
                             title={progress.title}
                         >
                             {progressParts.head}
@@ -1106,12 +1109,13 @@ function RunSubline({
                             <span
                                 data-run-progress-count
                                 className={cn(
-                                    "-ml-[6px] flex-none whitespace-nowrap",
+                                    "flex-none whitespace-nowrap @[240px]:-ml-[6px]",
                                     PROGRESS_TEXT[runStage(run).tone]
                                 )}
                                 title={progress.title}
                             >
-                                {" " + progressParts.tail.slice(1)}
+                                <span className="hidden @[240px]:inline">{" · "}</span>
+                                {progressParts.tail.slice(3)}
                             </span>
                         ) : null}
                     </>
