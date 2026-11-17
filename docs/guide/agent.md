@@ -21,7 +21,7 @@ Cockpit cho bạn cái nhìn tổng quan ([Cockpit](cockpit.md)); Agent là nơi
 └─────────────────┴──────────────────────────────────────────────┴──────────────────┘
 ```
 
-![Surface Agent: sidebar với nhóm project và một run (lead cùng worker), terminal ở giữa, rail chi tiết bên phải](images/agent-overview.png)
+![Surface Agent: sidebar với một thư mục mỗi project và No folder ở cuối, Chat của agent đang chọn ở giữa, rail chi tiết bên phải với các file đã đổi](images/agent-overview.png)
 
 Surface Agent là surface duy nhất arcterm **giữ nguyên trong nền** khi bạn chuyển đi nơi khác, nên terminal đang chạy không bị dựng lại hay vẽ lại; các surface còn lại bị gỡ khỏi màn hình mỗi khi bạn chuyển đi.
 
@@ -223,7 +223,7 @@ Cách các ô xếp: 1 ô chiếm cả vùng, 2 ô cạnh nhau, 3 ô là hai ô 
 
 Khi chuyển giữa các agent và terminal bằng phím (thanh `Ctrl+Tab`, `j`/`k`…) hay chọn trong cây: nếu cái đó đã có ô thì ô đó được focus; nếu chưa thì nó hiện một mình còn split giữ nguyên. Vậy từ một split [A, B] đang ở A, chọn terminal T thì T hiện một mình; bấm nhanh `Ctrl+Tab` về A thì [A, B] trở lại (hoặc bấm hàng split trong sidebar). Mở split mới (kéo thả, **Open in split**) từ một tab đang hiện một mình thì split mới thay split cũ của project.
 
-![Lưới terminal 2x2 với bốn agent, ô đang focus có viền accent, mỗi ô có thanh tiêu đề kèm nút ×](images/agent-grid.png)
+![Lưới 2x2 với bốn agent của một project, ô đang focus có viền accent, mỗi ô có thanh tiêu đề kèm nút Chat | Terminal và nút ×; sidebar gộp bốn ô thành một hàng split](images/agent-grid.png)
 
 ## Panel terminal
 
