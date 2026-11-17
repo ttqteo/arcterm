@@ -149,11 +149,15 @@ func (ws *WshServer) GetConsumersCommand(ctx context.Context) (*wshrpc.CommandGe
 				a.Heaviest = &wshrpc.ConsumerProcess{Pid: pid, Command: commandOf(ctx, pid), Bytes: b}
 			}
 		}
-		if tpath, terr := agentTranscriptPath(ctx, r); terr == nil && tpath != "" {
-			if buckets, ok := consumersTokens.Window(tpath, now, ConsumersTokenWindow); ok {
-				a.TokensRead = true
-				for _, b := range buckets {
-					a.Tokens = append(a.Tokens, usageBucketToWire(b))
+		// another harness's transcript is left unread (TokensRead false): the panel says it cannot tell, not that the
+		// agent used none
+		if consumerReadsTokens(r.Harness) {
+			if tpath, terr := agentTranscriptPath(ctx, r); terr == nil && tpath != "" {
+				if buckets, ok := consumersTokens.Window(tpath, now, ConsumersTokenWindow); ok {
+					a.TokensRead = true
+					for _, b := range buckets {
+						a.Tokens = append(a.Tokens, usageBucketToWire(b))
+					}
 				}
 			}
 		}
@@ -162,6 +166,12 @@ func (ws *WshServer) GetConsumersCommand(ctx context.Context) (*wshrpc.CommandGe
 	// a transcript no agent named this poll is not polled again; a minute's grace covers a slow roster
 	consumersTokens.Forget(now.Add(-time.Minute))
 	return out, nil
+}
+
+// consumerReadsTokens reports whether the token window can read this harness's transcript. WindowReader parses Claude
+// Code's JSONL: a codex rollout or a pi session reads as ok with no buckets, which would say the agent used no tokens.
+func consumerReadsTokens(harness string) bool {
+	return harness == "claude"
 }
 
 // modelArg is one word `/model` takes: an alias or a model id ("claude-sonnet-4-6[1m]")

@@ -44,6 +44,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- The Consumers panel no longer shows a pi or codex agent as using no tokens: it says it cannot tell, since it reads
+  only Claude's transcripts.
 - Picking No folder for a tool in the New dialog opens it in your home folder even when you have a project named Home.
 - A folded project folder that holds only apps says how many it holds, rather than looking empty.
 - Changing where a built-in tool opens (Setup → Tools) no longer fixes its command in `tools.json`, so a later
