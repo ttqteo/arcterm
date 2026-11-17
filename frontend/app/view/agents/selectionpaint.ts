@@ -115,6 +115,10 @@ export function bandRadius(b: Band): string {
 
 // set on <html> while the selection takes in rendered Markdown; tailwindsetup.css hides the native paint under it
 const MD_SELECTION = "data-md-selection";
+// set on each inline code span whose text the selection takes in: its own background would show through the band as a
+// second shade, so tailwindsetup.css drops it while the span is selected
+const MD_SELECTED = "data-md-selected";
+let marked = new Set<Element>();
 
 interface Painted {
     root: HTMLElement;
@@ -168,8 +172,9 @@ function clipOf(el: Element, root: HTMLElement, cache: Map<Element, DOMRect | nu
     return clip;
 }
 
-// the selected text's line boxes inside one message, in its own coordinates
-function rectsIn(p: Painted, range: Range): LineRect[] {
+// the selected text's line boxes inside one message, in its own coordinates; the inline code spans that hold some of
+// that text go into codes
+function rectsIn(p: Painted, range: Range, codes: Set<Element>): LineRect[] {
     const origin = p.root.getBoundingClientRect();
     const heights = new Map<Element, number>();
     const clips = new Map<Element, DOMRect | null>();
@@ -191,6 +196,10 @@ function rectsIn(p: Painted, range: Range): LineRect[] {
         }
         if (sub.collapsed) {
             continue;
+        }
+        const code = parent.closest("code");
+        if (code != null && p.root.contains(code) && code.closest("pre") == null) {
+            codes.add(code);
         }
         const lineHeight = lineHeightOf(parent, heights);
         const clip = clipOf(parent, p.root, clips);
@@ -237,12 +246,26 @@ function paint() {
     const sel = window.getSelection();
     const range = sel != null && sel.rangeCount > 0 && !sel.isCollapsed ? sel.getRangeAt(0) : null;
     let any = false;
+    const codes = new Set<Element>();
     for (const p of painted) {
-        const bands = range != null && range.intersectsNode(p.root) ? lineBands(rectsIn(p, range)) : [];
+        const bands = range != null && range.intersectsNode(p.root) ? lineBands(rectsIn(p, range, codes)) : [];
         any ||= bands.length > 0;
         draw(p.layer, bands);
     }
+    markCodes(codes);
     document.documentElement.toggleAttribute(MD_SELECTION, any);
+}
+
+function markCodes(codes: Set<Element>) {
+    for (const el of marked) {
+        if (!codes.has(el)) {
+            el.removeAttribute(MD_SELECTED);
+        }
+    }
+    for (const el of codes) {
+        el.setAttribute(MD_SELECTED, "");
+    }
+    marked = codes;
 }
 
 // repaint on the next frame: the selection moved, or a message holding it changed size (a reply still streaming, a
@@ -274,6 +297,12 @@ export function paintSelectionIn(root: HTMLElement, layer: HTMLElement): () => v
         resize.disconnect();
         painted.delete(p);
         layer.replaceChildren();
+        for (const el of marked) {
+            if (root.contains(el)) {
+                el.removeAttribute(MD_SELECTED);
+                marked.delete(el);
+            }
+        }
         if (painted.size === 0) {
             document.removeEventListener("selectionchange", schedulePaint);
             listening = false;
