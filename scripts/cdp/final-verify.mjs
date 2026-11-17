@@ -10,7 +10,8 @@
 //
 //   ARC_FINAL_OUT=<dir> node scripts/cdp/final-verify.mjs [scenario...]
 //
-// ARC_FINAL_DEV_CMD (default `task dev` with the port override, or `task dev:browser`), ARC_FINAL_BOOT_MS (default 10 min, a cold cargo
+// ARC_FINAL_DEV_CMD (default `task dev:final` with the port override, `task dev` without go mod tidy and generate, or
+// `task dev:browser`), ARC_FINAL_BOOT_MS (default 10 min, a cold cargo
 // build), ARC_FINAL_VITE_PORT (the first port tried) and ARC_FINAL_LOCK_WAIT_MS (default 10 min) exist so the test
 // can drive the boot path without a real app. The lock wait is for a free build slot.
 //
@@ -377,7 +378,7 @@ async function main() {
     } else {
         const configPath = join(out, "tauri.final.json");
         writeFileSync(configPath, JSON.stringify(tauriConfig(vitePort), null, 2));
-        devCmd = process.env.ARC_FINAL_DEV_CMD || `task dev -- --config "${configPath}"`;
+        devCmd = process.env.ARC_FINAL_DEV_CMD || `task dev:final -- --config "${configPath}"`;
         // inside the store, so it goes with it: nothing reads it after the run, and kept in ARC_FINAL_OUT it was ~76 MB
             // a round for the 30 days the engine keeps that dir
             const profile = join(store, "webview2-profile");
@@ -422,8 +423,12 @@ async function main() {
 
     let code;
     let reason;
+    const bootStart = Date.now();
     try {
-        if (!(await waitForCdp(port, dev, bootMs))) {
+        const up = await waitForCdp(port, dev, bootMs);
+        // the build and the boot are most of a short Final: say how long they took, so a slow one shows in the log
+        console.log(`dev app ${up ? "answered" : "gave up"} after ${Math.round((Date.now() - bootStart) / 1000)}s`);
+        if (!up) {
             const said = lastLine(logPath);
             reason =
                 (dev.exitCode === null

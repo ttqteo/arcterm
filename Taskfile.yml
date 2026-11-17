@@ -26,6 +26,30 @@ tasks:
             WAVETERM_ENVFILE: "{{.ROOT_DIR}}/.env"
             WAVETERM_NOCONFIRMQUIT: "1"
 
+    # A Final stage's dev app (scripts/cdp/final-verify.mjs) on Windows. Its tree is a fresh checkout of committed
+    # work, so Task's checksums are empty and `task dev` would run go mod tidy and generate (~25 s of `go run` alone)
+    # to rewrite files the tree already holds, then build wavesrv and wsh one after the other. This builds them side by
+    # side from the tree as committed: a stale generated file shows up in the Final instead of being fixed silently.
+    dev:final:
+        desc: "`task dev` for a Final stage on Windows: builds wavesrv, wsh and the schema side by side, without go mod tidy or generate. Arguments after -- go to `cargo tauri dev`."
+        platforms: [windows]
+        cmd: npm run dev -- {{.CLI_ARGS}}
+        deps:
+            - npm:install
+            - tauri:sync-version
+            - build:schema
+            - task: build:server:internal
+              vars:
+                  ARCHS: amd64
+                  GO_ENV_VARS: CC="zig cc -target x86_64-windows-gnu"
+            - task: build:wsh:internal
+              vars:
+                  GOOS: windows
+                  GOARCH: amd64
+        env:
+            WAVETERM_ENVFILE: "{{.ROOT_DIR}}/.env"
+            WAVETERM_NOCONFIRMQUIT: "1"
+
     dev:browser:
         desc: "Run the cockpit in headless Chrome for the CDP scenarios where the webview answers none (macOS's WKWebView): builds the dev-host backend like `task dev`, then scripts/cdp/browser-app.mjs (CDP :9222, vite :5180). `task dev:browser -- --headed` shows the window."
         cmd: node scripts/cdp/browser-app.mjs {{.CLI_ARGS}}
@@ -296,6 +320,7 @@ tasks:
 
     sync:pi-theme:
         desc: Regenerate pi/themes/arc.json palette vars from the cockpit @theme tokens (tailwindsetup.css).
+        run: once
         cmds:
             - cmd: node scripts/sync-pi-theme.mjs --write
         sources:
@@ -305,6 +330,8 @@ tasks:
 
     sync:piartifacts:
         desc: Copy authored pi/ artifacts into their go:embed locations under cmd/wsh/cmd (generated, never hand-edited).
+        # several builds run side by side depend on it (dev:final): once per `task` run, not one copy each at once
+        run: once
         deps:
             - sync:pi-theme
         cmds:
