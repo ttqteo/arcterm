@@ -416,8 +416,15 @@ function ComposerBox({
     const filesRoot = chatFilesRoot(cwd, agent.project, projects);
     // the files this agent read or wrote lead the `@` list, newest first
     const recentFiles = useMemo(() => recentMentionPaths(entries, filesRoot), [entries, filesRoot]);
-    // the live agents and the project's runs and councils an `@` can also name, read while the text holds one
-    const refItems = useRefItems(filesRoot, agent.id, !bash && text.includes("@"));
+    // the live agents, the project's runs and councils, the past conversations and the initiatives an `@` can also name,
+    // read while the text holds one; the project's path orders the conversations, its name the initiatives
+    const refItems = useRefItems(
+        filesRoot,
+        agent.project ?? "",
+        projects[agent.project ?? ""]?.path ?? "",
+        agent.id,
+        !bash && text.includes("@")
+    );
     const mention = useFileMention({
         // a bash command has no @mentions: the picker is shut while the text starts with `!`
         text: bash ? "" : text,

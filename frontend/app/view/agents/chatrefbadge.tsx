@@ -1,15 +1,17 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// The badge an `agent:<id>`, `run:<id>` or `council:<id>` reference is drawn as in Chat (refbadge.ts finds and resolves
-// them): in your sent bubble (RefBadge, through remarkrefmention.ts) and in the message box (chateditorrefpill.tsx,
-// through useResolvedRef and RefBadgeFace). Chat provides what a badge resolves against (ChatRefLinks); with none around
-// a badge is its token as plain text. The text itself is never changed: a badge only draws the token it stands for.
+// The badge an `agent:<id>`, `run:<id>`, `council:<id>`, `session:<id>` or `effort:<id>` reference is drawn as in Chat
+// (refbadge.ts finds and resolves them): in your sent bubble (RefBadge, through remarkrefmention.ts) and in the message
+// box (chateditorrefpill.tsx, through useResolvedRef and RefBadgeFace). Chat provides what a badge resolves against
+// (ChatRefLinks); with none around a badge is its token as plain text. The text itself is never changed: a badge only
+// draws the token it stands for.
 
 import type { OpenTarget } from "@/app/view/jarvis/address";
 import { openOrPeek, type OpenGesture } from "@/app/view/jarvis/openref";
 import { cn, fireAndForget } from "@/util/util";
 import { useAtomValue } from "jotai";
+import { Flag, History } from "lucide-react";
 import { createContext, useContext, useEffect, useMemo, type ReactNode } from "react";
 import type { AgentsViewModel } from "./agents";
 import { councilListAtom, loadCouncils } from "./councilstore";
@@ -18,7 +20,9 @@ import { selectingInto } from "./pathlinkcontext";
 import { loadProjectRuns, projectRunsAtom } from "./projecthistorystore";
 import { badgeLook, refTitle, resolveRef, type ResolvedRef } from "./refbadge";
 import type { RefKind } from "./refmention";
+import { loadRefEfforts, refEffortsAtom } from "./refmentionstore";
 import { RuntimeMark } from "./runtimemark";
+import { loadSessionsArchive, sessionsArchiveAtom } from "./sessionsarchivestore";
 
 export interface RefLinksValue {
     model: AgentsViewModel;
@@ -54,8 +58,22 @@ function loadCouncilsOnce(project: string): void {
     void loadCouncils(project).finally(() => loadingCouncils.delete(project));
 }
 
-/** What `kind:id` names right now: the roster live, the chat project's runs and councils (read once, when a token of
- *  their kind first needs them and nothing has read them yet). With no ChatRefLinks around, nothing is known. */
+// loadSessionsArchive asked again while a scan runs scans once more, so ten conversation badges must not each ask
+let loadingSessions = false;
+
+function loadSessionsOnce(): void {
+    if (loadingSessions) {
+        return;
+    }
+    loadingSessions = true;
+    void loadSessionsArchive().finally(() => {
+        loadingSessions = false;
+    });
+}
+
+/** What `kind:id` names right now: the roster live; the chat project's runs and councils, and the conversations and
+ *  initiatives of any project (each read once, when a token of its kind first needs them and nothing has read them yet).
+ *  With no ChatRefLinks around, nothing is known. */
 export function useResolvedRef(kind: RefKind, id: string): ResolvedRef {
     const links = useContext(RefLinks);
     const project = links?.project ?? "";
@@ -63,9 +81,20 @@ export function useResolvedRef(kind: RefKind, id: string): ResolvedRef {
     const roster = useAtomValue(devRosterAtom);
     const runs = useAtomValue(projectRunsAtom(project)).runs;
     const councils = useAtomValue(councilListAtom(project));
+    const sessions = useAtomValue(sessionsArchiveAtom);
+    const efforts = useAtomValue(refEffortsAtom);
     const runsUnread = runs == null;
     const councilsUnread = councils == null;
+    const sessionsUnread = sessions == null;
+    const effortsUnread = efforts == null;
     useEffect(() => {
+        // a conversation and an initiative belong to no project: they load for a chat outside one too
+        if (kind === "session" && sessionsUnread) {
+            loadSessionsOnce();
+        }
+        if (kind === "effort" && effortsUnread) {
+            fireAndForget(loadRefEfforts);
+        }
         if (project === "") {
             return;
         }
@@ -75,7 +104,7 @@ export function useResolvedRef(kind: RefKind, id: string): ResolvedRef {
         if (kind === "council" && councilsUnread) {
             loadCouncilsOnce(project);
         }
-    }, [kind, project, runsUnread, councilsUnread]);
+    }, [kind, project, runsUnread, councilsUnread, sessionsUnread, effortsUnread]);
     const hasLinks = links != null;
     // plain terminals are not agents: the picker leaves them out, so a token naming one is no agent either
     const agents = useMemo(
@@ -88,8 +117,17 @@ export function useResolvedRef(kind: RefKind, id: string): ResolvedRef {
         [roster, hasLinks]
     );
     return useMemo(
-        () => resolveRef(kind, id, { agents, runs: runs ?? [], councils: councils ?? [], project }),
-        [kind, id, agents, runs, councils, project]
+        () =>
+            resolveRef(kind, id, {
+                agents,
+                runs: runs ?? [],
+                councils: councils ?? [],
+                project,
+                sessions: sessions ?? [],
+                efforts: efforts ?? [],
+                now: Date.now(),
+            }),
+        [kind, id, agents, runs, councils, project, sessions, efforts]
     );
 }
 
@@ -109,6 +147,9 @@ export function RefBadgeFace({
 }) {
     const look = badgeLook(resolved);
     const known = resolved.status === "resolved";
+    // a conversation's age, an initiative's chunks; an unresolved token has none
+    const meta = known ? resolved.meta : undefined;
+    const metaDone = known && resolved.metaDone === true;
     return (
         // the file pill's frame and its lift (chateditorpill.tsx), so a badge sits in the text as a file pill does.
         // Never data-chat-pill: that is the file pill's attribute, which agent-chat counts to prove a pick drew none
@@ -119,7 +160,9 @@ export function RefBadgeFace({
             data-ref-selected={selected ? "true" : "false"}
             title={refTitle(resolved, { opens })}
             className={cn(
-                "relative -top-[1.5px] mx-px inline-flex h-5 max-w-[240px] items-center gap-1 rounded-[6px] border px-1.5 align-middle text-[12.5px] leading-none text-ink-hi",
+                "relative -top-[1.5px] mx-px inline-flex h-5 items-center gap-1 rounded-[6px] border px-1.5 align-middle text-[12.5px] leading-none text-ink-hi",
+                // the meta never truncates, so a badge that has one is wider to leave the name its room
+                meta ? "max-w-[260px]" : "max-w-[240px]",
                 selected ? "border-accent bg-accent/12" : look.frame
             )}
         >
@@ -130,9 +173,19 @@ export function RefBadgeFace({
             {look.mark === "council" ? (
                 <span className="mx-px size-[7px] shrink-0 rounded-full bg-mark-council" />
             ) : null}
+            {look.mark === "session" ? <History size={12} className="shrink-0 text-muted" /> : null}
+            {look.mark === "effort" ? <Flag size={12} className="shrink-0 text-muted" /> : null}
             <span data-ref-name className={cn("min-w-0 truncate", !known && "font-mono text-[11.5px]")}>
                 {known ? resolved.name : raw}
             </span>
+            {meta ? (
+                <span
+                    data-ref-meta
+                    className={cn("shrink-0 text-[11.5px] tabular-nums", metaDone ? "text-success" : "text-muted")}
+                >
+                    {meta}
+                </span>
+            ) : null}
             {look.dot === "working" ? (
                 <span data-ref-dot="working" className="pulse-dot ml-0.5 size-1.5 shrink-0 rounded-full bg-working" />
             ) : null}
@@ -152,6 +205,12 @@ function targetOf(resolved: Extract<ResolvedRef, { status: "resolved" }>): OpenT
     }
     if (resolved.kind === "run") {
         return { kind: "run", runId: resolved.id };
+    }
+    if (resolved.kind === "session") {
+        return { kind: "session", sessionId: resolved.id };
+    }
+    if (resolved.kind === "effort") {
+        return { kind: "effort", effortId: resolved.id };
     }
     return { kind: "council", councilId: resolved.id };
 }

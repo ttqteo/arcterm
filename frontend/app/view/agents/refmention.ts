@@ -1,21 +1,24 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// The chat box's `@` picker lists the live agents, the project's runs and its councils beside its files: a pick puts
-// `agent:<id>`, `run:<id>` or `council:<id>` in the text, a reference for the agent to read with `wsh read` (the arc
-// mod's prompt hook tells it so, claude/arc-mod/hooks/refs-core.ts), never an `@` mention, which a prompt starting with
-// `@<tab id>` would send to that agent instead. Pure: the rows, the matching and the insert; filemention.tsx draws them.
+// The chat box's `@` picker lists the live agents, the project's runs and its councils, the past conversations and the
+// initiatives beside its files: a pick puts `agent:<id>`, `run:<id>`, `council:<id>`, `session:<id>` or `effort:<id>` in
+// the text, a reference for the agent to read with `wsh read` (the arc mod's prompt hook tells it so,
+// claude/arc-mod/hooks/refs-core.ts), never an `@` mention, which a prompt starting with `@<tab id>` would send to that
+// agent instead. Pure: the rows, the matching and the insert; filemention.tsx draws them.
 
-import type { AgentVM } from "./agentsviewmodel";
+import { normPath } from "./agentsidebarmodel";
+import { formatAgo, type AgentVM } from "./agentsviewmodel";
 
 export type RefKind = "agent" | "run" | "council" | "session" | "effort";
 
 export interface RefItem {
     kind: RefKind;
     id: string;
-    // the row's text: an agent's task title or name, a run's goal, a council's feature
+    // the row's text: an agent's task title or name, a run's goal, a council's feature, a conversation's task, an
+    // initiative's title
     label: string;
-    // the line beside it: project, harness and state; status; state
+    // the line beside it: project, harness and state; status; state; project, runtime and age; chunks and status
     detail: string;
     // newest first within a kind
     ts: number;
@@ -25,7 +28,7 @@ export interface RefItem {
 export const REF_ID_LEN = 8;
 // the rows the picker shows at most, so the files under them stay in reach
 export const REF_MAX_ROWS = 6;
-// the runs and councils a project lists at most before a query narrows them
+// the runs, councils, conversations and initiatives a project lists at most before a query narrows them
 const PER_KIND = 20;
 
 const KIND_WORDS: Record<RefKind, readonly string[]> = {
@@ -88,6 +91,51 @@ export function councilRefs(councils: readonly Council[] | null | undefined): Re
     }));
 }
 
+/** The past conversations a chat can refer to, from the archive's loaded pages: the newest 20, those at the chat
+ *  project's path first (`projectPath`, the registered path; the scan names a session's project for the last segment of
+ *  its cwd, which a registered name need not equal), each group newest first. Ordered before the cut, so the project's one
+ *  old conversation is not pushed out by 20 newer ones elsewhere. */
+export function sessionRefs(
+    sessions: readonly SessionActivity[] | null | undefined,
+    projectPath: string,
+    now: number
+): RefItem[] {
+    const here = projectPath === "" ? "" : normPath(projectPath);
+    const newestFirst = [...(sessions ?? [])].sort((a, b) => b.lastactivets - a.lastactivets);
+    const ordered =
+        here === ""
+            ? newestFirst
+            : [
+                  ...newestFirst.filter((s) => normPath(s.projectpath ?? "") === here),
+                  ...newestFirst.filter((s) => normPath(s.projectpath ?? "") !== here),
+              ];
+    return ordered.slice(0, PER_KIND).map((s, i) => ({
+        kind: "session" as const,
+        id: s.id,
+        label: clip(oneLine((s.task ?? "").trim().split(/\r?\n/, 1)[0]) || s.projectname, 80),
+        detail: [s.projectname, s.runtime, formatAgo(now - s.lastactivets)].filter(Boolean).join(" · "),
+        // the project's group leads, then the rest; refMatches' ts sort keeps that order
+        ts: -i,
+    }));
+}
+
+/** The initiatives a chat can refer to: those not archived, the ones of the chat's project first (`projectName`, the
+ *  registered name an initiative's `project` holds), each group by last update, newest first. */
+export function effortRefs(efforts: readonly EffortSummary[] | null | undefined, projectName: string): RefItem[] {
+    const open = (efforts ?? []).filter((e) => e.status !== "archived").sort((a, b) => b.updatedts - a.updatedts);
+    const ordered =
+        projectName === ""
+            ? open
+            : [...open.filter((e) => e.project === projectName), ...open.filter((e) => e.project !== projectName)];
+    return ordered.slice(0, PER_KIND).map((e, i) => ({
+        kind: "effort" as const,
+        id: e.oref.replace(/^effort:/, ""),
+        label: clip(oneLine(e.title) || e.oref, 80),
+        detail: `${e.done}/${e.total} chunks · ${e.status}`,
+        ts: -i,
+    }));
+}
+
 const kindOrder: Record<RefKind, number> = { agent: 0, run: 1, council: 2, session: 3, effort: 4 };
 
 /** The kind a query asks for by name: "@run", "@coun", "@agent" (two letters at least), else null. */
@@ -104,15 +152,16 @@ export function queryKind(query: string): RefKind | null {
     return null;
 }
 
-// a query written as a reference: `agent:b9b1`, `tab:b9b1`, `run:`, `council:0c28` (an id pasted after the `@`)
-const ADDRESS_QUERY = /^(agent|tab|run|council):([0-9a-f-]*)$/;
+// a query written as a reference: `agent:b9b1`, `tab:b9b1`, `run:`, `council:0c28`, `session:9f31`, `effort:e9b2` (an id
+// pasted after the `@`)
+const ADDRESS_QUERY = /^(agent|tab|run|council|session|effort):([0-9a-f-]*)$/;
 
 /**
  * The rows the `@` query lists, at most REF_MAX_ROWS: with no query none (a bare `@` lists files, as it always has); a
  * query that names a kind lists that kind's items; a query written as `kind:<id>` lists that kind's items whose id
  * starts with it; any other lists the items whose id starts with it or whose label or detail holds every word of it.
- * A query that holds a `/` or a `.` is a path, and lists none. Agents first, then runs, then councils, each newest
- * first.
+ * A query that holds a `/` or a `.` is a path, and lists none. Agents first, then runs, councils, conversations and
+ * initiatives, each newest first.
  */
 export function refMatches(query: string, items: readonly RefItem[]): RefItem[] {
     const q = query.trim().toLowerCase();
