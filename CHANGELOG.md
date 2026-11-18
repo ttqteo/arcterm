@@ -60,23 +60,17 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   questions. Hand a Claude or pi agent to the phone (`p`, or More → Hand to phone) to read its
   transcript, send the next prompt, stop a turn and approve a permission prompt from the phone. It runs only while you
   turn it on; a Remote chip in the footer shows it. <!-- big -->
-
-- Typing in the find bar of a long session no longer lags: each key took up to a few tenths of a second on a session
-  with a million characters of conversation, and now takes a few milliseconds.
-- A Claude agent left idle on screen is compacted again before its prompt cache goes cold when Claude Code's own idle
-  compaction is off (auto-compact or `idleCompaction` turned off): since 1.0.7 nothing compacted it, and the next turn
-  after an hour re-read the whole conversation at the full rate.
-- An agent or terminal started in No folder from the New dialog sits in No folder in the Agent tree, rather than in a
-  second folder named Home beside it. A project of yours named Home keeps its own folder.
-- A project you add or remove shows in the cockpit as soon as it is saved, also when the machine is busy: arcterm
-  waited for the config file's change event, which under load came half a minute or more later.
+- The Task box of New agent works like Chat's box: `@` names an agent, a run, a council, a past conversation or an
+  initiative as well as a file, `/` lists Claude Code's commands, and any file can be attached (paste, drop, the
+  paperclip or Cmd+U / Ctrl+U), not only images.
+- A Jarvis theme in Settings → Appearance: a deep navy ground, thin cyan-tinted edges and a cyan accent, like a
+  heads-up display.
 
 ### Changed
 
 - Sidecar's full window no longer draws each agent's last 2 hours as lanes: the Resources band stands there instead.
 - An agent whose brainstorm's builder check waits on you (a builder question, or the review to approve) now reads as
   asking: its row in the Agent tree breathes amber, and it counts in Cockpit's Needs you.
-
 - A run's final stage and an agent's background tasks show their commands' output in colour, as a terminal would: a
   test that passed has a green ✓ (or `ok`), one that failed is red, warnings yellow, skips and each test's time dimmed,
   `git status -s` in git's colours and a task's `[exited with code N]` green or red. Output that comes with its own
@@ -106,8 +100,7 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   view opens the whole output beside it, as a click did before.
 - The agent header puts the project and initiative on a second line under the agent's name, in the height the header
   already had, so the run link, model and context beside it get the room back.
-- Focus read in Chat is each agent's own: turning it on for one agent leaves the others as they were. While it is on,
-  buttons under its toggle step to the previous and next block and quote the lit one, each showing its key (K, J, Q).
+- Focus read in Chat is each agent's own: turning it on for one agent leaves the others as they were.
 - Sidecar's small-form button is a screen with a small window in its corner, so it no longer looks like the full
   screen button beside it, and the full window has its own pin button, so a maximized or full-screen Sidecar can stay
   on top too.
@@ -123,14 +116,27 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - Chat's Pick a board card opens its boards in a window over Chat instead of switching to the Canvas: Compare shows
   only the boards the agent asked about, side by side, and a click on one shows it alone with a Pick button. Open in
   Canvas is still in that window.
+- Clicking a file in the "Edited N files" card that ends a turn in Chat opens it in the rail beside the terminal, in a
+  tab of its own, on its diff against the last commit (also for a file in a worktree under the agent's folder; a change
+  already committed says so). See all still opens the Diff.
+- Switching back to an agent in Chat shows a skeleton while it reads what the agent wrote meanwhile, then draws the
+  conversation at once, instead of opening each of those rows one by one.
+- Chat no longer draws commit suggestion cards: an agent that has to ask before committing asks in plain words again,
+  and no longer writes the suggestion as an `arc-commit` code block.
 
 ### Fixed
 
 - Switching the agent on screen (from the tree, Sidecar or a terminal) no longer crashes the agent header with
   "number … is not iterable".
-- Selecting text in Chat keeps the words their own colour: the highlight no longer tints them the accent's blue.
-- A file in the "Edited N files" card at the end of a Chat turn opens on its diff against the last commit, not on the
-  whole file, also for a file in a worktree under the agent's folder; a change already committed says so.
+- Typing in the find bar of a long session no longer lags: each key took up to a few tenths of a second on a session
+  with a million characters of conversation, and now takes a few milliseconds.
+- A Claude agent left idle on screen is compacted again before its prompt cache goes cold when Claude Code's own idle
+  compaction is off (auto-compact or `idleCompaction` turned off): since 1.0.7 nothing compacted it, and the next turn
+  after an hour re-read the whole conversation at the full rate.
+- An agent or terminal started in No folder from the New dialog sits in No folder in the Agent tree, rather than in a
+  second folder named Home beside it. A project of yours named Home keeps its own folder.
+- A project you add or remove shows in the cockpit as soon as it is saved, also when the machine is busy: arcterm
+  waited for the config file's change event, which under load came half a minute or more later.
 - A dev server that starts and detaches itself (Astro's `astro dev`) is no longer put down to an agent of another
   project whose background task happened to end as it came up, and a project kept in a folder inside its repo shows
   the servers running under that folder on its folder in the Agent tree.
@@ -149,9 +155,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   for the word whole; it is left out only when it truly does not fit, instead of below a fixed 240 px.
 - In focus read, ↑ and ↓ step one block like K and J instead of scrolling a little and jumping back.
 - Sidecar's alert frame follows the window's rounded corners on Windows, maximized or full screen included, instead of
-  being cut off at them, and the heaviest-agent cards in its RAM band no longer squeeze an agent's name to one letter: the buttons wrap under it.
-- Claude agents stop writing a commit suggestion as an `arc-commit` code block: the skill that asked for it outlived
-  the removed commit card and is now cleaned up.
+  being cut off at them, and the heaviest-agent cards in its RAM band no longer squeeze an agent's name to one letter:
+  the buttons wrap under it.
 - The Consumers panel no longer shows a pi or codex agent as using no tokens: it says it cannot tell, since it reads
   only Claude's transcripts.
 - Picking No folder for a tool in the New dialog opens it in your home folder even when you have a project named Home.
@@ -166,24 +171,6 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   nothing; a width dragged there no longer sticks.
 - A terminal on another machine is no longer marked as in a removed folder because a local folder with the same path
   was deleted.
-### Added
-
-- The Task box of New agent works like Chat's box: `@` names an agent, a run, a council, a past conversation or an
-  initiative as well as a file, `/` lists Claude Code's commands, and any file can be attached (paste, drop, the
-  paperclip or Cmd+U / Ctrl+U), not only images.
-- A Jarvis theme in Settings → Appearance: a deep navy ground, thin cyan-tinted edges and a cyan accent, like a
-  heads-up display.
-
-### Changed
-
-- Clicking a file in the card that ends a turn in Chat opens it in the rail beside the terminal, in a tab of its own;
-  See all still opens the Diff.
-- Switching back to an agent in Chat shows a skeleton while it reads what the agent wrote meanwhile, then draws the
-  conversation at once, instead of opening each of those rows one by one.
-- Chat no longer draws commit suggestion cards: an agent that has to ask before committing asks in plain words again.
-
-### Fixed
-
 - Switching between HTML files no longer flashes white before the page shows.
 - On a Mac, Sidecar is a native window like the main one: rounded corners, a shadow and the traffic lights, whose
   green button takes it full screen in both its forms.
