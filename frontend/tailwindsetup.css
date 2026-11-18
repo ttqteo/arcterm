@@ -856,6 +856,14 @@ html[data-md-selection] ::selection,
 html[data-md-selection]::selection {
     background-color: transparent;
 }
+/* The layer of bands sits over the text (markdownmessage.tsx), so a plain fill tinted the selected words the accent's
+   colour. It screens onto what is under it instead: white text stays white, the dark ground takes the accent, and code
+   blocks and tables, whose own grounds would hide a band laid under the text, still show it. Every theme is dark, where
+   screen only lightens. The blend sits on the layer, not the bands: the layer's z-index makes it a stacking context, an
+   isolated group, inside which a band would blend with nothing. */
+[data-md-selection-layer] {
+    mix-blend-mode: screen;
+}
 /* its border-radius is set per band (selectionpaint.ts bandRadius): square where it meets the line above or below */
 .md-selection-band {
     position: absolute;

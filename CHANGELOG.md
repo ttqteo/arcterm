@@ -78,6 +78,7 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- Selecting text in Chat keeps the words their own colour: the highlight no longer tints them the accent's blue.
 - Opening arcterm from the Start menu or a shortcut while it runs in the tray brings its window back, instead of
   starting a second arcterm that stopped on "wavesrv did not report its ports" beside a second Sidecar and tray icon
   (Windows). When the backend does stop at launch, the error now says why at once rather than after 15 seconds.
