@@ -96,7 +96,92 @@ func handedAgent(a Agent, since int64) HandedAgent {
 	}
 }
 
-func handedLine(a Agent, state string) string {
+// ListedAgent is one roster agent in the phone page's Agents list, which only shows them.
+type ListedAgent struct {
+	Tab     string `json:"tab"`
+	Name    string `json:"name"`
+	Project string `json:"project"`
+	Runtime string `json:"runtime"`
+	State   string `json:"state"` // Phone* constants, or PhoneEnded
+	// Since is the agent's last status report (unix ms) while it waits or is idle, 0 while it works: a
+	// working agent reports on every tool call, so its last report says nothing about how long it has run.
+	Since  int64  `json:"since"`
+	Line   string `json:"line"`
+	Handed bool   `json:"handed"`
+}
+
+// PhoneEnded is a listed agent whose session exited to its shell; the tab is still open.
+const PhoneEnded = "ended"
+
+// the Agents list's order: what needs the owner first, an exited session last
+var listedStateOrder = map[string]int{
+	PhoneAsking: 0, PhonePermission: 1, PhoneInput: 2, PhoneWorking: 3, PhoneIdle: 4, PhoneEnded: 5,
+}
+
+// BuildAgentList gives every roster agent as the phone lists it, sorted by state, then the longest
+// waiting first, then by name. handed holds the tabs handed to the phone.
+func BuildAgentList(agents []Agent, handed map[string]bool) []ListedAgent {
+	out := make([]ListedAgent, 0, len(agents))
+	for _, a := range agents {
+		state := listedState(a)
+		since := a.Status.Ts
+		if state == PhoneWorking {
+			since = 0
+		}
+		out = append(out, ListedAgent{
+			Tab:     a.TabId,
+			Name:    a.Name,
+			Project: a.Project,
+			Runtime: a.Harness,
+			State:   state,
+			Since:   since,
+			Line:    stateLine(a, state),
+			Handed:  handed[a.TabId],
+		})
+	}
+	slices.SortStableFunc(out, func(x, y ListedAgent) int {
+		if d := listedStateOrder[x.State] - listedStateOrder[y.State]; d != 0 {
+			return d
+		}
+		if x.Since != y.Since {
+			if x.Since == 0 || (y.Since != 0 && x.Since > y.Since) {
+				return 1
+			}
+			return -1
+		}
+		return strings.Compare(x.Name, y.Name)
+	})
+	return out
+}
+
+func listedState(a Agent) string {
+	if a.Status.Ended || (a.Harness == harnessClaude && !a.HasStream) {
+		return PhoneEnded
+	}
+	return PhoneState(a)
+}
+
+// remoteAgentList reads the roster for the Agents list; no roster hook lists none.
+func remoteAgentList(ctx context.Context) ([]ListedAgent, error) {
+	if AgentsHook == nil {
+		return []ListedAgent{}, nil
+	}
+	agents, err := AgentsHook(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("read the agents: %w", err)
+	}
+	handMu.Lock()
+	tabs := make(map[string]bool, len(handed))
+	for tab := range handed {
+		tabs[tab] = true
+	}
+	handMu.Unlock()
+	return BuildAgentList(agents, tabs), nil
+}
+
+// stateLine is the one-line summary a state carries by itself, "" for a state whose line is the
+// transcript's last answer or that has none.
+func stateLine(a Agent, state string) string {
 	detail := a.Status.Detail
 	switch state {
 	case PhoneWorking:
@@ -111,6 +196,13 @@ func handedLine(a Agent, state string) string {
 		return "Wants approval: " + detail
 	case PhoneAsking:
 		return lineAsking
+	}
+	return ""
+}
+
+func handedLine(a Agent, state string) string {
+	if line := stateLine(a, state); line != "" || state == PhoneWorking {
+		return line
 	}
 	if a.TranscriptPath == "" {
 		return ""

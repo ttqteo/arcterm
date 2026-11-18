@@ -25,8 +25,17 @@ export function viewState(list, error) {
     }
     const empty =
         !list ||
-        ((list.questions ?? []).length === 0 && (list.handed ?? []).length === 0 && (list.shown ?? []).length === 0);
+        ((list.questions ?? []).length === 0 &&
+            (list.handed ?? []).length === 0 &&
+            (list.shown ?? []).length === 0 &&
+            listedAgents(list).length === 0);
     return empty ? "empty" : "main";
+}
+
+/** The Agents section's rows: every agent the server lists but the ones already under Handed over. */
+export function listedAgents(list) {
+    const handed = new Set((list?.handed ?? []).map((a) => a.tab));
+    return (list?.agents ?? []).filter((a) => !handed.has(a.tab));
 }
 
 /** The header's counts, e.g. "2 questions to answer · 3 agents handed over · 2 runs held · 1 other". */

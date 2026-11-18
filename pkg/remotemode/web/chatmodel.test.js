@@ -343,6 +343,10 @@ describe("state labels", () => {
         expect(rowStateLabel(agent("working", { since: 0 }), NOW)).toBe("working");
         expect(headerStateLabel(agent("idle", { since: 0 }), NOW)).toBe("idle");
     });
+
+    it("reads an exited session as exited, with no age", () => {
+        expect(rowStateLabel(agent("ended"), NOW)).toBe("exited");
+    });
 });
 
 describe("endedText", () => {

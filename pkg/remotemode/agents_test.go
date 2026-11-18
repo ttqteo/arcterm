@@ -390,3 +390,48 @@ func TestOffEndsStreams(t *testing.T) {
 	}
 	agentsTestRecv(t, tail.exited, "tail exit")
 }
+
+func TestBuildAgentList(t *testing.T) {
+	agent := func(tab, name, harness string, st baseds.AgentStatusData, stream bool) Agent {
+		return Agent{TabId: tab, Name: name, Harness: harness, Status: st, HasStream: stream}
+	}
+	agents := []Agent{
+		agent("t-idle-new", "b-idle", harnessPi, baseds.AgentStatusData{State: baseds.AgentState_Idle, Ts: 300}, false),
+		agent("t-work", "work", harnessClaude, baseds.AgentStatusData{State: baseds.AgentState_Working, Detail: "running tests", Ts: 900}, true),
+		agent("t-gone", "gone", harnessClaude, baseds.AgentStatusData{State: baseds.AgentState_Idle, Ts: 50}, false),
+		agent("t-idle-old", "a-idle", harnessClaude, baseds.AgentStatusData{State: baseds.AgentState_Idle, Ts: 100}, true),
+		agent("t-perm", "perm", harnessClaude, baseds.AgentStatusData{
+			State: baseds.AgentState_Waiting, Hook: baseds.AgentHook_Notification,
+			NotificationType: notificationPermissionPrompt, Detail: "running npm test", Ts: 700,
+		}, true),
+		agent("t-pi-ended", "pi-ended", harnessPi, baseds.AgentStatusData{State: baseds.AgentState_Idle, Ended: true, Ts: 10}, false),
+	}
+	got := BuildAgentList(agents, map[string]bool{"t-work": true})
+	var tabs []string
+	for _, a := range got {
+		tabs = append(tabs, a.Tab)
+	}
+	want := []string{"t-perm", "t-work", "t-idle-old", "t-idle-new", "t-pi-ended", "t-gone"}
+	if !slices.Equal(tabs, want) {
+		t.Fatalf("order %v, want %v", tabs, want)
+	}
+	byTab := map[string]ListedAgent{}
+	for _, a := range got {
+		byTab[a.Tab] = a
+	}
+	if w := byTab["t-work"]; w.State != PhoneWorking || w.Since != 0 || w.Line != "Running tests" || !w.Handed {
+		t.Errorf("working agent %+v", w)
+	}
+	if p := byTab["t-perm"]; p.State != PhonePermission || p.Since != 700 || p.Line != "Wants to run: npm test" || p.Handed {
+		t.Errorf("permission agent %+v", p)
+	}
+	if g := byTab["t-gone"]; g.State != PhoneEnded || g.Line != "" {
+		t.Errorf("claude with no stream should read ended, got %+v", g)
+	}
+	if e := byTab["t-pi-ended"]; e.State != PhoneEnded {
+		t.Errorf("pi that reported its end should read ended, got %+v", e)
+	}
+	if i := byTab["t-idle-new"]; i.State != PhoneIdle || i.Runtime != harnessPi {
+		t.Errorf("idle pi %+v", i)
+	}
+}

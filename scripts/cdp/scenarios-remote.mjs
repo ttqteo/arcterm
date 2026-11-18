@@ -376,6 +376,12 @@ const PHONE_READ = `(() => {
             chip: text(r.querySelector(".state-chip")),
             line: text(r.querySelector(".agent-line")),
         })),
+        agents: [...document.querySelectorAll("[data-agent-row]")].map((r) => ({
+            tab: r.dataset.agentRow,
+            state: r.querySelector(".state-chip")?.dataset.state ?? "",
+            chip: text(r.querySelector(".state-chip")),
+            line: text(r.querySelector(".agent-line")),
+        })),
         foot: text(document.querySelector(".foot-text")),
     };
 })()`;
@@ -514,7 +520,7 @@ const remotePhone = {
             "1. Main: questions, the three hand-overs with their state chips, held runs, the counts line, the off footer and Turn on notifications",
             main.chip === "Remote on" &&
                 main.sub === "3 questions to answer · 3 agents handed over · 2 runs held" &&
-                JSON.stringify(main.sections) === JSON.stringify(["Questions", "Handed over", "Held runs"]) &&
+                JSON.stringify(main.sections) === JSON.stringify(["Questions", "Handed over", "Held runs", "Agents"]) &&
                 JSON.stringify(main.cards) === JSON.stringify(list.questions.map((q) => q.source)) &&
                 JSON.stringify(main.handed.map(rowOf)) === JSON.stringify(wantHanded) &&
                 JSON.stringify(wantHanded.map((a) => [a.name, a.state])) ===
@@ -530,6 +536,24 @@ const remotePhone = {
                 main.notifications &&
                 sw === true,
             JSON.stringify({ ...main, sw })
+        );
+
+        // 1a. Agents: every roster agent but the hand-overs, shown only
+        await page.ev(`document.querySelector('section[aria-label="Agents"]')?.scrollIntoView({ block: "end" })`);
+        await polishNap(200);
+        await shot("1a-agents");
+        await page.ev(`document.querySelector(".main")?.scrollTo(0, 0)`);
+        const agentRows = main.agents.map((a) => [a.tab, a.state, a.chip, a.line]);
+        rec(
+            "1a. Agents: the three agents at the desk with their state chips, the hand-overs left out, no row opens a chat",
+            JSON.stringify(agentRows) ===
+                JSON.stringify([
+                    ["fx-bench-runner", "working", "working", "Running go test ./pkg/orchestrate"],
+                    ["fx-lab-notes", "idle", "idle 25m", ""],
+                    ["fx-old-spike", "ended", "exited", ""],
+                ]) &&
+                (await page.ev(`document.querySelectorAll("[data-agent-row] button, button[data-agent-row]").length`)) === 0,
+            JSON.stringify(main.agents)
         );
 
         // 1b. Turn on notifications

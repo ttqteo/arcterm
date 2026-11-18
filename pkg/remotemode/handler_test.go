@@ -40,6 +40,8 @@ type handlerFake struct {
 	actErr     error
 	acted      []handlerActCall
 	takenBack  []string
+	agents     []ListedAgent
+	agentsErr  error
 }
 
 type handlerActCall struct {
@@ -82,6 +84,7 @@ func (f *handlerFake) handler() http.Handler {
 			return nil
 		},
 		Handed: func(context.Context) ([]HandedAgent, error) { return f.handed, nil },
+		Agents: func(context.Context) ([]ListedAgent, error) { return f.agents, f.agentsErr },
 		Stream: func(ctx context.Context, tab string, sink StreamSink) error {
 			return f.stream(ctx, tab, sink)
 		},
@@ -527,5 +530,33 @@ func TestActStatusCodes(t *testing.T) {
 	}
 	if !slices.Contains(f.takenBack, "tab-a") {
 		t.Errorf("TakeBack got %v", f.takenBack)
+	}
+}
+
+func TestHandlerWaitingAgents(t *testing.T) {
+	decode := func(f *handlerFake) string {
+		t.Helper()
+		rec := handlerDo(t, f.handler(), http.MethodGet, "/api/waiting", "", nil)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("got %d %s", rec.Code, rec.Body.String())
+		}
+		var got map[string]json.RawMessage
+		if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		return string(got["agents"])
+	}
+	f := handlerNewFake()
+	if got := decode(f); got != "[]" {
+		t.Errorf("no agents should send [], got %s", got)
+	}
+	f.agents = []ListedAgent{{Tab: "t1", Name: "docs", State: PhoneWorking, Handed: true}}
+	if got := decode(f); !strings.Contains(got, `"tab":"t1"`) || !strings.Contains(got, `"handed":true`) {
+		t.Errorf("agents %s", got)
+	}
+	// a roster that cannot be read must not take the questions down with it
+	f.agentsErr = errors.New("roster down")
+	if got := decode(f); got != "[]" {
+		t.Errorf("a failed roster read should send [], got %s", got)
 	}
 }

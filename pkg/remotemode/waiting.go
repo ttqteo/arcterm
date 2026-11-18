@@ -23,6 +23,8 @@ type WaitingList struct {
 	Shown       []WaitingShown    `json:"shown"`
 	// Handed is filled by the handler from Deps.Handed
 	Handed []HandedAgent `json:"handed"`
+	// Agents is filled by the handler from Deps.Agents: every roster agent, shown only
+	Agents []ListedAgent `json:"agents"`
 }
 
 // WaitingQuestion is an agent question the phone can answer.

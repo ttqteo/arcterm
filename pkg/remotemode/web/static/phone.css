@@ -609,6 +609,13 @@ input {
     background: none;
     border: 1.5px solid currentColor;
 }
+[data-state="ended"] {
+    color: var(--color-muted);
+}
+[data-state="ended"] .state-dot {
+    background: none;
+    border: 1.5px dashed currentColor;
+}
 
 /* a handed-over agent in the list */
 .agent-row {
@@ -624,6 +631,11 @@ input {
     text-align: left;
     cursor: pointer;
 }
+/* an agent the phone only shows, under Agents */
+.agent-row.listed {
+    cursor: default;
+}
+
 .agent-line-row {
     display: flex;
     align-items: center;

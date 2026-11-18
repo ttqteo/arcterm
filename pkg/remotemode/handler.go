@@ -50,6 +50,8 @@ type Deps struct {
 	Off         func(context.Context) error
 	Subscribe   func(context.Context, PushSubscription) error
 	Handed      func(context.Context) ([]HandedAgent, error)
+	// Agents lists every roster agent; a failure leaves the list empty rather than failing the page
+	Agents func(context.Context) ([]ListedAgent, error)
 	// Stream returns a *GoneError when it ends for a reason, and nil when ctx ends
 	Stream func(ctx context.Context, tab string, sink StreamSink) error
 	// Act and TakeBack return a *GoneError for a tab not handed over; Act wraps ErrWrongState
@@ -140,6 +142,15 @@ func (d Deps) handleWaiting(w http.ResponseWriter, r *http.Request) {
 	}
 	if list.Handed == nil {
 		list.Handed = []HandedAgent{}
+	}
+	if d.Agents != nil {
+		if list.Agents, err = d.Agents(r.Context()); err != nil {
+			log.Printf("remote mode: agents list: %v\n", err)
+			list.Agents = nil
+		}
+	}
+	if list.Agents == nil {
+		list.Agents = []ListedAgent{}
 	}
 	handlerWriteJSON(w, http.StatusOK, list)
 }

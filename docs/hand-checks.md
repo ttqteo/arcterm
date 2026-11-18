@@ -51,6 +51,11 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
   in a markdown file open in the Agent's doc view: the Comment button sits just above the first selected line, its left
   edge at the selection's start, covering no selected text; select the doc's very first line and it drops under the
   selection instead. `md-comments` scenario (`mddoc.tsx`).
+- [ ] (arcterm) **The phone page's Agents list.** Seen only on `cmd/remotepreview`'s fixture in headless Edge, and step
+  1a of `remote-phone` was written but not run (no dev app, low memory): run `task verify:ui -- remote-phone` first.
+  With remote on, open the phone page: under what waits, **Agents** lists each agent not handed over with its state
+  chip (a working one's line says what it runs, an idle one shows `idle <age>`, a claude that exited to its shell
+  reads `exited`); hand one over and it moves to Handed over within 10 s.
 - [ ] (arcterm) **Remote mode through Tailscale on a real phone.** Only fakes have run `tailscale serve` (the
   `remotemode` tests). Step 10 of `remote-switch` (the Connection card with Tailscale picked) was written but its run was
   stopped for low memory: run `task verify:ui -- remote-switch` first. Turn HTTPS on for the tailnet (admin console →
