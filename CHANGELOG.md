@@ -73,6 +73,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - Focus read in Chat fades in steps: the block before and after the lit one stay half bright, so you keep your place,
   and `J` / `K` pass over tool steps and cards to the next block of text. Its button and the `K` `J` `Q` buttons
   under it are now one pill. <!-- try: chat-focus-read -->
+- A Claude agent's suggested replies in Chat come sooner, about 2 s after its turn ends instead of 5-6 s, and no longer
+  start a second claude (about 470 MB) each time: the agent's own claude works them out.
 - Scrollbars stay hidden until you point at the area that scrolls, then show as a thin bar that thickens under the
   pointer, so the sidebar, Chat and lists read as clean panels.
 - A message you send while the agent works no longer has a Queued caption under it: its dimmed bubble says it waits, and

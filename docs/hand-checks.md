@@ -34,6 +34,15 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
   check, beside "push đi" and the model's step, even when the row is full. A click (or Tab to it, then Enter) asks to
   close it as the header's ✓ does; it is gone while a background task still runs or a run it started is still going,
   and on a turn that ends in a question. Branch `feat/chat-close-chip`.
+- [ ] (arcterm) **A Claude agent's suggested replies come from its own claude.** After a build with this change, let
+  a Claude agent finish a turn that ends in a question while you look at it in Chat: the reply chips show about 2 s
+  after the turn ends (not 5-6 s), and no extra `claude.exe` starts for them (Task Manager); `waveapp.log` has no
+  `wsh chatsuggest` errors. A pi agent's chips still come (the headless call), and a turn the mod could not answer
+  (claude outside arcterm, the mod not loaded) still gets chips after ~2 s more. If chips never come faster, check
+  whether `cc-plugin-sec-default` skips the arc mod's `turn.complete` (it skips its `prompt.compose` and
+  `session.append` in some sessions). Unit tests only: `pkg/chatsuggest/hook.go`, `claude/arc-mod/hooks/suggest-core.ts`
+  (2026-11-18);
+
 - [ ] (arcterm) **Switching agents no longer crashes the header.** In Agent, pick a Claude agent, then a plain
   terminal, a run's worker and back (from the tree and from Sidecar's wall), including one falling asleep: no
   `WINDOW ERROR … is not iterable` in `waveapp.log` and the header redraws each time. Not tried in the app:

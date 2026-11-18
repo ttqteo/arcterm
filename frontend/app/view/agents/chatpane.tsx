@@ -998,7 +998,15 @@ function ChatPaneBody({ model, agent, barred }: { model: AgentsViewModel; agent:
     const askModel = wantsModelSuggest({ ...turnOpen, seen: focusId === agent.id && surface === "agent" });
     useEffect(() => {
         if (askModel && turnKey != null && reply != null) {
-            requestModelSuggest(turnKey, { reply, recent, question });
+            // a Claude agent's arc mod works the replies out in its own claude at the turn's end: wavesrv takes that
+            // answer when it comes, and starts a claude of its own only when it does not (pkg/chatsuggest/hook.go)
+            requestModelSuggest(turnKey, {
+                reply,
+                recent,
+                question,
+                blockid: agent.blockId,
+                hook: agent.agent === "claude",
+            });
         }
         // the key stands for the reply, and the question with it; the person's messages before it change with the reply
     }, [askModel, turnKey]);
