@@ -67,9 +67,6 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
-- A Chat card waiting on you (a builder check, a brainstorm question, a council) now blinks its whole "Waiting on
-  you" tag, dot and words, instead of only the small dot, which was easy to miss.
-
 - A run's final stage shows its commands' output in colour, as a terminal would: a test that passed has a green ✓
   (or `ok`), one that failed is red, warnings yellow, skips and each test's time dimmed. Output that comes with its own
   colours keeps them.
