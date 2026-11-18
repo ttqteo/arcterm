@@ -16,15 +16,8 @@ import { Check, Ellipsis } from "lucide-react";
 import { lazy, Suspense, useContext, useEffect, useMemo, useRef, useState } from "react";
 import type { AgentsViewModel } from "../agents";
 import { formatAgeShort } from "../agentsviewmodel";
-import {
-    defaultAccountName,
-    knownClaudeEmails,
-    projectsWithOwnAccount,
-    quotaLine,
-    restartCandidates,
-    rowQuota,
-    type RowQuota,
-} from "../claudeaccount";
+import { defaultAccountName, knownClaudeEmails, quotaLine, rowQuota, type RowQuota } from "../claudeaccount";
+import { switchClaudeAccount } from "../claudeaccountswitch";
 import { RUNTIME_FLAGS, type Runtime } from "../launch";
 import { naFlagsAtom, naRememberFlagsAtom } from "../naflagsstore";
 import { projectListAtom, projectsAtom } from "../projectsstore";
@@ -305,22 +298,23 @@ function ClaudeAccountCard({ model }: { model: AgentsViewModel }) {
             return;
         }
         setError(null);
-        writeConfig({ "claude:activeaccount": id });
         setList((prev) => (prev == null ? prev : { ...prev, active: id }));
-        // a project tied to its own account keeps its agents on it, so the switch does not offer to move them
-        const pinned = projectsWithOwnAccount(projects, list?.accounts ?? []);
-        const candidates = restartCandidates(
-            globalStore.get(model.agentsAtom),
-            id,
-            globalStore.get(model.lineageAtom)
-        ).filter((c) => c.project == null || !pinned.has(c.project));
-        if (candidates.length > 0) {
-            const accountName =
-                id === ""
-                    ? defaultAccountName(identity.loginEmail)
-                    : (list?.accounts.find((a) => a.id === id)?.label ?? id);
-            modalsModel.pushModal("ClaudeAccountRestartModal", { candidates, account: id, accountName });
-        }
+        // the write and the restart dialog are the shared switch (a project tied to its own account keeps its agents
+        // on it, so it does not offer to move them)
+        fireAndForget(async () => {
+            try {
+                await switchClaudeAccount(id, {
+                    agents: globalStore.get(model.agentsAtom),
+                    lineage: globalStore.get(model.lineageAtom),
+                    projects,
+                    accounts: list?.accounts ?? [],
+                    identity,
+                    active,
+                });
+            } catch (e) {
+                setError(errorText(e));
+            }
+        });
     };
     const rename = (id: string, label: string) =>
         fireAndForget(async () => {

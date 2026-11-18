@@ -797,6 +797,7 @@ declare global {
         reply: string;
         recent?: string[];
         question?: boolean;
+        summary?: boolean;
         blockid?: string;
         hook?: boolean;
     };
@@ -826,6 +827,7 @@ declare global {
     // wshrpc.CommandChatSuggestRtnData
     type CommandChatSuggestRtnData = {
         replies: string[];
+        summary?: string;
     };
 
     // wshrpc.CommandCheckMemoryHygieneData

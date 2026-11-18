@@ -31,6 +31,12 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Added
 
+- After a long turn (a long closing reply, or many commands) Chat tells you in a line or two, above the suggested
+  replies, where things stand: what the turn did and what it left undone, in your language.
+- Chat warns above the box when the Claude account an agent runs on is near its weekly (80%) or 5-hour (90%) limit,
+  with the reset time. With more than one account it names the one in use and offers Switch to the account with the
+  most room, which moves this agent over and offers to restart the others; Snooze hides it for an hour, four hours or
+  until tomorrow.
 - Chat's message box draws a `>` quote (slanted, with a bar beside it) and `inline code` as you type them, as the sent
   message shows them. A pasted stack trace, log or block of code goes in wrapped in a ``` code block; Ctrl+Z takes the
   wrapping away and keeps the paste.
@@ -115,13 +121,14 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- Switching the agent on screen (from the tree, Sidecar or a terminal) no longer crashes the agent header with
+  "number … is not iterable".
+- Selecting text in Chat keeps the words their own colour: the highlight no longer tints them the accent's blue.
 - A file in the "Edited N files" card at the end of a Chat turn opens on its diff against the last commit, not on the
   whole file, also for a file in a worktree under the agent's folder; a change already committed says so.
 - A dev server that starts and detaches itself (Astro's `astro dev`) is no longer put down to an agent of another
   project whose background task happened to end as it came up, and a project kept in a folder inside its repo shows
   the servers running under that folder on its folder in the Agent tree.
-- Switching the agent on screen (from the tree, Sidecar or a terminal) no longer crashes the agent header with
-  "number … is not iterable".
 - Chat no longer jumps around a send: a message that takes a few seconds to reach a busy Claude Code stays in place
   instead of vanishing and coming back, the "working" line opens and closes smoothly instead of shoving the
   conversation as each turn starts and ends, and a message of yours that lands with nothing standing in for it opens

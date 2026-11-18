@@ -80,6 +80,7 @@ import chatRedesignScenarios from "./scenarios-chat-redesign.mjs";
 import chatCodeBoxScenarios from "./scenarios-chat-code-box.mjs";
 import chatVerdictHandoffScenarios from "./scenarios-chat-verdict-handoff.mjs";
 import chatCouncilScenarios from "./scenarios-chat-council.mjs";
+import chatSuggestCardScenarios from "./scenarios-chat-suggest-card.mjs";
 import codeBlameDraftScenarios from "./scenarios-code-blame-draft.mjs";
 import codeFixesSessionScenarios from "./scenarios-code-fixes-session.mjs";
 import codeFixesViewScenarios from "./scenarios-code-fixes-view.mjs";
@@ -44437,6 +44438,17 @@ const agentChat = {
 
             // 4. the agent working: the working line reads Working with no " · <activity>" tail (Calm.dc.html: the running
             // stretch's own line names the call), and Stop sends Esc
+            // The mock's transcript never takes the two sends above, as a real one does within seconds (chatpane.tsx forgets a
+            // landed send through landedIds). A plain message of yours that has not landed makes Chat read the last turn as over
+            // (liveTurn, b84c0baa2: its files card stays, its stretch is not running) while the agent works on that message, so
+            // forgetting them here is the landing: this step and 26 see the turn under way as live, as they do when the message
+            // lands
+            await AC.agentPage(
+                h,
+                `const P = await mod("app/view/agents/chatpendingstore.ts");
+                P.dropPendingIds(${JSON.stringify(A)}, P.getPending(${JSON.stringify(A)}).map((p) => p.id));
+                return P.getPending(${JSON.stringify(A)}).length;`
+            );
             await AC.setRoster(h, acRoster(ctx, { state: "working", activity: AC_ACTIVITY, activeMs: 30_000, idleSince: undefined }));
             const working = await polishWaitFor(h, `!!${acLayer(A)}?.querySelector("[data-chat-working]") && !!${acLayer(A)}?.querySelector("[data-chat-stop]")`, AC_WAIT_MS);
             const workingLine4 = await h.ev(`(() => {
@@ -45214,7 +45226,7 @@ const agentChat = {
             const before20 = await acInputs(h, blockA);
             await acType(h, acBox(A), S1);
             const pendingUp = await polishWaitFor(h, `!!${acLayer(A)}?.querySelector("[data-chat-pending]")`, 5000);
-            // the earlier steps' sends ("hello"...) stay pending for two minutes, as the transcript never holds them
+            // the sends of steps 2 and 3 were forgotten at step 4, as the transcript never holds them
             const pendingOf = `[...(${acLayer(A)}?.querySelectorAll("[data-chat-pending]") ?? [])].filter((p) => p.firstElementChild?.textContent.trim() === ${JSON.stringify(S1)})`;
             const pend20 = await h.ev(`(() => {
                 const mine = ${pendingOf};
@@ -46814,7 +46826,8 @@ const agentChat = {
             // answers AC_BASH_HISTORY) as grey ghost text right after the last character, with "→ accept" in the caption; → takes it.
             // `!` alone has the well and no ghost. The `@` picker stays shut over `!ls @../` (step 72 opens it in a plain box), and a
             // command sent moves to the front of the list the ghost reads. The history is read per folder, so the box's folder is
-            // set first, to the scenario's own (not one an earlier step has read)
+            // set first, to the scenario's own (not one an earlier step has read). Bash mode is `data-chat-bash-mode` on the box
+            // (`[data-chat-box]`, inside the composer wrapper since 2e2b0f291), which the steps read it from
             await h.rpc("setmeta", { oref: orefA, meta: { "cmd:cwd": ctx.dir.replace(/\\/g, "/") } });
             await showAgent(A);
             await h.ev(`window.__arcChatMode.set(${JSON.stringify(A)}, "chat")`);
@@ -46847,7 +46860,7 @@ const agentChat = {
                     }
                     const gr = ghost?.getBoundingClientRect();
                     return {
-                        mode: c?.hasAttribute("data-chat-bash-mode") ?? false,
+                        mode: c?.querySelector("[data-chat-box]")?.hasAttribute("data-chat-bash-mode") ?? false,
                         text: ${acVal(acBox(A))},
                         caption: cap?.querySelector("span")?.textContent.trim() ?? null,
                         accept: cap?.querySelector("[data-chat-bash-accept]")?.textContent.replace(/\\s+/g, " ").trim() ?? null,
@@ -46891,7 +46904,7 @@ const agentChat = {
             await acKey(h, acKeys.left);
             await acKey(h, acKeys.left);
             await acKey(h, acKeys.backspace);
-            const unbanged76 = await polishWaitFor(h, `${acVal(acBox(A))} === "ls" && !${composer76}?.hasAttribute("data-chat-bash-mode")`, 3000);
+            const unbanged76 = await polishWaitFor(h, `${acVal(acBox(A))} === "ls" && ${composer76}?.querySelector("[data-chat-box]")?.hasAttribute("data-chat-bash-mode") === false`, 3000);
             // the `@` picker stays shut in bash mode
             await acClear(h, acBox(A));
             await polishWaitFor(h, `${acVal(acBox(A))} === ""`, 3000);
@@ -47570,9 +47583,10 @@ const agentChat = {
                 { refs87, idRefs87, want87, written87 }
             );
 
-            // 88. Calm.dc.html's card opens the Diff: with the fixture folder a git repo whose client.ts has changed since its
-            // commit, a click on the card's client.ts row switches to the Diff on agent A's working tree with
-            // src/sync/client.ts selected; back on the agent, See all opens the Diff on the same scope
+            // 88. Calm.dc.html's card opens the file and the Diff: a click on the card's client.ts row opens that file in the
+            // agent's File tab in the rail and stays on the Agent surface (84a727091: "a turn's file card opens the file in the
+            // rail", chatconversation.tsx openTurnDiff); with the fixture folder a git repo whose client.ts has changed since its
+            // commit, See all switches to the Diff on agent A's working tree
             // a git that fails says how (a Final once saw `git init -q` fail with no output), and is tried once more
             let git88 = null;
             for (let i = 0; i < 2 && git88 !== "ok"; i++) {
@@ -47604,22 +47618,32 @@ const agentChat = {
                 }
                 return got;
             };
+            const wantFile88 = JSON.stringify(ctx.files.edited.split("\\").join("/").toLowerCase());
+            // step 5b left client.ts open in a File tab: close every file tab first, so only this click can bring the file up
+            let clean88 = false;
+            for (let i = 0; i < 6 && !clean88; i++) {
+                await h.ev(`${RAIL_ASIDE}?.querySelector("[data-rail-file-close]")?.click()`);
+                await polishNap(150);
+                clean88 = await h.ev(`!${RAIL_ASIDE}?.querySelector("[data-rail-file]") && !${RAIL_ASIDE}?.querySelector("[data-rail-file-close]")`);
+            }
             await h.ev(`(() => { const r = ${card88}?.querySelector("[data-chat-turn-file]"); r?.scrollIntoView({ block: "center" }); r?.click(); return !!r; })()`);
-            const row88 = await diffUntil88((s) => s?.surface === "files" && /(^|\/)src\/sync\/client\.ts$/.test(s.file ?? ""));
-            // the file's two sides load after the selection: give them time to draw for the shot
-            await polishNap(1500);
-            await h.shot("cdp-shots/agent-chat-88-card-row-diff.png");
+            const file88 = await polishWaitFor(
+                h,
+                `((${RAIL_ASIDE}?.querySelector("[data-rail-file]")?.dataset.railFile ?? "").split("\\\\").join("/").toLowerCase()) === ${wantFile88}`,
+                AC_WAIT_MS
+            );
+            const row88 = await diffState88();
+            await h.shot("cdp-shots/agent-chat-88-card-row-file.png");
             await showAgent(A);
             await polishWaitFor(h, `!!${card88}`, AC_WAIT_MS);
             await h.ev(`(() => { const r = ${card88}?.querySelector("[data-chat-turn-files-all]"); r?.scrollIntoView({ block: "center" }); r?.click(); return !!r; })()`);
             const all88 = await diffUntil88((s) => s?.surface === "files");
             await h.goto("agent");
             rec(
-                "88. a click on the card's client.ts row opens the Diff on agent A's working tree with src/sync/client.ts selected; See all opens the Diff on the same agent",
-                git88 === "ok" && cardUp88 && row88?.surface === "files" && row88.origin?.kind === "agent" && row88.origin.id === A &&
-                    /(^|\/)src\/sync\/client\.ts$/.test(row88.file ?? "") &&
+                "88. a click on the card's client.ts row opens that file in the agent's File tab in the rail and leaves the Agent surface as it was; See all opens the Diff on agent A's working tree",
+                git88 === "ok" && cardUp88 && clean88 && file88 && row88?.surface === "agent" &&
                     all88?.surface === "files" && all88.origin?.kind === "agent" && all88.origin.id === A,
-                { git88, cardUp88, row88, all88 }
+                { git88, cardUp88, clean88, file88, row88, all88 }
             );
         } catch (e) {
             rec("the scenario ran to its end", false, String(e?.message ?? e));
@@ -73872,6 +73896,7 @@ export const SCENARIOS = [
     ...chatBrainstormReviewScenarios(CBR_KIT),
     ...chatVerdictHandoffScenarios(CBR_KIT),
     ...chatCouncilScenarios(CR_KIT),
+    ...chatSuggestCardScenarios(CR_KIT),
     ...overlaysFrostScenarios(OF_KIT),
     ...surfacesSpringScenarios(SS_KIT),
     sidebarAgentRam,
