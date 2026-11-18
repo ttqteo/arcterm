@@ -16392,7 +16392,7 @@ const agentTreeRail = {
                 strip: lead?.querySelector("[role=img]")?.getAttribute("aria-label") ?? null,
                 workersChip: lead?.querySelector('button[aria-label="Hide workers"]')?.textContent.trim() ?? null,
                 progress: (() => {
-                    const s = lead?.querySelector("span.truncate.text-muted");
+                    const s = lead?.querySelector("[data-run-stage]");
                     return s ? { text: s.textContent.trim(), clipped: s.scrollWidth > s.clientWidth } : null;
                 })(),
                 worker: !!worker,
@@ -16442,18 +16442,25 @@ const agentTreeRail = {
             if (!line) return null;
             const frame = () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
             const read = () => {
-                const progress = row.querySelector("span.truncate.text-muted");
+                const progress = row.querySelector("[data-run-stage]");
+                const word = row.querySelector("[data-run-stage-word]");
                 const ram = row.querySelector("[data-agent-ram]");
                 const tokens = row.querySelector('span[class*="min-w-[34px]"]');
                 const count = row.querySelector("[data-run-progress-count]");
+                // the stage word wraps onto its box's clipped second line when the line has no room for it whole
+                // (agenttree.tsx RunSubline): it shows whole, or not at all
+                const wb = progress?.getBoundingClientRect();
+                const wr = word?.getBoundingClientRect();
+                const hidden = wb && wr ? wr.top >= wb.bottom - 0.5 : null;
                 return {
                     w: Math.round(line.getBoundingClientRect().width),
-                    // the stage word is left out of a line too narrow for it whole (agenttree.tsx RunSubline)
-                    hidden: progress ? getComputedStyle(progress).display === "none" : null,
+                    hidden,
+                    whole: wb && wr ? !hidden && wr.left >= wb.left - 0.5 && wr.right <= wb.right + 0.5 : null,
+                    // the stage word with the "·" that goes with it, so a line reads "Working · 0/3"
+                    word: word ? word.textContent.replace(/\\s+/g, " ").trim() : null,
                     // what it shows: its "·" goes with the word
                     count: count && count.clientWidth > 0 ? count.innerText.replace(/\\s+/g, " ").trim() : null,
                     countTitled: count ? count.title.length > 0 : null,
-                    whole: progress ? progress.scrollWidth <= progress.clientWidth : null,
                     // how much of it shows, and whether its tooltip holds it whole
                     shown: progress ? Math.round(progress.clientWidth) : null,
                     titled: progress ? progress.title.length > 0 : null,
@@ -16465,7 +16472,7 @@ const agentTreeRail = {
                 };
             };
             const out = { at: [read()] };
-            for (const w of [240, 280, 300, 320, 360, 420]) {
+            for (const w of [200, 220, 240, 280, 300, 320, 360, 420]) {
                 line.style.width = w + "px";
                 await frame();
                 out.at.push(read());
@@ -16479,10 +16486,11 @@ const agentTreeRail = {
         const runAt = runLine?.at ?? [];
         rec(
             // the spec (2026-11-13-sidebar-declutter-design, "Bố cục dòng"): the words left of the columns give way, never
-            // the columns. On a line under 240px the three columns and the run's ↰ origin leave "Working" no room whole,
-            // so the word goes (never "W…") and the count shows alone, its tone and tooltip saying the stage; from 240px
-            // "Working · 0/3" reads whole
-            "7. the lead's run line carries its workers chip, its progress, its ↰ origin and the task strip; its tokens, age and the run's RAM stay on the line at every width; under 240px the stage word is left out and the count shows alone with its tooltip, from 240px the word reads whole; nothing spills out of the line",
+            // the columns. The stage word shows whenever the line has room for it whole and is left out when it has not
+            // (never "W…"), the count then showing alone, its tone and tooltip saying the stage. With this fixture's ↰
+            // and three columns "Working · 0/3" reads whole from a 240px line; a fixed 240px cutoff had hidden it on
+            // lines with fewer columns and room to spare
+            "7. the lead's run line carries its workers chip, its progress, its ↰ origin and the task strip; its tokens, age and the run's RAM stay on the line at every width; the stage word is whole or left out at every width, never cut, and whole from a 240px line; the count shows with its tooltip at every width; nothing spills out of the line",
             nested != null &&
                 runAt.every((s) => s.origin === true) &&
                 /^\d+ of 3 tasks done/.test(nested.strip ?? "") &&
@@ -16496,10 +16504,12 @@ const agentTreeRail = {
                 runAt.every((s) => typeof s.ram === "string" && s.ram !== "") &&
                 // the stage word is whole or left out, never cut; the count shows at every width with the stage in its
                 // tooltip, its "·" only beside the word
-                runAt.some((s) => s.w < 240) &&
-                runAt.every((s) => (s.w < 240 ? s.hidden === true : s.hidden === false && s.whole === true)) &&
+                runAt.some((s) => s.hidden === true) &&
+                runAt.every((s) => s.hidden === true || s.whole === true) &&
+                runAt.filter((s) => s.w >= 240).every((s) => s.hidden === false && s.whole === true) &&
+                runAt.every((s) => /^Working\s·$/.test(s.word ?? "")) &&
                 runAt.every((s) => s.countTitled === true) &&
-                runAt.every((s) => (s.w < 240 ? /^\d+\/3$/ : /^· \d+\/3$/).test(s.count ?? "")) &&
+                runAt.every((s) => /^\d+\/3$/.test(s.count ?? "")) &&
                 runAt.every((s) => !s.overflow),
             JSON.stringify({ nested, runLine })
         );
