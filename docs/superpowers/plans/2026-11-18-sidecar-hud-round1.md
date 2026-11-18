@@ -38,7 +38,10 @@ Acceptance:
 ### Task 2: A heavy agent's label above its node clears the dot
 **Depends on:** Task 1 (both add a step to `scripts/cdp/scenarios-sidecar.mjs`)
 **Model:** sonnet
-**Files:** `frontend/app/cockpit/sidecarorbit.tsx`, `scripts/cdp/scenarios-sidecar.mjs`
+**Files:** `frontend/app/cockpit/sidecarorbit.tsx`, `scripts/cdp/scenarios-sidecar.mjs`, `frontend/tauri/sidecar.tsx`
+
+(Folded in by the lead, 2026-11-18, at the person's request: Task 1 was lost to app restarts and skipped, and a skipped
+task cannot be retried, so this task also does all of Task 1, its fix and its scenario step, first.)
 
 On the orbit, a node at the top draws its label at a fixed `top: -51` above the dot (`labelStyle` in `Node`,
 `sidecarorbit.tsx`), sized for two lines; a heavy agent's label has a third line (`data-sidecar-node-heavy`, about
