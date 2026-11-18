@@ -16,6 +16,16 @@ list (its number is not reused).
 Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) ·
 [part 4](hand-checks-4.md) · [part 3](hand-checks-3.md) · [part 2](hand-checks-2.md) (oldest).
 
+- [ ] (arcterm) **Chat's box fences a real clipboard paste of a log.** The CDP step dispatches a made-up paste event.
+  Copy a stack trace from the browser's DevTools console (several `at …` lines) and paste it into Chat's box after a
+  word: it goes in on its own lines inside ``` with the code box behind it, the box grows to show it all, and one
+  Ctrl+Z leaves the raw paste with no fence. Paste two lines of Vietnamese prose: they go in as typed, no fence.
+  `feat/chat-input-marks` (956770e3c).
+- [ ] (arcterm) **Telex typed inside a quote and inline code in Chat's box.** Type `> đây là trích dẫn` and
+  `` gõ `lệnh` xong `` with Telex on: every syllable lands whole (none dropped or doubled), the quote line stays
+  slanted with its bar, `` `lệnh` `` stays a chip, and the text after the closing backtick is plain again.
+  `feat/chat-input-marks` (956770e3c).
+
 - [ ] (arcterm) **A self-detaching dev server reads as its own project's.** With SIEM-portal's `astro dev --port 4310`
   up (started in the foreground, so it detaches), open the footer's Servers: the :4310 row is not an arcterm agent's
   (no owner, or a SIEM-portal agent's); in Agent, the SIEM-portal folder row shows :4310 beside :8100's agent row.
