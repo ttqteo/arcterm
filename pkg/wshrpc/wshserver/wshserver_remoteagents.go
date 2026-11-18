@@ -9,7 +9,6 @@ import (
 
 	"github.com/wavetermdev/waveterm/pkg/remotemode"
 	"github.com/wavetermdev/waveterm/pkg/waveobj"
-	"github.com/wavetermdev/waveterm/pkg/wshrpc"
 )
 
 // RemoteAgents is remotemode.AgentsHook: one Agent per roster row. It reads the roster only, never
@@ -49,54 +48,4 @@ func RemoteAgents(ctx context.Context) ([]remotemode.Agent, error) {
 // Quick run's agent, so both can be handed over.
 func isRunWorker(run *waveobj.Run) bool {
 	return run != nil && (run.TaskId != "" || run.Review || run.StageRole != "" || run.ParentLeadORef != "")
-}
-
-// RemoteTranscript is remotemode.TranscriptHook: it drains streamTranscript into send, and returns the
-// first error from send or from the stream, nil once ctx is done.
-func RemoteTranscript(ctx context.Context, path string, tail int, send func(lines []string) error) error {
-	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
-	ch := make(chan wshrpc.RespOrErrorUnion[wshrpc.AgentTranscriptUpdate], 16)
-	streamDone := make(chan error, 1)
-	go func() {
-		streamDone <- streamTranscript(ctx, path, tail, ch)
-	}()
-	var first error
-	// after the first failure, cancel and keep reading until the stream returns: it sends on ch
-	// unguarded, so a reader that left would strand it
-	fail := func(err error) {
-		if first == nil {
-			first = err
-			cancel()
-		}
-	}
-	for {
-		select {
-		case msg := <-ch:
-			if first != nil {
-				continue
-			}
-			if msg.Error != nil {
-				fail(msg.Error)
-			} else if err := send(msg.Response.Lines); err != nil {
-				fail(err)
-			}
-		case err := <-streamDone:
-			if err != nil {
-				fail(err)
-			}
-			for {
-				select {
-				case msg := <-ch:
-					if first == nil && msg.Error == nil {
-						if err := send(msg.Response.Lines); err != nil {
-							fail(err)
-						}
-					}
-				default:
-					return first
-				}
-			}
-		}
-	}
 }

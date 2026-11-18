@@ -6,12 +6,7 @@ package wshserver
 import (
 	"context"
 	"errors"
-	"os"
-	"path/filepath"
-	"reflect"
-	"sync/atomic"
 	"testing"
-	"time"
 
 	"github.com/wavetermdev/waveterm/pkg/baseds"
 	"github.com/wavetermdev/waveterm/pkg/remotemode"
@@ -103,93 +98,5 @@ func TestRemoteAgentsKeepsRowWhenTranscriptPathErrors(t *testing.T) {
 	}
 	if len(agents) != 1 || agents[0].TranscriptPath != "" {
 		t.Fatalf("agents = %+v, want the row kept with an empty path", agents)
-	}
-}
-
-func TestRemoteTranscriptSendsBacklogAndAppends(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "s.jsonl")
-	if err := os.WriteFile(path, []byte("one\ntwo\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	batches := make(chan []string, 8)
-	sendErr := errors.New("phone gone")
-	var failNext atomic.Bool
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	done := make(chan error, 1)
-	go func() {
-		done <- RemoteTranscript(ctx, path, 0, func(lines []string) error {
-			if failNext.Load() {
-				return sendErr
-			}
-			batches <- lines
-			return nil
-		})
-	}()
-
-	next := func() []string {
-		t.Helper()
-		select {
-		case b := <-batches:
-			return b
-		case <-time.After(5 * time.Second):
-			t.Fatal("no batch arrived")
-			return nil
-		}
-	}
-	if got := next(); !reflect.DeepEqual(got, []string{"one", "two"}) {
-		t.Fatalf("backlog = %v", got)
-	}
-	f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0o600)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := f.WriteString("three\n"); err != nil {
-		t.Fatal(err)
-	}
-	f.Close()
-	if got := next(); !reflect.DeepEqual(got, []string{"three"}) {
-		t.Fatalf("append = %v", got)
-	}
-
-	failNext.Store(true)
-	f, err = os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0o600)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := f.WriteString("four\n"); err != nil {
-		t.Fatal(err)
-	}
-	f.Close()
-	select {
-	case err := <-done:
-		if !errors.Is(err, sendErr) {
-			t.Fatalf("err = %v, want the send error", err)
-		}
-	case <-time.After(5 * time.Second):
-		t.Fatal("RemoteTranscript did not return after a send error")
-	}
-}
-
-func TestRemoteTranscriptReturnsNilOnCancel(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "s.jsonl")
-	if err := os.WriteFile(path, []byte("one\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	ctx, cancel := context.WithCancel(context.Background())
-	got := make(chan struct{}, 1)
-	done := make(chan error, 1)
-	go func() {
-		done <- RemoteTranscript(ctx, path, 0, func([]string) error { got <- struct{}{}; return nil })
-	}()
-	<-got
-	cancel()
-	select {
-	case err := <-done:
-		if err != nil {
-			t.Fatalf("err = %v, want nil on ctx done", err)
-		}
-	case <-time.After(5 * time.Second):
-		t.Fatal("RemoteTranscript did not return on cancel")
 	}
 }

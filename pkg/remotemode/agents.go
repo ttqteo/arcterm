@@ -47,11 +47,26 @@ const (
 // ErrWrongState is an action the agent's current phone state does not take; it is wrapped with the state.
 var ErrWrongState = errors.New("the agent is not in a state that takes this")
 
+// ErrRefused is a take the desk refuses; the error wraps it as fmt.Errorf("%w: %s", ErrRefused, reason), and
+// the phone is shown the reason.
+var ErrRefused = errors.New("refused")
+
+// TranscriptChunk is a run of whole transcript lines and where they sit in the file. Cursor is the byte
+// offset of the first line and End the offset just after the last (Backlog marks the stream's first chunk).
+// End is not sent in the chunk's JSON: the stream carries it as the event's id, and a page read answers
+// with the lines and the cursor alone.
+type TranscriptChunk struct {
+	Lines   []string `json:"lines"`
+	Cursor  int64    `json:"cursor"`
+	End     int64    `json:"-"`
+	Backlog bool     `json:"backlog"`
+}
+
 // StreamSink receives a stream's events; it must be safe for concurrent use, since the transcript tail
 // and the state poll send from their own goroutines.
 type StreamSink interface {
 	Agent(HandedAgent) error
-	Lines([]string) error
+	Lines(TranscriptChunk) error
 }
 
 // the keystrokes typed into the agent's terminal (decision 8 of the plan)
@@ -108,6 +123,27 @@ type ListedAgent struct {
 	Since  int64  `json:"since"`
 	Line   string `json:"line"`
 	Handed bool   `json:"handed"`
+	// Takeable is whether a tap can take the agent to the phone: Eligible passes for it.
+	Takeable bool `json:"takeable"`
+}
+
+// ListedRun is one run in the Agents list's Runs section: its live workers, which the phone only shows.
+// NeedsYou is set when a worker is asking or needs approval or input, which only the desk can answer.
+type ListedRun struct {
+	Key      string         `json:"key"`
+	Name     string         `json:"name"`
+	NeedsYou bool           `json:"needsyou"`
+	Workers  []RunWorkerRow `json:"workers"`
+}
+
+// RunWorkerRow is one worker of a ListedRun. Label is what the worker is for ("Review: <task>", the task's
+// label, "Plan reviewer"), Line what it is doing; State and Since are an agent row's.
+type RunWorkerRow struct {
+	Tab   string `json:"tab"`
+	Label string `json:"label"`
+	State string `json:"state"` // Phone* constants
+	Line  string `json:"line"`
+	Since int64  `json:"since"`
 }
 
 // PhoneEnded is a listed agent whose session exited to its shell; the tab is still open.
@@ -161,14 +197,14 @@ func listedState(a Agent) string {
 	return PhoneState(a)
 }
 
-// remoteAgentList reads the roster for the Agents list; no roster hook lists none.
-func remoteAgentList(ctx context.Context) ([]ListedAgent, error) {
+// remoteAgentList reads the roster for the Agents list and its Runs; no roster hook lists none.
+func remoteAgentList(ctx context.Context) ([]ListedAgent, []ListedRun, error) {
 	if AgentsHook == nil {
-		return []ListedAgent{}, nil
+		return []ListedAgent{}, nil, nil
 	}
 	agents, err := AgentsHook(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("read the agents: %w", err)
+		return nil, nil, fmt.Errorf("read the agents: %w", err)
 	}
 	handMu.Lock()
 	tabs := make(map[string]bool, len(handed))
@@ -176,7 +212,7 @@ func remoteAgentList(ctx context.Context) ([]ListedAgent, error) {
 		tabs[tab] = true
 	}
 	handMu.Unlock()
-	return BuildAgentList(agents, tabs), nil
+	return BuildAgentList(agents, tabs), nil, nil
 }
 
 // stateLine is the one-line summary a state carries by itself, "" for a state whose line is the
@@ -253,6 +289,16 @@ func remoteAct(ctx context.Context, tab string, act AgentAction) error {
 	if handAway(tab) {
 		return fmt.Errorf("%w: it is not answering Arc right now", ErrWrongState)
 	}
+	if err := remoteTypeAct(a, act); err != nil {
+		return err
+	}
+	// an acted-on take stays until the owner takes it back (see remoteRelease)
+	handMarkActed(tab)
+	return nil
+}
+
+// remoteTypeAct types what the action is into the agent's terminal.
+func remoteTypeAct(a Agent, act AgentAction) error {
 	switch act.Kind {
 	case ActionSend:
 		return typeMessage(a.BlockId, act.Text)
@@ -306,9 +352,10 @@ func streamKeyOf(a Agent, since int64) streamKey {
 }
 
 // remoteStream sends the agent, then its transcript backlog and appends beside a state poll that sends the
-// agent on each change. It returns a *GoneError when the agent stops being handed over, and nil when ctx
+// agent on each change. from is the byte offset a reconnecting page last saw (its Last-Event-ID), or -1 for
+// the last 200 lines. It returns a *GoneError when the agent stops being handed over, and nil when ctx
 // ends; it never returns while the tail is still running.
-func remoteStream(ctx context.Context, tab string, sink StreamSink) error {
+func remoteStream(ctx context.Context, tab string, from int64, sink StreamSink) error {
 	a, since, err := LookupHanded(ctx, tab)
 	if err != nil {
 		return err
@@ -334,7 +381,7 @@ func remoteStream(ctx context.Context, tab string, sink StreamSink) error {
 		if !tailing && a.TranscriptPath != "" && TranscriptHook != nil {
 			tailing = true
 			path := a.TranscriptPath
-			go func() { tailDone <- TranscriptHook(ctx, path, 0, sink.Lines) }()
+			go func() { tailDone <- TranscriptHook(ctx, path, from, sink.Lines) }()
 		}
 		select {
 		case <-ctx.Done():

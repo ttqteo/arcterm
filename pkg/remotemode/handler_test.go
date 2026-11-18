@@ -36,12 +36,23 @@ type handlerFake struct {
 	subscribed []PushSubscription
 	offCalls   chan struct{}
 	handed     []HandedAgent
-	stream     func(ctx context.Context, tab string, sink StreamSink) error
+	stream     func(ctx context.Context, tab string, from int64, sink StreamSink) error
 	actErr     error
 	acted      []handlerActCall
 	takenBack  []string
 	agents     []ListedAgent
+	runs       []ListedRun
 	agentsErr  error
+	takeErr    error
+	taken      []string
+	releaseErr error
+	released   []string
+	// transcript answers a page read; nil answers an empty page
+	transcript      func(tab string, before int64) (TranscriptChunk, error)
+	transcriptCalls []handlerTranscriptCall
+	pcLockErr       error
+	pcVolumeErr     error
+	pcCalls         []string // "lock", or "volume <step>"
 }
 
 type handlerActCall struct {
@@ -49,12 +60,22 @@ type handlerActCall struct {
 	act AgentAction
 }
 
+type handlerTranscriptCall struct {
+	tab    string
+	before int64
+}
+
 func handlerNewFake() *handlerFake {
 	return &handlerFake{offCalls: make(chan struct{}, 4)}
 }
 
 func (f *handlerFake) handler() http.Handler {
-	return NewHandler(Deps{
+	return NewHandler(f.deps())
+}
+
+// deps wires every dep to the fake; a test clears one to see its route answer 501.
+func (f *handlerFake) deps() Deps {
+	return Deps{
 		Static: fstest.MapFS{
 			"index.html":           {Data: []byte("<html>phone</html>")},
 			"phone.js":             {Data: []byte("export {}")},
@@ -84,9 +105,9 @@ func (f *handlerFake) handler() http.Handler {
 			return nil
 		},
 		Handed: func(context.Context) ([]HandedAgent, error) { return f.handed, nil },
-		Agents: func(context.Context) ([]ListedAgent, error) { return f.agents, f.agentsErr },
-		Stream: func(ctx context.Context, tab string, sink StreamSink) error {
-			return f.stream(ctx, tab, sink)
+		Agents: func(context.Context) ([]ListedAgent, []ListedRun, error) { return f.agents, f.runs, f.agentsErr },
+		Stream: func(ctx context.Context, tab string, from int64, sink StreamSink) error {
+			return f.stream(ctx, tab, from, sink)
 		},
 		Act: func(_ context.Context, tab string, act AgentAction) error {
 			f.mu.Lock()
@@ -100,7 +121,40 @@ func (f *handlerFake) handler() http.Handler {
 			f.takenBack = append(f.takenBack, tab)
 			return f.actErr
 		},
-	})
+		Take: func(_ context.Context, tab string) error {
+			f.mu.Lock()
+			defer f.mu.Unlock()
+			f.taken = append(f.taken, tab)
+			return f.takeErr
+		},
+		Release: func(_ context.Context, tab string) error {
+			f.mu.Lock()
+			defer f.mu.Unlock()
+			f.released = append(f.released, tab)
+			return f.releaseErr
+		},
+		Transcript: func(_ context.Context, tab string, before int64) (TranscriptChunk, error) {
+			f.mu.Lock()
+			defer f.mu.Unlock()
+			f.transcriptCalls = append(f.transcriptCalls, handlerTranscriptCall{tab, before})
+			if f.transcript == nil {
+				return TranscriptChunk{}, nil
+			}
+			return f.transcript(tab, before)
+		},
+		PCLock: func(context.Context) error {
+			f.mu.Lock()
+			defer f.mu.Unlock()
+			f.pcCalls = append(f.pcCalls, "lock")
+			return f.pcLockErr
+		},
+		PCVolume: func(_ context.Context, step string) error {
+			f.mu.Lock()
+			defer f.mu.Unlock()
+			f.pcCalls = append(f.pcCalls, "volume "+step)
+			return f.pcVolumeErr
+		},
+	}
 }
 
 func handlerDo(t *testing.T, h http.Handler, method, path, body string, hdr map[string]string) *httptest.ResponseRecorder {
@@ -136,6 +190,11 @@ func TestHandlerRefusesEveryRouteWithoutAccess(t *testing.T) {
 		{http.MethodPost, "/api/answer", handlerTestAnswer},
 		{http.MethodPost, "/api/off", "{}"},
 		{http.MethodPost, "/api/subscribe", handlerTestSub},
+		{http.MethodPost, "/api/agents/tab-a/hand", "{}"},
+		{http.MethodPost, "/api/agents/tab-a/release", "{}"},
+		{http.MethodGet, "/api/agents/tab-a/transcript?before=0", ""},
+		{http.MethodPost, "/api/pc/lock", "{}"},
+		{http.MethodPost, "/api/pc/volume", `{"step":"up"}`},
 	} {
 		rec := handlerDo(t, h, rt.method, rt.path, rt.body, map[string]string{"Content-Type": "application/json", "Origin": handlerTestOrigin})
 		if rec.Code != http.StatusForbidden {
@@ -145,7 +204,8 @@ func TestHandlerRefusesEveryRouteWithoutAccess(t *testing.T) {
 			t.Errorf("%s %s: 403 body should be bare, got %q", rt.method, rt.path, rec.Body.String())
 		}
 	}
-	if len(f.answered) != 0 || len(f.subscribed) != 0 || len(f.offCalls) != 0 {
+	if len(f.answered) != 0 || len(f.subscribed) != 0 || len(f.offCalls) != 0 ||
+		len(f.taken) != 0 || len(f.released) != 0 || len(f.transcriptCalls) != 0 || len(f.pcCalls) != 0 {
 		t.Fatalf("a refused request reached a dep: %+v", f)
 	}
 }
@@ -340,7 +400,7 @@ func TestWaitingIncludesHanded(t *testing.T) {
 }
 
 // handlerSSEEvent is one SSE frame; a comment frame has only comment set.
-type handlerSSEEvent struct{ name, data, comment string }
+type handlerSSEEvent struct{ name, id, data, comment string }
 
 func handlerReadEvent(br *bufio.Reader) (handlerSSEEvent, error) {
 	var ev handlerSSEEvent
@@ -357,6 +417,8 @@ func handlerReadEvent(br *bufio.Reader) (handlerSSEEvent, error) {
 			ev.comment = strings.TrimSpace(line[1:])
 		case strings.HasPrefix(line, "event: "):
 			ev.name = line[len("event: "):]
+		case strings.HasPrefix(line, "id: "):
+			ev.id = line[len("id: "):]
 		case strings.HasPrefix(line, "data: "):
 			ev.data = line[len("data: "):]
 		}
@@ -365,9 +427,23 @@ func handlerReadEvent(br *bufio.Reader) (handlerSSEEvent, error) {
 
 func handlerOpenStream(t *testing.T, h http.Handler, tab string) (*http.Response, *bufio.Reader) {
 	t.Helper()
+	return handlerOpenStreamFrom(t, h, tab, "")
+}
+
+// handlerOpenStreamFrom opens the stream as a reconnecting EventSource does: with its Last-Event-ID when it
+// has one.
+func handlerOpenStreamFrom(t *testing.T, h http.Handler, tab, lastEventID string) (*http.Response, *bufio.Reader) {
+	t.Helper()
 	srv := httptest.NewServer(h)
 	t.Cleanup(srv.Close)
-	resp, err := http.Get(srv.URL + "/api/agents/" + tab + "/stream")
+	req, err := http.NewRequest(http.MethodGet, srv.URL+"/api/agents/"+tab+"/stream", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if lastEventID != "" {
+		req.Header.Set("Last-Event-ID", lastEventID)
+	}
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatalf("open stream: %v", err)
 	}
@@ -378,12 +454,15 @@ func handlerOpenStream(t *testing.T, h http.Handler, tab string) (*http.Response
 func TestStreamFramesAgentLinesAndEnded(t *testing.T) {
 	f := handlerNewFake()
 	var gotTab string
-	f.stream = func(_ context.Context, tab string, sink StreamSink) error {
+	f.stream = func(_ context.Context, tab string, _ int64, sink StreamSink) error {
 		gotTab = tab
 		if err := sink.Agent(HandedAgent{Tab: tab, Name: "phone-chat", State: PhoneWorking}); err != nil {
 			return err
 		}
-		if err := sink.Lines([]string{`{"type":"user"}`, `{"type":"assistant"}`}); err != nil {
+		if err := sink.Lines(TranscriptChunk{Lines: []string{`{"type":"user"}`, `{"type":"assistant"}`}, Cursor: 12, End: 57, Backlog: true}); err != nil {
+			return err
+		}
+		if err := sink.Lines(TranscriptChunk{Lines: []string{`{"type":"user"}`}, End: 80}); err != nil {
 			return err
 		}
 		return &GoneError{Reason: EndExited}
@@ -399,7 +478,10 @@ func TestStreamFramesAgentLinesAndEnded(t *testing.T) {
 	}
 	want := []handlerSSEEvent{
 		{name: "agent", data: `{"tab":"tab-a","name":"phone-chat","project":"","runtime":"","state":"working","since":0,"line":""}`},
-		{name: "lines", data: `{"lines":["{\"type\":\"user\"}","{\"type\":\"assistant\"}"]}`},
+		// a lines event carries the chunk and an id that is the byte offset after its last line; End itself
+		// stays out of the data
+		{name: "lines", id: "57", data: `{"lines":["{\"type\":\"user\"}","{\"type\":\"assistant\"}"],"cursor":12,"backlog":true}`},
+		{name: "lines", id: "80", data: `{"lines":["{\"type\":\"user\"}"],"cursor":0,"backlog":false}`},
 		{name: "ended", data: `{"reason":"exited"}`},
 	}
 	for i, w := range want {
@@ -422,7 +504,7 @@ func TestStreamHeartbeat(t *testing.T) {
 	t.Cleanup(func() { remoteStreamHeartbeat = prev })
 	f := handlerNewFake()
 	returned := make(chan error, 1)
-	f.stream = func(ctx context.Context, _ string, _ StreamSink) error {
+	f.stream = func(ctx context.Context, _ string, _ int64, _ StreamSink) error {
 		<-ctx.Done()
 		returned <- nil
 		return nil
@@ -442,7 +524,7 @@ func TestStreamHeartbeat(t *testing.T) {
 
 func TestStreamGoneIsOneEndedEvent(t *testing.T) {
 	f := handlerNewFake()
-	f.stream = func(context.Context, string, StreamSink) error { return &GoneError{Reason: EndTaken} }
+	f.stream = func(context.Context, string, int64, StreamSink) error { return &GoneError{Reason: EndTaken} }
 	resp, br := handlerOpenStream(t, f.handler(), "tab-a")
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("a gone tab must still answer 200 so EventSource can read why, got %d", resp.StatusCode)
@@ -558,5 +640,332 @@ func TestHandlerWaitingAgents(t *testing.T) {
 	f.agentsErr = errors.New("roster down")
 	if got := decode(f); got != "[]" {
 		t.Errorf("a failed roster read should send [], got %s", got)
+	}
+}
+
+func TestHandlerWaitingTakeableFlag(t *testing.T) {
+	f := handlerNewFake()
+	f.agents = []ListedAgent{{Tab: "t1", Name: "docs", State: PhoneIdle, Takeable: true}, {Tab: "t2", Name: "scan", State: PhoneIdle}}
+	rec := handlerDo(t, f.handler(), http.MethodGet, "/api/waiting", "", nil)
+	var got struct {
+		Agents []map[string]any `json:"agents"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil || len(got.Agents) != 2 {
+		t.Fatalf("GET /api/waiting = %d %s (err %v)", rec.Code, rec.Body.String(), err)
+	}
+	if got.Agents[0]["takeable"] != true || got.Agents[1]["takeable"] != false {
+		t.Errorf("takeable = %v and %v, want true and false", got.Agents[0]["takeable"], got.Agents[1]["takeable"])
+	}
+}
+
+func handlerWaitingFields(t *testing.T, d Deps) map[string]string {
+	t.Helper()
+	rec := handlerDo(t, NewHandler(d), http.MethodGet, "/api/waiting", "", nil)
+	var raw map[string]json.RawMessage
+	if rec.Code != http.StatusOK || json.Unmarshal(rec.Body.Bytes(), &raw) != nil {
+		t.Fatalf("GET /api/waiting = %d %s", rec.Code, rec.Body.String())
+	}
+	got := map[string]string{}
+	for k, v := range raw {
+		got[k] = string(v)
+	}
+	return got
+}
+
+func TestHandlerWaitingRuns(t *testing.T) {
+	f := handlerNewFake()
+	if got := handlerWaitingFields(t, f.deps())["runs"]; got != "[]" {
+		t.Errorf("no runs should send [], got %s", got)
+	}
+	f.runs = []ListedRun{{
+		Key: "dag-1", Name: "Phone agent list", NeedsYou: true,
+		Workers: []RunWorkerRow{{Tab: "w1", Label: "Review: Roster", State: PhonePermission, Line: "Wants approval", Since: 9}},
+	}}
+	want := `[{"key":"dag-1","name":"Phone agent list","needsyou":true,"workers":[{"tab":"w1","label":"Review: Roster","state":"permission","line":"Wants approval","since":9}]}]`
+	if got := handlerWaitingFields(t, f.deps())["runs"]; got != want {
+		t.Errorf("runs = %s, want %s", got, want)
+	}
+	// a roster that cannot be read leaves the runs empty too
+	f.agentsErr = errors.New("roster down")
+	if got := handlerWaitingFields(t, f.deps())["runs"]; got != "[]" {
+		t.Errorf("a failed roster read should send [] runs, got %s", got)
+	}
+	d := f.deps()
+	d.Agents = nil
+	if got := handlerWaitingFields(t, d)["runs"]; got != "[]" {
+		t.Errorf("a handler with no roster dep should send [] runs, got %s", got)
+	}
+}
+
+func TestHandlerWaitingPCFlag(t *testing.T) {
+	f := handlerNewFake()
+	both := f.deps()
+	lockOnly, volumeOnly, neither := f.deps(), f.deps(), f.deps()
+	lockOnly.PCVolume = nil
+	volumeOnly.PCLock = nil
+	neither.PCLock, neither.PCVolume = nil, nil
+	for name, c := range map[string]struct {
+		d    Deps
+		want string
+	}{"both": {both, "true"}, "lock only": {lockOnly, "false"}, "volume only": {volumeOnly, "false"}, "neither": {neither, "false"}} {
+		if got := handlerWaitingFields(t, c.d)["pc"]; got != c.want {
+			t.Errorf("%s: pc = %s, want %s", name, got, c.want)
+		}
+	}
+}
+
+// only a lines event carries an id, the byte offset after its last line; an id of 0 is still sent, and the
+// agent and ended events leave the browser's last id alone
+func TestHandlerStreamLinesCarryID(t *testing.T) {
+	f := handlerNewFake()
+	f.stream = func(_ context.Context, tab string, _ int64, sink StreamSink) error {
+		if err := sink.Agent(HandedAgent{Tab: tab}); err != nil {
+			return err
+		}
+		if err := sink.Lines(TranscriptChunk{Backlog: true}); err != nil {
+			return err
+		}
+		if err := sink.Lines(TranscriptChunk{Lines: []string{"a"}, End: 1234567890123}); err != nil {
+			return err
+		}
+		return &GoneError{Reason: EndOff}
+	}
+	_, br := handlerOpenStream(t, f.handler(), "tab-a")
+	for i, want := range []struct{ name, id string }{{"agent", ""}, {"lines", "0"}, {"lines", "1234567890123"}, {"ended", ""}} {
+		ev, err := handlerReadEvent(br)
+		if err != nil || ev.name != want.name || ev.id != want.id {
+			t.Fatalf("event %d = %+v (err %v), want %s with id %q", i, ev, err, want.name, want.id)
+		}
+	}
+}
+
+func TestHandlerStreamResumesFromLastEventID(t *testing.T) {
+	for _, c := range []struct {
+		header string
+		want   int64
+	}{
+		{"", -1}, {"57", 57}, {"0", 0},
+		// malformed or negative reads as no id: the backlog is then the last 200 lines
+		{"abc", -1}, {"-3", -1}, {"12x", -1}, {"1.5", -1},
+	} {
+		f := handlerNewFake()
+		froms := make(chan int64, 1)
+		f.stream = func(_ context.Context, _ string, from int64, _ StreamSink) error {
+			froms <- from
+			return &GoneError{Reason: EndTaken}
+		}
+		_, br := handlerOpenStreamFrom(t, f.handler(), "tab-a", c.header)
+		if _, err := handlerReadEvent(br); err != nil {
+			t.Fatalf("Last-Event-ID %q: %v", c.header, err)
+		}
+		select {
+		case got := <-froms:
+			if got != c.want {
+				t.Errorf("Last-Event-ID %q: Stream got from %d, want %d", c.header, got, c.want)
+			}
+		case <-time.After(remoteTestTimeout):
+			t.Fatalf("Last-Event-ID %q: Stream was not called", c.header)
+		}
+	}
+}
+
+// the routes this plan adds, with a body each takes
+var handlerNewPosts = []struct{ path, body string }{
+	{"/api/agents/tab-a/hand", `{}`},
+	{"/api/agents/tab-a/release", `{}`},
+	{"/api/pc/lock", `{}`},
+	{"/api/pc/volume", `{"step":"up"}`},
+}
+
+func TestHandlerNewPostsNeedOriginAndJSON(t *testing.T) {
+	f := handlerNewFake()
+	h := f.handler()
+	for _, p := range handlerNewPosts {
+		if rec := handlerDo(t, h, http.MethodPost, p.path, p.body, map[string]string{"Content-Type": "application/json"}); rec.Code != http.StatusForbidden {
+			t.Errorf("POST %s without Origin: got %d, want 403", p.path, rec.Code)
+		}
+		form := map[string]string{"Content-Type": "application/x-www-form-urlencoded", "Origin": handlerTestOrigin}
+		if rec := handlerDo(t, h, http.MethodPost, p.path, "step=up", form); rec.Code != http.StatusUnsupportedMediaType {
+			t.Errorf("POST %s as a form: got %d, want 415", p.path, rec.Code)
+		}
+	}
+	if len(f.taken) != 0 || len(f.released) != 0 || len(f.pcCalls) != 0 {
+		t.Fatalf("a refused post reached a dep: %+v", f)
+	}
+}
+
+func TestHandlerTake(t *testing.T) {
+	f := handlerNewFake()
+	h := f.handler()
+	rec := handlerPostJSON(t, h, "/api/agents/tab-a/hand", `{}`)
+	if rec.Code != http.StatusOK || strings.TrimSpace(rec.Body.String()) != `{"ok":true}` {
+		t.Fatalf("ok take: got %d %s", rec.Code, rec.Body.String())
+	}
+	if !slices.Equal(f.taken, []string{"tab-a"}) {
+		t.Fatalf("Take got %v", f.taken)
+	}
+
+	// a refusal answers 409 with the text after the sentinel, quotes and all
+	reason := `"lab-notes" (tab t-9) runs "codex": only claude and pi agents can be taken`
+	f.takeErr = fmt.Errorf("%w: %s", ErrRefused, reason)
+	rec = handlerPostJSON(t, h, "/api/agents/tab-b/hand", `{}`)
+	var body map[string]string
+	if rec.Code != http.StatusConflict || json.Unmarshal(rec.Body.Bytes(), &body) != nil ||
+		!reflect.DeepEqual(body, map[string]string{"error": "refused", "reason": reason}) {
+		t.Errorf("refused take: got %d %s, want 409 refused with the reason", rec.Code, rec.Body.String())
+	}
+
+	f.takeErr = errors.New("roster down")
+	rec = handlerPostJSON(t, h, "/api/agents/tab-c/hand", `{}`)
+	if rec.Code != http.StatusInternalServerError || strings.TrimSpace(rec.Body.String()) != `{"error":"roster down"}` {
+		t.Errorf("failed take: got %d %s, want 500 with the error", rec.Code, rec.Body.String())
+	}
+	if !slices.Equal(f.taken, []string{"tab-a", "tab-b", "tab-c"}) {
+		t.Errorf("Take got %v", f.taken)
+	}
+}
+
+func TestHandlerRelease(t *testing.T) {
+	f := handlerNewFake()
+	h := f.handler()
+	if rec := handlerPostJSON(t, h, "/api/agents/tab-a/release", `{}`); rec.Code != http.StatusOK || strings.TrimSpace(rec.Body.String()) != `{"ok":true}` {
+		t.Fatalf("ok release: got %d %s", rec.Code, rec.Body.String())
+	}
+	// a tab that is no longer handed over has nothing to release, which is not a failure
+	f.releaseErr = &GoneError{Reason: EndTaken}
+	if rec := handlerPostJSON(t, h, "/api/agents/tab-b/release", `{}`); rec.Code != http.StatusOK || strings.TrimSpace(rec.Body.String()) != `{"ok":true}` {
+		t.Errorf("release of a gone tab: got %d %s, want 200 ok", rec.Code, rec.Body.String())
+	}
+	f.releaseErr = errors.New("roster down")
+	if rec := handlerPostJSON(t, h, "/api/agents/tab-c/release", `{}`); rec.Code != http.StatusInternalServerError {
+		t.Errorf("failed release: got %d %s, want 500", rec.Code, rec.Body.String())
+	}
+	if !slices.Equal(f.released, []string{"tab-a", "tab-b", "tab-c"}) {
+		t.Errorf("Release got %v", f.released)
+	}
+}
+
+func TestHandlerTranscript(t *testing.T) {
+	f := handlerNewFake()
+	h := f.handler()
+	get := func(query string) *httptest.ResponseRecorder {
+		return handlerDo(t, h, http.MethodGet, "/api/agents/tab-a/transcript"+query, "", nil)
+	}
+	f.transcript = func(string, int64) (TranscriptChunk, error) {
+		return TranscriptChunk{Lines: []string{`{"a":1}`, `{"b":2}`}, Cursor: 120, End: 999, Backlog: true}, nil
+	}
+	rec := get("?before=300")
+	// only the lines and the cursor: End is internal and a page is never the stream's backlog
+	if rec.Code != http.StatusOK || strings.TrimSpace(rec.Body.String()) != `{"lines":["{\"a\":1}","{\"b\":2}"],"cursor":120}` {
+		t.Fatalf("page: got %d %s", rec.Code, rec.Body.String())
+	}
+	if cc := rec.Header().Get("Cache-Control"); cc != "no-store" {
+		t.Errorf("Cache-Control %q", cc)
+	}
+	if want := []handlerTranscriptCall{{"tab-a", 300}}; !reflect.DeepEqual(f.transcriptCalls, want) {
+		t.Fatalf("Transcript got %+v, want %+v", f.transcriptCalls, want)
+	}
+
+	// before 0 is a valid ask; an empty page sends [] and not null
+	f.transcript = nil
+	rec = get("?before=0")
+	if rec.Code != http.StatusOK || strings.TrimSpace(rec.Body.String()) != `{"lines":[],"cursor":0}` {
+		t.Errorf("before=0: got %d %s", rec.Code, rec.Body.String())
+	}
+
+	calls := len(f.transcriptCalls)
+	for _, query := range []string{"", "?before=", "?before=abc", "?before=-1", "?before=1.5", "?before=99999999999999999999", "?after=5"} {
+		if rec := get(query); rec.Code != http.StatusBadRequest {
+			t.Errorf("GET transcript%s: got %d %s, want 400", query, rec.Code, rec.Body.String())
+		}
+	}
+	if len(f.transcriptCalls) != calls {
+		t.Fatalf("a malformed ask reached Transcript: %+v", f.transcriptCalls[calls:])
+	}
+
+	f.transcript = func(string, int64) (TranscriptChunk, error) { return TranscriptChunk{}, &GoneError{Reason: EndExited} }
+	if rec := get("?before=10"); rec.Code != http.StatusGone || strings.TrimSpace(rec.Body.String()) != `{"error":"gone","reason":"exited"}` {
+		t.Errorf("gone: got %d %s, want 410 with the reason", rec.Code, rec.Body.String())
+	}
+	f.transcript = func(string, int64) (TranscriptChunk, error) { return TranscriptChunk{}, errors.New("read failed") }
+	if rec := get("?before=10"); rec.Code != http.StatusInternalServerError || strings.TrimSpace(rec.Body.String()) != `{"error":"read failed"}` {
+		t.Errorf("failed read: got %d %s, want 500 with the error", rec.Code, rec.Body.String())
+	}
+}
+
+func TestHandlerPC(t *testing.T) {
+	f := handlerNewFake()
+	h := f.handler()
+	if rec := handlerPostJSON(t, h, "/api/pc/lock", `{}`); rec.Code != http.StatusOK || strings.TrimSpace(rec.Body.String()) != `{"ok":true}` {
+		t.Fatalf("lock: got %d %s", rec.Code, rec.Body.String())
+	}
+	for _, step := range []string{"down", "mute", "up"} {
+		if rec := handlerPostJSON(t, h, "/api/pc/volume", `{"step":"`+step+`"}`); rec.Code != http.StatusOK {
+			t.Errorf("volume %s: got %d %s", step, rec.Code, rec.Body.String())
+		}
+	}
+	if want := []string{"lock", "volume down", "volume mute", "volume up"}; !slices.Equal(f.pcCalls, want) {
+		t.Fatalf("PC got %v, want %v", f.pcCalls, want)
+	}
+
+	// a step the page never sends is the page's bug: 400, and nothing presses a key
+	for _, body := range []string{`{"step":"louder"}`, `{"step":"DOWN"}`, `{"step":""}`, `{}`, `not json`} {
+		if rec := handlerPostJSON(t, h, "/api/pc/volume", body); rec.Code != http.StatusBadRequest {
+			t.Errorf("volume %s: got %d %s, want 400", body, rec.Code, rec.Body.String())
+		}
+	}
+	if len(f.pcCalls) != 4 {
+		t.Fatalf("a bad step reached PCVolume: %v", f.pcCalls[4:])
+	}
+
+	f.pcLockErr = errors.New("LockWorkStation failed: access denied")
+	if rec := handlerPostJSON(t, h, "/api/pc/lock", `{}`); rec.Code != http.StatusInternalServerError || strings.TrimSpace(rec.Body.String()) != `{"error":"LockWorkStation failed: access denied"}` {
+		t.Errorf("failed lock: got %d %s, want 500 with the error", rec.Code, rec.Body.String())
+	}
+	f.pcVolumeErr = errors.New("volume key refused")
+	if rec := handlerPostJSON(t, h, "/api/pc/volume", `{"step":"mute"}`); rec.Code != http.StatusInternalServerError || strings.TrimSpace(rec.Body.String()) != `{"error":"volume key refused"}` {
+		t.Errorf("failed volume: got %d %s, want 500 with the error", rec.Code, rec.Body.String())
+	}
+}
+
+// a handler built without one of the new deps answers 501 on its route instead of panicking
+func TestHandlerNilDepsAnswer501(t *testing.T) {
+	for _, c := range []struct {
+		name, method, path, body string
+		clear                    func(*Deps)
+	}{
+		{"Take", http.MethodPost, "/api/agents/tab-a/hand", `{}`, func(d *Deps) { d.Take = nil }},
+		{"Release", http.MethodPost, "/api/agents/tab-a/release", `{}`, func(d *Deps) { d.Release = nil }},
+		{"Transcript", http.MethodGet, "/api/agents/tab-a/transcript?before=0", "", func(d *Deps) { d.Transcript = nil }},
+		{"PCLock", http.MethodPost, "/api/pc/lock", `{}`, func(d *Deps) { d.PCLock = nil }},
+		{"PCVolume", http.MethodPost, "/api/pc/volume", `{"step":"up"}`, func(d *Deps) { d.PCVolume = nil }},
+		// the nil dep wins over a bad step: the computer cannot do any of it
+		{"PCVolume with a bad step", http.MethodPost, "/api/pc/volume", `{"step":"louder"}`, func(d *Deps) { d.PCVolume = nil }},
+	} {
+		d := handlerNewFake().deps()
+		c.clear(&d)
+		rec := handlerDo(t, NewHandler(d), c.method, c.path, c.body, map[string]string{"Content-Type": "application/json", "Origin": handlerTestOrigin})
+		if rec.Code != http.StatusNotImplemented || strings.TrimSpace(rec.Body.String()) != `{"error":"Not supported on this computer"}` {
+			t.Errorf("nil %s: got %d %s, want 501", c.name, rec.Code, rec.Body.String())
+		}
+	}
+}
+
+// remoteDeps is what the running phone listener is built from: every route needs its dep, and the PC ones
+// are wired only where the platform supports them.
+func TestRemoteDepsWiresEveryRoute(t *testing.T) {
+	d := remoteDeps(Config{Provider: ProviderTailscale}, context.Background())
+	for name, wired := range map[string]bool{
+		"Static": d.Static != nil, "Verify": d.Verify != nil, "Waiting": d.Waiting != nil, "Answer": d.Answer != nil,
+		"Off": d.Off != nil, "Subscribe": d.Subscribe != nil, "Handed": d.Handed != nil, "Agents": d.Agents != nil,
+		"Stream": d.Stream != nil, "Act": d.Act != nil, "TakeBack": d.TakeBack != nil,
+		"Take": d.Take != nil, "Release": d.Release != nil, "Transcript": d.Transcript != nil,
+	} {
+		if !wired {
+			t.Errorf("remoteDeps leaves %s unset", name)
+		}
+	}
+	if (d.PCLock != nil) != pcSupported || (d.PCVolume != nil) != pcSupported {
+		t.Errorf("PCLock set %v, PCVolume set %v, want both %v (pcSupported)", d.PCLock != nil, d.PCVolume != nil, pcSupported)
 	}
 }

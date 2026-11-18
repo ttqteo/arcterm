@@ -23,8 +23,12 @@ type WaitingList struct {
 	Shown       []WaitingShown    `json:"shown"`
 	// Handed is filled by the handler from Deps.Handed
 	Handed []HandedAgent `json:"handed"`
-	// Agents is filled by the handler from Deps.Agents: every roster agent, shown only
+	// Agents is filled by the handler from Deps.Agents: every live roster agent that no run started
 	Agents []ListedAgent `json:"agents"`
+	// Runs is filled by the handler from Deps.Agents: the runs that have a live worker, always an array
+	Runs []ListedRun `json:"runs"`
+	// PC is whether the computer's Lock and volume controls work here, set by the handler from its deps
+	PC bool `json:"pc"`
 }
 
 // WaitingQuestion is an agent question the phone can answer.

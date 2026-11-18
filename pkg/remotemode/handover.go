@@ -27,13 +27,27 @@ type Agent struct {
 	OpenAsk                                                bool
 	HasStream                                              bool // the arc mod's control stream is open (claude's liveness)
 	RunWorker                                              bool
+	// RunKey is the group a run worker lists under, RunName the run's name and RunLine the worker's own
+	// line ("Review: <task>", the task's label, "Plan reviewer"); all three are "" for an agent no run
+	// started.
+	RunKey, RunName, RunLine string
+	// Ask is the text of the open ask's first question, "" with no ask open.
+	Ask string
 }
 
-// AgentsHook and TranscriptHook are set by wshserver, which owns the roster and the transcript tailer and
-// imports this package. A nil AgentsHook means no agents, so Hand refuses.
+// AgentsHook, TranscriptHook and TranscriptPageHook are set by wshserver, which owns the roster and the
+// transcript reader and imports this package. A nil AgentsHook means no agents, so Hand refuses.
+//
+// TranscriptHook streams the transcript at path into send: first a backlog chunk (Backlog true), then one
+// chunk per batch appended. A from below 0 makes the backlog the last 200 lines; otherwise it is the lines
+// from byte offset from on. It returns the first error from send or the stream, and nil once ctx is done.
+//
+// TranscriptPageHook gives the page of up to maxLines complete lines that ends at byte offset before,
+// with Cursor the offset of its first line (0 at the file's start).
 var (
-	AgentsHook     func(ctx context.Context) ([]Agent, error)
-	TranscriptHook func(ctx context.Context, path string, tailLines int, send func(lines []string) error) error
+	AgentsHook         func(ctx context.Context) ([]Agent, error)
+	TranscriptHook     func(ctx context.Context, path string, from int64, send func(TranscriptChunk) error) error
+	TranscriptPageHook func(path string, before int64, maxLines int) (TranscriptChunk, error)
 )
 
 // why a tab is no longer handed over

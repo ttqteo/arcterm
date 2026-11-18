@@ -147,10 +147,10 @@ func (p *preview) handedList(context.Context) ([]remotemode.HandedAgent, error) 
 	return slices.Clone(p.handed), nil
 }
 
-func (p *preview) agentsList(context.Context) ([]remotemode.ListedAgent, error) {
+func (p *preview) agentsList(context.Context) ([]remotemode.ListedAgent, []remotemode.ListedRun, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	return slices.Clone(p.agents), nil
+	return slices.Clone(p.agents), nil, nil
 }
 
 // lookup gives the hand-over for tab, or why it is not one: a tab never handed over reads as taken, as
@@ -169,8 +169,9 @@ func (p *preview) lookup(tab string) (remotemode.HandedAgent, error) {
 	return remotemode.HandedAgent{}, &remotemode.GoneError{Reason: remotemode.EndTaken}
 }
 
-// stream sends the agent and its whole transcript, then holds the stream open until the page leaves.
-func (p *preview) stream(ctx context.Context, tab string, sink remotemode.StreamSink) error {
+// stream sends the agent and its whole transcript, then holds the stream open until the page leaves. It
+// ignores from and sets no offsets: the transcript is always resent whole.
+func (p *preview) stream(ctx context.Context, tab string, _ int64, sink remotemode.StreamSink) error {
 	a, err := p.lookup(tab)
 	if err != nil {
 		return err
@@ -178,7 +179,7 @@ func (p *preview) stream(ctx context.Context, tab string, sink remotemode.Stream
 	if err := sink.Agent(a); err != nil {
 		return err
 	}
-	if err := sink.Lines(p.transcripts[tab]); err != nil {
+	if err := sink.Lines(remotemode.TranscriptChunk{Lines: p.transcripts[tab], Backlog: true}); err != nil {
 		return err
 	}
 	<-ctx.Done()
@@ -303,7 +304,7 @@ func fixtureHanded(name string, now time.Time) []remotemode.HandedAgent {
 }
 
 // fixtureAgents is the roster behind the Agents list: the main fixture's hand-overs, which the page leaves
-// out since they show under Handed over, and three agents that stay at the desk.
+// out since they show under Handed over, and two agents that stay at the desk.
 func fixtureAgents(name string, now time.Time) []remotemode.ListedAgent {
 	if name != fixtureMain {
 		return nil
@@ -324,10 +325,6 @@ func fixtureAgents(name string, now time.Time) []remotemode.ListedAgent {
 		remotemode.ListedAgent{
 			Tab: "fx-lab-notes", Name: "lab-notes", Project: "mit-thesis", Runtime: "claude",
 			State: remotemode.PhoneIdle, Since: ago(25 * time.Minute),
-		},
-		remotemode.ListedAgent{
-			Tab: "fx-old-spike", Name: "old-spike", Project: "waveterm", Runtime: "claude",
-			State: remotemode.PhoneEnded, Since: ago(3 * time.Hour),
 		},
 	)
 }

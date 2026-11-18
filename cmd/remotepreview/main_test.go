@@ -146,10 +146,10 @@ func (s *previewSink) Agent(a remotemode.HandedAgent) error {
 	return nil
 }
 
-func (s *previewSink) Lines(lines []string) error {
+func (s *previewSink) Lines(c remotemode.TranscriptChunk) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.lines = append(s.lines, lines...)
+	s.lines = append(s.lines, c.Lines...)
 	return nil
 }
 
@@ -197,7 +197,7 @@ func TestPreviewStreamProjectsBoards(t *testing.T) {
 		cancel()
 		for _, a := range p.handed {
 			var sink previewSink
-			if err := p.stream(ctx, a.Tab, &sink); err != nil {
+			if err := p.stream(ctx, a.Tab, -1, &sink); err != nil {
 				t.Fatalf("stream %s: %v", a.Tab, err)
 			}
 			if len(sink.agents) != 1 || sink.agents[0] != a {
@@ -246,10 +246,10 @@ func TestPreviewRecordsInputAndTakeBack(t *testing.T) {
 			t.Fatalf("%s: want gone %s, got %v", what, reason, err)
 		}
 	}
-	wantGone("stream after take-back", remotemode.EndTaken, p.stream(ctx, chat, &previewSink{}))
+	wantGone("stream after take-back", remotemode.EndTaken, p.stream(ctx, chat, -1, &previewSink{}))
 	wantGone("act after take-back", remotemode.EndTaken, p.act(ctx, chat, remotemode.AgentAction{Kind: remotemode.ActionSend, Text: "hi"}))
 	wantGone("take back twice", remotemode.EndTaken, p.takeBack(ctx, chat))
-	wantGone("the exited tab", remotemode.EndExited, p.stream(ctx, exitedTab, &previewSink{}))
+	wantGone("the exited tab", remotemode.EndExited, p.stream(ctx, exitedTab, -1, &previewSink{}))
 	wantGone("a tab never handed over", remotemode.EndTaken, p.act(ctx, "fx-nope", remotemode.AgentAction{Kind: remotemode.ActionStop}))
 	if strings.Count(out.String(), "\n") != 3 {
 		t.Fatalf("a refused action must record nothing, got:\n%s", out.String())

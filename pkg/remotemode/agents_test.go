@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"sync"
 	"testing"
 	"time"
@@ -34,10 +35,11 @@ func (r *agentsTestTyped) get() ([]string, []string) {
 }
 
 // agentsTestTail is a scripted TranscriptHook: it sends its backlog, then waits for the stream to end;
-// exited closes when the last call returns.
+// exited closes when the last call returns. froms holds the offset each call was asked to start from.
 type agentsTestTail struct {
 	backlog []string
 	calls   chan string
+	froms   chan int64
 	exited  chan struct{}
 }
 
@@ -58,12 +60,13 @@ func agentsTestRecordInput(t *testing.T) *agentsTestTyped {
 
 func agentsTestScriptTail(t *testing.T, backlog ...string) *agentsTestTail {
 	t.Helper()
-	tail := &agentsTestTail{backlog: backlog, calls: make(chan string, 4), exited: make(chan struct{})}
+	tail := &agentsTestTail{backlog: backlog, calls: make(chan string, 4), froms: make(chan int64, 4), exited: make(chan struct{})}
 	prev := TranscriptHook
-	TranscriptHook = func(ctx context.Context, path string, _ int, send func([]string) error) error {
+	TranscriptHook = func(ctx context.Context, path string, from int64, send func(TranscriptChunk) error) error {
 		defer close(tail.exited)
 		tail.calls <- path
-		if err := send(tail.backlog); err != nil {
+		tail.froms <- from
+		if err := send(TranscriptChunk{Lines: tail.backlog, Backlog: true}); err != nil {
 			return err
 		}
 		<-ctx.Done()
@@ -232,15 +235,15 @@ func TestHandedLine(t *testing.T) {
 // agentsTestSink records what a stream sent.
 type agentsTestSink struct {
 	agents chan HandedAgent
-	lines  chan []string
+	lines  chan TranscriptChunk
 }
 
 func agentsTestNewSink() *agentsTestSink {
-	return &agentsTestSink{agents: make(chan HandedAgent, 16), lines: make(chan []string, 16)}
+	return &agentsTestSink{agents: make(chan HandedAgent, 16), lines: make(chan TranscriptChunk, 16)}
 }
 
-func (s *agentsTestSink) Agent(a HandedAgent) error { s.agents <- a; return nil }
-func (s *agentsTestSink) Lines(l []string) error    { s.lines <- l; return nil }
+func (s *agentsTestSink) Agent(a HandedAgent) error     { s.agents <- a; return nil }
+func (s *agentsTestSink) Lines(c TranscriptChunk) error { s.lines <- c; return nil }
 
 func agentsTestRecv[T any](t *testing.T, ch <-chan T, what string) T {
 	t.Helper()
@@ -263,7 +266,7 @@ func TestStreamSendsAgentLinesAndChanges(t *testing.T) {
 	sink := agentsTestNewSink()
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
-	go func() { done <- remoteStream(ctx, "tab-a", sink) }()
+	go func() { done <- remoteStream(ctx, "tab-a", -1, sink) }()
 
 	if got := agentsTestRecv(t, sink.agents, "agent"); got.State != PhoneIdle {
 		t.Errorf("first agent state %q, want idle", got.State)
@@ -271,8 +274,8 @@ func TestStreamSendsAgentLinesAndChanges(t *testing.T) {
 	if got := agentsTestRecv(t, tail.calls, "tail call"); got != a.TranscriptPath {
 		t.Errorf("tailed %q, want %q", got, a.TranscriptPath)
 	}
-	if got := agentsTestRecv(t, sink.lines, "lines"); !slices.Equal(got, []string{`{"type":"user"}`}) {
-		t.Errorf("lines %q", got)
+	if got := agentsTestRecv(t, sink.lines, "lines"); !slices.Equal(got.Lines, []string{`{"type":"user"}`}) || !got.Backlog {
+		t.Errorf("lines %+v, want the backlog chunk with the one line", got)
 	}
 	roster.edit("tab-a", func(a *Agent) {
 		a.Status.State = baseds.AgentState_Working
@@ -293,6 +296,30 @@ func TestStreamSendsAgentLinesAndChanges(t *testing.T) {
 	agentsTestRecv(t, tail.exited, "tail exit")
 }
 
+// a reconnecting page's Last-Event-ID reaches the transcript tail as its start offset, and -1 (none) asks for
+// the last 200 lines
+func TestStreamPassesFromToTranscript(t *testing.T) {
+	for _, from := range []int64{-1, 0, 57} {
+		t.Run(strconv.FormatInt(from, 10), func(t *testing.T) {
+			a := handTestClaude("tab-a")
+			a.TranscriptPath = "C:/t/session.jsonl"
+			handTestEnv(t, a)
+			handTestHand(t, "tab-a")
+			agentsTestPoll(t, 20*time.Millisecond)
+			tail := agentsTestScriptTail(t)
+			sink := agentsTestNewSink()
+			ctx, cancel := context.WithCancel(context.Background())
+			done := make(chan error, 1)
+			go func() { done <- remoteStream(ctx, "tab-a", from, sink) }()
+			if got := agentsTestRecv(t, tail.froms, "tail from"); got != from {
+				t.Errorf("the tail was asked to start from %d, want %d", got, from)
+			}
+			cancel()
+			agentsTestRecv(t, done, "stream end")
+		})
+	}
+}
+
 func TestStreamWithoutTranscriptWaits(t *testing.T) {
 	handTestEnv(t, handTestClaude("tab-a"))
 	handTestHand(t, "tab-a")
@@ -301,7 +328,7 @@ func TestStreamWithoutTranscriptWaits(t *testing.T) {
 	sink := agentsTestNewSink()
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
-	go func() { done <- remoteStream(ctx, "tab-a", sink) }()
+	go func() { done <- remoteStream(ctx, "tab-a", -1, sink) }()
 	agentsTestRecv(t, sink.agents, "agent")
 	select {
 	case err := <-done:
@@ -329,7 +356,7 @@ func TestStreamEndsWhenAgentExits(t *testing.T) {
 	tail := agentsTestScriptTail(t)
 	sink := agentsTestNewSink()
 	done := make(chan error, 1)
-	go func() { done <- remoteStream(context.Background(), "tab-a", sink) }()
+	go func() { done <- remoteStream(context.Background(), "tab-a", -1, sink) }()
 	agentsTestRecv(t, sink.agents, "agent")
 	agentsTestRecv(t, tail.calls, "tail call")
 
