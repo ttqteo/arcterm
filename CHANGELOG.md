@@ -33,6 +33,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 - A shell command in a Chat reply (a `bash`, `sh` or `powershell` block) has a Run button: it opens a terminal in the
   panel under the agent, in the folder the agent works in, and runs the command there.
+- A shell command shows in colour as you type it in Chat's bash mode and in a reply's shell block: the command apart
+  from its arguments, flags and pipes dimmed, variables and strings in their own colours.
 - A turn in which the agent drew design boards now ends in a Canvas card in Chat, with a small live picture of each
   board it drew: click one to look at it full size over Chat, Look at all to see them side by side, or Open in Canvas.
 - Sidecar shows what everything takes, like Task Manager: on a big enough window a Resources column beside the

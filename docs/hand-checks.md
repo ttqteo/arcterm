@@ -16,6 +16,11 @@ list (its number is not reused).
 Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) ·
 [part 4](hand-checks-4.md) · [part 3](hand-checks-3.md) · [part 2](hand-checks-2.md) (oldest).
 
+- [ ] (arcterm) **A shell command in colour.** In Chat type `!` then `git log --oneline -3 | head "$HOME"`: `git` and
+  `head` in the keyword blue, `log` in the string green, `--oneline`, `-3` and `|` dimmed, `"$HOME"` green; the caret
+  shows and moves where it should, a selection shows its band, the grey ghost text still sits after the last character,
+  and a command long enough to wrap or scroll stays lined up with its colours. A reply's `bash` block draws the same
+  colours. Branch `feat/codeblock-run`.
 - [ ] (arcterm) **A shell block in Chat has Run.** Ask an agent for a command in a `bash` block written `! git status`:
   its head shows Run beside Wrap; Run opens a terminal in the panel under that agent, in the agent's folder (its
   worktree when it has one), and `git status` runs there without the `! `. A `ts` or `json` block has no Run; with no

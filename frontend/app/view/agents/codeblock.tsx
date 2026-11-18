@@ -11,6 +11,7 @@ import { isRunnableLang, runnableCommand } from "./coderun";
 import { runInTerminal } from "./coderunstore";
 import { highlightLine, isPlainLang, type CodeToken } from "./highlight";
 import { PINNED_PROMPT_HEIGHT_VAR } from "./pinnedpromptbar";
+import { shellLine } from "./shellhighlight";
 
 // Wrap long lines instead of scrolling sideways, on by default. One mode for every code block, kept across
 // reloads (atomWithStorage convention, see cockpitprefsstore.ts).
@@ -22,10 +23,12 @@ export function CodeBlock({ code, lang, path }: { code: string; lang?: string; p
     const [wrap, setWrap] = useAtom(codeWrapAtom);
     const lines = code.replace(/\n$/, "").split("\n");
     const plain = isPlainLang(lang);
+    const shell = isRunnableLang(lang);
+    // a shell block in the shell's colours (the command apart from its arguments), as Chat's bash box draws it
     const tokens = (ln: string): CodeToken[] =>
-        plain ? [{ t: ln || " ", cls: "text-syntax-ident" }] : highlightLine(ln);
+        plain ? [{ t: ln || " ", cls: "text-syntax-ident" }] : shell ? shellLine(ln) : highlightLine(ln);
     // a shell block is a command the reply means you to run: Run types it into a new terminal (coderunstore.ts)
-    const command = isRunnableLang(lang) ? runnableCommand(code) : undefined;
+    const command = shell ? runnableCommand(code) : undefined;
     const run = () => {
         if (command == null) {
             return;
