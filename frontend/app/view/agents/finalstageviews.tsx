@@ -13,7 +13,8 @@ import { getWebServerEndpoint } from "@/util/endpoints";
 import { fetch } from "@/util/fetchutil";
 import { cn, fireAndForget } from "@/util/util";
 import { atom, useAtomValue, type Atom } from "jotai";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { parseAnsiLines, runCss } from "./ansitext";
 import { dockButtonClass, EndFinalForm } from "./endfinalform";
 import {
     finalStageView,
@@ -26,6 +27,7 @@ import {
     type FinalStepKey,
     type FinalTone,
 } from "./finalstage";
+import { toneLine, type OutputTone } from "./outputtone";
 import { rerunFinalStage } from "./runactions";
 import { useRunEvents } from "./runeventstore";
 
@@ -276,8 +278,55 @@ export function FinalStepStrip({ view }: { view: FinalStageView }) {
 
 // A running command's output tail, its last `lines` lines when given. Draws nothing with no output. A line wider than
 // the box wraps, broken anywhere (a path has no space to break at): one cut at the edge hid where a dev app started.
+// a toned line's colours (outputtone.ts): a failure's whole line, a pass's mark, a heading brighter
+const TONE_LINE: Record<OutputTone, string> = {
+    pass: "",
+    fail: "text-error",
+    warn: "text-warning",
+    skip: "text-muted",
+    head: "text-ink-hi",
+    plain: "",
+};
+const TONE_MARK: Record<OutputTone, string> = {
+    pass: "text-success",
+    fail: "",
+    warn: "",
+    skip: "",
+    head: "",
+    plain: "",
+};
+
+// One line of output: in the colours the program printed it in, or, when it printed none (the engine runs it with no
+// terminal), in the colours its text calls for (outputtone.ts)
+function OutputLine({ runs }: { runs: ReturnType<typeof parseAnsiLines>[number] }) {
+    if (runs.some((r) => Object.keys(r.style).length > 0)) {
+        return (
+            <div>
+                {runs.map((r, i) => (
+                    <span key={i} style={runCss(r.style, "var(--color-ink-mid)", "var(--color-surface-code)")}>
+                        {r.text}
+                    </span>
+                ))}
+            </div>
+        );
+    }
+    const line = toneLine(runs.map((r) => r.text).join(""));
+    // an empty line keeps its height
+    if (line.mark === "" && line.body === "" && line.time === "") {
+        return <div>{"\n"}</div>;
+    }
+    return (
+        <div data-output-tone={line.tone} className={TONE_LINE[line.tone]}>
+            {line.mark !== "" ? <span className={TONE_MARK[line.tone]}>{line.mark}</span> : null}
+            {line.body}
+            {line.time !== "" ? <span className="text-muted">{line.time}</span> : null}
+        </div>
+    );
+}
+
 export function FinalOutput({ output, lines, className }: { output: string; lines?: number; className?: string }) {
     const text = lines == null ? output.trimEnd() : outputTail(output, lines);
+    const parsed = useMemo(() => parseAnsiLines(text.split("\n")), [text]);
     if (text === "") {
         return null;
     }
@@ -289,7 +338,9 @@ export function FinalOutput({ output, lines, className }: { output: string; line
                 className
             )}
         >
-            {text}
+            {parsed.map((runs, i) => (
+                <OutputLine key={i} runs={runs} />
+            ))}
         </div>
     );
 }

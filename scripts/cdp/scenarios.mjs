@@ -24461,6 +24461,8 @@ const FST_LONG = `${FST_MARK} long ${"/users/x/final-shots/f68b0618-72a1/tauri.f
 const FST_LIVE_VERIFY = `printf '${FST_MARK} 1\\n${FST_LONG}\\n${FST_MARK} 2\\n${FST_MARK} 3\\n'; for i in $(seq 1 300); do sleep 3; echo "${FST_MARK} still running $i"; done`;
 const FST_LIVE_FINAL = "true";
 const FST_KEPT_MARK = "final-stage kept check output";
+// the kept output's other lines, as vitest and go test print them with no terminal: drawn in their tones (outputtone.ts)
+const FST_KEPT_TONED = ["task: [check:ts] node tsc.js --noEmit", " ✓ a.test.ts > passes 1ms", " × a.test.ts > breaks 2ms", "ok  \tpkg/x\t0.5s"];
 const FST_DETAIL = [
     `Final \`${FINAL_SHOTS_CMD}\` failed (exit 1):`,
     "FAIL jarvis-peek 4. the narrow panel stays bounded with a pinned header, no horizontal overflow, and an unclipped harness picker",
@@ -25102,13 +25104,17 @@ const finalStageScenario = {
         // written here, so Verify stands for a step whose output is gone
         const keptDir = join(ctx.out, "1-steps");
         mkdirSync(keptDir, { recursive: true });
-        writeFileSync(join(keptDir, "check.txt"), `${FST_KEPT_MARK}\n`);
+        writeFileSync(join(keptDir, "check.txt"), `${[FST_KEPT_MARK, ...FST_KEPT_TONED].join("\n")}\n`);
         await fstAgent(h, (s) => s.rows[0].selected && s.pane != null, reselect(wait));
         const paneCell = (key) => `${FST_PANE}?.querySelector('[data-final-step="${key}"]')`;
         const keptRead = `(() => ({
             pane: (${FST_PANE}?.textContent ?? "").replace(/\\s+/g, " ").trim(),
             pressed: [...(${FST_PANE}?.querySelectorAll('[data-final-step][aria-pressed="true"]') ?? [])].map((c) => c.getAttribute("data-final-step")),
             rail: (${FST_RAIL}?.querySelector("[data-final-rail]")?.textContent ?? "").replace(/\\s+/g, " ").trim(),
+            tones: [...(${FST_PANE}?.querySelectorAll("[data-final-output] [data-output-tone]") ?? [])].map((l) => l.getAttribute("data-output-tone")),
+            // a pass line's mark is green and the line itself is not; a failure's whole line is red
+            passMark: (() => { const l = ${FST_PANE}?.querySelector('[data-output-tone="pass"]'); return l ? [getComputedStyle(l.firstElementChild).color, getComputedStyle(l).color] : null; })(),
+            failLine: (() => { const l = ${FST_PANE}?.querySelector('[data-output-tone="fail"]'); return l ? getComputedStyle(l).color : null; })(),
         }))()`;
         await finalShotsClick(h, paneCell("check"));
         const keptCheck = await fstUntil(h, keptRead, (s) => s.pane.includes(FST_KEPT_MARK));
@@ -25132,10 +25138,15 @@ const finalStageScenario = {
         await finalShotsClick(h, dagCell);
         const keptDagClosed = await fstUntil(h, dagRead, (s) => s.expanded.length === 0);
         rec(
-            "B5b. a step that ended opens the output it kept: Check's from the pane, the rail and the DAG peek card (under its row, the outcome still shown), Verify's says none was kept, and a second click returns to the outcome",
+            "B5b. a step that ended opens the output it kept: Check's from the pane (in tones: a heading, a pass's mark green, a failure red), the rail and the DAG peek card (under its row, the outcome still shown), Verify's says none was kept, and a second click returns to the outcome",
             () =>
                 fstSame(keptCheck.pressed, ["check"]) &&
                 keptCheck.pane.includes(`$ ${FST_CHECK}`) &&
+                fstSame(keptCheck.tones, ["plain", "head", "pass", "fail", "pass"]) &&
+                keptCheck.passMark != null &&
+                keptCheck.passMark[0] !== keptCheck.passMark[1] &&
+                keptCheck.failLine != null &&
+                keptCheck.failLine !== keptCheck.passMark[1] &&
                 fstSame(keptGone.pressed, ["verify"]) &&
                 !keptGone.pane.includes(FST_KEPT_MARK) &&
                 keptClosed.pane.includes(fstFlat(FST_DETAIL)) &&
