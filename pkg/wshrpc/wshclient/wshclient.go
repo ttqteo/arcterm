@@ -309,6 +309,18 @@ func ChatSuggestCommand(w *wshutil.WshRpc, data wshrpc.CommandChatSuggestData, o
 	return resp, err
 }
 
+// command "chatsuggesthookbegin", wshserver.ChatSuggestHookBeginCommand
+func ChatSuggestHookBeginCommand(w *wshutil.WshRpc, data wshrpc.CommandChatSuggestHookBeginData, opts *wshrpc.RpcOpts) (*wshrpc.CommandChatSuggestHookBeginRtnData, error) {
+	resp, err := sendRpcRequestCallHelper[*wshrpc.CommandChatSuggestHookBeginRtnData](w, "chatsuggesthookbegin", data, opts)
+	return resp, err
+}
+
+// command "chatsuggesthookend", wshserver.ChatSuggestHookEndCommand
+func ChatSuggestHookEndCommand(w *wshutil.WshRpc, data wshrpc.CommandChatSuggestHookEndData, opts *wshrpc.RpcOpts) error {
+	_, err := sendRpcRequestCallHelper[any](w, "chatsuggesthookend", data, opts)
+	return err
+}
+
 // command "checkmemoryhygiene", wshserver.CheckMemoryHygieneCommand
 func CheckMemoryHygieneCommand(w *wshutil.WshRpc, data wshrpc.CommandCheckMemoryHygieneData, opts *wshrpc.RpcOpts) error {
 	_, err := sendRpcRequestCallHelper[any](w, "checkmemoryhygiene", data, opts)

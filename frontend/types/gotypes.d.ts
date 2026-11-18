@@ -797,6 +797,30 @@ declare global {
         reply: string;
         recent?: string[];
         question?: boolean;
+        blockid?: string;
+        hook?: boolean;
+    };
+
+    // wshrpc.CommandChatSuggestHookBeginData
+    type CommandChatSuggestHookBeginData = {
+        blockid: string;
+        reply: string;
+        recent?: string[];
+    };
+
+    // wshrpc.CommandChatSuggestHookBeginRtnData
+    type CommandChatSuggestHookBeginRtnData = {
+        key: string;
+        system: string;
+        prompt: string;
+    };
+
+    // wshrpc.CommandChatSuggestHookEndData
+    type CommandChatSuggestHookEndData = {
+        blockid: string;
+        key: string;
+        text?: string;
+        failed?: boolean;
     };
 
     // wshrpc.CommandChatSuggestRtnData

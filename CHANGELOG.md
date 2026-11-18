@@ -56,6 +56,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- A Claude agent's suggested replies in Chat come sooner, about 2 s after its turn ends instead of 5-6 s, and no longer
+  start a second claude (about 470 MB) each time: the agent's own claude works them out.
 - Scrollbars stay hidden until you point at the area that scrolls, then show as a thin bar that thickens under the
   pointer, so the sidebar, Chat and lists read as clean panels.
 - The agent header puts the project and initiative on a second line under the agent's name, in the height the header
