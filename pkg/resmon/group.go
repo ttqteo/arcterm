@@ -29,7 +29,8 @@ const (
 	busyMemFrac    = 0.75
 )
 
-var launcherImages = []string{"cmd.exe", "bash.exe", "sh.exe", "pwsh.exe", "powershell.exe"}
+// the shells a block starts an agent through: Windows images, then macOS names
+var launcherImages = []string{"cmd.exe", "bash.exe", "sh.exe", "pwsh.exe", "powershell.exe", "zsh", "bash", "sh", "fish"}
 
 // webview roles in match order: the first flag found in the command line names the process
 var webViewRoles = []struct{ flag, role string }{
@@ -38,6 +39,13 @@ var webViewRoles = []struct{ flag, role string }{
 	{"--type=renderer", "Renderer"},
 	{"--type=gpu-process", "GPU"},
 	{"--type=crashpad-handler", "Crash handler"},
+}
+
+// macOS: the WebKit services a WKWebView runs, by name (proc_name keeps 32 bytes, enough for each)
+var webKitRoles = []struct{ name, role string }{
+	{"com.apple.WebKit.WebContent", "Renderer"},
+	{"com.apple.WebKit.GPU", "GPU"},
+	{"com.apple.WebKit.Networking", "Network service"},
 }
 
 const (
@@ -52,6 +60,7 @@ type proc struct {
 	Pid      int
 	Ppid     int
 	Name     string // image name
+	App      string // macOS: the name of the app it works for (its responsible process), when that is another; else ""
 	Command  string
 	CreateTs int64 // epoch ms
 	Cpu      float64
@@ -273,6 +282,11 @@ func arcRole(p proc, hostPid, selfPid int) string {
 		}
 		if !strings.Contains(p.Command, "--type=") {
 			return roleBrowser
+		}
+	}
+	for _, r := range webKitRoles {
+		if strings.HasPrefix(p.Name, r.name) {
+			return r.role
 		}
 	}
 	return p.Name

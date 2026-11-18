@@ -83,7 +83,7 @@ const byMemDesc = (a: SidecarResourceRow, b: SidecarResourceRow) =>
 /**
  * The panel's rows. Sidecar first (the processes drawing its page), then the rest of arcterm (its host, wavesrv, the
  * shared WebView2 processes and the main window's page), then each agent and run command by RAM. A snapshot not in yet
- * reads as measuring; one off Windows, where pkg/resmon reads nothing, as unsupported.
+ * reads as measuring; one off Windows and macOS, where pkg/resmon reads nothing, as unsupported.
  */
 export function resourcesOf(
     snap: ResMonSnapshotData | null,

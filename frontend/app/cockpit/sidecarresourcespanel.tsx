@@ -112,7 +112,9 @@ function Heading({ children, divider = true }: { children: string; divider?: boo
 
 function Unsupported() {
     return (
-        <div className="px-2 py-2 text-[12.5px] text-hud-muted">Process figures are read on Windows only for now.</div>
+        <div className="px-2 py-2 text-[12.5px] text-hud-muted">
+            Process figures are read on Windows and macOS only.
+        </div>
     );
 }
 

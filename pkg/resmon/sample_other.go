@@ -1,4 +1,4 @@
-//go:build !windows
+//go:build !windows && !darwin
 
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
@@ -7,7 +7,8 @@ package resmon
 
 import "github.com/shirou/gopsutil/v4/process"
 
-// attribution is Windows-only (job objects): the snapshot reports unsupported and the readout hides
+// attribution needs job objects (Windows) or the macOS sampler: elsewhere the snapshot reports unsupported and the
+// readout hides
 const supported = false
 
 func readTable() (map[int]proc, error) {

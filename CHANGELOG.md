@@ -136,6 +136,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 ### Fixed
 
 - A background task's or server's output opened in full view shows its colours, as its peek does, instead of the raw escape codes.
+- On a Mac, Sidecar's Resources panel and the agents' RAM now show figures instead of "read on
+  Windows only": arcterm itself (with its WebKit processes and Sidecar's own row), each agent and run command, and the
+  apps outside arcterm, grouped as Activity Monitor groups them.
 - Sidecar no longer paints a text selection over its labels and buttons when you drag across it or press Cmd+A.
 - Chat's usage-limit warning, summary line and suggested replies no longer show the conversation through them when
   you scroll up: the fade under them now grows with them.

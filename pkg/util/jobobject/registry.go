@@ -49,6 +49,9 @@ func OwnerFrom(ctx context.Context) (Owner, bool) {
 type regEntry struct {
 	owner   Owner
 	rootPid int
+	// the root's start time (epoch ms) where the platform follows a job as the root's process tree (macOS), so a pid
+	// reused after the root exited is never taken for it; 0 on Windows, whose job objects need no such guard
+	rootStart int64
 	// disarmed: the job holds a kept desktop app, so closing it no longer kills (WatchKeptApps)
 	disarmed bool
 }
@@ -67,7 +70,7 @@ func Register(job uintptr, rootPid int, o Owner) {
 	}
 	registry.mu.Lock()
 	defer registry.mu.Unlock()
-	registry.jobs[job] = regEntry{owner: o, rootPid: rootPid}
+	registry.jobs[job] = regEntry{owner: o, rootPid: rootPid, rootStart: rootStartOf(rootPid)}
 }
 
 func unregister(job uintptr) {
@@ -76,13 +79,15 @@ func unregister(job uintptr) {
 	delete(registry.jobs, job)
 }
 
-// LiveJobs queries every registered job's members under the registry lock. nil off Windows.
+// LiveJobs queries every registered job's members under the registry lock: a job object's on Windows, the root's
+// process tree on macOS. nil elsewhere.
 func LiveJobs() []LiveJob {
 	registry.mu.Lock()
 	defer registry.mu.Unlock()
 	var rtn []LiveJob
+	read := memberReader()
 	for job, e := range registry.jobs {
-		members, err := Members(job)
+		members, err := read(job, e)
 		if err != nil {
 			log.Printf("jobobject: members of job (root pid %d, owner %s %s): %v", e.rootPid, e.owner.Kind, e.owner.Id, err)
 			continue
@@ -93,14 +98,14 @@ func LiveJobs() []LiveJob {
 }
 
 // anyOwnedJob reports whether match holds for some job registered for o, under the registry lock.
-func anyOwnedJob(o Owner, match func(job uintptr) (bool, error)) (bool, error) {
+func anyOwnedJob(o Owner, match func(job uintptr, e regEntry) (bool, error)) (bool, error) {
 	registry.mu.Lock()
 	defer registry.mu.Unlock()
 	for job, e := range registry.jobs {
 		if e.owner != o {
 			continue
 		}
-		ok, err := match(job)
+		ok, err := match(job, e)
 		if err != nil {
 			return false, err
 		}

@@ -19,6 +19,14 @@ import (
 
 const jobsSupported = true
 
+// memberReader reads each job object's members as asked.
+func memberReader() func(job uintptr, e regEntry) ([]int, error) {
+	return func(job uintptr, _ regEntry) ([]int, error) { return Members(job) }
+}
+
+// a job object holds its members itself, so no root needs telling from a reused pid
+func rootStartOf(pid int) int64 { return 0 }
+
 // Attach puts proc in a new job object with JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE so closing the
 // handle (Close) terminates the entire process tree rooted at proc, not just proc itself.
 // BREAKAWAY_OK lets a descendant that asks for it (StartDetached) leave the job; every other one stays in.
@@ -327,7 +335,7 @@ func TerminateMember(o Owner, pid int) error {
 	if hasExited(h) {
 		return ErrGone
 	}
-	member, err := anyOwnedJob(o, func(job uintptr) (bool, error) { return isProcessInJob(h, job) })
+	member, err := anyOwnedJob(o, func(job uintptr, _ regEntry) (bool, error) { return isProcessInJob(h, job) })
 	if err != nil {
 		return fmt.Errorf("IsProcessInJob(%d): %w", pid, err)
 	}

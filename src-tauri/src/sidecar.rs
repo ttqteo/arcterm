@@ -1107,10 +1107,11 @@ fn close_with_main(app: &AppHandle) {
     });
 }
 
-/// The pids of the processes that draw Sidecar's page, for its resource panel's own row: the WebView2 renderers
-/// running a frame of sidecar.html. Both windows share one WebView2 browser, GPU and utility processes, so those count
-/// as arcterm's, not Sidecar's. Empty off Windows (WKWebView names no process), and on a WebView2 runtime older than
-/// the process-and-frames list (1.0.2210).
+/// The pids of the processes that draw Sidecar's page, for its resource panel's own row: on Windows the WebView2
+/// renderers running a frame of sidecar.html, on macOS the WebContent process of Sidecar's WKWebView. Both windows
+/// share the browser (Windows), GPU and network processes, so those count as arcterm's, not Sidecar's. Empty on a
+/// WebView2 runtime older than the process-and-frames list (1.0.2210), and on a WebKit that no longer answers
+/// `_webProcessIdentifier`.
 #[tauri::command]
 pub async fn sidecar_pids(app: AppHandle) -> Result<Vec<u32>, String> {
     let Some(win) = app.get_webview_window(SIDECAR_LABEL) else {
@@ -1119,9 +1120,34 @@ pub async fn sidecar_pids(app: AppHandle) -> Result<Vec<u32>, String> {
     renderer_pids(&win).await
 }
 
-#[cfg(not(windows))]
+#[cfg(not(any(windows, target_os = "macos")))]
 async fn renderer_pids(_win: &WebviewWindow) -> Result<Vec<u32>, String> {
     Ok(Vec::new())
+}
+
+#[cfg(target_os = "macos")]
+async fn renderer_pids(win: &WebviewWindow) -> Result<Vec<u32>, String> {
+    use objc2::runtime::AnyObject;
+    use objc2::{msg_send, sel};
+
+    let (tx, rx) = tokio::sync::oneshot::channel::<Vec<u32>>();
+    win.with_webview(move |wv| unsafe {
+        // runs on the main thread, where WKWebView must be asked
+        let mut out = Vec::new();
+        if let Some(view) = (wv.inner() as *mut AnyObject).as_ref() {
+            // WKWebView's own pid of its WebContent process: private, so asked only when it answers
+            let knows: bool = msg_send![view, respondsToSelector: sel!(_webProcessIdentifier)];
+            if knows {
+                let pid: i32 = msg_send![view, _webProcessIdentifier];
+                if pid > 0 {
+                    out.push(pid as u32);
+                }
+            }
+        }
+        let _ = tx.send(out);
+    })
+    .map_err(|e| e.to_string())?;
+    rx.await.map_err(|_| "the pid read was dropped".to_string())
 }
 
 #[cfg(windows)]
