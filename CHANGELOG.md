@@ -60,6 +60,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- A message you send while the agent works no longer has a Queued caption under it: its dimmed bubble says it waits, and
+  the line under it is Send now alone (two or more still read "2 queued").
 - The agent header puts the project and initiative on a second line under the agent's name, in the height the header
   already had, so the run link, model and context beside it get the room back.
 - Focus read in Chat is each agent's own: turning it on for one agent leaves the others as they were. While it is on,
