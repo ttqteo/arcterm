@@ -20,7 +20,6 @@ import type {
     SidecarNeed,
     SidecarRunBox,
     SidecarSnapshot,
-    SidecarSpan,
     SidecarStrain,
     SidecarTile,
     SidecarUsage,
@@ -200,7 +199,9 @@ function same(a: unknown, b: unknown): boolean {
 
 /**
  * Whether two snapshots say the same thing: everything but `now`, which moves on every build. Nothing sent is never the
- * same. The machine figures reach it already rounded (decision 8), so a reading that only jitters does not differ.
+ * same. The machine figures reach it already rounded (decision 8), so a reading that only jitters does not differ; the
+ * resource panel's reading reaches it rounded too (sidecarresources.ts), and a new one differs: left out, a poll that
+ * changed nothing else was dropped as unchanged and the panel stayed on "Measuring…".
  */
 export function sameSnapshot(a: SidecarSnapshot | null, b: SidecarSnapshot | null): boolean {
     if (a == null || b == null) {
@@ -214,6 +215,7 @@ export function sameSnapshot(a: SidecarSnapshot | null, b: SidecarSnapshot | nul
         same(a.needs, b.needs) &&
         same(a.run, b.run) &&
         same(a.usage, b.usage) &&
+        same(a.resources, b.resources) &&
         a.more === b.more
     );
 }
@@ -306,23 +308,6 @@ export function runBoxOf(run: RunInfo, o: { leadId?: string; failed: boolean; du
         ...(run.createdTs != null ? { since: run.createdTs } : {}),
         ...(o.due != null ? { due: o.due } : {}),
     };
-}
-
-/**
- * When a failed lead's lane turns red (plan review N2): the engine's date of the failure, when it is later than the
- * lane's open span began (an earlier one would draw a failed span before the work it follows) and not after `now`;
- * otherwise unset, which the timeline reads as now.
- */
-export function failureAt(
-    failedAt: number | null,
-    spans: readonly SidecarSpan[] | undefined,
-    now: number
-): number | undefined {
-    if (failedAt == null || failedAt > now) {
-        return undefined;
-    }
-    const last = spans != null && spans.length > 0 ? spans[spans.length - 1] : undefined;
-    return last == null || last.to != null || failedAt > last.from ? failedAt : undefined;
 }
 
 /** The plan rings: the claude provider's 5-hour and weekly windows in whole percents; a window with no reading is left out. */

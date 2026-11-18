@@ -6,10 +6,14 @@
 // (habits.go), and names the replies they would likely send next. Chat draws them as chips in the message box beside its own rule chips
 // (frontend/app/view/agents/chatsuggest.ts has the rules and the merge).
 //
-// The call runs claude with no tools, no MCP servers and no settings (so no hooks and no plugins), its own short
-// system prompt, and an empty working folder (no project CLAUDE.md, no auto memory): about 800 tokens before the
-// reply, against 10-15k for a bare `claude -p`. It takes 8-11 s, almost all of it claude starting, so the chips it
-// adds arrive a while after the turn ends.
+// A Claude agent's arc mod makes the call itself, in its own claude, at the end of each turn (hook.go): the chips come
+// about 2 s after the turn. The headless call below is for every other agent, and for a turn the mod did not answer.
+//
+// The headless call runs claude with no tools, no MCP servers and no settings (so no hooks and no plugins), its own
+// short system prompt, and an empty working folder (no project CLAUDE.md, no auto memory): about 1.9k tokens before
+// the reply, against 10-15k for a bare `claude -p`. It takes 5-7 s, 3-5 s of it claude starting, and holds ~470 MB
+// while it runs (measured 2026-11-18). Haiku thinks before it answers, 150-500 tokens, which no flag of the CLI turns
+// off.
 package chatsuggest
 
 import (

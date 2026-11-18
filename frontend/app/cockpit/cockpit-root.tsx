@@ -21,6 +21,7 @@ import { ConsumersPanel } from "@/app/view/agents/consumerspanel";
 import { MachineServersPanel } from "@/app/view/agents/machineserverspanel";
 import { NowTicker } from "@/app/view/agents/nowticker";
 import { setPathLinkModel } from "@/app/view/agents/pathlinkroute";
+import { setCodeRunModel } from "@/app/view/agents/coderunstore";
 import { BackgroundAgentsPoller } from "@/app/view/agents/backgroundagentspoller";
 import { AttentionPoller } from "@/app/view/agents/attentionpoller";
 import { BrainstormPoller } from "@/app/view/agents/brainstormpoller";
@@ -110,7 +111,11 @@ function CockpitBody({ waveEnv }: { waveEnv: WaveEnv }) {
     }, [model]);
     useEffect(() => {
         setPathLinkModel(model);
-        return () => setPathLinkModel(null);
+        setCodeRunModel(model);
+        return () => {
+            setPathLinkModel(null);
+            setCodeRunModel(null);
+        };
     }, [model]);
     useEffect(() => setupUiClient(model), [model]);
     useEffect(() => setupFloatMode(model), [model]);

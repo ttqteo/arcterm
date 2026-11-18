@@ -2,17 +2,23 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // Q, Sidecar's compact window (spec 2026-11-17-sidecar-orbit-dashboard-design.md; board Q-compact-live): the same
-// dashboard as P (sidecarorbit.tsx) at the small form's 340 x 440, pinned beside the person's work. The core shrunk to
-// 112 px with its figures beside it, the strain as one line with the heaviest job's Stop and Sleep, the Needs you rows
-// (which scroll inside their own list, never the page), and at the bottom one dot per agent in the orbit beside the
-// run. No timeline. It draws the snapshot it is given and sends SidecarActs; it holds only the selection and the
-// Stop question. Every decision it draws is the page model's (sidecarorbitmodel.ts). The page is storeless: only the
-// types, the pure models, motion's tokens and React.
+// dashboard as P (sidecarorbit.tsx) at the small form's 340 x 440, pinned beside the person's work. The core a small
+// three-ring dial of 128 px with its figures beside it, the strain as one line with the heaviest job's Stop and Sleep,
+// the Needs you rows (which scroll inside their own list, never the page), and at the bottom one dot per agent in the
+// orbit beside the run. No timeline. It draws the snapshot it is given and sends SidecarActs; it holds only the
+// selection and the Stop question. Every decision it draws is the page model's (sidecarorbitmodel.ts). The page is
+// storeless: only the types, the pure models, motion's tokens and React.
+//
+// It wears Sidecar's HUD skin (spec 2026-11-18-sidecar-hud-design.md; board Q-dang-nho): the `hud-*` tokens, the parts
+// of sidecarhud.tsx (a tick ring round the dial, glowing value rings, brackets on the strain line, labels) and
+// monospace figures, thinner than P's so the small form stays readable. The window's corner brackets board Q draws are
+// left out: the alert frame (FRAME) does that job.
 
 import { springReveal } from "@/app/element/motiontokens";
 import { cn } from "@/util/util";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
-import { useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
+import { memo, useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
+import { GlowCircle, HudBrackets, HudDivider, HudLabel, HudTickRing } from "./sidecarhud";
 import { ageText } from "./sidecarkeys";
 import {
     coreLabel,
@@ -50,27 +56,28 @@ export interface SidecarCompactProps {
     send: (act: SidecarAct) => void;
 }
 
-// Each tone's classes are written out whole: Tailwind finds a class by reading the source, not by building it.
+// Each tone's classes are written out whole: Tailwind finds a class by reading the source, not by building it. The status
+// tones keep their tokens; the two quiet ones (finished, asleep) are the HUD's `hud-muted`, as board Q draws an idle dot.
 const TEXT: Record<Tone, string> = {
     warning: "text-warning",
     error: "text-error",
     success: "text-success",
-    secondary: "text-secondary",
-    muted: "text-muted",
+    secondary: "text-hud-muted",
+    muted: "text-hud-muted",
 };
 const BG: Record<Tone, string> = {
     warning: "bg-warning",
     error: "bg-error",
     success: "bg-success",
-    secondary: "bg-secondary",
-    muted: "bg-muted",
+    secondary: "bg-hud-muted",
+    muted: "bg-hud-muted",
 };
 const BORDER: Record<Tone, string> = {
     warning: "border-warning",
     error: "border-error",
     success: "border-success",
-    secondary: "border-secondary",
-    muted: "border-muted",
+    secondary: "border-hud-muted",
+    muted: "border-hud-muted",
 };
 
 // The alert frame, an inset edge drawn over the whole window (an outer one would fall off the screen): 2 px at this size
@@ -82,20 +89,29 @@ const FRAME: Record<AlertFrame, string> = {
     error: "shadow-[inset_0_0_0_2px_var(--color-error),inset_0_0_40px_color-mix(in_srgb,var(--color-error)_35%,transparent)]",
 };
 
-// a heavy agent's dot wears a ring in the strain's colour, set off from the dot by a gap of the window's own background
+// a heavy agent's dot wears a ring in the strain's colour, set off from the dot by a gap of the HUD's own ground
 const HALO = {
-    amber: "shadow-[0_0_0_2px_var(--color-background),0_0_0_3.5px_var(--color-warning)]",
-    red: "shadow-[0_0_0_2px_var(--color-background),0_0_0_3.5px_var(--color-error)]",
+    amber: "shadow-[0_0_0_2px_var(--color-hud-bg),0_0_0_3.5px_var(--color-warning)]",
+    red: "shadow-[0_0_0_2px_var(--color-hud-bg),0_0_0_3.5px_var(--color-error)]",
 } as const;
 
 // ---- The core ----
 
-const CORE_PX = 112;
-const RING_STROKE = 6;
-// outside in: the 5-hour window, the week, RAM used (board Q-compact-live)
-const RING_5H = 50;
-const RING_WEEK = 41;
-const RING_RAM = 32;
+const CORE_PX = 128;
+// a value ring's core is 2 px over a 8 px halo (GlowCircle), on a 1 px `hud-line` track; the rings are 8 px apart, so a
+// halo touches the next one's but never covers it
+const RING_GLOW = 2;
+const RING_TRACK = 1;
+// outside in: the 5-hour window, the week, RAM used (board Q-dang-nho)
+const RING_5H = 52;
+const RING_WEEK = 44;
+const RING_RAM = 36;
+// the tick ring just outside the 5-hour ring's halo: 60 ticks (every 6 degrees), every 5th a major one, 3 / 5 px long
+const TICK_R = CORE_PX / 2 - 2;
+const TICKS = 60;
+const TICKS_MAJOR_EVERY = 5;
+const TICK_MINOR_PX = 3;
+const TICK_MAJOR_PX = 5;
 
 function percent(pct: number | undefined): string {
     return pct == null || !Number.isFinite(pct) ? "–" : `${Math.round(pct)}%`;
@@ -106,13 +122,12 @@ function Ring(props: { r: number; pct: number | undefined; arc: string; eased?: 
     const c = CORE_PX / 2;
     return (
         <>
-            <circle cx={c} cy={c} r={props.r} fill="none" strokeWidth={RING_STROKE} className="stroke-edge-mid" />
-            <circle
+            <circle cx={c} cy={c} r={props.r} fill="none" strokeWidth={RING_TRACK} className="stroke-hud-line" />
+            <GlowCircle
                 cx={c}
                 cy={c}
                 r={props.r}
-                fill="none"
-                strokeWidth={RING_STROKE}
+                width={RING_GLOW}
                 // a round cap on an empty ring would still draw a dot
                 strokeLinecap={dash > 0 ? "round" : "butt"}
                 style={{ strokeDasharray: `${dash} ${gap}` }}
@@ -126,10 +141,35 @@ function Ring(props: { r: number; pct: number | undefined; arc: string; eased?: 
     );
 }
 
-// RAM's ring is grey until RAM itself is strained, then it takes the band's colour (a CPU strain leaves it alone)
+// The dial's tick ring in its own svg under the value rings: it takes no snapshot field and has no props, so a snapshot
+// never re-renders it and the browser never repaints it.
+const DialTicks = memo(function DialTicks() {
+    const c = CORE_PX / 2;
+    return (
+        <svg
+            width={CORE_PX}
+            height={CORE_PX}
+            viewBox={`0 0 ${CORE_PX} ${CORE_PX}`}
+            className="pointer-events-none absolute left-0 top-0"
+            aria-hidden="true"
+        >
+            <HudTickRing
+                cx={c}
+                cy={c}
+                r={TICK_R}
+                count={TICKS}
+                majorEvery={TICKS_MAJOR_EVERY}
+                minorLen={TICK_MINOR_PX}
+                majorLen={TICK_MAJOR_PX}
+            />
+        </svg>
+    );
+});
+
+// RAM's ring is near-white until RAM itself is strained, then it takes the band's colour (a CPU strain leaves it alone)
 function ramArc(strain: SidecarStrain | undefined): string {
     if (strain?.ram == null) {
-        return "stroke-ink-faint";
+        return "stroke-hud-text";
     }
     return strain.ram.critical ? "stroke-error" : "stroke-warning";
 }
@@ -144,8 +184,10 @@ function Core({ snap, needs }: { snap: SidecarSnapshot; needs: readonly SidecarN
     // the label says what the colour says, so the strain is never colour alone
     const ramText = m == null ? "RAM –" : `${label ?? `RAM ${percent(usedPct)} used`} · ${formatBytes(m.memFree)} free`;
     return (
-        <div className="flex shrink-0 items-center gap-4 px-4 pb-2.5 pt-3.5">
-            <div className="relative shrink-0" style={{ width: CORE_PX, height: CORE_PX }}>
+        <div className="flex shrink-0 items-center gap-3.5 px-3.5 pb-2 pt-3">
+            {/* the dial: the static tick ring, the glowing value rings over it, and the figure at its centre */}
+            <div data-hud-dial className="relative shrink-0" style={{ width: CORE_PX, height: CORE_PX }}>
+                <DialTicks />
                 <svg
                     width={CORE_PX}
                     height={CORE_PX}
@@ -153,8 +195,8 @@ function Core({ snap, needs }: { snap: SidecarSnapshot; needs: readonly SidecarN
                     className="absolute left-0 top-0"
                     aria-hidden="true"
                 >
-                    <Ring r={RING_5H} pct={snap.usage?.fiveHourPct} arc="stroke-secondary" />
-                    <Ring r={RING_WEEK} pct={snap.usage?.weekPct} arc="stroke-muted" />
+                    <Ring r={RING_5H} pct={snap.usage?.fiveHourPct} arc="stroke-hud-glow" />
+                    <Ring r={RING_WEEK} pct={snap.usage?.weekPct} arc="stroke-hud-muted" />
                     <Ring r={RING_RAM} pct={usedPct} arc={ramArc(snap.strain)} eased />
                 </svg>
                 <div className="absolute inset-0 flex items-center justify-center">
@@ -162,7 +204,7 @@ function Core({ snap, needs }: { snap: SidecarSnapshot; needs: readonly SidecarN
                         data-sidecar-core
                         data-core-tone={tone}
                         className={cn(
-                            "text-[36px] font-semibold leading-none tabular-nums transition-colors duration-500 motion-reduce:transition-none",
+                            "font-mono text-[32px] font-medium leading-none tabular-nums transition-colors duration-500 motion-reduce:transition-none",
                             TEXT[tone]
                         )}
                     >
@@ -170,26 +212,27 @@ function Core({ snap, needs }: { snap: SidecarSnapshot; needs: readonly SidecarN
                     </span>
                 </div>
             </div>
-            <div className="flex min-w-0 flex-1 flex-col gap-1 text-[13px] tabular-nums">
+            <div className="flex min-w-0 flex-1 flex-col gap-1 font-mono text-[12px] uppercase tabular-nums">
                 <span
                     data-sidecar-core-words
                     className={cn(
-                        "truncate text-[15px] font-semibold transition-colors duration-500 motion-reduce:transition-none",
+                        "truncate text-[12.5px] font-medium transition-colors duration-500 motion-reduce:transition-none",
                         TEXT[tone]
                     )}
                 >
                     {failed > 0 ? `${needs.length} need you · ${failed} failed` : `${needs.length} need you`}
                 </span>
-                <span className="truncate text-muted">
-                    <b className="font-semibold text-success">{snap.counts.working}</b> working
+                <span className="truncate text-hud-muted">
+                    <b className="font-medium text-success">{snap.counts.working}</b> working
                 </span>
-                <span data-sidecar-usage className="truncate text-muted">
+                <span data-sidecar-usage className="truncate text-hud-muted">
                     5h {percent(snap.usage?.fiveHourPct)} · week {percent(snap.usage?.weekPct)}
                 </span>
+                {/* it wraps instead of truncating: the RAM figure is what the strain band is about */}
                 <span
                     data-sidecar-ram
                     data-ram-tone={ramTone}
-                    className={cn("truncate", TEXT[ramTone], label != null && "font-semibold")}
+                    className={cn("break-words", TEXT[ramTone], label != null && "font-medium")}
                 >
                     {ramText}
                 </span>
@@ -213,7 +256,7 @@ function strainTitle(strain: SidecarStrain): string {
 }
 
 const STRAIN_BUTTON =
-    "flex h-[26px] shrink-0 items-center whitespace-nowrap rounded-md border border-edge-strong bg-surface-hover px-[9px] text-[12.5px] text-primary hover:bg-surface-selected active:scale-100";
+    "flex h-[26px] shrink-0 items-center whitespace-nowrap rounded-sm border border-hud-line bg-hud-panel px-[9px] text-[12.5px] text-hud-text hover:border-hud-glow active:scale-100";
 
 function StrainLine({ strain, send }: { strain: SidecarStrain; send: (act: SidecarAct) => void }) {
     const red = strain.level === "red";
@@ -233,14 +276,17 @@ function StrainLine({ strain, send }: { strain: SidecarStrain; send: (act: Sidec
             data-sidecar-strainline
             data-level={strain.level}
             role="status"
+            // the brackets, in the strain's tone, stand where the border was: the line is `relative` for them, and its
+            // padding is wider than their 10 px so they never sit over the text
             className={cn(
-                "mx-3 mb-2.5 flex shrink-0 flex-col gap-2 rounded-lg border-[1.5px] px-3 py-2.5",
-                red ? "border-error bg-errorbg" : "border-warning bg-askingbg"
+                "relative mx-3 mb-2.5 flex shrink-0 flex-col gap-2 rounded-md px-3 py-2.5",
+                red ? "bg-errorbg" : "bg-askingbg"
             )}
         >
+            <HudBrackets size={10} radius={6} className={red ? "stroke-error" : "stroke-warning"} />
             <span
                 className={cn(
-                    "flex items-center gap-1.5 text-[13.5px] font-semibold",
+                    "flex items-center gap-1.5 font-mono text-[11.5px] font-medium uppercase tracking-[0.08em]",
                     red ? "text-error" : "text-warning"
                 )}
             >
@@ -258,19 +304,19 @@ function StrainLine({ strain, send }: { strain: SidecarStrain; send: (act: Sidec
                 </svg>
                 <span data-sidecar-strainline-title className="min-w-0 truncate">
                     {strainTitle(strain)}
-                    <span className="font-normal text-secondary"> · the heaviest job</span>
+                    <span className="font-normal text-hud-muted"> · the heaviest job</span>
                 </span>
             </span>
             {h == null ? (
-                <span data-sidecar-strainline-finding className="text-[12.5px] text-muted">
+                <span data-sidecar-strainline-finding className="text-[12.5px] text-hud-muted">
                     Finding the heaviest agents…
                 </span>
             ) : (
                 <div data-sidecar-heavy={h.id} className="flex min-w-0 items-center gap-2">
                     {asking ? (
                         <div data-sidecar-confirm className="flex min-w-0 flex-1 items-center gap-2">
-                            <span className="min-w-0 flex-1 truncate text-[12.5px] text-secondary" title={proc.command}>
-                                Stop <span className="font-mono text-primary">{proc.command}</span>?
+                            <span className="min-w-0 flex-1 truncate text-[12.5px] text-hud-muted" title={proc.command}>
+                                Stop <span className="font-mono text-hud-text">{proc.command}</span>?
                             </span>
                             <button
                                 {...press}
@@ -279,7 +325,7 @@ function StrainLine({ strain, send }: { strain: SidecarStrain; send: (act: Sidec
                                     setConfirm(null);
                                     send({ kind: "stop", id: h.id, pid: proc.pid });
                                 }}
-                                className="flex h-[26px] shrink-0 items-center whitespace-nowrap rounded-md bg-accent px-[9px] text-[12.5px] font-semibold text-background active:scale-100"
+                                className="flex h-[26px] shrink-0 items-center whitespace-nowrap rounded-sm bg-hud-glow px-[9px] text-[12.5px] font-semibold text-hud-bg active:scale-100"
                             >
                                 Stop
                             </button>
@@ -295,7 +341,7 @@ function StrainLine({ strain, send }: { strain: SidecarStrain; send: (act: Sidec
                     ) : (
                         <>
                             <span
-                                className="flex min-w-0 flex-1 gap-1.5 text-[12.5px] text-ink-hi"
+                                className="flex min-w-0 flex-1 gap-1.5 text-[12.5px] text-hud-text"
                                 title={proc != null ? `${h.name}: ${proc.command}` : h.name}
                             >
                                 {proc != null ? (
@@ -309,7 +355,7 @@ function StrainLine({ strain, send }: { strain: SidecarStrain; send: (act: Sidec
                                     <span className="min-w-0 truncate">{h.name}</span>
                                 )}
                                 {weightText(h) !== "" && (
-                                    <span className="shrink-0 font-semibold">{`· ${weightText(h)}`}</span>
+                                    <span className="shrink-0 font-mono text-[11.5px] font-medium tabular-nums">{`· ${weightText(h)}`}</span>
                                 )}
                             </span>
                             {proc != null && (
@@ -336,7 +382,7 @@ function StrainLine({ strain, send }: { strain: SidecarStrain; send: (act: Sidec
                 </div>
             )}
             {h?.note != null && (
-                <span data-sidecar-heavy-note className="truncate text-[11.5px] text-muted" title={h.note}>
+                <span data-sidecar-heavy-note className="truncate text-[11.5px] text-hud-muted" title={h.note}>
                     {h.note}
                 </span>
             )}
@@ -383,13 +429,12 @@ function NeedRow(props: {
                 onClick={props.onSelect}
                 onDoubleClick={props.onOpen}
                 className={cn(
-                    "flex select-none gap-2.5 rounded-lg px-3 py-2.5",
-                    // selection is a grey inset ring, never the accent: an outer one is clipped by the list's overflow
-                    selected
-                        ? "bg-surface-hover ring-2 ring-inset ring-secondary"
-                        : failed
-                          ? "bg-errorbg"
-                          : "bg-askingbg"
+                    // board Q: a 2 px bar in the row's tone down its left edge over the tint; the row's corners are rounded
+                    // (the bar bends with the left ones) and the tint is clipped by them
+                    "flex select-none gap-2.5 rounded-md border-l-2 px-3 py-2.5",
+                    BORDER[tone],
+                    // selection is a `hud-glow` inset ring, never the accent: an outer one is clipped by the list's overflow
+                    selected ? "bg-hud-panel ring-2 ring-inset ring-hud-glow" : failed ? "bg-errorbg" : "bg-askingbg"
                 )}
             >
                 <span className="relative mt-[5px] h-2.5 w-2.5 shrink-0">
@@ -406,27 +451,29 @@ function NeedRow(props: {
                 </span>
                 <div className="flex min-w-0 flex-1 flex-col gap-0.5">
                     <div className="flex items-baseline gap-1.5">
-                        {failed && <span className="shrink-0 text-[12px] font-semibold text-error">Failed</span>}
+                        {failed && (
+                            <span className="shrink-0 font-mono text-[11px] font-medium text-error">Failed</span>
+                        )}
                         <span
-                            className="min-w-0 flex-1 truncate text-[13px] font-semibold text-primary"
+                            className="min-w-0 flex-1 truncate text-[13px] font-semibold text-hud-text"
                             title={need.who}
                         >
                             {need.who}
                         </span>
                         {!failed && need.kind === "jarvis" && need.word != null && (
-                            <span className="shrink-0 text-[12px] text-secondary">{need.word}</span>
+                            <span className="shrink-0 font-mono text-[11px] text-hud-muted">{need.word}</span>
                         )}
-                        <span className="shrink-0 whitespace-nowrap text-[12px] tabular-nums text-muted">
+                        <span className="shrink-0 whitespace-nowrap font-mono text-[11px] tabular-nums text-hud-muted">
                             {props.age}
                         </span>
                     </div>
                     <span
-                        className="line-clamp-2 break-words text-[14px] leading-[1.35] text-primary"
+                        className="line-clamp-2 break-words text-[14px] leading-[1.35] text-hud-text"
                         title={need.text}
                     >
                         {need.text}
                     </span>
-                    <span className="text-[12px] text-muted">{needHow(need)}</span>
+                    <span className="font-mono text-[11px] text-hud-muted">{needHow(need)}</span>
                 </div>
             </div>
         </motion.div>
@@ -439,8 +486,8 @@ function AllClear() {
             data-sidecar-allclear
             className="flex min-h-0 flex-1 flex-col items-center justify-center gap-1 px-3 text-center"
         >
-            <span className="text-[15px] font-semibold text-secondary">All clear</span>
-            <span className="text-[13px] text-muted">Nothing waits on you.</span>
+            <span className="text-[15px] font-semibold text-hud-text">All clear</span>
+            <span className="text-[13px] text-hud-muted">Nothing waits on you.</span>
         </div>
     );
 }
@@ -542,11 +589,19 @@ export function SidecarCompact({ snap, receivedAt, clock, send }: SidecarCompact
             data-sidecar-dashboard="compact"
             data-sidecar-state={state}
             data-sidecar-frame={frame}
-            className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
+            className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-hud-bg text-hud-text"
         >
             <Core snap={snap} needs={needs} />
             {strain != null && <StrainLine strain={strain} send={send} />}
             {needs.length === 0 && <AllClear />}
+            {/* board Q's list heading: a label and a circuit-line rule. Static decoration beside the always-mounted list,
+                shown only while it holds rows */}
+            {needs.length > 0 && (
+                <div className="flex shrink-0 items-center gap-2 px-3.5 pb-1.5">
+                    <HudLabel>Needs you</HudLabel>
+                    <HudDivider className="min-w-0 flex-1" />
+                </div>
+            )}
             {/* always mounted, hidden while empty: AnimatePresence's `initial={false}` spares only the rows it first
                 mounts with, so a list that mounted with the first need would skip that row's reveal */}
             <div
@@ -589,7 +644,7 @@ export function SidecarCompact({ snap, receivedAt, clock, send }: SidecarCompact
                     ))}
                 </AnimatePresence>
             </div>
-            <div className="flex shrink-0 items-center gap-2 border-t border-border px-3.5 py-2.5">
+            <div className="flex shrink-0 items-center gap-2 border-t border-hud-line px-3.5 py-2.5">
                 {tiles.map((tile) => (
                     <Dot
                         key={tile.id}
@@ -606,8 +661,8 @@ export function SidecarCompact({ snap, receivedAt, clock, send }: SidecarCompact
                         data-sidecar-run
                         data-run-failed={run.failed ? "true" : undefined}
                         className={cn(
-                            "min-w-0 truncate whitespace-nowrap text-[12px] tabular-nums",
-                            run.failed ? "text-error" : "text-muted"
+                            "min-w-0 truncate whitespace-nowrap font-mono text-[11px] uppercase tabular-nums",
+                            run.failed ? "text-error" : "text-hud-muted"
                         )}
                         title={run.title}
                     >

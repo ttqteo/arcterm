@@ -5,10 +5,12 @@
 // when the machine is strained, saying what is strained and since when, and naming the agents that weigh most with a
 // Stop and a Sleep for each. It draws the snapshot's `strain` and sends `stop` and `sleep` acts; the page holds whether
 // the × hid it. Stop asks in place first (page-local state), and there is no band-wide action. Nothing here animates.
-// The page is storeless: only the types, the pure models and React.
+// HUD skin (spec 2026-11-18-sidecar-hud-design.md): a rounded `hud-panel` ground with corner brackets in the band's tone
+// bending round its corners in place of a border, and monospace figures. The page is storeless: only the types, the pure models and React.
 
 import { cn } from "@/util/util";
 import { useState, type MouseEvent } from "react";
+import { HudBrackets } from "./sidecarhud";
 import { bandTitle, bandWhy, formatBytes } from "./sidecarstrainmodel";
 import type { SidecarAct, SidecarHeavy, SidecarMachine, SidecarStrain } from "./sidecartypes";
 
@@ -36,12 +38,13 @@ export function SidecarBand({ strain, machine, now, onHide, send }: SidecarBandP
             data-sidecar-band
             data-level={strain.level}
             role="status"
-            className={cn(
-                "mx-5 mt-3 flex shrink-0 flex-col gap-2.5 rounded-lg border px-3.5 py-3",
-                red ? "border-error bg-error/12" : "border-warning bg-warning/12"
-            )}
+            // `relative` for the brackets; the padding is at least their 14 px, so they never sit over text
+            className="relative mx-5 mt-3 flex shrink-0 flex-col gap-2.5 rounded-lg bg-hud-panel px-3.5 py-3.5"
         >
-            <div className="flex items-center gap-2.5">
+            <HudBrackets size={18} radius={12} className={red ? "stroke-error" : "stroke-warning"} />
+            {/* the why line is monospace and long, so it takes its own row under the title (order-last) instead of being
+                squeezed into a few characters beside it; the close button stays at the title's right */}
+            <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
                 <svg
                     width="16"
                     height="16"
@@ -61,7 +64,10 @@ export function SidecarBand({ strain, machine, now, onHide, send }: SidecarBandP
                 >
                     {bandTitle(strain)}
                 </span>
-                <span data-sidecar-band-why className="min-w-0 text-[13px] text-secondary">
+                <span
+                    data-sidecar-band-why
+                    className="order-last min-w-0 basis-full font-mono text-[12px] tabular-nums text-hud-muted"
+                >
                     {bandWhy(strain, machine, now)}
                 </span>
                 <span className="flex-1" />
@@ -74,7 +80,7 @@ export function SidecarBand({ strain, machine, now, onHide, send }: SidecarBandP
                     // a click must not leave the button holding focus: Enter belongs to the dashboard, not to it
                     onMouseDown={(e) => e.preventDefault()}
                     onClick={onHide}
-                    className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted hover:bg-surface-hover hover:text-primary"
+                    className="flex h-7 w-7 shrink-0 items-center justify-center text-hud-muted hover:bg-hud-line hover:text-hud-text"
                 >
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
                         <path d="M6 6l12 12M18 6 6 18" />
@@ -82,7 +88,7 @@ export function SidecarBand({ strain, machine, now, onHide, send }: SidecarBandP
                 </button>
             </div>
             {strain.heavy.length === 0 ? (
-                <div data-sidecar-band-finding className="text-[12.5px] text-muted">
+                <div data-sidecar-band-finding className="text-[12.5px] text-hud-muted">
                     Finding the heaviest agents…
                 </div>
             ) : (
@@ -97,7 +103,7 @@ export function SidecarBand({ strain, machine, now, onHide, send }: SidecarBandP
 }
 
 const BUTTON =
-    "flex h-[26px] shrink-0 items-center whitespace-nowrap rounded-md border border-edge-strong bg-surface-hover px-[9px] text-[12px] text-primary hover:bg-surface-selected active:scale-100";
+    "flex h-[26px] shrink-0 items-center whitespace-nowrap rounded-sm border border-hud-line bg-hud-bg px-[9px] text-[12px] text-hud-text hover:border-hud-glow hover:text-hud-glow active:scale-100";
 
 function HeavyRow({ h, send }: { h: SidecarHeavy; send: (act: SidecarAct) => void }) {
     // the confirm is for one process: if the row's process changes while it is open, the question no longer fits and the
@@ -113,21 +119,23 @@ function HeavyRow({ h, send }: { h: SidecarHeavy; send: (act: SidecarAct) => voi
     return (
         <div
             data-sidecar-heavy={h.id}
-            className="flex min-w-0 flex-1 flex-col gap-1.5 rounded-md border border-edge-strong bg-surface-raised px-2.5 py-2"
+            className="flex min-w-0 flex-1 flex-col gap-1.5 rounded-md border border-hud-line bg-hud-bg px-2.5 py-2"
         >
             {/* in a narrow card the buttons wrap under the name, never squeeze it to a letter */}
             <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5">
                 <div className="flex min-w-[8rem] flex-1 flex-col gap-0.5">
                     <div className="flex items-baseline gap-2">
-                        <span className="min-w-0 truncate text-[13px] font-semibold text-primary" title={h.name}>
+                        <span className="min-w-0 truncate text-[13px] font-semibold text-hud-text" title={h.name}>
                             {h.name}
                         </span>
-                        <span className="shrink-0 text-[12px] tabular-nums text-secondary">{weightText(h)}</span>
+                        <span className="shrink-0 font-mono text-[12px] tabular-nums text-hud-muted">
+                            {weightText(h)}
+                        </span>
                     </div>
                     {proc != null && (
                         <div
                             data-sidecar-heavy-process
-                            className="flex min-w-0 gap-1.5 font-mono text-[11px] text-secondary"
+                            className="flex min-w-0 gap-1.5 font-mono text-[11px] tabular-nums text-hud-muted"
                             title={proc.command}
                         >
                             <span className="min-w-0 truncate">{proc.command}</span>
@@ -137,8 +145,8 @@ function HeavyRow({ h, send }: { h: SidecarHeavy; send: (act: SidecarAct) => voi
                 </div>
                 {asking ? (
                     <div data-sidecar-confirm className="flex min-w-[12rem] flex-[1.4] items-center gap-2">
-                        <span className="min-w-0 text-[12px] leading-[1.35] text-secondary">
-                            Stop <span className="break-all font-mono text-primary">{proc.command}</span>? The
+                        <span className="min-w-0 text-[12px] leading-[1.35] text-hud-muted">
+                            Stop <span className="break-all font-mono text-hud-text">{proc.command}</span>? The
                             agent&apos;s build ends; the agent keeps running.
                         </span>
                         <button
@@ -148,7 +156,7 @@ function HeavyRow({ h, send }: { h: SidecarHeavy; send: (act: SidecarAct) => voi
                                 setConfirm(null);
                                 send({ kind: "stop", id: h.id, pid: proc.pid });
                             }}
-                            className="flex h-[26px] shrink-0 items-center whitespace-nowrap rounded-md bg-accent px-[9px] text-[12px] font-semibold text-background active:scale-100"
+                            className="flex h-[26px] shrink-0 items-center whitespace-nowrap bg-accent px-[9px] text-[12px] font-semibold text-background active:scale-100"
                         >
                             Stop
                         </button>
@@ -185,7 +193,7 @@ function HeavyRow({ h, send }: { h: SidecarHeavy; send: (act: SidecarAct) => voi
                 )}
             </div>
             {h.note != null && (
-                <div data-sidecar-heavy-note className="text-[11.5px] text-muted">
+                <div data-sidecar-heavy-note className="text-[11.5px] text-hud-muted">
                     {h.note}
                 </div>
             )}

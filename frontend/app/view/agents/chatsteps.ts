@@ -286,6 +286,40 @@ export interface TurnFile {
     dels: number;
 }
 
+// the pictures a webview draws from a blob (createImageBitmap, useLocalImage): no svg, no heic
+const PICTURE_EXTS = new Set(["png", "jpg", "jpeg", "gif", "webp", "bmp", "avif"]);
+const ABSOLUTE = /^(\/|[A-Za-z]:[\\/]|\\\\)/;
+
+/** Pure: the picture a call read, as its absolute path, or null. Only a read that did not fail, of a file whose full path
+ *  the transcript gave (a bare name cannot be found on disk) and whose extension is a picture's. */
+export function pictureOf(a: AgentActionEntry): string | null {
+    if (a.verb !== "read" || a.outcome === "fail" || a.outcome === "blocked") {
+        return null;
+    }
+    const path = (a.path != null && a.path !== "" ? a.path : a.target).trim();
+    const dot = path.lastIndexOf(".");
+    if (!ABSOLUTE.test(path) || dot < 0 || !PICTURE_EXTS.has(path.slice(dot + 1).toLowerCase())) {
+        return null;
+    }
+    return path;
+}
+
+/** Pure: the pictures a stretch read, once each in the order first read, at most `max`: the thumbnails its folded line
+ *  shows. */
+export function stretchPictures(actions: readonly AgentActionEntry[], max: number): string[] {
+    const out: string[] = [];
+    for (const a of actions) {
+        const path = pictureOf(a);
+        if (path != null && !out.includes(path)) {
+            out.push(path);
+            if (out.length >= max) {
+                break;
+            }
+        }
+    }
+    return out;
+}
+
 /** Pure: the call did what it set out to: it neither failed nor was refused. */
 export const succeeded = (a: AgentActionEntry) =>
     a.outcome !== "fail" && a.outcome !== "blocked" && a.verb !== "blocked";
@@ -351,6 +385,19 @@ export function turnFileAbs(path: string, cwd: string | null | undefined): strin
     }
     const sep = cwd.includes("\\") && !cwd.includes("/") ? "\\" : "/";
     return `${cwd.replace(/[\\/]+$/, "")}${sep}${path.replace(/^\.[\\/]/, "")}`;
+}
+
+/** Pure: what a turn's file opens its Diff against: the last commit, read by git from the file's own folder, so a file in
+ *  a worktree under the agent's directory (`.worktrees/x/a.ts`, another work tree of the repo) is measured in that tree.
+ *  Null for a path with no folder in it. */
+export function turnFileDiff(abs: string): { cwd: string; rel: string; base: string } | null {
+    const cut = Math.max(abs.lastIndexOf("/"), abs.lastIndexOf("\\"));
+    if (cut <= 0 || cut === abs.length - 1) {
+        return null;
+    }
+    // a drive root keeps its separator: `C:` alone is the drive's current folder, not its root
+    const dir = /^[a-z]:$/i.test(abs.slice(0, cut)) ? abs.slice(0, cut + 1) : abs.slice(0, cut);
+    return { cwd: dir, rel: abs.slice(cut + 1), base: "" };
 }
 
 /** Pure: where a file the agent edited on another machine may be here, longest guess first. A session started on Windows

@@ -7,9 +7,10 @@
 // them, and a second copy here would cost its RAM again. Spec 2026-11-13-sidecar-design.md, section 2.
 
 import { SidecarCompact } from "@/app/cockpit/sidecarcompact";
-import { layoutFor, resourcesColumnFits, type FormChange, type SidecarLayout } from "@/app/cockpit/sidecarlayout";
+import { HudLabel } from "@/app/cockpit/sidecarhud";
+import { layoutFor, type FormChange, type SidecarLayout } from "@/app/cockpit/sidecarlayout";
 import { SidecarOrbit } from "@/app/cockpit/sidecarorbit";
-import { SidecarResourcesColumn, SidecarResourcesPanel } from "@/app/cockpit/sidecarresourcespanel";
+import { SidecarResourcesPanel } from "@/app/cockpit/sidecarresourcespanel";
 import { NATIVE_MAC_FRAME, SidecarTitleBar, toggleSidecarFullscreen } from "@/app/cockpit/sidecartitlebar";
 import {
     SIDECAR_ACT_EVENT,
@@ -22,7 +23,6 @@ import { useApplyCockpitTheme } from "@/app/view/agents/themestore";
 import { loadFonts } from "@/util/fontutil";
 import { invoke } from "@tauri-apps/api/core";
 import { emit, listen } from "@tauri-apps/api/event";
-import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useCallback, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import "./tailwind.css";
@@ -55,28 +55,15 @@ function readLayout(): SidecarLayout {
     return layoutFor(window.innerWidth, window.screen?.availWidth);
 }
 
-interface LayoutState {
-    layout: SidecarLayout;
-    column: boolean; // the wall has room for the Resources column
-}
-
-function readLayoutState(): LayoutState {
-    const layout = readLayout();
-    return { layout, column: resourcesColumnFits(layout, window.innerWidth, window.innerHeight) };
-}
-
-function useLayout(): LayoutState {
-    const [state, setState] = useState<LayoutState>(readLayoutState);
+function useLayout(): SidecarLayout {
+    const [layout, setLayout] = useState<SidecarLayout>(readLayout);
     useEffect(() => {
-        const onResize = () => {
-            const next = readLayoutState();
-            setState((prev) => (prev.layout === next.layout && prev.column === next.column ? prev : next));
-        };
+        const onResize = () => setLayout(readLayout());
         window.addEventListener("resize", onResize);
         onResize();
         return () => window.removeEventListener("resize", onResize);
     }, []);
-    return state;
+    return layout;
 }
 
 // The host's form (the S button's small form, the pin) is the host's to keep: the page reads it once at load and takes the
@@ -101,16 +88,20 @@ function useSidecarForm(): [SidecarForm, (change: FormChange) => void] {
     return [form, change];
 }
 
-// The resources: while the panel is open or the wall shows the column, the page tells the main window's bridge (which
-// then polls the Resource Manager) with the pids the host says draw this page, and again as they change; once neither
-// shows, it tells the bridge to stop. A pid read that fails leaves Sidecar's own row unmeasured, the rest as it is. The
-// column takes the panel's place: a panel left open shuts when the column appears.
-function useResourcesPanel(column: boolean): [boolean, () => void, () => void] {
+// The resources: while the wall shows its band or the small form's panel is open, the page tells the main window's bridge
+// (which then polls the Resource Manager) with the pids the host says draw this page, and again as they change; once
+// neither shows, it tells the bridge to stop. A pid read that fails leaves Sidecar's own row unmeasured, the rest as it
+// is. The band takes the panel's place: a panel left open shuts when the window widens to the wall.
+// The page asks only once it has heard its first snapshot (`answered`): the bridge answers a hello by shutting the
+// resource panel ("a reloaded page starts with its panel shut", sidecarbridge.tsx), so an open act that reaches it before
+// the hello is wiped and never sent again. A snapshot heard means the hello was answered; the panel and the column still
+// show at once (measuring) from the page's own state, whatever the bridge has heard.
+function useResourcesPanel(band: boolean, answered: boolean): [boolean, () => void, () => void] {
     const [open, setOpen] = useState(false);
-    if (column && open) {
+    if (band && open) {
         setOpen(false);
     }
-    const want = open || column;
+    const want = (open || band) && answered;
     useEffect(() => {
         if (!want) {
             return;
@@ -149,9 +140,10 @@ function useResourcesPanel(column: boolean): [boolean, () => void, () => void] {
 function SidecarRoot() {
     useApplyCockpitTheme();
     const [heard, setHeard] = useState<Heard | null>(null);
-    const { layout, column } = useLayout();
+    const layout = useLayout();
+    const wall = layout === "wall";
     const [form, changeForm] = useSidecarForm();
-    const [resourcesOpen, toggleResources, closeResources] = useResourcesPanel(column);
+    const [resourcesOpen, toggleResources, closeResources] = useResourcesPanel(wall, heard != null);
     // Date.now() too: the dashboard adds (clock - heard.at) to the snapshot's own `now`, so the two must share one clock
     const [clock, setClock] = useState(() => Date.now());
 
@@ -207,7 +199,7 @@ function SidecarRoot() {
     return (
         // the only motion is the dashboard's own (the spec's Motion section: a waiting item's ping, a row's reveal, the
         // frame's and the ring's colour); the base layer's button transitions go, so a button never moves on its own
-        <div className="relative flex h-screen w-screen flex-col overflow-hidden bg-background font-sans text-primary [&_button]:transition-none">
+        <div className="relative flex h-screen w-screen flex-col overflow-hidden bg-hud-bg font-sans text-primary [&_button]:transition-none">
             <SidecarTitleBar
                 machine={heard?.snap.machine}
                 strain={heard?.snap.strain}
@@ -215,30 +207,15 @@ function SidecarRoot() {
                 form={form}
                 onForm={changeForm}
                 resourcesOpen={resourcesOpen}
-                onResources={column ? undefined : toggleResources}
+                onResources={wall ? undefined : toggleResources}
             />
-            {resourcesOpen && (
-                <SidecarResourcesPanel
-                    resources={heard?.snap.resources}
-                    small={layout === "small"}
-                    onClose={closeResources}
-                />
-            )}
+            {resourcesOpen && <SidecarResourcesPanel resources={heard?.snap.resources} onClose={closeResources} />}
             {heard == null ? (
-                <div
-                    data-sidecar-waiting
-                    role="status"
-                    className="flex flex-1 items-center justify-center text-[13px] text-muted"
-                >
-                    Waiting for arcterm…
+                <div data-sidecar-waiting role="status" className="flex flex-1 items-center justify-center">
+                    <HudLabel className="text-[12px]">Waiting for arcterm…</HudLabel>
                 </div>
             ) : layout === "small" ? (
                 <SidecarCompact snap={heard.snap} receivedAt={heard.at} clock={clock} send={send} />
-            ) : column ? (
-                <div className="flex min-h-0 flex-1">
-                    <SidecarOrbit snap={heard.snap} receivedAt={heard.at} clock={clock} send={send} />
-                    <SidecarResourcesColumn resources={heard.snap.resources} />
-                </div>
             ) : (
                 <SidecarOrbit snap={heard.snap} receivedAt={heard.at} clock={clock} send={send} />
             )}
@@ -246,53 +223,19 @@ function SidecarRoot() {
     );
 }
 
-// The alert frame (an inset edge over the whole window) follows the window's corners, or the OS cuts its corners off.
-// A native Mac window rounds them 12px. Windows 11 rounds a frameless window too, 8px, except maximized or full screen
-// (and Windows 10 never): read again on each resize, since both toggles resize the window.
+// The alert frame (an inset edge over the whole window) and every box in Sidecar are rounded, never sharp (spec
+// 2026-11-18-sidecar-hud-design.md, "Corners"): the frame takes `--sidecar-corner` as its radius. A native Mac window
+// rounds its corners 12px; on Windows (10 and 11 alike) the frame is 8px whatever the window's state, a maximized or
+// full-screen one included, so nothing reads the window or listens to its resizes for it.
 const MAC_CORNER = "12px";
-const WIN11_CORNER = "8px";
+const WIN_CORNER = "8px";
 
 function setCorner(px: string): void {
     document.documentElement.style.setProperty("--sidecar-corner", px);
 }
 
-// Windows 11 reports platformVersion 13 and up through the client hints; Windows 10 below 13
-async function windows11(): Promise<boolean> {
-    const hints = (
-        navigator as Navigator & {
-            userAgentData?: {
-                platform: string;
-                getHighEntropyValues(keys: string[]): Promise<{ platformVersion?: string }>;
-            };
-        }
-    ).userAgentData;
-    if (hints?.platform !== "Windows") {
-        return false;
-    }
-    const { platformVersion } = await hints.getHighEntropyValues(["platformVersion"]);
-    return Number.parseInt(platformVersion ?? "0", 10) >= 13;
-}
-
-async function followWindowsCorners(): Promise<void> {
-    if (!(await windows11())) {
-        return;
-    }
-    const win = getCurrentWindow();
-    const sync = () => {
-        Promise.all([win.isMaximized(), win.isFullscreen()])
-            .then(([max, fs]) => setCorner(max || fs ? "0px" : WIN11_CORNER))
-            .catch((err) => console.error("sidecar: reading the window's state for its corners failed", err));
-    };
-    sync();
-    await win.onResized(sync);
-}
-
 loadFonts();
-if (NATIVE_MAC_FRAME) {
-    setCorner(MAC_CORNER);
-} else {
-    followWindowsCorners().catch((err) => console.error("sidecar: following the window's corners failed", err));
-}
+setCorner(NATIVE_MAC_FRAME ? MAC_CORNER : WIN_CORNER);
 // the window never scrolls: P is drawn to fit it, and Q's Needs you list scrolls inside itself
 document.body.classList.add("overflow-hidden");
 createRoot(document.getElementById("sidecar")!).render(<SidecarRoot />);

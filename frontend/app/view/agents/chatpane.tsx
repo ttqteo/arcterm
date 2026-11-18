@@ -26,10 +26,20 @@ import { loadEffortDetail } from "@/app/view/jarvis/effortstore";
 import { formatChordString } from "@/util/keysym";
 import { cn, fireAndForget, stringToBase64 } from "@/util/util";
 import { useAtom, useAtomValue } from "jotai";
-import { ArrowDown, ChevronDown, ChevronUp, Highlighter, TextQuote, TextSearch } from "lucide-react";
-import { AnimatePresence, motion, MotionConfig, useIsPresent, useReducedMotion, type Variants } from "motion/react";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from "react";
+import { ArrowDown, ChevronDown, ChevronUp, Highlighter, Quote, TextSearch } from "lucide-react";
+import {
+    animate,
+    AnimatePresence,
+    motion,
+    MotionConfig,
+    useIsPresent,
+    usePresence,
+    useReducedMotion,
+    type Variants,
+} from "motion/react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
 import { goalFromLines } from "../../../../claude/arc-mod/hooks/goal-core";
+import { confirmCloseSession } from "./agentactions";
 import { canStop } from "./agentcomposer";
 import { getProcExitAtom } from "./agentcontrollerstore";
 import { agentCwd } from "./agentcwd";
@@ -55,7 +65,14 @@ import { isDocReviewAsk } from "./chatdocreview";
 import { ChatDocReviewCard } from "./chatdocreviewcard";
 import { chatEmptyError, chatEmptyView } from "./chatempty";
 import { ChatFileCards } from "./chatfilecards";
-import { chatFocusReadOnAtom, FOCUS_READ_KEYS, focusReaderOf, type FocusReader } from "./chatfocusreadstore";
+import { nextFocusReadSize } from "./chatfocusread";
+import {
+    chatFocusReadOnAtom,
+    chatFocusReadSizeAtom,
+    FOCUS_READ_KEYS,
+    focusReaderOf,
+    type FocusReader,
+} from "./chatfocusreadstore";
 import { useFocusRead } from "./chatfocusreadview";
 import { splitAttachments } from "./chatfiles";
 import { ChatGoalStrip } from "./chatgoal";
@@ -90,6 +107,7 @@ import { chatSkimOnAtom, refreshSkimMarks } from "./chatskimstore";
 import { SleepRunRows } from "./chatsleepbashrows";
 import {
     chatChips,
+    closeChip,
     endsWithQuestion,
     initiativeChips,
     isLongTurn,
@@ -108,6 +126,7 @@ import { withoutTakenBack } from "./chattakeback";
 import { noteTakenBack, useTakenBack } from "./chattakebackstore";
 import { VERDICT_TOPIC } from "./chatverdict";
 import { ChatVisualHost } from "./chatvisualview";
+import { doneSuggestion } from "./donesuggest";
 import { switchAgentChunk } from "./initiativebandstore";
 import { startTranscriptStream, stopTranscriptStream } from "./livetranscript";
 import { activityAtomFor } from "./livetranscriptatoms";
@@ -116,14 +135,16 @@ import { AgentPathLinks } from "./pathlinkcontext";
 import { PermissionCard } from "./permissioncard";
 import { projectsAtom } from "./projectsstore";
 import { useTranscriptWindow } from "./railtranscript";
-import { useBrainstormQueue } from "./runqueuestore";
+import { runQueueAtom, useBrainstormQueue } from "./runqueuestore";
 import { runtimeLogo } from "./runtimelogo";
 import { runtimeMeta } from "./runtimemeta";
 import { ScreenDialogCard } from "./screendialogcard";
 import { shipGitAtom } from "./shipstore";
 import { useStickToBottom } from "./sticktobottom";
-import { turnStats, type TurnStats } from "./transcriptprojection";
+import { backgroundTasksByIdAtom } from "./subagentsstore";
+import { runningBackgroundTasks, turnStats, type TurnStats } from "./transcriptprojection";
 import { TranscriptSkeleton } from "./transcriptskeleton";
+import { unreadAgentsAtom } from "./unreadagentsstore";
 import { useWaking } from "./wakingstore";
 import { WorkingGlyph } from "./workingglyph";
 
@@ -286,7 +307,7 @@ function PendingBubble({ pending, first }: { pending: PendingMessage; first: boo
                 className={cn("flex max-w-[75%] flex-col items-end gap-2", pending.queued === true && "opacity-55")}
             >
                 {body !== "" || said.images.length > 0 ? (
-                    <div className={youBubbleBox(said.files.length > 0)}>
+                    <div className={cn("relative", youBubbleBox(said.files.length > 0))}>
                         {body !== "" ? <TaggedPromptText text={body} /> : null}
                         {said.images.length > 0 ? <PromptImages paths={said.images} /> : null}
                     </div>
@@ -299,6 +320,90 @@ function PendingBubble({ pending, first }: { pending: PendingMessage; first: boo
 
 // the tail's gap above PendingLine, which its margin takes back as it folds
 const LINE_GAP = 12;
+
+// The working line, which opens and folds on the spring as a chat row does (Arriving): drawn and dropped at once, the
+// conversation stuck to the end jumped by its height as a turn started and again as it ended. `arrive`: it shows on a
+// pane already drawn (a turn starting), not on the pane's first render. The tail's gap that goes with it is taken back
+// by a margin as it closes, on the side something is drawn (above it, else under it), so nothing jumps as it mounts or
+// unmounts. Imperative, as Arriving is: the styles that close it are set before the first paint, and removed at rest.
+function WorkingLine({ arrive, children }: { arrive: boolean; children: ReactNode }) {
+    const ref = useRef<HTMLDivElement>(null);
+    const reduce = useReducedMotion() ?? false;
+    const [isPresent, safeToRemove] = usePresence();
+    const fold = (el: HTMLElement): "marginTop" | "marginBottom" | null =>
+        el.previousElementSibling != null ? "marginTop" : el.nextElementSibling != null ? "marginBottom" : null;
+    const opens = useRef(arrive && !reduce);
+    useLayoutEffect(() => {
+        const el = ref.current;
+        if (!opens.current || el == null) {
+            return;
+        }
+        const full = el.getBoundingClientRect().height;
+        const side = fold(el);
+        const rest = () => {
+            for (const prop of ["height", "margin-top", "margin-bottom", "opacity", "overflow"]) {
+                el.style.removeProperty(prop);
+            }
+        };
+        el.style.overflow = "hidden";
+        el.style.height = "0px";
+        el.style.opacity = "0";
+        if (side != null) {
+            el.style[side] = `${-LINE_GAP}px`;
+        }
+        const runs = [
+            animate(el, { height: [0, full] }, MOTION.spring),
+            animate(el, { opacity: [0, 1] }, { duration: MOTION.durMicro, ease: MOTION.easeFluid }),
+            ...(side != null ? [animate(el, { [side]: [-LINE_GAP, 0] }, MOTION.spring)] : []),
+        ];
+        let over = false;
+        const end = () => {
+            if (!over) {
+                over = true;
+                rest();
+            }
+        };
+        void Promise.all(runs.map((run) => run.finished)).then(end, end);
+        return () => {
+            for (const run of runs) {
+                run.stop();
+            }
+            end();
+        };
+    }, []);
+    useEffect(() => {
+        const el = ref.current;
+        if (isPresent) {
+            return;
+        }
+        if (el == null || reduce) {
+            safeToRemove?.();
+            return;
+        }
+        const full = el.getBoundingClientRect().height;
+        const side = fold(el);
+        el.style.overflow = "hidden";
+        const runs = [
+            animate(el, { height: [full, 0] }, MOTION.spring),
+            animate(el, { opacity: [1, 0] }, { duration: MOTION.durMicro, ease: MOTION.easeFluid }),
+            ...(side != null ? [animate(el, { [side]: [0, -LINE_GAP] }, MOTION.spring)] : []),
+        ];
+        void Promise.all(runs.map((run) => run.finished)).then(
+            () => safeToRemove?.(),
+            () => safeToRemove?.()
+        );
+        return () => {
+            for (const run of runs) {
+                run.stop();
+            }
+        };
+    }, [isPresent]);
+    return (
+        <div ref={ref} data-chat-working className="flex flex-none items-center gap-2 text-[12px] text-muted">
+            {children}
+        </div>
+    );
+}
 
 // PendingLine opens and folds on the spring like a chat row (springReveal), and as it folds its margin takes back the
 // tail's gap above it, so what is under it closes up with no jump when it unmounts. At rest it sits 4px under the bubble
@@ -329,12 +434,15 @@ function PendingLine({ text, starting, onSendNow }: { text: string; starting: bo
             exit="exit"
             className="flex flex-none items-center justify-end gap-2 overflow-hidden"
         >
-            <span data-chat-pending-label className="flex items-center gap-1.5 text-[11px] text-muted">
-                {starting ? (
-                    <span className="h-[6px] w-[6px] flex-none rounded-full bg-accent pulse-dot" aria-hidden />
-                ) : null}
-                {text}
-            </span>
+            {/* one queued message's line has no words (chatpending.ts pendingLine): Send now alone */}
+            {text !== "" ? (
+                <span data-chat-pending-label className="flex items-center gap-1.5 text-[11px] text-muted">
+                    {starting ? (
+                        <span className="h-[6px] w-[6px] flex-none rounded-full bg-accent pulse-dot" aria-hidden />
+                    ) : null}
+                    {text}
+                </span>
+            ) : null}
             {!starting && onSendNow != null ? (
                 <button
                     type="button"
@@ -512,12 +620,15 @@ function SkimToggle() {
 
 // Chat's focus read toggle, beside Skim: one block at a time, the rest dimmed (chatfocusreadview.ts). Each agent's own,
 // remembered (chatfocusreadstore.ts). Turning it on puts the focus in the conversation, so J/K step at once; while it is
-// on, the step and quote buttons under it say their keys on their face.
+// on, the toggle grows down into one pill with the step and quote buttons, which say their keys on their face.
 function FocusReadToggle({ agentId, scrollRef }: { agentId: string; scrollRef: RefObject<HTMLDivElement | null> }) {
     const [on, setOn] = useAtom(chatFocusReadOnAtom(agentId));
     const keys = formatChordString(FOCUS_READ_KEYS);
     return (
-        <>
+        <div
+            data-chat-focus-read-group
+            className="absolute right-[42px] top-2 z-20 flex w-[26px] flex-col overflow-hidden rounded-[8px] border border-edge-mid bg-surface-raised"
+        >
             <button
                 type="button"
                 data-chat-focus-read-toggle
@@ -535,32 +646,47 @@ function FocusReadToggle({ agentId, scrollRef }: { agentId: string; scrollRef: R
                     }
                 }}
                 className={cn(
-                    "absolute right-[42px] top-2 z-20 flex h-[26px] w-[26px] cursor-pointer items-center justify-center rounded-[8px] border border-edge-mid bg-surface-raised hover:bg-surface-hover",
-                    on ? "text-accent" : "text-muted"
+                    "flex h-[24px] w-full cursor-pointer items-center justify-center",
+                    on ? "bg-accentbg text-accent" : "text-muted hover:bg-surface-hover"
                 )}
             >
                 <TextSearch size={13} strokeWidth={2} aria-hidden />
             </button>
             {on ? <FocusReadSteps agentId={agentId} scrollRef={scrollRef} /> : null}
-        </>
+        </div>
     );
 }
 
-// Focus read's buttons, a column under its toggle (clear of the pinned prompt card, which keeps 70px of the corner):
-// the previous and next block and the quote, each with its key on its face so the keys need no tooltip. A click leaves
-// the focus in the conversation, so the keys go on from there.
+// Focus read's buttons, the lower part of its pill (clear of the pinned prompt card, which keeps 70px of the corner):
+// how many blocks it lights at a time (×1, ×2, ×3, a click for the next), the previous and next group, then past a
+// hairline the quote, each step with its key on its face so the keys need no tooltip. A click leaves the focus in the
+// conversation, so the keys go on from there.
 const FOCUS_STEPS = [
-    { key: "K", label: "Previous block (K or ↑)", Icon: ChevronUp, act: (r: FocusReader) => r.step(-1) },
-    { key: "J", label: "Next block (J, ↓ or Space)", Icon: ChevronDown, act: (r: FocusReader) => r.step(1) },
-    { key: "Q", label: "Quote the lit block into the box (Q)", Icon: TextQuote, act: (r: FocusReader) => r.quote() },
+    { key: "K", label: "Previous blocks (K or ↑)", Icon: ChevronUp, act: (r: FocusReader) => r.step(-1) },
+    { key: "J", label: "Next blocks (J, ↓ or Space)", Icon: ChevronDown, act: (r: FocusReader) => r.step(1) },
+    { key: "Q", label: "Quote the lit blocks into the box (Q)", Icon: Quote, act: (r: FocusReader) => r.quote() },
 ] as const;
 
 function FocusReadSteps({ agentId, scrollRef }: { agentId: string; scrollRef: RefObject<HTMLDivElement | null> }) {
+    const [size, setSize] = useAtom(chatFocusReadSizeAtom);
+    const next = nextFocusReadSize(size);
+    const sizeLabel = `${size} ${size === 1 ? "block" : "blocks"} at a time (click for ${next})`;
     return (
-        <div
-            data-chat-focus-read-steps
-            className="absolute right-[42px] top-[38px] z-20 flex w-[26px] flex-col overflow-hidden rounded-[8px] border border-edge-mid bg-surface-raised"
-        >
+        <div data-chat-focus-read-steps className="flex flex-col border-t border-edge-mid">
+            <button
+                type="button"
+                data-chat-focus-read-size={size}
+                aria-label={sizeLabel}
+                title={sizeLabel}
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => {
+                    setSize(next);
+                    scrollRef.current?.focus({ preventScroll: true });
+                }}
+                className="flex h-[24px] cursor-pointer items-center justify-center border-b border-edge-mid font-mono text-[10.5px] font-semibold text-secondary hover:bg-surface-hover hover:text-primary"
+            >
+                ×{size}
+            </button>
             {FOCUS_STEPS.map(({ key, label, Icon, act }) => (
                 <button
                     key={key}
@@ -577,10 +703,13 @@ function FocusReadSteps({ agentId, scrollRef }: { agentId: string; scrollRef: Re
                         }
                         scrollRef.current?.focus({ preventScroll: true });
                     }}
-                    className="flex h-[32px] cursor-pointer flex-col items-center justify-center gap-px text-muted hover:bg-surface-hover hover:text-primary"
+                    className={cn(
+                        "group flex h-[30px] cursor-pointer flex-col items-center justify-center gap-[3px] text-secondary hover:bg-surface-hover hover:text-primary",
+                        key === "Q" && "border-t border-edge-mid"
+                    )}
                 >
-                    <Icon size={13} strokeWidth={2} aria-hidden />
-                    <kbd className="font-sans text-[9.5px] leading-none text-muted">{key}</kbd>
+                    <Icon size={12} strokeWidth={2} aria-hidden />
+                    <kbd className="font-mono text-[9px] leading-none text-muted group-hover:text-secondary">{key}</kbd>
                 </button>
             ))}
         </div>
@@ -715,7 +844,8 @@ function ChatPaneBody({ model, agent, barred }: { model: AgentsViewModel; agent:
     // the bottom, so Chat then looks as it does without it
     const focusRead = useAtomValue(chatFocusReadOnAtom(agent.id));
     const focusTickRef = useRef<HTMLDivElement>(null);
-    useFocusRead(agent.id, scrollRef, focusTickRef, focusRead, agent.state === "working" && atBottom);
+    const focusReadSize = useAtomValue(chatFocusReadSizeAtom);
+    useFocusRead(agent.id, scrollRef, focusTickRef, focusRead, agent.state === "working" && atBottom, focusReadSize);
     // false while ChatLayer's exit plays: the pane is still drawn (fading) but already gone as far as input goes
     const present = useIsPresent();
     const streaming = surface === "agent";
@@ -797,6 +927,20 @@ function ChatPaneBody({ model, agent, barred }: { model: AgentsViewModel; agent:
     const awaitsOwn = awaitsOwnMessage(pending);
     // the last turn drawn is over while that message is on its way, so its files card stays put through the send
     const lastTurn = liveTurn(agent.state, pending);
+    // a message bubble of yours stood in the tail at the last commit: the row of yours landing now is its twin, drawn at
+    // once in its place; with none up, a row of yours that lands opens on the spring as any row does (ChatConversation
+    // ownArrives): one whose bubble the idle rule dropped before it landed, or one typed in the terminal
+    const bubbleUp = pending.some((p) => p.kind == null);
+    const bubbleWasUp = useRef(bubbleUp);
+    useLayoutEffect(() => {
+        bubbleWasUp.current = bubbleUp;
+    });
+    const ownArrives = !bubbleUp && !bubbleWasUp.current;
+    // the pane has been drawn once: a working line showing from then on opens on the spring (WorkingLine)
+    const paneDrawn = useRef(false);
+    useEffect(() => {
+        paneDrawn.current = true;
+    }, []);
     // the cards Chat drew for a bare /usage, /tasks… (chatlocal.ts)
     const localCards = useLocalCards(agent.id);
     // a queued message's Send now: Claude Code's own send-now chord in the agent's terminal, which sends every queued
@@ -887,7 +1031,16 @@ function ChatPaneBody({ model, agent, barred }: { model: AgentsViewModel; agent:
     const askModel = wantsModelSuggest({ ...turnOpen, seen: focusId === agent.id && surface === "agent" });
     useEffect(() => {
         if (askModel && turnKey != null && reply != null) {
-            requestModelSuggest(turnKey, { reply, recent, question, summary: long });
+            // a Claude agent's arc mod works the replies out in its own claude at the turn's end: wavesrv takes that
+            // answer when it comes, and starts a claude of its own only when it does not (pkg/chatsuggest/hook.go)
+            requestModelSuggest(turnKey, {
+                reply,
+                recent,
+                question,
+                summary: long,
+                blockid: agent.blockId,
+                hook: agent.agent === "claude",
+            });
         }
         // the key stands for the reply, and the question with it; the person's messages before it change with the reply;
         // a finished turn's tool count cannot change, so the same key always means the same `long`
@@ -951,6 +1104,15 @@ function ChatPaneBody({ model, agent, barred }: { model: AgentsViewModel; agent:
     };
     // a cell in a split shows the chips too, from the rules and from an answer already in
     const vi = writesVietnamese(recent);
+    // the agent looks finished, by the rule the header's ✓ Close and its sidebar row read (donesuggest.ts): the row
+    // offers to close it too, last
+    const done = doneSuggestion(
+        agent,
+        useAtomValue(unreadAgentsAtom).get(agent.id) ?? 0,
+        useAtomValue(model.lineageAtom).runs,
+        runningBackgroundTasks(useAtomValue(backgroundTasksByIdAtom)[agent.id]).length,
+        useAtomValue(runQueueAtom)
+    );
     const chips = wantsModelSuggest({ ...turnOpen, seen: true })
         ? chatChips({
               question,
@@ -961,6 +1123,7 @@ function ChatPaneBody({ model, agent, barred }: { model: AgentsViewModel; agent:
                         ...initiativeChips(effort, agent.id, agent.committed === true, vi, turnEnded),
                     ],
               model: modelSuggest,
+              close: closeChip(done, vi),
           })
         : undefined;
 
@@ -1014,6 +1177,7 @@ function ChatPaneBody({ model, agent, barred }: { model: AgentsViewModel; agent:
                                     placeId={placeId}
                                     active={lastTurn.active}
                                     working={lastTurn.working}
+                                    ownArrives={ownArrives}
                                     onLoadEarlier={hasEarlier ? () => void loadEarlier() : undefined}
                                     onOpenTerminal={asleep ? undefined : () => setChatMode(agent.id, "terminal")}
                                     brainstorm={{
@@ -1091,15 +1255,17 @@ function ChatPaneBody({ model, agent, barred }: { model: AgentsViewModel; agent:
                             </div>
                         ) : null}
                         {/* the empty conversation, or the first message's label, already says the harness is starting */}
-                        {working != null && !empty && !opening ? (
-                            <div data-chat-working className="flex items-center gap-2 text-[12px] text-muted">
-                                <WorkingGlyph />
-                                <span className="volt-text flex min-w-0">
-                                    <span className="min-w-0 truncate shimmer-jarvis">{working}</span>
-                                </span>
-                                {turn != null ? <TurnStatsText stats={turn} /> : null}
-                            </div>
-                        ) : null}
+                        <AnimatePresence initial={false}>
+                            {working != null && !empty && !opening ? (
+                                <WorkingLine key="working" arrive={paneDrawn.current}>
+                                    <WorkingGlyph />
+                                    <span className="volt-text flex min-w-0">
+                                        <span className="min-w-0 truncate shimmer-jarvis">{working}</span>
+                                    </span>
+                                    {turn != null ? <TurnStatsText stats={turn} /> : null}
+                                </WorkingLine>
+                            ) : null}
+                        </AnimatePresence>
                         <PermissionCard
                             agent={agent}
                             askShown={asking}
@@ -1206,6 +1372,7 @@ function ChatPaneBody({ model, agent, barred }: { model: AgentsViewModel; agent:
                             chips={chips}
                             summary={chips !== undefined && long ? turnSummary(modelSuggest) : undefined}
                             onMarkDone={markDone}
+                            onClose={() => confirmCloseSession(agent, model, "chat chip")}
                             onGoOn={goOn}
                             onSendNow={queuedShown ? sendNow : undefined}
                             questionWaits={questionWaits}

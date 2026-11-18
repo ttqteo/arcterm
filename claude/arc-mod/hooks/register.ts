@@ -26,6 +26,17 @@ import type { Ran } from "./mention-core";
 import { leadingMention, mentionRefusal, sendArgs, sendOutcome } from "./mention-core";
 import { refsContext } from "./refs-core";
 import { idleArgs, TurnStatus } from "./status-core";
+import {
+    beginArgs,
+    beginPayload,
+    endArgs,
+    parseBegin,
+    recentPrompts,
+    SUGGEST_MAX_TOKENS,
+    SUGGEST_MODEL,
+    SUGGEST_TIMEOUT_MS,
+    wantsSuggest,
+} from "./suggest-core";
 import type { Group, SpawnVerdict } from "./tokengate-core";
 import { createSpawnGate, endsTurnSay, RUN_VERDICT, tokengateArgs, tokengateLine } from "./tokengate-core";
 import { isCommit, isLiveCheck, uiCheckReminder, uiFiles } from "./uicheck-core";
@@ -264,6 +275,43 @@ async function answerBtw($: EngineInterface, question: string) {
     });
     if (kept.deny !== undefined) {
         throw new Error(kept.deny);
+    }
+}
+
+// works out Chat's suggested replies for the turn that ended on `answer` (suggest-core.ts): wavesrv hands back the
+// completion, it runs here on haiku, and the answer goes back for Chat. never throws, and nothing waits on it: anything
+// that goes wrong leaves wavesrv to run its own call
+async function suggestReplies($: EngineInterface, answer: string) {
+    try {
+        const recent = recentPrompts(await $.session.messages());
+        const begun = await $.process.run([WSH, ...beginArgs()], {
+            stdin: beginPayload(answer, recent),
+            timeoutMs: 25_000,
+        });
+        if (begun.exitCode !== 0) {
+            $.ui.log(`arc: wsh chatsuggest begin exited ${begun.exitCode}: ${begun.stderr.trim()}`, { to: "debug" });
+            return;
+        }
+        const call = parseBegin(begun.stdout);
+        if (call == null) {
+            return;
+        }
+        const r = await $.model.complete({
+            model: SUGGEST_MODEL,
+            system: call.system,
+            prompt: call.prompt,
+            maxTokens: SUGGEST_MAX_TOKENS,
+            timeoutMs: SUGGEST_TIMEOUT_MS,
+        });
+        const ended = await $.process.run([WSH, ...endArgs(call.key, !r.isAnswered)], {
+            stdin: r.isAnswered ? r.text : "",
+            timeoutMs: 10_000,
+        });
+        if (ended.exitCode !== 0) {
+            $.ui.log(`arc: wsh chatsuggest end exited ${ended.exitCode}: ${ended.stderr.trim()}`, { to: "debug" });
+        }
+    } catch (err) {
+        $.ui.log(`arc: suggesting replies failed: ${String(err)}`, { to: "debug" });
     }
 }
 
@@ -943,6 +991,11 @@ export const register: Register = (on) => {
         const wasAskInDialog = isAskInDialog && !e.agentId;
         if (wasAskInDialog) {
             isAskInDialog = false;
+        }
+        // Chat's replies for this turn, worked out here. not awaited: the completion takes seconds and must not hold the
+        // turn's end; its begin can reach wavesrv after Chat's ask, which waits a moment for it (pkg/chatsuggest Hooks)
+        if (active && !e.agentId && wantsSuggest(e, active, isEngineTree(await $.session.cwd()))) {
+            void suggestReplies($, e.answer);
         }
         for (const text of e.agentId ? [] : endTurn(turn)) {
             void $.prompt

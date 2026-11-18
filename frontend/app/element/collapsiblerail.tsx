@@ -273,7 +273,7 @@ export function CollapsibleRail({
                             {body != null ? (
                                 <div className="flex min-h-0 flex-1 flex-col">{body}</div>
                             ) : (
-                                // the scrollbar's 10px (tailwindsetup.css) is always kept, out of the right padding,
+                                // the scrollbar's 8px (tailwindsetup.css) is always kept, out of the right padding,
                                 // so the rail's content is one width whether it scrolls or not
                                 <div
                                     data-rail-scroll

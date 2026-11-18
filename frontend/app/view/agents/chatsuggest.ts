@@ -24,7 +24,7 @@ import type { HintPart } from "./chatboxstate";
 import { agentChunk } from "./initiativepopovermodel";
 import { shipOffer, type ShipGit } from "./shipmodel";
 
-export type ChipKind = "commit" | "push" | "reply" | "done" | "next";
+export type ChipKind = "commit" | "push" | "reply" | "done" | "next" | "close";
 
 /** One suggested reply: `text` is both what the chip says and what a click sends, except a `done` chip's, whose click
  *  ticks `chunk` done on the agent's initiative and sends nothing. */
@@ -249,9 +249,22 @@ export function turnSummary(model: ModelSuggest | undefined): string | undefined
     return s === undefined || s === "" ? undefined : s;
 }
 
+/** Pure: the chip that closes an agent the cockpit counts as done (`done`: donesuggest.ts doneSuggestion, which the
+ *  header's ✓ Close and the sidebar row's read too, so the three come and go together), or none. An action, as a
+ *  `done` chip is: a click closes the agent the way the header's ✓ does, and sends nothing. */
+export function closeChip(done: boolean, vi: boolean): ChatChip | undefined {
+    return done ? { text: vi ? "đóng agent" : "close agent", kind: "close", source: "rule" } : undefined;
+}
+
 /** Pure: the row's chips. A question's are the model's answers (with "ok" only once the call failed or found none); any
- *  other turn's are the rules' chips, then the model's next step when it is not one of them. */
-export function chatChips(i: { question: boolean; rules: ChatChip[]; model: ModelSuggest | undefined }): ChatChip[] {
+ *  other turn's are the rules' chips, then the model's next step when it is not one of them, and last the close chip
+ *  (closeChip), which keeps its place in a full row: the model's step gives way to it. */
+export function chatChips(i: {
+    question: boolean;
+    rules: ChatChip[];
+    model: ModelSuggest | undefined;
+    close?: ChatChip;
+}): ChatChip[] {
     const replies = i.model?.status === "done" ? i.model.replies : [];
     const fromModel = replies.map((text): ChatChip => ({ text, kind: "reply", source: "model" }));
     if (i.question) {
@@ -269,7 +282,7 @@ export function chatChips(i: { question: boolean; rules: ChatChip[]; model: Mode
             shown.add(c.text.toLowerCase());
         }
     }
-    return out.slice(0, MAX_CHIPS);
+    return i.close == null ? out.slice(0, MAX_CHIPS) : [...out.slice(0, MAX_CHIPS - 1), i.close];
 }
 
 /** Pure: the key one turn's model answer is kept under: the agent and its reply, so a new turn asks again and the same
@@ -353,10 +366,12 @@ export function runningActions(entries: readonly AgentEntry[], now: number): Run
     return { diff, terminal, terminalAt: terminal ? null : terminalAt };
 }
 
-/** Pure: the chips the row draws: a `done` chip needs a way to tick its chunk (`canMarkDone`), or it is left out. Tab
- *  walks these, so the picked chip is always one on screen. */
-export function drawnChips(chips: readonly ChatChip[], canMarkDone: boolean): ChatChip[] {
-    return chips.filter((c) => !(c.kind === "done" && c.chunk != null && !canMarkDone));
+/** Pure: the chips the row draws: a `done` chip needs a way to tick its chunk (`canMarkDone`), and a `close` chip a
+ *  way to close the agent (`canClose`), or it is left out. Tab walks these, so the picked chip is always one on screen. */
+export function drawnChips(chips: readonly ChatChip[], canMarkDone: boolean, canClose = false): ChatChip[] {
+    return chips.filter(
+        (c) => !(c.kind === "done" && c.chunk != null && !canMarkDone) && !(c.kind === "close" && !canClose)
+    );
 }
 
 /** Pure: the chip Tab picks next (Shift+Tab: the one before), by its text, wrapping round; none picked starts at the
@@ -387,6 +402,9 @@ export function suggestTake(typed: string, armed: string | null, t: string): "se
  *  sends its text as typed (a reply, commit, push, or a `next` chip with nothing to start its chunk: `canGoOn` false).
  *  A `done` chip sends nothing and a `next` chip that starts its chunk does more than send, so neither has text to edit. */
 export function chipEditable(chip: ChatChip, canGoOn: boolean): boolean {
+    if (chip.kind === "close") {
+        return false;
+    }
     if (chip.chunk == null) {
         return true;
     }
@@ -406,7 +424,12 @@ export function withChipText(typed: string, t: string): string {
 /** Pure: the empty box's line while a chip is picked: what Enter does with it, Shift+Enter when the chip's text can be
  *  edited first (chipEditable), then the keys that move on or let go. */
 export function pickedHint(chip: ChatChip, editable = false): HintPart[] {
-    const does = chip.kind === "done" && chip.chunk != null ? ` marks “${chip.chunk}” done` : ` sends “${chip.text}”`;
+    const does =
+        chip.kind === "close"
+            ? " closes this agent"
+            : chip.kind === "done" && chip.chunk != null
+              ? ` marks “${chip.chunk}” done`
+              : ` sends “${chip.text}”`;
     const edit: HintPart[] = editable ? [{ key: "Shift+Enter" }, " edits first · "] : [];
     return [{ key: "Enter" }, does + " · ", ...edit, { key: "Tab" }, " next · ", { key: "Esc" }, " back to typing"];
 }

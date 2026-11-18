@@ -798,6 +798,30 @@ declare global {
         recent?: string[];
         question?: boolean;
         summary?: boolean;
+        blockid?: string;
+        hook?: boolean;
+    };
+
+    // wshrpc.CommandChatSuggestHookBeginData
+    type CommandChatSuggestHookBeginData = {
+        blockid: string;
+        reply: string;
+        recent?: string[];
+    };
+
+    // wshrpc.CommandChatSuggestHookBeginRtnData
+    type CommandChatSuggestHookBeginRtnData = {
+        key: string;
+        system: string;
+        prompt: string;
+    };
+
+    // wshrpc.CommandChatSuggestHookEndData
+    type CommandChatSuggestHookEndData = {
+        blockid: string;
+        key: string;
+        text?: string;
+        failed?: boolean;
     };
 
     // wshrpc.CommandChatSuggestRtnData
@@ -4499,6 +4523,7 @@ declare global {
         cpu: number;
         mem: number;
         gpu?: number;
+        icon?: string;
     };
 
     // wshrpc.ResMonSnapshotData

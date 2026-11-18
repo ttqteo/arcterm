@@ -32,9 +32,90 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
   account's name and Switch to <other>: Switch makes the other account active, restarts this agent on it (the session
   resumes) and lists the other agents on the old account in the restart dialog; Snooze for an hour hides the strip in
   every agent of that account, and an agent in a project tied to its own account has no Switch (2026-11-18);
+- [ ] (arcterm) **A turn's file card opens the file's diff.** In Chat, at the end of a turn that edited files, click a
+  row of "Edited N files": the rail tab opens on Diff (changed lines marked, the rest folded), not the whole file. A
+  file in a `.worktrees/<x>/` tree shows its change in that tree; a file new since the last commit shows all added; a
+  change already committed says "No change since the last commit". `chatsteps.ts` turnFileDiff, `filetabdiff.tsx`.
+  Not tried in the dev app when written.
+
+- [ ] (arcterm) **A builder check waiting on you makes the agent's row breathe.** In Agent, on a brainstorm whose
+  builder check is back (a builder question open, or Review / Approve shown in Chat): its row in the tree breathes an
+  amber wash and edge, as an asking agent's does, and Cockpit counts it; after Approve starts the run the row stops.
+  `brainstormmodel.ts` checkWaits.
+
+- [ ] (arcterm) **A brainstorm's rail opens as wide as the details rail.** In Agent, on an agent brainstorming, switch
+  between Chat and the brainstorm (the lightbulb): Decided so far's left edge sits where the details rail's did, with
+  nothing moving. Drag it narrower, switch to Chat and back: it opens at the details rail's width again. Not tried in
+  the dev app when written.
+- [ ] (arcterm) **Chat's box fences a real clipboard paste of a log.** The CDP step dispatches a made-up paste event.
+  Copy a stack trace from the browser's DevTools console (several `at …` lines) and paste it into Chat's box after a
+  word: it goes in on its own lines inside ``` with the code box behind it, the box grows to show it all, and one
+  Ctrl+Z leaves the raw paste with no fence. Paste two lines of Vietnamese prose: they go in as typed, no fence.
+  `feat/chat-input-marks` (956770e3c).
+- [ ] (arcterm) **Telex typed inside a quote and inline code in Chat's box.** Type `> đây là trích dẫn` and
+  `` gõ `lệnh` xong `` with Telex on: every syllable lands whole (none dropped or doubled), the quote line stays
+  slanted with its bar, `` `lệnh` `` stays a chip, and the text after the closing backtick is plain again.
+  `feat/chat-input-marks` (956770e3c).
+
+- [ ] (arcterm) **A self-detaching dev server reads as its own project's.** With SIEM-portal's `astro dev --port 4310`
+  up (started in the foreground, so it detaches), open the footer's Servers: the :4310 row is not an arcterm agent's
+  (no owner, or a SIEM-portal agent's); in Agent, the SIEM-portal folder row shows :4310 beside :8100's agent row.
+  `fix/servers-owner`.
+- [ ] (arcterm) **Sidecar HUD skin: Sidecar's renderer plus the GPU process on a release build, before the HUD and with
+  it.** The scenarios only read a dev app's idle cost (the `sidecar-orbit` step "HUD idle cost"), never a release
+  build's memory. Build the last commit before the HUD (`task tauri:build FROM=9b2297587`, the spec and plan commit)
+  and the one with it, install each in turn, open P with 12 agents, and read Sidecar's WebView2 renderer plus the GPU process it adds
+  (Task Manager → Details, the `msedgewebview2.exe` rows under Sidecar's window) after an hour on screen, each build.
+  Write both figures into the "Sidecar HUD skin" row of `docs/open-issues.md` "RAM watch", against the "Sidecar, part
+  3" row's: the HUD should add the stacked strokes and a few hundred static SVG nodes, not a visible step in either
+  process. Also watch the GPU process's CPU while P idles: the ping is the only thing that should keep it awake.
+  Commit: test(sidecar) HUD scenario steps, RAM watch row and changelog line
+- [ ] (arcterm) **A close chip in Chat's box.** Have a Claude agent commit something and read its reply: the header's ✓
+  Close shows, and the chips over the box end in "đóng agent" (or "close agent" when you write English) with a circled
+  check, beside "push đi" and the model's step, even when the row is full. A click (or Tab to it, then Enter) asks to
+  close it as the header's ✓ does; it is gone while a background task still runs or a run it started is still going,
+  and on a turn that ends in a question. Branch `feat/chat-close-chip`.
+- [ ] (arcterm) **A Claude agent's suggested replies come from its own claude.** After a build with this change, let
+  a Claude agent finish a turn that ends in a question while you look at it in Chat: the reply chips show about 2 s
+  after the turn ends (not 5-6 s), and no extra `claude.exe` starts for them (Task Manager); `waveapp.log` has no
+  `wsh chatsuggest` errors. A pi agent's chips still come (the headless call), and a turn the mod could not answer
+  (claude outside arcterm, the mod not loaded) still gets chips after ~2 s more. If chips never come faster, check
+  whether `cc-plugin-sec-default` skips the arc mod's `turn.complete` (it skips its `prompt.compose` and
+  `session.append` in some sessions). Unit tests only: `pkg/chatsuggest/hook.go`, `claude/arc-mod/hooks/suggest-core.ts`
+  (2026-11-18);
+
+- [ ] (arcterm) **Switching agents no longer crashes the header.** In Agent, pick a Claude agent, then a plain
+  terminal, a run's worker and back (from the tree and from Sidecar's wall), including one falling asleep: no
+  `WINDOW ERROR … is not iterable` in `waveapp.log` and the header redraws each time. Not tried in the app:
+  `agentheader.tsx` `remoteStatus` (7778f1559, 2026-11-18);
+
+- [ ] (arcterm) **Scrollbars show only under the pointer.** With the pointer away, the Agent tree, Chat, Jarvis and
+  Setup lists show no scrollbar; point into one and a thin bar shows on that list alone (not on a list beside or
+  inside it), thicker and brighter under the pointer and while dragged; nothing shifts sideways when it shows. Jarvis
+  bands and the council composer still line up with the scrolling column above them (gutter 10px → 8px). Checked only
+  in an Edge page with the same rules (`--scrollbar-thumb` in `tailwindsetup.css`, 2026-11-18), not in the app or on a
+  Mac's WebKit.
+
+- [ ] (arcterm) **Background tasks open in place.** Have an agent run two commands with `run_in_background` (one that
+  ends at once, one `npx vitest run <a test file>` that runs a while), then open its details rail → Background tasks:
+  Running 1 holds the vitest one with its time counting up, Finished 1 the other with its time. A click opens a row:
+  `$ <command>`, then its last 12 output lines in vitest's own colours, growing while it runs, and Open full view, which
+  opens the output in the File tab as before; a second click folds it. Stop still ends a running one; the Finished
+  heading folds its rows. Branch `feat/codeblock-run`.
+- [ ] (arcterm) **A shell command in colour.** In Chat type `!` then `git log --oneline -3 | head "$HOME"`: `git` and
+  `head` in the keyword blue, `log` in the string green, `--oneline`, `-3` and `|` dimmed, `"$HOME"` green; the caret
+  shows and moves where it should, a selection shows its band, the grey ghost text still sits after the last character,
+  and a command long enough to wrap or scroll stays lined up with its colours. A reply's `bash` block draws the same
+  colours. Branch `feat/codeblock-run`.
+- [ ] (arcterm) **A shell block in Chat has Run.** Ask an agent for a command in a `bash` block written `! git status`:
+  its head shows Run beside Wrap; Run opens a terminal in the panel under that agent, in the agent's folder (its
+  worktree when it has one), and `git status` runs there without the `! `. A `ts` or `json` block has no Run; with no
+  agent in focus the terminal takes the centre. Branch `feat/codeblock-run`.
 - [ ] (arcterm) **A Chat selection keeps the text's colour.** Drag over a reply in Chat (prose, an inline code span, a
-  code block, a table): the words stay their own colour (white prose, coloured code) on the accent band, not tinted
-  blue, under a few themes. Checked only in a headless-Edge page with the same layer (`mix-blend-mode: screen` on
+  code block, a table), and double-click one word: the words stay their own colour (white prose, coloured code) on a
+  band in the system's selection colour (Windows' blue `Highlight`, not the theme's accent), under a few themes; the
+  same band shows on a selection in Chat's bash box (`!` mode), its coloured command still readable under it (b67964193).
+  The blend was checked only in a headless-Edge page with the same layer (`mix-blend-mode: screen` on
   `[data-md-selection-layer]`, `tailwindsetup.css`, 2026-11-18), not in the app or on a Mac's WebKit;
 
 - [ ] (arcterm) **One arcterm at a time (Windows, packaged).** With arcterm closed to the tray, open it again from the
@@ -61,14 +142,16 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
   is no taller than before (the view switch sets its height). Narrow it to a 2x2 cell: the project truncates, nothing
   runs under the buttons. `agentheader.tsx`, "the project and initiative on the title's second line" (2026-11-18);
   `task verify:ui -- agent-header-redesign` not run (no dev app up).
-- [ ] (arcterm) **Sidecar's Resources: column, charts and panel.** Make Sidecar at least 1560 × 760 CSS px (maximized on
-  a 1080p screen at 100–125%): a Resources column stands right of the dashboard with CPU, RAM and GPU charts filling
-  in over 5 minutes (a hover shows a crosshair and "23% · 40s ago"; GPU matches Task Manager's figure, or says the
-  machine has no GPU counters), then Sidecar's own row first (its CPU and RAM, not "—"; "—" means WebView2 did not
-  name its renderer), arcterm and each agent by RAM with a GPU column, and "Other apps over 200 MB" (chrome.exe
-  (12)…). The title bar's figures are then plain text. Shrink it below that (or the small form): the figures get a
-  border and a chevron, and a click drops the same charts and table under the bar; Escape or a click outside closes
-  it. Windows only; on a Mac it says so. Commits 4f28db4b9 and the `feat/sidecar-charts` merge.
+- [ ] (arcterm) **Sidecar's Resources: band, charts, icons and panel.** Open Sidecar's full window at any size from
+  1100 CSS px (1440 × 900 included): a Resources band runs across the bottom, where the last 2 hours' lanes were, with
+  CPU, RAM and GPU charts filling in over 5 minutes (a hover shows a crosshair and "23% · 40s ago"; GPU matches Task
+  Manager's figure, or says the machine has no GPU counters), then Sidecar's own row first (its CPU and RAM, not "—";
+  "—" means WebView2 did not name its renderer), arcterm and each agent by RAM with a GPU column, and "Other apps over
+  200 MB" (chrome.exe (12)…). Each row leads with its mark: the arcterm "t>" on Sidecar and arcterm, the Claude or pi
+  logo on an agent, the app's own icon on an other app as Task Manager draws it (Chrome, Docker; a window glyph where
+  the exe has none or is protected, VmmemWSL). The title bar's figures are plain text there. In the small form the
+  figures get a border and a chevron, and a click drops the same charts and table under the bar; Escape or a click
+  outside closes it. Windows only; on a Mac it says so. Branch `feat/sidecar-taskman`.
 - [ ] (arcterm) **Sidecar's pin in the full window.** Maximize Sidecar or press F11: the title bar has a pin button
   beside S; pressed, Sidecar stays over the other apps on its screen, and a relaunch reopens it pinned. Same merge.
 - [ ] (arcterm) **Sidecar's resource panel.** Click the RAM · CPU figures in Sidecar's title bar (wall and small
@@ -81,6 +164,11 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
 - [ ] (arcterm) **Sidecar's S button reads as its own button.** In the wall layout the S button shows a screen with a
   small window in its corner (a screen with an arrow out while small), no longer the same inward arrows as the full
   screen button beside it. Commit 4f28db4b9.
+- [ ] (arcterm) **Sidecar's alert frame follows the window's corners.** On Windows (10 and 11), with RAM strained, the
+  red frame bends with an 8 px radius instead of being cut at the window's rounded corners, maximized or full screen
+  too (the frame no longer reads the window's state; Windows 11 squares a maximized window's corners, so check that a
+  full-screen frame still looks right). In the band, a narrow heavy-agent card keeps the agent's name and command readable, its Stop
+  and Sleep buttons wrapping under them. Commits 7cdcfa181, f67c6b351 (the capability needs a rebuilt host).
 - [ ] (arcterm) **Sidecar's band cards keep the agent's name.** In the wall's RAM band, a narrow heavy-agent card keeps
   the agent's name and command readable, its Stop and Sleep buttons wrapping under them; maximized or full screen, the
   alert frame is square (the rounded-corner case was seen holding on 2026-11-18). Commit 7cdcfa181.
@@ -828,7 +916,23 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
   with focus read on, the K / J / Q column under the toggle sits clear of the pinned prompt card and reads well in a
   light and a dark theme; holding ↓ steps block after block with no judder; turning it on for one agent in a 2x2 split
   leaves the other cells undimmed, and it is still on for that agent after a restart.
+- [ ] (arcterm) Focus read skips what is not text (`chatfocusreadview.ts` `data-fr-skip`): on a real agent's turn with
+  tool steps and a command card between paragraphs, `J` / `K` and a stopped scroll pass over them to the next paragraph,
+  they stay at 32% and are never lit, and the paragraphs either side of the lit one sit at 50%. The `chat-focus-read`
+  fixture has no tool steps, so the scenario checks only the 50% neighbours; the one pill (toggle over K / J, a hairline,
+  Q) also reads well in a light theme.
+- [ ] (arcterm) A folded message of yours (`narrationtimeline.tsx` PromptText): in Chat, folded, a click anywhere on the
+  bubble (its padding too) opens it, and its hover Copy / Fork row under it still works; open, a click on its text does
+  nothing and the text selects, and only Show less folds it. A bubble with a pasted block card: the card still opens on
+  its own while the text above it is folded. Same in Conversation History's transcript and a pending bubble. No scenario
+  opens a folded bubble in History or a pending one (`chat-bubble-fold` covers Chat).
 - [ ] (arcterm) Sending to an idle agent in Chat (`chatlive.ts` liveTurn, `chatpane.tsx`): when the last turn ended
   with an "Edited N files" card, the card stays where it is from the send until your message lands and the new turn
   starts (it used to fold away at the send and spring open again up to 3 s later). A message queued while the agent
   works leaves the working turn's card held back as before. Checked only by unit tests.
+- [ ] (arcterm) Chat around a send (`chatpending.ts` sending, `chatpane.tsx` WorkingLine, `chatconversation.tsx`
+  ownArrives): send to a Claude agent that is busy redrawing (just after a turn ends, or while it starts) and the
+  bubble stays until your message lands, never blinking out at 5 s; as the turn starts the working line opens under
+  the bubble and as it ends folds away, with the conversation gliding rather than jumping; a message typed straight in
+  the terminal opens into Chat on the spring. Measured in headless Chrome with a fixture agent (a scripted send,
+  live reply and transcript), not yet with a real Claude agent in the app.

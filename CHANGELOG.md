@@ -37,12 +37,23 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   with the reset time. With more than one account it names the one in use and offers Switch to the account with the
   most room, which moves this agent over and offers to restart the others; Snooze hides it for an hour, four hours or
   until tomorrow.
+- Chat's message box draws a `>` quote (slanted, with a bar beside it) and `inline code` as you type them, as the sent
+  message shows them. A pasted stack trace, log or block of code goes in wrapped in a ``` code block; Ctrl+Z takes the
+  wrapping away and keeps the paste.
+- When an agent's work is done (its last turn committed and you have read it), the suggested replies over Chat's box end
+  with "close agent", which closes it as the header's ✓ Close does.
+- A shell command in a Chat reply (a `bash`, `sh` or `powershell` block) has a Run button: it opens a terminal in the
+  panel under the agent, in the folder the agent works in, and runs the command there.
+- A shell command shows in colour as you type it in Chat's bash mode and in a reply's shell block: the command apart
+  from its arguments, flags and pipes dimmed, variables and strings in their own colours.
+- A picture the agent read shows as a small thumbnail in Chat: at the end of its folded line of steps and of its Read
+  row, which now opens to the picture itself (click it to see it full width).
 - A turn in which the agent drew design boards now ends in a Canvas card in Chat, with a small live picture of each
   board it drew: click one to look at it full size over Chat, Look at all to see them side by side, or Open in Canvas.
-- Sidecar shows what everything takes, like Task Manager: on a big enough window a Resources column beside the
-  dashboard charts the machine's CPU, RAM and GPU over the last 5 minutes and lists Sidecar's own CPU, GPU and RAM, the
-  rest of arcterm, each agent, and the other apps holding over 200 MB; in a smaller window the RAM · CPU figures in
-  the title bar open the same as a panel (Windows). <!-- big -->
+- Sidecar shows what everything takes, like Task Manager: across the bottom of the full window a Resources band charts
+  the machine's CPU, RAM and GPU over the last 5 minutes and lists Sidecar's own CPU, GPU and RAM, the rest of arcterm,
+  each agent, and the other apps holding over 200 MB, each row with its icon (the app's own, or the agent's runtime
+  logo); in the small form the RAM · CPU figures in the title bar open the same as a panel (Windows). <!-- big -->
 - **Your phone as a remote for arcterm**: through Tailscale (no domain needed) or your own Cloudflare tunnel, set up in
   Settings → Remote (or `wsh remote setup`), an installed web app on your phone lists what waits on you and every
   agent with its state (working, idle, asking, exited), pushes a notification when an agent asks, and answers its
@@ -62,6 +73,32 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- Sidecar's full window no longer draws each agent's last 2 hours as lanes: the Resources band stands there instead.
+- An agent whose brainstorm's builder check waits on you (a builder question, or the review to approve) now reads as
+  asking: its row in the Agent tree breathes amber, and it counts in Cockpit's Needs you.
+
+- A run's final stage shows its commands' output in colour, as a terminal would: a test that passed has a green ✓
+  (or `ok`), one that failed is red, warnings yellow, skips and each test's time dimmed. Output that comes with its own
+  colours keeps them.
+- An agent's run link (a worker's ↑ way back to its lead, a lead's own run, the runs a session started) sits on the line
+  under its name, after the project, so a long name no longer gets cut to make room for it.
+- A long message of yours folded behind Show more opens with a click anywhere on its bubble; once open, only Show less
+  folds it again, so you can still select its text.
+- Sidecar now wears a HUD look, in the full window and in the small form: a blue-black ground with glowing cyan rings,
+  tick marks and corner brackets that bend round the rounded corners of every box.
+- Focus read in Chat fades in steps: the block before and after the lit one stay half bright, so you keep your place,
+  and `J` / `K` pass over tool steps and cards to the next block of text. Its button and the `K` `J` `Q` buttons
+  under it are now one pill, with a ×1 / ×2 / ×3 button on it that lights one, two or three blocks at a time: `J` / `K`
+  then step a whole group and `Q` quotes all of it. <!-- try: chat-focus-read -->
+- A Claude agent's suggested replies in Chat come sooner, about 2 s after its turn ends instead of 5-6 s, and no longer
+  start a second claude (about 470 MB) each time: the agent's own claude works them out.
+- Scrollbars stay hidden until you point at the area that scrolls, then show as a thin bar that thickens under the
+  pointer, so the sidebar, Chat and lists read as clean panels.
+- A message you send while the agent works no longer has a Queued caption under it: its dimmed bubble says it waits, and
+  the line under it is Send now alone (two or more still read "2 queued").
+- Background tasks in the agent's details rail split into Running and Finished, each with its count, and each task
+  shows how long it ran. A click opens it in place, with its command and the end of its output in colour; Open full
+  view opens the whole output beside it, as a click did before.
 - The agent header puts the project and initiative on a second line under the agent's name, in the height the header
   already had, so the run link, model and context beside it get the room back.
 - Focus read in Chat is each agent's own: turning it on for one agent leaves the others as they were. While it is on,
@@ -87,6 +124,17 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - Switching the agent on screen (from the tree, Sidecar or a terminal) no longer crashes the agent header with
   "number … is not iterable".
 - Selecting text in Chat keeps the words their own colour: the highlight no longer tints them the accent's blue.
+- A file in the "Edited N files" card at the end of a Chat turn opens on its diff against the last commit, not on the
+  whole file, also for a file in a worktree under the agent's folder; a change already committed says so.
+- A dev server that starts and detaches itself (Astro's `astro dev`) is no longer put down to an agent of another
+  project whose background task happened to end as it came up, and a project kept in a folder inside its repo shows
+  the servers running under that folder on its folder in the Agent tree.
+- Chat no longer jumps around a send: a message that takes a few seconds to reach a busy Claude Code stays in place
+  instead of vanishing and coming back, the "working" line opens and closes smoothly instead of shoving the
+  conversation as each turn starts and ends, and a message of yours that lands with nothing standing in for it opens
+  like any other row.
+- Selecting text in Chat keeps the words their own colour, and the highlight behind them is your system's own selection
+  colour rather than the theme's accent.
 - Opening arcterm from the Start menu or a shortcut while it runs in the tray brings its window back, instead of
   starting a second arcterm that stopped on "wavesrv did not report its ports" beside a second Sidecar and tray icon
   (Windows). When the backend does stop at launch, the error now says why at once rather than after 15 seconds.
@@ -95,8 +143,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - A run's line in a narrow Agent tree says its stage again ("Working · 0/5", "Planning · 0/5") whenever there is room
   for the word whole; it is left out only when it truly does not fit, instead of below a fixed 240 px.
 - In focus read, ↑ and ↓ step one block like K and J instead of scrolling a little and jumping back.
-- Sidecar's alert frame follows Windows 11's rounded window corners instead of being cut off at them, and the
-  heaviest-agent cards in its RAM band no longer squeeze an agent's name to one letter: the buttons wrap under it.
+- Sidecar's alert frame follows the window's rounded corners on Windows, maximized or full screen included, instead of
+  being cut off at them, and the heaviest-agent cards in its RAM band no longer squeeze an agent's name to one letter: the buttons wrap under it.
 - Claude agents stop writing a commit suggestion as an `arc-commit` code block: the skill that asked for it outlived
   the removed commit card and is now cleaned up.
 - The Consumers panel no longer shows a pi or codex agent as using no tokens: it says it cannot tell, since it reads
@@ -109,6 +157,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - Opening an app and starting it at nearly the same moment no longer leaves an extra tab behind.
 - A server in the agent's rail that refuses to stop (access denied) says why on its row, and an app that refuses Stop
   or Restart from its menu says so, rather than the click seeming to do nothing.
+- A brainstorm's Decided so far rail always opens as wide as the agent's details rail, so switching to it moves
+  nothing; a width dragged there no longer sticks.
 - A terminal on another machine is no longer marked as in a removed folder because a local folder with the same path
   was deleted.
 ### Added

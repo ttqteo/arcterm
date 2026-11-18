@@ -13,15 +13,16 @@
 
 import { springReveal } from "@/app/element/motiontokens";
 import { modalsModel } from "@/app/store/modalmodel";
+import { useLocalImage } from "@/app/view/jarvis/localimage";
 import { cn } from "@/util/util";
-import { ArrowUpRight, ChevronDown, ChevronRight } from "lucide-react";
+import { ArrowUpRight, ChevronDown, ChevronRight, ImageOff } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useState, type KeyboardEvent, type ReactNode } from "react";
 import { detailExceedsInline, type AgentActionEntry } from "./agentsviewmodel";
-import { editCounts, foldOf, stepOf, stepRows, type StepChip } from "./chatsteps";
+import { editCounts, foldOf, pictureOf, stepOf, stepRows, stretchPictures, type StepChip } from "./chatsteps";
 import { stepSummary, stretchTime } from "./chatstepsummary";
 import { stretchMs, type WorkItem } from "./compacttimeline";
-import { ToolDetailBody, useNow } from "./narrationtimeline";
+import { PromptImages, ToolDetailBody, useNow } from "./narrationtimeline";
 import { PathLink } from "./pathlinkcontext";
 
 function baseName(path: string): string {
@@ -211,6 +212,39 @@ function StepDetail({ action, detail }: { action: AgentActionEntry; detail: NonN
     );
 }
 
+// a folded line shows at most this many of the pictures its stretch read
+const MAX_LINE_PICTURES = 3;
+
+// a picture the agent read, as a small framed thumbnail at the end of its row or its stretch's folded line (as Claude
+// Desktop draws one); an empty frame while it loads, a crossed-out picture once the file is gone
+function PictureThumb({ path }: { path: string }) {
+    const img = useLocalImage(path);
+    const frame = "h-[22px] w-[34px] shrink-0 overflow-hidden rounded-[4px] border border-edge-mid bg-surface";
+    if (img.url != null) {
+        return <img data-chat-step-thumb src={img.url} alt="" title={path} className={cn(frame, "object-cover")} />;
+    }
+    return (
+        <span
+            data-chat-step-thumb={img.status === "loading" ? "loading" : "gone"}
+            title={img.status === "loading" ? path : `${path} · no longer on disk`}
+            className={cn(frame, "flex items-center justify-center text-muted")}
+        >
+            {img.status === "loading" ? null : <ImageOff size={11} aria-hidden />}
+        </span>
+    );
+}
+
+// an opened picture read: the picture itself, a click zooming it to its full width (PromptImages, as your bubble's)
+function PictureDetail({ path }: { path: string }) {
+    return (
+        <Opened>
+            <div data-chat-step-picture>
+                <PromptImages paths={[path]} />
+            </div>
+        </Opened>
+    );
+}
+
 const ROW = "flex min-w-0 items-center gap-2 px-3 py-[9px] text-[13px]";
 
 // a click on a row opens it, a drag that selected its text does not (it ends in a click too: it copies); Enter and Space
@@ -256,6 +290,9 @@ function StepRow({
     // the command line an opened command row shows: the detail's once the result lands, else what its row was built from
     const head = step.chips[0];
     const command = head?.kind === "description" ? head.command : head?.kind === "command" ? head.text : undefined;
+    // a picture it read opens to the picture: its result holds no text, so it has no detail to open
+    const picture = step.running ? null : pictureOf(action);
+    const opens = detail != null || picture != null;
     return (
         <div>
             <div
@@ -264,11 +301,11 @@ function StepRow({
                 data-tool-running={step.running ? "" : undefined}
                 data-tool-settled={neutral ? "" : undefined}
                 data-tool-blocked={blocked ? "" : undefined}
-                role={detail != null ? "button" : undefined}
-                tabIndex={detail != null ? 0 : undefined}
-                aria-expanded={detail != null ? open : undefined}
-                {...rowHandlers(detail != null, onToggle)}
-                className={cn(ROW, bare && "pl-9", detail != null && "cursor-pointer hover:bg-surface")}
+                role={opens ? "button" : undefined}
+                tabIndex={opens ? 0 : undefined}
+                aria-expanded={opens ? open : undefined}
+                {...rowHandlers(opens, onToggle)}
+                className={cn(ROW, bare && "pl-9", opens && "cursor-pointer hover:bg-surface")}
             >
                 {step.verb !== "" ? (
                     <span data-chat-step-verb className={cn("shrink-0", step.failed ? "text-error" : "text-muted")}>
@@ -288,14 +325,21 @@ function StepRow({
                     <span className="flex text-muted">
                         <Spinner size={12} />
                     </span>
-                ) : detail != null ? (
+                ) : opens ? (
                     <span className="flex text-muted">
                         <Chevron open={open} size={12} />
                     </span>
                 ) : null}
+                {picture != null ? (
+                    <span className="ml-auto flex pl-2">
+                        <PictureThumb path={picture} />
+                    </span>
+                ) : null}
             </div>
             <AnimatePresence initial={false}>
-                {detail != null && open ? (
+                {picture != null && open ? (
+                    <PictureDetail key="picture" path={picture} />
+                ) : detail != null && open ? (
                     step.command && command != null ? (
                         <CommandDetail
                             key="detail"
@@ -467,6 +511,8 @@ export function ChatSteps({
     const running = summary.running;
     const now = useNow(running);
     const time = stretchTime(running ? stretchMs(work, now, live) : work.durationMs, running);
+    // the pictures it read, on its folded line: opened, each sits on its own row instead
+    const pictures = shown ? [] : stretchPictures(work.actions, MAX_LINE_PICTURES);
     return (
         <div data-chat-work className="flex flex-col">
             <button
@@ -501,6 +547,13 @@ export function ChatSteps({
                 <span className="flex text-muted">
                     <Chevron open={shown} size={13} />
                 </span>
+                {pictures.length > 0 ? (
+                    <span data-fold-thumbs className="ml-1.5 flex shrink-0 gap-1">
+                        {pictures.map((path) => (
+                            <PictureThumb key={path} path={path} />
+                        ))}
+                    </span>
+                ) : null}
             </button>
             <AnimatePresence initial={false}>
                 {shown ? (

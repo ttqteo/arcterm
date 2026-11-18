@@ -7,6 +7,7 @@ import {
     chatChips,
     chipEditable,
     chipIcon,
+    closeChip,
     drawnChips,
     endsWithQuestion,
     initiativeChips,
@@ -129,6 +130,65 @@ describe("ruleChips", () => {
         expect(ruleChips({ ...agent, runId: "r" }, git, true)).toEqual([]);
         expect(ruleChips({ ...agent, step: "1/3" }, git, true)).toEqual([]);
         expect(ruleChips({ ...agent, edited: false }, git, true)).toEqual([]);
+    });
+});
+
+describe("closeChip", () => {
+    it("offers to close an agent the cockpit counts as done, in the person's language", () => {
+        expect(closeChip(true, true)).toEqual({ text: "đóng agent", kind: "close", source: "rule" });
+        expect(closeChip(true, false)).toEqual({ text: "close agent", kind: "close", source: "rule" });
+    });
+
+    it("offers nothing while the agent is not done", () => {
+        expect(closeChip(false, true)).toBeUndefined();
+    });
+});
+
+describe("chatChips with a close chip", () => {
+    const push: ChatChip = { text: "push đi", kind: "push", source: "rule" };
+    const close: ChatChip = { text: "đóng agent", kind: "close", source: "rule" };
+
+    it("puts it last, after the rules and the model's step", () => {
+        const chips = chatChips({
+            question: false,
+            rules: [push],
+            model: { status: "done", replies: ["build đi"] },
+            close,
+        });
+        expect(chips.map((c) => c.text)).toEqual(["push đi", "build đi", "đóng agent"]);
+    });
+
+    it("keeps it when the row is full: the model's step gives way", () => {
+        const chips = chatChips({
+            question: false,
+            rules: [push],
+            model: { status: "done", replies: ["build đi", "cài đi", "thêm test"] },
+            close,
+        });
+        expect(chips.map((c) => c.text)).toEqual(["push đi", "build đi", "đóng agent"]);
+    });
+
+    it("leaves it out of a question's answers", () => {
+        const chips = chatChips({ question: true, rules: [], model: { status: "done", replies: ["A", "B"] }, close });
+        expect(chips.map((c) => c.text)).toEqual(["A", "B"]);
+    });
+});
+
+describe("a close chip in the row", () => {
+    const close: ChatChip = { text: "close agent", kind: "close", source: "rule" };
+
+    it("is drawn only when the box can close the agent", () => {
+        expect(drawnChips([close], true, true)).toEqual([close]);
+        expect(drawnChips([close], true, false)).toEqual([]);
+    });
+
+    it("has no text to edit, and its hint says it closes the agent", () => {
+        expect(chipEditable(close, true)).toBe(false);
+        expect(pickedHint(close)[1]).toBe(" closes this agent · ");
+    });
+
+    it("has its own icon", () => {
+        expect(chipIcon(close)).toBe("close");
     });
 });
 

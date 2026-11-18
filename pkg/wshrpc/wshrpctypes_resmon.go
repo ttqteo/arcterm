@@ -40,7 +40,8 @@ type ResMonOther struct {
 	Count int     `json:"count"`
 	Cpu   float64 `json:"cpu"`
 	Mem   int64   `json:"mem"`
-	Gpu   float64 `json:"gpu,omitempty"` // the busiest GPU engine any of them holds, as Task Manager sums a group
+	Gpu   float64 `json:"gpu,omitempty"`  // the busiest GPU engine any of them holds, as Task Manager sums a group
+	Icon  string  `json:"icon,omitempty"` // the image's icon as a PNG data URL, as Task Manager draws it; none where unread
 }
 
 // ResMonMachine is the whole machine, read with the others: what Sidecar's resource charts plot.

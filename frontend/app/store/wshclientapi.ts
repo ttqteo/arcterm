@@ -312,6 +312,18 @@ export class RpcApiType {
         return client.wshRpcCall("chatsuggest", data, opts);
     }
 
+    // command "chatsuggesthookbegin" [call]
+    ChatSuggestHookBeginCommand(client: WshClient, data: CommandChatSuggestHookBeginData, opts?: RpcOpts): Promise<CommandChatSuggestHookBeginRtnData> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "chatsuggesthookbegin", data, opts);
+        return client.wshRpcCall("chatsuggesthookbegin", data, opts);
+    }
+
+    // command "chatsuggesthookend" [call]
+    ChatSuggestHookEndCommand(client: WshClient, data: CommandChatSuggestHookEndData, opts?: RpcOpts): Promise<void> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "chatsuggesthookend", data, opts);
+        return client.wshRpcCall("chatsuggesthookend", data, opts);
+    }
+
     // command "checkmemoryhygiene" [call]
     CheckMemoryHygieneCommand(client: WshClient, data: CommandCheckMemoryHygieneData, opts?: RpcOpts): Promise<void> {
         if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "checkmemoryhygiene", data, opts);

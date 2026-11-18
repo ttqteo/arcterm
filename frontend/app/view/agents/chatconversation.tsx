@@ -119,7 +119,7 @@ import { withMarks } from "./chatskim";
 import { useSkimFold } from "./chatskimstore";
 import { placeStepLists, stepsPartKey, type AgentNow } from "./chatsteplist";
 import { ChatStepsHost, StepsPart } from "./chatsteplistview";
-import { foreignPathGuesses, turnFileAbs, turnFiles } from "./chatsteps";
+import { foreignPathGuesses, turnFileAbs, turnFileDiff, turnFiles } from "./chatsteps";
 import { ChatSteps } from "./chatstepsview";
 import { TaggedPromptText } from "./chattagblock";
 import { ChatTurnFiles } from "./chatturnfiles";
@@ -842,6 +842,7 @@ export function ChatConversation({
     onLoadEarlier,
     active,
     working,
+    ownArrives,
     onOpenTerminal,
     brainstorm,
     model,
@@ -868,6 +869,10 @@ export function ChatConversation({
     // that stopped left without a result is drawn neutral. Defaults to `active`; a session waiting on an answer is
     // `active` but not working
     working?: boolean;
+    // a message of yours landing now opens on the spring as any row does: no pending bubble stood in for it (one typed in
+    // the terminal, or one whose bubble went before its record landed). Left out, your rows are drawn at once, as a
+    // bubble's twin must be: a row that opens from nothing in the bubble's place would dip
+    ownArrives?: boolean;
     // shows the agent's terminal, for a command whose panel only Claude Code's own screen draws; left out where there is
     // no live terminal to show (an ended session)
     onOpenTerminal?: () => void;
@@ -1301,9 +1306,15 @@ export function ChatConversation({
                   openDiff(model!, agentDiffScope(agent!.id, agent!.name), path);
                   return;
               }
-              // reread: the agent may have changed it since its tab was last open
+              // reread: the agent may have changed it since its tab was last open; it opens on its Diff against the
+              // last commit, read from the file's own folder (it may sit in a worktree under the agent's directory)
               const open = (at: string) =>
-                  openFileInPanel(model!, agent!.id, { abs: at, root: cwd || null, reread: Date.now() });
+                  openFileInPanel(model!, agent!.id, {
+                      abs: at,
+                      root: cwd || null,
+                      reread: Date.now(),
+                      diff: turnFileDiff(at) ?? undefined,
+                  });
               // a path the session wrote on the other machine (Windows `d:\…` read on a Mac) is looked for under the
               // agent's directory here; found nowhere, it opens as written and the tab says the file is gone
               const guesses = foreignPathGuesses(abs, cwd, isWindows());
@@ -1748,7 +1759,7 @@ export function ChatConversation({
                 key={item.key}
                 itemKey={item.key}
                 gap={ITEM_GAP}
-                arrive={item.kind !== "you" && arrived.has(item.key)}
+                arrive={(item.kind !== "you" || ownArrives === true) && arrived.has(item.key)}
                 className={cn("flex flex-col", item.kind === "you" || item.kind === "sent" ? "items-end" : undefined)}
             >
                 {drawn.element}

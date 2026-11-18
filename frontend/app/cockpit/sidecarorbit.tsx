@@ -3,16 +3,23 @@
 //
 // P, the Sidecar's full window (spec 2026-11-17-sidecar-orbit-dashboard-design.md; boards P-orbit-dashboard, P-calm,
 // P-high, P-critical, P-failed, P-live): an orbit of agents around a core that counts what waits on you, the Needs you
-// queue, the active run, and the last 2 hours as lanes. It draws the snapshot it is given and sends SidecarActs; every
-// decision (the screen's state, tones, lines, geometry, bars, keys) is in sidecarorbitmodel.ts, so this file only draws.
+// queue, the active run, and under them the machine's resources as Task Manager shows them (sidecarresourcespanel.tsx's
+// band, where the last 2 hours' lanes were). It draws the snapshot it is given and sends SidecarActs; every decision (the
+// screen's state, tones, lines, geometry, keys) is in sidecarorbitmodel.ts, so this file only draws.
 // It holds the selection and whether the x hid the strain band. The orbit is drawn on a fixed 1160 x 620 stage scaled
 // into its cell, so the board's sizes hold at any window size. The page is storeless: only the types, the pure models,
 // the motion tokens and React.
+//
+// The HUD skin (spec 2026-11-18-sidecar-hud-design.md, board A-giu-bo-cuc): the orbit on the left at 3fr and the column
+// of Needs you (with the strain band and the run box) on the right at 2fr, all on the `hud-*` tokens. The decoration
+// (brackets, the tick ring, dividers) takes no snapshot field; the value rings glow as two stacked strokes
+// (sidecarhud.tsx), never a filter.
 
 import { springReveal } from "@/app/element/motiontokens";
 import { cn } from "@/util/util";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import {
+    memo,
     useCallback,
     useEffect,
     useLayoutEffect,
@@ -23,13 +30,13 @@ import {
     type RefObject,
 } from "react";
 import { SidecarBand } from "./sidecarband";
+import { GlowCircle, HudBrackets, HudLabel, HudTickRing } from "./sidecarhud";
 import { ageText } from "./sidecarkeys";
 import {
     coreLabel,
     coreTone,
     dashKey,
     frameOf,
-    laneBars,
     needHow,
     needPings,
     nodeLine,
@@ -39,13 +46,13 @@ import {
     ringDash,
     screenState,
     selectionAfter,
-    TIMELINE_WINDOW_MS,
     waitingIds,
     type AlertFrame,
     type DashSel,
     type Point,
     type Tone,
 } from "./sidecarorbitmodel";
+import { SidecarResourcesBand } from "./sidecarresourcespanel";
 import { bandShows, formatBytes, nextHidden } from "./sidecarstrainmodel";
 import type {
     SidecarAct,
@@ -53,7 +60,6 @@ import type {
     SidecarNeed,
     SidecarRunBox,
     SidecarSnapshot,
-    SidecarSpanState,
     SidecarTile,
     StrainLevel,
 } from "./sidecartypes";
@@ -68,42 +74,44 @@ export interface SidecarOrbitProps {
 }
 
 // ---- Tokens: a tone is a class, spelled out so Tailwind's scanner sees every one ----
+// The status tones keep the theme's colours; the two quiet ones (an idle or review agent, a finished or asleep one) are
+// the HUD's muted ink, the second dimmer, so neither lands as a grey on the blue-black ground.
 
 const TEXT: Record<Tone, string> = {
     warning: "text-warning",
     error: "text-error",
     success: "text-success",
-    secondary: "text-secondary",
-    muted: "text-muted",
+    secondary: "text-hud-muted",
+    muted: "text-hud-muted/70",
 };
 const BG: Record<Tone, string> = {
     warning: "bg-warning",
     error: "bg-error",
     success: "bg-success",
-    secondary: "bg-secondary",
-    muted: "bg-muted",
+    secondary: "bg-hud-muted",
+    muted: "bg-hud-muted/60",
 };
 const BORDER: Record<Tone, string> = {
     warning: "border-warning",
     error: "border-error",
     success: "border-success",
-    secondary: "border-secondary",
-    muted: "border-muted",
+    secondary: "border-hud-muted",
+    muted: "border-hud-muted/60",
 };
 const STROKE: Record<Tone, string> = {
     warning: "stroke-warning",
     error: "stroke-error",
     success: "stroke-success",
-    secondary: "stroke-secondary",
-    muted: "stroke-muted",
+    secondary: "stroke-hud-muted",
+    muted: "stroke-hud-muted/60",
 };
 // the same colours as custom properties, for a box-shadow, which has no utility that takes two rings
 const VAR: Record<Tone, string> = {
     warning: "var(--color-warning)",
     error: "var(--color-error)",
     success: "var(--color-success)",
-    secondary: "var(--color-secondary)",
-    muted: "var(--color-muted)",
+    secondary: "var(--color-hud-muted)",
+    muted: "var(--color-hud-muted)",
 };
 
 // the alert frame as a box-shadow built from the tokens; every state has the same number of shadows where it can, so
@@ -112,18 +120,6 @@ const FRAME: Record<AlertFrame, string> = {
     none: "inset 0 0 0 0 transparent",
     warning: "inset 0 0 0 3px var(--color-warning)",
     error: "inset 0 0 0 4px var(--color-error), inset 0 0 120px color-mix(in srgb, var(--color-error) 22%, transparent)",
-};
-
-const SPAN_BG: Record<Exclude<SidecarSpanState, "finished">, string> = {
-    working: "bg-success",
-    asking: "bg-warning",
-    failed: "bg-error",
-};
-const SPAN_WORD: Record<SidecarSpanState, string> = {
-    working: "working",
-    asking: "waiting on you",
-    finished: "finished",
-    failed: "failed",
 };
 
 const NO_NEEDS: SidecarNeed[] = [];
@@ -137,20 +133,21 @@ const CY = 320;
 // the orbit is the board's circle (240) a little wider, so a right-hand label (280 px) still ends inside the stage
 const ORBIT_RX = 250;
 const ORBIT_RY = 240;
-const RING_W = 9;
+// a value ring is a 3 px core over a 12 px glow halo on a 1 px track; the rings are 16 px apart, so a halo never
+// reaches the next ring
+const RING_CORE = 3;
 // outside in: the 5-hour window, the week, RAM used
 const RING_R = [150, 134, 118] as const;
-const SPOKE_FROM = 162; // the core's outer ring + 12
+// the tick ring sits just outside the outer ring's halo (150 + 6): 120 ticks, every 10th a major one
+const TICK_R = 166;
+const SPOKE_FROM = TICK_R + 8; // a spoke starts clear of the tick ring
 const NODE_R = 9;
 const LABEL_W = 280;
+// the space between the top node's box and the bottom edge of its label (a two-line label sat 5 px above the dot)
+const LABEL_GAP_ABOVE = 5;
 
 function sameSel(a: DashSel | null, b: DashSel | null): boolean {
     return a === b || (a != null && b != null && a.area === b.area && a.index === b.index && a.key === b.key);
-}
-
-function clockText(ms: number): string {
-    const d = new Date(ms);
-    return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
 }
 
 function pctText(pct: number | undefined): string {
@@ -274,7 +271,7 @@ export function SidecarOrbit({ snap, receivedAt, clock, send }: SidecarOrbitProp
             data-sidecar-dashboard="orbit"
             data-sidecar-state={state}
             data-sidecar-frame={frame}
-            className="relative flex min-h-0 min-w-0 flex-1 select-none flex-col"
+            className="relative flex min-h-0 min-w-0 flex-1 select-none flex-col bg-hud-bg text-hud-text"
         >
             <div
                 aria-hidden="true"
@@ -291,7 +288,7 @@ export function SidecarOrbit({ snap, receivedAt, clock, send }: SidecarOrbitProp
                     onSelect={(i) => select("orbit", i, tiles[i].id)}
                     onOpen={(i) => open("orbit", i)}
                 />
-                <div className="flex min-h-0 min-w-0 flex-col gap-3.5 pb-4 pr-6 pt-5">
+                <div data-sidecar-needs-col className="flex min-h-0 min-w-0 flex-col gap-3.5 pb-4 pr-6 pt-5">
                     {showBand && (
                         // the band keeps its own side margins: this column has none, so they are taken back
                         <div className="-mx-5 -mt-3 flex shrink-0 flex-col">
@@ -317,13 +314,23 @@ export function SidecarOrbit({ snap, receivedAt, clock, send }: SidecarOrbitProp
                     )}
                 </div>
             </div>
-            <Lanes tiles={tiles} now={now} selectedAgent={selectedAgent} />
+            <SidecarResourcesBand resources={snap.resources} />
             <Footer />
         </div>
     );
 }
 
 // ---- The orbit ----
+
+// The orbit's tick ring: static decoration in its own SVG layer under the changing one. It takes no props, so a snapshot
+// never re-renders it and the browser never repaints it.
+const OrbitTicks = memo(function OrbitTicks() {
+    return (
+        <svg width={STAGE_W} height={STAGE_H} className="absolute left-0 top-0" aria-hidden="true">
+            <HudTickRing cx={CX} cy={CY} r={TICK_R} count={120} majorEvery={10} minorLen={4} majorLen={7} />
+        </svg>
+    );
+});
 
 function OrbitCell(props: {
     snap: SidecarSnapshot;
@@ -364,8 +371,9 @@ function OrbitCell(props: {
     const review = tiles.filter((t) => t.state === "review").length;
 
     return (
-        <div ref={ref} className="relative min-h-0 min-w-0 overflow-hidden">
+        <div ref={ref} data-sidecar-orbit-cell className="relative min-h-0 min-w-0 overflow-hidden">
             <div style={stage}>
+                <OrbitTicks />
                 <svg width={STAGE_W} height={STAGE_H} className="absolute left-0 top-0" aria-hidden="true">
                     {tiles.map((t, i) => {
                         const p = points[i];
@@ -385,7 +393,7 @@ function OrbitCell(props: {
                                 y2={p.y - uy * (NODE_R + 5)}
                                 strokeWidth={1.5}
                                 strokeDasharray={loud ? "4 6" : undefined}
-                                className={loud ? STROKE[spokeTone] : "stroke-edge-mid"}
+                                className={loud ? STROKE[spokeTone] : "stroke-hud-line"}
                             />
                         );
                     })}
@@ -396,7 +404,7 @@ function OrbitCell(props: {
                         ry={ORBIT_RY}
                         fill="none"
                         strokeWidth={1}
-                        className="stroke-border"
+                        className="stroke-hud-line"
                     />
                     {RING_R.map((r) => (
                         <circle
@@ -405,28 +413,27 @@ function OrbitCell(props: {
                             cy={CY}
                             r={r}
                             fill="none"
-                            strokeWidth={RING_W}
-                            className="stroke-edge-mid"
+                            strokeWidth={1}
+                            className="stroke-hud-line"
                         />
                     ))}
                     {RING_R.map((r, i) => {
                         const { dash, gap } = ringDash(rings[i], r);
-                        const stroke = i === 0 ? "stroke-secondary" : i === 1 ? "stroke-muted" : null;
+                        const stroke = i === 0 ? "stroke-hud-glow" : i === 1 ? "stroke-hud-muted" : null;
                         return (
-                            <circle
+                            <GlowCircle
                                 key={`a${r}`}
                                 cx={CX}
                                 cy={CY}
                                 r={r}
-                                fill="none"
-                                strokeWidth={RING_W}
+                                width={RING_CORE}
                                 // a zero-length round cap draws a dot, so an empty ring has butt caps
                                 strokeLinecap={dash > 0.5 ? "round" : "butt"}
                                 transform={`rotate(-90 ${CX} ${CY})`}
                                 style={{ strokeDasharray: `${dash} ${gap}` }}
                                 className={cn(
                                     "transition-[stroke-dasharray,stroke] duration-500 motion-reduce:transition-none",
-                                    stroke ?? (ramTone != null ? STROKE[ramTone] : "stroke-ink-faint")
+                                    stroke ?? (ramTone != null ? STROKE[ramTone] : "stroke-hud-text")
                                 )}
                             />
                         );
@@ -441,20 +448,21 @@ function OrbitCell(props: {
                         data-sidecar-core={needsCount}
                         data-core-tone={tone}
                         className={cn(
-                            "text-[92px] font-semibold leading-none tabular-nums transition-colors duration-500 motion-reduce:transition-none",
+                            "font-mono text-[92px] font-medium leading-none tabular-nums transition-colors duration-500 motion-reduce:transition-none",
                             TEXT[tone]
                         )}
                     >
                         {needsCount}
                     </span>
-                    <span
+                    {/* the stage is scaled down to its cell, so the word is set larger than a HudLabel's 10.5 px */}
+                    <HudLabel
                         className={cn(
-                            "text-[19px] font-semibold transition-colors duration-500 motion-reduce:transition-none",
-                            tone === "muted" ? "text-muted" : tone === "error" ? "text-error" : "text-warning-soft"
+                            "text-[16px] transition-colors duration-500 motion-reduce:transition-none",
+                            tone === "error" ? "text-error" : tone === "warning" ? "text-warning-soft" : undefined
                         )}
                     >
                         need you
-                    </span>
+                    </HudLabel>
                     {ramLine != null && bandTone != null && (
                         <span
                             data-sidecar-core-alert
@@ -476,35 +484,35 @@ function OrbitCell(props: {
                     )}
                 </div>
 
-                <div className="absolute left-7 top-6 flex flex-col gap-1.5 text-[13.5px] tabular-nums text-secondary">
-                    <KeyLine swatch="bg-secondary" text={`5h window ${pctText(rings[0])}`} />
-                    <KeyLine swatch="bg-muted" text={`Week ${pctText(rings[1])}`} />
+                <div className="absolute left-7 top-6 flex flex-col gap-1.5 font-mono text-[13px] tabular-nums text-hud-muted">
+                    <KeyLine swatch="bg-hud-glow" text={`5h window ${pctText(rings[0])}`} />
+                    <KeyLine swatch="bg-hud-muted" text={`Week ${pctText(rings[1])}`} />
                     <KeyLine
-                        swatch={ramTone != null ? BG[ramTone] : "bg-ink-faint"}
+                        swatch={ramTone != null ? BG[ramTone] : "bg-hud-text"}
                         text={ramText}
                         textClass={ramTone != null ? TEXT[ramTone] : undefined}
                     />
                 </div>
-                <div className="absolute bottom-[22px] left-7 flex gap-[22px] text-[14px] tabular-nums text-muted">
+                <div className="absolute bottom-[22px] left-7 flex gap-[22px] font-mono text-[13px] tabular-nums text-hud-muted">
                     <span>
-                        <b className="font-semibold text-success">{snap.counts.working}</b> working
+                        <b className="font-medium text-success">{snap.counts.working}</b> working
                     </span>
                     <span>
-                        <b className="font-semibold text-primary">{review}</b> for review
+                        <b className="font-medium text-hud-text">{review}</b> for review
                     </span>
                     <span>
-                        <b className="font-semibold text-primary">{snap.counts.idle}</b> idle
+                        <b className="font-medium text-hud-text">{snap.counts.idle}</b> idle
                     </span>
                     {snap.more != null && snap.more > 0 && (
                         <span data-sidecar-more>
-                            <b className="font-semibold text-primary">+{snap.more}</b> more
+                            <b className="font-medium text-hud-text">+{snap.more}</b> more
                         </span>
                     )}
                 </div>
                 {tiles.length === 0 && (
                     <div
                         data-sidecar-empty
-                        className="absolute bottom-6 left-1/2 -translate-x-1/2 text-[14px] text-muted"
+                        className="absolute bottom-6 left-1/2 -translate-x-1/2 text-[14px] text-hud-muted"
                     >
                         {snap.counts.idle > 0 ? `Nothing live · ${snap.counts.idle} idle` : "No agents running"}
                     </div>
@@ -540,7 +548,7 @@ function KeyLine(props: { swatch: string; text: string; textClass?: string }) {
 }
 
 // A node is the 18 px dot at its place on the orbit; its label hangs off it (above the top one, below the bottom one,
-// beside the rest, on the side away from the core). The ring behind the dot is the selection (grey) or a heavy agent
+// beside the rest, on the side away from the core). The ring behind the dot is the selection (cyan) or a heavy agent
 // (the band's colour); a node that waits on you or failed also pings.
 function Node(props: {
     tile: SidecarTile;
@@ -560,23 +568,25 @@ function Node(props: {
     const left = dx < -1;
     const above = point.y < CY;
     const heavyLine = props.heavy != null ? heavyText(props.heavy) : "";
-    // the dot's halo: the background's gap, then the heavy ring (the band's colour) and/or the selection's grey one
+    // the dot's halo: the HUD ground's gap, then the heavy ring (the band's colour) and/or the selection's cyan one. Hard
+    // rings (no blur), as before.
     const ringTone = props.heavy != null ? props.heavyTone : null;
-    const rings = ["0 0 0 4px var(--color-background)"];
+    const rings = ["0 0 0 4px var(--color-hud-bg)"];
     if (ringTone != null) {
         rings.push(`0 0 0 6px ${VAR[ringTone]}`);
     }
     if (selected) {
         if (ringTone != null) {
-            rings.push("0 0 0 8px var(--color-background)");
+            rings.push("0 0 0 8px var(--color-hud-bg)");
         }
-        rings.push(`0 0 0 ${ringTone != null ? 10 : 6}px var(--color-secondary)`);
+        rings.push(`0 0 0 ${ringTone != null ? 10 : 6}px var(--color-hud-glow)`);
     }
-    // relative to the dot's own box
+    // relative to the dot's own box. Above the top node the label hangs by its bottom edge, a fixed gap over the dot, so a
+    // third line (a heavy agent's) grows upward; a top offset sized for two lines put that line over the dot.
     const labelStyle: CSSProperties = {
         width: LABEL_W,
         left: vertical ? NODE_R - LABEL_W / 2 : left ? -LABEL_W - 15 : NODE_R * 2 + 15,
-        top: vertical ? (above ? -51 : 25) : -11,
+        ...(vertical && above ? { bottom: NODE_R * 2 + LABEL_GAP_ABOVE } : { top: vertical ? 25 : -11 }),
     };
     return (
         <div
@@ -608,7 +618,7 @@ function Node(props: {
                 style={labelStyle}
                 title={`${tile.name} · ${props.line}`}
             >
-                <span className="truncate text-[16px] font-semibold text-primary">{tile.name}</span>
+                <span className="truncate text-[16px] font-semibold text-hud-text">{tile.name}</span>
                 <span className={cn("truncate text-[13.5px]", TEXT[tone])}>{props.line}</span>
                 {heavyLine !== "" && props.heavyTone != null && (
                     <span
@@ -644,55 +654,65 @@ function NeedsPanel(props: {
         }
     }, [selectedKey]);
     return (
-        <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-hidden rounded-lg border border-edge-mid bg-surface-raised px-4 py-3.5">
-            <span
-                className={cn(
-                    "shrink-0 text-[16px] font-semibold",
-                    needs.length === 0 ? "text-secondary" : "text-warning"
-                )}
-            >
-                Needs you
-            </span>
-            {/* the list stays mounted when empty, so the first row after a calm screen arrives on the spring too */}
-            <div
-                ref={listRef}
-                role="listbox"
-                aria-label="Needs you"
-                aria-hidden={needs.length === 0 ? true : undefined}
-                tabIndex={-1}
-                className={cn("flex min-h-0 flex-col overflow-y-auto overflow-x-hidden", needs.length > 0 && "flex-1")}
-            >
-                {/* a row arrives on the spring and leaves at once: no exit is set */}
-                <AnimatePresence initial={false}>
-                    {needs.map((need, i) => (
-                        <motion.div
-                            key={need.key}
-                            role="presentation"
-                            variants={springReveal}
-                            initial={reduce ? false : "initial"}
-                            animate="animate"
-                            className="shrink-0 overflow-hidden"
-                        >
-                            <NeedRow
-                                need={need}
-                                selected={sel?.area === "needs" && sel.index === i}
-                                age={ageText(need.since, props.snapNow, props.sinceArrived)}
-                                onSelect={() => props.onSelect(i)}
-                                onOpen={() => props.onOpen(i)}
-                            />
-                        </motion.div>
-                    ))}
-                </AnimatePresence>
-            </div>
-            {needs.length === 0 && (
-                <div
-                    data-sidecar-allclear
-                    className="flex flex-1 flex-col items-center justify-center gap-1.5 text-center"
-                >
-                    <span className="text-[18px] text-secondary">All clear</span>
-                    <span className="text-[14px] text-muted">Nothing waits on you.</span>
+        // the brackets stand on this outer box and the list scrolls inside it, so a scroll never carries them off the corners
+        <div className="relative flex min-h-0 flex-1 flex-col rounded-lg bg-hud-panel">
+            <HudBrackets size={18} radius={12} />
+            <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-hidden px-4 py-3.5">
+                <div className="flex shrink-0 items-baseline gap-2.5">
+                    <HudLabel className="text-[12px]">Needs you</HudLabel>
+                    <span
+                        className={cn(
+                            "font-mono text-[13px] tabular-nums",
+                            needs.length === 0 ? "text-hud-muted" : "text-warning"
+                        )}
+                    >
+                        {String(needs.length).padStart(2, "0")}
+                    </span>
                 </div>
-            )}
+                {/* the list stays mounted when empty, so the first row after a calm screen arrives on the spring too */}
+                <div
+                    ref={listRef}
+                    role="listbox"
+                    aria-label="Needs you"
+                    aria-hidden={needs.length === 0 ? true : undefined}
+                    tabIndex={-1}
+                    className={cn(
+                        "flex min-h-0 flex-col overflow-y-auto overflow-x-hidden",
+                        needs.length > 0 && "flex-1"
+                    )}
+                >
+                    {/* a row arrives on the spring and leaves at once: no exit is set */}
+                    <AnimatePresence initial={false}>
+                        {needs.map((need, i) => (
+                            <motion.div
+                                key={need.key}
+                                role="presentation"
+                                variants={springReveal}
+                                initial={reduce ? false : "initial"}
+                                animate="animate"
+                                className="shrink-0 overflow-hidden"
+                            >
+                                <NeedRow
+                                    need={need}
+                                    selected={sel?.area === "needs" && sel.index === i}
+                                    age={ageText(need.since, props.snapNow, props.sinceArrived)}
+                                    onSelect={() => props.onSelect(i)}
+                                    onOpen={() => props.onOpen(i)}
+                                />
+                            </motion.div>
+                        ))}
+                    </AnimatePresence>
+                </div>
+                {needs.length === 0 && (
+                    <div
+                        data-sidecar-allclear
+                        className="flex flex-1 flex-col items-center justify-center gap-1.5 text-center"
+                    >
+                        <span className="text-[18px] text-hud-text">All clear</span>
+                        <span className="text-[14px] text-hud-muted">Nothing waits on you.</span>
+                    </div>
+                )}
+            </div>
         </div>
     );
 }
@@ -718,28 +738,42 @@ function NeedRow(props: {
             data-selected={selected ? "true" : undefined}
             onClick={props.onSelect}
             onDoubleClick={props.onOpen}
-            // a failed row keeps its tint when selected (the grey ring still marks it); a waiting one takes the grey fill
+            // a failed row is a 1 px error border over its tint, a row still waiting on you a warning one over its tint, an
+            // answered one the quiet line; the selection is the cyan ring on any of them
             className={cn(
-                "mb-2 flex flex-col gap-[3px] rounded-md px-3 py-[9px]",
-                failed ? "bg-errorbg" : selected ? "bg-surface-hover" : "bg-askingbg",
-                selected && "ring-2 ring-inset ring-secondary"
+                "mb-2 flex flex-col gap-[3px] rounded-md border px-3 py-[9px]",
+                failed
+                    ? "border-error bg-errorbg"
+                    : ping
+                      ? "border-warning bg-askingbg"
+                      : "border-hud-line bg-hud-bg/40",
+                selected && "ring-2 ring-inset ring-hud-glow"
             )}
         >
             <div className="flex items-baseline gap-2">
                 <Marker tone={failed ? "error" : "warning"} ping={ping} />
                 {failed && <span className="shrink-0 text-[12.5px] font-semibold text-error">Failed</span>}
-                <span className="min-w-0 flex-1 truncate text-[13.5px] font-semibold text-primary" title={need.who}>
+                <span className="min-w-0 flex-1 truncate text-[13.5px] font-semibold text-hud-text" title={need.who}>
                     {need.who}
                 </span>
                 {need.kind === "jarvis" && !failed && need.word != null && need.word !== "" && (
-                    <span className="shrink-0 text-[12.5px] text-secondary">{need.word}</span>
+                    <span className="shrink-0 text-[12.5px] text-hud-muted">{need.word}</span>
                 )}
-                <span className="shrink-0 whitespace-nowrap text-[12.5px] tabular-nums text-muted">{props.age}</span>
+                <span className="shrink-0 whitespace-nowrap font-mono text-[12px] tabular-nums text-hud-muted">
+                    {props.age}
+                </span>
             </div>
-            <span className="line-clamp-2 break-words text-[15.5px] leading-[1.35] text-primary" title={need.text}>
+            <span className="line-clamp-2 break-words text-[15.5px] leading-[1.35] text-hud-text" title={need.text}>
                 {need.text}
             </span>
-            <span className="text-[12.5px] text-muted">{needHow(need)}</span>
+            <span
+                className={cn(
+                    "break-words font-mono text-[12px] tabular-nums",
+                    failed ? "text-error" : ping ? "text-warning" : "text-hud-muted"
+                )}
+            >
+                {needHow(need)}
+            </span>
         </div>
     );
 }
@@ -773,14 +807,16 @@ function RunBox(props: { run: SidecarRunBox; snapNow: number; sinceArrived: numb
         <div
             data-sidecar-run={run.id}
             data-run-failed={run.failed ? "true" : "false"}
-            className="flex shrink-0 flex-col gap-2 rounded-lg border border-edge-mid bg-surface-raised px-4 py-3.5"
+            className="flex shrink-0 flex-col gap-2 rounded-lg border border-hud-line bg-hud-panel px-4 py-3.5"
         >
             <div className="flex items-baseline gap-2">
-                <span className="shrink-0 text-[16px] font-semibold text-primary">Run</span>
-                <span className="min-w-0 flex-1 truncate text-[13.5px] text-primary" title={run.title}>
+                <HudLabel className="shrink-0 text-[12px]">Run</HudLabel>
+                <span className="min-w-0 flex-1 truncate text-[13.5px] text-hud-text" title={run.title}>
                     {run.title}
                 </span>
-                {age !== "" && <span className="shrink-0 text-[12.5px] tabular-nums text-muted">{age}</span>}
+                {age !== "" && (
+                    <span className="shrink-0 font-mono text-[12px] tabular-nums text-hud-muted">{age}</span>
+                )}
             </div>
             {run.total > 0 && (
                 <div className="flex gap-[3px]">
@@ -788,126 +824,24 @@ function RunBox(props: { run: SidecarRunBox; snapNow: number; sinceArrived: numb
                         <span
                             key={i}
                             className={cn(
-                                "h-1.5 flex-1 rounded-[3px]",
+                                "h-1.5 flex-1 rounded-[1px]",
                                 i < run.done
                                     ? "bg-success/45"
                                     : i === run.done
                                       ? run.failed
                                           ? "bg-error"
                                           : "bg-success"
-                                      : "bg-edge-mid"
+                                      : "bg-hud-line"
                             )}
                         />
                     ))}
                 </div>
             )}
-            <span className="text-[13px] text-secondary">
+            <span className="font-mono text-[12.5px] tabular-nums text-hud-muted">
                 {run.failed && <span className="mr-1.5 font-semibold text-error">Failed</span>}
                 {text}
             </span>
         </div>
-    );
-}
-
-// ---- Last 2 hours ----
-
-// the label column's width: the ticks row and every lane share it, so a lane's track and the axis are one width
-const LANE_LABEL = "w-[clamp(120px,16vw,300px)]";
-
-function Lanes(props: { tiles: SidecarTile[]; now: number; selectedAgent: string | null }) {
-    const { tiles, now } = props;
-    // every lane's track is as wide as the axis's: measured once, before the first paint
-    const axisRef = useRef<HTMLDivElement>(null);
-    const [width, setWidth] = useState(0);
-    useLayoutEffect(() => {
-        const el = axisRef.current;
-        if (el == null) {
-            return;
-        }
-        const measure = () => setWidth((prev) => (prev === el.clientWidth ? prev : el.clientWidth));
-        measure();
-        const observer = new ResizeObserver(measure);
-        observer.observe(el);
-        return () => observer.disconnect();
-    }, []);
-    const start = now - TIMELINE_WINDOW_MS;
-    return (
-        <div
-            data-sidecar-lanes
-            className="mx-6 mb-4 flex min-h-0 flex-[2_1_0%] flex-col gap-2 overflow-hidden rounded-lg border border-edge-mid bg-surface-raised px-5 py-3"
-        >
-            <div className="flex shrink-0 items-center gap-[18px]">
-                <span className="text-[15px] font-semibold text-primary">Last 2 hours</span>
-                <span className="flex-1" />
-                <Legend swatch="h-2 w-4 rounded-[2px] bg-success" label="Working" />
-                <Legend swatch="h-2 w-4 rounded-[2px] bg-warning" label="Waiting on you" />
-                <Legend swatch="h-2 w-4 rounded-[2px] bg-error" label="Failed" />
-                <Legend swatch="h-0.5 w-4 bg-secondary" label="Finished" />
-            </div>
-            <div className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-hidden">
-                {tiles.map((t) => (
-                    <div
-                        key={t.id}
-                        data-sidecar-lane={t.id}
-                        className={cn(
-                            "flex min-h-[18px] flex-1 items-center gap-4 rounded-[5px] px-2",
-                            t.id === props.selectedAgent && "bg-surface-hover"
-                        )}
-                    >
-                        <span
-                            className={cn("shrink-0 truncate text-[14px] font-semibold text-primary", LANE_LABEL)}
-                            title={t.name}
-                        >
-                            {t.name}
-                        </span>
-                        <div className="relative h-[18px] min-w-0 flex-1">
-                            <div className="absolute inset-x-0 top-2 h-px bg-border" />
-                            {(t.spans ?? []).flatMap((s, i) =>
-                                // one span at a time keeps each bar's span, for its tooltip
-                                laneBars([s], now, width).map((b) => (
-                                    <div
-                                        key={i}
-                                        data-span-state={b.state}
-                                        title={`${SPAN_WORD[s.state]} ${clockText(s.from)}–${s.to == null ? "now" : clockText(s.to)}`}
-                                        className={cn(
-                                            "absolute",
-                                            b.state === "finished"
-                                                ? "top-2 h-0.5 rounded-[1px] bg-secondary"
-                                                : cn("top-0.5 h-3.5 rounded-[4px]", SPAN_BG[b.state])
-                                        )}
-                                        style={{ left: b.x, width: b.w }}
-                                    />
-                                ))
-                            )}
-                        </div>
-                    </div>
-                ))}
-            </div>
-            <div className="flex shrink-0 gap-4 px-2 text-[12px] tabular-nums text-muted">
-                <span className={cn("shrink-0", LANE_LABEL)} />
-                <div ref={axisRef} className="relative h-4 min-w-0 flex-1">
-                    {[0, 1, 2, 3].map((k) => (
-                        <span
-                            key={k}
-                            className="absolute top-0"
-                            style={{ left: `${k * 25}%`, transform: `translateX(-${k * 25}%)` }}
-                        >
-                            {clockText(start + k * 30 * 60_000)}
-                        </span>
-                    ))}
-                    <span className="absolute right-0 top-0 text-primary">now</span>
-                </div>
-            </div>
-        </div>
-    );
-}
-
-function Legend(props: { swatch: string; label: string }) {
-    return (
-        <span className="flex items-center gap-1.5 text-[13px] text-secondary">
-            <span className={props.swatch} />
-            {props.label}
-        </span>
     );
 }
 
@@ -917,7 +851,7 @@ function Footer() {
     return (
         <div
             data-sidecar-footer
-            className="flex h-7 shrink-0 items-center gap-[18px] border-t border-edge-mid px-4 text-[11.5px] text-muted"
+            className="flex h-7 shrink-0 items-center gap-[18px] border-t border-hud-line bg-hud-bg px-4 font-mono text-[10.5px] uppercase tracking-[0.1em] text-hud-muted"
         >
             <Hint keys="←↑↓→" label="move" />
             <Hint keys="Enter" label="open in the main window" />
@@ -930,7 +864,7 @@ function Footer() {
 function Hint({ keys, label }: { keys: string; label: string }) {
     return (
         <span>
-            <kbd className="font-mono text-[11px] text-secondary">{keys}</kbd> {label}
+            <kbd className="font-mono text-[11px] text-hud-glow">{keys}</kbd> {label}
         </span>
     );
 }

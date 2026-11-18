@@ -534,9 +534,16 @@ export function awaitsReview(f: BrainstormFile): boolean {
     return f.question == null && f.working == null && f.check == null && f.run == null && toReview(f) > 0;
 }
 
-// the file waits on the user: a question to answer, or guesses to confirm
+// the builder check waits on the user: its results are in the file, nothing is being written (a pending check shows as
+// working, shownBrainstormFile) and no run has started, so a builder question is open or the review waits on Approve,
+// as the Chat check card's "Waiting on you" (chatbrainstorm.ts checkCard)
+export function checkWaits(f: BrainstormFile): boolean {
+    return f.check != null && f.working == null && f.run == null;
+}
+
+// the file waits on the user: a question to answer, guesses to confirm, or the builder check's questions and review
 export function waitsOnUser(f: BrainstormFile): boolean {
-    return isAsking(f) || awaitsReview(f);
+    return isAsking(f) || awaitsReview(f) || checkWaits(f);
 }
 
 export function asksUser(f: BrainstormFile | null, agent: Pick<AgentVM, "state" | "atPrompt">): boolean {

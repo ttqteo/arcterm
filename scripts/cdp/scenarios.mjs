@@ -62,6 +62,7 @@ import sidebarColumnsScenarios from "./scenarios-sidebar-columns.mjs";
 import agentStreamsScenarios from "./scenarios-agent-streams.mjs";
 import chatBgTasksScenarios from "./scenarios-chat-bg-tasks.mjs";
 import chatStepsScenarios from "./scenarios-chat-steps.mjs";
+import chatReadPictureScenarios from "./scenarios-chat-read-picture.mjs";
 import agentSubagentsScenarios from "./scenarios-agent-subagents.mjs";
 import brainstormBoardPickScenarios from "./scenarios-brainstorm-board-pick.mjs";
 import brainstormBuilderScenarios from "./scenarios-brainstorm-builder.mjs";
@@ -24461,6 +24462,8 @@ const FST_LONG = `${FST_MARK} long ${"/users/x/final-shots/f68b0618-72a1/tauri.f
 const FST_LIVE_VERIFY = `printf '${FST_MARK} 1\\n${FST_LONG}\\n${FST_MARK} 2\\n${FST_MARK} 3\\n'; for i in $(seq 1 300); do sleep 3; echo "${FST_MARK} still running $i"; done`;
 const FST_LIVE_FINAL = "true";
 const FST_KEPT_MARK = "final-stage kept check output";
+// the kept output's other lines, as vitest and go test print them with no terminal: drawn in their tones (outputtone.ts)
+const FST_KEPT_TONED = ["task: [check:ts] node tsc.js --noEmit", " ✓ a.test.ts > passes 1ms", " × a.test.ts > breaks 2ms", "ok  \tpkg/x\t0.5s"];
 const FST_DETAIL = [
     `Final \`${FINAL_SHOTS_CMD}\` failed (exit 1):`,
     "FAIL jarvis-peek 4. the narrow panel stays bounded with a pinned header, no horizontal overflow, and an unclipped harness picker",
@@ -25102,13 +25105,17 @@ const finalStageScenario = {
         // written here, so Verify stands for a step whose output is gone
         const keptDir = join(ctx.out, "1-steps");
         mkdirSync(keptDir, { recursive: true });
-        writeFileSync(join(keptDir, "check.txt"), `${FST_KEPT_MARK}\n`);
+        writeFileSync(join(keptDir, "check.txt"), `${[FST_KEPT_MARK, ...FST_KEPT_TONED].join("\n")}\n`);
         await fstAgent(h, (s) => s.rows[0].selected && s.pane != null, reselect(wait));
         const paneCell = (key) => `${FST_PANE}?.querySelector('[data-final-step="${key}"]')`;
         const keptRead = `(() => ({
             pane: (${FST_PANE}?.textContent ?? "").replace(/\\s+/g, " ").trim(),
             pressed: [...(${FST_PANE}?.querySelectorAll('[data-final-step][aria-pressed="true"]') ?? [])].map((c) => c.getAttribute("data-final-step")),
             rail: (${FST_RAIL}?.querySelector("[data-final-rail]")?.textContent ?? "").replace(/\\s+/g, " ").trim(),
+            tones: [...(${FST_PANE}?.querySelectorAll("[data-final-output] [data-output-tone]") ?? [])].map((l) => l.getAttribute("data-output-tone")),
+            // a pass line's mark is green and the line itself is not; a failure's whole line is red
+            passMark: (() => { const l = ${FST_PANE}?.querySelector('[data-output-tone="pass"]'); return l ? [getComputedStyle(l.firstElementChild).color, getComputedStyle(l).color] : null; })(),
+            failLine: (() => { const l = ${FST_PANE}?.querySelector('[data-output-tone="fail"]'); return l ? getComputedStyle(l).color : null; })(),
         }))()`;
         await finalShotsClick(h, paneCell("check"));
         const keptCheck = await fstUntil(h, keptRead, (s) => s.pane.includes(FST_KEPT_MARK));
@@ -25132,10 +25139,15 @@ const finalStageScenario = {
         await finalShotsClick(h, dagCell);
         const keptDagClosed = await fstUntil(h, dagRead, (s) => s.expanded.length === 0);
         rec(
-            "B5b. a step that ended opens the output it kept: Check's from the pane, the rail and the DAG peek card (under its row, the outcome still shown), Verify's says none was kept, and a second click returns to the outcome",
+            "B5b. a step that ended opens the output it kept: Check's from the pane (in tones: a heading, a pass's mark green, a failure red), the rail and the DAG peek card (under its row, the outcome still shown), Verify's says none was kept, and a second click returns to the outcome",
             () =>
                 fstSame(keptCheck.pressed, ["check"]) &&
                 keptCheck.pane.includes(`$ ${FST_CHECK}`) &&
+                fstSame(keptCheck.tones, ["plain", "head", "pass", "fail", "pass"]) &&
+                keptCheck.passMark != null &&
+                keptCheck.passMark[0] !== keptCheck.passMark[1] &&
+                keptCheck.failLine != null &&
+                keptCheck.failLine !== keptCheck.passMark[1] &&
                 fstSame(keptGone.pressed, ["verify"]) &&
                 !keptGone.pane.includes(FST_KEPT_MARK) &&
                 keptClosed.pane.includes(fstFlat(FST_DETAIL)) &&
@@ -32867,8 +32879,6 @@ const bsRailOpen = (h) =>
 // the rail is the pane's, but with the details rail open it is drawn in the details rail's place, outside the pane
 const BS_RAIL = `document.querySelector("[data-brainstorm-board-rail]")`;
 const BS_RAIL_WIDTH_KEY = "brainstorm.railWidth";
-// the width of the rail drawn in the details rail's place, kept apart (it opens at the details rail's 300px)
-const BS_SLOT_RAIL_WIDTH_KEY = "brainstorm.slotRailWidth";
 // the question keeps 360px, and two 380px boards with the gap, the rail's padding and its handle need ~830px more
 const BS_WIDE_PANE_MIN = 1190;
 // the rail goes under the question below the question's 360px plus the rail's smallest 280px
@@ -33161,8 +33171,6 @@ const brainstormMode = {
             }
             // the rail's dragged width is one number kept in localStorage: start from the default, and put back what was there
             ctx.prevRailWidth = await h.ev(`localStorage.getItem(${JSON.stringify(BS_RAIL_WIDTH_KEY)})`);
-            ctx.prevSlotRailWidth = await h.ev(`localStorage.getItem(${JSON.stringify(BS_SLOT_RAIL_WIDTH_KEY)})`);
-            await h.ev(`localStorage.removeItem(${JSON.stringify(BS_SLOT_RAIL_WIDTH_KEY)})`);
             await h.ev(`localStorage.removeItem(${JSON.stringify(BS_RAIL_WIDTH_KEY)})`);
             bsWrite(ctx, BS_FILES.justStarted);
             await openCanvasTerminal(h, ctx, BS_TOPIC);
@@ -34388,9 +34396,6 @@ const brainstormMode = {
         // the details rail and the agent tree, which the rail steps closed and folded to make the pane wide
         await step("restore the details rail and the agent tree", () => bsRestoreLayout(h, ctx));
         await step("restore the rail's dragged width", () => h.ev(restoreStorageKey(BS_RAIL_WIDTH_KEY, ctx.prevRailWidth)));
-        await step("restore the slot rail's dragged width", () =>
-            h.ev(restoreStorageKey(BS_SLOT_RAIL_WIDTH_KEY, ctx.prevSlotRailWidth))
-        );
         await step("stop recording taskbar flashes", () => h.ev(BS_FLASH_REMOVE));
         await step("close the New run window", () => h.ev(`${NEW_RUN} ? (${PEEKS_ESC}, true) : false`));
         await step("stop recording sent lines", () => h.ev(BS_TYPED_REMOVE));
@@ -45206,8 +45211,8 @@ const agentChat = {
             await showAgent(A);
 
             // 20. a message sent while Claude works. A `queued_command` attachment line (a message queued in the terminal and
-            // taken mid-turn) draws as your bubble; one sent from the box shows at once as your bubble with a "Queued" line
-            // under it, and goes when a line holding the same text lands in the transcript
+            // taken mid-turn) draws as your bubble; one sent from the box shows at once as your bubble with a line of Send now alone
+            // under it (no Queued: the dimmed bubble says it waits), and goes when a line holding the same text lands in the transcript
             const Q1 = "queued from the terminal";
             const S1 = "and also handle timeouts";
             const workingA = { state: "working", activity: AC_ACTIVITY, activeMs: 30_000, idleSince: undefined };
@@ -45227,8 +45232,8 @@ const agentChat = {
                 const mine = ${pendingOf};
                 return {
                     text: mine[0]?.firstElementChild?.textContent.trim() ?? null,
-                    // the line under the pending bubbles (its own row, which folds away after them): Queued, with a Send now
-                    // button beside it
+                    // the line under the pending bubbles (its own row, which folds away after them): a Send now button and
+                    // no words (null: no label) for one queued message
                     caption: mine.length > 0 ? (${acLayer(A)}?.querySelector("[data-chat-pending-line] [data-chat-pending-label]")?.textContent.trim() ?? null) : null,
                     sendNow: !!${acLayer(A)}?.querySelector("[data-chat-pending-line] [data-chat-send-now]"),
                     pending: mine.length,
@@ -45240,8 +45245,8 @@ const agentChat = {
             acAppend(ctx.files.main, acQueuedLine(ctx.dir, S1));
             const landed20 = await polishWaitFor(h, `${youHas(S1)} === 1 && ${pendingOf}.length === 0`, 15000);
             rec(
-                "20. a queued_command line draws as your bubble; a message sent while Claude works shows at once as a pending bubble captioned Queued (and is typed into the block), and is gone once a matching line is in the transcript",
-                queuedUp && pendingUp && pend20.text === S1 && pend20.caption === "Queued" && pend20.pending === 1 && pend20.asYou === 0 &&
+                "20. a queued_command line draws as your bubble; a message sent while Claude works shows at once as a pending bubble with a Send now line and no Queued caption (and is typed into the block), and is gone once a matching line is in the transcript",
+                queuedUp && pendingUp && pend20.text === S1 && pend20.caption === null && pend20.sendNow && pend20.pending === 1 && pend20.asYou === 0 &&
                     JSON.stringify(sent20) === JSON.stringify([S1, "\r"]) && landed20,
                 { queuedUp, pend20, sent20, landed20 }
             );
@@ -49074,6 +49079,149 @@ const chatQuote = {
     },
 };
 
+// --- chat-bubble-fold: a long message of yours in Chat (narrationtimeline.tsx PromptText). Folded behind Show more, a
+// click anywhere on its bubble (its padding too, away from the button) opens it; open, a click on its text leaves it
+// open, and only Show less folds it again.
+
+const CBF_NAME = "bubble fold source";
+const CBF_PROMPT = Array.from({ length: 12 }, (_, i) => `Line ${i + 1} of a long message, pasted from a release log.`).join("\n");
+
+const chatBubbleFold = {
+    name: "chat-bubble-fold",
+    surface: "agent",
+    async arrange(h) {
+        const ctx = {
+            dir: mkdtempSync(join(tmpdir(), "verify-chat-bubble-fold-")),
+            prevGrid: await h.ev(`localStorage.getItem(${JSON.stringify(GRID_KEY)})`),
+            prevModes: await h.ev(`localStorage.getItem("agent.chatmode")`),
+        };
+        let at = "writing the transcript";
+        try {
+            const base = Date.now() - 7_200_000;
+            const o = (sec) => ({ cwd: ctx.dir, ts: new Date(base + sec * 1000).toISOString() });
+            ctx.transcript = AC.writeTranscript(ctx.dir, "bubble-fold-source", [
+                AC.userText(CBF_PROMPT, { ...o(0), uuid: "u0" }),
+                AC.assistantText("Read it. Line 7 is the one that matters.", { ...o(2), uuid: "a0" }),
+            ]);
+            at = "resetting the grid";
+            await h.ev(`localStorage.setItem(${JSON.stringify(GRID_KEY)}, ${JSON.stringify(JSON.stringify(GRID_EMPTY))})`);
+            await h.ev(`localStorage.removeItem("agent.chatmode")`);
+            if (!(await ahReload(h))) throw new Error("the page did not come back after the reload");
+            await h.goto("agent");
+            at = "making the tab";
+            ctx.tabs = { main: await acMakeTab(h, ctx, { label: CBF_NAME }) };
+            at = "setting the roster";
+            const now = Date.now();
+            await AC.setRoster(h, [
+                {
+                    project: "arcterm",
+                    state: "idle",
+                    idleSince: now - 3_600_000,
+                    task: "Release",
+                    agent: "claude",
+                    model: "opus",
+                    id: ctx.tabs.main.tabId,
+                    name: CBF_NAME,
+                    blockId: ctx.tabs.main.blockId,
+                    transcriptPath: ctx.transcript,
+                    sleeping: { since: now - 3_600_000, freedBytes: 0 },
+                },
+            ]);
+        } catch (e) {
+            ctx.arrangeError = `${at}: ${String(e?.message ?? e)}`;
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok: ok === true, detail: typeof detail === "string" ? detail : JSON.stringify(detail) });
+        if (ctx.arrangeError != null) {
+            rec("0. the fixture agent and its transcript", false, ctx.arrangeError);
+            return steps;
+        }
+        const A = ctx.tabs.main.tabId;
+        const bubble = `document.querySelector('[data-agent-chat="${A}"] [data-chat-you] > div')`;
+        // the bubble's button word, its height, and where to click: its top-left padding, and the middle of its text
+        const read = () =>
+            h.ev(`(() => {
+                const b = ${bubble};
+                if (!b) return null;
+                const r = b.getBoundingClientRect();
+                const btn = [...b.querySelectorAll("button")].find((x) => /^Show (more|less)$/.test(x.textContent.trim()));
+                const p = b.querySelector("p");
+                const pr = p?.getBoundingClientRect();
+                // the bubble's right-hand padding, halfway down: clear of the pinned prompt card over the top of Chat
+                const edge = { x: Math.round(r.right - 5), y: Math.round(r.top + r.height / 2) };
+                return {
+                    button: btn?.textContent.trim() ?? null,
+                    h: Math.round(r.height),
+                    corner: edge,
+                    // what is under that point: the fold's cover while folded
+                    cover: document.elementFromPoint(edge.x, edge.y)?.hasAttribute("data-prompt-fold-cover") === true,
+                    text: pr ? { x: Math.round(pr.left + pr.width / 2), y: Math.round(pr.top + pr.height / 2) } : null,
+                };
+            })()`);
+        const click = async (at) => {
+            for (const type of ["mouseMoved", "mousePressed", "mouseReleased"]) {
+                await h.cdp("Input.dispatchMouseEvent", { type, x: at.x, y: at.y, button: "left", clickCount: 1 });
+            }
+            await polishNap(400);
+        };
+        try {
+            await AC.focusAgent(h, A);
+            await polishWaitFor(h, `!!${bubble}?.querySelector("p")`, 15000);
+            await polishNap(400);
+            const s1 = await read();
+            await h.shot("cdp-shots/chat-bubble-fold-1-folded.png");
+            rec("1. the 12-line message is folded: Show more under it, and the fold's cover over the bubble", s1?.button === "Show more" && s1.cover === true, s1);
+
+            // 2. a click on the bubble's right-hand padding, nowhere near the button, opens it
+            await click(s1.corner);
+            const s2 = await read();
+            await h.shot("cdp-shots/chat-bubble-fold-2-open.png");
+            rec("2. a click on the bubble's right-hand edge opens it: Show less, and the bubble is taller", s2?.button === "Show less" && s2.h > s1.h, { s1, s2 });
+
+            // 3. open, a click on its text leaves it open
+            await click(s2.text);
+            const s3 = await read();
+            rec("3. open, a click in the middle of its text leaves it open", s3?.button === "Show less" && s3.h === s2.h, s3);
+
+            // 4. Show less folds it again
+            await h.ev(`[...${bubble}.querySelectorAll("button")].find((x) => x.textContent.trim() === "Show less")?.click()`);
+            await polishNap(400);
+            const s4 = await read();
+            await h.shot("cdp-shots/chat-bubble-fold-4-folded-again.png");
+            rec("4. Show less folds it back to its first height", s4?.button === "Show more" && s4.h === s1.h, s4);
+        } catch (e) {
+            rec("x. the scenario ran to the end", false, String(e?.stack ?? e));
+        }
+        return steps;
+    },
+    async teardown(h, ctx) {
+        const step = async (what, fn) => {
+            try {
+                await fn();
+            } catch (e) {
+                console.error(`chat-bubble-fold teardown: ${what} failed: ${e?.message ?? e}`);
+            }
+        };
+        await step("restore the roster", () => AC.restoreRoster(h));
+        await step("close the fixture tab", () => acCloseTabs(h, ctx));
+        await step("restore the grid and the chat modes", () =>
+            h.ev(`(() => {
+                for (const [key, prev] of [[${JSON.stringify(GRID_KEY)}, ${JSON.stringify(ctx.prevGrid)}], ["agent.chatmode", ${JSON.stringify(ctx.prevModes)}]]) {
+                    if (prev == null) localStorage.removeItem(key);
+                    else localStorage.setItem(key, prev);
+                }
+                return true;
+            })()`)
+        );
+        await step("remove the fixture transcript", () => rmSync(ctx.dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 500 }));
+        await step("reload onto the live roster", () => ahReload(h));
+        await step("go home", () => h.goto("cockpit"));
+    },
+};
+
 // --- chat-focus-read: Focus read in Chat (chatfocusread.ts, chatfocusreadview.ts, chatfocusreadstore.ts). The toggle
 // beside Skim turns it on over a long reply: one block lit on the reading line, every other block dimmed to 32%, the
 // line's tick in the gutter, and the focus in the conversation. J steps the next block onto the line (the Agent tree's j
@@ -49142,6 +49290,7 @@ const chatFocusRead = {
             prevGrid: await h.ev(`localStorage.getItem(${JSON.stringify(GRID_KEY)})`),
             prevModes: await h.ev(`localStorage.getItem("agent.chatmode")`),
             prevFocusRead: await h.ev(`localStorage.getItem("chat.focusRead")`),
+            prevFocusReadSize: await h.ev(`localStorage.getItem("chat.focusRead.size")`),
         };
         let at = "writing the transcript";
         try {
@@ -49158,6 +49307,7 @@ const chatFocusRead = {
             await h.ev(`localStorage.setItem(${JSON.stringify(GRID_KEY)}, ${JSON.stringify(JSON.stringify(GRID_EMPTY))})`);
             await h.ev(`localStorage.removeItem("agent.chatmode")`);
             await h.ev(`localStorage.removeItem("chat.focusRead")`);
+            await h.ev(`localStorage.removeItem("chat.focusRead.size")`);
             if (!(await ahReload(h))) throw new Error("the page did not come back after the reload");
             await h.goto("agent");
             at = "making the tab";
@@ -49192,7 +49342,8 @@ const chatFocusRead = {
                 const sr = s.getBoundingClientRect();
                 const line = Math.round(s.clientHeight / 3);
                 const r = lit >= 0 ? blocks[lit].getBoundingClientRect() : null;
-                const dim = blocks.find((b) => !b.hasAttribute("data-fr-lit"));
+                const dim = blocks.find((b) => !b.hasAttribute("data-fr-lit") && !b.hasAttribute("data-fr-near"));
+                const near = blocks.map((b, i) => (b.hasAttribute("data-fr-near") ? i : -1)).filter((i) => i >= 0);
                 const tick = ${pane}?.querySelector("[data-chat-focus-line]");
                 return {
                     on: s.hasAttribute("data-focus-read"),
@@ -49200,6 +49351,7 @@ const chatFocusRead = {
                     litCount: blocks.filter((b) => b.hasAttribute("data-fr-lit")).length,
                     lit,
                     litText: lit >= 0 ? blocks[lit].innerText : null,
+                    litTexts: blocks.filter((b) => b.hasAttribute("data-fr-lit")).map((b) => b.innerText),
                     litCode: lit >= 0 && !!blocks[lit].querySelector("[data-code-line]"),
                     litTable: lit >= 0 && !!blocks[lit].querySelector("table"),
                     // the lit block's top from the line (negative: above it) and its height
@@ -49207,6 +49359,9 @@ const chatFocusRead = {
                     litH: r ? Math.round(r.height) : null,
                     litOpacity: lit >= 0 ? getComputedStyle(blocks[lit]).opacity : null,
                     dimOpacity: dim ? getComputedStyle(dim).opacity : null,
+                    // the blocks at half strength: the one before the lit one and the one after
+                    near,
+                    nearOpacity: near.map((i) => getComputedStyle(blocks[i]).opacity),
                     tick: tick ? getComputedStyle(tick).display : "absent",
                     tickAtLine: tick ? Math.abs(tick.getBoundingClientRect().top + tick.offsetHeight / 2 - sr.top - line) <= 2 : false,
                     focusIn: !!document.activeElement?.closest?.("[data-chat-scroller]"),
@@ -49252,8 +49407,10 @@ const chatFocusRead = {
             const pressed1 = await h.ev(`${pane}?.querySelector("[data-chat-focus-read-toggle]")?.getAttribute("aria-pressed")`);
             await h.shot("cdp-shots/chat-focus-read-1-on.png");
             rec(
-                "1. the toggle beside Skim turns focus read on: every block but one dims to 32%, the lit one stays at 1, the accent tick marks the line, and the focus is in the conversation",
-                loaded && on1 && pressed1 === "true" && s1?.count >= 12 && s1.litCount === 1 && s1.litOpacity === "1" && s1.dimOpacity === "0.32" && s1.tick === "block" && s1.tickAtLine && s1.focusIn,
+                "1. the toggle beside Skim turns focus read on: the lit block stays at 1, the block before and after it at 0.5, the rest at 0.32, the accent tick marks the line, and the focus is in the conversation",
+                loaded && on1 && pressed1 === "true" && s1?.count >= 12 && s1.litCount === 1 && s1.litOpacity === "1" && s1.dimOpacity === "0.32" &&
+                    s1.near.join(",") === [s1.lit - 1, s1.lit + 1].filter((i) => i >= 0 && i < s1.count).join(",") && s1.nearOpacity.every((o) => o === "0.5") &&
+                    s1.tick === "block" && s1.tickAtLine && s1.focusIn,
                 { loaded, on1, pressed1, s1 }
             );
 
@@ -49369,6 +49526,32 @@ const chatFocusRead = {
                 { s6a, s6, s6b }
             );
 
+            // 6c. the size button lights two blocks at a time: two lit from the line, the one before and after the pair at
+            // half strength; K steps back a whole pair, Q quotes the pair as one quote; two more clicks go round to ×1
+            const sizeBtn = `${pane}?.querySelector("[data-chat-focus-read-size]")`;
+            await click(sizeBtn);
+            const s6c = await state();
+            const size6c = await h.ev(`${sizeBtn}?.getAttribute("data-chat-focus-read-size")`);
+            await h.shot("cdp-shots/chat-focus-read-6c-two.png");
+            await K();
+            const s6k = await state();
+            const before6q = await boxText();
+            await Q();
+            const text6q = await boxText();
+            const quoted6 = (s6k?.litTexts ?? []).map((t) => t.trim()).join("\n\n").split("\n").map((l) => (l === "" ? ">" : "> " + l)).join("\n");
+            await click(sizeBtn);
+            await click(sizeBtn);
+            const size6end = await h.ev(`${sizeBtn}?.getAttribute("data-chat-focus-read-size")`);
+            const s6end = await state();
+            rec(
+                "6c. ×2 lights the block on the line and the one after it, with the block before and after the pair at 0.5; K steps back two blocks; Q quotes the pair as one quote; the button goes round ×3 back to ×1",
+                size6c === "2" && s6c?.litCount === 2 && s6c.near.join(",") === [s6c.lit - 1, s6c.lit + 2].filter((i) => i >= 0 && i < s6c.count).join(",") &&
+                    s6k?.lit === s6c.lit - 2 && s6k.litCount === 2 &&
+                    text6q === `${before6q.replace(/\s+$/, "")}\n\n${quoted6}\n\n` &&
+                    size6end === "1" && s6end?.litCount === 1,
+                { size6c, s6c, s6k, text6q, quoted6, size6end, litEnd: s6end?.litCount }
+            );
+
             // 7. Alt+R turns it off: nothing dimmed, no tick, the toggle up
             await press("r", "KeyR", 82, 1);
             const off7 = await polishWaitFor(h, `!${scroller}?.hasAttribute("data-focus-read") && !${pane}?.querySelector("[data-fr-block]")`, 3000);
@@ -49405,7 +49588,7 @@ const chatFocusRead = {
         await step("close the fixture tab", () => acCloseTabs(h, ctx));
         await step("restore the grid, the chat modes and focus read", () =>
             h.ev(`(() => {
-                for (const [key, prev] of [[${JSON.stringify(GRID_KEY)}, ${JSON.stringify(ctx.prevGrid)}], ["agent.chatmode", ${JSON.stringify(ctx.prevModes)}], ["chat.focusRead", ${JSON.stringify(ctx.prevFocusRead)}]]) {
+                for (const [key, prev] of [[${JSON.stringify(GRID_KEY)}, ${JSON.stringify(ctx.prevGrid)}], ["agent.chatmode", ${JSON.stringify(ctx.prevModes)}], ["chat.focusRead", ${JSON.stringify(ctx.prevFocusRead)}], ["chat.focusRead.size", ${JSON.stringify(ctx.prevFocusReadSize)}]]) {
                     if (prev == null) localStorage.removeItem(key);
                     else localStorage.setItem(key, prev);
                 }
@@ -73674,6 +73857,7 @@ export const SCENARIOS = [
     ...agentStreamsScenarios(RT_KIT),
     ...chatBgTasksScenarios(RT_KIT),
     ...chatStepsScenarios(RT_KIT),
+    ...chatReadPictureScenarios(RT_KIT),
     ...agentSubagentsScenarios(RT_KIT),
     ...modalFocusHomeScenarios(RT_KIT),
     ...parkedLaunchScenarios(),
@@ -73699,6 +73883,7 @@ export const SCENARIOS = [
     chatFork,
     chatQuote,
     chatFocusRead,
+    chatBubbleFold,
     chatMath,
     chatRefBadges,
     chatInitiative,

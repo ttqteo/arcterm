@@ -47,6 +47,7 @@ import {
     ArrowRight,
     ArrowUpFromLine,
     Check,
+    CircleCheck,
     CornerDownLeft,
     Diamond,
     FileDiff,
@@ -102,6 +103,7 @@ import {
 } from "./chatpending";
 import {
     addPending,
+    deliveredPending,
     dropPending,
     dropPendingIds,
     getPending,
@@ -109,7 +111,6 @@ import {
     sentHistory,
     setHeldSend,
     useHeldSend,
-    wokenPending,
 } from "./chatpendingstore";
 import { ChatPlusMenu } from "./chatplusmenu";
 import { asleepCommand, runBlocks, runsAsleep, type SleepRun } from "./chatsleepbash";
@@ -220,6 +221,7 @@ function ComposerBox({
     chips,
     summary,
     onMarkDone,
+    onClose,
     onGoOn,
     onLocal,
     onSendNow,
@@ -249,6 +251,9 @@ function ComposerBox({
     summary?: string;
     /** a chunk's done chip: ticks it on the agent's initiative. Left out, that chip is not drawn. */
     onMarkDone?: (chunk: string) => void;
+    /** the close chip (chatsuggest.ts closeChip): closes the agent as the header's ✓ Close does, asking as it does. Left
+     *  out, that chip is not drawn. */
+    onClose?: () => void;
     /** a "go on with: <chunk>" chip: moves the agent to the chunk, then sends the chip's text (the caller does both, so a
      *  switch that fails sends nothing). Left out, that chip is sent as typed. */
     onGoOn?: (chunk: string, text: string) => void;
@@ -291,7 +296,7 @@ function ComposerBox({
                 const w = wake.current;
                 wake.current = null;
                 if (w?.pendingId != null) {
-                    wokenPending(agent.id, w.pendingId);
+                    deliveredPending(agent.id, w.pendingId);
                 }
             },
             wakeClears: true,
@@ -600,7 +605,18 @@ function ComposerBox({
                 att.addPaths(ridingPaths);
             }
         };
-        const taken = send(wire, onFailed);
+        // the pending bubble waits on the send's way into Claude Code's box (the echo wait takes seconds while Claude
+        // Code is busy), and only once the Enter went on the idle agent (chatpending.ts sending)
+        let pendingId: string | null = null;
+        let deliveredEarly = false;
+        const onDelivered = () => {
+            if (pendingId != null) {
+                deliveredPending(agentId, pendingId);
+            } else {
+                deliveredEarly = true;
+            }
+        };
+        const taken = send(wire, onFailed, onDelivered);
         if (!taken && lines.length > 0) {
             putBackResultLines(agent.id, lines);
         }
@@ -625,7 +641,7 @@ function ComposerBox({
                 // the band's own switch message draws as arcterm's row once it lands, never as a bubble of yours
                 const bandNote = sent === SWITCH_NOTE && lines.length > 0;
                 if (entries != null && pendsAsBubble(sent) && !bandNote) {
-                    addPending(agent.id, sent, entries, agent.state !== "idle");
+                    pendingId = addPending(agent.id, sent, entries, agent.state !== "idle", false, !deliveredEarly);
                     // a `! cmd` is kept past a restart too: one that closes arcterm never reaches the transcript
                     noteLostBash(agent.transcriptPath, sent, entries);
                 }
@@ -866,7 +882,7 @@ function ComposerBox({
     });
     // Tab walks the suggested replies on screen (chatsuggest.ts stepPick), Shift+Tab back. The picked chip is kept by its
     // text, so a row that changes under it lets it go; typing lets it go too. Enter takes it as a click does.
-    const tabChips = row.kind === "suggest" ? drawnChips(row.chips, onMarkDone != null) : NO_CHIPS;
+    const tabChips = row.kind === "suggest" ? drawnChips(row.chips, onMarkDone != null, onClose != null) : NO_CHIPS;
     // the long turn's summary line: it stands with the chip row's own conditions, but not on its chips (the row is
     // "suggest" only with a chip, and a summary can come with none); the running agent's actions take the line instead
     const summaryShown =
@@ -903,7 +919,9 @@ function ComposerBox({
         return () => document.removeEventListener("pointerdown", off, true);
     }, [armed]);
     const activateChip = (c: ChatChip) => {
-        if (c.kind === "done" && c.chunk != null && onMarkDone != null) {
+        if (c.kind === "close" && onClose != null) {
+            onClose();
+        } else if (c.kind === "done" && c.chunk != null && onMarkDone != null) {
             onMarkDone(c.chunk);
         } else if (c.kind === "next" && c.chunk != null && onGoOn != null) {
             onGoOn(c.chunk, c.text);
@@ -1547,6 +1565,8 @@ const SUGGEST_ICONS: Record<ChipIcon, LucideIcon> = {
     push: ArrowUpFromLine,
     done: Check,
     next: ArrowRight,
+    // the header's ✓ Close, in the chip row's shape
+    close: CircleCheck,
 };
 
 // A key named in the empty box's line (chatboxstate.ts HintPart), drawn as a keycap.
@@ -1607,11 +1627,13 @@ function SuggestChips({
                                     title={
                                         c.text === armed
                                             ? `Send “${c.text}” in place of the text in the box · Esc keeps your text`
-                                            : ticks
-                                              ? `Mark “${c.chunk}” done and move on to the next chunk`
-                                              : goes
-                                                ? `Move this agent to “${c.chunk}” and send “${c.text}”`
-                                                : `Send “${c.text}”`
+                                            : c.kind === "close"
+                                              ? "Its work is committed: close this agent, as the header's ✓ Close does"
+                                              : ticks
+                                                ? `Mark “${c.chunk}” done and move on to the next chunk`
+                                                : goes
+                                                  ? `Move this agent to “${c.chunk}” and send “${c.text}”`
+                                                  : `Send “${c.text}”`
                                     }
                                     onClick={() => onActivate(c)}
                                     data={{ "data-chat-suggest-chip": c.source, "data-chat-suggest-kind": c.kind }}

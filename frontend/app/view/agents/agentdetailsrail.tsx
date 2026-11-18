@@ -14,7 +14,9 @@ import { useAtomValue } from "jotai";
 import {
     ArrowLeft,
     ArrowUpRight,
+    ChevronDown,
     ChevronLeft,
+    ChevronRight,
     FileDiff,
     FileText,
     Folder,
@@ -25,7 +27,7 @@ import {
     ScrollText,
 } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
-import { useEffect, useRef, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { driveAgent, NUDGE_INPUT } from "./agentactions";
 import { agentDiffScope, openBranchDiff, openDiff } from "./agentdiffnav";
 import {
@@ -43,6 +45,8 @@ import {
 import { RailResizeGrip, RailStats, RailTabStrip, useWideWidth } from "./agentrailpanel";
 import {
     bgSessionLive,
+    bgTaskElapsed,
+    bgTaskGroups,
     bgTaskStatusLabel,
     bgTaskStoppable,
     planAgentRail,
@@ -56,6 +60,7 @@ import { activeFile, fileTabLabel, panelFor, RAIL_OVERVIEW_PX, shownTab, type Re
 import type { AgentsViewModel } from "./agents";
 import { displayAgeMs, formatAgeShort, type AgentVM } from "./agentsviewmodel";
 import { setAgentView } from "./agentview";
+import { BackgroundTaskTail } from "./backgroundtaskpeek";
 import { backgroundActivity, shownState } from "./bgactivity";
 import { agentCacheStatusAtom, formatCacheCountdown, loadCacheStatusForAgent } from "./cachestatusstore";
 import { canvasStateAtom, selectCanvasTab } from "./canvasstore";
@@ -461,66 +466,124 @@ const BG_DOT: Record<BgTaskLabel, string> = {
     unknown: "bg-muted",
 };
 
-// A background command: what it is for, the command itself under it, and its status. With an output file it opens
-// that file in the panel's File tab with its Live toggle, following the output while the task runs. A running one
-// has a Stop at the end of its card (two clicks), which ends its process and what it started.
+// A background command, as Claude Desktop's panel has it: a card with its status dot, what it is for and how long it
+// ran (a running one counts up), and a chevron. A click opens it in place: the command whole, then the end of its output
+// in its program's colours (BackgroundTaskTail, re-read while it runs), and Open full view, which opens the output file in
+// the panel's File tab with its Live toggle. A running one has a Stop on its card (two clicks), which ends its process
+// and what it started.
 function BackgroundTaskRow({
     task,
     live,
+    now,
     onOpen,
     onStop,
 }: {
     task: BackgroundTask;
     live: boolean;
+    now: number;
     onOpen?: () => void;
     onStop?: () => void;
 }) {
+    const [open, setOpen] = useState(false);
     const label = bgTaskStatusLabel(task.status, live);
-    const showCommand = task.command != null && task.command !== task.label;
-    const body = (
-        <>
-            <span className={cn("mt-[5px] h-[6px] w-[6px] shrink-0 self-start rounded-full", BG_DOT[label])} />
-            <span className="flex min-w-0 flex-1 flex-col gap-[2px]">
-                <span className="truncate text-[11.5px] text-secondary">{task.label}</span>
-                {showCommand ? (
-                    <span className="truncate font-mono text-[10.5px] text-muted">{task.command}</span>
-                ) : null}
-            </span>
-            <span className="self-start whitespace-nowrap text-[10.5px] text-muted">{label}</span>
-        </>
-    );
-    // A stoppable row draws the card on its wrapper instead, so the Stop sits inside it
-    const card = "rounded-[8px] bg-surface-raised";
-    const cls = cn(
-        "flex w-full items-center gap-[10px] px-[11px] py-[8px] text-left",
-        onStop == null ? card : "rounded-l-[8px] pr-[6px]"
-    );
-    const row =
-        onOpen == null ? (
-            <div title={task.command} data-bg-task={task.toolUseId} className={cls}>
-                {body}
-            </div>
-        ) : (
-            <button
-                type="button"
-                data-bg-task={task.toolUseId}
-                title={`${task.command ?? task.label}\n\nOpen its output`}
-                onClick={onOpen}
-                className={cn(cls, "cursor-pointer", onStop == null && "hover:bg-surface-hover")}
-            >
-                {body}
-            </button>
-        );
-    if (onStop == null) {
-        return row;
-    }
+    const elapsed = bgTaskElapsed(task, now);
+    const running = label === "running";
+    const Chevron = open ? ChevronDown : ChevronRight;
     return (
         <div
-            data-bg-task-stoppable
-            className={cn("flex items-center pr-[9px]", card, onOpen != null && "hover:bg-surface-hover")}
+            data-bg-task={task.toolUseId}
+            data-bg-task-open={open || undefined}
+            className="rounded-[8px] bg-surface-raised"
         >
-            <div className="min-w-0 flex-1">{row}</div>
-            <ServerStopButton confirmLabel="Stop" onStop={onStop} />
+            <div className="flex items-center pr-[9px]">
+                <button
+                    type="button"
+                    aria-expanded={open}
+                    title={`${task.command ?? task.label}\n\n${label}`}
+                    onClick={() => setOpen(!open)}
+                    className="flex min-w-0 flex-1 cursor-pointer items-center gap-[9px] rounded-[8px] px-[11px] py-[8px] text-left hover:bg-surface-hover"
+                >
+                    <Chevron size={12} strokeWidth={2} aria-hidden className="shrink-0 text-muted" />
+                    <span className={cn("h-[6px] w-[6px] shrink-0 rounded-full", BG_DOT[label])} />
+                    <span className="min-w-0 flex-1 truncate text-[11.5px] text-secondary">{task.label}</span>
+                    <span className="whitespace-nowrap text-[10.5px] tabular-nums text-muted">
+                        {elapsed !== "" ? elapsed : label}
+                    </span>
+                </button>
+                {onStop != null ? <ServerStopButton confirmLabel="Stop" onStop={onStop} /> : null}
+            </div>
+            {open ? (
+                <div className="flex flex-col gap-[7px] px-[11px] pb-[10px]">
+                    {task.command != null && task.command !== task.label ? (
+                        <div className="whitespace-pre-wrap break-words font-mono text-[10.5px] text-muted">
+                            <span className="select-none text-ink-faint">$ </span>
+                            {task.command}
+                        </div>
+                    ) : null}
+                    {task.outputFile != null ? <BackgroundTaskTail path={task.outputFile} running={running} /> : null}
+                    {onOpen != null ? (
+                        <button
+                            type="button"
+                            onClick={onOpen}
+                            className="flex cursor-pointer items-center gap-[5px] self-start text-[10.5px] text-muted hover:text-primary"
+                        >
+                            <ArrowUpRight size={11} strokeWidth={2} aria-hidden />
+                            Open full view
+                        </button>
+                    ) : null}
+                </div>
+            ) : null}
+        </div>
+    );
+}
+
+// The Background tasks section: Running, then Finished, each with its count, newest first (bgTaskGroups). Finished folds
+// away on a click on its heading, as Claude Desktop's does; it starts open.
+function BackgroundTaskGroups({
+    tasks,
+    live,
+    row,
+}: {
+    tasks: BackgroundTask[];
+    live: boolean;
+    row: (t: BackgroundTask) => ReactNode;
+}) {
+    const [finishedOpen, setFinishedOpen] = useState(true);
+    const { running, finished } = bgTaskGroups(tasks, live);
+    const heading = "flex items-center gap-[5px] px-[2px] text-[10.5px] font-medium text-muted";
+    return (
+        <div className="flex flex-col gap-[7px]">
+            {running.length > 0 ? (
+                <>
+                    <div data-bg-group="running" className={heading}>
+                        Running <span className="tabular-nums">{running.length}</span>
+                    </div>
+                    {running.map(row)}
+                </>
+            ) : null}
+            {finished.length > 0 ? (
+                <>
+                    <button
+                        type="button"
+                        data-bg-group="finished"
+                        aria-expanded={finishedOpen}
+                        onClick={() => setFinishedOpen(!finishedOpen)}
+                        className={cn(
+                            heading,
+                            "cursor-pointer self-start hover:text-secondary",
+                            running.length > 0 && "mt-[5px]"
+                        )}
+                    >
+                        {finishedOpen ? (
+                            <ChevronDown size={11} strokeWidth={2} aria-hidden />
+                        ) : (
+                            <ChevronRight size={11} strokeWidth={2} aria-hidden />
+                        )}
+                        Finished <span className="tabular-nums">{finished.length}</span>
+                    </button>
+                    {finishedOpen ? finished.map(row) : null}
+                </>
+            ) : null}
         </div>
     );
 }
@@ -1306,13 +1369,15 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
             />
         ),
         bgtasks: () => (
-            <div className="flex flex-col gap-[7px]">
-                {/* newest first: the transcript gives them in the order they started */}
-                {[...bgTasks].reverse().map((t) => (
+            <BackgroundTaskGroups
+                tasks={bgTasks}
+                live={live}
+                row={(t) => (
                     <BackgroundTaskRow
                         key={t.toolUseId}
                         task={t}
                         live={live}
+                        now={now}
                         onStop={
                             // the kill finds the task among the agent block's job object: Windows only
                             isWindows() && bgTaskStoppable(t, live)
@@ -1332,8 +1397,8 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
                                 : undefined
                         }
                     />
-                ))}
-            </div>
+                )}
+            />
         ),
         run: () =>
             role?.kind === "worker" ? (

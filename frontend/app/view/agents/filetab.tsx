@@ -177,7 +177,7 @@ export function FileTab({
     const pin = filePinTarget(ref, cwd);
     const pinned = pin != null && isPinned(pins, pin.folder, pin.rel);
     const openCode = () => fireAndForget(() => openRefInCode(model, ref));
-    const openWholeDiff = (rel: string) => {
+    const openWholeDiff = (rel?: string) => {
         globalStore.set(model.focusIdAtom, agentId);
         openDiff(model, agentDiffScope(agentId, agent.name), rel);
     };
@@ -268,12 +268,12 @@ export function FileTab({
                 ))}
             </div>
         );
-    } else if (diffable && diff != null && ref.root != null) {
+    } else if (diffable && diff != null && (diff.cwd ?? ref.root) != null) {
         body = (
             <FileTabDiff
                 fileRef={ref}
                 abs={ref.abs}
-                cwd={ref.root}
+                cwd={(diff.cwd ?? ref.root)!}
                 rel={diff.rel}
                 base={diff.base}
                 modified={state.kind === "text" ? state.text : ""}
@@ -586,7 +586,8 @@ export function FileTab({
                         data-file-open-diff
                         aria-label="Open in Diff"
                         title="Open in Diff, with the agent's other changes"
-                        onClick={() => openWholeDiff(diff.rel)}
+                        // a path relative to its own folder is no path the Diff surface knows: it opens on the whole
+                        onClick={() => openWholeDiff(diff.cwd == null ? diff.rel : undefined)}
                         className={ICON_BTN}
                     >
                         <GitCompare size={13} aria-hidden />

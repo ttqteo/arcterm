@@ -10,10 +10,13 @@ import {
     foldOf,
     foreignPathGuesses,
     MAX_STEP_CHIPS,
+    pictureOf,
     stepElapsed,
     stepOf,
     stepRows,
+    stretchPictures,
     turnFileAbs,
+    turnFileDiff,
     turnFiles,
 } from "./chatsteps";
 
@@ -305,6 +308,31 @@ const edit = (path: string, adds: number, dels: number, extra: Partial<AgentActi
 const read = (path: string, extra: Partial<AgentActionEntry> = {}): AgentActionEntry =>
     action("read", { target: path.split("/").pop(), path, outcome: "ok", summary: "25 lines", ...extra });
 
+describe("pictureOf", () => {
+    it("is the absolute path of a picture a read took in", () => {
+        expect(pictureOf(read("/a/shot.png"))).toBe("/a/shot.png");
+        expect(pictureOf(read("C:\\a\\Shot.JPG", { target: "Shot.JPG" }))).toBe("C:\\a\\Shot.JPG");
+    });
+    it("falls back to an absolute target when the call gave no path", () => {
+        expect(pictureOf(action("read", { target: "/a/b.webp" }))).toBe("/a/b.webp");
+    });
+    it("is null for a bare name, another file, another verb, or a failed read", () => {
+        expect(pictureOf(action("read", { target: "b.png" }))).toBeNull();
+        expect(pictureOf(read("/a/b.ts"))).toBeNull();
+        expect(pictureOf(read("/a/b.svg"))).toBeNull();
+        expect(pictureOf(edit("/a/b.png", 1, 0))).toBeNull();
+        expect(pictureOf(read("/a/b.png", { outcome: "fail" }))).toBeNull();
+    });
+});
+
+describe("stretchPictures", () => {
+    it("names each picture once, in order, up to the cap", () => {
+        const acts = [read("/a/1.png"), read("/a/x.ts"), read("/a/1.png"), read("/a/2.png"), read("/a/3.png")];
+        expect(stretchPictures(acts, 2)).toEqual(["/a/1.png", "/a/2.png"]);
+        expect(stretchPictures(acts, 5)).toEqual(["/a/1.png", "/a/2.png", "/a/3.png"]);
+    });
+});
+
 describe("stepRows", () => {
     it("folds a run of the same verb on the same file, in order, each line keyed by its first call", () => {
         const calls = [
@@ -515,5 +543,24 @@ describe("turnFileAbs", () => {
     it("has nowhere to open a relative path without a cwd", () => {
         expect(turnFileAbs("pkg/a.go", undefined)).toBeNull();
         expect(turnFileAbs("pkg/a.go", "")).toBeNull();
+    });
+});
+
+describe("turnFileDiff", () => {
+    it("reads the file against the last commit from its own folder", () => {
+        expect(turnFileDiff("D:\\repo\\.worktrees\\x\\frontend\\a.tsx")).toEqual({
+            cwd: "D:\\repo\\.worktrees\\x\\frontend",
+            rel: "a.tsx",
+            base: "",
+        });
+        expect(turnFileDiff("/repo/pkg/a.go")).toEqual({ cwd: "/repo/pkg", rel: "a.go", base: "" });
+    });
+    it("keeps a drive root's separator", () => {
+        expect(turnFileDiff("C:\\a.go")).toEqual({ cwd: "C:\\", rel: "a.go", base: "" });
+    });
+    it("has no diff for a path with no folder", () => {
+        expect(turnFileDiff("a.go")).toBeNull();
+        expect(turnFileDiff("/a.go")).toBeNull();
+        expect(turnFileDiff("/repo/")).toBeNull();
     });
 });

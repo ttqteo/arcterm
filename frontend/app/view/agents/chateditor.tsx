@@ -22,7 +22,9 @@
 // mirrors it and scrolls as the editor does (GhostScroll). A bash command's leading `!` (`bash`) is in `value` but not in the editor: it is drawn as an accent marker
 // beside it, a gap before the command, as Claude Code's own box does (chateditormodel.ts `bangSkip`); every text and offset
 // the editor takes or gives is mapped across it, and Backspace at the command's start takes the `!` away, leaving bash mode.
-// A ``` fenced block is drawn as a code box while it is typed (chateditorfences.tsx), its text unchanged.
+// A ``` fenced block is drawn as a code box while it is typed, a `code` span as inline code and a `>` line as a quote
+// (chateditormarks.tsx), the text unchanged. A paste of several lines that reads as code or a log goes in fenced
+// (chatmarks.ts codePaste); one undo takes the fence away and leaves the raw paste.
 
 import { isMacOS } from "@/util/platformutil";
 import { cn } from "@/util/util";
@@ -33,6 +35,7 @@ import { LexicalErrorBoundary } from "@lexical/react/LexicalErrorBoundary";
 import { HistoryPlugin } from "@lexical/react/LexicalHistoryPlugin";
 import { PlainTextPlugin } from "@lexical/react/LexicalPlainTextPlugin";
 import {
+    $addUpdateTag,
     $createLineBreakNode,
     $createNodeSelection,
     $createParagraphNode,
@@ -49,6 +52,7 @@ import {
     CLEAR_HISTORY_COMMAND,
     COMMAND_PRIORITY_HIGH,
     COMPOSITION_END_COMMAND,
+    HISTORY_PUSH_TAG,
     KEY_BACKSPACE_COMMAND,
     KEY_DELETE_COMMAND,
     KEY_DOWN_COMMAND,
@@ -59,8 +63,17 @@ import {
     type LexicalNode,
     type PointType,
 } from "lexical";
-import { forwardRef, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState, type RefObject } from "react";
-import { FENCED_TEXT_CLASS, FencedCode } from "./chateditorfences";
+import {
+    forwardRef,
+    Fragment,
+    useImperativeHandle,
+    useLayoutEffect,
+    useMemo,
+    useRef,
+    useState,
+    type RefObject,
+} from "react";
+import { MARK_THEME, TypedMarks } from "./chateditormarks";
 import {
     atomRunsIn,
     bangSkip,
@@ -84,7 +97,9 @@ import {
 } from "./chateditornodes";
 import { $createFileMentionNode, $isFileMentionNode, FileMentionNode } from "./chateditorpill";
 import { $createRefMentionNode, $isRefMentionNode, RefMentionNode } from "./chateditorrefpill";
+import { codePaste } from "./chatmarks";
 import { gapAfterMention, gapBeforeMention } from "./filementiontokens";
+import { shellLine } from "./shellhighlight";
 
 /** The part of an `HTMLTextAreaElement` the box's callers (the slash menu, the `@` picker, recall, insert) use, so a
  *  textarea (the New launcher's Task box) passes as one and floating-ui can anchor a picker to it as a virtual element. */
@@ -553,6 +568,42 @@ function clipboardHasFiles(e: ClipboardEvent): boolean {
     return data.files.length > 0 || Array.from(data.items ?? []).some((i) => i.kind === "file");
 }
 
+/** A paste of code or a log goes in fenced (chatmarks.ts codePaste), in two undo steps: the raw paste, as the editor's
+ *  own paste puts it in, then the fence around it, so one undo leaves the raw paste. Runs in the paste command's update;
+ *  the fence goes in an update of its own once it has committed. True when the paste was taken; a bash command is never
+ *  fenced (the shell would get the backticks). */
+function $pasteCode(editor: LexicalEditor, event: ClipboardEvent, bash: boolean): boolean {
+    const pasted = event.clipboardData?.getData("text/plain") ?? "";
+    const selection = $getSelection();
+    if (bash || pasted === "" || !$isRangeSelection(selection)) {
+        return false;
+    }
+    const doc = $readDoc();
+    const at = $selectionOffsets(doc);
+    const paste = at == null ? null : codePaste(linesText(doc.lines), at.start, at.end, pasted);
+    if (at == null || paste == null) {
+        return false;
+    }
+    event.preventDefault();
+    $addUpdateTag(HISTORY_PUSH_TAG);
+    selection.insertRawText(paste.raw);
+    // a task, not a microtask: Lexical commits the paste's update in a microtask it queues after this one, and an update
+    // made before that commit joins it, one undo step with the paste
+    setTimeout(() =>
+        editor.update(
+            () => {
+                $selectOffsets($readDoc(), at.start, at.start + paste.raw.length);
+                const raw = $getSelection();
+                if ($isRangeSelection(raw)) {
+                    raw.insertRawText(paste.fenced);
+                }
+            },
+            { tag: HISTORY_PUSH_TAG }
+        )
+    );
+    return true;
+}
+
 const NO_RECT = typeof DOMRect === "undefined" ? ({} as DOMRect) : new DOMRect();
 
 // ---- the editor ----
@@ -832,15 +883,18 @@ const Bridge = forwardRef<EditorLike, BridgeProps>(function Bridge({ props, said
         const offPaste = editor.registerCommand(
             PASTE_COMMAND,
             (event) => {
+                if (!("clipboardData" in event)) {
+                    return false;
+                }
                 const files = props.current.onPasteFiles;
-                if (files == null || !("clipboardData" in event) || !clipboardHasFiles(event)) {
-                    return false;
+                if (files != null && clipboardHasFiles(event)) {
+                    if (!files(event)) {
+                        return false;
+                    }
+                    event.preventDefault();
+                    return true;
                 }
-                if (!files(event)) {
-                    return false;
-                }
-                event.preventDefault();
-                return true;
+                return $pasteCode(editor, event, props.current.bash ?? false);
             },
             COMMAND_PRIORITY_HIGH
         );
@@ -899,12 +953,14 @@ export const ChatEditor = forwardRef<EditorLike, ChatEditorProps>(function ChatE
     const said = useRef<Said>({ text: p.value, caret: p.value.length, skip });
     const ghost = p.ghost ?? "";
     const shown = shownText(p.value, skip);
+    // the layer under the editor shows for the ghost text, and for a bash command, which it draws in colour
+    const mirror = ghost !== "" || skip > 0;
     // read once, when the editor is made; later values reach it through the Bridge
     const [initialConfig] = useState(() => ({
         namespace: "arc-chat-editor",
         nodes: [FileMentionNode, RefMentionNode],
-        // a fenced line's text (chateditorfences.tsx)
-        theme: { text: { code: FENCED_TEXT_CLASS } },
+        // fenced and inline code and a quote's text (chateditormarks.tsx)
+        theme: { text: MARK_THEME },
         editable: !p.readOnly,
         onError: (error: Error) => console.error("chat editor:", error),
         // the draft the box mounts with (a restored one, with its pills; a bash command has none)
@@ -924,8 +980,8 @@ export const ChatEditor = forwardRef<EditorLike, ChatEditorProps>(function ChatE
                     </span>
                 ) : null}
                 <div className="relative min-w-0 flex-1">
-                    {/* the boxes behind fenced code, under the editor's text */}
-                    <FencedCode />
+                    {/* the boxes behind fenced code and the quotes' bars, under the editor's text */}
+                    <TypedMarks bash={skip > 0} />
                     <PlainTextPlugin
                         contentEditable={
                             <ContentEditable
@@ -942,7 +998,14 @@ export const ChatEditor = forwardRef<EditorLike, ChatEditorProps>(function ChatE
                                 onBlur={(e) => props.current.onBlur?.(e.nativeEvent)}
                                 // relative z-[1]: the placeholder and the ghost layer are absolute, so they would paint
                                 // over the caret (a positioned box paints above in-flow content); this keeps it on top
-                                className="relative z-[1] block overflow-y-auto leading-[1.9] whitespace-pre-wrap outline-none [overflow-wrap:anywhere] data-[pill-selected]:caret-transparent"
+                                // a bash command's own text is see-through: the mirror under it draws it in the shell's colours
+                                className={cn(
+                                    "relative z-[1] block overflow-y-auto leading-[1.9] whitespace-pre-wrap outline-none [overflow-wrap:anywhere] data-[pill-selected]:caret-transparent",
+                                    skip > 0 &&
+                                        // the system's selection colour, as Chat's replies draw theirs (tailwindsetup.css
+                                        // .md-selection-band), light enough that the coloured text under it shows
+                                        "text-transparent caret-primary selection:bg-[color-mix(in_srgb,Highlight_35%,transparent)] selection:text-transparent"
+                                )}
                                 style={{ minHeight: p.minHeight, maxHeight: p.maxHeight }}
                             />
                         }
@@ -956,23 +1019,44 @@ export const ChatEditor = forwardRef<EditorLike, ChatEditorProps>(function ChatE
                         }
                         ErrorBoundary={LexicalErrorBoundary}
                     />
-                    {/* A mirror of the text laid over the editor, with the same type and wrapping, so what it draws lands
-                    exactly where the editor's own text is: the text itself invisible, the ghost after the last character. */}
-                    {ghost !== "" ? (
+                    {/* A mirror of the text laid under the editor, with the same type and wrapping, so what it draws lands
+                    exactly where the editor's own text is: a bash command in the shell's colours (the editor's text is
+                    see-through then), any other text invisible, and the ghost after the last character. */}
+                    {mirror ? (
                         <div
                             ref={ghostLayer}
                             aria-hidden
                             data-chat-ghost-layer=""
                             className="pointer-events-none absolute inset-0 overflow-hidden leading-[1.9] whitespace-pre-wrap select-none [overflow-wrap:anywhere]"
                         >
-                            <span className="invisible">{shown}</span>
-                            <span data-chat-ghost="" className="text-ink-faint">
-                                {ghost}
-                            </span>
+                            {skip > 0 ? (
+                                <span data-chat-bash-colors="">
+                                    {shown.split("\n").map((ln, i) => (
+                                        <Fragment key={i}>
+                                            {i > 0 ? "\n" : null}
+                                            {/* an empty line draws nothing: shellLine's stand-in space would push the ghost */}
+                                            {ln === ""
+                                                ? null
+                                                : shellLine(ln).map((tk, k) => (
+                                                      <span key={k} className={tk.cls}>
+                                                          {tk.t}
+                                                      </span>
+                                                  ))}
+                                        </Fragment>
+                                    ))}
+                                </span>
+                            ) : (
+                                <span className="invisible">{shown}</span>
+                            )}
+                            {ghost !== "" ? (
+                                <span data-chat-ghost="" className="text-ink-faint">
+                                    {ghost}
+                                </span>
+                            ) : null}
                         </div>
                     ) : null}
                     {/* after the layer, so its ref is set when this lays out */}
-                    {ghost !== "" ? <GhostScroll layer={ghostLayer} text={shown} ghost={ghost} /> : null}
+                    {mirror ? <GhostScroll layer={ghostLayer} text={shown} ghost={ghost} /> : null}
                     <HistoryPlugin />
                     <Bridge ref={ref} props={props} said={said} />
                 </div>
