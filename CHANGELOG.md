@@ -140,6 +140,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - Opening an app and starting it at nearly the same moment no longer leaves an extra tab behind.
 - A server in the agent's rail that refuses to stop (access denied) says why on its row, and an app that refuses Stop
   or Restart from its menu says so, rather than the click seeming to do nothing.
+- A brainstorm's Decided so far rail always opens as wide as the agent's details rail, so switching to it moves
+  nothing; a width dragged there no longer sticks.
 - A terminal on another machine is no longer marked as in a removed folder because a local folder with the same path
   was deleted.
 ### Added

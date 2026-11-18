@@ -32867,8 +32867,6 @@ const bsRailOpen = (h) =>
 // the rail is the pane's, but with the details rail open it is drawn in the details rail's place, outside the pane
 const BS_RAIL = `document.querySelector("[data-brainstorm-board-rail]")`;
 const BS_RAIL_WIDTH_KEY = "brainstorm.railWidth";
-// the width of the rail drawn in the details rail's place, kept apart (it opens at the details rail's 300px)
-const BS_SLOT_RAIL_WIDTH_KEY = "brainstorm.slotRailWidth";
 // the question keeps 360px, and two 380px boards with the gap, the rail's padding and its handle need ~830px more
 const BS_WIDE_PANE_MIN = 1190;
 // the rail goes under the question below the question's 360px plus the rail's smallest 280px
@@ -33161,8 +33159,6 @@ const brainstormMode = {
             }
             // the rail's dragged width is one number kept in localStorage: start from the default, and put back what was there
             ctx.prevRailWidth = await h.ev(`localStorage.getItem(${JSON.stringify(BS_RAIL_WIDTH_KEY)})`);
-            ctx.prevSlotRailWidth = await h.ev(`localStorage.getItem(${JSON.stringify(BS_SLOT_RAIL_WIDTH_KEY)})`);
-            await h.ev(`localStorage.removeItem(${JSON.stringify(BS_SLOT_RAIL_WIDTH_KEY)})`);
             await h.ev(`localStorage.removeItem(${JSON.stringify(BS_RAIL_WIDTH_KEY)})`);
             bsWrite(ctx, BS_FILES.justStarted);
             await openCanvasTerminal(h, ctx, BS_TOPIC);
@@ -34388,9 +34384,6 @@ const brainstormMode = {
         // the details rail and the agent tree, which the rail steps closed and folded to make the pane wide
         await step("restore the details rail and the agent tree", () => bsRestoreLayout(h, ctx));
         await step("restore the rail's dragged width", () => h.ev(restoreStorageKey(BS_RAIL_WIDTH_KEY, ctx.prevRailWidth)));
-        await step("restore the slot rail's dragged width", () =>
-            h.ev(restoreStorageKey(BS_SLOT_RAIL_WIDTH_KEY, ctx.prevSlotRailWidth))
-        );
         await step("stop recording taskbar flashes", () => h.ev(BS_FLASH_REMOVE));
         await step("close the New run window", () => h.ev(`${NEW_RUN} ? (${PEEKS_ESC}, true) : false`));
         await step("stop recording sent lines", () => h.ev(BS_TYPED_REMOVE));

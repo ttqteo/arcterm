@@ -16,6 +16,10 @@ list (its number is not reused).
 Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) ·
 [part 4](hand-checks-4.md) · [part 3](hand-checks-3.md) · [part 2](hand-checks-2.md) (oldest).
 
+- [ ] (arcterm) **A brainstorm's rail opens as wide as the details rail.** In Agent, on an agent brainstorming, switch
+  between Chat and the brainstorm (the lightbulb): Decided so far's left edge sits where the details rail's did, with
+  nothing moving. Drag it narrower, switch to Chat and back: it opens at the details rail's width again. Not tried in
+  the dev app when written.
 - [ ] (arcterm) **Chat's box fences a real clipboard paste of a log.** The CDP step dispatches a made-up paste event.
   Copy a stack trace from the browser's DevTools console (several `at …` lines) and paste it into Chat's box after a
   word: it goes in on its own lines inside ``` with the code box behind it, the box grows to show it all, and one

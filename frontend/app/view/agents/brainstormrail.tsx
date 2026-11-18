@@ -109,11 +109,10 @@ export const brainstormRailSlotAtom = atomFamily(
 type RailPlace = { slotted: boolean; row: HTMLElement | null };
 const RailPlaceContext = createContext<RailPlace>({ slotted: false, row: null });
 
-// one number for the design and the check, and another for the rail in the slot, which opens at the details rail's
-// width so that switching to Brainstorm moves nothing; every access can throw (private window, blocked site data), and
-// the rail then opens at its default width
+// one number for the design and the check. The rail in the slot stores none: it always opens at the details rail's
+// width, so that switching to Brainstorm moves nothing, and a drag there lasts until the rail closes. Every access can
+// throw (private window, blocked site data), and the rail then opens at its default width
 const WIDTH_KEY = "brainstorm.railWidth";
-const SLOT_WIDTH_KEY = "brainstorm.slotRailWidth";
 
 function readStoredWidth(key: string): number | null {
     try {
@@ -212,8 +211,7 @@ export function BrainstormRail({ agent, s, f, second, minWidth = RAIL_MIN_W, que
         return () => ro.disconnect();
     }, [place.slotted, place.row]);
 
-    const widthKey = place.slotted ? SLOT_WIDTH_KEY : WIDTH_KEY;
-    const [stored, setStored] = useState<number | null>(() => readStoredWidth(widthKey));
+    const [stored, setStored] = useState<number | null>(() => (place.slotted ? null : readStoredWidth(WIDTH_KEY)));
     const [live, setLive] = useState<number | null>(null);
     // the slot never stacks: it is there only beside a full-size agent view
     const stacked = !place.slotted && paneW > 0 && railStacks(paneW, minWidth);
@@ -242,7 +240,9 @@ export function BrainstormRail({ agent, s, f, second, minWidth = RAIL_MIN_W, que
             drag.current = null;
             setLive(null);
             setStored(d.last);
-            writeStoredWidth(widthKey, d.last);
+            if (!place.slotted) {
+                writeStoredWidth(WIDTH_KEY, d.last);
+            }
         }
     };
 
