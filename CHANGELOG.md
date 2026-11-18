@@ -67,6 +67,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- An agent whose brainstorm's builder check waits on you (a builder question, or the review to approve) now reads as
+  asking: its row in the Agent tree breathes amber, and it counts in Cockpit's Needs you.
+
 - A run's final stage shows its commands' output in colour, as a terminal would: a test that passed has a green ✓
   (or `ok`), one that failed is red, warnings yellow, skips and each test's time dimmed. Output that comes with its own
   colours keeps them.

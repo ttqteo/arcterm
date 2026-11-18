@@ -35,6 +35,7 @@ import {
     checkReview,
     checkSpan,
     checkUnder,
+    checkWaits,
     clampRailWidth,
     clockText,
     compactedSummary,
@@ -385,6 +386,21 @@ describe("counts and gates", () => {
         expect(awaitsReview({ ...g, run: "r1" })).toBe(false);
         // with a question open it is the question that asks
         expect(awaitsReview({ ...g, question: { n: 1, text: "?", part: "a" } })).toBe(false);
+    });
+
+    it("asksUser counts a builder check waiting on its questions or its review", () => {
+        const check = { yours: [{ q: "Which env?" }], calls: [], answered: [] };
+        const c = file({ done: true, parts: [part("a", "yours")], check });
+        expect(checkWaits(c)).toBe(true);
+        expect(asksUser(c, { state: "idle" })).toBe(true);
+        expect(asksUser(c, { state: "working" })).toBe(false);
+        // every builder question answered: the review waits on Approve just the same
+        expect(checkWaits({ ...c, check: { ...check, yours: [{ q: "Which env?", a: "prod" }] } })).toBe(true);
+        // the agent writing (a pending check shows so) or the run started: not the user's turn
+        expect(checkWaits({ ...c, working: "Writing" })).toBe(false);
+        expect(checkWaits({ ...c, run: "r1" })).toBe(false);
+        expect(checkWaits(file({ parts: [part("a", "yours")] }))).toBe(false);
+        expect(withBrainstorm(agent({ state: "idle" }), c, 0).state).toBe("asking");
     });
 
     it("reads a design waiting on confirms in the tree and the attention item", () => {

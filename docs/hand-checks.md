@@ -16,6 +16,11 @@ list (its number is not reused).
 Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) ·
 [part 4](hand-checks-4.md) · [part 3](hand-checks-3.md) · [part 2](hand-checks-2.md) (oldest).
 
+- [ ] (arcterm) **A builder check waiting on you makes the agent's row breathe.** In Agent, on a brainstorm whose
+  builder check is back (a builder question open, or Review / Approve shown in Chat): its row in the tree breathes an
+  amber wash and edge, as an asking agent's does, and Cockpit counts it; after Approve starts the run the row stops.
+  `brainstormmodel.ts` checkWaits.
+
 - [ ] (arcterm) **A brainstorm's rail opens as wide as the details rail.** In Agent, on an agent brainstorming, switch
   between Chat and the brainstorm (the lightbulb): Decided so far's left edge sits where the details rail's did, with
   nothing moving. Drag it narrower, switch to Chat and back: it opens at the details rail's width again. Not tried in
