@@ -59,6 +59,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- Claude agents stop writing a commit suggestion as an `arc-commit` code block: the skill that asked for it outlived
+  the removed commit card and is now cleaned up.
 - The Consumers panel no longer shows a pi or codex agent as using no tokens: it says it cannot tell, since it reads
   only Claude's transcripts.
 - Picking No folder for a tool in the New dialog opens it in your home folder even when you have a project named Home.
