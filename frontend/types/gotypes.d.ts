@@ -797,11 +797,13 @@ declare global {
         reply: string;
         recent?: string[];
         question?: boolean;
+        summary?: boolean;
     };
 
     // wshrpc.CommandChatSuggestRtnData
     type CommandChatSuggestRtnData = {
         replies: string[];
+        summary?: string;
     };
 
     // wshrpc.CommandCheckMemoryHygieneData
