@@ -56,10 +56,14 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   logo); in the small form the RAM · CPU figures in the title bar open the same as a panel (Windows). <!-- big -->
 - **Your phone as a remote for arcterm**: through Tailscale (no domain needed) or your own Cloudflare tunnel, set up in
   Settings → Remote (or `wsh remote setup`), an installed web app on your phone lists what waits on you and every
-  agent with its state (working, idle, asking, exited), pushes a notification when an agent asks, and answers its
+  live agent with its state (working, idle, asking), pushes a notification when an agent asks, and answers its
   questions. Hand a Claude or pi agent to the phone (`p`, or More → Hand to phone) to read its
   transcript, send the next prompt, stop a turn and approve a permission prompt from the phone. It runs only while you
   turn it on; a Remote chip in the footer shows it. <!-- big -->
+- On the phone page, tap a Claude or pi agent in the Agents list to take it: read its transcript, send a prompt, stop a
+  turn or approve a permission from the phone, without handing it over at the desk first; if you leave without doing
+  any of those it goes back to the desk by itself. A new Computer section locks the PC and turns its volume down, up or
+  off (Windows and macOS).
 - The Task box of New agent works like Chat's box: `@` names an agent, a run, a council, a past conversation or an
   initiative as well as a file, `/` lists Claude Code's commands, and any file can be attached (paste, drop, the
   paperclip or Cmd+U / Ctrl+U), not only images.
@@ -68,6 +72,10 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- The phone page's Agents list shows only live agents (a session back at its shell is gone from it), with a dot that
+  shows what the agent is doing and a line under its name: its question when it asks, the first sentence of its last
+  reply when it is idle. A run's workers are one row under Runs that opens to its worker lines, the header counts what
+  needs you ("3 need you"), and a chat loads older messages when you scroll to its top.
 - Sidecar's full window no longer draws each agent's last 2 hours as lanes: the Resources band stands there instead.
 - An agent whose brainstorm's builder check waits on you (a builder question, or the review to approve) now reads as
   asking: its row in the Agent tree breathes amber, and it counts in Cockpit's Needs you.

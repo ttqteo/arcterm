@@ -27,13 +27,27 @@ type Agent struct {
 	OpenAsk                                                bool
 	HasStream                                              bool // the arc mod's control stream is open (claude's liveness)
 	RunWorker                                              bool
+	// RunKey is the group a run worker lists under, RunName the run's name and RunLine the worker's own
+	// line ("Review: <task>", the task's label, "Plan reviewer"); all three are "" for an agent no run
+	// started.
+	RunKey, RunName, RunLine string
+	// Ask is the text of the open ask's first question, "" with no ask open.
+	Ask string
 }
 
-// AgentsHook and TranscriptHook are set by wshserver, which owns the roster and the transcript tailer and
-// imports this package. A nil AgentsHook means no agents, so Hand refuses.
+// AgentsHook, TranscriptHook and TranscriptPageHook are set by wshserver, which owns the roster and the
+// transcript reader and imports this package. A nil AgentsHook means no agents, so Hand refuses.
+//
+// TranscriptHook streams the transcript at path into send: first a backlog chunk (Backlog true), then one
+// chunk per batch appended. A from below 0 makes the backlog the last 200 lines; otherwise it is the lines
+// from byte offset from on. It returns the first error from send or the stream, and nil once ctx is done.
+//
+// TranscriptPageHook gives the page of up to maxLines complete lines that ends at byte offset before,
+// with Cursor the offset of its first line (0 at the file's start).
 var (
-	AgentsHook     func(ctx context.Context) ([]Agent, error)
-	TranscriptHook func(ctx context.Context, path string, tailLines int, send func(lines []string) error) error
+	AgentsHook         func(ctx context.Context) ([]Agent, error)
+	TranscriptHook     func(ctx context.Context, path string, from int64, send func(TranscriptChunk) error) error
+	TranscriptPageHook func(path string, before int64, maxLines int) (TranscriptChunk, error)
 )
 
 // why a tab is no longer handed over
@@ -78,11 +92,17 @@ func (e *GoneError) Error() string {
 
 // handover is one handed-over tab: its phone state, when the listener first saw it in that state, the
 // agent as last seen eligible, and since when it has failed the check (0 while it passes).
+//
+// phone is set for a hand-over the phone made by tapping the agent's row (remoteTake), never for one made
+// with Hand: Hand of a tab the phone already took clears it, since the owner's hand at the desk makes it a
+// desk hand-over. acted is set once the owner has sent, stopped, approved or denied from the phone. Only a
+// phone take nobody acted on is ended when the owner leaves the agent view (remoteRelease).
 type handover struct {
-	state     string
-	since     int64
-	agent     Agent
-	awaySince int64
+	state        string
+	since        int64
+	agent        Agent
+	awaySince    int64
+	phone, acted bool
 }
 
 var (
@@ -333,14 +353,24 @@ func handStatusTabs() []string {
 }
 
 // handAdd seeds since from the status time at this first look; handing over again keeps it.
-func handAdd(a Agent) {
+func handAdd(a Agent) { handAddFrom(a, false) }
+
+// handAddFrom is handAdd with the hand-over's phone flag, which only a new hand-over takes. A tab already
+// handed over keeps its flags, with one exception: a take (phone true) of a desk hand-over does not make the
+// phone own it, and a second take does not forget the owner has acted, but a desk hand-over (phone false)
+// of a tab the phone took clears its phone flag, since the owner's explicit hand at the desk makes it a desk
+// hand-over, which the phone leaving the agent view (remoteRelease) must not end.
+func handAddFrom(a Agent, phone bool) {
 	handMu.Lock()
 	defer handMu.Unlock()
 	delete(handEnded, a.TabId)
-	if _, ok := handed[a.TabId]; ok {
+	if h, ok := handed[a.TabId]; ok {
+		if !phone {
+			h.phone = false
+		}
 		return
 	}
-	handed[a.TabId] = &handover{state: PhoneState(a), since: a.Status.Ts, agent: a}
+	handed[a.TabId] = &handover{state: PhoneState(a), since: a.Status.Ts, agent: a, phone: phone}
 }
 
 // handClearOff ends every hand-over with reason off; reasons from before are dropped with them.

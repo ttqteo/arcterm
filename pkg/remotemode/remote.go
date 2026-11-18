@@ -459,7 +459,7 @@ func remoteDeps(cfg Config, runCtx context.Context) Deps {
 	if cfg.ActiveProvider() == ProviderCloudflare {
 		verify = NewAccessVerifier(TeamCertsURL(cfg.Team), TeamIssuer(cfg.Team), cfg.Aud, cfg.Email, remoteAccessClient).Verify
 	}
-	return Deps{
+	d := Deps{
 		Static:      web.FS,
 		Verify:      verify,
 		Origin:      "https://" + cfg.Host(),
@@ -472,15 +472,23 @@ func remoteDeps(cfg Config, runCtx context.Context) Deps {
 		},
 		Handed: remoteHanded,
 		Agents: remoteAgentList,
-		Stream: func(ctx context.Context, tab string, sink StreamSink) error {
+		Stream: func(ctx context.Context, tab string, from int64, sink StreamSink) error {
 			ctx, cancel := context.WithCancel(ctx)
 			defer cancel()
 			defer context.AfterFunc(runCtx, cancel)()
-			return remoteStream(ctx, tab, sink)
+			return remoteStream(ctx, tab, from, sink)
 		},
-		Act:      remoteAct,
-		TakeBack: remoteTakeBack,
+		Act:        remoteAct,
+		TakeBack:   remoteTakeBack,
+		Take:       remoteTake,
+		Release:    remoteRelease,
+		Transcript: remoteTranscriptPage,
 	}
+	// a platform without the controls leaves them nil: their routes answer 501 and the waiting list's pc is false
+	if pcSupported {
+		d.PCLock, d.PCVolume = pcLock, pcVolume
+	}
+	return d
 }
 
 func remoteGatherWaiting(ctx context.Context) (WaitingList, error) {

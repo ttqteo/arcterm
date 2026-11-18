@@ -177,11 +177,18 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
   in a markdown file open in the Agent's doc view: the Comment button sits just above the first selected line, its left
   edge at the selection's start, covering no selected text; select the doc's very first line and it drops under the
   selection instead. `md-comments` scenario (`mddoc.tsx`).
-- [ ] (arcterm) **The phone page's Agents list.** Seen only on `cmd/remotepreview`'s fixture in headless Edge, and step
-  1a of `remote-phone` was written but not run (no dev app, low memory): run `task verify:ui -- remote-phone` first.
-  With remote on, open the phone page: under what waits, **Agents** lists each agent not handed over with its state
-  chip (a working one's line says what it runs, an idle one shows `idle <age>`, a claude that exited to its shell
-  reads `exited`); hand one over and it moves to Handed over within 10 s.
+- [ ] (arcterm) **Take an agent from the phone's Agents list, on a real iPhone.** Only `cmd/remotepreview`'s fixture in
+  headless Chrome has drawn it (`remote-phone` steps 1a, 1c, 1d, 13, 14): no real roster, transcript or lock has run.
+  Run `task verify:ui -- remote-phone` first. With remote on and the page installed, **Agents** lists live agents only
+  (one that exited to its shell is gone), each with a dot coloured by state, and an idle one shows the first sentence
+  of its last reply. Tap an idle claude: its chat opens and the desk's header reads **On phone · Take back**; Back
+  without sending returns it to the list and clears the desk's pill within a poll. Take another, send a prompt, then
+  Back: it stays handed over. In a long session scroll to the top of the chat: older messages load above and the one
+  you were reading stays put; switch the phone to airplane mode and back and the chat carries on with no gap or
+  repeat. A run with workers is one row under **Runs** that opens to its worker lines. **Computer**: Lock locks the PC
+  (on a Mac it sleeps the display, which locks it only when the account asks for its password at once), Volume down
+  and up move the sound one step, Mute toggles it, and a failure shows its text under the buttons. On a Mac, also
+  note whether Volume up unmutes (the script sets a level and leaves the muted flag alone).
 - [ ] (arcterm) **Remote mode through Tailscale on a real phone.** Only fakes have run `tailscale serve` (the
   `remotemode` tests). Step 10 of `remote-switch` (the Connection card with Tailscale picked) was written but its run was
   stopped for low memory: run `task verify:ui -- remote-switch` first. Turn HTTPS on for the tailnet (admin console →

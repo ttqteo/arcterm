@@ -10,6 +10,7 @@ const SHELL = [
     "/model.js",
     "/chat.js",
     "/chatmodel.js",
+    "/transcriptpages.js",
     "/projectors.js",
     "/markdown.js",
     "/manifest.webmanifest",

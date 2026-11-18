@@ -15,6 +15,7 @@ import (
 	"net/http"
 	"net/url"
 	"path"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -50,14 +51,29 @@ type Deps struct {
 	Off         func(context.Context) error
 	Subscribe   func(context.Context, PushSubscription) error
 	Handed      func(context.Context) ([]HandedAgent, error)
-	// Agents lists every roster agent; a failure leaves the list empty rather than failing the page
-	Agents func(context.Context) ([]ListedAgent, error)
-	// Stream returns a *GoneError when it ends for a reason, and nil when ctx ends
-	Stream func(ctx context.Context, tab string, sink StreamSink) error
+	// Agents lists the live roster agents and the runs their workers belong to; a failure leaves both lists
+	// empty rather than failing the page
+	Agents func(context.Context) ([]ListedAgent, []ListedRun, error)
+	// Stream returns a *GoneError when it ends for a reason, and nil when ctx ends. from is the byte offset
+	// the page's Last-Event-ID names, -1 when the request has none or it is malformed.
+	Stream func(ctx context.Context, tab string, from int64, sink StreamSink) error
 	// Act and TakeBack return a *GoneError for a tab not handed over; Act wraps ErrWrongState
 	Act      func(ctx context.Context, tab string, act AgentAction) error
 	TakeBack func(ctx context.Context, tab string) error
+	// Take hands a listed agent to the phone; a refusal wraps ErrRefused. Release gives a take the owner
+	// never acted on back to the desk, and returns nil when there is nothing to release. Transcript gives
+	// the page of lines before a byte offset, and a *GoneError for a tab not handed over.
+	Take       func(ctx context.Context, tab string) error
+	Release    func(ctx context.Context, tab string) error
+	Transcript func(ctx context.Context, tab string, before int64) (TranscriptChunk, error)
+	// PCLock locks the computer, and PCVolume presses one volume key (a pcVolumeSteps value). A nil dep is
+	// a computer that cannot: its route answers 501 and the waiting list's pc flag is false.
+	PCLock   func(ctx context.Context) error
+	PCVolume func(ctx context.Context, step string) error
 }
+
+// handlerUnsupported is what a route answers when its dep is nil.
+const handlerUnsupported = "Not supported on this computer"
 
 // keeps an open stream under cloudflared's 100 s idle cut; a var so tests can shorten it
 var remoteStreamHeartbeat = 25 * time.Second
@@ -70,6 +86,10 @@ type handlerAnswerBody struct {
 	ORef    string                   `json:"oref"`
 	AskId   string                   `json:"askid"`
 	Answers []baseds.AgentAnswerItem `json:"answers"`
+}
+
+type handlerStepBody struct {
+	Step string `json:"step"`
 }
 
 // NewHandler serves the phone page and its API. Every request, static files included, passes Verify
@@ -86,6 +106,11 @@ func NewHandler(d Deps) http.Handler {
 		mux.Handle("POST /api/agents/{tab}/"+kind, d.handlerPost(d.handleAct(kind)))
 	}
 	mux.Handle("POST /api/agents/{tab}/takeback", d.handlerPost(d.handleTakeBack))
+	mux.Handle("POST /api/agents/{tab}/hand", d.handlerPost(d.handleTake))
+	mux.Handle("POST /api/agents/{tab}/release", d.handlerPost(d.handleRelease))
+	mux.HandleFunc("GET /api/agents/{tab}/transcript", d.handleTranscript)
+	mux.Handle("POST /api/pc/lock", d.handlerPost(d.handlePCLock))
+	mux.Handle("POST /api/pc/volume", d.handlerPost(d.handlePCVolume))
 	static := http.FileServerFS(d.Static)
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if ct, ok := handlerStaticTypes[path.Ext(r.URL.Path)]; ok {
@@ -144,14 +169,18 @@ func (d Deps) handleWaiting(w http.ResponseWriter, r *http.Request) {
 		list.Handed = []HandedAgent{}
 	}
 	if d.Agents != nil {
-		if list.Agents, err = d.Agents(r.Context()); err != nil {
+		if list.Agents, list.Runs, err = d.Agents(r.Context()); err != nil {
 			log.Printf("remote mode: agents list: %v\n", err)
-			list.Agents = nil
+			list.Agents, list.Runs = nil, nil
 		}
 	}
 	if list.Agents == nil {
 		list.Agents = []ListedAgent{}
 	}
+	if list.Runs == nil {
+		list.Runs = []ListedRun{}
+	}
+	list.PC = d.PCLock != nil && d.PCVolume != nil
 	handlerWriteJSON(w, http.StatusOK, list)
 }
 
@@ -164,20 +193,31 @@ type sseSink struct {
 
 func (s *sseSink) Agent(a HandedAgent) error { return s.event("agent", a) }
 
-func (s *sseSink) Lines(lines []string) error {
-	if lines == nil {
-		lines = []string{}
+// Lines sends the chunk as a lines event whose id is the byte offset after its last line, which the browser
+// returns as Last-Event-ID when it reconnects.
+func (s *sseSink) Lines(c TranscriptChunk) error {
+	if c.Lines == nil {
+		c.Lines = []string{}
 	}
-	return s.event("lines", map[string][]string{"lines": lines})
+	return s.eventWithID("lines", strconv.FormatInt(c.End, 10), c)
 }
 
-// event's data is one line: json.Marshal escapes every newline
 func (s *sseSink) event(name string, v any) error {
+	return s.eventWithID(name, "", v)
+}
+
+// eventWithID's data is one line: json.Marshal escapes every newline. An empty id leaves the id line out, so
+// the browser keeps the last id it was given.
+func (s *sseSink) eventWithID(name, id string, v any) error {
 	data, err := json.Marshal(v)
 	if err != nil {
 		return fmt.Errorf("encode %s event: %w", name, err)
 	}
-	return s.write("event: " + name + "\ndata: " + string(data) + "\n\n")
+	frame := "event: " + name + "\n"
+	if id != "" {
+		frame += "id: " + id + "\n"
+	}
+	return s.write(frame + "data: " + string(data) + "\n\n")
 }
 
 func (s *sseSink) write(frame string) error {
@@ -206,8 +246,9 @@ func (d Deps) handleStream(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()
 	tab := r.PathValue("tab")
+	from := handlerLastEventID(r)
 	done := make(chan error, 1)
-	go func() { done <- d.Stream(ctx, tab, sink) }()
+	go func() { done <- d.Stream(ctx, tab, from, sink) }()
 	beat := time.NewTicker(remoteStreamHeartbeat)
 	defer beat.Stop()
 	for {
@@ -229,6 +270,16 @@ func (d Deps) handleStream(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
+}
+
+// handlerLastEventID is the byte offset a reconnecting EventSource names in Last-Event-ID, or -1 when the
+// header is absent, not a whole number or negative.
+func handlerLastEventID(r *http.Request) int64 {
+	n, err := strconv.ParseInt(r.Header.Get("Last-Event-ID"), 10, 64)
+	if err != nil || n < 0 {
+		return -1
+	}
+	return n
 }
 
 func (d Deps) handleAct(kind string) http.HandlerFunc {
@@ -253,6 +304,102 @@ func (d Deps) handleAct(kind string) http.HandlerFunc {
 
 func (d Deps) handleTakeBack(w http.ResponseWriter, r *http.Request) {
 	handlerAgentResult(w, r, d.TakeBack(r.Context(), r.PathValue("tab")))
+}
+
+// handleTake answers a refused take with 409 and the reason, which the phone shows on the agent's row.
+func (d Deps) handleTake(w http.ResponseWriter, r *http.Request) {
+	if d.Take == nil {
+		handlerUnsupportedResult(w)
+		return
+	}
+	err := d.Take(r.Context(), r.PathValue("tab"))
+	switch {
+	case err == nil:
+		handlerOK(w)
+	case errors.Is(err, ErrRefused):
+		reason := err.Error()
+		if _, after, ok := strings.Cut(reason, ErrRefused.Error()+": "); ok {
+			reason = after
+		}
+		handlerWriteJSON(w, http.StatusConflict, map[string]string{"error": "refused", "reason": reason})
+	default:
+		log.Printf("remote mode: %s: %v\n", r.URL.Path, err)
+		handlerWriteJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+}
+
+// handleRelease treats a tab that is no longer handed over as released: the page leaves the agent view
+// whatever became of the take.
+func (d Deps) handleRelease(w http.ResponseWriter, r *http.Request) {
+	if d.Release == nil {
+		handlerUnsupportedResult(w)
+		return
+	}
+	err := d.Release(r.Context(), r.PathValue("tab"))
+	var gone *GoneError
+	if errors.As(err, &gone) {
+		err = nil
+	}
+	handlerAgentResult(w, r, err)
+}
+
+// handleTranscript serves one page of older lines: the byte offset it ends at is the required before.
+func (d Deps) handleTranscript(w http.ResponseWriter, r *http.Request) {
+	if d.Transcript == nil {
+		handlerUnsupportedResult(w)
+		return
+	}
+	before, err := strconv.ParseInt(r.URL.Query().Get("before"), 10, 64)
+	if err != nil || before < 0 {
+		handlerBadRequest(w, "before must be a byte offset, 0 or more")
+		return
+	}
+	chunk, err := d.Transcript(r.Context(), r.PathValue("tab"), before)
+	if err != nil {
+		handlerAgentResult(w, r, err)
+		return
+	}
+	if chunk.Lines == nil {
+		chunk.Lines = []string{}
+	}
+	handlerWriteJSON(w, http.StatusOK, struct {
+		Lines  []string `json:"lines"`
+		Cursor int64    `json:"cursor"`
+	}{chunk.Lines, chunk.Cursor})
+}
+
+func (d Deps) handlePCLock(w http.ResponseWriter, r *http.Request) {
+	if d.PCLock == nil {
+		handlerUnsupportedResult(w)
+		return
+	}
+	handlerPCResult(w, r, d.PCLock(r.Context()))
+}
+
+func (d Deps) handlePCVolume(w http.ResponseWriter, r *http.Request) {
+	if d.PCVolume == nil {
+		handlerUnsupportedResult(w)
+		return
+	}
+	var body handlerStepBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || !slices.Contains(pcVolumeSteps, body.Step) {
+		handlerBadRequest(w, "step must be one of "+strings.Join(pcVolumeSteps, ", "))
+		return
+	}
+	handlerPCResult(w, r, d.PCVolume(r.Context(), body.Step))
+}
+
+func handlerPCResult(w http.ResponseWriter, r *http.Request, err error) {
+	if err != nil {
+		log.Printf("remote mode: %s: %v\n", r.URL.Path, err)
+		handlerWriteJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	handlerOK(w)
+}
+
+func handlerUnsupportedResult(w http.ResponseWriter) {
+	handlerWriteJSON(w, http.StatusNotImplemented, map[string]string{"error": handlerUnsupported})
 }
 
 func handlerAgentResult(w http.ResponseWriter, r *http.Request, err error) {

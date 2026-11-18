@@ -100,12 +100,57 @@ nothing is bypassed to make the login work.
 
 ## The Agents list
 
-Under what waits on you, the phone page lists every agent in the cockpit's roster except the ones handed over (those
-sit under **Handed over**): its name, project and state, asking first, then needs approval, needs input, working, idle,
-and exited (a session back at its shell, its tab still open). A working agent shows what it is doing; one that waits or
-is idle shows how long since its last report. The list only shows: to drive an agent from the phone, hand it over. It
-comes from the same `/api/waiting` call as the rest of the page (`BuildAgentList`, `pkg/remotemode/agents.go`), and a
-roster that cannot be read leaves it empty rather than failing the page.
+Under what waits on you, the phone page lists the agents that are alive in the cockpit, except the ones already handed
+over (those sit under **Handed over**). A session that exited back to its shell is not listed, and a run's workers are
+not listed one by one: they are grouped under **Runs** (below). The list is both a glance at what is running and the way
+to take an agent to the phone. It comes from the same `/api/waiting` call as the rest of the page (`BuildAgentList`,
+`pkg/remotemode/agents.go`), and a roster that cannot be read leaves it empty rather than failing the page.
+
+Each row has the agent's name (and its project, only when that differs from the name), a dot coloured by what the agent
+is doing, the state chip, and a second line: a working agent shows what it is doing, one asking you shows its question,
+one waiting for approval shows what it wants to run, and an idle one shows the first sentence of its last reply (at
+most 160 characters; arcterm rereads the transcript only when its file changed). Rows are ordered asking, needs
+approval, needs input, working, idle, the longest wait first within a state.
+
+- **Taking an agent.** Tap a row to take it: the phone asks arcterm to hand the agent over and opens its chat, the same
+  one a hand-over from the desk gets (see below), and at the desk its header reads **On phone · Take back**. A row the
+  phone cannot take (a codex, agy or opencode session, an agent with no terminal) is dimmed and does nothing. When
+  arcterm refuses a take (the session exited since the page last refreshed, say), the row shows "Not taken: <why>"
+  under its line and stays listed; the reason stays until the next take of that row.
+- **Leaving without acting gives it back.** If you leave the chat (Back) without sending, stopping, approving or
+  denying anything, the agent returns to the desk by itself and is listed again. Once you have done one of those, the
+  take stays until **Take back**, the agent exits or remote mode turns off, like a hand-over from the desk, which
+  leaving never releases. A phone that closes or locks mid-chat gives nothing back: take it back at the desk.
+- **Runs.** A run with a live worker is one row under **Runs**: its name, the workers' states counted ("2 working · 1
+  needs approval"), and **Needs you at the desk** when a worker is asking or waits for approval or input (such a run
+  sorts first; the phone cannot answer a worker, it says to go to the desk). Tap it to open one line per worker (its
+  task, "Review: " and the task for a reviewer, "Plan reviewer", "Verifier" or "Land resolver" for a stage session,
+  then what it is doing); tap again to close it. Workers are read-only, since they cannot be taken, and an open run
+  stays open through the 10-second refresh, not a reload. A run's orchestrator lead and a Quick run's agent are not
+  workers: they are ordinary rows.
+- **Older messages.** A chat opens on the latest messages (the stream's last 200 transcript lines). Scroll to the top
+  and it loads the page before them (`GET /api/agents/<tab>/transcript?before=<byte offset>`, 200 lines a page, until a
+  screenful of new messages or the session's start), keeping the message you were reading in place. When the connection
+  drops, the stream resumes at the byte after the last line the page has (the SSE `Last-Event-ID`), so the live
+  messages continue with no gap and no repeat, and what you scrolled back through stays.
+- **The header's count.** It reads "N need you", or "Nothing waits on you", and counts each thing once: the open
+  questions, the held, blocked and other items under Held runs, and every agent (handed over, listed or a run's
+  worker) waiting for approval or input. An agent that is asking counts through its question, not again as an agent,
+  and a working or idle agent never counts. The line under it counts what the page lists.
+
+### Computer
+
+Above **Turn off remote mode**, **Computer** has **Lock**, **Volume down**, **Mute** and **Volume up**, on the main
+view and the empty one. A press is one request, with no confirm: unlocking needs your password at the desk, and locking
+stops no agent. A refusal or a failure shows its reason under the buttons until a later press goes through
+(`POST /api/pc/lock`, `POST /api/pc/volume` with `{"step": "down" | "mute" | "up"}`, `pkg/remotemode/pc*.go`).
+
+- **Windows:** Lock calls `LockWorkStation`; each volume button presses the keyboard's media key once (about 2%).
+- **macOS:** Lock runs `pmset displaysleepnow`, which locks the screen only when the account asks for its password at
+  once on sleep (the default); volume moves the output volume by 6 points, and Mute toggles it.
+- **Elsewhere** there are no controls: `/api/waiting` carries `pc: false` and the page leaves the section out.
+
+The page shows no volume level: neither platform's media keys can read it.
 
 ## Hand an agent to the phone
 
@@ -119,6 +164,7 @@ What you type reaches the session as your own input.
 - **From a terminal:** `wsh remote hand [tab]` and `wsh remote take-back [tab]`. The tab is an id or a
   unique prefix. With no tab, `wsh` acts on the agent in the terminal it runs in, so an agent can hand
   itself over.
+- **From the phone:** tap the agent in the Agents list (above). A take you leave without acting on goes back by itself.
 
 Only a live claude or pi session in a terminal can be handed over: a run's task worker, reviewer,
 stage session or lead-started child cannot, nor can a codex session, a closed tab, or a session that

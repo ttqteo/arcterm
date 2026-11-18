@@ -493,6 +493,44 @@ func TestTranscriptTailer(t *testing.T) {
 	}
 }
 
+// readNewLines gives each line with the byte offset it starts at, and end() is the offset past the last complete line,
+// so a partial line is neither in end() nor lost: the append that finishes it starts where end() stopped
+func TestTranscriptTailerReportsLineOffsets(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "t.jsonl")
+	writeFile(t, path, "aa\n\r\nbbb\ncc")
+	tl := &transcriptTailer{}
+
+	got, err := tl.readNewLines(path)
+	if err != nil {
+		t.Fatalf("readNewLines: %v", err)
+	}
+	want := []transcriptLine{{"aa", 0}, {"bbb", 5}}
+	if !reflect.DeepEqual(got, want) || tl.end() != 9 {
+		t.Fatalf("first read = %v end %d, want %v end 9 (cc is partial)", got, tl.end(), want)
+	}
+
+	appendFile(t, path, "\nd\n")
+	got, err = tl.readNewLines(path)
+	if err != nil {
+		t.Fatalf("readNewLines: %v", err)
+	}
+	want = []transcriptLine{{"cc", 9}, {"d", 12}}
+	if !reflect.DeepEqual(got, want) || tl.end() != 14 {
+		t.Fatalf("second read = %v end %d, want %v end 14", got, tl.end(), want)
+	}
+
+	// a tailer started at an offset reports offsets in the file, not in what it read
+	tl = &transcriptTailer{offset: 5}
+	got, err = tl.readNewLines(path)
+	if err != nil {
+		t.Fatalf("readNewLines: %v", err)
+	}
+	want = []transcriptLine{{"bbb", 5}, {"cc", 9}, {"d", 12}}
+	if !reflect.DeepEqual(got, want) || tl.end() != 14 {
+		t.Fatalf("read from 5 = %v end %d, want %v end 14", got, tl.end(), want)
+	}
+}
+
 // bytes appended between the size check and the read must be counted once: offsetting by the stat size
 // re-read them on the next call, duplicating lines, and a re-read that ended mid-line glued the saved
 // partial onto repeated bytes, a malformed line in place of the real one

@@ -614,6 +614,7 @@ func main() {
 	}
 	remotemode.AgentsHook = wshserver.RemoteAgents // wshserver imports remotemode, so remotemode reads the roster and transcripts through these; before Restore
 	remotemode.TranscriptHook = wshserver.RemoteTranscript
+	remotemode.TranscriptPageHook = wshserver.RemoteTranscriptPage
 	if !snapshotSkips("remotemode.Restore") { // the copied store may hold remote mode on, which would start a tunnel
 		go func() {
 			defer func() {
