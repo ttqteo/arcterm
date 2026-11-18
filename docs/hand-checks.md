@@ -16,6 +16,12 @@ list (its number is not reused).
 Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) ·
 [part 4](hand-checks-4.md) · [part 3](hand-checks-3.md) · [part 2](hand-checks-2.md) (oldest).
 
+- [ ] (arcterm) **Live output in full view is in colour.** Run a coloured background task (`task tauri:build`, or
+  `npx vite build`) from a Claude agent, open its peek → Open full view: the File tab shows vite's cyan/green and no
+  `␛[36m` codes; with Live on it keeps to the end as lines arrive, scrolling up stops it, clicking Live jumps back;
+  Wrap toggles wrapping; Mod+F opens the find bar over the output. A server log opened from Servers looks the same.
+  The view is `liveoutput.tsx` in place of Monaco for a `live` ref; tried only by unit tests and the typecheck
+  (821fb0ae9, 2026-11-18);
 - [ ] (arcterm) **Settings → Agents still switches the Claude account.** With two Claude accounts and an idle agent
   running on the old one, pick the other account's row: it checks at once, the restart dialog lists the idle agent (an
   agent in a project tied to its own account is left out), and picking the account that is already active again does
