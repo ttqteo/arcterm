@@ -593,12 +593,13 @@ const remotePhone = {
             main.handed[1].chip.startsWith("working ") &&
             main.handed[2].chip.startsWith("idle ");
         // the h1 counts the three questions, the two held runs, siem-deploy's permission (once: the Agents roster repeats
-        // it) and the run worker that waits on one; the sub-line is still the counts of what is listed
+        // it) and the run worker that waits on one; the sub-line names those two as "2 need approval" (it adds up to
+        // the h1 but for the three hand-overs: 3 questions + 2 need approval + 2 held runs = 7)
         rec(
             "1. Main: the h1 counting what needs you, questions, the three hand-overs with their state chips, held runs, Agents, Runs, Computer, the counts line, the off footer and Turn on notifications",
             main.chip === "Remote on" &&
                 main.title === "7 need you" &&
-                main.sub === "3 questions to answer · 3 agents handed over · 2 runs held" &&
+                main.sub === "3 questions to answer · 2 need approval · 3 agents handed over · 2 runs held" &&
                 JSON.stringify(main.sections) ===
                     JSON.stringify(["Questions", "Handed over", "Held runs", "Agents", "Runs", "Computer"]) &&
                 JSON.stringify(main.cards) === JSON.stringify(list.questions.map((q) => q.source)) &&

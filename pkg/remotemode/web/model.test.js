@@ -252,6 +252,94 @@ describe("countsLine", () => {
     it("says nothing is waiting for an empty list", () => {
         expect(countsLine({ questions: [], shown: [] })).toBe("Nothing waiting");
     });
+
+    it("names an agent that waits on approval, so the line accounts for the title", () => {
+        const list = { agents: [agent("a1", "permission")] };
+        expect(needYouTitle(list)).toBe("1 needs you");
+        expect(countsLine(list)).toBe("1 needs approval");
+    });
+
+    it("words approval and input in the singular and the plural", () => {
+        const list = {
+            agents: [agent("a1", "permission"), agent("a2", "permission"), agent("a3", "input")],
+            runs: [run("r", [worker("w1", "input")])],
+        };
+        expect(countsLine(list)).toBe("2 need approval · 2 need input");
+    });
+
+    it("counts a permission tab once although handed and agents both hold it", () => {
+        const handed = agent("h1", "permission", { handed: true });
+        const list = { handed: [handed], agents: [{ ...handed }] };
+        expect(countsLine(list)).toBe("1 needs approval · 1 agent handed over");
+    });
+
+    it("counts a run worker that waits on input", () => {
+        const list = { runs: [run("r", [worker("w1", "input"), worker("w2", "working")])] };
+        expect(countsLine(list)).toBe("1 needs input");
+    });
+
+    it("adds nothing for an asking agent: its question is the count", () => {
+        const list = {
+            questions: [{ key: "ask:a" }],
+            handed: [agent("h1", "asking", { handed: true })],
+            agents: [agent("h1", "asking", { handed: true }), agent("a2", "asking")],
+            runs: [run("r", [worker("w1", "asking")])],
+        };
+        expect(countsLine(list)).toBe("1 question to answer · 1 agent handed over");
+    });
+
+    it("orders questions, approval, input, hand-overs, held runs, other", () => {
+        const list = {
+            questions: [{}],
+            shown: [held("a"), { kind: "dag-blocked" }],
+            handed: [agent("h1", "permission", { handed: true }), agent("h2", "working", { handed: true })],
+            agents: [agent("h1", "permission", { handed: true }), agent("a1", "input")],
+            runs: [run("r", [worker("w1", "permission")])],
+        };
+        expect(countsLine(list)).toBe(
+            "1 question to answer · 2 need approval · 1 needs input · 2 agents handed over · 1 run held · 1 other"
+        );
+    });
+
+    // the title's number is the sum of the line's numbers but the hand-overs, which repeat agents already
+    // counted (or work or idle), so the line never reads "Nothing waiting" under "N need you"
+    describe("against needYouCount", () => {
+        const lists = {
+            nothing: {},
+            onlyPermission: { agents: [agent("a1", "permission")] },
+            onlyInput: { runs: [run("r", [worker("w1", "input")])] },
+            handedOnly: { handed: [agent("h1", "working", { handed: true })] },
+            handedAndListed: {
+                handed: [agent("h1", "permission", { handed: true })],
+                agents: [agent("h1", "permission", { handed: true }), agent("a2", "input")],
+            },
+            everything: {
+                questions: [{}, {}],
+                shown: [held("a"), held("b"), { kind: "escalation" }],
+                handed: [agent("h1", "permission", { handed: true }), agent("h2", "asking", { handed: true })],
+                agents: [agent("h1", "permission", { handed: true }), agent("a1", "input"), agent("a2", "idle")],
+                runs: [
+                    run("r1", [worker("w1", "permission"), worker("w2", "input"), worker("w3", "working")]),
+                    run("r2", [worker("w1", "permission"), worker("w4", "asking")]),
+                ],
+            },
+        };
+
+        for (const [name, list] of Object.entries(lists)) {
+            it(`adds up to needYouCount: ${name}`, () => {
+                const parts = countsLine(list) === "Nothing waiting" ? [] : countsLine(list).split(" · ");
+                const sum = parts
+                    .filter((p) => !p.endsWith("handed over"))
+                    .reduce((total, p) => total + Number.parseInt(p, 10), 0);
+                expect(sum).toBe(needYouCount(list));
+            });
+
+            it(`reads Nothing waiting only with nothing counted and nothing handed over: ${name}`, () => {
+                const nothing = needYouCount(list) === 0 && (list.handed ?? []).length === 0;
+                expect(countsLine(list) === "Nothing waiting").toBe(nothing);
+            });
+        }
+    });
 });
 
 describe("formatAge", () => {

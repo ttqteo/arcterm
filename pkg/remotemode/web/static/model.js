@@ -48,15 +48,16 @@ export function viewState(list, error) {
 }
 
 /**
- * How many things need the owner: the open questions, the shown attention items, and every agent that needs
- * approval or input, counted once per tab. The agents come from Handed over, the listed agents (which repeat
- * the handed ones) and every run's workers. An asking agent is counted through its question, not again.
+ * Every agent that needs approval or input, once per tab, as a map from the tab to its state (the first state
+ * seen when a tab appears twice). The agents come from Handed over, the listed agents (which repeat the handed
+ * ones) and every run's workers. An asking agent is left out: its question is counted instead. The title's
+ * count and the counts line both read this, so they cannot disagree about who waits.
  */
-export function needYouCount(list) {
-    const tabs = new Set();
+function needYouTabs(list) {
+    const tabs = new Map();
     const note = (a) => {
-        if (NEEDS_YOU_STATES.has(a?.state)) {
-            tabs.add(a.tab);
+        if (NEEDS_YOU_STATES.has(a?.state) && !tabs.has(a.tab)) {
+            tabs.set(a.tab, a.state);
         }
     };
     (list?.handed ?? []).forEach(note);
@@ -64,7 +65,15 @@ export function needYouCount(list) {
     for (const run of list?.runs ?? []) {
         (run.workers ?? []).forEach(note);
     }
-    return (list?.questions ?? []).length + (list?.shown ?? []).length + tabs.size;
+    return tabs;
+}
+
+/**
+ * How many things need the owner: the open questions, the shown attention items, and every agent that needs
+ * approval or input, counted once per tab (see needYouTabs).
+ */
+export function needYouCount(list) {
+    return (list?.questions ?? []).length + (list?.shown ?? []).length + needYouTabs(list).size;
 }
 
 /** The header's title: "2 need you", "1 needs you" or "Nothing waits on you". */
@@ -129,9 +138,22 @@ export function listedAgents(list) {
     return (list?.agents ?? []).filter((a) => !handed.has(a.tab));
 }
 
-/** The header's counts, e.g. "2 questions to answer · 3 agents handed over · 2 runs held · 1 other". */
+/**
+ * The header's counts, e.g. "2 questions to answer · 1 needs approval · 3 agents handed over · 2 runs held ·
+ * 1 other". Every number but the hand-overs (who may work or idle, and repeat agents already counted) is a part
+ * of needYouCount, so the line accounts for the title above it.
+ */
 export function countsLine(list) {
     const questions = (list?.questions ?? []).length;
+    let approval = 0;
+    let input = 0;
+    for (const state of needYouTabs(list).values()) {
+        if (state === "permission") {
+            approval++;
+        } else {
+            input++;
+        }
+    }
     const handed = (list?.handed ?? []).length;
     const shown = list?.shown ?? [];
     const held = shown.filter((s) => s.kind === HELD_KIND).length;
@@ -139,6 +161,12 @@ export function countsLine(list) {
     const parts = [];
     if (questions) {
         parts.push(plural(questions, "question to answer", "questions to answer"));
+    }
+    if (approval) {
+        parts.push(`${approval} ${COUNT_WORDS.permission(approval)}`);
+    }
+    if (input) {
+        parts.push(`${input} ${COUNT_WORDS.input(input)}`);
     }
     if (handed) {
         parts.push(plural(handed, "agent handed over", "agents handed over"));
