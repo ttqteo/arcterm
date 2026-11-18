@@ -19,14 +19,6 @@ export interface SidecarAsk {
     key?: string; // the ask's identity (askSentKey): an answer names it, so a new ask never takes an answer meant for the old
 }
 
-/** One stretch of an agent's state on the 2-hour timeline. `to` absent: still in it. UnixMilli. */
-export type SidecarSpanState = "working" | "asking" | "finished" | "failed";
-export interface SidecarSpan {
-    state: SidecarSpanState;
-    from: number;
-    to?: number;
-}
-
 /** One row of Needs you: an ask, a finished agent's question, or something Jarvis holds for you. */
 export type SidecarNeedKind = "ask" | "question" | "jarvis";
 export interface SidecarNeed {
@@ -72,7 +64,6 @@ export interface SidecarTile {
     sent?: boolean; // the answer to its ask has gone out and the agent has not moved on yet
     failed?: boolean; // the agent's run failed, or it holds a failed need
     diff?: { adds: number; dels: number }; // the lines its work added and removed
-    spans?: SidecarSpan[]; // its state over the last 2 hours, oldest first
 }
 
 export type StrainLevel = "amber" | "red";
@@ -116,7 +107,7 @@ export interface SidecarSnapshot {
     run?: SidecarRunBox; // the newest active orchestrator run
     usage?: SidecarUsage; // the 5-hour and weekly plan rings
     more?: number; // agents past the orbit's eight, for the core's "+N"
-    resources?: SidecarResources; // only while the page's resource panel is open
+    resources?: SidecarResources; // only while the page shows the resources (the wall's band, or the small form's panel)
 }
 
 /** One row of the resource panel: a figure is left out where it could not be read (CPU before a second sample). */
@@ -128,6 +119,8 @@ export interface SidecarResourceRow {
     mem?: number; // bytes held in RAM (the private working set), rounded to the MB
     gpu?: number; // percent of its busiest GPU engine, whole; left out at 0 or where not read
     count?: number; // an "other" row's processes of that name
+    runtime?: string; // an agent row's runtime (claude, pi…), for its logo
+    icon?: string; // an "other" row's image icon, a PNG data URL (pkg/resmon reads it on Windows)
 }
 
 /** One reading of the whole machine for the resource charts: whole percents, `gpu` left out where not read. */

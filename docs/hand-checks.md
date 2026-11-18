@@ -120,14 +120,16 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
   is no taller than before (the view switch sets its height). Narrow it to a 2x2 cell: the project truncates, nothing
   runs under the buttons. `agentheader.tsx`, "the project and initiative on the title's second line" (2026-11-18);
   `task verify:ui -- agent-header-redesign` not run (no dev app up).
-- [ ] (arcterm) **Sidecar's Resources: column, charts and panel.** Make Sidecar at least 1560 × 760 CSS px (maximized on
-  a 1080p screen at 100–125%): a Resources column stands right of the dashboard with CPU, RAM and GPU charts filling
-  in over 5 minutes (a hover shows a crosshair and "23% · 40s ago"; GPU matches Task Manager's figure, or says the
-  machine has no GPU counters), then Sidecar's own row first (its CPU and RAM, not "—"; "—" means WebView2 did not
-  name its renderer), arcterm and each agent by RAM with a GPU column, and "Other apps over 200 MB" (chrome.exe
-  (12)…). The title bar's figures are then plain text. Shrink it below that (or the small form): the figures get a
-  border and a chevron, and a click drops the same charts and table under the bar; Escape or a click outside closes
-  it. Windows only; on a Mac it says so. Commits 4f28db4b9 and the `feat/sidecar-charts` merge.
+- [ ] (arcterm) **Sidecar's Resources: band, charts, icons and panel.** Open Sidecar's full window at any size from
+  1100 CSS px (1440 × 900 included): a Resources band runs across the bottom, where the last 2 hours' lanes were, with
+  CPU, RAM and GPU charts filling in over 5 minutes (a hover shows a crosshair and "23% · 40s ago"; GPU matches Task
+  Manager's figure, or says the machine has no GPU counters), then Sidecar's own row first (its CPU and RAM, not "—";
+  "—" means WebView2 did not name its renderer), arcterm and each agent by RAM with a GPU column, and "Other apps over
+  200 MB" (chrome.exe (12)…). Each row leads with its mark: the arcterm "t>" on Sidecar and arcterm, the Claude or pi
+  logo on an agent, the app's own icon on an other app as Task Manager draws it (Chrome, Docker; a window glyph where
+  the exe has none or is protected, VmmemWSL). The title bar's figures are plain text there. In the small form the
+  figures get a border and a chevron, and a click drops the same charts and table under the bar; Escape or a click
+  outside closes it. Windows only; on a Mac it says so. Branch `feat/sidecar-taskman`.
 - [ ] (arcterm) **Sidecar's pin in the full window.** Maximize Sidecar or press F11: the title bar has a pin button
   beside S; pressed, Sidecar stays over the other apps on its screen, and a relaunch reopens it pinned. Same merge.
 - [ ] (arcterm) **Sidecar's resource panel.** Click the RAM · CPU figures in Sidecar's title bar (wall and small

@@ -126,6 +126,7 @@ export function resourcesOf(
             key: g.key,
             label: g.label,
             kind: "agent" as const,
+            ...(g.runtime ? { runtime: g.runtime } : {}),
             ...figures(g.cpu, g.mem, ready, gpuOf(g.rows)),
         }))
         .sort(byMemDesc);
@@ -134,6 +135,7 @@ export function resourcesOf(
         label: o.name,
         kind: "other" as const,
         count: o.count,
+        ...(o.icon ? { icon: o.icon } : {}),
         ...figures(o.cpu, o.mem, ready, o.gpu ?? 0),
     }));
     return {

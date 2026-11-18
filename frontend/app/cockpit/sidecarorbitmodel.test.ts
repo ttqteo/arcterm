@@ -7,7 +7,6 @@ import {
     coreTone,
     dashKey,
     frameOf,
-    laneBars,
     needHow,
     needPings,
     nodeLine,
@@ -20,7 +19,7 @@ import {
     waitingIds,
     type DashSel,
 } from "./sidecarorbitmodel";
-import type { SidecarNeed, SidecarRunBox, SidecarSnapshot, SidecarSpan, SidecarTile } from "./sidecartypes";
+import type { SidecarNeed, SidecarRunBox, SidecarSnapshot, SidecarTile } from "./sidecartypes";
 
 const MIN = 60_000;
 const NOW = 1_800_000_000_000;
@@ -312,58 +311,6 @@ describe("ringDash", () => {
         expect(ringDash(-5, 10)).toEqual({ dash: 0, gap: c });
         expect(ringDash(undefined, 10)).toEqual({ dash: 0, gap: c });
         expect(ringDash(Number.NaN, 10)).toEqual({ dash: 0, gap: c });
-    });
-});
-
-describe("laneBars", () => {
-    const W = 720; // 6 px a minute over the 2 hours
-    const span = (state: SidecarSpan["state"], fromMin: number, toMin?: number): SidecarSpan => ({
-        state,
-        from: NOW - fromMin * MIN,
-        ...(toMin == null ? {} : { to: NOW - toMin * MIN }),
-    });
-
-    it("a span inside the window: its place and length, and its state", () => {
-        expect(laneBars([span("working", 60, 30)], NOW, W)).toEqual([{ x: 360, w: 180, state: "working" }]);
-    });
-
-    it("a span with no end runs to now", () => {
-        expect(laneBars([span("asking", 10)], NOW, W)).toEqual([{ x: 660, w: 60, state: "asking" }]);
-    });
-
-    it("a span that began before the window's edge starts at the edge", () => {
-        expect(laneBars([span("working", 180, 60)], NOW, W)).toEqual([{ x: 0, w: 360, state: "working" }]);
-    });
-
-    it("a span that ended before the window's edge is dropped, one that ended at it too", () => {
-        expect(laneBars([span("working", 180, 121), span("finished", 150, 120)], NOW, W)).toEqual([]);
-    });
-
-    it("at least 2 px wide, and kept inside the lane's right edge", () => {
-        const [tiny] = laneBars([{ state: "failed", from: NOW - 60 * MIN, to: NOW - 60 * MIN + 1000 }], NOW, W);
-        expect(tiny).toEqual({ x: 360, w: 2, state: "failed" });
-        const [edge] = laneBars([{ state: "working", from: NOW }], NOW, W);
-        expect(edge).toEqual({ x: W - 2, w: 2, state: "working" });
-    });
-
-    it("an open span that began after now (the bridge's clock ran ahead of the snapshot's) draws a 2 px bar at the edge", () => {
-        expect(laneBars([{ state: "failed", from: NOW + 5000 }], NOW, W)).toEqual([
-            { x: W - 2, w: 2, state: "failed" },
-        ]);
-        expect(laneBars([{ state: "asking", from: NOW + 20 * MIN }], NOW, W)).toEqual([
-            { x: W - 2, w: 2, state: "asking" },
-        ]);
-    });
-
-    it("a closed span that ends before it begins is dropped", () => {
-        expect(laneBars([{ state: "working", from: NOW - 10 * MIN, to: NOW - 20 * MIN }], NOW, W)).toEqual([]);
-        expect(laneBars([{ state: "working", from: NOW + 5000, to: NOW + 1000 }], NOW, W)).toEqual([]);
-    });
-
-    it("keeps the spans' order, and draws nothing in a lane with no width", () => {
-        const bars = laneBars([span("working", 100, 80), span("asking", 80, 60), span("finished", 60)], NOW, W);
-        expect(bars.map((b) => b.state)).toEqual(["working", "asking", "finished"]);
-        expect(laneBars([span("working", 60, 30)], NOW, 0)).toEqual([]);
     });
 });
 

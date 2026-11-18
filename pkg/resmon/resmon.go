@@ -203,9 +203,10 @@ func (st *tickState) tick() *sample {
 				cpu = float64(s.cpuTime-prev) * 100 / float64(wallDelta/100) / float64(st.cores)
 			}
 			marks[id] = s.cpuTime
-			rest = append(rest, otherProc{Name: p.Name, Cpu: cpu, Mem: s.mem, Gpu: gpuByPid[pid]})
+			rest = append(rest, otherProc{Pid: pid, Name: p.Name, Cpu: cpu, Mem: s.mem, Gpu: gpuByPid[pid]})
 		}
 		others = groupOthers(rest, OthersMin, othersLimit)
+		withIcons(others, rest)
 	}
 	st.cpuMarks, st.cmdlines, st.lastWall = marks, cmdlines, now
 
