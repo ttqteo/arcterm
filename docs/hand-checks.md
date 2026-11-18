@@ -19,11 +19,11 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
 - [ ] (arcterm) **Sidecar's resource panel.** Click the RAM · CPU figures in Sidecar's title bar (wall and small
   layouts): a panel drops under the bar with Sidecar's own row first (its CPU and RAM, not "—"; "—" means WebView2
   did not name its renderer), then arcterm and each agent by RAM, then "Other apps over 200 MB" (chrome.exe (12)…),
-  every row refreshing every 2 s; Escape or a click outside closes it. Windows only; on a Mac it says so. Branch
-  `feat/sidecar-resources`.
+  every row refreshing every 2 s; Escape or a click outside closes it. Windows only; on a Mac it says so. Commit
+  4f28db4b9.
 - [ ] (arcterm) **Sidecar's S button reads as its own button.** In the wall layout the S button shows a screen with a
   small window in its corner (a screen with an arrow out while small), no longer the same inward arrows as the full
-  screen button beside it. Branch `feat/sidecar-resources`.
+  screen button beside it. Commit 4f28db4b9.
 - [ ] (arcterm) **Sidecar's alert frame follows the window's corners.** On Windows 11, with Sidecar not maximized and
   RAM strained, the red frame bends with the window's rounded corners instead of being cut at them; maximized or full
   screen it is square. In the band, a narrow heavy-agent card keeps the agent's name and command readable, its Stop
