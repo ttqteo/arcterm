@@ -846,79 +846,83 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
             data-header-width={width}
             data-header-labels={words ? "words" : "icons"}
             onContextMenu={openHeaderMenu}
-            className="flex shrink-0 select-none items-center gap-[10px] whitespace-nowrap border-b border-border bg-background px-[18px] py-[8px]"
+            className="flex shrink-0 select-none items-center gap-[10px] whitespace-nowrap border-b border-border bg-background px-[18px] py-[6px]"
         >
+            {/* on the name's line (20px tall), not centred on the two lines; the title is the header's tallest item, so
+                its top is the header's */}
             {stage ? null : ended || failed ? (
-                <span className="h-[8px] w-[8px] shrink-0 rounded-full" style={{ background: stateColor }} />
+                <span
+                    className="mt-[6px] h-[8px] w-[8px] shrink-0 self-start rounded-full"
+                    style={{ background: stateColor }}
+                />
             ) : (
-                <span className="flex shrink-0">
+                <span className="mt-[6px] flex shrink-0 self-start">
                     <StatusDot state={shown} pulse={shown !== "idle"} className="!h-[8px] !w-[8px]" />
                 </span>
             )}
-            {/* one row: the name first (it is the header's first line of text), then what it is: its runtime, its state
-                and what it left running. It keeps its share of a narrow header before it truncates */}
+            {/* two lines in the height the view switch already gives the header: the name, its runtime, its state and
+                what it left running, then where it works (project / initiative) under them. Together they keep their
+                share of a narrow header before they truncate */}
             <div
-                data-header-name
-                // the name gives way before the clusters (shrink 3 to their 1), down to a floor it keeps
-                className="flex min-w-[120px] shrink-[3] items-baseline gap-[8px]"
+                data-header-title
+                // the title gives way before the clusters (shrink 3 to their 1), down to a floor it keeps
+                className="flex min-w-[120px] shrink-[3] flex-col gap-[1px]"
                 style={nameMax ? { maxWidth: nameMax } : undefined}
             >
-                <span ref={nameRef} className="min-w-0 shrink truncate text-[14px] font-semibold text-foreground">
-                    {lineage?.kind === "lead" ? (
-                        <Workflow
-                            size={13}
-                            aria-hidden
-                            className="mr-[5px] inline-block align-[-1px] text-accent-soft"
-                        />
-                    ) : null}
-                    {name}
-                </span>
-                {stage ? null : (
-                    <>
-                        <span title={rt.label} className={cn("flex-none self-center", rt.text)}>
-                            <RuntimeMark runtime={agent.agent} className="text-[12px] leading-none" />
-                        </span>
-                        {queued ? (
-                            <QueuedJobTag job={queued} />
-                        ) : (
-                            <span
-                                data-agent-state-pill
-                                className={cn(
-                                    "flex-none text-[11px] font-medium transition-colors duration-[140ms]",
-                                    failed && "text-error",
-                                    settling && "animate-[settle_0.5s_ease-out] motion-reduce:animate-none"
-                                )}
-                                style={failed ? undefined : { color: stateColor }}
-                            >
-                                {stateText}
-                            </span>
-                        )}
-                        {failed ? (
-                            // why, in the row: the full text is the title when the pane is too narrow for it
-                            <span
-                                data-agent-start-error
-                                title={agent.startError}
-                                className="min-w-0 shrink truncate font-mono text-[11px] font-medium text-error"
-                            >
-                                {agent.startError}
-                            </span>
+                <div data-header-name className="flex min-w-0 items-baseline gap-[8px]">
+                    <span
+                        ref={nameRef}
+                        className="min-w-0 shrink truncate text-[14px] font-semibold leading-[20px] text-foreground"
+                    >
+                        {lineage?.kind === "lead" ? (
+                            <Workflow
+                                size={13}
+                                aria-hidden
+                                className="mr-[5px] inline-block align-[-1px] text-accent-soft"
+                            />
                         ) : null}
-                        <span className="flex-none self-center">
-                            <ServerMark servers={servers} ports={width === "wide"} count={width !== "wide"} />
-                        </span>
-                    </>
-                )}
-            </div>
-            {/* three clusters, each led by its icon: where it works (project / initiative), its run, and its model and
-                context. None is ever hidden: a narrow header shortens their words, and the project gives way first */}
-            <div
-                ref={clustersRef}
-                data-header-clusters
-                // clipped, so a cluster that cannot shrink further is cut here and never drawn under the buttons
-                className="ml-[2px] flex min-w-0 shrink items-center overflow-hidden text-[11px] text-muted"
-                style={{ gap: clusterGap }}
-            >
-                <span data-header-location className="inline-flex min-w-0 items-center gap-[5px]">
+                        {name}
+                    </span>
+                    {stage ? null : (
+                        <>
+                            <span title={rt.label} className={cn("flex-none self-center", rt.text)}>
+                                <RuntimeMark runtime={agent.agent} className="text-[12px] leading-none" />
+                            </span>
+                            {queued ? (
+                                <QueuedJobTag job={queued} />
+                            ) : (
+                                <span
+                                    data-agent-state-pill
+                                    className={cn(
+                                        "flex-none text-[11px] font-medium transition-colors duration-[140ms]",
+                                        failed && "text-error",
+                                        settling && "animate-[settle_0.5s_ease-out] motion-reduce:animate-none"
+                                    )}
+                                    style={failed ? undefined : { color: stateColor }}
+                                >
+                                    {stateText}
+                                </span>
+                            )}
+                            {failed ? (
+                                // why, in the row: the full text is the title when the pane is too narrow for it
+                                <span
+                                    data-agent-start-error
+                                    title={agent.startError}
+                                    className="min-w-0 shrink truncate font-mono text-[11px] font-medium text-error"
+                                >
+                                    {agent.startError}
+                                </span>
+                            ) : null}
+                            <span className="flex-none self-center">
+                                <ServerMark servers={servers} ports={width === "wide"} count={width !== "wide"} />
+                            </span>
+                        </>
+                    )}
+                </div>
+                <span
+                    data-header-location
+                    className="flex min-w-0 items-center gap-[5px] text-[11px] leading-[15px] text-muted"
+                >
                     <Folder size={12} strokeWidth={2} aria-hidden className="flex-none text-ink-faint" />
                     <span ref={projectRef} title={project || undefined} className="min-w-[40px] truncate">
                         {project || "—"}
@@ -929,6 +933,16 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
                         <LinkToInitiative agent={agent} project={project} width={width} />
                     ) : null}
                 </span>
+            </div>
+            {/* two clusters, each led by its icon: its run, and its model and context. Neither is ever hidden: a narrow
+                header shortens their words */}
+            <div
+                ref={clustersRef}
+                data-header-clusters
+                // clipped, so a cluster that cannot shrink further is cut here and never drawn under the buttons
+                className="ml-[2px] flex min-w-0 shrink items-center overflow-hidden text-[11px] text-muted"
+                style={{ gap: clusterGap }}
+            >
                 {stage ? null : <RunLinkItem model={model} agent={agent} lineage={lineage} width={width} />}
                 {stage || (!agent.model && agent.usage?.contextpct == null) ? null : (
                     <span data-header-model className="inline-flex flex-none items-baseline gap-[6px]">

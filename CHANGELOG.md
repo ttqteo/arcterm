@@ -55,6 +55,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- The agent header puts the project and initiative on a second line under the agent's name, in the height the header
+  already had, so the run link, model and context beside it get the room back.
 - Sidecar's small-form button is a screen with a small window in its corner, so it no longer looks like the full
   screen button beside it, and the full window has its own pin button, so a maximized or full-screen Sidecar can stay
   on top too.

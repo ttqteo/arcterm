@@ -16,6 +16,12 @@ list (its number is not reused).
 Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) ·
 [part 4](hand-checks-4.md) · [part 3](hand-checks-3.md) · [part 2](hand-checks-2.md) (oldest).
 
+- [ ] (arcterm) **Agent header: project / initiative on the title's second line.** Open a Claude agent in Chat and in
+  Terminal: the name, runtime mark and state sit on the first line with the status dot beside the name, `📁 project /
+  ◇ initiative` (or `/ + initiative`) on a line under it, and the run link, model and context to the right; the header
+  is no taller than before (the view switch sets its height). Narrow it to a 2x2 cell: the project truncates, nothing
+  runs under the buttons. `agentheader.tsx`, "the project and initiative on the title's second line" (2026-11-18);
+  `task verify:ui -- agent-header-redesign` not run (no dev app up).
 - [ ] (arcterm) **Sidecar's Resources: column, charts and panel.** Make Sidecar at least 1560 × 760 CSS px (maximized on
   a 1080p screen at 100–125%): a Resources column stands right of the dashboard with CPU, RAM and GPU charts filling
   in over 5 minutes (a hover shows a crosshair and "23% · 40s ago"; GPU matches Task Manager's figure, or says the
