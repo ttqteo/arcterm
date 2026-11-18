@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it } from "vitest";
-import { applySgr, color256, parseAnsiLine, parseAnsiLines, runCss } from "./ansitext";
+import { applySgr, color256, outputTextLines, parseAnsiLine, parseAnsiLines, runCss } from "./ansitext";
 
 const E = "\x1b";
 
@@ -116,5 +116,16 @@ describe("runCss", () => {
             textDecoration: "underline line-through",
             fontWeight: 600,
         });
+    });
+});
+
+describe("outputTextLines", () => {
+    it("splits on LF and CRLF and drops the empty line after the last newline", () => {
+        expect(outputTextLines("a\r\nb\nc\n")).toEqual(["a", "b", "c"]);
+    });
+
+    it("keeps a blank line inside the text and reads an empty file as no lines", () => {
+        expect(outputTextLines("a\n\nb")).toEqual(["a", "", "b"]);
+        expect(outputTextLines("")).toEqual([]);
     });
 });

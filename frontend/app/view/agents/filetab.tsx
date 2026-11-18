@@ -39,6 +39,7 @@ import { FileTabDiff } from "./filetabdiff";
 import { afterReread, canOpenInOsApp, formatSize, readPanelFile, type PanelFile } from "./filetabload";
 import { frameToTop, HtmlFrame } from "./htmlframe";
 import { ImageFrame } from "./imageframe";
+import { LiveOutput } from "./liveoutput";
 import { cancelBox, mdCommentAtom } from "./mdcommentstore";
 import { MdCommentTray } from "./mdcommenttray";
 import { MdDoc } from "./mddoc";
@@ -181,7 +182,9 @@ export function FileTab({
         globalStore.set(model.focusIdAtom, agentId);
         openDiff(model, agentDiffScope(agentId, agent.name), rel);
     };
-    const findable = markdown && preview && state.kind === "text";
+    // Live output draws in its program's colours, not in Monaco (liveoutput.tsx)
+    const liveText = !!ref.live && !preview && !diffable && state.kind === "text";
+    const findable = (markdown && preview && state.kind === "text") || liveText;
     const finding = findOpen && findable;
     const mdDoc = () => bodyRef.current?.querySelector<HTMLElement>("[data-md-doc]") ?? null;
     // a Preview's Top button: Source and Diff have Monaco's Ctrl+Home
@@ -315,6 +318,8 @@ export function FileTab({
                 }
             });
         body = <MdDoc model={model} agent={agent} fileRef={ref} text={state.text} onFileChanged={reread} />;
+    } else if (liveText && state.kind === "text") {
+        body = <LiveOutput fileRef={ref} text={state.text} wrap={wrap} following={following} stickRef={stickRef} />;
     } else if (state.kind === "text") {
         const line = ref.line;
         body = (

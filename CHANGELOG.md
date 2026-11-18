@@ -135,6 +135,7 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- A background task's or server's output opened in full view shows its colours, as its peek does, instead of the raw escape codes.
 - Sidecar no longer paints a text selection over its labels and buttons when you drag across it or press Cmd+A.
 - Chat's usage-limit warning, summary line and suggested replies no longer show the conversation through them when
   you scroll up: the fade under them now grows with them.

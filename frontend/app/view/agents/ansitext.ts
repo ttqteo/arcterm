@@ -146,6 +146,19 @@ export function parseAnsiLine(line: string, style: AnsiStyle = {}): { runs: Ansi
     return { runs, style: cur };
 }
 
+/** A whole output file's lines, for parseAnsiLines: a CRLF ends a line as LF does, and the newline that ends the
+ *  file opens no empty last line. */
+export function outputTextLines(text: string): string[] {
+    if (text === "") {
+        return [];
+    }
+    const lines = text.split(/\r?\n/);
+    if (lines[lines.length - 1] === "") {
+        lines.pop();
+    }
+    return lines;
+}
+
 /** Every line's runs, carrying style from each line into the next. */
 export function parseAnsiLines(lines: string[]): AnsiRun[][] {
     let style: AnsiStyle = {};
