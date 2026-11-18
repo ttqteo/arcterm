@@ -359,6 +359,7 @@ const PHONE_READ = `(() => {
     const buttons = [...document.querySelectorAll("button")].map(text);
     return {
         chip: text(document.querySelector(".chip")),
+        title: text(document.querySelector(".head h1")),
         sub: text(document.querySelector(".head-sub")),
         sections: [...document.querySelectorAll("section h2")].map(text),
         cards: [...document.querySelectorAll(".card .meta-agent")].map(text),
@@ -378,10 +379,33 @@ const PHONE_READ = `(() => {
         })),
         agents: [...document.querySelectorAll("[data-agent-row]")].map((r) => ({
             tab: r.dataset.agentRow,
+            tag: r.tagName,
+            untakeable: r.hasAttribute("data-untakeable"),
+            dot: r.querySelector(".lead-dot")?.dataset.state ?? "",
             state: r.querySelector(".state-chip")?.dataset.state ?? "",
             chip: text(r.querySelector(".state-chip")),
+            project: text(r.querySelector(".meta-project")),
             line: text(r.querySelector(".agent-line")),
+            error: text(r.querySelector("[data-take-error]")),
         })),
+        runs: [...document.querySelectorAll("[data-run-row]")].map((r) => ({
+            key: r.dataset.runRow,
+            expanded: r.getAttribute("aria-expanded"),
+            name: text(r.querySelector(".run-name")),
+            counts: text(r.querySelector(".agent-line")),
+            needs: text(r.querySelector("[data-run-needs]")),
+            workers: [...r.closest(".run").querySelectorAll("[data-run-worker]")].map((w) => ({ tab: w.dataset.runWorker, text: text(w) })),
+        })),
+        computer: (() => {
+            const s = document.querySelector('section[aria-label="Computer"]');
+            return s
+                ? {
+                      heading: text(s.querySelector("h2")),
+                      buttons: [...s.querySelectorAll("[data-pc]")].map((b) => [b.dataset.pc, text(b)]),
+                      error: text(s.querySelector("[data-pc-error]")),
+                  }
+                : null;
+        })(),
         foot: text(document.querySelector(".foot-text")),
     };
 })()`;
@@ -393,6 +417,15 @@ const PHONE_TAKEN_TEXT =
 // fx-exited is on no list, so the page has no name for it
 const PHONE_EXITED_TEXT = "The agent exited, so it is off the phone.";
 const PHONE_EXITED_TAB = "fx-exited";
+// what the preview's fixtures say (cmd/remotepreview): the take it refuses, the volume key it refuses, and the long
+// transcript behind fx-lab-notes (testdata/lab-notes.jsonl: 260 lines, so the 200-line backlog starts at week 15)
+const PHONE_REFUSED_TEXT = `Not taken: "refused" (tab fx-refused) has exited to its shell: claude is no longer running there`;
+const PHONE_MUTE_REFUSAL = "This computer has no mute key";
+const PHONE_LAB_FILE = "cmd/remotepreview/testdata/lab-notes.jsonl";
+const PHONE_LAB_BACKLOG = 200;
+const PHONE_LAB_FIRST = "Start a notes file for the thesis lab meeting: agenda, who presents, open questions.";
+const PHONE_LAB_BACKLOG_TOP = "Add week 15's meeting to notes/lab-meeting.md: we talked about the supervisor's request for a second dataset.";
+const PHONE_LAB_LINE = "Rewrote the related-work paragraph and added the two missing citations.";
 
 const PHONE_CHAT_READ = `(() => {
     const text = (el) => (el?.textContent || "").trim();
@@ -461,6 +494,49 @@ const phoneOpenCard = (source) =>
 const phonePick = (qi, oi) => `document.querySelectorAll(".qblock")[${qi}]?.querySelectorAll(".option")[${oi}]?.click()`;
 const PHONE_SEND_DISABLED = `document.querySelector(".btn-primary")?.disabled ?? null`;
 
+// The page polls /api/waiting every 10 s and again whenever it turns visible: a visibilitychange makes one at once.
+// Counts the answers through a wrapper on fetch (kept for the life of the document), so this resolves once a new
+// answer is in, then waits a beat for the page to draw it.
+async function phoneRefresh(page) {
+    await page.ev(`(() => {
+        if (!window.__waitingAnswers) {
+            window.__waitingAnswers = 0;
+            const real = window.fetch;
+            window.fetch = (...args) => {
+                const p = real.apply(window, args);
+                if (String(args[0]).includes("/api/waiting")) p.then(() => window.__waitingAnswers++, () => {});
+                return p;
+            };
+        }
+        window.__waitingWas = window.__waitingAnswers;
+        document.dispatchEvent(new Event("visibilitychange"));
+    })()`);
+    await polishWaitFor(page, `window.__waitingAnswers > window.__waitingWas`, PHONE_WAIT_MS);
+    await polishNap(300);
+}
+
+// the rows of the chat body once two reads 300 ms apart agree: the first paint of a thin backlog pages back by itself
+async function phoneChatSettled(page) {
+    let last = -1;
+    for (let i = 0; i < 20; i++) {
+        const n = await page.ev(`document.querySelector("[data-chat-body]")?.childElementCount ?? 0`);
+        if (n > 0 && n === last) return n;
+        last = n;
+        await polishNap(300);
+    }
+    return last;
+}
+
+// the byte offset the preview gives the start of the 200-line backlog: lines joined by newlines, so the first
+// (total - 200) lines' lengths plus one each (cmd/remotepreview lineOffsets)
+function phoneLabCursor() {
+    const lines = readFileSync(join(PHONE_REPO, PHONE_LAB_FILE), "utf8")
+        .split("\n")
+        .map((l) => l.trim())
+        .filter(Boolean);
+    return lines.slice(0, Math.max(0, lines.length - PHONE_LAB_BACKLOG)).reduce((n, l) => n + Buffer.byteLength(l) + 1, 0);
+}
+
 const remotePhone = {
     name: "remote-phone",
     surface: "cockpit",
@@ -516,11 +592,15 @@ const remotePhone = {
             main.handed[0].chip === "needs approval" &&
             main.handed[1].chip.startsWith("working ") &&
             main.handed[2].chip.startsWith("idle ");
+        // the h1 counts the three questions, the two held runs, siem-deploy's permission (once: the Agents roster repeats
+        // it) and the run worker that waits on one; the sub-line is still the counts of what is listed
         rec(
-            "1. Main: questions, the three hand-overs with their state chips, held runs, the counts line, the off footer and Turn on notifications",
+            "1. Main: the h1 counting what needs you, questions, the three hand-overs with their state chips, held runs, Agents, Runs, Computer, the counts line, the off footer and Turn on notifications",
             main.chip === "Remote on" &&
+                main.title === "7 need you" &&
                 main.sub === "3 questions to answer · 3 agents handed over · 2 runs held" &&
-                JSON.stringify(main.sections) === JSON.stringify(["Questions", "Handed over", "Held runs", "Agents"]) &&
+                JSON.stringify(main.sections) ===
+                    JSON.stringify(["Questions", "Handed over", "Held runs", "Agents", "Runs", "Computer"]) &&
                 JSON.stringify(main.cards) === JSON.stringify(list.questions.map((q) => q.source)) &&
                 JSON.stringify(main.handed.map(rowOf)) === JSON.stringify(wantHanded) &&
                 JSON.stringify(wantHanded.map((a) => [a.name, a.state])) ===
@@ -538,21 +618,34 @@ const remotePhone = {
             JSON.stringify({ ...main, sw })
         );
 
-        // 1a. Agents: every roster agent but the hand-overs, shown only
+        // 1a. Agents: the live agents at the desk, hand-overs left out. The fixture's idle rows have sat 25, 12 and 8
+        // minutes; one more minute may have passed since the preview started.
         await page.ev(`document.querySelector('section[aria-label="Agents"]')?.scrollIntoView({ block: "end" })`);
         await polishNap(200);
         await shot("1a-agents");
         await page.ev(`document.querySelector(".main")?.scrollTo(0, 0)`);
-        const agentRows = main.agents.map((a) => [a.tab, a.state, a.chip, a.line]);
+        const idleFor = (m) => new RegExp(`^idle (${m}|${m + 1})m$`);
+        const agentRows = main.agents.map((a) => [a.tab, a.tag, a.untakeable, a.dot, a.state]);
+        const [bench, lab, codex, refused] = main.agents;
         rec(
-            "1a. Agents: the three agents at the desk with their state chips, the hand-overs left out, no row opens a chat",
+            "1a. Agents: bench-runner, lab-notes, codex-scan and refused with a state dot and chip each, lab-notes' line the first sentence of its last reply, the takeable rows buttons and codex-scan a muted row, no exited row",
             JSON.stringify(agentRows) ===
                 JSON.stringify([
-                    ["fx-bench-runner", "working", "working", "Running go test ./pkg/orchestrate"],
-                    ["fx-lab-notes", "idle", "idle 25m", ""],
-                    ["fx-old-spike", "ended", "exited", ""],
+                    ["fx-bench-runner", "BUTTON", false, "working", "working"],
+                    ["fx-lab-notes", "BUTTON", false, "idle", "idle"],
+                    ["fx-codex-scan", "DIV", true, "idle", "idle"],
+                    ["fx-refused", "BUTTON", false, "idle", "idle"],
                 ]) &&
-                (await page.ev(`document.querySelectorAll("[data-agent-row] button, button[data-agent-row]").length`)) === 0,
+                bench.chip === "working" &&
+                bench.line === "Running go test ./pkg/orchestrate" &&
+                lab.project === "mit-thesis" &&
+                idleFor(25).test(lab.chip) &&
+                lab.line === PHONE_LAB_LINE &&
+                idleFor(12).test(codex.chip) &&
+                codex.line === "" &&
+                idleFor(8).test(refused.chip) &&
+                main.agents.every((a) => a.state !== "ended" && a.chip !== "exited" && a.tab !== "fx-old-spike") &&
+                (await page.ev(`document.querySelectorAll("div[data-agent-row]:not([data-untakeable]), button[data-untakeable]").length`)) === 0,
             JSON.stringify(main.agents)
         );
 
@@ -566,6 +659,98 @@ const remotePhone = {
             "1b. tapping Turn on notifications: the preview recorded the stub's subscription and the button is gone",
             subscribed && records("subscribe")[0].data.endpoint === PHONE_ENDPOINT && !afterSub.notifications && afterSub.notice === "",
             JSON.stringify({ subscribe: records("subscribe"), notice: afterSub.notice, button: afterSub.notifications })
+        );
+
+        // 1c. Take: a tap on a takeable row takes the agent and opens its chat; leaving it unacted releases the take and
+        // the row is listed again; a refused take says why on its row, through a refresh, and opens nothing
+        const takes = () => records("take").length;
+        const releases = () => records("release").length;
+        const [take0, release0] = [takes(), releases()];
+        await page.ev(phoneClick('[data-agent-row="fx-lab-notes"]'));
+        const tookLab = await recorded("take", take0 + 1);
+        await polishWaitFor(page, PHONE_CHAT_DRAWN, PHONE_WAIT_MS);
+        await polishNap(300);
+        await shot("1c-take-chat");
+        const labChat = await page.ev(PHONE_CHAT_READ);
+        const labHash = await page.ev(`location.hash`);
+        await page.ev(phoneClick('[aria-label="Back to the list"]'));
+        const releasedLab = await recorded("release", release0 + 1);
+        await polishWaitFor(
+            page,
+            `document.querySelector('[data-agent-row="fx-lab-notes"]') != null && document.querySelectorAll("[data-handed-row]").length === 3`,
+            PHONE_WAIT_MS
+        );
+        await polishNap(300);
+        const listedAgain = await read();
+        await page.ev(`document.querySelector('[data-agent-row="fx-lab-notes"]')?.scrollIntoView({ block: "center" })`);
+        await shot("1c-released");
+        await page.ev(phoneClick('[data-agent-row="fx-refused"]'));
+        await polishWaitFor(page, `document.querySelector('[data-agent-row="fx-refused"] [data-take-error]') != null`, PHONE_WAIT_MS);
+        await polishNap(300);
+        await page.ev(`document.querySelector('[data-agent-row="fx-refused"]')?.scrollIntoView({ block: "center" })`);
+        await shot("1c-refused");
+        const refusedNow = (await read()).agents.find((a) => a.tab === "fx-refused");
+        await phoneRefresh(page);
+        const refusedKept = (await read()).agents.find((a) => a.tab === "fx-refused");
+        const stayedOnList = await page.ev(`location.hash === "" && document.querySelector(".chat-name") == null`);
+        rec(
+            "1c. Take: tapping lab-notes records a take and opens its chat, Back records a release and lists the row again; tapping refused shows its Not taken line, which survives a refresh, and opens no chat",
+            tookLab &&
+                JSON.stringify(records("take")[take0].data) === JSON.stringify({ tab: "fx-lab-notes" }) &&
+                labHash === "#agent/fx-lab-notes" &&
+                labChat.name === "lab-notes" &&
+                labChat.state.startsWith("idle") &&
+                labChat.users.length > 0 &&
+                releasedLab &&
+                JSON.stringify(records("release")[release0].data) === JSON.stringify({ tab: "fx-lab-notes" }) &&
+                listedAgain.agents.some((a) => a.tab === "fx-lab-notes") &&
+                !listedAgain.handed.some((a) => a.tab === "fx-lab-notes") &&
+                refusedNow?.error === PHONE_REFUSED_TEXT &&
+                refusedKept?.error === PHONE_REFUSED_TEXT &&
+                stayedOnList &&
+                takes() === take0 + 1 &&
+                releases() === release0 + 1,
+            JSON.stringify({ labHash, labChat: { name: labChat.name, state: labChat.state }, refusedNow, refusedKept, stayedOnList, takes: records("take"), releases: records("release") })
+        );
+
+        // 1d. Runs: the run row's counts and needs-you chip; a tap opens its three worker lines, a refresh keeps them
+        // open, a second tap closes them
+        const [run] = list.runs;
+        const wantWorkers = run.workers.map((w) => ({ tab: w.tab, text: [w.label, w.line].filter(Boolean).join(" · ") }));
+        const runRowSel = `[data-run-row="${run.key}"]`;
+        await page.ev(`document.querySelector('${runRowSel}')?.scrollIntoView({ block: "center" })`);
+        await polishNap(200);
+        await shot("1d-run-closed");
+        const runClosed = (await read()).runs;
+        await page.ev(phoneClick(runRowSel));
+        await polishWaitFor(page, `document.querySelectorAll("[data-run-worker]").length === ${wantWorkers.length}`, PHONE_WAIT_MS);
+        await page.ev(`document.querySelector(".run")?.scrollIntoView({ block: "center" })`);
+        await polishNap(200);
+        await shot("1d-run-open");
+        const runOpen = (await read()).runs;
+        await phoneRefresh(page);
+        const runKept = (await read()).runs;
+        await page.ev(phoneClick(runRowSel));
+        await polishWaitFor(page, `document.querySelectorAll("[data-run-worker]").length === 0`, PHONE_WAIT_MS);
+        const runShut = (await read()).runs;
+        rec(
+            "1d. Runs: the run row reads 2 working · 1 needs approval with its Needs you at the desk chip, a tap opens three worker lines (label · line), a refresh keeps them, a second tap closes them",
+            run.key === "dag-fx1" &&
+                wantWorkers.length === 3 &&
+                runClosed.length === 1 &&
+                runClosed[0].key === run.key &&
+                runClosed[0].name === "Phone agent list" &&
+                runClosed[0].counts === "2 working · 1 needs approval" &&
+                runClosed[0].needs === "Needs you at the desk" &&
+                runClosed[0].expanded === "false" &&
+                runClosed[0].workers.length === 0 &&
+                runOpen[0]?.expanded === "true" &&
+                JSON.stringify(runOpen[0].workers) === JSON.stringify(wantWorkers) &&
+                runKept[0]?.expanded === "true" &&
+                JSON.stringify(runKept[0].workers) === JSON.stringify(wantWorkers) &&
+                runShut[0]?.expanded === "false" &&
+                runShut[0].workers.length === 0,
+            JSON.stringify({ runClosed, runOpen, runKept, runShut })
         );
 
         // 2. Answer
@@ -681,8 +866,20 @@ const remotePhone = {
         await shot("5-empty");
         const empty = await read();
         rec(
-            "5. the empty fixture: Empty, still on, with the off button",
-            empty.blank === "Nothing is waiting on you." && empty.chip === "Remote on" && empty.sub === "Nothing waiting" && empty.off,
+            "5. the empty fixture: Empty with the h1 Nothing waits on you, still on, the Computer section and the off button",
+            empty.blank === "Nothing is waiting on you." &&
+                empty.title === "Nothing waits on you" &&
+                empty.chip === "Remote on" &&
+                empty.sub === "Nothing waiting" &&
+                empty.computer?.heading === "Computer" &&
+                JSON.stringify(empty.computer.buttons) ===
+                    JSON.stringify([
+                        ["lock", "Lock"],
+                        ["down", "Volume down"],
+                        ["mute", "Mute"],
+                        ["up", "Volume up"],
+                    ]) &&
+                empty.off,
             JSON.stringify(empty)
         );
 
@@ -894,6 +1091,113 @@ const remotePhone = {
             "12b. ChatEnded exited: #agent/fx-exited draws Back at the desk with the exited string",
             exited.ended === "exited" && exited.endedTitle === "Back at the desk" && exited.endedText === PHONE_EXITED_TEXT,
             JSON.stringify(exited)
+        );
+
+        // 13. Older messages: lab-notes' backlog is its last 200 of 260 lines, so its first message lies a page back;
+        // scrolling to the top asks for that page once, and the message that was on top stays in view under it
+        await restartOn("main");
+        const transcript0 = records("transcript").length;
+        const release13 = records("release").length;
+        await page.ev(phoneClick('[data-agent-row="fx-lab-notes"]'));
+        await polishWaitFor(page, PHONE_CHAT_DRAWN, PHONE_WAIT_MS);
+        await phoneChatSettled(page);
+        await shot("13-chat-latest");
+        const latest = await page.ev(`(() => {
+            const body = document.querySelector("[data-chat-body]");
+            return {
+                users: [...document.querySelectorAll("[data-chat-user]")].map((b) => b.textContent.trim()),
+                earlier: document.querySelector("[data-chat-earlier]")?.dataset.chatEarlier ?? "",
+                scrollTop: body.scrollTop,
+            };
+        })()`);
+        await page.ev(`(document.querySelector("[data-chat-body]").scrollTop = 0, true)`);
+        const paged = await recorded("transcript", transcript0 + 1);
+        await polishWaitFor(
+            page,
+            `document.querySelector("[data-chat-user]")?.textContent.trim() === ${JSON.stringify(PHONE_LAB_FIRST)} && document.querySelector("[data-chat-earlier]") == null`,
+            PHONE_WAIT_MS
+        );
+        await phoneChatSettled(page);
+        // the bubble that headed the backlog must lie wholly inside the body's viewport now
+        const older = await page.ev(`(() => {
+            const body = document.querySelector("[data-chat-body]");
+            const box = body.getBoundingClientRect();
+            const prev = [...document.querySelectorAll("[data-chat-user]")].find((b) => b.textContent.trim() === ${JSON.stringify(PHONE_LAB_BACKLOG_TOP)});
+            const at = prev?.getBoundingClientRect();
+            return {
+                users: [...document.querySelectorAll("[data-chat-user]")].map((b) => b.textContent.trim()),
+                earlier: document.querySelector("[data-chat-earlier]")?.dataset.chatEarlier ?? "",
+                scrollTop: body.scrollTop,
+                prevInView: !!at && at.top >= box.top - 1 && at.bottom <= box.bottom + 1,
+            };
+        })()`);
+        await shot("13-older-messages");
+        const pages = records("transcript").slice(transcript0);
+        rec(
+            "13. Older messages (lab-notes): the chat opens on the week 15 message, scrolling to the top records one transcript request before the backlog's cursor, the first message of the thread shows above, and the message that was on top is still in view",
+            latest.users[0] === PHONE_LAB_BACKLOG_TOP &&
+                !latest.users.includes(PHONE_LAB_FIRST) &&
+                latest.earlier === "" &&
+                latest.scrollTop > 0 &&
+                paged &&
+                pages.length === 1 &&
+                JSON.stringify(pages[0].data) === JSON.stringify({ tab: "fx-lab-notes", before: phoneLabCursor() }) &&
+                older.users[0] === PHONE_LAB_FIRST &&
+                older.users.includes(PHONE_LAB_BACKLOG_TOP) &&
+                older.users.length > latest.users.length &&
+                older.earlier === "" &&
+                older.scrollTop > 0 &&
+                older.prevInView,
+            JSON.stringify({ latest: { ...latest, users: latest.users.length, top: latest.users[0] }, older: { ...older, users: older.users.length, top: older.users[0] }, pages })
+        );
+
+        // 14. Computer: Lock and volume up reach the PC (the preview records them); Mute is refused and the page says
+        // why under the buttons, until a later press goes through
+        await page.ev(phoneClick('[aria-label="Back to the list"]'));
+        await recorded("release", release13 + 1);
+        await polishWaitFor(page, `document.querySelector('section[aria-label="Computer"]') != null && document.querySelectorAll("[data-handed-row]").length === 3`, PHONE_WAIT_MS);
+        const [lock0, volume0] = [records("pclock").length, records("pcvolume").length];
+        const pcScroll = () => page.ev(`document.querySelector('section[aria-label="Computer"]')?.scrollIntoView({ block: "center" })`);
+        await pcScroll();
+        await polishNap(300);
+        await shot("14-computer");
+        const computer = (await read()).computer;
+        await page.ev(phoneClick('[data-pc="lock"]'));
+        const locked = await recorded("pclock", lock0 + 1);
+        await page.ev(phoneClick('[data-pc="up"]'));
+        const louder = await recorded("pcvolume", volume0 + 1);
+        await page.ev(phoneClick('[data-pc="mute"]'));
+        await polishWaitFor(page, `document.querySelector("[data-pc-error]") != null`, PHONE_WAIT_MS);
+        await pcScroll();
+        await polishNap(300);
+        await shot("14-computer-refused");
+        const muted = (await read()).computer;
+        const volumeAfterMute = records("pcvolume").length;
+        await page.ev(phoneClick('[data-pc="down"]'));
+        const quieter = await recorded("pcvolume", volume0 + 2);
+        await polishWaitFor(page, `document.querySelector("[data-pc-error]") == null`, PHONE_WAIT_MS);
+        const pcCleared = (await read()).computer;
+        rec(
+            "14. Computer: Lock records a pclock and Volume up a pcvolume up, Mute records nothing and shows its refusal under the buttons, and a later Volume down records and clears it",
+            computer?.heading === "Computer" &&
+                JSON.stringify(computer.buttons) ===
+                    JSON.stringify([
+                        ["lock", "Lock"],
+                        ["down", "Volume down"],
+                        ["mute", "Mute"],
+                        ["up", "Volume up"],
+                    ]) &&
+                computer.error === "" &&
+                locked &&
+                JSON.stringify(records("pclock")[lock0].data) === JSON.stringify({}) &&
+                louder &&
+                JSON.stringify(records("pcvolume")[volume0].data) === JSON.stringify({ step: "up" }) &&
+                muted?.error === PHONE_MUTE_REFUSAL &&
+                volumeAfterMute === volume0 + 1 &&
+                quieter &&
+                JSON.stringify(records("pcvolume")[volume0 + 1].data) === JSON.stringify({ step: "down" }) &&
+                pcCleared?.error === "",
+            JSON.stringify({ computer, muted, cleared: pcCleared, locks: records("pclock"), volumes: records("pcvolume") })
         );
         return steps;
     },
