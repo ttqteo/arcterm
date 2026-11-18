@@ -45194,8 +45194,8 @@ const agentChat = {
             await showAgent(A);
 
             // 20. a message sent while Claude works. A `queued_command` attachment line (a message queued in the terminal and
-            // taken mid-turn) draws as your bubble; one sent from the box shows at once as your bubble with a "Queued" line
-            // under it, and goes when a line holding the same text lands in the transcript
+            // taken mid-turn) draws as your bubble; one sent from the box shows at once as your bubble with a line of Send now alone
+            // under it (no Queued: the dimmed bubble says it waits), and goes when a line holding the same text lands in the transcript
             const Q1 = "queued from the terminal";
             const S1 = "and also handle timeouts";
             const workingA = { state: "working", activity: AC_ACTIVITY, activeMs: 30_000, idleSince: undefined };
@@ -45215,8 +45215,8 @@ const agentChat = {
                 const mine = ${pendingOf};
                 return {
                     text: mine[0]?.firstElementChild?.textContent.trim() ?? null,
-                    // the line under the pending bubbles (its own row, which folds away after them): Queued, with a Send now
-                    // button beside it
+                    // the line under the pending bubbles (its own row, which folds away after them): a Send now button and
+                    // no words (null: no label) for one queued message
                     caption: mine.length > 0 ? (${acLayer(A)}?.querySelector("[data-chat-pending-line] [data-chat-pending-label]")?.textContent.trim() ?? null) : null,
                     sendNow: !!${acLayer(A)}?.querySelector("[data-chat-pending-line] [data-chat-send-now]"),
                     pending: mine.length,
@@ -45228,8 +45228,8 @@ const agentChat = {
             acAppend(ctx.files.main, acQueuedLine(ctx.dir, S1));
             const landed20 = await polishWaitFor(h, `${youHas(S1)} === 1 && ${pendingOf}.length === 0`, 15000);
             rec(
-                "20. a queued_command line draws as your bubble; a message sent while Claude works shows at once as a pending bubble captioned Queued (and is typed into the block), and is gone once a matching line is in the transcript",
-                queuedUp && pendingUp && pend20.text === S1 && pend20.caption === "Queued" && pend20.pending === 1 && pend20.asYou === 0 &&
+                "20. a queued_command line draws as your bubble; a message sent while Claude works shows at once as a pending bubble with a Send now line and no Queued caption (and is typed into the block), and is gone once a matching line is in the transcript",
+                queuedUp && pendingUp && pend20.text === S1 && pend20.caption === null && pend20.sendNow && pend20.pending === 1 && pend20.asYou === 0 &&
                     JSON.stringify(sent20) === JSON.stringify([S1, "\r"]) && landed20,
                 { queuedUp, pend20, sent20, landed20 }
             );

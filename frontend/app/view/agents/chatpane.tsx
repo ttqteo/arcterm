@@ -418,12 +418,15 @@ function PendingLine({ text, starting, onSendNow }: { text: string; starting: bo
             exit="exit"
             className="flex flex-none items-center justify-end gap-2 overflow-hidden"
         >
-            <span data-chat-pending-label className="flex items-center gap-1.5 text-[11px] text-muted">
-                {starting ? (
-                    <span className="h-[6px] w-[6px] flex-none rounded-full bg-accent pulse-dot" aria-hidden />
-                ) : null}
-                {text}
-            </span>
+            {/* one queued message's line has no words (chatpending.ts pendingLine): Send now alone */}
+            {text !== "" ? (
+                <span data-chat-pending-label className="flex items-center gap-1.5 text-[11px] text-muted">
+                    {starting ? (
+                        <span className="h-[6px] w-[6px] flex-none rounded-full bg-accent pulse-dot" aria-hidden />
+                    ) : null}
+                    {text}
+                </span>
+            ) : null}
             {!starting && onSendNow != null ? (
                 <button
                     type="button"

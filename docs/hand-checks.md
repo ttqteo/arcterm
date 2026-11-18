@@ -28,6 +28,21 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
   in an Edge page with the same rules (`--scrollbar-thumb` in `tailwindsetup.css`, 2026-11-18), not in the app or on a
   Mac's WebKit.
 
+- [ ] (arcterm) **Background tasks open in place.** Have an agent run two commands with `run_in_background` (one that
+  ends at once, one `npx vitest run <a test file>` that runs a while), then open its details rail → Background tasks:
+  Running 1 holds the vitest one with its time counting up, Finished 1 the other with its time. A click opens a row:
+  `$ <command>`, then its last 12 output lines in vitest's own colours, growing while it runs, and Open full view, which
+  opens the output in the File tab as before; a second click folds it. Stop still ends a running one; the Finished
+  heading folds its rows. Branch `feat/codeblock-run`.
+- [ ] (arcterm) **A shell command in colour.** In Chat type `!` then `git log --oneline -3 | head "$HOME"`: `git` and
+  `head` in the keyword blue, `log` in the string green, `--oneline`, `-3` and `|` dimmed, `"$HOME"` green; the caret
+  shows and moves where it should, a selection shows its band, the grey ghost text still sits after the last character,
+  and a command long enough to wrap or scroll stays lined up with its colours. A reply's `bash` block draws the same
+  colours. Branch `feat/codeblock-run`.
+- [ ] (arcterm) **A shell block in Chat has Run.** Ask an agent for a command in a `bash` block written `! git status`:
+  its head shows Run beside Wrap; Run opens a terminal in the panel under that agent, in the agent's folder (its
+  worktree when it has one), and `git status` runs there without the `! `. A `ts` or `json` block has no Run; with no
+  agent in focus the terminal takes the centre. Branch `feat/codeblock-run`.
 - [ ] (arcterm) **A Chat selection keeps the text's colour.** Drag over a reply in Chat (prose, an inline code span, a
   code block, a table): the words stay their own colour (white prose, coloured code) on the accent band, not tinted
   blue, under a few themes. Checked only in a headless-Edge page with the same layer (`mix-blend-mode: screen` on

@@ -296,9 +296,9 @@ describe("pendingMessage and the line under it", () => {
         expect(pendingLine([p])).toBeNull();
         expect(queuedBubbleUp([p])).toBe(false);
     });
-    it("reads Queued under a message sent while the agent works, which Send now can push", () => {
+    it("has a line with no words under one message sent while the agent works: its dimmed bubble says it waits, and Send now can push it", () => {
         const p = pendingMessage("p2", "and the tray", entries, 1_000, true);
-        expect(pendingLine([p])).toBe("Queued");
+        expect(pendingLine([p])).toBe("");
         expect(queuedBubbleUp([p])).toBe(true);
     });
     it("counts the queued messages in one line", () => {

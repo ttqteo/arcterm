@@ -84,7 +84,8 @@ export function wakingBubbleUp(pending: PendingMessage[]): boolean {
 }
 
 /** The one line under the pending messages' bubbles, or null: the harness's starting line while a session starts, then
- *  Waking… while a wake brings a sleeping agent back for one of them, else Queued ("2 queued" for more) while messages sent as the agent worked wait. Messages sent to an idle agent have none:
+ *  Waking… while a wake brings a sleeping agent back for one of them, else, while messages sent as the agent worked
+ *  wait, "2 queued" for more than one and "" (a line of Send now alone) for one. Messages sent to an idle agent have none:
  *  the transcript takes them in a moment, and a Sending… line there only blinked as the transcript's copy replaced the
  *  bubble. A command's card (a /btw, a panel, a `! cmd`) says what it waits on itself. */
 export function pendingLine(pending: PendingMessage[], starting?: string): string | null {
@@ -99,7 +100,8 @@ export function pendingLine(pending: PendingMessage[], starting?: string): strin
         return WAKING_LINE;
     }
     const queued = messages.filter((p) => p.queued === true).length;
-    return queued === 0 ? null : queued === 1 ? "Queued" : `${queued} queued`;
+    // one queued message's dimmed bubble says it waits: its line is Send now alone, with no words
+    return queued === 0 ? null : queued === 1 ? "" : `${queued} queued`;
 }
 
 /** Whether a message bubble captioned Queued is up, which Ctrl+Enter in the empty box sends now. */
