@@ -46808,11 +46808,11 @@ const agentChat = {
                 { two75, top75, moved75, down75, pilled75, closedAfterPick75, spaceGone75, text75, shutAtEnd75, atEnd75, shutLeft75, left75 }
             );
 
-            // 76. Bash mode: a text that starts with `!` sits in a shell well (a dark, rounded box) under a "Bash" caption, the editor
-            // in the mono font and its `!` drawn in the accent colour and semibold (a span of the overlay that also holds the ghost).
-            // Typing `!git l` shows the newest `!` command of Claude Code's history that starts so (the mocked BashHistoryCommand
-            // answers AC_BASH_HISTORY) as grey ghost text right after the last character, with "→ accept" in the caption; → takes it.
-            // `!` alone has the well and no ghost. The `@` picker stays shut over `!ls @../` (step 72 opens it in a plain box), and a
+            // 76. Bash mode, as Claude Desktop draws its shell mode: a text that starts with `!` stays one row, with a "Bash" pill
+            // beside Send (no caption over it, no well around it), the editor in the mono font and its `!` drawn in the accent colour
+            // and semibold (a span of the overlay that also holds the ghost). Typing `!git l` shows the newest `!` command of
+            // Claude Code's history that starts so (the mocked BashHistoryCommand answers AC_BASH_HISTORY) as grey ghost text
+            // right after the last character; → takes it. `!` alone has the pill and no ghost. The `@` picker stays shut over `!ls @../` (step 72 opens it in a plain box), and a
             // command sent moves to the front of the list the ghost reads. The history is read per folder, so the box's folder is
             // set first, to the scenario's own (not one an earlier step has read)
             await h.rpc("setmeta", { oref: orefA, meta: { "cmd:cwd": ctx.dir.replace(/\\/g, "/") } });
@@ -46828,11 +46828,13 @@ const agentChat = {
                     const c = ${composer76};
                     const box = c?.querySelector("[data-chat-input]");
                     const cap = c?.querySelector("[data-chat-bash-caption]");
+                    const pill = c?.querySelector("[data-chat-bash-pill]");
                     const bang = c?.querySelector("[data-chat-bang]");
                     const ghost = c?.querySelector("[data-chat-ghost]");
-                    const icon = cap?.querySelector("svg");
                     const well = c?.querySelector("[data-chat-well]");
                     const ws = well ? getComputedStyle(well) : null;
+                    const wr = well?.getBoundingClientRect();
+                    const pr = pill?.getBoundingClientRect();
                     // where the editor's own text ends, against where the ghost starts
                     let textRight = null;
                     if (box) {
@@ -46847,15 +46849,19 @@ const agentChat = {
                     }
                     const gr = ghost?.getBoundingClientRect();
                     return {
-                        mode: c?.hasAttribute("data-chat-bash-mode") ?? false,
+                        // the box inside the composer carries it ([data-chat-box])
+                        mode: !!c?.querySelector("[data-chat-bash-mode]"),
                         text: ${acVal(acBox(A))},
-                        caption: cap?.querySelector("span")?.textContent.trim() ?? null,
-                        accept: cap?.querySelector("[data-chat-bash-accept]")?.textContent.replace(/\\s+/g, " ").trim() ?? null,
+                        caption: cap ? cap.textContent.trim() : null,
+                        pill: pill?.textContent.trim() ?? null,
+                        // the pill sits on the editor's row: one row, not a grown box with the editor on a line of its own
+                        oneRow: wr && pr ? pr.top < wr.bottom && pr.bottom > wr.top : null,
                         chip: !!c?.querySelector("[data-chat-bash]"),
                         font: box ? getComputedStyle(box).fontFamily : null,
-                        well: ws ? { bg: ws.backgroundColor, radius: ws.borderRadius } : null,
+                        well: ws ? { bg: ws.backgroundColor } : null,
                         bang: bang ? { text: bang.textContent, color: getComputedStyle(bang).color, weight: getComputedStyle(bang).fontWeight } : null,
-                        accent: icon ? getComputedStyle(icon).color : null,
+                        // the bang stands out from the command's own text colour
+                        boxColor: box ? getComputedStyle(box).color : null,
                         ghost: ghost?.textContent ?? null,
                         ghostGap: gr && textRight != null ? Math.abs(gr.left - textRight) : null,
                         // the \`!\` sits beside the editor, out of its text, a gap before the command
@@ -46891,7 +46897,7 @@ const agentChat = {
             await acKey(h, acKeys.left);
             await acKey(h, acKeys.left);
             await acKey(h, acKeys.backspace);
-            const unbanged76 = await polishWaitFor(h, `${acVal(acBox(A))} === "ls" && !${composer76}?.hasAttribute("data-chat-bash-mode")`, 3000);
+            const unbanged76 = await polishWaitFor(h, `${acVal(acBox(A))} === "ls" && !${composer76}?.querySelector("[data-chat-bash-mode]")`, 3000);
             // the `@` picker stays shut in bash mode
             await acClear(h, acBox(A));
             await polishWaitFor(h, `${acVal(acBox(A))} === ""`, 3000);
@@ -46922,23 +46928,26 @@ const agentChat = {
             const tabTaken76 = await polishWaitFor(h, `${acVal(acBox(A))} === "!git stash list"`, 3000);
             await acClear(h, acBox(A));
             await polishWaitFor(h, `${acVal(acBox(A))} === ""`, 3000);
+            // the pill folds away on the spring
+            await polishWaitFor(h, `!${composer76}?.querySelector("[data-chat-bash-pill]")`, 3000);
             const gone76 = await read76();
             rec(
-                "76. `!git l` in the main agent's box puts it in bash mode: a Bash caption (and no Bash mode chip) over a rounded well with a background, the editor in JetBrains Mono (not in a plain box), its `!` beside the editor (out of its text, 6px or more before the command) in the caption icon's accent colour and weight 600, the ghost og --oneline -5 right after the text (within 2 px) and the caption's → or Tab accept; → makes the box !git log --oneline -5 and the ghost and hint go; `!` alone has the well and the caption, no ghost, no hint, and the bash placeholder; Backspace at the start of `!ls` leaves ls in a plain box; `!ls @../` opens no @ list; a sent !git stash list (typed, then Enter) moves to the front, so `!git s` suggests tash list, and Tab takes it; an empty box has no caption, well or bang",
+                "76. `!git l` in the main agent's box puts it in bash mode, as Claude Desktop draws it: one row with a Bash pill beside Send (no caption, no Bash mode chip, no well behind the editor), the editor in JetBrains Mono (not in a plain box), its `!` beside the editor (out of its text, 6px or more before the command) in a colour apart from the command's and weight 600, the ghost og --oneline -5 right after the text (within 2 px); → makes the box !git log --oneline -5 and the ghost goes; `!` alone has the pill, no ghost, and the bash placeholder; Backspace at the start of `!ls` leaves ls in a plain box; `!ls @../` opens no @ list; a sent !git stash list (typed, then Enter) moves to the front, so `!git s` suggests tash list, and Tab takes it; an empty box has no pill or bang",
                 ghosted76 && asked76.length >= 1 && asked76[0].data.cwd === ctx.dir.replace(/\\/g, "/") &&
-                    typed76.mode === true && typed76.text === "!git l" && typed76.caption === "Bash" && typed76.chip === false &&
-                    typed76.well != null && typed76.well.radius === "8px" && typed76.well.bg !== "rgba(0, 0, 0, 0)" &&
+                    typed76.mode === true && typed76.text === "!git l" && typed76.pill === "Bash" && typed76.oneRow === true &&
+                    typed76.caption === null && typed76.chip === false &&
+                    typed76.well != null && typed76.well.bg === "rgba(0, 0, 0, 0)" &&
                     /JetBrains Mono/.test(typed76.font ?? "") && !/JetBrains Mono/.test(plainFont76 ?? "") &&
-                    typed76.bang?.text === "!" && typed76.accent != null && typed76.bang.color === typed76.accent && typed76.bang.weight === "600" &&
+                    typed76.bang?.text === "!" && typed76.bang.color !== typed76.boxColor && typed76.bang.weight === "600" &&
                     typed76.bangOut === true && typed76.bangGap != null && typed76.bangGap >= 6 &&
-                    typed76.ghost === "og --oneline -5" && typed76.ghostGap != null && typed76.ghostGap <= 2 && typed76.accept === "→ or Tab accept" &&
-                    taken76 && after76.ghost === null && after76.accept === null && after76.mode === true &&
-                    bare76.mode === true && bare76.text === "!" && bare76.caption === "Bash" && bare76.bang?.text === "!" &&
-                    bare76.ghost === null && bare76.accept === null && /agent's shell; Backspace leaves bash mode/.test(bare76.placeholder ?? "") &&
+                    typed76.ghost === "og --oneline -5" && typed76.ghostGap != null && typed76.ghostGap <= 2 &&
+                    taken76 && after76.ghost === null && after76.mode === true && after76.pill === "Bash" &&
+                    bare76.mode === true && bare76.text === "!" && bare76.pill === "Bash" && bare76.bang?.text === "!" &&
+                    bare76.ghost === null && /agent's shell; Backspace leaves bash mode/.test(bare76.placeholder ?? "") &&
                     unbanged76 &&
                     mentions76 === 0 &&
                     sent76.join("") === "!git stash list\r" && front76 && ghostAfterSend76 === "tash list" && tabTaken76 &&
-                    gone76.mode === false && gone76.caption === null && gone76.well?.bg === "rgba(0, 0, 0, 0)" && gone76.bang === null,
+                    gone76.mode === false && gone76.pill === null && gone76.bang === null,
                 { ghosted76, asked76, typed76, plainFont76, taken76, after76, bare76, unbanged76, mentions76, sent76, front76, ghostAfterSend76, tabTaken76, gone76 }
             );
 

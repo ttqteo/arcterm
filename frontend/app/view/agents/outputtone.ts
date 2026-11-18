@@ -4,10 +4,12 @@
 // The colour of a line of a command's output that came with none. The engine runs Verify, Check and Final with no
 // terminal, so vitest and `go test` print plain text: a line is read for what a terminal would have coloured, a test
 // that passed (its ✓ or `ok` green), one that failed (red, the whole line), a warning or a skip, a heading (the command,
-// a task's `task: [x]` line), and the time a test took at the end (dimmed). A line the program did colour keeps its own
-// colours (ansitext.ts); this is only for the rest. finalstageviews.tsx FinalOutput draws it.
+// a task's `task: [x]` line), and the time a test took at the end (dimmed); an agent's background task adds its exit
+// line and `git status -s`. A line the program did colour keeps its own colours (ansitext.ts); this is only for the
+// rest. outputlines.tsx draws it.
 
-export type OutputTone = "pass" | "fail" | "warn" | "skip" | "head" | "plain";
+/** `mod`: a change git has not staged (its mark red, as `git status` draws it), the line itself plain */
+export type OutputTone = "pass" | "fail" | "warn" | "skip" | "head" | "mod" | "plain";
 
 export interface TonedLine {
     tone: OutputTone;
@@ -18,12 +20,18 @@ export interface TonedLine {
     time: string;
 }
 
-// a status at the start of a line: vitest's and node's marks, go test's words, and their tone
+// a status at the start of a line: vitest's and node's marks, go test's words, a background task's exit line, and `git
+// status -s`'s two columns (staged green, not staged red, untracked dimmed, as git colours them), and their tone
 const MARKS: [RegExp, OutputTone][] = [
     [/^\s*(?:✓|✔|√|PASS\b|ok\b|--- PASS:)/, "pass"],
     [/^\s*(?:×|✗|✘|✖|FAIL\b|--- FAIL:)/, "fail"],
     [/^\s*(?:↓|--- SKIP:|\?\s)/, "skip"],
     [/^\s*(?:⚠|WARN(?:ING)?\b)/, "warn"],
+    [/^\[exited with code 0\]/, "pass"],
+    [/^\[exited with code -?[1-9]\d*\]/, "fail"],
+    [/^[MADRC][ MD](?= \S)/, "pass"],
+    [/^ [MD](?= \S)/, "mod"],
+    [/^\?\?(?= \S)/, "skip"],
 ];
 
 const HEAD = /^(?:\$ |task: \[|=== RUN\b|\s*RUN\s+v\d|#{1,3} |==+ )/;

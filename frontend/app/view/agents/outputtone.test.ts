@@ -47,4 +47,13 @@ describe("toneLine", () => {
         expect(toneLine("for the person's own entry, whose view writes You").tone).toBe("plain");
         expect(toneLine("")).toEqual({ tone: "plain", mark: "", body: "", time: "" });
     });
+    it("reads a background task's exit line and git status -s", () => {
+        expect(toneLine("[exited with code 0]")).toMatchObject({ tone: "pass", mark: "[exited with code 0]" });
+        expect(toneLine("[exited with code 2]").tone).toBe("fail");
+        expect(toneLine(" M frontend/app/view/agents/councilchat.tsx")).toMatchObject({ tone: "mod", mark: " M" });
+        expect(toneLine("M  frontend/a.tsx")).toMatchObject({ tone: "pass", mark: "M " });
+        expect(toneLine("A  docs/x.md")).toMatchObject({ tone: "pass", mark: "A " });
+        expect(toneLine("?? docs/superpowers/plans/x.md")).toMatchObject({ tone: "skip", mark: "??" });
+        expect(toneLine("A big change landed").tone).toBe("plain");
+    });
 });

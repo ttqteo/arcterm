@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it } from "vitest";
-import { isRunnableLang, runnableCommand } from "./coderun";
+import { isCompactBlock, isPromptedCommand, isRunnableLang, runnableCommand } from "./coderun";
 
 describe("isRunnableLang", () => {
     it("takes the shell languages, in any case", () => {
@@ -38,5 +38,32 @@ describe("runnableCommand", () => {
 
     it("gives nothing for a block of only blank lines", () => {
         expect(runnableCommand("\n  \n")).toBeUndefined();
+    });
+});
+
+describe("isPromptedCommand", () => {
+    it("takes a block with no language whose lines are all prompted", () => {
+        expect(isPromptedCommand("! task install", undefined)).toBe(true);
+        expect(isPromptedCommand("$ cd web\n$ npm test\n", "")).toBe(true);
+    });
+
+    it("refuses a language, an unprompted line, and a bare prompt", () => {
+        expect(isPromptedCommand("! task install", "text")).toBe(false);
+        expect(isPromptedCommand("$ cd web\nnpm test", undefined)).toBe(false);
+        expect(isPromptedCommand("$HOME/bin/x", undefined)).toBe(false);
+        expect(isPromptedCommand("! ", undefined)).toBe(false);
+    });
+});
+
+describe("isCompactBlock", () => {
+    it("is one line with no language or a shell's, and no path", () => {
+        expect(isCompactBlock("! task install\n", undefined, undefined)).toBe(true);
+        expect(isCompactBlock("npm test", "bash", undefined)).toBe(true);
+    });
+
+    it("keeps the head for several lines, a named language, or a path", () => {
+        expect(isCompactBlock("a\nb", undefined, undefined)).toBe(false);
+        expect(isCompactBlock('{"a": 1}', "json", undefined)).toBe(false);
+        expect(isCompactBlock("x", undefined, "src/a.ts")).toBe(false);
     });
 });

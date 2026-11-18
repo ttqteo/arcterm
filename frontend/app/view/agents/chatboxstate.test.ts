@@ -137,18 +137,19 @@ describe("boxTabPlaceholder", () => {
 });
 
 describe("boxLayout", () => {
-    const plain: BoxLayoutInput = { text: "", attachments: 0, bash: false, wrapped: false };
+    const plain: BoxLayoutInput = { text: "", attachments: 0, wrapped: false };
     const layout = (patch: Partial<BoxLayoutInput>) => boxLayout({ ...plain, ...patch });
 
-    it("is one row when empty or holding one line", () => {
+    it("is one row when empty or holding one line, a bash command's too", () => {
         expect(layout({})).toBe("row");
         expect(layout({ text: "merge it into main" })).toBe("row");
+        expect(layout({ text: "!ls" })).toBe("row");
     });
 
-    it("grows for several lines, an attachment or bash mode", () => {
+    it("grows for several lines or an attachment", () => {
         expect(layout({ text: "first\nsecond" })).toBe("grown");
         expect(layout({ attachments: 1 })).toBe("grown");
-        expect(layout({ text: "!ls", bash: true })).toBe("grown");
+        expect(layout({ text: "!ls\n" })).toBe("grown");
     });
 
     it("stays grown after the text wrapped, until the text is empty", () => {

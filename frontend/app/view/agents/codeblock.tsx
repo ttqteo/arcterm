@@ -7,7 +7,7 @@ import { cn } from "@/util/util";
 import { useAtom } from "jotai";
 import { atomWithStorage } from "jotai/utils";
 import { Play } from "lucide-react";
-import { isRunnableLang, runnableCommand } from "./coderun";
+import { isCompactBlock, isPromptedCommand, isRunnableLang, runnableCommand } from "./coderun";
 import { runInTerminal } from "./coderunstore";
 import { highlightLine, isPlainLang, type CodeToken } from "./highlight";
 import { PINNED_PROMPT_HEIGHT_VAR } from "./pinnedpromptbar";
@@ -17,16 +17,18 @@ import { shellLine } from "./shellhighlight";
 // reloads (atomWithStorage convention, see cockpitprefsstore.ts).
 const codeWrapAtom = atomWithStorage<boolean>("cockpit.codeblock.wrap", true);
 
-// Styled fenced-code block for transcript prose (Wave-transcript-feed.dc.html code block).
+// Styled fenced-code block for transcript prose (Wave-transcript-feed.dc.html code block); a one-line command is a
+// compact row instead (isCompactBlock).
 // lang label + optional path + wrap/copy affordances + line-number gutter + tokenized source.
 export function CodeBlock({ code, lang, path }: { code: string; lang?: string; path?: string }) {
     const [wrap, setWrap] = useAtom(codeWrapAtom);
     const lines = code.replace(/\n$/, "").split("\n");
     const plain = isPlainLang(lang);
-    const shell = isRunnableLang(lang);
+    // a shell block, or one with no language that is all prompted commands (`! task install`)
+    const shell = isRunnableLang(lang) || isPromptedCommand(code, lang);
     // a shell block in the shell's colours (the command apart from its arguments), as Chat's bash box draws it
     const tokens = (ln: string): CodeToken[] =>
-        plain ? [{ t: ln || " ", cls: "text-syntax-ident" }] : shell ? shellLine(ln) : highlightLine(ln);
+        shell ? shellLine(ln) : plain ? [{ t: ln || " ", cls: "text-syntax-ident" }] : highlightLine(ln);
     // a shell block is a command the reply means you to run: Run types it into a new terminal (coderunstore.ts)
     const command = shell ? runnableCommand(code) : undefined;
     const run = () => {
@@ -41,6 +43,51 @@ export function CodeBlock({ code, lang, path }: { code: string; lang?: string; p
             })
         );
     };
+    // One line with no language or a shell's (a command, most often): one compact row, as Claude Desktop draws it, the
+    // line wrapped, then Run (▷) and Copy as icons at its right; no head, no line number
+    if (isCompactBlock(code, lang, path)) {
+        return (
+            <div
+                data-code-compact=""
+                className="my-1.5 flex items-start gap-2 rounded-[8px] border border-border bg-surface-code py-[7px] pr-[8px] pl-[12px]"
+            >
+                <span
+                    data-code-line
+                    className="min-w-0 flex-1 whitespace-pre-wrap py-[2px] font-mono text-[12px] leading-[1.6] [overflow-wrap:anywhere]"
+                >
+                    {tokens(lines[0]).map((tk, k) => (
+                        <span key={k} className={tk.cls}>
+                            {tk.t}
+                        </span>
+                    ))}
+                </span>
+                <span className="flex flex-none items-center gap-[2px] text-muted">
+                    {command != null ? (
+                        <button
+                            type="button"
+                            data-code-run=""
+                            aria-label="Run in a new terminal"
+                            title="Run in a new terminal"
+                            onClick={run}
+                            className="flex size-[24px] cursor-pointer items-center justify-center rounded-[5px] hover:bg-surface-hover hover:text-primary"
+                        >
+                            <Play size={13} strokeWidth={2} />
+                        </button>
+                    ) : null}
+                    <span
+                        data-code-copy
+                        className="flex size-[24px] items-center justify-center rounded-[5px] hover:bg-surface-hover"
+                    >
+                        <CopyButton
+                            title="Copy code"
+                            content={code}
+                            className="text-[12px] text-muted hover:text-primary"
+                        />
+                    </span>
+                </span>
+            </div>
+        );
+    }
     // The head sticks to the top of the transcript's scroller while a long block scrolls past, so Wrap and Copy stay in
     // reach; below the pinned prompt when one shows (PINNED_PROMPT_HEIGHT_VAR), and under it (z-[5] < its z-10) as the
     // band slides. overflow-clip, not -hidden: it rounds the corners without making the block a scroller, which would
