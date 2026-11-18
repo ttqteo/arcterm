@@ -123,6 +123,8 @@ import { foreignPathGuesses, turnFileAbs, turnFiles } from "./chatsteps";
 import { ChatSteps } from "./chatstepsview";
 import { TaggedPromptText } from "./chattagblock";
 import { ChatTurnFiles } from "./chatturnfiles";
+import { turnCanvas } from "./chatcanvaspeek";
+import { ChatCanvasPeekCard } from "./chatcanvaspeekcard";
 import { VERDICT_TOPIC, verdictMode, type VerdictMode } from "./chatverdict";
 import { ChatVerdictCard } from "./chatverdictcard";
 import { CouncilText } from "./councilchat";
@@ -1594,6 +1596,9 @@ export function ChatConversation({
             case "agent": {
                 // a finished turn (not the live last one) ends in a card of the files its edits changed (chatturnfiles.tsx)
                 const files = active && last ? [] : turnFiles(item.parts);
+                // and one that wrote design boards, over that card, in a card of the boards (chatcanvaspeekcard.tsx),
+                // where there is an agent to open them for
+                const drew = agent != null ? turnCanvas(files, cwd) : null;
                 return (
                     <div data-chat-agent className="flex min-w-0 flex-col gap-2">
                         {/* a part landing in a row that was already there opens on the spring; one of a row that arrives
@@ -1615,7 +1620,17 @@ export function ChatConversation({
                                 </Arriving>
                             );
                         })}
-                        {/* it opens on the spring when the turn it closes ends in view */}
+                        {/* they open on the spring when the turn they close ends in view */}
+                        {drew != null ? (
+                            <Arriving
+                                key="canvas"
+                                gap={PART_GAP}
+                                arrive={!reduceMotion && drawnBefore.has(item.key)}
+                                className="min-w-0"
+                            >
+                                <ChatCanvasPeekCard agent={agent!} canvas={drew} />
+                            </Arriving>
+                        ) : null}
                         {files.length > 0 ? (
                             <Arriving
                                 key="files"

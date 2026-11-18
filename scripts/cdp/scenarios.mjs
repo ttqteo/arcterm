@@ -51312,6 +51312,219 @@ const chatCanvasPick = {
     },
 };
 
+// --- chat-canvas-peek: the Canvas card at the end of a turn that wrote design boards (chatcanvaspeek.ts,
+// chatcanvaspeekcard.tsx; board .superpowers/design/chat-canvas-peek/project/A-canvas-card.dc.html). An idle Claude
+// fixture agent's one turn writes Panel and Main of its canvas (Main first in canvas.json, Other never touched) and edits
+// canvas.json, then asks whether the layout is right; the canvas is attached with the agent's own reveal. The turn ends
+// in a Canvas card naming the canvas, with a live picture of Main and Panel in canvas.json's order (never Other), over
+// the Edited files card. Look at all opens the board modal over Chat with no Pick button; a picture opens its board
+// alone; Escape closes it; Open in Canvas shows the Canvas. The transcript and the design folder are in a temp dir.
+const CPK_NAME = "canvas peek";
+const CPK_TOPIC = "verify-canvas-peek";
+const CPK_WAIT_MS = 15000;
+const CPK_QUESTION = "Does this layout work, or should I change the column first?";
+
+function cpkWriteFixtures(dir) {
+    const project = join(dir, ".superpowers", "design", CPK_TOPIC, "project");
+    mkdirSync(project, { recursive: true });
+    const boards = {
+        "Main.dc.html": { x: 0, y: 0, w: 1440, h: 900, title: "Wide window: the Resources column" },
+        "Other.dc.html": { x: 1520, y: 0, w: 1440, h: 900, title: "An older board" },
+        "Panel.dc.html": { x: 3040, y: 0, w: 1200, h: 800, title: "Narrow window: the drop-down panel" },
+    };
+    writeFileSync(join(project, "canvas.json"), JSON.stringify({ boards, order: Object.keys(boards) }));
+    for (const [name, b] of Object.entries(boards)) {
+        writeFileSync(
+            join(project, name),
+            `<!doctype html><meta charset="utf-8"><title>${b.title}</title><body style="margin:0;background:#262624;color:#ece9e0;font:32px sans-serif"><h1 style="margin:48px">${b.title}</h1></body>`
+        );
+    }
+    const base = Date.now() - 600_000;
+    const o = (sec) => ({ cwd: dir, ts: new Date(base + sec * 1000).toISOString() });
+    const file = (name) => join(project, name);
+    return AC.writeTranscript(dir, "canvas-peek-main", [
+        AC.userText("draw the resource panel first", { ...o(0), uuid: "u1" }),
+        AC.assistantText("Drawing the boards.", { ...o(2), uuid: "a1" }),
+        AC.toolUse("toolu_cpk_panel", "Write", { file_path: file("Panel.dc.html"), content: "<p>panel</p>\n" }, o(4)),
+        AC.toolResult("toolu_cpk_panel", "File created successfully.", o(5)),
+        AC.toolUse("toolu_cpk_main", "Write", { file_path: file("Main.dc.html"), content: "<p>main</p>\n" }, o(6)),
+        AC.toolResult("toolu_cpk_main", "File created successfully.", o(7)),
+        AC.toolUse(
+            "toolu_cpk_json",
+            "Edit",
+            { file_path: file("canvas.json"), old_string: '"order"', new_string: '"order" ' },
+            o(8)
+        ),
+        AC.toolResult("toolu_cpk_json", "The file has been updated successfully.", o(9)),
+        AC.assistantText(`Two boards are on the canvas.\n\n${CPK_QUESTION}`, { ...o(12), uuid: "a2" }),
+    ]);
+}
+
+const chatCanvasPeek = {
+    name: "chat-canvas-peek",
+    surface: "agent",
+    async arrange(h) {
+        const ctx = {
+            dir: mkdtempSync(join(tmpdir(), "verify-chat-canvas-peek-")),
+            tabs: {},
+            prevGrid: await h.ev(`localStorage.getItem(${JSON.stringify(GRID_KEY)})`),
+            prevModes: await h.ev(`localStorage.getItem("agent.chatmode")`),
+        };
+        let at = "writing the fixtures";
+        try {
+            ctx.transcript = cpkWriteFixtures(ctx.dir);
+            at = "resetting the grid";
+            await h.ev(`localStorage.setItem(${JSON.stringify(GRID_KEY)}, ${JSON.stringify(JSON.stringify(GRID_EMPTY))})`);
+            await h.ev(`localStorage.removeItem("agent.chatmode")`);
+            if (!(await ahReload(h))) throw new Error("the page did not come back after the reload");
+            await h.goto("agent");
+            at = "making the tab";
+            ctx.tabs.main = await acMakeTab(h, ctx, { label: CPK_NAME });
+            at = "setting the roster";
+            const now = Date.now();
+            await AC.setRoster(h, [
+                {
+                    project: "arcterm",
+                    state: "idle",
+                    idleSince: now - 60_000,
+                    task: "Resource panel",
+                    agent: "claude",
+                    model: "opus",
+                    id: ctx.tabs.main.tabId,
+                    name: CPK_NAME,
+                    blockId: ctx.tabs.main.blockId,
+                    transcriptPath: ctx.transcript,
+                    cwd: ctx.dir,
+                },
+            ]);
+            at = "opening the canvas from the agent";
+            await h.rpc(
+                "uireveal",
+                { address: `canvas:${CPK_TOPIC}`, callerblockid: ctx.tabs.main.blockId, callercwd: ctx.dir },
+                UI_ROUTE
+            );
+        } catch (e) {
+            ctx.arrangeError = `${at}: ${String(e?.message ?? e)}`;
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        const steps = [];
+        const rec = (step, ok, detail) =>
+            steps.push({ step, ok: ok === true, detail: typeof detail === "string" ? detail : JSON.stringify(detail) });
+        if (ctx.arrangeError != null) {
+            rec("0. the fixture agent, its transcript and its canvas", false, ctx.arrangeError);
+            return steps;
+        }
+        const A = ctx.tabs.main.tabId;
+        const card = `document.querySelector('[data-agent-chat="${A}"] [data-chat-canvaspeek]')`;
+        const modal = `document.querySelector('[data-chat-canvaspick-modal="${A}"]')`;
+        const readModal = `(() => {
+            const m = ${modal};
+            if (!m) return null;
+            return {
+                tabs: [...m.querySelectorAll("[data-chat-canvaspick-modal-tab]")].map((t) => t.textContent.trim()),
+                frames: [...m.querySelectorAll("[data-canvas-frame]")].map((f) => f.getAttribute("data-canvas-frame")),
+                pick: m.querySelector("[data-chat-canvaspick-modal-pick]")?.textContent.trim() ?? null,
+            };
+        })()`;
+        try {
+            await AC.focusAgent(h, A);
+            const shown = await polishWaitFor(h, `(${card})?.querySelectorAll("[data-chat-canvaspeek-tile] iframe").length === 2`, CPK_WAIT_MS);
+            await h.ev(`${card}?.scrollIntoView({ block: "center" })`);
+            // the pictures' pages load and the card's spring is over
+            await polishNap(1200);
+            const seen = await h.ev(`(() => {
+                const c = ${card};
+                if (!c) return null;
+                const files = c.closest("[data-chat-agent]")?.querySelector("[data-chat-turn-files]");
+                return {
+                    topic: c.getAttribute("data-chat-canvaspeek"),
+                    tiles: [...c.querySelectorAll("[data-chat-canvaspeek-tile]")].map((t) => t.getAttribute("data-chat-canvaspeek-tile")),
+                    titles: [...c.querySelectorAll("[data-chat-canvaspeek-tile]")].map((t) => t.textContent.trim()),
+                    all: c.querySelector("[data-chat-canvaspeek-all]")?.textContent.trim(),
+                    aboveFiles: files != null && !!(c.compareDocumentPosition(files) & Node.DOCUMENT_POSITION_FOLLOWING),
+                };
+            })()`);
+            await h.shot("cdp-shots/chat-canvas-peek-card.png");
+            rec(
+                "1. the turn ends in a Canvas card over its Edited files card: the canvas's name, live pictures of Main and Panel in canvas.json's order (not Other), each named by its title, and Look at all 2",
+                shown &&
+                    seen?.topic === CPK_TOPIC &&
+                    JSON.stringify(seen?.tiles) === JSON.stringify(["Main.dc.html", "Panel.dc.html"]) &&
+                    seen?.titles?.[0]?.startsWith("Wide window") &&
+                    seen?.all === "Look at all 2" &&
+                    seen?.aboveFiles === true,
+                { shown, seen }
+            );
+
+            await h.ev(`${card}?.querySelector("[data-chat-canvaspeek-all]")?.click()`);
+            const opened = await polishWaitFor(h, `(${modal})?.querySelectorAll("[data-canvas-frame] iframe").length === 2`, CPK_WAIT_MS);
+            await polishNap(900);
+            const all = await h.ev(readModal);
+            const canvasShut = await h.ev(`!document.querySelector('[data-canvas-pane]')`);
+            await h.shot("cdp-shots/chat-canvas-peek-modal.png");
+            rec(
+                "2. Look at all opens the board modal over Chat (the Canvas stays shut) with All 2, Main and Panel by title, both boards drawn and no Pick button",
+                opened &&
+                    canvasShut === true &&
+                    all?.tabs?.[0] === "All 2" &&
+                    all?.tabs?.length === 3 &&
+                    JSON.stringify(all?.frames) === JSON.stringify(["Main.dc.html", "Panel.dc.html"]) &&
+                    all?.pick == null,
+                { opened, canvasShut, all }
+            );
+            await h.ev(`document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }))`);
+            const closed = await polishWaitFor(h, `!${modal} && !!${card}`, CPK_WAIT_MS);
+
+            await h.ev(`${card}?.querySelector('[data-chat-canvaspeek-tile="Panel.dc.html"]')?.click()`);
+            const alone = await polishWaitFor(h, `(${modal})?.querySelectorAll("[data-canvas-frame]").length === 1`, CPK_WAIT_MS);
+            await polishNap(700);
+            const one = await h.ev(readModal);
+            await h.shot("cdp-shots/chat-canvas-peek-modal-one.png");
+            rec(
+                "3. Escape closes the modal and leaves the card; a click on Panel's picture opens Panel alone, still with no Pick button",
+                closed && alone && JSON.stringify(one?.frames) === JSON.stringify(["Panel.dc.html"]) && one?.pick == null,
+                { closed, alone, one }
+            );
+            await h.ev(`document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }))`);
+            await polishWaitFor(h, `!${modal}`, CPK_WAIT_MS);
+
+            await h.ev(`${card}?.querySelector("[data-chat-canvaspeek-open]")?.click()`);
+            const canvas = await polishWaitFor(h, `!!document.querySelector('[data-canvas-pane]')`, CPK_WAIT_MS);
+            await polishNap(600);
+            await h.shot("cdp-shots/chat-canvas-peek-open.png");
+            rec("4. Open in Canvas shows the agent's Canvas", canvas, { canvas });
+        } catch (e) {
+            rec("the scenario threw", false, String(e?.stack ?? e));
+        }
+        return steps;
+    },
+    async teardown(h, ctx) {
+        const step = async (what, fn) => {
+            try {
+                await fn();
+            } catch (e) {
+                console.error(`chat-canvas-peek teardown: ${what} failed: ${e?.message ?? e}`);
+            }
+        };
+        await step("restore the roster", () => AC.restoreRoster(h));
+        await step("close the fixture tab", () => acCloseTabs(h, ctx));
+        await step("restore the grid and the chat modes", () =>
+            h.ev(`(() => {
+                for (const [key, prev] of [[${JSON.stringify(GRID_KEY)}, ${JSON.stringify(ctx.prevGrid ?? null)}], ["agent.chatmode", ${JSON.stringify(ctx.prevModes ?? null)}]]) {
+                    if (prev == null) localStorage.removeItem(key);
+                    else localStorage.setItem(key, prev);
+                }
+                return true;
+            })()`)
+        );
+        await step("remove the fixtures", () => rmSync(ctx.dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 500 }));
+        await step("reload onto the live roster", () => ahReload(h));
+        await step("go home", () => h.goto("cockpit"));
+    },
+};
+
 // --- sidebar-agent-ram: an agent row in the sidebar shows the RAM its processes hold (agentram.ts), read from the Resource
 // Manager's snapshot, which the step pins (window.__resmonFixture) so the figures are known: 412 MB for the first agent,
 // 1.3 GB for the second, none for the third (no group). Settings → Appearance → Agent sidebar → RAM off hides them.
@@ -73369,6 +73582,7 @@ export const SCENARIOS = [
     chatRefBadges,
     chatInitiative,
     chatCanvasPick,
+    chatCanvasPeek,
     ...chatRedesignScenarios(CR_KIT),
     ...chatCodeBoxScenarios(CR_KIT),
     ...chatInitiativeBandScenarios(CR_KIT),
