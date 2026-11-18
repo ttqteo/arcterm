@@ -117,7 +117,7 @@ const readHeader = `(() => {
         unlinked: hd.querySelector("[data-initiative-link]") ? flat(hd.querySelector("[data-initiative-link]")) : null,
         initiative: ini ? flat(ini) : null,
         initiativeIcon: !!ini?.querySelector("svg"),
-        run: run ? { kind: run.getAttribute("data-run-link"), text: flat(run) } : null,
+        run: run ? { kind: run.getAttribute("data-run-link"), text: flat(run), inLocation: !!run.closest("[data-header-location]") } : null,
         model: hd.querySelector("[data-header-model]") ? flat(hd.querySelector("[data-header-model]")) : null,
         dots: [...hd.querySelectorAll("[data-header-clusters] *")].some((el) => el.childNodes.length === 1 && el.textContent.trim() === "·"),
         queued: /queued/i.test(flat(hd)),
@@ -215,19 +215,21 @@ export default function (kit) {
                 rec("0. the fixture roster, its two runs and the initiative were made", ctx.arrangeError == null && ctx.ready === true, ctx.arrangeError ?? { ready: ctx.ready });
                 if (ctx.arrangeError != null) return steps;
 
-                // 1. a plain session in Terminal, wide: three clusters led by icons, no ` · `
+                // 1. a plain session in Terminal, wide: the run link on the location line after the project, set off by a
+                // dot; the model on the right with no ` · `
                 await show(h, IDS.plain, "terminal");
                 await waitHeader(h, "Pull history and sync", `!!${HEADER}.querySelector("[data-run-link]")`);
                 await polishNap(400);
                 const plain = await h.ev(readHeader);
                 await shot(h, "1-plain");
                 rec(
-                    '1. plain session, Terminal: "mit-thesis / + initiative", the run link "2 runs · 2 active" with its menu, "opus 4.5" and its context, no ` · ` between them',
+                    '1. plain session, Terminal: "mit-thesis / + initiative · 2 runs · 2 active" on the location line, the run link with its menu, "opus 4.5" and its context on the right, no ` · ` there',
                     plain?.width === "wide" &&
-                        /^mit-thesis\s*\/\s*initiative$/.test(plain.location) &&
+                        /^mit-thesis\s*\/\s*initiative\s*·\s*2 runs · 2 active$/.test(plain.location) &&
                         plain.unlinked === "initiative" &&
                         plain.run?.kind === "menu" &&
                         plain.run.text === "2 runs · 2 active" &&
+                        plain.run.inLocation === true &&
                         /^opus 4\.5\s*\d+(\.\d+)?k$/.test(plain.model ?? "") &&
                         !plain.dots,
                     plain

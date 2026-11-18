@@ -80,7 +80,8 @@ export function TaggedPromptText({ text }: { text: string }) {
                 part.kind === "text" ? (
                     <PromptText key={i} text={part.text} mentions />
                 ) : (
-                    <div key={i} className="my-1.5">
+                    // above a folded text part's Show more, whose overlay fills the bubble (PromptText)
+                    <div key={i} className="relative z-[1] my-1.5">
                         <ChatTagBlock tag={part.tag} attrs={part.attrs} body={part.body} label={part.label} />
                     </div>
                 )

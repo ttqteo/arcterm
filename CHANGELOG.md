@@ -62,6 +62,10 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- An agent's run link (a worker's ↑ way back to its lead, a lead's own run, the runs a session started) sits on the line
+  under its name, after the project, so a long name no longer gets cut to make room for it.
+- A long message of yours folded behind Show more opens with a click anywhere on its bubble; once open, only Show less
+  folds it again, so you can still select its text.
 - Sidecar now wears a HUD look, in the full window and in the small form: a blue-black ground with glowing cyan rings,
   tick marks and corner brackets that bend round the rounded corners of every box.
 - Focus read in Chat fades in steps: the block before and after the lit one stay half bright, so you keep your place,

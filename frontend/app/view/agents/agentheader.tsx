@@ -445,9 +445,13 @@ function RunLinkItem({
             : [];
     const hideLabel = hideable.length === 1 ? "Hide the finished run" : `Hide the ${hideable.length} finished runs`;
     return (
-        // a worker's way back reads as its lead's name, which is often a whole run goal: capped and cut to one line, the
-        // whole of it on hover, so it never runs over the project or under the view switch
-        <span className="group/runlink inline-flex min-w-[48px] max-w-[220px] shrink items-center gap-[3px]">
+        // on the location line after the project, set off by a dot (a run is not a step of the project's path). A worker's
+        // way back reads as its lead's name, which is often a whole run goal: capped and cut to one line, the whole of it
+        // on hover; it gives way before the project does
+        <span className="group/runlink inline-flex min-w-[48px] max-w-[220px] shrink-[2] items-center gap-[3px]">
+            <span aria-hidden className="mr-[2px] flex-none text-ink-faint">
+                ·
+            </span>
             <button
                 type="button"
                 data-run-link={link.click.kind}
@@ -936,10 +940,11 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
                     ) : canLink ? (
                         <LinkToInitiative agent={agent} project={project} width={width} />
                     ) : null}
+                    {/* its run is where it works too: after the project, the name's line keeping its room */}
+                    {stage ? null : <RunLinkItem model={model} agent={agent} lineage={lineage} width={width} />}
                 </span>
             </div>
-            {/* two clusters, each led by its icon: its run, and its model and context. Neither is ever hidden: a narrow
-                header shortens their words */}
+            {/* its model and context, never hidden: a narrow header shortens their words */}
             <div
                 ref={clustersRef}
                 data-header-clusters
@@ -947,7 +952,6 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
                 className="ml-[2px] flex min-w-0 shrink items-center overflow-hidden text-[11px] text-muted"
                 style={{ gap: clusterGap }}
             >
-                {stage ? null : <RunLinkItem model={model} agent={agent} lineage={lineage} width={width} />}
                 {stage || (!agent.model && agent.usage?.contextpct == null) ? null : (
                     <span data-header-model className="inline-flex flex-none items-baseline gap-[6px]">
                         {agent.model ? <span title={agent.model}>{modelShown(agent.model, width)}</span> : null}
