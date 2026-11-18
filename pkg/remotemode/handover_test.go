@@ -225,6 +225,50 @@ func TestTakeBackRecordsTaken(t *testing.T) {
 	}
 }
 
+func TestHandFlags(t *testing.T) {
+	ctx := context.Background()
+	handTestEnv(t, handTestClaude("tab-a"), handTestClaude("tab-b"))
+
+	handMarkActed("tab-never") // not handed over: nothing to mark, nothing to panic
+	if _, _, ok := takeTestFlags("tab-never"); ok {
+		t.Fatal("marking an unhanded tab handed it over")
+	}
+
+	handTestHand(t, "tab-a")
+	if phone, acted, ok := takeTestFlags("tab-a"); !ok || phone || acted {
+		t.Errorf("a hand-over made with Hand: phone %v, acted %v, handed %v; want handed, not a phone take, not acted", phone, acted, ok)
+	}
+	handMarkActed("tab-a")
+	if _, acted, _ := takeTestFlags("tab-a"); !acted {
+		t.Error("handMarkActed left a handed tab unmarked")
+	}
+
+	// a take after Take back, or after remote mode went off, is a fresh hand-over: the owner has not acted on it
+	if err := remoteTake(ctx, "tab-b"); err != nil {
+		t.Fatal(err)
+	}
+	handMarkActed("tab-b")
+	if _, err := TakeBack(ctx, wshrpc.CommandRemoteHandData{Tab: "tab-b"}); err != nil {
+		t.Fatalf("TakeBack: %v", err)
+	}
+	if err := remoteTake(ctx, "tab-b"); err != nil {
+		t.Fatal(err)
+	}
+	if phone, acted, ok := takeTestFlags("tab-b"); !ok || !phone || acted {
+		t.Errorf("a take after Take back: phone %v, acted %v, handed %v; want a fresh phone take", phone, acted, ok)
+	}
+	handMarkActed("tab-b")
+	if _, err := Off(); err != nil {
+		t.Fatalf("Off: %v", err)
+	}
+	if err := remoteTake(ctx, "tab-b"); err != nil {
+		t.Fatal(err)
+	}
+	if _, acted, _ := takeTestFlags("tab-b"); acted {
+		t.Error("a take after remote mode went off kept the acted flag of the hand-over Off ended")
+	}
+}
+
 // handTestClock pins handNow at handTestTs and returns a function that moves it by ms.
 func handTestClock(t *testing.T) func(ms int64) {
 	t.Helper()

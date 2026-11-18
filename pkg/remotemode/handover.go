@@ -92,11 +92,16 @@ func (e *GoneError) Error() string {
 
 // handover is one handed-over tab: its phone state, when the listener first saw it in that state, the
 // agent as last seen eligible, and since when it has failed the check (0 while it passes).
+//
+// phone is set for a hand-over the phone made by tapping the agent's row (remoteTake), never for one made
+// with Hand. acted is set once the owner has sent, stopped, approved or denied from the phone. Only a phone
+// take nobody acted on is ended when the owner leaves the agent view (remoteRelease).
 type handover struct {
-	state     string
-	since     int64
-	agent     Agent
-	awaySince int64
+	state        string
+	since        int64
+	agent        Agent
+	awaySince    int64
+	phone, acted bool
 }
 
 var (
@@ -347,14 +352,19 @@ func handStatusTabs() []string {
 }
 
 // handAdd seeds since from the status time at this first look; handing over again keeps it.
-func handAdd(a Agent) {
+func handAdd(a Agent) { handAddFrom(a, false) }
+
+// handAddFrom is handAdd with the hand-over's phone flag, which only a new hand-over takes: a tab already
+// handed over keeps the flags it has, so a take of a desk hand-over does not make the phone own it, and a
+// second take does not forget the owner has acted.
+func handAddFrom(a Agent, phone bool) {
 	handMu.Lock()
 	defer handMu.Unlock()
 	delete(handEnded, a.TabId)
 	if _, ok := handed[a.TabId]; ok {
 		return
 	}
-	handed[a.TabId] = &handover{state: PhoneState(a), since: a.Status.Ts, agent: a}
+	handed[a.TabId] = &handover{state: PhoneState(a), since: a.Status.Ts, agent: a, phone: phone}
 }
 
 // handClearOff ends every hand-over with reason off; reasons from before are dropped with them.
