@@ -13,7 +13,7 @@ import { wakeAgent, wakeErrorToast } from "./agentsleep";
 import { submitToAgent } from "./agentsubmit";
 import type { AgentEntry, AgentVM } from "./agentsviewmodel";
 import { withResultLines } from "./chatinitiative";
-import { addPending, dropPendingIds, wokenPending } from "./chatpendingstore";
+import { addPending, deliveredPending, dropPendingIds } from "./chatpendingstore";
 import { fixMessage, runBlocks, type SleepRun } from "./chatsleepbash";
 
 const NONE: SleepRun[] = [];
@@ -108,15 +108,18 @@ export async function askToFix(
     const runs = takeSleepRuns(agent.id);
     const wire = withResultLines(runBlocks(runs), text);
     const asleep = agent.sleeping != null;
-    const pendingId = entries != null ? addPending(agent.id, text, entries, false, asleep) : null;
+    const pendingId = entries != null ? addPending(agent.id, text, entries, false, asleep, !asleep) : null;
     try {
         if (asleep) {
             await wakeAgent(agent.id, { message: wire });
             if (pendingId != null) {
-                wokenPending(agent.id, pendingId);
+                deliveredPending(agent.id, pendingId);
             }
         } else if (agent.blockId != null) {
             await submitToAgent(agent.blockId, wire);
+            if (pendingId != null) {
+                deliveredPending(agent.id, pendingId);
+            }
         } else {
             throw new Error("The agent has no terminal to send to.");
         }

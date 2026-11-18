@@ -7,7 +7,7 @@
 import { globalStore } from "@/app/store/jotaiStore";
 import { atom, useAtomValue } from "jotai";
 import type { AgentEntry } from "./agentsviewmodel";
-import { PENDING_QUEUED_MAX_MS, pendingMessage, pushSent, woken, type PendingMessage } from "./chatpending";
+import { delivered, PENDING_QUEUED_MAX_MS, pendingMessage, pushSent, type PendingMessage } from "./chatpending";
 
 const NONE: PendingMessage[] = [];
 const NO_HISTORY: string[] = [];
@@ -22,15 +22,26 @@ let nextId = 0;
 
 /** Records `text` as sent to the agent just now, with how many times the `entries` (the transcript as drawn at this
  *  moment) already hold it, and whether the agent was `busy` (not idle), which makes it Queued, or asleep (`waking`: the
- *  wake carries it, chatpending.ts). Answers the pending message's id. */
+ *  wake carries it, chatpending.ts), or on its way (`sending`: the send that carries it has not pressed Enter yet;
+ *  deliveredPending ends it). Answers the pending message's id. */
 export function addPending(
     agentId: string,
     text: string,
     entries: AgentEntry[],
     busy: boolean,
-    waking = false
+    waking = false,
+    sending = false
 ): string {
-    const p = pendingMessage(`pending-${++nextId}`, text, entries, Date.now(), busy, waking, sentHistory(agentId));
+    const p = pendingMessage(
+        `pending-${++nextId}`,
+        text,
+        entries,
+        Date.now(),
+        busy,
+        waking,
+        sentHistory(agentId),
+        sending
+    );
     const m = new Map(globalStore.get(pendingAtom));
     // the ones the transcript has long since caught up with go too, so the list never grows over a long session
     m.set(agentId, [...(m.get(agentId) ?? NONE).filter((q) => Date.now() - q.sentAt < PENDING_QUEUED_MAX_MS), p]);
@@ -38,8 +49,9 @@ export function addPending(
     return p.id;
 }
 
-/** The wake that carried pending message `id` delivered it: it no longer waits on the wake (chatpending.ts woken). */
-export function wokenPending(agentId: string, id: string): void {
+/** The wake or the send that carried pending message `id` delivered it: it no longer waits on its way (chatpending.ts
+ *  delivered). */
+export function deliveredPending(agentId: string, id: string): void {
     const list = globalStore.get(pendingAtom).get(agentId) ?? NONE;
     if (!list.some((p) => p.id === id)) {
         return;
@@ -48,7 +60,7 @@ export function wokenPending(agentId: string, id: string): void {
     const m = new Map(globalStore.get(pendingAtom));
     m.set(
         agentId,
-        list.map((p) => (p.id === id ? woken(p, now) : p))
+        list.map((p) => (p.id === id ? delivered(p, now) : p))
     );
     globalStore.set(pendingAtom, m);
 }

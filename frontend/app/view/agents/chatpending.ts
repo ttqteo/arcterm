@@ -34,8 +34,13 @@ export interface PendingMessage {
     /** Sent to a sleeping agent: the wake relaunches it and types the message once it is back, which takes seconds, so the
      *  bubble stands in from the press (rising from the box as any send's does) and the line under it says Waking…. The
      *  idle rule does not drop it meanwhile (the agent reads idle, asleep); once the wake delivers it the mark goes
-     *  (wokenPending) and its idle wait starts from then. */
+     *  (deliveredPending) and its idle wait starts from then. */
     waking?: boolean;
+    /** On its way to an awake agent: the send types it into Claude Code's box and waits until the box shows it before
+     *  the Enter, which takes seconds while Claude Code is busy (up to ECHO_ABSENT_MAX_MS). Like a waking one, the idle
+     *  rule does not drop it meanwhile: dropped at five seconds and drawn again as its record landed, the message blinked
+     *  out and back. Once the Enter goes the mark goes (delivered) and its idle wait starts from then. */
+    sending?: boolean;
 }
 
 /** The pending message for `text` sent at `now`: how many of `entries` (the transcript as drawn then) already hold its
@@ -47,7 +52,8 @@ export function pendingMessage(
     now: number,
     busy: boolean,
     waking = false,
-    sent: readonly string[] = []
+    sent: readonly string[] = [],
+    sending = false
 ): PendingMessage {
     const kind = pendingKind(text);
     return {
@@ -58,14 +64,14 @@ export function pendingMessage(
         seenWithin: userTextWithinCount(entries, text, sent),
         queued: busy,
         ...(kind != null ? { kind } : {}),
-        ...(waking ? { waking: true } : {}),
+        ...(waking ? { waking: true } : sending ? { sending: true } : {}),
     };
 }
 
-/** The pending message once the wake that carried it has delivered it at `now`: no longer waking, and its idle wait
- *  (PENDING_IDLE_MS) counted from the delivery, not from the press seconds before. */
-export function woken(p: PendingMessage, now: number): PendingMessage {
-    const { waking: _, ...rest } = p;
+/** The pending message once the wake or the send that carried it has delivered it at `now`: no longer waking or
+ *  sending, and its idle wait (PENDING_IDLE_MS) counted from the delivery, not from the press seconds before. */
+export function delivered(p: PendingMessage, now: number): PendingMessage {
+    const { waking: _w, sending: _s, ...rest } = p;
     return { ...rest, sentAt: now };
 }
 
@@ -221,7 +227,8 @@ export const PENDING_IDLE_MS = 5_000;
 
 /** The pending messages still to draw: the transcript holds the text no more often than when it was sent, it is not
  *  older than PENDING_QUEUED_MAX_MS (a side question or a panel: PENDING_MAX_MS), and the agent has not sat idle on it
- *  for PENDING_IDLE_MS. `idleSince` is when the agent last went idle, null while it works. A side question or a panel
+ *  for PENDING_IDLE_MS, counted once it is delivered (a waking or sending one waits on its way). `idleSince` is when the
+ *  agent last went idle, null while it works. A side question or a panel
  *  waits on the agent while it sits idle (the answer comes from a fork, the panel's row once it closes), so only
  *  PENDING_MAX_MS ends those. `sent` is the box's history (sentHistory), for a short message that landed behind one. */
 export function pendingStill(
@@ -236,6 +243,7 @@ export function pendingStill(
             now - p.sentAt < (p.kind != null ? PENDING_MAX_MS : PENDING_QUEUED_MAX_MS) &&
             (p.kind != null ||
                 p.waking === true ||
+                p.sending === true ||
                 idleSince == null ||
                 now - Math.max(idleSince, p.sentAt) < PENDING_IDLE_MS) &&
             !landed(p, entries, sent)

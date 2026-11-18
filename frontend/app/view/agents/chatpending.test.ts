@@ -12,6 +12,7 @@ import {
     SubmitError,
     WAKING_LINE,
     btwQuestion,
+    delivered,
     echoStep,
     holdLine,
     isSendNowKey,
@@ -34,7 +35,6 @@ import {
     submitSteps,
     userTextCount,
     wakingBubbleUp,
-    woken,
     type PendingMessage,
 } from "./chatpending";
 
@@ -249,7 +249,7 @@ describe("a message a wake carries", () => {
         expect(pendingStill([p], entries, 1_000 + 20_000, 0)).toHaveLength(1);
     });
     it("once delivered loses the mark and waits on the idle agent from the delivery", () => {
-        const p = woken(pendingMessage("w4", "go on", entries, 1_000, false, true), 21_000);
+        const p = delivered(pendingMessage("w4", "go on", entries, 1_000, false, true), 21_000);
         expect(p.waking).toBeUndefined();
         expect(p.sentAt).toBe(21_000);
         expect(pendingLine([p])).toBeNull();
@@ -258,6 +258,32 @@ describe("a message a wake carries", () => {
     });
     it("goes once the transcript holds it", () => {
         const p = pendingMessage("w5", "go on", entries, 1_000, false, true);
+        expect(pendingStill([p], [user("go on")], 2_000, 0)).toEqual([]);
+    });
+});
+
+describe("a message still on its way to an awake agent (sending)", () => {
+    const entries: AgentEntry[] = [];
+    it("is marked only when sent awake: a waking one is the wake's", () => {
+        expect(pendingMessage("s1", "go on", entries, 1_000, false, false, [], true).sending).toBe(true);
+        expect(pendingMessage("s2", "go on", entries, 1_000, false, true, [], true).sending).toBeUndefined();
+        expect(pendingMessage("s3", "go on", entries, 1_000, false).sending).toBeUndefined();
+    });
+    it("stays while the idle agent's box has not shown it yet, past PENDING_IDLE_MS", () => {
+        const p = pendingMessage("s4", "go on", entries, 1_000, false, false, [], true);
+        expect(pendingStill([p], entries, 1_000 + PENDING_IDLE_MS + 3_000, 0)).toHaveLength(1);
+        // and draws as a message sent to an idle agent: no line under it
+        expect(pendingLine([p])).toBeNull();
+    });
+    it("once delivered waits on the idle agent from the Enter", () => {
+        const p = delivered(pendingMessage("s5", "go on", entries, 1_000, false, false, [], true), 7_000);
+        expect(p.sending).toBeUndefined();
+        expect(p.sentAt).toBe(7_000);
+        expect(pendingStill([p], entries, 7_000 + PENDING_IDLE_MS - 1, 0)).toHaveLength(1);
+        expect(pendingStill([p], entries, 7_000 + PENDING_IDLE_MS, 0)).toEqual([]);
+    });
+    it("goes once the transcript holds it, delivered or not", () => {
+        const p = pendingMessage("s6", "go on", entries, 1_000, false, false, [], true);
         expect(pendingStill([p], [user("go on")], 2_000, 0)).toEqual([]);
     });
 });

@@ -83,8 +83,9 @@ export interface AgentSend {
      *  withResultLines): the box, and everything the caller keeps of the message, stay the person's own text. A send that
      *  fails after it was taken (submitToAgent rejects) is toasted, and its text put back ahead of what the box holds
      *  when none of it reached Claude Code (chatpending.ts sendFailure); `onFailed` then tells the caller, which puts back
-     *  what it let go of (the pending bubble, the attachments, the result lines). */
-    send: (lines?: readonly string[], onFailed?: (f: SendFailure) => void) => boolean;
+     *  what it let go of (the pending bubble, the attachments, the result lines). `onDelivered` is told once the Enter
+     *  went (an awake send only: a wake's delivery is onWoken's). */
+    send: (lines?: readonly string[], onFailed?: (f: SendFailure) => void, onDelivered?: () => void) => boolean;
 }
 
 // Sends free text to an agent's terminal block (submitToAgent: the text, then Enter on its own). A sleeping agent has no process to type into: given
@@ -141,7 +142,11 @@ export function useAgentSend(
             setLocalText((cur) => mergeTaken([t], cur));
         }
     };
-    const send = (lines?: readonly string[], onFailed?: (f: SendFailure) => void): boolean => {
+    const send = (
+        lines?: readonly string[],
+        onFailed?: (f: SendFailure) => void,
+        onDelivered?: () => void
+    ): boolean => {
         if (!canSend) {
             return false;
         }
@@ -208,6 +213,7 @@ export function useAgentSend(
             fireAndForget(async () => {
                 try {
                     await submitToAgent(target, withResultLines(lines ?? [], message));
+                    onDelivered?.();
                 } catch (e) {
                     const f = sendFailure(e);
                     if (f.restore) {
