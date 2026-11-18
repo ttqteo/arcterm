@@ -101,7 +101,7 @@ const RUN_READ = (pane) => `(() => {
     const open = pane?.querySelector("[data-brainstorm-open-run]");
     const close = pane?.querySelector("[data-brainstorm-close]");
     const phases = [...(pane?.querySelectorAll("[data-brainstorm-phase] > li:not([aria-hidden])") ?? [])];
-    const rail = pane?.querySelector("[data-brainstorm-run-rail]");
+    const rail = document.querySelector("[data-brainstorm-run-rail]");
     return {
         view: pane?.getAttribute("data-brainstorm-view") ?? null,
         state: pane?.querySelector("[data-brainstorm-run]")?.getAttribute("data-brainstorm-run") ?? null,

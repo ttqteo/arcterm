@@ -16,6 +16,14 @@ list (its number is not reused).
 Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) ·
 [part 4](hand-checks-4.md) · [part 3](hand-checks-3.md) · [part 2](hand-checks-2.md) (oldest).
 
+- [ ] (arcterm) **Brainstorm rail in the details rail's place.** With the details rail open (`d`), switch an agent
+  with a brainstorm between Terminal, Chat and Brainstorm: the Chat · Terminal · Brainstorm switch stays put, and in
+  Brainstorm the right column shows Boards · Decided so far (no Overview / Files / Changes); a question with boards
+  shows its tiles there, a tile opens its board over the question only, the rail's handle drags its width. In the
+  builder check the rail is 460px, so the switch moves there. Close the details rail: the brainstorm's rail goes back
+  beside the question and stacks under it in a narrow pane. Also a board opened from Chat now covers the Focus read
+  and Skim buttons. `brainstormrail.tsx` RailRow / `agentsurface.tsx` BrainstormRailSlot (2026-11-18);
+  `task verify:ui -- brainstorm-mode` (step 0c) not run (no dev app up).
 - [ ] (arcterm) **Agent header: project / initiative on the title's second line.** Open a Claude agent in Chat and in
   Terminal: the name, runtime mark and state sit on the first line with the status dot beside the name, `📁 project /
   ◇ initiative` (or `/ + initiative`) on a line under it, and the run link, model and context to the right; the header

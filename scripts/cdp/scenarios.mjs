@@ -32533,12 +32533,12 @@ const bsRead = (h, ctx) =>
             // Decided so far: the second tab's label when the rail has a tab strip (the Boards tab exists), else the heading
             // it keeps as the whole rail. Its entries below are drawn only while it is the shown tab
             rail: flat(
-                pane?.querySelector('[data-brainstorm-board-rail] [data-brainstorm-rail-tab="second"]') ??
-                    pane?.querySelector("[data-brainstorm-rail] h2")
+                document.querySelector('[data-brainstorm-board-rail] [data-brainstorm-rail-tab="second"]') ??
+                    document.querySelector("[data-brainstorm-rail] h2")
             ),
-            railText: flat(pane?.querySelector("[data-brainstorm-rail]")),
+            railText: flat(document.querySelector("[data-brainstorm-rail]")),
             // the rail's tabs, the shown one marked
-            railTabs: [...(pane?.querySelectorAll("[data-brainstorm-rail-tab]") ?? [])].map(
+            railTabs: [...document.querySelectorAll("[data-brainstorm-rail-tab]")].map(
                 (t) => t.getAttribute("data-brainstorm-rail-tab") + (t.getAttribute("aria-selected") === "true" ? "*" : "")
             ),
             // the old thumbnails: a question's boards and a part row's are the rail's now, so none may be drawn in the pane
@@ -32853,8 +32853,11 @@ const bsRailOpen = (h) =>
     `);
 
 // --- the brainstorm's right rail (brainstormrail.tsx): Boards beside Decided so far, one width the user drags ---------
-const BS_RAIL = `document.querySelector("[data-brainstorm-pane] [data-brainstorm-board-rail]")`;
+// the rail is the pane's, but with the details rail open it is drawn in the details rail's place, outside the pane
+const BS_RAIL = `document.querySelector("[data-brainstorm-board-rail]")`;
 const BS_RAIL_WIDTH_KEY = "brainstorm.railWidth";
+// the width of the rail drawn in the details rail's place, kept apart (it opens at the details rail's 300px)
+const BS_SLOT_RAIL_WIDTH_KEY = "brainstorm.slotRailWidth";
 // the question keeps 360px, and two 380px boards with the gap, the rail's padding and its handle need ~830px more
 const BS_WIDE_PANE_MIN = 1190;
 // the rail goes under the question below the question's 360px plus the rail's smallest 280px
@@ -32891,13 +32894,13 @@ async function bsWide(h, ctx) {
     return width;
 }
 
-// The details rail open and the agent tree shown in a window narrow enough that the pane is under 640px (it is ~300px at the
-// harness's 1600px window, which leaves the pane 974px, so the window is narrowed). Measured with the pane's left edge at
-// 326px: at 1100px it ends at the window's edge and is 774px, at 900px it is 574px. A width is taken from this list, widest
-// first, until the pane is under BS_STACK_BELOW
+// The details rail closed (open, the brainstorm's rail takes its place and never stacks) and the agent tree shown, in a
+// window narrow enough that the pane is under 640px. Measured with the pane's left edge at 326px: at 1100px it ends at the
+// window's edge and is 774px, at 900px it is 574px. A width is taken from this list, widest first, until the pane is under
+// BS_STACK_BELOW
 const BS_NARROW_WINDOW_WIDTHS = [1100, 900, 800, 700];
 async function bsNarrow(h, ctx) {
-    const was = await bsSetLayout(h, { rail: true, fullscreen: false });
+    const was = await bsSetLayout(h, { rail: false, fullscreen: false });
     ctx.layout ??= was;
     ctx.viewport ??= await h.ev("({ width: window.innerWidth, height: window.innerHeight })");
     let width = 0;
@@ -33147,6 +33150,8 @@ const brainstormMode = {
             }
             // the rail's dragged width is one number kept in localStorage: start from the default, and put back what was there
             ctx.prevRailWidth = await h.ev(`localStorage.getItem(${JSON.stringify(BS_RAIL_WIDTH_KEY)})`);
+            ctx.prevSlotRailWidth = await h.ev(`localStorage.getItem(${JSON.stringify(BS_SLOT_RAIL_WIDTH_KEY)})`);
+            await h.ev(`localStorage.removeItem(${JSON.stringify(BS_SLOT_RAIL_WIDTH_KEY)})`);
             await h.ev(`localStorage.removeItem(${JSON.stringify(BS_RAIL_WIDTH_KEY)})`);
             bsWrite(ctx, BS_FILES.justStarted);
             await openCanvasTerminal(h, ctx, BS_TOPIC);
@@ -33215,8 +33220,42 @@ const brainstormMode = {
         );
         if (!switcher) return steps;
 
-        // 1. just started
+        // 0c. with the details rail open, Brainstorm draws its rail in the details rail's place: the switch and the right
+        // column's edge stay where Terminal had them
+        const slotWas = await bsSetLayout(h, { rail: true, fullscreen: false });
+        await polishNap(900);
+        const EDGES = `(() => {
+            const r = (el) => (el ? Math.round(el.getBoundingClientRect().left) : null);
+            const sw = ${BS_SWITCH};
+            const slot = document.querySelector("[data-brainstorm-rail-slot]");
+            return {
+                switchRight: sw ? Math.round(sw.getBoundingClientRect().right) : null,
+                details: r(document.querySelector('aside[aria-label="Agent details"]')),
+                slot: r(slot),
+                inSlot: !!slot?.querySelector("[data-brainstorm-board-rail][data-brainstorm-rail-slotted]"),
+                inPane: !!document.querySelector("[data-brainstorm-pane] [data-brainstorm-board-rail]"),
+            };
+        })()`;
+        const onTerminal = await h.ev(EDGES);
         await bsClick(h, BS_SWITCH, "Brainstorm");
+        await polishWaitFor(h, `!!document.querySelector("[data-brainstorm-rail-slot] [data-brainstorm-board-rail]")`, 3000);
+        await polishNap(900);
+        const onBrainstorm = await h.ev(EDGES);
+        await h.shot("cdp-shots/brainstorm-mode-0c-rail-slot.png");
+        rec(
+            "0c. Brainstorm with the details rail open: its rail (Decided so far) takes the details rail's place, and the Chat · Terminal · Brainstorm switch does not move",
+            onTerminal.details != null &&
+                onBrainstorm.inSlot &&
+                !onBrainstorm.inPane &&
+                onBrainstorm.slot === onTerminal.details &&
+                onBrainstorm.switchRight === onTerminal.switchRight,
+            { onTerminal, onBrainstorm }
+        );
+        await bsSetLayout(h, slotWas);
+        await polishNap(600);
+
+        // 1. just started
+        await bsShowPane(h);
         const s1 = await bsUntil(h, ctx, (s) => s.question.includes(BS_Q1.text));
         await h.shot("cdp-shots/brainstorm-mode-1.png");
         rec(
@@ -33428,7 +33467,7 @@ const brainstormMode = {
         rec("2q. Back to question 4 returns to the question", closed2 && (await bsRead(h, ctx)).question.includes(BS_Q4.text), { closed2 });
         // Decided so far is the rail's whole content on question 4 (its part lists no boards); a tab strip would put it second
         await bsRailTab(h, "second");
-        await bsClick(h, `${BS_PANE}?.querySelector("[data-brainstorm-rail]")`, "Anti-goals");
+        await bsClick(h, `document.querySelector("[data-brainstorm-rail]")`, "Anti-goals");
         const railJump = await polishWaitFor(h, `!!${BS_PANE}?.querySelector("[data-brainstorm-back]") && !!${bsPartSel("anti")}`, 3000);
         rec("2r. a Went into link in the rail opens the design at its part", railJump, { railJump });
         await bsCloseDesign(h);
@@ -33988,13 +34027,13 @@ const brainstormMode = {
             { board: s3e.widenedBoard, via: esc3, design: { ...bsBrief(s3d), back: s3d.back }, question: { ...bsBrief(s3q), back: s3q.back } }
         );
 
-        // a pane too narrow for the question's 360px and the rail's 280px (under 640px: the details rail open in a narrowed
+        // a pane too narrow for the question's 360px and the rail's 280px (under 640px: the details rail closed in a narrowed
         // window) puts the rail under the question at full width, with no handle
         const narrowW = await bsNarrow(h, ctx);
         const stack = await bsRailUntil(h, (r) => r.tiles.length === 2 && r.question != null && r.rail != null, 4000);
         await h.shot("cdp-shots/brainstorm-mode-3-rail-stacked.png");
         rec(
-            "3c. rail stacks when narrow: with the details rail open in a narrowed window the pane is under 640px, and the rail sits under the question at the pane's full width with no handle",
+            "3c. rail stacks when narrow: with the details rail closed in a narrowed window the pane is under 640px, and the rail sits under the question at the pane's full width with no handle",
             narrowW < BS_STACK_BELOW &&
                 stack.ok &&
                 stack.handle == null &&
@@ -34338,6 +34377,9 @@ const brainstormMode = {
         // the details rail and the agent tree, which the rail steps closed and folded to make the pane wide
         await step("restore the details rail and the agent tree", () => bsRestoreLayout(h, ctx));
         await step("restore the rail's dragged width", () => h.ev(restoreStorageKey(BS_RAIL_WIDTH_KEY, ctx.prevRailWidth)));
+        await step("restore the slot rail's dragged width", () =>
+            h.ev(restoreStorageKey(BS_SLOT_RAIL_WIDTH_KEY, ctx.prevSlotRailWidth))
+        );
         await step("stop recording taskbar flashes", () => h.ev(BS_FLASH_REMOVE));
         await step("close the New run window", () => h.ev(`${NEW_RUN} ? (${PEEKS_ESC}, true) : false`));
         await step("stop recording sent lines", () => h.ev(BS_TYPED_REMOVE));

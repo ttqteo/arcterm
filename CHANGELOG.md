@@ -147,6 +147,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- Brainstorm keeps the right column: its Boards and Decided so far take the agent details panel's place, so switching
+  between Chat, Terminal and Brainstorm no longer moves the header's buttons. With the details panel closed (`d`) they
+  stay beside the question as before.
 - A reference or an `@path` you type or paste into Chat's box becomes a badge or a file pill as soon as a space or
   punctuation follows it, and deleting one leaves a single space.
 - The run launcher's When choices (Run now, After run…, Queue) are pill badges now, so none gets cut off, and the one
