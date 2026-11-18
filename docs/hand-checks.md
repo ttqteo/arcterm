@@ -869,6 +869,11 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
   they stay at 32% and are never lit, and the paragraphs either side of the lit one sit at 50%. The `chat-focus-read`
   fixture has no tool steps, so the scenario checks only the 50% neighbours; the one pill (toggle over K / J, a hairline,
   Q) also reads well in a light theme.
+- [ ] (arcterm) A folded message of yours (`narrationtimeline.tsx` PromptText): in Chat, folded, a click anywhere on the
+  bubble (its padding too) opens it, and its hover Copy / Fork row under it still works; open, a click on its text does
+  nothing and the text selects, and only Show less folds it. A bubble with a pasted block card: the card still opens on
+  its own while the text above it is folded. Same in Conversation History's transcript and a pending bubble. No scenario
+  opens a folded bubble.
 - [ ] (arcterm) Sending to an idle agent in Chat (`chatlive.ts` liveTurn, `chatpane.tsx`): when the last turn ended
   with an "Edited N files" card, the card stays where it is from the send until your message lands and the new turn
   starts (it used to fold away at the send and spring open again up to 3 s later). A message queued while the agent

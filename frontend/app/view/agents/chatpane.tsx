@@ -296,7 +296,7 @@ function PendingBubble({ pending, first }: { pending: PendingMessage; first: boo
                 className={cn("flex max-w-[75%] flex-col items-end gap-2", pending.queued === true && "opacity-55")}
             >
                 {body !== "" || said.images.length > 0 ? (
-                    <div className={youBubbleBox(said.files.length > 0)}>
+                    <div className={cn("relative", youBubbleBox(said.files.length > 0))}>
                         {body !== "" ? <TaggedPromptText text={body} /> : null}
                         {said.images.length > 0 ? <PromptImages paths={said.images} /> : null}
                     </div>
