@@ -16,6 +16,11 @@ list (its number is not reused).
 Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) ·
 [part 4](hand-checks-4.md) · [part 3](hand-checks-3.md) · [part 2](hand-checks-2.md) (oldest).
 
+- [ ] (arcterm) **Switching agents no longer crashes the header.** In Agent, pick a Claude agent, then a plain
+  terminal, a run's worker and back (from the tree and from Sidecar's wall), including one falling asleep: no
+  `WINDOW ERROR … is not iterable` in `waveapp.log` and the header redraws each time. Not tried in the app:
+  `agentheader.tsx` `remoteStatus` (7778f1559, 2026-11-18);
+
 - [ ] (arcterm) **Scrollbars show only under the pointer.** With the pointer away, the Agent tree, Chat, Jarvis and
   Setup lists show no scrollbar; point into one and a thin bar shows on that list alone (not on a list beside or
   inside it), thicker and brighter under the pointer and while dragged; nothing shifts sideways when it shows. Jarvis
