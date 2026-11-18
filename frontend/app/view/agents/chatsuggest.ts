@@ -11,7 +11,8 @@
 //   works on: a turn that committed while it holds a chunk offers to tick that chunk done (an action, as the header
 //   popover's Mark done, not a message), and once its chunks are settled the next one is offered ("làm tiếp: …");
 // - one haiku call (pkg/chatsuggest), a few seconds later, that reads the end of the reply: the answers to the question
-//   it ends on, or the one next step only the reply shows ("vẽ tôi xem" after a layout told in words).
+//   it ends on, or the one next step only the reply shows ("vẽ tôi xem" after a layout told in words). After a long turn
+//   (isLongTurn) the same call also writes a one-or-two-sentence summary of it, drawn above the chips (turnSummary).
 //
 // A reply that ends in a question gets the model's answers alone: a rule's "commit đi" does not answer "A, B or C?", and
 // while the answers are on their way the row stays empty rather than offer a bare "ok" the agent would have to read a
@@ -54,8 +55,12 @@ export function chipIcon(c: Pick<ChatChip, "kind" | "text">): ChipIcon | null {
     return BUILD_REPLY.test(c.text) ? "build" : null;
 }
 
-/** The model's answer for one turn, as the store holds it. */
-export type ModelSuggest = { status: "loading" } | { status: "done"; replies: string[] } | { status: "failed" };
+/** The model's answer for one turn, as the store holds it. A `done` answer carries the turn's summary line when the call
+ *  was asked for one (a long turn: isLongTurn) and the model wrote it. */
+export type ModelSuggest =
+    | { status: "loading" }
+    | { status: "done"; replies: string[]; summary?: string }
+    | { status: "failed" };
 
 /** at most this many chips in the row */
 export const MAX_CHIPS = 3;
@@ -203,6 +208,45 @@ export function wantsModelSuggest(i: {
     seen: boolean;
 }): boolean {
     return i.reply != null && i.idle && !i.asking && !i.questionWaits && !i.pending && i.seen;
+}
+
+/** a closing reply longer than this many characters is a long turn: about one screen of the 600px Chat column */
+export const LONG_TURN_CHARS = 1200;
+/** a turn that made this many tool calls or more is a long turn, whatever its reply's length */
+export const LONG_TURN_TOOL_CALLS = 8;
+
+/** Pure: how many tool calls the turn made: the `action` entries after the person's last message (the turn
+ *  runningActions walks). Every action counts, whatever its outcome: a command that failed was still a step the
+ *  person did not watch. */
+export function turnToolCount(entries: readonly AgentEntry[]): number {
+    let n = 0;
+    for (let i = entries.length - 1; i >= 0; i--) {
+        const e = entries[i];
+        if (e.kind === "user") {
+            break;
+        }
+        if (e.kind === "action") {
+            n++;
+        }
+    }
+    return n;
+}
+
+/** Pure: whether the turn is long enough that the person who looked away wants it told in a sentence or two (a summary
+ *  line above the chips): the closing reply is over LONG_TURN_CHARS characters, or the turn made LONG_TURN_TOOL_CALLS
+ *  tool calls or more. A short turn shows only the chips. */
+export function isLongTurn(reply: string, toolCalls: number): boolean {
+    return reply.length > LONG_TURN_CHARS || toolCalls >= LONG_TURN_TOOL_CALLS;
+}
+
+/** Pure: the summary line the model wrote for this turn, or undefined: while the call is on its way, after it failed,
+ *  before it was asked, and when it found nothing to say (no line, an empty one). */
+export function turnSummary(model: ModelSuggest | undefined): string | undefined {
+    if (model?.status !== "done") {
+        return undefined;
+    }
+    const s = model.summary?.trim();
+    return s === undefined || s === "" ? undefined : s;
 }
 
 /** Pure: the row's chips. A question's are the model's answers (with "ok" only once the call failed or found none); any

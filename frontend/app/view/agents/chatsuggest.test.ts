@@ -10,7 +10,10 @@ import {
     drawnChips,
     endsWithQuestion,
     initiativeChips,
+    isLongTurn,
     lastReply,
+    LONG_TURN_CHARS,
+    LONG_TURN_TOOL_CALLS,
     pickedChip,
     pickedHint,
     recentPrompts,
@@ -23,10 +26,13 @@ import {
     suggestKey,
     suggestTake,
     TERMINAL_AFTER_MS,
+    turnSummary,
+    turnToolCount,
     wantsModelSuggest,
     withChipText,
     writesVietnamese,
     type ChatChip,
+    type ModelSuggest,
 } from "./chatsuggest";
 import type { ShipGit } from "./shipmodel";
 
@@ -158,6 +164,114 @@ describe("chatChips", () => {
             chatChips({ question: false, rules: [commit], model: { status: "done", replies: ["Commit đi"] } })
         ).toEqual([commit]);
         expect(chatChips({ question: false, rules: [commit], model: { status: "loading" } })).toEqual([commit]);
+    });
+
+    it("gives the same chips whether or not the model's answer carries a summary", () => {
+        const summary = "Lỗi là do một arcterm thứ hai. Mình chưa sửa code.";
+        for (const question of [true, false]) {
+            const bare = chatChips({
+                question,
+                rules: [commit],
+                model: { status: "done", replies: ["vẽ tôi xem", "A"] },
+            });
+            const withSummary = chatChips({
+                question,
+                rules: [commit],
+                model: { status: "done", replies: ["vẽ tôi xem", "A"], summary },
+            });
+            expect(withSummary).toEqual(bare);
+        }
+        // a summary with no replies is still a settled answer: a question's row says ok, as it does for none found
+        expect(
+            chatChips({ question: true, rules: [], model: { status: "done", replies: [], summary: "x" } })[0].text
+        ).toBe("ok");
+    });
+});
+
+describe("isLongTurn", () => {
+    it("is true for a reply over the character threshold, and not at it", () => {
+        expect(isLongTurn("x".repeat(LONG_TURN_CHARS), 0)).toBe(false);
+        expect(isLongTurn("x".repeat(LONG_TURN_CHARS + 1), 0)).toBe(true);
+    });
+
+    it("is true for a turn with the tool-call threshold or more, and not just under it", () => {
+        expect(isLongTurn("ok", LONG_TURN_TOOL_CALLS - 1)).toBe(false);
+        expect(isLongTurn("ok", LONG_TURN_TOOL_CALLS)).toBe(true);
+        expect(isLongTurn("ok", LONG_TURN_TOOL_CALLS + 5)).toBe(true);
+    });
+
+    it("is true when either one is past, false for a short reply of a short turn", () => {
+        expect(isLongTurn("x".repeat(LONG_TURN_CHARS + 1), LONG_TURN_TOOL_CALLS)).toBe(true);
+        expect(isLongTurn("Đã commit.", 2)).toBe(false);
+        expect(isLongTurn("", 0)).toBe(false);
+    });
+
+    it("takes the thresholds from the spec: 1,200 characters, 8 tool calls", () => {
+        expect(LONG_TURN_CHARS).toBe(1200);
+        expect(LONG_TURN_TOOL_CALLS).toBe(8);
+    });
+});
+
+describe("turnToolCount", () => {
+    const user = (text: string): AgentEntry => ({ kind: "user", text });
+
+    it("counts the actions after the last user entry, and none before it", () => {
+        const entries: AgentEntry[] = [
+            act,
+            act,
+            user("làm tiếp"),
+            { kind: "message", text: "Đang đọc." },
+            act,
+            act,
+            act,
+            { kind: "message", text: "Xong." },
+        ];
+        expect(turnToolCount(entries)).toBe(3);
+    });
+
+    it("counts every action when the person has not spoken, and none for a turn that only wrote text", () => {
+        expect(turnToolCount([act, act])).toBe(2);
+        expect(turnToolCount([user("hi"), { kind: "message", text: "chào" }])).toBe(0);
+        expect(turnToolCount([])).toBe(0);
+    });
+
+    it("counts an action whatever its outcome, and leaves out what is not an action", () => {
+        const entries: AgentEntry[] = [
+            user("sửa đi"),
+            { kind: "action", verb: "edited", target: "a.ts", outcome: "fail" },
+            { kind: "action", verb: "ran", target: "npm test", outcome: "ok" },
+            { kind: "command", name: "/compact" },
+            { kind: "interrupted" },
+        ];
+        expect(turnToolCount(entries)).toBe(2);
+    });
+
+    it("stops at a user entry that is the very last one: the new turn has no actions yet", () => {
+        expect(turnToolCount([act, act, user("tiếp")])).toBe(0);
+    });
+});
+
+describe("turnSummary", () => {
+    const done = (summary?: string): ModelSuggest => ({ status: "done", replies: ["ok"], summary });
+
+    it("is the summary of a done answer", () => {
+        expect(turnSummary(done("Mình đã sửa lỗi. Chưa chạy test."))).toBe("Mình đã sửa lỗi. Chưa chạy test.");
+    });
+
+    it("is undefined while the call is on its way, after it failed, or before it was asked", () => {
+        expect(turnSummary({ status: "loading" })).toBeUndefined();
+        expect(turnSummary({ status: "failed" })).toBeUndefined();
+        expect(turnSummary(undefined)).toBeUndefined();
+    });
+
+    it("is undefined for an answer with no summary, an empty one, or one of only spaces", () => {
+        expect(turnSummary(done())).toBeUndefined();
+        expect(turnSummary(done(""))).toBeUndefined();
+        expect(turnSummary(done("  \n "))).toBeUndefined();
+    });
+
+    it("trims the line it gives", () => {
+        expect(turnSummary(done("  Xong.  "))).toBe("Xong.");
     });
 });
 
