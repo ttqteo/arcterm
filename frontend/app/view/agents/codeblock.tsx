@@ -1,10 +1,14 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
+import { pushToast } from "@/app/cockpit/notificationstore";
 import { CopyButton } from "@/app/element/copybutton";
 import { cn } from "@/util/util";
 import { useAtom } from "jotai";
 import { atomWithStorage } from "jotai/utils";
+import { Play } from "lucide-react";
+import { isRunnableLang, runnableCommand } from "./coderun";
+import { runInTerminal } from "./coderunstore";
 import { highlightLine, isPlainLang, type CodeToken } from "./highlight";
 import { PINNED_PROMPT_HEIGHT_VAR } from "./pinnedpromptbar";
 
@@ -20,6 +24,20 @@ export function CodeBlock({ code, lang, path }: { code: string; lang?: string; p
     const plain = isPlainLang(lang);
     const tokens = (ln: string): CodeToken[] =>
         plain ? [{ t: ln || " ", cls: "text-syntax-ident" }] : highlightLine(ln);
+    // a shell block is a command the reply means you to run: Run types it into a new terminal (coderunstore.ts)
+    const command = isRunnableLang(lang) ? runnableCommand(code) : undefined;
+    const run = () => {
+        if (command == null) {
+            return;
+        }
+        runInTerminal(command).catch((e) =>
+            pushToast({
+                level: "warn",
+                title: "Could not run the command",
+                message: e instanceof Error ? e.message : String(e),
+            })
+        );
+    };
     // The head sticks to the top of the transcript's scroller while a long block scrolls past, so Wrap and Copy stay in
     // reach; below the pinned prompt when one shows (PINNED_PROMPT_HEIGHT_VAR), and under it (z-[5] < its z-10) as the
     // band slides. overflow-clip, not -hidden: it rounds the corners without making the block a scroller, which would
@@ -36,6 +54,17 @@ export function CodeBlock({ code, lang, path }: { code: string; lang?: string; p
                 ) : null}
                 {path ? <span className="text-[10.5px] text-muted">{path}</span> : null}
                 <div className="flex-1" />
+                {command != null ? (
+                    <button
+                        type="button"
+                        title="Run in a new terminal"
+                        onClick={run}
+                        className={cnHeadButton("text-muted hover:text-accent")}
+                    >
+                        <Play size={9} strokeWidth={2.5} />
+                        Run
+                    </button>
+                ) : null}
                 <button
                     type="button"
                     aria-pressed={wrap}
