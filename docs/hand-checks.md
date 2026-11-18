@@ -16,6 +16,16 @@ list (its number is not reused).
 Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) ·
 [part 4](hand-checks-4.md) · [part 3](hand-checks-3.md) · [part 2](hand-checks-2.md) (oldest).
 
+- [ ] (arcterm) **One arcterm at a time (Windows, packaged).** With arcterm closed to the tray, open it again from the
+  Start menu or a desktop shortcut: its own window comes back to the front (no second window, no second Sidecar or tray
+  icon, no BOOT ERROR), and `waveapp.log` has `[tauri] arcterm was opened again`. Also minimized, and folded into
+  Sprout (it grows back). A dev app (`task dev`) still opens beside the installed one. `main.rs`
+  `show_main_window_again`, `tauri-plugin-single-instance` (2026-11-18);
+- [ ] (arcterm) **A backend that stops at launch says why at once.** Hard to stage by hand: with the single-instance
+  guard in place the held-lock case needs a dev app pointed at a running app's data dir (`ARC_DEV_DATA_DIR`). The BOOT
+  ERROR should show within a second as "backend unavailable: another arcterm is already running…" rather than after
+  15 s. `main.rs` stderr reader, `init.rs` `startup_failure` (2026-11-18);
+
 - [ ] (arcterm) **Brainstorm rail in the details rail's place.** With the details rail open (`d`), switch an agent
   with a brainstorm between Terminal, Chat and Brainstorm: the Chat · Terminal · Brainstorm switch stays put, and in
   Brainstorm the right column shows Boards · Decided so far (no Overview / Files / Changes); a question with boards

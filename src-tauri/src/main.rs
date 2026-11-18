@@ -134,8 +134,19 @@ fn spawn_wavesrv(
     let ready = state.1.clone();
     std::thread::spawn(move || {
         let reader = BufReader::new(stderr);
+        // wavesrv's last few lines, kept until it reports its ports: why it stopped, if it stops first
+        let mut last_lines: std::collections::VecDeque<String> = std::collections::VecDeque::new();
+        let mut reported = false;
         for line in reader.lines().flatten() {
+            if !reported {
+                if last_lines.len() == 5 {
+                    last_lines.pop_front();
+                }
+                last_lines.push_back(line.clone());
+            }
             if let Some(info) = estart::parse_estart(&line) {
+                reported = true;
+                last_lines.clear();
                 let mut d = state_data.lock().unwrap();
                 d.ws_endpoint = info.ws;
                 d.web_endpoint = info.web;
@@ -155,6 +166,13 @@ fn spawn_wavesrv(
         }
         // eof on stderr means wavesrv exited; without this line a backend crash leaves no trace
         applog::log_line("[tauri] wavesrv stderr closed");
+        // gone before its ports: wake get_init now with the reason, instead of a 15 s wait and a "timed out"
+        if !reported {
+            let why = init::startup_failure(&Vec::from(last_lines));
+            applog::log_line(&format!("[tauri] {}", why));
+            state_data.lock().unwrap().startup_error = why;
+            ready.notify_all();
+        }
         tray::wavesrv_gone();
     });
 
@@ -479,7 +497,15 @@ fn main() {
         }
     }
     let auth_key = Uuid::new_v4().to_string();
-    let builder = tauri::Builder::default()
+    let builder = tauri::Builder::default();
+    // First, so a second arcterm exits before it builds a window, opens Sidecar or spawns a wavesrv. Opening arcterm
+    // again while it runs closed to the tray (the Start menu, a shortcut: its window has no taskbar button then) started
+    // a second app whose wavesrv could not take wave.lock and exited, leaving a "did not report its ports" window, a
+    // second Sidecar and a second tray icon (2026-11-18). Packaged only: a dev build shares the identifier, and a dev app
+    // runs beside the installed one (and a worktree's beside that).
+    #[cfg(all(windows, not(debug_assertions)))]
+    let builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| show_main_window_again(app)));
+    let builder = builder
         .plugin(tauri_plugin_http::init())
         .plugin(tauri_plugin_dialog::init());
     builder
@@ -697,6 +723,21 @@ fn main() {
 }
 
 const MAIN_WINDOW_LABEL: &str = "main";
+
+// arcterm was opened again while it runs: bring its window back (closed to the tray, minimized or behind others), as a
+// click on the tray icon would, and grow a window folded into Sprout back (floatstore.ts hears "app-reopen"). The second
+// instance handed us the right to take the foreground before it exited (the plugin's AllowSetForegroundWindow).
+#[cfg(all(windows, not(debug_assertions)))]
+fn show_main_window_again(app: &tauri::AppHandle) {
+    use tauri::Emitter;
+    applog::log_line("[tauri] arcterm was opened again: showing this window instead of starting a second arcterm");
+    if let Some(win) = app.get_webview_window(MAIN_WINDOW_LABEL) {
+        let _ = win.unminimize();
+        let _ = win.show();
+        let _ = win.set_focus();
+    }
+    let _ = app.emit("app-reopen", ());
+}
 
 // Set by RunEvent::ExitRequested, which every quit arcterm asks for (app.exit, the last window closed, a restart)
 // raises before RunEvent::Exit; read there to tell those from Windows ending the session.

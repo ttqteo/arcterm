@@ -58,6 +58,9 @@ async function boot() {
                 `VERSION MISMATCH: app ${version.app} vs wavesrv ${version.server} — dist/bin is stale, run \`task build:backend\``
             );
         }
+        if (!init.webEndpoint && init.startupError) {
+            throw new Error("backend unavailable: " + init.startupError);
+        }
         if (!init.webEndpoint) {
             // wavesrv never reported its endpoints; without this an empty endpoint builds
             // http:///wave/service, which the URL parser rewrites to host "wave" and the

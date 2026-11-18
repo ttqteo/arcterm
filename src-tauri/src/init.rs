@@ -18,6 +18,25 @@ pub struct InitData {
     pub is_dev: bool,
     pub user_name: String,
     pub host_name: String,
+    // set when wavesrv exits before it reports its endpoints: why it did, for the boot error,
+    // so get_init returns at once instead of waiting out ENDPOINT_WAIT for ports that never come
+    pub startup_error: String,
+}
+
+// wavesrv's own wording when another wavesrv holds the data dir's wave.lock (cmd/server/main-server.go)
+const LOCK_HELD: &str = "error acquiring wave lock";
+
+// Why wavesrv stopped before it reported its ports, from its last stderr lines (oldest first). A held wave.lock means
+// another arcterm runs on this data dir; anything else names wavesrv's last line, the likeliest cause.
+pub fn startup_failure(last_lines: &[String]) -> String {
+    if last_lines.iter().any(|l| l.contains(LOCK_HELD)) {
+        return "another arcterm is already running on this data dir (its wavesrv holds wave.lock)"
+            .to_string();
+    }
+    match last_lines.iter().rev().find(|l| !l.trim().is_empty()) {
+        Some(line) => format!("wavesrv exited before reporting its ports: {}", line.trim()),
+        None => "wavesrv exited before reporting its ports".to_string(),
+    }
 }
 
 // .0 holds the boot data; .1 is signalled by the wavesrv stderr reader once it parses
@@ -36,7 +55,7 @@ const ENDPOINT_WAIT: Duration = Duration::from_secs(15);
 pub fn wait_for_endpoints(data: &Arc<Mutex<InitData>>, ready: &Condvar, timeout: Duration) -> InitData {
     let deadline = Instant::now() + timeout;
     let mut d = data.lock().unwrap();
-    while d.web_endpoint.is_empty() {
+    while d.web_endpoint.is_empty() && d.startup_error.is_empty() {
         let Some(remaining) = deadline.checked_duration_since(Instant::now()) else {
             break;
         };
@@ -92,5 +111,48 @@ mod tests {
         let ready = Arc::new(Condvar::new());
         let got = wait_for_endpoints(&data, &ready, Duration::from_millis(50));
         assert!(got.web_endpoint.is_empty());
+    }
+
+    #[test]
+    fn wait_returns_at_once_when_wavesrv_exits_before_reporting() {
+        let data = Arc::new(Mutex::new(InitData::default()));
+        let ready = Arc::new(Condvar::new());
+        let (d2, r2) = (data.clone(), ready.clone());
+        std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(50));
+            d2.lock().unwrap().startup_error = "gone".to_string();
+            r2.notify_all();
+        });
+        let started = Instant::now();
+        let got = wait_for_endpoints(&data, &ready, Duration::from_secs(10));
+        assert!(started.elapsed() < Duration::from_secs(5));
+        assert_eq!(got.startup_error, "gone");
+        assert!(got.web_endpoint.is_empty());
+    }
+
+    #[test]
+    fn startup_failure_names_a_held_lock() {
+        let lines = vec![
+            "[wavesrv] [base] acquiring lock on C:\\data\\wave.lock".to_string(),
+            "[wavesrv] error acquiring wave lock (another instance of Wave is likely running): filemutex trylock error: lock already acquired".to_string(),
+        ];
+        assert!(startup_failure(&lines).starts_with("another arcterm is already running"));
+    }
+
+    #[test]
+    fn startup_failure_quotes_the_last_line_otherwise() {
+        let lines = vec![
+            "[wavesrv] one".to_string(),
+            "[wavesrv] panic: boom".to_string(),
+            "  ".to_string(),
+        ];
+        assert_eq!(
+            startup_failure(&lines),
+            "wavesrv exited before reporting its ports: [wavesrv] panic: boom"
+        );
+        assert_eq!(
+            startup_failure(&[]),
+            "wavesrv exited before reporting its ports"
+        );
     }
 }
