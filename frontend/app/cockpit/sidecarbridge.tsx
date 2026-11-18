@@ -95,6 +95,7 @@ import {
     type HeavyNotes,
 } from "./sidecarbridgemodel";
 import { sidecarNeeds } from "./sidecarneeds";
+import { resourcesOf } from "./sidecarresources";
 import {
     orbitTiles,
     scopeTiles,
@@ -163,6 +164,10 @@ declare global {
     }
 }
 
+// the resource panel's poll: the Resource Manager's own pace (resmonstore.ts), and its timeout
+const RESOURCES_POLL_MS = 2000;
+const RESOURCES_RPC_TIMEOUT_MS = 5000;
+
 function log(msg: string): void {
     getApi().sendLog(`[sidecar] ${msg}`);
 }
@@ -188,6 +193,10 @@ export function SidecarBridge({ model }: { model: AgentsViewModel }) {
         let offPressure: (() => void) | null = null;
         let consumersTimer: ReturnType<typeof setInterval> | null = null;
         let cpuTimer: ReturnType<typeof setInterval> | null = null;
+        // The resource panel (the page's machine figures, clicked): polled only while the page has it open.
+        let resPanel: { pids: number[] } | null = null;
+        let resReading: ResMonSnapshotData | null = null;
+        let resTimer: ReturnType<typeof setInterval> | null = null;
 
         // The dashboard (plan Task 4): what waits on you, the active run and who leads it.
         // the Jarvis rows' peek rows of the last build, by need key: a `need` act opens the target the tray's peek opens
@@ -219,6 +228,15 @@ export function SidecarBridge({ model }: { model: AgentsViewModel }) {
             import.meta.env.DEV ? (window.__sidecarMachine ?? null) : null;
         const heavySeam = () => (import.meta.env.DEV ? (window.__sidecarHeavy ?? null) : null);
 
+        const stopResources = () => {
+            if (resTimer != null) {
+                clearInterval(resTimer);
+                resTimer = null;
+            }
+            resPanel = null;
+            resReading = null;
+        };
+
         // Stops every timer and subscription of the machine and the heavy polls and forgets what they read: the page is
         // gone (or held), and the next one starts from nothing.
         const stopFeeds = () => {
@@ -245,6 +263,7 @@ export function SidecarBridge({ model }: { model: AgentsViewModel }) {
             cpuReading = null;
             polls = heavyPolls(null);
             failedLogged.clear();
+            stopResources();
         };
 
         const held = () => import.meta.env.DEV && window.__sidecarHold === true;
@@ -434,6 +453,7 @@ export function SidecarBridge({ model }: { model: AgentsViewModel }) {
                 usage,
                 ...(stats != null ? { machine: machineOf(stats, platformName()) } : {}),
                 ...(strain != null ? { strain } : {}),
+                ...(resPanel != null ? { resources: resourcesOf(resReading, resPanel.pids) } : {}),
             };
         };
 
@@ -601,13 +621,48 @@ export function SidecarBridge({ model }: { model: AgentsViewModel }) {
             live = true;
             // a reloaded or reopened page has none of the last snapshot: this one goes out even if nothing changed
             feed = afterHello(feed);
+            // a reloaded page starts with its resource panel shut: it says so again if it opens it
+            stopResources();
             cancelTimer();
             send(build());
             startMachine();
         };
 
+        // the Resource Manager's snapshot with the processes outside arcterm; the backend samples them only while asked
+        const pollResources = async (): Promise<void> => {
+            try {
+                const snap = await RpcApi.ResMonSnapshotCommand(
+                    TabRpcClient,
+                    { others: true },
+                    { timeout: RESOURCES_RPC_TIMEOUT_MS }
+                );
+                recovered("resources read");
+                // dropped when the panel closed while the read was out
+                if (resPanel != null) {
+                    resReading = snap ?? null;
+                    onChange();
+                }
+            } catch (e) {
+                failure("resources read", e);
+            }
+        };
+
         const carryOut = (act: SidecarAct) => {
             switch (act.kind) {
+                case "resources":
+                    if (!act.open) {
+                        stopResources();
+                        onChange();
+                        return;
+                    }
+                    resPanel = { pids: act.pids };
+                    if (resTimer == null) {
+                        resTimer = setInterval(() => void pollResources(), RESOURCES_POLL_MS);
+                        void pollResources();
+                    }
+                    // the panel shows at once, measuring until the first reading lands
+                    onChange();
+                    return;
                 case "hello":
                     hello();
                     return;

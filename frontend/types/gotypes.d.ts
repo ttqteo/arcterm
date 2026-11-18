@@ -2332,7 +2332,9 @@ declare global {
     };
 
     // wshrpc.CommandResMonSnapshotData
-    type CommandResMonSnapshotData = object;
+    type CommandResMonSnapshotData = {
+        others?: boolean;
+    };
 
     // wshrpc.CommandResolveAmbientRtnData
     type CommandResolveAmbientRtnData = {
@@ -4479,6 +4481,14 @@ declare global {
         error?: string;
     };
 
+    // wshrpc.ResMonOther
+    type ResMonOther = {
+        name: string;
+        count: number;
+        cpu: number;
+        mem: number;
+    };
+
     // wshrpc.ResMonSnapshotData
     type ResMonSnapshotData = {
         supported: boolean;
@@ -4490,6 +4500,8 @@ declare global {
         busycpu: boolean;
         busymem: boolean;
         groups: ResMonGroup[];
+        others?: ResMonOther[];
+        othersmin?: number;
     };
 
     // wshrpc.ResumeCardData

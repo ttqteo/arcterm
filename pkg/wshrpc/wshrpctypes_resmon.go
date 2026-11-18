@@ -27,7 +27,20 @@ const (
 	ResMonKill_Failed    = "failed"    // the OS refused; Error holds its text
 )
 
-type CommandResMonSnapshotData struct{}
+type CommandResMonSnapshotData struct {
+	// Others also measures the processes that are not arcterm's or an agent's, grouped by image name: Sidecar's
+	// resource panel asks for them while it is open. The first snapshot that asks has none yet (the sampler reads
+	// them from its next tick on).
+	Others bool `json:"others,omitempty"`
+}
+
+// ResMonOther is the processes of one image name outside arcterm and its agents, summed (chrome.exe, 12 of them).
+type ResMonOther struct {
+	Name  string  `json:"name"` // image name
+	Count int     `json:"count"`
+	Cpu   float64 `json:"cpu"`
+	Mem   int64   `json:"mem"`
+}
 
 type ResMonGroup struct {
 	Key       string        `json:"key"`               // "arc", or "job:<rootpid>:<root createts>"; stable for the job's life
@@ -51,6 +64,9 @@ type ResMonSnapshotData struct {
 	BusyCpu   bool          `json:"busycpu"`
 	BusyMem   bool          `json:"busymem"`
 	Groups    []ResMonGroup `json:"groups"`
+	// asked for with Others: the image names holding at least OthersMin bytes, heaviest first
+	Others    []ResMonOther `json:"others,omitempty"`
+	OthersMin int64         `json:"othersmin,omitempty"`
 }
 
 type CommandResMonKillData struct {

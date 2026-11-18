@@ -146,6 +146,18 @@ describe("validateAct", () => {
         expect(validateAct({ kind: "hello" }, null)).toEqual({ ok: true, act: { kind: "hello" } });
     });
 
+    it("takes the resource panel's open and close, keeping only whole positive pids", () => {
+        expect(validateAct({ kind: "resources", open: true, pids: [12, -1, 3.5, "x", 40] }, null)).toEqual({
+            ok: true,
+            act: { kind: "resources", open: true, pids: [12, 40] },
+        });
+        expect(validateAct({ kind: "resources", open: false }, null)).toEqual({
+            ok: true,
+            act: { kind: "resources", open: false, pids: [] },
+        });
+        expect(validateAct({ kind: "resources" }, null).ok).toBe(false);
+    });
+
     it("refuses what is not an act, and an unknown kind", () => {
         for (const raw of [null, undefined, 3, "open", [], {}, { kind: 4 }, { kind: "close" }]) {
             const r = validateAct(raw, roster);

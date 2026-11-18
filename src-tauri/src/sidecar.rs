@@ -1107,6 +1107,109 @@ fn close_with_main(app: &AppHandle) {
     });
 }
 
+/// The pids of the processes that draw Sidecar's page, for its resource panel's own row: the WebView2 renderers
+/// running a frame of sidecar.html. Both windows share one WebView2 browser, GPU and utility processes, so those count
+/// as arcterm's, not Sidecar's. Empty off Windows (WKWebView names no process), and on a WebView2 runtime older than
+/// the process-and-frames list (1.0.2210).
+#[tauri::command]
+pub async fn sidecar_pids(app: AppHandle) -> Result<Vec<u32>, String> {
+    let Some(win) = app.get_webview_window(SIDECAR_LABEL) else {
+        return Err("Sidecar is not open".to_string());
+    };
+    renderer_pids(&win).await
+}
+
+#[cfg(not(windows))]
+async fn renderer_pids(_win: &WebviewWindow) -> Result<Vec<u32>, String> {
+    Ok(Vec::new())
+}
+
+#[cfg(windows)]
+async fn renderer_pids(win: &WebviewWindow) -> Result<Vec<u32>, String> {
+    use std::cell::RefCell;
+    use std::rc::Rc;
+    use webview2_com::GetProcessExtendedInfosCompletedHandler;
+    use webview2_com::Microsoft::Web::WebView2::Win32::{
+        ICoreWebView2Environment13, ICoreWebView2ProcessExtendedInfoCollection, ICoreWebView2_2,
+        COREWEBVIEW2_PROCESS_KIND, COREWEBVIEW2_PROCESS_KIND_RENDERER,
+    };
+    use windows::core::{Interface, BOOL, PWSTR};
+
+    // the page's url in a dev build (localhost:5174) and a packaged one (tauri.localhost) alike
+    const PAGE: &str = "/sidecar.html";
+
+    unsafe fn pids_of(
+        list: &ICoreWebView2ProcessExtendedInfoCollection,
+    ) -> windows::core::Result<Vec<u32>> {
+        let mut out = Vec::new();
+        let mut count = 0u32;
+        list.Count(&mut count)?;
+        for i in 0..count {
+            let info = list.GetValueAtIndex(i)?;
+            let process = info.ProcessInfo()?;
+            let mut kind = COREWEBVIEW2_PROCESS_KIND::default();
+            process.Kind(&mut kind)?;
+            if kind != COREWEBVIEW2_PROCESS_KIND_RENDERER {
+                continue;
+            }
+            let frames = info.AssociatedFrameInfos()?.GetIterator()?;
+            let mut has = BOOL::default();
+            frames.HasCurrent(&mut has)?;
+            while has.as_bool() {
+                let mut source = PWSTR::null();
+                frames.GetCurrent()?.Source(&mut source)?;
+                if webview2_com::take_pwstr(source).contains(PAGE) {
+                    let mut pid = 0i32;
+                    process.ProcessId(&mut pid)?;
+                    out.push(pid as u32);
+                    break;
+                }
+                frames.MoveNext(&mut has)?;
+            }
+        }
+        Ok(out)
+    }
+
+    let (tx, rx) = tokio::sync::oneshot::channel::<Result<Vec<u32>, String>>();
+    win.with_webview(move |wv| unsafe {
+        // runs on the main thread; the list comes back on it later, so the sender is shared with the handler
+        let tx = Rc::new(RefCell::new(Some(tx)));
+        let send = {
+            let tx = tx.clone();
+            move |out: Result<Vec<u32>, String>| {
+                if let Some(tx) = tx.borrow_mut().take() {
+                    let _ = tx.send(out);
+                }
+            }
+        };
+        let done = send.clone();
+        let setup = (|| -> Result<(), String> {
+            let core = wv.controller().CoreWebView2().map_err(|e| e.to_string())?;
+            let env = core
+                .cast::<ICoreWebView2_2>()
+                .and_then(|c| c.Environment())
+                .and_then(|e| e.cast::<ICoreWebView2Environment13>())
+                .map_err(|e| format!("this WebView2 runtime lists no processes: {e}"))?;
+            let handler =
+                GetProcessExtendedInfosCompletedHandler::create(Box::new(move |res, list| {
+                    done(res.map_err(|e| e.to_string()).and_then(|_| match list {
+                        Some(list) => pids_of(&list).map_err(|e| e.to_string()),
+                        None => Ok(Vec::new()),
+                    }));
+                    Ok(())
+                }));
+            env.GetProcessExtendedInfos(&handler)
+                .map_err(|e| e.to_string())
+        })();
+        if let Err(e) = setup {
+            send(Err(e));
+        }
+    })
+    .map_err(|e| e.to_string())?;
+    rx.await
+        .map_err(|_| "the process list was dropped".to_string())?
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

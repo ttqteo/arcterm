@@ -116,6 +116,25 @@ export interface SidecarSnapshot {
     run?: SidecarRunBox; // the newest active orchestrator run
     usage?: SidecarUsage; // the 5-hour and weekly plan rings
     more?: number; // agents past the orbit's eight, for the core's "+N"
+    resources?: SidecarResources; // only while the page's resource panel is open
+}
+
+/** One row of the resource panel: a figure is left out where it could not be read (CPU before a second sample). */
+export interface SidecarResourceRow {
+    key: string;
+    label: string;
+    kind: "sidecar" | "arcterm" | "agent" | "other";
+    cpu?: number; // percent of the whole machine, one decimal
+    mem?: number; // bytes held in RAM (the private working set), rounded to the MB
+    count?: number; // an "other" row's processes of that name
+}
+
+/** The resource panel (sidecarresources.ts builds it): arcterm's rows, then the heavy processes outside it. */
+export interface SidecarResources {
+    state: "measuring" | "ready" | "unsupported";
+    rows: SidecarResourceRow[];
+    others: SidecarResourceRow[];
+    othersMin?: number; // bytes: the least an "other" row holds
 }
 
 export type SidecarAct =
@@ -124,7 +143,9 @@ export type SidecarAct =
     | { kind: "need"; key: string } // a Jarvis row: must be a need of the last snapshot
     | { kind: "answer"; id: string; option: number; key: string } // key: the ask the page showed (SidecarAsk.key)
     | { kind: "stop"; id: string; pid: number } // must match a heavy row's process
-    | { kind: "sleep"; id: string }; // must be a heavy row
+    | { kind: "sleep"; id: string } // must be a heavy row
+    // the resource panel opened (with the pids the host says draw the page; re-sent as they change) or closed
+    | { kind: "resources"; open: boolean; pids: number[] };
 
 /** What the host's sidecar_form command answers: whether the window is in its small form and pinned on top. */
 export interface SidecarForm {

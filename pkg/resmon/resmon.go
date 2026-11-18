@@ -71,6 +71,8 @@ type sample struct {
 	busyMem  bool
 	hostPid  int
 	selfPid  int
+	// read only while someone asks for them (AskOthers); nil otherwise
+	others []wshrpc.ResMonOther
 }
 
 // tickState is owned by one sampler goroutine: CPU-time marks for deltas, the command-line cache, the
@@ -84,6 +86,8 @@ type tickState struct {
 	cmdlines map[procId]string
 	rootTs   map[rootKey]int64
 	busy     busyState
+	// also read the processes outside arcterm this tick (samplerLoop sets it from AskOthers)
+	others bool
 }
 
 func newTickState() *tickState {
@@ -161,6 +165,28 @@ func (st *tickState) tick() *sample {
 		}
 		procs[pid] = p
 	}
+	var others []wshrpc.ResMonOther
+	if st.others {
+		// every other process's memory and CPU: one OpenProcess each, ~300 on a busy machine, only while asked
+		var rest []otherProc
+		for pid, p := range table {
+			if tracked[pid] || pid == 0 {
+				continue
+			}
+			s := stat(pid)
+			if !s.ok {
+				continue // a protected process, or gone since the table read
+			}
+			id := procId{pid, s.createTs}
+			cpu := 0.0
+			if prev, seen := st.cpuMarks[id]; seen && ready && wallDelta > 0 && s.cpuTime >= prev {
+				cpu = float64(s.cpuTime-prev) * 100 / float64(wallDelta/100) / float64(st.cores)
+			}
+			marks[id] = s.cpuTime
+			rest = append(rest, otherProc{Name: p.Name, Cpu: cpu, Mem: s.mem})
+		}
+		others = groupOthers(rest, OthersMin, othersLimit)
+	}
 	st.cpuMarks, st.cmdlines, st.lastWall = marks, cmdlines, now
 
 	rootTs := make(map[rootKey]int64, len(jobs))
@@ -183,7 +209,7 @@ func (st *tickState) tick() *sample {
 	}
 	s := &sample{
 		ts: now.UnixMilli(), ready: ready, procs: procs, arcRows: arcRows, jobs: jobs, rootTs: rootTs,
-		totalMem: totalMem, hostPid: st.hostPid, selfPid: st.selfPid,
+		totalMem: totalMem, hostPid: st.hostPid, selfPid: st.selfPid, others: others,
 	}
 	// busy counts every group, so it groups without labels: owner info changes no total
 	cpu, memUsed := sumTotals(buildGroups(procs, arcRows, s.jobViews(nil), st.hostPid, st.selfPid))
@@ -208,6 +234,8 @@ var sampler = struct {
 	running  bool
 	lastCall time.Time
 	latest   *sample
+	// AskOthers: until when the ticks read the processes outside arcterm
+	othersUntil time.Time
 }{}
 
 func samplerLoop() {
@@ -215,6 +243,7 @@ func samplerLoop() {
 	t := time.NewTicker(sampleInterval)
 	defer t.Stop()
 	for {
+		st.others = wantOthers()
 		s := st.tick()
 		sampler.mu.Lock()
 		sampler.latest = s
@@ -302,5 +331,7 @@ func Snapshot(ctx context.Context, resolve Resolver) wshrpc.ResMonSnapshotData {
 		BusyCpu:   s.busyCpu,
 		BusyMem:   s.busyMem,
 		Groups:    groups,
+		Others:    s.others,
+		OthersMin: OthersMin,
 	}
 }

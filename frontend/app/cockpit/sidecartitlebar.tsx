@@ -70,18 +70,30 @@ function Machine(props: {
     machine: SidecarMachine;
     strain: SidecarStrain | undefined;
     short: boolean;
+    // the resource panel: open under the bar, and the press that opens or closes it
+    open: boolean;
+    onToggle: () => void;
     className?: string;
 }) {
     const r = machineReadout(props.machine, props.strain);
     const ram = <b className={cn("font-semibold", TONE[r.ramTone])}>{r.ram}</b>;
     const cpu = <b className={cn("font-semibold", TONE[r.cpuTone])}>{r.cpu}</b>;
+    // a button for the resource panel; tabIndex -1 and no focus on press, as the bar's other buttons
     return (
-        <span
+        <button
+            type="button"
             data-sidecar-machine
             data-ram-tone={r.ramTone}
             data-cpu-tone={r.cpuTone}
+            aria-expanded={props.open}
+            aria-haspopup="dialog"
+            title="What arcterm, its agents and Sidecar itself take"
+            tabIndex={-1}
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={props.onToggle}
             className={cn(
-                "min-w-0 truncate whitespace-nowrap text-[12px] tabular-nums text-secondary",
+                "min-w-0 truncate whitespace-nowrap rounded-md px-1.5 py-0.5 text-left text-[12px] tabular-nums text-secondary hover:bg-surface-hover",
+                props.open && "bg-surface-selected",
                 props.className
             )}
         >
@@ -94,7 +106,7 @@ function Machine(props: {
                     RAM {ram} free · CPU {cpu}
                 </>
             )}
-        </span>
+        </button>
     );
 }
 
@@ -133,13 +145,15 @@ const BOXED_PRESSED = "bg-surface-selected text-primary";
 const SMALL_BTN = "h-6 w-[26px] shrink-0 rounded-md hover:bg-surface-hover";
 
 function SmallGlyph({ small }: { small: boolean }) {
-    // arrows in (shrink to the small form) / arrows out (grow back to the wall)
+    // a screen with a small window in its corner (shrink to the small form, pinned) / that window growing back out to
+    // the wall. Not arrows: the full screen button's corners are arrows in and out, and the two read as one button.
     return (
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+            <rect x="2.5" y="4" width="19" height="16" rx="2" />
             {small ? (
-                <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" />
+                <path d="M8 16l7-7M10 9h5v5" />
             ) : (
-                <path d="M4 14h6v6M20 10h-6V4M14 10l7-7M3 21l7-7" />
+                <rect x="12" y="12" width="7" height="5.5" rx="1" fill="currentColor" stroke="none" />
             )}
         </svg>
     );
@@ -160,6 +174,9 @@ export interface SidecarTitleBarProps {
     // the host's form, and a request to change it (the page invokes sidecar_form and takes the answer)
     form: SidecarForm;
     onForm: (change: FormChange) => void;
+    // the resource panel the machine figures open
+    resourcesOpen: boolean;
+    onResources: () => void;
 }
 
 export function SidecarTitleBar(props: SidecarTitleBarProps) {
@@ -201,7 +218,16 @@ export function SidecarTitleBar(props: SidecarTitleBarProps) {
             >
                 <span className="shrink-0 text-[12px] font-semibold text-primary">Sidecar</span>
                 {import.meta.env.DEV ? <span className="shrink-0 text-[12px] text-muted">(dev)</span> : null}
-                {machine == null ? null : <Machine machine={machine} strain={strain} short className="ml-1" />}
+                {machine == null ? null : (
+                    <Machine
+                        machine={machine}
+                        strain={strain}
+                        short
+                        open={props.resourcesOpen}
+                        onToggle={props.onResources}
+                        className="ml-0.5"
+                    />
+                )}
                 <span className="flex-1" />
                 {sButton}
                 <TitleButton
@@ -250,7 +276,16 @@ export function SidecarTitleBar(props: SidecarTitleBarProps) {
                 <span className="font-semibold text-primary">Sidecar</span>
             </div>
             {/* the machine's two figures, always once a snapshot carries them: the band speaks only past a threshold */}
-            {machine == null ? null : <Machine machine={machine} strain={strain} short={false} className="ml-3" />}
+            {machine == null ? null : (
+                <Machine
+                    machine={machine}
+                    strain={strain}
+                    short={false}
+                    open={props.resourcesOpen}
+                    onToggle={props.onResources}
+                    className="ml-2"
+                />
+            )}
             <div className="ml-auto flex h-full items-center gap-4">
                 {sButton}
                 {/* a Mac's traffic lights are the window buttons, the green one full screen */}

@@ -22,7 +22,14 @@ const (
 )
 
 func (ws *WshServer) ResMonSnapshotCommand(ctx context.Context, data wshrpc.CommandResMonSnapshotData) (*wshrpc.ResMonSnapshotData, error) {
+	if data.Others {
+		resmon.AskOthers()
+	}
 	rtn := resmon.Snapshot(ctx, resolveResMonOwner)
+	if !data.Others {
+		// another caller's ask keeps the sampler reading them a while: only an asker gets them
+		rtn.Others, rtn.OthersMin = nil, 0
+	}
 	return &rtn, nil
 }
 

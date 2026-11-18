@@ -9,6 +9,7 @@
 import { SidecarCompact } from "@/app/cockpit/sidecarcompact";
 import { layoutFor, type FormChange, type SidecarLayout } from "@/app/cockpit/sidecarlayout";
 import { SidecarOrbit } from "@/app/cockpit/sidecarorbit";
+import { SidecarResourcesPanel } from "@/app/cockpit/sidecarresourcespanel";
 import { NATIVE_MAC_FRAME, SidecarTitleBar, toggleSidecarFullscreen } from "@/app/cockpit/sidecartitlebar";
 import {
     SIDECAR_ACT_EVENT,
@@ -31,6 +32,9 @@ import "./tailwind.css";
 const HELLO_RETRY_MS = 2000;
 // ages are minutes and hours: a redraw every 30 s keeps them honest at no other cost
 const CLOCK_TICK_MS = 30_000;
+// while the resource panel is open the host is asked again which processes draw the page: a renderer that crashed and
+// came back is a new pid
+const PIDS_REFRESH_MS = 15_000;
 
 function send(act: SidecarAct): void {
     emit(SIDECAR_ACT_EVENT, act).catch((err) => console.error("sidecar: could not send", act.kind, err));
@@ -84,11 +88,52 @@ function useSidecarForm(): [SidecarForm, (change: FormChange) => void] {
     return [form, change];
 }
 
+// The resource panel: open, it tells the main window's bridge (which then polls the Resource Manager) with the pids the
+// host says draw this page, and again as they change; closed, it tells the bridge to stop. A pid read that fails leaves
+// Sidecar's own row unmeasured, the rest of the panel as it is.
+function useResourcesPanel(): [boolean, () => void, () => void] {
+    const [open, setOpen] = useState(false);
+    useEffect(() => {
+        if (!open) {
+            return;
+        }
+        let live = true;
+        let last = "";
+        const tell = () => {
+            invoke<number[]>("sidecar_pids")
+                .catch((err) => {
+                    console.error("sidecar: reading the page's processes failed", err);
+                    return [] as number[];
+                })
+                .then((pids) => {
+                    const key = pids.join(",");
+                    if (live && key !== last) {
+                        last = key;
+                        send({ kind: "resources", open: true, pids });
+                    }
+                });
+        };
+        // the panel shows at once (measuring) while the pids are read
+        send({ kind: "resources", open: true, pids: [] });
+        tell();
+        const timer = setInterval(tell, PIDS_REFRESH_MS);
+        return () => {
+            live = false;
+            clearInterval(timer);
+            send({ kind: "resources", open: false, pids: [] });
+        };
+    }, [open]);
+    const toggle = useCallback(() => setOpen((o) => !o), []);
+    const close = useCallback(() => setOpen(false), []);
+    return [open, toggle, close];
+}
+
 function SidecarRoot() {
     useApplyCockpitTheme();
     const [heard, setHeard] = useState<Heard | null>(null);
     const layout = useLayout();
     const [form, changeForm] = useSidecarForm();
+    const [resourcesOpen, toggleResources, closeResources] = useResourcesPanel();
     // Date.now() too: the dashboard adds (clock - heard.at) to the snapshot's own `now`, so the two must share one clock
     const [clock, setClock] = useState(() => Date.now());
 
@@ -144,14 +189,23 @@ function SidecarRoot() {
     return (
         // the only motion is the dashboard's own (the spec's Motion section: a waiting item's ping, a row's reveal, the
         // frame's and the ring's colour); the base layer's button transitions go, so a button never moves on its own
-        <div className="flex h-screen w-screen flex-col overflow-hidden bg-background font-sans text-primary [&_button]:transition-none">
+        <div className="relative flex h-screen w-screen flex-col overflow-hidden bg-background font-sans text-primary [&_button]:transition-none">
             <SidecarTitleBar
                 machine={heard?.snap.machine}
                 strain={heard?.snap.strain}
                 layout={layout}
                 form={form}
                 onForm={changeForm}
+                resourcesOpen={resourcesOpen}
+                onResources={toggleResources}
             />
+            {resourcesOpen && (
+                <SidecarResourcesPanel
+                    resources={heard?.snap.resources}
+                    small={layout === "small"}
+                    onClose={closeResources}
+                />
+            )}
             {heard == null ? (
                 <div
                     data-sidecar-waiting
