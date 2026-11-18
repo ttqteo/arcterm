@@ -203,7 +203,7 @@ export function settingsSections(flagRuntime: Runtime): SettingSectionDef[] {
         {
             id: "remote",
             name: "Remote",
-            blurb: "Your phone as a remote for arcterm, through your own Cloudflare tunnel, while you turn it on: what waits on you, answering agent questions, and driving an agent you hand over.",
+            blurb: "Your phone as a remote for arcterm, through Tailscale or your own Cloudflare tunnel, while you turn it on: what waits on you, answering agent questions, and driving an agent you hand over.",
             cards: [
                 {
                     id: "remotemode",
@@ -226,9 +226,33 @@ export function settingsSections(flagRuntime: Runtime): SettingSectionDef[] {
                 },
                 {
                     id: "remotesetup",
-                    label: "Tunnel & Access",
-                    keywords: ["cloudflare", "tunnel", "access", "zero trust", "token"],
+                    label: "Connection",
+                    keywords: [
+                        "cloudflare",
+                        "tunnel",
+                        "access",
+                        "zero trust",
+                        "token",
+                        "tailscale",
+                        "tailnet",
+                        "serve",
+                    ],
                     rows: [
+                        {
+                            id: "remote.provider",
+                            title: "Connect through",
+                            desc: "Tailscale: tailscale serve on this machine's tailnet address, open only to your devices in the tailnet; no domain needed. Cloudflare: your own named tunnel behind Cloudflare Access, on a domain you own.",
+                        },
+                        {
+                            id: "remote.tshostname",
+                            title: "Tailnet address",
+                            desc: "This machine's name in the tailnet, read from tailscale status. Turn HTTPS on for the tailnet in the Tailscale admin console (DNS) the first time.",
+                        },
+                        {
+                            id: "remote.tslogin",
+                            title: "Tailnet login",
+                            desc: "The only tailnet login arcterm lets in, read from tailscale status: log the phone's Tailscale app in as the same user.",
+                        },
                         {
                             id: "remote.tunneltoken",
                             title: "Tunnel token",

@@ -5,7 +5,7 @@ package wshrpc
 
 import "context"
 
-// RemoteCommands is remote mode: the phone page behind a Cloudflare tunnel (pkg/remotemode).
+// RemoteCommands is remote mode: the phone page behind a Cloudflare tunnel or tailscale serve (pkg/remotemode).
 type RemoteCommands interface {
 	RemoteStatusCommand(ctx context.Context) (*RemoteStatusData, error)
 	RemoteSetupCommand(ctx context.Context, data CommandRemoteSetupData) (*RemoteStatusData, error)
@@ -23,7 +23,10 @@ type CommandRemoteHandData struct {
 }
 
 // CommandRemoteSetupData: Port 0 means the default port. A re-setup replaces every field it carries.
+// Provider is "cloudflare" or "tailscale", "" keeping the stored one; Hostname and Email set the active
+// provider's address and owner, and for tailscale an empty one is read from `tailscale status`.
 type CommandRemoteSetupData struct {
+	Provider    string `json:"provider,omitempty"`
 	TunnelToken string `json:"tunneltoken"`
 	Team        string `json:"team"`
 	Aud         string `json:"aud"`
@@ -36,6 +39,7 @@ type CommandRemoteSetupData struct {
 // Tunnel is "off", "starting", "up" or "down". Handed is the sorted tab ids handed to the phone.
 type RemoteStatusData struct {
 	On                 bool     `json:"on"`
+	Provider           string   `json:"provider,omitempty"`
 	Missing            []string `json:"missing,omitempty"`
 	Team               string   `json:"team,omitempty"`
 	Aud                string   `json:"aud,omitempty"`
@@ -46,5 +50,6 @@ type RemoteStatusData struct {
 	TunnelError        string   `json:"tunnelerror,omitempty"`
 	Subscriptions      int      `json:"subscriptions"`
 	CloudflaredMissing bool     `json:"cloudflaredmissing,omitempty"`
+	TailscaleMissing   bool     `json:"tailscalemissing,omitempty"`
 	Handed             []string `json:"handed,omitempty"`
 }

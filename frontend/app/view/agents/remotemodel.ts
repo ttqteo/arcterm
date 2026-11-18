@@ -7,6 +7,15 @@
 export const REMOTE_SETUP_NOTE = "Fill in the setup below, or run wsh remote setup";
 // the line pkg/remotemode prints when cloudflared is not found
 export const REMOTE_CLOUDFLARED_NOTE = "Install cloudflared first: winget install --id Cloudflare.cloudflared";
+// the same for tailscale, which also has to be logged in
+export const REMOTE_TAILSCALE_NOTE = "Install Tailscale and log in first: https://tailscale.com/download";
+
+export type RemoteProvider = "cloudflare" | "tailscale";
+
+// The stored provider; a status from before the choice existed is cloudflare.
+export function remoteProvider(status: RemoteStatusData | null): RemoteProvider {
+    return status?.provider === "tailscale" ? "tailscale" : "cloudflare";
+}
 
 export type RemoteSwitch = { enabled: boolean; on: boolean; note: string | null };
 
@@ -23,6 +32,11 @@ const MISSING_LABEL: Record<string, string> = {
 };
 
 export type RemoteSetupField = "tunneltoken" | "team" | "aud" | "email" | "hostname" | "port";
+
+// Switching provider is a setup that carries only the provider; each provider keeps its own fields.
+export function remoteProviderPatch(provider: RemoteProvider): CommandRemoteSetupData {
+    return { provider, tunneltoken: "", team: "", aud: "", email: "", hostname: "" };
+}
 
 // One Settings field's edit as a RemoteSetup call. Setup keeps every field sent empty, so the others stay as
 // stored; for the same reason an emptied field is refused rather than sent, since it would change nothing.
@@ -64,6 +78,9 @@ export function remoteSwitch(status: RemoteStatusData | null): RemoteSwitch {
     if (status.cloudflaredmissing) {
         return { enabled: false, on: false, note: REMOTE_CLOUDFLARED_NOTE };
     }
+    if (status.tailscalemissing) {
+        return { enabled: false, on: false, note: REMOTE_TAILSCALE_NOTE };
+    }
     return { enabled: true, on: false, note: null };
 }
 
@@ -72,16 +89,19 @@ export function remoteStatusLines(status: RemoteStatusData | null): RemoteStatus
         return [];
     }
     const missing = status.missing ?? [];
+    const tailscale = remoteProvider(status) === "tailscale";
+    const label = (m: string) => (tailscale && m === "email" ? "tailnet login" : (MISSING_LABEL[m] ?? m));
     const lines: RemoteStatusLine[] = [
         {
             id: "setup",
             text:
-                missing.length === 0
-                    ? "Setup complete"
-                    : `Setup incomplete, missing ${missing.map((m) => MISSING_LABEL[m] ?? m).join(", ")}`,
+                missing.length === 0 ? "Setup complete" : `Setup incomplete, missing ${missing.map(label).join(", ")}`,
         },
     ];
-    const tunnel = TUNNEL_LABEL[status.tunnel] ?? `Tunnel ${status.tunnel}`;
+    let tunnel = TUNNEL_LABEL[status.tunnel] ?? `Tunnel ${status.tunnel}`;
+    if (tailscale) {
+        tunnel = tunnel.replace("Tunnel", "Tailscale serve");
+    }
     lines.push({
         id: "tunnel",
         text: status.tunnelerror ? `${tunnel}: ${status.tunnelerror}` : tunnel,
