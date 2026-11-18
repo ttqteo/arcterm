@@ -59,7 +59,16 @@ import {
     type LexicalNode,
     type PointType,
 } from "lexical";
-import { forwardRef, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState, type RefObject } from "react";
+import {
+    forwardRef,
+    Fragment,
+    useImperativeHandle,
+    useLayoutEffect,
+    useMemo,
+    useRef,
+    useState,
+    type RefObject,
+} from "react";
 import { FENCED_TEXT_CLASS, FencedCode } from "./chateditorfences";
 import {
     atomRunsIn,
@@ -85,6 +94,7 @@ import {
 import { $createFileMentionNode, $isFileMentionNode, FileMentionNode } from "./chateditorpill";
 import { $createRefMentionNode, $isRefMentionNode, RefMentionNode } from "./chateditorrefpill";
 import { gapAfterMention, gapBeforeMention } from "./filementiontokens";
+import { shellLine } from "./shellhighlight";
 
 /** The part of an `HTMLTextAreaElement` the box's callers (the slash menu, the `@` picker, recall, insert) use, so a
  *  textarea (the New launcher's Task box) passes as one and floating-ui can anchor a picker to it as a virtual element. */
@@ -899,6 +909,8 @@ export const ChatEditor = forwardRef<EditorLike, ChatEditorProps>(function ChatE
     const said = useRef<Said>({ text: p.value, caret: p.value.length, skip });
     const ghost = p.ghost ?? "";
     const shown = shownText(p.value, skip);
+    // the layer under the editor shows for the ghost text, and for a bash command, which it draws in colour
+    const mirror = ghost !== "" || skip > 0;
     // read once, when the editor is made; later values reach it through the Bridge
     const [initialConfig] = useState(() => ({
         namespace: "arc-chat-editor",
@@ -942,7 +954,14 @@ export const ChatEditor = forwardRef<EditorLike, ChatEditorProps>(function ChatE
                                 onBlur={(e) => props.current.onBlur?.(e.nativeEvent)}
                                 // relative z-[1]: the placeholder and the ghost layer are absolute, so they would paint
                                 // over the caret (a positioned box paints above in-flow content); this keeps it on top
-                                className="relative z-[1] block overflow-y-auto leading-[1.9] whitespace-pre-wrap outline-none [overflow-wrap:anywhere] data-[pill-selected]:caret-transparent"
+                                // a bash command's own text is see-through: the mirror under it draws it in the shell's colours
+                                className={cn(
+                                    "relative z-[1] block overflow-y-auto leading-[1.9] whitespace-pre-wrap outline-none [overflow-wrap:anywhere] data-[pill-selected]:caret-transparent",
+                                    skip > 0 &&
+                                        // the system's selection colour, as Chat's replies draw theirs (tailwindsetup.css
+                                        // .md-selection-band), light enough that the coloured text under it shows
+                                        "text-transparent caret-primary selection:bg-[color-mix(in_srgb,Highlight_35%,transparent)] selection:text-transparent"
+                                )}
                                 style={{ minHeight: p.minHeight, maxHeight: p.maxHeight }}
                             />
                         }
@@ -956,23 +975,44 @@ export const ChatEditor = forwardRef<EditorLike, ChatEditorProps>(function ChatE
                         }
                         ErrorBoundary={LexicalErrorBoundary}
                     />
-                    {/* A mirror of the text laid over the editor, with the same type and wrapping, so what it draws lands
-                    exactly where the editor's own text is: the text itself invisible, the ghost after the last character. */}
-                    {ghost !== "" ? (
+                    {/* A mirror of the text laid under the editor, with the same type and wrapping, so what it draws lands
+                    exactly where the editor's own text is: a bash command in the shell's colours (the editor's text is
+                    see-through then), any other text invisible, and the ghost after the last character. */}
+                    {mirror ? (
                         <div
                             ref={ghostLayer}
                             aria-hidden
                             data-chat-ghost-layer=""
                             className="pointer-events-none absolute inset-0 overflow-hidden leading-[1.9] whitespace-pre-wrap select-none [overflow-wrap:anywhere]"
                         >
-                            <span className="invisible">{shown}</span>
-                            <span data-chat-ghost="" className="text-ink-faint">
-                                {ghost}
-                            </span>
+                            {skip > 0 ? (
+                                <span data-chat-bash-colors="">
+                                    {shown.split("\n").map((ln, i) => (
+                                        <Fragment key={i}>
+                                            {i > 0 ? "\n" : null}
+                                            {/* an empty line draws nothing: shellLine's stand-in space would push the ghost */}
+                                            {ln === ""
+                                                ? null
+                                                : shellLine(ln).map((tk, k) => (
+                                                      <span key={k} className={tk.cls}>
+                                                          {tk.t}
+                                                      </span>
+                                                  ))}
+                                        </Fragment>
+                                    ))}
+                                </span>
+                            ) : (
+                                <span className="invisible">{shown}</span>
+                            )}
+                            {ghost !== "" ? (
+                                <span data-chat-ghost="" className="text-ink-faint">
+                                    {ghost}
+                                </span>
+                            ) : null}
                         </div>
                     ) : null}
                     {/* after the layer, so its ref is set when this lays out */}
-                    {ghost !== "" ? <GhostScroll layer={ghostLayer} text={shown} ghost={ghost} /> : null}
+                    {mirror ? <GhostScroll layer={ghostLayer} text={shown} ghost={ghost} /> : null}
                     <HistoryPlugin />
                     <Bridge ref={ref} props={props} said={said} />
                 </div>

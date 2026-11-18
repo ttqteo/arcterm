@@ -300,6 +300,31 @@ function OutputBody({ path, running }: { path: string | undefined; running: bool
     );
 }
 
+// How many output lines a task opened in the details rail shows: the end of it, which says how it went; Open full view
+// has the rest.
+export const TASK_TAIL_LINES = 12;
+
+/** The last lines of a background task's output, in its program's colours, for a task opened in place (the details
+ *  rail's Background tasks): re-read while it runs, as the peek's body is. */
+export function BackgroundTaskTail({ path, running }: { path: string | undefined; running: boolean }) {
+    const lines = useTaskOutput(path, running);
+    const tail = useMemo(() => (lines ?? NO_LINES).slice(-TASK_TAIL_LINES), [lines]);
+    return (
+        <div
+            data-bg-task-tail
+            className="overflow-x-auto rounded-[6px] bg-surface-code px-[9px] py-[7px] font-mono text-[10.5px] leading-[1.5]"
+        >
+            {lines == null ? (
+                <div className="text-muted">Reading…</div>
+            ) : tail.length === 0 ? (
+                <div className="text-muted">No output yet.</div>
+            ) : (
+                <AnsiLines lines={tail} />
+            )}
+        </div>
+    );
+}
+
 function EventsBody({ events }: { events: MonitorEvent[] }) {
     const { scrollRef, onScroll, atBottom, jumpToBottom } = useStickToBottom(events);
     const bodyStyle = useBodyStyle();

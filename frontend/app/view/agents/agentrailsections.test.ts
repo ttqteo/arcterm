@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
     bgSessionLive,
+    bgTaskElapsed,
+    bgTaskGroups,
     bgTaskStatusLabel,
     bgTaskStopNote,
     bgTaskStoppable,
@@ -151,6 +153,40 @@ describe("railStatClick", () => {
     });
     it("opens a section Overview is not showing", () => {
         expect(railStatClick(false, undefined, view)).toBe("open");
+    });
+});
+
+describe("bgTaskGroups", () => {
+    const t = (id: string, status: "running" | "completed" | "failed" | "stopped") => ({
+        toolUseId: id,
+        label: id,
+        status,
+    });
+
+    it("splits the tasks into running and finished, newest first in each", () => {
+        const g = bgTaskGroups([t("a", "completed"), t("b", "running"), t("c", "failed"), t("d", "running")], true);
+        expect(g.running.map((x) => x.toolUseId)).toEqual(["d", "b"]);
+        expect(g.finished.map((x) => x.toolUseId)).toEqual(["c", "a"]);
+    });
+
+    it("counts a task left running by a session that is gone as finished: nothing runs it now", () => {
+        const g = bgTaskGroups([t("a", "running")], false);
+        expect(g.running).toEqual([]);
+        expect(g.finished.map((x) => x.toolUseId)).toEqual(["a"]);
+    });
+});
+
+describe("bgTaskElapsed", () => {
+    it("is how long a finished task ran", () => {
+        expect(bgTaskElapsed({ startMs: 1_000, endMs: 128_000 }, 999_999)).toBe("2m 7s");
+    });
+
+    it("counts a running task up to now", () => {
+        expect(bgTaskElapsed({ startMs: 1_000 }, 13_500)).toBe("12s");
+    });
+
+    it("is empty when the start is not known", () => {
+        expect(bgTaskElapsed({ endMs: 5_000 }, 9_000)).toBe("");
     });
 });
 

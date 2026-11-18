@@ -1091,40 +1091,52 @@ function RunSubline({
                     ariaShow="Show workers"
                     ariaHide="Hide workers"
                 />
+                {/* the stage word gives way first: a queue tag or a long note may hide "Working", never "2/6". The
+                    two are siblings in the line itself, not one box holding both: a box that may shrink lets its
+                    count spill out under the next thing (the ↰), and one that may not keeps "Working" from going.
+                    The word shows whenever it fits whole and is left out only when it does not, never cut to "W…":
+                    its box is one line tall and wraps, and a zero-width first item makes a word too wide for the
+                    box wrap onto the clipped second line. A fixed 240px cutoff hid it on lines with room to spare
+                    (one with no ↰ or age column). Left out, the count's tone and tooltip still say the stage
+                    (agent-tree-rail step 7 measures it). A line with no count ("Final check · verifying…") cuts
+                    with "…" instead. */}
                 {runComplete(run) ? (
                     <RunCompleteLabel run={run} />
                 ) : runStage(run).key === "landing" && run.land?.state === "pending" ? (
                     <LandLine model={model} run={run} className={PROGRESS_TEXT[runStage(run).tone]} />
-                ) : (
-                    // the stage word gives way first: a queue tag or a long note may cut "Working", never "2/6". The
-                    // two are siblings in the line itself, not one box holding both: a box that may shrink lets its
-                    // count spill out under the next thing (the ↰), and one that may not keeps "Working" from cutting.
-                    // The count pulls back over the line's gap and keeps its own space (a leading one would collapse).
-                    // Below 240px the word cannot show whole beside the columns, so it goes, with the count's "·",
-                    // rather than read "W…": the count's tone says the stage and its tooltip has it in words
-                    // (agent-tree-rail step 7 measures it).
+                ) : progressParts.tail ? (
                     <>
                         <span
+                            data-run-stage
                             data-run-paused={paused ? "" : undefined}
-                            className={cn("hidden min-w-0 truncate @[240px]:block", PROGRESS_TEXT[runStage(run).tone])}
+                            className={cn(
+                                "flex h-[1lh] min-w-0 flex-wrap content-start overflow-hidden",
+                                PROGRESS_TEXT[runStage(run).tone]
+                            )}
                             title={progress.title}
                         >
-                            {progressParts.head}
-                        </span>
-                        {progressParts.tail ? (
-                            <span
-                                data-run-progress-count
-                                className={cn(
-                                    "flex-none whitespace-nowrap @[240px]:-ml-[6px]",
-                                    PROGRESS_TEXT[runStage(run).tone]
-                                )}
-                                title={progress.title}
-                            >
-                                <span className="hidden @[240px]:inline">{" · "}</span>
-                                {progressParts.tail.slice(3)}
+                            <span aria-hidden className="h-[1lh] w-0" />
+                            <span data-run-stage-word className="whitespace-nowrap">
+                                {progressParts.head + " ·"}
                             </span>
-                        ) : null}
+                        </span>
+                        <span
+                            data-run-progress-count
+                            className={cn("-ml-[3px] flex-none whitespace-nowrap", PROGRESS_TEXT[runStage(run).tone])}
+                            title={progress.title}
+                        >
+                            {progressParts.tail.slice(3)}
+                        </span>
                     </>
+                ) : (
+                    <span
+                        data-run-stage
+                        data-run-paused={paused ? "" : undefined}
+                        className={cn("min-w-0 truncate", PROGRESS_TEXT[runStage(run).tone])}
+                        title={progress.title}
+                    >
+                        {progressParts.head}
+                    </span>
                 )}
                 {note}
                 <OriginFrom model={model} run={run} />

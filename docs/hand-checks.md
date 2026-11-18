@@ -25,6 +25,49 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
   3" row's: the HUD should add the stacked strokes and a few hundred static SVG nodes, not a visible step in either
   process. Also watch the GPU process's CPU while P idles: the ping is the only thing that should keep it awake.
   Commit: test(sidecar) HUD scenario steps, RAM watch row and changelog line
+- [ ] (arcterm) **Switching agents no longer crashes the header.** In Agent, pick a Claude agent, then a plain
+  terminal, a run's worker and back (from the tree and from Sidecar's wall), including one falling asleep: no
+  `WINDOW ERROR … is not iterable` in `waveapp.log` and the header redraws each time. Not tried in the app:
+  `agentheader.tsx` `remoteStatus` (7778f1559, 2026-11-18);
+
+- [ ] (arcterm) **Scrollbars show only under the pointer.** With the pointer away, the Agent tree, Chat, Jarvis and
+  Setup lists show no scrollbar; point into one and a thin bar shows on that list alone (not on a list beside or
+  inside it), thicker and brighter under the pointer and while dragged; nothing shifts sideways when it shows. Jarvis
+  bands and the council composer still line up with the scrolling column above them (gutter 10px → 8px). Checked only
+  in an Edge page with the same rules (`--scrollbar-thumb` in `tailwindsetup.css`, 2026-11-18), not in the app or on a
+  Mac's WebKit.
+
+- [ ] (arcterm) **Background tasks open in place.** Have an agent run two commands with `run_in_background` (one that
+  ends at once, one `npx vitest run <a test file>` that runs a while), then open its details rail → Background tasks:
+  Running 1 holds the vitest one with its time counting up, Finished 1 the other with its time. A click opens a row:
+  `$ <command>`, then its last 12 output lines in vitest's own colours, growing while it runs, and Open full view, which
+  opens the output in the File tab as before; a second click folds it. Stop still ends a running one; the Finished
+  heading folds its rows. Branch `feat/codeblock-run`.
+- [ ] (arcterm) **A shell command in colour.** In Chat type `!` then `git log --oneline -3 | head "$HOME"`: `git` and
+  `head` in the keyword blue, `log` in the string green, `--oneline`, `-3` and `|` dimmed, `"$HOME"` green; the caret
+  shows and moves where it should, a selection shows its band, the grey ghost text still sits after the last character,
+  and a command long enough to wrap or scroll stays lined up with its colours. A reply's `bash` block draws the same
+  colours. Branch `feat/codeblock-run`.
+- [ ] (arcterm) **A shell block in Chat has Run.** Ask an agent for a command in a `bash` block written `! git status`:
+  its head shows Run beside Wrap; Run opens a terminal in the panel under that agent, in the agent's folder (its
+  worktree when it has one), and `git status` runs there without the `! `. A `ts` or `json` block has no Run; with no
+  agent in focus the terminal takes the centre. Branch `feat/codeblock-run`.
+- [ ] (arcterm) **A Chat selection keeps the text's colour.** Drag over a reply in Chat (prose, an inline code span, a
+  code block, a table), and double-click one word: the words stay their own colour (white prose, coloured code) on a
+  band in the system's selection colour (Windows' blue `Highlight`, not the theme's accent), under a few themes; the
+  same band shows on a selection in Chat's bash box (`!` mode), its coloured command still readable under it (b67964193).
+  The blend was checked only in a headless-Edge page with the same layer (`mix-blend-mode: screen` on
+  `[data-md-selection-layer]`, `tailwindsetup.css`, 2026-11-18), not in the app or on a Mac's WebKit;
+
+- [ ] (arcterm) **One arcterm at a time (Windows, packaged).** With arcterm closed to the tray, open it again from the
+  Start menu or a desktop shortcut: its own window comes back to the front (no second window, no second Sidecar or tray
+  icon, no BOOT ERROR), and `waveapp.log` has `[tauri] arcterm was opened again`. Also minimized, and folded into
+  Sprout (it grows back). A dev app (`task dev`) still opens beside the installed one. `main.rs`
+  `show_main_window_again`, `tauri-plugin-single-instance` (2026-11-18);
+- [ ] (arcterm) **A backend that stops at launch says why at once.** Hard to stage by hand: with the single-instance
+  guard in place the held-lock case needs a dev app pointed at a running app's data dir (`ARC_DEV_DATA_DIR`). The BOOT
+  ERROR should show within a second as "backend unavailable: another arcterm is already running…" rather than after
+  15 s. `main.rs` stderr reader, `init.rs` `startup_failure` (2026-11-18);
 
 - [ ] (arcterm) **Brainstorm rail in the details rail's place.** With the details rail open (`d`), switch an agent
   with a brainstorm between Terminal, Chat and Brainstorm: the Chat · Terminal · Brainstorm switch stays put, and in
@@ -65,6 +108,9 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
   too (the frame no longer reads the window's state; Windows 11 squares a maximized window's corners, so check that a
   full-screen frame still looks right). In the band, a narrow heavy-agent card keeps the agent's name and command readable, its Stop
   and Sleep buttons wrapping under them. Commits 7cdcfa181, f67c6b351 (the capability needs a rebuilt host).
+- [ ] (arcterm) **Sidecar's band cards keep the agent's name.** In the wall's RAM band, a narrow heavy-agent card keeps
+  the agent's name and command readable, its Stop and Sleep buttons wrapping under them; maximized or full screen, the
+  alert frame is square (the rounded-corner case was seen holding on 2026-11-18). Commit 7cdcfa181.
 
 - [ ] (arcterm) **A markdown doc's Comment button floats above the selection, at its start.** Select a phrase mid-line
   in a markdown file open in the Agent's doc view: the Comment button sits just above the first selected line, its left
@@ -809,3 +855,13 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
   with focus read on, the K / J / Q column under the toggle sits clear of the pinned prompt card and reads well in a
   light and a dark theme; holding ↓ steps block after block with no judder; turning it on for one agent in a 2x2 split
   leaves the other cells undimmed, and it is still on for that agent after a restart.
+- [ ] (arcterm) Sending to an idle agent in Chat (`chatlive.ts` liveTurn, `chatpane.tsx`): when the last turn ended
+  with an "Edited N files" card, the card stays where it is from the send until your message lands and the new turn
+  starts (it used to fold away at the send and spring open again up to 3 s later). A message queued while the agent
+  works leaves the working turn's card held back as before. Checked only by unit tests.
+- [ ] (arcterm) Chat around a send (`chatpending.ts` sending, `chatpane.tsx` WorkingLine, `chatconversation.tsx`
+  ownArrives): send to a Claude agent that is busy redrawing (just after a turn ends, or while it starts) and the
+  bubble stays until your message lands, never blinking out at 5 s; as the turn starts the working line opens under
+  the bubble and as it ends folds away, with the conversation gliding rather than jumping; a message typed straight in
+  the terminal opens into Chat on the spring. Measured in headless Chrome with a fixture agent (a scripted send,
+  live reply and transcript), not yet with a real Claude agent in the app.

@@ -31,6 +31,10 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Added
 
+- A shell command in a Chat reply (a `bash`, `sh` or `powershell` block) has a Run button: it opens a terminal in the
+  panel under the agent, in the folder the agent works in, and runs the command there.
+- A shell command shows in colour as you type it in Chat's bash mode and in a reply's shell block: the command apart
+  from its arguments, flags and pipes dimmed, variables and strings in their own colours.
 - A turn in which the agent drew design boards now ends in a Canvas card in Chat, with a small live picture of each
   board it drew: click one to look at it full size over Chat, Look at all to see them side by side, or Open in Canvas.
 - Sidecar shows what everything takes, like Task Manager: on a big enough window a Resources column beside the
@@ -58,6 +62,13 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 - Sidecar now wears a HUD look, in the full window and in the small form: a blue-black ground with glowing cyan rings,
   tick marks and corner brackets that bend round the rounded corners of every box.
+- Scrollbars stay hidden until you point at the area that scrolls, then show as a thin bar that thickens under the
+  pointer, so the sidebar, Chat and lists read as clean panels.
+- A message you send while the agent works no longer has a Queued caption under it: its dimmed bubble says it waits, and
+  the line under it is Send now alone (two or more still read "2 queued").
+- Background tasks in the agent's details rail split into Running and Finished, each with its count, and each task
+  shows how long it ran. A click opens it in place, with its command and the end of its output in colour; Open full
+  view opens the whole output beside it, as a click did before.
 - The agent header puts the project and initiative on a second line under the agent's name, in the height the header
   already had, so the run link, model and context beside it get the room back.
 - Focus read in Chat is each agent's own: turning it on for one agent leaves the others as they were. While it is on,
@@ -80,6 +91,21 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- Switching the agent on screen (from the tree, Sidecar or a terminal) no longer crashes the agent header with
+  "number … is not iterable".
+- Chat no longer jumps around a send: a message that takes a few seconds to reach a busy Claude Code stays in place
+  instead of vanishing and coming back, the "working" line opens and closes smoothly instead of shoving the
+  conversation as each turn starts and ends, and a message of yours that lands with nothing standing in for it opens
+  like any other row.
+- Selecting text in Chat keeps the words their own colour, and the highlight behind them is your system's own selection
+  colour rather than the theme's accent.
+- Opening arcterm from the Start menu or a shortcut while it runs in the tray brings its window back, instead of
+  starting a second arcterm that stopped on "wavesrv did not report its ports" beside a second Sidecar and tray icon
+  (Windows). When the backend does stop at launch, the error now says why at once rather than after 15 seconds.
+- Sending a message in Chat no longer folds away the last turn's "Edited N files" card and opens it again a moment
+  later: the conversation stays still until your message lands.
+- A run's line in a narrow Agent tree says its stage again ("Working · 0/5", "Planning · 0/5") whenever there is room
+  for the word whole; it is left out only when it truly does not fit, instead of below a fixed 240 px.
 - In focus read, ↑ and ↓ step one block like K and J instead of scrolling a little and jumping back.
 - Sidecar's alert frame follows the window's rounded corners on Windows, maximized or full screen included, instead of
   being cut off at them, and the heaviest-agent cards in its RAM band no longer squeeze an agent's name to one letter: the buttons wrap under it.

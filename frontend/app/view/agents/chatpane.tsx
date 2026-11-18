@@ -27,8 +27,17 @@ import { formatChordString } from "@/util/keysym";
 import { cn, fireAndForget, stringToBase64 } from "@/util/util";
 import { useAtom, useAtomValue } from "jotai";
 import { ArrowDown, ChevronDown, ChevronUp, Highlighter, TextQuote, TextSearch } from "lucide-react";
-import { AnimatePresence, motion, MotionConfig, useIsPresent, useReducedMotion, type Variants } from "motion/react";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from "react";
+import {
+    animate,
+    AnimatePresence,
+    motion,
+    MotionConfig,
+    useIsPresent,
+    usePresence,
+    useReducedMotion,
+    type Variants,
+} from "motion/react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
 import { goalFromLines } from "../../../../claude/arc-mod/hooks/goal-core";
 import { canStop } from "./agentcomposer";
 import { getProcExitAtom } from "./agentcontrollerstore";
@@ -64,7 +73,7 @@ import { ChatHandoffCard } from "./chathandoffcard";
 import { holdSwitchLine } from "./chatinitiativestore";
 import { submitIntoChatBox } from "./chatinsert";
 import { CHAT_JUMP_KEYS, registerChatJump } from "./chatjump";
-import { awaitsOwnMessage, narratesThinking, streamsLiveReply } from "./chatlive";
+import { awaitsOwnMessage, liveTurn, narratesThinking, streamsLiveReply } from "./chatlive";
 import { liveReplyAtom, startLiveReplyStream, stopLiveReplyStream } from "./chatlivestore";
 import { ChatLocalCard } from "./chatlocalcards";
 import { closeLocalCard, showLocalCard, useLocalCards } from "./chatlocalstore";
@@ -296,6 +305,90 @@ function PendingBubble({ pending, first }: { pending: PendingMessage; first: boo
 // the tail's gap above PendingLine, which its margin takes back as it folds
 const LINE_GAP = 12;
 
+// The working line, which opens and folds on the spring as a chat row does (Arriving): drawn and dropped at once, the
+// conversation stuck to the end jumped by its height as a turn started and again as it ended. `arrive`: it shows on a
+// pane already drawn (a turn starting), not on the pane's first render. The tail's gap that goes with it is taken back
+// by a margin as it closes, on the side something is drawn (above it, else under it), so nothing jumps as it mounts or
+// unmounts. Imperative, as Arriving is: the styles that close it are set before the first paint, and removed at rest.
+function WorkingLine({ arrive, children }: { arrive: boolean; children: ReactNode }) {
+    const ref = useRef<HTMLDivElement>(null);
+    const reduce = useReducedMotion() ?? false;
+    const [isPresent, safeToRemove] = usePresence();
+    const fold = (el: HTMLElement): "marginTop" | "marginBottom" | null =>
+        el.previousElementSibling != null ? "marginTop" : el.nextElementSibling != null ? "marginBottom" : null;
+    const opens = useRef(arrive && !reduce);
+    useLayoutEffect(() => {
+        const el = ref.current;
+        if (!opens.current || el == null) {
+            return;
+        }
+        const full = el.getBoundingClientRect().height;
+        const side = fold(el);
+        const rest = () => {
+            for (const prop of ["height", "margin-top", "margin-bottom", "opacity", "overflow"]) {
+                el.style.removeProperty(prop);
+            }
+        };
+        el.style.overflow = "hidden";
+        el.style.height = "0px";
+        el.style.opacity = "0";
+        if (side != null) {
+            el.style[side] = `${-LINE_GAP}px`;
+        }
+        const runs = [
+            animate(el, { height: [0, full] }, MOTION.spring),
+            animate(el, { opacity: [0, 1] }, { duration: MOTION.durMicro, ease: MOTION.easeFluid }),
+            ...(side != null ? [animate(el, { [side]: [-LINE_GAP, 0] }, MOTION.spring)] : []),
+        ];
+        let over = false;
+        const end = () => {
+            if (!over) {
+                over = true;
+                rest();
+            }
+        };
+        void Promise.all(runs.map((run) => run.finished)).then(end, end);
+        return () => {
+            for (const run of runs) {
+                run.stop();
+            }
+            end();
+        };
+    }, []);
+    useEffect(() => {
+        const el = ref.current;
+        if (isPresent) {
+            return;
+        }
+        if (el == null || reduce) {
+            safeToRemove?.();
+            return;
+        }
+        const full = el.getBoundingClientRect().height;
+        const side = fold(el);
+        el.style.overflow = "hidden";
+        const runs = [
+            animate(el, { height: [full, 0] }, MOTION.spring),
+            animate(el, { opacity: [1, 0] }, { duration: MOTION.durMicro, ease: MOTION.easeFluid }),
+            ...(side != null ? [animate(el, { [side]: [0, -LINE_GAP] }, MOTION.spring)] : []),
+        ];
+        void Promise.all(runs.map((run) => run.finished)).then(
+            () => safeToRemove?.(),
+            () => safeToRemove?.()
+        );
+        return () => {
+            for (const run of runs) {
+                run.stop();
+            }
+        };
+    }, [isPresent]);
+    return (
+        <div ref={ref} data-chat-working className="flex flex-none items-center gap-2 text-[12px] text-muted">
+            {children}
+        </div>
+    );
+}
+
 // PendingLine opens and folds on the spring like a chat row (springReveal), and as it folds its margin takes back the
 // tail's gap above it, so what is under it closes up with no jump when it unmounts. At rest it sits 4px under the bubble
 function pendingLineVariants(reduce: boolean): Variants {
@@ -325,12 +418,15 @@ function PendingLine({ text, starting, onSendNow }: { text: string; starting: bo
             exit="exit"
             className="flex flex-none items-center justify-end gap-2 overflow-hidden"
         >
-            <span data-chat-pending-label className="flex items-center gap-1.5 text-[11px] text-muted">
-                {starting ? (
-                    <span className="h-[6px] w-[6px] flex-none rounded-full bg-accent pulse-dot" aria-hidden />
-                ) : null}
-                {text}
-            </span>
+            {/* one queued message's line has no words (chatpending.ts pendingLine): Send now alone */}
+            {text !== "" ? (
+                <span data-chat-pending-label className="flex items-center gap-1.5 text-[11px] text-muted">
+                    {starting ? (
+                        <span className="h-[6px] w-[6px] flex-none rounded-full bg-accent pulse-dot" aria-hidden />
+                    ) : null}
+                    {text}
+                </span>
+            ) : null}
             {!starting && onSendNow != null ? (
                 <button
                     type="button"
@@ -791,6 +887,22 @@ function ChatPaneBody({ model, agent, barred }: { model: AgentsViewModel; agent:
     // after it), and with its thinking blocks only where the session narrates in them
     const narrates = useMemo(() => (lines != null ? narratesThinking(lines) : false), [lines]);
     const awaitsOwn = awaitsOwnMessage(pending);
+    // the last turn drawn is over while that message is on its way, so its files card stays put through the send
+    const lastTurn = liveTurn(agent.state, pending);
+    // a message bubble of yours stood in the tail at the last commit: the row of yours landing now is its twin, drawn at
+    // once in its place; with none up, a row of yours that lands opens on the spring as any row does (ChatConversation
+    // ownArrives): one whose bubble the idle rule dropped before it landed, or one typed in the terminal
+    const bubbleUp = pending.some((p) => p.kind == null);
+    const bubbleWasUp = useRef(bubbleUp);
+    useLayoutEffect(() => {
+        bubbleWasUp.current = bubbleUp;
+    });
+    const ownArrives = !bubbleUp && !bubbleWasUp.current;
+    // the pane has been drawn once: a working line showing from then on opens on the spring (WorkingLine)
+    const paneDrawn = useRef(false);
+    useEffect(() => {
+        paneDrawn.current = true;
+    }, []);
     // the cards Chat drew for a bare /usage, /tasks… (chatlocal.ts)
     const localCards = useLocalCards(agent.id);
     // a queued message's Send now: Claude Code's own send-now chord in the agent's terminal, which sends every queued
@@ -1002,8 +1114,9 @@ function ChatPaneBody({ model, agent, barred }: { model: AgentsViewModel; agent:
                                     liveReply={liveStreams && !awaitsOwn ? liveReplyAtom(streamId) : undefined}
                                     liveNarrates={narrates}
                                     placeId={placeId}
-                                    active={agent.state !== "idle"}
-                                    working={agent.state === "working"}
+                                    active={lastTurn.active}
+                                    working={lastTurn.working}
+                                    ownArrives={ownArrives}
                                     onLoadEarlier={hasEarlier ? () => void loadEarlier() : undefined}
                                     onOpenTerminal={asleep ? undefined : () => setChatMode(agent.id, "terminal")}
                                     brainstorm={{
@@ -1081,15 +1194,17 @@ function ChatPaneBody({ model, agent, barred }: { model: AgentsViewModel; agent:
                             </div>
                         ) : null}
                         {/* the empty conversation, or the first message's label, already says the harness is starting */}
-                        {working != null && !empty && !opening ? (
-                            <div data-chat-working className="flex items-center gap-2 text-[12px] text-muted">
-                                <WorkingGlyph />
-                                <span className="volt-text flex min-w-0">
-                                    <span className="min-w-0 truncate shimmer-jarvis">{working}</span>
-                                </span>
-                                {turn != null ? <TurnStatsText stats={turn} /> : null}
-                            </div>
-                        ) : null}
+                        <AnimatePresence initial={false}>
+                            {working != null && !empty && !opening ? (
+                                <WorkingLine key="working" arrive={paneDrawn.current}>
+                                    <WorkingGlyph />
+                                    <span className="volt-text flex min-w-0">
+                                        <span className="min-w-0 truncate shimmer-jarvis">{working}</span>
+                                    </span>
+                                    {turn != null ? <TurnStatsText stats={turn} /> : null}
+                                </WorkingLine>
+                            ) : null}
+                        </AnimatePresence>
                         <PermissionCard
                             agent={agent}
                             askShown={asking}

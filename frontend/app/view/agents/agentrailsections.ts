@@ -10,6 +10,7 @@
 // Rendered by agentdetailsrail.tsx. A plain terminal has no rail.
 
 import type { RailSectionHeader } from "@/app/element/railsections";
+import { stepElapsed } from "./chatsteps";
 import type { BackgroundTaskStatus } from "./transcriptprojection";
 
 // the lists the tab strip counts, in its order
@@ -110,6 +111,27 @@ export type BgTaskLabel = BackgroundTaskStatus | "unknown";
 // a task the transcript never resolved is only known to be running while its session is
 export function bgTaskStatusLabel(status: BackgroundTaskStatus, live: boolean): BgTaskLabel {
     return status === "running" && !live ? "unknown" : status;
+}
+
+/** Pure: the Background tasks section's two groups, newest first in each, as Claude Desktop's panel has them: Running,
+ *  and Finished, which takes a task a session that is gone left running (bgTaskStatusLabel's unknown: nothing runs it). */
+export function bgTaskGroups<T extends { status: BackgroundTaskStatus }>(
+    tasks: readonly T[],
+    live: boolean
+): { running: T[]; finished: T[] } {
+    const newest = [...tasks].reverse();
+    return {
+        running: newest.filter((t) => bgTaskStatusLabel(t.status, live) === "running"),
+        finished: newest.filter((t) => bgTaskStatusLabel(t.status, live) !== "running"),
+    };
+}
+
+/** Pure: how long a task ran ("2m 7s"), a running one up to `now`; "" when its start is not known. */
+export function bgTaskElapsed(task: { startMs?: number; endMs?: number }, now: number): string {
+    if (task.startMs == null) {
+        return "";
+    }
+    return stepElapsed((task.endMs ?? now) - task.startMs);
 }
 
 /** Pure: the session a background task belongs to is live, as the details rail and the Agent tree's task peek both read

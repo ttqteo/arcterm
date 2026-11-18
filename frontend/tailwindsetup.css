@@ -498,7 +498,7 @@
 
     /* a textarea wraps, so it never scrolls sideways. WebKit (macOS) lays out an empty textarea's inner box at its
        width times the page zoom: at a zoom above 1 (cockpit.zoom 1.1) a one-line box overflows by 10%, the global
-       10px scrollbar shows, takes 10px of the box's height, and a vertical one follows. */
+       8px scrollbar shows, takes 8px of the box's height, and a vertical one follows. */
     textarea {
         overflow-x: hidden;
     }
@@ -518,26 +518,37 @@ svg [aria-label="tip"] g path {
     color: var(--color-border);
 }
 
-.wide-scrollbar::-webkit-scrollbar {
-    width: 10px;
+/* scrollbars stay out of sight until the pointer is over the area that scrolls: a 4px thumb then, 6px and brighter
+   under the pointer or while dragged. The 8px gutter is always reserved (stagemeasure.ts reads that width), so the
+   thumb appearing never moves the content. Shown in ink-faint, the lowest tier that clears 3:1 for non-text. No
+   fade: WebView2 cannot transition a scrollbar thumb.
+   The colour rides a variable rather than `:hover::-webkit-scrollbar-thumb`: Chromium does not repaint a scrollbar
+   when only its element's :hover changes, so that rule shows the thumb only after a scroll or relayout, but it does
+   repaint when the element's own custom property changes. The thumb inherits the variable from its element, and
+   every element not hovered resets it, so a scroller inside a hovered ancestor stays hidden. */
+:not(:hover) {
+    --scrollbar-thumb: transparent;
 }
-
-/* Handoff design-system globals: scrollbar */
+:hover {
+    --scrollbar-thumb: var(--color-ink-faint);
+}
 ::-webkit-scrollbar {
-    width: 10px;
-    height: 10px;
+    width: 8px;
+    height: 8px;
 }
 ::-webkit-scrollbar-thumb {
-    background: var(--color-edge-mid);
-    border-radius: 6px;
+    background-color: var(--scrollbar-thumb);
+    border-radius: 4px;
     border: 2px solid transparent;
     background-clip: padding-box;
 }
-::-webkit-scrollbar-thumb:hover {
-    background: var(--color-edge-strong);
-    background-clip: padding-box;
+::-webkit-scrollbar-thumb:hover,
+::-webkit-scrollbar-thumb:active {
+    background-color: var(--color-muted);
+    border-width: 1px;
 }
-::-webkit-scrollbar-track {
+::-webkit-scrollbar-track,
+::-webkit-scrollbar-corner {
     background: transparent;
 }
 
@@ -866,10 +877,20 @@ html[data-md-selection] ::selection,
 html[data-md-selection]::selection {
     background-color: transparent;
 }
-/* its border-radius is set per band (selectionpaint.ts bandRadius): square where it meets the line above or below */
+/* The layer of bands sits over the text (markdownmessage.tsx), so a plain fill tinted the selected words the band's
+   colour. It screens onto what is under it instead: white text stays white, the dark ground takes the band, and code
+   blocks and tables, whose own grounds would hide a band laid under the text, still show it. Every theme is dark, where
+   screen only lightens. The blend sits on the layer, not the bands: the layer's z-index makes it a stacking context, an
+   isolated group, inside which a band would blend with nothing. */
+[data-md-selection-layer] {
+    mix-blend-mode: screen;
+}
+/* its border-radius is set per band (selectionpaint.ts bandRadius): square where it meets the line above or below. Its
+   colour is the system's own selection colour (Highlight), as a selection anywhere else on the machine has, not the
+   theme's accent. */
 .md-selection-band {
     position: absolute;
-    background-color: color-mix(in srgb, var(--color-accent) 50%, transparent);
+    background-color: color-mix(in srgb, Highlight 60%, transparent);
 }
 
 /* Agents-view narration markdown (see markdownmessage.tsx). Neutral overlays, not palette hex. */
