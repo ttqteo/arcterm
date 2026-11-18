@@ -16,6 +16,19 @@ list (its number is not reused).
 Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) ·
 [part 4](hand-checks-4.md) · [part 3](hand-checks-3.md) · [part 2](hand-checks-2.md) (oldest).
 
+- [ ] (arcterm) **Sidecar's resource panel.** Click the RAM · CPU figures in Sidecar's title bar (wall and small
+  layouts): a panel drops under the bar with Sidecar's own row first (its CPU and RAM, not "—"; "—" means WebView2
+  did not name its renderer), then arcterm and each agent by RAM, then "Other apps over 200 MB" (chrome.exe (12)…),
+  every row refreshing every 2 s; Escape or a click outside closes it. Windows only; on a Mac it says so. Branch
+  `feat/sidecar-resources`.
+- [ ] (arcterm) **Sidecar's S button reads as its own button.** In the wall layout the S button shows a screen with a
+  small window in its corner (a screen with an arrow out while small), no longer the same inward arrows as the full
+  screen button beside it. Branch `feat/sidecar-resources`.
+- [ ] (arcterm) **Sidecar's alert frame follows the window's corners.** On Windows 11, with Sidecar not maximized and
+  RAM strained, the red frame bends with the window's rounded corners instead of being cut at them; maximized or full
+  screen it is square. In the band, a narrow heavy-agent card keeps the agent's name and command readable, its Stop
+  and Sleep buttons wrapping under them. Commits 7cdcfa181, f67c6b351 (the capability needs a rebuilt host).
+
 - [ ] (arcterm) **A markdown doc's Comment button floats above the selection, at its start.** Select a phrase mid-line
   in a markdown file open in the Agent's doc view: the Comment button sits just above the first selected line, its left
   edge at the selection's start, covering no selected text; select the doc's very first line and it drops under the

@@ -160,6 +160,16 @@ export function validateAct(raw: unknown, last: SidecarSnapshot | null): ActChec
             }
             return { ok: true, act: { kind: "sleep", id: row.heavy.id } };
         }
+        case "resources": {
+            // it only reads: no snapshot needs to have gone out, and the pids only pick a row out of what is read
+            if (typeof raw.open !== "boolean") {
+                return { ok: false, reason: "resources: no open" };
+            }
+            const pids = Array.isArray(raw.pids)
+                ? raw.pids.filter((p): p is number => typeof p === "number" && Number.isInteger(p) && p > 0)
+                : [];
+            return { ok: true, act: { kind: "resources", open: raw.open, pids } };
+        }
         default:
             return { ok: false, reason: `unknown act kind "${raw.kind}"` };
     }

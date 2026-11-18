@@ -31,6 +31,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Added
 
+- Sidecar shows what everything takes: click the RAM · CPU figures in its title bar for a panel with Sidecar's own
+  CPU and RAM, the rest of arcterm, each agent, and the other apps holding over 200 MB (Windows).
 - **Your phone as a remote for arcterm**: with your own Cloudflare tunnel set up in Settings → Remote (or
   `wsh remote setup`), an installed web app on your phone lists what waits on you, pushes a notification when an agent
   asks, and answers its questions. Hand a Claude or pi agent to the phone (`p`, or More → Hand to phone) to read its
@@ -49,6 +51,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- Sidecar's small-form button is a screen with a small window in its corner, so it no longer looks like the full
+  screen button beside it.
 - The Comment button on text you select in a markdown doc now floats above the selection, at its start, instead of
   under it.
 - Agents with no project now sit in No folder in the Agent tree, with the terminals that have none, rather than in a
