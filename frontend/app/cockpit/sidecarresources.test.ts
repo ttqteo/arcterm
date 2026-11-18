@@ -137,6 +137,13 @@ describe("pushHistory", () => {
         expect(h.map((p) => p.t)).toEqual([3000, 5000]);
     });
 
+    it("adds a Mac's swap in use, to the MB, only where the swap is read", () => {
+        const swap = { ...machine(10, 500), swapused: 1536 * MB + 1234, swaptotal: 2048 * MB };
+        const h = pushHistory([], snap({ ts: 1000, machine: swap }));
+        expect(h).toEqual([{ t: 1000, cpu: 10, mem: 50, swap: 1536 * MB }]);
+        expect(pushHistory([], snap({ ts: 1000, machine: machine(10, 500) }))[0].swap).toBeUndefined();
+    });
+
     it("keeps the same history for a snapshot with no reading, not ready, or not newer", () => {
         const h = pushHistory([], snap({ ts: 1000, machine: machine(1, 1) }));
         expect(pushHistory(h, null)).toBe(h);

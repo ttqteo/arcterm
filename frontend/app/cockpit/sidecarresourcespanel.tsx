@@ -123,6 +123,7 @@ function Charts({ resources, className }: { resources: SidecarResources | undefi
         <SidecarResourceCharts
             history={resources?.history ?? []}
             memTotal={resources?.memTotal}
+            swapTotal={resources?.swapTotal}
             className={className}
         />
     );

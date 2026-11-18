@@ -1,8 +1,8 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// Sidecar's resource charts: the whole machine's CPU, RAM and GPU over the last 5 minutes, as three small multiples on
-// one 0-100% scale (one series each, named by its title, so no legend), like Task Manager's Performance tab. A hover
+// Sidecar's resource charts: the whole machine's CPU, RAM, a Mac's swap and GPU over the last 5 minutes, as small
+// multiples on one 0-100% scale (one series each, named by its title, so no legend), like Task Manager's Performance tab. A hover
 // shows a crosshair and the reading under it. Wears the HUD skin (spec 2026-11-18-sidecar-hud-design.md): the line is a
 // GlowPath, the gridline and the ground `hud-*` tokens, the figures mono. Runs on the slim page: only the types, the pure
 // models and React.
@@ -30,7 +30,8 @@ function agoText(ms: number): string {
 
 interface Series {
     t: number;
-    v: number;
+    v: number; // 0-100, the plot's scale
+    label?: string; // the hover's figure, when the percent is not what the chart counts (Swap's GB)
 }
 
 function Chart(props: { title: string; figure: string; detail?: string; series: Series[]; end: number }) {
@@ -66,7 +67,8 @@ function Chart(props: { title: string; figure: string; detail?: string; series: 
                 <span className="flex-1" />
                 {shown != null ? (
                     <span className="font-mono text-[11.5px] tabular-nums text-hud-muted">
-                        <b className="font-medium text-hud-text">{shown.v}%</b> · {agoText(end - shown.t)}
+                        <b className="font-medium text-hud-text">{shown.label ?? `${shown.v}%`}</b> ·{" "}
+                        {agoText(end - shown.t)}
                     </span>
                 ) : (
                     <span className="font-mono text-[11.5px] tabular-nums text-hud-muted">
@@ -122,18 +124,28 @@ function Chart(props: { title: string; figure: string; detail?: string; series: 
     );
 }
 
-/** The three charts. `memTotal` words RAM's figure in GB; a machine whose GPU is not read says so in place of a chart. */
+/** The charts: CPU, RAM, a Mac's Swap, GPU. `memTotal` words RAM's figure in GB; a machine whose GPU is not read says so
+ * in place of a chart. Swap shows only where it is read (a Mac), drawn against the swap files' size now. */
 export function SidecarResourceCharts(props: {
     history: SidecarResourcePoint[];
     memTotal?: number;
+    swapTotal?: number;
     className?: string;
 }) {
-    const { history, memTotal } = props;
+    const { history, memTotal, swapTotal } = props;
     const last = history.at(-1);
     const end = last?.t ?? Date.now();
     const cpu = history.map((p) => ({ t: p.t, v: p.cpu }));
     const mem = history.map((p) => ({ t: p.t, v: p.mem }));
     const gpu = history.flatMap((p) => (p.gpu != null ? [{ t: p.t, v: p.gpu }] : []));
+    const swap =
+        swapTotal != null && swapTotal > 0
+            ? history.flatMap((p) =>
+                  p.swap != null
+                      ? [{ t: p.t, v: Math.round((p.swap / swapTotal) * 100), label: formatBytes(p.swap) }]
+                      : []
+              )
+            : [];
     const pct = (v: number | undefined) => (v != null ? `${v}%` : "—");
     const memDetail =
         last != null && memTotal != null
@@ -143,6 +155,15 @@ export function SidecarResourceCharts(props: {
         <div data-sidecar-charts className={cn("flex flex-col gap-2.5", props.className)}>
             <Chart title="CPU" figure={pct(last?.cpu)} series={cpu} end={end} />
             <Chart title="RAM" figure={pct(last?.mem)} detail={memDetail} series={mem} end={end} />
+            {swap.length > 0 && swapTotal != null && (
+                <Chart
+                    title="Swap"
+                    figure={formatBytes(last?.swap ?? 0)}
+                    detail={`of ${formatBytes(swapTotal)}`}
+                    series={swap}
+                    end={end}
+                />
+            )}
             {/* the GPU counters need two readings of their own: past a few, none means this machine has none to read */}
             {history.length >= 3 && gpu.length === 0 ? (
                 <div data-sidecar-chart="gpu" className="text-[11.5px] text-hud-muted">

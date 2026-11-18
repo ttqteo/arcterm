@@ -4514,6 +4514,8 @@ declare global {
         memused: number;
         memtotal: number;
         gpu?: number;
+        swapused?: number;
+        swaptotal?: number;
     };
 
     // wshrpc.ResMonOther

@@ -129,6 +129,7 @@ export interface SidecarResourcePoint {
     cpu: number;
     mem: number; // RAM in use, percent of the total
     gpu?: number;
+    swap?: number; // bytes of swap in use, to the MB; a Mac's only (pkg/resmon reads vm.swapusage)
 }
 
 /** The resource panel (sidecarresources.ts builds it): arcterm's rows, then the heavy processes outside it. */
@@ -139,6 +140,7 @@ export interface SidecarResources {
     othersMin?: number; // bytes: the least an "other" row holds
     history: SidecarResourcePoint[]; // the last 5 minutes, oldest first
     memTotal?: number; // bytes, for the RAM chart's figure
+    swapTotal?: number; // bytes: the swap files' size now (macOS grows them as it needs), the Swap chart's scale
 }
 
 export type SidecarAct =

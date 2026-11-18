@@ -50,6 +50,9 @@ type ResMonMachine struct {
 	MemUsed  int64    `json:"memused"`       // bytes: total less available
 	MemTotal int64    `json:"memtotal"`      // bytes
 	Gpu      *float64 `json:"gpu,omitempty"` // percent of the busiest engine; none where the GPU counters cannot be read
+	// macOS: the swap in use and the swap files' size (vm.swapusage), which grows as macOS needs it; none elsewhere
+	SwapUsed  int64 `json:"swapused,omitempty"`
+	SwapTotal int64 `json:"swaptotal,omitempty"`
 }
 
 type ResMonGroup struct {

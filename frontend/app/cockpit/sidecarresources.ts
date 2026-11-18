@@ -72,6 +72,7 @@ export function pushHistory(
         cpu: Math.round(m.cpu),
         mem: m.memtotal > 0 ? Math.round((m.memused / m.memtotal) * 100) : 0,
         ...(m.gpu != null ? { gpu: Math.round(m.gpu) } : {}),
+        ...(m.swaptotal != null && m.swaptotal > 0 ? { swap: roundMem(m.swapused ?? 0) } : {}),
     };
     const from = snap.ts - windowMs;
     return [...history.filter((p) => p.t >= from), point];
@@ -145,5 +146,8 @@ export function resourcesOf(
         ...(snap.othersmin != null && snap.othersmin > 0 ? { othersMin: snap.othersmin } : {}),
         history,
         ...(snap.machine != null && snap.machine.memtotal > 0 ? { memTotal: snap.machine.memtotal } : {}),
+        ...(snap.machine?.swaptotal != null && snap.machine.swaptotal > 0
+            ? { swapTotal: roundMem(snap.machine.swaptotal) }
+            : {}),
     };
 }

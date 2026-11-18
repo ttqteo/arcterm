@@ -233,6 +233,13 @@ func (st *tickState) tick() *sample {
 			machine.MemUsed, machine.MemTotal = int64(vm.Total-vm.Available), int64(vm.Total)
 		}
 	}
+	// a Mac's swap: on an 8 GB machine it is where the RAM's overflow goes, and Activity Monitor shows it beside the RAM.
+	// Windows' page file is not read: its commit charge is another measure
+	if machine != nil && runtime.GOOS == "darwin" {
+		if sw, err := mem.SwapMemory(); err == nil && sw.Total > 0 {
+			machine.SwapUsed, machine.SwapTotal = int64(sw.Used), int64(sw.Total)
+		}
+	}
 	s := &sample{
 		ts: now.UnixMilli(), ready: ready, procs: procs, arcRows: arcRows, jobs: jobs, rootTs: rootTs,
 		totalMem: totalMem, hostPid: st.hostPid, selfPid: st.selfPid, others: others, machine: machine,
