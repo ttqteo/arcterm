@@ -421,7 +421,7 @@ export function BoardDialog({ open, onClose, children }: { open: boolean; onClos
                                 onClose();
                             }
                         }}
-                        className="absolute inset-0 z-20 flex items-stretch justify-center bg-black/60 p-[20px] backdrop-blur-sm"
+                        className="absolute inset-0 z-30 flex items-stretch justify-center bg-black/60 p-[20px] backdrop-blur-sm"
                     >
                         <motion.div
                             variants={modalPanel}

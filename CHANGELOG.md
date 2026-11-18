@@ -225,6 +225,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- A brainstorm board opened from Chat covers the Focus read and Skim buttons, instead of the two buttons floating over
+  the board.
 - An agent's header and its run chip in the Agent tree list the runs it started in a project opened after arcterm
   launched, instead of missing them until a restart.
 - An agent's step list in Chat shows as a checklist when it writes its steps as a Markdown task list (`- [ ] …`),
