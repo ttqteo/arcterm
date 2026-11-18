@@ -9,6 +9,7 @@ import {
     lineOffset,
     litAt,
     nearestAt,
+    nearOf,
     parseFocusReadIds,
     scrollTopFor,
     SETTLE_MAX,
@@ -88,6 +89,21 @@ describe("stepFrom", () => {
     });
     it("steps from the last block when the lit one is past the list", () => {
         expect(stepFrom(5, -1, 3)).toBe(1);
+    });
+});
+
+describe("nearOf", () => {
+    it("names the block before and after the lit one", () => {
+        expect(nearOf(3, 8)).toEqual([2, 4]);
+    });
+    it("names only the one that exists at either end", () => {
+        expect(nearOf(0, 8)).toEqual([1]);
+        expect(nearOf(7, 8)).toEqual([6]);
+        expect(nearOf(0, 1)).toEqual([]);
+    });
+    it("names none with nothing lit or the lit one gone", () => {
+        expect(nearOf(-1, 8)).toEqual([]);
+        expect(nearOf(8, 8)).toEqual([]);
     });
 });
 

@@ -2,16 +2,18 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // Focus read in Chat, the DOM half (chatfocusread.ts is the pure geometry, chatfocusreadstore.ts the toggle and the
-// registry). useFocusRead finds the conversation's blocks, marks each `data-fr-block` and the one on the reading line
-// `data-fr-lit`, and the scroller `data-focus-read` while it dims; the opacity is tailwindsetup.css's. Marks, not React
-// state: the line moves on every scroll frame, and a render of the conversation per frame would redraw it.
+// registry). useFocusRead finds the conversation's blocks, marks each `data-fr-block`, the one on the reading line
+// `data-fr-lit` and the one before and after it `data-fr-near`, and the scroller `data-focus-read` while it dims; the
+// opacity is tailwindsetup.css's. Marks, not React state: the line moves on every scroll frame, and a render of the
+// conversation per frame would redraw it.
 //
 // A block is a paragraph, a heading, a leaf list item (or a list item's own line above its nested list, the
-// `data-md-li-head` markdownmessage.tsx wraps it in), a code block, a table, your bubble, and each other row or reply
-// part as a whole: a step list, a card, a marker. Never a block, so never dimmed and never picked: a reply still being
-// written (`data-chat-live`), an item that waits on you (the brainstorm row, a commit card, a handoff card), and the
-// pending bubbles, the ask and the local cards, which are in `data-chat-tail`, outside the conversation. A folded reply's
-// Show more goes with its last block.
+// `data-md-li-head` markdownmessage.tsx wraps it in), a code block, a table and your bubble. Every other row or reply
+// part (a step list, a card, a marker) is not text: it is marked `data-fr-skip`, dimmed, and never lit, so the line, J/K
+// and the settle pass over it. Never marked, so never dimmed and never picked: a reply still being written
+// (`data-chat-live`), an item that waits on you (the brainstorm row, a commit card, a handoff card), and the pending
+// bubbles, the ask and the local cards, which are in `data-chat-tail`, outside the conversation. A folded reply's Show
+// more goes with its last block.
 
 import { useEffect, useRef, type RefObject } from "react";
 import {
@@ -19,6 +21,7 @@ import {
     lineOffset,
     litAt,
     maxScroll,
+    nearOf,
     scrollTopFor,
     settleTo,
     stepFrom,
@@ -50,6 +53,8 @@ const TEXT_TAGS = new Set(["P", "H1", "H2", "H3", "H4", "H5", "H6"]);
 
 const BLOCK_ATTR = "data-fr-block";
 const LIT_ATTR = "data-fr-lit";
+const NEAR_ATTR = "data-fr-near";
+const SKIP_ATTR = "data-fr-skip";
 const ON_ATTR = "data-focus-read";
 
 function shown(el: Element): el is HTMLElement {
@@ -183,7 +188,9 @@ export function useFocusRead(
         if (!on || scroller == null) {
             return;
         }
+        // the text blocks the line lights and J/K step through, and the rows that are not text, dimmed and passed over
         let blocks: FocusBlock[] = [];
+        let skipped: FocusBlock[] = [];
         let spans: Span[] = [];
         let lit = -1;
         let programmatic = false;
@@ -197,14 +204,30 @@ export function useFocusRead(
         let watchConv: (conv: Element | null) => void = () => {};
 
         const marked = (b: FocusBlock) => [b.el, ...b.extra];
+        // the lit block's mark and its neighbours', put on or taken off
+        const paint = (put: boolean) => {
+            const marks: [number, string][] = [
+                [lit, LIT_ATTR],
+                ...nearOf(lit, blocks.length).map((i): [number, string] => [i, NEAR_ATTR]),
+            ];
+            for (const [i, attr] of marks) {
+                const b = blocks[i];
+                if (b == null) {
+                    continue;
+                }
+                for (const el of marked(b)) {
+                    if (put) {
+                        el.setAttribute(attr, "");
+                    } else {
+                        el.removeAttribute(attr);
+                    }
+                }
+            }
+        };
         const setLit = (next: number) => {
-            if (lit >= 0 && blocks[lit] != null) {
-                marked(blocks[lit]).forEach((el) => el.removeAttribute(LIT_ATTR));
-            }
+            paint(false);
             lit = next;
-            if (lit >= 0 && blocks[lit] != null) {
-                marked(blocks[lit]).forEach((el) => el.setAttribute(LIT_ATTR, ""));
-            }
+            paint(true);
         };
         const line = () => lineOffset(scroller.clientHeight);
         const pickFromLine = () => setLit(litAt(spans, scroller.scrollTop + line()));
@@ -238,20 +261,30 @@ export function useFocusRead(
             lastCollect = Date.now();
             const conv = scroller.querySelector("[data-chat-conversation]");
             watchConv(conv);
-            const next = conv != null ? collectBlocks(conv) : [];
+            const all = conv != null ? collectBlocks(conv) : [];
+            const next = all.filter((b) => b.kind !== "card");
+            const nextSkipped = all.filter((b) => b.kind === "card");
             const keep = new Set(next.flatMap(marked));
-            for (const b of blocks) {
-                for (const el of marked(b)) {
-                    if (!keep.has(el)) {
-                        el.removeAttribute(BLOCK_ATTR);
-                        el.removeAttribute(LIT_ATTR);
-                    }
+            const keepSkipped = new Set(nextSkipped.flatMap(marked));
+            const litEl = lit >= 0 ? blocks[lit]?.el : undefined;
+            paint(false);
+            for (const el of blocks.flatMap(marked)) {
+                if (!keep.has(el)) {
+                    el.removeAttribute(BLOCK_ATTR);
                 }
             }
-            const litEl = lit >= 0 ? blocks[lit]?.el : undefined;
+            for (const el of skipped.flatMap(marked)) {
+                if (!keepSkipped.has(el)) {
+                    el.removeAttribute(SKIP_ATTR);
+                }
+            }
             blocks = next;
+            skipped = nextSkipped;
             for (const el of keep) {
                 el.setAttribute(BLOCK_ATTR, "");
+            }
+            for (const el of keepSkipped) {
+                el.setAttribute(SKIP_ATTR, "");
             }
             const top = scroller.getBoundingClientRect().top;
             spans = blocks.map((b) => spanOf(b.el, scroller, top));
@@ -378,11 +411,13 @@ export function useFocusRead(
             clearTimeout(collectTimer);
             clearTimeout(idleTimer);
             clearTimeout(programmaticTimer);
-            for (const b of blocks) {
-                for (const el of marked(b)) {
-                    el.removeAttribute(BLOCK_ATTR);
-                    el.removeAttribute(LIT_ATTR);
-                }
+            for (const el of blocks.flatMap(marked)) {
+                el.removeAttribute(BLOCK_ATTR);
+                el.removeAttribute(LIT_ATTR);
+                el.removeAttribute(NEAR_ATTR);
+            }
+            for (const el of skipped.flatMap(marked)) {
+                el.removeAttribute(SKIP_ATTR);
             }
             scroller.removeAttribute(ON_ATTR);
             if (tickRef.current != null) {

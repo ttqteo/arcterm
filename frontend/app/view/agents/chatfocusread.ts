@@ -83,6 +83,15 @@ export function stepFrom(lit: number, dir: 1 | -1, count: number): number | null
     return next < 0 || next >= count ? null : next;
 }
 
+/** The blocks drawn at half strength beside the lit one: the one before it and the one after, those that exist. None with
+ *  nothing lit. */
+export function nearOf(lit: number, count: number): number[] {
+    if (lit < 0 || lit >= count) {
+        return [];
+    }
+    return [lit - 1, lit + 1].filter((i) => i >= 0 && i < count);
+}
+
 /** Where a scroll that stopped settles: the block nearest the line and the scrollTop that puts it there. Null at the
  *  scroller's end (a settle there would pull the reader off the bottom Chat follows), when that block already sits on
  *  the line, and when it is more than SETTLE_MAX off (the reader is inside a tall block). */

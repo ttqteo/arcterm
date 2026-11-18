@@ -26,7 +26,7 @@ import { loadEffortDetail } from "@/app/view/jarvis/effortstore";
 import { formatChordString } from "@/util/keysym";
 import { cn, fireAndForget, stringToBase64 } from "@/util/util";
 import { useAtom, useAtomValue } from "jotai";
-import { ArrowDown, ChevronDown, ChevronUp, Highlighter, TextQuote, TextSearch } from "lucide-react";
+import { ArrowDown, ChevronDown, ChevronUp, Highlighter, Quote, TextSearch } from "lucide-react";
 import {
     animate,
     AnimatePresence,
@@ -604,12 +604,15 @@ function SkimToggle() {
 
 // Chat's focus read toggle, beside Skim: one block at a time, the rest dimmed (chatfocusreadview.ts). Each agent's own,
 // remembered (chatfocusreadstore.ts). Turning it on puts the focus in the conversation, so J/K step at once; while it is
-// on, the step and quote buttons under it say their keys on their face.
+// on, the toggle grows down into one pill with the step and quote buttons, which say their keys on their face.
 function FocusReadToggle({ agentId, scrollRef }: { agentId: string; scrollRef: RefObject<HTMLDivElement | null> }) {
     const [on, setOn] = useAtom(chatFocusReadOnAtom(agentId));
     const keys = formatChordString(FOCUS_READ_KEYS);
     return (
-        <>
+        <div
+            data-chat-focus-read-group
+            className="absolute right-[42px] top-2 z-20 flex w-[26px] flex-col overflow-hidden rounded-[8px] border border-edge-mid bg-surface-raised"
+        >
             <button
                 type="button"
                 data-chat-focus-read-toggle
@@ -627,32 +630,29 @@ function FocusReadToggle({ agentId, scrollRef }: { agentId: string; scrollRef: R
                     }
                 }}
                 className={cn(
-                    "absolute right-[42px] top-2 z-20 flex h-[26px] w-[26px] cursor-pointer items-center justify-center rounded-[8px] border border-edge-mid bg-surface-raised hover:bg-surface-hover",
-                    on ? "text-accent" : "text-muted"
+                    "flex h-[24px] w-full cursor-pointer items-center justify-center",
+                    on ? "bg-accentbg text-accent" : "text-muted hover:bg-surface-hover"
                 )}
             >
                 <TextSearch size={13} strokeWidth={2} aria-hidden />
             </button>
             {on ? <FocusReadSteps agentId={agentId} scrollRef={scrollRef} /> : null}
-        </>
+        </div>
     );
 }
 
-// Focus read's buttons, a column under its toggle (clear of the pinned prompt card, which keeps 70px of the corner):
-// the previous and next block and the quote, each with its key on its face so the keys need no tooltip. A click leaves
-// the focus in the conversation, so the keys go on from there.
+// Focus read's buttons, the lower part of its pill (clear of the pinned prompt card, which keeps 70px of the corner):
+// the previous and next block, then past a hairline the quote, each with its key on its face so the keys need no
+// tooltip. A click leaves the focus in the conversation, so the keys go on from there.
 const FOCUS_STEPS = [
     { key: "K", label: "Previous block (K or ↑)", Icon: ChevronUp, act: (r: FocusReader) => r.step(-1) },
     { key: "J", label: "Next block (J, ↓ or Space)", Icon: ChevronDown, act: (r: FocusReader) => r.step(1) },
-    { key: "Q", label: "Quote the lit block into the box (Q)", Icon: TextQuote, act: (r: FocusReader) => r.quote() },
+    { key: "Q", label: "Quote the lit block into the box (Q)", Icon: Quote, act: (r: FocusReader) => r.quote() },
 ] as const;
 
 function FocusReadSteps({ agentId, scrollRef }: { agentId: string; scrollRef: RefObject<HTMLDivElement | null> }) {
     return (
-        <div
-            data-chat-focus-read-steps
-            className="absolute right-[42px] top-[38px] z-20 flex w-[26px] flex-col overflow-hidden rounded-[8px] border border-edge-mid bg-surface-raised"
-        >
+        <div data-chat-focus-read-steps className="flex flex-col border-t border-edge-mid">
             {FOCUS_STEPS.map(({ key, label, Icon, act }) => (
                 <button
                     key={key}
@@ -669,10 +669,13 @@ function FocusReadSteps({ agentId, scrollRef }: { agentId: string; scrollRef: Re
                         }
                         scrollRef.current?.focus({ preventScroll: true });
                     }}
-                    className="flex h-[32px] cursor-pointer flex-col items-center justify-center gap-px text-muted hover:bg-surface-hover hover:text-primary"
+                    className={cn(
+                        "group flex h-[30px] cursor-pointer flex-col items-center justify-center gap-[3px] text-secondary hover:bg-surface-hover hover:text-primary",
+                        key === "Q" && "border-t border-edge-mid"
+                    )}
                 >
-                    <Icon size={13} strokeWidth={2} aria-hidden />
-                    <kbd className="font-sans text-[9.5px] leading-none text-muted">{key}</kbd>
+                    <Icon size={12} strokeWidth={2} aria-hidden />
+                    <kbd className="font-mono text-[9px] leading-none text-muted group-hover:text-secondary">{key}</kbd>
                 </button>
             ))}
         </div>
