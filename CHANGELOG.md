@@ -78,6 +78,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- Opening arcterm from the Start menu or a shortcut while it runs in the tray brings its window back, instead of
+  starting a second arcterm that stopped on "wavesrv did not report its ports" beside a second Sidecar and tray icon
+  (Windows). When the backend does stop at launch, the error now says why at once rather than after 15 seconds.
 - Sending a message in Chat no longer folds away the last turn's "Edited N files" card and opens it again a moment
   later: the conversation stays still until your message lands.
 - A run's line in a narrow Agent tree says its stage again ("Working · 0/5", "Planning · 0/5") whenever there is room

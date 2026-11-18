@@ -35,6 +35,9 @@ windows = { version = "=0.61.3", features = ["Win32_Foundation", "Win32_Storage_
 # WinRT toasts with an activation callback (notify.rs): a click focuses the window and opens what the toast is about,
 # which tauri-plugin-notification cannot report on desktop
 tauri-winrt-notification = "0.7"
+# one arcterm per user: opening it again (the Start menu, a shortcut) while it runs in the tray shows that window
+# instead of starting a second app, whose wavesrv cannot take wave.lock (main.rs). Windows only: macOS already keeps one.
+tauri-plugin-single-instance = "2"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 # Notification Center banners that report their click (notify.rs), which tauri-plugin-notification, built on this crate,

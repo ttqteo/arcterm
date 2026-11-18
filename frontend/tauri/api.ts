@@ -16,6 +16,8 @@ export type InitData = {
     isDev: boolean;
     userName: string;
     hostName: string;
+    // why wavesrv stopped before it reported its ports (empty while it starts or runs); absent in the browser shim
+    startupError?: string;
 };
 
 const noop = () => {};
