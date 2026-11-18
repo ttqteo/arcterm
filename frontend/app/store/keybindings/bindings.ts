@@ -55,12 +55,14 @@ import { paneState } from "@/app/view/agents/canvasmodel";
 import { focusedCanvas, focusedCanvasMode, setMarking, stepCanvasBoard } from "@/app/view/agents/canvasstore";
 import { activeChannelRunsAtom } from "@/app/view/agents/channelsstore";
 import {
-    chatFocusReadOnAtom,
+    chatFocusReadIdsAtom,
     conversationShown,
     FOCUS_READ_KEYS,
     focusConversation,
     focusedConversationAgent,
     focusReaderOf,
+    focusReadOn,
+    setFocusReadOn,
 } from "@/app/view/agents/chatfocusreadstore";
 import { focusChatBox, hasChatBox, interruptChat } from "@/app/view/agents/chatinsert";
 import { CHAT_JUMP_KEYS, jumpChatToLatest } from "@/app/view/agents/chatjump";
@@ -1243,28 +1245,39 @@ const agentNav = (ctx: KeyContext) =>
 // from the conversation being read. j, k and Ctrl+Tab still step agents anywhere off a text field.
 const inAgentTree = () =>
     typeof document !== "undefined" && document.activeElement?.closest?.("[data-agent-tree]") != null;
-// Focus read's toggle. On the Agent surface it turns focus read on or off for the Chat on screen, and as it turns on puts
-// the focus in the conversation so J/K step at once; with no Chat on screen it passes (inside a terminal the key is the
-// TUI's). From another surface (What's new's Try it) it turns focus read on and opens the Agent surface.
+// Focus read's toggle, for the agent in focus: each agent has its own. On the Agent surface it turns focus read on or off
+// for that agent's Chat on screen, and as it turns on puts the focus in the conversation so J/K step at once; with no
+// Chat on screen it passes (inside a terminal the key is the TUI's). From another surface (What's new's Try it) it turns
+// focus read on for the agent in focus and opens the Agent surface.
 function toggleFocusRead(model: AgentsViewModel): false | void {
+    const id = globalStore.get(model.focusIdAtom);
     if (globalStore.get(model.surfaceAtom) !== "agent") {
-        globalStore.set(chatFocusReadOnAtom, true);
+        if (id) {
+            setFocusReadOn(id, true);
+        }
         globalStore.set(model.surfaceAtom, "agent");
         return;
     }
-    const id = globalStore.get(model.focusIdAtom);
     if (!centerAtRest() || !conversationShown(id)) {
         return false;
     }
-    const next = !globalStore.get(chatFocusReadOnAtom);
-    globalStore.set(chatFocusReadOnAtom, next);
+    const next = !focusReadOn(id);
+    setFocusReadOn(id, next);
     if (next) {
         focusConversation(id);
     }
 }
 
-// Focus read's keys act in the Chat conversation that holds the focus, while focus read is on (chatfocusreadstore.ts)
-const focusReadAgent = (): string | null => (globalStore.get(chatFocusReadOnAtom) ? focusedConversationAgent() : null);
+// Focus read's keys act in the Chat conversation that holds the focus, while that agent has focus read on
+// (chatfocusreadstore.ts). The list is read first: with no agent reading, the DOM is never asked.
+const focusReadAgent = (): string | null => {
+    const ids = globalStore.get(chatFocusReadIdsAtom);
+    if (ids.length === 0) {
+        return null;
+    }
+    const id = focusedConversationAgent();
+    return id != null && ids.includes(id) ? id : null;
+};
 const focusReadKeys = (ctx: KeyContext) =>
     navigateStrict(ctx) &&
     ctx.surface === "agent" &&
@@ -2066,6 +2079,9 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
             [
                 ["agent:focus-read-next", "j", "Focus read: the next block onto the line", 1],
                 ["agent:focus-read-prev", "k", "Focus read: the previous block onto the line", -1],
+                // the arrows too: left to the page they scroll 40px and the settle pulls the block back, a judder
+                ["agent:focus-read-next-arrow", "ArrowDown", "Focus read: the next block onto the line", 1],
+                ["agent:focus-read-prev-arrow", "ArrowUp", "Focus read: the previous block onto the line", -1],
                 ["agent:focus-read-next-space", "Space", "Focus read: the next block onto the line", 1],
                 ["agent:focus-read-prev-space", "Shift:Space", "Focus read: the previous block onto the line", -1],
             ] as const

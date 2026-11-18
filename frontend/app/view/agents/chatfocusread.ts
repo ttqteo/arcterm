@@ -124,7 +124,25 @@ export function tableText(rows: readonly (readonly string[])[]): string {
     return [line(rows[0]), sep, ...rows.slice(1).map(line)].join("\n");
 }
 
-/** The toggle's stored value: off unless it says true (a reading mode is something you turn on). */
-export function parseFocusReadOn(raw: string | null): boolean {
-    return raw === "true";
+// how many agents the stored list keeps: the agents that turned it on last, so ended agents' ids never pile up
+export const FOCUS_READ_KEEP = 100;
+
+/** The stored list of agents whose Chat reads one block at a time: off for every agent unless listed (a reading mode is
+ *  something you turn on). The old global value ("true" / "false") turns on none: it said nothing about an agent. */
+export function parseFocusReadIds(raw: string | null): string[] {
+    if (raw == null) {
+        return [];
+    }
+    try {
+        const v: unknown = JSON.parse(raw);
+        return Array.isArray(v) ? v.filter((x): x is string => typeof x === "string" && x !== "") : [];
+    } catch {
+        return [];
+    }
+}
+
+/** The list with one agent turned on (moved to the end, the newest) or off, kept to the last FOCUS_READ_KEEP. */
+export function withFocusRead(ids: readonly string[], agentId: string, on: boolean): string[] {
+    const rest = ids.filter((id) => id !== agentId);
+    return on ? [...rest, agentId].slice(-FOCUS_READ_KEEP) : rest;
 }

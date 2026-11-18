@@ -32,7 +32,7 @@ import type { AgentsViewModel } from "@/app/view/agents/agents";
 import { brainstormAtom } from "@/app/view/agents/brainstormstore";
 import { canvasGalleryAtom } from "@/app/view/agents/canvasgallerystore";
 import { canvasStateAtom } from "@/app/view/agents/canvasstore";
-import { chatFocusReadOnAtom } from "@/app/view/agents/chatfocusreadstore";
+import { chatFocusReadIdsAtom } from "@/app/view/agents/chatfocusreadstore";
 import { compareOnAtom } from "@/app/view/agents/comparestore";
 import { councilChatNavAtom } from "@/app/view/agents/councilchatnav";
 import { docReviewStateAtom } from "@/app/view/agents/docreviewstore";
@@ -96,7 +96,7 @@ export const PREDICATE_ATOMS: Atom<unknown>[] = [
     usageLensAtom, // usage:back, and surface:back-home stands down to it
     usageWorkScopeAtom, // usage:back, surface:back-home
     usageWorkItemAtom, // usage:back, surface:back-home
-    chatFocusReadOnAtom, // buildAgentBindings: agent:focus-read-* and agent:next-j / agent:prev-k
+    chatFocusReadIdsAtom, // buildAgentBindings: agent:focus-read-* and agent:next-j / agent:prev-k
 ];
 
 function bumpWhenVersion() {

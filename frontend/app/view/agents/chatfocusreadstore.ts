@@ -2,44 +2,68 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // Focus read in Chat, the state half (chatfocusread.ts is the pure half, chatfocusreadview.ts the DOM half). The toggle
-// is global across agents and remembered in localStorage `chat.focusRead`, the way Skim's `chat.skim` is. Each ChatPane
-// registers its reader under its agent id, so the keys in bindings.ts reach the conversation that holds the focus
-// (chatjump.ts and chatinsert.ts keep the same kind of registry).
+// is each agent's own: the agents that have it on are a list remembered in localStorage `chat.focusRead`. Each ChatPane
+// registers its reader under its agent id, so the keys in bindings.ts and the pane's step buttons reach the conversation
+// they act in (chatjump.ts and chatinsert.ts keep the same kind of registry).
 
+import { globalStore } from "@/app/store/jotaiStore";
 import { atom } from "jotai";
-import { parseFocusReadOn } from "./chatfocusread";
+import { parseFocusReadIds, withFocusRead } from "./chatfocusread";
 
 const STORAGE_KEY = "chat.focusRead";
 
 // the toggle's key (agent:chat-focus-read), here so the button's tooltip names it without importing the bindings
 export const FOCUS_READ_KEYS = "Alt:r";
 
-function readOn(): boolean {
+function readIds(): string[] {
     try {
-        return parseFocusReadOn(localStorage.getItem(STORAGE_KEY));
+        return parseFocusReadIds(localStorage.getItem(STORAGE_KEY));
     } catch {
-        return false;
+        return [];
     }
 }
 
-const onAtom = atom<boolean>(readOn());
+const idsAtom = atom<string[]>(readIds());
 
-// whether Chat reads one block at a time; writing it keeps it in localStorage
-export const chatFocusReadOnAtom = atom(
-    (get) => get(onAtom),
-    (_get, set, next: boolean) => {
-        set(onAtom, next);
-        try {
-            localStorage.setItem(STORAGE_KEY, next ? "true" : "false");
-        } catch {
-            // storage unavailable: the toggle holds for this session
+// the agents whose Chat reads one block at a time; the keybindings' predicates subscribe to it (whenstate.ts)
+export const chatFocusReadIdsAtom = atom((get) => get(idsAtom));
+
+// one agent's toggle; writing it keeps the list in localStorage
+const onAtoms = new Map<string, ReturnType<typeof makeOnAtom>>();
+function makeOnAtom(agentId: string) {
+    return atom(
+        (get) => get(idsAtom).includes(agentId),
+        (get, set, next: boolean) => {
+            const ids = withFocusRead(get(idsAtom), agentId, next);
+            set(idsAtom, ids);
+            try {
+                localStorage.setItem(STORAGE_KEY, JSON.stringify(ids));
+            } catch {
+                // storage unavailable: the toggle holds for this session
+            }
         }
+    );
+}
+export function chatFocusReadOnAtom(agentId: string) {
+    let a = onAtoms.get(agentId);
+    if (a == null) {
+        a = makeOnAtom(agentId);
+        onAtoms.set(agentId, a);
     }
-);
+    return a;
+}
+
+export function focusReadOn(agentId: string): boolean {
+    return globalStore.get(chatFocusReadIdsAtom).includes(agentId);
+}
+
+export function setFocusReadOn(agentId: string, on: boolean): void {
+    globalStore.set(chatFocusReadOnAtom(agentId), on);
+}
 
 /** What the keys do in one agent's Chat while focus read is on. */
 export interface FocusReader {
-    /** J / Space (1) and K / Shift+Space (-1): the next or previous block onto the line */
+    /** J / ↓ / Space (1) and K / ↑ / Shift+Space (-1): the next or previous block onto the line */
     step(dir: 1 | -1): void;
     /** Q: the lit block into the chat box as a quote, the focus left in the conversation */
     quote(): void;

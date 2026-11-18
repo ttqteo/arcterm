@@ -786,3 +786,7 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
   their +/− lines; a row opens the Diff on that file and See all opens the agent's whole Diff. Checked only in the
   `agent-chat` CDP scenario with fixture turns.
 - [ ] (arcterm) Focus read in Chat (`chatfocusreadview.ts`): with a real wheel and a trackpad, a stopped scroll settles the nearest block onto the line in one short glide and never fights an ongoing fling; `Space` / `Shift+Space` step like `j` / `k`; with reduced motion the step jumps and the dimming has no fade; while a live agent writes a reply and you sit at the bottom nothing is dimmed, and scrolling up brings the dimming back; `j` / `q` typed with Telex on act as keys in the conversation. The `chat-focus-read` scenario drives keys and `scrollTop` only
+- [ ] (arcterm) Focus read's step buttons and per-agent toggle (`chatpane.tsx` FocusReadSteps, `chatfocusreadstore.ts`):
+  with focus read on, the K / J / Q column under the toggle sits clear of the pinned prompt card and reads well in a
+  light and a dark theme; holding ↓ steps block after block with no judder; turning it on for one agent in a 2x2 split
+  leaves the other cells undimmed, and it is still on for that agent after a restart.

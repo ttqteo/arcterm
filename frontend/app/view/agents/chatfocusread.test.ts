@@ -5,16 +5,18 @@ import { describe, expect, it } from "vitest";
 import {
     atEnd,
     fencedText,
+    FOCUS_READ_KEEP,
     lineOffset,
     litAt,
     nearestAt,
-    parseFocusReadOn,
+    parseFocusReadIds,
     scrollTopFor,
     SETTLE_MAX,
     settleTo,
     stepFrom,
     tableText,
     TOP_ABOVE,
+    withFocusRead,
 } from "./chatfocusread";
 
 // three blocks with 20px gaps: 0-100, 120-160, 180-600
@@ -155,10 +157,33 @@ describe("tableText", () => {
     });
 });
 
-describe("parseFocusReadOn", () => {
-    it("is off unless stored true", () => {
-        expect(parseFocusReadOn(null)).toBe(false);
-        expect(parseFocusReadOn("false")).toBe(false);
-        expect(parseFocusReadOn("true")).toBe(true);
+describe("parseFocusReadIds", () => {
+    it("is the stored list of agent ids", () => {
+        expect(parseFocusReadIds('["a","b"]')).toEqual(["a", "b"]);
+    });
+    it("turns on no agent from nothing, the old global value or junk", () => {
+        expect(parseFocusReadIds(null)).toEqual([]);
+        expect(parseFocusReadIds("true")).toEqual([]);
+        expect(parseFocusReadIds("false")).toEqual([]);
+        expect(parseFocusReadIds("{")).toEqual([]);
+        expect(parseFocusReadIds('[1,"",null,"a"]')).toEqual(["a"]);
+    });
+});
+
+describe("withFocusRead", () => {
+    it("turns one agent on, at the end, once", () => {
+        expect(withFocusRead(["a", "b"], "a", true)).toEqual(["b", "a"]);
+        expect(withFocusRead([], "a", true)).toEqual(["a"]);
+    });
+    it("turns one agent off and leaves the rest", () => {
+        expect(withFocusRead(["a", "b"], "a", false)).toEqual(["b"]);
+        expect(withFocusRead(["b"], "a", false)).toEqual(["b"]);
+    });
+    it("keeps the agents that turned it on last", () => {
+        const many = Array.from({ length: FOCUS_READ_KEEP }, (_, i) => `x${i}`);
+        const next = withFocusRead(many, "new", true);
+        expect(next).toHaveLength(FOCUS_READ_KEEP);
+        expect(next[0]).toBe("x1");
+        expect(next.at(-1)).toBe("new");
     });
 });

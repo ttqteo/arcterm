@@ -49003,7 +49003,8 @@ const chatQuote = {
 // line's tick in the gutter, and the focus in the conversation. J steps the next block onto the line (the Agent tree's j
 // does not step agents there), Q puts the lit block in the box as a quote with the focus left in the conversation, a code
 // block quotes fenced and a table as a markdown table, J keeps stepping at the end of the conversation without pulling
-// the scroller off the bottom, and Alt+R turns it off again.
+// the scroller off the bottom, and Alt+R turns it off again. While it is on, a column of buttons under the toggle steps
+// and quotes with its keys (K, J, Q) on their faces, the arrows step as J and K do, and the toggle is the agent's own.
 
 const CFR_NAME = "focus read source";
 const CFR_QUESTION = "walk me through the release steps";
@@ -49147,6 +49148,16 @@ const chatFocusRead = {
         const J = () => press("j", "KeyJ", 74);
         const K = () => press("k", "KeyK", 75);
         const Q = () => press("q", "KeyQ", 81);
+        const Down = () => press("ArrowDown", "ArrowDown", 40);
+        const Up = () => press("ArrowUp", "ArrowUp", 38);
+        const click = async (sel) => {
+            const at = await h.ev(caCenter(sel));
+            for (const type of ["mouseMoved", "mousePressed", "mouseReleased"]) {
+                await h.cdp("Input.dispatchMouseEvent", { type, x: Math.round(at.x), y: Math.round(at.y), button: "left", clickCount: 1 });
+            }
+            await polishNap(700);
+        };
+        const stepBtn = (k) => `${pane}?.querySelector('[data-chat-focus-read-step="${k}"]')`;
         // the lit block sits on the line: its top TOP_ABOVE (12) px above it, half a short block, within a few px
         const onLine = (s) => s != null && s.litTop != null && Math.abs(s.litTop + Math.min(s.litH / 2, 12)) <= 3;
         try {
@@ -49170,6 +49181,22 @@ const chatFocusRead = {
                 { loaded, on1, pressed1, s1 }
             );
 
+            // 1b. the step buttons show under the toggle with their keys on their faces, and the toggle is this agent's
+            // own: the stored list names it alone, and another agent reads off
+            const btn1 = await h.ev(`(() => {
+                const col = ${pane}?.querySelector("[data-chat-focus-read-steps]");
+                const t = ${pane}?.querySelector("[data-chat-focus-read-toggle]")?.getBoundingClientRect();
+                const r = col?.getBoundingClientRect();
+                return col ? { keys: [...col.querySelectorAll("kbd")].map((k) => k.innerText), below: !!t && r.top >= t.bottom, visible: col.checkVisibility() } : null;
+            })()`);
+            const stored1 = await h.ev(`localStorage.getItem("chat.focusRead")`);
+            const other1 = await AC.agentPage(h, `const S = await mod("app/view/agents/chatfocusreadstore.ts"); return S.focusReadOn("some-other-agent");`);
+            rec(
+                "1b. a column of buttons under the toggle reads K, J, Q; focus read is stored for this agent alone, and another agent has it off",
+                btn1?.visible === true && btn1.below && btn1.keys.join(",") === "K,J,Q" && stored1 === JSON.stringify([A]) && other1 === false,
+                { btn1, stored1, other1 }
+            );
+
             // 2. from the reply's first paragraph, J puts the next block on the line, and the Agent tree's j does not step
             // agents
             await h.ev(`(() => {
@@ -49189,6 +49216,24 @@ const chatFocusRead = {
                 "2. J lights the next block and scrolls it onto the reading line (its top just above the line); the focused agent stays the same",
                 s2a?.lit >= 0 && s2?.lit === s2a.lit + 1 && onLine(s2) && s2.litCount === 1 && id2 === id2a && id2 === A,
                 { s2a, s2, id2a, id2 }
+            );
+
+            // 2b. ↓ and ↑ step as J and K do (no 40px page scroll for the settle to pull back), and so do the buttons,
+            // which leave the focus in the conversation
+            await Down();
+            const s2d = await state();
+            await Up();
+            const s2u = await state();
+            await click(stepBtn("j"));
+            const s2bj = await state();
+            await click(stepBtn("k"));
+            const s2bk = await state();
+            await h.shot("cdp-shots/chat-focus-read-2b-buttons.png");
+            rec(
+                "2b. ↓ lights the next block on the line and ↑ the one before; the ↓ and ↑ buttons do the same and the focus stays in the conversation",
+                s2d?.lit === s2.lit + 1 && onLine(s2d) && s2u?.lit === s2.lit && onLine(s2u) &&
+                    s2bj?.lit === s2.lit + 1 && onLine(s2bj) && s2bk?.lit === s2.lit && onLine(s2bk) && s2bk.focusIn === true,
+                { s2d, s2u, s2bj, s2bk }
             );
 
             // 3. Q puts the lit block in the box as a quote, the caret's fresh line under it, and the focus stays in Chat
@@ -49252,9 +49297,9 @@ const chatFocusRead = {
             await press("r", "KeyR", 82, 1);
             const off7 = await polishWaitFor(h, `!${scroller}?.hasAttribute("data-focus-read") && !${pane}?.querySelector("[data-fr-block]")`, 3000);
             const pressed7 = await h.ev(`${pane}?.querySelector("[data-chat-focus-read-toggle]")?.getAttribute("aria-pressed")`);
-            const tick7 = await h.ev(`!!${pane}?.querySelector("[data-chat-focus-line]")`);
+            const tick7 = await h.ev(`!!${pane}?.querySelector("[data-chat-focus-line]") || !!${pane}?.querySelector("[data-chat-focus-read-steps]")`);
             await h.shot("cdp-shots/chat-focus-read-7-off.png");
-            rec("7. Alt+R turns focus read off: no block dimmed, no tick, the toggle up", off7 && pressed7 === "false" && tick7 === false, {
+            rec("7. Alt+R turns focus read off: no block dimmed, no tick, no step buttons, the toggle up", off7 && pressed7 === "false" && tick7 === false, {
                 off7,
                 pressed7,
                 tick7,

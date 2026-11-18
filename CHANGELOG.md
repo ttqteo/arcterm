@@ -58,6 +58,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 - The agent header puts the project and initiative on a second line under the agent's name, in the height the header
   already had, so the run link, model and context beside it get the room back.
+- Focus read in Chat is each agent's own: turning it on for one agent leaves the others as they were. While it is on,
+  buttons under its toggle step to the previous and next block and quote the lit one, each showing its key (K, J, Q).
 - Sidecar's small-form button is a screen with a small window in its corner, so it no longer looks like the full
   screen button beside it, and the full window has its own pin button, so a maximized or full-screen Sidecar can stay
   on top too.
@@ -76,6 +78,7 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- In focus read, ↑ and ↓ step one block like K and J instead of scrolling a little and jumping back.
 - Sidecar's alert frame follows Windows 11's rounded window corners instead of being cut off at them, and the
   heaviest-agent cards in its RAM band no longer squeeze an agent's name to one letter: the buttons wrap under it.
 - Claude agents stop writing a commit suggestion as an `arc-commit` code block: the skill that asked for it outlived

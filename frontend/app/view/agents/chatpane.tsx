@@ -26,7 +26,7 @@ import { loadEffortDetail } from "@/app/view/jarvis/effortstore";
 import { formatChordString } from "@/util/keysym";
 import { cn, fireAndForget, stringToBase64 } from "@/util/util";
 import { useAtom, useAtomValue } from "jotai";
-import { ArrowDown, Highlighter, TextSearch } from "lucide-react";
+import { ArrowDown, ChevronDown, ChevronUp, Highlighter, TextQuote, TextSearch } from "lucide-react";
 import { AnimatePresence, motion, MotionConfig, useIsPresent, useReducedMotion, type Variants } from "motion/react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { goalFromLines } from "../../../../claude/arc-mod/hooks/goal-core";
@@ -55,7 +55,7 @@ import { isDocReviewAsk } from "./chatdocreview";
 import { ChatDocReviewCard } from "./chatdocreviewcard";
 import { chatEmptyError, chatEmptyView } from "./chatempty";
 import { ChatFileCards } from "./chatfilecards";
-import { chatFocusReadOnAtom, FOCUS_READ_KEYS } from "./chatfocusreadstore";
+import { chatFocusReadOnAtom, FOCUS_READ_KEYS, focusReaderOf, type FocusReader } from "./chatfocusreadstore";
 import { useFocusRead } from "./chatfocusreadview";
 import { splitAttachments } from "./chatfiles";
 import { ChatGoalStrip } from "./chatgoal";
@@ -506,35 +506,80 @@ function SkimToggle() {
     );
 }
 
-// Chat's focus read toggle, beside Skim: one block at a time, the rest dimmed (chatfocusreadview.ts). Global across
-// agents, remembered (chatfocusreadstore.ts). Turning it on puts the focus in the conversation, so J/K step at once.
-function FocusReadToggle({ scrollRef }: { scrollRef: RefObject<HTMLDivElement | null> }) {
-    const [on, setOn] = useAtom(chatFocusReadOnAtom);
+// Chat's focus read toggle, beside Skim: one block at a time, the rest dimmed (chatfocusreadview.ts). Each agent's own,
+// remembered (chatfocusreadstore.ts). Turning it on puts the focus in the conversation, so J/K step at once; while it is
+// on, the step and quote buttons under it say their keys on their face.
+function FocusReadToggle({ agentId, scrollRef }: { agentId: string; scrollRef: RefObject<HTMLDivElement | null> }) {
+    const [on, setOn] = useAtom(chatFocusReadOnAtom(agentId));
     const keys = formatChordString(FOCUS_READ_KEYS);
     return (
-        <button
-            type="button"
-            data-chat-focus-read-toggle
-            aria-pressed={on}
-            aria-label="Focus read"
-            title={
-                on
-                    ? `Focus read: on, J/K step, Q quotes (${keys} or click to turn off)`
-                    : `Focus read: read one block at a time (${keys})`
-            }
-            onClick={() => {
-                setOn(!on);
-                if (!on) {
-                    scrollRef.current?.focus({ preventScroll: true });
+        <>
+            <button
+                type="button"
+                data-chat-focus-read-toggle
+                aria-pressed={on}
+                aria-label="Focus read"
+                title={
+                    on
+                        ? `Focus read: on for this agent (${keys} or click to turn off)`
+                        : `Focus read: read this agent's Chat one block at a time (${keys})`
                 }
-            }}
-            className={cn(
-                "absolute right-[42px] top-2 z-20 flex h-[26px] w-[26px] cursor-pointer items-center justify-center rounded-[8px] border border-edge-mid bg-surface-raised hover:bg-surface-hover",
-                on ? "text-accent" : "text-muted"
-            )}
+                onClick={() => {
+                    setOn(!on);
+                    if (!on) {
+                        scrollRef.current?.focus({ preventScroll: true });
+                    }
+                }}
+                className={cn(
+                    "absolute right-[42px] top-2 z-20 flex h-[26px] w-[26px] cursor-pointer items-center justify-center rounded-[8px] border border-edge-mid bg-surface-raised hover:bg-surface-hover",
+                    on ? "text-accent" : "text-muted"
+                )}
+            >
+                <TextSearch size={13} strokeWidth={2} aria-hidden />
+            </button>
+            {on ? <FocusReadSteps agentId={agentId} scrollRef={scrollRef} /> : null}
+        </>
+    );
+}
+
+// Focus read's buttons, a column under its toggle (clear of the pinned prompt card, which keeps 70px of the corner):
+// the previous and next block and the quote, each with its key on its face so the keys need no tooltip. A click leaves
+// the focus in the conversation, so the keys go on from there.
+const FOCUS_STEPS = [
+    { key: "K", label: "Previous block (K or ↑)", Icon: ChevronUp, act: (r: FocusReader) => r.step(-1) },
+    { key: "J", label: "Next block (J, ↓ or Space)", Icon: ChevronDown, act: (r: FocusReader) => r.step(1) },
+    { key: "Q", label: "Quote the lit block into the box (Q)", Icon: TextQuote, act: (r: FocusReader) => r.quote() },
+] as const;
+
+function FocusReadSteps({ agentId, scrollRef }: { agentId: string; scrollRef: RefObject<HTMLDivElement | null> }) {
+    return (
+        <div
+            data-chat-focus-read-steps
+            className="absolute right-[42px] top-[38px] z-20 flex w-[26px] flex-col overflow-hidden rounded-[8px] border border-edge-mid bg-surface-raised"
         >
-            <TextSearch size={13} strokeWidth={2} aria-hidden />
-        </button>
+            {FOCUS_STEPS.map(({ key, label, Icon, act }) => (
+                <button
+                    key={key}
+                    type="button"
+                    data-chat-focus-read-step={key.toLowerCase()}
+                    aria-label={label}
+                    title={label}
+                    // the conversation keeps the focus: a button that took it would leave J/K with nowhere to act
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => {
+                        const reader = focusReaderOf(agentId);
+                        if (reader != null) {
+                            act(reader);
+                        }
+                        scrollRef.current?.focus({ preventScroll: true });
+                    }}
+                    className="flex h-[32px] cursor-pointer flex-col items-center justify-center gap-px text-muted hover:bg-surface-hover hover:text-primary"
+                >
+                    <Icon size={13} strokeWidth={2} aria-hidden />
+                    <kbd className="font-sans text-[9.5px] leading-none text-muted">{key}</kbd>
+                </button>
+            ))}
+        </div>
     );
 }
 
@@ -664,7 +709,7 @@ function ChatPaneBody({ model, agent, barred }: { model: AgentsViewModel; agent:
     useDockPadding(scrollRef, dockRef);
     // Focus read: the reading line's tick in the gutter, and the dimming held off while you follow the agent's work at
     // the bottom, so Chat then looks as it does without it
-    const focusRead = useAtomValue(chatFocusReadOnAtom);
+    const focusRead = useAtomValue(chatFocusReadOnAtom(agent.id));
     const focusTickRef = useRef<HTMLDivElement>(null);
     useFocusRead(agent.id, scrollRef, focusTickRef, focusRead, agent.state === "working" && atBottom);
     // false while ChatLayer's exit plays: the pane is still drawn (fading) but already gone as far as input goes
@@ -1065,7 +1110,7 @@ function ChatPaneBody({ model, agent, barred }: { model: AgentsViewModel; agent:
                 </div>
                 {/* floats over the scroller (the pinned prompt bar leaves room for it); not on the loading or empty state */}
                 {!loading && !empty ? <SkimToggle /> : null}
-                {!loading && !empty ? <FocusReadToggle scrollRef={scrollRef} /> : null}
+                {!loading && !empty ? <FocusReadToggle agentId={agent.id} scrollRef={scrollRef} /> : null}
                 {/* focus read's reading line: a short accent tick in the gutter, placed by useFocusRead */}
                 {focusRead ? (
                     <div
