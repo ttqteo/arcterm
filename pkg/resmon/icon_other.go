@@ -1,4 +1,4 @@
-//go:build !windows
+//go:build !windows && !darwin
 
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0

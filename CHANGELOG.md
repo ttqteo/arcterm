@@ -138,7 +138,7 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - A background task's or server's output opened in full view shows its colours, as its peek does, instead of the raw escape codes.
 - On a Mac, Sidecar's Resources panel and the agents' RAM now show figures instead of "read on
   Windows only": arcterm itself (with its WebKit processes and Sidecar's own row), each agent and run command, and the
-  apps outside arcterm, grouped as Activity Monitor groups them.
+  apps outside arcterm with their icons, each app's helpers counted under it (Zalo's renderers under Zalo).
 - Sidecar no longer paints a text selection over its labels and buttons when you drag across it or press Cmd+A.
 - On a Mac, Sidecar's coloured frame follows the window's own rounded corners, which macOS 26 and later round more, so
   its line no longer breaks off at the four corners.

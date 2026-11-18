@@ -28,6 +28,7 @@ static int arc_rusage(pid_t pid, struct rusage_info_v2 *ri) {
 import "C"
 
 import (
+	"cmp"
 	"os"
 	"path/filepath"
 	"strings"
@@ -68,15 +69,50 @@ type startKey struct {
 	start int64
 }
 
-// argv0Names keeps, per process (pid and start), the argv[0] name a version-named binary was given, so a tick reads
-// the arguments once per process; each readTable keeps only the live ones. readTable runs on the sampler and on a kill.
-var argv0Names = struct {
-	mu    sync.Mutex
-	names map[startKey]string
-}{names: map[startKey]string{}}
+// procNames is what readTable learns of a process once (pid and start), not every tick: the argv[0] name a
+// version-named binary was given, and the app bundle its executable sits in.
+type procNames struct {
+	argv0  string
+	bundle string // the outermost .app holding the executable, "" when none
+}
 
-// readTable lists every process from one sysctl, with its name and the name of the app it works for. A WebKit
-// service working for arcterm's host is placed under the host, so it counts as arcterm's, not as another app.
+// nameCache keeps each live process's procNames; each readTable keeps only the live ones. readTable runs on the
+// sampler and on a kill.
+var nameCache = struct {
+	mu    sync.Mutex
+	procs map[startKey]procNames
+}{procs: map[startKey]procNames{}}
+
+// pidPath is pid's executable path; "" when it cannot be read (another user's process, or gone).
+func pidPath(pid int) string {
+	var buf [C.PROC_PIDPATHINFO_MAXSIZE]C.char
+	if n := C.proc_pidpath(C.int(pid), unsafe.Pointer(&buf[0]), C.uint32_t(len(buf))); n > 0 {
+		return C.GoStringN(&buf[0], n)
+	}
+	return ""
+}
+
+// outerBundle is the outermost .app directory in path: Google Chrome.app for its renderer, which runs from a helper
+// .app deep inside it; "" when the path is in no .app.
+func outerBundle(path string) string {
+	if i := strings.Index(path, ".app/"); i >= 0 {
+		return path[:i+len(".app")]
+	}
+	if strings.HasSuffix(path, ".app") {
+		return path
+	}
+	return ""
+}
+
+// bundleName is the app's name as the Dock shows it: the bundle's folder without .app.
+func bundleName(bundle string) string {
+	return strings.TrimSuffix(filepath.Base(bundle), ".app")
+}
+
+// readTable lists every process from one sysctl, with its name and the app it works for: the outermost .app its
+// executable sits in (so every helper of Chrome or Zalo counts under it, as Activity Monitor groups them), else the
+// app the kernel holds responsible for it. A WebKit service working for arcterm's host is placed under the host, so it
+// counts as arcterm's, not as another app.
 func readTable() (map[int]proc, error) {
 	kps, err := unix.SysctlKinfoProcSlice("kern.proc.all")
 	if err != nil {
@@ -85,25 +121,29 @@ func readTable() (map[int]proc, error) {
 	host := webKitHost
 	table := make(map[int]proc, len(kps))
 	resp := make(map[int]int, len(kps))
-	argv0Names.mu.Lock()
-	defer argv0Names.mu.Unlock()
-	names := map[startKey]string{}
+	nameCache.mu.Lock()
+	defer nameCache.mu.Unlock()
+	live := make(map[startKey]procNames, len(kps))
 	for i := range kps {
 		k := &kps[i]
 		pid := int(k.Proc.P_pid)
 		p := proc{Pid: pid, Ppid: int(k.Eproc.Ppid), Name: procName(pid, k.Proc.P_comm[:])}
-		if isVersionName(p.Name) {
-			key := startKey{pid, k.Proc.P_starttime.Sec*1000 + int64(k.Proc.P_starttime.Usec)/1000}
-			name, ok := argv0Names.names[key]
-			if !ok {
+		key := startKey{pid, k.Proc.P_starttime.Sec*1000 + int64(k.Proc.P_starttime.Usec)/1000}
+		names, known := nameCache.procs[key]
+		if !known {
+			names.bundle = outerBundle(pidPath(pid))
+			if isVersionName(p.Name) {
 				if argv := ReadArgv(pid); len(argv) > 0 {
-					name = filepath.Base(argv[0])
+					names.argv0 = filepath.Base(argv[0])
 				}
 			}
-			names[key] = name
-			if name != "" {
-				p.Name = name
-			}
+		}
+		live[key] = names
+		if names.argv0 != "" {
+			p.Name = names.argv0
+		}
+		if names.bundle != "" {
+			p.App = bundleName(names.bundle)
 		}
 		r := int(C.arc_responsible(C.pid_t(pid)))
 		resp[pid] = r
@@ -113,15 +153,16 @@ func readTable() (map[int]proc, error) {
 		table[pid] = p
 	}
 	for pid, r := range resp {
-		if r > 0 && r != pid {
-			if app, ok := table[r]; ok {
-				p := table[pid]
-				p.App = app.Name
-				table[pid] = p
-			}
+		p := table[pid]
+		if p.App != "" || r <= 0 || r == pid {
+			continue
+		}
+		if app, ok := table[r]; ok {
+			p.App = cmp.Or(app.App, app.Name)
+			table[pid] = p
 		}
 	}
-	argv0Names.names = names
+	nameCache.procs = live
 	return table, nil
 }
 

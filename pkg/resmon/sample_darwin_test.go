@@ -68,3 +68,49 @@ func TestIsVersionName(t *testing.T) {
 		}
 	}
 }
+
+func TestOuterBundle(t *testing.T) {
+	cases := map[string]string{
+		"/Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/1/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer)": "/Applications/Google Chrome.app",
+		"/Applications/Zalo.app/Contents/MacOS/Zalo": "/Applications/Zalo.app",
+		"/System/Library/CoreServices/Finder.app":    "/System/Library/CoreServices/Finder.app",
+		"/opt/homebrew/bin/node":                     "",
+		"":                                           "",
+	}
+	for path, want := range cases {
+		if got := outerBundle(path); got != want {
+			t.Errorf("outerBundle(%q) = %q, want %q", path, got, want)
+		}
+	}
+	if got := bundleName("/Applications/Google Chrome.app"); got != "Google Chrome" {
+		t.Errorf("bundleName = %q", got)
+	}
+}
+
+func TestReadIconOfAnAppDarwin(t *testing.T) {
+	finder := "/System/Library/CoreServices/Finder.app"
+	if _, err := os.Stat(finder); err != nil {
+		t.Skip("no Finder.app")
+	}
+	data, err := os.ReadFile(bundleIconPath(finder))
+	if err != nil {
+		t.Skipf("Finder's icon is not an .icns here: %v", err)
+	}
+	img := icnsImage(data, iconSide)
+	if img == nil {
+		t.Fatal("Finder's .icns read as no image")
+	}
+	if b := img.Bounds(); b.Dx() != iconSide || b.Dy() != iconSide {
+		t.Fatalf("icon is %v, want %dx%d", b, iconSide, iconSide)
+	}
+}
+
+func TestSipsIconDarwin(t *testing.T) {
+	icns := "/Applications/Zalo.app/Contents/Resources/icon.icns"
+	if _, err := os.Stat(icns); err != nil {
+		t.Skip("no Zalo here, whose .icns holds only JPEG 2000")
+	}
+	if got := sipsIcon(icns, iconSide); len(got) == 0 {
+		t.Fatal("sips read no icon")
+	}
+}
