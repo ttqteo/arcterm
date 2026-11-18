@@ -143,6 +143,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   anything is in swap.
 - Hovering a Resources chart shows the reading in a label over the plot, so the title row and the panel around it no
   longer shift as the pointer moves.
+- With Resources open, Sidecar no longer draws the dashboard hidden under it, which held a full-window image of its
+  own on a Retina screen.
 - Sidecar redraws only its CPU and RAM figures when they alone change, instead of the whole dashboard every 5 s, so
   its memory climbs less between clean-ups.
 - A hidden Sidecar (minimized, on another Space, or covered whole) is sent nothing until it shows again, when it

@@ -24,6 +24,7 @@ import {
 } from "@/app/cockpit/sidecartypes";
 import { useApplyCockpitTheme } from "@/app/view/agents/themestore";
 import { loadFonts } from "@/util/fontutil";
+import { cn } from "@/util/util";
 import { invoke } from "@tauri-apps/api/core";
 import { emit, listen } from "@tauri-apps/api/event";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -249,17 +250,22 @@ function SidecarRoot() {
             {/* the body under the bar: the small form's Resources view covers it as a tab would, while the dashboard stays
                 mounted under it (its alert frame, fixed over the whole window, keeps showing) */}
             <div className="relative flex min-h-0 flex-1 flex-col">
-                <SidecarMachineContext.Provider value={machine}>
-                    {heard == null ? (
-                        <div data-sidecar-waiting role="status" className="flex flex-1 items-center justify-center">
-                            <HudLabel className="text-[12px]">Waiting for arcterm…</HudLabel>
-                        </div>
-                    ) : layout === "small" ? (
-                        <SidecarCompact snap={heard.snap} receivedAt={heard.at} clock={clock} send={send} />
-                    ) : (
-                        <SidecarOrbit snap={heard.snap} receivedAt={heard.at} clock={clock} send={send} />
-                    )}
-                </SidecarMachineContext.Provider>
+                {/* under the Resources view the dashboard is not drawn (visibility: hidden), only kept mounted: drawn, it
+                    held a full-window layer of its own on a Retina screen, ~8 MB more of WebKit's graphics. Its alert
+                    frame sets itself visible, so it still shows over the view */}
+                <div className={cn("flex min-h-0 flex-1 flex-col", resourcesOpen && "invisible")}>
+                    <SidecarMachineContext.Provider value={machine}>
+                        {heard == null ? (
+                            <div data-sidecar-waiting role="status" className="flex flex-1 items-center justify-center">
+                                <HudLabel className="text-[12px]">Waiting for arcterm…</HudLabel>
+                            </div>
+                        ) : layout === "small" ? (
+                            <SidecarCompact snap={heard.snap} receivedAt={heard.at} clock={clock} send={send} />
+                        ) : (
+                            <SidecarOrbit snap={heard.snap} receivedAt={heard.at} clock={clock} send={send} />
+                        )}
+                    </SidecarMachineContext.Provider>
+                </div>
                 {resourcesOpen && <SidecarResourcesPanel resources={heard?.snap.resources} onClose={closeResources} />}
             </div>
         </div>

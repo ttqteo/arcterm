@@ -679,7 +679,7 @@ export const SidecarCompact = memo(function SidecarCompact({ snap, receivedAt, c
                 aria-hidden="true"
                 data-sidecar-frame-edge
                 className={cn(
-                    "pointer-events-none fixed inset-0 z-50 rounded-[var(--sidecar-corner,0px)] transition-[box-shadow] duration-500 motion-reduce:transition-none",
+                    "pointer-events-none visible fixed inset-0 z-50 rounded-[var(--sidecar-corner,0px)] transition-[box-shadow] duration-500 motion-reduce:transition-none",
                     FRAME[frame]
                 )}
             />
