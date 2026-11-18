@@ -8,9 +8,33 @@
 
 import { globalStore } from "@/app/store/jotaiStore";
 import { atom } from "jotai";
-import { parseFocusReadIds, withFocusRead } from "./chatfocusread";
+import { parseFocusReadIds, parseFocusReadSize, withFocusRead, type FocusReadSize } from "./chatfocusread";
 
 const STORAGE_KEY = "chat.focusRead";
+const SIZE_KEY = "chat.focusRead.size";
+
+function readSize(): FocusReadSize {
+    try {
+        return parseFocusReadSize(localStorage.getItem(SIZE_KEY));
+    } catch {
+        return 1;
+    }
+}
+
+const sizeBase = atom<FocusReadSize>(readSize());
+
+// how many blocks the line lights at a time (1, 2 or 3): one reading preference for every agent, remembered
+export const chatFocusReadSizeAtom = atom(
+    (get) => get(sizeBase),
+    (_get, set, next: FocusReadSize) => {
+        set(sizeBase, next);
+        try {
+            localStorage.setItem(SIZE_KEY, String(next));
+        } catch {
+            // storage unavailable: the size holds for this session
+        }
+    }
+);
 
 // the toggle's key (agent:chat-focus-read), here so the button's tooltip names it without importing the bindings
 export const FOCUS_READ_KEYS = "Alt:r";
@@ -65,7 +89,7 @@ export function setFocusReadOn(agentId: string, on: boolean): void {
 export interface FocusReader {
     /** J / ↓ / Space (1) and K / ↑ / Shift+Space (-1): the next or previous block onto the line */
     step(dir: 1 | -1): void;
-    /** Q: the lit block into the chat box as a quote, the focus left in the conversation */
+    /** Q: the lit blocks into the chat box as one quote, the focus left in the conversation */
     quote(): void;
 }
 

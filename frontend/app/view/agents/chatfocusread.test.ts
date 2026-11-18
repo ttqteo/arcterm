@@ -8,9 +8,12 @@ import {
     FOCUS_READ_KEEP,
     lineOffset,
     litAt,
+    litGroup,
     nearestAt,
     nearOf,
+    nextFocusReadSize,
     parseFocusReadIds,
+    parseFocusReadSize,
     scrollTopFor,
     SETTLE_MAX,
     settleTo,
@@ -104,6 +107,54 @@ describe("nearOf", () => {
     it("names none with nothing lit or the lit one gone", () => {
         expect(nearOf(-1, 8)).toEqual([]);
         expect(nearOf(8, 8)).toEqual([]);
+    });
+    it("names the block before a group and the one after it", () => {
+        expect(nearOf(3, 8, 3)).toEqual([2, 6]);
+        expect(nearOf(6, 8, 3)).toEqual([5]);
+    });
+});
+
+describe("litGroup", () => {
+    it("lights size blocks from the first", () => {
+        expect(litGroup(2, 8, 3)).toEqual([2, 3, 4]);
+        expect(litGroup(2, 8)).toEqual([2]);
+    });
+    it("stops at the last block", () => {
+        expect(litGroup(6, 8, 3)).toEqual([6, 7]);
+    });
+    it("lights none with nothing lit", () => {
+        expect(litGroup(-1, 8, 2)).toEqual([]);
+        expect(litGroup(8, 8, 2)).toEqual([]);
+    });
+});
+
+describe("stepFrom with a group", () => {
+    it("moves a whole group on and back", () => {
+        expect(stepFrom(2, 1, 10, 3)).toBe(5);
+        expect(stepFrom(5, -1, 10, 3)).toBe(2);
+    });
+    it("goes back to the first block from inside the first group, and no further", () => {
+        expect(stepFrom(1, -1, 10, 3)).toBe(0);
+        expect(stepFrom(0, -1, 10, 3)).toBeNull();
+    });
+    it("stops past the last block", () => {
+        expect(stepFrom(8, 1, 10, 3)).toBeNull();
+        expect(stepFrom(6, 1, 10, 3)).toBe(9);
+    });
+});
+
+describe("focus read size", () => {
+    it("reads 1, 2 or 3, else 1", () => {
+        expect(parseFocusReadSize("2")).toBe(2);
+        expect(parseFocusReadSize("3")).toBe(3);
+        expect(parseFocusReadSize(null)).toBe(1);
+        expect(parseFocusReadSize("7")).toBe(1);
+        expect(parseFocusReadSize("x")).toBe(1);
+    });
+    it("cycles 1, 2, 3 and back to 1", () => {
+        expect(nextFocusReadSize(1)).toBe(2);
+        expect(nextFocusReadSize(2)).toBe(3);
+        expect(nextFocusReadSize(3)).toBe(1);
     });
 });
 

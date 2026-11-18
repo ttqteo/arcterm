@@ -21,10 +21,12 @@ import {
     projectsWithOwnAccount,
     quotaLine,
     restartCandidates,
+    restartMeta,
     rowQuota,
     toggleGroup,
     type RestartCandidate,
 } from "./claudeaccount";
+import { resumeArgsForClaude } from "./launch";
 import type { Lineage, RunInfo } from "./runlineage";
 
 describe("restartCandidates", () => {
@@ -136,6 +138,29 @@ describe("accountSwitchNudge", () => {
 
     it("leaves an agent whose turn was over at its prompt", () => {
         expect(accountSwitchNudge("idle", false)).toBeUndefined();
+    });
+});
+
+describe("restartMeta", () => {
+    it("resumes the session and clears the launch's account pick when no account is given", () => {
+        const meta = restartMeta("s1", ["--model", "opus", "--resume", "old"]);
+        expect(meta).toEqual({
+            "cmd:args": resumeArgsForClaude("s1", ["--model", "opus", "--resume", "old"]),
+            [CLAUDE_ACCOUNT_META]: null,
+        });
+        expect(meta["cmd:args"]).toContain("s1");
+        expect(meta["cmd:args"]).not.toContain("old");
+        // the key is present, so the write deletes the pick rather than leaving it
+        expect(CLAUDE_ACCOUNT_META in meta).toBe(true);
+    });
+
+    it("writes the pick as the account it was given", () => {
+        expect(restartMeta("s1", [], "a2")[CLAUDE_ACCOUNT_META]).toBe("a2");
+    });
+
+    it("writes Default as the login pick, not as an empty value", () => {
+        expect(restartMeta("s1", [], "")[CLAUDE_ACCOUNT_META]).toBe(DEFAULT_ACCOUNT_PICK);
+        expect(DEFAULT_ACCOUNT_PICK).toBe("login");
     });
 });
 

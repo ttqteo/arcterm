@@ -65,7 +65,14 @@ import { isDocReviewAsk } from "./chatdocreview";
 import { ChatDocReviewCard } from "./chatdocreviewcard";
 import { chatEmptyError, chatEmptyView } from "./chatempty";
 import { ChatFileCards } from "./chatfilecards";
-import { chatFocusReadOnAtom, FOCUS_READ_KEYS, focusReaderOf, type FocusReader } from "./chatfocusreadstore";
+import { nextFocusReadSize } from "./chatfocusread";
+import {
+    chatFocusReadOnAtom,
+    chatFocusReadSizeAtom,
+    FOCUS_READ_KEYS,
+    focusReaderOf,
+    type FocusReader,
+} from "./chatfocusreadstore";
 import { useFocusRead } from "./chatfocusreadview";
 import { splitAttachments } from "./chatfiles";
 import { ChatGoalStrip } from "./chatgoal";
@@ -74,6 +81,7 @@ import { ChatHandoffCard } from "./chathandoffcard";
 import { holdSwitchLine } from "./chatinitiativestore";
 import { submitIntoChatBox } from "./chatinsert";
 import { CHAT_JUMP_KEYS, registerChatJump } from "./chatjump";
+import { ChatLimitStrip } from "./chatlimitstripview";
 import { awaitsOwnMessage, liveTurn, narratesThinking, streamsLiveReply } from "./chatlive";
 import { liveReplyAtom, startLiveReplyStream, stopLiveReplyStream } from "./chatlivestore";
 import { ChatLocalCard } from "./chatlocalcards";
@@ -102,10 +110,13 @@ import {
     closeChip,
     endsWithQuestion,
     initiativeChips,
+    isLongTurn,
     lastReply,
     recentPrompts,
     ruleChips,
     suggestKey,
+    turnSummary,
+    turnToolCount,
     wantsModelSuggest,
     writesVietnamese,
 } from "./chatsuggest";
@@ -647,17 +658,35 @@ function FocusReadToggle({ agentId, scrollRef }: { agentId: string; scrollRef: R
 }
 
 // Focus read's buttons, the lower part of its pill (clear of the pinned prompt card, which keeps 70px of the corner):
-// the previous and next block, then past a hairline the quote, each with its key on its face so the keys need no
-// tooltip. A click leaves the focus in the conversation, so the keys go on from there.
+// how many blocks it lights at a time (×1, ×2, ×3, a click for the next), the previous and next group, then past a
+// hairline the quote, each step with its key on its face so the keys need no tooltip. A click leaves the focus in the
+// conversation, so the keys go on from there.
 const FOCUS_STEPS = [
-    { key: "K", label: "Previous block (K or ↑)", Icon: ChevronUp, act: (r: FocusReader) => r.step(-1) },
-    { key: "J", label: "Next block (J, ↓ or Space)", Icon: ChevronDown, act: (r: FocusReader) => r.step(1) },
-    { key: "Q", label: "Quote the lit block into the box (Q)", Icon: Quote, act: (r: FocusReader) => r.quote() },
+    { key: "K", label: "Previous blocks (K or ↑)", Icon: ChevronUp, act: (r: FocusReader) => r.step(-1) },
+    { key: "J", label: "Next blocks (J, ↓ or Space)", Icon: ChevronDown, act: (r: FocusReader) => r.step(1) },
+    { key: "Q", label: "Quote the lit blocks into the box (Q)", Icon: Quote, act: (r: FocusReader) => r.quote() },
 ] as const;
 
 function FocusReadSteps({ agentId, scrollRef }: { agentId: string; scrollRef: RefObject<HTMLDivElement | null> }) {
+    const [size, setSize] = useAtom(chatFocusReadSizeAtom);
+    const next = nextFocusReadSize(size);
+    const sizeLabel = `${size} ${size === 1 ? "block" : "blocks"} at a time (click for ${next})`;
     return (
         <div data-chat-focus-read-steps className="flex flex-col border-t border-edge-mid">
+            <button
+                type="button"
+                data-chat-focus-read-size={size}
+                aria-label={sizeLabel}
+                title={sizeLabel}
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => {
+                    setSize(next);
+                    scrollRef.current?.focus({ preventScroll: true });
+                }}
+                className="flex h-[24px] cursor-pointer items-center justify-center border-b border-edge-mid font-mono text-[10.5px] font-semibold text-secondary hover:bg-surface-hover hover:text-primary"
+            >
+                ×{size}
+            </button>
             {FOCUS_STEPS.map(({ key, label, Icon, act }) => (
                 <button
                     key={key}
@@ -815,7 +844,8 @@ function ChatPaneBody({ model, agent, barred }: { model: AgentsViewModel; agent:
     // the bottom, so Chat then looks as it does without it
     const focusRead = useAtomValue(chatFocusReadOnAtom(agent.id));
     const focusTickRef = useRef<HTMLDivElement>(null);
-    useFocusRead(agent.id, scrollRef, focusTickRef, focusRead, agent.state === "working" && atBottom);
+    const focusReadSize = useAtomValue(chatFocusReadSizeAtom);
+    useFocusRead(agent.id, scrollRef, focusTickRef, focusRead, agent.state === "working" && atBottom, focusReadSize);
     // false while ChatLayer's exit plays: the pane is still drawn (fading) but already gone as far as input goes
     const present = useIsPresent();
     const streaming = surface === "agent";
@@ -967,6 +997,9 @@ function ChatPaneBody({ model, agent, barred }: { model: AgentsViewModel; agent:
     const reply = useMemo(() => lastReply(entries), [entries]);
     const recent = useMemo(() => recentPrompts(entries), [entries]);
     const question = useMemo(() => reply != null && endsWithQuestion(reply), [reply]);
+    // a long turn (a long closing reply, or many tool calls) is told in a line above the chips (chatsuggest.ts isLongTurn);
+    // the same call that writes the chips writes it
+    const long = useMemo(() => reply != null && isLongTurn(reply, turnToolCount(entries)), [reply, entries]);
     const questionWaits = boxPlaceholderOverride(card) != null;
     // The quick pick card (chatcanvaspick.ts): the option boards of the canvas this app opened for the agent in focus,
     // when its last reply asks you to choose between them. While it shows, the model's guessed chips ("A đi") give way
@@ -1004,11 +1037,13 @@ function ChatPaneBody({ model, agent, barred }: { model: AgentsViewModel; agent:
                 reply,
                 recent,
                 question,
+                summary: long,
                 blockid: agent.blockId,
                 hook: agent.agent === "claude",
             });
         }
-        // the key stands for the reply, and the question with it; the person's messages before it change with the reply
+        // the key stands for the reply, and the question with it; the person's messages before it change with the reply;
+        // a finished turn's tool count cannot change, so the same key always means the same `long`
     }, [askModel, turnKey]);
     // The initiative the agent works on, read again at each turn's end (the agent may have ticked its chunk with
     // `wsh effort` meanwhile; the stamp makes an older read stale): its chunk chips (chatsuggest.ts initiativeChips).
@@ -1323,6 +1358,9 @@ function ChatPaneBody({ model, agent, barred }: { model: AgentsViewModel; agent:
                             }}
                             onOpenTerminal={() => setChatMode(agent.id, "terminal")}
                         />
+                        {/* the account's usage-limit warning, above the summary line and the chips (it is about the account,
+                            not the turn); only a Claude agent shown in Chat has one */}
+                        <ChatLimitStrip model={model} agent={agent} />
                         <ChatComposer
                             key={agent.id}
                             model={model}
@@ -1332,6 +1370,7 @@ function ChatPaneBody({ model, agent, barred }: { model: AgentsViewModel; agent:
                             onBoxState={setBoxNow}
                             onShowDiff={() => openDiff(model, agentDiffScope(agent.id, agent.name))}
                             chips={chips}
+                            summary={chips !== undefined && long ? turnSummary(modelSuggest) : undefined}
                             onMarkDone={markDone}
                             onClose={() => confirmCloseSession(agent, model, "chat chip")}
                             onGoOn={goOn}

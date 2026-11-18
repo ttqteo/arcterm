@@ -44,15 +44,17 @@ const SIDECAR_READY = `!!document.querySelector("[data-sidecar-titlebar]")`;
 // screen the window opened on
 const ORBIT_VIEWPORT = { width: 1920, height: 1080, deviceScaleFactor: 1, mobile: false };
 const NARROW_VIEWPORT = { width: 900, height: 800, deviceScaleFactor: 1, mobile: false };
-// a wall with no room for the Resources column (RESOURCES_MIN_W, sidecarlayout.ts: 1560 wide, 760 high), so the title bar's
-// figures are the button that drops the panel
-const PANEL_VIEWPORT = { width: 1400, height: 900, deviceScaleFactor: 1, mobile: false };
+// the small form (under SMALL_BREAK_PX), where the title bar's figures are the button that drops the Resources panel; the
+// wall shows the resources in its band instead
+const PANEL_VIEWPORT = { width: 900, height: 800, deviceScaleFactor: 1, mobile: false };
+// the wall at the width that had no Resources column before the band (spec: a 1440 px wall shows its resources)
+const MID_WALL_VIEWPORT = { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false };
 // how long the HUD's idle cost is read over (the step "HUD idle cost")
 const IDLE_MS = 10_000;
 // a chart's line draws once a series has two points, two polls (2 s apart) after the panel opens; the reads before that
 // are "measuring"
 const GLOW_WAIT_MS = 15_000;
-// how long the Resources panel is left after it opens for the bridge's snapshot that follows the column's close to land
+// how long the Resources panel is left after it opens for the bridge's snapshot that follows the band's close to land
 const STALE_SNAPSHOT_MS = 1500;
 // the keys step: how long the stubbed `answeragent` call takes to fail, so the ask's Sent mark stays up while the page reads it
 const ANSWER_FAILS_AFTER_MS = 2500;
@@ -423,7 +425,7 @@ const nodeSel = (id) => `[data-sidecar-node="${id}"]`;
 const needSel = (key) => `[data-sidecar-need="${key}"]`;
 
 // the dashboard as the page draws it, P or Q: its attributes, the core, the Needs you rows, the nodes (P) or dots (Q), the
-// lanes (P), the run, the band (P) or the strain line (Q). `.animate-sidecar-ping` is on a child ring, so a ping is the
+// Resources band (P), the run, the strain band (P) or the strain line (Q). `.animate-sidecar-ping` is on a child ring, so a ping is the
 // element having one inside it
 const DASH_READ = `(() => {
     const q = (s) => document.querySelector(s);
@@ -476,7 +478,7 @@ const DASH_READ = `(() => {
             line: n.querySelector("[title]")?.getAttribute("title") ?? null,
         })),
         dots: all("[data-sidecar-dot]").map((d) => ({ id: d.dataset.sidecarDot, tone: d.dataset.nodeTone, ping: pinged(d), heavy: d.dataset.heavy === "true", tip: d.getAttribute("title") })),
-        lanes: all("[data-sidecar-lane]").map((l) => ({ id: l.dataset.sidecarLane, bars: [...l.querySelectorAll("[data-span-state]")].map((b) => b.dataset.spanState) })),
+        resources: q('[data-sidecar-resources="band"]')?.dataset.state ?? null,
         more: q("[data-sidecar-more]") == null ? null : txt(q("[data-sidecar-more]")),
         empty: q("[data-sidecar-empty]") == null ? null : txt(q("[data-sidecar-empty]")),
         run: run == null ? null : { text: txt(run), failed: run.dataset.runFailed === "true" },
@@ -1080,7 +1082,7 @@ async function hudSteps(side, rec) {
     );
 
     // Performance.getMetrics before and after IDLE_MS of nothing: how often the page lays out and recalculates styles on its
-    // own (the bridge's snapshots and the Resources column's 2 s poll are what moves it), and what it holds. The page is the
+    // own (the bridge's snapshots and the Resources band's 2 s poll are what moves it), and what it holds. The page is the
     // 1920x1080 the other shape asserts are made at. Passes when the figures are read: it records them, it does not bound them
     const metricsOf = async () => {
         const { metrics } = await side.cdp("Performance.getMetrics", {});
@@ -1115,65 +1117,101 @@ async function hudSteps(side, rec) {
     );
 }
 
-// The Resources column at the wall's own size fills after the page loads: the page reloads (the case that failed: its open act
-// reached the bridge before the page's hello, and the hello's answer shut the panel again), and within GLOW_WAIT_MS the column
-// leaves "Measuring…" and, once the history has two points, draws a glow line. Off Windows the Resource Manager reads nothing,
-// the column says "unsupported" and there is no glow to wait for. The outcome alone can pass on the old page, which raced: its
-// open act always reached the bridge first, and the column filled only when the pid read that follows landed after the hello,
-// so the step also asks for the order itself, from the raw `__sidecarActs` log (hello included, which `actsSince` drops):
-// no `resources` act before the page's first hello.
-async function resourcesColumnStep(h, side, rec) {
+// The Resources band at the wall's own size fills after the page loads: the page reloads (the case that once failed: its
+// open act reached the bridge before the page's hello, and the hello's answer shut the feed again), and within GLOW_WAIT_MS
+// the band leaves "Measuring…" and, once the history has two points, draws a glow line. The step also asks for the order
+// itself, from the raw `__sidecarActs` log (hello included, which `actsSince` drops): no `resources` act before the
+// page's first hello. Every row leads with its mark (the arcterm mark, a runtime logo, an app's icon or a glyph), and on
+// Windows an other app is drawn with its own icon. Then at a 1440 px wall (no room for the old column) the band still
+// shows and the title bar's figures are not a button. Off Windows the Resource Manager reads nothing: the band says
+// "unsupported" and there is no glow or icon to wait for.
+async function resourcesBandStep(h, side, rec, shot) {
     const win = process.platform === "win32";
-    const what = "the Resources column fills at wall width: after the page reloads it asks for resources only after its hello, and within 15 s the column leaves `Measuring…` and draws a glow line";
+    const what = "the Resources band fills at wall width, where the lanes were: after the page reloads it asks for resources only after its hello, within 15 s it leaves `Measuring…` and draws a glow line, and each row leads with its mark (on Windows an app with its own icon)";
+    const bandSel = '[data-sidecar-resources="band"]';
     let detail = {};
     try {
         await h.ev("window.__sidecarActs = []");
         await side.reload();
         await side.cdp("Emulation.setDeviceMetricsOverride", ORBIT_VIEWPORT);
         const t0 = Date.now();
-        const colSel = '[data-sidecar-resources="column"]';
-        const left = await waitFor(side.ev, `(() => { const c = document.querySelector(${JSON.stringify(colSel)}); return c != null && c.dataset.state !== "measuring"; })()`, GLOW_WAIT_MS);
+        const left = await waitFor(side.ev, `(() => { const c = document.querySelector(${JSON.stringify(bandSel)}); return c != null && c.dataset.state !== "measuring"; })()`, GLOW_WAIT_MS);
         const leftAfter = Date.now() - t0;
-        const glow = win ? await waitFor(side.ev, `!!document.querySelector(${JSON.stringify(`${colSel} [data-hud-glow]`)})`, Math.max(0, GLOW_WAIT_MS - leftAfter)) : null;
+        const glow = win ? await waitFor(side.ev, `!!document.querySelector(${JSON.stringify(`${bandSel} [data-hud-glow]`)})`, Math.max(0, GLOW_WAIT_MS - leftAfter)) : null;
         const read = await side.ev(`(() => {
-            const col = document.querySelector(${JSON.stringify(colSel)});
-            return col == null ? null : { state: col.dataset.state ?? null, glowLines: col.querySelectorAll("[data-hud-glow]").length };
+            const band = document.querySelector(${JSON.stringify(bandSel)});
+            if (band == null) return null;
+            const rows = [...band.querySelectorAll("[data-sidecar-resource]")];
+            const others = [...band.querySelectorAll('[data-sidecar-resources-col="others"] [data-sidecar-resource]')];
+            return {
+                state: band.dataset.state ?? null,
+                glowLines: band.querySelectorAll("[data-hud-glow]").length,
+                cols: [...band.querySelectorAll("[data-sidecar-resources-col]")].map((c) => c.dataset.sidecarResourcesCol),
+                rows: rows.length,
+                marked: rows.filter((r) => r.querySelector("[data-sidecar-resource-mark]") != null).length,
+                others: others.length,
+                otherIcons: others.filter((r) => r.querySelector('[data-sidecar-resource-mark="icon"]') != null).length,
+                lanes: document.querySelectorAll("[data-sidecar-lanes]").length,
+            };
         })()`);
         const acts = ((await h.ev("window.__sidecarActs ?? []")) ?? []).map((a) => (a?.kind === "resources" ? `resources:${a.open ? "open" : "close"}:${Array.isArray(a.pids) ? a.pids.length : "?"}` : (a?.kind ?? "?")));
         // a page that heard a snapshot before it could say hello sends none: then there is no hello to precede
         const helloAt = acts.indexOf("hello");
         const firstResources = acts.findIndex((k) => k.startsWith("resources"));
         const askedAfterHello = firstResources === -1 || helloAt === -1 || firstResources > helloAt;
+        await shot(side, "resources-band");
         detail = { platform: process.platform, left, leftAfterMs: leftAfter, glowWait: glow == null ? "skipped: Windows only" : glow, ...read, askedAfterHello, acts: acts.slice(0, 8) };
-        rec(what + (win ? "" : " (glow wait skipped: Windows only)"), left && read != null && askedAfterHello && (win ? glow === true && read.glowLines >= 1 : true), detail);
+        const marksOk = read != null && read.rows > 0 && read.marked === read.rows && (!win || read.others === 0 || read.otherIcons >= 1);
+        rec(
+            what + (win ? "" : " (glow and icon waits skipped: Windows only)"),
+            left && read != null && read.lanes === 0 && askedAfterHello && (win ? glow === true && read.glowLines >= 1 && marksOk : true),
+            detail
+        );
+
+        // a 1440 px wall: the band, not the title bar's button
+        await side.cdp("Emulation.setDeviceMetricsOverride", MID_WALL_VIEWPORT);
+        await sleep(600);
+        const mid = await side.ev(`(() => ({
+            band: document.querySelector(${JSON.stringify(bandSel)})?.dataset.state ?? null,
+            machineButton: document.querySelector("[data-sidecar-machine]")?.tagName === "BUTTON",
+            overflows: document.documentElement.scrollWidth > window.innerWidth + 1,
+        }))()`);
+        await shot(side, "resources-band-1440");
+        rec(
+            "at a 1440 x 900 wall the Resources band shows (the old column needed 1560 px) and the title bar's figures are not a button",
+            mid.band != null && mid.machineButton === false && mid.overflows === false,
+            mid
+        );
     } catch (e) {
         rec(what, false, { ...detail, error: String(e?.message ?? e) });
+    } finally {
+        await side.cdp("Emulation.setDeviceMetricsOverride", ORBIT_VIEWPORT).catch(() => {});
+        await sleep(600);
     }
 }
 
-// The title bar's figures drop the Resources panel where the wall has no room for the column (RESOURCES_MIN_W): at
-// PANEL_VIEWPORT they are a button, a press opens the panel, and once the history has two points each chart draws its line
-// as a glow. Shrinking closed the column, and the bridge's `stopResources` cleared the history with it, so the series starts
-// over two polls after the panel opens. Off Windows the Resource Manager reads nothing and the state is "unsupported": the
+// The title bar's figures drop the Resources panel in the small form: at PANEL_VIEWPORT they are a button, a press opens
+// the panel, and once the history has two points each chart draws its line as a glow. Shrinking closed the band, and the
+// bridge's `stopResources` cleared the history with it, so the series starts over two polls after the panel opens. Off Windows the Resource Manager reads nothing and the state is "unsupported": the
 // panel still opens, and there is no glow to wait for.
 async function resourcesPanelStep(h, side, rec, shot) {
-    const what = "the title bar's figures open the HUD Resources panel: below the column's width RAM · CPU is a button, a press drops the panel with its brackets, and each chart draws its glow line";
+    const what = "the title bar's figures open the HUD Resources panel: in the small form RAM · CPU is a button, a press drops the panel with its brackets, and each chart draws its glow line";
     let detail = {};
     try {
-        // the column at the wall's own size, read before the shrink for the step's detail (not asserted): the page reloaded
-        // earlier in this scenario, so this says whether a column that was up through a reload still gets its readings
-        const columnBefore = await side.ev(`(() => {
-            const col = document.querySelector('[data-sidecar-resources="column"]');
+        // the band at the wall's own size, read before the shrink for the step's detail (not asserted): the page reloaded
+        // earlier in this scenario, so this says whether a band that was up through a reload still gets its readings
+        const bandBefore = await side.ev(`(() => {
+            const col = document.querySelector('[data-sidecar-resources="band"]');
             return col == null ? null : { state: col.dataset.state ?? null, glow: col.querySelectorAll("[data-hud-glow]").length };
         })()`);
         await side.cdp("Emulation.setDeviceMetricsOverride", PANEL_VIEWPORT);
-        const button = await waitFor(side.ev, `document.querySelector("[data-sidecar-machine]")?.tagName === "BUTTON" && !${has('[data-sidecar-resources="column"]')}`, 5000);
+        const button = await waitFor(side.ev, `document.querySelector("[data-sidecar-machine]")?.tagName === "BUTTON" && !${has('[data-sidecar-resources="band"]')}`, 5000);
         const beforeClick = await actCount(h);
         await clickIn(side, "[data-sidecar-machine]");
         const opened = await waitFor(side.ev, has('[data-sidecar-resources="panel"]'), 5000);
         const win = process.platform === "win32";
-        // The press can land before the bridge's answer to the column's close (the page's last snapshot still carries the
-        // column's history, so the panel draws a glow at once from it, and the next snapshot, with the history started over,
+        // The press can land before the bridge's answer to the band's close (the page's last snapshot still carries the
+        // band's history, so the panel draws a glow at once from it, and the next snapshot, with the history started over,
         // takes it away): let that snapshot arrive (SNAPSHOT_THROTTLE_MS is 500) so the glow waited for is the panel's own.
         await sleep(STALE_SNAPSHOT_MS);
         const glow = win ? await waitFor(side.ev, has('[data-sidecar-resources="panel"] [data-hud-glow]'), GLOW_WAIT_MS) : null;
@@ -1197,7 +1235,7 @@ async function resourcesPanelStep(h, side, rec, shot) {
         // pressed again, the panel closes; the original size back
         await clickIn(side, "[data-sidecar-machine]");
         const closed = await waitFor(side.ev, `!${has('[data-sidecar-resources="panel"]')}`, 3000);
-        detail = { button, opened, closed, platform: process.platform, glowWait: glow == null ? "skipped: Windows only" : glow, ...read, columnBefore, resourceActs, direct };
+        detail = { button, opened, closed, platform: process.platform, glowWait: glow == null ? "skipped: Windows only" : glow, ...read, bandBefore, resourceActs, direct };
         rec(
             what + (win ? "" : " (glow wait skipped: Windows only)"),
             button && opened && closed && read.brackets >= 1 && read.charts >= 1 && (win ? glow === true && read.glowLines >= 1 : true),
@@ -1256,16 +1294,16 @@ async function orbitStates(h, ctx, side, rec, shot) {
         { state: got.state, frame: got.frame, core: got.core, rows: got.needs.map((n) => ({ key: n.key, text: n.text, how: n.how })) }
     );
     rec(
-        "P-orbit-dashboard: at most 8 nodes (here 6, none for the two parked agents), one lane per node in the same order, the lead's line reads `run · 7 of 9`, and the run box says `7 of 9 tasks`",
+        "P-orbit-dashboard: at most 8 nodes (here 6, none for the two parked agents), the Resources band under them where the lanes were, the lead's line reads `run · 7 of 9`, and the run box says `7 of 9 tasks`",
         got.nodes.length <= ORBIT_MAX &&
             !got.nodes.some((n) => PARKED_IDS.includes(n.id)) &&
-            JSON.stringify(got.lanes.map((l) => l.id)) === JSON.stringify(got.nodes.map((n) => n.id)) &&
+            got.resources != null &&
             /run · 7 of 9 · 1h \d+m/.test(drawnOf(got, WORK_ID)?.line ?? "") &&
             got.run != null &&
             got.run.text.includes("7 of 9 tasks") &&
             got.run.failed === false &&
             got.band == null,
-        { nodes: got.nodes.map((n) => n.id), lanes: got.lanes.map((l) => l.id), lead: drawnOf(got, WORK_ID)?.line, run: got.run }
+        { nodes: got.nodes.map((n) => n.id), resources: got.resources, lead: drawnOf(got, WORK_ID)?.line, run: got.run }
     );
     rec(
         "P-orbit-dashboard: each asking node, the finished agent with a question and each ask or question row carries `animate-sidecar-ping`, and no working or quiet finished node does",
@@ -1288,7 +1326,7 @@ async function orbitStates(h, ctx, side, rec, shot) {
     let sentShown = false;
     let sentQuiet = false;
     // The agents are fixtures, so the answer's RPC fails at once and answerAgentAsk takes the ask's Sent mark back with it: the
-    // row says Sent only as long as that call takes. The bridge sends a snapshot at most every 500 ms and the Resources column's
+    // row says Sent only as long as that call takes. The bridge sends a snapshot at most every 500 ms and the Resources band's
     // poll takes that slot every 2 s, so a mark that came and went within one slot never reached the page. The call fails late
     // here, as an agent slow to answer would, so the mark outlives the slot; the unmark and its toast still follow.
     await h.ev(`(() => {
@@ -1384,26 +1422,13 @@ async function orbitStates(h, ctx, side, rec, shot) {
     // P-failed (board P-failed): RAM back to normal; a task of the run failed, and it fails the run
     await applyState(h, ctx, "failed");
     settled = await settleState(side, "failed", "orbit");
-    // A fixture run has no engine events to date its failure, so the lead's lane turns red from the build that saw it, and
-    // that red span starts at the bridge's Date.now(), a moment after the snapshot's own `now`: `laneBars` clamps an open
-    // span's start to the page's `now`, so the bar draws with the snapshot, not on the page's next 30 s clock tick
-    const redBarAt = Date.now();
-    const redBar = await waitFor(
-        side.ev,
-        `[...(document.querySelector(${JSON.stringify(`[data-sidecar-lane="${WORK_ID}"]`)})?.querySelectorAll("[data-span-state]") ?? [])].at(-1)?.dataset.spanState === "failed"`,
-        REACT_MS,
-        100
-    );
-    const redBarMs = Date.now() - redBarAt;
     await sleep(600);
     got = await readDash(side);
     await shot(side, "p-failed");
     const lead = drawnOf(got, WORK_ID);
-    const leadLane = got.lanes.find((l) => l.id === WORK_ID);
     rec(
-        "P-failed (board P-failed): with a task of the run failed the state is `failed` with an error frame and the core in error (`1 run failed`); the first row leads with Failed on `bg-errorbg`, the lead's node is `error` and pings, and its lane's last bar is failed (with the snapshot, no clock tick needed)",
+        "P-failed (board P-failed): with a task of the run failed the state is `failed` with an error frame and the core in error (`1 run failed`); the first row leads with Failed on `bg-errorbg`, and the lead's node is `error` and pings",
         settled &&
-            redBar &&
             shapeOk("failed", got, "orbit") &&
             got.coreFailed === "1 run failed" &&
             got.needs[0]?.failed === true &&
@@ -1411,10 +1436,9 @@ async function orbitStates(h, ctx, side, rec, shot) {
             got.needs[0].tinted === true &&
             lead?.tone === "error" &&
             lead.ping === true &&
-            leadLane?.bars.at(-1) === "failed" &&
             got.run?.failed === true &&
             got.band == null,
-        { state: got.state, frame: got.frame, core: got.core, coreFailed: got.coreFailed, first: got.needs[0], lead, leadLane, run: got.run, redBarAfterMs: redBarMs }
+        { state: got.state, frame: got.frame, core: got.core, coreFailed: got.coreFailed, first: got.needs[0], lead, run: got.run }
     );
 
     // P-live (board P-live): normal → high → critical → normal → failed through the seams with no reload; each change
@@ -1472,8 +1496,9 @@ async function orbitStates(h, ctx, side, rec, shot) {
         { live, probe, needs: after.needs.map((n) => n.key) }
     );
 
-    // the column at the wall's size, on a reloaded page, before the panel step shrinks the page below the column's width
-    await resourcesColumnStep(h, side, rec);
+    // the band at the wall's size, on a reloaded page, then at a 1440 px wall, before the panel step shrinks the page to the
+    // small form
+    await resourcesBandStep(h, side, rec, shot);
 
     // last: it resizes the page and restores it, which the states above need not follow
     await resourcesPanelStep(h, side, rec, shot);
@@ -1782,16 +1807,15 @@ export default function () {
                     await bandSteps(h, side, rec, shot);
 
                     // the agents the Cockpit folds into its Idle list (idle 40 min, asleep) have no node, and the orbit holds the
-                    // rest, with a lane each
+                    // rest
                     const parkedGot = await readDash(side);
                     await shot(side, "parked");
                     rec(
-                        `the agents the Cockpit folds into its Idle list (idle 40 min, asleep) have no node: the orbit holds the other ${ORBIT_FULL.length} in order, each with a lane, and the core's line counts the 4 idle (2 finished, 2 parked)`,
+                        `the agents the Cockpit folds into its Idle list (idle 40 min, asleep) have no node: the orbit holds the other ${ORBIT_FULL.length} in order, and the core's line counts the 4 idle (2 finished, 2 parked)`,
                         JSON.stringify(parkedGot.nodes.map((n) => n.id)) === JSON.stringify(ORBIT_FULL) &&
                             !parkedGot.nodes.some((n) => PARKED_IDS.includes(n.id)) &&
-                            JSON.stringify(parkedGot.lanes.map((l) => l.id)) === JSON.stringify(ORBIT_FULL) &&
                             (await side.ev(`document.body.textContent.includes("4 idle")`)) === true,
-                        { nodes: parkedGot.nodes.map((n) => n.id), lanes: parkedGot.lanes.map((l) => l.id) }
+                        { nodes: parkedGot.nodes.map((n) => n.id) }
                     );
 
                     await orbitStates(h, ctx, side, rec, shot);

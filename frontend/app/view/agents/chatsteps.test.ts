@@ -16,6 +16,7 @@ import {
     stepRows,
     stretchPictures,
     turnFileAbs,
+    turnFileDiff,
     turnFiles,
 } from "./chatsteps";
 
@@ -542,5 +543,24 @@ describe("turnFileAbs", () => {
     it("has nowhere to open a relative path without a cwd", () => {
         expect(turnFileAbs("pkg/a.go", undefined)).toBeNull();
         expect(turnFileAbs("pkg/a.go", "")).toBeNull();
+    });
+});
+
+describe("turnFileDiff", () => {
+    it("reads the file against the last commit from its own folder", () => {
+        expect(turnFileDiff("D:\\repo\\.worktrees\\x\\frontend\\a.tsx")).toEqual({
+            cwd: "D:\\repo\\.worktrees\\x\\frontend",
+            rel: "a.tsx",
+            base: "",
+        });
+        expect(turnFileDiff("/repo/pkg/a.go")).toEqual({ cwd: "/repo/pkg", rel: "a.go", base: "" });
+    });
+    it("keeps a drive root's separator", () => {
+        expect(turnFileDiff("C:\\a.go")).toEqual({ cwd: "C:\\", rel: "a.go", base: "" });
+    });
+    it("has no diff for a path with no folder", () => {
+        expect(turnFileDiff("a.go")).toBeNull();
+        expect(turnFileDiff("/a.go")).toBeNull();
+        expect(turnFileDiff("/repo/")).toBeNull();
     });
 });

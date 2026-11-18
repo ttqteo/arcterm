@@ -70,26 +70,53 @@ export function scrollTopFor(span: Span, line: number, max: number): number {
     return Math.min(Math.max(Math.round(target), 0), max);
 }
 
-/** The block J (dir 1) or K (dir -1) steps to from the lit one, or null past either end. With none lit, J takes the
- *  first and K none. */
-export function stepFrom(lit: number, dir: 1 | -1, count: number): number | null {
+/** How many blocks the line lights at a time: the one on it and the ones after it. The reader picks one of these. */
+export const FOCUS_READ_SIZES = [1, 2, 3] as const;
+export type FocusReadSize = (typeof FOCUS_READ_SIZES)[number];
+
+/** The stored size, 1 when it is missing or not one of FOCUS_READ_SIZES. */
+export function parseFocusReadSize(raw: string | null): FocusReadSize {
+    const n = Number(raw);
+    return (FOCUS_READ_SIZES as readonly number[]).includes(n) ? (n as FocusReadSize) : 1;
+}
+
+/** The size after this one, wrapping from the largest back to 1: what the size button cycles to. */
+export function nextFocusReadSize(size: FocusReadSize): FocusReadSize {
+    return FOCUS_READ_SIZES[(FOCUS_READ_SIZES.indexOf(size) + 1) % FOCUS_READ_SIZES.length];
+}
+
+/** The blocks lit together: `size` blocks from the first, those that exist. None with nothing lit. */
+export function litGroup(first: number, count: number, size: number = 1): number[] {
+    if (first < 0 || first >= count) {
+        return [];
+    }
+    return Array.from({ length: Math.min(size, count - first) }, (_, i) => first + i);
+}
+
+/** The first block J (dir 1) or K (dir -1) lights from the lit group's first, a whole group on, or null past either end.
+ *  K from inside the first group goes back to the very first block. With none lit, J takes the first and K none. */
+export function stepFrom(lit: number, dir: 1 | -1, count: number, size: number = 1): number | null {
     if (count === 0) {
         return null;
     }
     if (lit < 0) {
         return dir > 0 ? 0 : null;
     }
-    const next = Math.min(lit, count - 1) + dir;
+    const base = Math.min(lit, count - 1);
+    const next = base + dir * size;
+    if (dir < 0 && next < 0 && base > 0) {
+        return 0;
+    }
     return next < 0 || next >= count ? null : next;
 }
 
-/** The blocks drawn at half strength beside the lit one: the one before it and the one after, those that exist. None with
- *  nothing lit. */
-export function nearOf(lit: number, count: number): number[] {
-    if (lit < 0 || lit >= count) {
+/** The blocks drawn at half strength beside the lit group: the one before it and the one after it, those that exist.
+ *  None with nothing lit. */
+export function nearOf(first: number, count: number, size: number = 1): number[] {
+    if (first < 0 || first >= count) {
         return [];
     }
-    return [lit - 1, lit + 1].filter((i) => i >= 0 && i < count);
+    return [first - 1, first + size].filter((i) => i >= 0 && i < count);
 }
 
 /** Where a scroll that stopped settles: the block nearest the line and the scrollTop that puts it there. Null at the

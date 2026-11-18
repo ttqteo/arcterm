@@ -55,6 +55,7 @@ When you read a long reply in Chat, every block of it shows at once, so your eye
   - a brainstorm, commit or handoff card
   - the pending bubbles and local cards in `data-chat-tail`
 - **Dimming** (steps added 2026-11-18). The lit block stays at full strength. The block just before it and the block just after it sit at 50%. Every other block drops to about 32%.
+- **Blocks at a time** (added 2026-11-18). A ×1 / ×2 / ×3 button on the pill, above `K`, lights the block on the line and up to two after it. It is one setting for every agent, kept in localStorage `chat.focusRead.size`. The 50% blocks are the one before the group and the one after it. `J` / `K` step a whole group; `K` from inside the first group goes back to the first block. `Q` quotes the group as one quote, its blocks a blank quoted line apart, leaving out any block that is not text.
   - Opacity changes on the Fluid ease at `durMicro` (140 ms).
   - Under reduced motion, opacity changes with no transition.
   - Skim highlights stay as they are inside a block.

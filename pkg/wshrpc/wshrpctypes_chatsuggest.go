@@ -23,6 +23,7 @@ type CommandChatSuggestData struct {
 	Reply    string   `json:"reply"`              // the agent's last reply; only its end is sent
 	Recent   []string `json:"recent,omitempty"`   // the person's last messages, oldest first: their words and language
 	Question bool     `json:"question,omitempty"` // the reply ends in a question: up to 3 answers, else at most 1 next step
+	Summary  bool     `json:"summary,omitempty"`  // also ask for a one-or-two-sentence summary of the reply (a long turn)
 	BlockId  string   `json:"blockid,omitempty"`  // the agent's terminal block: whose mod may have worked the replies out
 	Hook     bool     `json:"hook,omitempty"`     // a Claude agent, whose arc mod begins the call itself: wait for it a moment
 }
@@ -50,9 +51,11 @@ type CommandChatSuggestHookEndData struct {
 	Failed  bool   `json:"failed,omitempty"`
 }
 
-// CommandChatSuggestRtnData is the replies, best first; empty when the model saw no clear one.
+// CommandChatSuggestRtnData is the replies, best first; empty when the model saw no clear one. Summary is the
+// model's one-or-two-sentence summary of the reply, "" when none was asked for or the model gave none.
 type CommandChatSuggestRtnData struct {
 	Replies []string `json:"replies"`
+	Summary string   `json:"summary,omitempty"`
 }
 
 // ChatHabit is one message the person sends often: its usual spelling, the key its spellings share (what Hide takes),

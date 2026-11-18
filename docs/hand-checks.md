@@ -16,6 +16,28 @@ list (its number is not reused).
 Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) ·
 [part 4](hand-checks-4.md) · [part 3](hand-checks-3.md) · [part 2](hand-checks-2.md) (oldest).
 
+- [ ] (arcterm) **Settings → Agents still switches the Claude account.** With two Claude accounts and an idle agent
+  running on the old one, pick the other account's row: it checks at once, the restart dialog lists the idle agent (an
+  agent in a project tied to its own account is left out), and picking the account that is already active again does
+  nothing. Settings now calls the shared `switchClaudeAccount` (`claudeaccountswitch.ts`, also the Chat usage strip's
+  Switch) instead of its own copy; tried only by unit tests (`switchPlan`) and the typecheck, not in the app
+  (2026-11-18);
+- [ ] (arcterm) **Chat's summary line and usage-limit strip, with the real model and real accounts.** The CDP scenarios
+  `chat-summary-line` and `chat-limit-strip` fake the haiku call (`__chatSuggestFake`), the accounts and their windows
+  (`__chatLimitFake`) and mock the switch's writes, so none of this ran against the real thing. (1) A Claude agent that
+  ends a turn with a long reply (over ~1,200 characters, or 8+ tool calls) shows one or two sentences in muted text
+  above the chips, in the language of your last messages, saying what the turn did and left undone; a short turn shows
+  none, and sending a message or a chip takes it away. (2) With a second Claude account added in Settings, an agent
+  whose account is at 80% of the week (or 90% of the 5-hour window) has a strip above the box with the reset time, the
+  account's name and Switch to <other>: Switch makes the other account active, restarts this agent on it (the session
+  resumes) and lists the other agents on the old account in the restart dialog; Snooze for an hour hides the strip in
+  every agent of that account, and an agent in a project tied to its own account has no Switch (2026-11-18);
+- [ ] (arcterm) **A turn's file card opens the file's diff.** In Chat, at the end of a turn that edited files, click a
+  row of "Edited N files": the rail tab opens on Diff (changed lines marked, the rest folded), not the whole file. A
+  file in a `.worktrees/<x>/` tree shows its change in that tree; a file new since the last commit shows all added; a
+  change already committed says "No change since the last commit". `chatsteps.ts` turnFileDiff, `filetabdiff.tsx`.
+  Not tried in the dev app when written.
+
 - [ ] (arcterm) **A builder check waiting on you makes the agent's row breathe.** In Agent, on a brainstorm whose
   builder check is back (a builder question open, or Review / Approve shown in Chat): its row in the tree breathes an
   amber wash and edge, as an asking agent's does, and Cockpit counts it; after Approve starts the run the row stops.
@@ -120,14 +142,16 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
   is no taller than before (the view switch sets its height). Narrow it to a 2x2 cell: the project truncates, nothing
   runs under the buttons. `agentheader.tsx`, "the project and initiative on the title's second line" (2026-11-18);
   `task verify:ui -- agent-header-redesign` not run (no dev app up).
-- [ ] (arcterm) **Sidecar's Resources: column, charts and panel.** Make Sidecar at least 1560 × 760 CSS px (maximized on
-  a 1080p screen at 100–125%): a Resources column stands right of the dashboard with CPU, RAM and GPU charts filling
-  in over 5 minutes (a hover shows a crosshair and "23% · 40s ago"; GPU matches Task Manager's figure, or says the
-  machine has no GPU counters), then Sidecar's own row first (its CPU and RAM, not "—"; "—" means WebView2 did not
-  name its renderer), arcterm and each agent by RAM with a GPU column, and "Other apps over 200 MB" (chrome.exe
-  (12)…). The title bar's figures are then plain text. Shrink it below that (or the small form): the figures get a
-  border and a chevron, and a click drops the same charts and table under the bar; Escape or a click outside closes
-  it. Windows only; on a Mac it says so. Commits 4f28db4b9 and the `feat/sidecar-charts` merge.
+- [ ] (arcterm) **Sidecar's Resources: band, charts, icons and panel.** Open Sidecar's full window at any size from
+  1100 CSS px (1440 × 900 included): a Resources band runs across the bottom, where the last 2 hours' lanes were, with
+  CPU, RAM and GPU charts filling in over 5 minutes (a hover shows a crosshair and "23% · 40s ago"; GPU matches Task
+  Manager's figure, or says the machine has no GPU counters), then Sidecar's own row first (its CPU and RAM, not "—";
+  "—" means WebView2 did not name its renderer), arcterm and each agent by RAM with a GPU column, and "Other apps over
+  200 MB" (chrome.exe (12)…). Each row leads with its mark: the arcterm "t>" on Sidecar and arcterm, the Claude or pi
+  logo on an agent, the app's own icon on an other app as Task Manager draws it (Chrome, Docker; a window glyph where
+  the exe has none or is protected, VmmemWSL). The title bar's figures are plain text there. In the small form the
+  figures get a border and a chevron, and a click drops the same charts and table under the bar; Escape or a click
+  outside closes it. Windows only; on a Mac it says so. Branch `feat/sidecar-taskman`.
 - [ ] (arcterm) **Sidecar's pin in the full window.** Maximize Sidecar or press F11: the title bar has a pin button
   beside S; pressed, Sidecar stays over the other apps on its screen, and a relaunch reopens it pinned. Same merge.
 - [ ] (arcterm) **Sidecar's resource panel.** Click the RAM · CPU figures in Sidecar's title bar (wall and small

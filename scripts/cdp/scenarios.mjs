@@ -80,6 +80,7 @@ import chatRedesignScenarios from "./scenarios-chat-redesign.mjs";
 import chatCodeBoxScenarios from "./scenarios-chat-code-box.mjs";
 import chatVerdictHandoffScenarios from "./scenarios-chat-verdict-handoff.mjs";
 import chatCouncilScenarios from "./scenarios-chat-council.mjs";
+import chatSuggestCardScenarios from "./scenarios-chat-suggest-card.mjs";
 import codeBlameDraftScenarios from "./scenarios-code-blame-draft.mjs";
 import codeFixesSessionScenarios from "./scenarios-code-fixes-session.mjs";
 import codeFixesViewScenarios from "./scenarios-code-fixes-view.mjs";
@@ -44437,6 +44438,17 @@ const agentChat = {
 
             // 4. the agent working: the working line reads Working with no " · <activity>" tail (Calm.dc.html: the running
             // stretch's own line names the call), and Stop sends Esc
+            // The mock's transcript never takes the two sends above, as a real one does within seconds (chatpane.tsx forgets a
+            // landed send through landedIds). A plain message of yours that has not landed makes Chat read the last turn as over
+            // (liveTurn, b84c0baa2: its files card stays, its stretch is not running) while the agent works on that message, so
+            // forgetting them here is the landing: this step and 26 see the turn under way as live, as they do when the message
+            // lands
+            await AC.agentPage(
+                h,
+                `const P = await mod("app/view/agents/chatpendingstore.ts");
+                P.dropPendingIds(${JSON.stringify(A)}, P.getPending(${JSON.stringify(A)}).map((p) => p.id));
+                return P.getPending(${JSON.stringify(A)}).length;`
+            );
             await AC.setRoster(h, acRoster(ctx, { state: "working", activity: AC_ACTIVITY, activeMs: 30_000, idleSince: undefined }));
             const working = await polishWaitFor(h, `!!${acLayer(A)}?.querySelector("[data-chat-working]") && !!${acLayer(A)}?.querySelector("[data-chat-stop]")`, AC_WAIT_MS);
             const workingLine4 = await h.ev(`(() => {
@@ -45214,7 +45226,7 @@ const agentChat = {
             const before20 = await acInputs(h, blockA);
             await acType(h, acBox(A), S1);
             const pendingUp = await polishWaitFor(h, `!!${acLayer(A)}?.querySelector("[data-chat-pending]")`, 5000);
-            // the earlier steps' sends ("hello"...) stay pending for two minutes, as the transcript never holds them
+            // the sends of steps 2 and 3 were forgotten at step 4, as the transcript never holds them
             const pendingOf = `[...(${acLayer(A)}?.querySelectorAll("[data-chat-pending]") ?? [])].filter((p) => p.firstElementChild?.textContent.trim() === ${JSON.stringify(S1)})`;
             const pend20 = await h.ev(`(() => {
                 const mine = ${pendingOf};
@@ -46814,7 +46826,8 @@ const agentChat = {
             // Claude Code's history that starts so (the mocked BashHistoryCommand answers AC_BASH_HISTORY) as grey ghost text
             // right after the last character; → takes it. `!` alone has the pill and no ghost. The `@` picker stays shut over `!ls @../` (step 72 opens it in a plain box), and a
             // command sent moves to the front of the list the ghost reads. The history is read per folder, so the box's folder is
-            // set first, to the scenario's own (not one an earlier step has read)
+            // set first, to the scenario's own (not one an earlier step has read). Bash mode is `data-chat-bash-mode` on the box
+            // (`[data-chat-box]`, inside the composer wrapper since 2e2b0f291), which the steps read it from
             await h.rpc("setmeta", { oref: orefA, meta: { "cmd:cwd": ctx.dir.replace(/\\/g, "/") } });
             await showAgent(A);
             await h.ev(`window.__arcChatMode.set(${JSON.stringify(A)}, "chat")`);
@@ -46849,8 +46862,7 @@ const agentChat = {
                     }
                     const gr = ghost?.getBoundingClientRect();
                     return {
-                        // the box inside the composer carries it ([data-chat-box])
-                        mode: !!c?.querySelector("[data-chat-bash-mode]"),
+                        mode: c?.querySelector("[data-chat-box]")?.hasAttribute("data-chat-bash-mode") ?? false,
                         text: ${acVal(acBox(A))},
                         caption: cap ? cap.textContent.trim() : null,
                         pill: pill?.textContent.trim() ?? null,
@@ -46897,7 +46909,7 @@ const agentChat = {
             await acKey(h, acKeys.left);
             await acKey(h, acKeys.left);
             await acKey(h, acKeys.backspace);
-            const unbanged76 = await polishWaitFor(h, `${acVal(acBox(A))} === "ls" && !${composer76}?.querySelector("[data-chat-bash-mode]")`, 3000);
+            const unbanged76 = await polishWaitFor(h, `${acVal(acBox(A))} === "ls" && ${composer76}?.querySelector("[data-chat-box]")?.hasAttribute("data-chat-bash-mode") === false`, 3000);
             // the `@` picker stays shut in bash mode
             await acClear(h, acBox(A));
             await polishWaitFor(h, `${acVal(acBox(A))} === ""`, 3000);
@@ -47579,9 +47591,10 @@ const agentChat = {
                 { refs87, idRefs87, want87, written87 }
             );
 
-            // 88. Calm.dc.html's card opens the Diff: with the fixture folder a git repo whose client.ts has changed since its
-            // commit, a click on the card's client.ts row switches to the Diff on agent A's working tree with
-            // src/sync/client.ts selected; back on the agent, See all opens the Diff on the same scope
+            // 88. Calm.dc.html's card opens the file and the Diff: a click on the card's client.ts row opens that file in the
+            // agent's File tab in the rail and stays on the Agent surface (84a727091: "a turn's file card opens the file in the
+            // rail", chatconversation.tsx openTurnDiff); with the fixture folder a git repo whose client.ts has changed since its
+            // commit, See all switches to the Diff on agent A's working tree
             // a git that fails says how (a Final once saw `git init -q` fail with no output), and is tried once more
             let git88 = null;
             for (let i = 0; i < 2 && git88 !== "ok"; i++) {
@@ -47613,22 +47626,32 @@ const agentChat = {
                 }
                 return got;
             };
+            const wantFile88 = JSON.stringify(ctx.files.edited.split("\\").join("/").toLowerCase());
+            // step 5b left client.ts open in a File tab: close every file tab first, so only this click can bring the file up
+            let clean88 = false;
+            for (let i = 0; i < 6 && !clean88; i++) {
+                await h.ev(`${RAIL_ASIDE}?.querySelector("[data-rail-file-close]")?.click()`);
+                await polishNap(150);
+                clean88 = await h.ev(`!${RAIL_ASIDE}?.querySelector("[data-rail-file]") && !${RAIL_ASIDE}?.querySelector("[data-rail-file-close]")`);
+            }
             await h.ev(`(() => { const r = ${card88}?.querySelector("[data-chat-turn-file]"); r?.scrollIntoView({ block: "center" }); r?.click(); return !!r; })()`);
-            const row88 = await diffUntil88((s) => s?.surface === "files" && /(^|\/)src\/sync\/client\.ts$/.test(s.file ?? ""));
-            // the file's two sides load after the selection: give them time to draw for the shot
-            await polishNap(1500);
-            await h.shot("cdp-shots/agent-chat-88-card-row-diff.png");
+            const file88 = await polishWaitFor(
+                h,
+                `((${RAIL_ASIDE}?.querySelector("[data-rail-file]")?.dataset.railFile ?? "").split("\\\\").join("/").toLowerCase()) === ${wantFile88}`,
+                AC_WAIT_MS
+            );
+            const row88 = await diffState88();
+            await h.shot("cdp-shots/agent-chat-88-card-row-file.png");
             await showAgent(A);
             await polishWaitFor(h, `!!${card88}`, AC_WAIT_MS);
             await h.ev(`(() => { const r = ${card88}?.querySelector("[data-chat-turn-files-all]"); r?.scrollIntoView({ block: "center" }); r?.click(); return !!r; })()`);
             const all88 = await diffUntil88((s) => s?.surface === "files");
             await h.goto("agent");
             rec(
-                "88. a click on the card's client.ts row opens the Diff on agent A's working tree with src/sync/client.ts selected; See all opens the Diff on the same agent",
-                git88 === "ok" && cardUp88 && row88?.surface === "files" && row88.origin?.kind === "agent" && row88.origin.id === A &&
-                    /(^|\/)src\/sync\/client\.ts$/.test(row88.file ?? "") &&
+                "88. a click on the card's client.ts row opens that file in the agent's File tab in the rail and leaves the Agent surface as it was; See all opens the Diff on agent A's working tree",
+                git88 === "ok" && cardUp88 && clean88 && file88 && row88?.surface === "agent" &&
                     all88?.surface === "files" && all88.origin?.kind === "agent" && all88.origin.id === A,
-                { git88, cardUp88, row88, all88 }
+                { git88, cardUp88, clean88, file88, row88, all88 }
             );
         } catch (e) {
             rec("the scenario ran to its end", false, String(e?.message ?? e));
@@ -49275,6 +49298,7 @@ const chatFocusRead = {
             prevGrid: await h.ev(`localStorage.getItem(${JSON.stringify(GRID_KEY)})`),
             prevModes: await h.ev(`localStorage.getItem("agent.chatmode")`),
             prevFocusRead: await h.ev(`localStorage.getItem("chat.focusRead")`),
+            prevFocusReadSize: await h.ev(`localStorage.getItem("chat.focusRead.size")`),
         };
         let at = "writing the transcript";
         try {
@@ -49291,6 +49315,7 @@ const chatFocusRead = {
             await h.ev(`localStorage.setItem(${JSON.stringify(GRID_KEY)}, ${JSON.stringify(JSON.stringify(GRID_EMPTY))})`);
             await h.ev(`localStorage.removeItem("agent.chatmode")`);
             await h.ev(`localStorage.removeItem("chat.focusRead")`);
+            await h.ev(`localStorage.removeItem("chat.focusRead.size")`);
             if (!(await ahReload(h))) throw new Error("the page did not come back after the reload");
             await h.goto("agent");
             at = "making the tab";
@@ -49334,6 +49359,7 @@ const chatFocusRead = {
                     litCount: blocks.filter((b) => b.hasAttribute("data-fr-lit")).length,
                     lit,
                     litText: lit >= 0 ? blocks[lit].innerText : null,
+                    litTexts: blocks.filter((b) => b.hasAttribute("data-fr-lit")).map((b) => b.innerText),
                     litCode: lit >= 0 && !!blocks[lit].querySelector("[data-code-line]"),
                     litTable: lit >= 0 && !!blocks[lit].querySelector("table"),
                     // the lit block's top from the line (negative: above it) and its height
@@ -49508,6 +49534,32 @@ const chatFocusRead = {
                 { s6a, s6, s6b }
             );
 
+            // 6c. the size button lights two blocks at a time: two lit from the line, the one before and after the pair at
+            // half strength; K steps back a whole pair, Q quotes the pair as one quote; two more clicks go round to ×1
+            const sizeBtn = `${pane}?.querySelector("[data-chat-focus-read-size]")`;
+            await click(sizeBtn);
+            const s6c = await state();
+            const size6c = await h.ev(`${sizeBtn}?.getAttribute("data-chat-focus-read-size")`);
+            await h.shot("cdp-shots/chat-focus-read-6c-two.png");
+            await K();
+            const s6k = await state();
+            const before6q = await boxText();
+            await Q();
+            const text6q = await boxText();
+            const quoted6 = (s6k?.litTexts ?? []).map((t) => t.trim()).join("\n\n").split("\n").map((l) => (l === "" ? ">" : "> " + l)).join("\n");
+            await click(sizeBtn);
+            await click(sizeBtn);
+            const size6end = await h.ev(`${sizeBtn}?.getAttribute("data-chat-focus-read-size")`);
+            const s6end = await state();
+            rec(
+                "6c. ×2 lights the block on the line and the one after it, with the block before and after the pair at 0.5; K steps back two blocks; Q quotes the pair as one quote; the button goes round ×3 back to ×1",
+                size6c === "2" && s6c?.litCount === 2 && s6c.near.join(",") === [s6c.lit - 1, s6c.lit + 2].filter((i) => i >= 0 && i < s6c.count).join(",") &&
+                    s6k?.lit === s6c.lit - 2 && s6k.litCount === 2 &&
+                    text6q === `${before6q.replace(/\s+$/, "")}\n\n${quoted6}\n\n` &&
+                    size6end === "1" && s6end?.litCount === 1,
+                { size6c, s6c, s6k, text6q, quoted6, size6end, litEnd: s6end?.litCount }
+            );
+
             // 7. Alt+R turns it off: nothing dimmed, no tick, the toggle up
             await press("r", "KeyR", 82, 1);
             const off7 = await polishWaitFor(h, `!${scroller}?.hasAttribute("data-focus-read") && !${pane}?.querySelector("[data-fr-block]")`, 3000);
@@ -49544,7 +49596,7 @@ const chatFocusRead = {
         await step("close the fixture tab", () => acCloseTabs(h, ctx));
         await step("restore the grid, the chat modes and focus read", () =>
             h.ev(`(() => {
-                for (const [key, prev] of [[${JSON.stringify(GRID_KEY)}, ${JSON.stringify(ctx.prevGrid)}], ["agent.chatmode", ${JSON.stringify(ctx.prevModes)}], ["chat.focusRead", ${JSON.stringify(ctx.prevFocusRead)}]]) {
+                for (const [key, prev] of [[${JSON.stringify(GRID_KEY)}, ${JSON.stringify(ctx.prevGrid)}], ["agent.chatmode", ${JSON.stringify(ctx.prevModes)}], ["chat.focusRead", ${JSON.stringify(ctx.prevFocusRead)}], ["chat.focusRead.size", ${JSON.stringify(ctx.prevFocusReadSize)}]]) {
                     if (prev == null) localStorage.removeItem(key);
                     else localStorage.setItem(key, prev);
                 }
@@ -73852,6 +73904,7 @@ export const SCENARIOS = [
     ...chatBrainstormReviewScenarios(CBR_KIT),
     ...chatVerdictHandoffScenarios(CBR_KIT),
     ...chatCouncilScenarios(CR_KIT),
+    ...chatSuggestCardScenarios(CR_KIT),
     ...overlaysFrostScenarios(OF_KIT),
     ...surfacesSpringScenarios(SS_KIT),
     sidebarAgentRam,

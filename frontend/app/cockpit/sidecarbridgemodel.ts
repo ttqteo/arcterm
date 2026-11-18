@@ -20,7 +20,6 @@ import type {
     SidecarNeed,
     SidecarRunBox,
     SidecarSnapshot,
-    SidecarSpan,
     SidecarStrain,
     SidecarTile,
     SidecarUsage,
@@ -309,23 +308,6 @@ export function runBoxOf(run: RunInfo, o: { leadId?: string; failed: boolean; du
         ...(run.createdTs != null ? { since: run.createdTs } : {}),
         ...(o.due != null ? { due: o.due } : {}),
     };
-}
-
-/**
- * When a failed lead's lane turns red (plan review N2): the engine's date of the failure, when it is later than the
- * lane's open span began (an earlier one would draw a failed span before the work it follows) and not after `now`;
- * otherwise unset, which the timeline reads as now.
- */
-export function failureAt(
-    failedAt: number | null,
-    spans: readonly SidecarSpan[] | undefined,
-    now: number
-): number | undefined {
-    if (failedAt == null || failedAt > now) {
-        return undefined;
-    }
-    const last = spans != null && spans.length > 0 ? spans[spans.length - 1] : undefined;
-    return last == null || last.to != null || failedAt > last.from ? failedAt : undefined;
 }
 
 /** The plan rings: the claude provider's 5-hour and weekly windows in whole percents; a window with no reading is left out. */

@@ -45,21 +45,25 @@ func chatHabitTexts() []string {
 
 // ChatSuggestCommand answers the replies Chat offers as chips once an agent's turn ends (pkg/chatsuggest), with the
 // person's habits for the model to offer one word for word. A Claude agent's arc mod works them out itself at the turn's
-// end: its answer is taken when it comes in time, and the headless call runs only when it does not.
+// end: its answer is taken when it comes in time, and the headless call runs only when it does not. The mod asks
+// for no summary, so a long turn (Summary) always runs the headless call.
 func (ws *WshServer) ChatSuggestCommand(ctx context.Context, data wshrpc.CommandChatSuggestData) (*wshrpc.CommandChatSuggestRtnData, error) {
-	if replies, ok := chatHooks().Await(ctx, data.BlockId, data.Reply, data.Question, data.Hook); ok {
-		return &wshrpc.CommandChatSuggestRtnData{Replies: replies}, nil
+	if !data.Summary {
+		if replies, ok := chatHooks().Await(ctx, data.BlockId, data.Reply, data.Question, data.Hook); ok {
+			return &wshrpc.CommandChatSuggestRtnData{Replies: replies}, nil
+		}
 	}
-	replies, err := chatSuggester().Suggest(ctx, chatsuggest.Request{
+	answer, err := chatSuggester().Suggest(ctx, chatsuggest.Request{
 		Reply:    data.Reply,
 		Recent:   data.Recent,
 		Question: data.Question,
 		Habits:   chatHabitTexts(),
+		Summary:  data.Summary,
 	})
 	if err != nil {
 		return nil, err
 	}
-	return &wshrpc.CommandChatSuggestRtnData{Replies: replies}, nil
+	return &wshrpc.CommandChatSuggestRtnData{Replies: answer.Replies, Summary: answer.Summary}, nil
 }
 
 // ChatSuggestHookBeginCommand begins a Claude agent's turn for its arc mod: the completion it runs in its own claude.

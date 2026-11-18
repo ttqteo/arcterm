@@ -31,6 +31,12 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Added
 
+- After a long turn (a long closing reply, or many commands) Chat tells you in a line or two, above the suggested
+  replies, where things stand: what the turn did and what it left undone, in your language.
+- Chat warns above the box when the Claude account an agent runs on is near its weekly (80%) or 5-hour (90%) limit,
+  with the reset time. With more than one account it names the one in use and offers Switch to the account with the
+  most room, which moves this agent over and offers to restart the others; Snooze hides it for an hour, four hours or
+  until tomorrow.
 - Chat's message box draws a `>` quote (slanted, with a bar beside it) and `inline code` as you type them, as the sent
   message shows them. A pasted stack trace, log or block of code goes in wrapped in a ``` code block; Ctrl+Z takes the
   wrapping away and keeps the paste.
@@ -44,10 +50,10 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   row, which now opens to the picture itself (click it to see it full width).
 - A turn in which the agent drew design boards now ends in a Canvas card in Chat, with a small live picture of each
   board it drew: click one to look at it full size over Chat, Look at all to see them side by side, or Open in Canvas.
-- Sidecar shows what everything takes, like Task Manager: on a big enough window a Resources column beside the
-  dashboard charts the machine's CPU, RAM and GPU over the last 5 minutes and lists Sidecar's own CPU, GPU and RAM, the
-  rest of arcterm, each agent, and the other apps holding over 200 MB; in a smaller window the RAM · CPU figures in
-  the title bar open the same as a panel (Windows). <!-- big -->
+- Sidecar shows what everything takes, like Task Manager: across the bottom of the full window a Resources band charts
+  the machine's CPU, RAM and GPU over the last 5 minutes and lists Sidecar's own CPU, GPU and RAM, the rest of arcterm,
+  each agent, and the other apps holding over 200 MB, each row with its icon (the app's own, or the agent's runtime
+  logo); in the small form the RAM · CPU figures in the title bar open the same as a panel (Windows). <!-- big -->
 - **Your phone as a remote for arcterm**: through Tailscale (no domain needed) or your own Cloudflare tunnel, set up in
   Settings → Remote (or `wsh remote setup`), an installed web app on your phone lists what waits on you and every
   agent with its state (working, idle, asking, exited), pushes a notification when an agent asks, and answers its
@@ -67,6 +73,7 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- Sidecar's full window no longer draws each agent's last 2 hours as lanes: the Resources band stands there instead.
 - An agent whose brainstorm's builder check waits on you (a builder question, or the review to approve) now reads as
   asking: its row in the Agent tree breathes amber, and it counts in Cockpit's Needs you.
 
@@ -86,7 +93,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   tick marks and corner brackets that bend round the rounded corners of every box.
 - Focus read in Chat fades in steps: the block before and after the lit one stay half bright, so you keep your place,
   and `J` / `K` pass over tool steps and cards to the next block of text. Its button and the `K` `J` `Q` buttons
-  under it are now one pill. <!-- try: chat-focus-read -->
+  under it are now one pill, with a ×1 / ×2 / ×3 button on it that lights one, two or three blocks at a time: `J` / `K`
+  then step a whole group and `Q` quotes all of it. <!-- try: chat-focus-read -->
 - A Claude agent's suggested replies in Chat come sooner, about 2 s after its turn ends instead of 5-6 s, and no longer
   start a second claude (about 470 MB) each time: the agent's own claude works them out.
 - Scrollbars stay hidden until you point at the area that scrolls, then show as a thin bar that thickens under the
@@ -118,11 +126,14 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- Switching the agent on screen (from the tree, Sidecar or a terminal) no longer crashes the agent header with
+  "number … is not iterable".
+- Selecting text in Chat keeps the words their own colour: the highlight no longer tints them the accent's blue.
+- A file in the "Edited N files" card at the end of a Chat turn opens on its diff against the last commit, not on the
+  whole file, also for a file in a worktree under the agent's folder; a change already committed says so.
 - A dev server that starts and detaches itself (Astro's `astro dev`) is no longer put down to an agent of another
   project whose background task happened to end as it came up, and a project kept in a folder inside its repo shows
   the servers running under that folder on its folder in the Agent tree.
-- Switching the agent on screen (from the tree, Sidecar or a terminal) no longer crashes the agent header with
-  "number … is not iterable".
 - Chat no longer jumps around a send: a message that takes a few seconds to reach a busy Claude Code stays in place
   instead of vanishing and coming back, the "working" line opens and closes smoothly instead of shoving the
   conversation as each turn starts and ends, and a message of yours that lands with nothing standing in for it opens
