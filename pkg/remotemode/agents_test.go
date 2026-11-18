@@ -13,9 +13,11 @@ import (
 	"path/filepath"
 	"slices"
 	"strconv"
+	"strings"
 	"sync"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/wavetermdev/waveterm/pkg/baseds"
 	"github.com/wavetermdev/waveterm/pkg/blockcontroller"
@@ -418,10 +420,24 @@ func TestOffEndsStreams(t *testing.T) {
 	agentsTestRecv(t, tail.exited, "tail exit")
 }
 
-func TestBuildAgentList(t *testing.T) {
-	agent := func(tab, name, harness string, st baseds.AgentStatusData, stream bool) Agent {
-		return Agent{TabId: tab, Name: name, Harness: harness, Status: st, HasStream: stream}
+// listTestAgent is a roster agent with a terminal block, as BuildAgentList reads it.
+func listTestAgent(tab, name, harness string, st baseds.AgentStatusData, stream bool) Agent {
+	return Agent{TabId: tab, BlockId: "blk-" + tab, Name: name, Harness: harness, Status: st, HasStream: stream}
+}
+
+func listTestTabs[T any](rows []T, tab func(T) string) []string {
+	tabs := []string{}
+	for _, r := range rows {
+		tabs = append(tabs, tab(r))
 	}
+	return tabs
+}
+
+func TestBuildAgentList(t *testing.T) {
+	agent := listTestAgent
+	codex := agent("t-codex", "codex", "codex", baseds.AgentStatusData{State: baseds.AgentState_Idle, Ts: 200}, false)
+	noBlock := agent("t-noblock", "no block", harnessClaude, baseds.AgentStatusData{State: baseds.AgentState_Idle, Ts: 400}, true)
+	noBlock.BlockId = ""
 	agents := []Agent{
 		agent("t-idle-new", "b-idle", harnessPi, baseds.AgentStatusData{State: baseds.AgentState_Idle, Ts: 300}, false),
 		agent("t-work", "work", harnessClaude, baseds.AgentStatusData{State: baseds.AgentState_Working, Detail: "running tests", Ts: 900}, true),
@@ -432,33 +448,261 @@ func TestBuildAgentList(t *testing.T) {
 			NotificationType: notificationPermissionPrompt, Detail: "running npm test", Ts: 700,
 		}, true),
 		agent("t-pi-ended", "pi-ended", harnessPi, baseds.AgentStatusData{State: baseds.AgentState_Idle, Ended: true, Ts: 10}, false),
+		codex,
+		noBlock,
+		agent("t-codex-ended", "codex ended", "codex", baseds.AgentStatusData{State: baseds.AgentState_Idle, Ended: true, Ts: 20}, false),
 	}
-	got := BuildAgentList(agents, map[string]bool{"t-work": true})
-	var tabs []string
-	for _, a := range got {
-		tabs = append(tabs, a.Tab)
+	got, runs := BuildAgentList(agents, map[string]bool{"t-work": true})
+	if len(runs) != 0 {
+		t.Errorf("runs = %+v, want none", runs)
 	}
-	want := []string{"t-perm", "t-work", "t-idle-old", "t-idle-new", "t-pi-ended", "t-gone"}
-	if !slices.Equal(tabs, want) {
+	// an exited session (claude with no stream, any harness that reported its end) is left out
+	want := []string{"t-perm", "t-work", "t-idle-old", "t-codex", "t-idle-new", "t-noblock"}
+	if tabs := listTestTabs(got, func(a ListedAgent) string { return a.Tab }); !slices.Equal(tabs, want) {
 		t.Fatalf("order %v, want %v", tabs, want)
 	}
 	byTab := map[string]ListedAgent{}
 	for _, a := range got {
 		byTab[a.Tab] = a
 	}
-	if w := byTab["t-work"]; w.State != PhoneWorking || w.Since != 0 || w.Line != "Running tests" || !w.Handed {
+	if w := byTab["t-work"]; w.State != PhoneWorking || w.Since != 0 || w.Line != "Running tests" || !w.Handed || !w.Takeable {
 		t.Errorf("working agent %+v", w)
 	}
-	if p := byTab["t-perm"]; p.State != PhonePermission || p.Since != 700 || p.Line != "Wants to run: npm test" || p.Handed {
+	if p := byTab["t-perm"]; p.State != PhonePermission || p.Since != 700 || p.Line != "Wants to run: npm test" || p.Handed || !p.Takeable {
 		t.Errorf("permission agent %+v", p)
 	}
-	if g := byTab["t-gone"]; g.State != PhoneEnded || g.Line != "" {
-		t.Errorf("claude with no stream should read ended, got %+v", g)
-	}
-	if e := byTab["t-pi-ended"]; e.State != PhoneEnded {
-		t.Errorf("pi that reported its end should read ended, got %+v", e)
-	}
-	if i := byTab["t-idle-new"]; i.State != PhoneIdle || i.Runtime != harnessPi {
+	if i := byTab["t-idle-new"]; i.State != PhoneIdle || i.Runtime != harnessPi || !i.Takeable {
 		t.Errorf("idle pi %+v", i)
+	}
+	// a live agent Eligible refuses for another reason than being a run worker stays listed, untakeable
+	if c := byTab["t-codex"]; c.State != PhoneIdle || c.Takeable || c.Runtime != "codex" {
+		t.Errorf("codex agent %+v, want listed and not takeable", c)
+	}
+	if n := byTab["t-noblock"]; n.Takeable {
+		t.Errorf("an agent with no terminal block %+v, want not takeable", n)
+	}
+}
+
+func TestBuildAgentListLines(t *testing.T) {
+	answer := agentsTestTranscript(t, `"\n\nDeployed to staging. The smoke tests pass.\nMore after."`)
+	withAnswer := func(a Agent) Agent { a.TranscriptPath = answer; return a }
+	asking := agentsTestAsking("t-ask")
+	asking.Ask = "Which database should the migration use?"
+	askingNoText := agentsTestAsking("t-ask-bare")
+	input := withAnswer(agentsTestInput("t-input"))
+	inputWithDetail := agentsTestInput("t-input-detail")
+	inputWithDetail.Status.Detail = "needs your input"
+	rows, _ := BuildAgentList([]Agent{
+		withAnswer(handTestClaude("t-idle")), handTestClaude("t-idle-none"), agentsTestWorking("t-work"),
+		agentsTestPermission("t-perm"), asking, askingNoText, input, inputWithDetail,
+	}, nil)
+	lines := map[string]string{}
+	for _, r := range rows {
+		lines[r.Tab] = r.Line
+	}
+	for tab, want := range map[string]string{
+		"t-idle":         "Deployed to staging.",
+		"t-idle-none":    "",
+		"t-work":         "Running node build.mjs",
+		"t-perm":         "Wants to run: ssh deploy@siem-236 'systemctl restart siem'",
+		"t-ask":          "Which database should the migration use?",
+		"t-ask-bare":     "Asking you a question",
+		"t-input":        "Deployed to staging.",
+		"t-input-detail": "Needs your input",
+	} {
+		if lines[tab] != want {
+			t.Errorf("%s: Line = %q, want %q", tab, lines[tab], want)
+		}
+	}
+	// a hand-over of the same agent words its line by the same rule
+	if got := handedAgent(asking, 5).Line; got != asking.Ask {
+		t.Errorf("handed asking Line = %q, want the question %q", got, asking.Ask)
+	}
+	if got := handedAgent(askingNoText, 5).Line; got != "Asking you a question" {
+		t.Errorf("handed asking with no ask text Line = %q", got)
+	}
+}
+
+func TestBuildAgentListRuns(t *testing.T) {
+	worker := func(tab, name, key, runName, label string, st baseds.AgentStatusData) Agent {
+		a := listTestAgent(tab, name, harnessClaude, st, true)
+		a.RunWorker, a.RunKey, a.RunName, a.RunLine = true, key, runName, label
+		return a
+	}
+	working := func(detail string, ts int64) baseds.AgentStatusData {
+		return baseds.AgentStatusData{State: baseds.AgentState_Working, Detail: detail, Ts: ts}
+	}
+	permission := baseds.AgentStatusData{
+		State: baseds.AgentState_Waiting, Hook: baseds.AgentHook_Notification,
+		NotificationType: notificationPermissionPrompt, Detail: "running go test", Ts: 500,
+	}
+	idle := func(ts int64) baseds.AgentStatusData {
+		return baseds.AgentStatusData{State: baseds.AgentState_Idle, Ts: ts}
+	}
+	asking := worker("w-ask", "ask", "dag-b", "Build the shaper", "Plan reviewer", idle(10))
+	asking.OpenAsk = true
+	plain := listTestAgent("t-plain", "plain", harnessClaude, idle(100), true)
+	agents := []Agent{
+		worker("w-1", "one", "dag-a", "Ship the phone list", "Roster", working("reading a.go", 900)),
+		worker("w-2", "two", "dag-a", "Ship the phone list", "Review: Roster", working("running tests", 800)),
+		worker("w-idle", "idle", "dag-a", "Ship the phone list", "Verifier", idle(300)),
+		asking,
+		worker("w-perm", "perm", "dag-b", "Build the shaper", "Shaper", permission),
+		worker("w-input", "input", "lead:tab:lead", "lead agent", "do a thing", baseds.AgentStatusData{
+			State: baseds.AgentState_Waiting, Hook: baseds.AgentHook_Notification, NotificationType: "elicitation_dialog", Ts: 40}),
+		// an exited worker is not live, and a run that has only exited workers has no row
+		worker("w-gone", "gone", "dag-c", "Old run", "Task", idle(5)),
+		plain,
+		worker("w-zzz", "zzz", "dag-z", "A calm run", "Task", working("editing", 1)),
+		worker("w-aaa", "aaa", "dag-y", "A calm run", "Task", working("editing", 2)),
+	}
+	agents[6].HasStream = false
+	rows, runs := BuildAgentList(agents, nil)
+	if tabs := listTestTabs(rows, func(a ListedAgent) string { return a.Tab }); !slices.Equal(tabs, []string{"t-plain"}) {
+		t.Errorf("agent rows %v, want only the plain agent: a run worker is never an agent row", tabs)
+	}
+	var keys []string
+	for _, r := range runs {
+		keys = append(keys, r.Key)
+	}
+	// needs-you runs first (by name: "Build the shaper" before "lead agent"), then the calm ones by name,
+	// then key ("A calm run" twice: dag-y before dag-z); dag-c has no live worker
+	if want := []string{"dag-b", "lead:tab:lead", "dag-y", "dag-z", "dag-a"}; !slices.Equal(keys, want) {
+		t.Fatalf("run order %v, want %v", keys, want)
+	}
+	byKey := map[string]ListedRun{}
+	for _, r := range runs {
+		byKey[r.Key] = r
+	}
+	a := byKey["dag-a"]
+	if a.Name != "Ship the phone list" || a.NeedsYou {
+		t.Errorf("run a = %+v", a)
+	}
+	// workers sort like agent rows: working first (state order), the two working ones tie on Since (0) and
+	// fall to the agent's name, then idle
+	if tabs := listTestTabs(a.Workers, func(w RunWorkerRow) string { return w.Tab }); !slices.Equal(tabs, []string{"w-1", "w-2", "w-idle"}) {
+		t.Errorf("run a workers %v, want w-1, w-2, w-idle", tabs)
+	}
+	for _, w := range a.Workers {
+		switch w.Tab {
+		case "w-1":
+			if w.Label != "Roster" || w.State != PhoneWorking || w.Line != "Reading a.go" || w.Since != 0 {
+				t.Errorf("worker w-1 = %+v", w)
+			}
+		case "w-2":
+			if w.Label != "Review: Roster" || w.Line != "Running tests" {
+				t.Errorf("worker w-2 = %+v", w)
+			}
+		case "w-idle":
+			if w.State != PhoneIdle || w.Since != 300 || w.Label != "Verifier" {
+				t.Errorf("worker w-idle = %+v", w)
+			}
+		}
+	}
+	b := byKey["dag-b"]
+	if !b.NeedsYou || b.Name != "Build the shaper" || len(b.Workers) != 2 {
+		t.Fatalf("run b = %+v, want it to need you with its two workers", b)
+	}
+	// asking sorts before permission
+	if b.Workers[0].Tab != "w-ask" || b.Workers[0].State != PhoneAsking || b.Workers[1].Tab != "w-perm" ||
+		b.Workers[1].State != PhonePermission || b.Workers[1].Line != "Wants to run: go test" {
+		t.Errorf("run b workers = %+v", b.Workers)
+	}
+	if l := byKey["lead:tab:lead"]; !l.NeedsYou || l.Name != "lead agent" || len(l.Workers) != 1 || l.Workers[0].State != PhoneInput {
+		t.Errorf("a worker waiting for input makes its run need you: %+v", l)
+	}
+	if byKey["dag-y"].NeedsYou || byKey["dag-z"].NeedsYou {
+		t.Errorf("a working run needs nothing: %+v %+v", byKey["dag-y"], byKey["dag-z"])
+	}
+}
+
+func TestReplyLine(t *testing.T) {
+	long := strings.Repeat("word ", 60)
+	cases := []struct {
+		name, text, want string
+	}{
+		{"first sentence of the first line", "Deployed to staging. The smoke tests pass.\nMore.", "Deployed to staging."},
+		{"skips blank lines", "\n  \n\tFixed it!  Done\n", "Fixed it!"},
+		{"a question", "Which one? Pick.", "Which one?"},
+		{"a dot inside a name is not a sentence end", "Edited pkg/main.go and bumped v1.2 today", "Edited pkg/main.go and bumped v1.2 today"},
+		{"the number of a list item is not a sentence", "1. Fixed the roster. Then more", "1. Fixed the roster."},
+		{"a line with no end", "Waiting on the build", "Waiting on the build"},
+		{"a sentence end at the end of the line", "All green.\nNext line.", "All green."},
+		{"empty", "", ""},
+		{"only blanks", " \n\t\n", ""},
+		{"capped at 160 characters", long, strings.Repeat("word ", 31) + "word…"},
+		{"counts characters, not bytes", strings.Repeat("é", 200), strings.Repeat("é", 159) + "…"},
+	}
+	for _, c := range cases {
+		got := firstSentence(c.text)
+		if got != c.want {
+			t.Errorf("%s: firstSentence = %q, want %q", c.name, got, c.want)
+		}
+		if n := utf8.RuneCountInString(got); n > replyLineMax {
+			t.Errorf("%s: %d characters, want at most %d", c.name, n, replyLineMax)
+		}
+	}
+}
+
+// the 10 s poll reads a transcript only when it changed: unchanged size and mod time is a cache hit
+func TestIdleLineCache(t *testing.T) {
+	path := agentsTestTranscript(t, `"First reply. Detail."`)
+	reads := 0
+	prevRead := replyRead
+	replyRead = func(p, harness string) (string, int64) { reads++; return prevRead(p, harness) }
+	replyCacheReset()
+	t.Cleanup(func() { replyRead = prevRead; replyCacheReset() })
+
+	a := handTestClaude("t-a")
+	a.TranscriptPath = path
+	line := func() string {
+		rows, _ := BuildAgentList([]Agent{a}, nil)
+		return rows[0].Line
+	}
+	if got := line(); got != "First reply." {
+		t.Fatalf("line = %q", got)
+	}
+	for range 3 {
+		if got := line(); got != "First reply." {
+			t.Errorf("cached line = %q", got)
+		}
+	}
+	if reads != 1 {
+		t.Errorf("an unchanged transcript was read %d times over 4 polls, want 1", reads)
+	}
+	// the handed-over row reads through the same cache
+	if got := handedAgent(a, 1).Line; got != "First reply." || reads != 1 {
+		t.Errorf("handed line = %q after %d reads, want the cached line and still 1 read", got, reads)
+	}
+
+	// a new reply grows the file: it is read again
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0o644)
+	if err != nil {
+		t.Fatal(err)
+	}
+	more := `{"type":"assistant","timestamp":"2026-11-03T11:00:00Z","message":{"content":[{"type":"text","text":"Second reply. More."}]}}` + "\n"
+	if _, err := f.WriteString(more); err != nil {
+		t.Fatal(err)
+	}
+	f.Close()
+	if got := line(); got != "Second reply." || reads != 2 {
+		t.Errorf("after an append line = %q after %d reads, want the new reply and 2 reads", got, reads)
+	}
+
+	// a state that shows no reply never reads
+	working := agentsTestWorking("t-a")
+	working.TranscriptPath = path
+	before := reads
+	BuildAgentList([]Agent{working}, nil)
+	if reads != before {
+		t.Errorf("a working row read the transcript")
+	}
+
+	// a transcript that is gone gives no line
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	if got := line(); got != "" {
+		t.Errorf("a missing transcript gave %q, want no line", got)
 	}
 }
