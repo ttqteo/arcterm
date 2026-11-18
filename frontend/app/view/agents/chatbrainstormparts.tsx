@@ -64,18 +64,22 @@ export function OpenButton({ agent }: { agent: AgentVM }) {
 }
 
 // the dot before a state word: amber while it waits on you, the working green otherwise. A card's own `tag` (CardShell)
-// takes it when its word is one that is at work, and leaves it out when it is not (a queued council)
+// takes it when its word is one that is at work, and leaves it out when it is not (a queued council). A waiting dot
+// holds still: the whole tag around it, dot and words, blinks instead (WAITING_BLINK), since a 6px dot alone went unseen
 export function StateDot({ state }: { state: CardState }) {
     return (
         <span
             aria-hidden="true"
             className={cn(
-                "h-[6px] w-[6px] flex-none rounded-full pulse-dot",
-                state === "waiting" ? "bg-asking" : "bg-working"
+                "h-[6px] w-[6px] flex-none rounded-full",
+                state === "waiting" ? "bg-asking" : "bg-working pulse-dot"
             )}
         />
     );
 }
+
+// a card waiting on you blinks its whole state tag, the Jarvis waiting strip's slower breath (pulse.ts)
+const WAITING_BLINK = "pulse-dot-slow";
 
 // one dot and one word say where the card stands, never the colour alone. Only `waiting` is amber: the judge weighing
 // and a builder or the agent at work are the working green
@@ -85,7 +89,12 @@ export function StateTag({ state }: { state: CardState }) {
     }
     const waiting = state === "waiting";
     return (
-        <span className={cn("ml-[6px] flex items-center gap-[6px]", waiting ? "text-warning" : "text-secondary")}>
+        <span
+            className={cn(
+                "ml-[6px] flex items-center gap-[6px]",
+                waiting ? cn("text-warning", WAITING_BLINK) : "text-secondary"
+            )}
+        >
             <StateDot state={state} />
             {waiting ? "Waiting on you" : state === "working" ? "Working" : "Judge weighing"}
         </span>
@@ -240,7 +249,7 @@ export function CardShell({
                             className={cn(
                                 "ml-[6px] flex min-w-0 items-center gap-[6px]",
                                 state === "waiting"
-                                    ? "text-warning"
+                                    ? cn("text-warning", WAITING_BLINK)
                                     : state === "static"
                                       ? "text-muted"
                                       : "text-secondary"

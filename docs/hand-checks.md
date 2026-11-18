@@ -16,6 +16,10 @@ list (its number is not reused).
 Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) ·
 [part 4](hand-checks-4.md) · [part 3](hand-checks-3.md) · [part 2](hand-checks-2.md) (oldest).
 
+- [ ] (arcterm) **A waiting Chat card blinks its whole tag.** In Agent → Chat, on a brainstorm card waiting on you
+  (Builder check, a question): "● Waiting on you" fades and comes back, dot and words together, about every 1.8 s; a
+  Working tag still pulses only its green dot. `chatbrainstormparts.tsx` (StateTag, CardShell's tag).
+
 - [ ] (arcterm) **A brainstorm's rail opens as wide as the details rail.** In Agent, on an agent brainstorming, switch
   between Chat and the brainstorm (the lightbulb): Decided so far's left edge sits where the details rail's did, with
   nothing moving. Drag it narrower, switch to Chat and back: it opens at the details rail's width again. Not tried in
