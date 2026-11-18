@@ -475,9 +475,10 @@ export function ToolLine({
 // A folded run of consecutive edits (Wave-transcript-feed.dc.html burst). Summary row: "N files
 // +adds −dels"; expands inline when the combined diff fits the edit budget, else opens the modal.
 // a prompt you sent, as markdown (an engine's task prompt is headings and fenced code), its line breaks kept as typed;
-// a long one shows its first six lines fading out, with Show more; folded, the whole card it sits in opens it (the
-// button's overlay fills its nearest positioned box, which every bubble holding it is), and open, only Show less folds
-// it again, so the text stays selectable. `mentions` draws an `@path` in it as a file pill (Chat's
+// a long one shows its first six lines fading out, with Show more; folded, the whole card it sits in opens it (a cover
+// fills its nearest positioned box, which every bubble holding it is: a real element, since a click that starts on a
+// button's ::after lands its release on the box), and open, only Show less folds it again, so the text stays
+// selectable. `mentions` draws an `@path` in it as a file pill (Chat's
 // bubble and its pending copy pass it; the other transcripts draw the text as typed). Code typed on a fence's own line
 // (```curl https://…) stays in the block instead of being read as its language (chatfences.ts splitFenceInfo)
 export function PromptText({ text, mentions }: { text: string; mentions?: boolean }) {
@@ -499,14 +500,19 @@ export function PromptText({ text, mentions }: { text: string; mentions?: boolea
                     className="[overflow-wrap:anywhere] [&_p]:whitespace-pre-wrap"
                 />
             </div>
+            {clamp && !open ? (
+                <span
+                    data-prompt-fold-cover
+                    aria-hidden
+                    onClick={() => setOpen(true)}
+                    className="absolute inset-0 cursor-pointer"
+                />
+            ) : null}
             {clamp ? (
                 <button
                     type="button"
                     onClick={() => setOpen((v) => !v)}
-                    className={cn(
-                        "mt-1 cursor-pointer text-[11.5px] text-muted hover:text-secondary",
-                        !open && "after:absolute after:inset-0 after:cursor-pointer"
-                    )}
+                    className="relative mt-1 cursor-pointer text-[11.5px] text-muted hover:text-secondary"
                 >
                     {open ? "Show less" : "Show more"}
                 </button>

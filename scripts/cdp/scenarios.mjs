@@ -49051,6 +49051,149 @@ const chatQuote = {
     },
 };
 
+// --- chat-bubble-fold: a long message of yours in Chat (narrationtimeline.tsx PromptText). Folded behind Show more, a
+// click anywhere on its bubble (its padding too, away from the button) opens it; open, a click on its text leaves it
+// open, and only Show less folds it again.
+
+const CBF_NAME = "bubble fold source";
+const CBF_PROMPT = Array.from({ length: 12 }, (_, i) => `Line ${i + 1} of a long message, pasted from a release log.`).join("\n");
+
+const chatBubbleFold = {
+    name: "chat-bubble-fold",
+    surface: "agent",
+    async arrange(h) {
+        const ctx = {
+            dir: mkdtempSync(join(tmpdir(), "verify-chat-bubble-fold-")),
+            prevGrid: await h.ev(`localStorage.getItem(${JSON.stringify(GRID_KEY)})`),
+            prevModes: await h.ev(`localStorage.getItem("agent.chatmode")`),
+        };
+        let at = "writing the transcript";
+        try {
+            const base = Date.now() - 7_200_000;
+            const o = (sec) => ({ cwd: ctx.dir, ts: new Date(base + sec * 1000).toISOString() });
+            ctx.transcript = AC.writeTranscript(ctx.dir, "bubble-fold-source", [
+                AC.userText(CBF_PROMPT, { ...o(0), uuid: "u0" }),
+                AC.assistantText("Read it. Line 7 is the one that matters.", { ...o(2), uuid: "a0" }),
+            ]);
+            at = "resetting the grid";
+            await h.ev(`localStorage.setItem(${JSON.stringify(GRID_KEY)}, ${JSON.stringify(JSON.stringify(GRID_EMPTY))})`);
+            await h.ev(`localStorage.removeItem("agent.chatmode")`);
+            if (!(await ahReload(h))) throw new Error("the page did not come back after the reload");
+            await h.goto("agent");
+            at = "making the tab";
+            ctx.tabs = { main: await acMakeTab(h, ctx, { label: CBF_NAME }) };
+            at = "setting the roster";
+            const now = Date.now();
+            await AC.setRoster(h, [
+                {
+                    project: "arcterm",
+                    state: "idle",
+                    idleSince: now - 3_600_000,
+                    task: "Release",
+                    agent: "claude",
+                    model: "opus",
+                    id: ctx.tabs.main.tabId,
+                    name: CBF_NAME,
+                    blockId: ctx.tabs.main.blockId,
+                    transcriptPath: ctx.transcript,
+                    sleeping: { since: now - 3_600_000, freedBytes: 0 },
+                },
+            ]);
+        } catch (e) {
+            ctx.arrangeError = `${at}: ${String(e?.message ?? e)}`;
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok: ok === true, detail: typeof detail === "string" ? detail : JSON.stringify(detail) });
+        if (ctx.arrangeError != null) {
+            rec("0. the fixture agent and its transcript", false, ctx.arrangeError);
+            return steps;
+        }
+        const A = ctx.tabs.main.tabId;
+        const bubble = `document.querySelector('[data-agent-chat="${A}"] [data-chat-you] > div')`;
+        // the bubble's button word, its height, and where to click: its top-left padding, and the middle of its text
+        const read = () =>
+            h.ev(`(() => {
+                const b = ${bubble};
+                if (!b) return null;
+                const r = b.getBoundingClientRect();
+                const btn = [...b.querySelectorAll("button")].find((x) => /^Show (more|less)$/.test(x.textContent.trim()));
+                const p = b.querySelector("p");
+                const pr = p?.getBoundingClientRect();
+                // the bubble's right-hand padding, halfway down: clear of the pinned prompt card over the top of Chat
+                const edge = { x: Math.round(r.right - 5), y: Math.round(r.top + r.height / 2) };
+                return {
+                    button: btn?.textContent.trim() ?? null,
+                    h: Math.round(r.height),
+                    corner: edge,
+                    // what is under that point: the fold's cover while folded
+                    cover: document.elementFromPoint(edge.x, edge.y)?.hasAttribute("data-prompt-fold-cover") === true,
+                    text: pr ? { x: Math.round(pr.left + pr.width / 2), y: Math.round(pr.top + pr.height / 2) } : null,
+                };
+            })()`);
+        const click = async (at) => {
+            for (const type of ["mouseMoved", "mousePressed", "mouseReleased"]) {
+                await h.cdp("Input.dispatchMouseEvent", { type, x: at.x, y: at.y, button: "left", clickCount: 1 });
+            }
+            await polishNap(400);
+        };
+        try {
+            await AC.focusAgent(h, A);
+            await polishWaitFor(h, `!!${bubble}?.querySelector("p")`, 15000);
+            await polishNap(400);
+            const s1 = await read();
+            await h.shot("cdp-shots/chat-bubble-fold-1-folded.png");
+            rec("1. the 12-line message is folded: Show more under it, and the fold's cover over the bubble", s1?.button === "Show more" && s1.cover === true, s1);
+
+            // 2. a click on the bubble's right-hand padding, nowhere near the button, opens it
+            await click(s1.corner);
+            const s2 = await read();
+            await h.shot("cdp-shots/chat-bubble-fold-2-open.png");
+            rec("2. a click on the bubble's right-hand edge opens it: Show less, and the bubble is taller", s2?.button === "Show less" && s2.h > s1.h, { s1, s2 });
+
+            // 3. open, a click on its text leaves it open
+            await click(s2.text);
+            const s3 = await read();
+            rec("3. open, a click in the middle of its text leaves it open", s3?.button === "Show less" && s3.h === s2.h, s3);
+
+            // 4. Show less folds it again
+            await h.ev(`[...${bubble}.querySelectorAll("button")].find((x) => x.textContent.trim() === "Show less")?.click()`);
+            await polishNap(400);
+            const s4 = await read();
+            await h.shot("cdp-shots/chat-bubble-fold-4-folded-again.png");
+            rec("4. Show less folds it back to its first height", s4?.button === "Show more" && s4.h === s1.h, s4);
+        } catch (e) {
+            rec("x. the scenario ran to the end", false, String(e?.stack ?? e));
+        }
+        return steps;
+    },
+    async teardown(h, ctx) {
+        const step = async (what, fn) => {
+            try {
+                await fn();
+            } catch (e) {
+                console.error(`chat-bubble-fold teardown: ${what} failed: ${e?.message ?? e}`);
+            }
+        };
+        await step("restore the roster", () => AC.restoreRoster(h));
+        await step("close the fixture tab", () => acCloseTabs(h, ctx));
+        await step("restore the grid and the chat modes", () =>
+            h.ev(`(() => {
+                for (const [key, prev] of [[${JSON.stringify(GRID_KEY)}, ${JSON.stringify(ctx.prevGrid)}], ["agent.chatmode", ${JSON.stringify(ctx.prevModes)}]]) {
+                    if (prev == null) localStorage.removeItem(key);
+                    else localStorage.setItem(key, prev);
+                }
+                return true;
+            })()`)
+        );
+        await step("remove the fixture transcript", () => rmSync(ctx.dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 500 }));
+        await step("reload onto the live roster", () => ahReload(h));
+        await step("go home", () => h.goto("cockpit"));
+    },
+};
+
 // --- chat-focus-read: Focus read in Chat (chatfocusread.ts, chatfocusreadview.ts, chatfocusreadstore.ts). The toggle
 // beside Skim turns it on over a long reply: one block lit on the reading line, every other block dimmed to 32%, the
 // line's tick in the gutter, and the focus in the conversation. J steps the next block onto the line (the Agent tree's j
@@ -73683,6 +73826,7 @@ export const SCENARIOS = [
     chatFork,
     chatQuote,
     chatFocusRead,
+    chatBubbleFold,
     chatMath,
     chatRefBadges,
     chatInitiative,
