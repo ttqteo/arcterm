@@ -615,7 +615,11 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
     // Hand to phone (remote mode, pkg/remotemode): an action in More; while the agent is on the phone the header says so
     // and its pill takes it back
     const handable = canHandToPhone(agent, useAtomValue(model.lineageAtom).roles[agent.id]);
-    const handed = handable && isHandedOver(useAtomValue(remoteStatusAtom), agent.id);
+    // read on every draw, never behind `handable &&`: the header stays mounted while its agent changes (a pick from the
+    // tree or Sidecar, a terminal, a worker, a lost block), and a hook skipped on one draw shifted every hook after it, so
+    // the next draw read useFallingAsleep's timestamp as useAtomValue's state and crashed ("number … is not iterable")
+    const remoteStatus = useAtomValue(remoteStatusAtom);
+    const handed = handable && isHandedOver(remoteStatus, agent.id);
 
     // The visible way to a second cell: every other live agent and terminal of this agent's project (a split holds one
     // project's), and what to do with none (dragging a sidebar row onto the terminal works too, but nothing on screen
