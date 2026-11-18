@@ -51048,7 +51048,8 @@ const chatInitiative = {
 // chatcanvaspick.ts). An idle Claude fixture agent's last reply lists options A and B and ends with a question; its canvas
 // (opened with the agent's own `wsh ui reveal canvas:<topic>`, here the same uireveal call) holds Main, A-…, B-… and a
 // C-… board the reply never names. Chat ends with a card holding the question and the two named boards' rows, and the
-// model's guessed chips give way to it; a click on B sends `B — <title>` to the agent's terminal and the card leaves. What
+// model's guessed chips give way to it. Compare opens a modal over Chat holding only A and B (a tile shows one alone with
+// its Pick button, Escape closes it); a click on row B sends `B — <title>` to the agent's terminal and the card leaves. What
 // the page types into the block is recorded by a small mock (window.__arcCanvasPickMock), never sent. The transcript and
 // the design folder are in a temp dir.
 const CCP_MOCK_KEY = "__arcCanvasPickMock";
@@ -51211,15 +51212,56 @@ const chatCanvasPick = {
             })()`);
             await h.shot("cdp-shots/chat-canvas-pick-card.png");
             rec(
-                "1. Chat ends with the quick pick card: the agent's question, rows A and B with the boards' titles (not the unnamed C), an open button per row, and Compare 2 boards in Canvas",
+                "1. Chat ends with the quick pick card: the agent's question, rows A and B with the boards' titles (not the unnamed C), a look button per row, and Compare 2 boards",
                 shown &&
                     seen?.question === CCP_QUESTION &&
                     JSON.stringify(seen?.rows) === JSON.stringify([`A${CCP_TITLE_A}`, `B${CCP_TITLE_B}`]) &&
                     JSON.stringify(seen?.opens) === JSON.stringify(["A-merge-runs.dc.html", "B-one-row-each.dc.html"]) &&
-                    seen?.compare === "Compare 2 boards in Canvas",
+                    seen?.compare === "Compare 2 boards",
                 { shown, seen }
             );
             rec("2. while the card shows, no guessed reply chips sit under the box", seen?.chips === 0, seen);
+
+            // Compare opens the modal over Chat, not the Canvas: All, A and B, and only those two boards drawn
+            const modal = `document.querySelector('[data-chat-canvaspick-modal="${A}"]')`;
+            const readModal = `(() => {
+                const m = ${modal};
+                if (!m) return null;
+                return {
+                    tabs: [...m.querySelectorAll("[data-chat-canvaspick-modal-tab]")].map((t) => t.getAttribute("data-chat-canvaspick-modal-tab")),
+                    frames: [...m.querySelectorAll("[data-canvas-frame]")].map((f) => f.getAttribute("data-canvas-frame")),
+                    pick: m.querySelector("[data-chat-canvaspick-modal-pick]")?.textContent.trim() ?? null,
+                    canvas: !!document.querySelector('[data-canvas-pane]'),
+                };
+            })()`;
+            await h.ev(`${card}?.querySelector("[data-chat-canvaspick-compare]")?.click()`);
+            const opened = await polishWaitFor(h, `(${modal})?.querySelectorAll("[data-canvas-frame] iframe").length === 2`, CCP_WAIT_MS);
+            await polishNap(900);
+            const all = await h.ev(readModal);
+            await h.shot("cdp-shots/chat-canvas-pick-modal.png");
+            rec(
+                "3. Compare 2 boards opens a modal over Chat (the Canvas stays shut) with tabs All, A and B, drawing only A and B, never Main or C",
+                opened &&
+                    all?.canvas === false &&
+                    JSON.stringify(all?.tabs) === JSON.stringify(["all", "A-merge-runs.dc.html", "B-one-row-each.dc.html"]) &&
+                    JSON.stringify(all?.frames) === JSON.stringify(["A-merge-runs.dc.html", "B-one-row-each.dc.html"]) &&
+                    all?.pick == null,
+                { opened, all }
+            );
+
+            // a click on tile B shows it alone with Pick B; Escape closes the modal and leaves the card
+            await h.ev(`(${modal})?.querySelector('[data-canvas-frame="B-one-row-each.dc.html"] button')?.click()`);
+            const alone = await polishWaitFor(h, `(${modal})?.querySelectorAll("[data-canvas-frame]").length === 1`, CCP_WAIT_MS);
+            await polishNap(500);
+            const one = await h.ev(readModal);
+            await h.shot("cdp-shots/chat-canvas-pick-modal-one.png");
+            await h.ev(`document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }))`);
+            const closed = await polishWaitFor(h, `!${modal} && !!${card}`, CCP_WAIT_MS);
+            rec(
+                "4. a click on tile B shows board B alone with a Pick B button; Escape closes the modal and the card stays",
+                alone && JSON.stringify(one?.frames) === JSON.stringify(["B-one-row-each.dc.html"]) && one?.pick === "Pick B" && closed,
+                { alone, one, closed }
+            );
 
             const clicked = await h.ev(
                 `(() => { const b = ${card}?.querySelectorAll("[data-chat-bscard-option]")[1]; b?.click(); return !!b; })()`
@@ -51235,7 +51277,7 @@ const chatCanvasPick = {
             await polishNap(500);
             await h.shot("cdp-shots/chat-canvas-pick-sent.png");
             rec(
-                "3. a click on row B sends `B — One row per edit` to the agent's terminal with Enter, and the card leaves",
+                "5. a click on row B sends `B — One row per edit` to the agent's terminal with Enter, and the card leaves",
                 clicked && sent && gone && text === `B — ${CCP_TITLE_B}\r`,
                 { clicked, sent, gone, text }
             );

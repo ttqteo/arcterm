@@ -56,6 +56,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - → Sonnet in the Consumers panel re-runs a working run worker's task on Sonnet, after a confirm: a model switch
   would only land when its turn ends, which for a worker is the end of its task.
 - A terminal in a split shows a terminal mark in its bar, and Move to the panel, as it does when it is the one in focus.
+- Chat's Pick a board card opens its boards in a window over Chat instead of switching to the Canvas: Compare shows
+  only the boards the agent asked about, side by side, and a click on one shows it alone with a Pick button. Open in
+  Canvas is still in that window.
 
 ### Fixed
 
