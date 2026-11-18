@@ -32,6 +32,7 @@ import {
 import { SidecarBand } from "./sidecarband";
 import { GlowCircle, HudBrackets, HudLabel, HudTickRing } from "./sidecarhud";
 import { ageText } from "./sidecarkeys";
+import { useSidecarMachine } from "./sidecarmachine";
 import {
     coreLabel,
     coreTone,
@@ -57,6 +58,7 @@ import { bandShows, formatBytes, nextHidden } from "./sidecarstrainmodel";
 import type {
     SidecarAct,
     SidecarHeavy,
+    SidecarMachine,
     SidecarNeed,
     SidecarRunBox,
     SidecarSnapshot,
@@ -197,7 +199,9 @@ function useFit(): { ref: RefObject<HTMLDivElement | null>; stage: CSSProperties
     };
 }
 
-export function SidecarOrbit({ snap, receivedAt, clock, send }: SidecarOrbitProps) {
+// memoized on its props: a sidecar:machine moves the page's machine figures alone, and only the parts that read them
+// (RamArc, RamKey, the band) redraw, not the nodes and the needs
+export const SidecarOrbit = memo(function SidecarOrbit({ snap, receivedAt, clock, send }: SidecarOrbitProps) {
     const tiles = snap.tiles;
     const needs = snap.needs ?? NO_NEEDS;
     const sinceArrived = clock - receivedAt;
@@ -292,13 +296,7 @@ export function SidecarOrbit({ snap, receivedAt, clock, send }: SidecarOrbitProp
                     {showBand && (
                         // the band keeps its own side margins: this column has none, so they are taken back
                         <div className="-mx-5 -mt-3 flex shrink-0 flex-col">
-                            <SidecarBand
-                                strain={strain}
-                                machine={snap.machine}
-                                now={now}
-                                onHide={() => setHidden(level)}
-                                send={send}
-                            />
+                            <SidecarBand strain={strain} now={now} onHide={() => setHidden(level)} send={send} />
                         </div>
                     )}
                     <NeedsPanel
@@ -318,7 +316,7 @@ export function SidecarOrbit({ snap, receivedAt, clock, send }: SidecarOrbitProp
             <Footer />
         </div>
     );
-}
+});
 
 // ---- The orbit ----
 
@@ -350,19 +348,9 @@ function OrbitCell(props: {
     const ramTone: Tone | null = strain?.by === "ram" ? bandTone : null;
     const heavy = useMemo(() => new Map((strain?.heavy ?? []).map((h) => [h.id, h])), [strain]);
 
-    const machine = snap.machine;
-    const ramPct = machine != null && machine.memTotal > 0 ? (1 - machine.memFree / machine.memTotal) * 100 : undefined;
-    const rings = [snap.usage?.fiveHourPct, snap.usage?.weekPct, ramPct] as const;
-    const ramText =
-        machine == null
-            ? "RAM –"
-            : [
-                  `RAM ${pctText(ramPct)} used`,
-                  `${formatBytes(machine.memFree)} free`,
-                  machine.cpuPct != null ? `CPU ${Math.round(machine.cpuPct)}%` : "",
-              ]
-                  .filter((p) => p !== "")
-                  .join(" · ");
+    // the plan rings; the RAM ring and its line read the page's machine figures themselves (RamArc, RamKey), so a
+    // sidecar:machine redraws them and not every node
+    const rings = [snap.usage?.fiveHourPct, snap.usage?.weekPct] as const;
 
     const tone = coreTone(snap);
     const needsCount = (snap.needs ?? NO_NEEDS).length;
@@ -417,27 +405,9 @@ function OrbitCell(props: {
                             className="stroke-hud-line"
                         />
                     ))}
-                    {RING_R.map((r, i) => {
-                        const { dash, gap } = ringDash(rings[i], r);
-                        const stroke = i === 0 ? "stroke-hud-glow" : i === 1 ? "stroke-hud-muted" : null;
-                        return (
-                            <GlowCircle
-                                key={`a${r}`}
-                                cx={CX}
-                                cy={CY}
-                                r={r}
-                                width={RING_CORE}
-                                // a zero-length round cap draws a dot, so an empty ring has butt caps
-                                strokeLinecap={dash > 0.5 ? "round" : "butt"}
-                                transform={`rotate(-90 ${CX} ${CY})`}
-                                style={{ strokeDasharray: `${dash} ${gap}` }}
-                                className={cn(
-                                    "transition-[stroke-dasharray,stroke] duration-500 motion-reduce:transition-none",
-                                    stroke ?? (ramTone != null ? STROKE[ramTone] : "stroke-hud-text")
-                                )}
-                            />
-                        );
-                    })}
+                    <ValueArc r={RING_R[0]} pct={rings[0]} stroke="stroke-hud-glow" />
+                    <ValueArc r={RING_R[1]} pct={rings[1]} stroke="stroke-hud-muted" />
+                    <RamArc r={RING_R[2]} tone={ramTone} />
                 </svg>
 
                 <div
@@ -487,11 +457,7 @@ function OrbitCell(props: {
                 <div className="absolute left-7 top-6 flex flex-col gap-1.5 font-mono text-[13px] tabular-nums text-hud-muted">
                     <KeyLine swatch="bg-hud-glow" text={`5h window ${pctText(rings[0])}`} />
                     <KeyLine swatch="bg-hud-muted" text={`Week ${pctText(rings[1])}`} />
-                    <KeyLine
-                        swatch={ramTone != null ? BG[ramTone] : "bg-hud-text"}
-                        text={ramText}
-                        textClass={ramTone != null ? TEXT[ramTone] : undefined}
-                    />
+                    <RamKey tone={ramTone} />
                 </div>
                 <div className="absolute bottom-[22px] left-7 flex gap-[22px] font-mono text-[13px] tabular-nums text-hud-muted">
                     <span>
@@ -535,6 +501,66 @@ function OrbitCell(props: {
                 ))}
             </div>
         </div>
+    );
+}
+
+// one of the core's value rings, drawn from its percent
+function ValueArc(props: { r: number; pct: number | undefined; stroke: string }) {
+    const { r } = props;
+    const { dash, gap } = ringDash(props.pct, r);
+    return (
+        <GlowCircle
+            cx={CX}
+            cy={CY}
+            r={r}
+            width={RING_CORE}
+            // a zero-length round cap draws a dot, so an empty ring has butt caps
+            strokeLinecap={dash > 0.5 ? "round" : "butt"}
+            transform={`rotate(-90 ${CX} ${CY})`}
+            style={{ strokeDasharray: `${dash} ${gap}` }}
+            className={cn(
+                "transition-[stroke-dasharray,stroke] duration-500 motion-reduce:transition-none",
+                props.stroke
+            )}
+        />
+    );
+}
+
+function ramUsedPct(machine: SidecarMachine | undefined): number | undefined {
+    return machine != null && machine.memTotal > 0 ? (1 - machine.memFree / machine.memTotal) * 100 : undefined;
+}
+
+// the RAM ring, from the page's machine figures, in the band's tone while RAM is what strains
+function RamArc(props: { r: number; tone: Tone | null }) {
+    const machine = useSidecarMachine();
+    return (
+        <ValueArc
+            r={props.r}
+            pct={ramUsedPct(machine)}
+            stroke={props.tone != null ? STROKE[props.tone] : "stroke-hud-text"}
+        />
+    );
+}
+
+// the key's RAM line: used, free and the CPU, from the page's machine figures
+function RamKey(props: { tone: Tone | null }) {
+    const machine = useSidecarMachine();
+    const text =
+        machine == null
+            ? "RAM –"
+            : [
+                  `RAM ${pctText(ramUsedPct(machine))} used`,
+                  `${formatBytes(machine.memFree)} free`,
+                  machine.cpuPct != null ? `CPU ${Math.round(machine.cpuPct)}%` : "",
+              ]
+                  .filter((p) => p !== "")
+                  .join(" · ");
+    return (
+        <KeyLine
+            swatch={props.tone != null ? BG[props.tone] : "bg-hud-text"}
+            text={text}
+            textClass={props.tone != null ? TEXT[props.tone] : undefined}
+        />
     );
 }
 

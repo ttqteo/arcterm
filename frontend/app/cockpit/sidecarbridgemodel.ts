@@ -203,10 +203,11 @@ function same(a: unknown, b: unknown): boolean {
 }
 
 /**
- * Whether two snapshots say the same thing: everything but `now`, which moves on every build. Nothing sent is never the
- * same. The machine figures reach it already rounded (decision 8), so a reading that only jitters does not differ; the
- * resource panel's reading reaches it rounded too (sidecarresources.ts), and a new one differs: left out, a poll that
- * changed nothing else was dropped as unchanged and the panel stayed on "Measuring…".
+ * Whether two snapshots say the same thing: everything but `now`, which moves on every build, and `machine`, whose
+ * figures move on nearly every 5 s poll: they go to the page on their own, small (`machineChanged`), so a reading does
+ * not resend and redraw the whole dashboard. Nothing sent is never the same. The resource panel's reading reaches it
+ * rounded (sidecarresources.ts), and a new one differs: left out, a poll that changed nothing else was dropped as
+ * unchanged and the panel stayed on "Measuring…".
  */
 export function sameSnapshot(a: SidecarSnapshot | null, b: SidecarSnapshot | null): boolean {
     if (a == null || b == null) {
@@ -215,7 +216,6 @@ export function sameSnapshot(a: SidecarSnapshot | null, b: SidecarSnapshot | nul
     return (
         same(a.counts, b.counts) &&
         same(a.tiles, b.tiles) &&
-        same(a.machine, b.machine) &&
         same(a.strain, b.strain) &&
         same(a.needs, b.needs) &&
         same(a.run, b.run) &&
@@ -351,9 +351,11 @@ export function decorateTiles(
 export interface FeedState {
     lastSent: SidecarSnapshot | null;
     lastEmitAt: number | null;
+    // the machine figures the page holds: the last snapshot's, or the last sidecar:machine since
+    machineSent: SidecarMachine | null;
 }
 
-export const EMPTY_FEED: FeedState = { lastSent: null, lastEmitAt: null };
+export const EMPTY_FEED: FeedState = { lastSent: null, lastEmitAt: null, machineSent: null };
 
 export type FeedStep =
     | { kind: "emit" } // send the snapshot just built, now
@@ -380,7 +382,20 @@ export function planChange(feed: FeedState, next: SidecarSnapshot, timerPending:
 
 /** The memory once `snap` has gone out. */
 export function afterEmit(snap: SidecarSnapshot, now: number): FeedState {
-    return { lastSent: snap, lastEmitAt: now };
+    return { lastSent: snap, lastEmitAt: now, machineSent: snap.machine ?? null };
+}
+
+/**
+ * Whether the machine figures of a build the snapshot rule calls unchanged are news to the page, to go as a
+ * sidecar:machine of their own. Only once a snapshot has gone out: the page takes the first figures from it.
+ */
+export function machineChanged(feed: FeedState, machine: SidecarMachine | undefined): boolean {
+    return feed.lastSent != null && machine != null && !same(feed.machineSent, machine);
+}
+
+/** The memory once a sidecar:machine has gone out. */
+export function afterMachine(feed: FeedState, machine: SidecarMachine): FeedState {
+    return { ...feed, machineSent: machine };
 }
 
 /**
@@ -388,7 +403,7 @@ export function afterEmit(snap: SidecarSnapshot, now: number): FeedState {
  * even when the roster has not changed. The bridge emits at once after this, which sets the memory again.
  */
 export function afterHello(feed: FeedState): FeedState {
-    return { ...feed, lastSent: null };
+    return { ...feed, lastSent: null, machineSent: null };
 }
 
 /** sidecar:closed: the page is gone, so the next one starts from nothing. */

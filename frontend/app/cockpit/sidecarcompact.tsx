@@ -20,6 +20,7 @@ import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { memo, useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
 import { GlowCircle, HudBrackets, HudDivider, HudLabel, HudTickRing } from "./sidecarhud";
 import { ageText } from "./sidecarkeys";
+import { useSidecarMachine } from "./sidecarmachine";
 import {
     coreLabel,
     coreTone,
@@ -177,7 +178,8 @@ function ramArc(strain: SidecarStrain | undefined): string {
 function Core({ snap, needs }: { snap: SidecarSnapshot; needs: readonly SidecarNeed[] }) {
     const tone = coreTone(snap);
     const failed = needs.filter((n) => n.failed === true).length;
-    const m = snap.machine;
+    // the page's latest figures, which a sidecar:machine moves without a new snapshot (sidecarmachine.ts)
+    const m = useSidecarMachine();
     const usedPct = m != null && m.memTotal > 0 ? (1 - m.memFree / m.memTotal) * 100 : undefined;
     const label = coreLabel(snap);
     const ramTone: Tone = label == null ? "muted" : snap.strain?.level === "red" ? "error" : "warning";
@@ -526,7 +528,9 @@ function Dot(props: { id: string; tone: Tone; ping: boolean; tip: string; halo?:
 
 // ---- The window ----
 
-export function SidecarCompact({ snap, receivedAt, clock, send }: SidecarCompactProps) {
+// memoized on its props: a sidecar:machine moves the page's machine figures alone, and only the parts that read them
+// (Core) redraw, not the needs and the dots
+export const SidecarCompact = memo(function SidecarCompact({ snap, receivedAt, clock, send }: SidecarCompactProps) {
     const reduce = useReducedMotion() === true;
     const needs = useMemo(() => snap.needs ?? [], [snap.needs]);
     const tiles = snap.tiles;
@@ -681,4 +685,4 @@ export function SidecarCompact({ snap, receivedAt, clock, send }: SidecarCompact
             />
         </div>
     );
-}
+});

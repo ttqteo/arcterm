@@ -7,6 +7,9 @@
 // the host tells the main window the Sidecar window is gone with sidecar:closed. Plain data only: it crosses a Tauri event.
 
 export const SIDECAR_SNAPSHOT_EVENT = "sidecar:snapshot"; // main → sidecar window
+// main → sidecar window: new machine figures (a SidecarMachine) when nothing else of the snapshot changed, so a 5 s poll
+// redraws the figures alone, not the dashboard
+export const SIDECAR_MACHINE_EVENT = "sidecar:machine";
 export const SIDECAR_ACT_EVENT = "sidecar:act"; // sidecar page → main
 export const SIDECAR_CLOSED_EVENT = "sidecar:closed"; // host → main, when the Sidecar window is destroyed
 

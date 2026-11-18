@@ -63,11 +63,13 @@ import {
     afterClosed,
     afterEmit,
     afterHello,
+    afterMachine,
     applyPressure,
     attachNotes,
     decorateTiles,
     dueLabel,
     heavyPolls,
+    machineChanged,
     machineOf,
     newestActiveRun,
     planChange,
@@ -104,6 +106,7 @@ import {
 import {
     SIDECAR_ACT_EVENT,
     SIDECAR_CLOSED_EVENT,
+    SIDECAR_MACHINE_EVENT,
     SIDECAR_SNAPSHOT_EVENT,
     type SidecarAct,
     type SidecarResourcePoint,
@@ -441,6 +444,14 @@ export function SidecarBridge({ model }: { model: AgentsViewModel }) {
                     }, step.delayMs);
                     return;
                 case "none":
+                    // the dashboard is as sent; new machine figures go alone (a trailing emit, when one is due, carries them)
+                    if (timer == null && machineChanged(feed, snap.machine)) {
+                        const machine = snap.machine!;
+                        feed = afterMachine(feed, machine);
+                        emitTo(SIDECAR_LABEL, SIDECAR_MACHINE_EVENT, machine).catch((e) =>
+                            log(`machine figures not sent: ${String(e)}`)
+                        );
+                    }
                     return;
             }
         }

@@ -11,12 +11,12 @@
 import { cn } from "@/util/util";
 import { useState, type MouseEvent } from "react";
 import { HudBrackets } from "./sidecarhud";
+import { useSidecarMachine } from "./sidecarmachine";
 import { bandTitle, bandWhy, formatBytes } from "./sidecarstrainmodel";
-import type { SidecarAct, SidecarHeavy, SidecarMachine, SidecarStrain } from "./sidecartypes";
+import type { SidecarAct, SidecarHeavy, SidecarStrain } from "./sidecartypes";
 
 export interface SidecarBandProps {
     strain: SidecarStrain;
-    machine?: SidecarMachine;
     // the page's clock: the snapshot's `now` plus the time since it arrived, so "RAM high for 3 min" ages like the tiles
     now: number;
     onHide: () => void;
@@ -31,7 +31,9 @@ function weightText(w: { ramBytes?: number; cpuPct?: number }): string {
     return w.cpuPct != null ? `${Math.round(w.cpuPct)}%` : "";
 }
 
-export function SidecarBand({ strain, machine, now, onHide, send }: SidecarBandProps) {
+export function SidecarBand({ strain, now, onHide, send }: SidecarBandProps) {
+    // the page's latest figures, which a sidecar:machine moves without a new snapshot (sidecarmachine.ts)
+    const machine = useSidecarMachine();
     const red = strain.level === "red";
     return (
         <div

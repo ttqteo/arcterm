@@ -9,14 +9,17 @@
 import { SidecarCompact } from "@/app/cockpit/sidecarcompact";
 import { HudLabel } from "@/app/cockpit/sidecarhud";
 import { layoutFor, type FormChange, type SidecarLayout } from "@/app/cockpit/sidecarlayout";
+import { SidecarMachineContext } from "@/app/cockpit/sidecarmachine";
 import { SidecarOrbit } from "@/app/cockpit/sidecarorbit";
 import { SidecarResourcesPanel } from "@/app/cockpit/sidecarresourcespanel";
 import { NATIVE_MAC_FRAME, SidecarTitleBar, toggleSidecarFullscreen } from "@/app/cockpit/sidecartitlebar";
 import {
     SIDECAR_ACT_EVENT,
+    SIDECAR_MACHINE_EVENT,
     SIDECAR_SNAPSHOT_EVENT,
     type SidecarAct,
     type SidecarForm,
+    type SidecarMachine,
     type SidecarSnapshot,
 } from "@/app/cockpit/sidecartypes";
 import { useApplyCockpitTheme } from "@/app/view/agents/themestore";
@@ -167,6 +170,8 @@ function useVisible(answered: boolean): boolean {
 function SidecarRoot() {
     useApplyCockpitTheme();
     const [heard, setHeard] = useState<Heard | null>(null);
+    // the machine figures, apart: a snapshot sets them, and so does a sidecar:machine between two (sidecarmachine.ts)
+    const [machine, setMachine] = useState<SidecarMachine | undefined>(undefined);
     const layout = useLayout();
     const wall = layout === "wall";
     const [form, changeForm] = useSidecarForm();
@@ -183,9 +188,11 @@ function SidecarRoot() {
             answered = true;
             const at = Date.now();
             setHeard({ snap: e.payload, at });
+            setMachine(e.payload.machine);
             // a snapshot's arrival is an age reading too, or the age would lag by up to a tick
             setClock(at);
         });
+        const unlistenMachine = listen<SidecarMachine>(SIDECAR_MACHINE_EVENT, (e) => setMachine(e.payload));
         // the hello goes out once the listener is registered, so its answer cannot arrive before anything hears it
         unlisten
             .then(() => {
@@ -209,6 +216,7 @@ function SidecarRoot() {
             clearInterval(retry);
             clearInterval(tick);
             void unlisten.then((off) => off()).catch(() => {});
+            void unlistenMachine.then((off) => off()).catch(() => {});
         };
     }, []);
 
@@ -230,7 +238,7 @@ function SidecarRoot() {
         // Nothing in Sidecar is text to copy (it has no input either), so no drag or Cmd+A paints a selection over it.
         <div className="relative flex h-screen w-screen select-none flex-col overflow-hidden bg-hud-bg font-sans text-primary [&_button]:transition-none">
             <SidecarTitleBar
-                machine={heard?.snap.machine}
+                machine={machine}
                 strain={heard?.snap.strain}
                 layout={layout}
                 form={form}
@@ -241,15 +249,17 @@ function SidecarRoot() {
             {/* the body under the bar: the small form's Resources view covers it as a tab would, while the dashboard stays
                 mounted under it (its alert frame, fixed over the whole window, keeps showing) */}
             <div className="relative flex min-h-0 flex-1 flex-col">
-                {heard == null ? (
-                    <div data-sidecar-waiting role="status" className="flex flex-1 items-center justify-center">
-                        <HudLabel className="text-[12px]">Waiting for arcterm…</HudLabel>
-                    </div>
-                ) : layout === "small" ? (
-                    <SidecarCompact snap={heard.snap} receivedAt={heard.at} clock={clock} send={send} />
-                ) : (
-                    <SidecarOrbit snap={heard.snap} receivedAt={heard.at} clock={clock} send={send} />
-                )}
+                <SidecarMachineContext.Provider value={machine}>
+                    {heard == null ? (
+                        <div data-sidecar-waiting role="status" className="flex flex-1 items-center justify-center">
+                            <HudLabel className="text-[12px]">Waiting for arcterm…</HudLabel>
+                        </div>
+                    ) : layout === "small" ? (
+                        <SidecarCompact snap={heard.snap} receivedAt={heard.at} clock={clock} send={send} />
+                    ) : (
+                        <SidecarOrbit snap={heard.snap} receivedAt={heard.at} clock={clock} send={send} />
+                    )}
+                </SidecarMachineContext.Provider>
                 {resourcesOpen && <SidecarResourcesPanel resources={heard?.snap.resources} onClose={closeResources} />}
             </div>
         </div>

@@ -12,11 +12,13 @@ import {
     afterClosed,
     afterEmit,
     afterHello,
+    afterMachine,
     applyPressure,
     attachNotes,
     decorateTiles,
     dueLabel,
     heavyPolls,
+    machineChanged,
     machineOf,
     newestActiveRun,
     planChange,
@@ -426,19 +428,18 @@ describe("sameSnapshot", () => {
         expect(sameSnapshot(base, snap([tile("a", { since: 5, ctxPct: 10, sent: true })]))).toBe(false);
     });
 
-    it("sees a changed strain level and a changed machine reading", () => {
+    it("sees a changed strain level, and leaves a changed machine reading to sidecar:machine", () => {
         const base = snapWith({ machine, strain: strain() });
         expect(sameSnapshot(base, snapWith({ machine, strain: strain() }))).toBe(true);
         expect(sameSnapshot(base, snapWith({ machine, strain: strain({ level: "red" }) }))).toBe(false);
-        expect(sameSnapshot(base, snapWith({ machine: { ...machine, cpuPct: 41 }, strain: strain() }))).toBe(false);
-        expect(sameSnapshot(base, snapWith({ machine: { ...machine, memFree: 1e9 }, strain: strain() }))).toBe(false);
+        expect(sameSnapshot(base, snapWith({ machine: { ...machine, cpuPct: 41 }, strain: strain() }))).toBe(true);
+        expect(sameSnapshot(base, snapWith({ machine: { ...machine, memFree: 1e9 }, strain: strain() }))).toBe(true);
     });
 
     it("sees a strain that appears or goes, and a heavy row's note", () => {
         const base = snapWith({ machine, strain: strain() });
         expect(sameSnapshot(base, snapWith({ machine }))).toBe(false);
         expect(sameSnapshot(snapWith({ machine }), base)).toBe(false);
-        expect(sameSnapshot(snapWith({}), snapWith({ machine }))).toBe(false);
         const noted = strain();
         noted.heavy[0].note = "Not run (fixture)";
         expect(sameSnapshot(base, snapWith({ machine, strain: noted }))).toBe(false);
@@ -522,6 +523,25 @@ describe("sameSnapshot", () => {
     });
 });
 
+describe("machineChanged", () => {
+    it("is news only after a snapshot went out, and only for figures the page does not hold", () => {
+        expect(machineChanged(EMPTY_FEED, machine)).toBe(false);
+        const feed = afterEmit(snapWith({ machine }), 10_000);
+        expect(machineChanged(feed, machine)).toBe(false);
+        expect(machineChanged(feed, { ...machine })).toBe(false);
+        const hotter = { ...machine, cpuPct: 41 };
+        expect(machineChanged(feed, hotter)).toBe(true);
+        expect(machineChanged(afterMachine(feed, hotter), hotter)).toBe(false);
+        expect(machineChanged(feed, undefined)).toBe(false);
+    });
+
+    it("takes a snapshot with no machine as holding none, and a hello as holding nothing", () => {
+        const feed = afterEmit(snapWith({}), 10_000);
+        expect(machineChanged(feed, machine)).toBe(true);
+        expect(machineChanged(afterHello(afterEmit(snapWith({ machine }), 1)), machine)).toBe(false);
+    });
+});
+
 describe("planChange", () => {
     const next = snap([tile("a")]);
 
@@ -573,12 +593,14 @@ describe("planChange", () => {
 
 describe("the last-sent memory", () => {
     it("starts with nothing sent and no emit time", () => {
-        expect(EMPTY_FEED).toEqual({ lastSent: null, lastEmitAt: null });
+        expect(EMPTY_FEED).toEqual({ lastSent: null, lastEmitAt: null, machineSent: null });
     });
 
-    it("afterEmit keeps the snapshot and when it went out", () => {
+    it("afterEmit keeps the snapshot, when it went out, and the machine figures it carried", () => {
         const s = snap([tile("a")]);
-        expect(afterEmit(s, 5)).toEqual({ lastSent: s, lastEmitAt: 5 });
+        expect(afterEmit(s, 5)).toEqual({ lastSent: s, lastEmitAt: 5, machineSent: null });
+        const m = snapWith({ machine });
+        expect(afterEmit(m, 5).machineSent).toBe(machine);
     });
 
     it("a hello forgets the last snapshot sent, so an unchanged roster still goes out again", () => {

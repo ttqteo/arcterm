@@ -141,6 +141,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   apps outside arcterm with their icons, each app's helpers counted under it (Zalo's renderers under Zalo).
 - On a Mac, Sidecar's Resources shows a Swap chart under RAM: the swap in use and the swap files' size, as Activity
   Monitor shows them.
+- Sidecar redraws only its CPU and RAM figures when they alone change, instead of the whole dashboard every 5 s, so
+  its memory climbs less between clean-ups.
 - A hidden Sidecar (minimized, on another Space, or covered whole) is sent nothing until it shows again, when it
   catches up at once, so it does not keep redrawing out of sight.
 - In Sidecar's small form, the title bar's figures switch the whole window to Resources and back, as a tab does,
