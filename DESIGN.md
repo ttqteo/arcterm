@@ -509,6 +509,17 @@ Theme set, via `element/fileicon.tsx` (`<FileIcon path dir expanded />`).
   `transform` and `opacity` only, so the compositor draws it and nothing repaints,
   and it draws no ring under reduced motion. No other repeating motion in Sidecar,
   and no radar sweep (it kept the GPU busy on a screen that had not changed).
+  Sidecar makes a second exception, to the tonal palette and to "glow only on a CTA": a
+  **HUD skin** (cyan on a blue-black ground), only there. It has its own fixed
+  tokens `hud-bg`, `hud-panel`, `hud-line`, `hud-glow`, `hud-glow-dim`, `hud-text` and
+  `hud-muted` (not per theme; status stays the theme's `warning`, `error`, `success`),
+  and its parts live in `cockpit/sidecarhud.tsx`: a glow of two stacked SVG strokes (a
+  thin bright core over a halo 4× as wide at 0.22 opacity), corner brackets, tick rings
+  and circuit dividers. The decoration depends on no snapshot field, so a snapshot never
+  repaints it. Glow is never a `filter`, `blur`, `drop-shadow` or a large `box-shadow` on
+  an element that changes; the one glowing `box-shadow` is the window's alert frame, which
+  repaints only when the state changes. A value arc or chart line may ease to its new
+  value but never loops: the ping stays the only repeating motion.
 - **Chat's floating box** (the message box and conversation of an agent's Chat)
   makes three deliberate exceptions, and only there:
   - the box is a floating pill at **radius 22px** with `shadow-popover-soft`,

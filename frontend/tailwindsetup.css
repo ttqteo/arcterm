@@ -82,6 +82,16 @@
     --color-on-warning: #171208; /* text on the filled needs-you badge */
     --color-askingbg: rgba(230, 180, 80, 0.12); /* asking-tint fill (effortcard ring); mirrored per theme in themes.ts like accentbg */
     --color-errorbg: rgba(224, 114, 108, 0.14); /* failed-tint fill (a failed Sidecar row); mirrored per theme in themes.ts like askingbg */
+    /* Sidecar's HUD skin (spec 2026-11-18-sidecar-hud-design.md; DESIGN.md "Sidecar"): used only by the Sidecar page
+       (cockpit/sidecar*.tsx). Fixed, not per theme: themes.ts buildThemeVars does not set them, so every theme keeps the
+       cyan HUD. Status colours stay the theme's warning / error / success. */
+    --color-hud-bg: #061218; /* the blue-black ground: the page, the title bar, the orbit's empty ring */
+    --color-hud-panel: #0a1b22; /* Needs you, the run box, the lanes, the Resources column */
+    --color-hud-line: #123642; /* ticks, dividers, a ring's track, gridlines, a panel's border */
+    --color-hud-glow: #3fd8ff; /* the cyan: brackets, value arcs, chart lines, the core's ring */
+    --color-hud-glow-dim: color-mix(in srgb, var(--color-hud-glow) 22%, transparent); /* the glow at the halo's 22% */
+    --color-hud-text: #d4f4ff; /* figures and names */
+    --color-hud-muted: #5f8c99; /* labels, units and secondary lines */
     /* Provider brand identity (not theme-derived; single source for the plan-strip dots) */
     --color-provider-claude: #d97757;
     --color-provider-codex: #96aacd;

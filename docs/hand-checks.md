@@ -20,6 +20,15 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
   up (started in the foreground, so it detaches), open the footer's Servers: the :4310 row is not an arcterm agent's
   (no owner, or a SIEM-portal agent's); in Agent, the SIEM-portal folder row shows :4310 beside :8100's agent row.
   `fix/servers-owner`.
+- [ ] (arcterm) **Sidecar HUD skin: Sidecar's renderer plus the GPU process on a release build, before the HUD and with
+  it.** The scenarios only read a dev app's idle cost (the `sidecar-orbit` step "HUD idle cost"), never a release
+  build's memory. Build the last commit before the HUD (`task tauri:build FROM=9b2297587`, the spec and plan commit)
+  and the one with it, install each in turn, open P with 12 agents, and read Sidecar's WebView2 renderer plus the GPU process it adds
+  (Task Manager → Details, the `msedgewebview2.exe` rows under Sidecar's window) after an hour on screen, each build.
+  Write both figures into the "Sidecar HUD skin" row of `docs/open-issues.md` "RAM watch", against the "Sidecar, part
+  3" row's: the HUD should add the stacked strokes and a few hundred static SVG nodes, not a visible step in either
+  process. Also watch the GPU process's CPU while P idles: the ping is the only thing that should keep it awake.
+  Commit: test(sidecar) HUD scenario steps, RAM watch row and changelog line
 - [ ] (arcterm) **Switching agents no longer crashes the header.** In Agent, pick a Claude agent, then a plain
   terminal, a run's worker and back (from the tree and from Sidecar's wall), including one falling asleep: no
   `WINDOW ERROR … is not iterable` in `waveapp.log` and the header redraws each time. Not tried in the app:
@@ -98,6 +107,11 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
 - [ ] (arcterm) **Sidecar's S button reads as its own button.** In the wall layout the S button shows a screen with a
   small window in its corner (a screen with an arrow out while small), no longer the same inward arrows as the full
   screen button beside it. Commit 4f28db4b9.
+- [ ] (arcterm) **Sidecar's alert frame follows the window's corners.** On Windows (10 and 11), with RAM strained, the
+  red frame bends with an 8 px radius instead of being cut at the window's rounded corners, maximized or full screen
+  too (the frame no longer reads the window's state; Windows 11 squares a maximized window's corners, so check that a
+  full-screen frame still looks right). In the band, a narrow heavy-agent card keeps the agent's name and command readable, its Stop
+  and Sleep buttons wrapping under them. Commits 7cdcfa181, f67c6b351 (the capability needs a rebuilt host).
 - [ ] (arcterm) **Sidecar's band cards keep the agent's name.** In the wall's RAM band, a narrow heavy-agent card keeps
   the agent's name and command readable, its Stop and Sleep buttons wrapping under them; maximized or full screen, the
   alert frame is square (the rounded-corner case was seen holding on 2026-11-18). Commit 7cdcfa181.

@@ -62,7 +62,7 @@ function useFullscreen(): boolean {
 }
 
 // the figure's colour: amber and red are the warning and error tokens the band uses, so the bar and the band agree
-const TONE = { normal: "text-primary", amber: "text-warning", red: "text-error" } as const;
+const TONE = { normal: "text-hud-text", amber: "text-warning", red: "text-error" } as const;
 
 // "RAM 2.1 GB free · CPU 93%" on the wide bar, the bare numbers ("2.1 GB · 93%") where the small bar has no room for the
 // words. One span of inline text either way, so a reader gets the whole line.
@@ -77,8 +77,8 @@ function Machine(props: {
     className?: string;
 }) {
     const r = machineReadout(props.machine, props.strain);
-    const ram = <b className={cn("font-semibold", TONE[r.ramTone])}>{r.ram}</b>;
-    const cpu = <b className={cn("font-semibold", TONE[r.cpuTone])}>{r.cpu}</b>;
+    const ram = <b className={cn("font-medium", TONE[r.ramTone])}>{r.ram}</b>;
+    const cpu = <b className={cn("font-medium", TONE[r.cpuTone])}>{r.cpu}</b>;
     const words = props.short ? (
         <>
             {ram} · {cpu}
@@ -95,7 +95,8 @@ function Machine(props: {
                 data-ram-tone={r.ramTone}
                 data-cpu-tone={r.cpuTone}
                 className={cn(
-                    "min-w-0 truncate whitespace-nowrap px-1.5 text-[12px] tabular-nums text-secondary",
+                    "min-w-0 truncate whitespace-nowrap font-mono tabular-nums text-hud-muted",
+                    props.short ? "px-1 text-[11px]" : "px-1.5 text-[11.5px] uppercase",
                     props.className
                 )}
             >
@@ -118,8 +119,10 @@ function Machine(props: {
             onMouseDown={(e) => e.preventDefault()}
             onClick={props.onToggle}
             className={cn(
-                "flex min-w-0 items-center gap-1 whitespace-nowrap rounded-md border border-edge-mid px-1.5 py-0.5 text-left text-[12px] tabular-nums text-secondary hover:bg-surface-hover",
-                props.open && "bg-surface-selected",
+                "flex min-w-0 items-center gap-1 whitespace-nowrap rounded-sm border border-hud-line py-0.5 text-left font-mono tabular-nums text-hud-muted hover:bg-hud-panel",
+                // the small bar has no room to spare: its figures are a size down and the box a little tighter
+                props.short ? "px-1 text-[11px]" : "px-1.5 text-[11.5px] uppercase",
+                props.open && "bg-hud-panel",
                 props.className
             )}
         >
@@ -132,7 +135,7 @@ function Machine(props: {
                 stroke="currentColor"
                 strokeWidth="2.4"
                 aria-hidden="true"
-                className={cn("shrink-0 text-muted", props.open && "rotate-180")}
+                className={cn("shrink-0 text-hud-muted", props.open && "rotate-180")}
             >
                 <path d="m6 9 6 6 6-6" />
             </svg>
@@ -160,19 +163,20 @@ function TitleButton(props: {
             tabIndex={-1}
             onMouseDown={(e) => e.preventDefault()}
             onClick={props.onClick}
-            className={cn("flex items-center justify-center text-secondary", props.className)}
+            className={cn("flex items-center justify-center text-hud-muted hover:text-hud-text", props.className)}
         >
             {props.children}
         </button>
     );
 }
 
-const WINDOW_BTN = "h-full w-11 hover:bg-hover";
-// the wide bar's boxed buttons (S, full screen); a pressed one reads as held down
-const BOXED_BTN = "h-[26px] w-[30px] rounded-md border border-edge-mid bg-surface-raised hover:bg-surface-hover";
-const BOXED_PRESSED = "bg-surface-selected text-primary";
+const WINDOW_BTN = "h-full w-11 hover:bg-hud-panel";
+// the wide bar's boxed buttons (S, full screen), a `hud-line` box as board A draws them; a pressed one reads as held down
+const BOXED_BTN = "h-[26px] w-[30px] rounded-sm border border-hud-line bg-hud-bg hover:bg-hud-panel";
+const BOXED_PRESSED = "border-hud-glow bg-hud-glow-dim text-hud-text";
 // the small bar's buttons (board F): 26 × 24, flat, a pressed one filled
-const SMALL_BTN = "h-6 w-[26px] shrink-0 rounded-md hover:bg-surface-hover";
+const SMALL_BTN = "h-6 w-[26px] shrink-0 rounded-sm hover:bg-hud-panel";
+const SMALL_PRESSED = "bg-hud-glow-dim text-hud-text";
 
 function SmallGlyph({ small }: { small: boolean }) {
     // a screen with a small window in its corner (shrink to the small form, pinned) / that window growing back out to
@@ -233,10 +237,7 @@ export function SidecarTitleBar(props: SidecarTitleBarProps) {
             label={form.small ? "Back to the full Sidecar" : "Small form, pinned on top"}
             pressed={form.small}
             onClick={() => props.onForm(smallButtonChange(form))}
-            className={cn(
-                small ? SMALL_BTN : BOXED_BTN,
-                form.small && (small ? "bg-surface-selected text-primary" : BOXED_PRESSED)
-            )}
+            className={cn(small ? SMALL_BTN : BOXED_BTN, form.small && (small ? SMALL_PRESSED : BOXED_PRESSED))}
         >
             <SmallGlyph small={form.small} />
         </TitleButton>
@@ -249,14 +250,20 @@ export function SidecarTitleBar(props: SidecarTitleBarProps) {
                 data-sidecar-layout="small"
                 data-tauri-drag-region="deep"
                 className={cn(
-                    "flex shrink-0 select-none items-center gap-2 border-b border-border bg-surface",
+                    "flex shrink-0 select-none items-center gap-1.5 border-b border-hud-line bg-hud-bg",
                     // a Mac's bar is the main window's height, where the lights sit
                     mac ? "h-[38px] pr-2" : "h-8 pr-1",
                     lightsRoom ? MAC_LIGHTS_ROOM : "pl-3"
                 )}
             >
-                <span className="shrink-0 text-[12px] font-semibold text-primary">Sidecar</span>
-                {import.meta.env.DEV ? <span className="shrink-0 text-[12px] text-muted">(dev)</span> : null}
+                {/* the one word: Q's 340 px bar has no room for "arcterm / sidecar" in mono (the CSS uppercases it), and a
+                    dev app's marker drops its parentheses, so the figures after them keep their room */}
+                <span className="shrink-0 font-mono text-[11px] uppercase tracking-[0.1em] text-hud-glow">Sidecar</span>
+                {import.meta.env.DEV ? (
+                    <span className="shrink-0 font-mono text-[10.5px] uppercase tracking-[0.1em] text-hud-muted">
+                        dev
+                    </span>
+                ) : null}
                 {machine == null ? null : (
                     <Machine
                         machine={machine}
@@ -274,7 +281,7 @@ export function SidecarTitleBar(props: SidecarTitleBarProps) {
                     label="Pin on top"
                     pressed={form.pinned}
                     onClick={() => props.onForm(pinButtonChange(form))}
-                    className={cn(SMALL_BTN, form.pinned && "bg-surface-selected text-primary")}
+                    className={cn(SMALL_BTN, form.pinned && SMALL_PRESSED)}
                 >
                     <PinGlyph />
                 </TitleButton>
@@ -300,17 +307,18 @@ export function SidecarTitleBar(props: SidecarTitleBarProps) {
             // "deep": the whole bar drags, the buttons opt out (the main window's app bar does the same)
             data-tauri-drag-region="deep"
             className={cn(
-                "flex h-[38px] shrink-0 select-none items-center gap-4 border-b border-border bg-surface",
+                "flex h-[38px] shrink-0 select-none items-center gap-4 border-b border-hud-line bg-hud-bg",
                 lightsRoom ? MAC_LIGHTS_ROOM : "pl-3.5",
                 mac && "pr-3.5"
             )}
         >
-            <div className="flex items-center gap-2 text-[13px]">
-                <span className="font-bold text-primary">arcterm</span>
+            {/* board A's "ARCTERM / SIDECAR": mono, letter-spaced, the glow colour (the CSS uppercases the words) */}
+            <div className="flex items-center gap-2 font-mono text-[12px] uppercase tracking-[0.18em] text-hud-glow">
+                <span>arcterm</span>
                 {/* a dev app beside the installed one must not pass for it (the window's own title says so too) */}
-                {import.meta.env.DEV ? <span className="font-medium text-muted">(dev)</span> : null}
-                <span className="text-muted">/</span>
-                <span className="font-semibold text-primary">Sidecar</span>
+                {import.meta.env.DEV ? <span className="text-hud-muted">(dev)</span> : null}
+                <span className="text-hud-muted">/</span>
+                <span>Sidecar</span>
             </div>
             {/* the machine's two figures, always once a snapshot carries them: the band speaks only past a threshold */}
             {machine == null ? null : (

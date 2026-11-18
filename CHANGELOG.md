@@ -60,6 +60,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- Sidecar now wears a HUD look, in the full window and in the small form: a blue-black ground with glowing cyan rings,
+  tick marks and corner brackets that bend round the rounded corners of every box.
 - Scrollbars stay hidden until you point at the area that scrolls, then show as a thin bar that thickens under the
   pointer, so the sidebar, Chat and lists read as clean panels.
 - A message you send while the agent works no longer has a Queued caption under it: its dimmed bubble says it waits, and
@@ -108,8 +110,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - A run's line in a narrow Agent tree says its stage again ("Working · 0/5", "Planning · 0/5") whenever there is room
   for the word whole; it is left out only when it truly does not fit, instead of below a fixed 240 px.
 - In focus read, ↑ and ↓ step one block like K and J instead of scrolling a little and jumping back.
-- Sidecar's alert frame follows Windows 11's rounded window corners instead of being cut off at them, and the
-  heaviest-agent cards in its RAM band no longer squeeze an agent's name to one letter: the buttons wrap under it.
+- Sidecar's alert frame follows the window's rounded corners on Windows, maximized or full screen included, instead of
+  being cut off at them, and the heaviest-agent cards in its RAM band no longer squeeze an agent's name to one letter: the buttons wrap under it.
 - Claude agents stop writing a commit suggestion as an `arc-commit` code block: the skill that asked for it outlived
   the removed commit card and is now cleaned up.
 - The Consumers panel no longer shows a pi or codex agent as using no tokens: it says it cannot tell, since it reads
