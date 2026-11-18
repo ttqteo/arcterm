@@ -1042,6 +1042,7 @@ function ComposerBox({
                                 activateChip(c);
                             }}
                             canGoOn={onGoOn != null}
+                            quick={quickChip(tabChips, text)?.text ?? null}
                         />
                     ) : null}
                 </AnimatePresence>
@@ -1600,6 +1601,7 @@ function SuggestChips({
     armed,
     onActivate,
     canGoOn,
+    quick,
 }: {
     chips: ChatChip[];
     /** the text of the chip Tab picked, or null */
@@ -1608,6 +1610,8 @@ function SuggestChips({
     armed: string | null;
     onActivate: (c: ChatChip) => void;
     canGoOn: boolean;
+    /** the text of the chip Cmd+Enter takes now (quickChip), which shows the key; null when the box holds text */
+    quick: string | null;
 }) {
     const part = usePartMotion(microFade);
     return (
@@ -1619,7 +1623,7 @@ function SuggestChips({
         <motion.div {...part} data-chat-suggest="" className="@container mb-2 min-w-0">
             <div className="flex min-w-0 flex-nowrap items-center gap-1.5 @min-[600px]:flex-wrap">
                 <AnimatePresence initial={false}>
-                    {chips.map((c, i) => {
+                    {chips.map((c) => {
                         const ticks = c.kind === "done" && c.chunk != null;
                         const goes = c.kind === "next" && c.chunk != null && canGoOn;
                         const mark = chipIcon(c);
@@ -1640,8 +1644,9 @@ function SuggestChips({
                                                 : goes
                                                   ? `Move this agent to “${c.chunk}” and send “${c.text}”`
                                                   : `Send “${c.text}”`) +
-                                        (i === 0 && c.text !== armed ? ` · ${isMacOS() ? "⌘" : "Ctrl+"}↵` : "")
+                                        (c.text === quick && c.text !== armed ? ` · ${quickKeyLabel()}` : "")
                                     }
+                                    quickKey={c.text === quick ? quickKeyLabel() : undefined}
                                     onClick={() => onActivate(c)}
                                     data={{ "data-chat-suggest-chip": c.source, "data-chat-suggest-kind": c.kind }}
                                 />
@@ -1654,6 +1659,11 @@ function SuggestChips({
     );
 }
 
+// the key that takes the first suggested reply from an empty box (isSendNowKey's)
+function quickKeyLabel(): string {
+    return isMacOS() ? "⌘↵" : "Ctrl+↵";
+}
+
 // a suggested reply's chip, shared with the council's boxes (councilchat.tsx ComposerAsks)
 export function Chip({
     icon: Icon,
@@ -1661,6 +1671,7 @@ export function Chip({
     title,
     picked = false,
     armed = false,
+    quickKey,
     onClick,
     data,
 }: {
@@ -1671,6 +1682,8 @@ export function Chip({
     picked?: boolean;
     /** taking it would replace the typed text: it says so in warning colours, and taking it again sends */
     armed?: boolean;
+    /** the key that takes it from an empty box (Cmd+Enter on the row's first chip), drawn faint while it is not picked */
+    quickKey?: string;
     onClick: () => void;
     data: Record<`data-${string}`, string>;
 }) {
@@ -1688,7 +1701,10 @@ export function Chip({
                     ? "border-warning bg-warning/10 pr-[5px] text-primary ring-2 ring-warning/30"
                     : picked
                       ? "border-accent bg-accentbg pr-[5px] text-primary ring-2 ring-accent/35"
-                      : "border-edge-mid bg-surface pr-[11px] text-secondary hover:border-edge-strong hover:text-primary"
+                      : cn(
+                            "border-edge-mid bg-surface text-secondary hover:border-edge-strong hover:text-primary",
+                            quickKey != null ? "pr-[5px]" : "pr-[11px]"
+                        )
             )}
         >
             {Icon != null && !armed ? <Icon size={13} strokeWidth={1.8} aria-hidden className="flex-none" /> : null}
@@ -1705,6 +1721,14 @@ export function Chip({
                     )}
                 >
                     ↵
+                </kbd>
+            ) : quickKey != null ? (
+                <kbd
+                    aria-label={quickKey}
+                    data-chat-suggest-quick=""
+                    className="inline-flex h-[18px] flex-none items-center rounded-[6px] border border-edge-mid px-1 font-mono text-[11px] text-muted"
+                >
+                    {quickKey}
                 </kbd>
             ) : null}
         </button>
