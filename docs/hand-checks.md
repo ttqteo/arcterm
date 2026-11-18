@@ -16,6 +16,12 @@ list (its number is not reused).
 Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) ·
 [part 4](hand-checks-4.md) · [part 3](hand-checks-3.md) · [part 2](hand-checks-2.md) (oldest).
 
+- [ ] (arcterm) **Settings → Agents still switches the Claude account.** With two Claude accounts and an idle agent
+  running on the old one, pick the other account's row: it checks at once, the restart dialog lists the idle agent (an
+  agent in a project tied to its own account is left out), and picking the account that is already active again does
+  nothing. Settings now calls the shared `switchClaudeAccount` (`claudeaccountswitch.ts`, also the Chat usage strip's
+  Switch) instead of its own copy; tried only by unit tests (`switchPlan`) and the typecheck, not in the app
+  (2026-11-18);
 - [ ] (arcterm) **A Chat selection keeps the text's colour.** Drag over a reply in Chat (prose, an inline code span, a
   code block, a table): the words stay their own colour (white prose, coloured code) on the accent band, not tinted
   blue, under a few themes. Checked only in a headless-Edge page with the same layer (`mix-blend-mode: screen` on

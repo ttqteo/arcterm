@@ -330,10 +330,21 @@ export function accountSwitchNudge(state: AgentState, inTurn: boolean): string |
     return state !== "idle" || inTurn ? ACCOUNT_SWITCH_NUDGE : undefined;
 }
 
+// The block meta a restart writes: the resume args and the account pick. With no `account` the restart follows the
+// active account, so an account picked at the agent's launch goes (a null deletes the key). With one (the id, "" for
+// Default) the agent is pinned to that account, whatever is active, the way a launch's own pick is.
+export function restartMeta(sessionId: string, baseArgs: string[], account?: string): Record<string, unknown> {
+    return {
+        "cmd:args": resumeArgsForClaude(sessionId, baseArgs),
+        [CLAUDE_ACCOUNT_META]: account == null ? null : account === "" ? DEFAULT_ACCOUNT_PICK : account,
+    };
+}
+
 // Respawn the agent's block as `claude --resume <session>`, the same sequence as
 // TermViewModel.forceRestartController. The new process starts from wavesrv's current environment, so
-// it runs on whichever account is active now.
-export async function restartOnAccount(c: RestartCandidate): Promise<void> {
+// it runs on whichever account is active now, unless `account` names one (the Chat usage strip moves one agent to the
+// account it picked, even before wavesrv has applied the setting).
+export async function restartOnAccount(c: RestartCandidate, account?: string): Promise<void> {
     const oref = WOS.makeORef("block", c.blockId);
     const block = WOS.getObjectValue<Block>(oref) ?? (await WOS.reloadWaveObject<Block>(oref));
     if (block == null) {
@@ -342,11 +353,7 @@ export async function restartOnAccount(c: RestartCandidate): Promise<void> {
     // read before the destroy: the old process's exit clears the mark
     const nudge = accountSwitchNudge(c.state, block.meta?.["agent:inturn"] === true);
     const baseArgs = (block.meta?.["agent:baseargs"] as string[] | undefined) ?? [];
-    // a restart moves it to the new account, so an account picked at its launch goes
-    const meta: Record<string, unknown> = {
-        "cmd:args": resumeArgsForClaude(c.sessionId, baseArgs),
-        [CLAUDE_ACCOUNT_META]: null,
-    };
+    const meta = restartMeta(c.sessionId, baseArgs, account);
     await RpcApi.SetMetaCommand(TabRpcClient, { oref, meta });
     await RpcApi.ControllerDestroyCommand(TabRpcClient, c.blockId);
     await RpcApi.ControllerResyncCommand(TabRpcClient, {
