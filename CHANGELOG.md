@@ -64,6 +64,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- Sidecar's alert frame follows Windows 11's rounded window corners instead of being cut off at them, and the
+  heaviest-agent cards in its RAM band no longer squeeze an agent's name to one letter: the buttons wrap under it.
 - Claude agents stop writing a commit suggestion as an `arc-commit` code block: the skill that asked for it outlived
   the removed commit card and is now cleaned up.
 - The Consumers panel no longer shows a pi or codex agent as using no tokens: it says it cannot tell, since it reads
