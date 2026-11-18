@@ -471,6 +471,7 @@ func remoteDeps(cfg Config, runCtx context.Context) Deps {
 			return remoteSubscribe(sub)
 		},
 		Handed: remoteHanded,
+		Agents: remoteAgentList,
 		Stream: func(ctx context.Context, tab string, sink StreamSink) error {
 			ctx, cancel := context.WithCancel(ctx)
 			defer cancel()

@@ -261,6 +261,8 @@ export function rowStateLabel(agent, now) {
             return "needs input";
         case "asking":
             return "asking you";
+        case "ended":
+            return "exited";
         default:
             return withAge(agent.state, ageOf(agent, now));
     }

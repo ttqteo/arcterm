@@ -98,6 +98,15 @@ If the login cannot be completed inside the installed app, report what you saw i
 loosening anything. The Access check on every request and the owner-email lock stay as they are;
 nothing is bypassed to make the login work.
 
+## The Agents list
+
+Under what waits on you, the phone page lists every agent in the cockpit's roster except the ones handed over (those
+sit under **Handed over**): its name, project and state, asking first, then needs approval, needs input, working, idle,
+and exited (a session back at its shell, its tab still open). A working agent shows what it is doing; one that waits or
+is idle shows how long since its last report. The list only shows: to drive an agent from the phone, hand it over. It
+comes from the same `/api/waiting` call as the rest of the page (`BuildAgentList`, `pkg/remotemode/agents.go`), and a
+roster that cannot be read leaves it empty rather than failing the page.
+
 ## Hand an agent to the phone
 
 A handed-over claude or pi agent shows on the phone page under **Handed over**. There you read its

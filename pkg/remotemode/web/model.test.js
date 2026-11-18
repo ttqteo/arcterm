@@ -5,6 +5,7 @@ import {
     buildAnswers,
     countsLine,
     formatAge,
+    listedAgents,
     optionCountLine,
     shownWord,
     splitRecommended,
@@ -38,6 +39,22 @@ describe("viewState", () => {
 
     it("is main with only hand-overs", () => {
         expect(viewState({ questions: [], handed: [{ tab: "t" }], shown: [] }, null)).toBe("main");
+    });
+});
+
+describe("listedAgents", () => {
+    it("lists every agent but the ones under Handed over", () => {
+        const list = { handed: [{ tab: "b" }], agents: [{ tab: "a" }, { tab: "b" }, { tab: "c" }] };
+        expect(listedAgents(list).map((a) => a.tab)).toEqual(["a", "c"]);
+        expect(listedAgents({})).toEqual([]);
+        expect(listedAgents(null)).toEqual([]);
+    });
+
+    it("makes the view main when only agents are listed", () => {
+        expect(viewState({ questions: [], shown: [], agents: [{ tab: "a" }] }, null)).toBe("main");
+        const allHanded = { questions: [], shown: [], handed: [], agents: [{ tab: "a" }] };
+        expect(viewState({ ...allHanded, handed: [{ tab: "a" }] }, null)).toBe("main");
+        expect(viewState({ questions: [], shown: [], handed: [], agents: [] }, null)).toBe("empty");
     });
 });
 

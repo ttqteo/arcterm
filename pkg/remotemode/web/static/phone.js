@@ -10,6 +10,7 @@ import {
     buildAnswers,
     countsLine,
     formatAge,
+    listedAgents,
     optionCountLine,
     shownWord,
     splitRecommended,
@@ -293,6 +294,28 @@ function handedRow(a) {
     );
 }
 
+// an agent the phone only shows: no chat, since only a handed-over agent takes input from the phone
+function listedRow(a) {
+    return h(
+        "div",
+        { class: "agent-row listed", "data-agent-row": a.tab },
+        h(
+            "span",
+            { class: "meta" },
+            h("span", { class: "rt-dot", "data-rt": a.runtime || "none", "aria-hidden": "true" }),
+            h("span", { class: "meta-agent" }, a.name || a.tab),
+            a.project ? h("span", { class: "meta-project" }, a.project) : null,
+            h(
+                "span",
+                { class: "state-chip", "data-state": a.state },
+                h("span", { class: "state-dot", "aria-hidden": "true" }),
+                rowStateLabel(a, Date.now())
+            )
+        ),
+        a.line ? h("span", { class: "agent-line" }, a.line) : null
+    );
+}
+
 function shownRow(s) {
     return h(
         "div",
@@ -413,6 +436,7 @@ function mainView() {
     const questions = state.list.questions ?? [];
     const handed = state.list.handed ?? [];
     const shown = state.list.shown ?? [];
+    const agents = listedAgents(state.list);
     const allHeld = shown.every((s) => s.kind === HELD_KIND);
     return [
         listHeader(countsLine(state.list)),
@@ -443,6 +467,14 @@ function mainView() {
                       { class: "section", "aria-label": allHeld ? "Held runs" : "Waiting at the desk" },
                       h("h2", null, allHeld ? "Held runs" : "Waiting at the desk"),
                       shown.map(shownRow)
+                  )
+                : null,
+            agents.length
+                ? h(
+                      "section",
+                      { class: "section", "aria-label": "Agents" },
+                      h("h2", null, "Agents"),
+                      agents.map(listedRow)
                   )
                 : null,
             offFooter(true)

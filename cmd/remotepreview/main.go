@@ -79,6 +79,7 @@ type preview struct {
 	mu     sync.Mutex
 	list   remotemode.WaitingList
 	handed []remotemode.HandedAgent
+	agents []remotemode.ListedAgent
 	// transcripts holds each handed-over tab's recorded lines
 	transcripts map[string][]string
 	out         io.Writer
@@ -92,6 +93,7 @@ func newPreview(fixture string, now time.Time, out io.Writer) (*preview, error) 
 	p := &preview{
 		list:        list,
 		handed:      fixtureHanded(fixture, now),
+		agents:      fixtureAgents(fixture, now),
 		transcripts: map[string][]string{},
 		out:         out,
 	}
@@ -132,6 +134,7 @@ func (p *preview) handler(origin, vapid string) http.Handler {
 			return nil
 		},
 		Handed:   p.handedList,
+		Agents:   p.agentsList,
 		Stream:   p.stream,
 		Act:      p.act,
 		TakeBack: p.takeBack,
@@ -142,6 +145,12 @@ func (p *preview) handedList(context.Context) ([]remotemode.HandedAgent, error) 
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	return slices.Clone(p.handed), nil
+}
+
+func (p *preview) agentsList(context.Context) ([]remotemode.ListedAgent, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return slices.Clone(p.agents), nil
 }
 
 // lookup gives the hand-over for tab, or why it is not one: a tab never handed over reads as taken, as
@@ -291,6 +300,36 @@ func fixtureHanded(name string, now time.Time) []remotemode.HandedAgent {
 		}}
 	}
 	return nil
+}
+
+// fixtureAgents is the roster behind the Agents list: the main fixture's hand-overs, which the page leaves
+// out since they show under Handed over, and three agents that stay at the desk.
+func fixtureAgents(name string, now time.Time) []remotemode.ListedAgent {
+	if name != fixtureMain {
+		return nil
+	}
+	ago := func(d time.Duration) int64 { return now.Add(-d).UnixMilli() }
+	agents := []remotemode.ListedAgent{}
+	for _, a := range fixtureHanded(name, now) {
+		agents = append(agents, remotemode.ListedAgent{
+			Tab: a.Tab, Name: a.Name, Project: a.Project, Runtime: a.Runtime, State: a.State, Since: a.Since,
+			Line: a.Line, Handed: true,
+		})
+	}
+	return append(agents,
+		remotemode.ListedAgent{
+			Tab: "fx-bench-runner", Name: "bench-runner", Project: "waveterm", Runtime: "pi",
+			State: remotemode.PhoneWorking, Line: "Running go test ./pkg/orchestrate",
+		},
+		remotemode.ListedAgent{
+			Tab: "fx-lab-notes", Name: "lab-notes", Project: "mit-thesis", Runtime: "claude",
+			State: remotemode.PhoneIdle, Since: ago(25 * time.Minute),
+		},
+		remotemode.ListedAgent{
+			Tab: "fx-old-spike", Name: "old-spike", Project: "waveterm", Runtime: "claude",
+			State: remotemode.PhoneEnded, Since: ago(3 * time.Hour),
+		},
+	)
 }
 
 const portPreview = `## Default port
