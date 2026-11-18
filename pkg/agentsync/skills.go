@@ -382,6 +382,32 @@ func retireRemovedSkill(skillsRoot, name string, shipped fs.FS) error {
 	return nil
 }
 
+// removedShippedMarked are removed shipped skills whose name is too common to retire by name alone, each with a phrase
+// only arcterm's copy of its SKILL.md holds: a seed deletes the vault copy only when its SKILL.md has that phrase, so a
+// user's own skill of the same name stays (and adoption may take one, as the seed will not delete it). `commit` asked the
+// agent for an arc-commit block, drawn as a commit card in Chat; the card was removed 2026-11-17, and the vault copy
+// left behind kept agents writing the block, which Chat now shows as a plain code block.
+var removedShippedMarked = map[string]string{
+	"commit": "arc-commit block",
+}
+
+// retireMarkedSkill deletes the vault copy of a skill arcterm no longer ships when its SKILL.md holds marker, unless
+// arcterm ships one of that name again.
+func retireMarkedSkill(skillsRoot, name, marker string, shipped fs.FS) error {
+	if st, err := fs.Stat(shipped, name); err == nil && st.IsDir() {
+		return nil
+	}
+	dir := filepath.Join(skillsRoot, name)
+	data, err := os.ReadFile(filepath.Join(dir, skillFile))
+	if err != nil || !strings.Contains(string(data), marker) {
+		return nil
+	}
+	if err := os.RemoveAll(dir); err != nil {
+		return fmt.Errorf("removing retired shipped skill %s: %w", name, err)
+	}
+	return nil
+}
+
 // retiredByASeed reports whether seedShippedSkills deletes a vault skill of this name: one arcterm shipped under it once
 // (renamedShipped, removedShipped) and does not ship now. Adoption leaves such a name where it is, since a copy adopted
 // into the vault would be deleted by the seed that follows and so lost from both places. The comparison folds case,
@@ -428,6 +454,11 @@ func seedShippedSkills(skillsRoot string, shipped fs.FS) error {
 	}
 	for _, name := range removedShipped {
 		if err := retireRemovedSkill(skillsRoot, name, shipped); err != nil {
+			return err
+		}
+	}
+	for name, marker := range removedShippedMarked {
+		if err := retireMarkedSkill(skillsRoot, name, marker, shipped); err != nil {
 			return err
 		}
 	}

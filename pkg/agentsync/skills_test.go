@@ -491,6 +491,43 @@ func TestApplyRetiresARemovedShippedSkillFromTheVaultAndTheHarness(t *testing.T)
 	}
 }
 
+// commit is retired by its content, not its name: arcterm's copy (it asked for an arc-commit block) leaves the vault and
+// the harness, while a user's own skill named commit stays
+func TestApplyRetiresArctermsCommitSkillButNotTheUsers(t *testing.T) {
+	arcterms := "---\nname: commit\ndescription: write the suggestion as an arc-commit block and end the turn\n---\nbody\n"
+	for _, tc := range []struct {
+		name, body string
+		retired    bool
+	}{
+		{"arcterm's copy", arcterms, true},
+		{"the user's own", "---\nname: commit\ndescription: my commit helper\n---\nbody\n", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			p := testPaths(t, "canonical\n", ".claude")
+			writeFile(t, filepath.Join(p.SkillsRoot, "commit", skillFile), tc.body)
+			if _, err := Apply(p, false); err != nil { // no shipped FS yet: commit reads as the user's and is projected
+				t.Fatal(err)
+			}
+			claudeCommit := filepath.Join(p.Home, ".claude", "skills", "commit", skillFile)
+			if _, err := os.Stat(claudeCommit); err != nil {
+				t.Fatalf("setup: commit was not projected: %v", err)
+			}
+			p.Shipped = shippedFS()
+			if _, err := Apply(p, false); err != nil {
+				t.Fatal(err)
+			}
+			_, vaultErr := os.Stat(filepath.Join(p.SkillsRoot, "commit"))
+			_, harnessErr := os.Stat(claudeCommit)
+			if tc.retired && (!os.IsNotExist(vaultErr) || !os.IsNotExist(harnessErr)) {
+				t.Errorf("arcterm's commit skill is still there: vault %v, ~/.claude/skills %v", vaultErr, harnessErr)
+			}
+			if !tc.retired && (vaultErr != nil || harnessErr != nil) {
+				t.Errorf("the user's commit skill was removed: vault %v, ~/.claude/skills %v", vaultErr, harnessErr)
+			}
+		})
+	}
+}
+
 // on Windows (and a default macOS volume) Review and review are one directory, so a vault skill must not write over a
 // user's own directory whose name differs only in case
 func TestReconcileLeavesAnUnmanagedDirDifferingOnlyInCase(t *testing.T) {
