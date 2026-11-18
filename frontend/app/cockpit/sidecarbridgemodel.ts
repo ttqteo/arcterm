@@ -200,7 +200,9 @@ function same(a: unknown, b: unknown): boolean {
 
 /**
  * Whether two snapshots say the same thing: everything but `now`, which moves on every build. Nothing sent is never the
- * same. The machine figures reach it already rounded (decision 8), so a reading that only jitters does not differ.
+ * same. The machine figures reach it already rounded (decision 8), so a reading that only jitters does not differ; the
+ * resource panel's reading reaches it rounded too (sidecarresources.ts), and a new one differs: left out, a poll that
+ * changed nothing else was dropped as unchanged and the panel stayed on "Measuring…".
  */
 export function sameSnapshot(a: SidecarSnapshot | null, b: SidecarSnapshot | null): boolean {
     if (a == null || b == null) {
@@ -214,6 +216,7 @@ export function sameSnapshot(a: SidecarSnapshot | null, b: SidecarSnapshot | nul
         same(a.needs, b.needs) &&
         same(a.run, b.run) &&
         same(a.usage, b.usage) &&
+        same(a.resources, b.resources) &&
         a.more === b.more
     );
 }

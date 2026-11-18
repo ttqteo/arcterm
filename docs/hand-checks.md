@@ -16,6 +16,16 @@ list (its number is not reused).
 Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) ·
 [part 4](hand-checks-4.md) · [part 3](hand-checks-3.md) · [part 2](hand-checks-2.md) (oldest).
 
+- [ ] (arcterm) **Sidecar HUD skin: Sidecar's renderer plus the GPU process on a release build, before the HUD and with
+  it.** The scenarios only read a dev app's idle cost (the `sidecar-orbit` step "HUD idle cost"), never a release
+  build's memory. Build the last commit before the HUD (`task tauri:build FROM=9b2297587`, the spec and plan commit)
+  and the one with it, install each in turn, open P with 12 agents, and read Sidecar's WebView2 renderer plus the GPU process it adds
+  (Task Manager → Details, the `msedgewebview2.exe` rows under Sidecar's window) after an hour on screen, each build.
+  Write both figures into the "Sidecar HUD skin" row of `docs/open-issues.md` "RAM watch", against the "Sidecar, part
+  3" row's: the HUD should add the stacked strokes and a few hundred static SVG nodes, not a visible step in either
+  process. Also watch the GPU process's CPU while P idles: the ping is the only thing that should keep it awake.
+  Commit: test(sidecar) HUD scenario steps, RAM watch row and changelog line
+
 - [ ] (arcterm) **Brainstorm rail in the details rail's place.** With the details rail open (`d`), switch an agent
   with a brainstorm between Terminal, Chat and Brainstorm: the Chat · Terminal · Brainstorm switch stays put, and in
   Brainstorm the right column shows Boards · Decided so far (no Overview / Files / Changes); a question with boards
@@ -50,9 +60,10 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
 - [ ] (arcterm) **Sidecar's S button reads as its own button.** In the wall layout the S button shows a screen with a
   small window in its corner (a screen with an arrow out while small), no longer the same inward arrows as the full
   screen button beside it. Commit 4f28db4b9.
-- [ ] (arcterm) **Sidecar's alert frame follows the window's corners.** On Windows 11, with Sidecar not maximized and
-  RAM strained, the red frame bends with the window's rounded corners instead of being cut at them; maximized or full
-  screen it is square. In the band, a narrow heavy-agent card keeps the agent's name and command readable, its Stop
+- [ ] (arcterm) **Sidecar's alert frame follows the window's corners.** On Windows (10 and 11), with RAM strained, the
+  red frame bends with an 8 px radius instead of being cut at the window's rounded corners, maximized or full screen
+  too (the frame no longer reads the window's state; Windows 11 squares a maximized window's corners, so check that a
+  full-screen frame still looks right). In the band, a narrow heavy-agent card keeps the agent's name and command readable, its Stop
   and Sleep buttons wrapping under them. Commits 7cdcfa181, f67c6b351 (the capability needs a rebuilt host).
 
 - [ ] (arcterm) **A markdown doc's Comment button floats above the selection, at its start.** Select a phrase mid-line

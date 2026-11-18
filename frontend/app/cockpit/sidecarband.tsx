@@ -5,8 +5,8 @@
 // when the machine is strained, saying what is strained and since when, and naming the agents that weigh most with a
 // Stop and a Sleep for each. It draws the snapshot's `strain` and sends `stop` and `sleep` acts; the page holds whether
 // the × hid it. Stop asks in place first (page-local state), and there is no band-wide action. Nothing here animates.
-// HUD skin (spec 2026-11-18-sidecar-hud-design.md): a `hud-panel` ground with corner brackets in the band's tone in place
-// of a border, and monospace figures. The page is storeless: only the types, the pure models and React.
+// HUD skin (spec 2026-11-18-sidecar-hud-design.md): a rounded `hud-panel` ground with corner brackets in the band's tone
+// bending round its corners in place of a border, and monospace figures. The page is storeless: only the types, the pure models and React.
 
 import { cn } from "@/util/util";
 import { useState, type MouseEvent } from "react";
@@ -39,9 +39,9 @@ export function SidecarBand({ strain, machine, now, onHide, send }: SidecarBandP
             data-level={strain.level}
             role="status"
             // `relative` for the brackets; the padding is at least their 14 px, so they never sit over text
-            className="relative mx-5 mt-3 flex shrink-0 flex-col gap-2.5 bg-hud-panel px-3.5 py-3.5"
+            className="relative mx-5 mt-3 flex shrink-0 flex-col gap-2.5 rounded-lg bg-hud-panel px-3.5 py-3.5"
         >
-            <HudBrackets className={red ? "stroke-error" : "stroke-warning"} />
+            <HudBrackets size={18} radius={12} className={red ? "stroke-error" : "stroke-warning"} />
             {/* the why line is monospace and long, so it takes its own row under the title (order-last) instead of being
                 squeezed into a few characters beside it; the close button stays at the title's right */}
             <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
@@ -103,7 +103,7 @@ export function SidecarBand({ strain, machine, now, onHide, send }: SidecarBandP
 }
 
 const BUTTON =
-    "flex h-[26px] shrink-0 items-center whitespace-nowrap border border-hud-line bg-hud-bg px-[9px] text-[12px] text-hud-text hover:border-hud-glow hover:text-hud-glow active:scale-100";
+    "flex h-[26px] shrink-0 items-center whitespace-nowrap rounded-sm border border-hud-line bg-hud-bg px-[9px] text-[12px] text-hud-text hover:border-hud-glow hover:text-hud-glow active:scale-100";
 
 function HeavyRow({ h, send }: { h: SidecarHeavy; send: (act: SidecarAct) => void }) {
     // the confirm is for one process: if the row's process changes while it is open, the question no longer fits and the
@@ -119,7 +119,7 @@ function HeavyRow({ h, send }: { h: SidecarHeavy; send: (act: SidecarAct) => voi
     return (
         <div
             data-sidecar-heavy={h.id}
-            className="flex min-w-0 flex-1 flex-col gap-1.5 border border-hud-line bg-hud-bg px-2.5 py-2"
+            className="flex min-w-0 flex-1 flex-col gap-1.5 rounded-md border border-hud-line bg-hud-bg px-2.5 py-2"
         >
             {/* in a narrow card the buttons wrap under the name, never squeeze it to a letter */}
             <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5">

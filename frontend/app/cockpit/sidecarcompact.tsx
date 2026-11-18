@@ -279,11 +279,11 @@ function StrainLine({ strain, send }: { strain: SidecarStrain; send: (act: Sidec
             // the brackets, in the strain's tone, stand where the border was: the line is `relative` for them, and its
             // padding is wider than their 10 px so they never sit over the text
             className={cn(
-                "relative mx-3 mb-2.5 flex shrink-0 flex-col gap-2 px-3 py-2.5",
+                "relative mx-3 mb-2.5 flex shrink-0 flex-col gap-2 rounded-md px-3 py-2.5",
                 red ? "bg-errorbg" : "bg-askingbg"
             )}
         >
-            <HudBrackets size={10} className={red ? "stroke-error" : "stroke-warning"} />
+            <HudBrackets size={10} radius={6} className={red ? "stroke-error" : "stroke-warning"} />
             <span
                 className={cn(
                     "flex items-center gap-1.5 font-mono text-[11.5px] font-medium uppercase tracking-[0.08em]",
@@ -429,8 +429,9 @@ function NeedRow(props: {
                 onClick={props.onSelect}
                 onDoubleClick={props.onOpen}
                 className={cn(
-                    // board Q: a 2 px bar in the row's tone down its left edge over the tint, no rounded corners
-                    "flex select-none gap-2.5 border-l-2 px-3 py-2.5",
+                    // board Q: a 2 px bar in the row's tone down its left edge over the tint; the row's corners are rounded
+                    // (the bar bends with the left ones) and the tint is clipped by them
+                    "flex select-none gap-2.5 rounded-md border-l-2 px-3 py-2.5",
                     BORDER[tone],
                     // selection is a `hud-glow` inset ring, never the accent: an outer one is clipped by the list's overflow
                     selected ? "bg-hud-panel ring-2 ring-inset ring-hud-glow" : failed ? "bg-errorbg" : "bg-askingbg"

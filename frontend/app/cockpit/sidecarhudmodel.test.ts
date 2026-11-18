@@ -4,12 +4,19 @@
 import { describe, expect, it } from "vitest";
 import { bracketPath, HUD_GLOW_HALO, HUD_GLOW_OPACITY, tickLines, type BracketCorner } from "./sidecarhudmodel";
 
-/** The points an absolute M / H / V path visits, in order (the only commands `bracketPath` draws). */
+/** The points an absolute M / H / V / A path visits, in order (the only commands `bracketPath` draws): an arc's point is where it ends. */
 function pathPoints(d: string): { x: number; y: number }[] {
-    const pts: { x: number; y: number }[] = [];
+    return pathSteps(d).map(({ x, y }) => ({ x, y }));
+}
+
+type Step = { cmd: string; x: number; y: number; arc?: { rx: number; ry: number; large: number; sweep: number } };
+
+/** `pathPoints` with each step's command, and an arc's radii and flags. */
+function pathSteps(d: string): Step[] {
+    const steps: Step[] = [];
     let x = 0;
     let y = 0;
-    for (const m of d.matchAll(/([MHV])([^MHV]*)/g)) {
+    for (const m of d.matchAll(/([MHVA])([^MHVA]*)/g)) {
         const nums = m[2]
             .split(/[ ,]+/)
             .filter((s) => s !== "")
@@ -18,12 +25,17 @@ function pathPoints(d: string): { x: number; y: number }[] {
             [x, y] = nums;
         } else if (m[1] === "H") {
             x = nums[0];
-        } else {
+        } else if (m[1] === "V") {
             y = nums[0];
+        } else {
+            // A rx ry x-axis-rotation large-arc sweep x y
+            [x, y] = [nums[5], nums[6]];
+            steps.push({ cmd: "A", x, y, arc: { rx: nums[0], ry: nums[1], large: nums[3], sweep: nums[4] } });
+            continue;
         }
-        pts.push({ x, y });
+        steps.push({ cmd: m[1], x, y });
     }
-    return pts;
+    return steps;
 }
 
 describe("glow constants", () => {
@@ -146,5 +158,81 @@ describe("bracketPath", () => {
 
     it("defaults the inset to 1, so a 1.5 px stroke stays inside the box", () => {
         expect(bracketPath(14, "tr")).toBe(bracketPath(14, "tr", 1));
+    });
+});
+
+describe("bracketPath with a radius", () => {
+    const SIZE = 18;
+    const INSET = 1;
+    const FAR = SIZE - INSET;
+    const R = 6;
+    // where each corner's arc centre sits: R in from both of the box's edges at that corner (the inset counted)
+    const centres: Record<BracketCorner, { x: number; y: number }> = {
+        tl: { x: INSET + R, y: INSET + R },
+        tr: { x: FAR - R, y: INSET + R },
+        br: { x: FAR - R, y: FAR - R },
+        bl: { x: INSET + R, y: FAR - R },
+    };
+
+    it("keeps the right-angle path at radius 0, whatever the corner", () => {
+        for (const corner of ["tl", "tr", "br", "bl"] as const) {
+            expect(bracketPath(14, corner, 1, 0)).toBe(bracketPath(14, corner));
+            expect(bracketPath(14, corner, 1, -3)).toBe(bracketPath(14, corner));
+            expect(bracketPath(14, corner)).not.toContain("A");
+        }
+    });
+
+    it("draws top-left as an arm down the left edge, a quarter arc, an arm along the top", () => {
+        expect(bracketPath(14, "tl", 1, 5)).toBe("M1,14V6A5,5,0,0,1,6,1H14");
+    });
+
+    for (const corner of ["tl", "tr", "br", "bl"] as const) {
+        it(`${corner}: one arc of the radius, clockwise, joining the two edges round the corner`, () => {
+            const steps = pathSteps(bracketPath(SIZE, corner, INSET, R));
+            // start, the arm's end where the arc begins, the arc's end, the other arm's end
+            expect(steps.map((s) => s.cmd)).toEqual(["M", steps[1].cmd, "A", steps[3].cmd]);
+            expect(steps.filter((s) => s.cmd === "A")).toHaveLength(1);
+            const arc = steps[2];
+            expect(arc.arc).toEqual({ rx: R, ry: R, large: 0, sweep: 1 });
+            // both ends of the arc lie R from the centre: a quarter circle, not a chord
+            const c = centres[corner];
+            for (const p of [steps[1], steps[2]]) {
+                expect(Math.hypot(p.x - c.x, p.y - c.y)).toBeCloseTo(R, 9);
+            }
+            // the arc's ends are on the corner's two edges, where the arms meet it
+            const { vertical, horizontal } = {
+                tl: { vertical: INSET, horizontal: INSET },
+                tr: { vertical: FAR, horizontal: INSET },
+                br: { vertical: FAR, horizontal: FAR },
+                bl: { vertical: INSET, horizontal: FAR },
+            }[corner];
+            const ends = [steps[1], steps[2]];
+            expect(ends.some((p) => p.x === vertical)).toBe(true);
+            expect(ends.some((p) => p.y === horizontal)).toBe(true);
+        });
+
+        it(`${corner}: both arms run the rest of the way to the box's other sides and nothing leaves the box`, () => {
+            const pts = pathPoints(bracketPath(SIZE, corner, INSET, R));
+            const [start, , , end] = pts;
+            // an arm is SIZE - INSET - R long: from its box side to where the arc starts
+            expect(Math.abs(start.x - pts[1].x) + Math.abs(start.y - pts[1].y)).toBe(SIZE - INSET - R);
+            expect(Math.abs(end.x - pts[2].x) + Math.abs(end.y - pts[2].y)).toBe(SIZE - INSET - R);
+            for (const p of pts) {
+                expect(p.x).toBeGreaterThanOrEqual(0);
+                expect(p.x).toBeLessThanOrEqual(SIZE);
+                expect(p.y).toBeGreaterThanOrEqual(0);
+                expect(p.y).toBeLessThanOrEqual(SIZE);
+            }
+        });
+    }
+
+    it("clamps a radius that does not fit to size - inset, where the arms shrink to nothing", () => {
+        expect(bracketPath(10, "tl", 1, 50)).toBe(bracketPath(10, "tl", 1, 9));
+        expect(bracketPath(10, "tl", 1, 9)).toBe("M1,10V10A9,9,0,0,1,10,1H10");
+    });
+
+    it("takes the inset into the arc's ends: tr at size 10, inset 2, radius 3", () => {
+        // the arm along the top ends 3 short of the right edge's line (x 8), the arc ends 3 below the top edge's line (y 2)
+        expect(bracketPath(10, "tr", 2, 3)).toBe("M0,2H5A3,3,0,0,1,8,5V10");
     });
 });

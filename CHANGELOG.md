@@ -56,6 +56,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- Sidecar now wears a HUD look, in the full window and in the small form: a blue-black ground with glowing cyan rings,
+  tick marks and corner brackets that bend round the rounded corners of every box.
 - The agent header puts the project and initiative on a second line under the agent's name, in the height the header
   already had, so the run link, model and context beside it get the room back.
 - Focus read in Chat is each agent's own: turning it on for one agent leaves the others as they were. While it is on,
@@ -79,8 +81,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 ### Fixed
 
 - In focus read, ↑ and ↓ step one block like K and J instead of scrolling a little and jumping back.
-- Sidecar's alert frame follows Windows 11's rounded window corners instead of being cut off at them, and the
-  heaviest-agent cards in its RAM band no longer squeeze an agent's name to one letter: the buttons wrap under it.
+- Sidecar's alert frame follows the window's rounded corners on Windows, maximized or full screen included, instead of
+  being cut off at them, and the heaviest-agent cards in its RAM band no longer squeeze an agent's name to one letter: the buttons wrap under it.
 - Claude agents stop writing a commit suggestion as an `arc-commit` code block: the skill that asked for it outlived
   the removed commit card and is now cleaned up.
 - The Consumers panel no longer shows a pi or codex agent as using no tokens: it says it cannot tell, since it reads

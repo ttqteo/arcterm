@@ -9,9 +9,10 @@
 // into its cell, so the board's sizes hold at any window size. The page is storeless: only the types, the pure models,
 // the motion tokens and React.
 //
-// The HUD skin (spec 2026-11-18-sidecar-hud-design.md, board A-giu-bo-cuc): Needs you (with the strain band and the run
-// box) on the left at 2fr, the orbit on the right at 3fr, all on the `hud-*` tokens. The decoration (brackets, the tick
-// ring, dividers) takes no snapshot field; the value rings glow as two stacked strokes (sidecarhud.tsx), never a filter.
+// The HUD skin (spec 2026-11-18-sidecar-hud-design.md, board A-giu-bo-cuc): the orbit on the left at 3fr and the column
+// of Needs you (with the strain band and the run box) on the right at 2fr, all on the `hud-*` tokens. The decoration
+// (brackets, the tick ring, dividers) takes no snapshot field; the value rings glow as two stacked strokes
+// (sidecarhud.tsx), never a filter.
 
 import { springReveal } from "@/app/element/motiontokens";
 import { cn } from "@/util/util";
@@ -293,9 +294,17 @@ export function SidecarOrbit({ snap, receivedAt, clock, send }: SidecarOrbitProp
                 className="pointer-events-none fixed inset-0 z-50 rounded-[var(--sidecar-corner,0px)] transition-[box-shadow] duration-500 motion-reduce:transition-none"
                 style={{ boxShadow: FRAME[frame] }}
             />
-            <div className="grid min-h-0 flex-[3_1_0%] grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
-                {/* Needs you comes first in the DOM, so Tab reaches it before the orbit */}
-                <div data-sidecar-needs-col className="flex min-h-0 min-w-0 flex-col gap-3.5 pb-4 pl-6 pt-5">
+            <div className="grid min-h-0 flex-[3_1_0%] grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
+                <OrbitCell
+                    snap={snap}
+                    tiles={tiles}
+                    waiting={waiting}
+                    selectedAgent={selectedAgent}
+                    sinceArrived={sinceArrived}
+                    onSelect={(i) => select("orbit", i, tiles[i].id)}
+                    onOpen={(i) => open("orbit", i)}
+                />
+                <div data-sidecar-needs-col className="flex min-h-0 min-w-0 flex-col gap-3.5 pb-4 pr-6 pt-5">
                     {showBand && (
                         // the band keeps its own side margins: this column has none, so they are taken back
                         <div className="-mx-5 -mt-3 flex shrink-0 flex-col">
@@ -320,15 +329,6 @@ export function SidecarOrbit({ snap, receivedAt, clock, send }: SidecarOrbitProp
                         <RunBox run={snap.run} snapNow={snap.now} sinceArrived={sinceArrived} />
                     )}
                 </div>
-                <OrbitCell
-                    snap={snap}
-                    tiles={tiles}
-                    waiting={waiting}
-                    selectedAgent={selectedAgent}
-                    sinceArrived={sinceArrived}
-                    onSelect={(i) => select("orbit", i, tiles[i].id)}
-                    onOpen={(i) => open("orbit", i)}
-                />
             </div>
             <Lanes tiles={tiles} now={now} selectedAgent={selectedAgent} />
             <Footer />
@@ -670,8 +670,8 @@ function NeedsPanel(props: {
     }, [selectedKey]);
     return (
         // the brackets stand on this outer box and the list scrolls inside it, so a scroll never carries them off the corners
-        <div className="relative flex min-h-0 flex-1 flex-col bg-hud-panel">
-            <HudBrackets />
+        <div className="relative flex min-h-0 flex-1 flex-col rounded-lg bg-hud-panel">
+            <HudBrackets size={18} radius={12} />
             <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-hidden px-4 py-3.5">
                 <div className="flex shrink-0 items-baseline gap-2.5">
                     <HudLabel className="text-[12px]">Needs you</HudLabel>
@@ -756,7 +756,7 @@ function NeedRow(props: {
             // a failed row is a 1 px error border over its tint, a row still waiting on you a warning one over its tint, an
             // answered one the quiet line; the selection is the cyan ring on any of them
             className={cn(
-                "mb-2 flex flex-col gap-[3px] border px-3 py-[9px]",
+                "mb-2 flex flex-col gap-[3px] rounded-md border px-3 py-[9px]",
                 failed
                     ? "border-error bg-errorbg"
                     : ping
@@ -822,7 +822,7 @@ function RunBox(props: { run: SidecarRunBox; snapNow: number; sinceArrived: numb
         <div
             data-sidecar-run={run.id}
             data-run-failed={run.failed ? "true" : "false"}
-            className="flex shrink-0 flex-col gap-2 border border-hud-line bg-hud-panel px-4 py-3.5"
+            className="flex shrink-0 flex-col gap-2 rounded-lg border border-hud-line bg-hud-panel px-4 py-3.5"
         >
             <div className="flex items-baseline gap-2">
                 <HudLabel className="shrink-0 text-[12px]">Run</HudLabel>
@@ -885,7 +885,7 @@ function Lanes(props: { tiles: SidecarTile[]; now: number; selectedAgent: string
     return (
         <div
             data-sidecar-lanes
-            className="mx-6 mb-4 flex min-h-0 flex-[2_1_0%] flex-col gap-2 overflow-hidden border border-hud-line bg-hud-panel px-5 py-3"
+            className="mx-6 mb-4 flex min-h-0 flex-[2_1_0%] flex-col gap-2 overflow-hidden rounded-lg border border-hud-line bg-hud-panel px-5 py-3"
         >
             <div className="flex shrink-0 items-center gap-[18px]">
                 <HudLabel className="shrink-0 text-[12px]">Last 2 hours</HudLabel>

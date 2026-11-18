@@ -80,7 +80,7 @@ function Chart(props: { title: string; figure: string; detail?: string; series: 
                 preserveAspectRatio="none"
                 role="img"
                 aria-label={`${props.title}, the last 5 minutes: ${props.figure}`}
-                className="h-[56px] w-full cursor-crosshair overflow-visible bg-hud-bg"
+                className="h-[56px] w-full cursor-crosshair overflow-visible rounded-sm bg-hud-bg"
                 onMouseMove={onMove}
                 onMouseLeave={() => setHover(null)}
             >

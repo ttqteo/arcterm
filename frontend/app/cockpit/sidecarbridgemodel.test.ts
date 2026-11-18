@@ -43,6 +43,7 @@ import type {
     SidecarHeavy,
     SidecarMachine,
     SidecarNeed,
+    SidecarResources,
     SidecarRunBox,
     SidecarSnapshot,
     SidecarSpan,
@@ -488,6 +489,33 @@ describe("sameSnapshot", () => {
     it("sees a changed more alone", () => {
         expect(sameSnapshot(full, { ...again(), more: 3 })).toBe(false);
         expect(sameSnapshot(full, { ...again(), more: undefined })).toBe(false);
+    });
+
+    // the resource panel's reading rides on the snapshot: a poll that changes nothing else must still go out, or the
+    // panel would stay on "Measuring…" until some other field moved
+    it("sees a changed resources alone, and the panel opening or closing", () => {
+        const row = { key: "sidecar", label: "Sidecar", kind: "sidecar" as const, cpu: 1.5, mem: 40 * 1024 * 1024 };
+        const reading = (cpu: number, history = [{ t: 1, cpu: 10, mem: 50 }]): SidecarResources => ({
+            state: "ready",
+            rows: [{ ...row, cpu }],
+            others: [],
+            history,
+        });
+        const withRes = (r: SidecarResources | undefined) => ({ ...again(), resources: r });
+        const base = withRes(reading(1.5));
+        expect(sameSnapshot(base, withRes(reading(1.5)))).toBe(true);
+        expect(sameSnapshot(base, withRes(reading(2.5)))).toBe(false);
+        // a new point on a chart, though every row read the same
+        const longer = [
+            { t: 1, cpu: 10, mem: 50 },
+            { t: 3, cpu: 12, mem: 50 },
+        ];
+        expect(sameSnapshot(base, withRes(reading(1.5, longer)))).toBe(false);
+        // the first reading after "measuring", the panel opening and the panel closing
+        expect(sameSnapshot(withRes({ state: "measuring", rows: [], others: [], history: [] }), base)).toBe(false);
+        expect(sameSnapshot(withRes(undefined), base)).toBe(false);
+        expect(sameSnapshot(base, withRes(undefined))).toBe(false);
+        expect(sameSnapshot(withRes(undefined), withRes(undefined))).toBe(true);
     });
 
     it("sees a changed span on a tile (the timeline rides on the tiles)", () => {

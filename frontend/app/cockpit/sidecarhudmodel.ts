@@ -41,20 +41,40 @@ export function tickLines(
 export type BracketCorner = "tl" | "tr" | "br" | "bl";
 
 /**
- * The `d` of one L-shaped corner bracket in a `size` x `size` box: its elbow sits `inset` in from the box's corner
- * (1, so a 1.5 px stroke stays inside the box), and its two arms run along the corner's two edges to the box's other
- * sides. `tl` is board A's `M1,14V1H14` at size 14.
+ * The `d` of one corner bracket in a `size` x `size` box: its elbow sits `inset` in from the box's corner (1, so a
+ * 1.5 px stroke stays inside the box), and its two arms run along the corner's two edges to the box's other sides.
+ * `tl` is board A's `M1,14V1H14` at size 14.
+ *
+ * With a `radius` the elbow bends: an SVG arc of that radius (an `A` command, clockwise) joins the two arms, so the
+ * bracket follows a box with rounded corners. `radius` is the arc's own radius, so the caller gives the box's radius less
+ * the inset; it is clamped to what fits (`size - inset`, where the arms shrink to nothing). A radius of 0, the default,
+ * is the right-angle path.
  */
-export function bracketPath(size: number, corner: BracketCorner, inset = 1): string {
+export function bracketPath(size: number, corner: BracketCorner, inset = 1, radius = 0): string {
     const far = size - inset;
+    const r = Math.min(Math.max(radius, 0), far);
+    if (r === 0) {
+        switch (corner) {
+            case "tl":
+                return `M${inset},${size}V${inset}H${size}`;
+            case "tr":
+                return `M0,${inset}H${far}V${size}`;
+            case "br":
+                return `M${far},0V${far}H0`;
+            case "bl":
+                return `M${size},${far}H${inset}V0`;
+        }
+    }
+    // each arc runs from one edge to the other round the corner, a quarter turn clockwise on screen (sweep 1)
+    const arc = (x: number, y: number) => `A${r},${r},0,0,1,${x},${y}`;
     switch (corner) {
         case "tl":
-            return `M${inset},${size}V${inset}H${size}`;
+            return `M${inset},${size}V${inset + r}${arc(inset + r, inset)}H${size}`;
         case "tr":
-            return `M0,${inset}H${far}V${size}`;
+            return `M0,${inset}H${far - r}${arc(far, inset + r)}V${size}`;
         case "br":
-            return `M${far},0V${far}H0`;
+            return `M${far},0V${far - r}${arc(far - r, far)}H0`;
         case "bl":
-            return `M${size},${far}H${inset}V0`;
+            return `M${size},${far}H${inset + r}${arc(inset, far - r)}V0`;
     }
 }

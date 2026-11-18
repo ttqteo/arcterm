@@ -32,7 +32,7 @@ function Row({ row }: { row: SidecarResourceRow }) {
     return (
         <div
             data-sidecar-resource={row.key}
-            className={cn("flex items-baseline gap-3 px-2 py-[3px]", own && "bg-hud-line")}
+            className={cn("flex items-baseline gap-3 rounded-sm px-2 py-[3px]", own && "bg-hud-line")}
         >
             <span
                 className={cn(
@@ -108,9 +108,9 @@ function ResourcesBody({ resources }: { resources: SidecarResources | undefined 
 }
 
 /**
- * The wall's Resources column, beside the dashboard: `hud-panel` with board A's `hud-line` left border (it divides the
- * column from the wall) and corner brackets. The brackets sit on this box, which never scrolls; the list scrolls inside it,
- * or they would ride up with the content.
+ * The wall's Resources column, beside the dashboard: a rounded `hud-panel` box with a `hud-line` border (which sets it
+ * apart from the wall, a gap of 8 px round it) and corner brackets bending round its corners. The brackets sit on this
+ * box, which never scrolls; the list scrolls inside it, or they would ride up with the content.
  */
 export function SidecarResourcesColumn({ resources }: { resources: SidecarResources | undefined }) {
     return (
@@ -118,10 +118,10 @@ export function SidecarResourcesColumn({ resources }: { resources: SidecarResour
             data-sidecar-resources="column"
             data-state={resources?.state ?? "measuring"}
             aria-label="Resources"
-            className="relative flex min-h-0 shrink-0 flex-col border-l border-hud-line bg-hud-panel"
+            className="relative my-2 mr-2 flex min-h-0 shrink-0 flex-col overflow-hidden rounded-lg border border-hud-line bg-hud-panel"
             style={{ width: RESOURCES_COL_PX }}
         >
-            <HudBrackets />
+            <HudBrackets size={18} radius={12} />
             <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-2.5 py-3">
                 <div className="px-2 pb-1.5">
                     <HudLabel>Resources</HudLabel>
@@ -174,11 +174,11 @@ export function SidecarResourcesPanel(props: {
             aria-label="Resources"
             // the popover's shadow stays: floating chrome, drawn once, not a glow that follows the beat
             className={cn(
-                "absolute z-40 flex max-h-[min(80vh,640px)] flex-col border border-hud-line bg-hud-panel shadow-popover-md",
+                "absolute z-40 flex max-h-[min(80vh,640px)] flex-col overflow-hidden rounded-lg border border-hud-line bg-hud-panel shadow-popover-md",
                 small ? "inset-x-2 top-[36px]" : "left-3.5 top-[42px] w-[420px]"
             )}
         >
-            <HudBrackets />
+            <HudBrackets size={18} radius={12} />
             <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-2.5 py-3">
                 <ResourcesBody resources={resources} />
             </div>

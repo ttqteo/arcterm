@@ -23,7 +23,6 @@ import { useApplyCockpitTheme } from "@/app/view/agents/themestore";
 import { loadFonts } from "@/util/fontutil";
 import { invoke } from "@tauri-apps/api/core";
 import { emit, listen } from "@tauri-apps/api/event";
-import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useCallback, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import "./tailwind.css";
@@ -243,53 +242,19 @@ function SidecarRoot() {
     );
 }
 
-// The alert frame (an inset edge over the whole window) follows the window's corners, or the OS cuts its corners off.
-// A native Mac window rounds them 12px. Windows 11 rounds a frameless window too, 8px, except maximized or full screen
-// (and Windows 10 never): read again on each resize, since both toggles resize the window.
+// The alert frame (an inset edge over the whole window) and every box in Sidecar are rounded, never sharp (spec
+// 2026-11-18-sidecar-hud-design.md, "Corners"): the frame takes `--sidecar-corner` as its radius. A native Mac window
+// rounds its corners 12px; on Windows (10 and 11 alike) the frame is 8px whatever the window's state, a maximized or
+// full-screen one included, so nothing reads the window or listens to its resizes for it.
 const MAC_CORNER = "12px";
-const WIN11_CORNER = "8px";
+const WIN_CORNER = "8px";
 
 function setCorner(px: string): void {
     document.documentElement.style.setProperty("--sidecar-corner", px);
 }
 
-// Windows 11 reports platformVersion 13 and up through the client hints; Windows 10 below 13
-async function windows11(): Promise<boolean> {
-    const hints = (
-        navigator as Navigator & {
-            userAgentData?: {
-                platform: string;
-                getHighEntropyValues(keys: string[]): Promise<{ platformVersion?: string }>;
-            };
-        }
-    ).userAgentData;
-    if (hints?.platform !== "Windows") {
-        return false;
-    }
-    const { platformVersion } = await hints.getHighEntropyValues(["platformVersion"]);
-    return Number.parseInt(platformVersion ?? "0", 10) >= 13;
-}
-
-async function followWindowsCorners(): Promise<void> {
-    if (!(await windows11())) {
-        return;
-    }
-    const win = getCurrentWindow();
-    const sync = () => {
-        Promise.all([win.isMaximized(), win.isFullscreen()])
-            .then(([max, fs]) => setCorner(max || fs ? "0px" : WIN11_CORNER))
-            .catch((err) => console.error("sidecar: reading the window's state for its corners failed", err));
-    };
-    sync();
-    await win.onResized(sync);
-}
-
 loadFonts();
-if (NATIVE_MAC_FRAME) {
-    setCorner(MAC_CORNER);
-} else {
-    followWindowsCorners().catch((err) => console.error("sidecar: following the window's corners failed", err));
-}
+setCorner(NATIVE_MAC_FRAME ? MAC_CORNER : WIN_CORNER);
 // the window never scrolls: P is drawn to fit it, and Q's Needs you list scrolls inside itself
 document.body.classList.add("overflow-hidden");
 createRoot(document.getElementById("sidecar")!).render(<SidecarRoot />);

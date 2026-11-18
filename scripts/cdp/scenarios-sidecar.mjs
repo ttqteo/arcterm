@@ -44,6 +44,14 @@ const SIDECAR_READY = `!!document.querySelector("[data-sidecar-titlebar]")`;
 // screen the window opened on
 const ORBIT_VIEWPORT = { width: 1920, height: 1080, deviceScaleFactor: 1, mobile: false };
 const NARROW_VIEWPORT = { width: 900, height: 800, deviceScaleFactor: 1, mobile: false };
+// a wall with no room for the Resources column (RESOURCES_MIN_W, sidecarlayout.ts: 1560 wide, 760 high), so the title bar's
+// figures are the button that drops the panel
+const PANEL_VIEWPORT = { width: 1400, height: 900, deviceScaleFactor: 1, mobile: false };
+// how long the HUD's idle cost is read over (the step "HUD idle cost")
+const IDLE_MS = 10_000;
+// a chart's line draws once a series has two points, two polls (2 s apart) after the panel opens; the reads before that
+// are "measuring"
+const GLOW_WAIT_MS = 15_000;
 const MIN_WINDOW = { w: 340, h: 440 };
 const SMALL_BREAK_PX = 1100; // layoutFor (sidecarlayout.ts): P from this width, Q under it
 const SIZE_SLACK = 2; // px: the window's size read back through the screen's scale
@@ -490,6 +498,67 @@ const DASH_READ = `(() => {
 })()`;
 const readDash = (side) => side.ev(DASH_READ);
 
+// ---- the HUD skin (spec 2026-11-18-sidecar-hud-design.md) -------------------------------------------------------------
+
+// A token as the browser resolves it, read through the same var() pipeline as the element it is compared with: the
+// background of a div for `--color-hud-bg`, the stroke of an svg path for the tones the brackets take
+const RESOLVE_BG = (token) => `(() => {
+    const probe = document.createElement("div");
+    probe.style.cssText = "position:absolute;visibility:hidden;background-color:var(${token})";
+    document.body.appendChild(probe);
+    const v = getComputedStyle(probe).backgroundColor;
+    probe.remove();
+    return v;
+})()`;
+const RESOLVE_STROKE = (token) => `(() => {
+    const ns = "http://www.w3.org/2000/svg";
+    const svg = document.createElementNS(ns, "svg");
+    svg.style.cssText = "position:absolute;visibility:hidden;width:0;height:0";
+    const path = document.createElementNS(ns, "path");
+    path.style.stroke = "var(${token})";
+    svg.appendChild(path);
+    document.body.appendChild(svg);
+    const v = getComputedStyle(path).stroke;
+    svg.remove();
+    return v;
+})()`;
+
+// "Light first" and "Motion": no element has a CSS filter or backdrop-filter (the glow is two stacked strokes), and the one
+// repeating animation is the ping, which any element's `animationName` names
+const LIGHT_READ = `(() => {
+    const filtered = [];
+    const all = document.querySelectorAll("*");
+    for (const el of all) {
+        const cs = getComputedStyle(el);
+        const filter = cs.filter ?? "none";
+        const backdrop = cs.backdropFilter ?? cs.webkitBackdropFilter ?? "none";
+        if (filter !== "none" || backdrop !== "none") {
+            filtered.push(el.tagName + "." + (el.getAttribute("class") ?? "").slice(0, 60) + " filter=" + filter + " backdrop=" + backdrop);
+        }
+    }
+    const infinite = document.getAnimations()
+        .filter((a) => a.effect?.getComputedTiming().iterations === Infinity)
+        .map((a) => a.animationName ?? a.constructor.name);
+    return {
+        elements: all.length,
+        filteredCount: filtered.length,
+        filtered: filtered.slice(0, 5),
+        infiniteCount: infinite.length,
+        infinite: [...new Set(infinite)],
+        pings: document.querySelectorAll(".animate-sidecar-ping").length,
+        reduced: matchMedia("(prefers-reduced-motion: reduce)").matches,
+    };
+})()`;
+// needPing: the page has pings on it, so the read must have seen at least one infinite animation (unless the system asks for
+// reduced motion, where the pings are hidden and nothing runs)
+const lightOk = (l, needPing) =>
+    l != null &&
+    l.filteredCount === 0 &&
+    l.infinite.every((n) => n === "sidecarPing") &&
+    (!needPing || l.reduced || l.infinite.includes("sidecarPing"));
+const LIGHT_STEP =
+    "no element on the Sidecar page has a filter or backdrop-filter, and the ping (`sidecarPing`) is the only infinite animation";
+
 // the band, and the title bar's readout with its tones, as P shows them now
 const BAND_READ = `(() => {
     const band = document.querySelector("[data-sidecar-band]");
@@ -921,6 +990,158 @@ async function bandSteps(h, side, rec, shot) {
     );
 }
 
+// The HUD skin on P, read in the normal state right after its shot: Needs you sits right of the orbit, the page wears the HUD
+// ground, nothing has a filter and only the ping repeats, the static decoration and the glow strokes are drawn, and what the
+// page costs idle (the HUD's "after" figure for RAM watch: the run reports only this one, no earlier tree has the step)
+async function hudSteps(side, rec) {
+    const cols = await side.ev(`(() => {
+        const needs = document.querySelector("[data-sidecar-needs-col]");
+        const cell = document.querySelector("[data-sidecar-orbit-cell]");
+        if (needs == null || cell == null) return null;
+        const a = needs.getBoundingClientRect();
+        const b = cell.getBoundingClientRect();
+        return {
+            orbitLeft: b.left,
+            orbitRight: b.right,
+            needsLeft: a.left,
+            needsRight: a.right,
+            orbitFirst: (cell.compareDocumentPosition(needs) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0,
+        };
+    })()`);
+    rec(
+        "the wall's Needs you column sits right of the orbit: the orbit cell's right edge is at or before the column's left edge, and the orbit cell comes first in the page",
+        cols != null && cols.orbitRight <= cols.needsLeft + 0.01 && cols.orbitFirst === true && cols.orbitLeft < cols.needsLeft,
+        cols ?? "no [data-sidecar-needs-col] or [data-sidecar-orbit-cell] on the page"
+    );
+
+    const ground = await side.ev(`(() => {
+        const root = document.getElementById("sidecar")?.firstElementChild;
+        const bar = document.querySelector("[data-sidecar-titlebar]");
+        return {
+            root: root == null ? null : getComputedStyle(root).backgroundColor,
+            bar: bar == null ? null : getComputedStyle(bar).backgroundColor,
+        };
+    })()`);
+    const hudBg = await side.ev(RESOLVE_BG("--color-hud-bg"));
+    rec(
+        "the page wears the HUD ground: the root's computed background is the resolved `--color-hud-bg`",
+        typeof hudBg === "string" && hudBg !== "" && ground.root === hudBg,
+        { root: ground.root, titlebar: ground.bar, hudBg }
+    );
+
+    const light = await side.ev(LIGHT_READ);
+    rec(`${LIGHT_STEP} (P, normal state, with pings on the page)`, lightOk(light, true) && light.pings > 0, light);
+
+    const deco = await side.ev(`(() => {
+        const q = (s, root = document) => root.querySelectorAll(s).length;
+        const cell = document.querySelector("[data-sidecar-orbit-cell]");
+        const needs = document.querySelector("[data-sidecar-needs-col]");
+        return {
+            deco: q("[data-hud-deco]"),
+            glow: q("[data-hud-glow]"),
+            orbitTicks: cell == null ? 0 : q('[data-hud-deco="ticks"]', cell),
+            orbitGlow: cell == null ? 0 : q("[data-hud-glow]", cell),
+            needsBrackets: needs == null ? 0 : q('[data-hud-deco="brackets"]', needs),
+        };
+    })()`);
+    rec(
+        "the HUD decoration is drawn: `data-hud-deco` parts and `data-hud-glow` strokes are on the page, the orbit holds its tick ring and its three value rings' halos, and Needs you wears brackets",
+        deco.deco >= 1 && deco.glow >= 1 && deco.orbitTicks >= 1 && deco.orbitGlow >= 3 && deco.needsBrackets >= 1,
+        deco
+    );
+
+    // Performance.getMetrics before and after IDLE_MS of nothing: how often the page lays out and recalculates styles on its
+    // own (the bridge's snapshots and the Resources column's 2 s poll are what moves it), and what it holds. The page is the
+    // 1920x1080 the other shape asserts are made at. Passes when the figures are read: it records them, it does not bound them
+    const metricsOf = async () => {
+        const { metrics } = await side.cdp("Performance.getMetrics", {});
+        return Object.fromEntries(metrics.map((m) => [m.name, m.value]));
+    };
+    let idle = null;
+    let idleError = null;
+    try {
+        await side.cdp("Performance.enable", {});
+        const before = await metricsOf();
+        await sleep(IDLE_MS);
+        const after = await metricsOf();
+        const num = (v) => typeof v === "number" && Number.isFinite(v);
+        idle = {
+            idleMs: IDLE_MS,
+            viewport: `${ORBIT_VIEWPORT.width}x${ORBIT_VIEWPORT.height}`,
+            layoutCountDelta: after.LayoutCount - before.LayoutCount,
+            recalcStyleCountDelta: after.RecalcStyleCount - before.RecalcStyleCount,
+            jsHeapUsedSize: after.JSHeapUsedSize,
+            nodes: after.Nodes,
+            read: num(after.LayoutCount) && num(before.LayoutCount) && num(after.RecalcStyleCount) && num(before.RecalcStyleCount) && num(after.JSHeapUsedSize) && num(after.Nodes),
+        };
+    } catch (e) {
+        idleError = String(e?.message ?? e);
+    } finally {
+        await side.cdp("Performance.disable", {}).catch(() => {});
+    }
+    rec(
+        `HUD idle cost: LayoutCount and RecalcStyleCount over ${IDLE_MS / 1000} s idle at ${ORBIT_VIEWPORT.width}x${ORBIT_VIEWPORT.height}, with the JS heap and DOM nodes, read for RAM watch (the HUD's "after" figure)`,
+        idle?.read === true,
+        idle ?? { error: idleError }
+    );
+}
+
+// The title bar's figures drop the Resources panel where the wall has no room for the column (RESOURCES_MIN_W): at
+// PANEL_VIEWPORT they are a button, a press opens the panel, and once the history has two points each chart draws its line
+// as a glow. Shrinking closed the column, and the bridge's `stopResources` cleared the history with it, so the series starts
+// over two polls after the panel opens. Off Windows the Resource Manager reads nothing and the state is "unsupported": the
+// panel still opens, and there is no glow to wait for.
+async function resourcesPanelStep(h, side, rec, shot) {
+    const what = "the title bar's figures open the HUD Resources panel: below the column's width RAM · CPU is a button, a press drops the panel with its brackets, and each chart draws its glow line";
+    let detail = {};
+    try {
+        // the column at the wall's own size, read before the shrink for the step's detail (not asserted): the page reloaded
+        // earlier in this scenario, so this says whether a column that was up through a reload still gets its readings
+        const columnBefore = await side.ev(`(() => {
+            const col = document.querySelector('[data-sidecar-resources="column"]');
+            return col == null ? null : { state: col.dataset.state ?? null, glow: col.querySelectorAll("[data-hud-glow]").length };
+        })()`);
+        await side.cdp("Emulation.setDeviceMetricsOverride", PANEL_VIEWPORT);
+        const button = await waitFor(side.ev, `document.querySelector("[data-sidecar-machine]")?.tagName === "BUTTON" && !${has('[data-sidecar-resources="column"]')}`, 5000);
+        const beforeClick = await actCount(h);
+        await clickIn(side, "[data-sidecar-machine]");
+        const opened = await waitFor(side.ev, has('[data-sidecar-resources="panel"]'), 5000);
+        const win = process.platform === "win32";
+        const glow = win ? await waitFor(side.ev, has('[data-sidecar-resources="panel"] [data-hud-glow]'), GLOW_WAIT_MS) : null;
+        await sleep(600);
+        // where the feed stops, for whoever reads a failure: the `resources` acts the page sent the bridge, and what the main
+        // page's own RPC client gets from the Resource Manager now (neither is asserted)
+        const resourceActs = (await actsSince(h, beforeClick)).filter((a) => a?.kind === "resources").map((a) => ({ open: a.open, pids: Array.isArray(a.pids) ? a.pids.length : null }));
+        const direct = await h
+            .ev(`window.TabRpcClient.wshRpcCall("resmonsnapshot", { others: true }, { timeout: 5000 }).then((s) => ({ supported: s?.supported, ready: s?.ready, machine: s?.machine != null, groups: s?.groups?.length, others: s?.others?.length }))`)
+            .catch((e) => ({ error: String(e?.message ?? e) }));
+        const read = await side.ev(`(() => {
+            const panel = document.querySelector('[data-sidecar-resources="panel"]');
+            return {
+                state: panel?.dataset.state ?? null,
+                brackets: panel?.querySelectorAll('[data-hud-deco="brackets"]').length ?? 0,
+                charts: panel?.querySelectorAll("[data-sidecar-chart]").length ?? 0,
+                glowLines: panel?.querySelectorAll("[data-hud-glow]").length ?? 0,
+            };
+        })()`);
+        await shot(side, "resources-panel");
+        // pressed again, the panel closes; the original size back
+        await clickIn(side, "[data-sidecar-machine]");
+        const closed = await waitFor(side.ev, `!${has('[data-sidecar-resources="panel"]')}`, 3000);
+        detail = { button, opened, closed, platform: process.platform, glowWait: glow == null ? "skipped: Windows only" : glow, ...read, columnBefore, resourceActs, direct };
+        rec(
+            what + (win ? "" : " (glow wait skipped: Windows only)"),
+            button && opened && closed && read.brackets >= 1 && read.charts >= 1 && (win ? glow === true && read.glowLines >= 1 : true),
+            detail
+        );
+    } catch (e) {
+        rec(what, false, { ...detail, error: String(e?.message ?? e) });
+    } finally {
+        await side.cdp("Emulation.setDeviceMetricsOverride", ORBIT_VIEWPORT).catch(() => {});
+        await sleep(600);
+    }
+}
+
 // P's five states and its keys, then P-live
 async function orbitStates(h, ctx, side, rec, shot) {
     // the band steps loaded the roster at arrange: each state builds its own, dated now (a finished agent leaves the orbit
@@ -984,6 +1205,9 @@ async function orbitStates(h, ctx, side, rec, shot) {
             [NEED.ask, NEED.multi, NEED.question].every((key) => row(got, key)?.ping === true),
         { nodes: got.nodes.map((n) => `${n.id}:${n.tone}:${n.ping}`), rows: got.needs.map((n) => `${n.key}:${n.ping}`) }
     );
+
+    // the HUD skin, read on this same state, before the keys select a row or answer an ask
+    await hudSteps(side, rec);
 
     // the keys (real key events): ArrowDown selects the first row, which is the answerable ask, and 2 answers it with its
     // second option (`option` is 0-based: key 2 sends 1); ArrowDown again to the gate and Enter opens it in the main window
@@ -1154,9 +1378,47 @@ async function orbitStates(h, ctx, side, rec, shot) {
             after.needs[0]?.key === NEED.failed,
         { live, probe, needs: after.needs.map((n) => n.key) }
     );
+
+    // last: it resizes the page and restores it, which the states above need not follow
+    await resourcesPanelStep(h, side, rec, shot);
 }
 
 // ---- sidecar-compact --------------------------------------------------------------------------------------------------
+
+// Q's dial (q-normal): one `[data-hud-dial]` wrapper holding the tick ring (static decoration) and the glow of the three value
+// rings (their halos carry `data-hud-glow`)
+async function dialStep(side, rec) {
+    const dial = await side.ev(`(() => {
+        const dials = document.querySelectorAll("[data-hud-dial]");
+        const d = dials[0];
+        const q = (s) => d?.querySelectorAll(s).length ?? 0;
+        return { dials: dials.length, ticks: q('[data-hud-deco="ticks"]'), deco: q("[data-hud-deco]"), glow: q("[data-hud-glow]") };
+    })()`);
+    rec("Q draws the HUD dial: one `[data-hud-dial]` holds a tick ring (`data-hud-deco`) and the three value rings' glow (`data-hud-glow`)", dial.dials === 1 && dial.ticks >= 1 && dial.deco >= 1 && dial.glow === 3, dial);
+}
+
+// Q's strain line (q-high, q-critical): corner brackets in the line's own tone, the warning colour at high and the error
+// colour at critical, compared with the tokens as the browser resolves them
+async function strainBracketsStep(side, rec, name) {
+    const token = name === "critical" ? "--color-error" : "--color-warning";
+    const got = await side.ev(`(() => {
+        const line = document.querySelector("[data-sidecar-strainline]");
+        const deco = line?.querySelector("[data-hud-deco]");
+        const path = deco?.querySelector("path");
+        return {
+            level: line?.dataset.level ?? null,
+            present: deco != null,
+            corners: deco?.querySelectorAll("svg").length ?? 0,
+            stroke: path == null ? null : getComputedStyle(path).stroke,
+        };
+    })()`);
+    const want = await side.ev(RESOLVE_STROKE(token));
+    rec(
+        `Q's strain line wears brackets at ${name}: \`[data-sidecar-strainline] [data-hud-deco]\` exists, with four corners, and its stroke is the resolved \`${token}\``,
+        got.present === true && got.corners === 4 && typeof want === "string" && want !== "" && got.stroke === want,
+        { ...got, want, token }
+    );
+}
 
 // Q's five states in the real small window, then its keys
 async function compactStates(h, ctx, side, rec, shot) {
@@ -1232,6 +1494,8 @@ async function compactStates(h, ctx, side, rec, shot) {
                 overflows: got.overflows,
             }
         );
+        if (name === "normal") await dialStep(side, rec);
+        if (spec.strain != null) await strainBracketsStep(side, rec, name);
     }
 
     // Q's keys, from the normal state: ArrowDown selects the first row, the answerable ask; 1 answers it with its first
@@ -1604,6 +1868,10 @@ export default function () {
                             mainNow.h === mainBeforeS.h,
                         { allClear: got.allClear, rows: got.needs.length, core: got.core, mainBeforeS, mainNow }
                     );
+                    // the light-first rules hold on Q too (nothing waits here, so no ping runs: the read finds no filter and
+                    // no other infinite animation)
+                    const light = await side.ev(LIGHT_READ);
+                    rec(`${LIGHT_STEP} (Q, calm)`, lightOk(light, false), light);
                 } catch (e) {
                     rec("the steps ran to the end", false, String(e?.message ?? e));
                 }

@@ -17,6 +17,8 @@ import { memo, type ReactNode, type SVGProps } from "react";
 import { bracketPath, HUD_GLOW_HALO, HUD_GLOW_OPACITY, tickLines, type BracketCorner } from "./sidecarhudmodel";
 
 const BRACKET_STROKE = 1.5;
+// the elbow sits this far in from the box's corner, so the stroke stays inside the box (bracketPath's default)
+const BRACKET_INSET = 1;
 const BRACKET_CORNERS: { corner: BracketCorner; place: string }[] = [
     { corner: "tl", place: "left-0 top-0" },
     { corner: "tr", place: "right-0 top-0" },
@@ -25,11 +27,21 @@ const BRACKET_CORNERS: { corner: BracketCorner; place: string }[] = [
 ];
 
 /**
- * Four L-shaped corner brackets pinned to the corners of the nearest `relative` parent, `size` px each (14 on P, smaller on
- * Q). Four fixed-size SVGs, not one sized to the box, so nothing measures the parent. `hud-glow` by default; `className`
- * recolours them (`stroke-error` for the RAM band).
+ * Four corner brackets pinned to the corners of the nearest `relative` parent, `size` px each (14 on P, smaller on Q).
+ * Each bends round its corner: `radius` is the radius of the box they stand on (6 for `rounded-md`, 12 for `rounded-lg`;
+ * 6 unless given), and the arc is that less the inset, so a bracket follows its box's corner and a radius of 0 is the
+ * right angle. Four fixed-size SVGs, not one sized to the box, so nothing measures the parent. `hud-glow` by default;
+ * `className` recolours them (`stroke-error` for the RAM band).
  */
-export const HudBrackets = memo(function HudBrackets({ size = 14, className }: { size?: number; className?: string }) {
+export const HudBrackets = memo(function HudBrackets({
+    size = 14,
+    radius = 6,
+    className,
+}: {
+    size?: number;
+    radius?: number;
+    className?: string;
+}) {
     return (
         <div aria-hidden="true" data-hud-deco="brackets" className="pointer-events-none absolute inset-0">
             {BRACKET_CORNERS.map(({ corner, place }) => (
@@ -41,7 +53,7 @@ export const HudBrackets = memo(function HudBrackets({ size = 14, className }: {
                     strokeWidth={BRACKET_STROKE}
                     className={cn("absolute fill-none stroke-hud-glow", place, className)}
                 >
-                    <path d={bracketPath(size, corner)} />
+                    <path d={bracketPath(size, corner, BRACKET_INSET, radius - BRACKET_INSET)} />
                 </svg>
             ))}
         </div>
