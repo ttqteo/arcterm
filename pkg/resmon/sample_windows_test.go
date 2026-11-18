@@ -10,6 +10,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -44,6 +45,52 @@ func BenchmarkSample(b *testing.B) {
 	cpuMs := float64(readStat(os.Getpid()).cpuTime-before) / 1e4 / float64(b.N)
 	b.ReportMetric(cpuMs, "cpu-ms/tick")
 	b.ReportMetric(cpuMs/float64(sampleInterval.Milliseconds())*100, "%core")
+}
+
+// BenchmarkSampleOthers measures what Sidecar's Resources cost wavesrv while they show: one tick that also reads every
+// other process, the machine and the GPU counters. %core is one core's share at sampleInterval; %machine divides by
+// the cores; heap-KB/tick is what a tick allocates (garbage the GC takes back, not memory held).
+func BenchmarkSampleOthers(b *testing.B) {
+	st := newTickState()
+	st.others = true
+	st.tick()
+	st.tick() // the GPU query's priming read
+	before := readStat(os.Getpid()).cpuTime
+	var ms runtime.MemStats
+	runtime.ReadMemStats(&ms)
+	allocBefore := ms.TotalAlloc
+	b.ResetTimer()
+	var s *sample
+	for range b.N {
+		s = st.tick()
+	}
+	b.StopTimer()
+	runtime.ReadMemStats(&ms)
+	cpuMs := float64(readStat(os.Getpid()).cpuTime-before) / 1e4 / float64(b.N)
+	b.ReportMetric(cpuMs, "cpu-ms/tick")
+	b.ReportMetric(cpuMs/float64(sampleInterval.Milliseconds())*100, "%core")
+	b.ReportMetric(cpuMs/float64(sampleInterval.Milliseconds())*100/float64(runtime.NumCPU()), "%machine")
+	b.ReportMetric(float64(ms.TotalAlloc-allocBefore)/1024/float64(b.N), "heap-KB/tick")
+	b.ReportMetric(float64(ms.HeapInuse)/(1<<20), "heap-inuse-MB")
+	if s.machine == nil || s.machine.Gpu == nil {
+		b.Logf("no GPU reading on this machine")
+	}
+	b.Logf("others listed: %d, machine: %+v", len(s.others), *s.machine)
+}
+
+// BenchmarkGpuRead is the GPU counters' share of a tick.
+func BenchmarkGpuRead(b *testing.B) {
+	var g gpuReader
+	defer g.close()
+	g.read()
+	g.read()
+	before := readStat(os.Getpid()).cpuTime
+	b.ResetTimer()
+	for range b.N {
+		g.read()
+	}
+	b.StopTimer()
+	b.ReportMetric(float64(readStat(os.Getpid()).cpuTime-before)/1e4/float64(b.N), "cpu-ms/read")
 }
 
 // listenLocal opens a TCP listener on a free loopback port and returns the port.

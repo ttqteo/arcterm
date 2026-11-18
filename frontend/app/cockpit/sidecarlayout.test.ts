@@ -2,7 +2,24 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it } from "vitest";
-import { layoutFor, pinButtonChange, SMALL_BREAK_PX, smallButtonChange } from "./sidecarlayout";
+import {
+    layoutFor,
+    pinButtonChange,
+    RESOURCES_MIN_H,
+    RESOURCES_MIN_W,
+    resourcesColumnFits,
+    SMALL_BREAK_PX,
+    smallButtonChange,
+} from "./sidecarlayout";
+
+describe("resourcesColumnFits", () => {
+    it("shows the column only on the wall, wide and tall enough", () => {
+        expect(resourcesColumnFits("wall", RESOURCES_MIN_W, RESOURCES_MIN_H)).toBe(true);
+        expect(resourcesColumnFits("wall", RESOURCES_MIN_W - 1, 2000)).toBe(false);
+        expect(resourcesColumnFits("wall", 4000, RESOURCES_MIN_H - 1)).toBe(false);
+        expect(resourcesColumnFits("small", 4000, 2000)).toBe(false);
+    });
+});
 
 describe("layoutFor", () => {
     it("the full window from 1100 px, the small form below it", () => {

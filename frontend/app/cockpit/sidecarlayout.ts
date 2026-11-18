@@ -28,6 +28,17 @@ export function layoutFor(width: number, screenWidth?: number): SidecarLayout {
     return fills ? "wall" : "small";
 }
 
+/** The wall gives a Resources column (charts and the process table) beside the dashboard from this size (CSS px): the
+ *  dashboard keeps SMALL_BREAK_PX and more, the column RESOURCES_COL_PX, and the charts and table room to read. */
+export const RESOURCES_COL_PX = 400;
+export const RESOURCES_MIN_W = SMALL_BREAK_PX + RESOURCES_COL_PX + 60;
+export const RESOURCES_MIN_H = 760;
+
+/** Whether the wall shows the Resources column; when it does not, the title bar's figures open the panel instead. */
+export function resourcesColumnFits(layout: SidecarLayout, width: number, height: number): boolean {
+    return layout === "wall" && width >= RESOURCES_MIN_W && height >= RESOURCES_MIN_H;
+}
+
 /** What the page asks of the host's `sidecar_form`; a field left out changes nothing. */
 export interface FormChange {
     small?: boolean;

@@ -126,7 +126,16 @@ export interface SidecarResourceRow {
     kind: "sidecar" | "arcterm" | "agent" | "other";
     cpu?: number; // percent of the whole machine, one decimal
     mem?: number; // bytes held in RAM (the private working set), rounded to the MB
+    gpu?: number; // percent of its busiest GPU engine, whole; left out at 0 or where not read
     count?: number; // an "other" row's processes of that name
+}
+
+/** One reading of the whole machine for the resource charts: whole percents, `gpu` left out where not read. */
+export interface SidecarResourcePoint {
+    t: number; // UnixMilli of the reading
+    cpu: number;
+    mem: number; // RAM in use, percent of the total
+    gpu?: number;
 }
 
 /** The resource panel (sidecarresources.ts builds it): arcterm's rows, then the heavy processes outside it. */
@@ -135,6 +144,8 @@ export interface SidecarResources {
     rows: SidecarResourceRow[];
     others: SidecarResourceRow[];
     othersMin?: number; // bytes: the least an "other" row holds
+    history: SidecarResourcePoint[]; // the last 5 minutes, oldest first
+    memTotal?: number; // bytes, for the RAM chart's figure
 }
 
 export type SidecarAct =

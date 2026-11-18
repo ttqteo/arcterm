@@ -95,7 +95,7 @@ import {
     type HeavyNotes,
 } from "./sidecarbridgemodel";
 import { sidecarNeeds } from "./sidecarneeds";
-import { resourcesOf } from "./sidecarresources";
+import { pushHistory, resourcesOf } from "./sidecarresources";
 import {
     orbitTiles,
     scopeTiles,
@@ -120,6 +120,7 @@ import {
     SIDECAR_CLOSED_EVENT,
     SIDECAR_SNAPSHOT_EVENT,
     type SidecarAct,
+    type SidecarResourcePoint,
     type SidecarRunBox,
     type SidecarSnapshot,
     type SidecarStrain,
@@ -196,6 +197,8 @@ export function SidecarBridge({ model }: { model: AgentsViewModel }) {
         // The resource panel (the page's machine figures, clicked): polled only while the page has it open.
         let resPanel: { pids: number[] } | null = null;
         let resReading: ResMonSnapshotData | null = null;
+        // the machine's readings for the charts, the last 5 minutes; kept only while the panel or the column shows
+        let resHistory: SidecarResourcePoint[] = [];
         let resTimer: ReturnType<typeof setInterval> | null = null;
 
         // The dashboard (plan Task 4): what waits on you, the active run and who leads it.
@@ -235,6 +238,7 @@ export function SidecarBridge({ model }: { model: AgentsViewModel }) {
             }
             resPanel = null;
             resReading = null;
+            resHistory = [];
         };
 
         // Stops every timer and subscription of the machine and the heavy polls and forgets what they read: the page is
@@ -453,7 +457,7 @@ export function SidecarBridge({ model }: { model: AgentsViewModel }) {
                 usage,
                 ...(stats != null ? { machine: machineOf(stats, platformName()) } : {}),
                 ...(strain != null ? { strain } : {}),
-                ...(resPanel != null ? { resources: resourcesOf(resReading, resPanel.pids) } : {}),
+                ...(resPanel != null ? { resources: resourcesOf(resReading, resPanel.pids, resHistory) } : {}),
             };
         };
 
@@ -640,6 +644,7 @@ export function SidecarBridge({ model }: { model: AgentsViewModel }) {
                 // dropped when the panel closed while the read was out
                 if (resPanel != null) {
                     resReading = snap ?? null;
+                    resHistory = pushHistory(resHistory, resReading);
                     onChange();
                 }
             } catch (e) {

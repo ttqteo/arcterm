@@ -28,7 +28,7 @@ func (ws *WshServer) ResMonSnapshotCommand(ctx context.Context, data wshrpc.Comm
 	rtn := resmon.Snapshot(ctx, resolveResMonOwner)
 	if !data.Others {
 		// another caller's ask keeps the sampler reading them a while: only an asker gets them
-		rtn.Others, rtn.OthersMin = nil, 0
+		rtn.Others, rtn.OthersMin, rtn.Machine = nil, 0, nil
 	}
 	return &rtn, nil
 }

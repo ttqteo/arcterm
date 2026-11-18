@@ -7,9 +7,9 @@
 // them, and a second copy here would cost its RAM again. Spec 2026-11-13-sidecar-design.md, section 2.
 
 import { SidecarCompact } from "@/app/cockpit/sidecarcompact";
-import { layoutFor, type FormChange, type SidecarLayout } from "@/app/cockpit/sidecarlayout";
+import { layoutFor, resourcesColumnFits, type FormChange, type SidecarLayout } from "@/app/cockpit/sidecarlayout";
 import { SidecarOrbit } from "@/app/cockpit/sidecarorbit";
-import { SidecarResourcesPanel } from "@/app/cockpit/sidecarresourcespanel";
+import { SidecarResourcesColumn, SidecarResourcesPanel } from "@/app/cockpit/sidecarresourcespanel";
 import { NATIVE_MAC_FRAME, SidecarTitleBar, toggleSidecarFullscreen } from "@/app/cockpit/sidecartitlebar";
 import {
     SIDECAR_ACT_EVENT,
@@ -55,15 +55,28 @@ function readLayout(): SidecarLayout {
     return layoutFor(window.innerWidth, window.screen?.availWidth);
 }
 
-function useLayout(): SidecarLayout {
-    const [layout, setLayout] = useState<SidecarLayout>(readLayout);
+interface LayoutState {
+    layout: SidecarLayout;
+    column: boolean; // the wall has room for the Resources column
+}
+
+function readLayoutState(): LayoutState {
+    const layout = readLayout();
+    return { layout, column: resourcesColumnFits(layout, window.innerWidth, window.innerHeight) };
+}
+
+function useLayout(): LayoutState {
+    const [state, setState] = useState<LayoutState>(readLayoutState);
     useEffect(() => {
-        const onResize = () => setLayout(readLayout());
+        const onResize = () => {
+            const next = readLayoutState();
+            setState((prev) => (prev.layout === next.layout && prev.column === next.column ? prev : next));
+        };
         window.addEventListener("resize", onResize);
         onResize();
         return () => window.removeEventListener("resize", onResize);
     }, []);
-    return layout;
+    return state;
 }
 
 // The host's form (the S button's small form, the pin) is the host's to keep: the page reads it once at load and takes the
@@ -88,13 +101,18 @@ function useSidecarForm(): [SidecarForm, (change: FormChange) => void] {
     return [form, change];
 }
 
-// The resource panel: open, it tells the main window's bridge (which then polls the Resource Manager) with the pids the
-// host says draw this page, and again as they change; closed, it tells the bridge to stop. A pid read that fails leaves
-// Sidecar's own row unmeasured, the rest of the panel as it is.
-function useResourcesPanel(): [boolean, () => void, () => void] {
+// The resources: while the panel is open or the wall shows the column, the page tells the main window's bridge (which
+// then polls the Resource Manager) with the pids the host says draw this page, and again as they change; once neither
+// shows, it tells the bridge to stop. A pid read that fails leaves Sidecar's own row unmeasured, the rest as it is. The
+// column takes the panel's place: a panel left open shuts when the column appears.
+function useResourcesPanel(column: boolean): [boolean, () => void, () => void] {
     const [open, setOpen] = useState(false);
+    if (column && open) {
+        setOpen(false);
+    }
+    const want = open || column;
     useEffect(() => {
-        if (!open) {
+        if (!want) {
             return;
         }
         let live = true;
@@ -122,7 +140,7 @@ function useResourcesPanel(): [boolean, () => void, () => void] {
             clearInterval(timer);
             send({ kind: "resources", open: false, pids: [] });
         };
-    }, [open]);
+    }, [want]);
     const toggle = useCallback(() => setOpen((o) => !o), []);
     const close = useCallback(() => setOpen(false), []);
     return [open, toggle, close];
@@ -131,9 +149,9 @@ function useResourcesPanel(): [boolean, () => void, () => void] {
 function SidecarRoot() {
     useApplyCockpitTheme();
     const [heard, setHeard] = useState<Heard | null>(null);
-    const layout = useLayout();
+    const { layout, column } = useLayout();
     const [form, changeForm] = useSidecarForm();
-    const [resourcesOpen, toggleResources, closeResources] = useResourcesPanel();
+    const [resourcesOpen, toggleResources, closeResources] = useResourcesPanel(column);
     // Date.now() too: the dashboard adds (clock - heard.at) to the snapshot's own `now`, so the two must share one clock
     const [clock, setClock] = useState(() => Date.now());
 
@@ -197,7 +215,7 @@ function SidecarRoot() {
                 form={form}
                 onForm={changeForm}
                 resourcesOpen={resourcesOpen}
-                onResources={toggleResources}
+                onResources={column ? undefined : toggleResources}
             />
             {resourcesOpen && (
                 <SidecarResourcesPanel
@@ -216,6 +234,11 @@ function SidecarRoot() {
                 </div>
             ) : layout === "small" ? (
                 <SidecarCompact snap={heard.snap} receivedAt={heard.at} clock={clock} send={send} />
+            ) : column ? (
+                <div className="flex min-h-0 flex-1">
+                    <SidecarOrbit snap={heard.snap} receivedAt={heard.at} clock={clock} send={send} />
+                    <SidecarResourcesColumn resources={heard.snap.resources} />
+                </div>
             ) : (
                 <SidecarOrbit snap={heard.snap} receivedAt={heard.at} clock={clock} send={send} />
             )}

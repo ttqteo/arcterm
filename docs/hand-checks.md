@@ -16,6 +16,16 @@ list (its number is not reused).
 Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) ·
 [part 4](hand-checks-4.md) · [part 3](hand-checks-3.md) · [part 2](hand-checks-2.md) (oldest).
 
+- [ ] (arcterm) **Sidecar's Resources: column, charts and panel.** Make Sidecar at least 1560 × 760 CSS px (maximized on
+  a 1080p screen at 100–125%): a Resources column stands right of the dashboard with CPU, RAM and GPU charts filling
+  in over 5 minutes (a hover shows a crosshair and "23% · 40s ago"; GPU matches Task Manager's figure, or says the
+  machine has no GPU counters), then Sidecar's own row first (its CPU and RAM, not "—"; "—" means WebView2 did not
+  name its renderer), arcterm and each agent by RAM with a GPU column, and "Other apps over 200 MB" (chrome.exe
+  (12)…). The title bar's figures are then plain text. Shrink it below that (or the small form): the figures get a
+  border and a chevron, and a click drops the same charts and table under the bar; Escape or a click outside closes
+  it. Windows only; on a Mac it says so. Commits 4f28db4b9 and the `feat/sidecar-charts` merge.
+- [ ] (arcterm) **Sidecar's pin in the full window.** Maximize Sidecar or press F11: the title bar has a pin button
+  beside S; pressed, Sidecar stays over the other apps on its screen, and a relaunch reopens it pinned. Same merge.
 - [ ] (arcterm) **Sidecar's resource panel.** Click the RAM · CPU figures in Sidecar's title bar (wall and small
   layouts): a panel drops under the bar with Sidecar's own row first (its CPU and RAM, not "—"; "—" means WebView2
   did not name its renderer), then arcterm and each agent by RAM, then "Other apps over 200 MB" (chrome.exe (12)…),
