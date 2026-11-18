@@ -37,6 +37,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   panel under the agent, in the folder the agent works in, and runs the command there.
 - A shell command shows in colour as you type it in Chat's bash mode and in a reply's shell block: the command apart
   from its arguments, flags and pipes dimmed, variables and strings in their own colours.
+- A picture the agent read shows as a small thumbnail in Chat: at the end of its folded line of steps and of its Read
+  row, which now opens to the picture itself (click it to see it full width).
 - A turn in which the agent drew design boards now ends in a Canvas card in Chat, with a small live picture of each
   board it drew: click one to look at it full size over Chat, Look at all to see them side by side, or Open in Canvas.
 - Sidecar shows what everything takes, like Task Manager: on a big enough window a Resources column beside the
