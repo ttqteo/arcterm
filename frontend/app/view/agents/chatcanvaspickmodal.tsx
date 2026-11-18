@@ -4,7 +4,9 @@
 // The quick pick card's board modal: the option boards the card lists, and only those, over Chat, so you can look at
 // them without leaving it. All draws them side by side; a tile, a tab or ← → shows one whole, and its Pick button sends
 // the row as the card's row does. Open in Canvas is still there for the whole canvas. What shows is chatcanvaspick.ts's
-// (pickTabs, pickShown, pickRowAt); the frames are the canvas pane's.
+// (pickTabs, pickShown, pickRowAt); the frames are the canvas pane's. The Canvas card at a turn's end
+// (chatcanvaspeekcard.tsx) opens it too, on the boards the turn drew: rows with no letter and no `onPick`, so there is
+// nothing to pick and the head names the canvas.
 
 import { useDimensionsWithCallbackRef } from "@/app/hook/useDimensions";
 import { ModalShell } from "@/app/modals/modalshell";
@@ -47,7 +49,8 @@ export function CanvasPickModal({
     tab: string;
     busy: boolean;
     onTab: (tab: string) => void;
-    onPick: (row: number) => void;
+    // left out where nothing is to be picked (the Canvas card's look at a turn's boards)
+    onPick?: (row: number) => void;
     onOpenInCanvas: () => void;
     onClose: () => void;
 }) {
@@ -107,7 +110,11 @@ export function CanvasPickModal({
                                 key: t,
                                 label: (
                                     <span data-chat-canvaspick-modal-tab={t} className="max-w-[220px] truncate">
-                                        {r == null ? `All ${pick.rows.length}` : `${r.letter} · ${r.title}`}
+                                        {r == null
+                                            ? `All ${pick.rows.length}`
+                                            : r.letter !== ""
+                                              ? `${r.letter} · ${r.title}`
+                                              : r.title}
                                     </span>
                                 ),
                             };
@@ -172,24 +179,36 @@ export function CanvasPickModal({
                     {row != null ? (
                         <>
                             <span className="min-w-0 truncate text-secondary">
-                                <span className="font-semibold text-primary">{pick.rows[row].letter}</span>
-                                {` · ${pick.rows[row].title}`}
+                                {pick.rows[row].letter !== "" ? (
+                                    <>
+                                        <span className="font-semibold text-primary">{pick.rows[row].letter}</span>
+                                        {` · ${pick.rows[row].title}`}
+                                    </>
+                                ) : (
+                                    pick.rows[row].title
+                                )}
                             </span>
                             <div className="flex-1" />
                             <span className="flex-none">← → boards · Esc closes</span>
-                            <button
-                                type="button"
-                                data-chat-canvaspick-modal-pick={pick.rows[row].letter}
-                                disabled={busy}
-                                onClick={() => onPick(row)}
-                                className={SWAP_PRIMARY_BTN}
-                            >
-                                {`Pick ${pick.rows[row].letter}`}
-                            </button>
+                            {onPick != null ? (
+                                <button
+                                    type="button"
+                                    data-chat-canvaspick-modal-pick={pick.rows[row].letter}
+                                    disabled={busy}
+                                    onClick={() => onPick(row)}
+                                    className={SWAP_PRIMARY_BTN}
+                                >
+                                    {`Pick ${pick.rows[row].letter}`}
+                                </button>
+                            ) : null}
                         </>
                     ) : (
                         <>
-                            <span className="min-w-0 truncate">Click a board to look at it alone, then pick it</span>
+                            <span className="min-w-0 truncate">
+                                {onPick != null
+                                    ? "Click a board to look at it alone, then pick it"
+                                    : "Click a board to look at it alone"}
+                            </span>
                             <div className="flex-1" />
                             <span className="flex-none">← → boards · Esc closes</span>
                         </>

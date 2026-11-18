@@ -31,6 +31,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Added
 
+- A turn in which the agent drew design boards now ends in a Canvas card in Chat, with a small live picture of each
+  board it drew: click one to look at it full size over Chat, Look at all to see them side by side, or Open in Canvas.
 - Sidecar shows what everything takes, like Task Manager: on a big enough window a Resources column beside the
   dashboard charts the machine's CPU, RAM and GPU over the last 5 minutes and lists Sidecar's own CPU, GPU and RAM, the
   rest of arcterm, each agent, and the other apps holding over 200 MB; in a smaller window the RAM · CPU figures in
