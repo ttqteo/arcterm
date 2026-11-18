@@ -113,6 +113,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- A file in the "Edited N files" card at the end of a Chat turn opens on its diff against the last commit, not on the
+  whole file, also for a file in a worktree under the agent's folder; a change already committed says so.
 - A dev server that starts and detaches itself (Astro's `astro dev`) is no longer put down to an agent of another
   project whose background task happened to end as it came up, and a project kept in a folder inside its repo shows
   the servers running under that folder on its folder in the Agent tree.

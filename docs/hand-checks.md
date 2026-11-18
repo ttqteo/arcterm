@@ -16,6 +16,12 @@ list (its number is not reused).
 Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) ·
 [part 4](hand-checks-4.md) · [part 3](hand-checks-3.md) · [part 2](hand-checks-2.md) (oldest).
 
+- [ ] (arcterm) **A turn's file card opens the file's diff.** In Chat, at the end of a turn that edited files, click a
+  row of "Edited N files": the rail tab opens on Diff (changed lines marked, the rest folded), not the whole file. A
+  file in a `.worktrees/<x>/` tree shows its change in that tree; a file new since the last commit shows all added; a
+  change already committed says "No change since the last commit". `chatsteps.ts` turnFileDiff, `filetabdiff.tsx`.
+  Not tried in the dev app when written.
+
 - [ ] (arcterm) **A builder check waiting on you makes the agent's row breathe.** In Agent, on a brainstorm whose
   builder check is back (a builder question open, or Review / Approve shown in Chat): its row in the tree breathes an
   amber wash and edge, as an asking agent's does, and Cockpit counts it; after Approve starts the run the row stops.

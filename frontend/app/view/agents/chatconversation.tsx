@@ -119,7 +119,7 @@ import { withMarks } from "./chatskim";
 import { useSkimFold } from "./chatskimstore";
 import { placeStepLists, stepsPartKey, type AgentNow } from "./chatsteplist";
 import { ChatStepsHost, StepsPart } from "./chatsteplistview";
-import { foreignPathGuesses, turnFileAbs, turnFiles } from "./chatsteps";
+import { foreignPathGuesses, turnFileAbs, turnFileDiff, turnFiles } from "./chatsteps";
 import { ChatSteps } from "./chatstepsview";
 import { TaggedPromptText } from "./chattagblock";
 import { ChatTurnFiles } from "./chatturnfiles";
@@ -1306,9 +1306,15 @@ export function ChatConversation({
                   openDiff(model!, agentDiffScope(agent!.id, agent!.name), path);
                   return;
               }
-              // reread: the agent may have changed it since its tab was last open
+              // reread: the agent may have changed it since its tab was last open; it opens on its Diff against the
+              // last commit, read from the file's own folder (it may sit in a worktree under the agent's directory)
               const open = (at: string) =>
-                  openFileInPanel(model!, agent!.id, { abs: at, root: cwd || null, reread: Date.now() });
+                  openFileInPanel(model!, agent!.id, {
+                      abs: at,
+                      root: cwd || null,
+                      reread: Date.now(),
+                      diff: turnFileDiff(at) ?? undefined,
+                  });
               // a path the session wrote on the other machine (Windows `d:\…` read on a Mac) is looked for under the
               // agent's directory here; found nowhere, it opens as written and the tab says the file is gone
               const guesses = foreignPathGuesses(abs, cwd, isWindows());

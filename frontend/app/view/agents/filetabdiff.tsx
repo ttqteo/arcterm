@@ -102,6 +102,20 @@ export function FileTabDiff({
             </div>
         );
     }
+    // the change is already committed (or undone): a diff with every line folded away reads as broken
+    if (orig.text === modified && (base === "" || base === "HEAD")) {
+        return (
+            <div
+                data-file-diff-same={abs}
+                className="flex h-full flex-col items-center justify-center gap-2 px-10 text-center"
+            >
+                <div className="text-[13px] font-semibold text-ink-hi">No change since the last commit</div>
+                <div className="text-[12px] leading-[1.5] text-ink-mid">
+                    The change may already be committed: Open in Diff shows the commits.
+                </div>
+            </div>
+        );
+    }
     return (
         <div data-file-diff={abs} className="min-h-0 flex-1">
             <Suspense fallback={null}>

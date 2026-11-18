@@ -387,6 +387,19 @@ export function turnFileAbs(path: string, cwd: string | null | undefined): strin
     return `${cwd.replace(/[\\/]+$/, "")}${sep}${path.replace(/^\.[\\/]/, "")}`;
 }
 
+/** Pure: what a turn's file opens its Diff against: the last commit, read by git from the file's own folder, so a file in
+ *  a worktree under the agent's directory (`.worktrees/x/a.ts`, another work tree of the repo) is measured in that tree.
+ *  Null for a path with no folder in it. */
+export function turnFileDiff(abs: string): { cwd: string; rel: string; base: string } | null {
+    const cut = Math.max(abs.lastIndexOf("/"), abs.lastIndexOf("\\"));
+    if (cut <= 0 || cut === abs.length - 1) {
+        return null;
+    }
+    // a drive root keeps its separator: `C:` alone is the drive's current folder, not its root
+    const dir = /^[a-z]:$/i.test(abs.slice(0, cut)) ? abs.slice(0, cut + 1) : abs.slice(0, cut);
+    return { cwd: dir, rel: abs.slice(cut + 1), base: "" };
+}
+
 /** Pure: where a file the agent edited on another machine may be here, longest guess first. A session started on Windows
  *  and resumed on a Mac (or the other way) keeps the other machine's absolute paths in its transcript (`d:\proj\a\b.html`),
  *  which this machine cannot open; the project is the agent's directory here, under another name and parent, so each tail
