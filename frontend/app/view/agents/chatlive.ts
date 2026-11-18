@@ -10,6 +10,7 @@
 // closes: its body names a file that is not whole yet), and a highlight mark still open is dropped until it closes.
 
 import { parseMarks } from "../../../../claude/skim-mod/hooks/highlight-core";
+import type { AgentState } from "./agentsviewmodel";
 import type { AgentPart, ChatItem } from "./chatmodel";
 import type { PendingMessage } from "./chatpending";
 import { REVIEW_LANG, splitReviewBlocks } from "./chatverdict";
@@ -110,6 +111,16 @@ export function narratesThinking(lines: readonly string[]): boolean {
  *  lands, so the reply waits for it rather than draw above it. */
 export function awaitsOwnMessage(pending: readonly PendingMessage[]): boolean {
     return pending.some((p) => p.kind == null && !p.queued);
+}
+
+/** Pure: whether the conversation's last turn is the one under way (`active`: its last stretch open, its files card
+ *  held back) and whether its tools run (`working`). While a message you sent an idle agent has not landed
+ *  (awaitsOwnMessage), the agent already works on it but the last turn drawn is the one before, which is over: drawn
+ *  as live, its files card folded away at the send and opened again as the message landed (up to 3 s later). A message
+ *  queued while the agent worked leaves the last turn live. */
+export function liveTurn(state: AgentState, pending: readonly PendingMessage[]): { active: boolean; working: boolean } {
+    const before = awaitsOwnMessage(pending);
+    return { active: state !== "idle" && !before, working: state === "working" && !before };
 }
 
 const FENCE = /^\s*(`{3,}|~{3,})\s*([^\s`]*)/;

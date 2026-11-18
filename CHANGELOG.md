@@ -78,6 +78,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- Sending a message in Chat no longer folds away the last turn's "Edited N files" card and opens it again a moment
+  later: the conversation stays still until your message lands.
 - A run's line in a narrow Agent tree says its stage again ("Working · 0/5", "Planning · 0/5") whenever there is room
   for the word whole; it is left out only when it truly does not fit, instead of below a fixed 240 px.
 - In focus read, ↑ and ↓ step one block like K and J instead of scrolling a little and jumping back.

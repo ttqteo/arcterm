@@ -64,7 +64,7 @@ import { ChatHandoffCard } from "./chathandoffcard";
 import { holdSwitchLine } from "./chatinitiativestore";
 import { submitIntoChatBox } from "./chatinsert";
 import { CHAT_JUMP_KEYS, registerChatJump } from "./chatjump";
-import { awaitsOwnMessage, narratesThinking, streamsLiveReply } from "./chatlive";
+import { awaitsOwnMessage, liveTurn, narratesThinking, streamsLiveReply } from "./chatlive";
 import { liveReplyAtom, startLiveReplyStream, stopLiveReplyStream } from "./chatlivestore";
 import { ChatLocalCard } from "./chatlocalcards";
 import { closeLocalCard, showLocalCard, useLocalCards } from "./chatlocalstore";
@@ -791,6 +791,8 @@ function ChatPaneBody({ model, agent, barred }: { model: AgentsViewModel; agent:
     // after it), and with its thinking blocks only where the session narrates in them
     const narrates = useMemo(() => (lines != null ? narratesThinking(lines) : false), [lines]);
     const awaitsOwn = awaitsOwnMessage(pending);
+    // the last turn drawn is over while that message is on its way, so its files card stays put through the send
+    const lastTurn = liveTurn(agent.state, pending);
     // the cards Chat drew for a bare /usage, /tasks… (chatlocal.ts)
     const localCards = useLocalCards(agent.id);
     // a queued message's Send now: Claude Code's own send-now chord in the agent's terminal, which sends every queued
@@ -1002,8 +1004,8 @@ function ChatPaneBody({ model, agent, barred }: { model: AgentsViewModel; agent:
                                     liveReply={liveStreams && !awaitsOwn ? liveReplyAtom(streamId) : undefined}
                                     liveNarrates={narrates}
                                     placeId={placeId}
-                                    active={agent.state !== "idle"}
-                                    working={agent.state === "working"}
+                                    active={lastTurn.active}
+                                    working={lastTurn.working}
                                     onLoadEarlier={hasEarlier ? () => void loadEarlier() : undefined}
                                     onOpenTerminal={asleep ? undefined : () => setChatMode(agent.id, "terminal")}
                                     brainstorm={{
