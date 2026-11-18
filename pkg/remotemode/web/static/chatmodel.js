@@ -252,7 +252,7 @@ function ageOf(agent, now) {
 
 const withAge = (word, age, sep = " ") => (age ? `${word}${sep}${age}` : word);
 
-/** A Handed over row's state chip. */
+/** An agent row's state chip (Handed over and Agents): the list holds live agents only, so there is no "exited". */
 export function rowStateLabel(agent, now) {
     switch (agent.state) {
         case "permission":
@@ -261,8 +261,6 @@ export function rowStateLabel(agent, now) {
             return "needs input";
         case "asking":
             return "asking you";
-        case "ended":
-            return "exited";
         default:
             return withAge(agent.state, ageOf(agent, now));
     }

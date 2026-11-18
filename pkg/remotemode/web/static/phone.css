@@ -599,22 +599,25 @@ input {
     border-radius: 9999px;
     background: currentColor;
 }
+/* the dot on an agent row's left, coloured by the state; it sits above the [data-state] rules so they recolour it */
+.lead-dot {
+    width: 8px;
+    height: 8px;
+    flex: none;
+    border-radius: 9999px;
+    background: currentColor;
+    color: var(--color-warning);
+}
 [data-state="working"] {
     color: var(--color-success);
 }
 [data-state="idle"] {
     color: var(--color-muted);
 }
-[data-state="idle"] .state-dot {
+[data-state="idle"] .state-dot,
+.lead-dot[data-state="idle"] {
     background: none;
     border: 1.5px solid currentColor;
-}
-[data-state="ended"] {
-    color: var(--color-muted);
-}
-[data-state="ended"] .state-dot {
-    background: none;
-    border: 1.5px dashed currentColor;
 }
 
 /* a handed-over agent in the list */
@@ -631,9 +634,97 @@ input {
     text-align: left;
     cursor: pointer;
 }
-/* an agent the phone only shows, under Agents */
-.agent-row.listed {
+/* an agent the phone cannot take (a codex, agy or opencode session, one with no terminal): shown, muted, not tappable */
+.agent-row.untakeable {
+    background: transparent;
+    border-color: var(--color-border);
     cursor: default;
+}
+.untakeable .meta-agent {
+    color: var(--color-muted);
+}
+.untakeable .agent-line {
+    color: var(--color-ink-mid);
+}
+/* what a tap on a takeable row answered: still going, or why it was refused */
+.take-note,
+.take-error {
+    font-size: 12.5px;
+    line-height: 1.4;
+    overflow-wrap: anywhere;
+}
+.take-note {
+    color: var(--color-ink-mid);
+}
+.take-error {
+    color: var(--color-error);
+}
+.agent-row[aria-busy="true"] {
+    cursor: progress;
+}
+
+/* a run: one row, its workers under it when opened */
+.run {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+/* a run's name is its goal, a sentence: sans, and it wraps rather than cutting at the chip */
+.run-name {
+    min-width: 0;
+    font-family: var(--font-sans);
+    font-size: 14px;
+    font-weight: 600;
+    line-height: 1.35;
+    color: var(--color-primary);
+    white-space: normal;
+    overflow-wrap: anywhere;
+}
+.run-need {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    flex: none;
+    margin-left: auto;
+    padding: 2px 7px;
+    border-radius: 5px;
+    background: var(--color-askingbg);
+    color: var(--color-warning);
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    font-weight: 700;
+    white-space: nowrap;
+}
+.run-row .agent-line-row svg {
+    transition: transform 0.15s ease;
+}
+.run-row[aria-expanded="true"] .agent-line-row svg {
+    transform: rotate(180deg);
+}
+.run-workers {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-left: 12px;
+    padding: 2px 0 2px 12px;
+    border-left: 2px solid var(--color-edge-mid);
+}
+.run-worker {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    font-size: 12.5px;
+    line-height: 1.4;
+    color: var(--color-ink-hi);
+    overflow-wrap: anywhere;
+}
+.run-worker .lead-dot {
+    margin-top: 5px;
+}
+
+/* Computer: under the last section, one section like the others; in the empty view it follows the blank text */
+.main-blank .section {
+    margin-top: 16px;
 }
 
 .agent-line-row {

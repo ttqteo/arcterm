@@ -18,6 +18,20 @@ const RECOMMENDED_SUFFIX = /\s*\(recommended\)\s*$/i;
 
 const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
 
+// the states of an agent that waits on the owner and that the owner can only clear at the desk or by
+// approving: an asking agent is counted through its question instead
+const NEEDS_YOU_STATES = new Set(["permission", "input"]);
+
+// A run's counts line reads what is running first, then what waits, idle last ("3 working · 1 needs
+// approval"). Each entry words one state for a count.
+const COUNT_WORDS = {
+    working: () => "working",
+    asking: () => "asking",
+    permission: (n) => (n === 1 ? "needs approval" : "need approval"),
+    input: (n) => (n === 1 ? "needs input" : "need input"),
+    idle: () => "idle",
+};
+
 /** Which view the list draws: a failed fetch is unreachable whatever was shown before. */
 export function viewState(list, error) {
     if (error) {
@@ -28,8 +42,85 @@ export function viewState(list, error) {
         ((list.questions ?? []).length === 0 &&
             (list.handed ?? []).length === 0 &&
             (list.shown ?? []).length === 0 &&
+            (list.runs ?? []).length === 0 &&
             listedAgents(list).length === 0);
     return empty ? "empty" : "main";
+}
+
+/**
+ * How many things need the owner: the open questions, the shown attention items, and every agent that needs
+ * approval or input, counted once per tab. The agents come from Handed over, the listed agents (which repeat
+ * the handed ones) and every run's workers. An asking agent is counted through its question, not again.
+ */
+export function needYouCount(list) {
+    const tabs = new Set();
+    const note = (a) => {
+        if (NEEDS_YOU_STATES.has(a?.state)) {
+            tabs.add(a.tab);
+        }
+    };
+    (list?.handed ?? []).forEach(note);
+    (list?.agents ?? []).forEach(note);
+    for (const run of list?.runs ?? []) {
+        (run.workers ?? []).forEach(note);
+    }
+    return (list?.questions ?? []).length + (list?.shown ?? []).length + tabs.size;
+}
+
+/** The header's title: "2 need you", "1 needs you" or "Nothing waits on you". */
+export function needYouTitle(list) {
+    const n = needYouCount(list);
+    if (n === 0) {
+        return "Nothing waits on you";
+    }
+    return n === 1 ? "1 needs you" : `${n} need you`;
+}
+
+/** An agent's project, only when it differs from its name (an agent's default name is its project). */
+export function agentProject(agent) {
+    const project = (agent?.project ?? "").trim();
+    const name = (agent?.name ?? "").trim();
+    return project && project.toLowerCase() !== name.toLowerCase() ? project : "";
+}
+
+/** A run row's counts line from its workers' states, e.g. "3 working · 1 needs approval". */
+export function runCounts(run) {
+    const counts = new Map();
+    for (const w of run?.workers ?? []) {
+        counts.set(w.state, (counts.get(w.state) ?? 0) + 1);
+    }
+    const known = Object.keys(COUNT_WORDS).filter((s) => counts.has(s));
+    const other = [...counts.keys()].filter((s) => !Object.hasOwn(COUNT_WORDS, s));
+    return [...known, ...other]
+        .map((s) => {
+            const n = counts.get(s);
+            return `${n} ${Object.hasOwn(COUNT_WORDS, s) ? COUNT_WORDS[s](n) : s}`;
+        })
+        .join(" · ");
+}
+
+/** A run worker's line under its run: its label and what it is doing. */
+export function runWorkerText(worker) {
+    return [worker?.label, worker?.line].filter(Boolean).join(" · ");
+}
+
+/**
+ * Why a phone post failed, in words: the server's own reason when it sent one, else what happened. A null
+ * status is no answer at all, 0 a redirect to the login (an expired access session).
+ */
+export function failReason(status, reason) {
+    if (reason) {
+        return reason;
+    }
+    if (status == null) {
+        return "arcterm is not reachable";
+    }
+    return status === 0 ? "the login expired, reload the page" : `arcterm answered ${status}`;
+}
+
+/** The line under an agent row whose take was refused or failed. Only a 409 carries a reason worth quoting. */
+export function takeNotice(status, reason) {
+    return `Not taken: ${failReason(status, status === 409 ? reason : "")}`;
 }
 
 /** The Agents section's rows: every agent the server lists but the ones already under Handed over. */

@@ -5,19 +5,28 @@
 import { openChat } from "./chat.js";
 import { chatTab, rowStateLabel } from "./chatmodel.js";
 import {
+    agentProject,
     answerText,
     base64UrlToBytes,
     buildAnswers,
     countsLine,
+    failReason,
     formatAge,
     listedAgents,
+    needYouTitle,
     optionCountLine,
+    runCounts,
+    runWorkerText,
     shownWord,
     splitRecommended,
+    takeNotice,
     viewState,
 } from "./model.js";
 
 const REFRESH_MS = 10 * 1000;
+// Leaving a chat waits for its release post so the list never reads the agent as still handed. The chat bounds
+// its own wait to about 2 s; this is the page's backstop, so the list can never wait longer than that.
+const LEAVE_WAIT_MS = 3 * 1000;
 const LAST_REACHED_KEY = "arc-remote.lastReached";
 // an expired access session turns api calls into a redirect to the login; one reload per window sends the
 // page through it without looping when the login itself keeps failing
@@ -31,6 +40,7 @@ const ICON_CHEVRON_LEFT = '<path d="M15 6l-6 6 6 6"></path>';
 const ICON_PAUSE = '<path d="M8 5v14M16 5v14"></path>';
 const ICON_DESK = '<rect x="3" y="4" width="18" height="12" rx="2"></rect><path d="M8 20h8M12 16v4"></path>';
 const ICON_CHECK = '<path d="M5 12l5 5 9-10"></path>';
+const ICON_CHEVRON_DOWN = '<path d="M6 9l6 6 6-6"></path>';
 
 const app = document.getElementById("app");
 const state = {
@@ -45,8 +55,18 @@ const state = {
     subscribing: false,
     subscribed: false,
     chat: null, // { tab, close } while a chat is open
+    // how many chats are being left: their release posts are still going, so a list drawn now could read the
+    // agent as handed over; render() waits for the count to reach zero
+    leaving: 0,
+    // which view render() drew last (null while a chat holds the page), so a redraw of the same view keeps its scroll
+    drawn: null,
     // keys of shown rows whose reason the owner expanded; the 10s refresh redraws every row
     expanded: new Set(),
+    // the 10s refresh redraws every row, so what a row shows lives here, not in its element:
+    taking: new Set(), // tabs whose take is in flight
+    takeErrors: new Map(), // tab -> "Not taken: <reason>", until that row's next take
+    openRuns: new Set(), // keys of the run rows the owner opened
+    pcError: "", // what the last Computer press answered when it was not 200
 };
 
 function h(tag, props, ...children) {
@@ -104,6 +124,15 @@ async function post(path, body) {
     });
 }
 
+// one string field of an answer's JSON body, "" when the body is not JSON or lacks it
+async function bodyField(res, field) {
+    try {
+        return (await res.json())[field] ?? "";
+    } catch {
+        return "";
+    }
+}
+
 function reloadForLogin() {
     const last = Number(sessionStorage.getItem(LOGIN_RELOAD_KEY) ?? 0);
     if (Date.now() - last < LOGIN_RELOAD_GAP_MS) {
@@ -139,6 +168,13 @@ async function refresh() {
     state.loaded = true;
     state.list = list;
     state.error = error;
+    // a refused take stays only on a row that is still listed
+    const listed = new Set((list?.agents ?? []).map((a) => a.tab));
+    for (const tab of state.takeErrors.keys()) {
+        if (list && !listed.has(tab)) {
+            state.takeErrors.delete(tab);
+        }
+    }
     // an open answer keeps its picks and typing, and a chat draws from its own stream; the list redraws
     // when the owner goes back to it
     if (!state.answering && !state.sent && !state.chat) {
@@ -162,7 +198,7 @@ function listHeader(sub) {
         h(
             "div",
             { class: "head-row" },
-            h("h1", null, "Waiting on you"),
+            h("h1", null, needYouTitle(state.list)),
             h("span", { class: "chip chip-on" }, h("span", { class: "chip-dot" }), "Remote on")
         ),
         h("div", { class: "head-sub" }, sub)
@@ -266,6 +302,29 @@ function metaRow(q) {
     );
 }
 
+// the dot on an agent row's left: coloured by what the agent is doing, not by its runtime
+function leadDot(agentState) {
+    return h("span", { class: "lead-dot", "data-state": agentState, "aria-hidden": "true" });
+}
+
+// the first line of an agent row: state dot, name, the project when it differs, and the state chip
+function agentMeta(a) {
+    const project = agentProject(a);
+    return h(
+        "span",
+        { class: "meta" },
+        leadDot(a.state),
+        h("span", { class: "meta-agent" }, a.name || a.tab),
+        project ? h("span", { class: "meta-project" }, project) : null,
+        h(
+            "span",
+            { class: "state-chip", "data-state": a.state },
+            h("span", { class: "state-dot", "aria-hidden": "true" }),
+            rowStateLabel(a, Date.now())
+        )
+    );
+}
+
 function handedRow(a) {
     return h(
         "button",
@@ -277,42 +336,163 @@ function handedRow(a) {
                 location.hash = `#agent/${encodeURIComponent(a.tab)}`;
             },
         },
-        h(
-            "span",
-            { class: "meta" },
-            h("span", { class: "rt-dot", "data-rt": a.runtime || "none", "aria-hidden": "true" }),
-            h("span", { class: "meta-agent" }, a.name),
-            a.project ? h("span", { class: "meta-project" }, a.project) : null,
-            h(
-                "span",
-                { class: "state-chip", "data-state": a.state },
-                h("span", { class: "state-dot", "aria-hidden": "true" }),
-                rowStateLabel(a, Date.now())
-            )
-        ),
+        agentMeta(a),
         h("span", { class: "agent-line-row" }, h("span", { class: "agent-line" }, a.line), icon(ICON_CHEVRON_RIGHT, 14))
     );
 }
 
-// an agent the phone only shows: no chat, since only a handed-over agent takes input from the phone
-function listedRow(a) {
+// An agent in the Agents list. One the phone can take is a button that takes it and opens its chat; one it
+// cannot (a codex, agy or opencode session, an agent with no terminal) is a muted row, shown for the glance.
+function agentRow(a) {
+    if (!a.takeable) {
+        return h(
+            "div",
+            { class: "agent-row untakeable", "data-agent-row": a.tab, "data-untakeable": true },
+            agentMeta(a),
+            a.line ? h("span", { class: "agent-line" }, a.line) : null
+        );
+    }
+    const taking = state.taking.has(a.tab);
+    const refused = state.takeErrors.get(a.tab);
     return h(
-        "div",
-        { class: "agent-row listed", "data-agent-row": a.tab },
+        "button",
+        {
+            type: "button",
+            class: "agent-row",
+            "data-agent-row": a.tab,
+            "aria-busy": taking ? "true" : null,
+            onclick: () => takeAgent(a.tab),
+        },
+        agentMeta(a),
         h(
             "span",
-            { class: "meta" },
-            h("span", { class: "rt-dot", "data-rt": a.runtime || "none", "aria-hidden": "true" }),
-            h("span", { class: "meta-agent" }, a.name || a.tab),
-            a.project ? h("span", { class: "meta-project" }, a.project) : null,
+            { class: "agent-line-row" },
+            h("span", { class: "agent-line" }, a.line),
+            icon(ICON_CHEVRON_RIGHT, 14)
+        ),
+        taking ? h("span", { class: "take-note" }, "Taking…") : null,
+        refused ? h("span", { class: "take-error", "data-take-error": true }, refused) : null
+    );
+}
+
+// A tap takes the agent at once: on 200 its chat opens as a handed-over agent's does; on a refusal the row
+// says why and stays listed.
+async function takeAgent(tab) {
+    if (state.taking.has(tab)) {
+        return;
+    }
+    state.taking.add(tab);
+    state.takeErrors.delete(tab);
+    render();
+    let res = null;
+    try {
+        res = await post(`/api/agents/${encodeURIComponent(tab)}/hand`, {});
+    } catch {
+        // arcterm did not answer: takeNotice says so below
+    }
+    const reason = res?.status === 409 ? await bodyField(res, "reason") : "";
+    state.taking.delete(tab);
+    if (res?.ok) {
+        location.hash = `#agent/${encodeURIComponent(tab)}`;
+        return;
+    }
+    state.takeErrors.set(tab, takeNotice(res ? res.status : null, reason));
+    render();
+}
+
+// One row per run with a live worker: its name, its workers' counts and, when one of them needs the owner, a
+// chip sending the owner to the desk. A tap opens the workers under it, read-only: a worker cannot be taken.
+function runRow(run) {
+    const open = state.openRuns.has(run.key);
+    const toggle = () => {
+        if (open) {
+            state.openRuns.delete(run.key);
+        } else {
+            state.openRuns.add(run.key);
+        }
+        render();
+    };
+    return h(
+        "div",
+        { class: "run" },
+        h(
+            "button",
+            {
+                type: "button",
+                class: "agent-row run-row",
+                "data-run-row": run.key,
+                "aria-expanded": open ? "true" : "false",
+                onclick: toggle,
+            },
             h(
                 "span",
-                { class: "state-chip", "data-state": a.state },
-                h("span", { class: "state-dot", "aria-hidden": "true" }),
-                rowStateLabel(a, Date.now())
+                { class: "meta" },
+                h("span", { class: "meta-agent run-name" }, run.name || run.key),
+                run.needsyou
+                    ? h(
+                          "span",
+                          { class: "run-need", "data-run-needs": true },
+                          icon(ICON_DESK, 11, 2),
+                          "Needs you at the desk"
+                      )
+                    : null
+            ),
+            h(
+                "span",
+                { class: "agent-line-row" },
+                h("span", { class: "agent-line" }, runCounts(run)),
+                icon(ICON_CHEVRON_DOWN, 14)
             )
         ),
-        a.line ? h("span", { class: "agent-line" }, a.line) : null
+        open
+            ? h(
+                  "div",
+                  { class: "run-workers" },
+                  (run.workers ?? []).map((w) =>
+                      h("div", { class: "run-worker", "data-run-worker": w.tab }, leadDot(w.state), runWorkerText(w))
+                  )
+              )
+            : null
+    );
+}
+
+// Computer: lock it and nudge its volume. One press is one request; only a refusal or a failure draws, so a
+// run of volume taps does not rebuild the buttons under the finger.
+async function pcPress(path, body) {
+    let error = "";
+    try {
+        const res = await post(path, body);
+        if (!res.ok) {
+            error = failReason(res.status, await bodyField(res, "error"));
+        }
+    } catch {
+        error = failReason(null, "");
+    }
+    if (error !== state.pcError) {
+        state.pcError = error;
+        render();
+    }
+}
+
+function pcSection() {
+    if (!state.list?.pc) {
+        return null;
+    }
+    const button = (key, label, path, body) =>
+        h("button", { type: "button", class: "btn", "data-pc": key, onclick: () => pcPress(path, body) }, label);
+    return h(
+        "section",
+        { class: "section", "aria-label": "Computer" },
+        h("h2", null, "Computer"),
+        button("lock", "Lock", "/api/pc/lock", {}),
+        h(
+            "div",
+            { class: "btn-row" },
+            button("down", "Volume down", "/api/pc/volume", { step: "down" }),
+            button("mute", "Mute", "/api/pc/volume", { step: "mute" }),
+            button("up", "Volume up", "/api/pc/volume", { step: "up" })
+        ),
+        state.pcError ? h("div", { class: "send-error", role: "alert", "data-pc-error": true }, state.pcError) : null
     );
 }
 
@@ -437,6 +617,7 @@ function mainView() {
     const handed = state.list.handed ?? [];
     const shown = state.list.shown ?? [];
     const agents = listedAgents(state.list);
+    const runs = state.list.runs ?? [];
     const allHeld = shown.every((s) => s.kind === HELD_KIND);
     return [
         listHeader(countsLine(state.list)),
@@ -474,9 +655,13 @@ function mainView() {
                       "section",
                       { class: "section", "aria-label": "Agents" },
                       h("h2", null, "Agents"),
-                      agents.map(listedRow)
+                      agents.map(agentRow)
                   )
                 : null,
+            runs.length
+                ? h("section", { class: "section", "aria-label": "Runs" }, h("h2", null, "Runs"), runs.map(runRow))
+                : null,
+            pcSection(),
             offFooter(true)
         ),
     ];
@@ -491,7 +676,8 @@ function emptyView() {
             noticeLine(),
             h("div", { class: "blank-title" }, "Nothing is waiting on you."),
             h("div", { class: "blank-text" }, "Your phone buzzes when one asks you something or a run is held."),
-            notificationsButton()
+            notificationsButton(),
+            pcSection()
         ),
         offFooter(),
     ];
@@ -724,42 +910,78 @@ function sentView() {
 }
 
 function render() {
-    if (!state.loaded || state.chat) {
+    // while a chat is open it draws itself, and while one is being left its release is still in flight
+    if (!state.loaded || state.chat || state.leaving > 0) {
         return;
     }
+    let kind;
     let view;
     if (state.sent) {
+        kind = "sent";
         view = sentView();
     } else if (state.answering) {
+        kind = "answer";
         view = answerView();
     } else {
-        const which = viewState(state.list, state.error);
-        view = which === "main" ? mainView() : which === "empty" ? emptyView() : unreachableView();
+        kind = viewState(state.list, state.error);
+        view = kind === "main" ? mainView() : kind === "empty" ? emptyView() : unreachableView();
     }
+    // a redraw of the same view (the 10s refresh, a run row opening) keeps the scroll position
+    const scroll = kind === state.drawn ? (app.querySelector(".main")?.scrollTop ?? 0) : 0;
     app.replaceChildren(...view);
+    const main = app.querySelector(".main");
+    if (main && scroll) {
+        main.scrollTop = scroll;
+    }
+    state.drawn = kind;
     hideNeedlessToggles();
 }
 
 // the chat lives in the hash, so a reload or a push tap keeps it
-function route() {
+async function route() {
     const tab = chatTab(location.hash);
     if ((state.chat?.tab ?? null) === tab) {
         return;
     }
-    state.chat?.close();
+    const left = state.chat;
     state.chat = null;
+    state.drawn = null;
+    // close() stops the stream at once and returns a Promise that settles when the release post is done
+    const released = left ? closeChat(left) : null;
     if (tab) {
-        const initial = (state.list?.handed ?? []).find((a) => a.tab === tab) ?? null;
+        const handed = state.list?.handed ?? [];
+        const initial =
+            handed.find((a) => a.tab === tab) ?? (state.list?.agents ?? []).find((a) => a.tab === tab) ?? null;
         state.chat = { tab, close: openChat(app, tab, { h, icon, post, initial, onBack: leaveChat }) };
+        return;
+    }
+    if (released) {
+        // the list must not read the agent as still handed, so it draws after the release, but never after
+        // the backstop
+        state.leaving += 1;
+        await Promise.race([released, new Promise((resolve) => setTimeout(resolve, LEAVE_WAIT_MS))]);
+        state.leaving -= 1;
+    }
+    // another route took the page while the release was going
+    if (state.chat) {
         return;
     }
     render();
     refresh();
 }
 
+// close() settles whether or not the release worked: a failure is the chat's to log, not the list's to wait on
+async function closeChat(chat) {
+    try {
+        await chat.close();
+    } catch (e) {
+        console.warn("arc remote: leaving the chat", e);
+    }
+}
+
 function leaveChat() {
     history.replaceState(null, "", location.pathname + location.search);
-    route();
+    return route();
 }
 
 if ("serviceWorker" in navigator) {

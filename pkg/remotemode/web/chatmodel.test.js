@@ -344,8 +344,8 @@ describe("state labels", () => {
         expect(headerStateLabel(agent("idle", { since: 0 }), NOW)).toBe("idle");
     });
 
-    it("reads an exited session as exited, with no age", () => {
-        expect(rowStateLabel(agent("ended"), NOW)).toBe("exited");
+    it("has no exited label: the list holds live agents only", () => {
+        expect(rowStateLabel(agent("ended", { since: NOW - 2 * MIN }), NOW)).not.toMatch(/exited/);
     });
 });
 
