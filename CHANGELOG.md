@@ -31,6 +31,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Added
 
+- Chat's message box draws a `>` quote (slanted, with a bar beside it) and `inline code` as you type them, as the sent
+  message shows them. A pasted stack trace, log or block of code goes in wrapped in a ``` code block; Ctrl+Z takes the
+  wrapping away and keeps the paste.
 - When an agent's work is done (its last turn committed and you have read it), the suggested replies over Chat's box end
   with "close agent", which closes it as the header's ✓ Close does.
 - A shell command in a Chat reply (a `bash`, `sh` or `powershell` block) has a Run button: it opens a terminal in the
