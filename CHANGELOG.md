@@ -67,6 +67,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- A run's final stage shows its commands' output in colour, as a terminal would: a test that passed has a green ✓
+  (or `ok`), one that failed is red, warnings yellow, skips and each test's time dimmed. Output that comes with its own
+  colours keeps them.
 - An agent's run link (a worker's ↑ way back to its lead, a lead's own run, the runs a session started) sits on the line
   under its name, after the project, so a long name no longer gets cut to make room for it.
 - A long message of yours folded behind Show more opens with a click anywhere on its bubble; once open, only Show less
