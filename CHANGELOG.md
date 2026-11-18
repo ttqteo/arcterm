@@ -31,8 +31,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Added
 
-- **Your phone as a remote for arcterm**: with your own Cloudflare tunnel set up in Settings → Remote (or
-  `wsh remote setup`), an installed web app on your phone lists what waits on you, pushes a notification when an agent
+- **Your phone as a remote for arcterm**: through Tailscale (no domain needed) or your own Cloudflare tunnel, set up in
+  Settings → Remote (or `wsh remote setup`), an installed web app on your phone lists what waits on you, pushes a notification when an agent
   asks, and answers its questions. Hand a Claude or pi agent to the phone (`p`, or More → Hand to phone) to read its
   transcript, send the next prompt, stop a turn and approve a permission prompt from the phone. It runs only while you
   turn it on; a Remote chip in the footer shows it. <!-- big -->

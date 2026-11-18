@@ -2277,6 +2277,7 @@ declare global {
 
     // wshrpc.CommandRemoteSetupData
     type CommandRemoteSetupData = {
+        provider?: string;
         tunneltoken: string;
         team: string;
         aud: string;
@@ -4443,6 +4444,7 @@ declare global {
     // wshrpc.RemoteStatusData
     type RemoteStatusData = {
         on: boolean;
+        provider?: string;
         missing?: string[];
         team?: string;
         aud?: string;
@@ -4453,6 +4455,7 @@ declare global {
         tunnelerror?: string;
         subscriptions: number;
         cloudflaredmissing?: boolean;
+        tailscalemissing?: boolean;
         handed?: string[];
     };
 

@@ -35,7 +35,7 @@ const (
 	remoteMinPort = 1024
 	remoteMaxPort = 65535
 
-	// the phone listener is reached only through cloudflared on this machine
+	// the phone listener is reached only through cloudflared or tailscale serve on this machine
 	remoteHost = "127.0.0.1"
 
 	remoteWingetLine = "winget install --id Cloudflare.cloudflared"
@@ -59,6 +59,15 @@ var (
 	remoteFindCloudflared = FindCloudflared
 	remoteStartTunnel     = func(path, token string, onState func(state, lastErr string)) (remoteTunnel, error) {
 		t, err := StartTunnel(path, token, onState)
+		if err != nil {
+			return nil, err
+		}
+		return t, nil
+	}
+	remoteFindTailscale = FindTailscale
+	remoteReadTailscale = ReadTailscaleSelf
+	remoteStartServe    = func(path string, port int, onState func(state, lastErr string)) (remoteTunnel, error) {
+		t, err := StartServe(path, port, onState)
 		if err != nil {
 			return nil, err
 		}
@@ -107,8 +116,12 @@ func Setup(data wshrpc.CommandRemoteSetupData) (*wshrpc.RemoteStatusData, error)
 	if err := remoteValidateSetup(data); err != nil {
 		return nil, err
 	}
+	self, selfErr := remoteSetupTailscaleSelf(data)
 	err := remoteUpdateConfig(func(cfg *Config) error {
-		remoteApplySetup(cfg, data)
+		remoteApplySetup(cfg, data, self)
+		if missing := cfg.Missing(); cfg.ActiveProvider() == ProviderTailscale && len(missing) > 0 && selfErr != nil {
+			return fmt.Errorf("cannot read this machine's tailnet name and login: %w", selfErr)
+		}
 		if cfg.VapidPrivate != "" && cfg.VapidPublic != "" {
 			return nil
 		}
@@ -127,7 +140,37 @@ func Setup(data wshrpc.CommandRemoteSetupData) (*wshrpc.RemoteStatusData, error)
 	return Status(), nil
 }
 
+// remoteSetupTailscaleSelf reads this machine's tailnet name and login when the setup leaves tailscale
+// the provider; nil with no error otherwise. It runs before the config lock, since it waits on a child.
+func remoteSetupTailscaleSelf(data wshrpc.CommandRemoteSetupData) (*TailscaleSelf, error) {
+	provider := strings.TrimSpace(data.Provider)
+	if provider == "" {
+		cfg, err := LoadConfig()
+		if err != nil {
+			return nil, err
+		}
+		provider = cfg.ActiveProvider()
+	}
+	if provider != ProviderTailscale {
+		return nil, nil
+	}
+	path, err := remoteFindTailscale()
+	if err != nil {
+		return nil, err
+	}
+	self, err := remoteReadTailscale(path)
+	if err != nil {
+		return nil, err
+	}
+	return &self, nil
+}
+
 func remoteValidateSetup(data wshrpc.CommandRemoteSetupData) error {
+	switch strings.TrimSpace(data.Provider) {
+	case "", ProviderCloudflare, ProviderTailscale:
+	default:
+		return fmt.Errorf("provider must be %q or %q", ProviderCloudflare, ProviderTailscale)
+	}
 	if team := strings.TrimSpace(data.Team); team != "" && !remoteTeamRe.MatchString(team) {
 		return fmt.Errorf("team must be the bare team name, e.g. \"acme\" for acme.cloudflareaccess.com")
 	}
@@ -143,17 +186,33 @@ func remoteValidateSetup(data wshrpc.CommandRemoteSetupData) error {
 	return nil
 }
 
-func remoteApplySetup(cfg *Config, data wshrpc.CommandRemoteSetupData) {
+// remoteApplySetup: what the setup gives wins, then what is stored, then what tailscale reports (self,
+// nil unless tailscale is the provider), so a hand-set tailnet login is not overwritten by the next setup.
+func remoteApplySetup(cfg *Config, data wshrpc.CommandRemoteSetupData, self *TailscaleSelf) {
 	set := func(dst *string, v string) {
 		if v = strings.TrimSpace(v); v != "" {
 			*dst = v
 		}
 	}
+	set(&cfg.Provider, data.Provider)
 	set(&cfg.TunnelToken, data.TunnelToken)
 	set(&cfg.Team, data.Team)
 	set(&cfg.Aud, data.Aud)
-	set(&cfg.Email, data.Email)
-	set(&cfg.Hostname, strings.ToLower(data.Hostname))
+	if cfg.ActiveProvider() == ProviderTailscale {
+		set(&cfg.TSLogin, data.Email)
+		set(&cfg.TSHostname, strings.ToLower(data.Hostname))
+		if self != nil {
+			if cfg.TSLogin == "" {
+				cfg.TSLogin = self.Login
+			}
+			if cfg.TSHostname == "" {
+				cfg.TSHostname = self.Hostname
+			}
+		}
+	} else {
+		set(&cfg.Email, data.Email)
+		set(&cfg.Hostname, strings.ToLower(data.Hostname))
+	}
 	switch {
 	case data.Port != 0:
 		cfg.Port = data.Port
@@ -204,13 +263,19 @@ func Status() *wshrpc.RemoteStatusData {
 		st.TunnelError = err.Error()
 		return st
 	}
+	st.Provider = cfg.ActiveProvider()
 	st.Missing = cfg.Missing()
-	st.Team, st.Aud, st.Email = cfg.Team, cfg.Aud, cfg.Email
-	st.Hostname = cfg.Hostname
+	st.Team, st.Aud, st.Email = cfg.Team, cfg.Aud, cfg.Owner()
+	st.Hostname = cfg.Host()
 	st.Port = cfg.ListenPort()
 	st.Subscriptions = len(cfg.Subscriptions)
-	_, findErr := remoteFindCloudflared()
-	st.CloudflaredMissing = findErr != nil
+	if st.Provider == ProviderTailscale {
+		_, findErr := remoteFindTailscale()
+		st.TailscaleMissing = findErr != nil
+	} else {
+		_, findErr := remoteFindCloudflared()
+		st.CloudflaredMissing = findErr != nil
+	}
 	return st
 }
 
@@ -295,9 +360,9 @@ func remoteStartLocked() (err error) {
 	if missing := cfg.Missing(); len(missing) > 0 {
 		return fmt.Errorf("remote mode setup is incomplete, missing %s: run `wsh remote setup`", strings.Join(missing, ", "))
 	}
-	path, err := remoteFindCloudflared()
+	start, err := remoteTunnelStarter(cfg)
 	if err != nil {
-		return fmt.Errorf("remote mode needs cloudflared: install it with `%s`", remoteWingetLine)
+		return err
 	}
 	port := cfg.ListenPort()
 	addr := net.JoinHostPort(remoteHost, strconv.Itoa(port))
@@ -309,7 +374,7 @@ func remoteStartLocked() (err error) {
 	run := &remoteRun{cancel: cancel, ln: ln}
 	run.srv = &http.Server{Handler: NewHandler(remoteDeps(cfg, runCtx)), ReadHeaderTimeout: remoteReadHeaderTimeout}
 	go remoteServe(run.srv, ln)
-	run.tunnel, err = remoteStartTunnel(path, cfg.TunnelToken, remoteOnTunnelState)
+	run.tunnel, err = start()
 	if err != nil {
 		cancel()
 		run.srv.Close()
@@ -326,6 +391,27 @@ func remoteStartLocked() (err error) {
 	remoteOn = true
 	remoteStateMu.Unlock()
 	return nil
+}
+
+// remoteTunnelStarter finds the active provider's program before anything is built, so a missing one
+// leaves nothing to undo.
+func remoteTunnelStarter(cfg Config) (func() (remoteTunnel, error), error) {
+	if cfg.ActiveProvider() == ProviderTailscale {
+		path, err := remoteFindTailscale()
+		if err != nil {
+			return nil, fmt.Errorf("remote mode needs tailscale: %w", err)
+		}
+		return func() (remoteTunnel, error) {
+			return remoteStartServe(path, cfg.ListenPort(), remoteOnTunnelState)
+		}, nil
+	}
+	path, err := remoteFindCloudflared()
+	if err != nil {
+		return nil, fmt.Errorf("remote mode needs cloudflared: install it with `%s`", remoteWingetLine)
+	}
+	return func() (remoteTunnel, error) {
+		return remoteStartTunnel(path, cfg.TunnelToken, remoteOnTunnelState)
+	}, nil
 }
 
 func remoteStopLocked() {
@@ -369,11 +455,14 @@ func remoteSetTunnel(state, lastErr string) {
 }
 
 func remoteDeps(cfg Config, runCtx context.Context) Deps {
-	verifier := NewAccessVerifier(TeamCertsURL(cfg.Team), TeamIssuer(cfg.Team), cfg.Aud, cfg.Email, remoteAccessClient)
+	verify := tailnetVerify(cfg.TSLogin)
+	if cfg.ActiveProvider() == ProviderCloudflare {
+		verify = NewAccessVerifier(TeamCertsURL(cfg.Team), TeamIssuer(cfg.Team), cfg.Aud, cfg.Email, remoteAccessClient).Verify
+	}
 	return Deps{
 		Static:      web.FS,
-		Verify:      verifier.Verify,
-		Origin:      "https://" + cfg.Hostname,
+		Verify:      verify,
+		Origin:      "https://" + cfg.Host(),
 		VapidPublic: cfg.VapidPublic,
 		Waiting:     remoteWaitingList,
 		Answer:      remoteAnswer,

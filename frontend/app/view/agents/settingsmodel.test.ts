@@ -303,6 +303,7 @@ describe("settings pages", () => {
         ]);
         expect(cards["remote/remotemode"]).toEqual(["remote.mode", "remote.status"]);
         expect(cards["remote/remotesetup"]).toEqual([
+            "remote.provider", "remote.tshostname", "remote.tslogin",
             "remote.tunneltoken", "remote.hostname", "remote.port", "remote.team", "remote.aud", "remote.email",
         ]);
         expect(cards["appearance/theme"]).toEqual(["appearance.theme"]);
@@ -369,7 +370,7 @@ describe("settings pages", () => {
         // today's 60, the nine rows the reorganization added, the two compaction rows, the pet's stay row, Chat's fold
         // , the agent row's RAM, the pet's form and hologram size, and About's build commit, less the two Radar rows
         // that went with Radar, plus DUM-E's toggle, the agent header's three buttons and Remote's eight rows
-        expect(ids).toHaveLength(87 + RUNTIME_FLAGS.claude.length);
+        expect(ids).toHaveLength(90 + RUNTIME_FLAGS.claude.length);
     });
 
     it("finds moved rows by search", () => {

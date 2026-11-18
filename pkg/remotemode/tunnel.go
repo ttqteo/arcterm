@@ -9,6 +9,7 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -38,15 +39,70 @@ const (
 // package vars so tests can run the fake cloudflared through the test binary and shrink the backoff
 var (
 	tunnelArgs         = []string{"tunnel", "--no-autoupdate", "run"}
+	serveArgs          = []string{"serve", "--https=443"}
 	tunnelBackoffStart = time.Second
 	tunnelBackoffMax   = time.Minute
 	tunnelBackoffReset = 5 * time.Minute
 )
 
-// Tunnel supervises one cloudflared child, restarting it with a backoff until Stop.
+const (
+	// what `tailscale serve` prints in the foreground once the address is live, and the line it ends with
+	serveAvailableMarker = "Available within your tailnet"
+	serveCtrlCMarker     = "Press Ctrl+C to exit"
+	// a serve that tailscale has not enabled for the tailnet prints a link to enable it, then waits
+	serveEnableLink = "https://login.tailscale.com/"
+)
+
+// tunnelKind is what differs between the programs a Tunnel can supervise.
+type tunnelKind struct {
+	// name is the program as the log and the exit reasons name it
+	name string
+	args []string
+	env  []string
+	// secret is redacted from every logged line
+	secret string
+	isUp   func(line string) bool
+	isErr  func(line string) bool
+	// notice turns a line into a message reported while starting, "" for none
+	notice func(line string) string
+}
+
+func cloudflaredKind(token string) tunnelKind {
+	return tunnelKind{
+		name:   "cloudflared",
+		args:   tunnelArgs,
+		env:    []string{tunnelTokenEnv + "=" + token},
+		secret: token,
+		isUp:   func(line string) bool { return strings.Contains(line, tunnelRegisteredMarker) },
+		isErr:  tunnelIsErrLine,
+	}
+}
+
+// serveKind runs `tailscale serve` in the foreground, so the serve config lives only as long as the
+// child: tailscaled drops it when the CLI's session ends, which a kill ends too.
+func serveKind(port int) tunnelKind {
+	return tunnelKind{
+		name: "tailscale serve",
+		args: append(slices.Clone(serveArgs), fmt.Sprintf("http://127.0.0.1:%d", port)),
+		isUp: func(line string) bool {
+			return strings.Contains(line, serveAvailableMarker) || strings.Contains(line, serveCtrlCMarker)
+		},
+		// tailscale prints few lines, and the last one before an exit is the reason
+		isErr: func(string) bool { return true },
+		notice: func(line string) string {
+			if i := strings.Index(line, serveEnableLink); i >= 0 {
+				return "Serve is not enabled on your tailnet: enable it at " + strings.TrimSpace(line[i:])
+			}
+			return ""
+		},
+	}
+}
+
+// Tunnel supervises one tunnel child (cloudflared, or tailscale serve), restarting it with a backoff
+// until Stop.
 type Tunnel struct {
 	path    string
-	token   string
+	kind    tunnelKind
 	onState func(state, lastErr string)
 	stopCh  chan struct{}
 	done    chan struct{}
@@ -62,9 +118,19 @@ type Tunnel struct {
 // the arguments. onState calls never overlap; the last one, from Stop, is TunnelOff. An error means
 // the first launch failed and nothing is left running.
 func StartTunnel(path, token string, onState func(state, lastErr string)) (*Tunnel, error) {
+	return startTunnel(path, cloudflaredKind(token), onState)
+}
+
+// StartServe runs `<path> serve --https=443 http://127.0.0.1:<port>` in the foreground: the phone
+// listener on this tailnet's HTTPS address, reachable only by devices in the tailnet.
+func StartServe(path string, port int, onState func(state, lastErr string)) (*Tunnel, error) {
+	return startTunnel(path, serveKind(port), onState)
+}
+
+func startTunnel(path string, kind tunnelKind, onState func(state, lastErr string)) (*Tunnel, error) {
 	t := &Tunnel{
 		path:    path,
-		token:   token,
+		kind:    kind,
 		onState: onState,
 		stopCh:  make(chan struct{}),
 		done:    make(chan struct{}),
@@ -111,17 +177,17 @@ func (t *Tunnel) launch() (*tunnelOutput, error) {
 		return nil, nil
 	}
 	out := &tunnelOutput{tunnel: t}
-	cmd := exec.Command(t.path, tunnelArgs...)
-	cmd.Env = append(os.Environ(), tunnelTokenEnv+"="+t.token)
+	cmd := exec.Command(t.path, t.kind.args...)
+	cmd.Env = append(os.Environ(), t.kind.env...)
 	cmd.Stdout = out
 	cmd.Stderr = out
 	cmd.WaitDelay = tunnelWaitDelay
 	if err := cmd.Start(); err != nil {
-		return nil, fmt.Errorf("starting cloudflared: %w", err)
+		return nil, fmt.Errorf("starting %s: %w", t.kind.name, err)
 	}
 	job, err := jobobject.Attach(cmd.Process)
 	if err != nil {
-		log.Printf("remotemode: cloudflared pid %d has no job object, it may outlive Arc: %v", cmd.Process.Pid, err)
+		log.Printf("remotemode: %s pid %d has no job object, it may outlive Arc: %v", t.kind.name, cmd.Process.Pid, err)
 	}
 	t.cmd, t.job, out.cmd = cmd, job, cmd
 	return out, nil
@@ -175,9 +241,9 @@ func (t *Tunnel) wait(out *tunnelOutput) (string, time.Duration) {
 	case out.lastErr != "":
 		return out.lastErr, upFor
 	case err != nil:
-		return "cloudflared " + err.Error(), upFor
+		return t.kind.name + " " + err.Error(), upFor
 	default:
-		return "cloudflared exited", upFor
+		return t.kind.name + " exited", upFor
 	}
 }
 
@@ -188,10 +254,10 @@ func (t *Tunnel) isStopped() bool {
 }
 
 func (t *Tunnel) redact(line string) string {
-	if t.token == "" {
+	if t.kind.secret == "" {
 		return line
 	}
-	return strings.ReplaceAll(line, t.token, tunnelRedacted)
+	return strings.ReplaceAll(line, t.kind.secret, tunnelRedacted)
 }
 
 // tunnelNextBackoff returns the wait before the next restart, given the previous wait (0 for none)
@@ -241,11 +307,18 @@ func (o *tunnelOutput) line(raw string) {
 	if line == "" {
 		return
 	}
-	log.Printf("remotemode: cloudflared: %s", line)
-	if tunnelIsErrLine(line) {
+	kind := o.tunnel.kind
+	log.Printf("remotemode: %s: %s", kind.name, line)
+	if kind.isErr(line) {
 		o.lastErr = line
 	}
-	if o.upAt.IsZero() && strings.Contains(line, tunnelRegisteredMarker) {
+	if o.upAt.IsZero() && kind.notice != nil {
+		if msg := kind.notice(line); msg != "" {
+			o.lastErr = msg
+			o.tunnel.onState(TunnelStarting, msg)
+		}
+	}
+	if o.upAt.IsZero() && kind.isUp(line) {
 		o.upAt = time.Now()
 		o.tunnel.onState(TunnelUp, "")
 	}
