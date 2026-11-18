@@ -39,6 +39,7 @@ import {
 } from "motion/react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
 import { goalFromLines } from "../../../../claude/arc-mod/hooks/goal-core";
+import { confirmCloseSession } from "./agentactions";
 import { canStop } from "./agentcomposer";
 import { getProcExitAtom } from "./agentcontrollerstore";
 import { agentCwd } from "./agentcwd";
@@ -98,6 +99,7 @@ import { chatSkimOnAtom, refreshSkimMarks } from "./chatskimstore";
 import { SleepRunRows } from "./chatsleepbashrows";
 import {
     chatChips,
+    closeChip,
     endsWithQuestion,
     initiativeChips,
     lastReply,
@@ -113,6 +115,7 @@ import { withoutTakenBack } from "./chattakeback";
 import { noteTakenBack, useTakenBack } from "./chattakebackstore";
 import { VERDICT_TOPIC } from "./chatverdict";
 import { ChatVisualHost } from "./chatvisualview";
+import { doneSuggestion } from "./donesuggest";
 import { switchAgentChunk } from "./initiativebandstore";
 import { startTranscriptStream, stopTranscriptStream } from "./livetranscript";
 import { activityAtomFor } from "./livetranscriptatoms";
@@ -121,14 +124,16 @@ import { AgentPathLinks } from "./pathlinkcontext";
 import { PermissionCard } from "./permissioncard";
 import { projectsAtom } from "./projectsstore";
 import { useTranscriptWindow } from "./railtranscript";
-import { useBrainstormQueue } from "./runqueuestore";
+import { runQueueAtom, useBrainstormQueue } from "./runqueuestore";
 import { runtimeLogo } from "./runtimelogo";
 import { runtimeMeta } from "./runtimemeta";
 import { ScreenDialogCard } from "./screendialogcard";
 import { shipGitAtom } from "./shipstore";
 import { useStickToBottom } from "./sticktobottom";
-import { turnStats, type TurnStats } from "./transcriptprojection";
+import { backgroundTasksByIdAtom } from "./subagentsstore";
+import { runningBackgroundTasks, turnStats, type TurnStats } from "./transcriptprojection";
 import { TranscriptSkeleton } from "./transcriptskeleton";
+import { unreadAgentsAtom } from "./unreadagentsstore";
 import { useWaking } from "./wakingstore";
 import { WorkingGlyph } from "./workingglyph";
 
@@ -1053,6 +1058,15 @@ function ChatPaneBody({ model, agent, barred }: { model: AgentsViewModel; agent:
     };
     // a cell in a split shows the chips too, from the rules and from an answer already in
     const vi = writesVietnamese(recent);
+    // the agent looks finished, by the rule the header's ✓ Close and its sidebar row read (donesuggest.ts): the row
+    // offers to close it too, last
+    const done = doneSuggestion(
+        agent,
+        useAtomValue(unreadAgentsAtom).get(agent.id) ?? 0,
+        useAtomValue(model.lineageAtom).runs,
+        runningBackgroundTasks(useAtomValue(backgroundTasksByIdAtom)[agent.id]).length,
+        useAtomValue(runQueueAtom)
+    );
     const chips = wantsModelSuggest({ ...turnOpen, seen: true })
         ? chatChips({
               question,
@@ -1063,6 +1077,7 @@ function ChatPaneBody({ model, agent, barred }: { model: AgentsViewModel; agent:
                         ...initiativeChips(effort, agent.id, agent.committed === true, vi, turnEnded),
                     ],
               model: modelSuggest,
+              close: closeChip(done, vi),
           })
         : undefined;
 
@@ -1307,6 +1322,7 @@ function ChatPaneBody({ model, agent, barred }: { model: AgentsViewModel; agent:
                             onShowDiff={() => openDiff(model, agentDiffScope(agent.id, agent.name))}
                             chips={chips}
                             onMarkDone={markDone}
+                            onClose={() => confirmCloseSession(agent, model, "chat chip")}
                             onGoOn={goOn}
                             onSendNow={queuedShown ? sendNow : undefined}
                             questionWaits={questionWaits}
