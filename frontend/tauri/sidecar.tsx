@@ -210,16 +210,20 @@ function SidecarRoot() {
                 resourcesOpen={resourcesOpen}
                 onResources={wall ? undefined : toggleResources}
             />
-            {resourcesOpen && <SidecarResourcesPanel resources={heard?.snap.resources} onClose={closeResources} />}
-            {heard == null ? (
-                <div data-sidecar-waiting role="status" className="flex flex-1 items-center justify-center">
-                    <HudLabel className="text-[12px]">Waiting for arcterm…</HudLabel>
-                </div>
-            ) : layout === "small" ? (
-                <SidecarCompact snap={heard.snap} receivedAt={heard.at} clock={clock} send={send} />
-            ) : (
-                <SidecarOrbit snap={heard.snap} receivedAt={heard.at} clock={clock} send={send} />
-            )}
+            {/* the body under the bar: the small form's Resources view covers it as a tab would, while the dashboard stays
+                mounted under it (its alert frame, fixed over the whole window, keeps showing) */}
+            <div className="relative flex min-h-0 flex-1 flex-col">
+                {heard == null ? (
+                    <div data-sidecar-waiting role="status" className="flex flex-1 items-center justify-center">
+                        <HudLabel className="text-[12px]">Waiting for arcterm…</HudLabel>
+                    </div>
+                ) : layout === "small" ? (
+                    <SidecarCompact snap={heard.snap} receivedAt={heard.at} clock={clock} send={send} />
+                ) : (
+                    <SidecarOrbit snap={heard.snap} receivedAt={heard.at} clock={clock} send={send} />
+                )}
+                {resourcesOpen && <SidecarResourcesPanel resources={heard?.snap.resources} onClose={closeResources} />}
+            </div>
         </div>
     );
 }

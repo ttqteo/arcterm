@@ -3,18 +3,18 @@
 //
 // Sidecar's resources, Task Manager's way, in two frames from the same parts: on the wall a band across the bottom of the
 // dashboard (charts, arcterm's rows, the other apps, side by side); in the small form the title bar's machine figures,
-// clicked, drop a panel under the bar with the same parts stacked. Either shows the machine's CPU, RAM and GPU charts, then
+// clicked, switch the body under the bar to a view of the same parts stacked, as a tab does. Either shows the machine's CPU, RAM and GPU charts, then
 // what Sidecar itself, the rest of arcterm and each agent take, then the processes outside arcterm holding at least
 // 200 MB, from the snapshot's `resources` (sidecarresources.ts builds it in the main window). Each row leads with its
 // mark, as Task Manager's do: the arcterm mark, an agent's runtime logo, an app's own icon (pkg/resmon reads it from the
-// executable). Both wear the HUD skin (spec 2026-11-18-sidecar-hud-design.md): a `hud-panel` ground, corner brackets on a
-// box that does not scroll, `HudLabel` titles, circuit dividers, mono figures. It runs on the slim page: only the types,
+// executable). Both wear the HUD skin (spec 2026-11-18-sidecar-hud-design.md): the band a `hud-panel` ground with corner
+// brackets, the small form's view the window's own ground, `HudLabel` titles, circuit dividers, mono figures. It runs on the slim page: only the types,
 // the pure models and React.
 
 import { ArctermMark } from "@/app/element/arctermmark";
 import { runtimeLogo } from "@/app/view/agents/runtimelogo";
 import { cn } from "@/util/util";
-import { useEffect, useRef, type ReactNode } from "react";
+import { useEffect, type ReactNode } from "react";
 import { HudBrackets, HudDivider, HudLabel } from "./sidecarhud";
 import { SidecarResourceCharts } from "./sidecarresourcecharts";
 import { formatBytes } from "./sidecarstrainmodel";
@@ -217,13 +217,14 @@ export function SidecarResourcesBand({ resources }: { resources: SidecarResource
     );
 }
 
-/** The panel the title bar's figures drop in the small form: the band's parts stacked. */
+/** The small form's Resources view: the title bar's figures switch the body under the bar to it, as a tab does, and
+ * back; the band's parts stacked. */
 export function SidecarResourcesPanel(props: { resources: SidecarResources | undefined; onClose: () => void }) {
     const { resources, onClose } = props;
-    const ref = useRef<HTMLDivElement>(null);
     const state = resources?.state ?? "measuring";
 
-    // Escape and a press outside close it; the title bar's figures toggle it themselves, so a press on them is left out
+    // Escape switches back; a press elsewhere does not, as a tab stays until another is picked (and the bar above it is
+    // the window's drag region)
     useEffect(() => {
         const onKey = (e: KeyboardEvent) => {
             if (e.key === "Escape") {
@@ -232,33 +233,20 @@ export function SidecarResourcesPanel(props: { resources: SidecarResources | und
                 onClose();
             }
         };
-        const onDown = (e: MouseEvent) => {
-            const target = e.target as Element | null;
-            if (ref.current?.contains(target) || target?.closest("[data-sidecar-machine]") != null) {
-                return;
-            }
-            onClose();
-        };
         window.addEventListener("keydown", onKey, true);
-        window.addEventListener("mousedown", onDown, true);
-        return () => {
-            window.removeEventListener("keydown", onKey, true);
-            window.removeEventListener("mousedown", onDown, true);
-        };
+        return () => window.removeEventListener("keydown", onKey, true);
     }, [onClose]);
 
     return (
         <div
-            ref={ref}
             data-sidecar-resources="panel"
             data-state={state}
-            role="dialog"
+            role="region"
             aria-label="Resources"
-            // the popover's shadow stays: floating chrome, drawn once, not a glow that follows the beat
-            // it fills the window under the title bar: the small form has no room to show the dashboard beside it
-            className="absolute inset-x-2 top-[36px] bottom-2 z-40 flex flex-col overflow-hidden rounded-lg border border-hud-line bg-hud-panel shadow-popover-md"
+            // the whole body under the title bar, on the window's own ground: a view switched to, not a box over the
+            // dashboard, so no border, corner brackets or shadow
+            className="absolute inset-0 z-40 flex flex-col overflow-hidden bg-hud-bg"
         >
-            <HudBrackets size={18} radius={12} />
             <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-2.5 py-3">
                 {state === "unsupported" ? (
                     <Unsupported />

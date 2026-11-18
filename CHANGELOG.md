@@ -139,8 +139,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - On a Mac, Sidecar's Resources panel and the agents' RAM now show figures instead of "read on
   Windows only": arcterm itself (with its WebKit processes and Sidecar's own row), each agent and run command, and the
   apps outside arcterm with their icons, each app's helpers counted under it (Zalo's renderers under Zalo).
-- Sidecar's Resources panel in the small form fills the window instead of stopping partway down it, and on a Mac its
-  note names Activity Monitor's memory figure rather than Task Manager's.
+- In Sidecar's small form, the title bar's figures switch the whole window to Resources and back, as a tab does,
+  instead of dropping a box partway down over the dashboard; on a Mac its note names Activity Monitor's memory figure.
 - Sidecar no longer paints a text selection over its labels and buttons when you drag across it or press Cmd+A.
 - On a Mac, Sidecar's coloured frame follows the window's own rounded corners, which macOS 26 and later round more, so
   its line no longer breaks off at the four corners.

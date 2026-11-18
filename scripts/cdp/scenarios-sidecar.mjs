@@ -1224,8 +1224,13 @@ async function resourcesPanelStep(h, side, rec, shot) {
             .catch((e) => ({ error: String(e?.message ?? e) }));
         const read = await side.ev(`(() => {
             const panel = document.querySelector('[data-sidecar-resources="panel"]');
+            // a view switched to, as a tab: it covers the whole body under the title bar, with no box's brackets
+            const r = panel?.getBoundingClientRect();
+            const body = panel?.parentElement?.getBoundingClientRect();
+            const near = (a, b) => Math.abs(a - b) <= 1;
             return {
                 state: panel?.dataset.state ?? null,
+                fills: r != null && body != null && near(r.top, body.top) && near(r.bottom, body.bottom) && near(r.left, body.left) && near(r.right, body.right),
                 brackets: panel?.querySelectorAll('[data-hud-deco="brackets"]').length ?? 0,
                 charts: panel?.querySelectorAll("[data-sidecar-chart]").length ?? 0,
                 glowLines: panel?.querySelectorAll("[data-hud-glow]").length ?? 0,
@@ -1238,7 +1243,7 @@ async function resourcesPanelStep(h, side, rec, shot) {
         detail = { button, opened, closed, platform: process.platform, glowWait: glow == null ? "skipped: Windows only" : glow, ...read, bandBefore, resourceActs, direct };
         rec(
             what + (win ? "" : " (glow wait skipped: Windows only)"),
-            button && opened && closed && read.brackets >= 1 && read.charts >= 1 && (win ? glow === true && read.glowLines >= 1 : true),
+            button && opened && closed && read.fills && read.brackets === 0 && read.charts >= 1 && (win ? glow === true && read.glowLines >= 1 : true),
             detail
         );
     } catch (e) {
