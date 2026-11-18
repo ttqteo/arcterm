@@ -105,3 +105,13 @@ What "Left to the builder" settles, and why.
   dev-app before/after of the same step would need a second app on the base tree in the run. The before/after that
   matters, Sidecar's renderer plus GPU process on a release build before and after the HUD, stays the person's
   (hand-checks.md), against the part 3 RAM watch row.
+
+## Corners: rounded, never sharp (the person, 2026-11-18, after seeing the built wall)
+- **The alert frame stays rounded in every window state.** On Windows (10 and 11) `--sidecar-corner` is 8px always,
+  maximized and full screen included; `followWindowsCorners` in `frontend/tauri/sidecar.tsx` no longer sets 0px nor
+  reads the window's state. The Mac's native frame keeps 12px.
+- **Boxes keep DESIGN.md's soft radius:** Needs you rows (P and Q, overriding board Q's square rows), the Needs you box,
+  the run box, the band cards, the Resources column and panel are `rounded-md` (or `rounded-lg` for the larger boxes),
+  never square.
+- **Corner brackets bend:** each corner is an arc of about the box's radius (`bracketPath` takes a radius), not a
+  right angle, so a bracket follows its box's rounded corner.

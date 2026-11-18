@@ -161,9 +161,14 @@ Acceptance:
 ### Task 5: Scenarios, RAM watch, changelog
 **Depends on:** Task 2 (uses `data-sidecar-needs-col` / `data-sidecar-orbit-cell`), Task 3 (uses `data-hud-dial`), Task 4 (opens the restyled panel)
 **Model:** sonnet
-**Files:** `scripts/cdp/scenarios-sidecar.mjs`, `frontend/app/cockpit/sidecarorbit.tsx`, `docs/open-issues.md`, `docs/hand-checks.md`, `CHANGELOG.md`
+**Files:** `scripts/cdp/scenarios-sidecar.mjs`, `frontend/app/cockpit/sidecarorbit.tsx`, `frontend/app/cockpit/sidecarcompact.tsx`, `frontend/app/cockpit/sidecarband.tsx`, `frontend/app/cockpit/sidecarhud.tsx`, `frontend/app/cockpit/sidecarhudmodel.ts`, `frontend/app/cockpit/sidecarhudmodel.test.ts`, `frontend/app/cockpit/sidecarresourcespanel.tsx`, `frontend/tauri/sidecar.tsx`, `docs/open-issues.md`, `docs/hand-checks.md`, `CHANGELOG.md`
 
 Add steps to the existing scenarios (each `rec(...)` with a clear name, shots under `cdp-shots/`):
+- (Folded in by the lead, 2026-11-18, at the person's request: spec "Corners: rounded, never sharp". On Windows
+  `--sidecar-corner` is 8px always, with no 0px and no window-state read in `followWindowsCorners`; the boxes are
+  `rounded-md`/`rounded-lg`, Needs you rows on P and Q included; `bracketPath` takes a radius and bends each corner in an
+  arc, tested in `sidecarhudmodel.test.ts`, and `HudBrackets` passes a radius matching its box. The existing shots
+  show it; the `p-orbit-dashboard`, `q-high` and `resources-panel` shots must show rounded brackets.)
 - (Folded in by the lead, 2026-11-18, at the person's request after seeing the built wall: P's two top blocks go back
   to the order before this run. In `frontend/app/cockpit/sidecarorbit.tsx` the grid is `3fr / 2fr` again, the orbit
   cell first in DOM and Tab order, then the Needs you column with `pr-6`; every HUD skin change, `dashKey`,
