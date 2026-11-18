@@ -7,6 +7,7 @@
 // them, and a second copy here would cost its RAM again. Spec 2026-11-13-sidecar-design.md, section 2.
 
 import { SidecarCompact } from "@/app/cockpit/sidecarcompact";
+import { HudLabel } from "@/app/cockpit/sidecarhud";
 import { layoutFor, resourcesColumnFits, type FormChange, type SidecarLayout } from "@/app/cockpit/sidecarlayout";
 import { SidecarOrbit } from "@/app/cockpit/sidecarorbit";
 import { SidecarResourcesColumn, SidecarResourcesPanel } from "@/app/cockpit/sidecarresourcespanel";
@@ -207,7 +208,7 @@ function SidecarRoot() {
     return (
         // the only motion is the dashboard's own (the spec's Motion section: a waiting item's ping, a row's reveal, the
         // frame's and the ring's colour); the base layer's button transitions go, so a button never moves on its own
-        <div className="relative flex h-screen w-screen flex-col overflow-hidden bg-background font-sans text-primary [&_button]:transition-none">
+        <div className="relative flex h-screen w-screen flex-col overflow-hidden bg-hud-bg font-sans text-primary [&_button]:transition-none">
             <SidecarTitleBar
                 machine={heard?.snap.machine}
                 strain={heard?.snap.strain}
@@ -225,12 +226,8 @@ function SidecarRoot() {
                 />
             )}
             {heard == null ? (
-                <div
-                    data-sidecar-waiting
-                    role="status"
-                    className="flex flex-1 items-center justify-center text-[13px] text-muted"
-                >
-                    Waiting for arcterm…
+                <div data-sidecar-waiting role="status" className="flex flex-1 items-center justify-center">
+                    <HudLabel className="text-[12px]">Waiting for arcterm…</HudLabel>
                 </div>
             ) : layout === "small" ? (
                 <SidecarCompact snap={heard.snap} receivedAt={heard.at} clock={clock} send={send} />

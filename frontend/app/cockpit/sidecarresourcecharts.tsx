@@ -3,15 +3,18 @@
 //
 // Sidecar's resource charts: the whole machine's CPU, RAM and GPU over the last 5 minutes, as three small multiples on
 // one 0-100% scale (one series each, named by its title, so no legend), like Task Manager's Performance tab. A hover
-// shows a crosshair and the reading under it. Runs on the slim page: only the types, the pure models and React.
+// shows a crosshair and the reading under it. Wears the HUD skin (spec 2026-11-18-sidecar-hud-design.md): the line is a
+// GlowPath, the gridline and the ground `hud-*` tokens, the figures mono. Runs on the slim page: only the types, the pure
+// models and React.
 
 import { cn } from "@/util/util";
 import { useState, type MouseEvent } from "react";
+import { GlowPath, HudLabel } from "./sidecarhud";
 import { HISTORY_MS } from "./sidecarresources";
 import { formatBytes } from "./sidecarstrainmodel";
 import type { SidecarResourcePoint } from "./sidecartypes";
 
-// the plot's own coordinates: the SVG stretches them to its box (the line keeps 2px with non-scaling-stroke)
+// the plot's own coordinates: the SVG stretches them to its box (the line keeps 1.5px with non-scaling-stroke)
 const W = 300;
 const H = 100;
 
@@ -59,15 +62,15 @@ function Chart(props: { title: string; figure: string; detail?: string; series: 
     return (
         <div data-sidecar-chart={props.title.toLowerCase()} className="flex min-w-0 flex-col gap-1">
             <div className="flex items-baseline gap-2">
-                <span className="text-[12px] font-semibold text-secondary">{props.title}</span>
+                <HudLabel>{props.title}</HudLabel>
                 <span className="flex-1" />
                 {shown != null ? (
-                    <span className="text-[11.5px] tabular-nums text-muted">
-                        <b className="font-semibold text-primary">{shown.v}%</b> · {agoText(end - shown.t)}
+                    <span className="font-mono text-[11.5px] tabular-nums text-hud-muted">
+                        <b className="font-medium text-hud-text">{shown.v}%</b> · {agoText(end - shown.t)}
                     </span>
                 ) : (
-                    <span className="text-[11.5px] tabular-nums text-muted">
-                        <b className="text-[14px] font-semibold text-primary">{props.figure}</b>
+                    <span className="font-mono text-[11.5px] tabular-nums text-hud-muted">
+                        <b className="text-[14px] font-medium text-hud-text">{props.figure}</b>
                         {props.detail != null ? ` · ${props.detail}` : ""}
                     </span>
                 )}
@@ -77,7 +80,7 @@ function Chart(props: { title: string; figure: string; detail?: string; series: 
                 preserveAspectRatio="none"
                 role="img"
                 aria-label={`${props.title}, the last 5 minutes: ${props.figure}`}
-                className="h-[56px] w-full cursor-crosshair overflow-visible rounded-[4px] bg-surface"
+                className="h-[56px] w-full cursor-crosshair overflow-visible bg-hud-bg"
                 onMouseMove={onMove}
                 onMouseLeave={() => setHover(null)}
             >
@@ -88,18 +91,17 @@ function Chart(props: { title: string; figure: string; detail?: string; series: 
                     y1={H / 2}
                     y2={H / 2}
                     vectorEffect="non-scaling-stroke"
-                    className="stroke-edge-mid"
+                    className="stroke-hud-line"
                     strokeWidth={1}
                     strokeDasharray="2 3"
                 />
-                {area !== "" && <path d={area} className="fill-accent/15" />}
+                {area !== "" && <path d={area} className="fill-hud-glow/10" />}
                 {series.length > 1 && (
-                    <path
+                    <GlowPath
                         d={line}
-                        fill="none"
+                        width={1.5}
                         vectorEffect="non-scaling-stroke"
-                        className="stroke-accent"
-                        strokeWidth={2}
+                        className="stroke-hud-glow"
                         strokeLinejoin="round"
                         strokeLinecap="round"
                     />
@@ -111,7 +113,7 @@ function Chart(props: { title: string; figure: string; detail?: string; series: 
                         y1={0}
                         y2={H}
                         vectorEffect="non-scaling-stroke"
-                        className="stroke-secondary"
+                        className="stroke-hud-muted"
                         strokeWidth={1}
                     />
                 )}
@@ -143,7 +145,7 @@ export function SidecarResourceCharts(props: {
             <Chart title="RAM" figure={pct(last?.mem)} detail={memDetail} series={mem} end={end} />
             {/* the GPU counters need two readings of their own: past a few, none means this machine has none to read */}
             {history.length >= 3 && gpu.length === 0 ? (
-                <div data-sidecar-chart="gpu" className="text-[11.5px] text-muted">
+                <div data-sidecar-chart="gpu" className="text-[11.5px] text-hud-muted">
                     GPU: this machine has no GPU counters to read.
                 </div>
             ) : (

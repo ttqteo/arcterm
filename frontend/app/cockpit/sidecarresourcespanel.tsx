@@ -5,10 +5,13 @@
 // beside the dashboard; elsewhere the title bar's machine figures, clicked, drop a panel under the bar. Either shows the
 // machine's CPU, RAM and GPU charts, then what Sidecar itself, the rest of arcterm and each agent take, then the
 // processes outside arcterm holding at least 200 MB, from the snapshot's `resources` (sidecarresources.ts builds it in
-// the main window). It runs on the slim page: only the types, the pure models and React.
+// the main window). Both wear the HUD skin (spec 2026-11-18-sidecar-hud-design.md): a `hud-panel` ground, corner brackets
+// on a box that does not scroll, `HudLabel` titles, circuit dividers, mono figures. It runs on the slim page: only the
+// types, the pure models and React.
 
 import { cn } from "@/util/util";
 import { useEffect, useRef } from "react";
+import { HudBrackets, HudDivider, HudLabel } from "./sidecarhud";
 import { RESOURCES_COL_PX } from "./sidecarlayout";
 import { SidecarResourceCharts } from "./sidecarresourcecharts";
 import { formatBytes } from "./sidecarstrainmodel";
@@ -21,40 +24,45 @@ function cpuText(cpu: number | undefined): string {
     return cpu < 0.1 ? "0%" : `${cpu.toFixed(1).replace(/\.0$/, "")}%`;
 }
 
-const NUM = "shrink-0 text-right text-[12px] tabular-nums";
+// a figure: JetBrains Mono, tabular, so the columns line up
+const NUM = "shrink-0 text-right font-mono text-[12px] tabular-nums";
 
 function Row({ row }: { row: SidecarResourceRow }) {
     const own = row.kind === "sidecar";
     return (
         <div
             data-sidecar-resource={row.key}
-            className={cn("flex items-baseline gap-3 rounded px-2 py-[3px]", own && "bg-surface-hover")}
+            className={cn("flex items-baseline gap-3 px-2 py-[3px]", own && "bg-hud-line")}
         >
             <span
                 className={cn(
                     "min-w-0 flex-1 truncate text-[12.5px]",
-                    own ? "font-semibold text-primary" : "text-secondary"
+                    own ? "font-semibold text-hud-text" : "text-hud-text/80"
                 )}
                 title={row.label}
             >
                 {row.label}
-                {row.count != null && row.count > 1 ? <span className="text-muted"> ({row.count})</span> : null}
+                {row.count != null && row.count > 1 ? <span className="text-hud-muted"> ({row.count})</span> : null}
             </span>
-            <span className={cn(NUM, "w-11 text-secondary")}>{cpuText(row.cpu)}</span>
-            <span className={cn(NUM, "w-9 text-secondary")}>{row.gpu != null ? `${row.gpu}%` : "—"}</span>
-            <span className={cn(NUM, "w-16 text-primary")}>{row.mem != null ? formatBytes(row.mem) : "—"}</span>
+            <span className={cn(NUM, "w-11 text-hud-muted")}>{cpuText(row.cpu)}</span>
+            <span className={cn(NUM, "w-9 text-hud-muted")}>{row.gpu != null ? `${row.gpu}%` : "—"}</span>
+            <span className={cn(NUM, "w-16 text-hud-text")}>{row.mem != null ? formatBytes(row.mem) : "—"}</span>
         </div>
     );
 }
 
+// a circuit-line divider, then the section's title (CSS uppercases it) and the table's column heads
 function Heading({ children }: { children: string }) {
     return (
-        <div className="flex items-baseline gap-3 px-2 pb-1 pt-2.5 text-[11px] font-semibold uppercase tracking-wide text-muted">
-            <span className="flex-1">{children}</span>
-            <span className="w-11 text-right">CPU</span>
-            <span className="w-9 text-right">GPU</span>
-            <span className="w-16 text-right">RAM</span>
-        </div>
+        <>
+            <HudDivider className="mx-2 mt-2.5" />
+            <div className="flex items-baseline gap-3 px-2 pb-1 pt-1.5">
+                <HudLabel className="min-w-0 flex-1 truncate">{children}</HudLabel>
+                <HudLabel className="w-11 text-right">CPU</HudLabel>
+                <HudLabel className="w-9 text-right">GPU</HudLabel>
+                <HudLabel className="w-16 text-right">RAM</HudLabel>
+            </div>
+        </>
     );
 }
 
@@ -63,7 +71,9 @@ function ResourcesBody({ resources }: { resources: SidecarResources | undefined 
     const state = resources?.state ?? "measuring";
     if (state === "unsupported") {
         return (
-            <div className="px-2 py-2 text-[12.5px] text-muted">Process figures are read on Windows only for now.</div>
+            <div className="px-2 py-2 text-[12.5px] text-hud-muted">
+                Process figures are read on Windows only for now.
+            </div>
         );
     }
     const othersMin = resources?.othersMin;
@@ -79,7 +89,7 @@ function ResourcesBody({ resources }: { resources: SidecarResources | undefined 
                 <Row key={r.key} row={r} />
             ))}
             {resources == null || resources.rows.length === 0 ? (
-                <div className="px-2 py-1 text-[12px] text-muted">Measuring…</div>
+                <div className="px-2 py-1 text-[12px] text-hud-muted">Measuring…</div>
             ) : null}
             {resources != null && resources.others.length > 0 ? (
                 <>
@@ -89,7 +99,7 @@ function ResourcesBody({ resources }: { resources: SidecarResources | undefined 
                     ))}
                 </>
             ) : null}
-            <div className="px-2 pb-0.5 pt-2.5 text-[11px] leading-[1.4] text-muted">
+            <div className="px-2 pb-0.5 pt-2.5 text-[11px] leading-[1.4] text-hud-muted">
                 RAM is each process&apos;s private working set and GPU its busiest engine, as Task Manager shows them.
                 CPU is a share of the whole machine{state === "measuring" ? "; it reads after the second sample" : ""}.
             </div>
@@ -97,18 +107,27 @@ function ResourcesBody({ resources }: { resources: SidecarResources | undefined 
     );
 }
 
-/** The wall's Resources column, beside the dashboard. */
+/**
+ * The wall's Resources column, beside the dashboard: `hud-panel` with board A's `hud-line` left border (it divides the
+ * column from the wall) and corner brackets. The brackets sit on this box, which never scrolls; the list scrolls inside it,
+ * or they would ride up with the content.
+ */
 export function SidecarResourcesColumn({ resources }: { resources: SidecarResources | undefined }) {
     return (
         <aside
             data-sidecar-resources="column"
             data-state={resources?.state ?? "measuring"}
             aria-label="Resources"
-            className="flex min-h-0 shrink-0 flex-col overflow-y-auto border-l border-border bg-surface-raised px-2.5 py-3"
+            className="relative flex min-h-0 shrink-0 flex-col border-l border-hud-line bg-hud-panel"
             style={{ width: RESOURCES_COL_PX }}
         >
-            <div className="px-2 pb-1.5 text-[13px] font-semibold text-primary">Resources</div>
-            <ResourcesBody resources={resources} />
+            <HudBrackets />
+            <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-2.5 py-3">
+                <div className="px-2 pb-1.5">
+                    <HudLabel>Resources</HudLabel>
+                </div>
+                <ResourcesBody resources={resources} />
+            </div>
         </aside>
     );
 }
@@ -153,12 +172,16 @@ export function SidecarResourcesPanel(props: {
             data-state={resources?.state ?? "measuring"}
             role="dialog"
             aria-label="Resources"
+            // the popover's shadow stays: floating chrome, drawn once, not a glow that follows the beat
             className={cn(
-                "absolute z-40 flex max-h-[min(80vh,640px)] flex-col overflow-y-auto rounded-lg border border-edge-strong bg-surface-raised p-1.5 shadow-popover-md",
+                "absolute z-40 flex max-h-[min(80vh,640px)] flex-col border border-hud-line bg-hud-panel shadow-popover-md",
                 small ? "inset-x-2 top-[36px]" : "left-3.5 top-[42px] w-[420px]"
             )}
         >
-            <ResourcesBody resources={resources} />
+            <HudBrackets />
+            <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-2.5 py-3">
+                <ResourcesBody resources={resources} />
+            </div>
         </div>
     );
 }
