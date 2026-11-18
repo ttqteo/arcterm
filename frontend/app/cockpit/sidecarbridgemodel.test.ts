@@ -155,6 +155,11 @@ describe("validateAct", () => {
             act: { kind: "resources", open: false, pids: [] },
         });
         expect(validateAct({ kind: "resources" }, null).ok).toBe(false);
+        expect(validateAct({ kind: "visible", visible: false, extra: 1 }, null)).toEqual({
+            ok: true,
+            act: { kind: "visible", visible: false },
+        });
+        expect(validateAct({ kind: "visible" }, null).ok).toBe(false);
     });
 
     it("refuses what is not an act, and an unknown kind", () => {

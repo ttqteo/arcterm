@@ -23,7 +23,7 @@ import { useApplyCockpitTheme } from "@/app/view/agents/themestore";
 import { loadFonts } from "@/util/fontutil";
 import { invoke } from "@tauri-apps/api/core";
 import { emit, listen } from "@tauri-apps/api/event";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import "./tailwind.css";
 
@@ -96,12 +96,13 @@ function useSidecarForm(): [SidecarForm, (change: FormChange) => void] {
 // resource panel ("a reloaded page starts with its panel shut", sidecarbridge.tsx), so an open act that reaches it before
 // the hello is wiped and never sent again. A snapshot heard means the hello was answered; the panel and the column still
 // show at once (measuring) from the page's own state, whatever the bridge has heard.
-function useResourcesPanel(band: boolean, answered: boolean): [boolean, () => void, () => void] {
+function useResourcesPanel(band: boolean, answered: boolean, visible: boolean): [boolean, () => void, () => void] {
     const [open, setOpen] = useState(false);
     if (band && open) {
         setOpen(false);
     }
-    const want = (open || band) && answered;
+    // a hidden page asks for no readings: the panel stays open and asks again once it shows
+    const want = (open || band) && answered && visible;
     useEffect(() => {
         if (!want) {
             return;
@@ -137,13 +138,40 @@ function useResourcesPanel(band: boolean, answered: boolean): [boolean, () => vo
     return [open, toggle, close];
 }
 
+function readVisible(): boolean {
+    return document.visibilityState !== "hidden";
+}
+
+// Whether the page shows: WebKit and WebView2 call it hidden when the window is minimized, on another Space or desktop,
+// or covered whole. Hidden, the page tells the bridge, which then sends it nothing: each snapshot is parsed and drawn
+// here, and Sidecar's heap climbs with them. It tells only once a snapshot has come (the hello has been answered, and
+// the hello is what makes the bridge treat the page as shown).
+function useVisible(answered: boolean): boolean {
+    const [visible, setVisible] = useState(readVisible);
+    useEffect(() => {
+        const onChange = () => setVisible(readVisible());
+        document.addEventListener("visibilitychange", onChange);
+        return () => document.removeEventListener("visibilitychange", onChange);
+    }, []);
+    // what the bridge holds: shown, from the hello on; it hears only a change
+    const told = useRef(true);
+    useEffect(() => {
+        if (answered && visible !== told.current) {
+            told.current = visible;
+            send({ kind: "visible", visible });
+        }
+    }, [answered, visible]);
+    return visible;
+}
+
 function SidecarRoot() {
     useApplyCockpitTheme();
     const [heard, setHeard] = useState<Heard | null>(null);
     const layout = useLayout();
     const wall = layout === "wall";
     const [form, changeForm] = useSidecarForm();
-    const [resourcesOpen, toggleResources, closeResources] = useResourcesPanel(wall, heard != null);
+    const visible = useVisible(heard != null);
+    const [resourcesOpen, toggleResources, closeResources] = useResourcesPanel(wall, heard != null, visible);
     // Date.now() too: the dashboard adds (clock - heard.at) to the snapshot's own `now`, so the two must share one clock
     const [clock, setClock] = useState(() => Date.now());
 

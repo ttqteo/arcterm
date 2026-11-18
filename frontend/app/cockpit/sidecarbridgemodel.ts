@@ -169,6 +169,11 @@ export function validateAct(raw: unknown, last: SidecarSnapshot | null): ActChec
                 : [];
             return { ok: true, act: { kind: "resources", open: raw.open, pids } };
         }
+        case "visible":
+            if (typeof raw.visible !== "boolean") {
+                return { ok: false, reason: "visible: no visible" };
+            }
+            return { ok: true, act: { kind: "visible", visible: raw.visible } };
         default:
             return { ok: false, reason: `unknown act kind "${raw.kind}"` };
     }

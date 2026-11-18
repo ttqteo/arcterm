@@ -149,7 +149,9 @@ export type SidecarAct =
     | { kind: "stop"; id: string; pid: number } // must match a heavy row's process
     | { kind: "sleep"; id: string } // must be a heavy row
     // the resource panel opened (with the pids the host says draw the page; re-sent as they change) or closed
-    | { kind: "resources"; open: boolean; pids: number[] };
+    | { kind: "resources"; open: boolean; pids: number[] }
+    // the page became hidden (minimized, on another Space, covered whole) or shown again: hidden, it is sent nothing
+    | { kind: "visible"; visible: boolean };
 
 /** What the host's sidecar_form command answers: whether the window is in its small form and pinned on top. */
 export interface SidecarForm {

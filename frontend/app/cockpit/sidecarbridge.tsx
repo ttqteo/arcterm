@@ -179,6 +179,9 @@ export function SidecarBridge({ model }: { model: AgentsViewModel }) {
         // the machine's readings for the charts, the last 5 minutes; kept only while the band or the panel shows
         let resHistory: SidecarResourcePoint[] = [];
         let resTimer: ReturnType<typeof setInterval> | null = null;
+        // the page is hidden (it said so): nothing is built or sent until it shows again. Each snapshot is parsed and
+        // drawn in Sidecar's own WebContent process, whose heap climbs with them (95 to 110 MB on a Mac, 2026-11-18)
+        let hidden = false;
 
         // The dashboard (plan Task 4): what waits on you, the active run and who leads it.
         // the Jarvis rows' peek rows of the last build, by need key: a `need` act opens the target the tray's peek opens
@@ -421,7 +424,7 @@ export function SidecarBridge({ model }: { model: AgentsViewModel }) {
 
         // a store changed: the trailing emit of a throttled burst builds its own fresh snapshot when it fires
         function onChange(): void {
-            if (!isLive()) {
+            if (!isLive() || hidden) {
                 return;
             }
             const snap = build();
@@ -535,6 +538,8 @@ export function SidecarBridge({ model }: { model: AgentsViewModel }) {
                 return;
             }
             live = true;
+            // a page that loads is shown; a hidden one says so after its first snapshot
+            hidden = false;
             // a reloaded or reopened page has none of the last snapshot: this one goes out even if nothing changed
             feed = afterHello(feed);
             // a reloaded page starts with its resource panel shut: it says so again if it opens it
@@ -582,6 +587,15 @@ export function SidecarBridge({ model }: { model: AgentsViewModel }) {
                     return;
                 case "hello":
                     hello();
+                    return;
+                case "visible":
+                    hidden = !act.visible;
+                    cancelTimer();
+                    if (!hidden && isLive()) {
+                        // what changed while it was hidden was never sent: this one goes out even if the last did not change
+                        feed = afterHello(feed);
+                        send(build());
+                    }
                     return;
                 case "open":
                     fireAndForget(async () => {
