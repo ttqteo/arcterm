@@ -8,9 +8,9 @@
 
 import { SidecarCompact } from "@/app/cockpit/sidecarcompact";
 import { HudLabel } from "@/app/cockpit/sidecarhud";
-import { layoutFor, resourcesColumnFits, type FormChange, type SidecarLayout } from "@/app/cockpit/sidecarlayout";
+import { layoutFor, type FormChange, type SidecarLayout } from "@/app/cockpit/sidecarlayout";
 import { SidecarOrbit } from "@/app/cockpit/sidecarorbit";
-import { SidecarResourcesColumn, SidecarResourcesPanel } from "@/app/cockpit/sidecarresourcespanel";
+import { SidecarResourcesPanel } from "@/app/cockpit/sidecarresourcespanel";
 import { NATIVE_MAC_FRAME, SidecarTitleBar, toggleSidecarFullscreen } from "@/app/cockpit/sidecartitlebar";
 import {
     SIDECAR_ACT_EVENT,
@@ -55,28 +55,15 @@ function readLayout(): SidecarLayout {
     return layoutFor(window.innerWidth, window.screen?.availWidth);
 }
 
-interface LayoutState {
-    layout: SidecarLayout;
-    column: boolean; // the wall has room for the Resources column
-}
-
-function readLayoutState(): LayoutState {
-    const layout = readLayout();
-    return { layout, column: resourcesColumnFits(layout, window.innerWidth, window.innerHeight) };
-}
-
-function useLayout(): LayoutState {
-    const [state, setState] = useState<LayoutState>(readLayoutState);
+function useLayout(): SidecarLayout {
+    const [layout, setLayout] = useState<SidecarLayout>(readLayout);
     useEffect(() => {
-        const onResize = () => {
-            const next = readLayoutState();
-            setState((prev) => (prev.layout === next.layout && prev.column === next.column ? prev : next));
-        };
+        const onResize = () => setLayout(readLayout());
         window.addEventListener("resize", onResize);
         onResize();
         return () => window.removeEventListener("resize", onResize);
     }, []);
-    return state;
+    return layout;
 }
 
 // The host's form (the S button's small form, the pin) is the host's to keep: the page reads it once at load and takes the
@@ -101,20 +88,20 @@ function useSidecarForm(): [SidecarForm, (change: FormChange) => void] {
     return [form, change];
 }
 
-// The resources: while the panel is open or the wall shows the column, the page tells the main window's bridge (which
-// then polls the Resource Manager) with the pids the host says draw this page, and again as they change; once neither
-// shows, it tells the bridge to stop. A pid read that fails leaves Sidecar's own row unmeasured, the rest as it is. The
-// column takes the panel's place: a panel left open shuts when the column appears.
+// The resources: while the wall shows its band or the small form's panel is open, the page tells the main window's bridge
+// (which then polls the Resource Manager) with the pids the host says draw this page, and again as they change; once
+// neither shows, it tells the bridge to stop. A pid read that fails leaves Sidecar's own row unmeasured, the rest as it
+// is. The band takes the panel's place: a panel left open shuts when the window widens to the wall.
 // The page asks only once it has heard its first snapshot (`answered`): the bridge answers a hello by shutting the
 // resource panel ("a reloaded page starts with its panel shut", sidecarbridge.tsx), so an open act that reaches it before
 // the hello is wiped and never sent again. A snapshot heard means the hello was answered; the panel and the column still
 // show at once (measuring) from the page's own state, whatever the bridge has heard.
-function useResourcesPanel(column: boolean, answered: boolean): [boolean, () => void, () => void] {
+function useResourcesPanel(band: boolean, answered: boolean): [boolean, () => void, () => void] {
     const [open, setOpen] = useState(false);
-    if (column && open) {
+    if (band && open) {
         setOpen(false);
     }
-    const want = (open || column) && answered;
+    const want = (open || band) && answered;
     useEffect(() => {
         if (!want) {
             return;
@@ -153,9 +140,10 @@ function useResourcesPanel(column: boolean, answered: boolean): [boolean, () => 
 function SidecarRoot() {
     useApplyCockpitTheme();
     const [heard, setHeard] = useState<Heard | null>(null);
-    const { layout, column } = useLayout();
+    const layout = useLayout();
+    const wall = layout === "wall";
     const [form, changeForm] = useSidecarForm();
-    const [resourcesOpen, toggleResources, closeResources] = useResourcesPanel(column, heard != null);
+    const [resourcesOpen, toggleResources, closeResources] = useResourcesPanel(wall, heard != null);
     // Date.now() too: the dashboard adds (clock - heard.at) to the snapshot's own `now`, so the two must share one clock
     const [clock, setClock] = useState(() => Date.now());
 
@@ -219,26 +207,15 @@ function SidecarRoot() {
                 form={form}
                 onForm={changeForm}
                 resourcesOpen={resourcesOpen}
-                onResources={column ? undefined : toggleResources}
+                onResources={wall ? undefined : toggleResources}
             />
-            {resourcesOpen && (
-                <SidecarResourcesPanel
-                    resources={heard?.snap.resources}
-                    small={layout === "small"}
-                    onClose={closeResources}
-                />
-            )}
+            {resourcesOpen && <SidecarResourcesPanel resources={heard?.snap.resources} onClose={closeResources} />}
             {heard == null ? (
                 <div data-sidecar-waiting role="status" className="flex flex-1 items-center justify-center">
                     <HudLabel className="text-[12px]">Waiting for arcterm…</HudLabel>
                 </div>
             ) : layout === "small" ? (
                 <SidecarCompact snap={heard.snap} receivedAt={heard.at} clock={clock} send={send} />
-            ) : column ? (
-                <div className="flex min-h-0 flex-1">
-                    <SidecarOrbit snap={heard.snap} receivedAt={heard.at} clock={clock} send={send} />
-                    <SidecarResourcesColumn resources={heard.snap.resources} />
-                </div>
             ) : (
                 <SidecarOrbit snap={heard.snap} receivedAt={heard.at} clock={clock} send={send} />
             )}

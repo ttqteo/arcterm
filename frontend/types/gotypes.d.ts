@@ -4521,6 +4521,7 @@ declare global {
         cpu: number;
         mem: number;
         gpu?: number;
+        icon?: string;
     };
 
     // wshrpc.ResMonSnapshotData

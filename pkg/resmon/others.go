@@ -24,6 +24,7 @@ const (
 
 // otherProc is one process outside arcterm and its agents, as one tick read it.
 type otherProc struct {
+	Pid  int
 	Name string
 	Cpu  float64
 	Mem  int64
@@ -65,6 +66,34 @@ func groupOthers(procs []otherProc, min int64, limit int) []wshrpc.ResMonOther {
 		out = out[:limit]
 	}
 	return out
+}
+
+// iconCache holds each image name's icon (lowercased name → PNG data URL, "" for one that could not be read), read once
+// per wavesrv: an image's icon does not change while it runs, and the names listed are a dozen at most. Only the
+// sampler's goroutine touches it.
+var iconCache = map[string]string{}
+
+// iconReader reads a process's icon; a test swaps it
+var iconReader = readIcon
+
+// withIcons gives each listed group the icon of its image, from the first of its processes the icon reads from; a name
+// tried before takes the cached answer, read or not.
+func withIcons(groups []wshrpc.ResMonOther, procs []otherProc) {
+	for i := range groups {
+		key := strings.ToLower(groups[i].Name)
+		icon, tried := iconCache[key]
+		if !tried {
+			for _, p := range procs {
+				if p.Pid > 0 && strings.ToLower(p.Name) == key {
+					if icon = iconReader(p.Pid); icon != "" {
+						break
+					}
+				}
+			}
+			iconCache[key] = icon
+		}
+		groups[i].Icon = icon
+	}
 }
 
 // AskOthers has the sampler read the processes outside arcterm too, from its next tick until othersHold passes

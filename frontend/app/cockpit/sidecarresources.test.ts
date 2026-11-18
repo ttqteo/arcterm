@@ -88,6 +88,21 @@ describe("resourcesOf", () => {
         expect(r.othersMin).toBe(200 * MB);
     });
 
+    it("carries an agent's runtime and an other app's icon, for the rows' marks", () => {
+        const icon = "data:image/png;base64,AA==";
+        const s = snap({
+            groups: [{ ...group("agenttab", "job:1:1", "agent", [], 1, 10 * MB), runtime: "claude" }],
+            others: [
+                { name: "chrome.exe", count: 1, cpu: 0, mem: 300 * MB, icon },
+                { name: "vmmem", count: 1, cpu: 0, mem: 300 * MB },
+            ],
+        });
+        const r = resourcesOf(s, []);
+        expect(r.rows[2].runtime).toBe("claude");
+        expect(r.others.map((o) => o.icon)).toEqual([icon, undefined]);
+        expect("icon" in r.others[1]).toBe(false);
+    });
+
     it("takes a group's GPU from its busiest process, and leaves an idle GPU out", () => {
         const busy = { ...row(10, 100 * MB), gpu: 12.4 } as ProcessInfo;
         const s = snap({

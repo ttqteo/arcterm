@@ -16,7 +16,6 @@ import {
     attachNotes,
     decorateTiles,
     dueLabel,
-    failureAt,
     heavyPolls,
     machineOf,
     newestActiveRun,
@@ -46,7 +45,6 @@ import type {
     SidecarResources,
     SidecarRunBox,
     SidecarSnapshot,
-    SidecarSpan,
     SidecarStrain,
     SidecarTile,
     SidecarUsage,
@@ -516,12 +514,6 @@ describe("sameSnapshot", () => {
         expect(sameSnapshot(withRes(undefined), base)).toBe(false);
         expect(sameSnapshot(base, withRes(undefined))).toBe(false);
         expect(sameSnapshot(withRes(undefined), withRes(undefined))).toBe(true);
-    });
-
-    it("sees a changed span on a tile (the timeline rides on the tiles)", () => {
-        const a = snap([tile("a", { spans: [{ state: "working", from: 1 }] })]);
-        expect(sameSnapshot(a, snap([tile("a", { spans: [{ state: "working", from: 1 }] })]))).toBe(true);
-        expect(sameSnapshot(a, snap([tile("a", { spans: [{ state: "working", from: 1, to: 5 }] })]))).toBe(false);
     });
 });
 
@@ -1015,27 +1007,6 @@ describe("runBoxOf", () => {
         const box = runBoxOf(runInfo("r2"), { failed: true });
         expect(box).toEqual({ id: "r2", title: "Run r2", done: 0, total: 0, failed: true });
         expect("leadId" in box || "since" in box || "due" in box).toBe(false);
-    });
-});
-
-describe("failureAt", () => {
-    const open = (from: number): SidecarSpan[] => [{ state: "working", from }];
-
-    it("is the engine's date when it is later than the open span began", () => {
-        expect(failureAt(500, open(300), 900)).toBe(500);
-    });
-
-    it("is unset (now) when the engine's date is not later than the open span's start, or after now, or unknown", () => {
-        expect(failureAt(300, open(300), 900)).toBeUndefined();
-        expect(failureAt(200, open(300), 900)).toBeUndefined();
-        expect(failureAt(1000, open(300), 900)).toBeUndefined();
-        expect(failureAt(null, open(300), 900)).toBeUndefined();
-    });
-
-    it("is the engine's date for a lead with no open span (none yet, or its last span closed)", () => {
-        expect(failureAt(500, undefined, 900)).toBe(500);
-        expect(failureAt(500, [], 900)).toBe(500);
-        expect(failureAt(500, [{ state: "working", from: 100, to: 400 }], 900)).toBe(500);
     });
 });
 

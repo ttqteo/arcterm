@@ -7,15 +7,7 @@
 // orbit, a ring's dash, a lane's bars, how a Needs you row is answered, and the keys with the selection they move.
 
 import { ageText, answerAct, canAnswer, moveSelection, sidecarKey } from "./sidecarkeys";
-import type {
-    SidecarAct,
-    SidecarNeed,
-    SidecarRunBox,
-    SidecarSnapshot,
-    SidecarSpan,
-    SidecarSpanState,
-    SidecarTile,
-} from "./sidecartypes";
+import type { SidecarAct, SidecarNeed, SidecarRunBox, SidecarSnapshot, SidecarTile } from "./sidecartypes";
 
 // ---- The screen ----
 
@@ -201,46 +193,6 @@ export function ringDash(pct: number | undefined, r: number): { dash: number; ga
     const share = pct == null || !Number.isFinite(pct) ? 0 : Math.min(100, Math.max(0, pct));
     const dash = (circumference * share) / 100;
     return { dash, gap: circumference - dash };
-}
-
-/** The timeline's window: the last 2 hours. */
-export const TIMELINE_WINDOW_MS = 2 * 60 * 60_000;
-/** The narrowest bar a span draws, px. */
-export const MIN_BAR_PX = 2;
-
-export interface LaneBar {
-    x: number;
-    w: number;
-    state: SidecarSpanState;
-}
-
-/**
- * A lane's bars: each span as `{ x, w, state }` in a lane `width` px wide that shows the 2 hours ending at `now`. A span
- * with no `to` runs to `now` (one that began a moment after `now`, the bridge's clock ahead of the snapshot's, begins
- * at it, so a fresh failure draws at once); one that began before the window starts at its edge, and one that ended at
- * or before the edge is dropped, as is a closed one that ends before it begins (the bridge sends the spans unclipped).
- * A bar is at least 2 px wide and stays inside the lane.
- */
-export function laneBars(spans: readonly SidecarSpan[], now: number, width: number): LaneBar[] {
-    if (!(width > 0)) {
-        return [];
-    }
-    const start = now - TIMELINE_WINDOW_MS;
-    const bars: LaneBar[] = [];
-    for (const s of spans) {
-        const to = Math.min(s.to ?? now, now);
-        if (to <= start) {
-            continue;
-        }
-        const from = Math.max(s.to == null ? Math.min(s.from, now) : s.from, start);
-        if (to < from) {
-            continue;
-        }
-        const w = Math.max(MIN_BAR_PX, ((to - from) * width) / TIMELINE_WINDOW_MS);
-        const x = Math.min(((from - start) * width) / TIMELINE_WINDOW_MS, Math.max(0, width - w));
-        bars.push({ x, w, state: s.state });
-    }
-    return bars;
 }
 
 // ---- Needs you ----

@@ -3,8 +3,9 @@
 //
 // P, the Sidecar's full window (spec 2026-11-17-sidecar-orbit-dashboard-design.md; boards P-orbit-dashboard, P-calm,
 // P-high, P-critical, P-failed, P-live): an orbit of agents around a core that counts what waits on you, the Needs you
-// queue, the active run, and the last 2 hours as lanes. It draws the snapshot it is given and sends SidecarActs; every
-// decision (the screen's state, tones, lines, geometry, bars, keys) is in sidecarorbitmodel.ts, so this file only draws.
+// queue, the active run, and under them the machine's resources as Task Manager shows them (sidecarresourcespanel.tsx's
+// band, where the last 2 hours' lanes were). It draws the snapshot it is given and sends SidecarActs; every decision (the
+// screen's state, tones, lines, geometry, keys) is in sidecarorbitmodel.ts, so this file only draws.
 // It holds the selection and whether the x hid the strain band. The orbit is drawn on a fixed 1160 x 620 stage scaled
 // into its cell, so the board's sizes hold at any window size. The page is storeless: only the types, the pure models,
 // the motion tokens and React.
@@ -29,14 +30,13 @@ import {
     type RefObject,
 } from "react";
 import { SidecarBand } from "./sidecarband";
-import { GlowCircle, HudBrackets, HudDivider, HudLabel, HudTickRing } from "./sidecarhud";
+import { GlowCircle, HudBrackets, HudLabel, HudTickRing } from "./sidecarhud";
 import { ageText } from "./sidecarkeys";
 import {
     coreLabel,
     coreTone,
     dashKey,
     frameOf,
-    laneBars,
     needHow,
     needPings,
     nodeLine,
@@ -46,13 +46,13 @@ import {
     ringDash,
     screenState,
     selectionAfter,
-    TIMELINE_WINDOW_MS,
     waitingIds,
     type AlertFrame,
     type DashSel,
     type Point,
     type Tone,
 } from "./sidecarorbitmodel";
+import { SidecarResourcesBand } from "./sidecarresourcespanel";
 import { bandShows, formatBytes, nextHidden } from "./sidecarstrainmodel";
 import type {
     SidecarAct,
@@ -60,7 +60,6 @@ import type {
     SidecarNeed,
     SidecarRunBox,
     SidecarSnapshot,
-    SidecarSpanState,
     SidecarTile,
     StrainLevel,
 } from "./sidecartypes";
@@ -123,18 +122,6 @@ const FRAME: Record<AlertFrame, string> = {
     error: "inset 0 0 0 4px var(--color-error), inset 0 0 120px color-mix(in srgb, var(--color-error) 22%, transparent)",
 };
 
-const SPAN_BG: Record<Exclude<SidecarSpanState, "finished">, string> = {
-    working: "bg-success",
-    asking: "bg-warning",
-    failed: "bg-error",
-};
-const SPAN_WORD: Record<SidecarSpanState, string> = {
-    working: "working",
-    asking: "waiting on you",
-    finished: "finished",
-    failed: "failed",
-};
-
 const NO_NEEDS: SidecarNeed[] = [];
 
 // ---- The stage: the board's own pixels ----
@@ -161,11 +148,6 @@ const LABEL_GAP_ABOVE = 5;
 
 function sameSel(a: DashSel | null, b: DashSel | null): boolean {
     return a === b || (a != null && b != null && a.area === b.area && a.index === b.index && a.key === b.key);
-}
-
-function clockText(ms: number): string {
-    const d = new Date(ms);
-    return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
 }
 
 function pctText(pct: number | undefined): string {
@@ -332,7 +314,7 @@ export function SidecarOrbit({ snap, receivedAt, clock, send }: SidecarOrbitProp
                     )}
                 </div>
             </div>
-            <Lanes tiles={tiles} now={now} selectedAgent={selectedAgent} />
+            <SidecarResourcesBand resources={snap.resources} />
             <Footer />
         </div>
     );
@@ -860,108 +842,6 @@ function RunBox(props: { run: SidecarRunBox; snapNow: number; sinceArrived: numb
                 {text}
             </span>
         </div>
-    );
-}
-
-// ---- Last 2 hours ----
-
-// the label column's width: the ticks row and every lane share it, so a lane's track and the axis are one width
-const LANE_LABEL = "w-[clamp(120px,16vw,300px)]";
-
-function Lanes(props: { tiles: SidecarTile[]; now: number; selectedAgent: string | null }) {
-    const { tiles, now } = props;
-    // every lane's track is as wide as the axis's: measured once, before the first paint
-    const axisRef = useRef<HTMLDivElement>(null);
-    const [width, setWidth] = useState(0);
-    useLayoutEffect(() => {
-        const el = axisRef.current;
-        if (el == null) {
-            return;
-        }
-        const measure = () => setWidth((prev) => (prev === el.clientWidth ? prev : el.clientWidth));
-        measure();
-        const observer = new ResizeObserver(measure);
-        observer.observe(el);
-        return () => observer.disconnect();
-    }, []);
-    const start = now - TIMELINE_WINDOW_MS;
-    return (
-        <div
-            data-sidecar-lanes
-            className="mx-6 mb-4 flex min-h-0 flex-[2_1_0%] flex-col gap-2 overflow-hidden rounded-lg border border-hud-line bg-hud-panel px-5 py-3"
-        >
-            <div className="flex shrink-0 items-center gap-[18px]">
-                <HudLabel className="shrink-0 text-[12px]">Last 2 hours</HudLabel>
-                <HudDivider className="min-w-0 flex-1" />
-                <Legend swatch="h-2 w-4 rounded-[1px] bg-success" label="Working" />
-                <Legend swatch="h-2 w-4 rounded-[1px] bg-warning" label="Waiting on you" />
-                <Legend swatch="h-2 w-4 rounded-[1px] bg-error" label="Failed" />
-                <Legend swatch="h-0.5 w-4 bg-hud-muted" label="Finished" />
-            </div>
-            <div className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-hidden">
-                {tiles.map((t) => (
-                    <div
-                        key={t.id}
-                        data-sidecar-lane={t.id}
-                        className={cn(
-                            "flex min-h-[18px] flex-1 items-center gap-4 rounded-[5px] px-2",
-                            t.id === props.selectedAgent && "bg-hud-line/60"
-                        )}
-                    >
-                        <span
-                            className={cn("shrink-0 truncate text-[14px] font-semibold text-hud-text", LANE_LABEL)}
-                            title={t.name}
-                        >
-                            {t.name}
-                        </span>
-                        <div className="relative h-[18px] min-w-0 flex-1">
-                            <div className="absolute inset-x-0 top-2 h-px bg-hud-line" />
-                            {(t.spans ?? []).flatMap((s, i) =>
-                                // one span at a time keeps each bar's span, for its tooltip
-                                laneBars([s], now, width).map((b) => (
-                                    <div
-                                        key={i}
-                                        data-span-state={b.state}
-                                        title={`${SPAN_WORD[s.state]} ${clockText(s.from)}–${s.to == null ? "now" : clockText(s.to)}`}
-                                        className={cn(
-                                            "absolute",
-                                            b.state === "finished"
-                                                ? "top-2 h-0.5 rounded-[1px] bg-hud-muted"
-                                                : cn("top-0.5 h-3.5 rounded-[2px]", SPAN_BG[b.state])
-                                        )}
-                                        style={{ left: b.x, width: b.w }}
-                                    />
-                                ))
-                            )}
-                        </div>
-                    </div>
-                ))}
-            </div>
-            <div className="flex shrink-0 gap-4 px-2 font-mono text-[12px] tabular-nums text-hud-muted">
-                <span className={cn("shrink-0", LANE_LABEL)} />
-                <div ref={axisRef} className="relative h-4 min-w-0 flex-1">
-                    {[0, 1, 2, 3].map((k) => (
-                        <span
-                            key={k}
-                            className="absolute top-0"
-                            style={{ left: `${k * 25}%`, transform: `translateX(-${k * 25}%)` }}
-                        >
-                            {clockText(start + k * 30 * 60_000)}
-                        </span>
-                    ))}
-                    <span className="absolute right-0 top-0 text-hud-text">now</span>
-                </div>
-            </div>
-        </div>
-    );
-}
-
-function Legend(props: { swatch: string; label: string }) {
-    return (
-        <span className="flex shrink-0 items-center gap-1.5 text-[13px] text-hud-muted">
-            <span className={props.swatch} />
-            {props.label}
-        </span>
     );
 }
 
