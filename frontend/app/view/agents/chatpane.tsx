@@ -65,6 +65,7 @@ import { isDocReviewAsk } from "./chatdocreview";
 import { ChatDocReviewCard } from "./chatdocreviewcard";
 import { chatEmptyError, chatEmptyView } from "./chatempty";
 import { ChatFileCards } from "./chatfilecards";
+import { splitAttachments } from "./chatfiles";
 import { nextFocusReadSize } from "./chatfocusread";
 import {
     chatFocusReadOnAtom,
@@ -74,7 +75,6 @@ import {
     type FocusReader,
 } from "./chatfocusreadstore";
 import { useFocusRead } from "./chatfocusreadview";
-import { splitAttachments } from "./chatfiles";
 import { ChatGoalStrip } from "./chatgoal";
 import { isHandoffAsk } from "./chathandoff";
 import { ChatHandoffCard } from "./chathandoffcard";
@@ -86,6 +86,7 @@ import { awaitsOwnMessage, liveTurn, narratesThinking, streamsLiveReply } from "
 import { liveReplyAtom, startLiveReplyStream, stopLiveReplyStream } from "./chatlivestore";
 import { ChatLocalCard } from "./chatlocalcards";
 import { closeLocalCard, showLocalCard, useLocalCards } from "./chatlocalstore";
+import { useLostBash } from "./chatlostbashstore";
 import { chatCapable } from "./chatmode";
 import { canSendNow, compactingNow, SEND_NOW_KEYS, turnStatsLabel, workingLine } from "./chatmodel";
 import { setChatMode, useChatMode } from "./chatmodestore";
@@ -99,7 +100,6 @@ import {
     type PendingKind,
     type PendingMessage,
 } from "./chatpending";
-import { useLostBash } from "./chatlostbashstore";
 import { dropPendingIds, sentHistory, usePending } from "./chatpendingstore";
 import { ChatRefLinks } from "./chatrefbadge";
 import { risesFromBox } from "./chatsentrise";
@@ -560,6 +560,9 @@ export function ChatLayer({ model, agent, barred }: { model: AgentsViewModel; ag
 // the dock's place in the pane, and the room kept between the last line and the box (px)
 const DOCK_BOTTOM = 20;
 const DOCK_MARGIN = 16;
+// how far above the dock's top the conversation fades out; under the dock the fade is solid, so nothing reads through
+// the strips, the summary line or the chips over the box
+const DOCK_FADE = 72;
 
 // The scroller's bottom padding = the dock's height (the box, and the goal strip above it) + its 20px from the bottom + a
 // 16px margin, so the last line scrolls to rest above the box whatever its height. It is written to the element, not kept
@@ -567,7 +570,13 @@ const DOCK_MARGIN = 16;
 // conversation. The padding takes height from the scroller's content box, which useStickToBottom's observer sees and
 // re-pins a stuck tail on, so the tail rides the box as it grows; a reader scrolled up is left where they are. The
 // observer's writes wait a frame: a write inside its own callback would loop the observers.
-function useDockPadding(scrollRef: RefObject<HTMLDivElement | null>, dockRef: RefObject<HTMLDivElement | null>) {
+// The fade under the dock is written the same way: as tall as the dock plus DOCK_FADE, solid from DOCK_FADE down, so a
+// dock grown by the usage strip, a summary line and the chips never stands over the conversation's text.
+function useDockPadding(
+    scrollRef: RefObject<HTMLDivElement | null>,
+    dockRef: RefObject<HTMLDivElement | null>,
+    fadeRef: RefObject<HTMLDivElement | null>
+) {
     useLayoutEffect(() => {
         const scroller = scrollRef.current;
         const dock = dockRef.current;
@@ -579,6 +588,10 @@ function useDockPadding(scrollRef: RefObject<HTMLDivElement | null>, dockRef: Re
             // the cell is shown again
             if (dock.offsetHeight > 0) {
                 scroller.style.paddingBottom = `${dock.offsetHeight + DOCK_BOTTOM + DOCK_MARGIN}px`;
+                const fade = fadeRef.current;
+                if (fade != null) {
+                    fade.style.height = `${dock.offsetHeight + DOCK_BOTTOM + DOCK_FADE}px`;
+                }
             }
         };
         apply();
@@ -839,7 +852,8 @@ function ChatPaneBody({ model, agent, barred }: { model: AgentsViewModel; agent:
         asleep ? "asleep" : agent.blockId != null && canStop(agent.state, agent.sleeping) ? "running" : "idle"
     );
     const dockRef = useRef<HTMLDivElement>(null);
-    useDockPadding(scrollRef, dockRef);
+    const fadeRef = useRef<HTMLDivElement>(null);
+    useDockPadding(scrollRef, dockRef, fadeRef);
     // Focus read: the reading line's tick in the gutter, and the dimming held off while you follow the agent's work at
     // the bottom, so Chat then looks as it does without it
     const focusRead = useAtomValue(chatFocusReadOnAtom(agent.id));
@@ -1297,14 +1311,15 @@ function ChatPaneBody({ model, agent, barred }: { model: AgentsViewModel; agent:
                         className="pointer-events-none absolute z-10 h-[20px] w-[3px] -translate-y-1/2 rounded-full bg-accent"
                     />
                 ) : null}
-                {/* the conversation runs out under the box: transparent at the top, the pane's background at the foot (a
-                    functional fade, DESIGN.md), clear of the scrollbar so that stays whole */}
+                {/* the conversation runs out under the box: transparent at the top, the pane's background from DOCK_FADE down
+                    (a functional fade, DESIGN.md), clear of the scrollbar so that stays whole; useDockPadding sizes it to
+                    the dock, so the strips and chips over the box always sit on the solid part */}
                 <div
+                    ref={fadeRef}
                     data-chat-fade
                     aria-hidden
                     style={{
-                        background:
-                            "linear-gradient(to bottom, color-mix(in srgb, var(--color-background) 0%, transparent), var(--color-background) 62%)",
+                        background: `linear-gradient(to bottom, color-mix(in srgb, var(--color-background) 0%, transparent), var(--color-background) ${DOCK_FADE}px)`,
                     }}
                     className="pointer-events-none absolute bottom-0 left-0 right-[10px] h-[190px]"
                 />
