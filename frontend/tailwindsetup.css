@@ -905,16 +905,23 @@ html[data-md-selection]::selection {
     margin-bottom: 0.4em;
 }
 
-/* Chat's focus read (chatfocusreadview.ts): every block off the reading line drops to 32%, on the Fluid ease at
-   durMicro; the lit block, a reply still being written and what waits on you carry no data-fr-block dim */
-[data-fr-block] {
+/* Chat's focus read (chatfocusreadview.ts): the lit block at full strength, the block before and after it at 50%, every
+   other block and every row that is not text (a step list, a card: data-fr-skip) at 32%, on the Fluid ease at durMicro;
+   a reply still being written and what waits on you carry neither mark */
+[data-fr-block],
+[data-fr-skip] {
     transition: opacity 140ms cubic-bezier(0.22, 1, 0.36, 1);
 }
-[data-focus-read] [data-fr-block]:not([data-fr-lit]) {
+[data-focus-read] [data-fr-block]:not([data-fr-lit]),
+[data-focus-read] [data-fr-skip] {
     opacity: 0.32;
 }
+[data-focus-read] [data-fr-block][data-fr-near] {
+    opacity: 0.5;
+}
 @media (prefers-reduced-motion: reduce) {
-    [data-fr-block] {
+    [data-fr-block],
+    [data-fr-skip] {
         transition: none;
     }
 }

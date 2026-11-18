@@ -64,6 +64,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 - Sidecar now wears a HUD look, in the full window and in the small form: a blue-black ground with glowing cyan rings,
   tick marks and corner brackets that bend round the rounded corners of every box.
+- Focus read in Chat fades in steps: the block before and after the lit one stay half bright, so you keep your place,
+  and `J` / `K` pass over tool steps and cards to the next block of text. Its button and the `K` `J` `Q` buttons
+  under it are now one pill. <!-- try: chat-focus-read -->
 - Scrollbars stay hidden until you point at the area that scrolls, then show as a thin bar that thickens under the
   pointer, so the sidebar, Chat and lists read as clean panels.
 - A message you send while the agent works no longer has a Queued caption under it: its dimmed bubble says it waits, and

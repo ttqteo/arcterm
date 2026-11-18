@@ -46,15 +46,15 @@ When you read a long reply in Chat, every block of it shows at once, so your eye
   - a code block
   - a table
   - your own bubble
-- **Non-prose items** (Agent's call, builder question 3). Tool calls draw as step lists (`chatsteplist.ts`, `chatstepsview.tsx`):
-  - A step list is one block, open or closed.
-  - Each card is one block: `CommandCard`, `BtwCard`, `SentCard`, the run, council and verdict cards, and an asleep `!` row.
-  - A skim-folded reply's Show more button belongs to that reply's last block. It is not a block of its own.
+- **Non-prose items are skipped** (changed 2026-11-18 after trying it: a lit step row pulled the eye off the reply). Tool calls draw as step lists (`chatsteplist.ts`, `chatstepsview.tsx`). A step list, open or closed, and every card (`CommandCard`, `BtwCard`, `SentCard`, the run, council and verdict cards, and an asleep `!` row) are not blocks:
+  - they stay dimmed at 32% and are never lit;
+  - the line, `J`/`K` and the settle pass over them to the next text block.
+- A skim-folded reply's Show more button belongs to that reply's last block. It is not a block of its own.
 - **Never dimmed** (Agent's call, builder question 3). An item that waits on you is never dimmed and never picked, so a question cannot fade to 32% and be missed:
   - an ask
   - a brainstorm, commit or handoff card
   - the pending bubbles and local cards in `data-chat-tail`
-- **Dimming.** Blocks off the line drop to about 32% opacity.
+- **Dimming** (steps added 2026-11-18). The lit block stays at full strength. The block just before it and the block just after it sit at 50%. Every other block drops to about 32%.
   - Opacity changes on the Fluid ease at `durMicro` (140 ms).
   - Under reduced motion, opacity changes with no transition.
   - Skim highlights stay as they are inside a block.

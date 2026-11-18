@@ -864,6 +864,11 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
   with focus read on, the K / J / Q column under the toggle sits clear of the pinned prompt card and reads well in a
   light and a dark theme; holding ↓ steps block after block with no judder; turning it on for one agent in a 2x2 split
   leaves the other cells undimmed, and it is still on for that agent after a restart.
+- [ ] (arcterm) Focus read skips what is not text (`chatfocusreadview.ts` `data-fr-skip`): on a real agent's turn with
+  tool steps and a command card between paragraphs, `J` / `K` and a stopped scroll pass over them to the next paragraph,
+  they stay at 32% and are never lit, and the paragraphs either side of the lit one sit at 50%. The `chat-focus-read`
+  fixture has no tool steps, so the scenario checks only the 50% neighbours; the one pill (toggle over K / J, a hairline,
+  Q) also reads well in a light theme.
 - [ ] (arcterm) Sending to an idle agent in Chat (`chatlive.ts` liveTurn, `chatpane.tsx`): when the last turn ended
   with an "Edited N files" card, the card stays where it is from the send until your message lands and the new turn
   starts (it used to fold away at the send and spring open again up to 3 s later). A message queued while the agent

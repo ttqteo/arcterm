@@ -49168,7 +49168,8 @@ const chatFocusRead = {
                 const sr = s.getBoundingClientRect();
                 const line = Math.round(s.clientHeight / 3);
                 const r = lit >= 0 ? blocks[lit].getBoundingClientRect() : null;
-                const dim = blocks.find((b) => !b.hasAttribute("data-fr-lit"));
+                const dim = blocks.find((b) => !b.hasAttribute("data-fr-lit") && !b.hasAttribute("data-fr-near"));
+                const near = blocks.map((b, i) => (b.hasAttribute("data-fr-near") ? i : -1)).filter((i) => i >= 0);
                 const tick = ${pane}?.querySelector("[data-chat-focus-line]");
                 return {
                     on: s.hasAttribute("data-focus-read"),
@@ -49183,6 +49184,9 @@ const chatFocusRead = {
                     litH: r ? Math.round(r.height) : null,
                     litOpacity: lit >= 0 ? getComputedStyle(blocks[lit]).opacity : null,
                     dimOpacity: dim ? getComputedStyle(dim).opacity : null,
+                    // the blocks at half strength: the one before the lit one and the one after
+                    near,
+                    nearOpacity: near.map((i) => getComputedStyle(blocks[i]).opacity),
                     tick: tick ? getComputedStyle(tick).display : "absent",
                     tickAtLine: tick ? Math.abs(tick.getBoundingClientRect().top + tick.offsetHeight / 2 - sr.top - line) <= 2 : false,
                     focusIn: !!document.activeElement?.closest?.("[data-chat-scroller]"),
@@ -49228,8 +49232,10 @@ const chatFocusRead = {
             const pressed1 = await h.ev(`${pane}?.querySelector("[data-chat-focus-read-toggle]")?.getAttribute("aria-pressed")`);
             await h.shot("cdp-shots/chat-focus-read-1-on.png");
             rec(
-                "1. the toggle beside Skim turns focus read on: every block but one dims to 32%, the lit one stays at 1, the accent tick marks the line, and the focus is in the conversation",
-                loaded && on1 && pressed1 === "true" && s1?.count >= 12 && s1.litCount === 1 && s1.litOpacity === "1" && s1.dimOpacity === "0.32" && s1.tick === "block" && s1.tickAtLine && s1.focusIn,
+                "1. the toggle beside Skim turns focus read on: the lit block stays at 1, the block before and after it at 0.5, the rest at 0.32, the accent tick marks the line, and the focus is in the conversation",
+                loaded && on1 && pressed1 === "true" && s1?.count >= 12 && s1.litCount === 1 && s1.litOpacity === "1" && s1.dimOpacity === "0.32" &&
+                    s1.near.join(",") === [s1.lit - 1, s1.lit + 1].filter((i) => i >= 0 && i < s1.count).join(",") && s1.nearOpacity.every((o) => o === "0.5") &&
+                    s1.tick === "block" && s1.tickAtLine && s1.focusIn,
                 { loaded, on1, pressed1, s1 }
             );
 
