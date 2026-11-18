@@ -6,6 +6,7 @@ import {
     liveExpiresAt,
     liveFresh,
     liveTexts,
+    liveTurn,
     narratesThinking,
     parseLiveReply,
     streamsLiveReply,
@@ -110,6 +111,22 @@ describe("awaitsOwnMessage", () => {
         expect(awaitsOwnMessage([{ ...base, kind: "btw" }])).toBe(false);
         expect(awaitsOwnMessage([{ ...base, queued: false }])).toBe(true);
         expect(awaitsOwnMessage([base])).toBe(true);
+    });
+});
+
+describe("liveTurn", () => {
+    const base = { id: "1", text: "hi", sentAt: 0, seen: 0 };
+    it("follows the agent's state when nothing of yours is on its way", () => {
+        expect(liveTurn("idle", [])).toEqual({ active: false, working: false });
+        expect(liveTurn("working", [])).toEqual({ active: true, working: true });
+        expect(liveTurn("asking", [])).toEqual({ active: true, working: false });
+    });
+    it("keeps the turn before a message sent to an idle agent over until the message lands", () => {
+        expect(liveTurn("working", [base])).toEqual({ active: false, working: false });
+    });
+    it("leaves the turn live for a message queued while it works, or a command", () => {
+        expect(liveTurn("working", [{ ...base, queued: true }])).toEqual({ active: true, working: true });
+        expect(liveTurn("working", [{ ...base, kind: "btw" }])).toEqual({ active: true, working: true });
     });
 });
 

@@ -798,3 +798,7 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
   with focus read on, the K / J / Q column under the toggle sits clear of the pinned prompt card and reads well in a
   light and a dark theme; holding ↓ steps block after block with no judder; turning it on for one agent in a 2x2 split
   leaves the other cells undimmed, and it is still on for that agent after a restart.
+- [ ] (arcterm) Sending to an idle agent in Chat (`chatlive.ts` liveTurn, `chatpane.tsx`): when the last turn ended
+  with an "Edited N files" card, the card stays where it is from the send until your message lands and the new turn
+  starts (it used to fold away at the send and spring open again up to 3 s later). A message queued while the agent
+  works leaves the working turn's card held back as before. Checked only by unit tests.
