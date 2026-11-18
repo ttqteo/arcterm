@@ -1,16 +1,24 @@
 // The phone page's chat with one handed-over agent: streams its transcript over /api/agents/<tab>/stream,
-// draws it with the cockpit's projectors, and sends, stops, approves, denies and takes back through the
-// action routes. Every string from the server or the agent goes in as text, never as markup.
+// pages older lines in from /api/agents/<tab>/transcript, draws them with the cockpit's projectors, and sends,
+// stops, approves, denies and takes back through the action routes. Leaving the chat releases a take the
+// phone never acted on. Every string from the server or the agent goes in as text, never as markup.
 
 import { chatItems, composerFor, endedText, headerStateLabel, liveElapsed, permissionCard } from "./chatmodel.js";
 import { projectFor } from "./projectors.js";
+import { allLines, canLoadOlder, createPages, merge, needMore, prependPage } from "./transcriptpages.js";
 
-const MAX_LINES = 2000;
 const HEADER_TICK_MS = 30 * 1000;
 const ELAPSED_TICK_MS = 1000;
 // a little slack so a list a pixel short of the end still follows new lines
 const STICK_PX = 48;
+// scrolling this close to the top asks for the page of older messages
+const TOP_PX = 48;
+// the release post may not hold the list up longer than this: the stream died with the tunnel, and a post
+// into the same tunnel never answers
+const RELEASE_TIMEOUT_MS = 2000;
 const MOVED_ON = "The agent moved on; showing it as it is now.";
+const EARLIER_LOADING = "Loading earlier messages";
+const EARLIER_FAILED = "Could not load earlier messages. Scroll up to try again.";
 const ICON_CHEVRON_LEFT = '<path d="M15 6l-6 6 6 6"></path>';
 const MARKS = { ok: "✓", fail: "✗", pending: "·" };
 
@@ -18,16 +26,31 @@ const MARKS = { ok: "✓", fail: "✗", pending: "·" };
  * Draws the chat for tab into root until the returned close() is called. ui carries the page's own
  * helpers: h, icon, post, onBack (leave the chat for the list) and initial (the list's row for the tab, or
  * null), so the header shows before the stream's first agent event.
+ *
+ * close() returns a Promise that settles once the release of the take is done (within about 2 s, success or
+ * not), and at once for a chat that already ended: the hand-over is gone then, so there is nothing to release.
  */
 export function openChat(root, tab, ui) {
     const { h, icon, post } = ui;
     const st = {
         agent: ui.initial ?? null,
-        lines: [],
+        // the history paged in above the first backlog, and the live tail below it
+        pages: createPages(),
+        // chat items in the last body drawn: what a page of older lines is measured against
+        items: 0,
+        // "", "loading" or "failed": the line above the first message
+        earlier: "",
+        paging: false,
+        // a failed load waits for the reader to scroll off the top and back before it tries again
+        stalled: false,
         notice: "",
         error: "",
         sending: false,
         closed: false,
+        ended: false,
+        released: null,
+        // the post of the send, stop, approve, deny or take back in flight, if any
+        acting: null,
         live: null,
     };
     const base = `/api/agents/${encodeURIComponent(tab)}`;
@@ -62,24 +85,23 @@ export function openChat(root, tab, ui) {
         errorLine
     );
 
+    // a reconnect keeps every line: the browser sends the last event's id as Last-Event-ID, and the server
+    // resumes the stream at that byte, so what arrives continues the tail with no gap and no repeat
     const es = new EventSource(`${base}/stream`);
-    let opened = false;
-    es.addEventListener("open", () => {
-        // a reconnect resends the backlog, so the lines start over
-        if (opened) {
-            st.lines = [];
-        }
-        opened = true;
-    });
     es.addEventListener("agent", (e) => {
         st.agent = JSON.parse(e.data);
         st.notice = "";
         draw();
     });
     es.addEventListener("lines", (e) => {
-        const { lines } = JSON.parse(e.data);
-        st.lines = st.lines.concat(lines ?? []).slice(-MAX_LINES);
+        const firstBacklog = st.pages.oldest === null;
+        st.pages = merge(st.pages, JSON.parse(e.data));
         drawBody();
+        // the backlog's last lines can project to few messages (a tool-heavy turn), too few to overflow the
+        // screen and so to scroll; page back for the screenful the reader would otherwise have to ask for
+        if (firstBacklog) {
+            fillScreen(st.items);
+        }
     });
     es.addEventListener("ended", (e) => end(JSON.parse(e.data).reason));
     es.addEventListener("error", () => {
@@ -88,14 +110,66 @@ export function openChat(root, tab, ui) {
             ui.onBack();
         }
     });
+    body.addEventListener("scroll", onScroll);
     const tick = setInterval(drawHeader, HEADER_TICK_MS);
     const elapsedTick = setInterval(drawElapsed, ELAPSED_TICK_MS);
 
     function close() {
+        if (st.closed) {
+            return st.released ?? Promise.resolve();
+        }
         st.closed = true;
         es.close();
         clearInterval(tick);
         clearInterval(elapsedTick);
+        // an ended chat has no hand-over left to release
+        st.released = st.ended ? Promise.resolve() : release();
+        return st.released;
+    }
+
+    // Gives back a take the phone never acted on: the server ends the hand-over only then, and no-ops for a
+    // send, stop, approve or deny made since and for a hand-over made at the desk. An action still in flight
+    // goes first, so a release cannot overtake the send it follows and turn it into a 410. Settles when the
+    // post does or after RELEASE_TIMEOUT_MS from the leave (the wait for that action included), and never
+    // rejects: a failure is logged and the leave goes on.
+    function release() {
+        return new Promise((resolve) => {
+            const ctl = new AbortController();
+            // the timer settles the Promise itself: the wait for an action that never answers has no fetch
+            // to abort. The abort keeps a release that comes late (after that action settles) from going out.
+            const timer = setTimeout(() => {
+                console.warn(`arc remote: release of ${tab} timed out`);
+                ctl.abort();
+                resolve();
+            }, RELEASE_TIMEOUT_MS);
+            (st.acting ?? Promise.resolve())
+                .catch(() => {})
+                .then(() =>
+                    fetch(`${base}/release`, {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: "{}",
+                        cache: "no-store",
+                        redirect: "manual",
+                        signal: ctl.signal,
+                    })
+                )
+                .then((res) => {
+                    if (!res.ok) {
+                        console.warn(`arc remote: release of ${tab} answered ${res.status || "a redirect"}`);
+                    }
+                })
+                .catch((e) => {
+                    // an abort is the timeout above, already logged
+                    if (e?.name !== "AbortError") {
+                        console.warn(`arc remote: release of ${tab} failed`, e);
+                    }
+                })
+                .finally(() => {
+                    clearTimeout(timer);
+                    resolve();
+                });
+        });
     }
 
     function name() {
@@ -300,10 +374,16 @@ export function openChat(root, tab, ui) {
         );
     }
 
-    function drawBody() {
+    // anchor: this draw changes what lies above the reader (an older page, the loading line), so the reading
+    // position moves down by the height gained and the message under the reader's thumb stays where it was.
+    // A draw for a live line adds below and leaves the position alone; a list that follows the end still does.
+    function drawBody(anchor = false) {
         const stick = body.scrollHeight - body.scrollTop - body.clientHeight < STICK_PX;
-        const entries = st.agent ? projectFor(st.agent.runtime, st.lines) : [];
+        const top = body.scrollTop;
+        const height = body.scrollHeight;
+        const entries = st.agent ? projectFor(st.agent.runtime, allLines(st.pages)) : [];
         const items = chatItems(entries);
+        st.items = items.length;
         const state = st.agent?.state;
         const last = items[items.length - 1];
         const pendingLast = last?.kind === "action" && last.mark === "pending";
@@ -327,10 +407,98 @@ export function openChat(root, tab, ui) {
         if (st.notice) {
             rows.push(h("div", { class: "notice", role: "status" }, st.notice));
         }
+        if (st.earlier) {
+            rows.unshift(
+                h(
+                    "div",
+                    { class: "blank-text", "data-chat-earlier": st.earlier },
+                    st.earlier === "loading" ? EARLIER_LOADING : EARLIER_FAILED
+                )
+            );
+        }
         body.replaceChildren(...rows);
         if (stick) {
             body.scrollTop = body.scrollHeight;
+        } else if (anchor) {
+            body.scrollTop = top + (body.scrollHeight - height);
         }
+    }
+
+    // scrolling to the top loads the page of older messages; after a failure only once the reader has
+    // scrolled off the top and back, so a dead tunnel is not asked again by the scroll its own redraw causes
+    function onScroll() {
+        if (body.scrollTop >= TOP_PX) {
+            st.stalled = false;
+        } else if (!st.stalled) {
+            fillScreen(0);
+        }
+    }
+
+    // Pages older lines in, one request at a time, until `gained` chat items reach a screenful or the
+    // session's start is reached. gained starts at the items already shown when the first backlog fills a
+    // screen that cannot scroll, and at 0 for a scroll to the top. It loops on the pages, not on scroll
+    // events: a backlog that projects to few items never overflows, so no scroll event would come.
+    async function fillScreen(gained) {
+        if (st.paging || st.closed || !st.agent || !canLoadOlder(st.pages) || !needMore(gained)) {
+            return;
+        }
+        st.paging = true;
+        st.earlier = "loading";
+        drawBody(true);
+        let failed = false;
+        try {
+            while (!st.closed && canLoadOlder(st.pages) && needMore(gained)) {
+                const before = st.items;
+                if (!(await loadPage())) {
+                    failed = true;
+                    break;
+                }
+                gained += st.items - before;
+            }
+        } finally {
+            st.paging = false;
+        }
+        if (st.closed) {
+            return;
+        }
+        st.earlier = failed ? "failed" : "";
+        st.stalled = failed;
+        drawBody(true);
+    }
+
+    // asks for the page of lines before the oldest one held and draws it above; false when it did not come
+    async function loadPage() {
+        let res = null;
+        try {
+            res = await fetch(`${base}/transcript?before=${st.pages.oldest}`, {
+                cache: "no-store",
+                redirect: "manual",
+            });
+        } catch {
+            // reported by the caller as a failed load
+        }
+        if (st.closed) {
+            return false;
+        }
+        if (res?.status === 410) {
+            end(await goneReason(res));
+            return false;
+        }
+        if (!res?.ok) {
+            return false;
+        }
+        let page = null;
+        try {
+            page = await res.json();
+        } catch {
+            return false;
+        }
+        if (st.closed) {
+            return false;
+        }
+        st.pages = prependPage(st.pages, page);
+        drawBody(true);
+        return true;
     }
 
     function syncSend() {
@@ -394,10 +562,15 @@ export function openChat(root, tab, ui) {
         st.notice = "";
         draw();
         let res = null;
+        const posting = post(`${base}/${kind}`, payload);
+        st.acting = posting;
         try {
-            res = await post(`${base}/${kind}`, payload);
+            res = await posting;
         } catch {
             // reported below as not reachable
+        }
+        if (st.acting === posting) {
+            st.acting = null;
         }
         st.sending = false;
         if (st.closed) {
@@ -432,6 +605,8 @@ export function openChat(root, tab, ui) {
     function end(reason) {
         const who = name();
         const a = st.agent;
+        // the hand-over is gone, so closing has nothing to release
+        st.ended = true;
         close();
         root.replaceChildren(
             h(
