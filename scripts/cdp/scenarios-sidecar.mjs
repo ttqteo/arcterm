@@ -52,6 +52,10 @@ const IDLE_MS = 10_000;
 // a chart's line draws once a series has two points, two polls (2 s apart) after the panel opens; the reads before that
 // are "measuring"
 const GLOW_WAIT_MS = 15_000;
+// how long the Resources panel is left after it opens for the bridge's snapshot that follows the column's close to land
+const STALE_SNAPSHOT_MS = 1500;
+// the keys step: how long the stubbed `answeragent` call takes to fail, so the ask's Sent mark stays up while the page reads it
+const ANSWER_FAILS_AFTER_MS = 2500;
 const MIN_WINDOW = { w: 340, h: 440 };
 const SMALL_BREAK_PX = 1100; // layoutFor (sidecarlayout.ts): P from this width, Q under it
 const SIZE_SLACK = 2; // px: the window's size read back through the screen's scale
@@ -954,6 +958,31 @@ async function bandSteps(h, side, rec, shot) {
         { title: got.band?.title, why: got.band?.why, ramTone: got.ramTone, rows: got.band?.rows.map((r) => r.id), machine: got.machine }
     );
 
+    // a heavy agent's label has a third line: the label above the top node hangs by its bottom edge, so it stays clear of the
+    // dot however many lines it holds (the node's own box is the dot's box, ring and all)
+    const labels = await side.ev(`(() => [...document.querySelectorAll("[data-sidecar-node]")].map((n) => {
+        const dot = n.getBoundingClientRect();
+        const label = n.querySelector(":scope > div[title]");
+        if (label == null) return { id: n.dataset.sidecarNode, label: false };
+        const l = label.getBoundingClientRect();
+        const overlap = l.left < dot.right && l.right > dot.left && l.top < dot.bottom && l.bottom > dot.top;
+        return {
+            id: n.dataset.sidecarNode,
+            label: true,
+            lines: label.children.length,
+            heavy: label.querySelector("[data-sidecar-node-heavy]") != null,
+            above: l.bottom <= dot.top,
+            overlap,
+            gap: Math.round((l.bottom <= dot.top ? dot.top - l.bottom : l.top >= dot.bottom ? l.top - dot.bottom : -1) * 10) / 10,
+        };
+    }))()`);
+    const topHeavy = labels.find((n) => n.heavy && n.above);
+    rec(
+        "a node's label never covers its dot: on the red band every `[data-sidecar-node]`'s label rect is clear of the node's rect, the heavy agent at the top of the orbit included (its three lines hang above the dot)",
+        labels.length > 0 && labels.every((n) => n.label && n.overlap === false) && topHeavy != null && topHeavy.lines === 3,
+        { nodes: labels, topHeavy: topHeavy?.id ?? null }
+    );
+
     // back to normal at 20% CPU: the band holds 30 s, steps down to amber, holds 30 s more and clears. A reading is taken
     // every 2.5 s here rather than waiting for the bridge's 5 s poll, so the hold is the only wait.
     await setSeams(h, { machine: MACHINE_CALM });
@@ -1086,6 +1115,42 @@ async function hudSteps(side, rec) {
     );
 }
 
+// The Resources column at the wall's own size fills after the page loads: the page reloads (the case that failed: its open act
+// reached the bridge before the page's hello, and the hello's answer shut the panel again), and within GLOW_WAIT_MS the column
+// leaves "Measuring…" and, once the history has two points, draws a glow line. Off Windows the Resource Manager reads nothing,
+// the column says "unsupported" and there is no glow to wait for. The outcome alone can pass on the old page, which raced: its
+// open act always reached the bridge first, and the column filled only when the pid read that follows landed after the hello,
+// so the step also asks for the order itself, from the raw `__sidecarActs` log (hello included, which `actsSince` drops):
+// no `resources` act before the page's first hello.
+async function resourcesColumnStep(h, side, rec) {
+    const win = process.platform === "win32";
+    const what = "the Resources column fills at wall width: after the page reloads it asks for resources only after its hello, and within 15 s the column leaves `Measuring…` and draws a glow line";
+    let detail = {};
+    try {
+        await h.ev("window.__sidecarActs = []");
+        await side.reload();
+        await side.cdp("Emulation.setDeviceMetricsOverride", ORBIT_VIEWPORT);
+        const t0 = Date.now();
+        const colSel = '[data-sidecar-resources="column"]';
+        const left = await waitFor(side.ev, `(() => { const c = document.querySelector(${JSON.stringify(colSel)}); return c != null && c.dataset.state !== "measuring"; })()`, GLOW_WAIT_MS);
+        const leftAfter = Date.now() - t0;
+        const glow = win ? await waitFor(side.ev, `!!document.querySelector(${JSON.stringify(`${colSel} [data-hud-glow]`)})`, Math.max(0, GLOW_WAIT_MS - leftAfter)) : null;
+        const read = await side.ev(`(() => {
+            const col = document.querySelector(${JSON.stringify(colSel)});
+            return col == null ? null : { state: col.dataset.state ?? null, glowLines: col.querySelectorAll("[data-hud-glow]").length };
+        })()`);
+        const acts = ((await h.ev("window.__sidecarActs ?? []")) ?? []).map((a) => (a?.kind === "resources" ? `resources:${a.open ? "open" : "close"}:${Array.isArray(a.pids) ? a.pids.length : "?"}` : (a?.kind ?? "?")));
+        // a page that heard a snapshot before it could say hello sends none: then there is no hello to precede
+        const helloAt = acts.indexOf("hello");
+        const firstResources = acts.findIndex((k) => k.startsWith("resources"));
+        const askedAfterHello = firstResources === -1 || helloAt === -1 || firstResources > helloAt;
+        detail = { platform: process.platform, left, leftAfterMs: leftAfter, glowWait: glow == null ? "skipped: Windows only" : glow, ...read, askedAfterHello, acts: acts.slice(0, 8) };
+        rec(what + (win ? "" : " (glow wait skipped: Windows only)"), left && read != null && askedAfterHello && (win ? glow === true && read.glowLines >= 1 : true), detail);
+    } catch (e) {
+        rec(what, false, { ...detail, error: String(e?.message ?? e) });
+    }
+}
+
 // The title bar's figures drop the Resources panel where the wall has no room for the column (RESOURCES_MIN_W): at
 // PANEL_VIEWPORT they are a button, a press opens the panel, and once the history has two points each chart draws its line
 // as a glow. Shrinking closed the column, and the bridge's `stopResources` cleared the history with it, so the series starts
@@ -1107,6 +1172,10 @@ async function resourcesPanelStep(h, side, rec, shot) {
         await clickIn(side, "[data-sidecar-machine]");
         const opened = await waitFor(side.ev, has('[data-sidecar-resources="panel"]'), 5000);
         const win = process.platform === "win32";
+        // The press can land before the bridge's answer to the column's close (the page's last snapshot still carries the
+        // column's history, so the panel draws a glow at once from it, and the next snapshot, with the history started over,
+        // takes it away): let that snapshot arrive (SNAPSHOT_THROTTLE_MS is 500) so the glow waited for is the panel's own.
+        await sleep(STALE_SNAPSHOT_MS);
         const glow = win ? await waitFor(side.ev, has('[data-sidecar-resources="panel"] [data-hud-glow]'), GLOW_WAIT_MS) : null;
         await sleep(600);
         // where the feed stops, for whoever reads a failure: the `resources` acts the page sent the bridge, and what the main
@@ -1215,13 +1284,37 @@ async function orbitStates(h, ctx, side, rec, shot) {
     await press(side, "ArrowDown");
     await sleep(300);
     const selectedFirst = (await readDash(side)).needs.find((n) => n.selected)?.key ?? null;
-    await press(side, "2");
     let answered = [];
-    await until(async () => (answered = await actsSince(h, before)).length > 0, 5000);
-    const sentShown = await waitFor(side.ev, `[...document.querySelectorAll(${JSON.stringify(needSel(NEED.ask))})].some((r) => r.textContent.includes("Sent"))`, 5000);
-    // an answer that went out no longer waits: the row and the node of that ask stop pinging
-    const sentView = await readDash(side);
-    const sentQuiet = row(sentView, NEED.ask)?.ping === false && drawnOf(sentView, ASK_ID)?.ping === false;
+    let sentShown = false;
+    let sentQuiet = false;
+    // The agents are fixtures, so the answer's RPC fails at once and answerAgentAsk takes the ask's Sent mark back with it: the
+    // row says Sent only as long as that call takes. The bridge sends a snapshot at most every 500 ms and the Resources column's
+    // poll takes that slot every 2 s, so a mark that came and went within one slot never reached the page. The call fails late
+    // here, as an agent slow to answer would, so the mark outlives the slot; the unmark and its toast still follow.
+    await h.ev(`(() => {
+        const c = window.TabRpcClient;
+        window.__answerStub = { own: Object.prototype.hasOwnProperty.call(c, "wshRpcCall"), orig: c.wshRpcCall };
+        c.wshRpcCall = function (cmd, ...rest) {
+            if (cmd === "answeragent") return new Promise((_, reject) => setTimeout(() => reject(new Error("fixture agent: no answer")), ${ANSWER_FAILS_AFTER_MS}));
+            return window.__answerStub.orig.call(this, cmd, ...rest);
+        };
+    })()`);
+    try {
+        await press(side, "2");
+        await until(async () => (answered = await actsSince(h, before)).length > 0, 5000);
+        sentShown = await waitFor(side.ev, `[...document.querySelectorAll(${JSON.stringify(needSel(NEED.ask))})].some((r) => r.textContent.includes("Sent"))`, 5000);
+        // an answer that went out no longer waits: the row and the node of that ask stop pinging
+        const sentView = await readDash(side);
+        sentQuiet = row(sentView, NEED.ask)?.ping === false && drawnOf(sentView, ASK_ID)?.ping === false;
+    } finally {
+        await h.ev(`(() => {
+            const s = window.__answerStub;
+            if (!s) return;
+            if (s.own) window.TabRpcClient.wshRpcCall = s.orig;
+            else delete window.TabRpcClient.wshRpcCall;
+            delete window.__answerStub;
+        })()`);
+    }
     let toGate = null;
     for (let i = 0; i < 5 && toGate !== NEED.gate; i++) {
         await press(side, "ArrowDown");
@@ -1378,6 +1471,9 @@ async function orbitStates(h, ctx, side, rec, shot) {
             after.needs[0]?.key === NEED.failed,
         { live, probe, needs: after.needs.map((n) => n.key) }
     );
+
+    // the column at the wall's size, on a reloaded page, before the panel step shrinks the page below the column's width
+    await resourcesColumnStep(h, side, rec);
 
     // last: it resizes the page and restores it, which the states above need not follow
     await resourcesPanelStep(h, side, rec, shot);

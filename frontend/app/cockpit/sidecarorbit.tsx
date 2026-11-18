@@ -156,6 +156,8 @@ const TICK_R = 166;
 const SPOKE_FROM = TICK_R + 8; // a spoke starts clear of the tick ring
 const NODE_R = 9;
 const LABEL_W = 280;
+// the space between the top node's box and the bottom edge of its label (a two-line label sat 5 px above the dot)
+const LABEL_GAP_ABOVE = 5;
 
 function sameSel(a: DashSel | null, b: DashSel | null): boolean {
     return a === b || (a != null && b != null && a.area === b.area && a.index === b.index && a.key === b.key);
@@ -597,11 +599,12 @@ function Node(props: {
         }
         rings.push(`0 0 0 ${ringTone != null ? 10 : 6}px var(--color-hud-glow)`);
     }
-    // relative to the dot's own box
+    // relative to the dot's own box. Above the top node the label hangs by its bottom edge, a fixed gap over the dot, so a
+    // third line (a heavy agent's) grows upward; a top offset sized for two lines put that line over the dot.
     const labelStyle: CSSProperties = {
         width: LABEL_W,
         left: vertical ? NODE_R - LABEL_W / 2 : left ? -LABEL_W - 15 : NODE_R * 2 + 15,
-        top: vertical ? (above ? -51 : 25) : -11,
+        ...(vertical && above ? { bottom: NODE_R * 2 + LABEL_GAP_ABOVE } : { top: vertical ? 25 : -11 }),
     };
     return (
         <div

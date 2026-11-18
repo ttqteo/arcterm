@@ -105,12 +105,16 @@ function useSidecarForm(): [SidecarForm, (change: FormChange) => void] {
 // then polls the Resource Manager) with the pids the host says draw this page, and again as they change; once neither
 // shows, it tells the bridge to stop. A pid read that fails leaves Sidecar's own row unmeasured, the rest as it is. The
 // column takes the panel's place: a panel left open shuts when the column appears.
-function useResourcesPanel(column: boolean): [boolean, () => void, () => void] {
+// The page asks only once it has heard its first snapshot (`answered`): the bridge answers a hello by shutting the
+// resource panel ("a reloaded page starts with its panel shut", sidecarbridge.tsx), so an open act that reaches it before
+// the hello is wiped and never sent again. A snapshot heard means the hello was answered; the panel and the column still
+// show at once (measuring) from the page's own state, whatever the bridge has heard.
+function useResourcesPanel(column: boolean, answered: boolean): [boolean, () => void, () => void] {
     const [open, setOpen] = useState(false);
     if (column && open) {
         setOpen(false);
     }
-    const want = open || column;
+    const want = (open || column) && answered;
     useEffect(() => {
         if (!want) {
             return;
@@ -151,7 +155,7 @@ function SidecarRoot() {
     const [heard, setHeard] = useState<Heard | null>(null);
     const { layout, column } = useLayout();
     const [form, changeForm] = useSidecarForm();
-    const [resourcesOpen, toggleResources, closeResources] = useResourcesPanel(column);
+    const [resourcesOpen, toggleResources, closeResources] = useResourcesPanel(column, heard != null);
     // Date.now() too: the dashboard adds (clock - heard.at) to the snapshot's own `now`, so the two must share one clock
     const [clock, setClock] = useState(() => Date.now());
 
