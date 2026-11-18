@@ -842,6 +842,7 @@ export function ChatConversation({
     onLoadEarlier,
     active,
     working,
+    ownArrives,
     onOpenTerminal,
     brainstorm,
     model,
@@ -868,6 +869,10 @@ export function ChatConversation({
     // that stopped left without a result is drawn neutral. Defaults to `active`; a session waiting on an answer is
     // `active` but not working
     working?: boolean;
+    // a message of yours landing now opens on the spring as any row does: no pending bubble stood in for it (one typed in
+    // the terminal, or one whose bubble went before its record landed). Left out, your rows are drawn at once, as a
+    // bubble's twin must be: a row that opens from nothing in the bubble's place would dip
+    ownArrives?: boolean;
     // shows the agent's terminal, for a command whose panel only Claude Code's own screen draws; left out where there is
     // no live terminal to show (an ended session)
     onOpenTerminal?: () => void;
@@ -1748,7 +1753,7 @@ export function ChatConversation({
                 key={item.key}
                 itemKey={item.key}
                 gap={ITEM_GAP}
-                arrive={item.kind !== "you" && arrived.has(item.key)}
+                arrive={(item.kind !== "you" || ownArrives === true) && arrived.has(item.key)}
                 className={cn("flex flex-col", item.kind === "you" || item.kind === "sent" ? "items-end" : undefined)}
             >
                 {drawn.element}

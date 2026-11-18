@@ -828,3 +828,9 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
   with an "Edited N files" card, the card stays where it is from the send until your message lands and the new turn
   starts (it used to fold away at the send and spring open again up to 3 s later). A message queued while the agent
   works leaves the working turn's card held back as before. Checked only by unit tests.
+- [ ] (arcterm) Chat around a send (`chatpending.ts` sending, `chatpane.tsx` WorkingLine, `chatconversation.tsx`
+  ownArrives): send to a Claude agent that is busy redrawing (just after a turn ends, or while it starts) and the
+  bubble stays until your message lands, never blinking out at 5 s; as the turn starts the working line opens under
+  the bubble and as it ends folds away, with the conversation gliding rather than jumping; a message typed straight in
+  the terminal opens into Chat on the spring. Measured in headless Chrome with a fixture agent (a scripted send,
+  live reply and transcript), not yet with a real Claude agent in the app.

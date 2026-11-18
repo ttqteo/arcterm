@@ -82,6 +82,10 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 - Switching the agent on screen (from the tree, Sidecar or a terminal) no longer crashes the agent header with
   "number … is not iterable".
+- Chat no longer jumps around a send: a message that takes a few seconds to reach a busy Claude Code stays in place
+  instead of vanishing and coming back, the "working" line opens and closes smoothly instead of shoving the
+  conversation as each turn starts and ends, and a message of yours that lands with nothing standing in for it opens
+  like any other row.
 - Selecting text in Chat keeps the words their own colour: the highlight no longer tints them the accent's blue.
 - Opening arcterm from the Start menu or a shortcut while it runs in the tray brings its window back, instead of
   starting a second arcterm that stopped on "wavesrv did not report its ports" beside a second Sidecar and tray icon

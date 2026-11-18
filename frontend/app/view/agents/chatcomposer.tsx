@@ -102,6 +102,7 @@ import {
 } from "./chatpending";
 import {
     addPending,
+    deliveredPending,
     dropPending,
     dropPendingIds,
     getPending,
@@ -109,7 +110,6 @@ import {
     sentHistory,
     setHeldSend,
     useHeldSend,
-    wokenPending,
 } from "./chatpendingstore";
 import { ChatPlusMenu } from "./chatplusmenu";
 import { asleepCommand, runBlocks, runsAsleep, type SleepRun } from "./chatsleepbash";
@@ -286,7 +286,7 @@ function ComposerBox({
                 const w = wake.current;
                 wake.current = null;
                 if (w?.pendingId != null) {
-                    wokenPending(agent.id, w.pendingId);
+                    deliveredPending(agent.id, w.pendingId);
                 }
             },
             wakeClears: true,
@@ -595,7 +595,18 @@ function ComposerBox({
                 att.addPaths(ridingPaths);
             }
         };
-        const taken = send(wire, onFailed);
+        // the pending bubble waits on the send's way into Claude Code's box (the echo wait takes seconds while Claude
+        // Code is busy), and only once the Enter went on the idle agent (chatpending.ts sending)
+        let pendingId: string | null = null;
+        let deliveredEarly = false;
+        const onDelivered = () => {
+            if (pendingId != null) {
+                deliveredPending(agentId, pendingId);
+            } else {
+                deliveredEarly = true;
+            }
+        };
+        const taken = send(wire, onFailed, onDelivered);
         if (!taken && lines.length > 0) {
             putBackResultLines(agent.id, lines);
         }
@@ -620,7 +631,7 @@ function ComposerBox({
                 // the band's own switch message draws as arcterm's row once it lands, never as a bubble of yours
                 const bandNote = sent === SWITCH_NOTE && lines.length > 0;
                 if (entries != null && pendsAsBubble(sent) && !bandNote) {
-                    addPending(agent.id, sent, entries, agent.state !== "idle");
+                    pendingId = addPending(agent.id, sent, entries, agent.state !== "idle", false, !deliveredEarly);
                     // a `! cmd` is kept past a restart too: one that closes arcterm never reaches the transcript
                     noteLostBash(agent.transcriptPath, sent, entries);
                 }
