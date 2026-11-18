@@ -23,6 +23,7 @@ import {
     pendingMessage,
     pendingStill,
     pendsAsBubble,
+    processGone,
     pushSent,
     queuedBubbleUp,
     recall,
@@ -583,6 +584,18 @@ describe("sendFailure", () => {
             reason: "no controller found for block b1",
         });
         expect(sendFailure("boom").reason).toBe("boom");
+    });
+});
+
+describe("processGone", () => {
+    it("reads a terminal with no process as an agent to start again", () => {
+        expect(processGone(sendFailure(new Error("no controller found for block 6022bf5d")))).toBe(true);
+        expect(processGone(sendFailure(new SubmitError("type", "no shell input chan")))).toBe(true);
+    });
+    it("leaves every other failure to its toast", () => {
+        expect(processGone(sendFailure(new SubmitError("type", "shell input buffer full")))).toBe(false);
+        expect(processGone(sendFailure(new SubmitError("enter", "no shell input chan")))).toBe(false);
+        expect(processGone(sendFailure(new SubmitError("echo", "the box stayed empty")))).toBe(false);
     });
 });
 

@@ -512,6 +512,15 @@ func (ws *WshServer) AgentsWakeCommand(ctx context.Context, data wshrpc.CommandA
 		if meta, err := readBlockMeta(ctx, target.blockId); err == nil && metaMillis(meta, waveobj.MetaKey_AgentSleeping) > 0 {
 			return wakeMarkedAwake(ctx, target, strings.TrimSpace(data.Message))
 		}
+		// an agent whose process exited on its own (/exit, a crash) has nothing to type into either: its cmd:args
+		// resume its session, so it comes back the way a sleeping one does, and the message is delivered once it
+		// reports in. Chat sends here when typing into its terminal found no process.
+		if exited, _ := controllerExited(target.blockId); exited {
+			if err := heldElsewhere(rows, target); err != nil {
+				return err
+			}
+			return wakeAgent(ctx, target, strings.TrimSpace(data.Message), false)
+		}
 		return fmt.Errorf("agent %q is not asleep", target.Name)
 	}
 	if !data.Fresh {

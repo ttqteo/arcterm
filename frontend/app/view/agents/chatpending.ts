@@ -443,6 +443,13 @@ export function sendFailure(e: unknown): SendFailure {
     }
 }
 
+/** Pure: whether a failed send found no process in the terminal (its agent exited on its own: /exit, a crash), so
+ *  nothing was typed and the agent can be started again on its session with the message (wakeAgent). wavesrv words it
+ *  "no controller found for block …" once the controller is gone, "no shell input chan" while it is still there. */
+export function processGone(f: SendFailure): boolean {
+    return f.stage === "type" && /no controller found for block|no shell input chan/.test(f.reason);
+}
+
 /** The waveapp.log line of a failed send: the block's short id, the stage, the text's length (never the text) and the
  *  reason on one line. */
 export function sendFailLogLine(blockId: string, text: string, f: SendFailure): string {

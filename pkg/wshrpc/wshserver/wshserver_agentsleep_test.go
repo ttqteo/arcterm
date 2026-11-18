@@ -11,6 +11,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -520,6 +521,28 @@ func TestWakeCommandRefusesAnAwakeAgent(t *testing.T) {
 	}
 	if w.resyncs != 0 {
 		t.Error("an awake agent was restarted")
+	}
+}
+
+// an awake agent whose process exited on its own (/exit): Chat's message has no terminal to go into, so the wake
+// restarts it on its session and delivers the message once it reports in
+func TestWakeRestartsAnAgentWhoseProcessExited(t *testing.T) {
+	w := newSleepWorld(t, claudeMeta())
+	w.install(&agentRosterFacts{Tabs: []agentTabFacts{idleClaude(writeTranscript(t, "abc"))}})
+	var restarted atomic.Bool
+	w.onResync = func() { restarted.Store(true) }
+	w.exited = func() (bool, int) { return !restarted.Load(), -1 }
+	w.status = func(int) baseds.AgentStatusData { return readyStatus() }
+
+	err := (&WshServer{}).AgentsWakeCommand(context.Background(), wshrpc.CommandAgentsWakeData{Tab: agentsTabA, Message: "hi again"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if w.resyncs != 1 {
+		t.Errorf("restarts = %d, want 1", w.resyncs)
+	}
+	if got := w.deliveries(); len(got) != 1 || got[0].text != "hi again" {
+		t.Fatalf("delivered %+v, want the message once the agent is back", got)
 	}
 }
 

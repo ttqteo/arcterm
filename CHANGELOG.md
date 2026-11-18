@@ -134,6 +134,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- A message from Chat to an agent whose Claude Code had exited (`/exit`, a crash) starts it again on its conversation
+  and goes in once it is back, instead of failing with "no controller found for block".
 - Switching the agent on screen (from the tree, Sidecar or a terminal) no longer crashes the agent header with
   "number … is not iterable".
 - Typing in the find bar of a long session no longer lags: each key took up to a few tenths of a second on a session

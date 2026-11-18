@@ -9,7 +9,7 @@ import { wakeAgent, wakeErrorToast } from "./agentsleep";
 import { askBtw, logLine, submitToAgent } from "./agentsubmit";
 import type { AgentState, AgentVM } from "./agentsviewmodel";
 import { withResultLines } from "./chatinitiative";
-import { btwQuestion, repeatsSend, sendFailure, type LastSend, type SendFailure } from "./chatpending";
+import { btwQuestion, processGone, repeatsSend, sendFailure, type LastSend, type SendFailure } from "./chatpending";
 import { mergeTaken } from "./chattakeback";
 import { messageWithAttachments, type Attachment } from "./composerattachments";
 import { useFallingAsleep, type FallAsleepPhase } from "./fallasleepstore";
@@ -210,12 +210,29 @@ export function useAgentSend(
             // the wire text carries the result lines; `message` stays the person's own (a /btw never has any)
             const own = text.trim();
             const name = agent?.name;
+            const wire = withResultLines(lines ?? [], message);
             fireAndForget(async () => {
                 try {
-                    await submitToAgent(target, withResultLines(lines ?? [], message));
+                    await submitToAgent(target, wire);
                     onDelivered?.();
                 } catch (e) {
-                    const f = sendFailure(e);
+                    let f = sendFailure(e);
+                    // the agent's process is gone (it exited: /exit, a crash), so nothing was typed: start it again
+                    // on its session, as a wake does, and the message goes in once it is back
+                    if (agent != null && processGone(f)) {
+                        logLine(`[chat-send] restart block=${target.slice(0, 8)} after="${f.reason}"`);
+                        try {
+                            await wakeAgent(agent.id, { message: wire });
+                            onDelivered?.();
+                            return;
+                        } catch (we) {
+                            const reason = we instanceof Error ? we.message : String(we);
+                            f = {
+                                ...f,
+                                message: `Its process had exited and it could not be started again (${reason}). It is back in the chat box.`,
+                            };
+                        }
+                    }
                     if (f.restore) {
                         forget();
                     }
