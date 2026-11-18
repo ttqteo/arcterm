@@ -20,7 +20,9 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
   layouts): a panel drops under the bar with Sidecar's own row first (its CPU and RAM, not "—"; "—" means WebView2
   did not name its renderer), then arcterm and each agent by RAM, then "Other apps over 200 MB" (chrome.exe (12)…),
   every row refreshing every 2 s; Escape or a click outside closes it. Windows only; on a Mac it says so. Commit
-  4f28db4b9.
+  4f28db4b9. Opening it crashed arcterm (an access violation in WebView2's `EmbeddedBrowserWebView.dll`, twice at
+  11:11 on 2026-11-18); the fix keeps the frame list alive while `sidecar_pids` walks it: check arcterm stays up and
+  Sidecar's row reads a figure, opening and closing the panel a few times.
 - [ ] (arcterm) **Sidecar's S button reads as its own button.** In the wall layout the S button shows a screen with a
   small window in its corner (a screen with an arrow out while small), no longer the same inward arrows as the full
   screen button beside it. Commit 4f28db4b9.

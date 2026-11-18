@@ -1152,12 +1152,17 @@ async fn renderer_pids(win: &WebviewWindow) -> Result<Vec<u32>, String> {
             if kind != COREWEBVIEW2_PROCESS_KIND_RENDERER {
                 continue;
             }
-            let frames = info.AssociatedFrameInfos()?.GetIterator()?;
+            // the collection held in a binding for as long as its iterator is walked: WebView2's iterator does not keep
+            // it alive, and one dropped as a temporary left HasCurrent reading freed memory, an access violation in
+            // EmbeddedBrowserWebView.dll that took the whole app down the moment the resource panel opened
+            let collection = info.AssociatedFrameInfos()?;
+            let frames = collection.GetIterator()?;
             let mut has = BOOL::default();
             frames.HasCurrent(&mut has)?;
             while has.as_bool() {
+                let frame = frames.GetCurrent()?;
                 let mut source = PWSTR::null();
-                frames.GetCurrent()?.Source(&mut source)?;
+                frame.Source(&mut source)?;
                 if webview2_com::take_pwstr(source).contains(PAGE) {
                     let mut pid = 0i32;
                     process.ProcessId(&mut pid)?;
