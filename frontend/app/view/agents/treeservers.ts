@@ -10,6 +10,7 @@ export type TreeServer = {
     pid: number;
     createms: number;
     ports: number[];
+    cwd?: string;
     repo?: string;
     owner?: { kind: string; tabid?: string };
 };
@@ -38,14 +39,33 @@ export function rowServers<S extends TreeServer>(
 }
 
 // "D:\Work\Portal\" and "d:/work/portal" are one folder
-function samePath(a: string, b: string): boolean {
-    const norm = (p: string) => p.replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
-    return norm(a) === norm(b);
+function normPath(p: string): string {
+    return p.replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
 }
 
-/** Pure: the servers a project's folder shows: those in its repo (`path`) that no row of the tree holds (`rowIds`: the
- *  tree's agent and terminal ids), or, while the folder is folded and its rows hidden, every one in its repo. None
- *  without a path. */
+/** Pure: whether `dir` is the folder `root` or inside it; case and slashes do not matter. False for an empty one. */
+export function pathWithin(dir: string | undefined, root: string | undefined): boolean {
+    if (!dir || !root) {
+        return false;
+    }
+    const d = normPath(dir);
+    const r = normPath(root);
+    return d === r || d.startsWith(r + "/");
+}
+
+/** Pure: whether a server runs in a project at `path`: its cwd is in that folder, or its repo is that folder. A
+ *  project registered at a folder inside its repo (`D:\Workspace\SIEM-portal\apps\portal`) holds the servers that
+ *  run under it, not the repo's others. */
+export function inProject(s: Pick<TreeServer, "cwd" | "repo">, path: string | undefined): boolean {
+    if (!path) {
+        return false;
+    }
+    return pathWithin(s.cwd, path) || (s.repo != null && normPath(s.repo) === normPath(path));
+}
+
+/** Pure: the servers a project's folder shows: those in its folder (`path`, inProject) that no row of the tree holds
+ *  (`rowIds`: the tree's agent and terminal ids), or, while the folder is folded and its rows hidden, every one in it.
+ *  None without a path. */
 export function folderServers<S extends TreeServer>(
     servers: readonly S[] | null,
     path: string | undefined,
@@ -56,7 +76,7 @@ export function folderServers<S extends TreeServer>(
         return [];
     }
     return (servers ?? [])
-        .filter((s) => s.repo != null && samePath(s.repo, path))
+        .filter((s) => inProject(s, path))
         .filter((s) => !open || s.owner?.tabid == null || !rowIds.has(s.owner.tabid))
         .sort((a, b) => (a.ports[0] ?? 0) - (b.ports[0] ?? 0));
 }

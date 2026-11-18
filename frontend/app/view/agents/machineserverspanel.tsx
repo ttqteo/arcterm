@@ -22,9 +22,17 @@ import { ChevronRight, Copy, FileText, Pin, RotateCw } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { openFileInPanel, openRefInCode } from "./agentrailstore";
 import type { AgentsViewModel } from "./agents";
+import { projectOf } from "./agentsviewmodel";
 import { pinServerAsApp, suggestForFolder } from "./appsuggeststore";
 import { copyText, portsLabel, serverUrl, stopRefusal, uptimeLabel, type TerminalLog } from "./devserversmodel";
-import { buildMachineServers, logHost, restartPlan, type MachineBadge, type MachineRow } from "./machineservers";
+import {
+    buildMachineServers,
+    logHost,
+    restartPlan,
+    withProjectRoots,
+    type MachineBadge,
+    type MachineRow,
+} from "./machineservers";
 import {
     forgetMachineServer,
     loadMachineServers,
@@ -32,7 +40,7 @@ import {
     machineServersReadingAtom,
     useMachineServersPoll,
 } from "./machineserversstore";
-import { projectListAtom } from "./projectsstore";
+import { projectListAtom, projectsAtom } from "./projectsstore";
 import { ACTION_BTN, ServerStopButton } from "./railservers";
 import { ensureServicesFeed, servicesAtom, stopService } from "./servicesstore";
 import { backgroundTasksByIdAtom } from "./subagentsstore";
@@ -345,6 +353,7 @@ export function MachineServersPanel({ model }: { model: AgentsViewModel }) {
     const terminals = useAtomValue(model.terminalsAtom);
     const bgTasks = useAtomValue(backgroundTasksByIdAtom);
     const services = useAtomValue(servicesAtom);
+    const projects = useAtomValue(projectsAtom);
     useEffect(() => ensureServicesFeed(), []);
     // the panel is always mounted, so this keeps its state between openings
     const [otherOpen, setOtherOpen] = useState(false);
@@ -380,11 +389,11 @@ export function MachineServersPanel({ model }: { model: AgentsViewModel }) {
                 ? null
                 : buildMachineServers(
                       reading.servers,
-                      [...agents, ...terminals],
+                      withProjectRoots([...agents, ...terminals], projectOf, projects),
                       bgTasks,
                       (services ?? []).map((s) => ({ id: s.id, name: s.name, tabid: s.tabid }))
                   ),
-        [reading.servers, agents, terminals, bgTasks, services]
+        [reading.servers, agents, terminals, bgTasks, services, projects]
     );
     return (
         <>

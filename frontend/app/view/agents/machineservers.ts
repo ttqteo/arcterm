@@ -16,6 +16,7 @@ import {
     type TerminalLog,
 } from "./devserversmodel";
 import type { BackgroundTask } from "./transcriptprojection";
+import { inProject } from "./treeservers";
 
 export type BadgeKind = "agent" | "terminal" | "service" | "app" | "noowner";
 
@@ -58,6 +59,19 @@ export interface MachineAgent {
     name: string;
     agent?: string; // harness
     kind?: "agent" | "terminal" | "background";
+    root?: string; // the folder of the project it works in (projects.json), when that project has one
+}
+
+// the roster entries with their project's folder: what the popover reads to keep a guess by time inside a project
+export function withProjectRoots<A extends MachineAgent>(
+    agents: readonly A[],
+    projectOf: (a: A) => string,
+    projects: Record<string, { path?: string } | undefined> | null | undefined
+): (A & { root?: string })[] {
+    return agents.map((a) => {
+        const root = projects?.[projectOf(a)]?.path;
+        return root ? { ...a, root } : a;
+    });
 }
 
 // what the model needs of a held service (ServiceStatus fits): its server runs in a terminal tab of its own
@@ -78,6 +92,15 @@ export function repoTitle(repo: string): string {
 
 function exeName(name: string | undefined): string {
     return (name ?? "").replace(/\.exe$/i, "");
+}
+
+// whether an agent may have started s: one whose project folder holds where s runs. An agent with no known folder, or
+// a server with no known place, is not ruled out.
+function worksWhere(a: MachineAgent | undefined, s: DevServerRow): boolean {
+    if (!a?.root || (!s.cwd && !s.repo)) {
+        return true;
+    }
+    return inProject(s, a.root);
 }
 
 function resolveRow(
@@ -128,8 +151,19 @@ function resolveRow(
                     return { ...base, badge: agentBadge(agentId), log: { agentId, task } };
                 }
             }
-            // a launcher that started the server and exited (`astro dev` daemonizes): the task that ended as it came up
+            // a launcher that started the server and exited (`astro dev` daemonizes): the task that ended as it came up,
+            // of an agent that works where the server runs. The match is by time alone, so an agent of another project
+            // whose task happened to end then is not one (2026-11-18: a SIEM-portal :4310 an agent started in the
+            // foreground read as an arcterm agent's)
             for (const [agentId, tasks] of Object.entries(bgTasks)) {
+                if (
+                    !worksWhere(
+                        agents.find((x) => x.id === agentId),
+                        s
+                    )
+                ) {
+                    continue;
+                }
                 const task = matchEndedTask(s.createms, tasks);
                 if (task) {
                     return { ...base, badge: agentBadge(agentId), log: { agentId, task } };

@@ -16,6 +16,10 @@ list (its number is not reused).
 Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) ·
 [part 4](hand-checks-4.md) · [part 3](hand-checks-3.md) · [part 2](hand-checks-2.md) (oldest).
 
+- [ ] (arcterm) **A self-detaching dev server reads as its own project's.** With SIEM-portal's `astro dev --port 4310`
+  up (started in the foreground, so it detaches), open the footer's Servers: the :4310 row is not an arcterm agent's
+  (no owner, or a SIEM-portal agent's); in Agent, the SIEM-portal folder row shows :4310 beside :8100's agent row.
+  `fix/servers-owner`.
 - [ ] (arcterm) **Switching agents no longer crashes the header.** In Agent, pick a Claude agent, then a plain
   terminal, a run's worker and back (from the tree and from Sidecar's wall), including one falling asleep: no
   `WINDOW ERROR … is not iterable` in `waveapp.log` and the header redraws each time. Not tried in the app:

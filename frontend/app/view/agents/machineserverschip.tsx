@@ -7,10 +7,12 @@ import { useAtomValue } from "jotai";
 import { Network } from "lucide-react";
 import { useEffect, useMemo } from "react";
 import type { AgentsViewModel } from "./agents";
+import { projectOf } from "./agentsviewmodel";
 import { consumersOpenAtom } from "./consumersstore";
 import { portsLabel } from "./devserversmodel";
-import { buildMachineServers } from "./machineservers";
+import { buildMachineServers, withProjectRoots } from "./machineservers";
 import { machineServersOpenAtom, machineServersReadingAtom } from "./machineserversstore";
+import { projectsAtom } from "./projectsstore";
 import { ensureServicesFeed, servicesAtom } from "./servicesstore";
 import { backgroundTasksByIdAtom } from "./subagentsstore";
 
@@ -24,6 +26,7 @@ export function MachineServersChip({ model }: { model: AgentsViewModel }) {
     const terminals = useAtomValue(model.terminalsAtom);
     const bgTasks = useAtomValue(backgroundTasksByIdAtom);
     const services = useAtomValue(servicesAtom);
+    const projects = useAtomValue(projectsAtom);
     useEffect(() => ensureServicesFeed(), []);
     // a first read that failed still draws the chip, with its `?`
     const view = useMemo(
@@ -32,11 +35,11 @@ export function MachineServersChip({ model }: { model: AgentsViewModel }) {
                 ? null
                 : buildMachineServers(
                       reading.servers ?? [],
-                      [...agents, ...terminals],
+                      withProjectRoots([...agents, ...terminals], projectOf, projects),
                       bgTasks,
                       (services ?? []).map((s) => ({ id: s.id, name: s.name, tabid: s.tabid }))
                   ),
-        [reading.servers, reading.failed, agents, terminals, bgTasks, services]
+        [reading.servers, reading.failed, agents, terminals, bgTasks, services, projects]
     );
     if (view == null) {
         return null;
