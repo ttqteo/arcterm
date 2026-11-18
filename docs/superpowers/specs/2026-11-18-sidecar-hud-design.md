@@ -34,17 +34,17 @@ New `@theme` tokens in `frontend/tailwindsetup.css`, used only by Sidecar: `--co
 (~`#d4f4ff`), `--color-hud-muted` (~`#5f8c99`). A theme may override them like any `--color-*` (`themes.ts` /
 `themestore.ts`). Status colors keep their tokens: warning (asking), error (RAM strained), success (working).
 
-### Layout: keep P's blocks, swap Needs you and the orbit
-Board `A-giu-bo-cuc.dc.html`. P keeps its blocks and grid, with one change: the right column of today moves to the left (`2fr`) whole, the strain band on top, Needs you, then the run box when no band shows (builder question 1), and the orbit to the right (`3fr`), next to the Resources column; lanes stay below, the footer at the bottom,
+### Layout: keep P's blocks where they are
+Board `A-giu-bo-cuc.dc.html`. P keeps its blocks and grid as before this work: the orbit on the left (`3fr`), the column on the right (`2fr`) with the strain band on top, Needs you, then the run box when no band shows; the Resources column further right. (The person tried Needs you on the left in the built wall and swapped it back, 2026-11-18.) lanes stay below, the footer at the bottom,
 the Resources column (CPU/RAM/GPU 5-minute charts, then the process table) on the right from 1560×760 as today
 (`resourcesColumnFits`). The orbit sits in the middle of its own area (close to the window's centre, off by a few
 tens of px depending on size), not pinned to the window's centre. The skin: corner brackets around Needs you and the
 Resources column, a tick ring around the orbit, circuit-line dividers, labels and figures in JetBrains Mono
 (uppercase, letter-spaced labels), value arcs and chart lines glowing with stacked strokes. 
 
-Agent's call: board A is a sketch of the skin, not of the content. P keeps everything it shows today: the node labels with the heavy agent's line, the spokes, Needs you filling its cell's height and scrolling, and the footer's `←→` and `F11` hints; only the drawing and the two blocks' places change.
+Agent's call: board A is a sketch of the skin, not of the content. P keeps everything it shows today: the node labels with the heavy agent's line, the spokes, Needs you filling its cell's height and scrolling, and the footer's `←→` and `F11` hints; only the drawing changes.
 
-Agent's call: the keys keep their two axes (↑↓ through Needs you, ←→ around the orbit); `dashKey` and `selectionAfter` do not change. Only the DOM and Tab order follow the new layout (Needs you first).
+Agent's call: the keys keep their two axes (↑↓ through Needs you, ←→ around the orbit); `dashKey` and `selectionAfter` do not change. The DOM and Tab order follow the visual order: the orbit cell, then the Needs you column.
 
 A row of SYS dials (option B) or a central array (option C) can be added later on this same skin; neither is built
 now.

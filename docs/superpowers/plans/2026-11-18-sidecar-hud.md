@@ -161,11 +161,15 @@ Acceptance:
 ### Task 5: Scenarios, RAM watch, changelog
 **Depends on:** Task 2 (uses `data-sidecar-needs-col` / `data-sidecar-orbit-cell`), Task 3 (uses `data-hud-dial`), Task 4 (opens the restyled panel)
 **Model:** sonnet
-**Files:** `scripts/cdp/scenarios-sidecar.mjs`, `docs/open-issues.md`, `docs/hand-checks.md`, `CHANGELOG.md`
+**Files:** `scripts/cdp/scenarios-sidecar.mjs`, `frontend/app/cockpit/sidecarorbit.tsx`, `docs/open-issues.md`, `docs/hand-checks.md`, `CHANGELOG.md`
 
 Add steps to the existing scenarios (each `rec(...)` with a clear name, shots under `cdp-shots/`):
-- In `sidecar-orbit`, after the `p-orbit-dashboard` shot: "the wall's Needs you column sits left of the orbit"
-  (`[data-sidecar-needs-col]`'s rect right ≤ `[data-sidecar-orbit-cell]`'s left, and Needs you comes first in DOM
+- (Folded in by the lead, 2026-11-18, at the person's request after seeing the built wall: P's two top blocks go back
+  to the order before this run. In `frontend/app/cockpit/sidecarorbit.tsx` the grid is `3fr / 2fr` again, the orbit
+  cell first in DOM and Tab order, then the Needs you column with `pr-6`; every HUD skin change, `dashKey`,
+  `selectionAfter` and the `data-*` attributes stay.)
+- In `sidecar-orbit`, after the `p-orbit-dashboard` shot: "the wall's Needs you column sits right of the orbit"
+  (`[data-sidecar-orbit-cell]`'s rect right ≤ `[data-sidecar-needs-col]`'s left, and the orbit cell comes first in DOM
   order); "the page wears the HUD ground" (the root's computed background equals the resolved `--color-hud-bg`);
   "no filter on the Sidecar page, and the ping is the only infinite animation" (every element's computed `filter` and
   `backdrop-filter` are `none`; `document.getAnimations()` with infinite iterations all have `animationName`
