@@ -29,6 +29,11 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
   3" row's: the HUD should add the stacked strokes and a few hundred static SVG nodes, not a visible step in either
   process. Also watch the GPU process's CPU while P idles: the ping is the only thing that should keep it awake.
   Commit: test(sidecar) HUD scenario steps, RAM watch row and changelog line
+- [ ] (arcterm) **A close chip in Chat's box.** Have a Claude agent commit something and read its reply: the header's ✓
+  Close shows, and the chips over the box end in "đóng agent" (or "close agent" when you write English) with a circled
+  check, beside "push đi" and the model's step, even when the row is full. A click (or Tab to it, then Enter) asks to
+  close it as the header's ✓ does; it is gone while a background task still runs or a run it started is still going,
+  and on a turn that ends in a question. Branch `feat/chat-close-chip`.
 - [ ] (arcterm) **Switching agents no longer crashes the header.** In Agent, pick a Claude agent, then a plain
   terminal, a run's worker and back (from the tree and from Sidecar's wall), including one falling asleep: no
   `WINDOW ERROR … is not iterable` in `waveapp.log` and the header redraws each time. Not tried in the app:

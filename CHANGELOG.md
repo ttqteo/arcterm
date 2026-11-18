@@ -31,6 +31,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Added
 
+- When an agent's work is done (its last turn committed and you have read it), the suggested replies over Chat's box end
+  with "close agent", which closes it as the header's ✓ Close does.
 - A shell command in a Chat reply (a `bash`, `sh` or `powershell` block) has a Run button: it opens a terminal in the
   panel under the agent, in the folder the agent works in, and runs the command there.
 - A shell command shows in colour as you type it in Chat's bash mode and in a reply's shell block: the command apart
