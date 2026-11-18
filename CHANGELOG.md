@@ -135,6 +135,7 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- Sidecar no longer paints a text selection over its labels and buttons when you drag across it or press Cmd+A.
 - Chat's usage-limit warning, summary line and suggested replies no longer show the conversation through them when
   you scroll up: the fade under them now grows with them.
 - A message from Chat to an agent whose Claude Code had exited (`/exit`, a crash) starts it again on its conversation

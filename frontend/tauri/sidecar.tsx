@@ -198,8 +198,9 @@ function SidecarRoot() {
 
     return (
         // the only motion is the dashboard's own (the spec's Motion section: a waiting item's ping, a row's reveal, the
-        // frame's and the ring's colour); the base layer's button transitions go, so a button never moves on its own
-        <div className="relative flex h-screen w-screen flex-col overflow-hidden bg-hud-bg font-sans text-primary [&_button]:transition-none">
+        // frame's and the ring's colour); the base layer's button transitions go, so a button never moves on its own.
+        // Nothing in Sidecar is text to copy (it has no input either), so no drag or Cmd+A paints a selection over it.
+        <div className="relative flex h-screen w-screen select-none flex-col overflow-hidden bg-hud-bg font-sans text-primary [&_button]:transition-none">
             <SidecarTitleBar
                 machine={heard?.snap.machine}
                 strain={heard?.snap.strain}
