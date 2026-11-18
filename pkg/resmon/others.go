@@ -27,6 +27,7 @@ type otherProc struct {
 	Name string
 	Cpu  float64
 	Mem  int64
+	Gpu  float64
 }
 
 // groupOthers sums the processes by image name (case aside, the first spelling seen names the group), keeps the
@@ -49,6 +50,7 @@ func groupOthers(procs []otherProc, min int64, limit int) []wshrpc.ResMonOther {
 		if p.Cpu > 0 {
 			g.Cpu += p.Cpu
 		}
+		g.Gpu = max(g.Gpu, p.Gpu)
 	}
 	out := make([]wshrpc.ResMonOther, 0, len(byKey))
 	for _, g := range byKey {

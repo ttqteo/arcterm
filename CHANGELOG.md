@@ -31,8 +31,10 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Added
 
-- Sidecar shows what everything takes: click the RAM · CPU figures in its title bar for a panel with Sidecar's own
-  CPU and RAM, the rest of arcterm, each agent, and the other apps holding over 200 MB (Windows).
+- Sidecar shows what everything takes, like Task Manager: on a big enough window a Resources column beside the
+  dashboard charts the machine's CPU, RAM and GPU over the last 5 minutes and lists Sidecar's own CPU, GPU and RAM, the
+  rest of arcterm, each agent, and the other apps holding over 200 MB; in a smaller window the RAM · CPU figures in
+  the title bar open the same as a panel (Windows). <!-- big -->
 - **Your phone as a remote for arcterm**: with your own Cloudflare tunnel set up in Settings → Remote (or
   `wsh remote setup`), an installed web app on your phone lists what waits on you, pushes a notification when an agent
 - **Your phone as a remote for arcterm**: through Tailscale (no domain needed) or your own Cloudflare tunnel, set up in

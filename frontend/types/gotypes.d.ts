@@ -4381,6 +4381,7 @@ declare global {
         status?: string;
         user?: string;
         mem: number;
+        gpu?: number;
         mempct: number;
         cpu: number;
         numthreads: number;
@@ -4481,12 +4482,21 @@ declare global {
         error?: string;
     };
 
+    // wshrpc.ResMonMachine
+    type ResMonMachine = {
+        cpu: number;
+        memused: number;
+        memtotal: number;
+        gpu?: number;
+    };
+
     // wshrpc.ResMonOther
     type ResMonOther = {
         name: string;
         count: number;
         cpu: number;
         mem: number;
+        gpu?: number;
     };
 
     // wshrpc.ResMonSnapshotData
@@ -4502,6 +4512,7 @@ declare global {
         groups: ResMonGroup[];
         others?: ResMonOther[];
         othersmin?: number;
+        machine?: ResMonMachine;
     };
 
     // wshrpc.ResumeCardData

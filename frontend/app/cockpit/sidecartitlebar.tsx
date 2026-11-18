@@ -70,15 +70,41 @@ function Machine(props: {
     machine: SidecarMachine;
     strain: SidecarStrain | undefined;
     short: boolean;
-    // the resource panel: open under the bar, and the press that opens or closes it
+    // the resource panel: open under the bar, and the press that opens or closes it. None while the wall shows the
+    // Resources column, where the figures are plain text.
     open: boolean;
-    onToggle: () => void;
+    onToggle?: () => void;
     className?: string;
 }) {
     const r = machineReadout(props.machine, props.strain);
     const ram = <b className={cn("font-semibold", TONE[r.ramTone])}>{r.ram}</b>;
     const cpu = <b className={cn("font-semibold", TONE[r.cpuTone])}>{r.cpu}</b>;
-    // a button for the resource panel; tabIndex -1 and no focus on press, as the bar's other buttons
+    const words = props.short ? (
+        <>
+            {ram} · {cpu}
+        </>
+    ) : (
+        <>
+            RAM {ram} free · CPU {cpu}
+        </>
+    );
+    if (props.onToggle == null) {
+        return (
+            <span
+                data-sidecar-machine
+                data-ram-tone={r.ramTone}
+                data-cpu-tone={r.cpuTone}
+                className={cn(
+                    "min-w-0 truncate whitespace-nowrap px-1.5 text-[12px] tabular-nums text-secondary",
+                    props.className
+                )}
+            >
+                {words}
+            </span>
+        );
+    }
+    // a button for the resource panel, its chevron saying it opens; tabIndex -1 and no focus on press, as the bar's
+    // other buttons
     return (
         <button
             type="button"
@@ -92,20 +118,24 @@ function Machine(props: {
             onMouseDown={(e) => e.preventDefault()}
             onClick={props.onToggle}
             className={cn(
-                "min-w-0 truncate whitespace-nowrap rounded-md px-1.5 py-0.5 text-left text-[12px] tabular-nums text-secondary hover:bg-surface-hover",
+                "flex min-w-0 items-center gap-1 whitespace-nowrap rounded-md border border-edge-mid px-1.5 py-0.5 text-left text-[12px] tabular-nums text-secondary hover:bg-surface-hover",
                 props.open && "bg-surface-selected",
                 props.className
             )}
         >
-            {props.short ? (
-                <>
-                    {ram} · {cpu}
-                </>
-            ) : (
-                <>
-                    RAM {ram} free · CPU {cpu}
-                </>
-            )}
+            <span className="min-w-0 truncate">{words}</span>
+            <svg
+                width="10"
+                height="10"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.4"
+                aria-hidden="true"
+                className={cn("shrink-0 text-muted", props.open && "rotate-180")}
+            >
+                <path d="m6 9 6 6 6-6" />
+            </svg>
         </button>
     );
 }
@@ -176,7 +206,8 @@ export interface SidecarTitleBarProps {
     onForm: (change: FormChange) => void;
     // the resource panel the machine figures open
     resourcesOpen: boolean;
-    onResources: () => void;
+    // none while the wall shows the Resources column
+    onResources?: () => void;
 }
 
 export function SidecarTitleBar(props: SidecarTitleBarProps) {

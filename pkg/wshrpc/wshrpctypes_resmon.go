@@ -40,6 +40,15 @@ type ResMonOther struct {
 	Count int     `json:"count"`
 	Cpu   float64 `json:"cpu"`
 	Mem   int64   `json:"mem"`
+	Gpu   float64 `json:"gpu,omitempty"` // the busiest GPU engine any of them holds, as Task Manager sums a group
+}
+
+// ResMonMachine is the whole machine, read with the others: what Sidecar's resource charts plot.
+type ResMonMachine struct {
+	Cpu      float64  `json:"cpu"`           // percent of all cores; 0 before the second sample
+	MemUsed  int64    `json:"memused"`       // bytes: total less available
+	MemTotal int64    `json:"memtotal"`      // bytes
+	Gpu      *float64 `json:"gpu,omitempty"` // percent of the busiest engine; none where the GPU counters cannot be read
 }
 
 type ResMonGroup struct {
@@ -65,8 +74,9 @@ type ResMonSnapshotData struct {
 	BusyMem   bool          `json:"busymem"`
 	Groups    []ResMonGroup `json:"groups"`
 	// asked for with Others: the image names holding at least OthersMin bytes, heaviest first
-	Others    []ResMonOther `json:"others,omitempty"`
-	OthersMin int64         `json:"othersmin,omitempty"`
+	Others    []ResMonOther  `json:"others,omitempty"`
+	OthersMin int64          `json:"othersmin,omitempty"`
+	Machine   *ResMonMachine `json:"machine,omitempty"`
 }
 
 type CommandResMonKillData struct {

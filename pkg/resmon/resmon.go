@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/shirou/gopsutil/v4/cpu"
 	"github.com/shirou/gopsutil/v4/mem"
 	"github.com/wavetermdev/waveterm/pkg/util/jobobject"
 	"github.com/wavetermdev/waveterm/pkg/wshrpc"
@@ -72,7 +73,8 @@ type sample struct {
 	hostPid  int
 	selfPid  int
 	// read only while someone asks for them (AskOthers); nil otherwise
-	others []wshrpc.ResMonOther
+	others  []wshrpc.ResMonOther
+	machine *wshrpc.ResMonMachine
 }
 
 // tickState is owned by one sampler goroutine: CPU-time marks for deltas, the command-line cache, the
@@ -86,8 +88,11 @@ type tickState struct {
 	cmdlines map[procId]string
 	rootTs   map[rootKey]int64
 	busy     busyState
-	// also read the processes outside arcterm this tick (samplerLoop sets it from AskOthers)
+	// also read the processes outside arcterm, the machine and the GPU this tick (samplerLoop sets it from AskOthers)
 	others bool
+	gpu    gpuReader
+	// the machine's CPU times at the last tick that read them, for its CPU percent
+	cpuBusy, cpuAll float64
 }
 
 func newTickState() *tickState {
@@ -166,6 +171,21 @@ func (st *tickState) tick() *sample {
 		procs[pid] = p
 	}
 	var others []wshrpc.ResMonOther
+	var gpuByPid map[int]float64
+	var machine *wshrpc.ResMonMachine
+	if st.others {
+		machine = &wshrpc.ResMonMachine{Cpu: st.machineCpu()}
+		if g, byPid, ok := st.gpu.read(); ok {
+			machine.Gpu, gpuByPid = &g, byPid
+			for pid, p := range procs {
+				p.Gpu = byPid[pid]
+				procs[pid] = p
+			}
+		}
+	} else {
+		st.gpu.close()
+		st.cpuBusy, st.cpuAll = 0, 0
+	}
 	if st.others {
 		// every other process's memory and CPU: one OpenProcess each, ~300 on a busy machine, only while asked
 		var rest []otherProc
@@ -183,7 +203,7 @@ func (st *tickState) tick() *sample {
 				cpu = float64(s.cpuTime-prev) * 100 / float64(wallDelta/100) / float64(st.cores)
 			}
 			marks[id] = s.cpuTime
-			rest = append(rest, otherProc{Name: p.Name, Cpu: cpu, Mem: s.mem})
+			rest = append(rest, otherProc{Name: p.Name, Cpu: cpu, Mem: s.mem, Gpu: gpuByPid[pid]})
 		}
 		others = groupOthers(rest, OthersMin, othersLimit)
 	}
@@ -206,15 +226,36 @@ func (st *tickState) tick() *sample {
 	var totalMem int64
 	if vm, err := mem.VirtualMemory(); err == nil {
 		totalMem = int64(vm.Total)
+		if machine != nil {
+			machine.MemUsed, machine.MemTotal = int64(vm.Total-vm.Available), int64(vm.Total)
+		}
 	}
 	s := &sample{
 		ts: now.UnixMilli(), ready: ready, procs: procs, arcRows: arcRows, jobs: jobs, rootTs: rootTs,
-		totalMem: totalMem, hostPid: st.hostPid, selfPid: st.selfPid, others: others,
+		totalMem: totalMem, hostPid: st.hostPid, selfPid: st.selfPid, others: others, machine: machine,
 	}
 	// busy counts every group, so it groups without labels: owner info changes no total
 	cpu, memUsed := sumTotals(buildGroups(procs, arcRows, s.jobViews(nil), st.hostPid, st.selfPid))
 	s.busyCpu, s.busyMem = st.busy.observe(cpu, memUsed, totalMem)
 	return s
+}
+
+// machineCpu is the whole machine's CPU percent since the last tick that read it: 0 on the first.
+func (st *tickState) machineCpu() float64 {
+	times, err := cpu.Times(false)
+	if err != nil || len(times) == 0 {
+		return 0
+	}
+	t := times[0]
+	idle := t.Idle + t.Iowait
+	all := t.User + t.System + t.Idle + t.Nice + t.Iowait + t.Irq + t.Softirq + t.Steal
+	busy := all - idle
+	prevBusy, prevAll := st.cpuBusy, st.cpuAll
+	st.cpuBusy, st.cpuAll = busy, all
+	if prevAll == 0 || all <= prevAll {
+		return 0
+	}
+	return min(100, max(0, (busy-prevBusy)*100/(all-prevAll)))
 }
 
 func (s *sample) jobViews(info func(o jobobject.Owner) OwnerInfo) []jobView {
@@ -253,6 +294,7 @@ func samplerLoop() {
 		if time.Since(sampler.lastCall) > idleStop {
 			sampler.running, sampler.latest = false, nil
 			sampler.mu.Unlock()
+			st.gpu.close()
 			return
 		}
 		sampler.mu.Unlock()
@@ -333,5 +375,6 @@ func Snapshot(ctx context.Context, resolve Resolver) wshrpc.ResMonSnapshotData {
 		Groups:    groups,
 		Others:    s.others,
 		OthersMin: OthersMin,
+		Machine:   s.machine,
 	}
 }

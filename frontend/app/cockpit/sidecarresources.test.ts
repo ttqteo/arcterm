@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it } from "vitest";
-import { resourcesOf } from "./sidecarresources";
+import { pushHistory, resourcesOf } from "./sidecarresources";
 
 const MB = 1024 * 1024;
 
@@ -31,8 +31,13 @@ function snap(over: Partial<ResMonSnapshotData> = {}): ResMonSnapshotData {
 
 describe("resourcesOf", () => {
     it("reads measuring before a snapshot and unsupported off Windows", () => {
-        expect(resourcesOf(null, [])).toEqual({ state: "measuring", rows: [], others: [] });
-        expect(resourcesOf(snap({ supported: false }), [])).toEqual({ state: "unsupported", rows: [], others: [] });
+        expect(resourcesOf(null, [])).toEqual({ state: "measuring", rows: [], others: [], history: [] });
+        expect(resourcesOf(snap({ supported: false }), [])).toEqual({
+            state: "unsupported",
+            rows: [],
+            others: [],
+            history: [],
+        });
     });
 
     it("splits Sidecar's renderer out of arcterm's processes and lists agents by RAM", () => {
@@ -81,5 +86,47 @@ describe("resourcesOf", () => {
             { key: "other:chrome.exe", label: "chrome.exe", kind: "other", count: 12, cpu: 1.3, mem: 1058 * MB },
         ]);
         expect(r.othersMin).toBe(200 * MB);
+    });
+
+    it("takes a group's GPU from its busiest process, and leaves an idle GPU out", () => {
+        const busy = { ...row(10, 100 * MB), gpu: 12.4 } as ProcessInfo;
+        const s = snap({
+            groups: [
+                group("arc", "arc", "arcterm", [busy, { ...row(11, 50 * MB), gpu: 3 } as ProcessInfo]),
+                group("agenttab", "job:1:1", "agent", [row(20, 10 * MB)], 1, 10 * MB),
+            ],
+        });
+        const r = resourcesOf(s, [10]);
+        expect(r.rows[0].gpu).toBe(12);
+        expect(r.rows[1].gpu).toBe(3);
+        expect(r.rows[2].gpu).toBeUndefined();
+    });
+});
+
+describe("pushHistory", () => {
+    const machine = (cpu: number, used: number, gpu?: number) => ({
+        cpu,
+        memused: used * MB,
+        memtotal: 1000 * MB,
+        ...(gpu != null ? { gpu } : {}),
+    });
+
+    it("adds a reading as whole percents and drops what is older than the window", () => {
+        let h = pushHistory([], snap({ ts: 1000, machine: machine(12.6, 250, 40.4) }), 3000);
+        h = pushHistory(h, snap({ ts: 3000, machine: machine(20, 500) }), 3000);
+        expect(h).toEqual([
+            { t: 1000, cpu: 13, mem: 25, gpu: 40 },
+            { t: 3000, cpu: 20, mem: 50 },
+        ]);
+        h = pushHistory(h, snap({ ts: 5000, machine: machine(30, 750) }), 3000);
+        expect(h.map((p) => p.t)).toEqual([3000, 5000]);
+    });
+
+    it("keeps the same history for a snapshot with no reading, not ready, or not newer", () => {
+        const h = pushHistory([], snap({ ts: 1000, machine: machine(1, 1) }));
+        expect(pushHistory(h, null)).toBe(h);
+        expect(pushHistory(h, snap({ ts: 2000 }))).toBe(h);
+        expect(pushHistory(h, snap({ ts: 2000, ready: false, machine: machine(1, 1) }))).toBe(h);
+        expect(pushHistory(h, snap({ ts: 1000, machine: machine(1, 1) }))).toBe(h);
     });
 });

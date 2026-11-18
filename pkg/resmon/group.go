@@ -56,7 +56,8 @@ type proc struct {
 	CreateTs int64 // epoch ms
 	Cpu      float64
 	Mem      int64
-	Ports    []int // tcp ports it listens on, sorted; nil when none or unreadable
+	Gpu      float64 // percent of its busiest GPU engine; 0 when not read
+	Ports    []int   // tcp ports it listens on, sorted; nil when none or unreadable
 }
 
 // treeRow places a pid in its group's pre-order tree.
@@ -288,6 +289,7 @@ func toRow(p proc, depth int) wshrpc.ProcessInfo {
 		Mem:        p.Mem,
 		MemPct:     -1,
 		Cpu:        p.Cpu,
+		Gpu:        p.Gpu,
 		NumThreads: -1,
 		Ports:      p.Ports,
 	}

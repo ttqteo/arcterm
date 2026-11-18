@@ -340,6 +340,7 @@ type ProcessInfo struct {
 	Status     string  `json:"status,omitempty"`
 	User       string  `json:"user,omitempty"`
 	Mem        int64   `json:"mem"`             // working set (resident set size) in bytes; -1 if unavailable
+	Gpu        float64 `json:"gpu,omitempty"`   // percent of its busiest GPU engine (Windows, read only while the others are asked for)
 	MemPct     float64 `json:"mempct"`          // memory percent; -1 if unavailable
 	Cpu        float64 `json:"cpu"`             // % of the whole machine; -1 if unavailable
 	NumThreads int32   `json:"numthreads"`      // -1 if unavailable
