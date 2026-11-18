@@ -36,15 +36,15 @@ export const STAGE_GUTTER = "w-full px-6";
 export const STAGE_PROSE = "max-w-[72ch]";
 
 // The right edge still needs the scrollbar reserved, for the same reason the left edge used to: it takes
-// its 10px off the scroller's content box, so a full-width table in a scrolling band would otherwise end
-// 10px short of one in a band without a scrollbar. Every band reserves the same 10px — the scrollers by
+// its 8px off the scroller's content box, so a full-width table in a scrolling band would otherwise end
+// 8px short of one in a band without a scrollbar. Every band reserves the same 8px — the scrollers by
 // having a scrollbar there, the rest by padding. `scroll` rather than `auto` so the reservation does not
 // come and go as content grows past one screen; the global track is transparent (tailwindsetup.css), so an
 // unused one is invisible.
 //
-// 10px is not a guess about the platform: ::-webkit-scrollbar is set to exactly that in tailwindsetup.css.
+// 8px is not a guess about the platform: ::-webkit-scrollbar is set to exactly that in tailwindsetup.css.
 export const STAGE_SCROLLER = "overflow-y-scroll";
-export const STAGE_BAND_INSET = "pr-[10px]";
+export const STAGE_BAND_INSET = "pr-[8px]";
 
 // One header band for all three columns: same height, same rule, same tone. Bands own their own padding —
 // the Stage's header pairs this with STAGE_GUTTER, the Subjects column with its own px. Borders stay

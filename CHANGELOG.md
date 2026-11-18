@@ -56,6 +56,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- Scrollbars stay hidden until you point at the area that scrolls, then show as a thin bar that thickens under the
+  pointer, so the sidebar, Chat and lists read as clean panels.
 - The agent header puts the project and initiative on a second line under the agent's name, in the height the header
   already had, so the run link, model and context beside it get the room back.
 - Focus read in Chat is each agent's own: turning it on for one agent leaves the others as they were. While it is on,

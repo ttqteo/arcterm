@@ -16,6 +16,13 @@ list (its number is not reused).
 Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) ·
 [part 4](hand-checks-4.md) · [part 3](hand-checks-3.md) · [part 2](hand-checks-2.md) (oldest).
 
+- [ ] (arcterm) **Scrollbars show only under the pointer.** With the pointer away, the Agent tree, Chat, Jarvis and
+  Setup lists show no scrollbar; point into one and a thin bar shows on that list alone (not on a list beside or
+  inside it), thicker and brighter under the pointer and while dragged; nothing shifts sideways when it shows. Jarvis
+  bands and the council composer still line up with the scrolling column above them (gutter 10px → 8px). Checked only
+  in an Edge page with the same rules (`--scrollbar-thumb` in `tailwindsetup.css`, 2026-11-18), not in the app or on a
+  Mac's WebKit.
+
 - [ ] (arcterm) **A Chat selection keeps the text's colour.** Drag over a reply in Chat (prose, an inline code span, a
   code block, a table): the words stay their own colour (white prose, coloured code) on the accent band, not tinted
   blue, under a few themes. Checked only in a headless-Edge page with the same layer (`mix-blend-mode: screen` on

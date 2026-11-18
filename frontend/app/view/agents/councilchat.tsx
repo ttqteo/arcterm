@@ -4120,8 +4120,8 @@ export function CouncilChat({
                             }
                         })}
                     </Channel>
-                    {/* the channel's column: its px-6, its 10px scrollbar gutter on the right, its 860px centred */}
-                    <div className="flex-none pb-4 pl-6 pr-[34px] pt-[10px]">
+                    {/* the channel's column: its px-6, its 8px scrollbar gutter on the right, its 860px centred */}
+                    <div className="flex-none pb-4 pl-6 pr-[32px] pt-[10px]">
                         <div className="mx-auto w-full max-w-[860px]">
                             <span id="council-channel-label" className="sr-only">
                                 Message the council
