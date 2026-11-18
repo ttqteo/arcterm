@@ -24,6 +24,8 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
   (12)…). The title bar's figures are then plain text. Shrink it below that (or the small form): the figures get a
   border and a chevron, and a click drops the same charts and table under the bar; Escape or a click outside closes
   it. Windows only; on a Mac it says so. Commits 4f28db4b9 and the `feat/sidecar-charts` merge.
+- [ ] (arcterm) **Sidecar's pin in the full window.** Maximize Sidecar or press F11: the title bar has a pin button
+  beside S; pressed, Sidecar stays over the other apps on its screen, and a relaunch reopens it pinned. Same merge.
 - [ ] (arcterm) **Sidecar's S button reads as its own button.** In the wall layout the S button shows a screen with a
   small window in its corner (a screen with an arrow out while small), no longer the same inward arrows as the full
   screen button beside it. Commit 4f28db4b9.

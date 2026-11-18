@@ -1574,7 +1574,7 @@ export default function () {
                             got.s === "false" &&
                             got.layout === wantLayout &&
                             got.kind === wantKind &&
-                            (wantLayout === "wall" ? got.pin === null : true) &&
+                            got.pin === "false" &&
                             mainNow.w === mainBeforeBack.w &&
                             mainNow.h === mainBeforeBack.h &&
                             mainNow.focus === mainBeforeBack.focus,

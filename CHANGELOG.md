@@ -56,7 +56,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 ### Changed
 
 - Sidecar's small-form button is a screen with a small window in its corner, so it no longer looks like the full
-  screen button beside it.
+  screen button beside it, and the full window has its own pin button, so a maximized or full-screen Sidecar can stay
+  on top too.
 - The Comment button on text you select in a markdown doc now floats above the selection, at its start, instead of
   under it.
 - Agents with no project now sit in No folder in the Agent tree, with the terminals that have none, rather than in a

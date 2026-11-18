@@ -189,6 +189,14 @@ function SmallGlyph({ small }: { small: boolean }) {
     );
 }
 
+function PinGlyph() {
+    return (
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+            <path d="M12 17v5M9 10.8V4h6v6.8l3 3.2H6z" />
+        </svg>
+    );
+}
+
 function CloseGlyph() {
     return (
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6">
@@ -268,9 +276,7 @@ export function SidecarTitleBar(props: SidecarTitleBarProps) {
                     onClick={() => props.onForm(pinButtonChange(form))}
                     className={cn(SMALL_BTN, form.pinned && "bg-surface-selected text-primary")}
                 >
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
-                        <path d="M12 17v5M9 10.8V4h6v6.8l3 3.2H6z" />
-                    </svg>
+                    <PinGlyph />
                 </TitleButton>
                 {/* the person's own close: the host reads it as "do not reopen Sidecar next launch" (a Mac's red light) */}
                 {mac ? null : (
@@ -319,6 +325,16 @@ export function SidecarTitleBar(props: SidecarTitleBarProps) {
             )}
             <div className="ml-auto flex h-full items-center gap-4">
                 {sButton}
+                {/* the pin alone, here too: a full-screen or maximized wall can stay over the apps on its screen */}
+                <TitleButton
+                    name="pin"
+                    label={form.pinned ? "Unpin" : "Pin on top"}
+                    pressed={form.pinned}
+                    onClick={() => props.onForm(pinButtonChange(form))}
+                    className={cn(BOXED_BTN, form.pinned && BOXED_PRESSED)}
+                >
+                    <PinGlyph />
+                </TitleButton>
                 {/* a Mac's traffic lights are the window buttons, the green one full screen */}
                 {mac ? null : (
                     <>
