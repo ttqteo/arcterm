@@ -23,7 +23,8 @@ const SHELL = {
     description: "serve the preview",
     command: "npm run preview",
     startedAgo: 14 * MIN,
-    output: ["preview on :4173", "ready in 312 ms", "dist/assets/redux-selector-B5jgC3IP.svg                     1.51 kB │ gzip:     0.77 kB"],
+    // the last line is a test's pass as vitest prints it with no terminal: drawn in its tone, its ✓ green (outputlines.tsx)
+    output: ["preview on :4173", "ready in 312 ms", "dist/assets/redux-selector-B5jgC3IP.svg                     1.51 kB │ gzip:     0.77 kB", " ✓ a.test.ts > renders 4ms"],
 };
 // the build line wider than the peek's default 560px: it wraps there, and reads on one line once the peek is dragged wider
 const WIDE_LINE = SHELL.output[2];
@@ -574,6 +575,12 @@ export default function (kit) {
                 // 7. a background shell has no tabs: its output, followed live; pressing its row again closes the peek
                 const shell = await openPeek(h, SHELL.id, `(tid(p, "background-task-peek-output")?.textContent ?? "").includes(${JSON.stringify(SHELL.output[0])})`);
                 await h.shot("cdp-shots/monitor-tasks-7.png");
+                // the pass line's ✓ in green, apart from the line's own colour
+                const tone7 = await h.ev(`(() => {
+                    ${LIB}
+                    const l = tid(peek(), "background-task-peek-output")?.querySelector('[data-output-tone="pass"]');
+                    return l ? { mark: getComputedStyle(l.firstElementChild).color, line: getComputedStyle(l).color } : null;
+                })()`);
                 // the peek opens at its default size whatever its output: the build line wraps at 560px. Then its right
                 // edge and its corner are dragged, and a double click on an edge puts the default back
                 const measure = () =>
@@ -647,7 +654,7 @@ export default function (kit) {
                 await h.ev(`(() => { ${LIB} row(${JSON.stringify(SHELL.id)})?.click(); })()`);
                 const closedByRow = await closed(h);
                 rec(
-                    "7. Shell: the peek of the background command has no tablist, reads running with its $ command line and output, over a footer of bmtshell.output and last 64 KB · live; the Close button closes the Monitor's peek and pressing the open row again closes this one",
+                    "7. Shell: the peek of the background command has no tablist, reads running with its $ command line and output (its ✓ line's mark green), over a footer of bmtshell.output and last 64 KB · live; the Close button closes the Monitor's peek and pressing the open row again closes this one",
                     closedByButton &&
                         shell != null &&
                         shell.kind === "shell" &&
@@ -658,10 +665,12 @@ export default function (kit) {
                         shell.events === null &&
                         shell.output === null &&
                         SHELL.output.every((l) => shell.outputBody?.includes(squash(l))) &&
+                        tone7 != null &&
+                        tone7.mark !== tone7.line &&
                         shell.footer[0]?.text === `${SHELL.id}.output` &&
                         shell.footer[1]?.text === "last 64 KB · live" &&
                         closedByRow,
-                    JSON.stringify({ closedByButton, shell, closedByRow })
+                    JSON.stringify({ closedByButton, shell, tone7, closedByRow })
                 );
 
                 // 8. Stop: two presses, then the row leaves the tree and the peek closes. The fixture block runs no such process, so the

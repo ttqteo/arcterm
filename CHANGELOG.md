@@ -77,9 +77,14 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - An agent whose brainstorm's builder check waits on you (a builder question, or the review to approve) now reads as
   asking: its row in the Agent tree breathes amber, and it counts in Cockpit's Needs you.
 
-- A run's final stage shows its commands' output in colour, as a terminal would: a test that passed has a green ✓
-  (or `ok`), one that failed is red, warnings yellow, skips and each test's time dimmed. Output that comes with its own
+- A run's final stage and an agent's background tasks show their commands' output in colour, as a terminal would: a
+  test that passed has a green ✓ (or `ok`), one that failed is red, warnings yellow, skips and each test's time dimmed,
+  `git status -s` in git's colours and a task's `[exited with code N]` green or red. Output that comes with its own
   colours keeps them.
+- Chat's bash mode looks like Claude Desktop's: the box stays one row with a Bash pill beside Send, instead of a
+  caption over a dark well.
+- A one-line command in a reply (`! task install`, a one-line `bash` block) is one compact row with Run (▷) and Copy
+  at its right, instead of a block with a header, Wrap and a line number.
 - An agent's run link (a worker's ↑ way back to its lead, a lead's own run, the runs a session started) sits on the line
   under its name, after the project, so a long name no longer gets cut to make room for it.
 - A long message of yours folded behind Show more opens with a click anywhere on its bubble; once open, only Show less

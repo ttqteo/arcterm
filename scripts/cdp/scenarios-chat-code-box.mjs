@@ -18,6 +18,8 @@ const SHORT_MS = 3000;
 // the prompt sent with code on the fence's line: its first line must stay in the block
 const SENT = '```curl https://api.example.test/v1/one \\\n  -H "Authorization: Bearer KEY" \\\n  -d \'{"model": "x"}\'\n```';
 const SENT_FIRST = "curl https://api.example.test/v1/one";
+// the reply's one-line command: a compact row with Run and Copy, as Claude Desktop draws it (codeblock.tsx)
+const COMPACT = "! task install";
 
 const layerOf = (id) => `document.querySelector('[data-agent-chat="${id}"]')`;
 const inputOf = (id) => `${layerOf(id)}?.querySelector("[data-chat-input]")`;
@@ -91,7 +93,7 @@ export default function (kit) {
                 const o = (sec) => ({ cwd: ctx.dir, ts: new Date(Date.now() - 600_000 + sec * 1000).toISOString() });
                 ctx.transcript = AC.writeTranscript(ctx.dir, "chat-code-box", [
                     AC.userText(SENT, o(0)),
-                    AC.assistantText("Sent it to the endpoint; it answered 200.", o(5)),
+                    AC.assistantText(`Sent it to the endpoint; it answered 200.\n\nTo install it, type:\n\n\`\`\`\n${COMPACT}\n\`\`\``, o(5)),
                 ]);
                 at = "resetting the grid";
                 await h.ev(`localStorage.setItem(${JSON.stringify(GRID_KEY)}, ${JSON.stringify(JSON.stringify(GRID_EMPTY))})`);
@@ -155,6 +157,30 @@ export default function (kit) {
                 rec(
                     `${name}: the [data-chat-you] bubble draws a code block whose first line is "${SENT_FIRST} \\", three lines, with no "curl" language tag`,
                     up && (got.first ?? "").startsWith(SENT_FIRST) && got.lines === 3 && got.lang !== "curl",
+                    { up, ...got }
+                );
+            });
+
+            // 1b. the reply's one-line command: one compact row, no head and no line number, Run (▷) and Copy at its right
+            await run("1b. one-line command is a compact row", async (name) => {
+                const up = await polishWaitFor(h, `!!${layerOf(A)}?.querySelector("[data-code-compact]")`, WAIT_MS);
+                const got = await h.ev(`(() => {
+                    const row = ${layerOf(A)}?.querySelector("[data-code-compact]");
+                    const line = row?.querySelector("[data-code-line]");
+                    return {
+                        text: line?.textContent ?? null,
+                        head: !!row?.querySelector("[data-code-head]"),
+                        run: !!row?.querySelector("[data-code-run]"),
+                        copy: !!row?.querySelector("[data-code-copy] button"),
+                        height: row ? Math.round(row.getBoundingClientRect().height) : null,
+                        mono: line ? /mono/i.test(getComputedStyle(line).fontFamily) : false,
+                    };
+                })()`);
+                await h.ev(`${layerOf(A)}?.querySelector("[data-code-compact]")?.scrollIntoView({ block: "center" })`);
+                await shot(h, "1b-compact-command");
+                rec(
+                    `${name}: "${COMPACT}" in the reply is one [data-code-compact] row in mono, no head, a Run and a Copy button, under 48px tall`,
+                    up && got.text === COMPACT && !got.head && got.run && got.copy && got.mono && got.height != null && got.height < 48,
                     { up, ...got }
                 );
             });

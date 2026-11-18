@@ -88,16 +88,15 @@ export interface BoxLayoutInput {
     text: string;
     /** how many attachments wait in the box */
     attachments: number;
-    /** the text is a bash command (`!`): its caption and shell well need the grown box */
-    bash: boolean;
     /** the editor measured past one line since the text was last empty. It is a latch, not the current measure: a line
      *  that wraps only at the row's narrower width would fit again once grown, and the box would flip back and forth */
     wrapped: boolean;
 }
 
-/** Several lines, an attachment or bash mode grow the box; an empty text lets go of a wrap. */
+/** Several lines or an attachment grow the box; an empty text lets go of a wrap. A bash command is one row like any
+ *  other text, its pill beside Send, as Claude Desktop draws its shell mode. */
 export function boxLayout(i: BoxLayoutInput): BoxLayout {
-    if (i.bash || i.attachments > 0 || i.text.includes("\n") || (i.wrapped && i.text !== "")) {
+    if (i.attachments > 0 || i.text.includes("\n") || (i.wrapped && i.text !== "")) {
         return "grown";
     }
     return "row";

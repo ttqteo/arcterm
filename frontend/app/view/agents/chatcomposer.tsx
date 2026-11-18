@@ -145,8 +145,6 @@ import { opensTui } from "./slashcommands";
 // one line of the editor (14px at line-height 1.9): the one-row box's text; grows as the text wraps, then scrolls
 const ChatMinH = 27;
 const ChatMaxH = 200;
-// in bash mode the editor sits in a well with 8px of padding above and below, so one line of it is about the box's height
-const ChatBashMinH = 25;
 
 const NO_BLOCK: Atom<Block | undefined> = atom(undefined as Block | undefined);
 const NO_CHIPS: ChatChip[] = [];
@@ -999,19 +997,19 @@ function ComposerBox({
             return;
         }
         const ro = new ResizeObserver(() => {
-            if (!bash && el.offsetHeight > ChatMinH + 2) {
+            if (el.offsetHeight > ChatMinH + 2) {
                 setWrapped(true);
             }
         });
         ro.observe(el);
         return () => ro.disconnect();
-    }, [bash]);
+    }, []);
     useEffect(() => {
         if (text === "") {
             setWrapped(false);
         }
     }, [text]);
-    const grown = boxLayout({ text, attachments: att.attachments.length, bash, wrapped }) === "grown";
+    const grown = boxLayout({ text, attachments: att.attachments.length, wrapped }) === "grown";
     return (
         // the chips above the box, the box, the line under it: one wrapper, so the cell's input lookup
         // (cellinput.ts) and the sleeping overlay's attribute reach all three
@@ -1107,25 +1105,6 @@ function ComposerBox({
                 the person to act */}
                         <ChatBgLine model={model} agent={agent} />
                         <AttachmentTray items={att.attachments} onRemove={att.remove} onRetry={att.retry} />
-                        {/* a bash command says what it is above its well: it runs in the agent's shell, and its output joins the chat */}
-                        {bash ? (
-                            <div
-                                data-chat-bash-caption=""
-                                className="flex items-center gap-1.5 whitespace-nowrap text-[12px]"
-                            >
-                                <Terminal size={13} strokeWidth={2} aria-hidden className="flex-none text-accent" />
-                                <span className="font-medium text-primary">Bash</span>
-                                <span className="min-w-0 truncate text-muted">
-                                    · runs in the agent's shell, output joins the chat
-                                </span>
-                                {ghost !== "" ? (
-                                    <span data-chat-bash-accept="" className="ml-auto flex-none text-ink-faint">
-                                        <span className="font-mono text-muted">→</span> or{" "}
-                                        <span className="font-mono text-muted">Tab</span> accept
-                                    </span>
-                                ) : null}
-                            </div>
-                        ) : null}
                         {/* `+`, the text and Send/Stop. One row; grown, the well takes a line of its own first (order-first,
                 basis-full) and `+` and Send/Stop wrap under it. The well and its editor stay this element's child either
                 way, so the editor is never remounted, and its parts fold in place through a sleep and a wake. */}
@@ -1150,18 +1129,14 @@ function ComposerBox({
                             <div
                                 ref={wellRef}
                                 data-chat-well=""
-                                className={cn(
-                                    "min-w-0",
-                                    grown ? "order-first basis-full px-1" : "flex-1",
-                                    bash && "rounded-[8px] bg-surface-code px-2.5 py-2"
-                                )}
+                                className={cn("min-w-0", grown ? "order-first basis-full px-1" : "flex-1")}
                             >
                                 <ChatEditor
                                     ref={editorRef}
                                     value={text}
                                     outsideCaret={outsideCaret.current}
                                     readOnly={waking || dozing}
-                                    minHeight={bash ? ChatBashMinH : ChatMinH}
+                                    minHeight={ChatMinH}
                                     maxHeight={ChatMaxH}
                                     placeholder={typeof hint === "string" ? hint : <HintLine parts={hint} />}
                                     bash={bash}
@@ -1346,6 +1321,25 @@ function ComposerBox({
                             {/* Stop and Send at the row's right (grown, the bottom row's right): Stop where Send is while the agent
                     works; Send folds out beside it with nothing to send */}
                             <div className="ml-auto flex flex-none items-center gap-1.5">
+                                {/* bash mode, as Claude Desktop marks its shell: a pill naming the shell beside Send. The
+                                `!` before the command stays (Backspace at its start leaves bash mode); the pill's title says
+                                where the command runs and how to take the ghost */}
+                                <AnimatePresence initial={false}>
+                                    {bash ? (
+                                        <Fold key="bash">
+                                            <span
+                                                data-chat-bash-pill=""
+                                                title={
+                                                    "Runs in the agent's shell; its output joins the chat. " +
+                                                    "→ or Tab takes the grey suggestion; Backspace at the start leaves bash mode."
+                                                }
+                                                className="flex-none select-none rounded-full bg-skill/15 px-2 py-[2px] text-[11px] font-medium whitespace-nowrap text-skill-soft"
+                                            >
+                                                Bash
+                                            </span>
+                                        </Fold>
+                                    ) : null}
+                                </AnimatePresence>
                                 <AnimatePresence initial={false}>
                                     {showStop ? (
                                         <Fold key="stop">

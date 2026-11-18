@@ -22,3 +22,25 @@ export function runnableCommand(code: string): string | undefined {
     const command = lines.join("\n").trim();
     return command || undefined;
 }
+
+// A block with no language whose every line is a prompted command (`! task install`, `$ npm test`): the reply means
+// you to run it as surely as a fenced `bash` block.
+export function isPromptedCommand(code: string, lang: string | undefined): boolean {
+    if (lang != null && lang !== "") {
+        return false;
+    }
+    const lines = code.replace(/\n+$/, "").split("\n");
+    return lines.length > 0 && lines.every((ln) => /^\s*[!$] \S/.test(ln));
+}
+
+// A block drawn as one compact row, as Claude Desktop draws a command: one line, no file path, and no language or a
+// shell's. A block of code in a named language keeps its head (the language tag, Wrap) and its line number.
+export function isCompactBlock(code: string, lang: string | undefined, path: string | undefined): boolean {
+    if (path != null && path !== "") {
+        return false;
+    }
+    if (lang != null && lang !== "" && !isRunnableLang(lang)) {
+        return false;
+    }
+    return !code.replace(/\n+$/, "").includes("\n");
+}

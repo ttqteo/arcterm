@@ -44,7 +44,6 @@ import {
 } from "react";
 import { bgSessionLive, bgTaskStoppable } from "./agentrailsections";
 import type { AgentsViewModel } from "./agents";
-import { parseAnsiLines, runCss } from "./ansitext";
 import {
     backgroundTaskKind,
     backgroundTaskState,
@@ -60,6 +59,7 @@ import {
     type BackgroundTaskState,
     type PeekSize,
 } from "./monitortasks";
+import { OutputLines } from "./outputlines";
 import { ServerStopButton } from "./railservers";
 import { JumpToLatestPill, useStickToBottom } from "./sticktobottom";
 import {
@@ -244,22 +244,16 @@ function useTaskOutput(path: string | undefined, running: boolean): string[] | n
     return lines;
 }
 
-// what an inverse run swaps in for an unset side: this view's own text and background
-const INVERSE_FG = "var(--color-secondary)";
-const INVERSE_BG = "var(--color-surface-code)";
+// output lines in colour (outputlines.tsx): the program's ANSI colours (vite, go test, cargo color theirs) or, for a
+// command that printed none, the colours its text calls for
+const PEEK_COLORS = { fg: "var(--color-secondary)", bg: "var(--color-surface-code)" };
 
-// output lines with the program's ANSI colors drawn (vite, go test, cargo all color theirs), not their raw escapes
 function AnsiLines({ lines }: { lines: string[] }) {
-    const parsed = useMemo(() => parseAnsiLines(lines), [lines]);
-    return parsed.map((runs, i) => (
-        <div key={i} className="whitespace-pre-wrap break-words text-secondary">
-            {runs.map((r, j) => (
-                <span key={j} style={runCss(r.style, INVERSE_FG, INVERSE_BG)}>
-                    {r.text}
-                </span>
-            ))}
+    return (
+        <div className="whitespace-pre-wrap break-words text-secondary">
+            <OutputLines lines={lines} colors={PEEK_COLORS} />
         </div>
-    ));
+    );
 }
 
 // The body's height: null fits its lines up to the default, a number is the height a drag gave it. A body marks its
