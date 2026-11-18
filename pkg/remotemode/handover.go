@@ -94,8 +94,9 @@ func (e *GoneError) Error() string {
 // agent as last seen eligible, and since when it has failed the check (0 while it passes).
 //
 // phone is set for a hand-over the phone made by tapping the agent's row (remoteTake), never for one made
-// with Hand. acted is set once the owner has sent, stopped, approved or denied from the phone. Only a phone
-// take nobody acted on is ended when the owner leaves the agent view (remoteRelease).
+// with Hand: Hand of a tab the phone already took clears it, since the owner's hand at the desk makes it a
+// desk hand-over. acted is set once the owner has sent, stopped, approved or denied from the phone. Only a
+// phone take nobody acted on is ended when the owner leaves the agent view (remoteRelease).
 type handover struct {
 	state        string
 	since        int64
@@ -354,14 +355,19 @@ func handStatusTabs() []string {
 // handAdd seeds since from the status time at this first look; handing over again keeps it.
 func handAdd(a Agent) { handAddFrom(a, false) }
 
-// handAddFrom is handAdd with the hand-over's phone flag, which only a new hand-over takes: a tab already
-// handed over keeps the flags it has, so a take of a desk hand-over does not make the phone own it, and a
-// second take does not forget the owner has acted.
+// handAddFrom is handAdd with the hand-over's phone flag, which only a new hand-over takes. A tab already
+// handed over keeps its flags, with one exception: a take (phone true) of a desk hand-over does not make the
+// phone own it, and a second take does not forget the owner has acted, but a desk hand-over (phone false)
+// of a tab the phone took clears its phone flag, since the owner's explicit hand at the desk makes it a desk
+// hand-over, which the phone leaving the agent view (remoteRelease) must not end.
 func handAddFrom(a Agent, phone bool) {
 	handMu.Lock()
 	defer handMu.Unlock()
 	delete(handEnded, a.TabId)
-	if _, ok := handed[a.TabId]; ok {
+	if h, ok := handed[a.TabId]; ok {
+		if !phone {
+			h.phone = false
+		}
 		return
 	}
 	handed[a.TabId] = &handover{state: PhoneState(a), since: a.Status.Ts, agent: a, phone: phone}

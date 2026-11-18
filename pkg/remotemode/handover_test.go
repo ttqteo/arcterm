@@ -269,6 +269,51 @@ func TestHandFlags(t *testing.T) {
 	}
 }
 
+// A desk hand-over of a tab the phone took is the owner's explicit hand at the desk: the phone leaving the agent
+// view no longer ends it, whether or not the owner had acted on the take.
+func TestHandOfAPhoneTakeBecomesADeskHandOver(t *testing.T) {
+	ctx := context.Background()
+	for _, c := range []struct {
+		name  string
+		acted bool
+	}{
+		{"a take nobody acted on", false},
+		{"a take the owner acted on", true},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			handTestEnv(t, handTestClaude("tab-a"))
+			if err := remoteTake(ctx, "tab-a"); err != nil {
+				t.Fatal(err)
+			}
+			if c.acted {
+				handMarkActed("tab-a")
+			}
+			if phone, _, ok := takeTestFlags("tab-a"); !ok || !phone {
+				t.Fatalf("setup: tab-a after a take: phone %v, handed %v; want a handed phone take", phone, ok)
+			}
+
+			handTestHand(t, "tab-a")
+			if phone, acted, ok := takeTestFlags("tab-a"); !ok || phone || acted != c.acted {
+				t.Errorf("tab-a after Hand: phone %v, acted %v, handed %v; want a handed desk hand-over, acted %v kept", phone, acted, ok, c.acted)
+			}
+			if err := remoteRelease(ctx, "tab-a"); err != nil {
+				t.Fatalf("remoteRelease: %v", err)
+			}
+			if got := takeTestHanded(t); !slices.Equal(got, []string{"tab-a"}) {
+				t.Errorf("Status().Handed after the phone left a tab the desk handed over = %v, want [tab-a]", got)
+			}
+
+			// a take of it afterwards is a take of a desk hand-over, which stays one
+			if err := remoteTake(ctx, "tab-a"); err != nil {
+				t.Fatal(err)
+			}
+			if phone, _, ok := takeTestFlags("tab-a"); !ok || phone {
+				t.Errorf("a take after the desk hand-over made it a phone take again (phone %v, handed %v)", phone, ok)
+			}
+		})
+	}
+}
+
 // handTestClock pins handNow at handTestTs and returns a function that moves it by ms.
 func handTestClock(t *testing.T) func(ms int64) {
 	t.Helper()
