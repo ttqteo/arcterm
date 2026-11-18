@@ -343,7 +343,54 @@ type transcriptTailer struct {
 	partial []byte
 }
 
+// transcriptLine is one non-empty, newline-terminated transcript line and the byte offset of the file it starts at.
+type transcriptLine struct {
+	text  string
+	start int64
+}
+
+// splitTranscriptLines splits buf, whose first byte sits at byte offset base of the file, into its non-empty
+// newline-terminated lines (a trailing "\r" dropped) and rest, the bytes after the last newline: an unfinished line.
+func splitTranscriptLines(buf []byte, base int64) (lines []transcriptLine, rest []byte) {
+	start := 0
+	for i := 0; i < len(buf); i++ {
+		if buf[i] != '\n' {
+			continue
+		}
+		line := strings.TrimRight(string(buf[start:i]), "\r")
+		if strings.TrimSpace(line) != "" {
+			lines = append(lines, transcriptLine{text: line, start: base + int64(start)})
+		}
+		start = i + 1
+	}
+	return lines, buf[start:]
+}
+
+// transcriptLineTexts is the text of each line, nil for none.
+func transcriptLineTexts(lines []transcriptLine) []string {
+	var texts []string
+	for _, ln := range lines {
+		texts = append(texts, ln.text)
+	}
+	return texts
+}
+
+// end is the byte offset past the last complete line read: where the next line starts, since a held-back partial
+// line is before offset but not before end.
+func (t *transcriptTailer) end() int64 {
+	return t.offset - int64(len(t.partial))
+}
+
 func (t *transcriptTailer) readNew(path string) ([]string, error) {
+	lines, err := t.readNewLines(path)
+	if err != nil {
+		return nil, err
+	}
+	return transcriptLineTexts(lines), nil
+}
+
+// readNewLines is readNew with the byte offset each line starts at.
+func (t *transcriptTailer) readNewLines(path string) ([]transcriptLine, error) {
 	info, err := os.Stat(path)
 	if err != nil {
 		return nil, err
@@ -368,22 +415,12 @@ func (t *transcriptTailer) readNew(path string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
+	base := t.end() // where buf starts: the held-back partial line comes first
 	// advance by what was read, not by size: ReadAll runs to the current end, past bytes appended since Stat
 	t.offset += int64(len(data))
 	buf := append(t.partial, data...)
-	var lines []string
-	start := 0
-	for i := 0; i < len(buf); i++ {
-		if buf[i] != '\n' {
-			continue
-		}
-		line := strings.TrimRight(string(buf[start:i]), "\r")
-		if strings.TrimSpace(line) != "" {
-			lines = append(lines, line)
-		}
-		start = i + 1
-	}
-	t.partial = append([]byte(nil), buf[start:]...)
+	lines, rest := splitTranscriptLines(buf, base)
+	t.partial = append([]byte(nil), rest...)
 	return lines, nil
 }
 
@@ -417,6 +454,53 @@ func watchTranscriptFile(watcher *fsnotify.Watcher, path string) (bool, error) {
 // every transcriptWaitInterval. Returns when ctx is cancelled or on a fatal error (the caller
 // forwards the error onto the channel).
 func streamTranscript(ctx context.Context, path string, tailLines int, ch chan wshrpc.RespOrErrorUnion[wshrpc.AgentTranscriptUpdate]) error {
+	return watchTranscript(ctx, path, tailLines, -1, func(b transcriptBatch) error {
+		ch <- wshrpc.RespOrErrorUnion[wshrpc.AgentTranscriptUpdate]{Response: wshrpc.AgentTranscriptUpdate{Lines: b.lines}}
+		return nil
+	})
+}
+
+// transcriptBatch is what watchTranscript emits at a time: complete lines, the byte offset of the file the first
+// starts at (cursor; where the read began when there is no line) and the offset just past the last (end), where a
+// stream resumes without a gap or a duplicate. backlog marks the first batch, which is sent even with no line in it.
+type transcriptBatch struct {
+	lines   []string
+	cursor  int64
+	end     int64
+	backlog bool
+}
+
+// transcriptResumeOffset reports whether a stream may continue from byte offset from: it is 0, or the file has that
+// many bytes and a newline just before. A stale or forged offset (the file shrank, or the offset is inside a line)
+// fails, and the stream starts over with its tail rather than replay the file from the top or open on half a line.
+func transcriptResumeOffset(path string, from int64) bool {
+	if from < 0 {
+		return false
+	}
+	if from == 0 {
+		return true
+	}
+	f, size, err := openTranscript(path)
+	if err != nil {
+		return false
+	}
+	defer f.Close()
+	if from > size {
+		return false
+	}
+	var prev [1]byte
+	if _, err := f.ReadAt(prev[:], from-1); err != nil {
+		return false
+	}
+	return prev[0] == '\n'
+}
+
+// watchTranscript is streamTranscript's loop with offsets, for any consumer of batches. from < 0 starts as
+// streamTranscript always has, with the backlog the last tailLines lines (the whole file for a negative
+// tailLines); from >= 0 that is a line boundary of the file (transcriptResumeOffset) makes the backlog every line
+// from there on, so a reader that kept the end of its last batch picks up exactly where it left off. It returns
+// emit's first error at once, nil once ctx is done.
+func watchTranscript(ctx context.Context, path string, tailLines int, from int64, emit func(transcriptBatch) error) error {
 	if path == "" {
 		return fmt.Errorf("transcript path is required")
 	}
@@ -438,7 +522,10 @@ func streamTranscript(ctx context.Context, path string, tailLines int, ch chan w
 	}
 
 	tailer := &transcriptTailer{}
-	if tailLines > 0 {
+	resumed := transcriptResumeOffset(path, from)
+	if resumed {
+		tailer.offset = from
+	} else if tailLines > 0 {
 		// start at the tail's line boundary instead of the file's start. One extra line: readTail counts an
 		// unterminated last line, which readNew holds back. A file not there (yet) or unreadable leaves the offset at
 		// 0, and readNew reports it as it always did
@@ -446,29 +533,36 @@ func streamTranscript(ctx context.Context, path string, tailLines int, ch chan w
 			tailer.offset = off
 		}
 	}
-	backlog, err := tailer.readNew(path)
+	readFrom := tailer.offset
+	backlog, err := tailer.readNewLines(path)
 	// a not-yet-existing file is expected: stay open with an empty backlog and pick the file up when it
 	// appears — don't abort, or the stream dies permanently until the panel remounts.
 	if err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("reading transcript: %w", err)
 	}
-	if tailLines > 0 && len(backlog) > tailLines {
+	if tailLines > 0 && len(backlog) > tailLines && !resumed {
 		backlog = backlog[len(backlog)-tailLines:]
 	}
-	ch <- wshrpc.RespOrErrorUnion[wshrpc.AgentTranscriptUpdate]{Response: wshrpc.AgentTranscriptUpdate{Lines: backlog}}
+	first := transcriptBatch{lines: transcriptLineTexts(backlog), cursor: readFrom, end: tailer.end(), backlog: true}
+	if len(backlog) > 0 {
+		first.cursor = backlog[0].start
+	}
+	if err := emit(first); err != nil {
+		return err
+	}
 
-	sendNew := func() {
-		lines, err := tailer.readNew(path)
+	sendNew := func() error {
+		lines, err := tailer.readNewLines(path)
 		if err != nil {
 			if !os.IsNotExist(err) {
 				log.Printf("transcript tail read: %v\n", err)
 			}
-			return
+			return nil
 		}
 		if len(lines) == 0 {
-			return
+			return nil
 		}
-		ch <- wshrpc.RespOrErrorUnion[wshrpc.AgentTranscriptUpdate]{Response: wshrpc.AgentTranscriptUpdate{Lines: lines}}
+		return emit(transcriptBatch{lines: transcriptLineTexts(lines), cursor: lines[0].start, end: tailer.end()})
 	}
 
 	target := filepath.Clean(path)
@@ -485,7 +579,9 @@ func streamTranscript(ctx context.Context, path string, tailLines int, ch chan w
 				return err
 			}
 			if watching {
-				sendNew()
+				if err := sendNew(); err != nil {
+					return err
+				}
 			}
 		case event, ok := <-watcher.Events:
 			if !ok {
@@ -504,7 +600,9 @@ func streamTranscript(ctx context.Context, path string, tailLines int, ch chan w
 			if event.Op&(fsnotify.Write|fsnotify.Create) == 0 {
 				continue
 			}
-			sendNew()
+			if err := sendNew(); err != nil {
+				return err
+			}
 		case werr, ok := <-watcher.Errors:
 			if !ok {
 				return nil

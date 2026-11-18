@@ -7,66 +7,51 @@ import (
 	"context"
 
 	"github.com/wavetermdev/waveterm/pkg/remotemode"
-	"github.com/wavetermdev/waveterm/pkg/wshrpc"
 )
 
-// RemoteTranscript is remotemode.TranscriptHook: it drains streamTranscript into send as chunks, the first
-// one the backlog (Backlog true), and returns the first error from send or from the stream, nil once ctx is
-// done.
+// RemoteTranscript is remotemode.TranscriptHook: it feeds watchTranscript's batches to send as chunks, the first one
+// the backlog (Backlog true), and returns the first error from send or the stream, nil once ctx is done.
 //
-// The chunks carry no offsets yet (Cursor and End stay 0), and from is not honoured: every stream starts
-// with the last defaultTranscriptTailLines lines, as the phone's stream always has.
+// A from below 0 makes the backlog the last defaultTranscriptTailLines complete lines. Otherwise, as long as from is a
+// line boundary the file still has, the backlog is every line from byte offset from on, so a phone that reconnects
+// with the End of the last chunk it got continues with no gap and no duplicate; any other from is a stale offset and
+// the backlog is the tail again. Each chunk's Cursor is the offset its first line starts at (that of an empty
+// backlog, where it began reading), and End the offset past its last line.
 func RemoteTranscript(ctx context.Context, path string, from int64, send func(remotemode.TranscriptChunk) error) error {
-	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
-	ch := make(chan wshrpc.RespOrErrorUnion[wshrpc.AgentTranscriptUpdate], 16)
-	streamDone := make(chan error, 1)
-	go func() {
-		streamDone <- streamTranscript(ctx, path, 0, ch)
-	}()
-	var first error
-	// after the first failure, cancel and keep reading until the stream returns: it sends on ch
-	// unguarded, so a reader that left would strand it
-	fail := func(err error) {
-		if first == nil {
-			first = err
-			cancel()
-		}
+	return watchTranscript(ctx, path, defaultTranscriptTailLines, from, func(b transcriptBatch) error {
+		return send(remotemode.TranscriptChunk{Lines: b.lines, Cursor: b.cursor, End: b.end, Backlog: b.backlog})
+	})
+}
+
+// RemoteTranscriptPage is remotemode.TranscriptPageHook: up to maxLines complete non-empty lines of the transcript at
+// path that end at byte offset before (clamped to the file's size), and Cursor, the offset the first of them starts at,
+// which the phone asks for the page before. Only whole newline-terminated lines count, so a last line still being
+// written, or one a before inside a line cuts, is left out. A page with no line has Cursor 0: the session's start.
+// It reads only the tail of the range (readTail), never the whole file.
+func RemoteTranscriptPage(path string, before int64, maxLines int) (remotemode.TranscriptChunk, error) {
+	if maxLines <= 0 {
+		maxLines = defaultTranscriptTailLines
 	}
-	// streamTranscript's first message is its backlog
-	backlog := true
-	deliver := func(lines []string) {
-		chunk := remotemode.TranscriptChunk{Lines: lines, Backlog: backlog}
-		backlog = false
-		if err := send(chunk); err != nil {
-			fail(err)
-		}
+	f, size, err := openTranscript(path)
+	if err != nil {
+		return remotemode.TranscriptChunk{}, err
 	}
-	for {
-		select {
-		case msg := <-ch:
-			if first != nil {
-				continue
-			}
-			if msg.Error != nil {
-				fail(msg.Error)
-			} else {
-				deliver(msg.Response.Lines)
-			}
-		case err := <-streamDone:
-			if err != nil {
-				fail(err)
-			}
-			for {
-				select {
-				case msg := <-ch:
-					if first == nil && msg.Error == nil {
-						deliver(msg.Response.Lines)
-					}
-				default:
-					return first
-				}
-			}
-		}
+	defer f.Close()
+	if before < 0 || before > size {
+		before = size
 	}
+	// One extra line: readTail counts an unterminated last line, which is dropped below.
+	off, data, err := readTail(f, before, maxLines+1)
+	if err != nil {
+		return remotemode.TranscriptChunk{}, err
+	}
+	lines, rest := splitTranscriptLines(data, off)
+	if len(lines) > maxLines {
+		lines = lines[len(lines)-maxLines:]
+	}
+	page := remotemode.TranscriptChunk{Lines: transcriptLineTexts(lines), End: off + int64(len(data)-len(rest))}
+	if len(lines) > 0 {
+		page.Cursor = lines[0].start
+	}
+	return page, nil
 }
