@@ -2,8 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // Focus read in Chat, the DOM half (chatfocusread.ts is the pure geometry, chatfocusreadstore.ts the toggle and the
-// registry). useFocusRead finds the conversation's blocks, marks each `data-fr-block`, the one on the reading line
-// `data-fr-lit` and the one before and after it `data-fr-near`, and the scroller `data-focus-read` while it dims; the
+// registry). useFocusRead finds the conversation's blocks, marks each `data-fr-block`, the one on the reading line and
+// the ones after it up to the chosen size (1 to 3) `data-fr-lit`, the one before that group and the one after it
+// `data-fr-near`, and the scroller `data-focus-read` while it dims; the
 // opacity is tailwindsetup.css's. Marks, not React state: the line moves on every scroll frame, and a render of the
 // conversation per frame would redraw it.
 //
@@ -20,6 +21,7 @@ import {
     fencedText,
     lineOffset,
     litAt,
+    litGroup,
     maxScroll,
     nearOf,
     scrollTopFor,
@@ -170,18 +172,23 @@ const IDLE_MS = 140;
 const PROGRAMMATIC_MS = 1200;
 
 /** Focus read over one Chat scroller: `on` is the toggle, `paused` holds the dimming off (while you follow a live reply
- *  at the bottom) with the keys still working. `tickRef` is the accent tick in the gutter that marks the line. */
+ *  at the bottom) with the keys still working, `size` how many blocks the line lights at a time (the one on it and the
+ *  ones after it; J/K step a whole group). `tickRef` is the accent tick in the gutter that marks the line. */
 export function useFocusRead(
     agentId: string,
     scrollRef: RefObject<HTMLDivElement | null>,
     tickRef: RefObject<HTMLDivElement | null>,
     on: boolean,
-    paused: boolean
+    paused: boolean,
+    size: number = 1
 ): void {
     const pausedRef = useRef(paused);
     pausedRef.current = paused;
+    const sizeRef = useRef(size);
     // the running machinery's way to show or hide the dimming when `paused` flips
     const applyPaused = useRef<() => void>(() => {});
+    // and to light a group of the new size when `size` changes
+    const applySize = useRef<(next: number) => void>(() => {});
 
     useEffect(() => {
         const scroller = scrollRef.current;
@@ -204,11 +211,12 @@ export function useFocusRead(
         let watchConv: (conv: Element | null) => void = () => {};
 
         const marked = (b: FocusBlock) => [b.el, ...b.extra];
-        // the lit block's mark and its neighbours', put on or taken off
+        // the lit group's marks (`lit` is its first block) and its neighbours', put on or taken off
         const paint = (put: boolean) => {
+            const size = sizeRef.current;
             const marks: [number, string][] = [
-                [lit, LIT_ATTR],
-                ...nearOf(lit, blocks.length).map((i): [number, string] => [i, NEAR_ATTR]),
+                ...litGroup(lit, blocks.length, size).map((i): [number, string] => [i, LIT_ATTR]),
+                ...nearOf(lit, blocks.length, size).map((i): [number, string] => [i, NEAR_ATTR]),
             ];
             for (const [i, attr] of marks) {
                 const b = blocks[i];
@@ -378,19 +386,28 @@ export function useFocusRead(
         collect();
         applyPaused.current();
 
+        applySize.current = (next) => {
+            paint(false);
+            sizeRef.current = next;
+            paint(true);
+        };
+
         const unregister = registerFocusReader(agentId, {
             step: (dir) => {
-                const n = stepFrom(lit >= 0 ? lit : litAt(spans, scroller.scrollTop + line()), dir, blocks.length);
+                const from = lit >= 0 ? lit : litAt(spans, scroller.scrollTop + line());
+                const n = stepFrom(from, dir, blocks.length, sizeRef.current);
                 if (n == null) {
                     return;
                 }
                 setLit(n);
                 scrollTo(scrollTopFor(spans[n], line(), maxScroll(scroller.scrollHeight, scroller.clientHeight)));
             },
+            // the lit group as one quote, its blocks a blank quoted line apart; a step list or a card in it adds nothing
             quote: () => {
-                const block = blocks[lit];
-                const text = block != null ? quoteTextOf(block) : null;
-                const next = text != null ? withQuote(chatBoxText(agentId), text) : null;
+                const texts = litGroup(lit, blocks.length, sizeRef.current)
+                    .map((i) => quoteTextOf(blocks[i]))
+                    .filter((t): t is string => t != null && t.trim() !== "");
+                const next = texts.length > 0 ? withQuote(chatBoxText(agentId), texts.join("\n\n")) : null;
                 if (next != null) {
                     writeChatBox(agentId, next);
                 }
@@ -400,6 +417,7 @@ export function useFocusRead(
         return () => {
             unregister();
             applyPaused.current = () => {};
+            applySize.current = () => {};
             scroller.removeEventListener("scroll", onScroll);
             scroller.removeEventListener("scrollend", stopped);
             scroller.removeEventListener("wheel", onIntent);
@@ -429,4 +447,11 @@ export function useFocusRead(
     useEffect(() => {
         applyPaused.current();
     }, [paused]);
+
+    useEffect(() => {
+        if (size !== sizeRef.current) {
+            applySize.current(size);
+            sizeRef.current = size;
+        }
+    }, [size]);
 }

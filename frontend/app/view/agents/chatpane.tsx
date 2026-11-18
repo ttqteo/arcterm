@@ -65,7 +65,14 @@ import { isDocReviewAsk } from "./chatdocreview";
 import { ChatDocReviewCard } from "./chatdocreviewcard";
 import { chatEmptyError, chatEmptyView } from "./chatempty";
 import { ChatFileCards } from "./chatfilecards";
-import { chatFocusReadOnAtom, FOCUS_READ_KEYS, focusReaderOf, type FocusReader } from "./chatfocusreadstore";
+import { nextFocusReadSize } from "./chatfocusread";
+import {
+    chatFocusReadOnAtom,
+    chatFocusReadSizeAtom,
+    FOCUS_READ_KEYS,
+    focusReaderOf,
+    type FocusReader,
+} from "./chatfocusreadstore";
 import { useFocusRead } from "./chatfocusreadview";
 import { splitAttachments } from "./chatfiles";
 import { ChatGoalStrip } from "./chatgoal";
@@ -647,17 +654,35 @@ function FocusReadToggle({ agentId, scrollRef }: { agentId: string; scrollRef: R
 }
 
 // Focus read's buttons, the lower part of its pill (clear of the pinned prompt card, which keeps 70px of the corner):
-// the previous and next block, then past a hairline the quote, each with its key on its face so the keys need no
-// tooltip. A click leaves the focus in the conversation, so the keys go on from there.
+// how many blocks it lights at a time (×1, ×2, ×3, a click for the next), the previous and next group, then past a
+// hairline the quote, each step with its key on its face so the keys need no tooltip. A click leaves the focus in the
+// conversation, so the keys go on from there.
 const FOCUS_STEPS = [
-    { key: "K", label: "Previous block (K or ↑)", Icon: ChevronUp, act: (r: FocusReader) => r.step(-1) },
-    { key: "J", label: "Next block (J, ↓ or Space)", Icon: ChevronDown, act: (r: FocusReader) => r.step(1) },
-    { key: "Q", label: "Quote the lit block into the box (Q)", Icon: Quote, act: (r: FocusReader) => r.quote() },
+    { key: "K", label: "Previous blocks (K or ↑)", Icon: ChevronUp, act: (r: FocusReader) => r.step(-1) },
+    { key: "J", label: "Next blocks (J, ↓ or Space)", Icon: ChevronDown, act: (r: FocusReader) => r.step(1) },
+    { key: "Q", label: "Quote the lit blocks into the box (Q)", Icon: Quote, act: (r: FocusReader) => r.quote() },
 ] as const;
 
 function FocusReadSteps({ agentId, scrollRef }: { agentId: string; scrollRef: RefObject<HTMLDivElement | null> }) {
+    const [size, setSize] = useAtom(chatFocusReadSizeAtom);
+    const next = nextFocusReadSize(size);
+    const sizeLabel = `${size} ${size === 1 ? "block" : "blocks"} at a time (click for ${next})`;
     return (
         <div data-chat-focus-read-steps className="flex flex-col border-t border-edge-mid">
+            <button
+                type="button"
+                data-chat-focus-read-size={size}
+                aria-label={sizeLabel}
+                title={sizeLabel}
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => {
+                    setSize(next);
+                    scrollRef.current?.focus({ preventScroll: true });
+                }}
+                className="flex h-[24px] cursor-pointer items-center justify-center border-b border-edge-mid font-mono text-[10.5px] font-semibold text-secondary hover:bg-surface-hover hover:text-primary"
+            >
+                ×{size}
+            </button>
             {FOCUS_STEPS.map(({ key, label, Icon, act }) => (
                 <button
                     key={key}
@@ -815,7 +840,8 @@ function ChatPaneBody({ model, agent, barred }: { model: AgentsViewModel; agent:
     // the bottom, so Chat then looks as it does without it
     const focusRead = useAtomValue(chatFocusReadOnAtom(agent.id));
     const focusTickRef = useRef<HTMLDivElement>(null);
-    useFocusRead(agent.id, scrollRef, focusTickRef, focusRead, agent.state === "working" && atBottom);
+    const focusReadSize = useAtomValue(chatFocusReadSizeAtom);
+    useFocusRead(agent.id, scrollRef, focusTickRef, focusRead, agent.state === "working" && atBottom, focusReadSize);
     // false while ChatLayer's exit plays: the pane is still drawn (fading) but already gone as far as input goes
     const present = useIsPresent();
     const streaming = surface === "agent";

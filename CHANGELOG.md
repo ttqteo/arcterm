@@ -81,7 +81,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   tick marks and corner brackets that bend round the rounded corners of every box.
 - Focus read in Chat fades in steps: the block before and after the lit one stay half bright, so you keep your place,
   and `J` / `K` pass over tool steps and cards to the next block of text. Its button and the `K` `J` `Q` buttons
-  under it are now one pill. <!-- try: chat-focus-read -->
+  under it are now one pill, with a ×1 / ×2 / ×3 button on it that lights one, two or three blocks at a time: `J` / `K`
+  then step a whole group and `Q` quotes all of it. <!-- try: chat-focus-read -->
 - A Claude agent's suggested replies in Chat come sooner, about 2 s after its turn ends instead of 5-6 s, and no longer
   start a second claude (about 470 MB) each time: the agent's own claude works them out.
 - Scrollbars stay hidden until you point at the area that scrolls, then show as a thin bar that thickens under the
