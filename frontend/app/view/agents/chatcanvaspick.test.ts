@@ -2,8 +2,19 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it } from "vitest";
-import type { CanvasBoard } from "./canvasmodel";
-import { boardTitle, canvasPick, lastQuestion, namedLetters, optionRows, pickLine } from "./chatcanvaspick";
+import { ALL_TAB, type CanvasBoard } from "./canvasmodel";
+import {
+    boardTitle,
+    canvasPick,
+    lastQuestion,
+    namedLetters,
+    optionRows,
+    pickLine,
+    pickRowAt,
+    pickShown,
+    pickTabs,
+    type CanvasPick,
+} from "./chatcanvaspick";
 
 const board = (name: string, extra: Partial<CanvasBoard> = {}): CanvasBoard => ({
     name,
@@ -149,5 +160,38 @@ describe("canvasPick", () => {
 
     it("is null once the agent moved the unchosen boards out of canvas.json", () => {
         expect(canvasPick({ ...base, boards: [BOARDS[0], BOARDS[1]] })).toBeNull();
+    });
+});
+
+describe("the board modal", () => {
+    const PICK: CanvasPick = {
+        question: "Which one do you want, A or B?",
+        rows: [
+            { letter: "A", title: "Gộp", board: "A-merge-runs.dc.html" },
+            { letter: "B", title: "One row", board: "B-one-row-each.dc.html" },
+        ],
+    };
+
+    it("steps through All, then the card's boards in its order", () => {
+        expect(pickTabs(PICK)).toEqual([ALL_TAB, "A-merge-runs.dc.html", "B-one-row-each.dc.html"]);
+    });
+
+    it("draws only the card's boards under All, never Main or the unnamed C", () => {
+        expect(pickShown(BOARDS, PICK, ALL_TAB).map((b) => b.name)).toEqual([
+            "A-merge-runs.dc.html",
+            "B-one-row-each.dc.html",
+        ]);
+    });
+
+    it("draws the one board on its tab, and leaves out a board canvas.json lost", () => {
+        expect(pickShown(BOARDS, PICK, "B-one-row-each.dc.html").map((b) => b.name)).toEqual([
+            "B-one-row-each.dc.html",
+        ]);
+        expect(pickShown(BOARDS.slice(0, 2), PICK, ALL_TAB).map((b) => b.name)).toEqual(["A-merge-runs.dc.html"]);
+    });
+
+    it("picks the row of the board on the tab, none under All", () => {
+        expect(pickRowAt(PICK, "B-one-row-each.dc.html")).toBe(1);
+        expect(pickRowAt(PICK, ALL_TAB)).toBeNull();
     });
 });

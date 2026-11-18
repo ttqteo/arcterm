@@ -5,7 +5,7 @@
 // (docs/superpowers/specs/2026-11-16-canvas-quick-pick-design.md). Which boards are options, when the card shows, its
 // head and the line a row sends. The card itself is chatcanvaspickcard.tsx.
 
-import type { CanvasBoard } from "./canvasmodel";
+import { ALL_TAB, type CanvasBoard } from "./canvasmodel";
 import { endsWithQuestion } from "./chatsuggest";
 
 /** One row of the card: the board's letter, its title as the agent wrote it, and the board it opens. */
@@ -109,6 +109,24 @@ export function lastQuestion(reply: string): string {
 /** Pure: the line a row sends, its letter and the board's title: `A — Gộp các lần liên tiếp cùng file`. */
 export function pickLine(row: PickRow): string {
     return `${row.letter} — ${row.title}`;
+}
+
+/** Pure: the tabs the card's board modal steps through: All, then each option board in the card's order. */
+export function pickTabs(pick: CanvasPick): string[] {
+    return [ALL_TAB, ...pick.rows.map((r) => r.board)];
+}
+
+/** Pure: what the modal draws on `tab`, from the canvas's boards: the card's option boards in its order under All (only
+ *  those, never the rest of the canvas), else the one board. A board canvas.json no longer lists is left out. */
+export function pickShown(boards: readonly CanvasBoard[], pick: CanvasPick, tab: string): CanvasBoard[] {
+    const names = tab === ALL_TAB ? pick.rows.map((r) => r.board) : [tab];
+    return names.flatMap((n) => boards.find((b) => b.name === n) ?? []);
+}
+
+/** Pure: the card's row for the board on `tab`, the one the modal's Pick button sends, or null under All. */
+export function pickRowAt(pick: CanvasPick, tab: string): number | null {
+    const i = pick.rows.findIndex((r) => r.board === tab);
+    return i < 0 ? null : i;
 }
 
 /** Pure: the card, or null when it does not show. It shows only while the agent's turn is over and waits on you (`idle`),

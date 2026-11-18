@@ -57,9 +57,12 @@ dòng. Muốn kèm ghi chú thì gõ vào ô chat.
 
 - Dùng lại `CardShell` và `OptionRows` của thẻ brainstorm.
 - Đầu thẻ là câu hỏi cuối của agent, tức câu kết thúc bằng dấu hỏi.
-- Mỗi dòng có chữ cái và tiêu đề board, cùng một nút nhỏ mở đúng board đó trong Canvas.
-- Chân thẻ có "Compare N boards in Canvas" (mở tab Canvas) và "Type below to answer in your own words". Chữ trên thẻ
+- Mỗi dòng có chữ cái và tiêu đề board, cùng một nút nhỏ mở đúng board đó trong một modal trên Chat.
+- Chân thẻ có "Compare N boards" (mở modal ở tab All) và "Type below to answer in your own words". Chữ trên thẻ
   bằng tiếng Anh như thẻ brainstorm; nhãn gửi đi giữ tiêu đề board như agent viết. (Agent's call)
+- Modal (2026-11-18, `chatcanvaspickmodal.tsx`) chỉ hiện các board thẻ nhắc đến, không hiện Main hay board không được
+  nêu: tab All xếp chúng cạnh nhau, bấm một ô (hoặc tab, ← →) xem riêng board đó kèm nút Pick gửi như bấm dòng.
+  Open in Canvas vẫn có trong modal; Esc đóng.
 - Gửi xong, thẻ biến mất. Dòng đã gửi (`A — …`) ở lại trong Chat như một tin nhắn của bạn, nên không có dòng ✓ riêng và
   không phải lưu gì thêm. (Agent's call)
 

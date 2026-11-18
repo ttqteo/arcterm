@@ -3,11 +3,13 @@
 //
 // The quick pick card at the end of Chat (docs/superpowers/specs/2026-11-16-canvas-quick-pick-design.md): the agent's
 // question over one row per option board of its Canvas. A row sends `A — <title>` to the agent at once; its small
-// button and the footer link open the board, or all of them, in the Canvas. What shows and what is sent is
-// chatcanvaspick.ts's; the shell and the rows are the brainstorm card's (chatbrainstormparts.tsx).
+// button and the footer link open the board, or all of the card's boards, in a modal over Chat
+// (chatcanvaspickmodal.tsx), which can still go on to the Canvas. What shows and what is sent is chatcanvaspick.ts's;
+// the shell and the rows are the brainstorm card's (chatbrainstormparts.tsx).
 
 import { cn } from "@/util/util";
 import { ArrowUpRight, PanelsTopLeft } from "lucide-react";
+import { useState } from "react";
 import type { AgentVM } from "./agentsviewmodel";
 import { setAgentView } from "./agentview";
 import { ERROR_LINE, useAction } from "./brainstormui";
@@ -15,6 +17,7 @@ import { ALL_TAB } from "./canvasmodel";
 import { selectCanvasTab } from "./canvasstore";
 import { CardShell, FOCUS_RING, OptionRows } from "./chatbrainstormparts";
 import { pickLine, type CanvasPick } from "./chatcanvaspick";
+import { CanvasPickModal } from "./chatcanvaspickmodal";
 
 function openInCanvas(agentId: string, tab: string): void {
     selectCanvasTab(agentId, tab);
@@ -34,6 +37,8 @@ export function ChatCanvasPickCard({
     onSent: () => void;
 }) {
     const act = useAction();
+    // the modal's tab (All or a board), null while it is closed
+    const [look, setLook] = useState<string | null>(null);
     const sendRow = async (i: number) => {
         if (act.busy) {
             return;
@@ -65,9 +70,9 @@ export function ChatCanvasPickCard({
                     <button
                         type="button"
                         data-chat-canvaspick-open={pick.rows[i].board}
-                        title={`Open board ${pick.rows[i].letter} in Canvas`}
-                        aria-label={`Open board ${pick.rows[i].letter} in Canvas`}
-                        onClick={() => openInCanvas(agent.id, pick.rows[i].board)}
+                        title={`Look at board ${pick.rows[i].letter}`}
+                        aria-label={`Look at board ${pick.rows[i].letter}`}
+                        onClick={() => setLook(pick.rows[i].board)}
                         className={cn(
                             "flex flex-none cursor-pointer items-center border-0 bg-transparent px-[12px] text-muted hover:text-primary",
                             FOCUS_RING
@@ -86,17 +91,36 @@ export function ChatCanvasPickCard({
                 <button
                     type="button"
                     data-chat-canvaspick-compare
-                    onClick={() => openInCanvas(agent.id, ALL_TAB)}
+                    onClick={() => setLook(ALL_TAB)}
                     className={cn(
                         "flex cursor-pointer items-center gap-[6px] rounded-[4px] border-0 bg-transparent p-0 text-accent-soft hover:underline",
                         FOCUS_RING
                     )}
                 >
                     <PanelsTopLeft size={13} strokeWidth={2} aria-hidden />
-                    {`Compare ${pick.rows.length} boards in Canvas`}
+                    {`Compare ${pick.rows.length} boards`}
                 </button>
                 <span className="ml-auto text-right">Type below to answer in your own words</span>
             </div>
+            {look != null ? (
+                <CanvasPickModal
+                    agent={agent}
+                    pick={pick}
+                    tab={look}
+                    busy={act.busy}
+                    onTab={setLook}
+                    onPick={(i) => {
+                        setLook(null);
+                        void sendRow(i);
+                    }}
+                    onOpenInCanvas={() => {
+                        const tab = look;
+                        setLook(null);
+                        openInCanvas(agent.id, tab);
+                    }}
+                    onClose={() => setLook(null)}
+                />
+            ) : null}
         </CardShell>
     );
 }
