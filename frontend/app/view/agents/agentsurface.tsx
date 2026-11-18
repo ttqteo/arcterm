@@ -33,7 +33,7 @@ import { CodePeekContext } from "@/app/view/code/codepeekhost";
 import { dismissRouteBand } from "@/app/view/jarvis/jarvisroutestore";
 import { getLastCommandAtom, setLastCommand } from "@/app/view/term/lastcommand";
 import { cn, fireAndForget } from "@/util/util";
-import { useAtomValue } from "jotai";
+import { useAtomValue, useSetAtom } from "jotai";
 import { MotionConfig } from "motion/react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { activeNavOrder } from "./activenav";
@@ -58,6 +58,7 @@ import { ConversationHistory } from "./conversationhistory";
 import { asksInTerminal, projectOf, type AgentVM } from "./agentsviewmodel";
 import { compactedSummary } from "./brainstormmodel";
 import { BrainstormPane } from "./brainstormpane";
+import { brainstormRailSlotAtom } from "./brainstormrail";
 import { brainstormAtom } from "./brainstormstore";
 import { CanvasGallery } from "./canvasgalleryview";
 import { CanvasPane } from "./canvaspane";
@@ -113,6 +114,7 @@ import {
     terminalDockFoldedAtom,
     terminalDockHeightAtom,
     terminalDockMaxAtom,
+    railVisibleAtom,
     terminalFullscreenAtom,
     undock,
 } from "./railstore";
@@ -138,6 +140,8 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
     const terminals = useAtomValue(model.terminalsAtom);
     const order = useAtomValue(model.orderAtom);
     const fullscreen = useAtomValue(terminalFullscreenAtom);
+    // the details rail open (`d`): a brainstorm puts its own rail in the details rail's place (BrainstormRailSlot)
+    const railVisible = useAtomValue(railVisibleAtom);
     const focusSub = useAtomValue(focusSubagentAtom);
     const ended = useAtomValue(model.endedWorkerAtom);
     const stage = useAtomValue(model.finalStageAtom);
@@ -941,18 +945,28 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
                 {/* a plain terminal alone has no details of its own: no rail, the tree reaches the others. In a split
                     with an agent it keeps that agent's (headSubject). Nor does a maximized dock, which is a terminal on
                     screen alone. A canvas or a review in the terminal's place keeps it, so swapping never moves the
-                    header's controls; a brainstorm drops it, as its own right rail (Boards, Decided so far) needs the
-                    width. */}
-                {!fullscreen &&
-                centerMode === "terminal" &&
-                subject!.kind !== "terminal" &&
-                !dockMax &&
-                swapped !== "brainstorm" ? (
-                    <AgentDetailsRail model={model} agent={subject!} />
+                    header's controls; a brainstorm keeps the place and fills it with its own rail (Boards, Decided so
+                    far, the check's, the run's), which its pane portals into the slot (brainstormrail.tsx RailRow).
+                    With the details rail closed the brainstorm's rail stays in the pane beside the question. */}
+                {!fullscreen && centerMode === "terminal" && subject!.kind !== "terminal" && !dockMax ? (
+                    swapped === "brainstorm" ? (
+                        railVisible ? (
+                            <BrainstormRailSlot agentId={agent.id} />
+                        ) : null
+                    ) : (
+                        <AgentDetailsRail model={model} agent={subject!} />
+                    )
                 ) : null}
             </div>
         </MotionConfig>
     );
+}
+
+// The details rail's place while the agent shows its brainstorm: an empty column the brainstorm's rail is portaled into
+// (brainstormRailSlotAtom). A flex row, so the rail fills its height as the details rail does
+function BrainstormRailSlot({ agentId }: { agentId: string }) {
+    const setSlot = useSetAtom(brainstormRailSlotAtom(agentId));
+    return <div ref={setSlot} data-brainstorm-rail-slot className="flex h-full flex-none" />;
 }
 
 // The tree names a plain terminal by the command its shell last ran, which its pane reads from the block's runtime info

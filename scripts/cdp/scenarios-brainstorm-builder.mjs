@@ -165,7 +165,7 @@ const Q16 = {
 const GRAPH = { id: "graph", title: "Graph model", state: "asked", body: "" };
 const PICKED_LINE = `brainstorm: builder answer: ${OPTIONS[1].label}`;
 const TYPED_ANSWER = "Count a missing day as zero.";
-const RAIL = `document.querySelector("[data-brainstorm-pane] [data-brainstorm-check-rail]")`;
+const RAIL = `document.querySelector("[data-brainstorm-check-rail]")`;
 // a pane between the design's 640px cutoff and the check's 820px (the question's 360px + the check rail's 460px): the row
 // of the question and the rail has to be stacked there, and used to be side by side. ~720px is the middle of that span
 const NARROW_PANE_W = 720;
@@ -353,7 +353,7 @@ export default function (kit) {
     // the rail has no such tab, which is the case of a rail with no Boards tab (no tab strip at all)
     const pickRailTab = (h, tab) =>
         h.ev(`(() => {
-            const t = ${BS_PANE}?.querySelector('[data-brainstorm-board-rail] [data-brainstorm-rail-tab="${tab}"]');
+            const t = document.querySelector('[data-brainstorm-board-rail] [data-brainstorm-rail-tab="${tab}"]');
             if (!t) return "missing";
             if (t.getAttribute("aria-selected") === "true") return "selected";
             t.click();
@@ -670,7 +670,7 @@ export default function (kit) {
                 const railHidden = (await setDetailsRail(h, false)) === false;
                 const roomy = await polishWaitFor(h, `(${BS_PANE}?.getBoundingClientRect().width ?? 0) >= 820`, 3000);
                 const ROLE_ROW = `${BS_PANE}?.querySelector('[data-brainstorm-review-row="role"]')`;
-                const RAIL_BOARDS = `${BS_PANE}?.querySelector("[data-brainstorm-board-rail]")`;
+                const RAIL_BOARDS = `document.querySelector("[data-brainstorm-board-rail]")`;
                 const toggled = await h.ev(`(() => {
                     const t = ${ROLE_ROW}?.querySelector("[data-brainstorm-review-toggle]");
                     if (!t) return "missing";

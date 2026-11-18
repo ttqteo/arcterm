@@ -226,6 +226,7 @@ function Design({
             <Toolbar topic={s.topic} f={f} />
             <StaleBanner s={s} />
             <RailRow
+                agentId={agent.id}
                 question={
                     <>
                         <motion.div

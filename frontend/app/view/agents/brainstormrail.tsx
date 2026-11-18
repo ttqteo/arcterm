@@ -21,8 +21,11 @@ import { atomFamily } from "jotai/utils";
 import { SquareCheck, SquareDashed, X } from "lucide-react";
 import { AnimatePresence, motion, MotionConfig } from "motion/react";
 import {
+    createContext,
+    useContext,
     useEffect,
     useLayoutEffect,
+    useMemo,
     useRef,
     useState,
     type CSSProperties,
@@ -30,6 +33,7 @@ import {
     type PointerEvent as ReactPointerEvent,
 } from "react";
 import { createPortal } from "react-dom";
+import { RAIL_OVERVIEW_PX } from "./agentrailtabs";
 import type { AgentVM } from "./agentsviewmodel";
 import {
     boardPick,
@@ -92,13 +96,28 @@ export type BrainstormRailProps = {
     focus: RailFocus | null;
 };
 
-// one number for the design and the check; every access can throw (private window, blocked site data), and the rail
-// then opens at its default share
-const WIDTH_KEY = "brainstorm.railWidth";
+// The agent details rail's place beside the agent (agentsurface.tsx) while the agent shows its brainstorm. The step's
+// rail is drawn there (RailRow portals it), so moving between Terminal, Chat and Brainstorm leaves the header and its
+// buttons where they were. Null where the details rail has no place (full screen, a maximized dock): the rail then
+// stays in the row beside the question.
+export const brainstormRailSlotAtom = atomFamily(
+    (_agentId: string) => atom<HTMLElement | null>(null) as PrimitiveAtom<HTMLElement | null>
+);
 
-function readStoredWidth(): number | null {
+// where RailRow put the rail: in the slot (`slotted`), or beside the question. `row` is RailRow's outer div, which holds
+// the open board's dialog either way
+type RailPlace = { slotted: boolean; row: HTMLElement | null };
+const RailPlaceContext = createContext<RailPlace>({ slotted: false, row: null });
+
+// one number for the design and the check, and another for the rail in the slot, which opens at the details rail's
+// width so that switching to Brainstorm moves nothing; every access can throw (private window, blocked site data), and
+// the rail then opens at its default width
+const WIDTH_KEY = "brainstorm.railWidth";
+const SLOT_WIDTH_KEY = "brainstorm.slotRailWidth";
+
+function readStoredWidth(key: string): number | null {
     try {
-        const raw = localStorage.getItem(WIDTH_KEY);
+        const raw = localStorage.getItem(key);
         const n = raw == null ? NaN : Number(raw);
         return Number.isFinite(n) ? n : null;
     } catch (e) {
@@ -107,9 +126,9 @@ function readStoredWidth(): number | null {
     }
 }
 
-function writeStoredWidth(width: number): void {
+function writeStoredWidth(key: string, width: number): void {
     try {
-        localStorage.setItem(WIDTH_KEY, String(Math.round(width)));
+        localStorage.setItem(key, String(Math.round(width)));
     } catch (e) {
         console.warn("brainstorm rail: storing the width failed", e);
     }
@@ -167,29 +186,42 @@ export function BrainstormRail({ agent, s, f, second, minWidth = RAIL_MIN_W, que
     const tilesDrawn = shownTab === "boards";
     const tilesShown = tilesDrawn && !widened;
 
-    // the pane is the rail's parent: its width bounds the rail, and the measure before first paint keeps the rail from
-    // opening at the smallest width and jumping. The row around the question and the rail (RailRow) holds the open
-    // board's dialog, so it covers both and nothing above them
+    // the pane is what the question and the rail share: beside the question the rail's parent, in the slot the row plus
+    // the rail itself (the one shrinks as the other grows). Its width bounds the rail, and the measure before first paint
+    // keeps the rail from opening at the smallest width and jumping. The row (RailRow) holds the open board's dialog:
+    // beside the question it covers both, in the slot the question, the rail staying beside it
+    const place = useContext(RailPlaceContext);
     const rootRef = useRef<HTMLElement>(null);
     const bodyRef = useRef<HTMLDivElement>(null);
     const [paneW, setPaneW] = useState(0);
     const [dialogHost, setDialogHost] = useState<HTMLElement | null>(null);
     useLayoutEffect(() => {
-        setDialogHost(rootRef.current?.closest<HTMLElement>("[data-brainstorm-rail-row]") ?? null);
-        const pane = rootRef.current?.parentElement;
-        if (pane == null) {
+        const own = rootRef.current;
+        const pane = place.slotted ? place.row : own?.parentElement;
+        setDialogHost(place.slotted ? place.row : (own?.closest<HTMLElement>("[data-brainstorm-rail-row]") ?? null));
+        if (own == null || pane == null) {
             return;
         }
-        setPaneW(pane.clientWidth);
-        const ro = new ResizeObserver(([entry]) => setPaneW(entry.contentRect.width));
+        const read = () => setPaneW(place.slotted ? pane.clientWidth + own.offsetWidth : pane.clientWidth);
+        read();
+        const ro = new ResizeObserver(read);
         ro.observe(pane);
+        if (place.slotted) {
+            ro.observe(own);
+        }
         return () => ro.disconnect();
-    }, []);
+    }, [place.slotted, place.row]);
 
-    const [stored, setStored] = useState<number | null>(readStoredWidth);
+    const widthKey = place.slotted ? SLOT_WIDTH_KEY : WIDTH_KEY;
+    const [stored, setStored] = useState<number | null>(() => readStoredWidth(widthKey));
     const [live, setLive] = useState<number | null>(null);
-    const stacked = paneW > 0 && railStacks(paneW, minWidth);
-    const width = clampRailWidth(live ?? stored, paneW, minWidth);
+    // the slot never stacks: it is there only beside a full-size agent view
+    const stacked = !place.slotted && paneW > 0 && railStacks(paneW, minWidth);
+    const width = clampRailWidth(
+        live ?? stored ?? (place.slotted ? Math.max(minWidth, RAIL_OVERVIEW_PX) : null),
+        paneW,
+        minWidth
+    );
     const drag = useRef<{ x: number; start: number; last: number } | null>(null);
     const startDrag = (e: ReactPointerEvent<HTMLDivElement>) => {
         e.preventDefault();
@@ -210,7 +242,7 @@ export function BrainstormRail({ agent, s, f, second, minWidth = RAIL_MIN_W, que
             drag.current = null;
             setLive(null);
             setStored(d.last);
-            writeStoredWidth(d.last);
+            writeStoredWidth(widthKey, d.last);
         }
     };
 
@@ -288,18 +320,22 @@ export function BrainstormRail({ agent, s, f, second, minWidth = RAIL_MIN_W, que
     const headOf = (name: string): RailBoardHead | null =>
         groups.flatMap((g) => railBoardHeads(f, g.partId, s.boards)).find((h) => h.name === name) ?? null;
 
+    // in the slot the rail keeps one width whether the question has boards or not, so a question with boards never
+    // resizes it; beside the question, only a rail with boards is dragged
+    const sized = hasBoards || place.slotted;
     return (
         <aside
             ref={rootRef}
             data-brainstorm-board-rail
-            style={hasBoards ? ({ "--rail-w": `${width}px` } as CSSProperties) : undefined}
+            data-brainstorm-rail-slotted={place.slotted ? "true" : undefined}
+            style={sized ? ({ "--rail-w": `${width}px` } as CSSProperties) : undefined}
             className={cn(
                 "flex flex-none overflow-hidden border-l border-border bg-surface",
-                hasBoards ? "w-[var(--rail-w)]" : check ? "w-[460px]" : "w-[32%] min-w-[280px] max-w-[500px]",
-                stack.aside
+                sized ? "w-[var(--rail-w)]" : check ? "w-[460px]" : "w-[32%] min-w-[280px] max-w-[500px]",
+                !place.slotted && stack.aside
             )}
         >
-            {hasBoards ? (
+            {sized ? (
                 <div
                     role="separator"
                     aria-orientation="vertical"
@@ -313,7 +349,7 @@ export function BrainstormRail({ agent, s, f, second, minWidth = RAIL_MIN_W, que
                     onLostPointerCapture={endDrag}
                     className={cn(
                         "group flex w-[12px] flex-none cursor-col-resize touch-none select-none items-center justify-center",
-                        stack.handle
+                        !place.slotted && stack.handle
                     )}
                 >
                     <div
@@ -808,28 +844,41 @@ function BoardPickBar({ agent, offer, onSent }: { agent: AgentVM; offer: BoardPi
 // reaches only what is inside the container; `question` is what fills the column, which keeps what the question has
 // always had: the rest of the row, the background, and room to shrink. The outer div also holds the open board's dialog
 // (BoardDialog), which covers the whole row.
+//
+// While the agent surface gives the brainstorm the details rail's place (brainstormRailSlotAtom), the rail is drawn
+// there instead, through a portal: React events still reach the pane's handlers through it, and the row is the
+// question alone, which never stacks.
 const ROW_STACKED = {
     design: { row: "@max-[640px]:flex-col @max-[640px]:overflow-y-auto", question: "@max-[640px]:flex-none" },
     check: { row: "@max-[820px]:flex-col @max-[820px]:overflow-y-auto", question: "@max-[820px]:flex-none" },
 };
 
 export function RailRow({
+    agentId,
     question,
     rail,
     minWidth = RAIL_MIN_W,
 }: {
+    agentId: string;
     question: ReactNode;
     rail: ReactNode;
     // the rail's smallest width, the same as the BrainstormRail inside it is given
     minWidth?: number;
 }) {
     const stack = minWidth === RAIL_MIN_W_CHECK ? ROW_STACKED.check : ROW_STACKED.design;
+    const slot = useAtomValue(brainstormRailSlotAtom(agentId));
+    const [row, setRow] = useState<HTMLElement | null>(null);
+    const place = useMemo<RailPlace>(() => ({ slotted: slot != null, row }), [slot, row]);
     return (
-        <div data-brainstorm-rail-row className="@container relative flex min-h-0 flex-1 flex-col">
-            <div className={cn("flex min-h-0 flex-1", stack.row)}>
-                <div className={cn("flex min-w-0 flex-1 flex-col bg-background", stack.question)}>{question}</div>
-                {rail}
+        <RailPlaceContext.Provider value={place}>
+            <div ref={setRow} data-brainstorm-rail-row className="@container relative flex min-h-0 flex-1 flex-col">
+                <div className={cn("flex min-h-0 flex-1", slot == null && stack.row)}>
+                    <div className={cn("flex min-w-0 flex-1 flex-col bg-background", slot == null && stack.question)}>
+                        {question}
+                    </div>
+                    {slot == null ? rail : createPortal(rail, slot)}
+                </div>
             </div>
-        </div>
+        </RailPlaceContext.Provider>
     );
 }

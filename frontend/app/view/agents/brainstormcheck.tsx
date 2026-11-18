@@ -114,6 +114,7 @@ export function Check({
             <Toolbar topic={s.topic} f={f} progress={false} />
             <StaleBanner s={s} />
             <RailRow
+                agentId={agent.id}
                 // the row stacks at the same cutoff as the rail it holds (820px here), or the full-width rail squeezes the
                 // question column to nothing between the design's 640px and the check's 820px
                 minWidth={RAIL_MIN_W_CHECK}

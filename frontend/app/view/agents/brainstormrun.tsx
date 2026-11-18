@@ -106,6 +106,7 @@ export function RunStep({
             <StaleBanner s={s} />
             {/* the run's rail is as wide as the check's, so it goes under the summary at the check's cutoff (RailRow) */}
             <RailRow
+                agentId={agent.id}
                 minWidth={RAIL_MIN_W_CHECK}
                 question={
                     <div

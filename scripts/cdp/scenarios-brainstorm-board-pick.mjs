@@ -66,7 +66,7 @@ export default function (kit) {
 
     const QUESTION = BS_FILES.layout.question;
     const LETTERS = ["A", "B"];
-    const tile = (name) => `${BS_PANE}?.querySelector('[data-brainstorm-board-rail] [data-brainstorm-rail-board="${name}"]')`;
+    const tile = (name) => `document.querySelector('[data-brainstorm-board-rail] [data-brainstorm-rail-board="${name}"]')`;
     const tileButton = (name) => `${tile(name)}?.querySelector("button")`;
     const DIALOG = `${BS_PANE}?.querySelector("[data-brainstorm-board-dialog]")`;
     const PICK = `${BS_PANE}?.querySelector("[data-brainstorm-board-pick]")`;
@@ -85,7 +85,7 @@ export default function (kit) {
         const b = bar?.getBoundingClientRect();
         const s = scroll?.getBoundingClientRect();
         return {
-            tiles: [...(pane?.querySelectorAll("[data-brainstorm-board-rail] [data-brainstorm-rail-board]") ?? [])].map((t) => ({
+            tiles: [...document.querySelectorAll("[data-brainstorm-board-rail] [data-brainstorm-rail-board]")].map((t) => ({
                 name: t.getAttribute("data-brainstorm-rail-board"),
                 frame: !!t.querySelector("iframe"),
             })),
