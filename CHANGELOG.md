@@ -89,6 +89,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- A dev server that starts and detaches itself (Astro's `astro dev`) is no longer put down to an agent of another
+  project whose background task happened to end as it came up, and a project kept in a folder inside its repo shows
+  the servers running under that folder on its folder in the Agent tree.
 - Switching the agent on screen (from the tree, Sidecar or a terminal) no longer crashes the agent header with
   "number … is not iterable".
 - Chat no longer jumps around a send: a message that takes a few seconds to reach a busy Claude Code stays in place

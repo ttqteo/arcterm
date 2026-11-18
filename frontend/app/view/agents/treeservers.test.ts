@@ -47,6 +47,24 @@ describe("folderServers", () => {
         expect(folderServers([held, stray, elsewhere], repo, false, rows).map((s) => s.pid)).toEqual([2, 1]);
     });
 
+    // 2026-11-18: SIEM-portal is registered at apps\portal of the SIEM-portal repo, and its :4310 runs in apps\portal\web
+    it("a project registered inside its repo shows the servers that run under its folder, not the repo's others", () => {
+        const repo = "D:\\Workspace\\SIEM-portal";
+        const web = srv(5, 4310, {
+            repo,
+            cwd: "D:\\Workspace\\SIEM-portal\\apps\\portal\\web",
+            owner: { kind: "detached" },
+        });
+        const site = srv(6, 4321, {
+            repo,
+            cwd: "D:\\Workspace\\SIEM-portal\\apps\\website",
+            owner: { kind: "detached" },
+        });
+        expect(
+            folderServers([web, site], "D:\\Workspace\\SIEM-portal\\apps\\portal", true, rows).map((s) => s.pid)
+        ).toEqual([5]);
+    });
+
     it("shows none for a project with no path", () => {
         expect(folderServers([held], undefined, false, rows)).toEqual([]);
     });

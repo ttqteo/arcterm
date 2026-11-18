@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { DevServerRow } from "./devserversmodel";
-import { buildMachineServers, logHost, machinePollMs, restartPlan } from "./machineservers";
+import { buildMachineServers, logHost, machinePollMs, restartPlan, withProjectRoots } from "./machineservers";
 import type { BackgroundTask } from "./transcriptprojection";
 
 const row = (o: Partial<DevServerRow>): DevServerRow => ({
@@ -113,6 +113,36 @@ describe("buildMachineServers", () => {
         expect(buildMachineServers([later], agents, { "tab-p": [devTask] }).noOwnerCount).toBe(1);
         const stopped = { ...devTask, status: "stopped" as const };
         expect(buildMachineServers([daemonized], agents, { "tab-p": [stopped] }).noOwnerCount).toBe(1);
+    });
+
+    // 2026-11-18: a SIEM-portal agent ran `astro dev` in the foreground; it daemonized, and an arcterm agent's task that
+    // ended as it came up claimed it
+    it("a task that ended as a server came up claims it only for an agent whose project holds the server", () => {
+        const astro = {
+            ...daemonized,
+            cwd: "D:\\Workspace\\SIEM-portal\\apps\\portal\\web",
+            repo: "D:\\Workspace\\SIEM-portal",
+        };
+        const roster = [
+            { id: "tab-arc", name: "arcterm", agent: "claude", root: "D:\\work\\arcterm" },
+            { id: "tab-p", name: "portal", agent: "claude", root: "D:\\Workspace\\SIEM-portal\\apps\\portal" },
+        ];
+        const other = buildMachineServers([astro], roster, { "tab-arc": [devTask] });
+        expect(other.groups[0].rows[0].badge.kind).toBe("noowner");
+        const own = buildMachineServers([astro], roster, { "tab-arc": [devTask], "tab-p": [devTask] });
+        expect(own.groups[0].rows[0].badge).toEqual({ kind: "agent", text: "claude · portal", tabId: "tab-p" });
+    });
+
+    it("withProjectRoots gives each roster entry its project's folder, when the project has one", () => {
+        const out = withProjectRoots(
+            [
+                { id: "a", name: "a", project: "SIEM-portal" },
+                { id: "b", name: "b", project: "loose" },
+            ],
+            (a) => a.project,
+            { "SIEM-portal": { path: "D:\\Workspace\\SIEM-portal\\apps\\portal" }, loose: {} }
+        );
+        expect(out.map((a) => a.root)).toEqual(["D:\\Workspace\\SIEM-portal\\apps\\portal", undefined]);
     });
 
     it("a server started with wsh detach belongs to the agent or terminal that ran it, its log the file", () => {
