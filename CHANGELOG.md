@@ -49,6 +49,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- The Comment button on text you select in a markdown doc now floats above the selection, at its start, instead of
+  under it.
 - Agents with no project now sit in No folder in the Agent tree, with the terminals that have none, rather than in a
   separate "ungrouped" folder.
 - An app's row in the Agent tree says its state in a word or two (external, port taken, no page, retry in 8s), so it

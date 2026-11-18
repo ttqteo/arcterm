@@ -56,6 +56,8 @@ const GUTTER = 30;
 const FLOAT_BTN =
     "absolute z-10 flex cursor-pointer items-center gap-[6px] whitespace-nowrap rounded-[7px] border-0 bg-accent px-[10px] py-[5px] text-[12.5px] font-semibold leading-[1.2] text-background shadow-popover-sm hover:bg-accenthover";
 const KBD = "rounded-[4px] bg-background/20 px-[5px] font-mono text-[10.5px]";
+// the floating Comment button's height (FLOAT_BTN's padding and line), to set it above the selection
+const SEL_BTN_H = 26;
 
 interface Overlay {
     top: number;
@@ -280,12 +282,16 @@ export function MdDoc({
                 setSel(null);
                 return;
             }
+            // above the selection's first line, at its start (top-left); under its last line when the document has
+            // no room above
             const r = range.getBoundingClientRect();
+            const first = Array.from(range.getClientRects()).find((x) => x.width > 0) ?? r;
             const base = root.getBoundingClientRect();
+            const above = first.top - base.top - SEL_BTN_H - 6;
             setSel({
                 target,
-                top: r.bottom - base.top + 6,
-                left: Math.min(Math.max(r.right - base.left - 120, 8), base.width - 150),
+                top: above >= 0 ? above : r.bottom - base.top + 6,
+                left: Math.min(Math.max(first.left - base.left, 8), base.width - 150),
             });
         };
         document.addEventListener("selectionchange", update);

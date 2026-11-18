@@ -16,6 +16,10 @@ list (its number is not reused).
 Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) ·
 [part 4](hand-checks-4.md) · [part 3](hand-checks-3.md) · [part 2](hand-checks-2.md) (oldest).
 
+- [ ] (arcterm) **A markdown doc's Comment button floats above the selection, at its start.** Select a phrase mid-line
+  in a markdown file open in the Agent's doc view: the Comment button sits just above the first selected line, its left
+  edge at the selection's start, covering no selected text; select the doc's very first line and it drops under the
+  selection instead. `md-comments` scenario (`mddoc.tsx`).
 - [ ] (arcterm) **Remote mode on a real phone (ported from the kael fork).** The `remote-switch`, `remote-hand` and
   `remote-phone` scenarios cover Settings → Remote, the footer chip, the More menu's Hand to phone and the phone page
   against fixtures; nothing has run against a real tunnel. With a Cloudflare named tunnel and an Access app set up as in
