@@ -44,8 +44,10 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
   worktree when it has one), and `git status` runs there without the `! `. A `ts` or `json` block has no Run; with no
   agent in focus the terminal takes the centre. Branch `feat/codeblock-run`.
 - [ ] (arcterm) **A Chat selection keeps the text's colour.** Drag over a reply in Chat (prose, an inline code span, a
-  code block, a table): the words stay their own colour (white prose, coloured code) on the accent band, not tinted
-  blue, under a few themes. Checked only in a headless-Edge page with the same layer (`mix-blend-mode: screen` on
+  code block, a table), and double-click one word: the words stay their own colour (white prose, coloured code) on a
+  band in the system's selection colour (Windows' blue `Highlight`, not the theme's accent), under a few themes; the
+  same band shows on a selection in Chat's bash box (`!` mode), its coloured command still readable under it (b67964193).
+  The blend was checked only in a headless-Edge page with the same layer (`mix-blend-mode: screen` on
   `[data-md-selection-layer]`, `tailwindsetup.css`, 2026-11-18), not in the app or on a Mac's WebKit;
 
 - [ ] (arcterm) **One arcterm at a time (Windows, packaged).** With arcterm closed to the tray, open it again from the
