@@ -36,16 +36,17 @@ func (ws *WshServer) ChatSuggestCommand(ctx context.Context, data wshrpc.Command
 	for _, h := range habits {
 		texts = append(texts, h.Text)
 	}
-	replies, err := chatSuggester().Suggest(ctx, chatsuggest.Request{
+	answer, err := chatSuggester().Suggest(ctx, chatsuggest.Request{
 		Reply:    data.Reply,
 		Recent:   data.Recent,
 		Question: data.Question,
 		Habits:   texts,
+		Summary:  data.Summary,
 	})
 	if err != nil {
 		return nil, err
 	}
-	return &wshrpc.CommandChatSuggestRtnData{Replies: replies}, nil
+	return &wshrpc.CommandChatSuggestRtnData{Replies: answer.Replies, Summary: answer.Summary}, nil
 }
 
 // ChatHabitsCommand lists the habits the model is given, for Setup → Learned.
