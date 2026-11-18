@@ -386,6 +386,12 @@ export function stepPick(chips: readonly ChatChip[], picked: string | null, back
     return chips[next].text;
 }
 
+/** Pure: the chip Cmd+Enter (Ctrl+Enter off a Mac) takes at once: the row's first, over an empty box only. With text
+ *  in the box the key stays the box's own send. */
+export function quickChip(chips: readonly ChatChip[], boxText: string): ChatChip | null {
+    return chips.length > 0 && boxText.trim() === "" ? chips[0] : null;
+}
+
 /** Pure: the picked chip, or null when the text is no longer one of the row's (the row changed under it). */
 export function pickedChip(chips: readonly ChatChip[], picked: string | null): ChatChip | null {
     return picked == null ? null : (chips.find((c) => c.text === picked) ?? null);

@@ -17,6 +17,7 @@ import {
     LONG_TURN_TOOL_CALLS,
     pickedChip,
     pickedHint,
+    quickChip,
     recentPrompts,
     ROW_ENTER_ACTIONS_MS,
     ROW_LEAVE_ACTIONS_MS,
@@ -628,5 +629,20 @@ describe("withChipText", () => {
         expect(withChipText("hello", "Có, đổi đi")).toBe("hello Có, đổi đi");
         expect(withChipText("hello ", "Có, đổi đi")).toBe("hello Có, đổi đi");
         expect(withChipText("hello\n", "Có, đổi đi")).toBe("hello\nCó, đổi đi");
+    });
+});
+
+describe("quickChip", () => {
+    const chips = [
+        { kind: "reply", text: "build di", source: "rule" },
+        { kind: "reply", text: "ok", source: "rule" },
+    ] as ChatChip[];
+    it("takes the first chip over an empty box", () => {
+        expect(quickChip(chips, "")?.text).toBe("build di");
+        expect(quickChip(chips, "  \n")?.text).toBe("build di");
+    });
+    it("leaves the key to the box once something is typed, or when there is no chip", () => {
+        expect(quickChip(chips, "hello")).toBeNull();
+        expect(quickChip([], "")).toBeNull();
     });
 });

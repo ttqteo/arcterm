@@ -121,6 +121,7 @@ import {
     drawnChips,
     pickedChip,
     pickedHint,
+    quickChip,
     rowHold,
     runningActions,
     stepPick,
@@ -1300,6 +1301,17 @@ function ComposerBox({
                                             onSendNow();
                                             return;
                                         }
+                                        // Cmd+Enter (Ctrl+Enter off a Mac) over an empty box takes the first suggested reply, as a
+                                        // click on it does; a queued message's Send now, above, comes first
+                                        if (!e.nativeEvent.isComposing && isSendNowKey(e, isMacOS())) {
+                                            const first = quickChip(tabChips, text);
+                                            if (first != null) {
+                                                e.preventDefault();
+                                                setPicked(null);
+                                                activateChip(first);
+                                                return;
+                                            }
+                                        }
                                         if (e.key === "Enter" && !e.shiftKey) {
                                             // Enter that commits an IME composition (Telex, Pinyin…) is not a send
                                             if (e.nativeEvent.isComposing) {
@@ -1607,7 +1619,7 @@ function SuggestChips({
         <motion.div {...part} data-chat-suggest="" className="@container mb-2 min-w-0">
             <div className="flex min-w-0 flex-nowrap items-center gap-1.5 @min-[600px]:flex-wrap">
                 <AnimatePresence initial={false}>
-                    {chips.map((c) => {
+                    {chips.map((c, i) => {
                         const ticks = c.kind === "done" && c.chunk != null;
                         const goes = c.kind === "next" && c.chunk != null && canGoOn;
                         const mark = chipIcon(c);
@@ -1619,7 +1631,7 @@ function SuggestChips({
                                     picked={c.text === picked}
                                     armed={c.text === armed}
                                     title={
-                                        c.text === armed
+                                        (c.text === armed
                                             ? `Send “${c.text}” in place of the text in the box · Esc keeps your text`
                                             : c.kind === "close"
                                               ? "Its work is committed: close this agent, as the header's ✓ Close does"
@@ -1627,7 +1639,8 @@ function SuggestChips({
                                                 ? `Mark “${c.chunk}” done and move on to the next chunk`
                                                 : goes
                                                   ? `Move this agent to “${c.chunk}” and send “${c.text}”`
-                                                  : `Send “${c.text}”`
+                                                  : `Send “${c.text}”`) +
+                                        (i === 0 && c.text !== armed ? ` · ${isMacOS() ? "⌘" : "Ctrl+"}↵` : "")
                                     }
                                     onClick={() => onActivate(c)}
                                     data={{ "data-chat-suggest-chip": c.source, "data-chat-suggest-kind": c.kind }}

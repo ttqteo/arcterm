@@ -76,6 +76,7 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   shows what the agent is doing and a line under its name: its question when it asks, the first sentence of its last
   reply when it is idle. A run's workers are one row under Runs that opens to its worker lines, the header counts what
   needs you ("3 need you"), and a chat loads older messages when you scroll to its top.
+- In an empty chat box, Cmd+Enter (Ctrl+Enter on Windows) takes the first suggested reply.
 - Sidecar's full window no longer draws each agent's last 2 hours as lanes: the Resources band stands there instead.
 - An agent whose brainstorm's builder check waits on you (a builder question, or the review to approve) now reads as
   asking: its row in the Agent tree breathes amber, and it counts in Cockpit's Needs you.
