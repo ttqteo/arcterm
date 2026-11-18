@@ -33,6 +33,16 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
   in a markdown file open in the Agent's doc view: the Comment button sits just above the first selected line, its left
   edge at the selection's start, covering no selected text; select the doc's very first line and it drops under the
   selection instead. `md-comments` scenario (`mddoc.tsx`).
+- [ ] (arcterm) **Remote mode through Tailscale on a real phone.** Only fakes have run `tailscale serve` (the
+  `remotemode` tests). Step 10 of `remote-switch` (the Connection card with Tailscale picked) was written but its run was
+  stopped for low memory: run `task verify:ui -- remote-switch` first. Turn HTTPS on for the tailnet (admin console →
+  DNS), then Settings → Remote → Connection → Tailscale: the tailnet address and login fill in by themselves; turn
+  Remote on → the footer reads Remote on and `tailscale serve status` lists `https://<pc>.ts.net` proxying to
+  `127.0.0.1:47821`. With the phone's Tailscale app logged in as the same user, open that address in Safari, add it to
+  the home screen, turn on notifications; an agent's question pushes and an answer reaches the agent. A device logged
+  in as another tailnet user gets 403. Turn Remote off → `tailscale serve status` reads "No serve config" again (the
+  foreground serve dies with its child; if a config stays behind, `tailscale serve reset` clears it and the kill path
+  needs a fix). Commit: feat(remote) Tailscale as a second way in
 - [ ] (arcterm) **Remote mode on a real phone (ported from the kael fork).** The `remote-switch`, `remote-hand` and
   `remote-phone` scenarios cover Settings → Remote, the footer chip, the More menu's Hand to phone and the phone page
   against fixtures; nothing has run against a real tunnel. With a Cloudflare named tunnel and an Access app set up as in

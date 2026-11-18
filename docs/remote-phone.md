@@ -7,10 +7,38 @@ means the tunnel and the phone listener are both stopped. Designs:
 `docs/superpowers/specs/2026-10-27-answer-arc-from-phone-design.md` and
 `docs/superpowers/specs/2026-11-03-arc-pwa-more-design.md`.
 
-The phone reaches Arc through a Cloudflare named tunnel behind Cloudflare Access. Arc never holds a
-Cloudflare API token; it holds only the tunnel token, in its secret store.
+The phone reaches Arc one of two ways, picked under Settings → Remote → Connection:
 
-## Set up
+- **Tailscale** (`pkg/remotemode/tailnet.go`): `tailscale serve` puts the phone listener on this machine's tailnet
+  address, `https://<pc>.<tailnet>.ts.net`, open only to devices in your tailnet. No domain and no Cloudflare account;
+  the phone runs the Tailscale app whenever you use it.
+- **Cloudflare**: a named tunnel on a domain you own, behind Cloudflare Access. Arc never holds a Cloudflare API
+  token; it holds only the tunnel token, in its secret store.
+
+Either way the listener binds `127.0.0.1` only, and the push notifications go through Apple's push service, not the
+tunnel.
+
+## Set up with Tailscale
+
+1. **Install Tailscale** on the PC and on the iPhone, and log both in as the same user.
+2. **Turn HTTPS on for the tailnet** once: the admin console, DNS, HTTPS Certificates (MagicDNS must be on too).
+   Without it the status reads "Serve is not enabled on your tailnet: enable it at <link>"; open the link, enable,
+   and the address comes up by itself.
+3. **Pick Tailscale** in Settings → Remote → Connection, or run `wsh remote setup --provider tailscale`. The tailnet
+   address and the one login let in are read from `tailscale status`; `--hostname` and `--email` (or the two fields)
+   override them, and a hand-set login is kept by later setups.
+4. **Turn it on**: the switch, or `wsh remote on`. Arc runs `tailscale serve --https=443 http://127.0.0.1:<port>` in the
+   foreground as its child, so the serve config lasts only while remote mode is on; turning off kills it and
+   tailscaled drops the config. It takes port 443 of the tailnet address, so it clashes with a serve of your own there.
+5. **On the iPhone**, with the Tailscale app connected, open the address in Safari, Share, Add to Home Screen, open it
+   from the icon and tap **Turn on notifications**.
+
+Every request must carry `Tailscale-User-Login`, which `tailscale serve` sets for a device's logged-in user after
+dropping any copy the client sent, and it must match the stored login; a tagged device, a Funnel request or another
+tailnet user gets 403. A program on the PC itself can reach the loopback listener directly and could forge the header,
+but such a program can already drive Arc through `wsh`.
+
+## Set up with Cloudflare
 
 1. **Install cloudflared** on the PC: `winget install --id Cloudflare.cloudflared`.
 2. **Create a named tunnel** in the Cloudflare dashboard (Zero Trust, Networks, Tunnels). Add a

@@ -23,6 +23,7 @@ const REMOTE_PANE = `document.querySelector('[data-settings-section="remote"]')`
 const REMOTE_PILL = `document.querySelector('[data-remote-pill]')`;
 const REMOTE_HOST = "arc.example.com";
 const REMOTE_TUNNEL_ERROR = "failed to dial edge: connection refused";
+const REMOTE_TS_HOST = "pc.tail123.ts.net";
 const REMOTE_SET_UP = {
     on: false,
     team: "acme",
@@ -47,6 +48,7 @@ const REMOTE_FIXTURES = {
     up: { ...REMOTE_SET_UP, on: true, tunnel: "up", subscriptions: 1 },
     down: { ...REMOTE_SET_UP, on: true, tunnel: "down", tunnelerror: REMOTE_TUNNEL_ERROR, subscriptions: 1 },
     nocloudflared: { ...REMOTE_SET_UP, cloudflaredmissing: true },
+    tailscale: { ...REMOTE_SET_UP, provider: "tailscale", hostname: REMOTE_TS_HOST, on: true, tunnel: "up", subscriptions: 1 },
     off: REMOTE_SET_UP,
 };
 const remoteSetStatus = (h, name) =>
@@ -194,6 +196,29 @@ const remoteSwitchScenario = {
             "9. a bad team goes to the real RemoteSetupCommand, which refuses it inline and stores nothing",
             /bare team name/.test(bad.error) && stored === "",
             JSON.stringify({ error: bad.error, storedTeam: stored })
+        );
+
+        await remoteSetStatus(h, "tailscale");
+        await settle();
+        await shot("10-tailscale");
+        const ts = await h.ev(`(() => {
+            const pane = ${REMOTE_PANE};
+            const row = (id) => pane?.querySelector(\`[data-setting-row="remote.\${id}"]\`);
+            const picked = pane?.querySelector('[data-testid="remote-provider-tailscale"]');
+            return {
+                picked: picked?.className.includes("bg-surface-selected") ?? false,
+                tshostname: row("tshostname")?.querySelector("input")?.value ?? null,
+                tslogin: row("tslogin")?.querySelector("input")?.value ?? null,
+                port: row("port")?.querySelector("input")?.value ?? null,
+                token: row("tunneltoken") != null,
+                team: row("team") != null,
+                tunnel: pane?.querySelector('[data-remote-line="tunnel"]')?.textContent?.trim() ?? "",
+            };
+        })()`);
+        rec(
+            "10. through tailscale: Tailscale is picked, the tailnet address and login show, and the Cloudflare rows are gone",
+            ts.picked && ts.tshostname === REMOTE_TS_HOST && ts.tslogin === "me@example.com" && ts.port === "8765" && !ts.token && !ts.team && ts.tunnel === "Tailscale serve up",
+            JSON.stringify(ts)
         );
         return steps;
     },

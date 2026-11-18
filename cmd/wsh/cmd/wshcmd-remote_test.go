@@ -162,3 +162,41 @@ func TestReadTunnelToken(t *testing.T) {
 		})
 	}
 }
+
+func TestRemoteSetupData(t *testing.T) {
+	set := func(provider, team, aud, email, host string) {
+		remoteSetupProvider, remoteSetupTeam, remoteSetupAud, remoteSetupEmail, remoteSetupHostname = provider, team, aud, email, host
+	}
+	t.Cleanup(func() { set(remoteProviderCloudflare, "", "", "", "") })
+	readCalls := 0
+	read := func() (string, error) { readCalls++; return remoteTestToken, nil }
+
+	set("Tailscale", "", "", "", "")
+	data, err := remoteSetupData(read)
+	if err != nil || data.Provider != remoteProviderTailscale || data.TunnelToken != "" || readCalls != 0 {
+		t.Errorf("tailscale: %+v %v, token reads %d", data, err, readCalls)
+	}
+
+	set(remoteProviderCloudflare, "acme", "", "me@example.com", "")
+	if _, err := remoteSetupData(read); err == nil || !strings.Contains(err.Error(), "--aud, --hostname") || readCalls != 0 {
+		t.Errorf("cloudflare missing flags: %v, token reads %d", err, readCalls)
+	}
+
+	set(remoteProviderCloudflare, "acme", "aud", "me@example.com", "arc.example.com")
+	data, err = remoteSetupData(read)
+	if err != nil || data.Provider != remoteProviderCloudflare || data.TunnelToken != remoteTestToken || data.Team != "acme" {
+		t.Errorf("cloudflare: %+v %v", data, err)
+	}
+
+	set("ngrok", "", "", "", "")
+	if _, err := remoteSetupData(read); err == nil {
+		t.Error("ngrok was accepted")
+	}
+}
+
+func TestRemoteStatusTextTailscale(t *testing.T) {
+	got := remoteStatusText(&wshrpc.RemoteStatusData{Provider: remoteProviderTailscale, Tunnel: "off", TailscaleMissing: true})
+	if !strings.Contains(got, "Through: tailscale serve\n") || !strings.Contains(got, "tailscale not found: ") {
+		t.Errorf("status text:\n%s", got)
+	}
+}

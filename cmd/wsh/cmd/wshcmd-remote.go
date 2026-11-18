@@ -17,14 +17,18 @@ import (
 )
 
 const (
-	remoteRpcTimeoutMs   = 10000
-	remoteTunnelPrompt   = "Tunnel token:"
-	remoteCloudflaredFix = "winget install --id Cloudflare.cloudflared"
+	remoteRpcTimeoutMs = 20000
+
+	remoteProviderCloudflare = "cloudflare"
+	remoteProviderTailscale  = "tailscale"
+	remoteTunnelPrompt       = "Tunnel token:"
+	remoteCloudflaredFix     = "winget install --id Cloudflare.cloudflared"
+	remoteTailscaleFix       = "install it from https://tailscale.com/download and log in"
 	// a tunnel token is a short base64 blob; the cap only bounds a runaway stdin
 	remoteTokenMaxBytes = 1024 * 1024
 )
 
-var remoteSetupTeam, remoteSetupAud, remoteSetupEmail, remoteSetupHostname string
+var remoteSetupProvider, remoteSetupTeam, remoteSetupAud, remoteSetupEmail, remoteSetupHostname string
 var remoteSetupPort int
 
 var remoteCmd = &cobra.Command{
@@ -33,8 +37,13 @@ var remoteCmd = &cobra.Command{
 }
 
 var remoteSetupCmd = &cobra.Command{
-	Use:     "setup --team <name> --aud <tag> --email <addr> --hostname <host> [--port N]",
-	Short:   "store the Cloudflare tunnel and Access details; the tunnel token is read from stdin",
+	Use:   "setup --team <name> --aud <tag> --email <addr> --hostname <host> [--port N] | setup --provider tailscale [--port N]",
+	Short: "store how the phone reaches Arc: a Cloudflare tunnel behind Access (its token read from stdin), or tailscale serve",
+	Long: `Cloudflare (the default): a named tunnel behind Cloudflare Access; --team, --aud, --email and --hostname
+are required and the tunnel token is read from stdin.
+
+Tailscale (--provider tailscale): tailscale serve on this machine's tailnet address. The hostname and the one
+tailnet login let in are read from tailscale status; --hostname and --email override them.`,
 	Args:    cobra.NoArgs,
 	RunE:    remoteSetupRun,
 	PreRunE: preRunSetupRpcClient,
@@ -81,36 +90,61 @@ var remoteTakeBackCmd = &cobra.Command{
 }
 
 func init() {
+	remoteSetupCmd.Flags().StringVar(&remoteSetupProvider, "provider", remoteProviderCloudflare, "cloudflare or tailscale")
 	remoteSetupCmd.Flags().StringVar(&remoteSetupTeam, "team", "", "Cloudflare Access team name (the part before .cloudflareaccess.com)")
 	remoteSetupCmd.Flags().StringVar(&remoteSetupAud, "aud", "", "the Access application's AUD tag")
-	remoteSetupCmd.Flags().StringVar(&remoteSetupEmail, "email", "", "the one email address allowed in")
-	remoteSetupCmd.Flags().StringVar(&remoteSetupHostname, "hostname", "", "the tunnel's public host name, e.g. arc.example.com")
+	remoteSetupCmd.Flags().StringVar(&remoteSetupEmail, "email", "", "the one email address (tailscale: tailnet login) allowed in")
+	remoteSetupCmd.Flags().StringVar(&remoteSetupHostname, "hostname", "", "the public host name, e.g. arc.example.com (tailscale: read from tailscale status)")
 	remoteSetupCmd.Flags().IntVar(&remoteSetupPort, "port", 0, "local port for the phone listener (default: the built-in port)")
-	for _, f := range []string{"team", "aud", "email", "hostname"} {
-		remoteSetupCmd.MarkFlagRequired(f)
-	}
 	remoteCmd.AddCommand(remoteSetupCmd, remoteOnCmd, remoteOffCmd, remoteStatusCmd, remoteHandCmd, remoteTakeBackCmd)
 	rootCmd.AddCommand(remoteCmd)
 }
 
 func remoteSetupRun(cmd *cobra.Command, args []string) error {
-	token, err := readTunnelToken(os.Stdin, stdinIsTerminal())
+	data, err := remoteSetupData(func() (string, error) { return readTunnelToken(os.Stdin, stdinIsTerminal()) })
 	if err != nil {
 		return err
 	}
-	st, err := wshclient.RemoteSetupCommand(RpcClient, wshrpc.CommandRemoteSetupData{
-		TunnelToken: token,
-		Team:        remoteSetupTeam,
-		Aud:         remoteSetupAud,
-		Email:       remoteSetupEmail,
-		Hostname:    remoteSetupHostname,
-		Port:        remoteSetupPort,
-	}, &wshrpc.RpcOpts{Timeout: remoteRpcTimeoutMs})
+	st, err := wshclient.RemoteSetupCommand(RpcClient, data, &wshrpc.RpcOpts{Timeout: remoteRpcTimeoutMs})
 	if err != nil {
 		return fmt.Errorf("remote setup: %w", err)
 	}
 	WriteStdout("%s", remoteStatusText(st))
 	return nil
+}
+
+// remoteSetupData checks the flags for the chosen provider and reads the tunnel token only for cloudflare.
+func remoteSetupData(readToken func() (string, error)) (wshrpc.CommandRemoteSetupData, error) {
+	data := wshrpc.CommandRemoteSetupData{
+		Provider: strings.ToLower(strings.TrimSpace(remoteSetupProvider)),
+		Email:    remoteSetupEmail,
+		Hostname: remoteSetupHostname,
+		Port:     remoteSetupPort,
+	}
+	switch data.Provider {
+	case remoteProviderTailscale:
+		return data, nil
+	case remoteProviderCloudflare:
+	default:
+		return data, fmt.Errorf("--provider must be %s or %s", remoteProviderCloudflare, remoteProviderTailscale)
+	}
+	var missing []string
+	for _, f := range []struct{ name, val string }{
+		{"--team", remoteSetupTeam}, {"--aud", remoteSetupAud}, {"--email", remoteSetupEmail}, {"--hostname", remoteSetupHostname},
+	} {
+		if strings.TrimSpace(f.val) == "" {
+			missing = append(missing, f.name)
+		}
+	}
+	if len(missing) > 0 {
+		return data, fmt.Errorf("cloudflare setup needs %s", strings.Join(missing, ", "))
+	}
+	token, err := readToken()
+	if err != nil {
+		return data, err
+	}
+	data.TunnelToken, data.Team, data.Aud = token, remoteSetupTeam, remoteSetupAud
+	return data, nil
 }
 
 func remoteOnRun(cmd *cobra.Command, args []string) error {
@@ -220,6 +254,9 @@ func remoteStatusText(st *wshrpc.RemoteStatusData) string {
 		onOff = "on"
 	}
 	fmt.Fprintf(&b, "Remote mode: %s\n", onOff)
+	if st.Provider == remoteProviderTailscale {
+		b.WriteString("Through: tailscale serve\n")
+	}
 	if st.Hostname != "" {
 		fmt.Fprintf(&b, "Address: https://%s\n", st.Hostname)
 	}
@@ -246,6 +283,9 @@ func remoteStatusText(st *wshrpc.RemoteStatusData) string {
 	}
 	if st.CloudflaredMissing {
 		fmt.Fprintf(&b, "cloudflared not found: %s\n", remoteCloudflaredFix)
+	}
+	if st.TailscaleMissing {
+		fmt.Fprintf(&b, "tailscale not found: %s\n", remoteTailscaleFix)
 	}
 	return b.String()
 }

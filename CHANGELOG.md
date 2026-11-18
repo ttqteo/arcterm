@@ -35,6 +35,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   CPU and RAM, the rest of arcterm, each agent, and the other apps holding over 200 MB (Windows).
 - **Your phone as a remote for arcterm**: with your own Cloudflare tunnel set up in Settings → Remote (or
   `wsh remote setup`), an installed web app on your phone lists what waits on you, pushes a notification when an agent
+- **Your phone as a remote for arcterm**: through Tailscale (no domain needed) or your own Cloudflare tunnel, set up in
+  Settings → Remote (or `wsh remote setup`), an installed web app on your phone lists what waits on you, pushes a notification when an agent
   asks, and answers its questions. Hand a Claude or pi agent to the phone (`p`, or More → Hand to phone) to read its
   transcript, send the next prompt, stop a turn and approve a permission prompt from the phone. It runs only while you
   turn it on; a Remote chip in the footer shows it. <!-- big -->
@@ -68,6 +70,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- Sidecar's alert frame follows Windows 11's rounded window corners instead of being cut off at them, and the
+  heaviest-agent cards in its RAM band no longer squeeze an agent's name to one letter: the buttons wrap under it.
 - Claude agents stop writing a commit suggestion as an `arc-commit` code block: the skill that asked for it outlived
   the removed commit card and is now cleaned up.
 - The Consumers panel no longer shows a pi or codex agent as using no tokens: it says it cannot tell, since it reads

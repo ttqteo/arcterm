@@ -5,7 +5,10 @@ import { describe, expect, it } from "vitest";
 import {
     REMOTE_CLOUDFLARED_NOTE,
     REMOTE_SETUP_NOTE,
+    REMOTE_TAILSCALE_NOTE,
     remoteChip,
+    remoteProvider,
+    remoteProviderPatch,
     remoteSetupPatch,
     remoteStatusLines,
     remoteSwitch,
@@ -149,5 +152,45 @@ describe("remoteSetupPatch", () => {
 
     it("refuses an empty value, since Setup would keep the stored one", () => {
         expect(remoteSetupPatch("email", "  ")).toEqual({ error: "email can't be empty" });
+    });
+});
+
+describe("tailscale", () => {
+    const TS: RemoteStatusData = {
+        ...OFF,
+        provider: "tailscale",
+        hostname: "pc.tail123.ts.net",
+        email: "me@example.com",
+    };
+
+    it("reads an old status with no provider as cloudflare", () => {
+        expect(remoteProvider(OFF)).toBe("cloudflare");
+        expect(remoteProvider(null)).toBe("cloudflare");
+        expect(remoteProvider(TS)).toBe("tailscale");
+    });
+
+    it("switches provider with a setup that carries nothing else", () => {
+        expect(remoteProviderPatch("tailscale")).toEqual({
+            provider: "tailscale",
+            tunneltoken: "",
+            team: "",
+            aud: "",
+            email: "",
+            hostname: "",
+        });
+    });
+
+    it("is disabled with the install line while tailscale is missing", () => {
+        expect(remoteSwitch({ ...TS, tailscalemissing: true })).toEqual({
+            enabled: false,
+            on: false,
+            note: REMOTE_TAILSCALE_NOTE,
+        });
+    });
+
+    it("names tailscale serve and the tailnet login in the status lines", () => {
+        expect(texts({ ...TS, on: true, tunnel: "up" })).toContain("Tailscale serve up");
+        expect(texts({ ...TS, missing: ["email"] })[0]).toBe("Setup incomplete, missing tailnet login");
+        expect(texts(TS)).toContain("https://pc.tail123.ts.net");
     });
 });

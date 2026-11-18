@@ -115,8 +115,9 @@ function HeavyRow({ h, send }: { h: SidecarHeavy; send: (act: SidecarAct) => voi
             data-sidecar-heavy={h.id}
             className="flex min-w-0 flex-1 flex-col gap-1.5 rounded-md border border-edge-strong bg-surface-raised px-2.5 py-2"
         >
-            <div className="flex items-center gap-2.5">
-                <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+            {/* in a narrow card the buttons wrap under the name, never squeeze it to a letter */}
+            <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5">
+                <div className="flex min-w-[8rem] flex-1 flex-col gap-0.5">
                     <div className="flex items-baseline gap-2">
                         <span className="min-w-0 truncate text-[13px] font-semibold text-primary" title={h.name}>
                             {h.name}
@@ -135,7 +136,7 @@ function HeavyRow({ h, send }: { h: SidecarHeavy; send: (act: SidecarAct) => voi
                     )}
                 </div>
                 {asking ? (
-                    <div data-sidecar-confirm className="flex min-w-0 flex-[1.4] items-center gap-2">
+                    <div data-sidecar-confirm className="flex min-w-[12rem] flex-[1.4] items-center gap-2">
                         <span className="min-w-0 text-[12px] leading-[1.35] text-secondary">
                             Stop <span className="break-all font-mono text-primary">{proc.command}</span>? The
                             agent&apos;s build ends; the agent keeps running.
@@ -161,7 +162,7 @@ function HeavyRow({ h, send }: { h: SidecarHeavy; send: (act: SidecarAct) => voi
                         </button>
                     </div>
                 ) : (
-                    <div className="flex shrink-0 items-center gap-1.5">
+                    <div className="ml-auto flex shrink-0 items-center gap-1.5">
                         {proc != null && (
                             <button
                                 {...press}
