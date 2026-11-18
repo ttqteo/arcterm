@@ -139,8 +139,10 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - On a Mac, Sidecar's Resources panel and the agents' RAM now show figures instead of "read on
   Windows only": arcterm itself (with its WebKit processes and Sidecar's own row), each agent and run command, and the
   apps outside arcterm with their icons, each app's helpers counted under it (Zalo's renderers under Zalo).
-- On a Mac, Sidecar's Resources shows a Swap chart under RAM: the swap in use and the swap files' size, as Activity
-  Monitor shows them.
+- On a Mac, Sidecar's Resources shows the swap in use beside RAM's figure ("6.3 GB of 8 GB · swap 3.6 GB"), when
+  anything is in swap.
+- Hovering a Resources chart shows the reading in a label over the plot, so the title row and the panel around it no
+  longer shift as the pointer moves.
 - Sidecar redraws only its CPU and RAM figures when they alone change, instead of the whole dashboard every 5 s, so
   its memory climbs less between clean-ups.
 - A hidden Sidecar (minimized, on another Space, or covered whole) is sent nothing until it shows again, when it

@@ -1,9 +1,10 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// Sidecar's resource charts: the whole machine's CPU, RAM, a Mac's swap and GPU over the last 5 minutes, as small
-// multiples on one 0-100% scale (one series each, named by its title, so no legend), like Task Manager's Performance tab. A hover
-// shows a crosshair and the reading under it. Wears the HUD skin (spec 2026-11-18-sidecar-hud-design.md): the line is a
+// Sidecar's resource charts: the whole machine's CPU, RAM and GPU over the last 5 minutes, as small multiples on one
+// 0-100% scale (one series each, named by its title, so no legend), like Task Manager's Performance tab. A Mac's swap in
+// use rides on RAM's figure, not a chart of its own. A hover shows a crosshair and the reading under it, in a label laid
+// over the plot, so the title row keeps its size and nothing around it moves. Wears the HUD skin (spec 2026-11-18-sidecar-hud-design.md): the line is a
 // GlowPath, the gridline and the ground `hud-*` tokens, the figures mono. Runs on the slim page: only the types, the pure
 // models and React.
 
@@ -31,7 +32,6 @@ function agoText(ms: number): string {
 interface Series {
     t: number;
     v: number; // 0-100, the plot's scale
-    label?: string; // the hover's figure, when the percent is not what the chart counts (Swap's GB)
 }
 
 function Chart(props: { title: string; figure: string; detail?: string; series: Series[]; end: number }) {
@@ -65,105 +65,89 @@ function Chart(props: { title: string; figure: string; detail?: string; series: 
             <div className="flex items-baseline gap-2">
                 <HudLabel>{props.title}</HudLabel>
                 <span className="flex-1" />
-                {shown != null ? (
-                    <span className="font-mono text-[11.5px] tabular-nums text-hud-muted">
-                        <b className="font-medium text-hud-text">{shown.label ?? `${shown.v}%`}</b> ·{" "}
-                        {agoText(end - shown.t)}
-                    </span>
-                ) : (
-                    <span className="font-mono text-[11.5px] tabular-nums text-hud-muted">
-                        <b className="text-[14px] font-medium text-hud-text">{props.figure}</b>
-                        {props.detail != null ? ` · ${props.detail}` : ""}
+                <span className="truncate whitespace-nowrap font-mono text-[11.5px] tabular-nums text-hud-muted">
+                    <b className="text-[14px] font-medium text-hud-text">{props.figure}</b>
+                    {props.detail != null ? ` · ${props.detail}` : ""}
+                </span>
+            </div>
+            {/* the plot and its hover label: the label floats over the plot's top-left corner, out of the flow */}
+            <div className="relative">
+                <svg
+                    viewBox={`0 0 ${W} ${H}`}
+                    preserveAspectRatio="none"
+                    role="img"
+                    aria-label={`${props.title}, the last 5 minutes: ${props.figure}`}
+                    className="h-[56px] w-full cursor-crosshair overflow-visible rounded-sm bg-hud-bg"
+                    onMouseMove={onMove}
+                    onMouseLeave={() => setHover(null)}
+                >
+                    {/* the one gridline: half way, recessive */}
+                    <line
+                        x1={0}
+                        x2={W}
+                        y1={H / 2}
+                        y2={H / 2}
+                        vectorEffect="non-scaling-stroke"
+                        className="stroke-hud-line"
+                        strokeWidth={1}
+                        strokeDasharray="2 3"
+                    />
+                    {area !== "" && <path d={area} className="fill-hud-glow/10" />}
+                    {series.length > 1 && (
+                        <GlowPath
+                            d={line}
+                            width={1.5}
+                            vectorEffect="non-scaling-stroke"
+                            className="stroke-hud-glow"
+                            strokeLinejoin="round"
+                            strokeLinecap="round"
+                        />
+                    )}
+                    {shown != null && (
+                        <line
+                            x1={x(shown.t)}
+                            x2={x(shown.t)}
+                            y1={0}
+                            y2={H}
+                            vectorEffect="non-scaling-stroke"
+                            className="stroke-hud-muted"
+                            strokeWidth={1}
+                        />
+                    )}
+                </svg>
+                {shown != null && (
+                    <span className="pointer-events-none absolute left-1 top-0.5 whitespace-nowrap rounded-sm bg-hud-bg/80 px-1 font-mono text-[11px] tabular-nums text-hud-muted">
+                        <b className="font-medium text-hud-text">{shown.v}%</b> · {agoText(end - shown.t)}
                     </span>
                 )}
             </div>
-            <svg
-                viewBox={`0 0 ${W} ${H}`}
-                preserveAspectRatio="none"
-                role="img"
-                aria-label={`${props.title}, the last 5 minutes: ${props.figure}`}
-                className="h-[56px] w-full cursor-crosshair overflow-visible rounded-sm bg-hud-bg"
-                onMouseMove={onMove}
-                onMouseLeave={() => setHover(null)}
-            >
-                {/* the one gridline: half way, recessive */}
-                <line
-                    x1={0}
-                    x2={W}
-                    y1={H / 2}
-                    y2={H / 2}
-                    vectorEffect="non-scaling-stroke"
-                    className="stroke-hud-line"
-                    strokeWidth={1}
-                    strokeDasharray="2 3"
-                />
-                {area !== "" && <path d={area} className="fill-hud-glow/10" />}
-                {series.length > 1 && (
-                    <GlowPath
-                        d={line}
-                        width={1.5}
-                        vectorEffect="non-scaling-stroke"
-                        className="stroke-hud-glow"
-                        strokeLinejoin="round"
-                        strokeLinecap="round"
-                    />
-                )}
-                {shown != null && (
-                    <line
-                        x1={x(shown.t)}
-                        x2={x(shown.t)}
-                        y1={0}
-                        y2={H}
-                        vectorEffect="non-scaling-stroke"
-                        className="stroke-hud-muted"
-                        strokeWidth={1}
-                    />
-                )}
-            </svg>
         </div>
     );
 }
 
-/** The charts: CPU, RAM, a Mac's Swap, GPU. `memTotal` words RAM's figure in GB; a machine whose GPU is not read says so
- * in place of a chart. Swap shows only where it is read (a Mac), drawn against the swap files' size now. */
+/** The charts: CPU, RAM, GPU. `memTotal` words RAM's figure in GB, and a Mac's swap in use follows it there when any is
+ * in swap; a machine whose GPU is not read says so in place of a chart. */
 export function SidecarResourceCharts(props: {
     history: SidecarResourcePoint[];
     memTotal?: number;
-    swapTotal?: number;
     className?: string;
 }) {
-    const { history, memTotal, swapTotal } = props;
+    const { history, memTotal } = props;
     const last = history.at(-1);
     const end = last?.t ?? Date.now();
     const cpu = history.map((p) => ({ t: p.t, v: p.cpu }));
     const mem = history.map((p) => ({ t: p.t, v: p.mem }));
     const gpu = history.flatMap((p) => (p.gpu != null ? [{ t: p.t, v: p.gpu }] : []));
-    const swap =
-        swapTotal != null && swapTotal > 0
-            ? history.flatMap((p) =>
-                  p.swap != null
-                      ? [{ t: p.t, v: Math.round((p.swap / swapTotal) * 100), label: formatBytes(p.swap) }]
-                      : []
-              )
-            : [];
     const pct = (v: number | undefined) => (v != null ? `${v}%` : "—");
     const memDetail =
         last != null && memTotal != null
-            ? `${formatBytes((last.mem / 100) * memTotal)} of ${formatBytes(memTotal)}`
+            ? `${formatBytes((last.mem / 100) * memTotal)} of ${formatBytes(memTotal)}` +
+              (last.swap != null && last.swap > 0 ? ` · swap ${formatBytes(last.swap)}` : "")
             : undefined;
     return (
         <div data-sidecar-charts className={cn("flex flex-col gap-2.5", props.className)}>
             <Chart title="CPU" figure={pct(last?.cpu)} series={cpu} end={end} />
             <Chart title="RAM" figure={pct(last?.mem)} detail={memDetail} series={mem} end={end} />
-            {swap.length > 0 && swapTotal != null && (
-                <Chart
-                    title="Swap"
-                    figure={formatBytes(last?.swap ?? 0)}
-                    detail={`of ${formatBytes(swapTotal)}`}
-                    series={swap}
-                    end={end}
-                />
-            )}
             {/* the GPU counters need two readings of their own: past a few, none means this machine has none to read */}
             {history.length >= 3 && gpu.length === 0 ? (
                 <div data-sidecar-chart="gpu" className="text-[11.5px] text-hud-muted">

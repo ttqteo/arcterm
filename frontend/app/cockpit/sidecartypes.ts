@@ -143,7 +143,7 @@ export interface SidecarResources {
     othersMin?: number; // bytes: the least an "other" row holds
     history: SidecarResourcePoint[]; // the last 5 minutes, oldest first
     memTotal?: number; // bytes, for the RAM chart's figure
-    swapTotal?: number; // bytes: the swap files' size now (macOS grows them as it needs), the Swap chart's scale
+    swapTotal?: number; // bytes: the swap files' size now (macOS grows them as it needs); the charts show only the swap in use
 }
 
 export type SidecarAct =
