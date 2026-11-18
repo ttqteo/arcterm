@@ -16,6 +16,12 @@ list (its number is not reused).
 Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) ·
 [part 4](hand-checks-4.md) · [part 3](hand-checks-3.md) · [part 2](hand-checks-2.md) (oldest).
 
+- [ ] (arcterm) **Background tasks open in place.** Have an agent run two commands with `run_in_background` (one that
+  ends at once, one `npx vitest run <a test file>` that runs a while), then open its details rail → Background tasks:
+  Running 1 holds the vitest one with its time counting up, Finished 1 the other with its time. A click opens a row:
+  `$ <command>`, then its last 12 output lines in vitest's own colours, growing while it runs, and Open full view, which
+  opens the output in the File tab as before; a second click folds it. Stop still ends a running one; the Finished
+  heading folds its rows. Branch `feat/codeblock-run`.
 - [ ] (arcterm) **A shell command in colour.** In Chat type `!` then `git log --oneline -3 | head "$HOME"`: `git` and
   `head` in the keyword blue, `log` in the string green, `--oneline`, `-3` and `|` dimmed, `"$HOME"` green; the caret
   shows and moves where it should, a selection shows its band, the grey ghost text still sits after the last character,
