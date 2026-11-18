@@ -1000,7 +1000,8 @@ export const ChatEditor = forwardRef<EditorLike, ChatEditorProps>(function ChatE
                                 // over the caret (a positioned box paints above in-flow content); this keeps it on top
                                 // a bash command's own text is see-through: the mirror under it draws it in the shell's colours
                                 className={cn(
-                                    "relative z-[1] block overflow-y-auto leading-[1.9] whitespace-pre-wrap outline-none [overflow-wrap:anywhere] data-[pill-selected]:caret-transparent",
+                                    // select-text: Chat's dock is select-none, and the box keeps its own text selectable
+                                    "relative z-[1] block overflow-y-auto leading-[1.9] whitespace-pre-wrap outline-none select-text [overflow-wrap:anywhere] data-[pill-selected]:caret-transparent",
                                     skip > 0 &&
                                         // the system's selection colour, as Chat's replies draw theirs (tailwindsetup.css
                                         // .md-selection-band), light enough that the coloured text under it shows

@@ -140,6 +140,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   Windows only": arcterm itself (with its WebKit processes and Sidecar's own row), each agent and run command, and the
   apps outside arcterm, grouped as Activity Monitor groups them.
 - Sidecar no longer paints a text selection over its labels and buttons when you drag across it or press Cmd+A.
+- On a Mac, Sidecar's coloured frame follows the window's own rounded corners, which macOS 26 and later round more, so
+  its line no longer breaks off at the four corners.
+- Cmd+A or a drag over Chat no longer paints a selection over the usage warning, the chips and the box's frame.
 - Chat's usage-limit warning, summary line and suggested replies no longer show the conversation through them when
   you scroll up: the fade under them now grows with them.
 - A message from Chat to an agent whose Claude Code had exited (`/exit`, a crash) starts it again on its conversation

@@ -1328,7 +1328,13 @@ function ChatPaneBody({ model, agent, barred }: { model: AgentsViewModel; agent:
                     is never remounted when the agent sleeps or wakes (its parts fold in place). Asleep its Enter wakes the
                     agent, and it carries data-sleeping-composer on its frame for the scenarios'
                     `[data-sleeping-composer] [data-chat-input]`. */}
-                <div ref={dockRef} data-chat-dock className="pointer-events-none absolute inset-x-6 bottom-5 z-10">
+                {/* select-none: the dock's strips, chips and labels are chrome, so Cmd+A or a drag over the conversation never
+                    paints them; the box itself selects (chateditor.tsx's select-text) */}
+                <div
+                    ref={dockRef}
+                    data-chat-dock
+                    className="pointer-events-none absolute inset-x-6 bottom-5 z-10 select-none"
+                >
                     <div className="pointer-events-auto relative mx-auto w-full max-w-[720px]">
                         {/* Chat's own jump-to-latest: a ↓ pill naming its key, centred just above the box while the reader is scrolled
                             up; it pops in and out on the spring (the wrapper carries the centring, so the pop's scale is the

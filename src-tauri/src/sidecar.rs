@@ -1107,6 +1107,43 @@ fn close_with_main(app: &AppHandle) {
     });
 }
 
+/// The radius macOS rounds Sidecar's window to, for its alert frame to follow: AppKit's own `_cornerRadius` (16 on
+/// macOS 26 and later, which round windows more than before). Private, so asked only when the window answers it; None
+/// off macOS and when it does not, and the page keeps its own guess.
+#[tauri::command]
+pub async fn sidecar_corner(app: AppHandle) -> Option<f64> {
+    corner_radius(&app).await
+}
+
+#[cfg(not(target_os = "macos"))]
+async fn corner_radius(_app: &AppHandle) -> Option<f64> {
+    None
+}
+
+#[cfg(target_os = "macos")]
+async fn corner_radius(app: &AppHandle) -> Option<f64> {
+    use objc2::runtime::AnyObject;
+    use objc2::{msg_send, sel};
+
+    let win = app.get_webview_window(SIDECAR_LABEL)?;
+    let (tx, rx) = tokio::sync::oneshot::channel::<Option<f64>>();
+    app.run_on_main_thread(move || {
+        // AppKit is asked on the main thread
+        let radius = (|| unsafe {
+            let ns = (win.ns_window().ok()? as *mut AnyObject).as_ref()?;
+            let knows: bool = msg_send![ns, respondsToSelector: sel!(_cornerRadius)];
+            if !knows {
+                return None;
+            }
+            let r: f64 = msg_send![ns, _cornerRadius];
+            (r > 0.0 && r < 64.0).then_some(r)
+        })();
+        let _ = tx.send(radius);
+    })
+    .ok()?;
+    rx.await.ok().flatten()
+}
+
 /// The pids of the processes that draw Sidecar's page, for its resource panel's own row: on Windows the WebView2
 /// renderers running a frame of sidecar.html, on macOS the WebContent process of Sidecar's WKWebView. Both windows
 /// share the browser (Windows), GPU and network processes, so those count as arcterm's, not Sidecar's. Empty on a
