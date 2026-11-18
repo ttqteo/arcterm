@@ -157,11 +157,14 @@ function OtherRows({ resources, divider }: { resources: SidecarResources | undef
     );
 }
 
+// the page runs on the machine it measures, so its own user agent says whose figures pkg/resmon read
+const ON_MAC = /Mac/.test(navigator.userAgent);
+
 function noteText(state: SidecarResources["state"]): string {
-    return (
-        "RAM is each process's private working set and GPU its busiest engine, as Task Manager shows them. CPU is a share" +
-        ` of the whole machine${state === "measuring" ? "; it reads after the second sample" : ""}.`
-    );
+    const ram = ON_MAC
+        ? "RAM is each process's memory footprint, as Activity Monitor shows it."
+        : "RAM is each process's private working set and GPU its busiest engine, as Task Manager shows them.";
+    return `${ram} CPU is a share of the whole machine${state === "measuring" ? "; it reads after the second sample" : ""}.`;
 }
 
 // a column of the band: it scrolls on its own, so a long list never pushes the others
@@ -252,7 +255,8 @@ export function SidecarResourcesPanel(props: { resources: SidecarResources | und
             role="dialog"
             aria-label="Resources"
             // the popover's shadow stays: floating chrome, drawn once, not a glow that follows the beat
-            className="absolute inset-x-2 top-[36px] z-40 flex max-h-[min(80vh,640px)] flex-col overflow-hidden rounded-lg border border-hud-line bg-hud-panel shadow-popover-md"
+            // it fills the window under the title bar: the small form has no room to show the dashboard beside it
+            className="absolute inset-x-2 top-[36px] bottom-2 z-40 flex flex-col overflow-hidden rounded-lg border border-hud-line bg-hud-panel shadow-popover-md"
         >
             <HudBrackets size={18} radius={12} />
             <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-2.5 py-3">
