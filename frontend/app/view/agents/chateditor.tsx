@@ -958,7 +958,9 @@ export const ChatEditor = forwardRef<EditorLike, ChatEditorProps>(function ChatE
                                 className={cn(
                                     "relative z-[1] block overflow-y-auto leading-[1.9] whitespace-pre-wrap outline-none [overflow-wrap:anywhere] data-[pill-selected]:caret-transparent",
                                     skip > 0 &&
-                                        "text-transparent caret-primary selection:bg-accent/30 selection:text-transparent"
+                                        // the system's selection colour, as Chat's replies draw theirs (tailwindsetup.css
+                                        // .md-selection-band), light enough that the coloured text under it shows
+                                        "text-transparent caret-primary selection:bg-[color-mix(in_srgb,Highlight_35%,transparent)] selection:text-transparent"
                                 )}
                                 style={{ minHeight: p.minHeight, maxHeight: p.maxHeight }}
                             />
