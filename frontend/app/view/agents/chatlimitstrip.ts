@@ -1,7 +1,7 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// The rules behind Chat's usage-limit strip (chatlimitstrip.tsx draws it): when the Claude account an agent runs on
+// The rules behind Chat's usage-limit strip (chatlimitstripview.tsx draws it): when the Claude account an agent runs on
 // is near its weekly or 5-hour limit, what the strip says, which account it offers to switch to, and how long a snooze
 // hides it. Pure; the view reads the atoms and the clock.
 // See docs/superpowers/specs/2026-11-18-chat-suggest-card-design.md (section 2, decisions 7 to 12 and 14).

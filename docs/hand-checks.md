@@ -22,6 +22,16 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
   nothing. Settings now calls the shared `switchClaudeAccount` (`claudeaccountswitch.ts`, also the Chat usage strip's
   Switch) instead of its own copy; tried only by unit tests (`switchPlan`) and the typecheck, not in the app
   (2026-11-18);
+- [ ] (arcterm) **Chat's summary line and usage-limit strip, with the real model and real accounts.** The CDP scenarios
+  `chat-summary-line` and `chat-limit-strip` fake the haiku call (`__chatSuggestFake`), the accounts and their windows
+  (`__chatLimitFake`) and mock the switch's writes, so none of this ran against the real thing. (1) A Claude agent that
+  ends a turn with a long reply (over ~1,200 characters, or 8+ tool calls) shows one or two sentences in muted text
+  above the chips, in the language of your last messages, saying what the turn did and left undone; a short turn shows
+  none, and sending a message or a chip takes it away. (2) With a second Claude account added in Settings, an agent
+  whose account is at 80% of the week (or 90% of the 5-hour window) has a strip above the box with the reset time, the
+  account's name and Switch to <other>: Switch makes the other account active, restarts this agent on it (the session
+  resumes) and lists the other agents on the old account in the restart dialog; Snooze for an hour hides the strip in
+  every agent of that account, and an agent in a project tied to its own account has no Switch (2026-11-18);
 - [ ] (arcterm) **A Chat selection keeps the text's colour.** Drag over a reply in Chat (prose, an inline code span, a
   code block, a table): the words stay their own colour (white prose, coloured code) on the accent band, not tinted
   blue, under a few themes. Checked only in a headless-Edge page with the same layer (`mix-blend-mode: screen` on

@@ -31,6 +31,12 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Added
 
+- After a long turn (a long closing reply, or many commands) Chat tells you in a line or two, above the suggested
+  replies, where things stand: what the turn did and what it left undone, in your language.
+- Chat warns above the box when the Claude account an agent runs on is near its weekly (80%) or 5-hour (90%) limit,
+  with the reset time. With more than one account it names the one in use and offers Switch to the account with the
+  most room, which moves this agent over and offers to restart the others; Snooze hides it for an hour, four hours or
+  until tomorrow.
 - A turn in which the agent drew design boards now ends in a Canvas card in Chat, with a small live picture of each
   board it drew: click one to look at it full size over Chat, Look at all to see them side by side, or Open in Canvas.
 - Sidecar shows what everything takes, like Task Manager: on a big enough window a Resources column beside the

@@ -64,6 +64,7 @@ import { ChatHandoffCard } from "./chathandoffcard";
 import { holdSwitchLine } from "./chatinitiativestore";
 import { submitIntoChatBox } from "./chatinsert";
 import { CHAT_JUMP_KEYS, registerChatJump } from "./chatjump";
+import { ChatLimitStrip } from "./chatlimitstripview";
 import { awaitsOwnMessage, liveTurn, narratesThinking, streamsLiveReply } from "./chatlive";
 import { liveReplyAtom, startLiveReplyStream, stopLiveReplyStream } from "./chatlivestore";
 import { ChatLocalCard } from "./chatlocalcards";
@@ -91,10 +92,13 @@ import {
     chatChips,
     endsWithQuestion,
     initiativeChips,
+    isLongTurn,
     lastReply,
     recentPrompts,
     ruleChips,
     suggestKey,
+    turnSummary,
+    turnToolCount,
     wantsModelSuggest,
     writesVietnamese,
 } from "./chatsuggest";
@@ -849,6 +853,9 @@ function ChatPaneBody({ model, agent, barred }: { model: AgentsViewModel; agent:
     const reply = useMemo(() => lastReply(entries), [entries]);
     const recent = useMemo(() => recentPrompts(entries), [entries]);
     const question = useMemo(() => reply != null && endsWithQuestion(reply), [reply]);
+    // a long turn (a long closing reply, or many tool calls) is told in a line above the chips (chatsuggest.ts isLongTurn);
+    // the same call that writes the chips writes it
+    const long = useMemo(() => reply != null && isLongTurn(reply, turnToolCount(entries)), [reply, entries]);
     const questionWaits = boxPlaceholderOverride(card) != null;
     // The quick pick card (chatcanvaspick.ts): the option boards of the canvas this app opened for the agent in focus,
     // when its last reply asks you to choose between them. While it shows, the model's guessed chips ("A đi") give way
@@ -880,9 +887,10 @@ function ChatPaneBody({ model, agent, barred }: { model: AgentsViewModel; agent:
     const askModel = wantsModelSuggest({ ...turnOpen, seen: focusId === agent.id && surface === "agent" });
     useEffect(() => {
         if (askModel && turnKey != null && reply != null) {
-            requestModelSuggest(turnKey, { reply, recent, question });
+            requestModelSuggest(turnKey, { reply, recent, question, summary: long });
         }
-        // the key stands for the reply, and the question with it; the person's messages before it change with the reply
+        // the key stands for the reply, and the question with it; the person's messages before it change with the reply;
+        // a finished turn's tool count cannot change, so the same key always means the same `long`
     }, [askModel, turnKey]);
     // The initiative the agent works on, read again at each turn's end (the agent may have ticked its chunk with
     // `wsh effort` meanwhile; the stamp makes an older read stale): its chunk chips (chatsuggest.ts initiativeChips).
@@ -1184,6 +1192,9 @@ function ChatPaneBody({ model, agent, barred }: { model: AgentsViewModel; agent:
                             }}
                             onOpenTerminal={() => setChatMode(agent.id, "terminal")}
                         />
+                        {/* the account's usage-limit warning, above the summary line and the chips (it is about the account,
+                            not the turn); only a Claude agent shown in Chat has one */}
+                        <ChatLimitStrip model={model} agent={agent} />
                         <ChatComposer
                             key={agent.id}
                             model={model}
@@ -1193,6 +1204,7 @@ function ChatPaneBody({ model, agent, barred }: { model: AgentsViewModel; agent:
                             onBoxState={setBoxNow}
                             onShowDiff={() => openDiff(model, agentDiffScope(agent.id, agent.name))}
                             chips={chips}
+                            summary={chips !== undefined && long ? turnSummary(modelSuggest) : undefined}
                             onMarkDone={markDone}
                             onGoOn={goOn}
                             onSendNow={queuedShown ? sendNow : undefined}

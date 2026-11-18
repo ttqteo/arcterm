@@ -79,6 +79,7 @@ import chatRedesignScenarios from "./scenarios-chat-redesign.mjs";
 import chatCodeBoxScenarios from "./scenarios-chat-code-box.mjs";
 import chatVerdictHandoffScenarios from "./scenarios-chat-verdict-handoff.mjs";
 import chatCouncilScenarios from "./scenarios-chat-council.mjs";
+import chatSuggestCardScenarios from "./scenarios-chat-suggest-card.mjs";
 import codeBlameDraftScenarios from "./scenarios-code-blame-draft.mjs";
 import codeFixesSessionScenarios from "./scenarios-code-fixes-session.mjs";
 import codeFixesViewScenarios from "./scenarios-code-fixes-view.mjs";
@@ -73687,6 +73688,7 @@ export const SCENARIOS = [
     ...chatBrainstormReviewScenarios(CBR_KIT),
     ...chatVerdictHandoffScenarios(CBR_KIT),
     ...chatCouncilScenarios(CR_KIT),
+    ...chatSuggestCardScenarios(CR_KIT),
     ...overlaysFrostScenarios(OF_KIT),
     ...surfacesSpringScenarios(SS_KIT),
     sidebarAgentRam,
