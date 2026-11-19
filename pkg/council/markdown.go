@@ -752,6 +752,13 @@ func writeRunFacts(b *strings.Builder, c *Council) {
 		}
 		fmt.Fprintf(b, "- Retried: %s in round %d on %s (its seat is %s%s)\n", docName(c, rt.Expert), rt.Round, rt.Model, rt.Was, why)
 	}
+	// a call still failed: what it was asked is missing from the report, though the council reads as done
+	for _, e := range c.Experts {
+		if f, ok := c.Failed[e.Id]; ok {
+			fmt.Fprintf(b, "- Failed: %s in round %d: %s (`wsh council retry %s --expert %s` runs it again)\n",
+				docName(c, e.Id), f.Round, oneLine(f.Error), c.Id, e.Id)
+		}
+	}
 	fmt.Fprintf(b, "- Tokens: %s in %d calls\n", FormatTokens(c.Tokens), c.Calls)
 	if c.Started > 0 && c.Updated > c.Started {
 		fmt.Fprintf(b, "- Time: %s\n", docDuration(c.Updated-c.Started))

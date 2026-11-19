@@ -49,6 +49,11 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   starts at once instead of 10 s later.
 - Chat opens again where you were reading when you come back to an agent from another one or from its Terminal, even
   after the agent kept working meanwhile: it no longer lands on a later message or at the top of the conversation.
+- A council seat whose answer comes back in the wrong shape is asked once more to resend it, so your question no longer
+  goes unanswered while the council reads as done; a seat that still fails is named in the report's Run facts with the
+  command that retries it.
+- `wsh council show`, `wait`, `retry`, `summarize`, `stop`, `rm`, `pin` and `memory` take the short council id arcterm
+  prints, as `wsh read` does.
 
 ## 1.7.0 — 2026-11-19
 

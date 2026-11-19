@@ -53,6 +53,32 @@ func councilNames(experts []council.CouncilExpert) []string {
 	return names
 }
 
+// `wsh council show 2abd70ee` read "load council 2abd70ee: ... cannot find the file" while `wsh read council:2abd70ee`
+// found it: every council command now takes the prefix arcterm prints.
+func TestPickCouncilIdTakesAPrefix(t *testing.T) {
+	cands := []readHit{
+		{Kind: readKindCouncil, Id: "2abd70eee7a1852f"},
+		{Kind: readKindCouncil, Id: "4e9f4589d6d9c6f8"},
+		{Kind: readKindCouncil, Id: "4e9f0000aaaaaaaa"},
+	}
+	for _, tc := range []struct{ in, want, err string }{
+		{in: "2abd70eee7a1852f", want: "2abd70eee7a1852f"},
+		{in: "2abd70ee", want: "2abd70eee7a1852f"},
+		{in: "2ABD70EE", want: "2abd70eee7a1852f"},
+		{in: "2ab", want: "2ab"},           // too short to stand for one: passed on, and the command reports the miss
+		{in: "ffff1234", want: "ffff1234"}, // names none
+		{in: "4e9f", err: `"4e9f" names 2 things`},
+	} {
+		got, err := pickCouncilId(tc.in, cands)
+		switch {
+		case tc.err != "" && (err == nil || !strings.Contains(err.Error(), tc.err)):
+			t.Errorf("pickCouncilId(%q) error = %v, want %q", tc.in, err, tc.err)
+		case tc.err == "" && (err != nil || got != tc.want):
+			t.Errorf("pickCouncilId(%q) = %q, %v, want %q", tc.in, got, err, tc.want)
+		}
+	}
+}
+
 func TestSplitCouncilList(t *testing.T) {
 	if got := splitCouncilList("a.ts,b.ts"); !reflect.DeepEqual(got, []string{"a.ts", "b.ts"}) {
 		t.Fatalf("files = %v", got)

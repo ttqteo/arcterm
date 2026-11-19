@@ -3045,6 +3045,67 @@ func TestAnExpertThatFailedSitsTheAnswersPassOut(t *testing.T) {
 	}
 }
 
+const rereadHead = "## Your last reply could not be read"
+
+// An answer written as prose, with no JSON block, is asked for once more with the reply in the prompt and no tools, so
+// the seat's answer reaches the thread instead of a Failed entry the person has to find (council 2abd70ee lost one so).
+func TestAnUnreadableAnswerIsAskedForAgainOnce(t *testing.T) {
+	h := newHarness(t)
+	h.run(testCouncil("c1"))
+	h.f.setFn("ux/ans", func(req CallReq) string {
+		if strings.Contains(req.Prompt, rereadHead) {
+			return canned(req, "ans")
+		}
+		return "Beyond tokens, RAM and CPU, watch eight more things."
+	})
+	if _, err := h.r.Reply("c1", "", "", "@all Anyone?", false, nil); err != nil {
+		t.Fatalf("Reply: %v", err)
+	}
+	c := h.wait("c1")
+	var ux []CallReq
+	for _, req := range h.f.calls("ans") {
+		if req.Expert.Id == "ux" {
+			ux = append(ux, req)
+		}
+	}
+	if len(ux) != 2 || !strings.Contains(ux[1].Prompt, rereadHead) || !strings.Contains(ux[1].Prompt, "watch eight more things") || ux[1].Tools {
+		t.Fatalf("ux's answer calls = %d, want the second to carry its prose reply, with no tools", len(ux))
+	}
+	if _, failed := c.Failed["ux"]; failed {
+		t.Errorf("Failed[ux] = %+v, want none once the second reply is read", c.Failed["ux"])
+	}
+	ask := repliesBy(c, YouId)[0]
+	if !answeredBy(c, ask.Id, "ux") {
+		t.Errorf("ux's answer to %s is missing from the thread", ask.Id)
+	}
+	if got, want := c.Stats["ux"].Tokens, int64(0); got <= want {
+		t.Errorf("ux's tokens = %d, want both calls booked", got)
+	}
+}
+
+// A reply that is still unreadable when asked again is the seat's failure, naming both tries; it is asked only once.
+func TestAnAnswerUnreadableTwiceFails(t *testing.T) {
+	h := newHarness(t)
+	h.run(testCouncil("c1"))
+	h.f.setText("ux/ans", "Still prose, no JSON.")
+	if _, err := h.r.Reply("c1", "", "", "@all Anyone?", false, nil); err != nil {
+		t.Fatalf("Reply: %v", err)
+	}
+	c := h.wait("c1")
+	n := 0
+	for _, req := range h.f.calls("ans") {
+		if req.Expert.Id == "ux" {
+			n++
+		}
+	}
+	f := c.Failed["ux"]
+	if n != 2 || f.Round != 4 || !strings.Contains(f.Error, "no JSON block; asked again: answers reply has no JSON block") {
+		t.Fatalf("ux's answer calls %d, Failed[ux] %+v, want 2 calls and a round 4 failure naming both", n, f)
+	}
+	mustContain(t, "document", Document(c), "- Failed: Ease of use in round 4: answers reply has no JSON block; asked again")
+	mustContain(t, "document", Document(c), "`wsh council retry c1 --expert ux` runs it again")
+}
+
 func TestAnAnswersPassFailureCanBeRetried(t *testing.T) {
 	h := newHarness(t)
 	h.run(testCouncil("c1"))

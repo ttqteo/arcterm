@@ -1652,6 +1652,20 @@ func writeThumbs(b *strings.Builder, c *Council) {
 	b.WriteString("## What the person liked and disliked\n\n" + thumbsRule + "\n\n" + strings.Join(lines, "\n") + "\n\n")
 }
 
+// RereadPrompt asks a seat again for a reply the council could not read: the prompt it answered, then its reply and why
+// it could not be read, and the ask to write the same answer again as the JSON block that prompt asks for. The tools are
+// off for this call, so it is told to read nothing.
+func RereadPrompt(prompt, reply string, err error) string {
+	var b strings.Builder
+	b.WriteString(strings.TrimRight(prompt, "\n"))
+	b.WriteString("\n\n## Your last reply could not be read\n\n")
+	fmt.Fprintf(&b, "You already answered this prompt, but the council could not read your reply: %s. ", errText(err))
+	b.WriteString("Write the same answer again, keeping what it says, as the JSON block in a ```json fence that this " +
+		"prompt asks for, with nothing outside the fence. Open no file: your reply below holds what you found.\n\n")
+	b.WriteString("Your last reply:\n\n<<<\n" + strings.TrimSpace(reply) + "\n>>>\n")
+	return b.String()
+}
+
 // SynthesisPrompt asks the coordinator for round 3: every proposal and everything said about it, the person's
 // replies included, with no tools. An expert whose call failed is named as missing.
 func SynthesisPrompt(c *Council) string {

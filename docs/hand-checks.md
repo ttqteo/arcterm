@@ -1197,3 +1197,8 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
   Conversations: the external-link icon beside Fork opens Claude Desktop on that conversation in its Code tab (Desktop
   imports it if it does not hold it yet). A live session and a pi session show no icon. A project's History row menu
   has the same item. Unit-tested only, not tried in the app.
+- [ ] (arcterm) **Council re-asks an unreadable answer** (`runner.go` `reread`, `prompts.go` `RereadPrompt`). When a
+  seat answers in prose with no JSON block, waveapp.log shows `[council] <id>: <seat>'s reply could not be read …;
+  asking it again`, the seat's avatar reads "Reply unreadable: asking again", and its answer then lands in the thread;
+  one that fails twice shows `- Failed: …` in the report's Run facts. Unit-tested with a fake caller only, not seen
+  with a real model slip.

@@ -860,11 +860,52 @@ the working directory, else its git top level; outside both, or with --project "
 	},
 }
 
+// preRunCouncilId sets up the RPC client, then puts the full id of the council args[0] names in its place, so every
+// `wsh council <cmd> <id>` takes the 8 characters arcterm prints (and a council: prefix), as `wsh read` does.
+func preRunCouncilId(cmd *cobra.Command, args []string) error {
+	if err := preRunSetupRpcClient(cmd, args); err != nil {
+		return err
+	}
+	if len(args) == 0 {
+		return nil
+	}
+	id := strings.TrimPrefix(strings.TrimSpace(args[0]), "council:")
+	args[0] = id
+	list, err := wshclient.CouncilListCommand(RpcClient, wshrpc.CommandCouncilListData{}, &wshrpc.RpcOpts{Timeout: runsReadTimeoutMs})
+	if err != nil {
+		return nil // the command's own call reports what is wrong
+	}
+	cands := make([]readHit, 0, len(list))
+	for _, c := range list {
+		cands = append(cands, readHit{Kind: readKindCouncil, Id: c.Id, Label: fmt.Sprintf("%s · %s", c.State, c.Feature)})
+	}
+	full, err := pickCouncilId(id, cands)
+	if err != nil {
+		return err
+	}
+	args[0] = full
+	return nil
+}
+
+// pickCouncilId is the council id names among cands: the one it is, or the one it starts when it is at least
+// readMinKindLen long. One that names none is returned as it is, for the command to report; one that starts several is
+// an error listing them.
+func pickCouncilId(id string, cands []readHit) (string, error) {
+	hits := pickReadHits(id, cands)
+	if len(hits) > 1 {
+		return "", readAmbiguous(id, hits)
+	}
+	if len(hits) == 0 || (!strings.EqualFold(hits[0].Id, id) && len(id) < readMinKindLen) {
+		return id, nil
+	}
+	return hits[0].Id, nil
+}
+
 var councilShowCmd = &cobra.Command{
 	Use:     "show <id>",
 	Short:   "print a council's Summary and Matrix as markdown",
 	Args:    cobra.ExactArgs(1),
-	PreRunE: preRunSetupRpcClient,
+	PreRunE: preRunCouncilId,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		c, err := wshclient.CouncilGetCommand(RpcClient, wshrpc.CommandCouncilIdData{Id: args[0]}, nil)
 		if err != nil {
@@ -886,7 +927,7 @@ var councilWaitCmd = &cobra.Command{
 behind another is waited through, to the end of its own run. A done council prints its markdown; one that paused after
 round 1 says what the person must do in the app, and a failed one exits non-zero with its reason. --timeout bounds the
 wait (30m by default); on a timeout the council keeps running, or stays queued.`,
-	PreRunE: preRunSetupRpcClient,
+	PreRunE: preRunCouncilId,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		timeout, _ := cmd.Flags().GetDuration("timeout")
 		ctx := context.Background()
@@ -918,7 +959,7 @@ var councilStopCmd = &cobra.Command{
 	Use:     "stop <id>",
 	Short:   "stop a running or queued council; the rounds that finished stay, and a queued one never runs",
 	Args:    cobra.ExactArgs(1),
-	PreRunE: preRunSetupRpcClient,
+	PreRunE: preRunCouncilId,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if err := wshclient.CouncilStopCommand(RpcClient, wshrpc.CommandCouncilIdData{Id: args[0]}, nil); err != nil {
 			return err
@@ -932,7 +973,7 @@ var councilRmCmd = &cobra.Command{
 	Use:     "rm <id>",
 	Short:   "remove an ended council (done, failed, stopped or not run) for good: its file goes to ~/.arc/trash, the document it wrote stays",
 	Args:    cobra.ExactArgs(1),
-	PreRunE: preRunSetupRpcClient,
+	PreRunE: preRunCouncilId,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if err := wshclient.CouncilDeleteCommand(RpcClient, wshrpc.CommandCouncilIdData{Id: args[0]}, nil); err != nil {
 			return err
@@ -949,7 +990,7 @@ var councilPinCmd = &cobra.Command{
 is unpinned. --off unpins it. Only the person pins: a council that runs again (a retry, a reply) keeps its pin as it
 was. "wsh council rm" removes an ended one for good (into ~/.arc/trash).`,
 	Args:    cobra.ExactArgs(1),
-	PreRunE: preRunSetupRpcClient,
+	PreRunE: preRunCouncilId,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		off, _ := cmd.Flags().GetBool("off")
 		if err := wshclient.CouncilPinCommand(RpcClient, wshrpc.CommandCouncilPinData{Id: args[0], Pinned: !off}, nil); err != nil {
@@ -972,7 +1013,7 @@ skipped), one stopped or failed, or a done one whose discussion moved on since i
 not a new council, and the app's Summarize does the same. A council with no sent idea has nothing to summarize and is
 refused, as is a running one. Read the report back with "wsh council wait <id>".`,
 	Args:    cobra.ExactArgs(1),
-	PreRunE: preRunSetupRpcClient,
+	PreRunE: preRunCouncilId,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if err := wshclient.CouncilSummarizeCommand(RpcClient, wshrpc.CommandCouncilIdData{Id: args[0]}, nil); err != nil {
 			return err
@@ -994,7 +1035,7 @@ more on claude-opus-4-8 by itself before it failed. A running council cannot be 
 retry several failed seats with --all, which reruns every failed seat but the coordinator at once in one run (the
 summary keeps its own retry, as it reads what they bring back); with --all, --model <model> puts every one of them on
 that model and --model <seat>=<model> (repeatable) one seat. Read the outcome back with "wsh council wait <id>".`,
-	PreRunE: preRunSetupRpcClient,
+	PreRunE: preRunCouncilId,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		want, _ := cmd.Flags().GetString("expert")
 		all, _ := cmd.Flags().GetBool("all")

@@ -28,7 +28,7 @@ Change it when the person settles a point about the council outside it, in your 
 To close an Open entry, rm it and add the answer as Agreed. What you write is the person's: record only what they
 decided, in the language the memory is in. The direction itself is set in the app.`,
 	Args:    cobra.MinimumNArgs(1),
-	PreRunE: preRunSetupRpcClient,
+	PreRunE: preRunCouncilId,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		id := args[0]
 		if len(args) == 1 {
