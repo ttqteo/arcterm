@@ -31,6 +31,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Added
 
+- A message queued in Chat while Claude works has a **×** beside Send now: it takes the queued messages out of
+  Claude's queue and the turn runs on. ↑ in the empty box brings the text back if you want it.
 - A run held because its final stage failed now offers **Land anyway** in Needs you, the Brief, the creature's peek
   and the run sheet, in place of a Land again that only re-read the same failure: after a confirm it lands the branch
   as it is, the same as `wsh runs land <run> --force`.

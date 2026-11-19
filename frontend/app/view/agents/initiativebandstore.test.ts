@@ -244,6 +244,7 @@ describe("switchAndTell", () => {
             write: () => true,
             focus: () => true,
             interrupt: () => false,
+            cancelQueued: () => false,
         };
         return { box, unregister: registerChatBox(TAB, box) };
     }
