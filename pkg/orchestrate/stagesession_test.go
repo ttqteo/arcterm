@@ -99,6 +99,9 @@ func TestSpawnStageSessionTrimsTheJudgesStartupContext(t *testing.T) {
 	if opts := (*calls)[0].opts; !opts.StrictMCP || !opts.NoSlashCommands {
 		t.Fatalf("judge launches with its startup context untrimmed: %+v", opts)
 	}
+	if !(*calls)[0].opts.EngineSession {
+		t.Fatal("judge is not marked an engine session, so Claude Desktop's CLI import lists it")
+	}
 }
 
 // a judging session no dag owns (the brainstorm builder check) is a child run with its role and no dag

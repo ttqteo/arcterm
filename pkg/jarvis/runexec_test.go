@@ -792,6 +792,40 @@ func TestMakeWorkerBlockMetaRunsBelowNormalPriority(t *testing.T) {
 	}
 }
 
+// an engine session's claude runs under EngineEntrypoint, which Claude Desktop's CLI import skips; a lead, a quick run
+// or a runtime other than claude keeps the env it had
+func TestSpawnRunWorkerSetsTheEngineEntrypointOnlyForAnEngineClaude(t *testing.T) {
+	stubWorkerSpawn(t)
+	var persisted waveobj.MetaMapType
+	persistWorkerBlockMeta = func(_ context.Context, _ string, meta waveobj.MetaMapType) error {
+		persisted = meta
+		return nil
+	}
+	claudeCap, err := runroute.Resolve(waveobj.RoutePin{Runtime: "claude"})
+	if err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+	for _, tc := range []struct {
+		name   string
+		cap    runroute.Capability
+		engine bool
+		want   string
+	}{
+		{"engine claude", claudeCap, true, EngineEntrypoint},
+		{"lead claude", claudeCap, false, ""},
+		{"engine pi", piCap(t), true, ""},
+	} {
+		// no cwd: a claude spawn with one registers folder trust in the real ~/.claude.json
+		if _, err := SpawnRunWorker(context.Background(), tc.cap, "ws-1", "proj", "", "do it", RunWorkerOptions{EngineSession: tc.engine}); err != nil {
+			t.Fatalf("%s: %v", tc.name, err)
+		}
+		got, ok := persisted.GetStringMap(waveobj.MetaKey_CmdEnv, false)["CLAUDE_CODE_ENTRYPOINT"]
+		if got != tc.want || ok != (tc.want != "") {
+			t.Fatalf("%s: cmd:env CLAUDE_CODE_ENTRYPOINT = %q (set %v), want %q", tc.name, got, ok, tc.want)
+		}
+	}
+}
+
 // only the engine's back-to-back sessions take the 5-minute cache: a lead or a design session has a person
 // pausing in it, and a re-written context after each pause costs more than the 1-hour writes
 func TestSpawnRunWorkerSetsTheShortCacheOnlyWhenAsked(t *testing.T) {

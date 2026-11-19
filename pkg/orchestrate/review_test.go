@@ -214,6 +214,9 @@ func TestReviewerLaunchesWithItsStartupContextTrimmed(t *testing.T) {
 	if opts := (*calls)[0].opts; !opts.StrictMCP || !opts.NoSlashCommands {
 		t.Fatalf("reviewer launches with its startup context untrimmed: %+v", opts)
 	}
+	if !(*calls)[0].opts.EngineSession {
+		t.Fatal("reviewer is not marked an engine session, so Claude Desktop's CLI import lists it")
+	}
 }
 
 // agy and codex are workers, not leads: a reviewer judges, so an agy or codex reviewer route fails with the

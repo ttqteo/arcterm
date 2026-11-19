@@ -206,7 +206,21 @@ type RunWorkerOptions struct {
 	// listing (~4.6k tokens): only for a session whose prompt invokes no skill and that is never typed a slash
 	// command, so never a lead (writing-plans, /compact) or a worker (may use skills).
 	NoSlashCommands bool
+	// EngineSession marks a session the engine runs on its own (a task worker, a reviewer, a judge), never one the
+	// person talks to: a claude one is launched with CLAUDE_CODE_ENTRYPOINT=EngineEntrypoint, which keeps it out
+	// of Claude Desktop's Import of CLI sessions.
+	EngineSession bool
 }
+
+// EngineEntrypoint is the CLAUDE_CODE_ENTRYPOINT an engine session's claude runs under. Claude Code records a preset
+// value as each transcript record's `entrypoint` instead of "cli", and Claude Desktop's Import of CLI sessions skips a
+// transcript whose entrypoint is one of its hidden ones (sdk-*, mcp, bench, remote…; isHiddenEntrypoint in Desktop
+// 6.6395), so hundreds of engine workers no longer flood its Code sidebar. "bench" is the one of those Claude Code
+// treats like cli (not a hosted surface: it still loads the org's managed settings), and unlike sdk-cli it is not
+// arcterm's mark of a nested print-mode session (agentobserve.HeadlessEntrypoint), so the worker's own hooks still
+// report into its block. Every block env is inherited, so a `claude -p` the worker runs records bench too, and its
+// hooks tell it nested by the process walk alone (agentobserve.NestedSession).
+const EngineEntrypoint = "bench"
 
 // createWorkerTab is the tab-creation seam, so tests make a tab without a layout or a live workspace.
 var createWorkerTab = wcore.CreateTab
@@ -393,6 +407,9 @@ var SpawnRunWorker = func(ctx context.Context, cap runroute.Capability, workspac
 	blockMeta := makeWorkerBlockMeta(spec, cwd, opts.KeepOnExit)
 	if opts.ShortCache {
 		blockMeta[waveobj.MetaKey_CmdEnv].(map[string]any)[consult.PromptCacheTTLEnv] = consult.ShortSessionCacheTTL
+	}
+	if opts.EngineSession && cap.Runtime == "claude" {
+		blockMeta[waveobj.MetaKey_CmdEnv].(map[string]any)["CLAUDE_CODE_ENTRYPOINT"] = EngineEntrypoint
 	}
 	if opts.RunId != "" {
 		blockMeta["agent:runid"] = opts.RunId

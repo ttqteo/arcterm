@@ -35,6 +35,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - What a `!` command prints in Chat is in colour, as an agent's command output is: the program's own colours, passes
   and failures toned, and the commands Task runs (`task: [install:windows] …`) in the shell's colours. `&&`, `<` and
   `>` no longer read as `&amp;&amp;`, `&lt;` and `&gt;`, in the command and in its output.
+- Claude Desktop's "Import Claude Code CLI sessions" no longer brings in the sessions an orchestrator run starts on its
+  own (task workers, reviewers, judges), so its Code sidebar keeps the conversations you had; a run's lead and a quick
+  run are still imported.
 
 ## 1.6.1 — 2026-11-19
 
