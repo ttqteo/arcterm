@@ -30,11 +30,16 @@
 // queued, running or waits on you, and its ended card where it ended once it is over; chatcouncil.ts places it; the
 // agent's summary of its report draws in a council panel, chatcouncil.ts councilReports) and a Doc review ask (chatdocreviewcard.tsx:
 // the card is the dock's while the agent asks, and the ✓ row it folds into stands in place once answered).
+// Boards draw here as well (docs/superpowers/specs/2026-11-19-kael-boards-design.md): a turn that ran `wsh board draw` ends in
+// a card for each board it drew on (chatboardcard.tsx: the board's name, its shapes, `drawing…` while the drawer works, Open),
+// and a message of yours that a board forwarded (boardforwardmarker.ts) draws a `from <board> · on <shapes>` chip over its
+// bubble, the marker line hidden (chatboard.ts).
 
 import { CopyButton } from "@/app/element/copybutton";
 import { MOTION } from "@/app/element/motiontokens";
 import { SkeletonLine } from "@/app/element/skeleton";
 import { ContextMenuModel } from "@/app/store/contextmenu";
+import { parseBoardForward } from "@/app/view/boards/boardforwardmarker";
 import { openOrPeek } from "@/app/view/jarvis/openref";
 import { isWindows } from "@/util/platformutil";
 import { cn, fireAndForget } from "@/util/util";
@@ -70,6 +75,8 @@ import { plainText } from "./ansitext";
 import { procExited } from "./brainstormmodel";
 import type { BrainstormState } from "./brainstormstore";
 import { arrivalFrom, tailArrivals } from "./chatarrival";
+import { boardsDrawn, wordsOf } from "./chatboard";
+import { ChatBoardCard, ChatBoardChip } from "./chatboardcard";
 import { pairAnswers, type ChatCard, type PairedAnswer, type SentAnswer } from "./chatbrainstorm";
 import {
     ChatBrainstormAnswered,
@@ -503,22 +510,26 @@ function YouBubble({
             </div>
         );
     }
+    // a question forwarded from a board is your words under a marker line (boardforwardmarker.ts): the line is not shown,
+    // a chip over the bubble says where the question came from
+    const forward = parseBoardForward(item.text);
+    const words = forward != null ? forward.question : item.text;
     // the files and images you sent ride the message as trailing blocks of paths (chatfiles.ts); images show as pictures in
     // the bubble and files as cards under it, not as the blocks that name them. The wrapper is the prompt the pinned bar and
     // the scenarios find, when the message says something (pinnedLabel): one of only pictures or files is no pin, so the
     // bar keeps the message before it rather than a "(picture)"
-    const said = splitAttachments(item.text);
+    const said = splitAttachments(words);
     const text = said.text.trim();
     const hasPictures = (item.images?.length ?? 0) > 0 || said.images.length > 0;
     const hasFiles = said.files.length > 0;
     const fork = onFork != null ? forkPointOfYou(item) : null;
     // the card opens with what you wrote, not the paths of the files and pictures that rode with it
     const initiative = onAddInitiative != null && text !== "" ? text : null;
-    return (
+    const bubble = (
         <div
             data-chat-you
             data-user-prompt={text !== "" ? "" : undefined}
-            onContextMenu={onContextMenu(item.text, fork, initiative)}
+            onContextMenu={onContextMenu(words, fork, initiative)}
             className="flex max-w-[75%] flex-col items-end gap-2 self-end"
         >
             {text !== "" || hasPictures ? (
@@ -528,7 +539,7 @@ function YouBubble({
                     {/* the whole message, files and all, as the context menu copies it */}
                     {text !== "" ? (
                         <BubbleCopy
-                            text={item.text}
+                            text={words}
                             align="right"
                             onFork={fork != null ? () => onFork?.(fork) : undefined}
                             onAddInitiative={initiative != null ? () => onAddInitiative?.(initiative) : undefined}
@@ -538,6 +549,14 @@ function YouBubble({
             ) : null}
             {hasFiles ? <ChatFileCards paths={said.files} /> : null}
         </div>
+    );
+    return forward != null ? (
+        <>
+            <ChatBoardChip forward={forward} />
+            {bubble}
+        </>
+    ) : (
+        bubble
     );
 }
 
@@ -1174,7 +1193,8 @@ export function ChatConversation({
         if (item.kind !== "you" || "command" in item || answers.has(item.key) || endedMessages.has(item.key)) {
             return [];
         }
-        const label = pinnedLabel(item.text);
+        // a question forwarded from a board pins by your words, as its bubble shows them (not the marker line)
+        const label = pinnedLabel(wordsOf(item.text));
         return label != null ? [label] : [];
     });
     // the scroll before "Show earlier" drew items in front, and the item that was first then
@@ -1447,6 +1467,9 @@ export function ChatConversation({
                 out.push("handoff");
             } else if (part.kind === "docreview") {
                 out.push("docreview");
+            } else if (part.kind === "boarddraw") {
+                // the end-of-turn card reads the agent's project and the cockpit it opens the board in
+                out.push(`board:${model != null}`);
             } else if (part.kind === "runstart") {
                 const slot = placed.byAnchor.get(part.key);
                 const ended = slot?.runId != null ? endedByRun.get(slot.runId) : undefined;
@@ -1470,6 +1493,7 @@ export function ChatConversation({
                   agent?.blockId,
                   agent?.sleeping != null,
                   agent?.name,
+                  agent?.project,
                   agent?.transcriptPath,
                   ...out,
               ].join("\n");
@@ -1583,6 +1607,9 @@ export function ChatConversation({
             // stays the tool line in the work before it, so nothing draws here
             case "councilstart":
                 return null;
+            // a `wsh board draw` call: its board's card is at the end of the turn (below the parts), once per board
+            case "boarddraw":
+                return null;
             // a Doc review: answered, its row. Unanswered, the live card is the dock's (chatpane.tsx), as the handoff's is,
             // so a live agent's conversation draws nothing; an agent that exited has the static card here
             case "docreview": {
@@ -1637,6 +1664,11 @@ export function ChatConversation({
                 // and one that wrote design boards, over that card, in a card of the boards (chatcanvaspeekcard.tsx),
                 // where there is an agent to open them for
                 const drew = agent != null ? turnCanvas(files, cwd) : null;
+                // the boards the turn drew on with `wsh board draw`: a card each, where there is an agent whose project holds
+                // them and a cockpit to open them in (a conversation drawn without them, an ended session's, has none)
+                const boardsOf =
+                    agent != null && model != null && agent.project ? { agent, model, project: agent.project } : null;
+                const boardNames = boardsOf != null ? boardsDrawn(item.parts) : [];
                 return (
                     <div data-chat-agent className="flex min-w-0 flex-col gap-2">
                         {/* a part landing in a row that was already there opens on the spring; one of a row that arrives
@@ -1658,6 +1690,26 @@ export function ChatConversation({
                                 </Arriving>
                             );
                         })}
+                        {/* a card for each board the turn drew on, live or not: the drawer works while the call runs, and
+                            the card says so. They open on the spring when the turn they close arrives */}
+                        {boardsOf != null
+                            ? boardNames.map((board) => (
+                                  <Arriving
+                                      key={`board:${board.trim().toLowerCase()}`}
+                                      gap={PART_GAP}
+                                      arrive={!reduceMotion && drawnBefore.has(item.key)}
+                                      // a board the list does not hold draws nothing, and its empty wrapper no gap
+                                      className="min-w-0 empty:hidden"
+                                  >
+                                      <ChatBoardCard
+                                          board={board}
+                                          project={boardsOf.project}
+                                          agent={boardsOf.agent}
+                                          model={boardsOf.model}
+                                      />
+                                  </Arriving>
+                              ))
+                            : null}
                         {/* they open on the spring when the turn they close ends in view */}
                         {drew != null ? (
                             <Arriving

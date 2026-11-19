@@ -189,6 +189,27 @@ describe("sameChatItem", () => {
             expect(sameChatItem(at([council(queued)]), at([council(queued)]))).toBe(true);
         });
 
+        it("tells a board-draw part by the call and the board it names", () => {
+            const draw = (command: string, output = ""): AgentEntry =>
+                ({
+                    kind: "action",
+                    verb: "ran",
+                    target: "Draw it",
+                    outcome: "ok",
+                    detail: { kind: "bash", command, output, exit: 0 },
+                }) as AgentEntry;
+            const running = (command: string): AgentEntry =>
+                ({ kind: "action", verb: "ran", target: command }) as AgentEntry;
+            const A = 'wsh board draw --board startup --context "x"';
+            expect(sameChatItem(at([draw(A)]), at([draw(A)]))).toBe(true);
+            expect(sameChatItem(at([draw(A)]), at([draw('wsh board draw --board auth --context "x"')]))).toBe(false);
+            // the call as it runs and as it finishes: the result changes the tool line, which the work part's compare sees
+            expect(sameChatItem(at([running(A)]), at([running(A)]))).toBe(true);
+            expect(sameChatItem(at([running(A)]), at([draw(A, "Drawn on board")]))).toBe(false);
+            // the part is there only for a call that is a draw
+            expect(sameChatItem(at([draw(A)]), at([draw("wsh board list")]))).toBe(false);
+        });
+
         it("tells a Doc review once it was answered, and by what it was answered", () => {
             expect(sameChatItem(at([docReview([])]), at([docReview([])]))).toBe(true);
             expect(sameChatItem(at([docReview([])]), at([docReview(["Approve"])]))).toBe(false);

@@ -26,6 +26,7 @@ import type {
     BtwAnswer,
     ShellResult,
 } from "./agentsviewmodel";
+import { boardDrawAnchor } from "./chatboard";
 import { councilStartAnchor, type CouncilAnchor } from "./chatcouncil";
 import { isDocReviewAsk } from "./chatdocreview";
 import { isHandoffAsk } from "./chathandoff";
@@ -62,7 +63,10 @@ export type AgentPart =
     // a `wsh council start` call's council: where its card or row sits (the call itself stays a tool line before it)
     | { kind: "councilstart"; key: string; anchor: CouncilAnchor }
     // a Doc review: an AskUserQuestion `isDocReviewAsk` reads, answered or not (`question.picked` / `typed`)
-    | { kind: "docreview"; key: string; question: AskQuestionDetail };
+    | { kind: "docreview"; key: string; question: AskQuestionDetail }
+    // a `wsh board draw` call and the board it names, as the call spells it: it draws nothing where it is (the call stays a
+    // tool line), the turn ends in one card per board (chatboard.ts boardsDrawn, chatboardcard.tsx)
+    | { kind: "boarddraw"; key: string; board: string };
 
 /** Who sent a prompt arcterm typed into the session. */
 export type SentFrom = "run" | "cockpit";
@@ -208,13 +212,15 @@ function recordUuid(entry: AgentEntry | undefined): string | undefined {
 }
 
 // What a tool call is to Chat when it is more than a tool line: the review a `ReportFindings` call reports, the plan
-// handoff, a Doc review ask, a run `wsh runs start` began, or a council `wsh council start` began.
+// handoff, a Doc review ask, a run `wsh runs start` began, a council `wsh council start` began, or a board a
+// `wsh board draw` call drew on.
 type Moment =
     | { kind: "verdict"; verdict: Verdict }
     | { kind: "handoff"; question: AskQuestionDetail }
     | { kind: "docreview"; question: AskQuestionDetail }
     | { kind: "runstart"; anchor: RunAnchor }
-    | { kind: "councilstart"; anchor: CouncilAnchor };
+    | { kind: "councilstart"; anchor: CouncilAnchor }
+    | { kind: "boarddraw"; board: string };
 
 function momentOf(action: AgentActionEntry): Moment | null {
     if (action.findings != null) {
@@ -235,9 +241,13 @@ function momentOf(action: AgentActionEntry): Moment | null {
             return { kind: "runstart", anchor: run };
         }
         const council = councilStartAnchor(command, detail.output);
-        return council != null ? { kind: "councilstart", anchor: council } : null;
+        if (council != null) {
+            return { kind: "councilstart", anchor: council };
+        }
     }
-    return null;
+    // a draw waits for the drawer, so the call is mostly seen while it runs, with no result and so no detail yet
+    const board = boardDrawAnchor(action);
+    return board != null ? { kind: "boarddraw", board: board.board } : null;
 }
 
 type VerdictPart = Extract<AgentPart, { kind: "verdict" }>;
@@ -250,7 +260,8 @@ type VerdictPart = Extract<AgentPart, { kind: "verdict" }>;
  * A group is cut at five moments, each a part of its own: a reply holding an ```arc-review block (the prose before and
  * after it kept as parts), a `ReportFindings` call, a `Handoff` ask and a Doc review ask (all cut out of the stretch of
  * tools they sit in, no tool line left for them), and a `wsh runs start` or `wsh council start` call whose output names a
- * run or a council (the stretch is split after the call, which stays a tool line).
+ * run or a council (the stretch is split after the call, which stays a tool line). A `wsh board draw` call cuts nothing:
+ * it adds a `boarddraw` part before its stretch and stays a tool line in it.
  */
 export function chatItems(entries: AgentEntry[]): ChatItem[] {
     const out: ChatItem[] = [];
@@ -355,12 +366,21 @@ export function chatItems(entries: AgentEntry[]): ChatItem[] {
                     }
                     from = to;
                 };
+                // the stretch's `wsh board draw` calls, which cut nothing: the call stays a tool line in the stretch, and the
+                // turn's card is at its end, so the part goes before the stretch's work. A stretch of that call alone,
+                // still running, is drawn differently while it grows, which it only does as the last part of its item.
+                const before = parts.length;
+                const draws: Extract<AgentPart, { kind: "boarddraw" }>[] = [];
                 item.actions.forEach((a, k) => {
                     const moment = momentOf(a);
                     if (moment == null) {
                         return;
                     }
                     const index = item.startIndex + k;
+                    if (moment.kind === "boarddraw") {
+                        draws.push({ kind: "boarddraw", key: `boarddraw:${index}`, board: moment.board });
+                        return;
+                    }
                     if (moment.kind === "runstart") {
                         cut(k + 1);
                         parts.push({ kind: "runstart", key: `runstart:${index}`, anchor: moment.anchor });
@@ -386,6 +406,7 @@ export function chatItems(entries: AgentEntry[]): ChatItem[] {
                     }
                 });
                 cut(item.actions.length);
+                parts.splice(before, 0, ...draws);
                 break;
             }
             case "compaction":
