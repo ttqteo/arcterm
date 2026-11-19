@@ -40,6 +40,9 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
   final stage failed at …", the button reads Land anyway (peek, Needs you, the Brief's Waiting list, the run sheet's
   dock); clicking it asks first, and confirming merges wave/<run> into the base and clears the card. A run held for
   another reason still reads Land again. Commit: feat/land-anyway.
+- [ ] (arcterm) **Chat's `@` list: one row per run, spaceless match, highlighted letters.** In Chat type `@buil` with a
+  run going: the run is listed once (no agent row for its lead), `@buildl` still finds "Build Library", and the matched
+  letters of agent and run rows are in the accent. Commit: fix/chat-ref-picker.
 - [ ] (arcterm) **Sidecar's Other apps shows VmmemWSL and each app's WebView2.** With WSL running and Teams open,
   open Sidecar → Resources: VmmemWSL is listed with about the RAM Task Manager shows, and Teams' panes read
   `WebView2: ms-teams.exe` on their own row (not endable). Commit: fix/resmon-vmmem.

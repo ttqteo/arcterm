@@ -42,13 +42,21 @@ const KIND_WORDS: Record<RefKind, readonly string[]> = {
 const clip = (s: string, n: number) => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
 const oneLine = (s: string | undefined) => (s ?? "").replace(/\s+/g, " ").trim();
 
-/** The live agents a chat can refer to: every agent but the chat's own and plain terminals, the ones in the chat's own
- *  project first (the likeliest to name, and the ones the row cap would otherwise push out), each group in roster
- *  order. */
-export function agentRefs(agents: readonly AgentVM[], selfId: string): RefItem[] {
+/** The live agents a chat can refer to: every agent but the chat's own, plain terminals and the lead of a run the picker
+ *  lists (`listedRuns`, run ids: the run's row stands for it, with the same title, and `wsh read run:` reads its lead
+ *  too), the ones in the chat's own project first (the likeliest to name, and the ones the row cap would otherwise push
+ *  out), each group in roster order. */
+export function agentRefs(
+    agents: readonly AgentVM[],
+    selfId: string,
+    listedRuns: ReadonlySet<string> = new Set()
+): RefItem[] {
     const project = agents.find((a) => a.id === selfId)?.project ?? "";
     const others = agents.filter(
-        (a) => a.id !== selfId && (a.kind == null || a.kind === "agent" || a.kind === "background")
+        (a) =>
+            a.id !== selfId &&
+            (a.kind == null || a.kind === "agent" || a.kind === "background") &&
+            !(a.runId != null && listedRuns.has(a.runId))
     );
     const ordered =
         project === ""
@@ -139,6 +147,56 @@ export function effortRefs(efforts: readonly EffortSummary[] | null | undefined,
     }));
 }
 
+// the text with its whitespace taken out, and where each kept character sits in the text
+function compact(text: string): { text: string; at: number[] } {
+    let out = "";
+    const at: number[] = [];
+    for (let i = 0; i < text.length; i++) {
+        if (!/\s/.test(text[i])) {
+            out += text[i];
+            at.push(i);
+        }
+    }
+    return { text: out, at };
+}
+
+/** Whether `hay` holds `q` once the whitespace of both is taken out: `buildl` is in "Build Library". Lowercase both. */
+function holdsCompact(hay: string, q: string): boolean {
+    const needle = compact(q).text;
+    return needle !== "" && compact(hay).text.includes(needle);
+}
+
+/**
+ * Which characters of a row's label the query matched, for the picker to draw in the accent: each word of the query
+ * where it first sits in the label, or, when a word is not there, the whole query read without its spaces (`buildl`
+ * marks "Build L" in "Build Library"). A kind word or an id the row matched by marks nothing.
+ */
+export function refHitMask(query: string, label: string): boolean[] {
+    const mask = new Array<boolean>(label.length).fill(false);
+    const q = query.trim().toLowerCase();
+    if (q === "" || queryKind(q) != null || ADDRESS_QUERY.test(q)) {
+        return mask;
+    }
+    const lower = label.toLowerCase();
+    const words = q.split(/\s+/);
+    if (words.every((w) => lower.includes(w))) {
+        for (const w of words) {
+            const at = lower.indexOf(w);
+            mask.fill(true, at, at + w.length);
+        }
+        return mask;
+    }
+    const flat = compact(lower);
+    const needle = compact(q).text;
+    const at = flat.text.indexOf(needle);
+    if (needle !== "" && at >= 0) {
+        for (let i = at; i < at + needle.length; i++) {
+            mask[flat.at[i]] = true;
+        }
+    }
+    return mask;
+}
+
 const kindOrder: Record<RefKind, number> = { agent: 0, run: 1, council: 2, session: 3, effort: 4 };
 
 /** The kind a query asks for by name: "@run", "@coun", "@agent" (two letters at least), else null. */
@@ -162,7 +220,8 @@ const ADDRESS_QUERY = /^(agent|tab|run|council|session|effort):([0-9a-f-]*)$/;
 /**
  * The rows the `@` query lists, at most REF_MAX_ROWS: with no query none (a bare `@` lists files, as it always has); a
  * query that names a kind lists that kind's items; a query written as `kind:<id>` lists that kind's items whose id
- * starts with it; any other lists the items whose id starts with it or whose label or detail holds every word of it.
+ * starts with it; any other lists the items whose id starts with it, whose label or detail holds every word of it, or
+ * whose label holds it once the spaces of both are taken out (`buildl` finds "Build Library").
  * A query that holds a `/` or a `.` is a path, and lists none. Agents first, then runs, councils, conversations and
  * initiatives, each newest first.
  */
@@ -190,7 +249,7 @@ export function refMatches(query: string, items: readonly RefItem[]): RefItem[] 
             return true;
         }
         const hay = `${it.label} ${it.detail}`.toLowerCase();
-        return words.every((w) => hay.includes(w));
+        return words.every((w) => hay.includes(w)) || holdsCompact(it.label.toLowerCase(), q);
     };
     return items
         .filter(hit)

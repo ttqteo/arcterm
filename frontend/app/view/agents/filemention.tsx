@@ -28,7 +28,7 @@ import {
 } from "./launchermention";
 import { homeDir } from "./pathlinkroute";
 import { PickerList, type PickerLook } from "./pickerlist";
-import { insertRef, refMatches, refToken, type RefItem } from "./refmention";
+import { insertRef, refHitMask, refMatches, refToken, type RefItem } from "./refmention";
 
 export interface FileMentionState {
     // the dropdown under the box, portaled out of its container (it draws nothing while no list shows)
@@ -280,7 +280,12 @@ export function useFileMention({
                                 className="min-w-0 shrink truncate text-[12px] text-primary"
                                 data-chat-ref={refToken(row.item)}
                             >
-                                {row.item.label}
+                                <MatchRuns
+                                    path={row.item.label}
+                                    mask={refHitMask(mention?.query ?? "", row.item.label)}
+                                    start={0}
+                                    end={row.item.label.length}
+                                />
                             </span>
                             <span className="min-w-0 truncate text-[11px] text-muted">
                                 {refToken(row.item)}
@@ -320,7 +325,7 @@ export function useFileMention({
     return { list, shown, onKeyDown, onCaret };
 }
 
-// a slice of a listed path with the characters the query matched in the accent colour
+// a slice of a listed path (or a reference's label) with the characters the query matched in the accent colour
 function MatchRuns({ path, mask, start, end }: { path: string; mask: boolean[]; start: number; end: number }) {
     return (
         <>
