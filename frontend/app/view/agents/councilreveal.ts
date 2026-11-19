@@ -8,7 +8,7 @@
 
 import { globalStore } from "@/app/store/jotaiStore";
 import { atom, type PrimitiveAtom } from "jotai";
-import { showCouncil } from "./agentcenter";
+import type { CouncilHost } from "./councilhost";
 
 /** The message a council's chat is asked to show: its id (an idea's P1 or a reply's r3), and the council it is in. */
 export interface CouncilReveal {
@@ -19,10 +19,10 @@ export interface CouncilReveal {
 /** The pending request to show a message in a council's chat, or null while there is none. The chat consumes it. */
 export const councilRevealAtom = atom<CouncilReveal | null>(null) as PrimitiveAtom<CouncilReveal | null>;
 
-/** Opens the council on its Discussion, showing everyone's messages (showCouncil clears the one-seat filter), and leaves
- *  the chat a request to show the message `messageId`: what it does with it (the scroll, the thread a reply sits in) is
- *  the chat's. */
-export function revealCouncilMessage(councilId: string, messageId: string): void {
-    showCouncil(councilId, "discussion");
+/** Opens the council on its Discussion in `host`, the one the calling view sits in, showing everyone's messages (opening a
+ *  council clears the one-seat filter), and leaves the chat a request to show the message `messageId`: what it does with
+ *  it (the scroll, the thread a reply sits in) is the chat's. */
+export function revealCouncilMessage(host: CouncilHost, councilId: string, messageId: string): void {
+    host.open(councilId, "discussion");
     globalStore.set(councilRevealAtom, { councilId, messageId });
 }

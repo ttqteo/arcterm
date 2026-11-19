@@ -10,6 +10,7 @@
 import { useAtomValue } from "jotai";
 import { useMemo } from "react";
 import { showCouncil } from "./agentcenter";
+import type { AgentsViewModel } from "./agents";
 import { canResumeCouncil } from "./agentsidebarmodel";
 import { councilOpenedAtom, markCouncilResumed } from "./councilopened";
 import { projectsAtom } from "./projectsstore";
@@ -31,10 +32,12 @@ function focusChannelBox(tries = FOCUS_TRIES): void {
     }
 }
 
-/** Resume council `id`: back in the tree for a day, opened on its Discussion with the box focused. Runs nothing. */
-export function resumeCouncil(id: string): void {
+/** Resume council `id`: back in the tree for a day, opened on its Discussion with the box focused. Runs nothing. It lands
+ *  on Agent, whichever surface asked (a council resumed from Library's Councils tab leaves Library): the tree is where a
+ *  resumed council lives, so `model` takes the person there. */
+export function resumeCouncil(id: string, model: Pick<AgentsViewModel, "surfaceAtom">): void {
     markCouncilResumed(id);
-    showCouncil(id, "discussion");
+    showCouncil(id, "discussion", model);
     requestAnimationFrame(() => focusChannelBox());
 }
 

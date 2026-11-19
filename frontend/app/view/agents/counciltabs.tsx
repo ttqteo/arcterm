@@ -3,7 +3,7 @@
 //
 // The Report / Discussion / Map switch of a council, shared by the three views (councilsummary.tsx,
 // councildiscussion.tsx, councilmap.tsx): three icon buttons in one segmented box, the one shown on a grey fill. A click
-// on another opens it (showCouncil), a click on the one shown runs the view's `onCurrent` (the Report glides down to its
+// on another opens it in the host the strip sits in (councilhost.ts), a click on the one shown runs the view's `onCurrent` (the Report glides down to its
 // body). Each tab's word is its title and aria-label, and a screen reader's text beside the icon, so the row stays short
 // in any language (Vietnamese's Bản đồ included); the Discussion's carries the number of ideas sent beside its icon, the
 // words in its aria-label (counciltabsmodel.ts).
@@ -23,7 +23,7 @@ import { cn } from "@/util/util";
 import { FileText, LayoutGrid, MessagesSquare, type LucideIcon } from "lucide-react";
 import { motion } from "motion/react";
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
-import { showCouncil } from "./agentcenter";
+import { useCouncilHost } from "./councilhost";
 import { councilTabs, fillSlideFrom, type CouncilTabId, type ShownStrip, type TabSpots } from "./counciltabsmodel";
 
 // relative: the tabs' offsets are measured from the box. isolate: the fill (-z-10) paints over the box's own background
@@ -53,6 +53,7 @@ export function CouncilTabs({
     onCurrent?: () => void;
     className?: string;
 }) {
+    const host = useCouncilHost();
     const tabs = councilTabs(c);
     const box = useRef<HTMLDivElement>(null);
     const bindings = useMemo(buildCouncilTabBindings, []);
@@ -103,7 +104,7 @@ export function CouncilTabs({
                         )}
                         onClick={() => {
                             if (!on) {
-                                showCouncil(c.id, tab.id);
+                                host.open(c.id, tab.id);
                             } else {
                                 onCurrent?.();
                             }

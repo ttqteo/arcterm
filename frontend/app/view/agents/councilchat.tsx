@@ -147,6 +147,7 @@ import { useCouncilChatNav, type CouncilChatNav } from "./councilchatnav";
 import { CouncilDetailsFoot } from "./councildetails";
 import { initialOf, isFollowUp, type AvatarTone } from "./councildiscussionmodel";
 import { messageMarkdown } from "./councilfinalmodel";
+import { useCouncilHost } from "./councilhost";
 import { useKeptScroll } from "./councilkeptscroll";
 import { councilList, newestReplyOn, railMeta, stanceGroups, type IdeaRow, type StanceTone } from "./councillistmodel";
 import { markSpans } from "./councilmarks";
@@ -198,7 +199,6 @@ import {
     closeCouncilSources,
     councilChatDraftAtom,
     councilIdeasRailFoldedAtom,
-    councilOnlyAtom,
     councilOpenProposalAtom,
     councilSourcesAtom,
     councilThreadReadAtom,
@@ -3777,8 +3777,9 @@ export function CouncilChat({
         }
     }, [threadOpen, sources, setSources]);
 
-    // one seat's messages only, when the Summary's column asked for them (a seat no longer on the panel shows everyone)
-    const [only, setOnly] = useAtom(councilOnlyAtom(c.id));
+    // one seat's messages only, when the Summary's column asked for them (a seat no longer on the panel shows everyone);
+    // kept by the host the chat sits in, so Library's Discussion has its own filter
+    const [only, setOnly] = useAtom(useCouncilHost().onlyAtom(c.id));
     const onlyId = only != null && c.experts.some((e) => e.id === only) ? only : null;
     const all = useMemo(() => councilChannel(c, onlyId ?? undefined), [c, onlyId]);
     // the rail's rows: New is measured against the time the person last left this council (councilopened.ts)

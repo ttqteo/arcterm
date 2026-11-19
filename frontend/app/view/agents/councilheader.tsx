@@ -16,6 +16,7 @@ import { cn } from "@/util/util";
 import { useAtomValue } from "jotai";
 import { Ellipsis, Pin, PinOff, Play } from "lucide-react";
 import { useRef, type ReactNode } from "react";
+import type { AgentsViewModel } from "./agents";
 import { chipShort, stepChip } from "./councilchatmodel";
 import { CouncilDetailsLine } from "./councildetails";
 import { isPinnedCouncil } from "./councilmodel";
@@ -31,16 +32,18 @@ const ICON_BTN =
 
 /** The actions menu (…): the view's own `items` first, then Resume (when the tree no longer lists the council) and Pin
  *  or Unpin, then `stop` past a separator. Each row carries a data attribute (`data-council-summarize`, …-resume, …-pin,
- *  …-stop) a CDP scenario finds it by once the menu is open. */
+ *  …-stop) a CDP scenario finds it by once the menu is open. `model` takes Resume to Agent from a council read in Library. */
 export function CouncilActions({
     c,
     items,
     stop,
+    model,
     className,
 }: {
     c: Council;
     items?: ContextMenuItem[];
     stop?: ContextMenuItem;
+    model: Pick<AgentsViewModel, "surfaceAtom">;
     className?: string;
 }) {
     const canResume = useCanResumeCouncil(c);
@@ -55,7 +58,7 @@ export function CouncilActions({
             label: "Resume",
             icon: <Play />,
             title: "Put this council back in the tree and open its Discussion: nothing runs until you reply",
-            click: () => resumeCouncil(c.id),
+            click: () => resumeCouncil(c.id, model),
             attrs: { "data-council-resume": "" },
         });
     }
@@ -126,7 +129,7 @@ function StatusChip({ c }: { c: Council }) {
 
 /** A council view's header row. `titleAttr` is the title's data attribute (each view's scenarios read their own);
  *  `details` draws the details after the step chip (the Report's); `aside` sits before the seats (the Report's jump
- *  links); `onCurrent` runs on a click of the tab already shown (CouncilTabs). */
+ *  links); `onCurrent` runs on a click of the tab already shown (CouncilTabs); `model` is for Resume (CouncilActions). */
 export function CouncilHeaderRow({
     c,
     view,
@@ -136,6 +139,7 @@ export function CouncilHeaderRow({
     items,
     stop,
     onCurrent,
+    model,
     onOpenTerminal,
 }: {
     c: Council;
@@ -146,6 +150,7 @@ export function CouncilHeaderRow({
     items?: ContextMenuItem[];
     stop?: ContextMenuItem;
     onCurrent?: () => void;
+    model: Pick<AgentsViewModel, "surfaceAtom">;
     onOpenTerminal: (tab: string) => void;
 }) {
     return (
@@ -165,7 +170,7 @@ export function CouncilHeaderRow({
             <div className="min-w-3 flex-1" />
             {aside}
             <CouncilSeats c={c} onOpenTerminal={onOpenTerminal} />
-            <CouncilActions c={c} items={items} stop={stop} />
+            <CouncilActions c={c} items={items} stop={stop} model={model} />
         </div>
     );
 }

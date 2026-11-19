@@ -32,8 +32,9 @@ import { Bot, ChevronDown, History } from "lucide-react";
 import { useEffect, useState } from "react";
 import { CouncilAvatar } from "./councilchat";
 import { seatChips, stackSeats, type SeatChip } from "./councilchatmodel";
+import { useCouncilHost } from "./councilhost";
 import { mapWords } from "./councilmapmodel";
-import { councilOnlyAtom, councilTimelineAtom } from "./councilstore";
+import { councilTimelineAtom } from "./councilstore";
 import { CouncilTimeline } from "./counciltimeline";
 
 export const SEAT_DOT: Record<SeatChip["dot"], string> = {
@@ -58,7 +59,7 @@ function avatarDot(dot: SeatChip["dot"]): "working" | "waiting" | "failed" | nul
 const TIMELINE_TRIGGER = "data-council-timeline-trigger";
 
 export function CouncilSeats({ c, onOpenTerminal }: { c: Council; onOpenTerminal: (tab: string) => void }) {
-    const [only, setOnly] = useAtom(councilOnlyAtom(c.id));
+    const [only, setOnly] = useAtom(useCouncilHost().onlyAtom(c.id));
     const [timeline, setTimeline] = useAtom(councilTimelineAtom(c.id));
     const [open, setOpen] = useState(false);
     const chips = seatChips(c);

@@ -92,6 +92,34 @@ describe("viewingCouncil", () => {
         expect(viewingCouncil("agent", "terminal", "summary", "c1", "c1")).toBe(false);
         expect(viewingCouncil("cockpit", "council", "summary", "c1", "c1")).toBe(false);
     });
+
+    it("is Library's Councils tab with that council open, on any of its views", () => {
+        const councils = { tab: "councils", selected: "c1" };
+        expect(viewingCouncil("library", "terminal", "discussion", null, "c1", councils)).toBe(true);
+        expect(viewingCouncil("library", "terminal", "map", null, "c1", councils)).toBe(true);
+        // Agent's own selection does not make Library's council seen, nor the other way round
+        expect(viewingCouncil("library", "council", "summary", "c1", "c2", councils)).toBe(false);
+        expect(viewingCouncil("agent", "council", "summary", null, "c1", councils)).toBe(false);
+    });
+
+    it("is not Library on another tab, with the list showing, or with no Library state given", () => {
+        expect(
+            viewingCouncil("library", "terminal", "summary", null, "c1", { tab: "conversations", selected: "c1" })
+        ).toBe(false);
+        expect(viewingCouncil("library", "terminal", "summary", null, "c1", { tab: "canvases", selected: "c1" })).toBe(
+            false
+        );
+        expect(viewingCouncil("library", "terminal", "summary", null, "c1", { tab: "councils", selected: null })).toBe(
+            false
+        );
+        expect(viewingCouncil("library", "terminal", "summary", null, "c1")).toBe(false);
+    });
+
+    it("is not a council open in Library while another surface shows", () => {
+        expect(viewingCouncil("jarvis", "terminal", "summary", null, "c1", { tab: "councils", selected: "c1" })).toBe(
+            false
+        );
+    });
 });
 
 describe("markUnread and markRead", () => {

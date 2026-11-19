@@ -40,14 +40,26 @@ export function noticeRoute(
     return { toast: notice != null && toastsOn, unread: notice != null };
 }
 
-/** Pure: whether the person is looking at council `id`: the Agent surface shows its Discussion or Summary. */
+/** Library's side of what is on screen: which tab shows and which council its Councils tab has open (null: the list). */
+export interface LibraryShown {
+    tab: string;
+    selected: string | null;
+}
+
+/** Pure: whether the person is looking at council `id`: the Agent surface shows its Discussion, Summary or Map (`center`,
+ *  `view` and `selected` are Agent's centre column), or the Library surface has it open on its Councils tab (`library`;
+ *  without it Library shows no council). The state comes in as arguments so this imports no store. */
 export function viewingCouncil(
     surface: string,
     center: string,
     view: string,
     selected: string | null,
-    id: string
+    id: string,
+    library?: LibraryShown
 ): boolean {
+    if (surface === "library") {
+        return library != null && library.tab === "councils" && library.selected === id;
+    }
     return surface === "agent" && center === "council" && view !== "setup" && selected === id;
 }
 

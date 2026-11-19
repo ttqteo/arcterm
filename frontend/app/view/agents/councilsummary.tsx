@@ -51,7 +51,7 @@ import {
 } from "lucide-react";
 import { motion } from "motion/react";
 import { useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
-import { showCouncil, showCouncilSetup } from "./agentcenter";
+import { showCouncilSetup } from "./agentcenter";
 import { openRefInCode } from "./agentrailstore";
 import type { AgentsViewModel } from "./agents";
 import { CouncilAvatar, CouncilText } from "./councilchat";
@@ -60,6 +60,7 @@ import { ClaimBadgeChip, WrongCiteChip } from "./councilchecks";
 import { avatarTone, modeWord, seatInitials } from "./councildiscussionmodel";
 import { finalProposal, type FinalProposal } from "./councilfinalmodel";
 import { CouncilHeaderRow } from "./councilheader";
+import { useCouncilHost } from "./councilhost";
 import { useKeptScroll } from "./councilkeptscroll";
 import { mapWords } from "./councilmapmodel";
 import {
@@ -83,7 +84,6 @@ import { claimBadge, isWrongCite, wrongCiteOf } from "./councilsources";
 import {
     councilChatDraftAtom,
     councilOpenProposalAtom,
-    councilSelAtom,
     finalPickCouncil,
     rateCouncil,
     retryExpert,
@@ -537,12 +537,13 @@ function RatingRow({ c }: { c: Council }) {
 // The report's bottom line: who agrees with which idea is the Map tab's, so the Report keeps one line that opens it. It
 // speaks in the council's language, like the Map.
 function MapLink({ c }: { c: Council }) {
+    const host = useCouncilHost();
     return (
         <div data-council-map-link-row className="flex border-t border-edge-faint pt-[18px]">
             <button
                 type="button"
                 data-council-map-link
-                onClick={() => showCouncil(c.id, "map")}
+                onClick={() => host.open(c.id, "map")}
                 className={cn(
                     "flex w-fit cursor-pointer items-center gap-[8px] rounded-[6px] py-[3px] pr-[6px] text-left text-[13.5px] font-semibold text-secondary hover:text-primary",
                     FOCUS
@@ -667,6 +668,7 @@ function JumpLinks({ c, scroller }: { c: Council; scroller: RefObject<HTMLDivEle
 // The panel in the glance box (board C2-panel-activity.dc.html): each seat with its model and what it did; a seat that
 // wrote something opens the Discussion on its messages alone.
 function Panel({ c }: { c: Council }) {
+    const host = useCouncilHost();
     const rows = useMemo(() => expertActivity(c), [c]);
     return (
         <div className="-mx-[6px] flex flex-col gap-[2px]">
@@ -709,7 +711,7 @@ function Panel({ c }: { c: Council }) {
                             type="button"
                             data-council-expert={e.id}
                             aria-label={`${e.name}, ${line}. Show only their messages in the Discussion`}
-                            onClick={() => showCouncil(c.id, "discussion", undefined, e.id)}
+                            onClick={() => host.open(c.id, "discussion", e.id)}
                             className={cn(
                                 "group flex w-full cursor-pointer items-start gap-2 rounded-[6px] p-[6px] text-left text-secondary hover:bg-surface-hover hover:text-primary",
                                 FOCUS
@@ -950,6 +952,7 @@ function FinalProposalSection({
     unpinning: boolean;
     onUnpin: () => void;
 }) {
+    const host = useCouncilHost();
     const { state, copy } = useCopyFeedback();
     const hasText = proposal.markdown !== "";
     return (
@@ -963,7 +966,7 @@ function FinalProposalSection({
                     <button
                         type="button"
                         data-council-final-open
-                        onClick={() => revealCouncilMessage(councilId, proposal.id)}
+                        onClick={() => revealCouncilMessage(host, councilId, proposal.id)}
                         className={cn(BUTTON, "gap-[6px]")}
                     >
                         <MessageSquare size={13} aria-hidden />
@@ -1005,6 +1008,7 @@ function FinalProposalSection({
 }
 
 function SummaryView({ model, c }: { model: AgentsViewModel; c: Council }) {
+    const host = useCouncilHost();
     const projects = useAtomValue(projectListAtom);
     const [open, setOpen] = useAtom(openDirectionAtom(c.id));
     const [savedDoc, setSavedDoc] = useAtom(savedDocAtom(c.id));
@@ -1120,13 +1124,13 @@ function SummaryView({ model, c }: { model: AgentsViewModel; c: Council }) {
         if (row.firstProposal !== "") {
             globalStore.set(councilOpenProposalAtom(c.id), row.firstProposal);
         }
-        showCouncil(c.id, "discussion");
+        host.open(c.id, "discussion");
     };
 
     // Ask next puts the question in the Discussion's box, to edit and send there
     const askNext = (fill: string) => {
         globalStore.set(councilChatDraftAtom(c.id), (d) => ({ ...d, texts: { ...d.texts, [""]: fill } }));
-        showCouncil(c.id, "discussion");
+        host.open(c.id, "discussion");
     };
     const asks = useMemo(() => askChips(c), [c]);
 
@@ -1163,7 +1167,8 @@ function SummaryView({ model, c }: { model: AgentsViewModel; c: Council }) {
         },
         {
             label: "Run again",
-            click: () => showCouncilSetup(c.project, draftFromCouncil(c)),
+            // Setup is Agent's only: from a council read in Library the model takes the person there
+            click: () => showCouncilSetup(c.project, draftFromCouncil(c), model),
             attrs: { "data-council-action": "run-again" },
         },
         { type: "separator" },
@@ -1193,6 +1198,7 @@ function SummaryView({ model, c }: { model: AgentsViewModel; c: Council }) {
                     aside={<JumpLinks c={c} scroller={scroller} />}
                     items={menuItems}
                     onCurrent={toReport}
+                    model={model}
                     onOpenTerminal={(tab) => model.openTerminal(tab)}
                 />
             </header>
@@ -1431,7 +1437,7 @@ function SummaryView({ model, c }: { model: AgentsViewModel; c: Council }) {
 }
 
 export function CouncilSummary({ model }: { model: AgentsViewModel }) {
-    const id = useAtomValue(councilSelAtom);
+    const id = useAtomValue(useCouncilHost().selAtom);
     const c = useCouncil(id);
     return (
         <div

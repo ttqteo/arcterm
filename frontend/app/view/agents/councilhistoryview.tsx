@@ -1,13 +1,14 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// Agent → Councils (agentcenter.ts' `councils` mode): every council of every project, as a list grouped Today /
-// Yesterday / Earlier, the way the Canvas gallery shows its canvases. The tree keeps only some councils (live, pinned,
-// unread or recent ones), so this is where an older one is found again: a row opens the council (showCouncil), a pin
+// Councils, the list (Library's Councils tab; the Agent surface's old `councils` centre mode): every council of every
+// project, as a list grouped Today / Yesterday / Earlier, the way the Canvas gallery shows its canvases. The tree keeps only
+// some councils (live, pinned, unread or recent ones), so this is where an older one is found again: a row opens the
+// council through openCouncil (librarystore.ts: one the tree keeps opens on Agent, a closed one inside Library), a pin
 // marks a pinned one, and each row's hover button and menu Pin it (Unpin a pinned one), which keeps it at the top of its
 // project in the tree. A council the tree no longer lists also offers Resume (councilresume.tsx), which puts it back in
-// the tree for a day and opens its Discussion. Thin: the rows, the search, the groups and the pin action come from
-// councilhistory.ts.
+// the tree for a day and opens its Discussion on Agent. Thin: the rows, the search, the groups and the pin action come
+// from councilhistory.ts.
 
 import { SkeletonLine } from "@/app/element/skeleton";
 import { ContextMenuModel } from "@/app/store/contextmenu";
@@ -16,7 +17,7 @@ import { cn, fireAndForget } from "@/util/util";
 import { atom, useAtom, useAtomValue, type PrimitiveAtom } from "jotai";
 import { Hash, Pin, PinOff, Play, Search, Users } from "lucide-react";
 import { useMemo, type KeyboardEvent, type MouseEvent } from "react";
-import { showCouncil } from "./agentcenter";
+import { openCouncil } from "../library/librarystore";
 import type { AgentsViewModel } from "./agents";
 import { formatAgeShort } from "./agentsviewmodel";
 import { COUNCIL_TONE, CouncilSeatPair } from "./agenttree";
@@ -33,7 +34,7 @@ import { resumeCouncil } from "./councilresume";
 import { councilUnreadAtom, setCouncilPinned, useCouncils } from "./councilstore";
 import { projectsAtom } from "./projectsstore";
 
-// the search survives the centre leaving Councils (a row opens a council, which unmounts this view)
+// the search survives this view leaving the screen (a row opens a council, which unmounts it)
 const councilHistoryQueryAtom = atom("") as PrimitiveAtom<string>;
 
 export function CouncilHistory({ model }: { model: AgentsViewModel }) {
@@ -65,7 +66,7 @@ export function CouncilHistory({ model }: { model: AgentsViewModel }) {
         if (e.key !== "Escape") {
             return;
         }
-        // a first Escape empties the box, the next leaves it, so a third (agent:leave-center) goes back to the terminal
+        // a first Escape empties the box, the next leaves it, so a third goes Back (leaves the surface)
         e.preventDefault();
         if (query !== "") {
             setQuery("");
@@ -153,7 +154,7 @@ export function CouncilHistory({ model }: { model: AgentsViewModel }) {
                                     <span className="text-[10.5px] tabular-nums text-muted">{grp.rows.length}</span>
                                 </div>
                                 {grp.rows.map((r) => (
-                                    <CouncilHistoryRowView key={r.id} row={r} now={now} />
+                                    <CouncilHistoryRowView key={r.id} row={r} now={now} model={model} />
                                 ))}
                             </div>
                         ))}
@@ -169,7 +170,7 @@ export function CouncilHistory({ model }: { model: AgentsViewModel }) {
 // pinned one), and the menu offers Copy id and the same Pin / Unpin, as the tree's council row does; a council the tree
 // no longer lists adds Resume to both, ahead of Pin. The button cannot hold the hover buttons, so the row sits in a
 // wrapper beside them.
-function CouncilHistoryRowView({ row, now }: { row: CouncilHistoryRow; now: number }) {
+function CouncilHistoryRowView({ row, now, model }: { row: CouncilHistoryRow; now: number; model: AgentsViewModel }) {
     const tone = COUNCIL_TONE[row.tone];
     const pin = councilHistoryPinAct(row);
     const PinIcon = row.pinned ? PinOff : Pin;
@@ -184,7 +185,7 @@ function CouncilHistoryRowView({ row, now }: { row: CouncilHistoryRow; now: numb
             },
             { type: "separator" } as const,
             ...(row.resumable
-                ? [{ label: "Resume", icon: <Play size={15} />, click: () => resumeCouncil(row.id) }]
+                ? [{ label: "Resume", icon: <Play size={15} />, click: () => resumeCouncil(row.id, model) }]
                 : []),
             { label: pin.label, icon: <PinIcon size={15} />, click: act },
         ];
@@ -201,7 +202,7 @@ function CouncilHistoryRowView({ row, now }: { row: CouncilHistoryRow; now: numb
                 data-council-history-row={row.id}
                 data-council-history-pinned={row.pinned ? "" : undefined}
                 title={row.question !== "" ? `${row.feature}\n${row.question}` : row.feature}
-                onClick={() => showCouncil(row.id)}
+                onClick={() => openCouncil(model, row.id)}
                 className="flex min-w-0 flex-1 cursor-pointer items-center gap-[12px] rounded-[8px] py-[8px] pl-[10px] text-left"
             >
                 <CouncilSeatPair seats={row.seats} dot={row.dot} selected={false} onPage />
@@ -245,7 +246,7 @@ function CouncilHistoryRowView({ row, now }: { row: CouncilHistoryRow; now: numb
                         data-council-history-act="resume"
                         title="Resume: back in the tree, Discussion open; nothing runs until you reply"
                         aria-label={`Resume ${row.feature}`}
-                        onClick={() => resumeCouncil(row.id)}
+                        onClick={() => resumeCouncil(row.id, model)}
                         className="flex h-[22px] w-[22px] cursor-pointer items-center justify-center rounded-[4px] text-muted outline-none hover:text-secondary focus-visible:ring-2 focus-visible:ring-accent"
                     >
                         <Play size={13} aria-hidden />

@@ -35,6 +35,7 @@ import { CouncilAvatar, MarkedText } from "./councilchat";
 import { CHECK_TONE, CheckIcon, WRONG_CITE_ICON, WRONG_CITE_TONE } from "./councilchecks";
 import { avatarTone, seatInitials } from "./councildiscussionmodel";
 import { CouncilHeaderRow } from "./councilheader";
+import { useCouncilHost } from "./councilhost";
 import { expertCards, mapWords, type ExpertCard, type MapWords } from "./councilmapmodel";
 import {
     byAgreement,
@@ -45,7 +46,7 @@ import {
     type MatrixRow,
     type StanceLabel,
 } from "./councilmodel";
-import { councilMapOpenAtom, councilSelAtom, councilTimelineAtom, useCouncil } from "./councilstore";
+import { councilMapOpenAtom, councilTimelineAtom, useCouncil } from "./councilstore";
 import { isBrainstorm, outcomeLabel } from "./councilsummarymodel";
 
 const ROOT = "flex min-h-0 min-w-0 flex-1 flex-col bg-background text-[14px] text-primary";
@@ -62,7 +63,7 @@ const OUTCOME_COL = 130;
 // ---- the view ----
 
 export function CouncilMap({ model }: { model: AgentsViewModel }) {
-    const id = useAtomValue(councilSelAtom);
+    const id = useAtomValue(useCouncilHost().selAtom);
     const c = useCouncil(id);
     if (c == null) {
         return (
@@ -87,7 +88,7 @@ function MapView({ c, model }: { c: Council; model: AgentsViewModel }) {
             lang={councilLang(c)}
             className={ROOT}
         >
-            <Header c={c} onOpenTerminal={(tab) => model.openTerminal(tab)} />
+            <Header c={c} model={model} onOpenTerminal={(tab) => model.openTerminal(tab)} />
             {/* the body fades in as the view opens (a tab click, a council picked); the header stays put */}
             <motion.div
                 variants={viewFade}
@@ -107,10 +108,24 @@ function MapView({ c, model }: { c: Council; model: AgentsViewModel }) {
 
 // ---- the header ----
 
-function Header({ c, onOpenTerminal }: { c: Council; onOpenTerminal: (tab: string) => void }) {
+function Header({
+    c,
+    model,
+    onOpenTerminal,
+}: {
+    c: Council;
+    model: AgentsViewModel;
+    onOpenTerminal: (tab: string) => void;
+}) {
     return (
         <header className="@container flex flex-none flex-col border-b border-border bg-surface">
-            <CouncilHeaderRow c={c} view="map" titleAttr="data-council-map-title" onOpenTerminal={onOpenTerminal} />
+            <CouncilHeaderRow
+                c={c}
+                view="map"
+                titleAttr="data-council-map-title"
+                model={model}
+                onOpenTerminal={onOpenTerminal}
+            />
         </header>
     );
 }
