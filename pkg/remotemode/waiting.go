@@ -32,6 +32,8 @@ type WaitingList struct {
 	// Locked is whether the computer's session is locked, set by the handler from Deps.PCLocked; null where
 	// the computer cannot tell (no dep, or the read failed)
 	Locked *bool `json:"locked"`
+	// Build is the wavesrv build serving the page, set by the handler from Deps.Build ("" in a test)
+	Build string `json:"build"`
 }
 
 // WaitingQuestion is an agent question the phone can answer.

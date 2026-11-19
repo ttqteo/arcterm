@@ -250,6 +250,14 @@ export function answerText(questions, answers) {
         .join(", ");
 }
 
+/**
+ * Whether the page was loaded from another build than the one now serving it: Arc was updated while the
+ * page stayed open, so its code is old. An unknown build on either side is not a change.
+ */
+export function pageOutdated(loadedBuild, build) {
+    return Boolean(loadedBuild) && Boolean(build) && loadedBuild !== build;
+}
+
 /** The word a shown-only row leads with. */
 export function shownWord(kind) {
     return SHOWN_WORDS[kind] ?? kind;

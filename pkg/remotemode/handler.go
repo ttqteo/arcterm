@@ -42,6 +42,9 @@ var handlerStaticTypes = map[string]string{
 // Deps is everything the phone handler calls out to, so it can be tested and previewed with fakes.
 type Deps struct {
 	Static fs.FS
+	// Build names this wavesrv build; the waiting list carries it, and an open page whose build changed
+	// reloads itself to pick up the new page.
+	Build  string
 	Verify func(*http.Request) error
 	// Origin is the only Origin a POST may carry: https://<hostname>.
 	Origin      string
@@ -119,6 +122,8 @@ func NewHandler(d Deps) http.Handler {
 		if ct, ok := handlerStaticTypes[path.Ext(r.URL.Path)]; ok {
 			w.Header().Set("Content-Type", ct)
 		}
+		// the embedded files carry no Last-Modified, so a phone could otherwise keep an old page after an update
+		w.Header().Set("Cache-Control", "no-cache")
 		static.ServeHTTP(w, r)
 	})
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -183,6 +188,7 @@ func (d Deps) handleWaiting(w http.ResponseWriter, r *http.Request) {
 	if list.Runs == nil {
 		list.Runs = []ListedRun{}
 	}
+	list.Build = d.Build
 	list.PC = d.PCLock != nil && d.PCVolume != nil
 	if d.PCLocked != nil {
 		if locked, err := d.PCLocked(r.Context()); err != nil {

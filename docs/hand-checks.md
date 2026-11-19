@@ -1145,6 +1145,11 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
   page: Computer reads Unlocked. Press Win+L at the desk → within 10 s the phone reads Locked and its Lock button is
   disabled; unlock at the desk → Unlocked again. Press Lock on the phone → the PC locks and the page reads Locked
   within about 2 s. `TestPCWindowsReadLocked` only read the unlocked case.
+- [ ] (arcterm) **The installed phone page reloads itself after an update, on a real iPhone.** With this build's page
+  open once (one reload by hand after installing it), install the next build while the PWA stays open on the list:
+  within about 10 s of remote mode coming back the page reloads on its own. With a chat open or text typed into an
+  answer it waits, and reloads once you are back on the list. Only headless Chrome on `cmd/remotepreview -build` has
+  run it.
 - [ ] (arcterm) **The rail says when the agent last compacted** (`railcompactionline.tsx`). In a Claude agent, run
   `/compact`; within a few seconds the Agent details rail's session block, under the tokens bar, reads
   `Compacted · <before> → <after> · manual · just now`. Click it: the summary opens under it and scrolls inside a

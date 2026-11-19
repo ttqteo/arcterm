@@ -15,6 +15,7 @@ import {
     listedAgents,
     needYouTitle,
     optionCountLine,
+    pageOutdated,
     runCounts,
     runWorkerText,
     shownWord,
@@ -68,6 +69,7 @@ const state = {
     takeErrors: new Map(), // tab -> "Not taken: <reason>", until that row's next take
     openRuns: new Set(), // keys of the run rows the owner opened
     pcError: "", // what the last Computer press answered when it was not 200
+    build: "", // the build the first list named: the page's own code is that build's
 };
 
 function h(tag, props, ...children) {
@@ -166,6 +168,9 @@ async function refresh() {
     if (state.turnedOff) {
         return;
     }
+    if (list && reloadIfOutdated(list.build)) {
+        return;
+    }
     state.loaded = true;
     state.list = list;
     state.error = error;
@@ -181,6 +186,25 @@ async function refresh() {
     if (!state.answering && !state.sent && !state.chat) {
         render();
     }
+}
+
+// Arc was updated while the page stayed open (a PWA can stay in memory for days): reload so the new page's
+// code runs. Never mid-answer, in a chat, while confirming Turn off or while something is typed into; the next
+// refresh after that tries again.
+function reloadIfOutdated(build) {
+    if (!state.build) {
+        state.build = build ?? "";
+        return false;
+    }
+    if (!pageOutdated(state.build, build)) {
+        return false;
+    }
+    const typing = document.activeElement?.matches?.("input, textarea, [contenteditable]") ?? false;
+    if (state.answering || state.sent || state.chat || state.leaving > 0 || state.confirmOff || typing) {
+        return false;
+    }
+    location.reload();
+    return true;
 }
 
 function backToList() {

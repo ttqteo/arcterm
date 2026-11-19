@@ -185,6 +185,14 @@ A hand-over ends when:
 Hand-overs live in memory only. An Arc restart ends them all, even when remote mode itself comes back
 on at start. Re-running `wsh remote setup` restarts the listener but keeps them.
 
+## After an update
+
+An installed page can stay in the phone's memory for days. `/api/waiting` carries `build` (the serving
+wavesrv's version and build time), and a page that sees it change from the one it loaded with reloads itself
+at its next refresh (10 s), so it runs the new page's code. It waits while an answer, a chat or the Turn off
+confirmation is open, or while something is typed into a field. Every page file is served `Cache-Control: no-cache`,
+so the reload fetches the new files. A page opened before this existed still needs one reload by hand.
+
 ## Turning it off
 
 `wsh remote off`, the switch in Settings → Remote, or **Turn off remote mode** at the foot of the phone

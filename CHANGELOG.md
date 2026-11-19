@@ -40,6 +40,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- The phone page installed on your home screen reloads itself after arcterm updates, so new things on it (such as
+  the Computer section's Locked or Unlocked) show without closing the app; it waits while you answer, chat or type.
+  A page opened before this update needs one reload by hand.
 - A Claude agent's suggested replies in Chat come about 2 s after its turn ends, as 1.6.0 promised: the agent's own
   claude worked them out, but its answer never reached Chat, which then started a claude of its own each time and
   showed the chips 6 to 15 s later.
