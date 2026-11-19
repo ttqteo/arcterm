@@ -12,8 +12,8 @@
 //   node scripts/release-build.mjs [--bump none|patch|minor|major|auto] [--force] [--from <commit>|tree] [--dry-run]
 //
 // --bump    bumps package.json in the main checkout (commit the bump after) and builds the commit at that version.
-//           `auto` picks it from the built commit's CHANGELOG.md Unreleased lines (release-bump.mjs: Added or big ->
-//           minor, else patch, none when empty). A bump passed by hand that is smaller than those lines call for
+//           `auto` picks it from the built commit's CHANGELOG.md Unreleased lines (release-bump.mjs: a big line or
+//           MIN_RELEASE_LINES lines -> minor, else none, the lines waiting for the next minor). A bump passed by hand that is smaller than those lines call for
 //           stops the build before anything is written, unless --force. A bumped build of a commit is tagged
 //           v<version> on that commit (local, never pushed), so `git log v1.1.3..v1.1.4` is what 1.1.4 holds.
 // --from    the commit to build (default HEAD); `tree` builds the main checkout as it stands, uncommitted edits
@@ -23,7 +23,7 @@ import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFi
 import { spawnSync } from "node:child_process";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { bumpTooSmall, describeCounts, suggestBump } from "./release-bump.mjs";
+import { MIN_RELEASE_LINES, bumpTooSmall, describeCounts, suggestBump } from "./release-bump.mjs";
 import { linkShared, unlinkShared } from "./worktree-junctions.mjs";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url)).replace(/[\\/]$/, "");
@@ -125,7 +125,11 @@ let bump = requested;
 if (requested === "auto") {
     bump = suggested.bump;
     console.log(`BUMP=auto: CHANGELOG.md's Unreleased has ${describeCounts(suggested.counts)} -> ${bump}`);
-    if (bump === "none") {
+    if (bump === "none" && suggested.lines > 0) {
+        console.log(
+            `building without a bump: ${suggested.lines} line(s) wait in Unreleased until there are ${MIN_RELEASE_LINES} or a big one`
+        );
+    } else if (bump === "none") {
         console.log("nothing a user would notice since the last release: building without a bump");
     }
 } else {
