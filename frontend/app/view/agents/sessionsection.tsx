@@ -5,7 +5,8 @@
 // while no live turn has reported it), the session's total tokens, its tokens bar and its spend on one row, its facts
 // (the rail passes them in as children), the agent's state and cache with Resume or Stop (state), then Compact/Clear
 // when offered (actions), so the cache countdown sits over the Compact/Clear it argues for. The tokens row comes from
-// the transcript and is there asleep too, so a missing context drops a row rather than leaving a hole. The figures
+// the transcript and is there asleep too, so a missing context drops a row rather than leaving a hole. Under the
+// figures, the last compaction when the transcript has one (compaction, railcompactionline.tsx). The figures
 // (head and tokens row) are the breakdown's toggle, with a chevron at the row's end. The breakdown is the one part that
 // folds: the insight, the per-class split (tokens + ≈ spend) and, for a session that used more than one model, the
 // per-model breakdown, from the session's own transcript (transcriptusagestore/sessionusage). The spend shows once, on
@@ -466,6 +467,7 @@ export function SessionSection({
     state,
     actions,
     context,
+    compaction,
     children,
 }: {
     head?: ReactNode; // the context line, left out while the context is unknown
@@ -473,6 +475,7 @@ export function SessionSection({
     state?: ReactNode; // the agent's state and cache with Resume or Stop, under the facts
     actions?: ReactNode; // Compact/Clear, on the last row
     context?: SessionContext; // a Claude agent's context in use: the breakdown opens on what fills it
+    compaction?: ReactNode; // the last compaction, under the figures (its own toggle, so not inside theirs)
     children: ReactNode; // the session's facts
 }) {
     const usage = useAtomValue(sessionUsageAtom);
@@ -518,6 +521,7 @@ export function SessionSection({
             ) : (
                 figures
             )}
+            {compaction}
             <div className="mt-[10px]">{children}</div>
             {state != null ? <div className="mt-[8px]">{state}</div> : null}
             {actions != null ? <div className="-ml-[6px] mt-[6px] flex items-center gap-[4px]">{actions}</div> : null}

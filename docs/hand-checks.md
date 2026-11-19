@@ -1088,3 +1088,8 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
   page: Computer reads Unlocked. Press Win+L at the desk → within 10 s the phone reads Locked and its Lock button is
   disabled; unlock at the desk → Unlocked again. Press Lock on the phone → the PC locks and the page reads Locked
   within about 2 s. `TestPCWindowsReadLocked` only read the unlocked case.
+- [ ] (arcterm) **The rail says when the agent last compacted** (`railcompactionline.tsx`). In a Claude agent, run
+  `/compact`; within a few seconds the Agent details rail's session block, under the tokens bar, reads
+  `Compacted · <before> → <after> · manual · just now`. Click it: the summary opens under it and scrolls inside a
+  320px box; click again to close. Compact once more → the line leads with `×2`. An agent that never compacted shows
+  no line, and a subagent's interior shows none.
