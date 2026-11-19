@@ -51,7 +51,15 @@ export const boardPage = page;
 export const installBoardStubs = (h) =>
     page(
         h,
-        `const shapeCount = (data) => {
+        `// every resource the page fetches from now on, for a step that reads where the fonts came from: the page's own
+        // timing buffer is full of the dev server's modules, and a canvas drawn before that step (the split beside Chat)
+        // fetches them first
+        if (fx.observer == null) {
+            fx.resources = [];
+            fx.observer = new PerformanceObserver((list) => fx.resources.push(...list.getEntries().map((e) => e.name)));
+            fx.observer.observe({ type: "resource" });
+        }
+        const shapeCount = (data) => {
             try {
                 return (JSON.parse(data).elements ?? []).filter((e) => !e.isDeleted && !(e.type === "text" && e.containerId != null)).length;
             } catch {
@@ -149,6 +157,7 @@ export const removeBoardStubs = (h) =>
     page(
         h,
         `for (const name of ${q(BOARD_COMMANDS)}) delete RpcApi[name];
+        fx.observer?.disconnect();
         delete window.__boardsFx;
         return true;`
     );

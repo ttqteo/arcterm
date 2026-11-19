@@ -114,6 +114,35 @@ export function turnView(turn: BoardTurn, now: number, agentTitle = ""): TurnVie
     };
 }
 
+// "12s", "1m 5s": how long a turn has been answering
+export function elapsedLabel(seconds: number): string {
+    const s = Math.max(0, Math.floor(seconds));
+    if (s < 60) {
+        return `${s}s`;
+    }
+    return s % 60 === 0 ? `${s / 60}m` : `${Math.floor(s / 60)}m ${s % 60}s`;
+}
+
+// what a drawn turn did to the board: "+9 shapes", "+2 shapes · 1 changed"; "no change" when it touched nothing
+export function drawnSummary(turn: BoardTurn): string {
+    const parts: string[] = [];
+    if (turn.added) {
+        parts.push(`+${plural(turn.added, "shape")}`);
+    }
+    if (turn.changed) {
+        parts.push(`${turn.changed} changed`);
+    }
+    if (turn.removed) {
+        parts.push(`${turn.removed} removed`);
+    }
+    return parts.length > 0 ? parts.join(" · ") : "no change";
+}
+
+// the words a turn is listed by: what the drawer says it drew, else what was asked, else the agent's briefing
+export function turnText(turn: BoardTurn): string {
+    return turn.title || turn.question || turn.context || "Drawing";
+}
+
 // the last `n` turns, oldest first, and how many came before them (the split's "N earlier" line)
 export function recentTurns(
     talk: BoardTalk | null | undefined,

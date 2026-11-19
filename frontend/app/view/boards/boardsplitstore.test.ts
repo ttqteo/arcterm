@@ -23,6 +23,7 @@ import {
     closeBoard,
     openBoard,
     setBoardExpanded,
+    splitExpanded,
     splitOpens,
     switchBoard,
     type BoardOpenModel,
@@ -49,6 +50,20 @@ describe("splitOpens", () => {
         expect(splitOpens(1)).toEqual({ expanded: false });
         expect(splitOpens(2)).toEqual({ expanded: true });
         expect(splitOpens(4)).toEqual({ expanded: true });
+    });
+});
+
+describe("splitExpanded", () => {
+    const split = (expanded: boolean) => ({ project: "arcterm", boardId: "b1", expanded });
+
+    it("is what the split says in a lone cell", () => {
+        expect(splitExpanded(split(false), false)).toBe(false);
+        expect(splitExpanded(split(true), false)).toBe(true);
+    });
+
+    it("is always expanded in a grid of several cells, even one that grew after the board opened", () => {
+        expect(splitExpanded(split(false), true)).toBe(true);
+        expect(splitExpanded(split(true), true)).toBe(true);
     });
 });
 

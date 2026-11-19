@@ -4,8 +4,11 @@ import {
     agentAlive,
     askAllowed,
     boardFacts,
+    drawnSummary,
+    elapsedLabel,
     recentTurns,
     talkTime,
+    turnText,
     turnView,
     type TurnShown,
 } from "./boardtalkmodel";
@@ -226,5 +229,37 @@ describe("askAllowed", () => {
 
     it("is not held by a forwarded turn", () => {
         expect(askAllowed(talk([turn({ state: "forwarded", forward: { state: "waiting" } })]), true)).toBe(true);
+    });
+});
+
+describe("elapsedLabel", () => {
+    it("reads seconds, then minutes and seconds", () => {
+        expect(elapsedLabel(0)).toBe("0s");
+        expect(elapsedLabel(12.9)).toBe("12s");
+        expect(elapsedLabel(60)).toBe("1m");
+        expect(elapsedLabel(65)).toBe("1m 5s");
+        expect(elapsedLabel(-3)).toBe("0s");
+    });
+});
+
+describe("drawnSummary", () => {
+    it("says what the turn added, changed and removed", () => {
+        expect(drawnSummary(turn({ added: 9 }))).toBe("+9 shapes");
+        expect(drawnSummary(turn({ added: 1 }))).toBe("+1 shape");
+        expect(drawnSummary(turn({ added: 2, changed: 1, removed: 3 }))).toBe("+2 shapes · 1 changed · 3 removed");
+        expect(drawnSummary(turn({ changed: 4 }))).toBe("4 changed");
+    });
+
+    it("reads a drawn turn that touched nothing as no change", () => {
+        expect(drawnSummary(turn({}))).toBe("no change");
+    });
+});
+
+describe("turnText", () => {
+    it("lists a turn by what it drew, else what was asked, else its briefing", () => {
+        expect(turnText(turn({ title: "wavesrv startup", question: "draw it" }))).toBe("wavesrv startup");
+        expect(turnText(turn({ question: "why a new auth key?" }))).toBe("why a new auth key?");
+        expect(turnText(turn({ kind: "request", context: "the startup flow" }))).toBe("the startup flow");
+        expect(turnText(turn({}))).toBe("Drawing");
     });
 });

@@ -369,7 +369,9 @@ export default function (kit) {
                     `await document.fonts.ready;
                     await nap(1500);
                     const res = await fetch("/excalidraw/fonts/Excalifont/Excalifont-Regular-a88b72a24fb54c9f94e3b5fdaa7481c9.woff2");
-                    const names = fx.smoke.resources;
+                    // every fetch since the stubs went in, not the smoke canvas's alone: the split in step 2 draws this board
+                    // first and fetches the fonts then
+                    const names = fx.resources;
                     return {
                         assetPath: window.EXCALIDRAW_ASSET_PATH,
                         served: { ok: res.ok, type: res.headers.get("content-type"), bytes: (await res.arrayBuffer()).byteLength },

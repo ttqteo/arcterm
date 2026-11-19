@@ -104,6 +104,8 @@ function OpenBoard({ project, boardId, highlightIds, onSelection }: BoardCanvasP
     onSelectionRef.current = onSelection;
     // settles once the scene is in Excalidraw; an answer that arrives before then waits for it
     const readyRef = useRef<Deferred | null>(null);
+    // a board opened for the first time is fitted to the canvas; one with a remembered view keeps it
+    const fitOnOpenRef = useRef(globalStore.get(boardViewportAtom(boardId)) == null);
 
     const ref = { project, boardid: boardId };
 
@@ -235,6 +237,13 @@ function OpenBoard({ project, boardId, highlightIds, onSelection }: BoardCanvasP
                 return;
             }
             sigRef.current = elementsSig(current().elements);
+            // initialData's scrollToContent only centres at zoom 1: beside Chat a drawing wider than the half cell
+            // would run off its edge. A smaller one stays at zoom 1 (maxZoom).
+            const shapes = api.getSceneElements();
+            if (fitOnOpenRef.current && shapes.length > 0) {
+                api.scrollToContent(shapes, { fitToViewport: true, viewportZoomFactor: 0.9 });
+            }
+            fitOnOpenRef.current = false;
             readyRef.current?.resolve();
             setReady(true);
         });

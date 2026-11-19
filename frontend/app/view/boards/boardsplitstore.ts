@@ -30,6 +30,12 @@ export function splitOpens(cellsInGrid: number): { expanded: boolean } {
     return { expanded: cellsInGrid > 1 };
 }
 
+// What the cell draws: the board takes the whole cell when it was opened expanded, and always in a grid of several cells
+// (the grid may have grown since it opened). The Chat layer and the split both ask here.
+export function splitExpanded(split: BoardSplit, multiCell: boolean): boolean {
+    return split.expanded || multiCell;
+}
+
 // what openBoard needs of AgentsViewModel; spelled out so it can be tested without one
 export interface BoardOpenModel {
     focusIdAtom: PrimitiveAtom<string | undefined>;
