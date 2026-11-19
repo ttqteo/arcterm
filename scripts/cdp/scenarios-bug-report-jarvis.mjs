@@ -27,8 +27,9 @@ const nap = (ms) => new Promise((r) => setTimeout(r, ms));
 const norm = (s) => (s || "").replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
 
 // The Brief's Waiting list: its queue rows (the strip folds behind Show all when more than a few wait), and the bug row,
-// told by any of its three texts
-const BRIEF_ROWS = `[...document.querySelectorAll('[data-jarvis-waiting-strip] [data-jarvis-brief-row="queue"]')]`;
+// told by any of its three texts. The strip's head line is a row too: with one item waiting it is the only one (no Show
+// all, no queue rows), and it carries that item's acts (waitingstrip.tsx)
+const BRIEF_ROWS = `[...document.querySelectorAll('[data-jarvis-waiting-strip] [data-jarvis-brief-row="queue"], [data-jarvis-waiting-strip] [data-jarvis-waiting-head]')]`;
 const BRIEF_ROW = `${BRIEF_ROWS}.find((r) => /báo lỗi|Không tìm thấy repo arcterm/.test(r.innerText))`;
 const SHOW_ALL = `document.querySelector('[data-jarvis-strip-show-all="shut"]')?.click()`;
 // the Cockpit's Needs-you strip row for the same item (needsyoustripmodel.ts keys it "bug-reports")
