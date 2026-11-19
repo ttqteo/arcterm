@@ -44,7 +44,7 @@ function pad2(n: number): string {
     return String(n).padStart(2, "0");
 }
 
-function plural(n: number, word: string): string {
+export function plural(n: number, word: string): string {
     return `${n} ${word}${n === 1 ? "" : "s"}`;
 }
 

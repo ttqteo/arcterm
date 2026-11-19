@@ -30,7 +30,10 @@ import { currentSize, restoreFromSprout } from "../agents/floatstore";
 import { selectMemoryProject } from "../agents/memorystore";
 import { setupTabAtom } from "../agents/setupstore";
 import { afterOpen } from "../agents/windowsize";
-import { openCouncil } from "../library/librarystore";
+import { openBoard } from "../boards/boardsplitstore";
+import { loadBoardList } from "../boards/boardstore";
+import { agentAlive } from "../boards/boardtalkmodel";
+import { openCouncil, showLibraryBoard } from "../library/librarystore";
 import { openDagLive, openDagTask } from "../orchestrate/dagmodalstate";
 import { isCanvasSegment, parseAddress, type AddressHint, type OpenTarget } from "./address";
 import { effortDetailAtom, loadEffortDetail } from "./effortstore";
@@ -64,6 +67,7 @@ type MemHygieneTarget = Extract<OpenTarget, { kind: "memhygiene" }>;
 type WorkflowScanTarget = Extract<OpenTarget, { kind: "workflowscan" }>;
 type CouncilTarget = Extract<OpenTarget, { kind: "council" }>;
 type SessionTarget = Extract<OpenTarget, { kind: "session" }>;
+type BoardTarget = Extract<OpenTarget, { kind: "board" }>;
 type Caller = AddressHint["caller"];
 
 const OK: OpenResult = { ok: true };
@@ -109,6 +113,8 @@ function targetName(target: OpenTarget): string {
             return `council ${target.councilId}`;
         case "session":
             return `conversation ${target.sessionId}`;
+        case "board":
+            return `board ${target.boardId}`;
     }
 }
 
@@ -172,7 +178,8 @@ export function isPeekable(target: OpenTarget): boolean {
         target.kind !== "memhygiene" &&
         target.kind !== "workflowscan" &&
         target.kind !== "council" &&
-        target.kind !== "session"
+        target.kind !== "session" &&
+        target.kind !== "board"
     );
 }
 
@@ -195,7 +202,8 @@ export async function peekTarget(
         target.kind === "memhygiene" ||
         target.kind === "workflowscan" ||
         target.kind === "council" ||
-        target.kind === "session"
+        target.kind === "session" ||
+        target.kind === "board"
     ) {
         return openTarget(model, target, report);
     }
@@ -318,7 +326,40 @@ async function land(
             return selectCouncil(model, target);
         case "session":
             return openSession(model, target, current);
+        case "board":
+            return select(await loadBoard(model, target, current), (facts) => selectBoard(model, target, facts));
     }
+}
+
+// A board opens where its agent is: beside that agent's Chat while the agent's tab is in the roster (asleep counts), else, with
+// the agent gone, in Library's Boards tab, which keeps it readable and its canvas editable. The project's list proves the board
+// exists and names its agent; it is read fresh, since a board drawn a moment ago may not be in a list read earlier.
+type BoardLanding = { agentId: string } | null;
+
+async function loadBoard(
+    model: AgentsViewModel,
+    target: BoardTarget,
+    current: () => boolean
+): Promise<Loaded<BoardLanding>> {
+    const boards = await loadBoardList(target.project);
+    if (!current()) {
+        return SUPERSEDED;
+    }
+    const board = boards.find((b) => b.id === target.boardId);
+    if (board == null) {
+        return unavailable("That board no longer exists");
+    }
+    const roster = globalStore.get(model.agentsAtom);
+    return loaded(agentAlive(board.agenttabid, roster) ? { agentId: board.agenttabid! } : null);
+}
+
+function selectBoard(model: AgentsViewModel, target: BoardTarget, landing: BoardLanding): OpenResult {
+    if (landing != null) {
+        openBoard(model, landing.agentId, target.project, target.boardId);
+    } else {
+        showLibraryBoard(model, target.project, target.boardId);
+    }
+    return OK;
 }
 
 // A past conversation opens again in a tab of its own, as its Resume does (cockpit-actions reopenSessionById). The
@@ -346,7 +387,13 @@ async function peek(
     model: AgentsViewModel,
     target: Exclude<
         OpenTarget,
-        CanvasTarget | BrainstormTarget | MemHygieneTarget | WorkflowScanTarget | CouncilTarget | SessionTarget
+        | CanvasTarget
+        | BrainstormTarget
+        | MemHygieneTarget
+        | WorkflowScanTarget
+        | CouncilTarget
+        | SessionTarget
+        | BoardTarget
     >,
     current: () => boolean
 ): Promise<OpenResult> {

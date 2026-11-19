@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // The Library surface: what is over, kept apart from what is live. A tab strip across the top (Conversations, Canvases,
-// Councils) over the tab's own view; the tab, the Conversations view and the open council live in librarystore.ts, so they
-// survive a switch to another surface (Library unmounts like every surface but Agent).
+// Councils, Boards) over the tab's own view; the tab, the Conversations view, the open council and the open board live in
+// librarystore.ts, so they survive a switch to another surface (Library unmounts like every surface but Agent).
 //   Conversations  `list` is Conversation History's master-detail (a row read in place); `session` and `run` are one
 //                  session's or run's pane at full width, shown when a session is opened from outside Library
 //                  (showLibrarySession), whose Back (leaveLibraryDetail) returns to the surface that opened it
@@ -12,6 +12,7 @@
 //                  against tokens per run, once the bench has a scored row); a council opened from it (or from Jarvis, a
 //                  notification, `wsh ui`) reads under a slim Back row, its views on Library's own selection through
 //                  LIBRARY_COUNCIL_HOST
+//   Boards         the boards agents drew (libraryboards.tsx): a live agent's opens beside its Chat, an ended one's here
 // Thin: the views are the ones the Agent surface used to hold as centre modes. The keys are buildLibraryBindings', so this
 // file holds no key handler but the tab strip's arrows.
 
@@ -32,6 +33,7 @@ import { CouncilPane } from "../agents/councilpane";
 import { RunPane } from "../agents/runpane";
 import { SessionPane } from "../agents/sessionpane";
 import { FADE_IN } from "../agents/setupstyles";
+import { LibraryBoards } from "./libraryboards";
 import {
     leaveLibraryCouncil,
     LIBRARY_COUNCIL_HOST,
@@ -46,6 +48,7 @@ const TAB_LABEL: Record<LibraryTab, string> = {
     conversations: "Conversations",
     canvases: "Canvases",
     councils: "Councils",
+    boards: "Boards",
 };
 
 const KBD = "rounded-[4px] border border-edge-mid px-1 font-mono text-[10px] font-normal text-muted";
@@ -155,6 +158,8 @@ function TabBody({ tab, model }: { tab: LibraryTab; model: AgentsViewModel }): R
         <CanvasGallery model={model} />
     ) : tab === "councils" ? (
         <Councils model={model} />
+    ) : tab === "boards" ? (
+        <LibraryBoards model={model} />
     ) : (
         <Conversations model={model} />
     );

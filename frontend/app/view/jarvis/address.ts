@@ -26,7 +26,10 @@ export type OpenTarget =
     | { kind: "council"; councilId: string; view?: "summary" }
     // a past conversation, by its session id or a unique prefix of one: reopened in a tab of its own, as its
     // Resume does (openref.ts). Not a transcript path: a Windows path holds ":"
-    | { kind: "session"; sessionId: string };
+    | { kind: "session"; sessionId: string }
+    // a board an agent drew, by its project and id: beside its agent's Chat while that agent is in the roster, else in
+    // Library → Boards (openref.ts)
+    | { kind: "board"; project: string; boardId: string };
 
 export type Unsupported = { kind: "unsupported"; message: string };
 
@@ -38,12 +41,17 @@ export const CANNOT_OPEN = "This item can't be opened";
 export const CANNOT_LOCATE_RECORD = "This citation can't locate its record";
 
 const MEMHYGIENE_PREFIX = "memhygiene:";
+const BOARD_PREFIX = "board:";
 
 export function parseAddress(address: string, hint?: AddressHint): OpenTarget | Unsupported {
     // a project name may hold ":", so this kind alone splits at the first one
     if (address?.startsWith(MEMHYGIENE_PREFIX)) {
         const project = address.slice(MEMHYGIENE_PREFIX.length);
         return project !== "" ? { kind: "memhygiene", project } : { kind: "unsupported", message: CANNOT_OPEN };
+    }
+    // board:<project>/<boardId>: a project name may hold ":" or "/", a board id (a slug) neither, so it splits at the last "/"
+    if (address?.startsWith(BOARD_PREFIX)) {
+        return parseBoard(address.slice(BOARD_PREFIX.length));
     }
     const parts = (address ?? "").split(":");
     if (parts.length !== 2 || parts[0] === "" || parts[1] === "") {
@@ -86,6 +94,16 @@ export function parseAddress(address: string, hint?: AddressHint): OpenTarget | 
         default:
             return { kind: "unsupported", message: CANNOT_OPEN };
     }
+}
+
+function parseBoard(rest: string): OpenTarget | Unsupported {
+    const slash = rest.lastIndexOf("/");
+    const project = rest.slice(0, slash);
+    const boardId = rest.slice(slash + 1);
+    if (slash < 0 || project === "" || boardId === "") {
+        return { kind: "unsupported", message: CANNOT_OPEN };
+    }
+    return { kind: "board", project, boardId };
 }
 
 // dag:<oid>[#<taskId>]: the graph, with one task selected when named

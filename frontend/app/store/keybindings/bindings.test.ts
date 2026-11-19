@@ -2595,16 +2595,17 @@ function resetLibrary() {
     globalStore.set(libraryCouncilSelAtom, null);
 }
 
-describe("g l, g s, g v, g o: Library and its tabs", () => {
+describe("g l, g s, g v, g o, g d: Library and its tabs", () => {
     beforeEach(resetLibrary);
     afterEach(resetLibrary);
 
-    // each target, from the Cockpit: the id (What's new's Try it links name go:history, go:canvases and go:councils), the
-    // letter, and the tab Library opens on
+    // each target, from the Cockpit: the id (What's new's Try it links name go:history, go:canvases, go:councils and
+    // go:boards), the letter, and the tab Library opens on
     const TARGETS: [id: string, keys: string, tab: LibraryTab][] = [
         ["go:history", "g s", "conversations"],
         ["go:canvases", "g v", "canvases"],
         ["go:councils", "g o", "councils"],
+        ["go:boards", "g d", "boards"],
     ];
 
     it.each(TARGETS)(
@@ -2622,9 +2623,10 @@ describe("g l, g s, g v, g o: Library and its tabs", () => {
         }
     );
 
-    it("keeps the Canvas gallery's label", () => {
+    it("keeps the Canvas gallery's label, and names the Boards tab", () => {
         const model = { surfaceAtom: atom<SurfaceKey>("cockpit") } as any;
         expect(buildGlobalBindings(model).find((b) => b.id === "go:canvases")!.label).toBe("Canvas gallery");
+        expect(buildGlobalBindings(model).find((b) => b.id === "go:boards")!.label).toBe("Boards");
     });
 
     it("g l opens Library on the tab it was left on, with its own id go:library", () => {
@@ -2632,6 +2634,7 @@ describe("g l, g s, g v, g o: Library and its tabs", () => {
         const library = buildGlobalBindings(model).find((b) => b.id === "go:library")!;
         expect(library.keys).toBe("g l");
         expect(library.label).toMatch(/^Library/);
+        expect(library.label).toMatch(/boards/);
         globalStore.set(libraryTabAtom, "councils");
         library.run(ctx());
         expect(globalStore.get(model.surfaceAtom)).toBe("library");
@@ -2652,7 +2655,7 @@ describe("Library's own keys", () => {
     const typing: KeyContext = { ...libCtx, editable: true };
     const model = { surfaceAtom: atom<SurfaceKey>("library") } as any;
     const find = (id: string) => buildLibraryBindings(model).find((b) => b.id === id)!;
-    const TAB_KEYS = ["library:tab-1", "library:tab-2", "library:tab-3"];
+    const TAB_KEYS = ["library:tab-1", "library:tab-2", "library:tab-3", "library:tab-4"];
     const navNode = (inThread = false) =>
         vi.stubGlobal("document", {
             activeElement: { tagName: "DIV", closest: () => (inThread ? {} : null) },
@@ -2665,10 +2668,15 @@ describe("Library's own keys", () => {
         vi.unstubAllGlobals();
     });
 
-    it("binds 1 2 3 to the three tabs, in the order the strip draws them", () => {
-        expect(TAB_KEYS.map((id) => find(id).keys)).toEqual(["1", "2", "3"]);
-        expect(TAB_KEYS.map((id) => find(id).label)).toEqual(["Show Conversations", "Show Canvases", "Show Councils"]);
-        for (const [i, tab] of (["conversations", "canvases", "councils"] as const).entries()) {
+    it("binds 1 2 3 4 to the four tabs, in the order the strip draws them", () => {
+        expect(TAB_KEYS.map((id) => find(id).keys)).toEqual(["1", "2", "3", "4"]);
+        expect(TAB_KEYS.map((id) => find(id).label)).toEqual([
+            "Show Conversations",
+            "Show Canvases",
+            "Show Councils",
+            "Show Boards",
+        ]);
+        for (const [i, tab] of (["conversations", "canvases", "councils", "boards"] as const).entries()) {
             globalStore.set(libraryTabAtom, tab === "councils" ? "conversations" : "councils");
             find(TAB_KEYS[i]).run(libCtx);
             expect(globalStore.get(libraryTabAtom)).toBe(tab);

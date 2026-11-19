@@ -5,9 +5,10 @@
 // applier's tests and the app's boot do not load the Excalidraw runtime: the applier and the canvas import it
 // dynamically, the first time an answer arrives or a board shows.
 
-import { convertToExcalidrawElements, restoreElements } from "@excalidraw/excalidraw";
+import { convertToExcalidrawElements, exportToSvg, restoreElements } from "@excalidraw/excalidraw";
 import type { ExcalidrawElementSkeleton } from "@excalidraw/excalidraw/data/transform";
 import type { ExcalidrawElement } from "@excalidraw/excalidraw/element/types";
+import type { AppState, BinaryFiles } from "@excalidraw/excalidraw/types";
 import { applyAnswer, type AnswerResult, type BoardScene } from "./boardmodel";
 
 // new ids on every conversion, so a redraw never collides with the group it replaces
@@ -49,6 +50,24 @@ function measure(elements: readonly ExcalidrawElement[], textIds: readonly strin
         const sized = { ...el, text: r.text, x: r.x, y: r.y, width: r.width, height: r.height } as ExcalidrawElement;
         return { ...sized, ...centered(sized, byId.get(r.containerId ?? "")) } as ExcalidrawElement;
     });
+}
+
+// A board's drawing as an SVG data URL, for the thumbnail in Library → Boards' list: light strokes on nothing (the row is
+// dark), a small margin, and no font data inlined (a few dozen pixels never show the face, and an inlined font would make
+// every thumbnail megabytes). An <img> shows it, so nothing in the board's text can run.
+export async function sceneThumbnail(scene: BoardScene): Promise<string> {
+    const svg = await exportToSvg({
+        elements: scene.elements.filter((el) => !el.isDeleted),
+        appState: {
+            exportBackground: false,
+            exportWithDarkMode: true,
+            viewBackgroundColor: "transparent",
+        } as Partial<AppState>,
+        files: scene.files as BinaryFiles,
+        exportPadding: 8,
+        skipInliningFonts: true,
+    });
+    return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(new XMLSerializer().serializeToString(svg))}`;
 }
 
 // the answer on the scene, converted and measured: a malformed answer throws, and the applier fails its turn

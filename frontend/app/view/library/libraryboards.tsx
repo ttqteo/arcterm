@@ -1,0 +1,338 @@
+// Copyright 2026, Command Line Inc.
+// SPDX-License-Identifier: Apache-2.0
+
+// Library → Boards: every board agents drew, reopened. A list of the app bar's project (every project when none is picked),
+// newest first, a thumbnail on each row, with the open board beside it.
+//   a live agent's board   its row opens the board beside that agent's Chat on the Agent surface, through the router
+//                          (openref.ts); Library stays as it was
+//   an ended agent's board its canvas (hand edits still save) and the whole talk, replies copied under what was forwarded.
+//                          The agent is gone, so there is no ask box, and Open conversation reads the agent's session
+// Only one canvas per board: the split beside Chat drops its own while another surface shows, so this one never doubles up
+// with it. The model is libraryboardsmodel.ts; the board's own parts are boards/.
+
+import { RpcApi } from "@/app/store/wshclientapi";
+import { TabRpcClient } from "@/app/store/wshrpcutil";
+import { cn } from "@/util/util";
+import { useAtomValue } from "jotai";
+import { Search } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import type { AgentsViewModel } from "../agents/agents";
+import { sessionKey } from "../agents/sessionsruns";
+import { rerouteBoardTurn, retryBoardTurn, stopBoardTurn } from "../boards/boardactions";
+import { BoardCanvas } from "../boards/boardcanvas";
+import { parseBoardFile } from "../boards/boardmodel";
+import { loadBoardConvert, useBoardList, useBoardTalk } from "../boards/boardstore";
+import { BoardTurns } from "../boards/boardturns";
+import { openTarget } from "../jarvis/openref";
+import { boardRows, boardsEmptyText, boardsScope, boardsSelectionIn, type BoardRow } from "./libraryboardsmodel";
+import { libraryBoardSelAtom, showLibraryBoard, showLibrarySession } from "./librarystore";
+
+const ENDED_LINE = "The agent ended, so you can't ask here";
+
+function errorText(e: unknown): string {
+    return e instanceof Error ? e.message : String(e);
+}
+
+// --- thumbnails: Excalidraw's SVG export of the board's file, drawn once per rev and only for rows on screen
+
+const thumbs = new Map<string, { rev: string; url: string }>();
+
+// the board file's drawing, as an image url; the file is read each time (that is how the rev is known) but the export, the
+// costly part, runs only when the rev is not the cached one
+async function thumbnailOf(project: string, boardId: string): Promise<string> {
+    const read = await RpcApi.BoardReadCommand(TabRpcClient, { project, boardid: boardId });
+    const key = `${project}/${boardId}`;
+    const hit = thumbs.get(key);
+    if (hit != null && hit.rev === read.rev) {
+        return hit.url;
+    }
+    const scene = parseBoardFile(read.data);
+    const { sceneThumbnail } = await loadBoardConvert();
+    const url = await sceneThumbnail(scene);
+    thumbs.set(key, { rev: read.rev, url });
+    return url;
+}
+
+function Thumb({ row }: { row: BoardRow }) {
+    const box = useRef<HTMLDivElement>(null);
+    const [onScreen, setOnScreen] = useState(false);
+    const [src, setSrc] = useState<string | null>(() => thumbs.get(row.key)?.url ?? null);
+
+    useEffect(() => {
+        const el = box.current;
+        if (el == null) {
+            return;
+        }
+        const seen = new IntersectionObserver((entries) => setOnScreen(entries.some((e) => e.isIntersecting)), {
+            rootMargin: "120px",
+        });
+        seen.observe(el);
+        return () => seen.disconnect();
+    }, []);
+
+    // read again when the board moved on (a turn drew, a hand edit saved): its activity time and facts say so
+    const stamp = `${row.activets}|${row.summary}`;
+    useEffect(() => {
+        if (!onScreen || row.shapes === 0 || row.loaderror !== "") {
+            return;
+        }
+        let cancelled = false;
+        thumbnailOf(row.project, row.id).then(
+            (url) => {
+                if (!cancelled) {
+                    setSrc(url);
+                }
+            },
+            (e) => console.warn("boards: the thumbnail of", row.key, "failed", e)
+        );
+        return () => {
+            cancelled = true;
+        };
+    }, [onScreen, row.project, row.id, row.key, row.shapes, row.loaderror, stamp]);
+
+    return (
+        <div
+            ref={box}
+            data-library-board-thumb={src != null ? "ready" : "none"}
+            className="h-[44px] w-[64px] flex-none overflow-hidden rounded-[4px] border border-edge-strong bg-background"
+        >
+            {src != null ? <img src={src} alt="" draggable={false} className="h-full w-full object-contain" /> : null}
+        </div>
+    );
+}
+
+// --- the list
+
+function BoardListRow({
+    row,
+    selected,
+    showProject,
+    onSelect,
+}: {
+    row: BoardRow;
+    selected: boolean;
+    showProject: boolean;
+    onSelect: () => void;
+}) {
+    return (
+        <button
+            type="button"
+            data-library-board={row.id}
+            data-library-board-project={row.project}
+            data-library-board-agent={row.agentState}
+            aria-current={selected ? "true" : undefined}
+            onClick={onSelect}
+            className={cn(
+                "flex w-full cursor-pointer gap-2.5 border-0 px-3.5 py-2.5 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent",
+                selected ? "bg-surface-selected" : "bg-transparent hover:bg-surface-hover"
+            )}
+        >
+            <Thumb row={row} />
+            <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                <span
+                    data-library-board-name
+                    className={cn("truncate text-[13px] text-primary", selected && "font-semibold")}
+                >
+                    {row.name}
+                </span>
+                {showProject ? (
+                    <span data-library-board-project-name className="truncate text-[11.5px] text-muted">
+                        {row.project}
+                    </span>
+                ) : null}
+                <span className="flex min-w-0 items-center gap-1.5 text-[12px] text-muted">
+                    {row.alive ? (
+                        <span aria-hidden className="h-[6px] w-[6px] flex-none rounded-full bg-success" />
+                    ) : null}
+                    <span data-library-board-agent-line className="truncate">
+                        {row.agent || "no agent"} · {row.agentState}
+                    </span>
+                </span>
+                <span data-library-board-summary className="truncate text-[12px] text-muted">
+                    {row.summary}
+                </span>
+            </span>
+        </button>
+    );
+}
+
+// --- the open board
+
+function BoardDetail({ model, row }: { model: AgentsViewModel; row: BoardRow }) {
+    const talk = useBoardTalk(row.project, row.id);
+    // Show: a new array each press, so the same shapes can be shown again
+    const [highlight, setHighlight] = useState<string[] | null>(null);
+    const [error, setError] = useState<string | null>(null);
+    const target = { project: row.project, boardId: row.id };
+    const sessionId = talk?.agent?.sessionid;
+
+    // a rejection shows above the footer line; the next action that goes clears it
+    async function act(fn: () => Promise<void>): Promise<void> {
+        try {
+            await fn();
+            setError(null);
+        } catch (e) {
+            setError(errorText(e));
+        }
+    }
+
+    return (
+        <div
+            data-library-board-open={row.id}
+            data-owns-keys
+            className="@container flex min-h-0 min-w-0 flex-1 flex-col"
+        >
+            <div className="flex h-10 flex-none items-center gap-2.5 border-b border-edge-mid px-4 text-[12px]">
+                <span
+                    data-library-board-title
+                    className="min-w-0 flex-none truncate text-[13px] font-semibold text-primary"
+                >
+                    {row.name}
+                </span>
+                <span data-library-board-state className="min-w-0 truncate text-muted">
+                    {row.agent || "no agent"} · {row.agentState}
+                    {row.alive ? "" : " · hand edits still save"}
+                </span>
+                <div className="flex-1" />
+                {sessionId ? (
+                    <button
+                        type="button"
+                        data-library-board-conversation
+                        onClick={() => showLibrarySession(model, sessionKey({ runtime: "claude", id: sessionId }))}
+                        className="flex-none cursor-pointer text-[12px] text-accent hover:text-accenthover"
+                    >
+                        Open conversation
+                    </button>
+                ) : null}
+            </div>
+            {/* wide enough (640px) the canvas has the turns beside it; narrower they stack, the turns scrolling in what is left */}
+            <div className="flex min-h-0 flex-1 flex-col @[640px]:flex-row">
+                <div className="relative min-h-0 min-w-0 flex-1">
+                    <BoardCanvas project={row.project} boardId={row.id} highlightIds={highlight} />
+                </div>
+                <div className="flex max-h-[45%] min-h-0 flex-none flex-col border-t border-edge-mid @[640px]:max-h-none @[640px]:w-[300px] @[640px]:border-l @[640px]:border-t-0">
+                    <BoardTurns
+                        talk={talk}
+                        mode="full"
+                        // Send to agent needs a live agent: this board's is gone. Draw instead and Retry still ask the drawer.
+                        canForward={false}
+                        onShow={(turn) => setHighlight([...(turn.shapeids ?? [])])}
+                        onOtherWay={(turn) => void act(() => rerouteBoardTurn(target, turn.id))}
+                        onStop={() => void act(() => stopBoardTurn(target))}
+                        onRetry={(turn) => void act(() => retryBoardTurn(target, turn.id))}
+                    />
+                    {error != null ? (
+                        <div
+                            role="alert"
+                            data-library-board-error
+                            className="mx-3.5 mb-1.5 flex-none text-[11.5px] leading-[1.4] text-error [overflow-wrap:anywhere]"
+                        >
+                            {error}
+                        </div>
+                    ) : null}
+                    {row.alive ? (
+                        // the roster filled in after the row was picked: the agent is running, so its board belongs beside its Chat
+                        <div className="flex flex-none items-center gap-2 px-3.5 pb-3 text-[12px] text-muted">
+                            <span data-library-board-running>The agent is running.</span>
+                            <button
+                                type="button"
+                                data-library-board-open-beside-chat
+                                onClick={() =>
+                                    void openTarget(model, { kind: "board", project: row.project, boardId: row.id })
+                                }
+                                className="cursor-pointer text-accent hover:text-accenthover"
+                            >
+                                Open beside Chat
+                            </button>
+                        </div>
+                    ) : (
+                        <div data-library-board-ended className="flex-none px-3.5 pb-3 text-[12px] text-ink-faint">
+                            {ENDED_LINE}
+                        </div>
+                    )}
+                </div>
+            </div>
+        </div>
+    );
+}
+
+// --- the tab
+
+export function LibraryBoards({ model }: { model: AgentsViewModel }) {
+    const filter = useAtomValue(model.projectFilterAtom);
+    const scope = boardsScope(filter);
+    const sel = useAtomValue(libraryBoardSelAtom);
+    const roster = useAtomValue(model.agentsAtom);
+    const list = useBoardList(scope);
+    // the open board may be of a project the app bar is not on (opened from outside): its own project's list names it
+    const openList = useBoardList(sel?.project ?? scope);
+    const [query, setQuery] = useState("");
+
+    const rows = useMemo(() => boardRows(list, { query, roster, now: Date.now() }), [list, query, roster]);
+    const open = useMemo(
+        () => boardsSelectionIn(boardRows(openList, { query: "", roster, now: Date.now() }), sel),
+        [openList, sel, roster]
+    );
+
+    function select(row: BoardRow): void {
+        if (row.alive) {
+            void openTarget(model, { kind: "board", project: row.project, boardId: row.id });
+        } else {
+            showLibraryBoard(model, row.project, row.id);
+        }
+    }
+
+    if (list != null && list.length === 0) {
+        return (
+            <div
+                data-library-boards-empty
+                className="flex min-h-0 flex-1 items-center justify-center px-6 text-center text-[13px] text-muted"
+            >
+                {boardsEmptyText(scope, "")}
+            </div>
+        );
+    }
+    return (
+        <div data-library-boards className="flex min-h-0 min-w-0 flex-1">
+            <div className="flex w-[360px] flex-none flex-col overflow-hidden border-r border-edge-mid">
+                <label className="m-3 flex h-[32px] flex-none items-center gap-2 rounded-[8px] border border-edge-strong bg-surface-raised pl-[10px] pr-2 focus-within:border-ink-faint">
+                    <Search size={13} strokeWidth={1.8} className="flex-none text-muted" aria-hidden />
+                    <input
+                        data-library-boards-search
+                        aria-label="Search boards"
+                        placeholder="Search boards"
+                        value={query}
+                        onChange={(e) => setQuery(e.target.value)}
+                        className="min-w-0 flex-1 bg-transparent text-[13px] text-primary outline-none placeholder:text-muted"
+                    />
+                </label>
+                <div data-library-boards-list className="min-h-0 flex-1 overflow-y-auto pb-2">
+                    {list == null ? (
+                        <div className="px-4 py-3 text-[12px] text-muted">Reading boards…</div>
+                    ) : rows.length === 0 ? (
+                        <div data-library-boards-none className="px-4 py-3 text-[12px] text-muted">
+                            {boardsEmptyText(scope, query)}
+                        </div>
+                    ) : (
+                        rows.map((row) => (
+                            <BoardListRow
+                                key={row.key}
+                                row={row}
+                                selected={open?.key === row.key}
+                                showProject={scope === ""}
+                                onSelect={() => select(row)}
+                            />
+                        ))
+                    )}
+                </div>
+            </div>
+            {open != null ? (
+                <BoardDetail key={open.key} model={model} row={open} />
+            ) : (
+                <div className="flex min-w-0 flex-1 items-center justify-center px-6 text-center text-[13px] text-muted">
+                    Pick a board to read it here.
+                </div>
+            )}
+        </div>
+    );
+}

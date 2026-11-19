@@ -139,15 +139,16 @@ describe("parseSurfaceAddress", () => {
         expect(parseSurfaceAddress("surface:sessions")).toEqual({ surface: "library", tab: "conversations" });
     });
 
-    it("takes surface:canvases and surface:councils to their Library tabs", () => {
+    it("takes surface:canvases, surface:councils and surface:boards to their Library tabs", () => {
         expect(parseSurfaceAddress("surface:canvases")).toEqual({ surface: "library", tab: "canvases" });
         expect(parseSurfaceAddress("surface:councils")).toEqual({ surface: "library", tab: "councils" });
+        expect(parseSurfaceAddress("surface:boards")).toEqual({ surface: "library", tab: "boards" });
     });
 
     it("lists the names that open a Library tab among the valid surfaces in its error", () => {
         const r = parseSurfaceAddress("surface:nope");
         expect(r != null && "error" in r && r.error).toMatch(
-            /, files, library, setup, settings, history, canvases, councils$/
+            /, files, library, setup, settings, history, canvases, councils, boards$/
         );
     });
 });
