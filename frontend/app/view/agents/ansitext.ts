@@ -169,6 +169,13 @@ export function parseAnsiLines(lines: string[]): AnsiRun[][] {
     });
 }
 
+/** Pure: the text a terminal would show, its colours and cursor moves dropped. */
+export function plainText(text: string): string {
+    return parseAnsiLines(text.split("\n"))
+        .map((runs) => runs.map((r) => r.text).join(""))
+        .join("\n");
+}
+
 /** The inline CSS for a run. `fgDefault`/`bgDefault` are what inverse swaps in when a side is unset. */
 export function runCss(style: AnsiStyle, fgDefault: string, bgDefault: string): Record<string, string | number> {
     let fg = style.fg;

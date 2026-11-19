@@ -1135,3 +1135,8 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
   whose range spans minutes reads `Nov 14 01:19–20`, its title no longer cut to `Veri…`. Pause and resume a run → the
   rail reads it in words, with who paused it and the RAM it held, not `run-paused`. The `kael1113-timeline` CDP
   scenario covers the fold; nobody has looked at it in the app.
+- [ ] (arcterm) **A `!` command's output in Chat is in colour** (`chatconversation.tsx` bubble, `commandtext.tsx`
+  CommandOutput, `taskecho.ts`). In a Claude agent's Chat run `! task install --dry` or any `! task <name>` whose
+  Taskfile command spans lines: the `task: [name]` prefix is muted and the command under it in the shell's colours up to
+  the blank line, the output after it plain; `&&` reads `&&`, never `&amp;&amp;`. Run `! git -c color.ui=always status`
+  → its colours show. Copy on the bubble pastes text with no escape codes. Unit-tested only, not tried in the app.

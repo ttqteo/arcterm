@@ -6,7 +6,7 @@
 
 import { parseBtwNotice } from "../../../../claude/arc-mod/hooks/btw-core";
 import type { AgentEntry, CardTask, ReportedFinding, SubagentCall } from "./agentsviewmodel";
-import { parseAnsiLines } from "./ansitext";
+import { plainText } from "./ansitext";
 import { lastStepsOf } from "./chatsteplist";
 import { answerAsk, askQuestions, buildEditDiff, parseGrep, sliceRead, toolResultText } from "./tooldetail";
 
@@ -174,10 +174,23 @@ const BASH_NO_OUTPUT = "(Bash completed with no output)";
 
 // captured output as plain text: the colours and cursor moves a terminal would draw, dropped
 function plainOutput(text: string): string {
-    return parseAnsiLines(text.split("\n"))
-        .map((runs) => runs.map((r) => r.text).join(""))
-        .join("\n")
-        .trim();
+    return plainText(text).trim();
+}
+
+// Claude Code writes a bash-mode record's text HTML-escaped (`&amp;&amp;` for `&&`); the person typed and the command
+// printed the characters themselves. `&amp;` last, so an escaped entity (`&amp;lt;`) comes back as written (`&lt;`).
+export function unescapeBashText(text: string): string {
+    return text
+        .replace(/&lt;/g, "<")
+        .replace(/&gt;/g, ">")
+        .replace(/&quot;/g, '"')
+        .replace(/&#39;|&apos;/g, "'")
+        .replace(/&amp;/g, "&");
+}
+
+// a `!` command's output as Chat draws it: unescaped, its colours kept for the bubble to draw (commandtext.tsx)
+function bashOutput(text: string): string {
+    return unescapeBashText(text).trim();
 }
 
 // What a slash command printed comes after its command as a record of its own: a user string, or a system record of
@@ -529,15 +542,19 @@ export function projectTranscript(lines: string[]): AgentEntry[] {
                     // a slash command's output ("Compacted …", with raw ANSI): it goes on its command, never a bubble
                     attachLocalOutput(entries, content);
                 } else if (BASH_INPUT.test(content)) {
-                    entries.push({ kind: "command", name: "!", args: BASH_INPUT.exec(content)![1].trim() });
+                    entries.push({
+                        kind: "command",
+                        name: "!",
+                        args: unescapeBashText(BASH_INPUT.exec(content)![1].trim()),
+                    });
                 } else if (BASH_STDOUT.test(content) || BASH_STDERR.test(content)) {
                     // it goes on its command; one whose command is not in the lines read is dropped, never a bubble
                     const last = entries[entries.length - 1];
                     if (last?.kind === "command" && last.name === "!" && last.shell == null) {
-                        const output = plainOutput(BASH_STDOUT.exec(content)?.[1] ?? "");
+                        const output = bashOutput(BASH_STDOUT.exec(content)?.[1] ?? "");
                         last.shell = {
                             output: output === BASH_NO_OUTPUT ? "" : output,
-                            error: plainOutput(BASH_STDERR.exec(content)?.[1] ?? ""),
+                            error: bashOutput(BASH_STDERR.exec(content)?.[1] ?? ""),
                         };
                     }
                 } else if (isInterrupted(content)) {
