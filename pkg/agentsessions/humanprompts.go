@@ -136,6 +136,9 @@ func claudePromptText(raw json.RawMessage) string {
 // projectTranscript (frontend/app/view/agents/transcriptprojection.ts) also skips or renders apart.
 func isClaudeNotice(text string) bool {
 	return strings.HasPrefix(text, caveatOpenTag) ||
+		strings.HasPrefix(text, bashInputTag) ||
+		strings.HasPrefix(text, bashStdoutTag) ||
+		strings.HasPrefix(text, bashStderrTag) ||
 		commandNameRe.MatchString(text) ||
 		strings.Contains(text, "<local-command-stdout>") ||
 		strings.Contains(text, "<task-notification>") ||

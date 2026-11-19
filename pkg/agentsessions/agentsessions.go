@@ -51,7 +51,18 @@ const (
 // local command output (/status, /context) is echoed back as a user record but is nothing the user asked
 var localCommandOutputTags = []string{"<local-command-stdout>", "<local-command-stderr>"}
 
+// a `!` command in Claude Code's bash mode is two user records: the input, then its output. It is a shell run, not a
+// prompt, so the output is never a title and the input titles a session only until a typed prompt exists.
+// Mirrors BASH_INPUT_RE in frontend/app/view/agents/transcriptprojection.ts.
+const (
+	bashInputTag  = "<bash-input>"
+	bashStdoutTag = "<bash-stdout>"
+	bashStderrTag = "<bash-stderr>"
+	shellRunMark  = "! "
+)
+
 var (
+	bashInputRe   = regexp.MustCompile(`(?s)^<bash-input>(.*)</bash-input>$`)
 	commandNameRe = regexp.MustCompile(`(?s)<command-name>(.*?)</command-name>`)
 	commandArgsRe = regexp.MustCompile(`(?s)<command-args>(.*?)</command-args>`)
 	// an initiative ref typed into a run goal; the Go index has no store to name it, so it is dropped
@@ -79,6 +90,12 @@ func unwrapTitle(raw string) string {
 		if strings.HasPrefix(t, tag) {
 			return ""
 		}
+	}
+	if strings.HasPrefix(t, bashStdoutTag) || strings.HasPrefix(t, bashStderrTag) {
+		return ""
+	}
+	if cmd := shellRunCommand(t); cmd != "" {
+		return shellRunMark + cmd
 	}
 	if strings.HasPrefix(t, caveatOpenTag) {
 		// the caveat is boilerplate the CLI adds; the real message, if any, follows the closing tag
@@ -198,14 +215,11 @@ type claudeBilled struct{ output, tokens int }
 // claudeSessionFrom folds one transcript into a session. folder is the name of the store folder it lives in, the slug
 // of the directory Claude Code files it under (agentobserve.SlugifyCwd), "" when unknown.
 func claudeSessionFrom(id, folder string, recs []claudeLine) *SessionInfo {
-	s := &SessionInfo{ID: id}
+	s := &SessionInfo{ID: id, TokensTotal: claudeTokens(recs)}
 	atHome := false
 	hasTask := false
 	fallback := ""
 	aiTitle := ""
-	// Claude Code writes an assistant message once per content block, each line repeating its usage: one per message,
-	// the line with the most output (its final count), as usagestats.dedupe keeps it
-	billed := map[string]claudeBilled{}
 	for _, rec := range recs {
 		if agentobserve.IsHeadlessEntrypoint(rec.Entrypoint) {
 			return nil
@@ -230,15 +244,6 @@ func claudeSessionFrom(id, folder string, recs []claudeLine) *SessionInfo {
 		// last assistant model wins; a "<synthetic>" turn (an interrupt, an API error) names none
 		if rec.Message.Model != "" && rec.Message.Model != "<synthetic>" {
 			s.Model = rec.Message.Model
-		}
-		if rec.Message.Usage != nil {
-			u := rec.Message.Usage
-			n := u.InputTokens + u.OutputTokens + u.CacheReadInputTokens + u.CacheCreationInputTokens
-			if rec.Message.ID == "" || rec.RequestID == "" {
-				s.TokensTotal += n
-			} else if key := rec.Message.ID + ":" + rec.RequestID; u.OutputTokens >= billed[key].output {
-				billed[key] = claudeBilled{output: u.OutputTokens, tokens: n}
-			}
 		}
 		// only what a person sent titles a session: a file with none, such as the Agent tool's
 		// <parent>/subagents/agent-<id>.jsonl, has no task and is no session
@@ -274,17 +279,76 @@ func claudeSessionFrom(id, folder string, recs []claudeLine) *SessionInfo {
 	if aiTitle != "" {
 		s.Task = trimTo(aiTitle, maxTaskLen)
 	}
-	for _, b := range billed {
-		s.TokensTotal += b.tokens
-	}
 	return s
 }
 
-// isBareCommand reports a slash command with no arguments. /clear or /compact names what was done to the
-// session rather than the work in it, so the first real prompt after it titles the session instead; the
-// command is kept only when nothing follows it.
+// claudeTokens sums a transcript's usage the way usagestats does, so Sessions and the details rail agree. Claude Code
+// writes an assistant message once per content block, each line repeating its usage: a message counts once, by the
+// line with the most output (its final count), as usagestats.dedupe keeps it.
+func claudeTokens(recs []claudeLine) int {
+	total := 0
+	billed := map[string]claudeBilled{}
+	for _, rec := range recs {
+		u := rec.Message.Usage
+		if u == nil {
+			continue
+		}
+		n := u.InputTokens + u.OutputTokens + u.CacheReadInputTokens + u.CacheCreationInputTokens
+		if rec.Message.ID == "" || rec.RequestID == "" {
+			total += n
+		} else if key := rec.Message.ID + ":" + rec.RequestID; u.OutputTokens >= billed[key].output {
+			billed[key] = claudeBilled{output: u.OutputTokens, tokens: n}
+		}
+	}
+	for _, b := range billed {
+		total += b.tokens
+	}
+	return total
+}
+
+// claudeSubagentsDir is the folder, named for the session, where Claude Code writes its Task subagents' transcripts.
+const claudeSubagentsDir = "subagents"
+
+// claudeSubagentTokens sums the transcripts under <session>/subagents (nested ones too), which the details rail
+// (usagestats.TranscriptUsage) bills to the session. They are read when the parent's transcript is, so a running
+// subagent's tokens show once the parent next writes.
+func claudeSubagentTokens(path string) int {
+	total := 0
+	dir := filepath.Join(strings.TrimSuffix(path, ".jsonl"), claudeSubagentsDir)
+	_ = filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			if !errors.Is(err, fs.ErrNotExist) { // a session that ran no subagent has no folder
+				log.Printf("agentsessions: reading the subagents of %q: %v", path, err)
+			}
+			return nil
+		}
+		if d.IsDir() || !strings.HasSuffix(p, ".jsonl") {
+			return nil
+		}
+		lines, err := readLines(p)
+		if err != nil {
+			log.Printf("agentsessions: skipping subagent transcript %q: %v", p, err)
+			return nil
+		}
+		total += claudeTokens(parseClaudeLines(lines))
+		return nil
+	})
+	return total
+}
+
+// shellRunCommand is the command of a `!` input record, "" for any other text.
+func shellRunCommand(t string) string {
+	if m := bashInputRe.FindStringSubmatch(t); m != nil {
+		return strings.TrimSpace(m[1])
+	}
+	return ""
+}
+
+// isBareCommand reports a title that names no work: a slash command with no arguments, or a shell run. /clear
+// or /compact names what was done to the session rather than the work in it, and `! ls` is not a task, so the
+// first real prompt after it titles the session instead; the command is kept only when nothing follows it.
 func isBareCommand(raw, title string) bool {
-	return commandNameRe.MatchString(raw) && !strings.Contains(title, " ")
+	return shellRunCommand(strings.TrimSpace(raw)) != "" || (commandNameRe.MatchString(raw) && !strings.Contains(title, " "))
 }
 
 type claudeBlock struct {
@@ -320,7 +384,20 @@ func claudeEventsFrom(recs []claudeLine) sessionEvents {
 	var raw []SessionEvent
 	cmdByID := map[string]string{}
 	var firstTs, lastTs int64
-	var firstUser, lastAssistant string
+	var firstUser, shellRun, lastAssistant string
+	// same unwrapping as the session title; a shell run names the session only while no prompt exists
+	noteUser := func(text string) {
+		title := sessionTitle(text)
+		switch {
+		case title == "" || firstUser != "":
+		case shellRunCommand(strings.TrimSpace(text)) != "":
+			if shellRun == "" {
+				shellRun = title
+			}
+		default:
+			firstUser = title
+		}
+	}
 	// openAsk is the AskUserQuestion still waiting on the user: its tool_result or a new prompt closes it.
 	var openAsk string
 	askOpen := false
@@ -365,9 +442,7 @@ func claudeEventsFrom(recs []claudeLine) sessionEvents {
 			var str string
 			if json.Unmarshal(rec.Message.Content, &str) == nil {
 				askOpen = false
-				if firstUser == "" {
-					firstUser = sessionTitle(str) // same unwrapping as the session title
-				}
+				noteUser(str)
 				continue
 			}
 			var blocks []claudeBlock
@@ -377,9 +452,7 @@ func claudeEventsFrom(recs []claudeLine) sessionEvents {
 			for _, b := range blocks {
 				if b.Type == "text" {
 					askOpen = false
-					if firstUser == "" {
-						firstUser = sessionTitle(b.Text)
-					}
+					noteUser(b.Text)
 				}
 				if b.Type == "tool_result" && b.ToolUseID == openAsk {
 					askOpen = false
@@ -393,6 +466,9 @@ func claudeEventsFrom(recs []claudeLine) sessionEvents {
 				}
 			}
 		}
+	}
+	if firstUser == "" {
+		firstUser = shellRun
 	}
 	startedText := "started session"
 	if firstUser != "" {
@@ -785,7 +861,7 @@ func claudeProvider(root string) provider {
 		},
 		// the Agent tool's <parent>/subagents/agent-<id>.jsonl is part of its parent and never a session of its own
 		// (claudeSessionFrom drops it), yet those files were a third of a cold scan's bytes
-		skipDir: func(_, path string) bool { return filepath.Base(path) == "subagents" },
+		skipDir: func(_, path string) bool { return filepath.Base(path) == claudeSubagentsDir },
 		// one shared unmarshal pass for both derivations — claude transcripts dominate the scan cost
 		fused: func(path string, id string, lines []string) (*SessionInfo, sessionEvents) {
 			return claudeDerive(path, id, parseClaudeLines(lines))
@@ -815,6 +891,7 @@ func claudeDerive(path, id string, recs []claudeLine) (*SessionInfo, sessionEven
 	if s == nil {
 		return nil, sessionEvents{}
 	}
+	s.TokensTotal += claudeSubagentTokens(path)
 	// none of its cwds names the folder (begun on another machine, its transcript synced over and never
 	// resumed here): it belongs to the folder's directory when that is on this disk, where it lists and resumes
 	if !strings.EqualFold(agentobserve.SlugifyCwd(s.ProjectPath), folder) {
