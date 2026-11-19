@@ -24,6 +24,7 @@ import {
     setMarking,
     updateCanvas,
 } from "@/app/view/agents/canvasstore";
+import { councilChatNavAtom } from "@/app/view/agents/councilchatnav";
 import { diffScopeAtom } from "@/app/view/agents/diffscopeatom";
 import { docReviewStateAtom, setGeneralNote, syncDocReview } from "@/app/view/agents/docreviewstore";
 import { historyFiltersAtom } from "@/app/view/agents/githistorystore";
@@ -36,6 +37,7 @@ import { initiativeSheetAtom, initiativeSheetOpenAtom } from "@/app/view/jarvis/
 import { briefSheetOpenAtom } from "@/app/view/jarvis/jarvisstore";
 import { activeSubjectAtom } from "@/app/view/jarvis/jarvissubjectstore";
 import { petPeekOpenAtom } from "@/app/view/jarvis/petstore";
+import { libraryConvViewAtom, libraryCouncilSelAtom, libraryTabAtom } from "@/app/view/library/librarystore";
 import { atom, type PrimitiveAtom } from "jotai";
 import { describe, expect, it } from "vitest";
 import {
@@ -49,6 +51,7 @@ import {
     buildGlobalBindings,
     buildInitiativeSheetBindings,
     buildJarvisBindings,
+    buildLibraryBindings,
     buildListNavBindings,
     buildMemoryBindings,
     buildUsageBindings,
@@ -68,7 +71,7 @@ function stubModel(focusId?: string): any {
 
 // where Agent → Canvas gallery is: a view, and the topic folder it has open
 const OPEN_DIR = "/p/.superpowers/design/t";
-function inGallery(view: "grid" | "viewer" | "cleanup", dir: string | null = null) {
+function inGallery(view: "grid" | "viewer" | "cleanup" | "scan", dir: string | null = null) {
     globalStore.set(canvasGalleryAtom, { view, dir, board: 0, query: "", cursor: 0 });
 }
 
@@ -109,6 +112,7 @@ const SURFACES: SurfaceKey[] = [
     "files",
     "usage",
     "code",
+    "library",
     "setup",
     "settings",
     "app",
@@ -440,40 +444,48 @@ describe("keybinding conflict invariant", () => {
         ).not.toThrow();
     });
 
-    // History publishes a list cursor for the Agent surface; j/k must belong to the list alone while it is open
-    it("global + list-nav + agent bindings do not conflict while History is open with its cursor published", () => {
+    // Conversation History publishes its list cursor on Library; j/k belong to the list while it is up, on Library only
+    it("global + list-nav + agent + library bindings do not conflict while Conversations is open with its cursor published", () => {
         const model = stubModel();
-        globalStore.set(centerModeAtom, "history");
-        globalStore.set(listNavAtom, { surface: "agent", navigableIds: ["all"], cursorId: "all", setCursor() {} });
+        globalStore.set(libraryTabAtom, "conversations");
+        globalStore.set(listNavAtom, { surface: "library", navigableIds: ["all"], cursorId: "all", setCursor() {} });
         try {
             expect(() =>
                 assertNoConflicts([
                     ...buildGlobalBindings(model),
                     ...buildListNavBindings(model),
                     ...buildAgentBindings(model),
+                    ...buildLibraryBindings(model),
                 ])
             ).not.toThrow();
-            // not vacuous: the list's j is live on the Agent surface and the agent's j is not
-            const ctx = { surface: "agent" as const, editable: false, modalOpen: false, leader: null };
-            expect(buildListNavBindings(model).find((b) => b.id === "list:next-j")!.when!(ctx)).toBe(true);
-            expect(buildAgentBindings(model).find((b) => b.id === "agent:next-j")!.when!(ctx)).toBe(false);
+            // not vacuous: the list's j is live on Library and not on the Agent surface, whose own j is not live on Library
+            const lib = { surface: "library" as const, editable: false, modalOpen: false, leader: null };
+            const agent = { ...lib, surface: "agent" as const };
+            const listJ = buildListNavBindings(model).find((b) => b.id === "list:next-j")!;
+            const agentJ = buildAgentBindings(model).find((b) => b.id === "agent:next-j")!;
+            expect(listJ.when!(lib)).toBe(true);
+            expect(listJ.when!(agent)).toBe(false);
+            expect(agentJ.when!(lib)).toBe(false);
         } finally {
-            globalStore.set(centerModeAtom, "terminal");
+            globalStore.set(libraryTabAtom, "conversations");
             globalStore.set(listNavAtom, null);
         }
     });
 
-    // a council's r c m switch its views while it covers the terminal; in the terminal the agent's own r c m keep them
+    // a council's r c m switch its views while it covers the terminal, or fills Library's Councils tab; in the terminal the
+    // agent's own r c m keep them
     it("the council view keys are live on a council and stand down in the terminal, without conflicting", () => {
         const model = stubModel();
         const all = () => [
             ...buildGlobalBindings(model),
             ...buildListNavBindings(model),
             ...buildAgentBindings(model),
+            ...buildLibraryBindings(model),
             ...buildCouncilBindings(),
             ...buildCouncilTabBindings(),
         ];
         const ctx = { surface: "agent" as const, editable: false, modalOpen: false, leader: null };
+        const lib = { ...ctx, surface: "library" as const };
         const tabs = buildCouncilTabBindings();
         expect(tabs.map((b) => b.keys)).toEqual(["r", "c", "m"]);
         try {
@@ -485,37 +497,51 @@ describe("keybinding conflict invariant", () => {
             globalStore.set(centerModeAtom, "terminal");
             expect(() => assertNoConflicts(all())).not.toThrow();
             expect(tabs.some((b) => b.when!(ctx))).toBe(false);
+            // Library: the Councils tab with a council open takes them, whatever Agent's centre shows
+            globalStore.set(libraryTabAtom, "councils");
+            globalStore.set(libraryCouncilSelAtom, "c1");
+            expect(() => assertNoConflicts(all())).not.toThrow();
+            expect(tabs.every((b) => b.when!(lib))).toBe(true);
+            expect(tabs.some((b) => b.when!(ctx))).toBe(false);
+            globalStore.set(libraryCouncilSelAtom, null);
+            expect(tabs.some((b) => b.when!(lib))).toBe(false);
         } finally {
             globalStore.set(centerModeAtom, "terminal");
+            globalStore.set(libraryTabAtom, "conversations");
+            globalStore.set(libraryCouncilSelAtom, null);
         }
     });
 
-    // Canvases covers the terminal like History, with its own arrows, Enter and Escape in each of its views; none may meet
-    // the agent's, the surface switch's `[` `]`, or the Escape that leaves the centre
-    it("global + list-nav + agent bindings do not conflict while Canvases is open, in any view", () => {
+    // The Canvases tab shows the gallery, with its own arrows, Enter and Escape in each of its views; none may meet the
+    // agent's, the surface switch's `[` `]`, or the Escape that navigates
+    it("global + list-nav + agent + library bindings do not conflict while Canvases is open, in any view", () => {
         const model = stubModel();
-        globalStore.set(centerModeAtom, "canvases");
-        const agentCtx = { surface: "agent" as const, editable: false, modalOpen: false, leader: null };
-        const all = [...buildGlobalBindings(model), ...buildListNavBindings(model), ...buildAgentBindings(model)];
+        globalStore.set(libraryTabAtom, "canvases");
+        const libCtx = { surface: "library" as const, editable: false, modalOpen: false, leader: null };
+        const all = [
+            ...buildGlobalBindings(model),
+            ...buildListNavBindings(model),
+            ...buildAgentBindings(model),
+            ...buildLibraryBindings(model),
+        ];
         const find = (id: string) => all.find((x) => x.id === id)!;
         try {
             for (const view of ["grid", "viewer", "cleanup"] as const) {
                 inGallery(view, OPEN_DIR);
                 expect(() => assertNoConflicts(all)).not.toThrow();
             }
-            // not vacuous: each view's keys are live there and the agent's and the surface's are not
+            // not vacuous: each view's keys are live there and the surface's are not
             inGallery("grid");
-            expect(find("canvases:left").when!(agentCtx)).toBe(true);
-            expect(find("agent:prev").when!(agentCtx)).toBe(false);
-            expect(find("canvases:prev-board").when!(agentCtx)).toBe(false);
-            expect(find("surface:prev").when!(agentCtx)).toBe(true);
+            expect(find("canvases:left").when!(libCtx)).toBe(true);
+            expect(find("canvases:prev-board").when!(libCtx)).toBe(false);
+            expect(find("surface:prev").when!(libCtx)).toBe(true);
             inGallery("viewer", OPEN_DIR);
-            expect(find("canvases:prev-board").when!(agentCtx)).toBe(true);
-            expect(find("canvases:prev-board-bracket").when!(agentCtx)).toBe(true);
-            expect(find("canvases:left").when!(agentCtx)).toBe(false);
-            expect(find("surface:prev").when!(agentCtx)).toBe(false);
-            expect(find("surface:next").when!(agentCtx)).toBe(false);
-            // clean up has its own arrows, Space and Escape; the grid's, the viewer's and the agent's all stand down
+            expect(find("canvases:prev-board").when!(libCtx)).toBe(true);
+            expect(find("canvases:prev-board-bracket").when!(libCtx)).toBe(true);
+            expect(find("canvases:left").when!(libCtx)).toBe(false);
+            expect(find("surface:prev").when!(libCtx)).toBe(false);
+            expect(find("surface:next").when!(libCtx)).toBe(false);
+            // clean up has its own arrows, Space and Escape; the grid's and the viewer's stand down
             inGallery("cleanup");
             for (const id of [
                 "canvases:cleanup-left",
@@ -523,57 +549,101 @@ describe("keybinding conflict invariant", () => {
                 "canvases:tick",
                 "canvases:cleanup-cancel",
             ]) {
-                expect(find(id).when!(agentCtx)).toBe(true);
+                expect(find(id).when!(libCtx)).toBe(true);
             }
-            for (const id of ["canvases:left", "canvases:open", "canvases:prev-board", "canvases:back", "agent:prev"]) {
-                expect(find(id).when!(agentCtx)).toBe(false);
+            for (const id of ["canvases:left", "canvases:open", "canvases:prev-board", "canvases:back"]) {
+                expect(find(id).when!(libCtx)).toBe(false);
             }
-            expect(find("agent:leave-center").when!(agentCtx)).toBe(false);
+            expect(find("surface:back-home").when!(libCtx)).toBe(false);
             // [ ] stay the surface switch's: clean up has no use for them
-            expect(find("surface:prev").when!(agentCtx)).toBe(true);
+            expect(find("surface:prev").when!(libCtx)).toBe(true);
+            // the other tabs: the surface switch's [ ] are live whatever the gallery was left on
+            inGallery("viewer", OPEN_DIR);
+            for (const tab of ["conversations", "councils"] as const) {
+                globalStore.set(libraryTabAtom, tab);
+                expect(find("surface:prev").when!(libCtx)).toBe(true);
+                expect(find("canvases:prev-board").when!(libCtx)).toBe(false);
+            }
         } finally {
-            globalStore.set(centerModeAtom, "terminal");
+            globalStore.set(libraryTabAtom, "conversations");
             inGallery("grid");
         }
     });
 
-    // Escape in a viewer or the clean-up mode goes back to the grid; only the grid's Escape leaves the centre
-    it("hands Escape to the viewer and to clean up, and to the centre only from the grid", () => {
+    // Escape in a viewer or the clean-up mode goes back to the grid; only the grid's Escape navigates
+    it("hands Escape to the viewer and to clean up, and to the surface only from the grid", () => {
         const model = stubModel();
-        const agentCtx = { surface: "agent" as const, editable: false, modalOpen: false, leader: null };
-        const all = buildAgentBindings(model);
-        const leave = all.find((x) => x.id === "agent:leave-center")!;
+        const libCtx = { surface: "library" as const, editable: false, modalOpen: false, leader: null };
+        const all = [...buildGlobalBindings(model), ...buildAgentBindings(model)];
+        const home = all.find((x) => x.id === "surface:back-home")!;
         const back = all.find((x) => x.id === "canvases:back")!;
         const cancel = all.find((x) => x.id === "canvases:cleanup-cancel")!;
-        globalStore.set(centerModeAtom, "canvases");
+        globalStore.set(libraryTabAtom, "canvases");
         try {
             inGallery("grid");
-            expect(leave.when!(agentCtx)).toBe(true);
-            expect(back.when!(agentCtx)).toBe(false);
-            expect(cancel.when!(agentCtx)).toBe(false);
+            expect(home.when!(libCtx)).toBe(true);
+            expect(back.when!(libCtx)).toBe(false);
+            expect(cancel.when!(libCtx)).toBe(false);
             inGallery("viewer", OPEN_DIR);
-            expect(leave.when!(agentCtx)).toBe(false);
-            expect(back.when!(agentCtx)).toBe(true);
-            expect(cancel.when!(agentCtx)).toBe(false);
+            expect(home.when!(libCtx)).toBe(false);
+            expect(back.when!(libCtx)).toBe(true);
+            expect(cancel.when!(libCtx)).toBe(false);
             // inside a field the field keeps its Escape
-            expect(back.when!({ ...agentCtx, editable: true })).toBe(false);
+            expect(back.when!({ ...libCtx, editable: true })).toBe(false);
             // clean up: Escape cancels clean up and nothing else, whatever else is open or focused
             inGallery("cleanup");
-            expect(leave.when!(agentCtx)).toBe(false);
-            expect(back.when!(agentCtx)).toBe(false);
-            expect(cancel.when!(agentCtx)).toBe(true);
-            expect(cancel.when!({ ...agentCtx, editable: true })).toBe(false);
-            expect(cancel.when!({ ...agentCtx, modalOpen: true })).toBe(false);
-            expect(cancel.when!({ ...agentCtx, surface: "jarvis" })).toBe(false);
+            expect(home.when!(libCtx)).toBe(false);
+            expect(back.when!(libCtx)).toBe(false);
+            expect(cancel.when!(libCtx)).toBe(true);
+            expect(cancel.when!({ ...libCtx, editable: true })).toBe(false);
+            expect(cancel.when!({ ...libCtx, modalOpen: true })).toBe(false);
+            expect(cancel.when!({ ...libCtx, surface: "jarvis" })).toBe(false);
             // only one Escape binding claims the key in clean up
-            expect(all.filter((x) => x.keys === "Escape" && x.when?.(agentCtx)).map((x) => x.id)).toEqual([
+            expect(all.filter((x) => x.keys === "Escape" && x.when?.(libCtx)).map((x) => x.id)).toEqual([
                 "canvases:cleanup-cancel",
             ]);
-            // History keeps the plain rule whatever the gallery was left on
-            globalStore.set(centerModeAtom, "history");
-            expect(leave.when!(agentCtx)).toBe(true);
+            // another tab keeps the plain rule whatever the gallery was left on
+            globalStore.set(libraryTabAtom, "conversations");
+            expect(home.when!(libCtx)).toBe(true);
+            expect(cancel.when!(libCtx)).toBe(false);
         } finally {
-            globalStore.set(centerModeAtom, "terminal");
+            globalStore.set(libraryTabAtom, "conversations");
+            inGallery("grid");
+        }
+    });
+
+    // One Escape never means two things on Library: with a session, a run, a council or a canvas open the press goes to
+    // that, and only from a list does it navigate
+    it("Library's Escape has one claimant in every state the surface can be in", () => {
+        const model = stubModel();
+        const libCtx = { surface: "library" as const, editable: false, modalOpen: false, leader: null };
+        const all = [
+            ...buildGlobalBindings(model),
+            ...buildListNavBindings(model),
+            ...buildAgentBindings(model),
+            ...buildLibraryBindings(model),
+            ...buildCouncilBindings(),
+        ];
+        const claimants = () => all.filter((b) => b.keys === "Escape" && b.when?.(libCtx) === true).map((b) => b.id);
+        try {
+            for (const tab of ["conversations", "canvases", "councils"] as const) {
+                for (const conv of ["list", "session", "run"] as const) {
+                    for (const council of [null, "c1"]) {
+                        for (const view of ["grid", "viewer", "cleanup", "scan"] as const) {
+                            globalStore.set(libraryTabAtom, tab);
+                            globalStore.set(libraryConvViewAtom, conv);
+                            globalStore.set(libraryCouncilSelAtom, council);
+                            inGallery(view, OPEN_DIR);
+                            expect(claimants(), `${tab}/${conv}/${council}/${view}`).toHaveLength(1);
+                        }
+                    }
+                }
+            }
+        } finally {
+            globalStore.set(libraryTabAtom, "conversations");
+            globalStore.set(libraryConvViewAtom, "list");
+            globalStore.set(libraryCouncilSelAtom, null);
+            globalStore.set(councilChatNavAtom, null);
             inGallery("grid");
         }
     });
@@ -817,6 +887,9 @@ describe("PREDICATE_ATOMS completeness (whenstate.ts)", () => {
             ...buildAgentBindings(model),
             ...buildFilesBindings(),
             ...buildCodeBindings(),
+            ...buildLibraryBindings(model),
+            ...buildCouncilBindings(),
+            ...buildCouncilTabBindings(),
         ];
 
         // Neutral so no `&&` chain (e.g. surface:back-home's, subagent:back's) short-circuits before
@@ -834,10 +907,17 @@ describe("PREDICATE_ATOMS completeness (whenstate.ts)", () => {
             return (realGet as (a: unknown) => unknown)(a);
         }) as typeof globalStore.get;
         try {
-            // the terminal's centre, and Canvases': with the centre on Canvases the agent keys stop at centerAtRest, and
-            // the gallery's predicates read the gallery's atom only there
-            for (const centre of ["terminal", "canvases"] as const) {
+            // the terminal's centre, and a council's: with the centre on a council the agent keys stop at centerAtRest and
+            // agent:leave-center reads the council chat's nav. And Library's tabs: the gallery's predicates read the
+            // gallery's atom only on Canvases, the Escape that leaves a council reads the chat's nav only on Councils
+            for (const [centre, tab] of [
+                ["terminal", "conversations"],
+                ["council", "canvases"],
+                ["terminal", "councils"],
+            ] as const) {
                 globalStore.set(centerModeAtom, centre);
+                globalStore.set(libraryTabAtom, tab);
+                globalStore.set(libraryCouncilSelAtom, tab === "councils" ? "c1" : null);
                 for (const ctx of contexts()) {
                     for (const binding of all) {
                         binding.when?.(ctx);
@@ -847,6 +927,9 @@ describe("PREDICATE_ATOMS completeness (whenstate.ts)", () => {
         } finally {
             (globalStore as { get: typeof globalStore.get }).get = realGet;
             globalStore.set(centerModeAtom, "terminal");
+            globalStore.set(libraryTabAtom, "conversations");
+            globalStore.set(libraryConvViewAtom, "list");
+            globalStore.set(libraryCouncilSelAtom, null);
             globalStore.set(diffScopeAtom, null);
             globalStore.set(renamingRowAtom, null);
             detachCanvas("a1");

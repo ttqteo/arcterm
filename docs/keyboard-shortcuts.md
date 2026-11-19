@@ -32,7 +32,7 @@ Design spec: [`docs/superpowers/specs/2026-07-03-keyboard-operability-design.md`
   that will work in your current context.
 - **Held modifier.** Hold `Mod` or `Alt` on its own a moment and the bottom bar lists every chord on that key that
   works right now — inside the terminal, the only keys that reach the cockpit. The digit jumps show as one chip
-  (`Mod`+`1`–`6`, `Alt`+`1`–`9`) while the rail and the Agent surface's project tree number their rows.
+  (`Mod`+`1`–`7`, `Alt`+`1`–`9`) while the rail and the Agent surface's project tree number their rows.
 - **Cheat sheet.** Press `?` (while not typing), or click the `?` button at the right end of the bottom bar (on every
   surface, while typing too), to open a searchable modal of every shortcut. From the keyboard while typing, open it via
   Search (`Mod`+`P`) → Commands → "Keyboard shortcuts".
@@ -41,7 +41,7 @@ Design spec: [`docs/superpowers/specs/2026-07-03-keyboard-operability-design.md`
 
 | Keys | Action |
 |---|---|
-| `Mod`+`1`…`6` | Jump to surface by position — in order: Cockpit, Jarvis, Agent, Usage, Code, Diff. Hold `Mod` a moment to see the numbers on the rail |
+| `Mod`+`1`…`7` | Jump to a surface — `1`–`6` in order: Cockpit, Jarvis, Agent, Usage, Code, Diff; `7` is Library, which sits fifth on the rail (after Usage) and takes the last chord so the other six keep theirs. Hold `Mod` a moment to see the numbers on the rail |
 | `Mod`+`P` | Search — opens on the Files scope on Code (see below) |
 | `Mod`+`N` | New agent: opens the New dialog on an agent row |
 | `Mod`+`Shift`+`R` | New run: opens the New dialog on a run row |
@@ -118,9 +118,10 @@ agent's header `…` menu, and Search → Commands → "Open a tool…". The sea
 | `Mod`+`G` `c` | Cockpit (home) |
 | `Mod`+`G` `a` | Agent |
 | `Mod`+`G` `j` | Jarvis — channels, records, recall |
-| `Mod`+`G` `s` | Conversation History (in the Agent surface) |
-| `Mod`+`G` `v` | Canvas gallery — every project's design canvases (in the Agent surface) |
-| `Mod`+`G` `o` | Councils — every project's councils, closed ones too (in the Agent surface) |
+| `Mod`+`G` `l` | Library — Conversation History, the Canvas gallery and Councils, on the tab you left it on |
+| `Mod`+`G` `s` | Conversation History (opens Library on its Conversations tab) |
+| `Mod`+`G` `v` | Canvas gallery — every project's design canvases (opens Library on its Canvases tab) |
+| `Mod`+`G` `o` | Councils — every project's councils, closed ones too (opens Library on its Councils tab) |
 | `Mod`+`G` `f` | Files |
 | `Mod`+`G` `u` | Usage |
 | `Mod`+`G` `b` | Code — browse source |
@@ -165,11 +166,11 @@ cancelled now, in All and in Commands, so it never starts a run named "cancel".
 
 | Keys | Action |
 |---|---|
-| `[` / `]` | Previous / next surface (cycles `SURFACE_ORDER`, wraps) |
+| `[` / `]` | Previous / next surface, in the order the rail shows them (Cockpit, Jarvis, Agent, Usage, Library, Code, Diff; wraps). In Library an open canvas takes them for its boards |
 | `j` / `k` (or `↓` / `↑`) | Move the cursor within the active region |
 | `Enter` | Open / activate the item under the cursor |
 | `Space` | Peek the item under the cursor in the avatar popup, without leaving the surface (see Peek below) |
-| `Esc` | On a deep surface (Jarvis, Files, Usage, Code), go back to the surface you jumped from (opening a run, file, diff or agent from elsewhere), else return to the Cockpit. On Usage's By work, first go back from an item to its scope, then from a project or initiative to All usage. In a composer or text field, leave Type posture first. |
+| `Esc` | On a deep surface (Jarvis, Files, Usage, Code, Library), go back to the surface you jumped from (opening a run, file, diff or agent from elsewhere), else return to the Cockpit. On Usage's By work, first go back from an item to its scope, then from a project or initiative to All usage. In Library it goes back out of what is open first (see Library below). In a composer or text field, leave Type posture first. |
 
 ## The avatar popup (what's waiting)
 
@@ -269,7 +270,7 @@ A link inside an item view does a full open, even with `Mod` held.
 | `Shift`+`F` | Toggle float: the window shrinks to the focused terminal, and its pin keeps it on top of other apps |
 | `r` | Review: open the focused lead's Spec review or Plan review dialog, or show the focused agent's Doc review in place of its terminal |
 | `p` | Hand the agent to the phone (remote mode), or take it back; a run's worker or a codex session cannot be handed over |
-| `Esc` | Back to where you jumped from, else to Cockpit (not while a Claude agent showing Chat works: then it stops the turn, above); exits fullscreen first; from Conversation History, the Canvas gallery grid, Councils or a session transcript, back to the terminal |
+| `Esc` | Back to where you jumped from, else to Cockpit (not while a Claude agent showing Chat works: then it stops the turn, above); exits fullscreen first; from a council, a project's Overview or a held agent, back to the terminal |
 | `Shift`+`Esc` | Return focus to the nav (from inside the terminal) |
 | `Ctrl`+`C` | In a terminal on Windows: copy while text is selected (the selection goes with it), else the interrupt as always. `Cmd`+`C` copies on a Mac. `Ctrl`+`Shift`+`C` copies too |
 | `←` / `→` / `Home` / `End` | Move between the panel's tabs (Overview, Files, Changes, Transcript, File; Transcript is missing while the agent shows Chat) while its tab strip has focus; the agent keys stand down there |
@@ -281,29 +282,37 @@ A link inside an item view does a full open, even with `Mod` held.
 | `Ctrl`+`Shift`+click on a file path in an agent's terminal (`Cmd`+`Shift`+click on a Mac) | Peek at the file: a read-only card unfolds under the line with Preview (markdown), Source, Diff against HEAD and Open in Code. A plain `Ctrl`+click on the same path still opens it (the agent's panel, else Code). Only in an agent's terminal, not a plain one |
 | `Enter` / `Esc` in the Code peek card | Open the file in Code / close the card. The card owns both keys while focus is in it; with focus in the terminal `Esc` still reaches the agent |
 
-### Agent: Conversation History
+### Library
 
-Opened with `Mod`+`G` `s` or the sidebar's Conversation History button. History and an ended session's transcript cover the terminal, so the keys
-that act on the focused agent stand down while either is open: `j` / `k`, the arrows, `d`, `f`, `r`, `c`, the canvas and review keys, `F11`,
-`Mod`+`Enter` (send marks, send review) and the `Esc` that goes back to the Cockpit. In History `j` / `k` (or `↓` / `↑`) move the list cursor,
-`Enter` jumps to a live session or resumes an ended one, and `Esc` returns to the terminal. The `Ctrl`+`Tab` switcher still works and brings
-the terminal back. An ended session opened from the sidebar covers the terminal the same way, and `Esc` leaves it.
+Opened with `Mod`+`7`, `Mod`+`G` `l` or the rail's Library button: the archive of what is over, in three tabs across the top.
+**Conversations** is Conversation History (a past session's transcript, a run's detail), **Canvases** is the Canvas gallery
+and its viewer, and **Councils** is every council that has left the Agent tree, with a finished council's Discussion, Report
+and Map. Library opens on the tab you left it on; `Mod`+`G` `s`, `v` and `o` open it on Conversations, Canvases and
+Councils. It is a surface of its own, so the agent keys (`j` / `k` on agents, `d`, `f`, `r`, `c`…) never reach it. Resume, a
+live agent and a running council open on the Agent surface instead.
 
-A search result opened from History's search box shows its session with a find bar over the transcript ("2 / 7"): `Enter` / `Shift`+`Enter`
-step to the next / previous match, and `Esc` closes the bar.
+| Keys | Action |
+|---|---|
+| `1` / `2` / `3` | Show the Conversations / Canvases / Councils tab. Not while a text field has focus |
+| `Esc` | In a session or a run opened in Conversations: back to the list, and to the surface it was opened from (Usage, the Brief…) when it came from one. In a council opened in Library: back to the Councils list, after closing an open thread or the Sources panel. Anywhere else (a list, the canvas grid): back to the surface you jumped from, else the Cockpit |
 
-### Agent: Canvas gallery
+#### Library: Conversations
 
-Opened with `Mod`+`G` `v` or the sidebar's Canvas gallery button. Like History it covers the terminal, so the keys that act on
-the focused agent stand down while it is open; the `Ctrl`+`Tab` switcher still works and brings the terminal back. The
-gallery is a grid of cards (Today / Yesterday / Earlier); a card opens in a viewer that shows one board at a time.
+`j` / `k` (or `↓` / `↑`) move the list cursor, and `Enter` jumps to a live session or resumes an ended one. A search result
+opened from the search box shows its session with a find bar over the transcript ("2 / 7"): `Enter` / `Shift`+`Enter` step to
+the next / previous match, and `Esc` closes the bar.
+
+#### Library: Canvases
+
+The gallery is a grid of cards (Today / Yesterday / Earlier); a card opens in a viewer that shows one board at a time. `[` and
+`]` page an open canvas's boards and, while it is open, do not switch surface.
 
 | Keys | Action |
 |---|---|
 | `←` / `↑` / `↓` / `→` | In the grid: move the card cursor. Down from the last row of a group continues in the next group, in the same column |
 | `Enter` | In the grid: open the canvas under the cursor |
 | `/` | In the grid: search topic, board and project names. `Enter` in the box opens the first match, `Esc` empties it, and a second `Esc` gives the keys back to the grid |
-| `Esc` | In the grid: back to the terminal |
+| `Esc` | In the grid: back to the surface you jumped from, else the Cockpit |
 | `←` / `→` | In an open canvas: previous / next board, round the ends. `[` / `]` step too, but the hints show only the arrows: a Vietnamese Telex input method turns `[` `]` into `ơ` `ư` |
 | `Esc` | In an open canvas: close the link picker (the header's **Link an older version…**) if it is open, else back to the grid. Inside the picker's search box the first `Esc` closes the picker too |
 | `Esc` | In the version scan's review (the grid's **Scan for versions** button): cancel, back to the grid. Nothing is linked, and the scan counts as done |
@@ -311,9 +320,15 @@ gallery is a grid of cards (Today / Yesterday / Earlier); a card opens in a view
 | `Space` | In Clean up: tick or untick the card under the cursor. A click does the same; **Untick all** and **Move to trash** are in the bar |
 | `Esc` | In Clean up: cancel, back to the grid |
 
+#### Library: Councils
+
+A council opened here has the keys of a council on the Agent surface (see Agent: council chat below): the chat's `j` / `k`,
+`Enter`, `p`, `Tab` and `Esc`, and `r` / `c` / `m` for the Report, Discussion and Map. They act on the council in Library, never
+on the one Agent's centre column may be showing. `Esc` with no thread open goes back to the list of councils.
+
 ### Agent: project Overview
 
-Opened from a project folder's menu, Open overview. It covers the terminal as History does, and `Esc` returns to it.
+Opened from a project folder's menu, Open overview. It covers the terminal, and `Esc` returns to it.
 
 | Keys | Action |
 |---|---|
@@ -324,8 +339,9 @@ Opened from a project folder's menu, Open overview. It covers the terminal as Hi
 ### Agent: council chat
 
 A council's Discussion is a channel with threads: each idea is a message, and its reply chip opens the thread in a panel
-on the right. A council covers the terminal as History does, so the agent keys (`j` / `k`, the arrows, `d`, `f`…) stand
-down there and `Esc` goes back to the terminal. These keys are the chat's only while focus is inside its channel or
+on the right. A council covers the terminal, so the agent keys (`j` / `k`, the arrows, `d`, `f`…) stand
+down there and `Esc` goes back to the terminal. A council opened in Library's Councils tab has the same keys, and its `Esc`
+goes back to the list of councils. These keys are the chat's only while focus is inside its channel or
 thread (click it, or `Esc` out of a box), not in a text field; elsewhere nothing here is live.
 
 | Keys | Action |
@@ -375,7 +391,7 @@ picker instead of moving through the list. `Shift`+`Esc` goes back to the list.
 | `↓` / `↑`, `→` / `←` | The same, only with keyboard focus in the Agent tree: elsewhere (Chat's conversation, its cards) the arrows stay the page's |
 | `f` / `Mod`+`Shift`+`Enter` / `F11` | Fullscreen shows only the focused cell; the grid returns when you leave it |
 
-Canvas mode, a review, a brainstorm, the subagent view, Conversation History, the Canvas gallery and an ended session's or a done
+Canvas mode, a review, a brainstorm, the subagent view, a council, a project's Overview and a done
 worker's transcript each show one thing in place of the grid; the grid comes back as it was. A terminal picked from the tree, `j` / `k`,
 `Ctrl`+`Tab` or Search no longer does: it takes a cell by the rule above.
 
