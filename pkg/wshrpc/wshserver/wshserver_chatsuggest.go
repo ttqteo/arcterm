@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/wavetermdev/waveterm/pkg/chatsuggest"
 	"github.com/wavetermdev/waveterm/pkg/wavebase"
@@ -50,10 +51,13 @@ func chatHabitTexts() []string {
 // end: its answer is taken when it comes in time, and the headless call runs only when it does not.
 func (ws *WshServer) ChatSuggestCommand(ctx context.Context, data wshrpc.CommandChatSuggestData) (*wshrpc.CommandChatSuggestRtnData, error) {
 	start := time.Now()
-	if replies, ok := chatHooks().Await(ctx, data.BlockId, data.Reply, data.Question, data.Hook); ok {
+	log.Printf("chatsuggest: block=%s ask %s", shortBlock(data.BlockId), replyFacts(data.Reply, data.Question))
+	replies, ok, why := chatHooks().AwaitWhy(ctx, data.BlockId, data.Reply, data.Question, data.Hook)
+	if ok {
 		log.Print(chatSuggestLogLine(data.BlockId, "mod", time.Since(start), len(replies), nil))
 		return &wshrpc.CommandChatSuggestRtnData{Replies: replies}, nil
 	}
+	log.Printf("chatsuggest: block=%s mod not taken after %dms: %s", shortBlock(data.BlockId), time.Since(start).Milliseconds(), why)
 	replies, err := chatSuggester().Suggest(ctx, chatsuggest.Request{
 		Reply:    data.Reply,
 		Recent:   data.Recent,
@@ -71,14 +75,24 @@ func (ws *WshServer) ChatSuggestCommand(ctx context.Context, data wshrpc.Command
 // headless call), how long it took and how many chips it made, with the error when the headless call failed. It is
 // what a "no chips" report can be read against.
 func chatSuggestLogLine(blockID, via string, took time.Duration, chips int, err error) string {
-	if len(blockID) > 8 {
-		blockID = blockID[:8]
-	}
-	line := fmt.Sprintf("chatsuggest: block=%s via=%s %dms chips=%d", blockID, via, took.Milliseconds(), chips)
+	line := fmt.Sprintf("chatsuggest: block=%s via=%s %dms chips=%d", shortBlock(blockID), via, took.Milliseconds(), chips)
 	if err != nil {
 		line += " err=" + err.Error()
 	}
 	return line
+}
+
+func shortBlock(blockID string) string {
+	if len(blockID) > 8 {
+		return blockID[:8]
+	}
+	return blockID
+}
+
+// replyFacts names a reply in a log line the way the mod's turn and Chat's ask are matched: its key (ReplyKey), its
+// length in runes and whether it ends on a question, so an ask and a begin of the same turn read alike.
+func replyFacts(reply string, question bool) string {
+	return fmt.Sprintf("key=%s runes=%d question=%v", chatsuggest.ReplyKey(reply)[:8], utf8.RuneCountInString(reply), question)
 }
 
 // ChatSuggestHookBeginCommand begins a Claude agent's turn for its arc mod: the completion it runs in its own claude.
@@ -94,12 +108,14 @@ func (ws *WshServer) ChatSuggestHookBeginCommand(ctx context.Context, data wshrp
 		Recent: data.Recent,
 		Habits: chatHabitTexts(),
 	})
+	log.Printf("chatsuggest: block=%s mod begin %s", shortBlock(data.BlockId), replyFacts(data.Reply, call.Question))
 	return &wshrpc.CommandChatSuggestHookBeginRtnData{Key: call.Key, System: call.System, Prompt: call.Prompt}, nil
 }
 
 // ChatSuggestHookEndCommand ends the turn the mod began with the model's answer, or with none.
 func (ws *WshServer) ChatSuggestHookEndCommand(ctx context.Context, data wshrpc.CommandChatSuggestHookEndData) error {
-	chatHooks().End(data.BlockId, data.Key, data.Text, data.Failed)
+	what := chatHooks().End(data.BlockId, data.Key, data.Text, data.Failed)
+	log.Printf("chatsuggest: block=%s mod end %s", shortBlock(data.BlockId), what)
 	return nil
 }
 
