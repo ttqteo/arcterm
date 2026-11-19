@@ -282,6 +282,15 @@ Load-bearing rules:
 
 What this project's councils settled, newest first. Where two councils differ, the newer one stands. Each council's report is the file named under it.
 
+### 2026-11-19 · Chat's suggested replies (chatsuggest): the fix for slow and meaningless reply chips, merged as 786a11648
+Report: `docs\council\2026-11-19-chat-s-suggested-replies-chatsuggest-the-fix-for-slow-and-me.md`
+
+- Agreed: Chưa bỏ chip ok nào trước khi đo; chỉ xét bỏ ở câu A hay B không nghiêng bên nào, sau khi có số.
+- Agreed: Đã làm ở b496dd0df: lượt hỏi mà mod đang ở reply khác không chạy headless (27/27 lượt như vậy trong log mod chưa từng begin).
+- Agreed: Đã làm ở b496dd0df: mod cắt cuộc gọi haiku ở 5 s và gửi end --failed ngay; wavesrv vẫn chờ 10 s.
+- Agreed: Đã làm ở b496dd0df: mỗi chip bấm ghi một dòng 'pick' trong waveapp.log (source model/rule/fallback, vị trí, loại câu hỏi yesno/open/none, đuôi reply), và dòng via= có question=.
+- Agreed: Đường mod chạy thật trên 1.7.0: 8/8 lượt 'mod end taken' 0,9–1,5 s sau begin (log 17:09–17:16, 2026-11-19).
+
 ### 2026-11-17 · Sidecar: the second window that shows the agents on another screen (wall of agent cards)
 Report: `docs\council\2026-11-17-sidecar-the-second-window-that-shows-the-agents-on-another-s.md`
 
