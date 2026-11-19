@@ -21,8 +21,10 @@ import {
     noteIcon,
     parseChangelog,
     releasesToShow,
+    SHOTS_REQUIRED_FROM,
     splitHighlights,
     tryIds,
+    type Entry,
 } from "./whatsnew";
 
 const MD = `# Changelog
@@ -219,6 +221,32 @@ describe("shots", () => {
             big: true,
             shot: "canvases.webp",
         });
+    });
+
+    it("reads `shot: none` as a big line with nothing to picture", () => {
+        const [r] = parseChangelog(
+            "## 1.9.0 — 2026-11-20\n\n### Added\n\n- `wsh x`: does a thing. <!-- big --> <!-- shot: none -->\n"
+        );
+        expect(r.sections[0].entries[0]).toEqual({ text: "`wsh x`: does a thing.", big: true, noShot: true });
+    });
+
+    // a card with no picture reads as one more line: from SHOTS_REQUIRED_FROM on (and in Unreleased), a big line names
+    // its picture (scripts/whatsnew-shot.mjs makes one) or says `shot: none`
+    const bigs: [string, Entry | null][] = parseChangelog(changelog, { unreleased: true })
+        .filter((r) => r.version === "Unreleased" || compareVersions(r.version, SHOTS_REQUIRED_FROM) >= 0)
+        .flatMap((r) =>
+            r.sections.flatMap((s) =>
+                s.entries.filter((e) => e.big).map((e): [string, Entry] => [`${r.version}: ${e.text.slice(0, 50)}`, e])
+            )
+        );
+    it.each(bigs.length > 0 ? bigs : [["(none)", null]])("%s has a picture or says shot: none", (_name, entry) => {
+        if (entry == null) {
+            return;
+        }
+        expect(
+            entry.shot != null || entry.noShot === true,
+            "end the line with <!-- shot: <file> --> (node scripts/whatsnew-shot.mjs <topic>) or <!-- shot: none -->"
+        ).toBe(true);
     });
 
     // a picture shows only on a card, ships inside the app, and every release adds a few: keep each one there and small
