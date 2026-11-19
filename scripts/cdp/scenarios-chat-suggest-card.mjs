@@ -1,10 +1,5 @@
-// Chat's summary line after long turns and the usage-limit strip above the composer
-// (docs/superpowers/specs/2026-11-18-chat-suggest-card-design.md, plan 2026-11-18-chat-suggest-card.md Task 5), two scenarios:
-//
-//   chat-summary-line: a finished turn whose closing reply is over 1,200 characters asks the model call for a summary too
-//   (`summary: true` in what window.__chatSuggestFake is asked), and the line it answers with draws as [data-chat-summary]
-//   in the conversation, under the last reply (not in the dock over the box), with or without a chip; a chip sent takes
-//   it away with the row; a short turn asks for none and draws none.
+// Chat's usage-limit strip above the composer (docs/superpowers/specs/2026-11-18-chat-suggest-card-design.md; the summary
+// line that spec also drew was removed on 2026-11-19), one scenario:
 //
 //   chat-limit-strip: [data-chat-limit-strip] above the chips and the box, for the weekly window at 80%
 //   or more (data-chat-limit-window="week", the 5-hour reading in the same line when it is past too) or the 5-hour at 90%
@@ -13,7 +8,7 @@
 //   agent:claudeaccount and restarts the agent; Snooze hides the strip. The identity, the saved windows and the active
 //   account come from the DEV-only window.__chatLimitFake (a dev store holds no second account).
 //
-// One to three fixture Claude agents over real tabs and the page's dev mock roster, as scenarios-chat-initiative-band.mjs
+// A fixture Claude agent over real tabs and the page's dev mock roster, as scenarios-chat-initiative-band.mjs
 // makes them; no real agent is launched. A small RPC mock stands in for wavesrv where a step would otherwise write real
 // state (the chip's text typed into the block; the account switch's setconfig, setmeta, controllerdestroy and
 // controllerresync), and records what it was given. Keys and clicks are real CDP input events.
@@ -32,39 +27,8 @@ const VK = { Tab: 9, Enter: 13, Escape: 27 };
 // --- page expressions -------------------------------------------------------------------------------------------------
 
 const layerOf = (id) => `document.querySelector('[data-agent-chat="${id}"]')`;
-const boxOf = (id) => `${layerOf(id)}?.querySelector("[data-agent-chat-composer] [data-chat-input]")`;
 const FLAT = `((el) => (el?.textContent ?? "").replace(/\\s+/g, " ").trim())`;
 const RECT = `((el) => { if (!el) return null; const b = el.getBoundingClientRect(); return { top: Math.round(b.top), bottom: Math.round(b.bottom), width: Math.round(b.width) }; })`;
-
-// --- the summary scenario's turns -------------------------------------------------------------------------------------
-
-// a long closing reply (over 1,200 characters) in each of the two agents that are asked for a summary, and a short one
-const LONG_A = [
-    "Mình đã đọc nhật ký khởi động của arcterm và đối chiếu với danh sách tiến trình lúc lỗi BOOT ERROR xảy ra.",
-    "Nhật ký ghi hai lần khởi động cách nhau chưa đầy một giây: lần đầu mở cửa sổ chính và đặt biểu tượng xuống khay hệ thống, lần sau chạy khi tiến trình đầu vẫn còn giữ khóa của kho dữ liệu. Lần sau không lấy được khóa nên dừng với đúng dòng lỗi bạn thấy.",
-    "Danh sách tiến trình cũng khớp: lúc đó có hai wave-tauri.exe và hai wavesrv đang chạy, mỗi cặp một thư mục dữ liệu khác nhau.",
-    "Vì sao có cái thứ hai: lối tắt ở thanh tác vụ và mục khởi động cùng Windows đều mở arcterm, và cửa sổ đầu đã được thu xuống khay nên không có gì báo rằng nó vẫn đang chạy. Bản cài từ trước khi có khay không gặp chuyện này vì khi đóng cửa sổ nó thoát hẳn.",
-    "Những gì mình đã làm: đọc waveapp.log và waveapp.1.log, liệt kê tiến trình, đối chiếu mốc thời gian. Những gì mình chưa làm: chưa sửa code, chưa dừng tiến trình nào, chưa đổi cách mở của lối tắt.",
-    "Hướng sửa gọn nhất là để lần mở thứ hai tìm cửa sổ đang ở khay và đưa nó lên, thay vì khởi động một kho dữ liệu nữa. Việc đó nằm ở phần mở ứng dụng của máy chủ Tauri, không đụng tới wavesrv.",
-    "Một hướng khác là cho lần mở thứ hai đợi tối đa vài giây rồi báo rõ rằng arcterm đang chạy dưới khay, nhưng cách đó vẫn để người dùng nhìn thấy một lỗi không cần thiết, nên mình nghiêng về hướng đầu hơn.",
-].join("\n\n");
-const LONG_B = [
-    "Đã chạy xong bộ kiểm tra của phần Chat và đọc từng lỗi trong kết quả.",
-    "Ba bài kiểm tra về dòng tóm tắt đều qua; hai bài về thanh cảnh báo giới hạn dùng vẫn đỏ vì chúng đọc giờ hiện tại thay vì giờ giả, nên kết quả đổi theo múi giờ của máy chạy. Mình đã ghi lại tên hai bài và dòng nào trong tệp thử gây ra chuyện đó.",
-    "Phần còn lại của bộ kiểm tra không đổi so với lần chạy trước: không có bài nào mới hỏng, không có bài nào tự khỏi.",
-    "Mình chưa sửa hai bài đỏ. Cách sửa gọn là truyền giờ vào hàm tính thay vì để nó gọi Date.now() bên trong, việc này chỉ chạm tệp thử và một dòng ở hàm chọn giờ nhắc lại.",
-    "Chạy lại cả bộ sau khi sửa mất khoảng hai phút trên máy này, nên mình để bạn quyết định có chạy ngay không. Nếu chạy, kết quả mong đợi là toàn bộ bài qua và không có cảnh báo mới nào.",
-    "Ghi chú thêm cho lần sau: hai bài đỏ đều nằm trong tệp kiểm tra của thanh cảnh báo, không bài nào nằm trong phần dòng tóm tắt. Bài thứ nhất kiểm tra dòng chữ có giờ đặt lại của cửa sổ tuần, bài thứ hai kiểm tra giờ của cửa sổ năm giờ; cả hai so với một chuỗi giờ viết sẵn theo múi giờ của người viết bài.",
-    "Vì chúng chỉ sai khi múi giờ của máy khác múi giờ đó, trên máy của bạn chúng vẫn qua, và trên máy chạy kiểm tra tự động thì đỏ. Sửa bằng cách dựng chuỗi giờ từ cùng hàm định dạng mà thanh cảnh báo dùng sẽ làm hai bài này không còn phụ thuộc vào máy chạy chúng.",
-].join("\n\n");
-const SHORT = "Xong: retry giờ thử lại 3 lần, cách nhau 2 giây.";
-
-// the fake model call's answers: a chip and a summary; no chip and a summary; the chips alone, as an array
-const CHIP_A = "sửa theo hướng đó đi";
-const SUMMARY_A =
-    "Lỗi BOOT ERROR là do một arcterm thứ hai được mở khi cái đầu vẫn đang chạy dưới khay hệ thống. Mình chưa sửa code và chưa dừng tiến trình nào.";
-const SUMMARY_B = "Bộ kiểm tra chạy xong: hai bài về giờ còn đỏ, mình chưa sửa chúng.";
-const CHIP_C = "tiếp đi";
 
 // --- the strip scenario's accounts ------------------------------------------------------------------------------------
 
@@ -187,12 +151,6 @@ export default function (kit) {
     const mockCalls = (h, command) =>
         h.ev(`(window.${MOCK_KEY}?.calls ?? []).filter((c) => c.command === ${JSON.stringify(command)})`);
     const clearMockCalls = (h) => h.ev(`(() => { if (window.${MOCK_KEY}) window.${MOCK_KEY}.calls.length = 0; return true; })()`);
-    // what was typed into the block as the person's text (stringToBase64 encodes it as UTF-8); the bracketed-paste markers go
-    const typedInputs = async (h) =>
-        ((await mockCalls(h, "controllerinput")) ?? [])
-            .map((c) => Buffer.from(c.data.inputdata64 ?? "", "base64").toString("utf8"))
-            .filter((i) => i !== "" && i !== "\r" && !/^\x1b\[[IO]$/.test(i))
-            .map((i) => i.replace(/^\x1b\[200~/, "").replace(/\x1b\[201~$/, "").replace(/\r/g, "\n"));
 
     // a step that throws is a failed step, not the end of the run: the ones after it read what they need themselves
     function stepRunner(steps) {
@@ -218,226 +176,6 @@ export default function (kit) {
             usage: { contextpct: 20 },
             ...r,
         }));
-
-    // --- chat-summary-line ------------------------------------------------------------------------------------------
-
-    const summaryScenario = {
-        name: "chat-summary-line",
-        surface: "agent",
-        async arrange(h) {
-            const ctx = { dir: mkdtempSync(join(tmpdir(), "verify-chat-summary-")), prev: {}, tabs: {} };
-            let at = "reading the keys";
-            try {
-                for (const k of [GRID_KEY, "agent.chatmode"]) ctx.prev[k] = await h.ev(`localStorage.getItem(${JSON.stringify(k)})`);
-
-                at = "writing the transcripts";
-                if (LONG_A.length <= 1200 || LONG_B.length <= 1200 || SHORT.length > 1200) throw new Error(`a fixture reply is on the wrong side of 1,200 characters (long ${LONG_A.length}, none ${LONG_B.length}, short ${SHORT.length})`);
-                const o = (sec) => ({ cwd: ctx.dir, ts: new Date(Date.now() - 600_000 + sec * 1000).toISOString() });
-                ctx.files = {
-                    long: AC.writeTranscript(ctx.dir, "chat-summary-long", [
-                        AC.userText("vì sao arcterm báo BOOT ERROR khi mình mở nó lần nữa?", o(0)),
-                        AC.assistantText(LONG_A, o(2)),
-                    ]),
-                    none: AC.writeTranscript(ctx.dir, "chat-summary-none", [
-                        AC.userText("chạy bộ kiểm tra của phần Chat đi", o(0)),
-                        AC.assistantText(LONG_B, o(2)),
-                    ]),
-                    short: AC.writeTranscript(ctx.dir, "chat-summary-short", [
-                        AC.userText("thêm retry vào sync client", o(0)),
-                        AC.assistantText(SHORT, o(2)),
-                    ]),
-                };
-
-                at = "resetting the stores";
-                await h.ev(`localStorage.setItem(${JSON.stringify(GRID_KEY)}, ${JSON.stringify(JSON.stringify(GRID_EMPTY))})`);
-                await h.ev(`localStorage.removeItem("agent.chatmode")`);
-                if (!(await ahReload(h))) throw new Error("the page did not come back after the reload");
-                await h.goto("agent");
-
-                at = "making the tabs";
-                ctx.tabs.long = await makeTab(h, ctx, { label: "summary long" });
-                ctx.tabs.none = await makeTab(h, ctx, { label: "summary none" });
-                ctx.tabs.short = await makeTab(h, ctx, { label: "summary short" });
-
-                at = "installing the model fake and the input mock";
-                // the replies are told apart by their first words; what each call was asked is kept for the steps
-                const answers = [
-                    { start: LONG_A.slice(0, 30), rtn: { replies: [CHIP_A], summary: SUMMARY_A } },
-                    { start: LONG_B.slice(0, 30), rtn: { replies: [], summary: SUMMARY_B } },
-                    { start: SHORT.slice(0, 30), rtn: [CHIP_C] },
-                ];
-                await h.ev(`(() => {
-                    window.__suggestCardAsked = [];
-                    const answers = ${JSON.stringify(answers)};
-                    window.__chatSuggestFake = (d) => {
-                        window.__suggestCardAsked.push(d);
-                        return answers.find((a) => d.reply.startsWith(a.start))?.rtn ?? [];
-                    };
-                    return true;
-                })()`);
-                await installMock(h, ctx.tabs.long.blockId);
-
-                at = "setting the roster";
-                await AC.setRoster(
-                    h,
-                    roster([
-                        { id: ctx.tabs.long.tabId, name: "summary long", blockId: ctx.tabs.long.blockId, transcriptPath: ctx.files.long },
-                        { id: ctx.tabs.none.tabId, name: "summary none", blockId: ctx.tabs.none.blockId, transcriptPath: ctx.files.none },
-                        { id: ctx.tabs.short.tabId, name: "summary short", blockId: ctx.tabs.short.blockId, transcriptPath: ctx.files.short },
-                    ])
-                );
-            } catch (e) {
-                ctx.arrangeError = `${at}: ${String(e?.message ?? e)}`;
-            }
-            return ctx;
-        },
-
-        async assert(h, ctx) {
-            const steps = [];
-            const { rec, run } = stepRunner(steps);
-            if (ctx.arrangeError != null) {
-                rec("0. the fixture agents, their transcripts, the model fake and the input mock", false, ctx.arrangeError);
-                return steps;
-            }
-            const L = ctx.tabs.long.tabId;
-            const N = ctx.tabs.none.tabId;
-            const S = ctx.tabs.short.tabId;
-            await h.cdp("Emulation.setFocusEmulationEnabled", { enabled: true });
-
-            // the summary line and the chips of one agent's Chat, as drawn, with where each sits: the line's own text (less its
-            // "Summary" label), whether it is the conversation's (under its last item) and not the dock's, and each chip's
-            // label (less the key it shows)
-            const read = (id) =>
-                h.ev(`(() => {
-                    const flat = ${FLAT};
-                    const rect = ${RECT};
-                    const layer = ${layerOf(id)};
-                    const line = layer?.querySelector("[data-chat-summary]");
-                    const chips = [...(layer?.querySelectorAll("[data-chat-suggest-chip]") ?? [])];
-                    const items = [...(layer?.querySelectorAll("[data-chat-conversation] [data-chat-item]") ?? [])];
-                    return {
-                        has: !!line,
-                        text: flat(line?.querySelector("span:last-child") ?? null),
-                        label: flat(line?.querySelector("span:first-child") ?? null),
-                        inConversation: !!line?.closest("[data-chat-conversation]"),
-                        inDock: !!line?.closest("[data-agent-chat-composer]"),
-                        lastItem: rect(items.at(-1)),
-                        chips: chips.map((b) => flat(b.querySelector("span.truncate") ?? b)),
-                        line: rect(line),
-                        chip: rect(chips[0]),
-                        box: rect(layer?.querySelector("[data-chat-box]")),
-                        width: Math.round(layer?.getBoundingClientRect().width ?? 0),
-                    };
-                })()`);
-            const asked = (start) =>
-                h.ev(`(window.__suggestCardAsked ?? []).filter((d) => d.reply.startsWith(${JSON.stringify(start.slice(0, 30))})).map((d) => ({ summary: d.summary, question: d.question, len: d.reply.length }))`);
-
-            // 1. a long turn with a chip: the call asked for a summary, and its line stands under the last reply, in the
-            // conversation, above the chip and the box
-            await run("1. a long turn's summary under its reply", async (name) => {
-                await AC.focusAgent(h, L);
-                const up = await polishWaitFor(h, `!!${layerOf(L)}?.querySelector("[data-chat-summary]") && !!${layerOf(L)}?.querySelector("[data-chat-suggest-chip]")`, WAIT_MS);
-                await polishNap(500);
-                const got = await read(L);
-                const asks = await asked(LONG_A);
-                await shot(h, "summary-1-with-chip");
-                rec(
-                    `${name}: the call was asked with summary:true, [data-chat-summary] reads Summary and the model's line, in [data-chat-conversation] under its last item and not in the dock, above the [data-chat-suggest-chip] "${CHIP_A}", which sits above the box`,
-                    up &&
-                        asks.length === 1 &&
-                        asks[0].summary === true &&
-                        got.text === SUMMARY_A &&
-                        got.label === "Summary" &&
-                        got.inConversation &&
-                        !got.inDock &&
-                        got.lastItem != null &&
-                        got.lastItem.bottom <= got.line.top &&
-                        got.chips.length === 1 &&
-                        got.chips[0] === CHIP_A &&
-                        got.line.bottom <= got.chip.top &&
-                        got.chip.bottom <= got.box.top,
-                    { up, asks, got }
-                );
-            });
-
-            // 2. a long turn the model found no chip for: the line shows alone, above the box
-            await run("2. a long turn's summary with no chip", async (name) => {
-                await AC.focusAgent(h, N);
-                const up = await polishWaitFor(h, `!!${layerOf(N)}?.querySelector("[data-chat-summary]")`, WAIT_MS);
-                await polishNap(600);
-                const got = await read(N);
-                const asks = await asked(LONG_B);
-                await shot(h, "summary-2-no-chip");
-                rec(
-                    `${name}: the call was asked with summary:true, [data-chat-summary] reads the line and no [data-chat-suggest-chip] stands under it, above the box`,
-                    up && asks.length === 1 && asks[0].summary === true && got.text === SUMMARY_B && got.inConversation && !got.inDock && got.chips.length === 0 && got.line.bottom <= got.box.top,
-                    { up, asks, got }
-                );
-            });
-
-            // 3. a chip sent: the line goes with the row
-            await run("3. sending the chip takes the line away", async (name) => {
-                await AC.focusAgent(h, L);
-                const back = await polishWaitFor(h, `!!${layerOf(L)}?.querySelector("[data-chat-summary]") && !!${layerOf(L)}?.querySelector("[data-chat-suggest-chip]")`, WAIT_MS);
-                await h.ev(`(${boxOf(L)})?.focus()`);
-                await press(h, "Tab");
-                const picked = await polishWaitFor(h, `!!${layerOf(L)}?.querySelector("[data-chat-suggest-picked]")`, SHORT_MS);
-                await press(h, "Enter", 500);
-                const gone = await polishWaitFor(h, `!${layerOf(L)}?.querySelector("[data-chat-summary]")`, WAIT_MS);
-                const typedChip = await until(async () => (await typedInputs(h)).some((t) => t.includes(CHIP_A)));
-                const after = await read(L);
-                await shot(h, "summary-3-sent");
-                rec(
-                    `${name}: Tab picks the chip, Enter sends its text to the agent, and [data-chat-summary] and the chips are gone`,
-                    back && picked && typedChip && gone && !after.has && after.chips.length === 0,
-                    { back, picked, typedChip, gone, after, typed: await typedInputs(h) }
-                );
-            });
-
-            // 4. a short turn: no summary asked, none drawn, the chips as before
-            await run("4. a short turn has no summary", async (name) => {
-                await AC.focusAgent(h, S);
-                const chips = await polishWaitFor(h, `!!${layerOf(S)}?.querySelector("[data-chat-suggest-chip]")`, WAIT_MS);
-                await polishNap(600);
-                const got = await read(S);
-                const asks = await asked(SHORT);
-                await shot(h, "summary-4-short");
-                rec(
-                    `${name}: the call was asked with no summary (the fake answers with an array), the chip "${CHIP_C}" shows and no [data-chat-summary] is drawn`,
-                    chips && asks.length === 1 && !asks[0].summary && got.chips.length === 1 && got.chips[0] === CHIP_C && !got.has,
-                    { chips, asks, got }
-                );
-            });
-
-            return steps;
-        },
-
-        async teardown(h, ctx) {
-            const step = async (what, fn) => {
-                try {
-                    await fn();
-                } catch (e) {
-                    console.error(`chat-summary-line teardown: ${what} failed: ${e?.message ?? e}`);
-                }
-            };
-            await step("remove the fake", () => h.ev(`(() => { delete window.__chatSuggestFake; delete window.__suggestCardAsked; return true; })()`));
-            await step("remove the input mock", () => removeMock(h));
-            await step("restore the roster", () => AC.restoreRoster(h));
-            await step("close the fixture tabs", () => closeTabs(h, ctx));
-            await step("restore the keys", () =>
-                h.ev(`(() => {
-                    for (const [k, v] of Object.entries(${JSON.stringify(ctx.prev ?? {})})) {
-                        if (v == null) localStorage.removeItem(k);
-                        else localStorage.setItem(k, v);
-                    }
-                    return true;
-                })()`)
-            );
-            await step("reload onto the live roster", () => ahReload(h));
-            if (ctx.dir) await step(`remove ${ctx.dir}`, () => rmSync(ctx.dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 500 }));
-            await step("go home", () => h.goto("cockpit"));
-        },
-    };
 
     // --- chat-limit-strip -------------------------------------------------------------------------------------------
 
@@ -723,5 +461,5 @@ export default function (kit) {
         },
     };
 
-    return [summaryScenario, limitScenario];
+    return [limitScenario];
 }

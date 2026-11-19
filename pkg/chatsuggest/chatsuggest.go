@@ -21,7 +21,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
-	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -39,12 +38,6 @@ const (
 	Model = "haiku"
 	// the end of the reply that is sent: the question or the next step is in its last lines
 	replyTailRunes = 1500
-	// a request for a summary sends the reply's start as well as its end, so the summary can say what the turn set out
-	// to do and where it stopped: the whole reply when it is no longer than both together (under ~2,500 runes sent)
-	summaryHeadRunes = 600
-	summaryTailRunes = 1800
-	// the summary, at most: one or two sentences, cut at a word past it
-	summaryRunes = 240
 	// the person's last messages that are sent, and the length each is cut to
 	recentMax   = 6
 	recentRunes = 160
@@ -71,8 +64,6 @@ type Request struct {
 	Question bool
 	// the messages the person sends often (Habits), most used first: a reply that fits the turn is given as written
 	Habits []string
-	// the turn was a long one: the call also writes a one-or-two-sentence summary of it, as a first `SUMMARY:` line
-	Summary bool
 }
 
 const systemPrompt = `You suggest what a person will send next to a coding agent, as one-tap replies in a chat app.
@@ -87,17 +78,7 @@ You may be given messages this person sends often. When one of them is the right
 
 Output only the replies, one per line, with no numbering, quotes or commentary.`
 
-// replyLabel heads the reply in the prompt, and summaryAsk is what a request for a summary adds after it. The rule is in
-// the message, not in systemPrompt, so the system prompt (and the prompt, which is the cache key, of a chip-only call)
-// stays what it was.
-const (
-	replyLabel   = "The end of the agent's last reply:"
-	summaryAsk   = `First write one line that starts with "SUMMARY: ", then one or two sentences, at most %d characters, in the language of the person's messages above (the reply's own language when there are none): what the agent did in this turn and what it left undone. Never repeat the question the reply ends on. That line is the only one that is not a reply; after it, give the replies as described next.`
-	summaryLabel = "The start and the end of the agent's last reply (the middle is left out):"
-)
-
-// BuildPrompt is the call's message: the person's last messages, the end of the reply, what kind of reply to give, and,
-// for a Summary request, the ask for a summary line.
+// BuildPrompt is the call's message: the person's last messages, the end of the reply, and what kind of reply to give.
 func BuildPrompt(req Request) string {
 	var b strings.Builder
 	recent := req.Recent
@@ -124,16 +105,9 @@ func BuildPrompt(req Request) string {
 		}
 		b.WriteString("\n")
 	}
-	label, body := replyLabel, tail(strings.TrimSpace(req.Reply), replyTailRunes)
-	if req.Summary {
-		label, body = summaryReply(strings.TrimSpace(req.Reply))
-	}
-	b.WriteString(label + "\n<reply>\n")
-	b.WriteString(body)
+	b.WriteString("The end of the agent's last reply:\n<reply>\n")
+	b.WriteString(tail(strings.TrimSpace(req.Reply), replyTailRunes))
 	b.WriteString("\n</reply>\n\n")
-	if req.Summary {
-		fmt.Fprintf(&b, summaryAsk+"\n\n", summaryRunes)
-	}
 	if req.Question {
 		b.WriteString("The reply ends with a question: give up to 5 replies that answer it.")
 	} else {
@@ -170,38 +144,15 @@ func oneLine(s string, max int) string {
 
 // tail is the last max runes of s, starting at a line when one begins in the cut, with an ellipsis in front when cut.
 func tail(s string, max int) string {
-	cut, wasCut := tailCut(s, max)
-	if wasCut {
-		return "…" + cut
-	}
-	return cut
-}
-
-// tailCut is the last max runes of s, starting at a line when one begins in the cut, and whether s was cut at all (s
-// itself when it was not).
-func tailCut(s string, max int) (string, bool) {
 	r := []rune(s)
 	if len(r) <= max {
-		return s, false
+		return s
 	}
 	cut := string(r[len(r)-max:])
 	if i := strings.IndexByte(cut, '\n'); i >= 0 && i < len(cut)-1 {
 		cut = cut[i+1:]
 	}
-	return cut, true
-}
-
-// summaryReply is the reply a Summary request sends, with the label that heads it: all of it when it is no longer than
-// its start and its end together, else its first summaryHeadRunes and its last summaryTailRunes (from a line) with a
-// line of "…" between them.
-func summaryReply(reply string) (label, body string) {
-	r := []rune(reply)
-	if len(r) <= summaryHeadRunes+summaryTailRunes {
-		return replyLabel, reply
-	}
-	head := strings.TrimRight(string(r[:summaryHeadRunes]), " \t\r\n")
-	cut, _ := tailCut(reply, summaryTailRunes)
-	return summaryLabel, head + "\n…\n" + cut
+	return "…" + cut
 }
 
 var (
@@ -216,63 +167,21 @@ func saysSomething(s string) bool {
 	return strings.IndexFunc(s, func(r rune) bool { return unicode.IsLetter(r) || unicode.IsDigit(r) }) >= 0
 }
 
-// Answer is what one call gives back: the replies, best first (never nil), and the summary of the turn, "" when none was
-// asked for or the model wrote none.
-type Answer struct {
-	Replies []string
-	Summary string
-}
-
-// summaryRe is the marker of the summary line: a line whose text starts with it. Nothing else is taken for the summary.
-var summaryRe = regexp.MustCompile(`(?i)^SUMMARY:`)
-
-// cutAtWord is s cut to at most max runes at a word, with an ellipsis, when it is longer than max; s itself otherwise.
-// s has its words one space apart. Text with no space to cut at (one long run of a script written without them) is cut
-// where it falls.
-func cutAtWord(s string, max int) string {
-	r := []rune(s)
-	if len(r) <= max {
-		return s
-	}
-	cut := r[:max-1]
-	if r[max-1] != ' ' {
-		for i := len(cut) - 1; i > 0; i-- {
-			if cut[i] == ' ' {
-				cut = cut[:i]
-				break
-			}
-		}
-	}
-	return strings.TrimRight(string(cut), " ,;:-–—") + "…"
-}
-
 // Parse reads the model's answer: one reply per line, numbering, bullets, HTML tags and quotes taken off, NONE and
 // lines with no letter or digit left skipped, a reply past replyRunes dropped (a cut reply would send half a sentence), the same reply kept once (sameReply:
-// "build di", "ok build đi" and "Build đi!" are one), and at most five answers to a question or one next step. A next step never commits or pushes: the rules offer those.
-//
-// A line that starts with SUMMARY: (any case) is never a reply. When summary is set, the first such line's rest, folded
-// to one line and cut at a word past summaryRunes, is the Answer's Summary; when it is not, the line is dropped. No other line is ever the summary.
-func Parse(text string, question, summary bool) Answer {
+// "build di", "ok build đi" and "Build đi!" are one), and at most five answers to a question or one next step. A next step never commits or pushes: the rules offer those. The replies come best first, never nil.
+func Parse(text string, question bool) []string {
 	limit := maxNext
 	if question {
 		limit = maxAnswers
 	}
 	out := []string{}
-	sum, seenSummary := "", false
 	seen := map[string]bool{}
 	for _, line := range strings.Split(text, "\n") {
-		trimmed := strings.TrimSpace(line)
-		if loc := summaryRe.FindStringIndex(trimmed); loc != nil {
-			if summary && !seenSummary {
-				sum = cutAtWord(strings.Join(strings.Fields(trimmed[loc[1]:]), " "), summaryRunes)
-			}
-			seenSummary = true
-			continue
-		}
 		if len(out) == limit {
-			continue // the replies are full; a line after them can still be the summary
+			break
 		}
-		s := bulletRe.ReplaceAllString(trimmed, "")
+		s := bulletRe.ReplaceAllString(strings.TrimSpace(line), "")
 		s = strings.TrimSpace(strings.Trim(strings.TrimSpace(tagRe.ReplaceAllString(s, "")), "\"'`“”‘’"))
 		if !saysSomething(s) || strings.EqualFold(strings.TrimRight(s, "."), "NONE") || utf8.RuneCountInString(s) > replyRunes {
 			continue
@@ -287,7 +196,7 @@ func Parse(text string, question, summary bool) Answer {
 		seen[key] = true
 		out = append(out, s)
 	}
-	return Answer{Replies: out, Summary: sum}
+	return out
 }
 
 // replyFiller is the words that change how a reply sounds, not what it answers: "ok build đi" says "build"
@@ -344,14 +253,14 @@ type Suggester struct {
 	sem chan struct{}
 
 	mu       sync.Mutex
-	cache    map[string]Answer
+	cache    map[string][]string
 	order    []string
 	inflight map[string]*call
 }
 
 type call struct {
 	done chan struct{}
-	out  Answer
+	out  []string
 	err  error
 }
 
@@ -363,18 +272,16 @@ func New(run Runner) *Suggester {
 	return &Suggester{
 		run:      run,
 		sem:      make(chan struct{}, parallel),
-		cache:    map[string]Answer{},
+		cache:    map[string][]string{},
 		inflight: map[string]*call{},
 	}
 }
 
-// Suggest answers req's replies, and its summary when req asks for one. A reply with no text asks nothing. The prompt
-// is the cache key, and a request for a summary has its own prompt, so a turn asked with and without one is two
-// entries. The call runs on its own clock, not ctx's, so an ask that gives up does not end the answer another is
+// Suggest answers req's replies, best first. A reply with no text asks nothing. The prompt is the cache key. The call runs on its own clock, not ctx's, so an ask that gives up does not end the answer another is
 // waiting on; a failed call is not kept, so a later ask tries again.
-func (s *Suggester) Suggest(ctx context.Context, req Request) (Answer, error) {
+func (s *Suggester) Suggest(ctx context.Context, req Request) ([]string, error) {
 	if strings.TrimSpace(req.Reply) == "" {
-		return Answer{Replies: []string{}}, nil
+		return []string{}, nil
 	}
 	prompt := BuildPrompt(req)
 	sum := sha256.Sum256([]byte(prompt))
@@ -391,17 +298,17 @@ func (s *Suggester) Suggest(ctx context.Context, req Request) (Answer, error) {
 	}
 	s.mu.Unlock()
 	if !running {
-		go s.do(key, prompt, req.Question, req.Summary, c)
+		go s.do(key, prompt, req.Question, c)
 	}
 	select {
 	case <-c.done:
 		return c.out, c.err
 	case <-ctx.Done():
-		return Answer{}, ctx.Err()
+		return nil, ctx.Err()
 	}
 }
 
-func (s *Suggester) do(key, prompt string, question, summary bool, c *call) {
+func (s *Suggester) do(key, prompt string, question bool, c *call) {
 	runCtx, cancel := context.WithTimeout(context.Background(), callTimeout)
 	defer cancel()
 	select {
@@ -409,7 +316,7 @@ func (s *Suggester) do(key, prompt string, question, summary bool, c *call) {
 		text, err := s.run(runCtx, prompt)
 		<-s.sem
 		if err == nil {
-			c.out = Parse(text, question, summary)
+			c.out = Parse(text, question)
 		}
 		c.err = err
 	case <-runCtx.Done():

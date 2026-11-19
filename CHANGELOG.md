@@ -31,8 +31,6 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Added
 
-- After a long turn (a long closing reply, or many commands) Chat tells you in a line or two, under the agent's last
-  reply, where things stand: what the turn did and what it left undone, in your language.
 - Chat warns above the box when the Claude account an agent runs on is near its weekly (80%) or 5-hour (90%) limit,
   with the reset time. With more than one account it names the one in use and offers Switch to the account with the
   most room, which moves this agent over and offers to restart the others; Snooze hides it for an hour, four hours or
@@ -177,7 +175,7 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - On a Mac, Sidecar's coloured frame follows the window's own rounded corners, which macOS 26 and later round more, so
   its line no longer breaks off at the four corners.
 - Cmd+A or a drag over Chat no longer paints a selection over the usage warning, the chips and the box's frame.
-- Chat's usage-limit warning, summary line and suggested replies no longer show the conversation through them when
+- Chat's usage-limit warning and suggested replies no longer show the conversation through them when
   you scroll up: the fade under them now grows with them.
 - A message from Chat to an agent whose Claude Code had exited (`/exit`, a crash) starts it again on its conversation
   and goes in once it is back, instead of failing with "no controller found for block".

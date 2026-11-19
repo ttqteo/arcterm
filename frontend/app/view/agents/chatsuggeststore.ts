@@ -24,8 +24,8 @@ const KEEP = 40;
 // the call is claude starting on haiku, 8-11 s; past this it is given up
 const TIMEOUT_MS = 70_000;
 
-/** What a DEV fake answers with: the replies alone (an array, no summary), or the replies and a summary line. */
-type FakeSuggestAnswer = string[] | { replies: string[]; summary?: string };
+/** What a DEV fake answers with: the replies. */
+type FakeSuggestAnswer = string[];
 
 declare global {
     interface Window {
@@ -97,14 +97,7 @@ export function useEffortDetail(oref: string | null): Effort | undefined {
     return useAtomValue(one);
 }
 
-/** A fake's answer as the call's return data: an array is the replies with no summary. */
-function fakeRtn(answer: FakeSuggestAnswer): CommandChatSuggestRtnData {
-    return Array.isArray(answer) ? { replies: answer } : answer;
-}
-
-/** Asks the model about one turn, once: a turn already asked (answered, failed or on its way) asks nothing. `data.summary`
- *  asks the same call for the turn's summary line too (a long turn); it goes to wavesrv as given, and the answer's
- *  summary is kept in the `done` state beside the replies. */
+/** Asks the model about one turn, once: a turn already asked (answered, failed or on its way) asks nothing. */
 export function requestModelSuggest(key: string, data: CommandChatSuggestData): void {
     if (key in globalStore.get(modelSuggestAtom)) {
         return;
@@ -115,14 +108,9 @@ export function requestModelSuggest(key: string, data: CommandChatSuggestData): 
         try {
             const rtn =
                 fake != null
-                    ? fakeRtn(await fake(data))
+                    ? { replies: await fake(data) }
                     : await RpcApi.ChatSuggestCommand(TabRpcClient, data, { timeout: TIMEOUT_MS });
-            const summary = rtn?.summary;
-            put(key, {
-                status: "done",
-                replies: rtn?.replies ?? [],
-                ...(summary != null && summary !== "" ? { summary } : {}),
-            });
+            put(key, { status: "done", replies: rtn?.replies ?? [] });
         } catch {
             put(key, { status: "failed" });
         }

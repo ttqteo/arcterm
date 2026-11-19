@@ -2,6 +2,9 @@
 
 Date: 2026-11-18. Brainstorm: `.superpowers/brainstorm/chat-suggest-card/brainstorm.json`.
 
+**2026-11-19: the summary line (1) was removed at the person's ask; only the usage-limit strip (2) stands.** The
+sections on the summary below are kept as the record of what was built and taken out.
+
 Two things borrowed from Claude Desktop's chat, for arcterm's Chat view of a Claude agent:
 
 1. A one-or-two-sentence **summary line** of where things stand, after long turns.
