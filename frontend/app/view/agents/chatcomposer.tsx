@@ -119,6 +119,7 @@ import {
     chipEditable,
     chipIcon,
     drawnChips,
+    fitChips,
     pickedChip,
     pickedHint,
     quickChip,
@@ -881,7 +882,11 @@ function ComposerBox({
     });
     // Tab walks the suggested replies on screen (chatsuggest.ts stepPick), Shift+Tab back. The picked chip is kept by its
     // text, so a row that changes under it lets it go; typing lets it go too. Enter takes it as a click does.
-    const tabChips = row.kind === "suggest" ? drawnChips(row.chips, onMarkDone != null, onClose != null) : NO_CHIPS;
+    // The row is one line: of the chips it could draw, those that fit whole (chatsuggest.ts fitChips, over the widths
+    // SuggestChips measures), so Tab, Cmd+Enter and the line under the box only ever name a chip on screen.
+    const rowChips = row.kind === "suggest" ? drawnChips(row.chips, onMarkDone != null, onClose != null) : NO_CHIPS;
+    const [chipFit, setChipFit] = useState<ChipFit | null>(null);
+    const tabChips = chipFit == null ? rowChips : fitChips(rowChips, chipFit.widths, chipFit.avail);
     // the long turn's summary line: it stands with the chip row's own conditions, but not on its chips (the row is
     // "suggest" only with a chip, and a summary can come with none); the running agent's actions take the line instead
     const summaryShown =
@@ -1035,6 +1040,8 @@ function ComposerBox({
                         <SuggestChips
                             key="suggest"
                             chips={tabChips}
+                            all={rowChips}
+                            onMeasure={setChipFit}
                             picked={picked?.text ?? null}
                             armed={armed}
                             onActivate={(c) => {
@@ -1591,19 +1598,39 @@ function HintLine({ parts }: { parts: HintPart[] }) {
     );
 }
 
+/** What the suggested replies' row measured: each chip's whole width by its text, and the row's own, px. */
+interface ChipFit {
+    widths: Record<string, number>;
+    avail: number;
+}
+
+function sameFit(a: ChipFit | null, b: ChipFit): boolean {
+    if (a == null || a.avail !== b.avail) {
+        return false;
+    }
+    const ka = Object.keys(a.widths);
+    return ka.length === Object.keys(b.widths).length && ka.every((k) => a.widths[k] === b.widths[k]);
+}
+
 // The finished turn's suggested replies (chatsuggest.ts drawnChips: the ones the row can act on), a click or Enter on the
 // chip Tab picked takes one (onActivate): a reply is sent as typed, a chunk's done chip ticks it on the initiative, as the
 // band's Mark done does, and a go on with: chip moves the agent to its chunk first, then sends its text. A chip the model
 // adds a few seconds after the rules' fades in beside them.
 function SuggestChips({
     chips,
+    all,
+    onMeasure,
     picked,
     armed,
     onActivate,
     canGoOn,
     quick,
 }: {
+    /** the chips drawn: those of `all` that fit on the line */
     chips: ChatChip[];
+    /** every chip the row could draw, measured in a hidden copy so the row knows which fit */
+    all: ChatChip[];
+    onMeasure: (fit: ChipFit) => void;
     /** the text of the chip Tab picked, or null */
     picked: string | null;
     /** the text of the chip asking before it replaces the typed text, or null */
@@ -1614,14 +1641,61 @@ function SuggestChips({
     quick: string | null;
 }) {
     const part = usePartMotion(microFade);
+    const rowRef = useRef<HTMLDivElement>(null);
+    const measureRef = useRef<HTMLDivElement>(null);
+    const last = useRef<ChipFit | null>(null);
+    const allKey = all.map((c) => c.text).join("\n");
+    // the row's width and each chip's whole width (up to its 340px), read before paint and again when the row resizes;
+    // the pane hears of a change only, so a measure that finds the same sizes draws nothing
+    useLayoutEffect(() => {
+        const measure = () => {
+            const row = rowRef.current;
+            const copy = measureRef.current;
+            if (row == null || copy == null) {
+                return;
+            }
+            const widths: Record<string, number> = {};
+            copy.querySelectorAll<HTMLElement>("[data-chat-suggest-measure]").forEach((el) => {
+                widths[el.dataset.chatSuggestMeasure ?? ""] = Math.ceil(el.getBoundingClientRect().width);
+            });
+            const fit = { widths, avail: Math.floor(row.getBoundingClientRect().width) };
+            if (!sameFit(last.current, fit)) {
+                last.current = fit;
+                onMeasure(fit);
+            }
+        };
+        measure();
+        const ro = new ResizeObserver(measure);
+        if (rowRef.current != null) {
+            ro.observe(rowRef.current);
+        }
+        return () => ro.disconnect();
+    }, [allKey]);
     return (
-        // A row wider than 600px (the Chat column) wraps the chips that do not fit onto a second line, so each shows
-        // whole up to its 340px; a narrower one (a float window's box of about 560px, a cell of a split) keeps them on
-        // one line, where they shrink and a long one ends in …. The row sits over the box and is as wide as it. A cut
-        // chip's whole text is in its tooltip and, once Tab picks it, in the box's line (pickedHint). The @container
-        // sits on the outer div: the row it queries is its own width.
-        <motion.div {...part} data-chat-suggest="" className="@container mb-2 min-w-0">
-            <div className="flex min-w-0 flex-nowrap items-center gap-1.5 @min-[600px]:flex-wrap">
+        // One line, as wide as the box it sits over: the chips that fit whole (fitChips), the first always, which alone
+        // too wide ends in … (its whole text is in its tooltip and, once Tab picks it, in the box's line: pickedHint).
+        // The hidden copy under it holds every chip at its whole width, for the measure.
+        <motion.div {...part} data-chat-suggest="" className="relative mb-2 min-w-0">
+            <div
+                ref={measureRef}
+                aria-hidden
+                className="pointer-events-none invisible absolute left-0 top-0 flex h-0 w-[4000px] items-start gap-1.5 overflow-hidden"
+            >
+                {all.map((c) => {
+                    const mark = chipIcon(c);
+                    return (
+                        <div key={c.text} data-chat-suggest-measure={c.text} className="flex max-w-[340px] flex-none">
+                            <Chip
+                                icon={mark != null ? SUGGEST_ICONS[mark] : undefined}
+                                label={c.text}
+                                onClick={() => {}}
+                                data={{}}
+                            />
+                        </div>
+                    );
+                })}
+            </div>
+            <div ref={rowRef} className="flex min-w-0 flex-nowrap items-center gap-1.5">
                 <AnimatePresence initial={false}>
                     {chips.map((c) => {
                         const ticks = c.kind === "done" && c.chunk != null;

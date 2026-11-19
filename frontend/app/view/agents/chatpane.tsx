@@ -119,6 +119,8 @@ import {
     turnToolCount,
     wantsModelSuggest,
     writesVietnamese,
+    yesNoChips,
+    yesNoQuestion,
 } from "./chatsuggest";
 import { markChunkDone, requestModelSuggest, useEffortDetail, useModelSuggest } from "./chatsuggeststore";
 import { TaggedPromptText } from "./chattagblock";
@@ -1138,6 +1140,11 @@ function ChatPaneBody({ model, agent, barred }: { model: AgentsViewModel; agent:
                     ],
               model: modelSuggest,
               close: closeChip(done, vi),
+              // a yes-or-no question gets its yes and no at once; the model's answers that say more follow them
+              yesNo:
+                  question && reply != null && yesNoQuestion(reply)
+                      ? yesNoChips(vi || writesVietnamese([reply.slice(-300)]))
+                      : undefined,
           })
         : undefined;
 

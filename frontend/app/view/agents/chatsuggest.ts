@@ -16,7 +16,9 @@
 //
 // A reply that ends in a question gets the model's answers alone: a rule's "commit đi" does not answer "A, B or C?", and
 // while the answers are on their way the row stays empty rather than offer a bare "ok" the agent would have to read a
-// choice into. Only a call that failed or found nothing leaves "ok" there. Pure: chatsuggeststore.ts holds the
+// choice into. Only a call that failed or found nothing leaves "ok" there. A yes-or-no question (yesNoQuestion) is the
+// exception: its yes and no show at once, and the model's answers that say more join after them. The row is one line:
+// it draws the chips that fit whole (fitChips), however many. Pure: chatsuggeststore.ts holds the
 // model's answers and makes the call, chatpane.tsx wires the two.
 
 import type { AgentEntry, AgentVM } from "./agentsviewmodel";
@@ -62,9 +64,6 @@ export type ModelSuggest =
     | { status: "done"; replies: string[]; summary?: string }
     | { status: "failed" };
 
-/** at most this many chips in the row */
-export const MAX_CHIPS = 3;
-
 /** the person's last messages the model reads for their words and language */
 const RECENT = 6;
 
@@ -97,6 +96,76 @@ export function endsWithQuestion(reply: string): boolean {
         return bare.endsWith("?") || bare.endsWith("？");
     }
     return false;
+}
+
+// the words that open a question asking yes or no ("Should I build it?", "Want me to commit?")
+const YES_NO_OPENERS = new Set(
+    "should shall do does did want would could can is are was were will may ready proceed ok okay sound sounds mind need go keep continue".split(
+        " "
+    )
+);
+// the words that close one ("…, ok?", "Có build luôn không?", "build nhé?")
+const YES_NO_CLOSERS = new Set("ok okay right good fine không ko hông chứ nhé nhe nha nhỉ hả được".split(" "));
+// a word that asks for something else than yes or no: what, which, how…, gì, nào, sao, đâu…; and the words that offer
+// a choice between options ("A or B", "A hay B")
+const NOT_YES_NO = new Set(
+    "what which how why where when who whose whom or gì nào sao đâu mấy nhiêu hay hoặc chưa".split(" ")
+);
+const WORD_SPLIT = /[^\p{L}\p{N}]+/u;
+
+/** Pure: the reply ends on a question one taps yes or no to: its last sentence, a question, opens like one ("Should
+ *  I…", "Want me to…") or closes like one ("…không?", "…nhé?", "…, ok?"), with no word that asks for something else
+ *  (what, which, gì, nào…) or offers a choice (or, hay). Those get their yes and no chips at once (yesNoChips), not
+ *  only once the model answers. */
+export function yesNoQuestion(reply: string): boolean {
+    if (!endsWithQuestion(reply)) {
+        return false;
+    }
+    const prose = reply.replace(/```[\s\S]*?(```|$)/g, "");
+    const line = prose
+        .split("\n")
+        .map((l) => l.trim())
+        .filter((l) => l !== "")
+        .at(-1);
+    if (line == null) {
+        return false;
+    }
+    // the last sentence: what follows the sentence before it, if the line holds two
+    const bare = line.replace(/[=*_`"'”’)\]\s]+$/u, "").replace(/[?？]+$/u, "");
+    const sentence = bare.split(/[.!?？。:]\s+/u).at(-1) ?? bare;
+    const words = sentence
+        .toLowerCase()
+        .split(WORD_SPLIT)
+        .filter((w) => w !== "");
+    if (words.length === 0 || words.some((w) => NOT_YES_NO.has(w))) {
+        return false;
+    }
+    const lead = ["so", "then", "and", "also", "vậy", "thế"].includes(words[0]) ? words.slice(1) : words;
+    return (lead.length > 0 && YES_NO_OPENERS.has(lead[0])) || YES_NO_CLOSERS.has(words[words.length - 1]);
+}
+
+/** Pure: the yes and the no a yes-or-no question gets at once, in the person's language. */
+export function yesNoChips(vi: boolean): ChatChip[] {
+    return [
+        { text: vi ? "ok" : "yes", kind: "reply", source: "rule" },
+        { text: vi ? "không" : "no", kind: "reply", source: "rule" },
+    ];
+}
+
+// the words that make a reply a bare yes or no: a model answer of only these says what the yes and no chips say
+const PLAIN_ANSWER = new Set(
+    "ok oke okay okie yes yeah yep sure có ừ ừm được đc vâng uh không ko khỏi no nope đi nhé nha luôn thôi please pls làm go ahead it do cần đâu".split(
+        " "
+    )
+);
+
+/** Pure: a reply that is only a yes or a no ("ok làm đi", "không cần đâu"), which the yes and no chips already offer. */
+export function plainAnswer(text: string): boolean {
+    const words = text
+        .toLowerCase()
+        .split(WORD_SPLIT)
+        .filter((w) => w !== "");
+    return words.length > 0 && words.every((w) => PLAIN_ANSWER.has(w));
 }
 
 /** Pure: the person's last messages, oldest first, each on one line, with what a paste or a picture brought along left
@@ -256,20 +325,27 @@ export function closeChip(done: boolean, vi: boolean): ChatChip | undefined {
     return done ? { text: vi ? "đóng agent" : "close agent", kind: "close", source: "rule" } : undefined;
 }
 
-/** Pure: the row's chips. A question's are the model's answers (with "ok" only once the call failed or found none); any
- *  other turn's are the rules' chips, then the model's next step when it is not one of them, and last the close chip
- *  (closeChip), which keeps its place in a full row: the model's step gives way to it. */
+/** Pure: the row's chips, all of them: the row draws those that fit on its one line (fitChips). A question's are the
+ *  model's answers (with "ok" only once the call failed or found none); a yes-or-no question's (`yesNo`, yesNoChips) are
+ *  its yes and no at once, then the model's answers that say more than yes or no, after them so the chips already there
+ *  do not move. Any other turn's are the rules' chips, then the model's next step when it is not one of them, and last
+ *  the close chip (closeChip), which fitChips keeps in a full row. */
 export function chatChips(i: {
     question: boolean;
     rules: ChatChip[];
     model: ModelSuggest | undefined;
     close?: ChatChip;
+    yesNo?: ChatChip[];
 }): ChatChip[] {
     const replies = i.model?.status === "done" ? i.model.replies : [];
     const fromModel = replies.map((text): ChatChip => ({ text, kind: "reply", source: "model" }));
     if (i.question) {
+        if (i.yesNo != null && i.yesNo.length > 0) {
+            const shown = new Set(i.yesNo.map((c) => c.text.toLowerCase()));
+            return [...i.yesNo, ...fromModel.filter((c) => !plainAnswer(c.text) && !shown.has(c.text.toLowerCase()))];
+        }
         if (fromModel.length > 0) {
-            return fromModel.slice(0, MAX_CHIPS);
+            return fromModel;
         }
         const settled = i.model?.status === "failed" || i.model?.status === "done";
         return settled ? [{ text: "ok", kind: "reply", source: "fallback" }] : [];
@@ -282,7 +358,41 @@ export function chatChips(i: {
             shown.add(c.text.toLowerCase());
         }
     }
-    return i.close == null ? out.slice(0, MAX_CHIPS) : [...out.slice(0, MAX_CHIPS - 1), i.close];
+    return i.close == null ? out : [...out, i.close];
+}
+
+/** the gap between two chips in the row, px (gap-1.5) */
+export const CHIP_GAP = 6;
+/** the room the row keeps for the key a chip shows (Cmd+Enter's on the first, ↵ on the picked one), px */
+export const CHIP_KEY_ROOM = 52;
+
+/** Pure: the chips the row's one line holds, in order: from the first on, each whose whole width (`widths`, by text)
+ *  still fits in `avail` after those before it, less `reserve`; one that does not is left out and a shorter one after
+ *  it can still take the room. The first is always kept (alone too wide, it ends in …), and a close chip is kept over
+ *  the replies before it, which give way from the last. A width not measured yet keeps every chip. */
+export function fitChips(
+    chips: readonly ChatChip[],
+    widths: Readonly<Record<string, number>>,
+    avail: number,
+    reserve = CHIP_KEY_ROOM,
+    gap = CHIP_GAP
+): ChatChip[] {
+    if (chips.length === 0 || avail <= 0 || chips.some((c) => widths[c.text] == null)) {
+        return [...chips];
+    }
+    const room = avail - reserve;
+    const width = (row: readonly ChatChip[]) => row.reduce((sum, c, n) => sum + widths[c.text] + (n > 0 ? gap : 0), 0);
+    // the close chip's room is set aside first, and the replies share what is left
+    const close = chips.find((c) => c.kind === "close");
+    const tail = close == null ? [] : [close];
+    const kept: ChatChip[] = [];
+    for (const c of chips) {
+        if (c !== close && (kept.length === 0 || width([...kept, c, ...tail]) <= room)) {
+            kept.push(c);
+        }
+    }
+    // the first is kept even when it and the close chip do not fit together: it is the one that ends in …
+    return [...kept, ...tail];
 }
 
 /** Pure: the key one turn's model answer is kept under: the agent and its reply, so a new turn asks again and the same

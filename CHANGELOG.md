@@ -72,6 +72,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- Chat's suggested replies answer a yes-or-no question at once with ok and không (yes and no in English), and the
+  model's fuller answers join after them when they come. The row is no longer capped at three: it shows every
+  suggestion that fits whole on its one line.
 - The phone page's Agents list shows only live agents (a session back at its shell is gone from it), with a dot that
   shows what the agent is doing and a line under its name: its question when it asks, the first sentence of its last
   reply when it is idle. A run's workers are one row under Runs that opens to its worker lines, the header counts what
