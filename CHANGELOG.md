@@ -153,6 +153,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- Sidecar shows every run in progress, not only the newest: a Runs box above Needs you lists up to three, a failed run
+  first, and sums up the rest in one line ("+2 more · 1 failed") that opens them in Jarvis; a row opens its run. The box
+  stays when the memory band shows, and the "due today" line it repeated from Needs you is gone.
 - Sidecar's Resources view names each agent by its task, as the cockpit does, instead of a row of "arcterm" (the
   project's name), and its arcterm mark no longer draws a bold "t" beside a thin, jagged chevron.
 - A question an agent asks stays in Chat with its choices while its background subagents keep working, instead of

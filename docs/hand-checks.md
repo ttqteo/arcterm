@@ -16,6 +16,12 @@ list (its number is not reused).
 Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) ·
 [part 4](hand-checks-4.md) · [part 3](hand-checks-3.md) · [part 2](hand-checks-2.md) (oldest).
 
+- [ ] (arcterm) **Sidecar's Runs box lists every active run.** With two or more orchestrator runs going, open Sidecar:
+  a Runs box above Needs you shows one row per run (title, `done/total`, age, a segment per task), `RUNS 0N` in its
+  head; with four or more, three rows and a `+N more · … working` line. A failed run sorts first with a red `Failed`.
+  The box stays under the memory band when RAM is high. A click on a row opens that run in the main window; on the
+  `+N more` line, Jarvis. The small form reads `Runs N` (`· 1 failed`). The `sidecar-orbit` scenario's new P-runs steps
+  cover it but were not run (no dev app here). Commit: fix/sidecar-runs.
 - [ ] (arcterm) **Sidecar's Resources rows name agents by their task, and the arcterm mark reads evenly.** Open
   Sidecar → Resources with several agents in one project: each agent row shows its title (as in the Agent tree), not
   "arcterm"; a tab with no title yet still shows the tab's name. The Sidecar / arcterm rows' "t>" mark has strokes of
