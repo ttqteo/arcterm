@@ -5,7 +5,8 @@
 // the change, never a second copy that drifts. An entry may end with `<!-- try: <binding id> -->`: hidden on GitHub,
 // it gives the entry a button that runs that global keybinding (whatsnew.test.ts checks every id still exists). An
 // entry marked `<!-- big -->` is one of its release's few highlights, drawn as a card above the folded rest, and a
-// highlight's `<!-- shot: <file> -->` names its picture in public/whatsnew/ (the test checks it is there and small).
+// highlight's `<!-- shot: <file> -->` names its picture in public/whatsnew/ (the test checks it is there and small);
+// `<!-- shot: none -->` says it has nothing to picture. From SHOTS_REQUIRED_FROM on, a big line carries one or the other.
 
 export type SectionKind = "Added" | "Changed" | "Fixed";
 
@@ -14,6 +15,7 @@ export interface Entry {
     tryId?: string;
     big?: boolean;
     shot?: string; // a file in public/whatsnew/
+    noShot?: boolean; // `shot: none`: a big line with nothing to picture (a wsh command, a behaviour)
 }
 
 export interface Section {
@@ -33,7 +35,11 @@ const SECTION_RE = /^### (Added|Changed|Fixed)\s*$/;
 const TRY_RE = /\s*<!--\s*try:\s*([\w:.-]+)\s*-->\s*/;
 const BIG_RE = /\s*<!--\s*big\s*-->\s*/;
 const SHOT_RE = /\s*<!--\s*shot:\s*([\w.-]+\.(?:webp|png|jpg))\s*-->\s*/;
+const NO_SHOT_RE = /\s*<!--\s*shot:\s*none\s*-->\s*/;
 const SECTION_ORDER: SectionKind[] = ["Added", "Changed", "Fixed"];
+
+// the first release whose big lines each carry a picture or `shot: none` (whatsnew.test.ts); Unreleased always does
+export const SHOTS_REQUIRED_FROM = "1.9.0";
 
 // a release's cards: past this many they read as a wall again (whatsnew.test.ts holds CHANGELOG.md to it)
 export const MAX_HIGHLIGHTS = 5;
@@ -119,6 +125,10 @@ function toEntry(raw: string): Entry {
     if (shot != null) {
         entry.text = entry.text.replace(SHOT_RE, " ").trim();
         entry.shot = shot[1];
+    }
+    if (NO_SHOT_RE.test(entry.text)) {
+        entry.text = entry.text.replace(NO_SHOT_RE, " ").trim();
+        entry.noShot = true;
     }
     return entry;
 }

@@ -23,10 +23,12 @@ A new feature someone would open the app to try ends with `<!-- big -->` (either
 new draws it as one of its release's cards and folds every other line under a count. At most 5 per release, and
 `whatsnew.test.ts` fails a release with more; a fix, a tweak or a rename is never big.
 
-A big line may also end with `<!-- shot: <file> -->`, a picture of the feature in `public/whatsnew/` that its card
-shows above the title: a 2:1 crop of a `task verify:ui` screenshot, as WebP, named `<version>-<topic>.webp`
-(`cwebp -q 82 -crop <x> <y> <w> <h> cdp-shots/<shot>.png -o public/whatsnew/<file>`). `whatsnew.test.ts` fails on a
-missing file, on one over 120 KB, and on a picture given to a line that is not big.
+A big line ends with `<!-- shot: <file> -->`, a picture of the feature in `public/whatsnew/` that its card shows above
+the title, or with `<!-- shot: none -->` when there is nothing to picture. Make the picture with the feature on screen
+in the dev app: `node scripts/whatsnew-shot.mjs <topic> [--selector <css>]` writes a 2:1 WebP named
+`<version>-<topic>.webp` and prints the comment (a scenario calls `h.whatsnewShot(topic, { selector })`).
+`whatsnew.test.ts` fails a big line with neither (in Unreleased and from 1.9.0 on), a missing file, one over 120 KB,
+and a picture given to a line that is not big.
 
 ## Unreleased
 

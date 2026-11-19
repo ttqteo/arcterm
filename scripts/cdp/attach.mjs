@@ -4,6 +4,7 @@
 // Node 21+ (global WebSocket + fetch; the repo runs Node 24).
 import { mkdirSync, writeFileSync } from "node:fs";
 import { basename, dirname } from "node:path";
+import { captureWhatsnewShot } from "./whatsnewshot.mjs";
 
 // SurfaceKey -> nav-rail label, mirrored from frontend/app/view/agents/navrail.tsx ITEMS. goto clicks
 // the nav button by label because globalStore/the agents model are NOT exposed on window (boot-core
@@ -193,10 +194,13 @@ async function attachTarget(target, { pageReady = PAGE_READY, shots = [] } = {})
         return x.result?.value;
     }
 
-    return {
+    const handle = {
         url: target.url,
         shots,
         ev,
+        // a What's new picture of the page as it is now, written to public/whatsnew (whatsnewshot.mjs): a scenario
+        // that shows a big CHANGELOG line's feature calls it, so a Final run leaves the picture in its tree
+        whatsnewShot: (topic, opts) => captureWhatsnewShot(handle, topic, opts),
         // raw CDP passthrough: Runtime.evaluate covers most driving, but Emulation (deterministic shot
         // size) and Input.dispatchKeyEvent (real key events, not synthetic DOM ones) have no wrapper.
         cdp: (method, params) => client.send(method, params),
@@ -248,4 +252,5 @@ async function attachTarget(target, { pageReady = PAGE_READY, shots = [] } = {})
         },
         close: () => client.close(),
     };
+    return handle;
 }
