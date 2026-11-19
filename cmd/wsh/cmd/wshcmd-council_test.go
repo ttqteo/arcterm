@@ -489,6 +489,12 @@ func TestCouncilEstimateLine(t *testing.T) {
 		t.Fatalf("estimate line\n got %s\nwant %s", got, want)
 	}
 
+	// a price calibrated on finished councils says how many, at the end of the line
+	rtn.Measured = 3
+	if got, want := councilEstimateLine(group, experts, rtn), want+" · from your last 3 councils"; got != want {
+		t.Fatalf("measured estimate line\n got %s\nwant %s", got, want)
+	}
+
 	// a model's experts share one clause, the clauses in the order the models first appear
 	experts[3].Model = "opus"
 	if got, want := councilModelsText(experts), "UX, RAM, New user on sonnet, Skeptic, Coordinator on opus"; got != want {
@@ -539,6 +545,11 @@ func TestCouncilStartedLine(t *testing.T) {
 	want := "council abc123 started: Council for the cockpit · review · Review a UI feature · 4 experts · ≈ 10 calls · ~0.8M tokens"
 	if got != want {
 		t.Fatalf("started line\n got %s\nwant %s", got, want)
+	}
+	measured := *est
+	measured.Measured = 3
+	if got, want := councilStartedLine(c, "Council\n  for the cockpit", council.ModeReview, "Review a UI feature", &measured), want+" · from your last 3 councils"; got != want {
+		t.Fatalf("measured started line\n got %s\nwant %s", got, want)
 	}
 	one := &council.Council{Id: "abc123", Experts: experts[3:]} // the Skeptic and the coordinator
 	if got := councilStartedLine(one, "f", council.ModeBrainstorm, "Product ideas", est); !strings.Contains(got, "· brainstorm · Product ideas · 1 expert ·") {

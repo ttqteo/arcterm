@@ -146,6 +146,47 @@ func TestAuditReportCitesSaysWhyAndWhere(t *testing.T) {
 	}
 }
 
+// a bare file name the report also cites by its full path is read there; one with no full path, or with two, is not
+// checked rather than called wrong (the 2026-11-19 report marked nine such cites Wrong, one of them a file that exists)
+func TestAuditReportCitesReadsABareNameThroughTheReportsOwnPaths(t *testing.T) {
+	root := t.TempDir()
+	for _, p := range []string{"pkg/a/chat.go", "pkg/b/util.go", "pkg/c/util.go"} {
+		full := filepath.Join(root, filepath.FromSlash(p))
+		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(full, []byte("package x\n\nfunc headless() {}\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	doc := "## Directions\n\n" +
+		"1. **A** the headless call (pkg/a/chat.go:3) and again (chat.go:3).\n" +
+		"2. **B** the headless helper (pkg/b/util.go:3, pkg/c/util.go:3) and (util.go:3).\n" +
+		"3. **C** the headless reply (other.go:3).\n"
+	got := auditByRef(AuditReportCites(doc, []string{root}))
+	if c := got["chat.go:3"]; c.Verdict != CiteHolds || c.Note != "read as pkg/a/chat.go" {
+		t.Errorf("chat.go:3 = %+v, want it read through pkg/a/chat.go", c)
+	}
+	if c := got["util.go:3"]; c.Verdict != CiteUnchecked || !strings.Contains(c.Note, "pkg/b/util.go") || !strings.Contains(c.Note, "pkg/c/util.go") {
+		t.Errorf("util.go:3 = %+v, want not checked: two paths match", c)
+	}
+	if c := got["other.go:3"]; c.Verdict != CiteUnchecked || c.Note != "a bare file name no full path of the report names" {
+		t.Errorf("other.go:3 = %+v, want not checked", c)
+	}
+}
+
+// a line with no keyword to look for is there, but nothing says it is the line the sentence meant
+func TestAuditReportCitesKeepsALineWithNoKeywordApart(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "x.go"), []byte("a\nb\nc\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got := auditByRef(AuditReportCites("## Directions\n\n1. **A** (x.go:2)\n", []string{root}))
+	if c := got["x.go:2"]; c.Verdict != CiteLineOnly {
+		t.Errorf("x.go:2 = %+v, want line only", c)
+	}
+}
+
 func TestAuditReportCitesCountsAPlaceOnceAndEachTimeItIsCited(t *testing.T) {
 	root := auditProject(t)
 	doc := "## Directions\n\n1. **A** n_paired is zero (harnesspov/results/m5curve/curve.json:12).\n" +
@@ -192,6 +233,24 @@ func TestCiteCheckSectionTalliesAndLists(t *testing.T) {
 	if CiteCheckSection("## Directions\n\n1. **A** nothing cited\n", []string{root}) != "" {
 		t.Error("a report that cites nothing got a section")
 	}
+	// a bare file name no full path names is not checked, and a line with nothing to look for is not counted as holding
+	if err := os.WriteFile(filepath.Join(root, "x.go"), []byte("a\nb\nc\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	s = CiteCheckSection("## Directions\n\n1. **A** the headless call (nowhere.go:3).\n2. **B** (x.go:2)\n", []string{root})
+	for _, want := range []string{
+		"2 places, cited 2 times. 0 hold",
+		"1 name a file only by its bare name and are not checked, 1 are on a line with nothing to look for.",
+		"Not checked (a bare file name):\n\n- `nowhere.go:3` (Directions): a bare file name no full path of the report names",
+		"Line there, nothing to look for:\n\n- `x.go:2` (Directions): no keyword to look for: the line is there",
+	} {
+		if !strings.Contains(s, want) {
+			t.Errorf("section lacks %q:\n%s", want, s)
+		}
+	}
+	if strings.Contains(s, "Wrong:") {
+		t.Errorf("a bare name was listed as wrong:\n%s", s)
+	}
 }
 
 // the saved document carries the section between the matrix and the discussion; Document, which reads no file, does not
@@ -215,8 +274,12 @@ func TestWriteDocumentChecksItsCites(t *testing.T) {
 	if check < 0 || disc < 0 || check > disc {
 		t.Fatalf("the cite check is not before the discussion:\n%s", doc)
 	}
-	if !strings.Contains(doc, "- `b.go:2` (RAM proposes · P2): file not found") {
-		t.Errorf("the wrong cite is not listed:\n%s", doc[check:disc])
+	// no full path of this report names b.go, so its bare name is not checked, not called wrong
+	if !strings.Contains(doc, "Not checked (a bare file name):\n\n- `b.go:2` (RAM proposes · P2): a bare file name no full path of the report names") {
+		t.Errorf("the unchecked cite is not listed:\n%s", doc[check:disc])
+	}
+	if strings.Contains(doc[check:disc], "file not found") {
+		t.Errorf("a bare name was called wrong:\n%s", doc[check:disc])
 	}
 	if strings.Contains(Document(c), "## Cite check") {
 		t.Error("Document read the files")

@@ -47,20 +47,20 @@ func TestDocBlockListsWhatEachCouncilSettledNewestFirst(t *testing.T) {
 	}
 	mustContain(t, "block", block,
 		"## Council decisions",
-		"### "+docDate(newer.Created)+" · Settle the problem after M5\nReport: `"+filepath.Join("docs", "council", "c2.md")+"`\n",
+		"### "+docDate(newer.Created)+" · Settle the problem after M5\nReport: `docs/council/c2.md`\n",
 		"- Direction: Read the paper before citing it\n",
 		"- Agreed: It is a benchmark, not a method.\n",
 		"- Ruled out: Cite it as proof (why: it measures another task)\n",
-		"- Open: What does human-engineered mean there?\n",
 	)
-	mustNotContain(t, "block", block, "A bench council", "Nothing settled yet")
+	// Open lines stay in the council's own Memory: in the block every agent would read them as settled
+	mustNotContain(t, "block", block, "A bench council", "Nothing settled yet", "- Open:", "What does human-engineered mean there?")
 	if strings.Index(block, "Settle the problem") > strings.Index(block, "Pick the direction") {
 		t.Errorf("the newer council should come first:\n%s", block)
 	}
 
 	// a report outside the project is named by its full path; none is left out
 	newer.DocPath = filepath.Join("elsewhere", "c2.md")
-	mustContain(t, "block", DocBlock([]*Council{newer}, project), "Report: `"+filepath.Join("elsewhere", "c2.md")+"`")
+	mustContain(t, "block", DocBlock([]*Council{newer}, project), "Report: `"+filepath.ToSlash(filepath.Join("elsewhere", "c2.md"))+"`")
 	newer.DocPath = ""
 	mustNotContain(t, "block", DocBlock([]*Council{newer}, project), "Report:")
 
@@ -75,6 +75,38 @@ func TestDocBlockListsWhatEachCouncilSettledNewestFirst(t *testing.T) {
 	}
 	if n := strings.Count(DocBlock(many, project), "\n### "); n != docCouncilsMax {
 		t.Errorf("%d councils in the block, want %d", n, docCouncilsMax)
+	}
+}
+
+// a commit hash is history, not a rule: the block drops it from the topic and the entries; a council whose memory holds
+// only Open lines has nothing settled to list
+func TestDocBlockDropsCommitHashesAndOpenOnlyCouncils(t *testing.T) {
+	project := filepath.Join("home", "p")
+	c := decisionsCouncil("c1", project, 1_793_000_000_000, "Chat's suggested replies, merged as 786a11648")
+	c.Memory.Entries[0].Text = "Đã sửa ở 38d789b52 (nhánh fix/sidecar): agent đang hỏi luôn hiện."
+	block := DocBlock([]*Council{c}, project)
+	mustNotContain(t, "block", block, "786a11648", "38d789b52")
+	mustContain(t, "block", block, "· Chat's suggested replies\n", "- Agreed: Đã sửa (nhánh fix/sidecar): agent đang hỏi luôn hiện.\n")
+
+	openOnly := decisionsCouncil("c2", project, 1_793_100_000_000, "Only questions")
+	openOnly.Memory = &CouncilMemory{Entries: []CouncilMemoryEntry{{Id: "m1", Kind: EntryOpen, Text: "Why?"}}}
+	mustNotContain(t, "block", DocBlock([]*Council{openOnly, c}, project), "Only questions")
+}
+
+func TestDropCommits(t *testing.T) {
+	for _, tc := range []struct{ in, want string }{
+		{"Chat's suggested replies, merged as 786a11648", "Chat's suggested replies"},
+		{"Đã sửa ở 38d789b52 (nhánh fix/sidecar): x", "Đã sửa (nhánh fix/sidecar): x"},
+		{"domain 786a11648 x", "domain x"},
+		{"plain 5472f0692", "plain"},
+		{"fixed in 5472f0692 for good", "for good"},
+		{"a 1234567 count", "a 1234567 count"},
+		{"deadbeef cafe", "deadbeef cafe"},
+		{"no hash here", "no hash here"},
+	} {
+		if got := dropCommits(tc.in); got != tc.want {
+			t.Errorf("dropCommits(%q) = %q, want %q", tc.in, got, tc.want)
+		}
 	}
 }
 

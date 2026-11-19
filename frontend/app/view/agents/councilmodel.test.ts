@@ -902,6 +902,12 @@ describe("estimateLabel and followupLabel", () => {
         expect(estimateLabel({ calls: 1, tokens: 20_000, minutes: 1 })).toBe("≈ 1 call · ~20k tokens · ~1 min");
     });
 
+    it("says how many councils a measured price came from", () => {
+        expect(estimateLabel({ calls: 18, tokens: 4_500_000, minutes: 6, measured: 3 })).toBe(
+            "≈ 18 calls · ~4.5M tokens · ~6 min · from your last 3 councils"
+        );
+    });
+
     it("names who answers and what it costs", () => {
         const text = { calls: 2, tokens: 40_000, minutes: 1 };
         const code = { calls: 2, tokens: 180_000, minutes: 2 };

@@ -5,7 +5,9 @@ package council
 
 import (
 	"fmt"
+	"path"
 	"regexp"
+	"runtime"
 	"slices"
 	"strings"
 	"unicode"
@@ -22,10 +24,12 @@ import (
 
 // The verdicts of one cited place.
 const (
-	CiteHolds   = "holds"   // the file and the line are there, and a keyword of a citing sentence is on or near it
-	CiteNoMatch = "nomatch" // the line is there, but no keyword of any sentence citing it is near it
-	CiteBroken  = "wrong"   // no such file, a folder, or a line past the end
-	CiteOutside = "outside" // the path lies outside every folder the council reads: not checked
+	CiteHolds     = "holds"     // the file and the line are there, and a keyword of a citing sentence is on or near it
+	CiteNoMatch   = "nomatch"   // the line is there, but no keyword of any sentence citing it is near it
+	CiteBroken    = "wrong"     // no such file, a folder, or a line past the end
+	CiteOutside   = "outside"   // the path lies outside every folder the council reads: not checked
+	CiteUnchecked = "unchecked" // a bare file name no full path of the report names, or that two or more name: not read
+	CiteLineOnly  = "lineonly"  // the line is there, but no sentence citing it has a keyword to look for
 )
 
 // auditWindowCap caps how many lines one cited range is read over, so a cite of a whole file's range stays cheap.
@@ -310,10 +314,18 @@ func AuditReportCites(doc string, roots []string) CiteAudit {
 			}
 		}
 	}
+	// the full paths the report cites, each once: a bare file name is read through the one of them that ends in it
+	var fulls []string
+	for _, key := range order {
+		if full := filepathSlash(places[key].ref.Path); strings.Contains(full, "/") &&
+			!slices.ContainsFunc(fulls, func(f string) bool { return sameFileName(f, full) }) {
+			fulls = append(fulls, full)
+		}
+	}
 	var audit CiteAudit
 	for _, key := range order {
 		p := places[key]
-		p.cite.Verdict, p.cite.Note, p.cite.Keywords = auditPlace(p.ref, p.contexts, roots, common)
+		p.cite.Verdict, p.cite.Note, p.cite.Keywords = auditPlace(p.ref, p.contexts, roots, common, fulls)
 		audit.Cites = append(audit.Cites, p.cite)
 	}
 	return audit
@@ -363,9 +375,39 @@ func distinctive(ws []string, common map[string]bool) []string {
 
 func filepathSlash(p string) string { return strings.ReplaceAll(p, `\`, "/") }
 
-// auditPlace is the verdict on one cited place, read from the sentences that cite it.
-func auditPlace(r citeRef, contexts []string, roots []string, common map[string]bool) (verdict, note string, found []string) {
+// sameFileName says two names or paths are the same text, case apart on Windows (as findCited's roots are).
+func sameFileName(a, b string) bool {
+	if runtime.GOOS == "windows" {
+		return strings.EqualFold(a, b)
+	}
+	return a == b
+}
+
+// auditPlace is the verdict on one cited place, read from the sentences that cite it. fulls are the full paths the
+// report cites (slash form): a bare file name found at none of roots is read through the one of them that ends in it.
+func auditPlace(r citeRef, contexts []string, roots []string, common map[string]bool, fulls []string) (verdict, note string, found []string) {
 	full, why := findCited(r.Path, roots)
+	if why == "file not found" && !strings.ContainsAny(r.Path, `/\`) {
+		var matches []string
+		for _, f := range fulls {
+			if sameFileName(path.Base(f), r.Path) {
+				matches = append(matches, f)
+			}
+		}
+		switch len(matches) {
+		case 0:
+			return CiteUnchecked, "a bare file name no full path of the report names", nil
+		case 1:
+			r.Path = matches[0] // a copy: the caller's ref is unchanged
+			verdict, note, found = auditPlace(r, contexts, roots, common, nil)
+			if verdict == CiteHolds {
+				note = "read as " + matches[0]
+			}
+			return verdict, note, found
+		default:
+			return CiteUnchecked, "a bare file name two cited paths share: " + strings.Join(matches, ", "), nil
+		}
+	}
 	switch {
 	case why == "path is outside the folders this council reads":
 		return CiteOutside, why, nil
@@ -400,7 +442,7 @@ func auditPlace(r citeRef, contexts []string, roots []string, common map[string]
 		return CiteHolds, "", found
 	}
 	if len(looked) == 0 {
-		return CiteHolds, "no keyword to look for: the line is there", nil
+		return CiteLineOnly, "no keyword to look for: the line is there", nil
 	}
 	return CiteNoMatch, "looked for " + strings.Join(firstN(looked, 6), ", ") + " " + nearText(r), nil
 }
@@ -415,9 +457,9 @@ func firstN(s []string, n int) []string {
 // citeCheckListCap caps how many places each list of the section names; the tally counts them all.
 const citeCheckListCap = 25
 
-// writeCiteCheck writes the "Cite check" section: the tally, then the wrong places, the places with no keyword near them
-// and the ones outside the council's folders, each with where the report cites it. It writes nothing for a report that
-// cites no `path:line`.
+// writeCiteCheck writes the "Cite check" section: the tally, then the wrong places, the places with no keyword near them,
+// the ones outside the council's folders, the bare file names it could not place and the lines with nothing to look for,
+// each with where the report cites it. It writes nothing for a report that cites no `path:line`.
 func writeCiteCheck(b *strings.Builder, a CiteAudit) {
 	if len(a.Cites) == 0 {
 		return
@@ -425,12 +467,25 @@ func writeCiteCheck(b *strings.Builder, a CiteAudit) {
 	b.WriteString("## Cite check\n\n")
 	fmt.Fprintf(b, "Go read every `path:line` this report cites, with no model: %d places, cited %d times. "+
 		"%d hold (the file is there, the line is in it, and a keyword of a sentence citing it is on or within %d lines of it), "+
-		"%d have no such keyword near the line, %d are wrong, %d are outside the folders this council reads.\n",
+		"%d have no such keyword near the line, %d are wrong, %d are outside the folders this council reads.",
 		len(a.Cites), a.Times(), a.Count(CiteHolds), quoteSlack, a.Count(CiteNoMatch), a.Count(CiteBroken), a.Count(CiteOutside))
+	var unread []string // the two verdicts that read nothing to hold or fail: said only when there are some
+	if n := a.Count(CiteUnchecked); n > 0 {
+		unread = append(unread, fmt.Sprintf("%d name a file only by its bare name and are not checked", n))
+	}
+	if n := a.Count(CiteLineOnly); n > 0 {
+		unread = append(unread, fmt.Sprintf("%d are on a line with nothing to look for", n))
+	}
+	if len(unread) > 0 {
+		b.WriteString(" " + strings.Join(unread, ", ") + ".")
+	}
+	b.WriteString("\n")
 	for _, group := range []struct{ verdict, title string }{
 		{CiteBroken, "Wrong"},
 		{CiteNoMatch, "No keyword near the line (read these by hand)"},
 		{CiteOutside, "Outside the council's folders (not checked)"},
+		{CiteUnchecked, "Not checked (a bare file name)"},
+		{CiteLineOnly, "Line there, nothing to look for"},
 	} {
 		var lines []string
 		for _, c := range a.Cites {

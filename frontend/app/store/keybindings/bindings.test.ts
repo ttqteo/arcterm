@@ -1448,7 +1448,7 @@ describe("open a tool chord", () => {
 describe("new council", () => {
     const find = (model: any) => buildGlobalBindings(model).find((x) => x.id === "new-council")!;
 
-    // a council costs 0.5-1.5M tokens: opened by name (the palette row, `wsh ui do new-council`), never by a keystroke
+    // a council costs several million tokens: opened by name (the palette row, `wsh ui do new-council`), never by a keystroke
     it("has no chord, so no keypress runs it, and opens the council Setup from anywhere but a modal", () => {
         const model = { surfaceAtom: atom<SurfaceKey>("agent") } as any;
         const b = find(model);

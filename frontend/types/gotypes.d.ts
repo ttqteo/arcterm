@@ -3132,6 +3132,7 @@ declare global {
         agenttokens?: number;
         callsmax?: number;
         tokensmax?: number;
+        measured?: number;
     };
 
     // council.CouncilEvidence

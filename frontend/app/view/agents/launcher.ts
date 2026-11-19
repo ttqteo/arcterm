@@ -41,7 +41,7 @@ const RUN_ROWS: { id: RunShape; name: string }[] = [
 const TOOL_ROW: Omit<StartRow, "key"> = { id: "tool", kind: "tool", name: "Tool", desc: "lazygit, yazi, btop…" };
 
 // The Council row opens a council's Setup in the picked project, where it is written and started: the one place to start
-// a council by hand besides the palette's New council… (a council costs 0.5–1.5M tokens, so no key starts one)
+// a council by hand besides the palette's New council… (a council costs several million tokens, so no key starts one)
 const COUNCIL_ROW: Omit<StartRow, "key"> = {
     id: "council",
     kind: "council",

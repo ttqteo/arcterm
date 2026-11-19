@@ -126,7 +126,7 @@ arcterm mang theo vài skill dạy agent dùng `wsh` và quy ước của cockpi
 | `arc:handoff` | Khi một plan viết xong, hỏi cách thực hiện bằng `AskUserQuestion` (Arc engine, Arc engine queued, inline, subagent-driven) thay vì hai lựa chọn của `writing-plans`; sau mỗi lần review, viết một khối `arc-review` để Chat vẽ kết quả thành thẻ verdict |
 | `arc:design` | Làm mockup `.dc.html` nhiều artboard trong thư mục nháp bị gitignore; vẽ mỗi phương án UI thành một board thay vì ASCII |
 | `arc:brainstorm` | Giữ trạng thái brainstorm trong `.superpowers/brainstorm/<chủ đề>/brainstorm.json` để arcterm hiện pane [Brainstorm](brainstorm.md) cạnh terminal |
-| `arc:council` | Tự mở một [Council](council.md) khi cuộc trò chuyện có câu hỏi thật sự còn bỏ ngỏ, hoặc khi bạn bảo; tóm tắt báo cáo khi xong |
+| `arc:council` | Đề nghị một [Council](council.md) kèm chi phí ước tính khi cuộc trò chuyện có câu hỏi thật sự còn bỏ ngỏ, và chỉ mở khi bạn đồng ý; mở ngay khi bạn bảo; tóm tắt báo cáo khi xong |
 | `arc:detach` | Chạy dev server, database hay watcher bằng `wsh detach` để nó sống tiếp khi terminal đóng hay arcterm khởi động lại |
 | `arc:learn` | Ghi lại lời sửa hay lời dặn lặp lại của bạn (`wsh learn note`) để nó thành một luật bạn duyệt |
 | `arc:notes` | Viết một ghi chú khi bạn bảo "note lại" (`wsh note add`); ghi chú nằm trong Search → Notes |

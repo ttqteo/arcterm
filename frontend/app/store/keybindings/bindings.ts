@@ -640,7 +640,7 @@ export function buildGlobalBindings(model: AgentsViewModel): Binding[] {
         },
         {
             // Setup for a new council, in the project of the agent in focus (else the first registered one). No chord: a
-            // council costs 0.5-1.5M tokens, so it is reached by name, from the palette's New council… row (which this
+            // council costs several million tokens, so it is reached by name, from the palette's New council… row (which this
             // binding stands in for, palette-commands.ts START_DEFS) or `wsh ui do new-council`; the matcher skips it.
             id: "new-council",
             keys: "",

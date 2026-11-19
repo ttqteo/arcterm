@@ -21,6 +21,9 @@ var councilCitesCmd = &cobra.Command{
 check" a council saves into its document: how many places hold (the file is there, the line is in it, and a keyword of
 a sentence citing it is on or within 3 lines of it), how many have no such keyword near the line, how many are wrong
 (no such file, or a line past the end), and how many lie outside the folders read, each with where the report cites it.
+A file named only by its bare name ("chat.go:3") is read through the full path the report cites elsewhere; one that no
+full path names, or that two do, is counted as not checked, not as wrong. A line with nothing to look for (no keyword in
+the sentences that cite it) is counted apart: it is there, but it does not count as holding.
 It reads files only: no model is called and nothing is written. A report under <project>/docs/council/ is read against
 <project>; --root names the folders instead (repeat it for more, the first one first).`,
 	RunE: func(cmd *cobra.Command, args []string) error {

@@ -10,6 +10,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"sync"
@@ -35,19 +36,45 @@ const (
 const docIntro = "What this project's councils settled, newest first. Where two councils differ, the newer one stands. " +
 	"Each council's report is the file named under it."
 
-// docHasMemory says a council has something settled to list: a direction or an entry.
-func docHasMemory(c *Council) bool {
-	return chosenDirectionOf(c) != "" || memoryHasEntries(c)
+// docSettled says a council has something settled to list: a chosen direction, or an Agreed or Ruled out entry. A
+// council whose memory holds only Open lines has none, and one with no memory at all (nil) has none either.
+func docSettled(c *Council) bool {
+	if chosenDirectionOf(c) != "" {
+		return true
+	}
+	if c.Memory == nil {
+		return false
+	}
+	return len(c.Memory.EntriesOf(EntryAgreed)) > 0 || len(c.Memory.EntriesOf(EntryRuledOut)) > 0
 }
 
-// DocBlock is the block for a project's councils: those with a direction or an entry in their Memory, bar a bench
-// council, newest asked first, at most docCouncilsMax. Each is its date and topic, its report's path (relative to the
-// project when inside it), then a line per Direction, Agreed, Ruled out (with its why) and Open entry. No such council
-// is no block ("").
+// commitRe is a commit hash with the word that points at it: "merged as 786a11648", "ở 38d789b52", "in 5472f0692".
+// The pointing word must start the text or follow whitespace, so "domain 786a11648" keeps "domain" (Go's \b is
+// ASCII-only, which would not bound ở or tại). A run of 7–40 hex digits counts only when it holds a digit and a
+// letter, so a number or a word is never taken.
+var commitRe = regexp.MustCompile(`(?i),?(?:(?:^|\s+)(?:merged as|fixed in|in|at|as|ở|tại))?\s*\b[0-9a-f]{7,40}\b`)
+
+// dropCommits is s with every commit hash, and the word that points at it, taken out, and its whitespace folded: a hash
+// is the history of a decision, not the decision, and the branch it names is gone once it merged.
+func dropCommits(s string) string {
+	s = commitRe.ReplaceAllStringFunc(s, func(m string) string {
+		hex := strings.TrimLeft(m[strings.LastIndexAny(m, " \t\r\n\f")+1:], ",")
+		if !strings.ContainsAny(hex, "0123456789") || strings.Trim(strings.ToLower(hex), "0123456789") == "" {
+			return m // a number or a word, not a hash
+		}
+		return ""
+	})
+	return routerFold(s)
+}
+
+// DocBlock is the block for a project's councils: those with a direction, an Agreed entry or a Ruled out entry in their
+// Memory, bar a bench council, newest asked first, at most docCouncilsMax. Each is its date and topic, its report's
+// path (slashes on every OS, relative to the project when inside it), then a line per Direction, Agreed and Ruled out
+// (with its why) entry, none with a commit hash. No such council is no block ("").
 func DocBlock(councils []*Council, project string) string {
 	var shown []*Council
 	for _, c := range councils {
-		if c != nil && !c.Bench && docHasMemory(c) {
+		if c != nil && !c.Bench && docSettled(c) {
 			shown = append(shown, c)
 		}
 	}
@@ -60,18 +87,20 @@ func DocBlock(councils []*Council, project string) string {
 	var b strings.Builder
 	b.WriteString(docBegin + "\n## Council decisions\n\n" + docIntro + "\n")
 	for _, c := range shown {
-		fmt.Fprintf(&b, "\n### %s · %s\n", time.UnixMilli(c.Created).Format("2006-01-02"), routerShown(c.Feature, docTitleMax))
+		fmt.Fprintf(&b, "\n### %s · %s\n", time.UnixMilli(c.Created).Format("2006-01-02"), routerShown(dropCommits(c.Feature), docTitleMax))
 		if c.DocPath != "" {
 			fmt.Fprintf(&b, "Report: `%s`\n", docReportPath(c.DocPath, project))
 		}
 		b.WriteString("\n")
 		if d := chosenDirectionOf(c); d != "" {
-			b.WriteString("- Direction: " + routerFold(d) + "\n")
+			b.WriteString("- Direction: " + dropCommits(d) + "\n")
 		}
-		for _, k := range []struct{ kind, label string }{{EntryAgreed, "Agreed"}, {EntryRuledOut, "Ruled out"}, {EntryOpen, "Open"}} {
+		// Open lines stay in the council's own Memory and in Library: in this block every agent would read them as
+		// settled, and a question answered since would stay on the page. A council shown has a Memory (docSettled).
+		for _, k := range []struct{ kind, label string }{{EntryAgreed, "Agreed"}, {EntryRuledOut, "Ruled out"}} {
 			for _, e := range c.Memory.EntriesOf(k.kind) {
-				line := "- " + k.label + ": " + routerFold(e.Text)
-				if why := routerFold(e.Why); why != "" && k.kind == EntryRuledOut {
+				line := "- " + k.label + ": " + dropCommits(e.Text)
+				if why := dropCommits(e.Why); why != "" && k.kind == EntryRuledOut {
 					line += " (why: " + why + ")"
 				}
 				b.WriteString(line + "\n")
@@ -82,12 +111,13 @@ func DocBlock(councils []*Council, project string) string {
 	return b.String()
 }
 
-// docReportPath is a council's report as the block names it: relative to the project when it is inside it.
+// docReportPath is a council's report as the block names it, with slashes on every OS (the block is read by agents on
+// any machine): relative to the project when it is inside it.
 func docReportPath(path, project string) string {
 	if rel, err := filepath.Rel(project, path); err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) && !filepath.IsAbs(rel) {
-		return rel
+		return filepath.ToSlash(rel)
 	}
-	return path
+	return filepath.ToSlash(path)
 }
 
 // WithDocBlock is doc with block in place of the one it holds, or, with none, block appended under the file's own text

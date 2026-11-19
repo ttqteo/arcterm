@@ -506,6 +506,7 @@ func TestRoundCheckPromptShowsMemory(t *testing.T) {
 		"- [m3] Polling every second (why: It wakes the laptop) (the person's)",
 		"- [m4] Which badge colour?\n", // an Open of the person's is not marked: the check may drop it
 		`"entries"`, `"op"`, `"drop"`, `"ruledout"`,
+		agreedIsARule, // arcterm copies Agreed lines into the project's instruction file as rules
 	)
 	mustNotContain(t, "round-check prompt", p, "[m1] Who owns the poll interval? (the person's)", "<nil>", "%!")
 }

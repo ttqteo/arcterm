@@ -437,6 +437,7 @@ func roundCheckPrompt(c *Council, rr roundRead) string {
 		"an entry only for what the seats plainly settled (\"agreed\"), dropped (\"ruledout\", with a \"why\") or left open " +
 		"(\"open\") this round, one sentence each, in the language the discussion is in, and cite the message ids it rests on. " +
 		"Never add what the memory already says or rules out.\n" +
+		"- " + agreedIsARule + "\n" +
 		"- " + personSettlesRule + "\n" +
 		"- Drop an entry only when this round answered an Open one (and then add the answer as Agreed) or when an entry you " +
 		"made is wrong. Never drop a line marked (the person's) above; the person's Open lines are not marked and may be " +
@@ -448,6 +449,12 @@ func roundCheckPrompt(c *Council, rr roundRead) string {
 		"\"why\": \"<for ruledout>\", \"messages\": [\"<id>\"]}, {\"op\": \"drop\", \"entry\": \"<m id>\"}]\n")
 	return b.String()
 }
+
+// agreedIsARule keeps the memory's Agreed lines true for as long as they stand: arcterm copies them into the
+// project's instruction file, where every agent reads them as rules.
+const agreedIsARule = "An \"agreed\" entry is a rule or a fact that stays true, written without a commit hash or a " +
+	"branch: never work still to do (that is \"open\"), never \"fixed in <commit>\" (write the rule the fix keeps), never " +
+	"a complaint."
 
 // personSettlesRule is the round check's rule for the person's own messages: what the person decides is settled, with
 // no seat needing to agree. Before it, the check recorded only what the seats settled, and read the person's messages
