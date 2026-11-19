@@ -46,6 +46,14 @@ func (ws *WshServer) EffortCreateCommand(ctx context.Context, data wshrpc.Comman
 	if len(data.Chunks) > 0 {
 		head = effortHead(ctx, data.Project)
 	}
+	// --proposed seeds proposals the way `chunk add --proposed` writes one: the chunk is proposed, and a "proposed"
+	// note keeps who proposed it (its session and run) when there is a session to keep, since To review groups a
+	// run's proposals by that note
+	var proposer jarvis.NoteAuthor
+	if data.Proposed && data.SourceBlock != "" {
+		proposer = agentAuthorForBlock(ctx, data.SourceBlock)
+	}
+	now := time.Now().UnixMilli()
 	for _, seed := range data.Chunks {
 		label := strings.TrimSpace(seed.Label)
 		if label == "" {
@@ -58,7 +66,16 @@ func (ws *WshServer) EffortCreateCommand(ctx context.Context, data wshrpc.Comman
 			return nil, fmt.Errorf("EC-DUPLICATE-LABEL: chunk %q already exists", label)
 		}
 		seen[label] = true
-		e.Chunks = append(e.Chunks, waveobj.EffortChunk{Label: label, Status: "pending", Owner: seed.Owner, BaseCommit: head})
+		c := waveobj.EffortChunk{Label: label, Status: "pending", Owner: seed.Owner, BaseCommit: head}
+		if data.Proposed {
+			c.Status, c.UpdatedTs = "proposed", now
+			if proposer.Session != "" {
+				c.Notes = append(c.Notes, waveobj.EffortNote{
+					Ts: now, Text: jarvis.ProposedNote, Author: proposer.Who, Session: proposer.Session, Run: proposer.Run,
+				})
+			}
+		}
+		e.Chunks = append(e.Chunks, c)
 	}
 	if err := effortstore.Create(ctx, e); err != nil {
 		return nil, err
@@ -345,15 +362,22 @@ func noteAuthorFor(ctx context.Context, data wshrpc.CommandEffortMutateData) jar
 		}
 		return jarvis.NoteAuthor{}
 	}
+	return agentAuthorForBlock(ctx, data.SourceBlock)
+}
+
+// agentAuthorForBlock is the author of what an agent writes from a terminal: the tab of sourceBlock is its session,
+// and the run owning that tab, if any, its run (a dag child's included: the run it belongs to). `wsh effort` writes
+// notes through it, both a mutate batch (noteAuthorFor) and a create (EffortCreateCommand --proposed).
+func agentAuthorForBlock(ctx context.Context, sourceBlock string) jarvis.NoteAuthor {
 	by := jarvis.NoteAuthor{Who: "agent"}
-	if oref, err := waveobj.ParseORef(data.SourceBlock); err == nil && oref.OType == waveobj.OType_Block {
+	if oref, err := waveobj.ParseORef(sourceBlock); err == nil && oref.OType == waveobj.OType_Block {
 		if block, err := wstore.DBMustGet[*waveobj.Block](ctx, oref.OID); err == nil {
 			if tab, err := waveobj.ParseORef(block.ParentORef); err == nil && tab.OType == waveobj.OType_Tab {
 				by.Session = "agent:" + tab.OID
 			}
 		}
 	}
-	if run, _, ok := ownerRunForBlock(ctx, data.SourceBlock); ok {
+	if run, _, ok := ownerRunForBlock(ctx, sourceBlock); ok {
 		by.Run = "run:" + run.OID
 	}
 	return by
