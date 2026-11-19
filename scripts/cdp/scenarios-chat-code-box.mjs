@@ -237,7 +237,8 @@ export default function (kit) {
                 rec(`${name}: no [data-chat-code-box] once the box is empty`, none, { none });
             });
 
-            // 5. a quote line and inline code typed in the box: the quote slanted with a bar beside it, each `span` a chip
+            // 5. a quote line and inline code typed in the box: the quote slanted with a bar beside it and its `> ` drawn as
+            // nothing (still in the text), each `span` a chip
             await run("5. quote and inline code in the box", async (name) => {
                 await clearBox(h, A);
                 await typeLines(h, A, ["> see `npm test` here", "plain `x` text"]);
@@ -261,13 +262,16 @@ export default function (kit) {
                         mono: codes.every((c) => /mono/i.test(getComputedStyle(c).fontFamily)),
                         chip: codes.every((c) => [c, ...c.querySelectorAll("*")].some((e) => getComputedStyle(e).backgroundColor !== "rgba(0, 0, 0, 0)")),
                         barOnQuoteOnly: bar != null && pr != null && bar.bottom <= pr.top + 1,
+                        // the quote's `> ` is a text node of its own with no width
+                        markerHidden: slanted.some((e) => e.textContent === "> " && e.getBoundingClientRect().width < 1),
                     };
                 })()`);
                 await shot(h, "5-quote-inline");
                 rec(
-                    `${name}: one [data-chat-quote-bar] beside the first line only; the quote line is <em> italic; \`npm test\` and \`x\` are mono <code> chips; no code box; the text is as typed`,
+                    `${name}: one [data-chat-quote-bar] beside the first line only; the quote line is <em> italic, its `> ` zero-width; \`npm test\` and \`x\` are mono <code> chips; no code box; the text is as typed`,
                     got.bars === 1 &&
                         got.barOnQuoteOnly &&
+                        got.markerHidden &&
                         got.boxes === 0 &&
                         got.quoted === "> see `npm test` here" &&
                         got.italic &&

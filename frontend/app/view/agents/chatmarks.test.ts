@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it } from "vitest";
-import { codePaste, inlineCodeSpans, lineMarks, looksLikeCode, markRuns, quoteBlocks } from "./chatmarks";
+import { codePaste, endQuotes, inlineCodeSpans, lineMarks, looksLikeCode, markRuns, quoteBlocks } from "./chatmarks";
 
 const STACK = [
     "    at ReleaseDetail (http://localhost:4310/src/components/releases/ReleaseDetail.tsx?t=1794992591545:38:41)",
@@ -40,28 +40,59 @@ describe("lineMarks", () => {
         ]);
     });
     it("draws only fences with inline off", () => {
-        expect(lineMarks(["> `a`"], { inline: false })[0]).toEqual({ fenced: false, quote: false, spans: [] });
+        expect(lineMarks(["> `a`"], { inline: false })[0]).toEqual({
+            fenced: false,
+            quote: false,
+            marker: 0,
+            spans: [],
+        });
+    });
+    it("measures a quote's marker: the `>` and one space after it", () => {
+        expect(lineMarks(["> a", ">a", ">  a", "  > a", ">", "a > b"]).map((m) => m.marker)).toEqual([
+            2, 1, 2, 4, 1, 0,
+        ]);
     });
 });
 
 describe("markRuns", () => {
     const [mark] = lineMarks(["> run `npm test` now"]);
     it("cuts a node at the span's ends", () => {
-        expect(markRuns(mark, 0, 20).map((r) => [r.start, r.end, r.mark.inline])).toEqual([
-            [0, 6, false],
-            [6, 16, true],
-            [16, 20, false],
+        expect(markRuns(mark, 0, 20).map((r) => [r.start, r.end, r.mark.inline, r.mark.marker])).toEqual([
+            [0, 2, false, true],
+            [2, 6, false, false],
+            [6, 16, true, false],
+            [16, 20, false, false],
         ]);
         expect(markRuns(mark, 0, 20).every((r) => r.mark.quote)).toBe(true);
     });
     it("is one run for a node inside the span", () => {
-        expect(markRuns(mark, 8, 12)).toEqual([{ start: 8, end: 12, mark: { code: true, inline: true, quote: true } }]);
+        expect(markRuns(mark, 8, 12)).toEqual([
+            { start: 8, end: 12, mark: { code: true, inline: true, quote: true, marker: false } },
+        ]);
+    });
+    it("marks the part of a node over the marker", () => {
+        expect(markRuns(mark, 1, 4).map((r) => [r.start, r.end, r.mark.marker])).toEqual([
+            [1, 2, true],
+            [2, 4, false],
+        ]);
     });
     it("is one run for a fenced line", () => {
         const [fenced] = lineMarks(["```", "x"]);
         expect(markRuns(fenced, 0, 3)).toEqual([
-            { start: 0, end: 3, mark: { code: true, inline: false, quote: false } },
+            { start: 0, end: 3, mark: { code: true, inline: false, quote: false, marker: false } },
         ]);
+    });
+});
+
+describe("endQuotes", () => {
+    it("ends a quote that a line of text follows at once", () => {
+        expect(endQuotes(">xx\nsss")).toBe(">xx\n\nsss");
+        expect(endQuotes("> a\n> b\nc\n> d")).toBe("> a\n> b\n\nc\n> d");
+    });
+    it("leaves a quote that ends the message, a blank line or a fence alone", () => {
+        expect(endQuotes("> a\n\nb")).toBe("> a\n\nb");
+        expect(endQuotes("a\n> b")).toBe("a\n> b");
+        expect(endQuotes("```\n> a\nb\n```")).toBe("```\n> a\nb\n```");
     });
 });
 

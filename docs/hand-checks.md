@@ -16,6 +16,11 @@ list (its number is not reused).
 Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) ·
 [part 4](hand-checks-4.md) · [part 3](hand-checks-3.md) · [part 2](hand-checks-2.md) (oldest).
 
+- [ ] (arcterm) **A quote in Chat's box draws no `>`, and a line under it stays out.** Type `>xx`, Shift+Enter, `sss`:
+  the box shows `xx` slanted beside the bar with no `>`, and `sss` plain; ← and Backspace across the hidden `> ` take one
+  press per character (two presses to undo the quote) with the caret never lost. Send it: the bubble shows `xx` in the
+  quote and `sss` under it, not both in the quote. `chatmarks.ts` lineMarks marker / endQuotes, `chateditormarks.tsx`
+  `lowercase`; `chat-code-box` step 5 checks the zero-width marker but was not run (no dev app up).
 - [ ] (arcterm) **A click on a focus-read agent's row lets J/K step at once.** With focus read on for an agent, click
   another agent's row, then that agent's row in the tree: J/K step its blocks with no click in Chat (before, they
   moved to the next agent). j/k pressed in the tree still go from agent to agent; a run row picked to type into

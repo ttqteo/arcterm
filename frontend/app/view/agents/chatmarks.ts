@@ -14,6 +14,9 @@ import { fenceRanges } from "./chatfences";
 export interface LineMark {
     fenced: boolean;
     quote: boolean;
+    /** a quote line's `>` and the one space after it, the characters the bar stands for (as the bubble draws a quote,
+     *  without them): their length from the line's start, 0 on any other line */
+    marker: number;
     spans: [number, number][];
 }
 
@@ -24,6 +27,8 @@ export interface Mark {
     /** an inline span (its own chip), not a fenced line */
     inline: boolean;
     quote: boolean;
+    /** a quote's `>` and its space: kept in the text, drawn as nothing */
+    marker: boolean;
 }
 
 export interface MarkRun {
@@ -32,8 +37,9 @@ export interface MarkRun {
     mark: Mark;
 }
 
-// up to three spaces, then `>`
+// up to three spaces, then `>`; and that with the one space after it, the marker the bubble does not draw
 const QUOTE = /^ {0,3}>/;
+const QUOTE_MARKER = /^ {0,3}> ?/;
 
 /** Pure: the inline code spans on a line, as markdown reads them: a run of backticks opens one and the next run of the
  *  same length closes it; a run with no partner is plain text. */
@@ -88,22 +94,26 @@ export function lineMarks(lines: string[], opts: { inline?: boolean } = {}): Lin
     }
     return lines.map((line, i) => {
         if (fenced.has(i)) {
-            return { fenced: true, quote: false, spans: [] };
+            return { fenced: true, quote: false, marker: 0, spans: [] };
         }
         if (!inline) {
-            return { fenced: false, quote: false, spans: [] };
+            return { fenced: false, quote: false, marker: 0, spans: [] };
         }
-        return { fenced: false, quote: QUOTE.test(line), spans: inlineCodeSpans(line) };
+        const marker = QUOTE_MARKER.exec(line)?.[0].length ?? 0;
+        return { fenced: false, quote: marker > 0, marker, spans: inlineCodeSpans(line) };
     });
 }
 
 function sameMark(a: Mark, b: Mark): boolean {
-    return a.code === b.code && a.inline === b.inline && a.quote === b.quote;
+    return a.code === b.code && a.inline === b.inline && a.quote === b.quote && a.marker === b.marker;
 }
 
 /** Pure: how the characters [from, to) of a line are drawn, as runs of one mark each (one run when it is all one). */
 export function markRuns(mark: LineMark, from: number, to: number): MarkRun[] {
     const cuts = new Set<number>([from, to]);
+    if (mark.marker > from && mark.marker < to) {
+        cuts.add(mark.marker);
+    }
     for (const [a, b] of mark.spans) {
         for (const at of [a, b]) {
             if (at > from && at < to) {
@@ -121,7 +131,12 @@ export function markRuns(mark: LineMark, from: number, to: number): MarkRun[] {
         const start = points[k];
         const end = points[k + 1];
         const inSpan = mark.spans.some(([a, b]) => start >= a && start < b);
-        const m: Mark = { code: mark.fenced || inSpan, inline: !mark.fenced && inSpan, quote: mark.quote };
+        const m: Mark = {
+            code: mark.fenced || inSpan,
+            inline: !mark.fenced && inSpan,
+            quote: mark.quote,
+            marker: start < mark.marker,
+        };
         const last = out[out.length - 1];
         if (last != null && sameMark(last.mark, m)) {
             last.end = end;
@@ -147,6 +162,23 @@ export function quoteBlocks(marks: LineMark[]): [number, number][] {
         }
     });
     return out;
+}
+
+/** Pure: the message with a blank line after each quote that a line of text follows at once, outside fenced blocks, so
+ *  markdown ends the quote there as the box drew it: `>xx` then `sss` is a quote of `xx` and a line `sss`, where markdown
+ *  alone would carry `sss` into the quote (a lazy continuation line). */
+export function endQuotes(text: string): string {
+    const lines = text.split("\n");
+    const marks = lineMarks(lines);
+    const out: string[] = [];
+    lines.forEach((line, i) => {
+        out.push(line);
+        const next = marks[i + 1];
+        if (marks[i].quote && next != null && !next.quote && !next.fenced && lines[i + 1].trim() !== "") {
+            out.push("");
+        }
+    });
+    return out.join("\n");
 }
 
 // ---- a paste that is code ----

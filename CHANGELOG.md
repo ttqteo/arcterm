@@ -37,7 +37,7 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   with the reset time. With more than one account it names the one in use and offers Switch to the account with the
   most room, which moves this agent over and offers to restart the others; Snooze hides it for an hour, four hours or
   until tomorrow.
-- Chat's message box draws a `>` quote (slanted, with a bar beside it) and `inline code` as you type them, as the sent
+- Chat's message box draws a `>` quote (slanted, with a bar beside it in place of the `>`) and `inline code` as you type them, as the sent
   message shows them. A pasted stack trace, log or block of code goes in wrapped in a ``` code block; Ctrl+Z takes the
   wrapping away and keeps the paste.
 - When an agent's work is done (its last turn committed and you have read it), the suggested replies over Chat's box end
@@ -152,6 +152,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- A line you type straight under a `>` quote, with no blank line between, shows in your sent message as its own line
+  under the quote, as the box drew it, instead of inside the quote.
 - Clicking an agent whose Chat reads with focus read puts the keyboard in its conversation, so J/K step blocks at once
   instead of moving to the next agent in the tree.
 - An agent resumed or woken after a night idle no longer reads "Working (10h 24m · ↓ 841 tokens)" in Chat while it starts: the time and tokens of a turn that already ended are not counted again.

@@ -4,8 +4,9 @@
 // The message box's markdown, drawn as you type it, as the bubble draws it once it is sent: the lines from an opening ```
 // to its closing one (or to the end, while it is still open) are set in the mono face with a box behind them; outside a
 // block, a `code` span is mono in a chip of its own, and a line that starts with `>` is a quote, slanted and dimmed with a
-// bar beside it. The text stays what you typed: each is a Lexical text format (fenced `code`, inline `code` + `highlight`,
-// quote `italic`; the editor's theme sets their look, MARK_THEME), which is no character of the message, and the boxes and
+// bar beside it and its `>` not drawn. The text stays what you typed: each is a Lexical text format (fenced `code`, inline
+// `code` + `highlight`, quote `italic`, its `>` `lowercase`; the editor's theme sets their look, MARK_THEME), which is no
+// character of the message, and the boxes and
 // bars are a layer behind the editor, placed where their first and last lines are on screen. Which line is what is
 // chatmarks.ts lineMarks.
 
@@ -30,11 +31,15 @@ import { lineMarks, markRuns, quoteBlocks, type Mark } from "./chatmarks";
 
 /** the editor theme's classes for the formats the marks use (LexicalComposer's `theme.text`): a fenced line's and an
  *  inline span's mono face (`code`), an inline span's chip over it (`highlight`, only ever beside `code`, so the element is
- *  a `<code>`, never a `<mark>`), and a quote's slant and dim (`italic`), as `.agent-md` draws them in the bubble */
+ *  a `<code>`, never a `<mark>`), a quote's slant and dim (`italic`), and its `>` drawn as nothing (`lowercase`), as
+ *  `.agent-md` draws them in the bubble */
 export const MARK_THEME = {
     code: "font-mono text-[0.88em]",
     highlight: "rounded-[3px] bg-panel-hover text-code-inline",
     italic: "italic text-secondary",
+    // a quote's `>` and its space: no width and no glyph, as the bubble draws the quote without them (the bar stands for
+    // them); the format is otherwise unused in the box
+    lowercase: "text-[0px]",
 } satisfies Partial<Record<TextFormatType, string>>;
 
 // how far the box reaches above its first line's text and below its last one's, inside the 1.9 leading's gap
@@ -109,6 +114,7 @@ const FORMATS: [TextFormatType, keyof Mark][] = [
     ["code", "code"],
     ["highlight", "inline"],
     ["italic", "quote"],
+    ["lowercase", "marker"],
 ];
 
 function hasMark(node: TextNode, mark: Mark): boolean {

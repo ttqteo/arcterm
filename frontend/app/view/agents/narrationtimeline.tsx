@@ -36,6 +36,7 @@ import {
     type EditFile,
 } from "./agentsviewmodel";
 import { splitFenceInfo } from "./chatfences";
+import { endQuotes } from "./chatmarks";
 import { userNeedsClamp } from "./compacttimeline";
 import { splitAttachedImages } from "./launcherimages";
 import { MarkdownMessage } from "./markdownmessage";
@@ -495,7 +496,7 @@ export function PromptText({ text, mentions }: { text: string; mentions?: boolea
                 )}
             >
                 <MarkdownMessage
-                    text={splitFenceInfo(text)}
+                    text={splitFenceInfo(endQuotes(text))}
                     mentions={mentions}
                     className="[overflow-wrap:anywhere] [&_p]:whitespace-pre-wrap"
                 />
