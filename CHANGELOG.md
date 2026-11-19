@@ -28,6 +28,13 @@ shows above the title: a 2:1 crop of a `task verify:ui` screenshot, as WebP, nam
 (`cwebp -q 82 -crop <x> <y> <w> <h> cdp-shots/<shot>.png -o public/whatsnew/<file>`). `whatsnew.test.ts` fails on a
 missing file, on one over 120 KB, and on a picture given to a line that is not big.
 
+## Unreleased
+
+### Changed
+
+- A council's first round and its pause now use the whole width of the pane: the experts' cards and the ideas fill it
+  instead of stopping at 900 px with an empty strip on the right, while an idea's argument keeps a readable line length.
+
 ## 1.7.0 — 2026-11-19
 
 ### Added
