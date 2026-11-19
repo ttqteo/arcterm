@@ -17,19 +17,14 @@ import { useLocalImage } from "@/app/view/jarvis/localimage";
 import { cn } from "@/util/util";
 import { ArrowUpRight, ChevronDown, ChevronRight, ImageOff } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
-import { Fragment, useMemo, useState, type KeyboardEvent, type ReactNode } from "react";
+import { useState, type KeyboardEvent, type ReactNode } from "react";
 import { detailExceedsInline, type AgentActionEntry } from "./agentsviewmodel";
 import { editCounts, foldOf, pictureOf, stepOf, stepRows, stretchPictures, type StepChip } from "./chatsteps";
 import { stepSummary, stretchTime } from "./chatstepsummary";
+import { CommandOutput, outputAsCode, ShellCommand } from "./commandtext";
 import { stretchMs, type WorkItem } from "./compacttimeline";
 import { PromptImages, ToolDetailBody, useNow } from "./narrationtimeline";
-import { OutputLines } from "./outputlines";
 import { PathLink } from "./pathlinkcontext";
-import { shellLine } from "./shellhighlight";
-import { codeOutputLine, readsCode } from "./stepoutput";
-
-// what an inverse ANSI run in a command's output swaps in for an unset side
-const OUTPUT_COLORS = { fg: "var(--color-secondary)", bg: "var(--color-surface-code)" };
 
 function baseName(path: string): string {
     return path.split(/[\\/]/).pop() || path;
@@ -175,13 +170,9 @@ function Opened({ children }: { children: ReactNode }) {
     );
 }
 
-// an opened command: `$ command` in a code block, then its output in a box that scrolls (Chat's own; the live feed keeps
-// ToolDetailBody's)
+// an opened command: `$ command` in a code block, then its output in a box that scrolls, both in colour (commandtext.tsx)
 function CommandDetail({ action, command }: { action: AgentActionEntry; command: string }) {
     const output = action.detail?.kind === "bash" ? action.detail.output : "";
-    const lines = useMemo(() => output.replace(/\n$/, "").split("\n"), [output]);
-    // output with no ANSI of its own that prints source is drawn as code (stepoutput.ts); the rest in its own colours
-    const asCode = !output.includes("\u001b") && readsCode(command);
     return (
         <Opened>
             <div
@@ -189,39 +180,15 @@ function CommandDetail({ action, command }: { action: AgentActionEntry; command:
                 className="whitespace-pre-wrap rounded-[6px] bg-surface-code px-3 py-2 font-mono text-[12px] text-primary [overflow-wrap:anywhere]"
             >
                 <span className="select-none text-muted">$ </span>
-                {/* the command in the shell's colours, as Chat's bash box draws it */}
-                {command.split("\n").map((ln, i) => (
-                    <Fragment key={i}>
-                        {i > 0 ? "\n" : null}
-                        {shellLine(ln).map((tk, k) => (
-                            <span key={k} className={tk.cls}>
-                                {tk.t}
-                            </span>
-                        ))}
-                    </Fragment>
-                ))}
+                <ShellCommand command={command} />
             </div>
             {output !== "" ? (
                 <pre
                     data-chat-step-output
-                    data-chat-step-output-code={asCode || undefined}
+                    data-chat-step-output-code={outputAsCode(command, output) || undefined}
                     className="m-0 max-h-[320px] overflow-auto whitespace-pre-wrap px-3 py-1 font-mono text-[12px] leading-[1.6] text-secondary [overflow-wrap:anywhere]"
                 >
-                    {asCode ? (
-                        lines.map((ln, i) => (
-                            <div key={i}>
-                                {ln === ""
-                                    ? "\n"
-                                    : codeOutputLine(ln).map((tk, k) => (
-                                          <span key={k} className={tk.cls}>
-                                              {tk.t}
-                                          </span>
-                                      ))}
-                            </div>
-                        ))
-                    ) : (
-                        <OutputLines lines={lines} colors={OUTPUT_COLORS} />
-                    )}
+                    <CommandOutput command={command} output={output} />
                 </pre>
             ) : null}
             <OpenFullView action={action} />

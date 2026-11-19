@@ -15,6 +15,7 @@ import { CircleAlert } from "lucide-react";
 import { useLayoutEffect, useRef, useState, type MouseEvent, type ReactNode } from "react";
 import type { AgentsViewModel } from "../agents/agents";
 import { runAtom } from "../agents/channelsstore";
+import { CommandOutput } from "../agents/commandtext";
 import { InlineMarkdown } from "../agents/inlinemarkdown";
 import { RoutePicker } from "../agents/routepicker";
 import { useRunEvents } from "../agents/runeventstore";
@@ -210,7 +211,8 @@ export function DagTaskPeek({
                                 peek.verify.tone === "warning" ? "text-warning" : "text-secondary"
                             )}
                         >
-                            {peek.verify.tail}
+                            {/* the engine runs Verify with no terminal: its lines in the tones they call for */}
+                            <CommandOutput command="" output={peek.verify.tail} />
                         </pre>
                     ) : null}
                 </div>

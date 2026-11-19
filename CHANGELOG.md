@@ -166,8 +166,10 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - Sidecar's Other apps lists WSL's and Docker's virtual machine (VmmemWSL, Vmmem) with the gigabytes Task Manager
   shows, and names each app's WebView2 panes after the app (`WebView2: ms-teams.exe`) instead of summing every app's
   into one msedgewebview2.exe row.
-- An opened command in Chat is in colour: the command in the shell's colours, and its output either as code (a `sed`,
-  `cat` or `grep` of a source file, line numbers dim) or in the colours its program printed, a failure red.
+- A command an agent ran is in colour wherever it opens (a Chat step, its full view, the live feed): the command in
+  the shell's colours, and its output either as code (a `sed`, `cat` or `grep` of a source file, line numbers dim)
+  or in the colours its program printed, a failure red. A Grep step's matches in a source file, a failed git command
+  in Diff and a task's Verify output in the run DAG are coloured too.
 - A `.jsonl` or `.ndjson` file opens in colour, like JSON, with no error marked on every line after the first.
 - Sidecar shows every run in progress, not only the newest: a Runs box above Needs you lists up to three, a failed run
   first, and sums up the rest in one line ("+2 more · 1 failed") that opens them in Jarvis; a row opens its run. The box

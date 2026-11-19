@@ -37,6 +37,7 @@ import {
 } from "./agentsviewmodel";
 import { splitFenceInfo } from "./chatfences";
 import { endQuotes } from "./chatmarks";
+import { CommandOutput, ShellCommand } from "./commandtext";
 import { userNeedsClamp } from "./compacttimeline";
 import { splitAttachedImages } from "./launcherimages";
 import { MarkdownMessage } from "./markdownmessage";
@@ -44,6 +45,7 @@ import { PathLink } from "./pathlinkcontext";
 import { PinnedPromptBar, scrollParent, usePinnedPrompt } from "./pinnedpromptbar";
 import { RELEASE_TAIL_EVENT } from "./sticktobottom";
 import { highlightLine } from "./highlight";
+import { namesCodeFile } from "./stepoutput";
 import { formatDuration } from "./tooldetail";
 
 // Handoff lane feed (Wave-cockpit-live.dc.html:211-247). message -> narration row
@@ -194,7 +196,16 @@ export function ToolDetailBody({ detail, variant }: { detail: ActionDetail; vari
                 {detail.matches.map((g, i) => (
                     <div key={i} className="flex gap-2.5 whitespace-pre font-mono text-[11.5px] leading-[1.65]">
                         <span className="shrink-0 text-muted">{g.loc}</span>
-                        <span className="min-w-0 flex-1 truncate text-secondary">{g.code}</span>
+                        <span className="min-w-0 flex-1 truncate text-secondary">
+                            {/* a match in a source file in its syntax colours; one in prose (a .md) plain */}
+                            {namesCodeFile(g.loc)
+                                ? highlightLine(g.code).map((tk, k) => (
+                                      <span key={k} className={tk.cls}>
+                                          {tk.t}
+                                      </span>
+                                  ))
+                                : g.code}
+                        </span>
                     </div>
                 ))}
                 {detail.more ? <div className={cn("pt-1.5", FAINT_TEXT)}>{detail.more}</div> : null}
@@ -231,7 +242,9 @@ export function ToolDetailBody({ detail, variant }: { detail: ActionDetail; vari
                         )}
                     >
                         <span className="shrink-0 select-none text-accent">$</span>
-                        <span>{detail.command}</span>
+                        <span>
+                            <ShellCommand command={detail.command} />
+                        </span>
                     </div>
                 ) : null}
                 {detail.output ? (
@@ -242,10 +255,11 @@ export function ToolDetailBody({ detail, variant }: { detail: ActionDetail; vari
                             modal && "overflow-x-auto",
                             detail.command && "border-t border-edge-faint",
                             pad,
-                            detail.exit ? "text-error" : "text-ink-mid"
+                            "text-ink-mid"
                         )}
                     >
-                        {detail.output}
+                        {/* the program's colours, or the tones its text calls for (a failing line red) */}
+                        <CommandOutput command={detail.command} output={detail.output} />
                     </pre>
                 ) : null}
                 {/* inline, the exit chip sits in the panel footer (ToolLine) so it never scrolls away */}

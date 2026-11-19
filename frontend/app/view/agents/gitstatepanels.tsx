@@ -10,6 +10,7 @@
 import { cn, fireAndForget } from "@/util/util";
 import { CircleAlert, Copy, Folder, RotateCw, X } from "lucide-react";
 import type { ReactNode } from "react";
+import { CommandOutput, ShellCommand } from "./commandtext";
 import { failureHeadline } from "./gitfailure";
 import { explainSyncFailure } from "./syncstate";
 
@@ -241,7 +242,7 @@ export function GitFailurePanel({ failure, onRetry }: { failure: GitFailure; onR
             <div className="w-full max-w-[720px] rounded-[8px] border border-edge-mid bg-surface-code">
                 <div className="flex items-center gap-[8px] px-[12px] py-[9px]">
                     <span className="min-w-0 flex-1 select-text truncate font-mono text-[11.5px] text-ink-mid">
-                        {failure.command}
+                        <ShellCommand command={failure.command} />
                     </span>
                     <span className="flex-none rounded-[5px] border border-error/25 bg-error/12 px-[7px] py-[2px] text-[10.5px] font-semibold tabular-nums text-error">
                         {exitLabel(failure)}
@@ -257,7 +258,8 @@ export function GitFailurePanel({ failure, onRetry }: { failure: GitFailure; onR
                 </div>
                 {failure.stderr ? (
                     <pre className="max-h-[220px] select-text overflow-auto whitespace-pre-wrap break-words border-t border-edge-faint px-[12px] py-[10px] font-mono text-[11.5px] leading-[1.5] text-ink-mid">
-                        {failure.stderr}
+                        {/* git's own words, never code: its error lines in the tones they call for */}
+                        <CommandOutput command="" output={failure.stderr} />
                     </pre>
                 ) : null}
             </div>
@@ -290,11 +292,11 @@ export function GitFailureColumn({ failure, onRetry }: { failure: GitFailure; on
                 </span>
             </div>
             <div title={failure.command} className="select-text truncate font-mono text-[11px] text-ink-mid">
-                {failure.command}
+                <ShellCommand command={failure.command} />
             </div>
             {failure.stderr ? (
                 <pre className="max-h-[120px] select-text overflow-auto whitespace-pre-wrap break-words font-mono text-[11px] leading-[1.5] text-muted">
-                    {failure.stderr}
+                    <CommandOutput command="" output={failure.stderr} />
                 </pre>
             ) : null}
             <button
