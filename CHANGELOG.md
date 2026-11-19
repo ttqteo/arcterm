@@ -181,6 +181,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- Chat's suggested replies no longer vanish when you paste or attach an image: they stay above the box, and a click
+  sends the reply with the image attached.
 - Sidecar's Resources no longer sits on "Measuring…" with empty charts after arcterm restarts with Sidecar open, or
   after the main window reloads: it asks for its readings again instead of waiting to be closed and opened.
 - Chat's last line (the Working line above all) is no longer dimmed by the fade over the box: the fade shows only

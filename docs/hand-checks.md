@@ -1098,3 +1098,6 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
   `Compacted · <before> → <after> · manual · just now`. Click it: the summary opens under it and scrolls inside a
   320px box; click again to close. Compact once more → the line leads with `×2`. An agent that never compacted shows
   no line, and a subagent's interior shows none.
+- [ ] (arcterm) **Suggested replies stay with an attachment** (`chatcomposer.tsx`). Once a Claude agent's turn ends with
+  chips above Chat's box, paste an image: the chips stay. Click one: the message sent carries the chip's text and the
+  image, and the box empties of both.

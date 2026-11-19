@@ -861,9 +861,10 @@ function ComposerBox({
     // not while a Sleep is under way: Esc would cut short the compaction the sleep waits on
     const showStop = !asleep && !dozing && agent.blockId != null && canStop(agent.state, agent.sleeping);
     // the finished turn's suggested replies: they stay while the person types (a click over typed text asks first,
-    // sendSuggested) and step aside once an attachment goes in. Asleep they show too, and one sent wakes the agent as a
-    // typed message does; they hide while the agent falls asleep or wakes, when the box is shut
-    const suggested = chips != null && !waking && !dozing && att.attachments.length === 0 ? chips : NO_CHIPS;
+    // sendSuggested) and stay with an attachment in the box too: a chip sends through the box's own send, so the files
+    // ride along with its text. Asleep they show too, and one sent wakes the agent as a typed message does; they hide
+    // while the agent falls asleep or wakes, when the box is shut
+    const suggested = chips != null && !waking && !dozing ? chips : NO_CHIPS;
     // the running agent's actions that have something to show (chatsuggest.ts runningActions): the diff once the turn
     // edited a file, the terminal once a command has run a while; read again when a running command gets there
     const acts = showStop ? runningActions(entries ?? [], Date.now()) : NO_ACTS;
