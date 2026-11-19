@@ -804,6 +804,20 @@ func TestExtractClaude_SkipsPrintModeRecords(t *testing.T) {
 	}
 }
 
+// A board drawer's turns are print-mode runs too, but their tokens are the person's own spend on the board's project:
+// they count, with the project folder as their cwd, while the other print-mode records stay out.
+func TestExtractClaude_CountsBoardDrawerRecords(t *testing.T) {
+	const usage = `"usage":{"input_tokens":100,"output_tokens":50}`
+	drawer := `{"type":"assistant","timestamp":"2026-06-26T10:00:00.000Z","entrypoint":"` + agentobserve.BoardDrawerEntrypoint +
+		`","cwd":"/home/u/repo","message":{"model":"claude-sonnet-4-6",` + usage + `}}`
+	headless := `{"type":"assistant","timestamp":"2026-06-26T10:00:01.000Z","entrypoint":"` + agentobserve.HeadlessEntrypoint +
+		`","cwd":"/home/u/repo","message":{"model":"claude-sonnet-4-6",` + usage + `}}`
+	got := extractClaude([]string{drawer, headless})
+	if len(got) != 1 || got[0].Cwd != "/home/u/repo" || got[0].Input != 100 || got[0].Output != 50 {
+		t.Fatalf("only the drawer's usage should be counted, got %+v", got)
+	}
+}
+
 // parseFiles re-reads a file only when its modtime or size changed: an unchanged file is served from
 // the cache, and one that grew is parsed again.
 func TestParseFilesReparsesOnlyChangedFiles(t *testing.T) {
