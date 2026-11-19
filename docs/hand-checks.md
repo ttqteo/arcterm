@@ -16,6 +16,10 @@ list (its number is not reused).
 Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) ·
 [part 4](hand-checks-4.md) · [part 3](hand-checks-3.md) · [part 2](hand-checks-2.md) (oldest).
 
+- [ ] (arcterm) **A sent `!` command keeps its colours.** In a Claude agent's Chat, type `! taskkill //T //F //PID 1`:
+  the box colours the command, the arguments green. Send it: the bubble's command line has the same colours, not
+  plain white. `CommandCard` (chatconversation.tsx) draws a bash command with `ShellCommand`. Branch
+  fix/bash-bubble-colour.
 - [ ] (arcterm) **No folder's split is one row in the Agent tree.** Launch an agent in No folder, open a plain
   terminal there, put it in a split with the agent (Open in split): No folder in the tree shows one split row holding
   both, in the accent frame, not two separate rows. `projectTree` keys a grid by `treeFolder` (a No folder launch's

@@ -185,6 +185,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   sends the reply with the image attached.
 - Typing ``` in Chat's box and pasting right after it no longer turns the rest of the message into code: the paste goes
   on the lines under the fence and the block is closed after it.
+- A `!` command you sent from Chat keeps its colours in its bubble, as the box drew it while you typed it, instead of
+  turning plain white once sent.
 - A split of No folder's agents and terminals shows as one split row in the Agent tree again, as every project's does,
   instead of its cells staying separate rows.
 - Sidecar's Resources no longer sits on "Measuring…" with empty charts after arcterm restarts with Sidecar open, or
