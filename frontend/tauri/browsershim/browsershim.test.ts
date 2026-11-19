@@ -130,6 +130,7 @@ describe("core stand-in", () => {
         await expect(invoke("open_sidecar")).rejects.toThrow(/Tauri host/);
         await expect(invoke("sidecar_form", { change: null })).rejects.toThrow(/Tauri host/);
         await expect(invoke("sidecar_form", { change: { small: true } })).rejects.toThrow(/Tauri host/);
+        await expect(invoke("sidecar_corner")).rejects.toThrow(/Tauri host/);
     });
 });
 
