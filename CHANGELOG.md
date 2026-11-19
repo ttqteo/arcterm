@@ -36,11 +36,19 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   icon beside Fork above its transcript or from its row's menu in a project's History.
 - An agent that started a council has a chat button after its panel's tabs, with a dot while the council works or
   waits on you: click it, or press `c`, to open that council's Discussion.
+- Focus read works in a markdown file's Preview too: the same pill at the top of its right edge (or Alt+R with the
+  document in focus) lights a few blocks at a time and dims the rest, and J and K step through them. One switch for
+  every markdown file, remembered.
 
 ### Changed
 
 - A council's first round and its pause now use the whole width of the pane: the experts' cards and the ideas fill it
   instead of stopping at 900 px with an empty strip on the right, while an idea's argument keeps a readable line length.
+- On Windows, heavy jobs and runs are held back for memory only once less than a tenth of the RAM is free, not a
+  fifth: with 3 to 6 GB free on a 32 GB machine, builds and tests no longer wait one at a time and runs are no longer
+  paused while the machine still runs smoothly.
+- The tabs at the top of the Agent panel (Overview, Files, Changes, Transcript and the open files) are pills: the one
+  on show is filled, the others light up when you hover them, in place of an underline.
 
 ### Fixed
 
@@ -56,25 +64,6 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   command that retries it.
 - `wsh council show`, `wait`, `retry`, `summarize`, `stop`, `rm`, `pin` and `memory` take the short council id arcterm
   prints, as `wsh read` does.
-
-## 1.7.0 — 2026-11-19
-
-### Added
-
-- Focus read works in a markdown file's Preview too: the same pill at the top of its right edge (or Alt+R with the
-  document in focus) lights a few blocks at a time and dims the rest, and J and K step through them. One switch for
-  every markdown file, remembered.
-
-### Changed
-
-- On Windows, heavy jobs and runs are held back for memory only once less than a tenth of the RAM is free, not a
-  fifth: with 3 to 6 GB free on a 32 GB machine, builds and tests no longer wait one at a time and runs are no longer
-  paused while the machine still runs smoothly.
-- The tabs at the top of the Agent panel (Overview, Files, Changes, Transcript and the open files) are pills: the one
-  on show is filled, the others light up when you hover them, in place of an underline.
-
-### Fixed
-
 - The phone page installed on your home screen reloads itself after arcterm updates, so new things on it (such as
   the Computer section's Locked or Unlocked) show without closing the app; it waits while you answer, chat or type.
   A page opened before this update needs one reload by hand.
@@ -100,11 +89,6 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - A file link in Chat that names only the end of a path (`handbook/parsers/development.md` for
   `apps/portal/content/handbook/parsers/development.md`) now opens when exactly one file in the agent's repo ends that
   way, even if the agent read it through a shell command, instead of saying "File not found".
-
-## 1.6.1 — 2026-11-19
-
-### Fixed
-
 - Focus read in Chat steps smoothly: J and K (and the arrows) move at once, and quick or held presses glide on instead
   of stopping and starting at every block.
 
