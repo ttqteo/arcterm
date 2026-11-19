@@ -16,6 +16,9 @@ list (its number is not reused).
 Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) ·
 [part 4](hand-checks-4.md) · [part 3](hand-checks-3.md) · [part 2](hand-checks-2.md) (oldest).
 
+- [ ] (arcterm) Council figures on a real council (4e9f4589d6d9c6f8): the takeaways read right, and the argument map
+  stays legible at 22 ideas
+
 - [ ] (arcterm) **Charts in a council's saved report, and the bench rejudged** (`pkg/council/charts.go`,
   `pkg/council/bench/chart.go`, `pkg/council/bench/rejudge.go`). Open the next finished Review council's document from
   Library: "At a glance" draws D1…Dn in the quadrant ahead of the directions, and under Run facts the token bars, the

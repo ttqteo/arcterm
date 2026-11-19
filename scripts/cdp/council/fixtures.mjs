@@ -31,7 +31,9 @@ import { waitFor } from "../attach.mjs";
 export const COUNCIL_PROJECT = "council-fixture";
 // `room` is a running council with two live agents seated, `room-awaiting` the same room waiting on two held ideas,
 // `room-attached` a running council (no live agent) whose person's post carries an image and names a project file: the
-// post's `attachments` holds a placeholder the step patches to the PNG it wrote (`ATTACHMENT_PLACEHOLDER`)
+// post's `attachments` holds a placeholder the step patches to the PNG it wrote (`ATTACHMENT_PLACEHOLDER`), and `figures`
+// a finished Review with five seats' stats, a timeline of timed steps and a nine-idea argument map: what the Report's,
+// the Map's and the figures' scenarios (figures.mjs) draw
 export const COUNCIL_FIXTURES = [
     "round1",
     "round2",
@@ -42,6 +44,7 @@ export const COUNCIL_FIXTURES = [
     "room",
     "room-awaiting",
     "room-attached",
+    "figures",
 ];
 export const ATTACHMENT_PLACEHOLDER = "<PNG>";
 export const COUNCIL_ID_PREFIX = "fx-council-";
@@ -53,7 +56,8 @@ const ROOT_WAIT_MS = 10_000;
 
 // Where each fixture sits on the clock. A running council's clock is `now - started`, so those two end at "now" and
 // their header reads 3:48 and 7:20 whenever the scenario looks (the room's 19:20); the rest are placed by when they were
-// created, so the tree (newest created first) lists round1, round2, awaiting, room-awaiting, room, failed, done, notrun.
+// created, so the tree (newest created first) lists round1, round2, awaiting, room-awaiting, room, failed, done, figures,
+// notrun.
 const PLACE = {
     round1: { updatedAgoMs: 0 },
     round2: { updatedAgoMs: 0 },
@@ -64,6 +68,7 @@ const PLACE = {
     room: { updatedAgoMs: 0 },
     "room-awaiting": { createdAgoMs: 18 * MINUTE },
     "room-attached": { updatedAgoMs: 0 },
+    figures: { createdAgoMs: 45 * MINUTE },
 };
 
 /** The fixture as authored (project empty, times around 2026-10-21 09:00 UTC). */
@@ -75,7 +80,8 @@ export function loadCouncilFixture(name) {
 }
 
 /** A copy of the fixture in `project`, every time on it (created, updated, started, proposal and reply times, the
- *  skips' and the summary's) moved by the same amount, so the gaps between them stay as authored. */
+ *  skips', the summary's and each seat's timeline steps') moved by the same amount, so the gaps between them stay as
+ *  authored: the figures' round markers and lanes are drawn from those gaps. */
 export function placeCouncil(raw, name, project, now = Date.now()) {
     const place = PLACE[name];
     const delta =
@@ -89,6 +95,9 @@ export function placeCouncil(raw, name, project, now = Date.now()) {
     for (const r of c.replies ?? []) r.ts += delta;
     for (const s of c.skips ?? []) s.ts += delta;
     if (c.summary) c.summary.at += delta;
+    for (const steps of Object.values(c.timeline ?? {})) {
+        for (const s of steps) s.ts += delta;
+    }
     return c;
 }
 

@@ -398,9 +398,10 @@ export const councilSummary = {
             // close the direction again for the steps after
             await click(h, `${DIRECTION(1)}[data-council-direction-toggle]`);
             await h.ev(`document.querySelector(${q(BOX)}).scrollTop = 0`);
-            // the matrix is no section of the Report any more (the Map tab holds it): the directions are the only link
+            // the matrix is no section of the Report any more (the Map tab holds it): the links are At a glance, the
+            // directions, and What it spent (the done fixture has seats with tokens; the figures' own steps are council-figures')
             const ok =
-                entries.join("|") === ["directions:Directions 4"].join("|") &&
+                entries.join("|") === ["glance:At a glance", "directions:Directions 4", "spend:What it spent"].join("|") &&
                 Math.abs(placed.scrollTop - expected) <= 4 &&
                 placed.barTop === barTop &&
                 placed.barBottom <= placed.boxTop + 1 &&
@@ -713,7 +714,8 @@ export const councilSummary = {
             const gone = {
                 section: await exists(h, "[data-council-matrix]"),
                 toggle: await exists(h, "[data-council-matrix-toggle]"),
-                table: await exists(h, `${SUMMARY} table`),
+                // the stance matrix's table is gone; the At a glance figures' own (a stance grid, a figure's Table view) are not it
+                table: await h.ev(`[...document.querySelectorAll(${q(`${SUMMARY} table`)})].some((t) => !t.closest("[data-council-figure]"))`),
                 jump: await exists(h, `${SUMMARY} [data-council-jump='matrix']`),
                 heading: /Every expert on every idea/.test(text),
             };
@@ -1338,7 +1340,7 @@ export const councilSummary = {
                 facts.steps.length === 3 &&
                 stepsInFrame &&
                 facts.steps.every((s) => s === "First step Try it on one screen") &&
-                facts.jumps === "directions,kept" &&
+                facts.jumps === "glance,directions,kept,spend" &&
                 facts.keptGrid === "grid" &&
                 facts.keptBorder === "0px" &&
                 // who had an idea is its avatars; the line of facts names only who built on it
@@ -1391,7 +1393,7 @@ export const councilSummary = {
                 !items.some((i) => i.startsWith("open-doc=")) &&
                 review.heading == null &&
                 review.steps.length === 0 &&
-                review.jumps === "directions" &&
+                review.jumps === "glance,directions,spend" &&
                 review.keptHeading == null &&
                 review.dropped == null &&
                 review.docpath == null &&
@@ -1457,7 +1459,7 @@ export const councilSummary = {
                 folded.directions.join("|") === [...TITLES, FIFTH].join("|") &&
                 folded.directionsShown &&
                 foldedInFrame &&
-                folded.jumps === "directions,kept" &&
+                folded.jumps === "glance,directions,kept,spend" &&
                 folded.heading === "Also raised" &&
                 folded.count === String(RAISED.length) &&
                 folded.toggleTag === "BUTTON" &&

@@ -244,10 +244,18 @@ export function useChartTip() {
     const bind = useCallback(
         (content: ReactNode) => ({
             onPointerEnter: (e: PointerEvent<Element>) => setTip({ anchor: e.currentTarget, content }),
-            onPointerLeave: (e: PointerEvent<Element>) =>
-                setTip((cur) => (cur?.anchor === e.currentTarget ? null : cur)),
+            // the element is read here, not inside the updater: React runs an updater later than the handler when
+            // another update of the same component is already queued (a view that also dims on hover), and by then
+            // the event's currentTarget is null, so the tooltip would never close
+            onPointerLeave: (e: PointerEvent<Element>) => {
+                const el = e.currentTarget;
+                setTip((cur) => (cur?.anchor === el ? null : cur));
+            },
             onFocus: (e: FocusEvent<Element>) => setTip({ anchor: e.currentTarget, content }),
-            onBlur: (e: FocusEvent<Element>) => setTip((cur) => (cur?.anchor === e.currentTarget ? null : cur)),
+            onBlur: (e: FocusEvent<Element>) => {
+                const el = e.currentTarget;
+                setTip((cur) => (cur?.anchor === el ? null : cur));
+            },
         }),
         []
     );

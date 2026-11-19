@@ -668,6 +668,14 @@ export const councilMapOpenAtom = atomFamily(
     (_id: string) => atom<string | null>(null) as PrimitiveAtom<string | null>
 );
 
+/** Which of the Map's two views of a council's ideas shows: the stance `matrix` (the default) or the argument `graph`
+ *  (who answered which idea). Kept per council, like the open row, so it survives a trip to the Report or the
+ *  Discussion, which unmount the Map. */
+export type CouncilMapView = "matrix" | "graph";
+export const councilMapViewAtom = atomFamily(
+    (_id: string) => atom<CouncilMapView>("matrix") as PrimitiveAtom<CouncilMapView>
+);
+
 /** What a council chat's Sources panel shows: the evidence of the message whose link was clicked, the file picked
  *  among it, and the thread it was opened from, which closing the panel goes back to. */
 export interface CouncilSourcesView {

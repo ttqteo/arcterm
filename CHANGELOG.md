@@ -32,6 +32,12 @@ and a picture given to a line that is not big.
 
 ## Unreleased
 
+### Added
+
+- A council's Report draws what its panel found and spent: where each direction stands on evidence and agreement, who
+  backed or opposed it, what each seat spent and read twice, and, on the Map, who answered which idea. Library's
+  Councils tab charts the benchmark. <!-- big --> <!-- shot: none -->
+
 ### Changed
 
 - The Council decisions block arcterm writes into a project's CLAUDE.md or AGENTS.md now lists only what was agreed or

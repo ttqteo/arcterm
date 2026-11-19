@@ -11,6 +11,9 @@
 // withdrawn idea dim). A click or Enter on a row opens its reasons under each seat's column, a second click closes it;
 // with many seats the matrix scrolls sideways inside its own box and the idea column stays in place. Before any idea is sent the matrix is one line, "No ideas yet". A Brainstorm asks for no
 // evidence, so its cards carry no bar and its rows no badge: the idea shows a Builds on pill instead.
+// Beside the matrix's title a Matrix | Graph switch (councilMapViewAtom, kept per council) swaps the matrix for the
+// argument map, who answered which idea (councilargumentmap.tsx, drawn from councilfiguresmodel.ts); a click on an idea
+// of the graph comes back to the matrix with that idea's row open.
 //
 // Status is never colour alone: every badge and pill carries an icon and a word. Every word follows the council's
 // language (councilmapmodel.ts `mapWords`, councilmodel.ts for the matrix's own); the rules are in those models, and
@@ -29,8 +32,9 @@ import {
     type LucideIcon,
 } from "lucide-react";
 import { motion } from "motion/react";
-import { useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { AgentsViewModel } from "./agents";
+import { ArgumentMap } from "./councilargumentmap";
 import { CouncilAvatar, MarkedText } from "./councilchat";
 import { CHECK_TONE, CheckIcon, WRONG_CITE_ICON, WRONG_CITE_TONE } from "./councilchecks";
 import { avatarTone, seatInitials } from "./councildiscussionmodel";
@@ -46,7 +50,13 @@ import {
     type MatrixRow,
     type StanceLabel,
 } from "./councilmodel";
-import { councilMapOpenAtom, councilTimelineAtom, useCouncil } from "./councilstore";
+import {
+    councilMapOpenAtom,
+    councilMapViewAtom,
+    councilTimelineAtom,
+    useCouncil,
+    type CouncilMapView,
+} from "./councilstore";
 import { isBrainstorm, outcomeLabel } from "./councilsummarymodel";
 
 const ROOT = "flex min-h-0 min-w-0 flex-1 flex-col bg-background text-[14px] text-primary";
@@ -576,11 +586,74 @@ function MatrixHead({
     );
 }
 
+// the Matrix | Graph switch beside the matrix's title: two buttons of one segmented control, each `data-map-view`
+function ViewSwitch({ view, onChange }: { view: CouncilMapView; onChange: (view: CouncilMapView) => void }) {
+    return (
+        <div
+            role="group"
+            aria-label="Map view"
+            data-council-map-views
+            className="flex flex-none gap-[2px] self-center rounded-md border border-edge-mid bg-surface p-[2px]"
+        >
+            {(["matrix", "graph"] as const).map((v) => (
+                <button
+                    key={v}
+                    type="button"
+                    data-map-view={v}
+                    aria-pressed={view === v}
+                    onClick={() => onChange(v)}
+                    className={cn(
+                        "h-[22px] cursor-pointer rounded-[4px] px-2 text-[11px] font-medium motion-reduce:transition-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
+                        view === v ? "bg-surface-hover text-primary" : "text-muted hover:text-secondary"
+                    )}
+                >
+                    {v === "matrix" ? "Matrix" : "Graph"}
+                </button>
+            ))}
+        </div>
+    );
+}
+
 function Matrix({ c, rows, words }: { c: Council; rows: MatrixRow[]; words: MapWords }) {
     const [openId, setOpenId] = useAtom(councilMapOpenAtom(c.id));
+    const [view, setView] = useAtom(councilMapViewAtom(c.id));
+    // the graph is drawn only for a council with an idea; with none the "No ideas yet" line shows whichever view is set
+    const graphShown = view === "graph" && rows.length > 0;
+    // the matrix fades in when the switch brings it back, not when the Map opens on it (the whole page fades then)
+    const [swapped, setSwapped] = useState(false);
+    const section = useRef<HTMLElement>(null);
+    // the row an idea of the graph was clicked for: once the matrix is back, the page glides to it
+    const reveal = useRef<string | null>(null);
+    const switchTo = (next: CouncilMapView) => {
+        setSwapped(true);
+        setView(next);
+    };
+    const openIdea = (id: string) => {
+        reveal.current = id;
+        switchTo("matrix");
+        setOpenId(id);
+    };
+    useEffect(() => {
+        const id = reveal.current;
+        if (id == null || graphShown) {
+            return;
+        }
+        reveal.current = null;
+        const row = section.current?.querySelector<HTMLElement>(`[data-council-map-row="${CSS.escape(id)}"]`);
+        const box = row?.closest<HTMLElement>("[data-council-map-scroll]");
+        if (row == null || box == null) {
+            return;
+        }
+        // 56px under the box's top: below the matrix's sticky header
+        const smooth = !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+        box.scrollTo({
+            top: box.scrollTop + row.getBoundingClientRect().top - box.getBoundingClientRect().top - 56,
+            behavior: smooth ? "smooth" : "auto",
+        });
+    }, [graphShown]);
     const seats = panel(c);
     const minWidth = IDEA_COL + seats.length * SEAT_COL + AGREEMENT_COL + OUTCOME_COL;
-    const revisedShown = rows.some((row) => row.cells.some((cell) => cell.note !== ""));
+    const revisedShown = !graphShown && rows.some((row) => row.cells.some((cell) => cell.note !== ""));
     // the header sits outside the rows' box (a box that scrolls sideways can't let a head stick to the page's top), so it
     // follows the rows' sideways scroll by hand
     const headBox = useRef<HTMLDivElement>(null);
@@ -590,10 +663,17 @@ function Matrix({ c, rows, words }: { c: Council; rows: MatrixRow[]; words: MapW
         }
     };
     return (
-        <section data-council-map-matrix aria-label={words.matrixTitle} className="flex flex-col gap-[10px]">
+        <section
+            ref={section}
+            data-council-map-matrix
+            data-map-shown={graphShown ? "graph" : "matrix"}
+            aria-label={words.matrixTitle}
+            className="flex flex-col gap-[10px]"
+        >
             <div className="flex flex-wrap items-baseline gap-x-[10px] gap-y-1">
                 <h2 className={H2}>{words.matrixTitle}</h2>
-                {rows.length > 0 && <span className="text-[12px] text-muted">{words.matrixHint}</span>}
+                {rows.length > 0 && <ViewSwitch view={graphShown ? "graph" : "matrix"} onChange={switchTo} />}
+                {rows.length > 0 && !graphShown && <span className="text-[12px] text-muted">{words.matrixHint}</span>}
                 <span className="flex-1" />
                 {/* the legend says what the badges mean: a Brainstorm asks for no evidence and has none */}
                 {rows.length > 0 && !isBrainstorm(c) && <Legend words={words} />}
@@ -605,8 +685,15 @@ function Matrix({ c, rows, words }: { c: Council; rows: MatrixRow[]; words: MapW
                 >
                     {words.noIdeas}
                 </p>
+            ) : graphShown ? (
+                <ArgumentMap c={c} onOpenIdea={openIdea} />
             ) : (
-                <div data-council-map-frame>
+                <motion.div
+                    data-council-map-frame
+                    variants={viewFade}
+                    initial={swapped ? "initial" : false}
+                    animate="animate"
+                >
                     <div
                         ref={headBox}
                         data-council-map-headbox
@@ -647,7 +734,7 @@ function Matrix({ c, rows, words }: { c: Council; rows: MatrixRow[]; words: MapW
                             </tbody>
                         </table>
                     </div>
-                </div>
+                </motion.div>
             )}
             {revisedShown && (
                 <span data-council-map-foot className="text-[12px] text-muted">

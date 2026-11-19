@@ -292,6 +292,42 @@ agrees with which idea in Map" mở nó.
 
 ![Báo cáo của council: câu bạn hỏi, câu trả lời in đậm và dòng nói ai viết nó, từ bao nhiêu reply; cột thông tin bên phải với số chuyên gia, số phút, số token và từng chuyên gia cùng model của họ; bên dưới là các hướng đi đánh số, đang đóng, kèm chip lập trường và các chuyên gia đã góp vào](images/council-report.png)
 
+## Figures
+
+Báo cáo, tab Map và Library vẽ sáu hình từ những gì council đã ghi lại; mỗi hình có một dòng kết luận ngay dưới tiêu đề.
+Mọi con số và mọi dòng kết luận do máy tính ra từ chính council, không có lượt gọi model nào vẽ hay viết lời cho một hình.
+Trạng thái không bao giờ chỉ là màu: mỗi lập trường luôn có biểu tượng và chữ (✓ Accept, ? Challenge, ✕ Oppose, ● Proposed).
+Mỗi hình có nút **Table** cho cùng các con số dưới dạng bảng; rê chuột (hay `Tab`) tới một điểm mở tooltip, `Enter` làm việc
+một cú bấm làm. Một hình không có gì để hiện thì không được vẽ. Hai phần của báo cáo là hai link nhảy trên thanh tab,
+**At a glance** và **What it spent**; trên cửa sổ hẹp hai link này nhường chỗ cho tên council.
+
+- **Evidence and backing** (Report, At a glance, chỉ Review): mỗi hướng một điểm `D1`, `D2`…. Trục ngang là phần bằng chứng
+  đã kiểm (nhãn cite ok, không yếu) trong bằng chứng của các ý hướng đó lấy từ; trục dọc là số ghế ủng hộ trên số ghế đã
+  có lập trường. Góc trên bên phải là hướng đứng vững; một hướng không có bằng chứng nào được vẽ rỗng, kèm "no evidence
+  cited" trong tooltip, để 0 trên 0 không bị đọc như 0 trên 3. Cùng công thức với biểu đồ trong tài liệu đã lưu. Bấm một
+  điểm mở thẻ của hướng đó.
+- **Who backed each direction** (Report, At a glance, cả hai chế độ): bảng hướng × ghế. Mỗi ô là lập trường của ghế đó
+  (● Proposed nếu ghế là tác giả; trong Brainstorm, **Builds on** nếu ghế xây tiếp ý đó), ô cuối hàng là thanh đồng thuận
+  kèm chữ Agreed hay Split. Bấm một hàng mở thẻ của hướng đó.
+- **What each seat spent** (Report, What it spent): mỗi ghế một thanh token, xếp theo thứ tự ghế chứ không theo cỡ, điều
+  phối viên ở cuối. Hàng **Memory check · outside the seats** là phần chênh giữa tổng của council và tổng các ghế, nên các
+  hàng luôn cộng ra đúng dòng đầu. Bấm một hàng mở Discussion chỉ hiện ghế đó. Khi council đang được ghi lại, thanh nới dần
+  tới độ dài mới.
+- **When each seat worked, and what it read twice** (Report, What it spent): mỗi ghế một làn thời gian, các đoạn làm việc
+  (các bước cách nhau không quá 60 giây nối thành một đoạn) với dấu cho từng loại bước: gạch là đọc, chấm là tìm, vuông là
+  chạy lệnh, cờ là đăng ý hay trả lời; vạch **R1**, **R2**… đánh dấu bài đăng đầu của mỗi vòng. Một file mà ghế khác cũng
+  đọc vẽ rỗng. Dưới các làn là danh sách file nhiều ghế cùng đọc. Một làn đủ 200 bước ghi `last 200 steps kept`: bước cũ
+  nhất đã bị bỏ. Điều phối viên không có bước nào nên không có làn.
+- **Argument map** (tab Map, công tắc **Matrix | Graph** trên ma trận, mặc định Matrix): ai trả lời ý nào. Bên trái là các
+  ghế, bên phải là các ý nhóm theo kết cục (mỗi hướng, rồi Also raised, Withdrawn, Cut). Nét liền trung tính là tác giả,
+  còn lập trường của một lượt trả lời là nét liền (accept), đứt (challenge) hay chấm (oppose). Rê chuột tới một ý hay một
+  ghế làm mờ các đường còn lại; bấm một ý về Matrix với hàng của nó đang mở.
+- **Benchmark** (Library → Councils, phần gập trên cùng của danh sách): hai đồ thị nhỏ, Review và Brainstorm, mỗi điểm một
+  (harness, variant), trục ngang là token mỗi lần chạy (thang log), trục dọc là phần key tìm thấy. Mỗi variant một hình
+  (solo ●, council ■, team ▲, brainstorm ◆); một hàng Review chỉ mới có recall@5 được vẽ rỗng (`wsh council bench rejudge`
+  chấm cả bản). Harness mới nhất đậm, các harness cũ mờ vì prompt của chúng khác; đường bậc thang nối các điểm của harness
+  mới nhất mà không điểm nào rẻ hơn vượt được.
+
 ## Khi một lượt gọi bị lỗi
 
 - **Retry** trên ghế lỗi chạy lại lượt đó; **Retry with…** chọn model khác cho riêng lượt đó (opus, Opus 4.8, sonnet,

@@ -391,6 +391,7 @@ describe("a report's top and its folded rest", () => {
 
     it("counts both in the outline and the jump links: the count the fold shows is the kept rows", () => {
         expect(jumpLinks(review).map((e) => [e.id, e.count])).toEqual([
+            ["glance", null],
             ["directions", 5],
             ["kept", 4],
         ]);
@@ -913,9 +914,10 @@ describe("expertActivity", () => {
 });
 
 describe("outlineOf", () => {
-    it("lists the answer and the directions with each one under them, and no matrix: the Map tab holds it", () => {
+    it("lists the answer, At a glance and the directions with each one under them, and no matrix: the Map tab holds it", () => {
         expect(outlineOf(council()).map((e) => [e.id, e.label, e.count, e.depth])).toEqual([
             ["answer", "The answer", null, 0],
+            ["glance", "At a glance", null, 0],
             ["directions", "Directions", 2, 0],
             ["direction:1", "direction 1", null, 1],
             ["direction:2", "direction 2", null, 1],
@@ -928,10 +930,43 @@ describe("outlineOf", () => {
         const brainstorm = outlineOf(council({ mode: "brainstorm", summary: kept }));
         expect(brainstorm.filter((e) => e.depth === 0).map((e) => [e.label, e.count])).toEqual([
             ["The answer", null],
+            ["At a glance", null],
             ["Ideas worth trying", 2],
             ["Wild ideas kept aside", 2],
         ]);
         expect(outlineOf(council({ summary: kept })).find((e) => e.id === "kept")?.label).toBe("Also raised");
+    });
+
+    it("leaves At a glance out when the summary ranked no direction", () => {
+        const none = { text: "", directions: [], outcomes: {}, at: 15 };
+        expect(outlineOf(council({ summary: none })).map((e) => e.id)).toEqual(["answer"]);
+    });
+
+    it("lists What it spent after the kept ideas, once a seat has tokens or a timed step", () => {
+        const base = council();
+        const kept = { ...base.summary!, kept: [direction(3, ["P6"])] };
+        const stats = { ram: { ms: 900, tokens: 1200, calls: 1 } };
+        const spent = outlineOf(council({ summary: kept, stats }));
+        expect(spent.map((e) => e.id)).toEqual([
+            "answer",
+            "glance",
+            "directions",
+            "direction:1",
+            "direction:2",
+            "kept",
+            "spend",
+        ]);
+        expect(spent[spent.length - 1]).toEqual({
+            id: "spend",
+            label: "What it spent",
+            count: null,
+            depth: 0,
+            rank: null,
+        });
+        // the lanes alone make the section too (the timeline holds a timed step, no seat has tokens)
+        const timed = council({ timeline: { ux: [{ ts: 1700000000000, kind: "read", target: "a.go" }] } });
+        expect(outlineOf(timed).map((e) => e.id)).toContain("spend");
+        expect(outlineOf(council()).map((e) => e.id)).not.toContain("spend");
     });
 
     it("is empty before a summary while nothing is pinned", () => {
@@ -944,6 +979,7 @@ describe("outlineOf", () => {
         const withKept = outlineOf(council({ summary: kept, finalpick: "P2" }));
         expect(withKept.map((e) => e.id)).toEqual([
             "answer",
+            "glance",
             "directions",
             "direction:1",
             "direction:2",
@@ -959,6 +995,7 @@ describe("outlineOf", () => {
         });
         expect(outlineOf(council({ finalpick: "r1" })).map((e) => e.id)).toEqual([
             "answer",
+            "glance",
             "directions",
             "direction:1",
             "direction:2",
@@ -980,16 +1017,29 @@ describe("outlineOf", () => {
 });
 
 describe("jumpLinks", () => {
-    it("lists the directions and the kept ideas of a Brainstorm", () => {
+    it("lists At a glance, the directions and the kept ideas of a Brainstorm", () => {
         const base = council();
         const kept = { ...base.summary!, kept: [direction(3, ["P6"]), direction(4, ["P7"])] };
         const links = jumpLinks(council({ mode: "brainstorm", summary: kept }));
-        expect(links.map((e) => e.id)).toEqual(["directions", "kept"]);
-        expect(links.map((e) => e.count)).toEqual([2, 2]);
+        expect(links.map((e) => e.id)).toEqual(["glance", "directions", "kept"]);
+        expect(links.map((e) => e.count)).toEqual([null, 2, 2]);
     });
 
     it("leaves out kept when a Review keeps nothing aside", () => {
-        expect(jumpLinks(council()).map((e) => e.id)).toEqual(["directions"]);
+        expect(jumpLinks(council()).map((e) => e.id)).toEqual(["glance", "directions"]);
+    });
+
+    it("lists What it spent after the kept ideas and before the Final proposal", () => {
+        const base = council();
+        const kept = { ...base.summary!, kept: [direction(3, ["P6"])] };
+        const stats = { ram: { ms: 900, tokens: 1200, calls: 1 } };
+        expect(jumpLinks(council({ summary: kept, stats, finalpick: "P2" })).map((e) => e.id)).toEqual([
+            "glance",
+            "directions",
+            "kept",
+            "spend",
+            "final",
+        ]);
     });
 
     it("is empty before a summary while nothing is pinned", () => {
@@ -1000,11 +1050,12 @@ describe("jumpLinks", () => {
         const base = council();
         const kept = { ...base.summary!, kept: [direction(3, ["P6"])] };
         expect(jumpLinks(council({ summary: kept, finalpick: "P2" })).map((e) => e.id)).toEqual([
+            "glance",
             "directions",
             "kept",
             "final",
         ]);
-        expect(jumpLinks(council({ finalpick: "r1" })).map((e) => e.id)).toEqual(["directions", "final"]);
+        expect(jumpLinks(council({ finalpick: "r1" })).map((e) => e.id)).toEqual(["glance", "directions", "final"]);
     });
 
     it("is only the Final proposal when a message is pinned and there is no summary", () => {
