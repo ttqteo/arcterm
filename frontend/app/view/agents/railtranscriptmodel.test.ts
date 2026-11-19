@@ -159,6 +159,16 @@ describe("keyOffsetAfter", () => {
     it("keeps the offset when the load added no entries", () => {
         expect(keyOffsetAfter(30, 150, 150)).toBe(30);
     });
+
+    // the cache cuts a left window to its tail (railtranscript.tsx): an entry keeps its key, index less the offset, so
+    // Chat's kept reading place (kept as such a key) still names the message it was kept on
+    it("moves the offset back by the entries a trim took off the front", () => {
+        const before = { offset: 30, entries: 300 };
+        const after = { offset: keyOffsetAfter(before.offset, before.entries, 180), entries: 180 };
+        expect(after.offset).toBe(-90);
+        // the entry at index 250 before the trim is at 250 - 120 after it
+        expect(250 - before.offset).toBe(250 - 120 - after.offset);
+    });
 });
 
 const msg = (text: string): AgentEntry => ({ kind: "message", text });

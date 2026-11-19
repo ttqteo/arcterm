@@ -35,6 +35,11 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - A council's first round and its pause now use the whole width of the pane: the experts' cards and the ideas fill it
   instead of stopping at 900 px with an empty strip on the right, while an idea's argument keeps a readable line length.
 
+### Fixed
+
+- Chat opens again where you were reading when you come back to an agent from another one or from its Terminal, even
+  after the agent kept working meanwhile: it no longer lands on a later message or at the top of the conversation.
+
 ## 1.7.0 — 2026-11-19
 
 ### Added

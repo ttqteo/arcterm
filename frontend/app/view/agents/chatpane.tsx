@@ -1143,6 +1143,7 @@ function ChatPaneBody({ model, agent, barred }: { model: AgentsViewModel; agent:
                                     liveReply={liveStreams && !awaitsOwn ? liveReplyAtom(streamId) : undefined}
                                     liveNarrates={narrates}
                                     placeId={placeId}
+                                    keyOffset={view!.keyOffset}
                                     active={lastTurn.active}
                                     working={lastTurn.working}
                                     ownArrives={ownArrives}
