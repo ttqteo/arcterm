@@ -176,29 +176,26 @@ const PROGRAMMATIC_MS = 1200;
 // after a glide lands, its last scroll event and scrollend still count as ours for this long
 const GLIDE_SETTLE_MS = 150;
 
-/** Focus read over one Chat scroller: `on` is the toggle, `paused` holds the dimming off (while you follow a live reply
- *  at the bottom) with the keys still working, `size` how many blocks the line lights at a time (the one on it and the
- *  ones after it; J/K slide it one block). `tickRef` is the accent tick in the gutter beside the lit block. `working`:
- *  the agent's turn is under way; one that ends while you follow it at the bottom lights the reply it wrote, from its
- *  start, so focus read picks the new reply up. */
+/** Focus read over one Chat scroller: `on` is the toggle, and it dims for as long as it is on, at the bottom of a
+ *  working agent's Chat too (a reply still being written is never dimmed); `size` how many blocks the line lights at a
+ *  time (the one on it and the ones after it; J/K slide it one block). `tickRef` is the accent tick in the gutter beside
+ *  the lit block. `following`: you sit at the bottom of a working agent's Chat; `working`: the agent's turn is under
+ *  way. A turn that ends while you follow it lights the reply it wrote, from its start, so focus read picks the new
+ *  reply up. */
 export function useFocusRead(
     agentId: string,
     scrollRef: RefObject<HTMLDivElement | null>,
     tickRef: RefObject<HTMLDivElement | null>,
     on: boolean,
-    paused: boolean,
+    following: boolean,
     size: number = 1,
     working: boolean = false
 ): void {
-    const pausedRef = useRef(paused);
-    pausedRef.current = paused;
-    // the last paused / working pair, to tell a turn that ended while you followed it from a scroll away from the bottom
-    const prevRef = useRef({ paused, working });
+    // the last following / working pair, to tell a turn that ended while you followed it from a scroll away from the bottom
+    const prevRef = useRef({ following, working });
     // the running machinery's way to light the reply a turn just ended with
     const applyLatest = useRef<() => void>(() => {});
     const sizeRef = useRef(size);
-    // the running machinery's way to show or hide the dimming when `paused` flips
-    const applyPaused = useRef<() => void>(() => {});
     // and to light a group of the new size when `size` changes
     const applySize = useRef<(next: number) => void>(() => {});
 
@@ -259,7 +256,7 @@ export function useFocusRead(
                 return;
             }
             const conv = scroller.querySelector("[data-chat-conversation]");
-            if (conv == null || pausedRef.current || blocks.length === 0) {
+            if (conv == null || blocks.length === 0) {
                 tick.style.display = "none";
                 return;
             }
@@ -268,15 +265,6 @@ export function useFocusRead(
             tick.style.top = `${tickTop(line(), spans[lit] ?? null, scroller.scrollTop, scroller.clientHeight)}px`;
             tick.style.left = `${Math.max(4, conv.getBoundingClientRect().left - base.left - 12)}px`;
         };
-        applyPaused.current = () => {
-            if (pausedRef.current) {
-                scroller.removeAttribute(ON_ATTR);
-            } else {
-                scroller.setAttribute(ON_ATTR, "");
-            }
-            placeTick();
-        };
-
         // the blocks and where they are; the lit one stays lit while it is still drawn, else the line picks again
         const collect = () => {
             lastCollect = Date.now();
@@ -437,7 +425,7 @@ export function useFocusRead(
             }
         };
         collect();
-        applyPaused.current();
+        scroller.setAttribute(ON_ATTR, "");
 
         applyLatest.current = () => {
             collect();
@@ -479,7 +467,6 @@ export function useFocusRead(
 
         return () => {
             unregister();
-            applyPaused.current = () => {};
             applySize.current = () => {};
             applyLatest.current = () => {};
             scroller.removeEventListener("scroll", onScroll);
@@ -511,12 +498,11 @@ export function useFocusRead(
 
     useEffect(() => {
         const prev = prevRef.current;
-        prevRef.current = { paused, working };
-        applyPaused.current();
-        if (prev.working && !working && prev.paused) {
+        prevRef.current = { following, working };
+        if (prev.working && !working && prev.following) {
             applyLatest.current();
         }
-    }, [paused, working]);
+    }, [following, working]);
 
     useEffect(() => {
         if (size !== sizeRef.current) {

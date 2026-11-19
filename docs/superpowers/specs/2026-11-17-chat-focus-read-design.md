@@ -63,7 +63,7 @@ When you read a long reply in Chat, every block of it shows at once, so your eye
 - **At the end of the conversation** (builder question 1). The conversation gets no extra room, so `useStickToBottom`, `atBottom`, jump-to-latest and `useDockPadding` (`chatpane.tsx:449`) stay as they are.
   - When the scroller is at its end, `J`/`K` keep stepping through the last blocks. The lit block sits below the line, since it cannot scroll up to it.
   - At the end, the settle does nothing, so it never pulls the scroller off the bottom or stops Chat following the tail.
-  - While you follow a live reply, Chat looks as it does today.
+  - While you follow a live reply, focus read stays on: the finished blocks dim as anywhere else and the live reply is not dimmed. (It first held the dimming off there; 2026-11-19 the person read that as focus read turning itself off.)
 
 ## Left to the builder
 

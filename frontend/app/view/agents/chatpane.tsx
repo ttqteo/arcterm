@@ -891,8 +891,8 @@ function ChatPaneBody({ model, agent, barred }: { model: AgentsViewModel; agent:
     const dockRef = useRef<HTMLDivElement>(null);
     const fadeRef = useRef<HTMLDivElement>(null);
     useDockPadding(scrollRef, dockRef, fadeRef);
-    // Focus read: the reading line's tick in the gutter, and the dimming held off while you follow the agent's work at
-    // the bottom, so Chat then looks as it does without it
+    // Focus read: the reading line's tick in the gutter; it dims while you follow the agent's work at the bottom too, and
+    // lights the new reply when that turn ends
     const focusRead = useAtomValue(chatFocusReadOnAtom(agent.id));
     const focusTickRef = useRef<HTMLDivElement>(null);
     const focusReadSize = useAtomValue(chatFocusReadSizeAtom);
@@ -1206,8 +1206,11 @@ function ChatPaneBody({ model, agent, barred }: { model: AgentsViewModel; agent:
                     // read's J/K/Space/Q act (bindings.ts)
                     data-chat-scroller
                     tabIndex={-1}
-                    // the bottom padding is the dock's (useDockPadding)
-                    className="flex h-full flex-col overflow-y-auto px-[22px] outline-none"
+                    // the bottom padding is the dock's (useDockPadding). The right padding keeps the column clear of the
+                    // Skim and Focus read controls floating in the corner (68px of it, 76 with a gap): 22px while the
+                    // centred 760px column already leaves that much (a pane of 912px or more), growing to 76px as the pane
+                    // narrows (934px - 100%), so on a narrow pane the text never runs under the Focus read pill
+                    className="flex h-full flex-col overflow-y-auto pl-[22px] pr-[clamp(22px,calc(934px_-_100%),76px)] outline-none"
                 >
                     {opening ? (
                         // the first message stands for the conversation: no skeleton or empty state over it

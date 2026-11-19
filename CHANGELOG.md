@@ -35,6 +35,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - What a `!` command prints in Chat is in colour, as an agent's command output is: the program's own colours, passes
   and failures toned, and the commands Task runs (`task: [install:windows] …`) in the shell's colours. `&&`, `<` and
   `>` no longer read as `&amp;&amp;`, `&lt;` and `&gt;`, in the command and in its output.
+- Focus read in Chat stays on when you scroll to the bottom while the agent is working, instead of the dimming
+  switching off there with the button still on; the reply being written stays undimmed.
+- In a narrow Chat, the text keeps clear of the Focus read and Skim buttons in the corner instead of running under them.
 
 ## 1.6.1 — 2026-11-19
 

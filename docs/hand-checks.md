@@ -16,6 +16,12 @@ list (its number is not reused).
 Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) ·
 [part 4](hand-checks-4.md) · [part 3](hand-checks-3.md) · [part 2](hand-checks-2.md) (oldest).
 
+- [ ] (arcterm) **Focus read stays on at the bottom of a working agent; a narrow Chat keeps clear of its pill**
+  (`chatfocusreadview.ts`, `chatpane.tsx` scroller padding, branch `fix/focus-read-bottom`). With focus read on, send a
+  prompt and stay at the bottom while the agent works: the finished blocks stay dimmed, the reply being written is not,
+  and when the turn ends its reply is lit from its start. Then narrow the Agent pane to about 700px: no line of text or
+  your bubble runs under the ×N / K / J / Q pill or the highlighter; at 1000px wide or more the column sits centred as
+  before, and the pinned prompt card spans the column.
 - [ ] (arcterm) **Focus read's J/K glide** (`chatfocusreadview.ts` glide, `chatfocusread.ts` glideStep). In a long
   real conversation, turn on Focus read and tap J quickly, then hold it: the scroll moves on the first frame and keeps
   its pace through the presses, never easing to a stop at each block; a wheel scroll mid-glide takes over at once.
