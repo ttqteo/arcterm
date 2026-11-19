@@ -123,6 +123,7 @@ import {
 } from "@/app/view/agents/memorystore";
 import { openNewCouncil } from "@/app/view/agents/newcouncil";
 import { canRequest } from "@/app/view/agents/proseanchor";
+import { agentCouncilNow } from "@/app/view/agents/railcouncilstore";
 import {
     dockedTerminalAtom,
     railVisibleAtom,
@@ -206,6 +207,7 @@ import {
     libraryConvViewAtom,
     libraryCouncilSelAtom,
     libraryTabAtom,
+    openCouncil,
     showLibrary,
     type LibraryTab,
 } from "@/app/view/library/librarystore";
@@ -1564,6 +1566,15 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
         return clickThrough("[data-doc-review-send]");
     };
     const focusId = () => globalStore.get(model.focusIdAtom);
+    // the council the focused agent started, or null: what the Agent panel's council button and its key c open
+    const focusedCouncil = () => {
+        const id = focusId();
+        if (!id) {
+            return null;
+        }
+        const agent = globalStore.get(model.agentsAtom).find((x) => x.id === id);
+        return agent == null ? null : agentCouncilNow(agent);
+    };
     // the focused agent when it is a Claude agent (chatmode.ts), awake or asleep, else undefined
     const claudeAgent = (): AgentVM | undefined => {
         const agent = globalStore.get(model.agentsAtom).find((a) => a.id === focusId());
@@ -2294,6 +2305,22 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
             label: "Back to the terminal",
             when: inCanvas,
             run: () => setAgentView(focusId(), "terminal", Date.now()),
+        },
+        // c's third meaning, for an agent with no canvas: the council it started, which the panel's button after its tabs
+        // names (railcouncilstore.ts reads the one council for both). Exclusive with the two above: they need a canvas
+        {
+            id: "agent:council-chat",
+            keys: "c",
+            group: "Agent",
+            label: "Open the council this agent started",
+            when: (ctx) => nav(ctx) && canvas() == null && docReview()?.mode !== "review" && focusedCouncil() != null,
+            run: () => {
+                const c = focusedCouncil();
+                if (c == null) {
+                    return false;
+                }
+                openCouncil(model, c.id, "discussion");
+            },
         },
         // b changes meaning with the brainstorm's state, so it is two bindings with exclusive when()s and every footer
         // chip keeps a static label. It is an Agent-surface key: the Cockpit's own b (cockpit:background) is live on the

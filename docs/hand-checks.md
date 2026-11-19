@@ -31,6 +31,11 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
   of the conversation. Try it once more after "Show earlier" loaded earlier messages. Only the key arithmetic is unit
   tested.
 
+- [ ] (arcterm) **The council chat button in the Agent panel** (`agentrailpanel.tsx` `RailCouncilButton`,
+  `railcouncilstore.ts`, binding `agent:council-chat`). The button, its three dots, the click and `c` were tried in
+  the dev app on a seeded council; still untried: have a live agent run `wsh council start …` and watch the button fade
+  in after the panel's tabs as the council appears; and on an agent with both a canvas and a council, `c` still opens the
+  canvas, not the council.
 - [ ] (arcterm) **A long path in a Chat reply wraps in full** (`markdownmessage.tsx` code → `PathLink wrap`,
   `tailwindsetup.css` `.agent-md code`). Ask an agent for a reply naming a long backticked Windows path mid-sentence:
   it continues on the same line as the words before it and wraps over several lines, with no "…", and the full stop

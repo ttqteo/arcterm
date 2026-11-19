@@ -4,6 +4,7 @@
 // The Agent panel's tab strip (icons, plus an editor-style tab per open file), the counts beside it, and the
 // grip that sizes the wide tabs. The panel itself is AgentDetailsRail, through CollapsibleRail's tabs/body/width props.
 
+import { MOTION } from "@/app/element/motiontokens";
 import { ContextMenuModel } from "@/app/store/contextmenu";
 import { globalStore } from "@/app/store/jotaiStore";
 import { pathMenuItems } from "@/app/view/code/pathmenu";
@@ -16,6 +17,7 @@ import {
     GitBranch,
     LayoutList,
     LayoutTemplate,
+    MessagesSquare,
     Paperclip,
     ScrollText,
     Server,
@@ -23,6 +25,7 @@ import {
     X,
     type LucideIcon,
 } from "lucide-react";
+import { motion } from "motion/react";
 import { useEffect, useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
 import { railStatAction, type AgentRailStat, type AgentRailStatId } from "./agentrailsections";
 import { closeRailFile, railWideDragAtom, railWidthAtoms, selectRailKey } from "./agentrailstore";
@@ -44,6 +47,7 @@ import {
     type ResizableTab,
 } from "./agentrailtabs";
 import { navRailCollapsed } from "./navrailwidth";
+import { railCouncilButton } from "./railcouncil";
 import { agentTreeWidth } from "./rowfields";
 import { rowFieldsAtom } from "./rowfieldsstore";
 
@@ -184,6 +188,46 @@ export function RailTabStrip({
                 )
             )}
         </div>
+    );
+}
+
+const COUNCIL_DOT = { working: "bg-working", asking: "bg-asking", error: "bg-error" } as const;
+
+// Quick access to the council the agent started (canvas rail-council-chat, board A): after the tabs, not one of them,
+// since it opens the council's Discussion in the centre rather than a view of the panel. Its dot is the tone of the
+// council's row in the tree, and `c` presses it (agent:council-chat). It fades in as the council appears.
+export function RailCouncilButton({ council, onOpen }: { council: Council; onOpen: () => void }) {
+    const { dot, title } = railCouncilButton(council);
+    return (
+        <motion.button
+            type="button"
+            data-rail-council={council.id}
+            aria-label={title}
+            aria-keyshortcuts="c"
+            title={title}
+            onClick={onOpen}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ duration: MOTION.durMicro, ease: MOTION.easeFluid }}
+            className="relative ml-[4px] flex h-[28px] shrink-0 cursor-pointer items-center gap-[5px] self-center rounded-full border-0 bg-transparent pl-[7px] pr-[6px] text-secondary outline-none hover:bg-surface-hover hover:text-primary focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent"
+        >
+            <MessagesSquare size={16} strokeWidth={1.8} aria-hidden />
+            {dot != null ? (
+                <span
+                    aria-hidden
+                    className={cn(
+                        "absolute left-[18px] top-[4px] h-[7px] w-[7px] rounded-full ring-2 ring-surface",
+                        COUNCIL_DOT[dot]
+                    )}
+                />
+            ) : null}
+            <kbd
+                aria-hidden
+                className="rounded-[4px] border border-border px-[4px] font-mono text-[10px] leading-[14px] font-normal text-muted"
+            >
+                c
+            </kbd>
+        </motion.button>
     );
 }
 

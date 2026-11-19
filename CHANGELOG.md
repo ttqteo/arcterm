@@ -34,6 +34,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 - Open in Claude Desktop: an ended Claude conversation opens in Claude Desktop's Code tab to carry on there, from the
   icon beside Fork above its transcript or from its row's menu in a project's History.
+- An agent that started a council has a chat button after its panel's tabs, with a dot while the council works or
+  waits on you: click it, or press `c`, to open that council's Discussion.
 
 ### Changed
 
