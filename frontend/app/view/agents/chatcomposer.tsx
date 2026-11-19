@@ -439,6 +439,7 @@ function ComposerBox({
     const submitNext = useRef(false);
     const submitRef = useRef<() => void>(() => {});
     const interruptRef = useRef<() => boolean>(() => false);
+    const cancelQueuedRef = useRef<() => boolean>(() => false);
     useEffect(
         () =>
             registerChatBox(agent.id, {
@@ -500,6 +501,7 @@ function ComposerBox({
                     return true;
                 },
                 interrupt: () => interruptRef.current(),
+                cancelQueued: () => cancelQueuedRef.current(),
             }),
         [agent.id]
     );
@@ -783,8 +785,9 @@ function ComposerBox({
     };
     // Esc, or ↑ in an empty box: a message Claude has not taken or answered yet comes back into the box
     // (chattakeback.ts), put ahead of what the box holds. False when there is none: the key keeps its old job.
-    // `onNone` runs when Claude Code's box never showed the text, so nothing came back
-    const takeBackKey = (key: "Escape" | "ArrowUp", onNone?: () => void): boolean => {
+    // `onNone` runs when Claude Code's box never showed the text, so nothing came back. `discard`: the queued messages'
+    // ×, which takes them out of Claude Code's queue the same way and drops them rather than filling the box
+    const takeBackKey = (key: "Escape" | "ArrowUp", onNone?: () => void, discard = false): boolean => {
         const blockid = agent.blockId;
         if (blockid == null || asleep) {
             return false;
@@ -803,6 +806,9 @@ function ComposerBox({
         const held = entries ?? [];
         fireAndForget(async () => {
             const result = await takeBack(agent.id, blockid, plan, (texts) => {
+                if (discard) {
+                    return;
+                }
                 if (plan.kind === "interrupt") {
                     noteTakenBack(agent.id, takenBackOf(plan, held, Date.now()));
                     // a message that had landed still has its sent record: with the record hidden it would read as not
@@ -850,6 +856,8 @@ function ComposerBox({
         return true;
     };
     interruptRef.current = interrupt;
+    // ↑'s take-back, never Esc's: the × cancels what waits and the turn runs on
+    cancelQueuedRef.current = () => takeBackKey("ArrowUp", undefined, true);
     // not while a Sleep is under way: Esc would cut short the compaction the sleep waits on
     const showStop = !asleep && !dozing && agent.blockId != null && canStop(agent.state, agent.sleeping);
     // the finished turn's suggested replies: they stay while the person types (a click over typed text asks first,

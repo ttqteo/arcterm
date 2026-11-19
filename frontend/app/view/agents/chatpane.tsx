@@ -26,7 +26,7 @@ import { loadEffortDetail } from "@/app/view/jarvis/effortstore";
 import { formatChordString } from "@/util/keysym";
 import { cn, fireAndForget, stringToBase64 } from "@/util/util";
 import { useAtom, useAtomValue } from "jotai";
-import { ArrowDown, ChevronDown, ChevronUp, Highlighter, Quote, TextSearch } from "lucide-react";
+import { ArrowDown, ChevronDown, ChevronUp, Highlighter, Quote, TextSearch, X } from "lucide-react";
 import {
     animate,
     AnimatePresence,
@@ -79,7 +79,7 @@ import { ChatGoalStrip } from "./chatgoal";
 import { isHandoffAsk } from "./chathandoff";
 import { ChatHandoffCard } from "./chathandoffcard";
 import { holdSwitchLine } from "./chatinitiativestore";
-import { submitIntoChatBox } from "./chatinsert";
+import { cancelQueuedChat, submitIntoChatBox } from "./chatinsert";
 import { CHAT_JUMP_KEYS, registerChatJump } from "./chatjump";
 import { ChatLimitStrip } from "./chatlimitstripview";
 import { awaitsOwnMessage, liveTurn, narratesThinking, streamsLiveReply } from "./chatlive";
@@ -420,8 +420,19 @@ function pendingLineVariants(reduce: boolean): Variants {
 // What the pending messages wait on, under the last of them (chatpending.ts pendingLine): the harness's starting line
 // while a session starts, else Queued while Claude works (Claude Code takes them at the next gap), with Send now. One
 // line, not one per bubble, and its own row: the bubbles go the moment the transcript takes them, and this folds away
-// after them, so neither a dimmed bubble nor a caption under it blinks out as the transcript's copy replaces it.
-function PendingLine({ text, starting, onSendNow }: { text: string; starting: boolean; onSendNow?: () => void }) {
+// after them, so neither a dimmed bubble nor a caption under it blinks out as the transcript's copy replaces it. The ×
+// after Send now cancels the queued messages: out of Claude Code's queue, the turn running on.
+function PendingLine({
+    text,
+    starting,
+    onSendNow,
+    onCancel,
+}: {
+    text: string;
+    starting: boolean;
+    onSendNow?: () => void;
+    onCancel?: () => void;
+}) {
     const reduce = useReducedMotion() ?? false;
     const chord = sendNowChord();
     return (
@@ -452,6 +463,18 @@ function PendingLine({ text, starting, onSendNow }: { text: string; starting: bo
                 >
                     Send now
                     <kbd className="font-sans text-[10.5px] text-muted">{chord}</kbd>
+                </button>
+            ) : null}
+            {!starting && onCancel != null ? (
+                <button
+                    type="button"
+                    data-chat-cancel-queued
+                    onClick={onCancel}
+                    aria-label="Cancel the queued messages"
+                    title="Cancel: take the queued messages out of Claude's queue (the turn runs on); ↑ in the empty box brings them back"
+                    className="inline-flex h-[16px] w-[16px] cursor-pointer items-center justify-center rounded-[4px] text-muted hover:bg-surface-hover hover:text-primary"
+                >
+                    <X size={12} strokeWidth={2} />
                 </button>
             ) : null}
         </motion.div>
@@ -1249,6 +1272,9 @@ function ChatPaneBody({ model, agent, barred }: { model: AgentsViewModel; agent:
                                     text={line}
                                     starting={startingTitle != null || wakingShown}
                                     onSendNow={sendNow}
+                                    onCancel={
+                                        sendNow != null && queuedShown ? () => cancelQueuedChat(agent.id) : undefined
+                                    }
                                 />
                             ) : null}
                         </AnimatePresence>

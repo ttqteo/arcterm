@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
     appendToChatBox,
+    cancelQueuedChat,
     chatBoxText,
     focusChatBox,
     hasChatBox,
@@ -92,6 +93,7 @@ describe("the chat box registry (chatBoxText, submitIntoChatBox, appendToChatBox
         write: vi.fn(() => true),
         focus: vi.fn(() => true),
         interrupt: vi.fn(() => true),
+        cancelQueued: vi.fn(() => true),
         ...over,
     });
     it("reads an empty text and takes nothing when no box is mounted", () => {
@@ -100,6 +102,15 @@ describe("the chat box registry (chatBoxText, submitIntoChatBox, appendToChatBox
         expect(appendToChatBox("cb-none", "x")).toBe(false);
         expect(replaceChatBox("cb-none", "x")).toBe(false);
         expect(focusChatBox("cb-none")).toBe(false);
+        expect(cancelQueuedChat("cb-none")).toBe(false);
+    });
+    it("cancels the queued messages through the registered box", () => {
+        const b = box();
+        const off = registerChatBox("cb-q", b);
+        expect(cancelQueuedChat("cb-q")).toBe(true);
+        expect(b.cancelQueued).toHaveBeenCalledOnce();
+        off();
+        expect(cancelQueuedChat("cb-q")).toBe(false);
     });
     it("interrupts through the registered box, and knows which agents have one", () => {
         expect(hasChatBox("cb-i")).toBe(false);

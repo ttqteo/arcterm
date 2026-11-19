@@ -58,6 +58,9 @@ export interface ChatBox {
     /** Esc while Claude works: stops the turn, a message it has not taken or answered yet coming back into the box;
      *  false when the agent is not working */
     interrupt(): boolean;
+    /** the queued messages' ×: takes them out of Claude Code's queue, as ↑ would, and drops them instead of putting
+     *  them in the box (↑ in the box recalls them from what was sent); false when none is queued */
+    cancelQueued(): boolean;
 }
 
 const boxes = new Map<string, ChatBox>();
@@ -105,6 +108,11 @@ export function hasChatBox(agentId: string): boolean {
 // false when the agent has no chat box mounted, or it is not working
 export function interruptChat(agentId: string): boolean {
     return boxes.get(agentId)?.interrupt() ?? false;
+}
+
+// false when the agent has no chat box mounted, or no message of it is queued
+export function cancelQueuedChat(agentId: string): boolean {
+    return boxes.get(agentId)?.cancelQueued() ?? false;
 }
 
 // false when the agent has no chat box mounted, or the box would not take it
