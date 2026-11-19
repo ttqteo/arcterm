@@ -33,12 +33,6 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
   the Agent tree), then ask a question on its board (Library → Boards opens a sleeping agent's board beside its Chat
   too): the agent wakes, as a message you type in Chat would wake it, and the question arrives as above. Then close
   the agent's tab: Library → Boards keeps the board read-only, with `The agent ended, so you can't ask here`.
-- [ ] (arcterm) **Boards, the What's new picture.** The `boards-split` scenario writes
-  `public/whatsnew/<version>-boards.webp` on the first Final run (or run `node scripts/whatsnew-shot.mjs boards` in the
-  dev app with a board open beside Chat). Commit that file, then change the Boards line in `CHANGELOG.md` from
-  `<!-- shot: none -->` to `<!-- shot: <that file> -->` (`whatsnew.test.ts` fails a shot naming a file that is not
-  there yet, so the line waits on the file). Also read the heap pair in the `boards-split` step 11 detail into
-  `docs/open-issues.md`'s RAM watch row for Boards.
 - [ ] (arcterm) Council figures on a real council (4e9f4589d6d9c6f8): the takeaways read right, and the argument map
   stays legible at 22 ideas
 - [ ] (arcterm) After installing, run `wsh effort backfill-proposed` once: the backlog since 2026-11-13 moves to To
