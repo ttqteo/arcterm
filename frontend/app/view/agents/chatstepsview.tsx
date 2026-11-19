@@ -11,6 +11,7 @@
 // .superpowers/design/chat-compact-work/project (Main, States, Calm).
 // Named chatstepsview, not chatsteps: chatsteps.ts holds the pure model, and `./chatsteps` resolves to the .ts first.
 
+import { ImageZoom } from "@/app/element/imagezoom";
 import { springReveal } from "@/app/element/motiontokens";
 import { modalsModel } from "@/app/store/modalmodel";
 import { useLocalImage } from "@/app/view/jarvis/localimage";
@@ -217,12 +218,35 @@ function StepDetail({ action, detail }: { action: AgentActionEntry; detail: NonN
 const MAX_LINE_PICTURES = 3;
 
 // a picture the agent read, as a small framed thumbnail at the end of its row or its stretch's folded line (as Claude
-// Desktop draws one); an empty frame while it loads, a crossed-out picture once the file is gone
+// Desktop draws one); an empty frame while it loads, a crossed-out picture once the file is gone. A click on a loaded one
+// opens the picture full size over Chat at once (ImageZoom), without opening the line or the row it sits on.
 function PictureThumb({ path }: { path: string }) {
     const img = useLocalImage(path);
+    const [zoomed, setZoomed] = useState(false);
     const frame = "h-[22px] w-[34px] shrink-0 overflow-hidden rounded-[4px] border border-edge-mid bg-surface";
     if (img.url != null) {
-        return <img data-chat-step-thumb src={img.url} alt="" title={path} className={cn(frame, "object-cover")} />;
+        return (
+            <>
+                <button
+                    type="button"
+                    data-chat-step-thumb-open
+                    aria-label={`Open ${baseName(path)}`}
+                    title={path}
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        setZoomed(true);
+                    }}
+                    onKeyDown={(e) => e.stopPropagation()}
+                    className="flex shrink-0 cursor-zoom-in rounded-[4px]"
+                >
+                    <img data-chat-step-thumb src={img.url} alt="" className={cn(frame, "object-cover")} />
+                </button>
+                <ImageZoom
+                    image={zoomed ? { src: img.url, alt: baseName(path) } : null}
+                    onClose={() => setZoomed(false)}
+                />
+            </>
+        );
     }
     return (
         <span
@@ -494,10 +518,14 @@ function StepList({ work, live }: { work: WorkItem; live: boolean }) {
 // opening to its box of rows on a click; "◌ Run the told tests +2 · 12s ›" while a call in it is in flight. A running
 // stretch stays folded too (Calm.dc.html): its line already names what runs, and a box growing under the paragraphs read
 // as noise. A finished stretch's line shows its time from 10 s up (stretchTime).
+// A stretch of one call that can no longer grow is its box alone, the row already open: its line said what the row says
+// ("Check shared registration files…" over "Check shared registration files… ›"). The stretch still growing keeps its
+// line, so a second call landing does not turn a box back into a line.
 export function ChatSteps({
     work,
     open,
     live,
+    growing,
     onToggle,
 }: {
     work: WorkItem;
@@ -505,57 +533,71 @@ export function ChatSteps({
     open: boolean;
     // the session is working: a tool with no result is running, and the stretch counts up to now
     live: boolean;
+    // the last part of the turn being written: another call may still join it
+    growing: boolean;
     onToggle: () => void;
 }) {
     const shown = open;
     const summary = stepSummary(work.actions, live);
     const running = summary.running;
     const now = useNow(running);
+    if (work.actions.length === 1 && !growing) {
+        return (
+            <div data-chat-work data-chat-work-single className="flex flex-col">
+                <div data-chat-tools className="overflow-hidden rounded-[10px] border border-edge-mid">
+                    <StepList work={work} live={live} />
+                </div>
+            </div>
+        );
+    }
     const time = stretchTime(running ? stretchMs(work, now, live) : work.durationMs, running);
     // the pictures it read, on its folded line: opened, each sits on its own row instead
     const pictures = shown ? [] : stretchPictures(work.actions, MAX_LINE_PICTURES);
     return (
         <div data-chat-work className="flex flex-col">
-            <button
-                type="button"
-                data-fold
-                aria-expanded={shown}
-                onClick={onToggle}
-                data-fold-state={running ? "running" : "done"}
-                className={cn(
-                    "flex min-w-0 max-w-full cursor-pointer items-center gap-1.5 self-start py-[2px] text-[13.5px] hover:text-secondary",
-                    running ? "text-secondary" : "text-muted"
-                )}
-            >
-                {running ? <Spinner size={13} /> : null}
-                {/* only the sentence truncates: the counts and the time stay in view. No failed call is in the sentence
+            {/* the thumbnails sit beside the line's button, not in it: each is a button of its own that opens its picture */}
+            <div className="flex min-w-0 max-w-full items-center self-start">
+                <button
+                    type="button"
+                    data-fold
+                    aria-expanded={shown}
+                    onClick={onToggle}
+                    data-fold-state={running ? "running" : "done"}
+                    className={cn(
+                        "flex min-w-0 max-w-full cursor-pointer items-center gap-1.5 py-[2px] text-[13.5px] hover:text-secondary",
+                        running ? "text-secondary" : "text-muted"
+                    )}
+                >
+                    {running ? <Spinner size={13} /> : null}
+                    {/* only the sentence truncates: the counts and the time stay in view. No failed call is in the sentence
                     and no red is on this line: a tool that fails mid-turn is mostly the agent's own probe (a grep with no
                     hit, a missing tool) that it gets past. A failed call keeps its red on its own row, once opened. */}
-                <span data-fold-sentence className="min-w-0 truncate">
-                    {summary.text}
-                </span>
-                {running && summary.more > 0 ? (
-                    <span data-fold-more className="shrink-0 tabular-nums text-muted">
-                        +{summary.more}
+                    <span data-fold-sentence className="min-w-0 truncate">
+                        {summary.text}
                     </span>
-                ) : null}
-                {running ? null : <Counts edits={summary.edits} data-fold-counts="" />}
-                {time !== "" ? (
-                    <span data-fold-time className="shrink-0 text-[12px] tabular-nums text-muted">
-                        · {time}
+                    {running && summary.more > 0 ? (
+                        <span data-fold-more className="shrink-0 tabular-nums text-muted">
+                            +{summary.more}
+                        </span>
+                    ) : null}
+                    {running ? null : <Counts edits={summary.edits} data-fold-counts="" />}
+                    {time !== "" ? (
+                        <span data-fold-time className="shrink-0 text-[12px] tabular-nums text-muted">
+                            · {time}
+                        </span>
+                    ) : null}
+                    <span className="flex text-muted">
+                        <Chevron open={shown} size={13} />
                     </span>
-                ) : null}
-                <span className="flex text-muted">
-                    <Chevron open={shown} size={13} />
-                </span>
+                </button>
                 {pictures.length > 0 ? (
-                    <span data-fold-thumbs className="ml-1.5 flex shrink-0 gap-1">
+                    <span data-fold-thumbs className="ml-3 flex shrink-0 gap-1">
                         {pictures.map((path) => (
                             <PictureThumb key={path} path={path} />
                         ))}
                     </span>
                 ) : null}
-            </button>
+            </div>
             <AnimatePresence initial={false}>
                 {shown ? (
                     <motion.div
