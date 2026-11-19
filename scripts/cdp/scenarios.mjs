@@ -1750,6 +1750,8 @@ const RR_A = "verify-rr-a";
 const RR_B = "verify-rr-b";
 const RR_STRIP = "[data-run-review-strip]";
 const RR_SHEET = "[data-run-review-sheet]";
+const RR_HEADER = "[data-run-review-header]";
+const RR_TOAST = "[data-jarvis-brief-toast]";
 const RR_PROMPT = "Tick what to do, then start one run with it.";
 const RR_REFUSAL = "Tick items from one project to start a run";
 const RR_EMPTY = "Nothing a run left is waiting on you.";
@@ -1782,6 +1784,33 @@ const RR_READ = `(() => {
         empty: t(document.querySelector('[data-run-review-empty]')) || null,
         start: start ? { disabled: start.disabled, text: t(start) } : null,
         clear: clear ? { disabled: clear.disabled } : null,
+    };
+})()`;
+
+// The undo toast and the sheet's panel as boxes (spec decision 13: the toast leaves the open sheet clear). `apart` says
+// their boxes do not intersect; `centredWouldCover` says where the toast would have landed centred on the page column,
+// as it did before it kept clear of the sheet, so the detail shows whether the check could catch the old placement at
+// this window size. `centred` is how far the toast's centre sits from its page column's.
+const RR_TOAST_BOXES = `(() => {
+    const box = (el) => {
+        if (el == null) return null;
+        const r = el.getBoundingClientRect();
+        return { left: Math.round(r.left), top: Math.round(r.top), right: Math.round(r.right), bottom: Math.round(r.bottom) };
+    };
+    const toastEl = document.querySelector('${RR_TOAST}');
+    const sheetEl = document.querySelector('${RR_SHEET}')?.closest('[role="dialog"]');
+    const toast = box(toastEl);
+    const sheet = box(sheetEl);
+    const col = box(toastEl?.offsetParent);
+    const apart =
+        toast != null && sheet != null &&
+        (toast.right <= sheet.left || sheet.right <= toast.left || toast.bottom <= sheet.top || sheet.bottom <= toast.top);
+    const mid = col == null ? null : (col.left + col.right) / 2;
+    const half = toast == null ? 0 : (toast.right - toast.left) / 2;
+    return {
+        toast, sheet, apart,
+        centredWouldCover: toast != null && sheet != null && mid != null ? mid + half > sheet.left : null,
+        centred: toast != null && mid != null ? Math.round(Math.abs((toast.left + toast.right) / 2 - mid)) : null,
     };
 })()`;
 
@@ -1945,16 +1974,61 @@ const briefRunReview = {
         // the page has focus now (a real click), so this says whether CDP keys reach it
         ctx.cdpKeys = await bsKeysArrive(h);
         const s2 = await read();
+        // The two initiatives hold only proposed chunks, so they sit in the Ideas box; every one of those chunks is in To
+        // review, so neither row repeats them as "N proposed" (spec decision 12). Both rows must be found: a row the box
+        // did not draw would pass for the wrong reason.
+        const ideaCounts = await h.ev(`(() => {
+            const row = (name) =>
+                [...document.querySelectorAll('[data-jarvis-ideas] [data-jarvis-idea-row]')].find((r) => {
+                    const label = r.querySelector('[role="button"]')?.getAttribute('aria-label') ?? '';
+                    return label === 'Open ' + name || label === 'Collapse ' + name;
+                });
+            const read = (name) => {
+                const r = row(name);
+                return r == null ? null : { count: r.querySelector('[data-jarvis-proposed-count]')?.innerText.trim() ?? null };
+            };
+            return { a: read(${JSON.stringify(RR_A)}), b: read(${JSON.stringify(RR_B)}) };
+        })()`);
+        // The picture is framed on the sheet's header, padded out to take in its first groups: a 2:1 crop around the whole
+        // sheet is as tall as the window and starts below the header, which cut the title and the count line off (spec
+        // decision 13). The clip must hold the box of the title and the count line (the header's first two children),
+        // and they must read "To review" and the count. The clip is in CSS px, and a page the host zooms is captured a
+        // little smaller than that, so the shot is also looked at by eye: the check is a floor, not the whole proof.
         let picture;
         try {
-            picture = await h.whatsnewShot("run-review", { selector: RR_SHEET });
+            picture = await h.whatsnewShot("run-review", { selector: RR_HEADER, pad: 200 });
         } catch (e) {
             picture = { error: String(e?.message ?? e) };
         }
+        const header = await h.ev(`(() => {
+            const el = document.querySelector('${RR_HEADER}');
+            const [title, count] = el == null ? [] : [el.children[0], el.children[1]];
+            if (title == null || count == null) return null;
+            const a = title.getBoundingClientRect();
+            const b = count.getBoundingClientRect();
+            return {
+                left: Math.min(a.left, b.left),
+                top: Math.min(a.top, b.top),
+                right: Math.max(a.right, b.right),
+                bottom: Math.max(a.bottom, b.bottom),
+                title: (title.innerText ?? '').trim(),
+                count: (count.innerText ?? '').replace(/\\s+/g, ' ').trim(),
+            };
+        })()`);
+        const clip = picture.clip;
+        const headerWhole =
+            header != null &&
+            clip != null &&
+            clip.x <= header.left &&
+            clip.y <= header.top &&
+            clip.x + clip.width >= header.right &&
+            clip.y + clip.height >= header.bottom &&
+            /^to review$/i.test(header.title) &&
+            header.count === "4 things 2 runs left, oldest first";
         await shot("sheet");
         const run2Keys = [K.r2a1, K.r2a2, K.r2b].sort();
         rec(
-            "2. Review opens the sheet with two groups, oldest run first; the footer reads the prompt and Start is dimmed",
+            `2. Review opens the sheet with two groups, oldest run first; the footer reads the prompt and Start is dimmed; the ${RR_A} and ${RR_B} Ideas rows show no proposed count; the What's new picture holds the sheet's header, "To review" and its count line, whole`,
             opened &&
                 rrSame(
                     s2.groups.map((g) => g.id),
@@ -1964,8 +2038,13 @@ const briefRunReview = {
                 rrSame([...(s2.groups[1]?.rows ?? [])].sort(), run2Keys) &&
                 s2.line === RR_PROMPT &&
                 s2.start?.disabled === true &&
-                picture.error == null,
-            JSON.stringify({ groups: s2.groups, line: s2.line, start: s2.start, cdpKeys: ctx.cdpKeys, picture: picture.file ?? picture.error })
+                ideaCounts?.a != null &&
+                ideaCounts?.b != null &&
+                ideaCounts.a.count == null &&
+                ideaCounts.b.count == null &&
+                picture.error == null &&
+                headerWhole,
+            JSON.stringify({ groups: s2.groups, line: s2.line, start: s2.start, ideaCounts, cdpKeys: ctx.cdpKeys, picture: picture.file ?? picture.error, clip, header, headerWhole })
         );
 
         // 3. a tick, Start opening the launcher on that row's line, Esc keeping the tick, Clear
@@ -2052,18 +2131,26 @@ const briefRunReview = {
         const laterGone = await gone(rrRow(order[0]));
         const groupGone = await gone(`document.querySelector('[data-run-review-group="${r1}"]')`);
         const s5later = await read();
+        // the undo toast Later raised is up beside the open sheet and does not cover it (spec decision 13)
+        const s5toastUp = await polishWaitFor(h, `document.querySelector('${RR_TOAST}') != null`, 3000);
+        await briefNap(450); // the toast's pop and move settle
+        const s5toast = await h.ev(RR_TOAST_BOXES);
         await rrKey(h, ctx, "Delete");
         const dropGone = await gone(rrRow(order[1]));
         const s5drop = await read();
         await rrKey(h, ctx, "Escape");
         const sheetClosed = await gone(`document.querySelector('${RR_SHEET}')`);
+        // Delete's toast is still inside its undo window: with the sheet shut it is centred on the page column again
+        await polishWaitFor(h, `document.querySelector('${RR_TOAST}') != null`, 1500);
+        await briefNap(450);
+        const s5shut = await h.ev(RR_TOAST_BOXES);
         const s5closed = await read();
         await click(`document.querySelector('${RR_STRIP}')`);
         const reopened = await polishWaitFor(h, `document.querySelector('${RR_SHEET}') != null`, 5000);
         await briefNap(700);
         const s5reopen = await read();
         rec(
-            "5. j and k move the cursor row, t ticks it, l folds a row and its group (Later), Delete folds one (Drop), Esc closes the sheet and Review reopens it",
+            "5. j and k move the cursor row, t ticks it, l folds a row and its group (Later) with the undo toast clear of the open sheet, Delete folds one (Drop), Esc closes the sheet (the toast is centred again) and Review reopens it",
             order.length === 4 &&
                 order[0] === K.r1a &&
                 s5start.cursor === order[0] &&
@@ -2076,25 +2163,38 @@ const briefRunReview = {
                 groupGone &&
                 s5later.groups.length === 1 &&
                 s5later.cursor === order[1] &&
+                s5toastUp &&
+                s5toast.apart === true &&
                 dropGone &&
                 rrSame([...s5drop.groups.flatMap((g) => g.rows)], [order[2], order[3]]) &&
                 sheetClosed &&
+                s5shut.toast != null &&
+                s5shut.centred != null &&
+                s5shut.centred <= 2 &&
                 s5closed.stripShown &&
                 s5closed.strip.includes("2 things 1 run left") &&
                 reopened &&
                 rrSame(s5reopen.groups.flatMap((g) => g.rows), [order[2], order[3]]),
-            JSON.stringify({ order, walk, tick: [s5tick.marked, s5tick.cursor], later: [laterGone, groupGone, s5later.groups.length, s5later.cursor], drop: [dropGone, s5drop.groups.flatMap((g) => g.rows)], closed: [sheetClosed, s5closed.strip], reopened: s5reopen.groups.flatMap((g) => g.rows) })
+            JSON.stringify({ order, walk, tick: [s5tick.marked, s5tick.cursor], later: [laterGone, groupGone, s5later.groups.length, s5later.cursor], toast: s5toast, drop: [dropGone, s5drop.groups.flatMap((g) => g.rows)], closed: [sheetClosed, s5closed.strip], shut: s5shut, reopened: s5reopen.groups.flatMap((g) => g.rows) })
         );
 
         // 6. Later by click folds one of the two rows left and leaves the other
         await click(rrBtn(order[2], "data-run-review-later"));
         const laterClicked = await gone(rrRow(order[2]));
         const s6 = await read();
+        const s6toastUp = await polishWaitFor(h, `document.querySelector('${RR_TOAST}') != null`, 3000);
+        await briefNap(450); // the toast's pop settles
+        const s6toast = await h.ev(RR_TOAST_BOXES);
         await shot("later");
         rec(
-            "6. Later by click folds its row and leaves the other one",
-            laterClicked && rrSame(s6.groups.flatMap((g) => g.rows), [order[3]]) && s6.groups.length === 1 && s6.empty == null,
-            JSON.stringify({ laterClicked, rows: s6.groups.flatMap((g) => g.rows) })
+            "6. Later by click folds its row and leaves the other one, and its undo toast and the open sheet do not intersect",
+            laterClicked &&
+                rrSame(s6.groups.flatMap((g) => g.rows), [order[3]]) &&
+                s6.groups.length === 1 &&
+                s6.empty == null &&
+                s6toastUp &&
+                s6toast.apart === true,
+            JSON.stringify({ laterClicked, rows: s6.groups.flatMap((g) => g.rows), toast: s6toast })
         );
 
         // 7. Drop by click on the last row shows the empty line, and past the undo window the rows stay gone and the store

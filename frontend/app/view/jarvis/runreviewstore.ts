@@ -14,6 +14,7 @@ import { resolveBriefCursor } from "./briefnav";
 import { briefUndo, pendingDeleteKeysAtom } from "./briefundo";
 import { setChunkStatus } from "./effortstore";
 import {
+    listedKeys,
     neighborKey,
     pruneSettled,
     reviewRowKeys,
@@ -38,6 +39,19 @@ export const runReviewRefusalAtom = atom<string | null>(null) as PrimitiveAtom<s
 // The rows whose Later or Drop went through while the Brief's snapshot still lists their chunk. briefUndo un-hides a key
 // as its commit returns, a refetch earlier, so without this the row would come back for that long.
 const settledAtom = atom<Set<string>>(new Set<string>()) as PrimitiveAtom<Set<string>>;
+
+// the Brief's snapshot's groups. Its own atom so that what derives from the groups recomputes only when the groups do, not
+// on every briefing state change
+const snapshotGroupsAtom: Atom<RunReviewGroup[] | undefined> = atom(
+    (get) => get(briefingStateAtom).snapshot?.state.runreview
+);
+
+/**
+ * The proposals To review lists, by `reviewKey`: what an initiative row leaves out of its "N proposed" (briefrows.ts
+ * initiativeLine, spec decision 12). It reads the snapshot's groups, not what the sheet draws, so a row a pending Later
+ * folds stays out of the count until its edit lands.
+ */
+export const runReviewListedAtom: Atom<ReadonlySet<string>> = atom((get) => listedKeys(get(snapshotGroupsAtom)));
 
 /** What To review draws now: the snapshot's groups less what is hidden or settled. */
 export const runReviewGroupsAtom: Atom<ReviewGroup[]> = atom((get) =>

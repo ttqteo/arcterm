@@ -22,6 +22,32 @@ export const reviewKey = (i: Pick<RunReviewItem, "effortoid" | "label">): string
     chunkKey("effort:" + i.effortoid, i.label);
 
 /**
+ * The keys of every proposal To review lists, read off the snapshot's own groups (WorkState.runreview), not off what the
+ * sheet draws: a row a pending Later or Drop folds is still a proposed chunk until its edit lands, so it must not drop
+ * back into an initiative's "N proposed" for the length of the undo window.
+ */
+export function listedKeys(groups: RunReviewGroup[] | undefined): ReadonlySet<string> {
+    return new Set((groups ?? []).flatMap((g) => g.items.map(reviewKey)));
+}
+
+/**
+ * The labels of an initiative's proposed chunks that To review does not list: the ones its row still counts (spec decision
+ * 12, a run's proposal is decided in To review only). `effortOref` is the initiative's oref, `listed` is `listedKeys`;
+ * with no To review data every label stays.
+ */
+export function unlistedProposals(
+    effortOref: string,
+    labels: string[],
+    listed: ReadonlySet<string> | undefined
+): string[] {
+    if (listed == null || listed.size === 0) {
+        return labels;
+    }
+    const effortoid = effortOref.replace(/^effort:/, "");
+    return labels.filter((label) => !listed.has(reviewKey({ effortoid, label })));
+}
+
+/**
  * The groups the sheet draws: a row a pending Later or Drop hides is out at once, and so is one whose edit went through
  * while the Brief's snapshot still lists it (`settled`), so it does not come back for the length of a refetch. A group
  * with no row left is out too. wavesrv's order is kept (oldest run first, each run's oldest proposal first).

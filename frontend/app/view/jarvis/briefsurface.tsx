@@ -257,7 +257,13 @@ import {
     setReviewCursor,
 } from "./reviewstore";
 import { RunReviewSheet, RunReviewStrip } from "./runreviewsheet";
-import { runReviewNavAtom, runReviewOpenAtom, setRunReviewCursor, useRunReviewSettling } from "./runreviewstore";
+import {
+    runReviewListedAtom,
+    runReviewNavAtom,
+    runReviewOpenAtom,
+    setRunReviewCursor,
+    useRunReviewSettling,
+} from "./runreviewstore";
 import { loadTaskList, taskListAtom } from "./tasksstore";
 import { WaitingStrip } from "./waitingstrip";
 
@@ -646,6 +652,8 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
     }, []);
     // To review's rows that went through Later or Drop stay out until a snapshot no longer lists them
     useRunReviewSettling(snapshot?.state.runreview);
+    // the proposals To review lists: an initiative row counts only the proposed chunks outside it (briefrows.ts)
+    const reviewListed = useAtomValue(runReviewListedAtom);
 
     // DEV-only: the resource-linking scenario's seams (linkingdevhooks.ts)
     useEffect(() => {
@@ -1026,7 +1034,14 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
         [showDone, doneShown, matches]
     );
     const listItems = useMemo(() => [...list.rows, ...doneItems, ...archivedItems], [list, doneItems, archivedItems]);
-    const ideaLines = useMemo(() => filterLines(ideaWindow.rows.map(initiativeLine), query), [ideaWindow, query]);
+    const ideaLines = useMemo(
+        () =>
+            filterLines(
+                ideaWindow.rows.map((c) => initiativeLine(c, reviewListed)),
+                query
+            ),
+        [ideaWindow, query, reviewListed]
+    );
 
     // --- Activity: Runs and Councils merged (briefactivity.ts) -----------------------------------------------------
     const councilList = useCouncils("");
@@ -1665,7 +1680,7 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
                     if (oref === pass.current) {
                         return <ReviewOpenInitiative key={oref} model={model} card={card} since={reviewBodyOf(card)} />;
                     }
-                    const line = initiativeLine(card);
+                    const line = initiativeLine(card, reviewListed);
                     const marked = review != null && reviewedInSession(reviewed, oref, review.startedAt);
                     const live = liveCards.get(oref);
                     return (

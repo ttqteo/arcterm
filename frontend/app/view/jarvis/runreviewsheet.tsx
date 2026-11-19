@@ -197,9 +197,18 @@ export function RunReviewSheet({ model }: { model: LauncherModel }) {
     const empty = groups.length === 0;
     const now = Date.now();
     return (
-        <ModalShell open={open} variant="sheet" onClose={closeRunReview} className="h-full w-[560px] max-w-[92vw]">
+        // the width is --run-review-sheet-w (tailwindsetup.css): the Brief's undo toast keeps clear of the sheet by it
+        <ModalShell
+            open={open}
+            variant="sheet"
+            onClose={closeRunReview}
+            className="h-full w-[var(--run-review-sheet-w)]"
+        >
             <div data-run-review-sheet className="flex h-full min-h-0 flex-col bg-surface">
-                <div className="flex flex-none items-center gap-2.5 border-b border-edge-faint px-[18px] py-4">
+                <div
+                    data-run-review-header
+                    className="flex flex-none items-center gap-2.5 border-b border-edge-faint px-[18px] py-4"
+                >
                     <span className="text-[15px] font-semibold text-ink-hi">To review</span>
                     {!empty ? (
                         <span className="min-w-0 truncate text-[11px] tabular-nums text-muted">

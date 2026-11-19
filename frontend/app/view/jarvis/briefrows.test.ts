@@ -37,6 +37,7 @@ import {
     type BriefLine,
 } from "./briefrows";
 import { buildEffortCard, type EffortCardModel } from "./effortmodel";
+import { reviewKey } from "./runreview";
 
 const MIN = 60_000;
 const DAY = 24 * 60 * MIN;
@@ -288,6 +289,43 @@ describe("initiativeLine", () => {
         expect(idea).toMatchObject({ idea: true, progress: null, proposed: "4 proposed" });
         expect(initiativeLine(buildEffortCard(summary([{ label: "A", status: "pending" }]))).proposed).toBeUndefined();
         expect(initiativeLine(buildEffortCard(summary([]))).proposed).toBeUndefined();
+    });
+
+    describe("with the proposals To review lists", () => {
+        const proposed = (...labels: string[]) => labels.map((label) => ({ label, status: "proposed" }));
+        const listed = (...labels: string[]) => new Set(labels.map((label) => reviewKey({ effortoid: "e1", label })));
+
+        it("shows no count on a row whose proposals are all in To review, an idea or a tracker", () => {
+            const idea = initiativeLine(
+                buildEffortCard(summary(proposed("P1", "P2"), { total: 0, activechunk: undefined })),
+                listed("P1", "P2")
+            );
+            expect(idea.idea).toBe(true);
+            expect(idea.proposed).toBeUndefined();
+            const tracker = initiativeLine(
+                buildEffortCard(
+                    summary([{ label: "A", status: "done" }, ...proposed("P1")], { total: 1, activechunk: undefined })
+                ),
+                listed("P1")
+            );
+            expect(tracker.proposed).toBeUndefined();
+            expect(tracker.progress).toMatchObject({ done: 1, total: 1 });
+        });
+
+        it("counts only the proposals To review does not list", () => {
+            const card = buildEffortCard(summary(proposed("P1", "P2"), { total: 0, activechunk: undefined }));
+            expect(initiativeLine(card, listed("P1")).proposed).toBe("1 proposed");
+            // a listed key of another initiative's chunk with the same label leaves this one's count whole
+            const other = new Set([reviewKey({ effortoid: "e2", label: "P1" })]);
+            expect(initiativeLine(card, other).proposed).toBe("2 proposed");
+        });
+
+        it("is unchanged with no To review data", () => {
+            const card = buildEffortCard(summary(proposed("P1", "P2"), { total: 0, activechunk: undefined }));
+            expect(initiativeLine(card).proposed).toBe("2 proposed");
+            expect(initiativeLine(card, undefined).proposed).toBe("2 proposed");
+            expect(initiativeLine(card, new Set()).proposed).toBe("2 proposed");
+        });
     });
 
     it("keeps a plan of only skipped chunks a tracker, and an archived empty one archived", () => {

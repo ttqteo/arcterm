@@ -6,6 +6,7 @@ import { chunkKey } from "./briefundo";
 import {
     footerLine,
     groupAge,
+    listedKeys,
     neighborKey,
     oldestLine,
     pruneSettled,
@@ -17,6 +18,7 @@ import {
     stripLine,
     TICK_PROMPT,
     tickedKeys,
+    unlistedProposals,
     visibleGroups,
 } from "./runreview";
 
@@ -42,6 +44,41 @@ const none = new Set<string>();
 describe("reviewKey", () => {
     it("is the chunk key briefUndo hides by", () => {
         expect(reviewKey(item("e1", "first issue"))).toBe(chunkKey("effort:e1", "first issue"));
+    });
+});
+
+describe("listedKeys and unlistedProposals", () => {
+    it("lists every row of every group by its key, and nothing without a snapshot", () => {
+        expect([...listedKeys(GROUPS)].sort()).toEqual(
+            [
+                chunkKey("effort:e1", "first issue"),
+                chunkKey("effort:e1", "second issue"),
+                chunkKey("effort:e2", "third issue"),
+            ].sort()
+        );
+        expect(listedKeys(undefined).size).toBe(0);
+        expect(listedKeys([]).size).toBe(0);
+    });
+
+    it("keeps the rows a pending Later or Drop hides: they are still proposed until the edit lands", () => {
+        // listedKeys reads the snapshot's groups, not visibleGroups: a folded row must not jump back into the count
+        const hidden = new Set([chunkKey("effort:e2", "third issue")]);
+        expect(visibleGroups(GROUPS, hidden, none).flatMap((g) => g.items)).toHaveLength(2);
+        expect(listedKeys(GROUPS).has(chunkKey("effort:e2", "third issue"))).toBe(true);
+    });
+
+    it("drops from an initiative's proposed labels the ones To review lists, matched by initiative and label", () => {
+        const listed = listedKeys(GROUPS);
+        expect(unlistedProposals("effort:e1", ["first issue", "kept here", "second issue"], listed)).toEqual([
+            "kept here",
+        ]);
+        // the same label under another initiative is a different proposal
+        expect(unlistedProposals("effort:e3", ["first issue"], listed)).toEqual(["first issue"]);
+    });
+
+    it("leaves every label with no To review data", () => {
+        expect(unlistedProposals("effort:e1", ["a", "b"], undefined)).toEqual(["a", "b"]);
+        expect(unlistedProposals("effort:e1", ["a", "b"], new Set())).toEqual(["a", "b"]);
     });
 });
 
