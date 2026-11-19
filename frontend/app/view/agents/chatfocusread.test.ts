@@ -129,17 +129,22 @@ describe("litGroup", () => {
 });
 
 describe("stepFrom with a group", () => {
-    it("moves a whole group on and back", () => {
-        expect(stepFrom(2, 1, 10, 3)).toBe(5);
-        expect(stepFrom(5, -1, 10, 3)).toBe(2);
+    it("slides the group one block on and back", () => {
+        expect(stepFrom(2, 1, 10, 3)).toBe(3);
+        expect(stepFrom(5, -1, 10, 3)).toBe(4);
     });
-    it("goes back to the first block from inside the first group, and no further", () => {
+    it("goes back to the first block, and no further", () => {
         expect(stepFrom(1, -1, 10, 3)).toBe(0);
         expect(stepFrom(0, -1, 10, 3)).toBeNull();
     });
-    it("stops past the last block", () => {
+    it("stops once the group ends on the last block", () => {
+        expect(stepFrom(6, 1, 10, 3)).toBe(7);
+        expect(stepFrom(7, 1, 10, 3)).toBeNull();
         expect(stepFrom(8, 1, 10, 3)).toBeNull();
-        expect(stepFrom(6, 1, 10, 3)).toBe(9);
+    });
+    it("takes the first block of a conversation shorter than the group, and moves no further", () => {
+        expect(stepFrom(-1, 1, 2, 3)).toBe(0);
+        expect(stepFrom(0, 1, 2, 3)).toBeNull();
     });
 });
 

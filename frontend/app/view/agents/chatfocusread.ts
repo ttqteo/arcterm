@@ -98,8 +98,9 @@ export function litGroup(first: number, count: number, size: number = 1): number
     return Array.from({ length: Math.min(size, count - first) }, (_, i) => first + i);
 }
 
-/** The first block J (dir 1) or K (dir -1) lights from the lit group's first, a whole group on, or null past either end.
- *  K from inside the first group goes back to the very first block. With none lit, J takes the first and K none. */
+/** The first block J (dir 1) or K (dir -1) lights from the lit group's first: one block on, so the group slides a block
+ *  at a time, or null past either end. J stops once the group ends on the last block (it would only shrink from there).
+ *  With none lit, J takes the first and K none. */
 export function stepFrom(lit: number, dir: 1 | -1, count: number, size: number = 1): number | null {
     if (count === 0) {
         return null;
@@ -107,12 +108,11 @@ export function stepFrom(lit: number, dir: 1 | -1, count: number, size: number =
     if (lit < 0) {
         return dir > 0 ? 0 : null;
     }
-    const base = Math.min(lit, count - 1);
-    const next = base + dir * size;
-    if (dir < 0 && next < 0 && base > 0) {
-        return 0;
+    const next = Math.min(lit, count - 1) + dir;
+    if (next < 0 || next >= count || (dir > 0 && next + size > count)) {
+        return null;
     }
-    return next < 0 || next >= count ? null : next;
+    return next;
 }
 
 /** The blocks drawn at half strength beside the lit group: the one before it and the one after it, those that exist.

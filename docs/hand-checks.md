@@ -22,7 +22,8 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
   (`typingFollowsAtom`) still lands in the box. `agenttree.tsx` selectAgentRow, `chatfocusreadstore.ts`
   focusConversationSoon; scenario step 6d of `chat-focus-read` was not run (no dev app up).
 - [ ] (arcterm) **Focus read starts at ×3 and goes to ×5.** With `chat.focusRead.size` cleared from localStorage, turn
-  Focus read on (Alt+R): three blocks are lit and the size button reads ×3; clicks go ×4, ×5, ×1. At ×5 the lit group
+  Focus read on (Alt+R): three blocks are lit and the size button reads ×3; clicks go ×4, ×5, ×1. J/K slide the group one
+  block (the top block leaves, the next one joins), and J stops once the group ends on the last block. At ×5 the lit group
   still reads well on a short window (the group can run taller than the view). The `chat-focus-read` scenario's step 6c
   covers ×5 but was not run (no dev app up). `chatfocusread.ts` FOCUS_READ_SIZES.
 

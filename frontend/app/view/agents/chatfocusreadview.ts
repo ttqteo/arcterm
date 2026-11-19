@@ -173,7 +173,7 @@ const PROGRAMMATIC_MS = 1200;
 
 /** Focus read over one Chat scroller: `on` is the toggle, `paused` holds the dimming off (while you follow a live reply
  *  at the bottom) with the keys still working, `size` how many blocks the line lights at a time (the one on it and the
- *  ones after it; J/K step a whole group). `tickRef` is the accent tick in the gutter that marks the line. */
+ *  ones after it; J/K slide it one block). `tickRef` is the accent tick in the gutter that marks the line. */
 export function useFocusRead(
     agentId: string,
     scrollRef: RefObject<HTMLDivElement | null>,

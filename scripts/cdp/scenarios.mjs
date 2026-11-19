@@ -49536,7 +49536,7 @@ const chatFocusRead = {
             );
 
             // 6c. the size button lights two blocks at a time: two lit from the line, the one before and after the pair at
-            // half strength; K steps back a whole pair, Q quotes the pair as one quote; four more clicks (×3, ×4, ×5) go round to ×1
+            // half strength; K slides the pair back one block, Q quotes the pair as one quote; four more clicks (×3, ×4, ×5) go round to ×1
             const sizeBtn = `${pane}?.querySelector("[data-chat-focus-read-size]")`;
             await click(sizeBtn);
             const s6c = await state();
@@ -49557,9 +49557,9 @@ const chatFocusRead = {
             const size6end = await h.ev(`${sizeBtn}?.getAttribute("data-chat-focus-read-size")`);
             const s6end = await state();
             rec(
-                "6c. ×2 lights the block on the line and the one after it, with the block before and after the pair at 0.5; K steps back two blocks; Q quotes the pair as one quote; the button goes round ×3, ×4, ×5 (five lit, or as many as are left) back to ×1",
+                "6c. ×2 lights the block on the line and the one after it, with the block before and after the pair at 0.5; K slides the pair back one block; Q quotes the pair as one quote; the button goes round ×3, ×4, ×5 (five lit, or as many as are left) back to ×1",
                 size6c === "2" && s6c?.litCount === 2 && s6c.near.join(",") === [s6c.lit - 1, s6c.lit + 2].filter((i) => i >= 0 && i < s6c.count).join(",") &&
-                    s6k?.lit === s6c.lit - 2 && s6k.litCount === 2 &&
+                    s6k?.lit === s6c.lit - 1 && s6k.litCount === 2 &&
                     text6q === `${before6q.replace(/\s+$/, "")}\n\n${quoted6}\n\n` &&
                     size5 === "5" && s6five?.litCount === Math.min(5, s6five.count - s6five.lit) &&
                     size6end === "1" && s6end?.litCount === 1,
