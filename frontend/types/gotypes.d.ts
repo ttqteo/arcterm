@@ -345,6 +345,131 @@ declare global {
         workspaceid?: string;
     };
 
+    // wshrpc.BoardAgent
+    type BoardAgent = {
+        tabid: string;
+        title: string;
+        sessionid?: string;
+        readts?: number;
+    };
+
+    // wshrpc.BoardAgentDrawRtnData
+    type BoardAgentDrawRtnData = {
+        boardid: string;
+        boardname: string;
+        project: string;
+        created?: boolean;
+        state: string;
+        added?: number;
+        changed?: number;
+        removed?: number;
+        reason?: string;
+    };
+
+    // wshrpc.BoardAnswer
+    type BoardAnswer = {
+        id: string;
+        project: string;
+        boardid: string;
+        turnid: string;
+        add?: string;
+        update?: string;
+        remove?: string[];
+        ts: number;
+    };
+
+    // wshrpc.BoardArcRecord
+    type BoardArcRecord = {
+        name: string;
+        createdts: number;
+    };
+
+    // wshrpc.BoardForward
+    type BoardForward = {
+        state: string;
+        reason?: string;
+        sentts?: number;
+        reply?: string;
+        replyts?: number;
+    };
+
+    // wshrpc.BoardInfo
+    type BoardInfo = {
+        id: string;
+        name: string;
+        project: string;
+        path: string;
+        createdts: number;
+        activets: number;
+        drawnts?: number;
+        state?: string;
+        loaderror?: string;
+        turns?: number;
+        shapes?: number;
+        agenttabid?: string;
+        agenttitle?: string;
+    };
+
+    // wshrpc.BoardListRtnData
+    type BoardListRtnData = {
+        boards: BoardInfo[];
+    };
+
+    // wshrpc.BoardReadRtnData
+    type BoardReadRtnData = {
+        info: BoardInfo;
+        data: string;
+        rev: string;
+    };
+
+    // wshrpc.BoardSaveRtnData
+    type BoardSaveRtnData = {
+        rev?: string;
+        conflict?: boolean;
+    };
+
+    // wshrpc.BoardTalk
+    type BoardTalk = {
+        project: string;
+        boardid: string;
+        sessionid?: string;
+        contexttokens?: number;
+        agent?: BoardAgent;
+        turns: BoardTurn[];
+    };
+
+    // wshrpc.BoardTurn
+    type BoardTurn = {
+        id: string;
+        ts: number;
+        kind: string;
+        question?: string;
+        on?: string;
+        selectedids?: string[];
+        context?: string;
+        state: string;
+        title?: string;
+        added?: number;
+        changed?: number;
+        removed?: number;
+        shapeids?: string[];
+        startedts?: number;
+        answeredts?: number;
+        reason?: string;
+        from?: string;
+        forward?: BoardForward;
+    };
+
+    // wshrpc.BoardUpdateData
+    type BoardUpdateData = {
+        project: string;
+        boardid?: string;
+        what: string;
+        turnid?: string;
+        state?: string;
+        reason?: string;
+    };
+
     // wshrpc.BrainstormCheckTimes
     type BrainstormCheckTimes = {
         usualms: number;
@@ -805,6 +930,59 @@ declare global {
         inputdata64?: string;
         signame?: string;
         termsize?: TermSize;
+    };
+
+    // wshrpc.CommandBoardAgentDrawData
+    type CommandBoardAgentDrawData = {
+        blockid: string;
+        board: string;
+        ask?: string;
+        context?: string;
+    };
+
+    // wshrpc.CommandBoardAnswerAckData
+    type CommandBoardAnswerAckData = {
+        project: string;
+        boardid: string;
+        answerid: string;
+        turnid: string;
+        shapeids?: string[];
+        error?: string;
+    };
+
+    // wshrpc.CommandBoardAskData
+    type CommandBoardAskData = {
+        project: string;
+        boardid: string;
+        question: string;
+        on?: string;
+        selectedids?: string[];
+    };
+
+    // wshrpc.CommandBoardListData
+    type CommandBoardListData = {
+        project?: string;
+    };
+
+    // wshrpc.CommandBoardRefData
+    type CommandBoardRefData = {
+        project: string;
+        boardid: string;
+    };
+
+    // wshrpc.CommandBoardSaveData
+    type CommandBoardSaveData = {
+        project: string;
+        boardid: string;
+        data: string;
+        baserev: string;
+    };
+
+    // wshrpc.CommandBoardTurnData
+    type CommandBoardTurnData = {
+        project: string;
+        boardid: string;
+        turnid: string;
     };
 
     // wshrpc.CommandBrainstormCheckData

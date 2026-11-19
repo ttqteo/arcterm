@@ -255,6 +255,72 @@ func BlocksListCommand(w *wshutil.WshRpc, data wshrpc.BlocksListRequest, opts *w
 	return resp, err
 }
 
+// command "boardagentdraw", wshserver.BoardAgentDrawCommand
+func BoardAgentDrawCommand(w *wshutil.WshRpc, data wshrpc.CommandBoardAgentDrawData, opts *wshrpc.RpcOpts) (*wshrpc.BoardAgentDrawRtnData, error) {
+	resp, err := sendRpcRequestCallHelper[*wshrpc.BoardAgentDrawRtnData](w, "boardagentdraw", data, opts)
+	return resp, err
+}
+
+// command "boardanswerack", wshserver.BoardAnswerAckCommand
+func BoardAnswerAckCommand(w *wshutil.WshRpc, data wshrpc.CommandBoardAnswerAckData, opts *wshrpc.RpcOpts) error {
+	_, err := sendRpcRequestCallHelper[any](w, "boardanswerack", data, opts)
+	return err
+}
+
+// command "boardanswerinbox", wshserver.BoardAnswerInboxCommand
+func BoardAnswerInboxCommand(w *wshutil.WshRpc, data wshrpc.CommandBoardRefData, opts *wshrpc.RpcOpts) ([]wshrpc.BoardAnswer, error) {
+	resp, err := sendRpcRequestCallHelper[[]wshrpc.BoardAnswer](w, "boardanswerinbox", data, opts)
+	return resp, err
+}
+
+// command "boardask", wshserver.BoardAskCommand
+func BoardAskCommand(w *wshutil.WshRpc, data wshrpc.CommandBoardAskData, opts *wshrpc.RpcOpts) error {
+	_, err := sendRpcRequestCallHelper[any](w, "boardask", data, opts)
+	return err
+}
+
+// command "boardaskretry", wshserver.BoardAskRetryCommand
+func BoardAskRetryCommand(w *wshutil.WshRpc, data wshrpc.CommandBoardTurnData, opts *wshrpc.RpcOpts) error {
+	_, err := sendRpcRequestCallHelper[any](w, "boardaskretry", data, opts)
+	return err
+}
+
+// command "boardaskstop", wshserver.BoardAskStopCommand
+func BoardAskStopCommand(w *wshutil.WshRpc, data wshrpc.CommandBoardRefData, opts *wshrpc.RpcOpts) error {
+	_, err := sendRpcRequestCallHelper[any](w, "boardaskstop", data, opts)
+	return err
+}
+
+// command "boardlist", wshserver.BoardListCommand
+func BoardListCommand(w *wshutil.WshRpc, data wshrpc.CommandBoardListData, opts *wshrpc.RpcOpts) (*wshrpc.BoardListRtnData, error) {
+	resp, err := sendRpcRequestCallHelper[*wshrpc.BoardListRtnData](w, "boardlist", data, opts)
+	return resp, err
+}
+
+// command "boardread", wshserver.BoardReadCommand
+func BoardReadCommand(w *wshutil.WshRpc, data wshrpc.CommandBoardRefData, opts *wshrpc.RpcOpts) (*wshrpc.BoardReadRtnData, error) {
+	resp, err := sendRpcRequestCallHelper[*wshrpc.BoardReadRtnData](w, "boardread", data, opts)
+	return resp, err
+}
+
+// command "boardreroute", wshserver.BoardRerouteCommand
+func BoardRerouteCommand(w *wshutil.WshRpc, data wshrpc.CommandBoardTurnData, opts *wshrpc.RpcOpts) error {
+	_, err := sendRpcRequestCallHelper[any](w, "boardreroute", data, opts)
+	return err
+}
+
+// command "boardsave", wshserver.BoardSaveCommand
+func BoardSaveCommand(w *wshutil.WshRpc, data wshrpc.CommandBoardSaveData, opts *wshrpc.RpcOpts) (*wshrpc.BoardSaveRtnData, error) {
+	resp, err := sendRpcRequestCallHelper[*wshrpc.BoardSaveRtnData](w, "boardsave", data, opts)
+	return resp, err
+}
+
+// command "boardtalk", wshserver.BoardTalkCommand
+func BoardTalkCommand(w *wshutil.WshRpc, data wshrpc.CommandBoardRefData, opts *wshrpc.RpcOpts) (*wshrpc.BoardTalk, error) {
+	resp, err := sendRpcRequestCallHelper[*wshrpc.BoardTalk](w, "boardtalk", data, opts)
+	return resp, err
+}
+
 // command "brainstormcheck", wshserver.BrainstormCheckCommand
 func BrainstormCheckCommand(w *wshutil.WshRpc, data wshrpc.CommandBrainstormCheckData, opts *wshrpc.RpcOpts) error {
 	_, err := sendRpcRequestCallHelper[any](w, "brainstormcheck", data, opts)

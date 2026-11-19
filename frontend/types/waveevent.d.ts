@@ -39,6 +39,7 @@ declare global {
         | "dume:changed"
         | "xmastree:changed"
         | "remote:status"
+        | "board:update"
     ;
 
     type WaveEvent = {
@@ -79,7 +80,8 @@ declare global {
         { event: "services:changed"; data?: ServicesData; } | 
         { event: "dume:changed"; data?: DumeStatusData; } | 
         { event: "xmastree:changed"; data?: XmasTreeData; } | 
-        { event: "remote:status"; data?: RemoteStatusData; }
+        { event: "remote:status"; data?: RemoteStatusData; } | 
+        { event: "board:update"; data?: BoardUpdateData; }
     );
 
 }

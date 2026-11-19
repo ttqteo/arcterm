@@ -58,6 +58,9 @@ const (
 
 	// remote mode (pkg/remotemode): its status, after every change
 	Event_RemoteStatus = "remote:status" // type: *wshrpc.RemoteStatusData
+
+	// boards (pkg/boardstore): a board's list or talk changed, or a drawer answer is waiting in its inbox
+	Event_BoardUpdate = "board:update" // type: wshrpc.BoardUpdateData
 )
 
 var AllEvents []string = []string{
@@ -93,6 +96,7 @@ var AllEvents []string = []string{
 	Event_DumeChanged,
 	Event_XmasTreeChanged,
 	Event_RemoteStatus,
+	Event_BoardUpdate,
 }
 
 type WaveEvent struct {

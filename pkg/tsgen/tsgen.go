@@ -40,6 +40,7 @@ var ExtraTypes = []any{
 	wshrpc.WshServerCommandMeta{},
 	waveobj.MetaTSType{},
 	waveobj.ObjRTInfo{},
+	wshrpc.BoardArcRecord{}, // the board file's "arc" key: the frontend writes it, no command carries it
 }
 
 // add extra type unions to generate here

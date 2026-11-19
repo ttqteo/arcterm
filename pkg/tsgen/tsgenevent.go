@@ -53,6 +53,7 @@ var WaveEventDataTypes = map[string]reflect.Type{
 	wps.Event_DumeChanged:      reflect.TypeOf(wshrpc.DumeStatusData{}),
 	wps.Event_XmasTreeChanged:  reflect.TypeOf(wshrpc.XmasTreeData{}),
 	wps.Event_RemoteStatus:     reflect.TypeOf((*wshrpc.RemoteStatusData)(nil)),
+	wps.Event_BoardUpdate:      reflect.TypeOf(wshrpc.BoardUpdateData{}),
 }
 
 func getWaveEventDataTSType(eventName string, tsTypesMap map[reflect.Type]string) string {
