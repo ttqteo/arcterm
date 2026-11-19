@@ -19,6 +19,7 @@
 import { useEffect, useRef, type RefObject } from "react";
 import {
     fencedText,
+    glideStep,
     latestReplyStart,
     lineOffset,
     litAt,
@@ -172,6 +173,8 @@ const COLLECT_MS = 120;
 const IDLE_MS = 140;
 // a programmatic scroll that never reports its end lets go after this
 const PROGRAMMATIC_MS = 1200;
+// after a glide lands, its last scroll event and scrollend still count as ours for this long
+const GLIDE_SETTLE_MS = 150;
 
 /** Focus read over one Chat scroller: `on` is the toggle, `paused` holds the dimming off (while you follow a live reply
  *  at the bottom) with the keys still working, `size` how many blocks the line lights at a time (the one on it and the
@@ -326,17 +329,58 @@ export function useFocusRead(
             }, wait);
         };
 
+        // our own scrolls glide (glideStep) instead of the browser's smooth scroll, which restarts from rest at every
+        // call: a J pressed while one glides moves its target and the scroll carries on at speed
+        let glideFrame = 0;
+        let glidePos = 0;
+        let glideTarget = 0;
+        let glideLast = -1;
+        const stopGlide = () => {
+            cancelAnimationFrame(glideFrame);
+            glideFrame = 0;
+        };
+        const glide = (now: number) => {
+            // the first frame moves at once, as if a frame had passed since the key
+            const dt = glideLast < 0 ? 16 : Math.min(now - glideLast, 64);
+            glideLast = now;
+            // something else moved the scroller meanwhile (content above grew, the tail pinned): go on from there
+            if (Math.abs(scroller.scrollTop - glidePos) > 2) {
+                glidePos = scroller.scrollTop;
+            }
+            glidePos = glideStep(glidePos, glideTarget, dt);
+            scroller.scrollTop = glidePos;
+            glideFrame = glidePos === glideTarget ? 0 : requestAnimationFrame(glide);
+            if (glideFrame === 0) {
+                // the last frame's own scroll event still reads as ours; the reader's next scroll does not
+                clearTimeout(programmaticTimer);
+                programmaticTimer = setTimeout(() => (programmatic = false), GLIDE_SETTLE_MS);
+            }
+        };
         const scrollTo = (top: number) => {
-            if (Math.abs(top - scroller.scrollTop) <= 1) {
+            if (glideFrame === 0 && Math.abs(top - scroller.scrollTop) <= 1) {
                 return;
             }
             programmatic = true;
             clearTimeout(programmaticTimer);
             programmaticTimer = setTimeout(() => (programmatic = false), PROGRAMMATIC_MS);
-            scroller.scrollTo({ top, behavior: reducedMotion() ? "auto" : "smooth" });
+            if (reducedMotion()) {
+                stopGlide();
+                scroller.scrollTop = top;
+                return;
+            }
+            glideTarget = top;
+            if (glideFrame === 0) {
+                glidePos = scroller.scrollTop;
+                glideLast = -1;
+                glideFrame = requestAnimationFrame(glide);
+            }
         };
         // a scroll stopped: one of ours ends there; one of the reader's settles the nearest block onto the line
         const stopped = () => {
+            // each frame of a glide sets scrollTop, and the browser may call that a scroll that ended
+            if (glideFrame !== 0) {
+                return;
+            }
             if (programmatic) {
                 programmatic = false;
                 clearTimeout(programmaticTimer);
@@ -361,6 +405,7 @@ export function useFocusRead(
         };
         // the reader taking the wheel or the bar mid-way through one of ours: theirs from here
         const onIntent = () => {
+            stopGlide();
             programmatic = false;
         };
 
@@ -445,6 +490,7 @@ export function useFocusRead(
             mo.disconnect();
             ro.disconnect();
             cancelAnimationFrame(frame);
+            stopGlide();
             clearTimeout(collectTimer);
             clearTimeout(idleTimer);
             clearTimeout(programmaticTimer);

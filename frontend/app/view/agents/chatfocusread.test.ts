@@ -6,6 +6,9 @@ import {
     atEnd,
     fencedText,
     FOCUS_READ_KEEP,
+    GLIDE_LAND,
+    GLIDE_TAU_MS,
+    glideStep,
     latestReplyStart,
     lineOffset,
     litAt,
@@ -149,6 +152,47 @@ describe("stepFrom with a group", () => {
         expect(stepFrom(-1, 1, 2, 3)).toBe(0);
         expect(stepFrom(0, 1, 2, 3)).toBe(1);
         expect(stepFrom(1, 1, 2, 3)).toBeNull();
+    });
+});
+
+describe("glideStep", () => {
+    it("moves on the first frame, fastest at the start (an ease-out, not a slow start)", () => {
+        const a = glideStep(0, 100, 16);
+        const b = glideStep(a, 100, 16);
+        expect(a).toBeGreaterThan(15);
+        expect(a).toBeGreaterThan(b - a);
+    });
+
+    it("closes the distance by e every GLIDE_TAU_MS, either way", () => {
+        expect(glideStep(0, 100, GLIDE_TAU_MS)).toBeCloseTo(100 - 100 / Math.E, 6);
+        expect(glideStep(100, 0, GLIDE_TAU_MS)).toBeCloseTo(100 / Math.E, 6);
+    });
+
+    it("lands exactly on the target once within GLIDE_LAND, and stays", () => {
+        expect(glideStep(100 - GLIDE_LAND, 100, 1)).toBe(100);
+        expect(glideStep(100, 100, 16)).toBe(100);
+    });
+
+    it("keeps its pace through a new target: a step taken mid-glide never stops the scroll", () => {
+        let pos = 0;
+        let target = 60;
+        let prev = 0;
+        for (let frame = 0; frame < 30; frame++) {
+            // a held J: the target moves on a block every third frame
+            if (frame % 3 === 0) {
+                target += 60;
+            }
+            pos = glideStep(pos, target, 16);
+            if (frame > 0) {
+                expect(pos - prev).toBeGreaterThan(5);
+            }
+            prev = pos;
+        }
+    });
+
+    it("stands still for no time passed", () => {
+        expect(glideStep(10, 100, 0)).toBe(10);
+        expect(glideStep(10, 100, -5)).toBe(10);
     });
 });
 

@@ -24,6 +24,19 @@ export const END_SLACK = 2;
  *  off, the reader is inside a tall block (a long code block) and a settle would yank them back to its top. */
 export const SETTLE_MAX = 120;
 
+/** How fast a step's scroll closes on its place: the distance left shrinks by e every GLIDE_TAU_MS. An ease-out that
+ *  moves on the first frame and that the next J retargets mid-way without stopping; the browser's own smooth scroll
+ *  started each step over from rest, so held or quick keys juddered (its speed fell back to ~0 at every press). */
+export const GLIDE_TAU_MS = 60;
+/** A glide lands on its target once it is this close, in px. */
+export const GLIDE_LAND = 0.5;
+
+/** Where a glide at `pos` heading for `target` is `dt` ms later. Exactly `target` once within GLIDE_LAND. */
+export function glideStep(pos: number, target: number, dt: number): number {
+    const next = target + (pos - target) * Math.exp(-Math.max(0, dt) / GLIDE_TAU_MS);
+    return Math.abs(target - next) <= GLIDE_LAND ? target : next;
+}
+
 /** The line's offset from the scroller's visible top, in px. */
 export function lineOffset(clientHeight: number): number {
     return Math.round(clientHeight * LINE_AT);
