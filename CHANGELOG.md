@@ -32,18 +32,23 @@ and a picture given to a line that is not big.
 
 ## Unreleased
 
-### Fixed
-
-- A conversation forked from Chat's Fork is named after the agent it came from ("… (fork)"), not just "Fork".
 ### Changed
 
 - The Council decisions block arcterm writes into a project's CLAUDE.md or AGENTS.md now lists only what was agreed or
   ruled out, without commit hashes or open questions, and with `/` paths on every OS.
 - Claude agents now offer a council and wait for your yes, instead of starting one on their own; Setup's cost line says
   how many past councils its price came from.
+- The council benchmark judges a Review report on its whole list, not its first 5 items, and `wsh council bench results`
+  shows recall@5 beside recall@all. `wsh council bench rejudge` scores the reports already saved the same way, one opus
+  call each, without running a council again.
+- A council's saved report now opens with a chart of its directions by checked evidence and the panel's backing, and
+  ends with charts of where the tokens went, how each seat looked things up (and how often it read a file another seat
+  had already read) and when each seat worked. `wsh council bench results --chart` draws each variant's key lines found
+  against its tokens per run.
 
 ### Fixed
 
+- A conversation forked from Chat's Fork is named after the agent it came from ("… (fork)"), not just "Fork".
 - A council's price on the Token burn card and in Setup now comes from what your last councils actually cost, instead of
   a fixed guess that read 3 to 5 times low.
 - A council report's Cite check no longer lists a file named by its bare name as Wrong: it reads it through the full path
@@ -70,13 +75,6 @@ and a picture given to a line that is not big.
   paused while the machine still runs smoothly.
 - The tabs at the top of the Agent panel (Overview, Files, Changes, Transcript and the open files) are pills: the one
   on show is filled, the others light up when you hover them, in place of an underline.
-- The council benchmark judges a Review report on its whole list, not its first 5 items, and `wsh council bench results`
-  shows recall@5 beside recall@all. `wsh council bench rejudge` scores the reports already saved the same way, one opus
-  call each, without running a council again.
-- A council's saved report now opens with a chart of its directions by checked evidence and the panel's backing, and
-  ends with charts of where the tokens went, how each seat looked things up (and how often it read a file another seat
-  had already read) and when each seat worked. `wsh council bench results --chart` draws each variant's key lines found
-  against its tokens per run.
 
 ### Fixed
 
