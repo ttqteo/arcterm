@@ -36,6 +36,13 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
   them a few seconds later without moving them; a question with "hay"/"or" still waits for the model's answers. With
   several answers the row stays one line. CDP checked it with a fake model only (chat-redesign 18b, 18c2; 10ef7f7a9,
   2026-11-19);
+- [ ] (arcterm) **Sidecar's Needs you buttons.** With a learned rule, a due chunk and a run to check waiting, each row
+  in the small form (and on the wall) starts with its kind ("Rule to approve", "Due", "Run to check") and its age ("1d
+  20h ago", "9h 49m late"), and has buttons under its text: the rule's Accept takes it off the list, the run's Accept
+  acknowledges it (`wsh runs attention` no longer lists it), Work on raises the main window with an agent on the
+  initiative, Open raises the main window on the item. An agent's ask shows its options as buttons; pressing one
+  answers it. A run to check no longer frames the window red. Tried only by unit tests and the typecheck (2687e7785,
+  2026-11-19);
 - [ ] (arcterm) **Sidecar's End task, the frame's reason and the 340 × 640 small form.** Press S: the window shrinks to
   340 × 640 and drags no smaller. Open Resources (the title bar's figures): the "Other apps" title is whole; hovering
   chrome.exe (or any app you can lose) shows an × beside its name, svchost.exe and msedgewebview2.exe show none; × asks
