@@ -24,6 +24,13 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
   Shift+Enter: each leaves one `chatsuggest: … pick send|edit source=model|rule|fallback … question=yesno|open|none`
   line (an armed chip over typed text only on the press that sends). The 5 s cut of the mod's call was not seen live:
   every call measured took 0.9-1.5 s. Unit tests only.
+- [ ] (arcterm) **Chat keeps your reading place across a switch while the agent works** (`railtranscript.tsx` trim
+  keeps `keyOffset`, `chatconversation.tsx` place kept less it; branch `fix/chat-place`). In Chat on a long-running agent
+  whose transcript is past 2,000 lines, scroll up to a message well above the end, switch to another agent (or to
+  Terminal) for a while as it keeps writing, then back: Chat opens on the same message, not a later one and not the top
+  of the conversation. Try it once more after "Show earlier" loaded earlier messages. Only the key arithmetic is unit
+  tested.
+
 - [ ] (arcterm) **A long path in a Chat reply wraps in full** (`markdownmessage.tsx` code → `PathLink wrap`,
   `tailwindsetup.css` `.agent-md code`). Ask an agent for a reply naming a long backticked Windows path mid-sentence:
   it continues on the same line as the words before it and wraps over several lines, with no "…", and the full stop

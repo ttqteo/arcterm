@@ -45,8 +45,10 @@ const CHUNK_LINES = 2000;
 const NO_ENTRIES: AgentEntry[] = [];
 
 // the tab's loaded part and what is drawn from it. `entries` are the projection of every loaded line, `keyOffset` how many
-// entries the loads have put in front of the first read's (CompactTranscript's keys and folds stay with their items), and
-// `epoch` changes on each fresh read of the tail, which starts the draw over
+// entries the loads have put in front of the first read's, less those the cache's trim took off the front (so an entry's
+// index less keyOffset names the same entry while the window lasts: CompactTranscript's keys and folds stay with their
+// items, and Chat's kept reading place with its message), and `epoch` changes on each fresh read of the tail, which starts
+// the draw over
 interface View {
     path: string;
     win: LoadedWindow;
@@ -360,13 +362,16 @@ export function useTranscriptWindow(path: string, runtime: string | undefined) {
                 window.clearTimeout(timer.current);
                 timer.current = undefined;
             }
-            // what the reader loaded back stays only while it is read: the cache keeps the tail a fresh read would hold
+            // what the reader loaded back stays only while it is read: the cache keeps the tail a fresh read would hold.
+            // The keys move back by the entries the trim took off the front, so a place kept under them (Chat's
+            // transcriptplace.ts) still names the message it was kept on when the agent is shown again
             const left = viewRef.current;
             if (left != null && left.path === path && !wholeFile(runtime, path)) {
                 const win = tailWindow(left.win, CHUNK_LINES);
                 if (win !== left.win) {
                     const entries = projectorFor(runtime, path).project(win.lines);
-                    viewCache.put(path, runtime, { path, win, entries, keyOffset: 0, epoch: ++nextEpoch });
+                    const keyOffset = keyOffsetAfter(left.keyOffset, left.entries.length, entries.length);
+                    viewCache.put(path, runtime, { path, win, entries, keyOffset, epoch: ++nextEpoch });
                 }
             }
         };

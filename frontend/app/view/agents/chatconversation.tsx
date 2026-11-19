@@ -851,6 +851,7 @@ export function ChatConversation({
     liveReply,
     liveNarrates,
     placeId,
+    keyOffset = 0,
     onLoadEarlier,
     active,
     working,
@@ -873,6 +874,10 @@ export function ChatConversation({
     // keeps where the reader is under this id (transcriptplace.ts) and opens there again; a caller that sticks to the
     // end (useStickToBottom) passes it the same id, so it does not pin over a kept place
     placeId?: string;
+    // what the caller's window counts in front of these entries (railtranscript.tsx View.keyOffset): the place is kept as
+    // an entry index less it, so it still names the same message after the window loaded earlier lines or was cut to its
+    // tail while the conversation was not shown
+    keyOffset?: number;
     // every item is drawn and the reader asked for earlier ones: the caller may load earlier entries
     onLoadEarlier?: () => void;
     // the session is live: its last stretch of work is open while it is the last thing drawn
@@ -1177,6 +1182,8 @@ export function ChatConversation({
     const placedFor = useRef<string | undefined>(undefined); // the placeId whose kept place was looked up
     const live = useRef(drawnVisible);
     live.current = drawnVisible;
+    const offsetRef = useRef(keyOffset);
+    offsetRef.current = keyOffset;
 
     const toggle = (key: string) =>
         setOpened((prev) => {
@@ -1218,11 +1225,13 @@ export function ChatConversation({
         if (placeId == null || placedFor.current === placeId || items.length === 0) {
             return;
         }
-        const place = transcriptPlace(placeId);
-        if (place == null) {
+        const kept = transcriptPlace(placeId);
+        if (kept == null) {
             placedFor.current = placeId;
             return;
         }
+        // the kept entry's index in these entries (it was kept less the window's offset then)
+        const place = { ...kept, key: kept.key + keyOffset };
         // the last item starting at or before the kept entry holds it
         let at = -1;
         for (let i = 0; i < items.length && keyIndex(items[i].key) <= place.key; i++) {
@@ -1248,7 +1257,7 @@ export function ChatConversation({
         if (el != null && scroller != null) {
             scroller.scrollTop += el.getBoundingClientRect().top - scroller.getBoundingClientRect().top + place.offset;
         }
-    }, [placeId, items.length, visible.length]);
+    }, [placeId, items.length, visible.length, keyOffset]);
 
     // keeps where the reader is, at most once a frame while they scroll: the item at the top of the view and how far
     // into it, or nothing once they are at the end. Not before the kept place was restored, nor while the view has no size
@@ -1276,7 +1285,7 @@ export function ChatConversation({
                 return;
             }
             keepTranscriptPlace(placeId, {
-                key: keyIndex(item.key),
+                key: keyIndex(item.key) - offsetRef.current,
                 offset: viewTop - drawn[at].getBoundingClientRect().top,
             });
         };

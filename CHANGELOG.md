@@ -47,6 +47,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - Chat no longer starts a background claude (~470 MB) to suggest replies to a line a Claude agent wrote mid-turn or
   to a reply it has already moved past, and an agent's own suggestion that takes over 5 s gives up so Chat's own call
   starts at once instead of 10 s later.
+- Chat opens again where you were reading when you come back to an agent from another one or from its Terminal, even
+  after the agent kept working meanwhile: it no longer lands on a later message or at the top of the conversation.
 
 ## 1.7.0 — 2026-11-19
 
