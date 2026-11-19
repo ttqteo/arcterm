@@ -3,7 +3,7 @@
 //
 // Focus read in Chat, the DOM half (chatfocusread.ts is the pure geometry, chatfocusreadstore.ts the toggle and the
 // registry). useFocusRead finds the conversation's blocks, marks each `data-fr-block`, the one on the reading line and
-// the ones after it up to the chosen size (1 to 3) `data-fr-lit`, the one before that group and the one after it
+// the ones after it up to the chosen size (1 to 5) `data-fr-lit`, the one before that group and the one after it
 // `data-fr-near`, and the scroller `data-focus-read` while it dims; the
 // opacity is tailwindsetup.css's. Marks, not React state: the line moves on every scroll frame, and a render of the
 // conversation per frame would redraw it.

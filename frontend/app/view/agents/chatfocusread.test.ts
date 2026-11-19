@@ -144,17 +144,20 @@ describe("stepFrom with a group", () => {
 });
 
 describe("focus read size", () => {
-    it("reads 1, 2 or 3, else 1", () => {
+    it("reads 1 to 5, else 3", () => {
+        expect(parseFocusReadSize("1")).toBe(1);
         expect(parseFocusReadSize("2")).toBe(2);
-        expect(parseFocusReadSize("3")).toBe(3);
-        expect(parseFocusReadSize(null)).toBe(1);
-        expect(parseFocusReadSize("7")).toBe(1);
-        expect(parseFocusReadSize("x")).toBe(1);
+        expect(parseFocusReadSize("5")).toBe(5);
+        expect(parseFocusReadSize(null)).toBe(3);
+        expect(parseFocusReadSize("")).toBe(3);
+        expect(parseFocusReadSize("7")).toBe(3);
+        expect(parseFocusReadSize("x")).toBe(3);
     });
-    it("cycles 1, 2, 3 and back to 1", () => {
+    it("cycles 1 to 5 and back to 1", () => {
         expect(nextFocusReadSize(1)).toBe(2);
-        expect(nextFocusReadSize(2)).toBe(3);
-        expect(nextFocusReadSize(3)).toBe(1);
+        expect(nextFocusReadSize(3)).toBe(4);
+        expect(nextFocusReadSize(4)).toBe(5);
+        expect(nextFocusReadSize(5)).toBe(1);
     });
 });
 

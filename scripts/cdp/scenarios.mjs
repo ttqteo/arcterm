@@ -49315,7 +49315,8 @@ const chatFocusRead = {
             await h.ev(`localStorage.setItem(${JSON.stringify(GRID_KEY)}, ${JSON.stringify(JSON.stringify(GRID_EMPTY))})`);
             await h.ev(`localStorage.removeItem("agent.chatmode")`);
             await h.ev(`localStorage.removeItem("chat.focusRead")`);
-            await h.ev(`localStorage.removeItem("chat.focusRead.size")`);
+            // the steps below read one block at a time; ×1 is set, as a reader starts at ×3
+            await h.ev(`localStorage.setItem("chat.focusRead.size", "1")`);
             if (!(await ahReload(h))) throw new Error("the page did not come back after the reload");
             await h.goto("agent");
             at = "making the tab";
@@ -49535,7 +49536,7 @@ const chatFocusRead = {
             );
 
             // 6c. the size button lights two blocks at a time: two lit from the line, the one before and after the pair at
-            // half strength; K steps back a whole pair, Q quotes the pair as one quote; two more clicks go round to ×1
+            // half strength; K steps back a whole pair, Q quotes the pair as one quote; four more clicks (×3, ×4, ×5) go round to ×1
             const sizeBtn = `${pane}?.querySelector("[data-chat-focus-read-size]")`;
             await click(sizeBtn);
             const s6c = await state();
@@ -49549,15 +49550,20 @@ const chatFocusRead = {
             const quoted6 = (s6k?.litTexts ?? []).map((t) => t.trim()).join("\n\n").split("\n").map((l) => (l === "" ? ">" : "> " + l)).join("\n");
             await click(sizeBtn);
             await click(sizeBtn);
+            await click(sizeBtn);
+            const size5 = await h.ev(`${sizeBtn}?.getAttribute("data-chat-focus-read-size")`);
+            const s6five = await state();
+            await click(sizeBtn);
             const size6end = await h.ev(`${sizeBtn}?.getAttribute("data-chat-focus-read-size")`);
             const s6end = await state();
             rec(
-                "6c. ×2 lights the block on the line and the one after it, with the block before and after the pair at 0.5; K steps back two blocks; Q quotes the pair as one quote; the button goes round ×3 back to ×1",
+                "6c. ×2 lights the block on the line and the one after it, with the block before and after the pair at 0.5; K steps back two blocks; Q quotes the pair as one quote; the button goes round ×3, ×4, ×5 (five lit, or as many as are left) back to ×1",
                 size6c === "2" && s6c?.litCount === 2 && s6c.near.join(",") === [s6c.lit - 1, s6c.lit + 2].filter((i) => i >= 0 && i < s6c.count).join(",") &&
                     s6k?.lit === s6c.lit - 2 && s6k.litCount === 2 &&
                     text6q === `${before6q.replace(/\s+$/, "")}\n\n${quoted6}\n\n` &&
+                    size5 === "5" && s6five?.litCount === Math.min(5, s6five.count - s6five.lit) &&
                     size6end === "1" && s6end?.litCount === 1,
-                { size6c, s6c, s6k, text6q, quoted6, size6end, litEnd: s6end?.litCount }
+                { size6c, s6c, s6k, text6q, quoted6, size5, s6five, size6end, litEnd: s6end?.litCount }
             );
 
             // 7. Alt+R turns it off: nothing dimmed, no tick, the toggle up

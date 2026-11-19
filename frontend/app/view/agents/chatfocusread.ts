@@ -71,13 +71,18 @@ export function scrollTopFor(span: Span, line: number, max: number): number {
 }
 
 /** How many blocks the line lights at a time: the one on it and the ones after it. The reader picks one of these. */
-export const FOCUS_READ_SIZES = [1, 2, 3] as const;
+export const FOCUS_READ_SIZES = [1, 2, 3, 4, 5] as const;
 export type FocusReadSize = (typeof FOCUS_READ_SIZES)[number];
 
-/** The stored size, 1 when it is missing or not one of FOCUS_READ_SIZES. */
+/** The size a reader starts at: a short paragraph is too little to read alone. */
+export const FOCUS_READ_DEFAULT_SIZE: FocusReadSize = 3;
+
+/** The stored size, FOCUS_READ_DEFAULT_SIZE when it is missing or not one of FOCUS_READ_SIZES. */
 export function parseFocusReadSize(raw: string | null): FocusReadSize {
     const n = Number(raw);
-    return (FOCUS_READ_SIZES as readonly number[]).includes(n) ? (n as FocusReadSize) : 1;
+    return raw != null && (FOCUS_READ_SIZES as readonly number[]).includes(n)
+        ? (n as FocusReadSize)
+        : FOCUS_READ_DEFAULT_SIZE;
 }
 
 /** The size after this one, wrapping from the largest back to 1: what the size button cycles to. */

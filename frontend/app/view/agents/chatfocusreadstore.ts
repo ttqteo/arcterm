@@ -8,7 +8,13 @@
 
 import { globalStore } from "@/app/store/jotaiStore";
 import { atom } from "jotai";
-import { parseFocusReadIds, parseFocusReadSize, withFocusRead, type FocusReadSize } from "./chatfocusread";
+import {
+    FOCUS_READ_DEFAULT_SIZE,
+    parseFocusReadIds,
+    parseFocusReadSize,
+    withFocusRead,
+    type FocusReadSize,
+} from "./chatfocusread";
 
 const STORAGE_KEY = "chat.focusRead";
 const SIZE_KEY = "chat.focusRead.size";
@@ -17,13 +23,13 @@ function readSize(): FocusReadSize {
     try {
         return parseFocusReadSize(localStorage.getItem(SIZE_KEY));
     } catch {
-        return 1;
+        return FOCUS_READ_DEFAULT_SIZE;
     }
 }
 
 const sizeBase = atom<FocusReadSize>(readSize());
 
-// how many blocks the line lights at a time (1, 2 or 3): one reading preference for every agent, remembered
+// how many blocks the line lights at a time (1 to 5, 3 to start): one reading preference for every agent, remembered
 export const chatFocusReadSizeAtom = atom(
     (get) => get(sizeBase),
     (_get, set, next: FocusReadSize) => {

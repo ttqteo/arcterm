@@ -72,6 +72,7 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- Focus read in Chat starts at three blocks lit at a time, and its size button now goes up to five (×4, ×5).
 - An agent whose work is done shows one Close in its header: the × turns into the green ✓ Close with the session's tokens, instead of the two sitting side by side.
 - The phone page's Agents list shows only live agents (a session back at its shell is gone from it), with a dot that
   shows what the agent is doing and a line under its name: its question when it asks, the first sentence of its last
