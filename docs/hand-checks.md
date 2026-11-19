@@ -31,6 +31,11 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
   `turnStats` stops at a `turn_duration` record (transcriptprojection.ts); tried by unit tests, the typecheck and on
   the real 2026-11-19 transcript cut at 09:11, not in the app. Why that agent read working before it reported in is
   still unknown (2026-11-19);
+- [ ] (arcterm) **A yes-or-no question gets ok and không at once.** In a live Claude agent, end a turn on "Có muốn
+  mình build luôn không?": the chips ok · không show as the turn ends, and haiku's fuller answers (if any) join after
+  them a few seconds later without moving them; a question with "hay"/"or" still waits for the model's answers. With
+  several answers the row stays one line. CDP checked it with a fake model only (chat-redesign 18b, 18c2; 10ef7f7a9,
+  2026-11-19);
 - [ ] (arcterm) **Live output in full view is in colour.** Run a coloured background task (`task tauri:build`, or
   `npx vite build`) from a Claude agent, open its peek → Open full view: the File tab shows vite's cyan/green and no
   `␛[36m` codes; with Live on it keeps to the end as lines arrive, scrolling up stops it, clicking Live jumps back;

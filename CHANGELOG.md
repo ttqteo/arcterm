@@ -74,6 +74,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 - Focus read in Chat starts at three blocks lit at a time, and its size button now goes up to five (×4, ×5).
 - An agent whose work is done shows one Close in its header: the × turns into the green ✓ Close with the session's tokens, instead of the two sitting side by side.
+- Chat's suggested replies answer a yes-or-no question at once with ok and không (yes and no in English), and the
+  model's fuller answers join after them when they come. The row is no longer capped at three: it shows every
+  suggestion that fits whole on its one line.
 - The phone page's Agents list shows only live agents (a session back at its shell is gone from it), with a dot that
   shows what the agent is doing and a line under its name: its question when it asks, the first sentence of its last
   reply when it is idle. A run's workers are one row under Runs that opens to its worker lines, the header counts what

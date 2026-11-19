@@ -1068,7 +1068,7 @@ export default function (kit) {
                     };
                     return true;
                 })()`);
-                const chipsNow = `[...(${layerOf(A)}?.querySelectorAll("[data-chat-suggest-chip]") ?? [])].map((b) => ({ text: ${FLAT}(b), source: b.getAttribute("data-chat-suggest-chip") }))`;
+                const chipsNow = `[...(${layerOf(A)}?.querySelectorAll("[data-chat-suggest-chip]") ?? [])].map((b) => ({ text: ${FLAT}(b.querySelector("span.truncate") ?? b), source: b.getAttribute("data-chat-suggest-chip") }))`;
                 append(
                     ctx,
                     AC.userText("vẽ 3 phương án bố cục cho trang Jarvis", ts(ctx, -2000)),
@@ -1117,8 +1117,8 @@ export default function (kit) {
                 );
             });
 
-            // 18b. a narrow box (a float window) keeps the suggested replies on one line: three long answers shrink side by
-            // side, the longest ends in … (its text wider than its label), and the row is one chip tall
+            // 18b. a narrow box (a float window) keeps the suggested replies on one line: of three long answers, those that
+            // fit whole are drawn (the first always), the rest left out, and the row is one chip tall
             await run("18b. suggested replies stay on one line", async (name) => {
                 await clearBox(h, A);
                 const LONG = ["Có, mở bundle ca mồi đầu giải thích giúp", "Không cần, tôi tự chấm luôn", "Để tôi đọc lại phần thứ tự làm trước đã"];
@@ -1126,12 +1126,12 @@ export default function (kit) {
                 append(
                     ctx,
                     AC.userText("hướng dẫn tôi cách chấm", ts(ctx, -1000)),
-                    AC.assistantText("Mỗi check là một kiểu giả. Bạn muốn mình mở bundle ca đầu và giải thích không?", ts(ctx, 0))
+                    AC.assistantText("Mỗi check là một kiểu giả. Bạn muốn mình mở bundle ca đầu giải thích, hay tự chấm?", ts(ctx, 0))
                 );
                 await setRoster({ idleSince: Date.now() + 2000 });
                 // the chips sit over the box, in the composer's wrapper: that is what a float window narrows
                 const BOX = `${layerOf(A)}?.querySelector("[data-agent-chat-composer]")`;
-                const up = await polishWaitFor(h, `${layerOf(A)}?.querySelectorAll("[data-chat-suggest-chip]").length === 3`, WAIT_MS);
+                const up = await polishWaitFor(h, `[...(${layerOf(A)}?.querySelectorAll("[data-chat-suggest-chip]") ?? [])].some((b) => b.title.includes(${JSON.stringify(LONG[0])}))`, WAIT_MS);
                 // as narrow as the float window's box in the report (about 560 px)
                 await h.ev(`(() => { const b = ${BOX}; if (b) { b.dataset.crWas = b.style.maxWidth; b.style.maxWidth = "560px"; } return true; })()`);
                 await polishNap(400);
@@ -1146,19 +1146,22 @@ export default function (kit) {
                         right: chips.length ? Math.round(chips.at(-1).getBoundingClientRect().right - row.getBoundingClientRect().right) : null,
                         cut: chips.map((b) => { const l = label(b); return !!l && l.scrollWidth > l.clientWidth + 1; }),
                         titles: chips.map((b) => b.title),
+                        rowWrapW: row ? Math.round(row.getBoundingClientRect().width) : null,
                     };
                 })()`);
                 await shot(h, "18b-suggest-one-line");
                 await h.ev(`(() => { const b = ${BOX}; if (b) { b.style.maxWidth = b.dataset.crWas ?? ""; delete b.dataset.crWas; } delete window.__chatSuggestFake; return true; })()`);
                 rec(
-                    `${name}: over a 560 px box the three long answers share one line (one top, the row at most 30 px tall, the last chip inside the row), at least one ends in … and each keeps its whole text in its tooltip`,
+                    `${name}: over a 560 px box only the long answers that fit whole stay (one or two, the first first), on one line (one top, the row at most 30 px tall, the last chip inside the row), none ending in … unless it is alone`,
                     up &&
-                        line.tops.length === 3 &&
+                        line.tops.length >= 1 &&
+                        line.tops.length < 3 &&
                         new Set(line.tops).size === 1 &&
                         line.rowH != null && line.rowH <= 30 &&
                         line.right != null && line.right <= 1 &&
-                        line.cut.some(Boolean) &&
-                        LONG.every((t, i) => (line.titles[i] ?? "").includes(t)),
+                        (line.tops.length === 1 || !line.cut.some(Boolean)) &&
+                        (line.titles[0] ?? "").includes(LONG[0]) &&
+                        line.titles.every((t) => LONG.some((l) => t.includes(l))),
                     line
                 );
             });
@@ -1171,7 +1174,7 @@ export default function (kit) {
                 append(
                     ctx,
                     AC.userText("chấm thử ca đầu", ts(ctx, -1000)),
-                    AC.assistantText("Ca đầu cần mở witness.js. Bạn muốn mình mở và giải thích không?", ts(ctx, 0))
+                    AC.assistantText("Ca đầu cần mở witness.js. Bạn muốn mình mở và giải thích, hay tự đọc?", ts(ctx, 0))
                 );
                 await setRoster({ idleSince: Date.now() + 4000 });
                 const chipUp = await polishWaitFor(h, `[...(${layerOf(A)}?.querySelectorAll("[data-chat-suggest-chip]") ?? [])].some((b) => b.title.includes(${JSON.stringify(FIRST)}))`, WAIT_MS);
@@ -1195,6 +1198,42 @@ export default function (kit) {
                     `${name}: hello in the box, Tab picks the first chip and Shift+Enter makes the box read hello ${FIRST}, nothing is sent and no chip stays picked`,
                     chipUp && picked && filled && after.text === want && !after.picked && after.sent === sentBefore,
                     { chipUp, picked, filled, after, sentBefore }
+                );
+            });
+
+            // 18c2. a yes-or-no question gets ok and không at once, before the model answers; the model's answers that say
+            // more than yes or no join after them, and a bare "ok làm đi" does not
+            await run("18c2. a yes-or-no question offers ok and không at once", async (name) => {
+                await clearBox(h, A);
+                await h.ev(`(() => {
+                    window.__crYesNoRelease = null;
+                    window.__chatSuggestFake = () => new Promise((res) => { window.__crYesNoRelease = () => res(["ok làm đi", "build rồi push luôn"]); });
+                    return true;
+                })()`);
+                const chipsNow = `[...(${layerOf(A)}?.querySelectorAll("[data-chat-suggest-chip]") ?? [])].map((b) => ({ text: ${FLAT}(b.querySelector("span.truncate") ?? b), source: b.getAttribute("data-chat-suggest-chip") }))`;
+                append(
+                    ctx,
+                    AC.userText("sửa lỗi thẻ gợi ý đi", ts(ctx, -1000)),
+                    AC.assistantText("Đã sửa xong, test pass. Có muốn mình build luôn không?", ts(ctx, 0))
+                );
+                await setRoster({ idleSince: Date.now() + 6000 });
+                const early = await polishWaitFor(h, `(${chipsNow}).map((c) => c.text).join("|") === "ok|không"`, 3000);
+                const before = await h.ev(`({ chips: ${chipsNow}, asked: typeof window.__crYesNoRelease === "function" })`);
+                await shot(h, "18c2-yes-no-early");
+                await h.ev(`(() => { window.__crYesNoRelease?.(); return true; })()`);
+                const later = await polishWaitFor(h, `(${chipsNow}).some((c) => c.text === "build rồi push luôn")`, 3000);
+                await polishNap(300);
+                const after = await h.ev(`({ chips: ${chipsNow} })`);
+                await shot(h, "18c2-yes-no-model");
+                await h.ev(`(() => { delete window.__chatSuggestFake; delete window.__crYesNoRelease; return true; })()`);
+                rec(
+                    `${name}: while the model's call is still out the row reads ok · không ([data-chat-suggest-chip="rule"]); once it answers, build rồi push luôn joins after them and ok làm đi does not`,
+                    early &&
+                        before.asked &&
+                        before.chips.every((c) => c.source === "rule") &&
+                        later &&
+                        after.chips.map((c) => c.text).join(" · ") === "ok · không · build rồi push luôn",
+                    { before, after }
                 );
             });
 

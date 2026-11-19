@@ -50,8 +50,9 @@ const (
 	recentRunes = 160
 	// one suggested reply, at most: a chip is a short line
 	replyRunes = 60
-	// how many replies come back: answers to a question, or the one next step
-	maxAnswers = 3
+	// how many replies come back: answers to a question, or the one next step. Chat draws the answers that fit on its
+	// one line of chips (frontend chatsuggest.ts fitChips), so more short ones fill it
+	maxAnswers = 5
 	maxNext    = 1
 	// a call that has not answered by then is dropped
 	callTimeout = 60 * time.Second
@@ -66,7 +67,7 @@ type Request struct {
 	Reply string
 	// the person's last messages in the conversation, oldest first
 	Recent []string
-	// the reply ends in a question: the replies answer it, and there can be three
+	// the reply ends in a question: the replies answer it, and there can be up to five
 	Question bool
 	// the messages the person sends often (Habits), most used first: a reply that fits the turn is given as written
 	Habits []string
@@ -78,7 +79,7 @@ const systemPrompt = `You suggest what a person will send next to a coding agent
 
 Write each reply the way this person writes: their language and their short, casual wording, as in their messages. At most 60 characters each.
 
-When the agent's reply ends with a question, give up to 3 replies that answer it. First the answer the agent recommends, spelled out in full when the question asks several things (for example "B, và ẩn thẻ Pin"), then the other options it named. Each reply must pick a different answer: never two that say the same thing in other words ("build đi" and "ok build đi" are one answer). Fewer replies are better than repeats. Never a bare "ok" or "yes" when the question offers options.
+When the agent's reply ends with a question, give up to 5 short replies that answer it. First the answer the agent recommends, spelled out in full when the question asks several things (for example "B, và ẩn thẻ Pin"), then the other options it named. Each reply must pick a different answer: never two that say the same thing in other words ("build đi" and "ok build đi" are one answer). Fewer replies are better than repeats. Never a bare "ok" or "yes" when the question offers options.
 
 When it does not end with a question, give at most 1 reply, and only for a clear next step: one the agent offered, or a natural follow-up such as drawing a mockup of a layout it described in words, running the tests, or building. Never suggest commit or push: the app offers those itself. When no next step is clear, write NONE.
 
@@ -134,7 +135,7 @@ func BuildPrompt(req Request) string {
 		fmt.Fprintf(&b, summaryAsk+"\n\n", summaryRunes)
 	}
 	if req.Question {
-		b.WriteString("The reply ends with a question: give up to 3 replies that answer it.")
+		b.WriteString("The reply ends with a question: give up to 5 replies that answer it.")
 	} else {
 		b.WriteString("The reply does not end with a question: give at most 1 reply, or NONE.")
 	}
@@ -247,7 +248,7 @@ func cutAtWord(s string, max int) string {
 
 // Parse reads the model's answer: one reply per line, numbering, bullets, HTML tags and quotes taken off, NONE and
 // lines with no letter or digit left skipped, a reply past replyRunes dropped (a cut reply would send half a sentence), the same reply kept once (sameReply:
-// "build di", "ok build đi" and "Build đi!" are one), and at most three answers to a question or one next step. A next step never commits or pushes: the rules offer those.
+// "build di", "ok build đi" and "Build đi!" are one), and at most five answers to a question or one next step. A next step never commits or pushes: the rules offer those.
 //
 // A line that starts with SUMMARY: (any case) is never a reply. When summary is set, the first such line's rest, folded
 // to one line and cut at a word past summaryRunes, is the Answer's Summary; when it is not, the line is dropped. No other line is ever the summary.

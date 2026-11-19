@@ -10,6 +10,7 @@ import {
     closeChip,
     drawnChips,
     endsWithQuestion,
+    fitChips,
     initiativeChips,
     isLongTurn,
     lastReply,
@@ -17,6 +18,7 @@ import {
     LONG_TURN_TOOL_CALLS,
     pickedChip,
     pickedHint,
+    plainAnswer,
     quickChip,
     recentPrompts,
     ROW_ENTER_ACTIONS_MS,
@@ -33,6 +35,8 @@ import {
     wantsModelSuggest,
     withChipText,
     writesVietnamese,
+    yesNoChips,
+    yesNoQuestion,
     type ChatChip,
     type ModelSuggest,
 } from "./chatsuggest";
@@ -159,14 +163,14 @@ describe("chatChips with a close chip", () => {
         expect(chips.map((c) => c.text)).toEqual(["push đi", "build đi", "đóng agent"]);
     });
 
-    it("keeps it when the row is full: the model's step gives way", () => {
+    it("keeps every chip, the close chip last: the row draws what fits (fitChips)", () => {
         const chips = chatChips({
             question: false,
             rules: [push],
             model: { status: "done", replies: ["build đi", "cài đi", "thêm test"] },
             close,
         });
-        expect(chips.map((c) => c.text)).toEqual(["push đi", "build đi", "đóng agent"]);
+        expect(chips.map((c) => c.text)).toEqual(["push đi", "build đi", "cài đi", "thêm test", "đóng agent"]);
     });
 
     it("leaves it out of a question's answers", () => {
@@ -202,7 +206,7 @@ describe("chatChips", () => {
             rules: [commit],
             model: { status: "done", replies: ["B, ẩn thẻ Pin", "A", "C", "D"] },
         });
-        expect(chips.map((c) => c.text)).toEqual(["B, ẩn thẻ Pin", "A", "C"]);
+        expect(chips.map((c) => c.text)).toEqual(["B, ẩn thẻ Pin", "A", "C", "D"]);
         expect(chips.every((c) => c.source === "model")).toBe(true);
     });
 
@@ -644,5 +648,97 @@ describe("quickChip", () => {
     it("leaves the key to the box once something is typed, or when there is no chip", () => {
         expect(quickChip(chips, "hello")).toBeNull();
         expect(quickChip([], "")).toBeNull();
+    });
+});
+
+describe("yesNoQuestion", () => {
+    it("reads a question that opens or closes like a yes or no", () => {
+        for (const reply of [
+            "Đã sửa xong. Có muốn mình build luôn không?",
+            "Xong phần UI. Build nhé?",
+            "Tests pass. Should I commit this?",
+            "Done. Want me to run the full suite?",
+            "I fixed it. So, ready to build?",
+            "Mình sẽ đổi tên hàm, ok?",
+            "**Có muốn mình chạy lại test không?**",
+            "Bản vá đây:\n\n```ts\nconst a = 1;\n```\n\nÁp dụng luôn nhé?",
+        ]) {
+            expect(yesNoQuestion(reply), reply).toBe(true);
+        }
+    });
+
+    it("leaves out a question that asks for something else, offers a choice, or is no question", () => {
+        for (const reply of [
+            "Bạn chọn A, B hay C?",
+            "Should I use the hook or the polling path?",
+            "Which one do you want?",
+            "Bạn muốn đặt tên là gì?",
+            "Đã chạy test chưa?",
+            "Cái nào gọn hơn?",
+            "Đã sửa xong lỗi.",
+            "What do you think about the layout?",
+        ]) {
+            expect(yesNoQuestion(reply), reply).toBe(false);
+        }
+    });
+});
+
+describe("yes and no chips", () => {
+    it("speak the person's language", () => {
+        expect(yesNoChips(true).map((c) => c.text)).toEqual(["ok", "không"]);
+        expect(yesNoChips(false).map((c) => c.text)).toEqual(["yes", "no"]);
+        expect(yesNoChips(true).every((c) => c.kind === "reply" && c.source === "rule")).toBe(true);
+    });
+
+    it("show at once, and the model's answers that say more come after them", () => {
+        const yesNo = yesNoChips(true);
+        expect(chatChips({ question: true, rules: [], model: { status: "loading" }, yesNo })).toEqual(yesNo);
+        expect(chatChips({ question: true, rules: [], model: undefined, yesNo })).toEqual(yesNo);
+        const done = chatChips({
+            question: true,
+            rules: [],
+            model: { status: "done", replies: ["ok làm đi", "build rồi push luôn", "không cần đâu", "để sau"] },
+            yesNo,
+        });
+        expect(done.map((c) => c.text)).toEqual(["ok", "không", "build rồi push luôn", "để sau"]);
+    });
+
+    it("are not a plain yes or no once the reply says what to do", () => {
+        expect(plainAnswer("ok làm đi")).toBe(true);
+        expect(plainAnswer("Yes, go ahead")).toBe(true);
+        expect(plainAnswer("không cần đâu")).toBe(true);
+        expect(plainAnswer("ok, và ẩn thẻ Pin")).toBe(false);
+        expect(plainAnswer("có, chạy cả e2e")).toBe(false);
+    });
+});
+
+describe("fitChips", () => {
+    const c = (text: string, kind: ChatChip["kind"] = "reply"): ChatChip => ({ text, kind, source: "model" });
+    const widths = { a: 100, b: 200, c: 60, d: 300, close: 90 };
+
+    it("keeps the chips that fit whole on the line, a shorter one taking the room a wider one left", () => {
+        // room 400: a 100, b +206 = 306, c +66 = 372, d does not fit
+        expect(fitChips([c("a"), c("b"), c("d"), c("c")], widths, 400, 0).map((x) => x.text)).toEqual(["a", "b", "c"]);
+        // the reserve is room the keys take
+        expect(fitChips([c("a"), c("b"), c("c")], widths, 400, 52).map((x) => x.text)).toEqual(["a", "b"]);
+    });
+
+    it("always keeps the first, which ends in … when alone too wide", () => {
+        expect(fitChips([c("d"), c("a")], widths, 250, 0).map((x) => x.text)).toEqual(["d"]);
+    });
+
+    it("keeps a close chip over the replies before it", () => {
+        const close = c("close", "close");
+        expect(fitChips([c("a"), c("b"), c("c"), close], widths, 400, 0).map((x) => x.text)).toEqual([
+            "a",
+            "c",
+            "close",
+        ]);
+    });
+
+    it("keeps every chip until each is measured", () => {
+        const all = [c("a"), c("new")];
+        expect(fitChips(all, widths, 50, 0)).toEqual(all);
+        expect(fitChips(all, widths, 0, 0)).toEqual(all);
     });
 });

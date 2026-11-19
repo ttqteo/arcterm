@@ -16,8 +16,8 @@ import (
 )
 
 func TestParseAnswersAQuestion(t *testing.T) {
-	got := Parse("1. B, và ẩn thẻ Pin\n- A\n\"C\"\n\nD\n", true, false).Replies
-	want := []string{"B, và ẩn thẻ Pin", "A", "C"}
+	got := Parse("1. B, và ẩn thẻ Pin\n- A\n\"C\"\n\nD\nE\nF\n", true, false).Replies
+	want := []string{"B, và ẩn thẻ Pin", "A", "C", "D", "E"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("Parse = %q, want %q", got, want)
 	}
@@ -87,7 +87,7 @@ func TestBuildPromptKeepsTheEndAndTheLastMessages(t *testing.T) {
 	if !strings.Contains(p, "\n…") || !strings.Contains(p, "Bạn chọn A, B hay C?\n</reply>") {
 		t.Fatalf("want the reply's end, marked as cut:\n%s", p)
 	}
-	if !strings.HasSuffix(p, "give up to 3 replies that answer it.") {
+	if !strings.HasSuffix(p, "give up to 5 replies that answer it.") {
 		t.Fatalf("want the question's instruction last:\n%s", p)
 	}
 	if strings.Contains(BuildPrompt(Request{Reply: "done"}), "person's last messages") {
@@ -204,7 +204,7 @@ func TestBuildPromptAsksForASummaryOnlyWhenToldTo(t *testing.T) {
 			t.Fatalf("a Summary request lacks %q:\n%s", want, p)
 		}
 	}
-	if !strings.HasSuffix(p, "give up to 3 replies that answer it.") {
+	if !strings.HasSuffix(p, "give up to 5 replies that answer it.") {
 		t.Fatalf("the replies' own instruction stays last:\n%s", p)
 	}
 	// the rule is in the message: the system prompt, and with it every chip-only call's cache key, is the same
