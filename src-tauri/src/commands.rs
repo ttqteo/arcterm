@@ -36,6 +36,19 @@ pub fn set_window_init_status(app: AppHandle, status: String) {
 // can only be an attempt to break out of an argument.
 //
 // Why a URL is refused, for the log: someone reading it for a break-out attempt needs the real cause.
+// Claude Desktop's resume link for one CLI session (a session's Open in Claude Desktop), and no other claude: link: the
+// rest of that scheme can start a prompt or sign in.
+fn is_claude_desktop_resume(url: &str) -> bool {
+    let Some(id) = url.strip_prefix("claude://resume?session=") else {
+        return false;
+    };
+    id.len() == 36
+        && id.char_indices().all(|(i, c)| match i {
+            8 | 13 | 18 | 23 => c == '-',
+            _ => c.is_ascii_hexdigit(),
+        })
+}
+
 fn external_url_rejection(url: &str) -> Option<&'static str> {
     if url.chars().any(|c| c == '"' || c.is_whitespace() || c.is_control()) {
         return Some("a raw quote, whitespace or control character");
@@ -43,7 +56,7 @@ fn external_url_rejection(url: &str) -> Option<&'static str> {
     let Some(scheme) = url.split_once(':').map(|(s, _)| s.to_ascii_lowercase()) else {
         return Some("no scheme");
     };
-    if matches!(scheme.as_str(), "http" | "https" | "mailto") {
+    if matches!(scheme.as_str(), "http" | "https" | "mailto") || is_claude_desktop_resume(url) {
         None
     } else {
         Some("a non-allowlisted scheme")
@@ -220,6 +233,24 @@ mod tests {
         );
         assert_eq!(external_url_rejection("example.com/page"), Some("no scheme"));
         assert_eq!(external_url_rejection("https://example.com"), None);
+    }
+
+    #[test]
+    fn allows_only_claude_desktops_resume_link() {
+        // a session's Open in Claude Desktop: the one claude: link Desktop's handler imports a CLI session from
+        assert!(is_allowed_external_url(
+            "claude://resume?session=6fc42214-cac4-494e-a823-f51d986afa66"
+        ));
+        assert!(!is_allowed_external_url("claude://resume?session=../x"));
+        assert!(!is_allowed_external_url(
+            "claude://resume?session=6fc42214-cac4-494e-a823-f51d986afa66&q=hi"
+        ));
+        assert!(!is_allowed_external_url("claude://code/new?q=hi"));
+        assert!(!is_allowed_external_url("claude://login"));
+        assert_eq!(
+            external_url_rejection("claude://code/new"),
+            Some("a non-allowlisted scheme")
+        );
     }
 
     #[test]

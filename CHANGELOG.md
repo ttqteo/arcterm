@@ -28,6 +28,18 @@ shows above the title: a 2:1 crop of a `task verify:ui` screenshot, as WebP, nam
 (`cwebp -q 82 -crop <x> <y> <w> <h> cdp-shots/<shot>.png -o public/whatsnew/<file>`). `whatsnew.test.ts` fails on a
 missing file, on one over 120 KB, and on a picture given to a line that is not big.
 
+## Unreleased
+
+### Added
+
+- Open in Claude Desktop: an ended Claude conversation opens in Claude Desktop's Code tab to carry on there, from the
+  icon beside Fork above its transcript or from its row's menu in a project's History.
+
+### Fixed
+
+- A task worker or judge reopened after its tab was closed stays out of Claude Desktop's CLI import, as it did when it
+  first started.
+
 ## 1.7.0 — 2026-11-19
 
 ### Added

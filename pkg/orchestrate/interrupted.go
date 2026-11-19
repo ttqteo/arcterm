@@ -232,7 +232,9 @@ func resumeInNewTab(ctx context.Context, run *waveobj.Run, phaseIdx int, closed,
 	}
 	// a lead's tab must outlive its process while the dag's children run, as the first spawn keeps it
 	// (jarvis.EnsureWorkers); without it every pause/resume of the lead makes yet another tab
-	opts := jarvis.RunWorkerOptions{KeepOnExit: run.Mode == jarvis.RunMode_Orchestrator, RunId: run.ID}
+	// a task's worker or a judge reopens as the engine session its first spawn was, so Desktop's import still skips it
+	opts := jarvis.RunWorkerOptions{KeepOnExit: run.Mode == jarvis.RunMode_Orchestrator, RunId: run.ID,
+		EngineSession: run.TaskId != "" || run.StageRole != ""}
 	tabORef, err := jarvis.SpawnRunWorker(ctx, cap, run.WorkspaceId, ch.Name, jarvis.LandPath(run), nudge, opts)
 	if err != nil {
 		return err
