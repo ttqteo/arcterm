@@ -32,6 +32,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- On Windows, heavy jobs and runs are held back for memory only once less than a tenth of the RAM is free, not a
+  fifth: with 3 to 6 GB free on a 32 GB machine, builds and tests no longer wait one at a time and runs are no longer
+  paused while the machine still runs smoothly.
 - The tabs at the top of the Agent panel (Overview, Files, Changes, Transcript and the open files) are pills: the one
   on show is filled, the others light up when you hover them, in place of an underline.
 

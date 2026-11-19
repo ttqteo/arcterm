@@ -13,9 +13,9 @@ import (
 
 const gib = 1 << 30
 
-// this box on 2026-11-05: 45.6 GB committed on 31.8 GB, 6 GB free, which the commit rule reads critical
+// this box on 2026-11-19: 45.6 GB committed on 31.8 GB, 2 GB free, which the commit rule reads critical
 func criticalSample(pagesIn, readMs float64) PagingSample {
-	return PagingSample{Commit: 456 * gib / 10, Phys: 318 * gib / 10, Avail: 6 * gib, PagesIn: pagesIn, PagesInOk: true, ReadMs: readMs, ReadMsOk: true}
+	return PagingSample{Commit: 456 * gib / 10, Phys: 318 * gib / 10, Avail: 2 * gib, PagesIn: pagesIn, PagesInOk: true, ReadMs: readMs, ReadMsOk: true}
 }
 
 // under the RAM: no pressure
@@ -27,13 +27,13 @@ func TestAPressuredMinuteIsLoggedWithItsPagingAndLatency(t *testing.T) {
 	var w pagingWindow
 	w.add(criticalSample(600, 2))
 	s := criticalSample(800, 4)
-	s.Avail = 59 * gib / 10
+	s.Avail = 19 * gib / 10
 	w.add(s)
 	if !w.worth() {
 		t.Fatal("a minute that read critical must be logged")
 	}
 	got := w.line("C:")
-	want := "[paging] critical: commit 45.6 GB on 31.8 GB RAM, 5.9 GB free (min 5.9 GB); pages in 700/s avg, 800 max; C: read 3 ms avg, 4 ms max"
+	want := "[paging] critical: commit 45.6 GB on 31.8 GB RAM, 1.9 GB free (min 1.9 GB); pages in 700/s avg, 800 max; C: read 3 ms avg, 4 ms max"
 	if got != want {
 		t.Fatalf("line:\n got %q\nwant %q", got, want)
 	}
