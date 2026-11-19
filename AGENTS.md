@@ -232,8 +232,9 @@ Load-bearing rules:
   own, starts it when it shows, restarts it after a crash and stops it a minute after it leaves the screen once nothing
   it started is still working (`services.Busy`), unless it is set to Keep running; the cockpit reads its state through
   `view/agents/servicesstore.ts` (the five service commands and the `services:changed` event), and words its tree row,
-  page header and Setup → Tools row from the pure `servicesmodel.ts`. The Agent tree lists a service only while it is up
-  or in trouble; Setup → Tools manages the apps (state, Pin, Keep running, Stop, Restart, Open), and the footer's Servers
+  page header and Setup → Tools row from the pure `servicesmodel.ts`. The Agent tree lists a service once it is opened and
+  keeps it when it stops on its own; only the row's Hide takes it out (`hiddenServicesAtom`, localStorage
+  `apps.hidden`) until it is opened again; Setup → Tools manages the apps (state, Pin, Keep running, Stop, Restart, Open), and the footer's Servers
   names a service's server `app · <name>`. There is no Services chip or popover in the app bar. A service can also be
   pinned to the nav rail (up to three, under Diff; `railapps.ts` is the pure model, `railappsstore.ts` the
   localStorage `apps.rail` list and the shown service): it opens as the `app` surface (`appsurface.tsx`), whose body

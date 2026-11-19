@@ -19,7 +19,7 @@ import { closedNeighbour } from "./cockpitsurfacemodel";
 import { railFull, railPins } from "./railapps";
 import { railPinsAtom, setRailPinned } from "./railappsstore";
 import { canStop, serviceMenuChoices, type ServiceMenuKey } from "./servicesmodel";
-import { restartService, servicesAtom, setServiceAutostart, stopService } from "./servicesstore";
+import { restartService, servicesAtom, setServiceAutostart, setServiceHidden, stopService } from "./servicesstore";
 import { openSetupTool } from "./setupstore";
 
 // Stop and Restart show wavesrv's refusal: the row only changes on `services:changed`, so a refused one would
@@ -33,13 +33,16 @@ async function serviceAction(s: ServiceStatus, verb: "stop" | "restart"): Promis
     }
 }
 
-// Hide: an up service is stopped, and the selection moves off its tab to the row beside it (as a closed tab hands its
-// place on), so treeServiceInput, which keeps a sleeping service only while its tab is selected, drops the row.
+// Hide: the service goes on the hidden list, an up one is stopped, and the selection moves off its tab to the row
+// beside it (as a closed tab hands its place on), so treeServiceInput, which keeps a hidden service only while its tab
+// is selected, drops the row. Opening it again takes it off the list (agenttree.tsx).
 function hideService(model: AgentsViewModel, s: ServiceStatus): void {
     if (canStop(s)) {
         fireAndForget(() => serviceAction(s, "stop"));
     }
+    // hidden only once the selection is off its tab: a selected hidden service reads as opened again
     if (s.tabid == null || globalStore.get(model.focusIdAtom) !== s.tabid) {
+        setServiceHidden(s.id, true);
         return;
     }
     const live = new Set(
@@ -53,6 +56,7 @@ function hideService(model: AgentsViewModel, s: ServiceStatus): void {
     } else {
         globalStore.set(model.focusIdAtom, undefined);
     }
+    setServiceHidden(s.id, true);
 }
 
 export function serviceMenuItems(model: AgentsViewModel, s: ServiceStatus): ContextMenuItem[] {

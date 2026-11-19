@@ -221,10 +221,10 @@ describe("what a state offers", () => {
 });
 
 describe("treeServiceInput", () => {
-    const ids = (list: ServiceStatus[], selected: string | null) =>
-        treeServiceInput(list, selected).services.map((s) => s.id);
+    const ids = (list: ServiceStatus[], selected: string | null, hidden: string[] = []) =>
+        treeServiceInput(list, selected, new Set(hidden)).services.map((s) => s.id);
 
-    it("lists a service that is up or in trouble, in the order given, and not a sleeping one", () => {
+    it("lists a service that is up or in trouble, in the order given, and not a sleeping one never opened", () => {
         const list = [
             svc("running", { id: "run" }),
             svc("sleeping", { id: "sleep" }),
@@ -238,15 +238,33 @@ describe("treeServiceInput", () => {
         expect(ids(list, null)).toEqual(["run", "crash", "start", "retry", "port", "nopage", "else"]);
     });
 
-    it("keeps a sleeping service whose tab is the selected row, and no other", () => {
+    it("keeps an opened service that went to sleep on its own, selected or not", () => {
         const list = [
             svc("sleeping", { id: "a", tabid: "tab-a" }),
-            svc("sleeping", { id: "b", tabid: "tab-b" }),
+            svc("sleeping", { id: "b", tabid: "tab-b", off: true }),
             svc("running", { id: "c", tabid: "tab-c" }),
         ];
-        expect(ids(list, "tab-b")).toEqual(["b", "c"]);
-        expect(ids(list, "tab-c")).toEqual(["c"]);
-        expect(ids(list, null)).toEqual(["c"]);
+        expect(ids(list, null)).toEqual(["a", "b", "c"]);
+        expect(ids(list, "tab-c")).toEqual(["a", "b", "c"]);
+    });
+
+    it("leaves out a hidden service, up or sleeping, unless its tab is the selected row", () => {
+        const list = [
+            svc("sleeping", { id: "a", tabid: "tab-a" }),
+            svc("running", { id: "b", tabid: "tab-b" }),
+            svc("sleeping", { id: "c", tabid: "tab-c" }),
+        ];
+        expect(ids(list, null, ["a", "b"])).toEqual(["c"]);
+        expect(ids(list, "tab-a", ["a", "b"])).toEqual(["a", "c"]);
+    });
+
+    it("lists a hidden service in trouble, which Hide does not apply to", () => {
+        const list = [
+            svc("crashed", { id: "crash", tabid: "tab-x" }),
+            svc("porttaken", { id: "port" }),
+            svc("elsewhere", { id: "else" }),
+        ];
+        expect(ids(list, null, ["crash", "port", "else"])).toEqual(["crash", "port", "else"]);
     });
 
     it("hands projectTree the fields it reads", () => {

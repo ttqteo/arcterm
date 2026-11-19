@@ -126,15 +126,29 @@ export function serviceHeaderLine(s: ServiceStatus, nowMs: number): string {
     }
 }
 
-/** Pure: the services the Agent tree lists, every one that is up or in trouble (any state but sleeping) and the one
- *  whose tab is the selected row, so Stop on the row in view does not pull it out from under the pointer; and every
- *  service's tab, which is never a terminal row. projectTree then draws no folder that holds nothing else. */
+/** Whether Hide applies to a service: one that is up, or sleeping. One in trouble keeps its row until it is fixed. */
+export const canHide = (s: ServiceStatus): boolean => canStop(s) || s.state === "sleeping";
+
+/** Pure: the services the Agent tree lists, and every service's tab, which is never a terminal row. A service is
+ *  listed while it is up or in trouble, and once opened (it has a tab) it stays listed when it goes to sleep: a service
+ *  that stops on its own keeps its row, and only the person's Hide (`hidden`, the ids) takes it out. A hidden one comes
+ *  back when its tab is the selected row or when it is in trouble. A sleeping service never opened has no row.
+ *  projectTree then draws no folder that holds nothing else. */
 export function treeServiceInput(
     list: readonly ServiceStatus[],
-    selectedTab: string | null
+    selectedTab: string | null,
+    hidden: ReadonlySet<string> = new Set()
 ): { services: { id: string; name: string; project: string; tabId?: string }[]; serviceTabs: Set<string> } {
     const services = list
-        .filter((s) => s.state !== "sleeping" || (s.tabid != null && s.tabid === selectedTab))
+        .filter((s) => {
+            if (s.tabid != null && s.tabid === selectedTab) {
+                return true;
+            }
+            if (hidden.has(s.id) && canHide(s)) {
+                return false;
+            }
+            return s.state !== "sleeping" || s.tabid != null;
+        })
         .map((s) => ({ id: s.id, name: s.name, project: s.project, tabId: s.tabid }));
     const serviceTabs = new Set(list.flatMap((s) => (s.tabid ? [s.tabid] : [])));
     return { services, serviceTabs };
@@ -148,14 +162,14 @@ export type ServiceMenuChoice =
 const HIDE_TROUBLE_TITLE = "A service in trouble stays in the tree until it is fixed or restarted";
 
 /** Pure: a service row's context menu, in order. There is no Start: showing the service starts it. `pinned` is
- *  whether it sits on the rail, `railFull` whether the rail holds its three. Hide takes the row out of the tree (the
- *  click moves the selection off it, so treeServiceInput drops it): an up one is stopped first; one in trouble keeps
- *  its row, so its Hide is off. */
+ *  whether it sits on the rail, `railFull` whether the rail holds its three. Hide takes the row out of the tree until
+ *  the service is opened again (servicesstore's hidden list, and the click moves the selection off it): an up one is
+ *  stopped first; one in trouble keeps its row, so its Hide is off. */
 export function serviceMenuChoices(
     s: ServiceStatus,
     { pinned, railFull }: { pinned: boolean; railFull: boolean }
 ): ServiceMenuChoice[] {
-    const hideable = canStop(s) || s.state === "sleeping";
+    const hideable = canHide(s);
     return [
         { key: "stop", label: "Stop", enabled: canStop(s) },
         { key: "restart", label: "Restart", enabled: canRestart(s) },

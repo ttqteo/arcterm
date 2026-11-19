@@ -16,6 +16,10 @@ list (its number is not reused).
 Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) ·
 [part 4](hand-checks-4.md) · [part 3](hand-checks-3.md) · [part 2](hand-checks-2.md) (oldest).
 
+- [ ] (arcterm) **An app that stops on its own keeps its tree row** (`servicesmodel.ts` treeServiceInput,
+  `servicesstore.ts` hiddenServicesAtom). Open an app (a tool with a page) in the Agent tree, select another row and
+  wait past the minute it takes to stop: its row stays, reading sleeping. Right-click it → Hide: the row goes, and stays
+  gone after a reload; open it again from the palette or Setup → Tools: the row is back and stays after you leave it.
 - [ ] (arcterm) **A one-call stretch is its box alone** (`chatstepsview.tsx` ChatSteps, `growing`). In a Claude
   agent's Chat, find a finished turn where the agent ran one described command between two paragraphs: it shows as a
   bordered box with one row ("Check shared registration files… ›") that opens to `$ command` and its output, with no

@@ -415,12 +415,22 @@ describe("projectTree", () => {
                 autostart: false,
                 tabid: "tab-web",
             });
+            const hidden = new Set(["web"]);
 
-            it("has no row, no terminal row for its tab, and leaves no folder that holds nothing else", () => {
+            it("stays a row, in its folder, when it went to sleep on its own", () => {
                 const rows = build(
                     [agent("a")],
                     [term("tab-web", "ops")],
                     treeServiceInput([status("sleeping")], null)
+                );
+                expect(shapeS(rows)).toEqual(["group:waveterm:1a:0t", "a:a", "group:ops:0a:0t", "s:web"]);
+            });
+
+            it("hidden, has no row, no terminal row for its tab, and leaves no folder that holds nothing else", () => {
+                const rows = build(
+                    [agent("a")],
+                    [term("tab-web", "ops")],
+                    treeServiceInput([status("sleeping")], null, hidden)
                 );
                 expect(shapeS(rows)).toEqual(["group:waveterm:1a:0t", "a:a"]);
             });
@@ -430,27 +440,27 @@ describe("projectTree", () => {
                 expect(shapeS(rows)).toEqual(["group:waveterm:1a:0t", "a:a", "group:ops:0a:0t", "s:web"]);
             });
 
-            it("keeps the folder of the project's agents, with no divider for a row that is not there", () => {
+            it("hidden, keeps the folder of the project's agents, with no divider for a row that is not there", () => {
                 const rows = build(
                     [agent("a")],
                     [term("tab-web", "waveterm")],
-                    treeServiceInput([status("sleeping", "waveterm")], null)
+                    treeServiceInput([status("sleeping", "waveterm")], null, hidden)
                 );
                 expect(shapeS(rows)).toEqual(["group:waveterm:1a:0t", "a:a"]);
             });
 
-            it("stays a row while its tab is the selected one", () => {
+            it("hidden, stays a row while its tab is the selected one", () => {
                 const rows = build(
                     [agent("a")],
                     [term("tab-web", "ops")],
-                    treeServiceInput([status("sleeping")], "tab-web")
+                    treeServiceInput([status("sleeping")], "tab-web", hidden)
                 );
                 expect(shapeS(rows)).toEqual(["group:waveterm:1a:0t", "a:a", "group:ops:0a:0t", "s:web"]);
             });
 
-            it("hides its tab's terminal under a project filter too", () => {
+            it("hidden, hides its tab's terminal under a project filter too", () => {
                 const rows = build([agent("a")], [term("tab-web", "waveterm"), term("t1")], {
-                    ...treeServiceInput([status("sleeping", "waveterm")], null),
+                    ...treeServiceInput([status("sleeping", "waveterm")], null, hidden),
                     filter: "waveterm",
                 });
                 expect(shapeS(rows)).toEqual(["a:a", "divider:waveterm", "t:t1"]);

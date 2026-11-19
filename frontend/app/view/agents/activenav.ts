@@ -17,7 +17,7 @@ import { projectsAtom } from "./projectsstore";
 import { dockedTerminalAtom } from "./railstore";
 import { treeFoldsAtom } from "./runlineagestore";
 import { treeServiceInput } from "./servicesmodel";
-import { servicesAtom } from "./servicesstore";
+import { hiddenServicesAtom, servicesAtom } from "./servicesstore";
 import { backgroundTasksByIdAtom } from "./subagentsstore";
 
 export function activeNavOrder(model: AgentsViewModel): string[] {
@@ -53,7 +53,7 @@ export function activeNavOrder(model: AgentsViewModel): string[] {
                 seeded: globalStore.get(rosterSeededAtom),
             }),
             roster: [...agents, ...terminals],
-            ...treeServiceInput(globalStore.get(servicesAtom) ?? [], focusId),
+            ...treeServiceInput(globalStore.get(servicesAtom) ?? [], focusId, globalStore.get(hiddenServicesAtom)),
         })
     );
 }

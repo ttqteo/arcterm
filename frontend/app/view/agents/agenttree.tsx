@@ -269,7 +269,14 @@ import { attentionAtom, splitAttention } from "./attentionstore";
 import { unreadAgentsAtom } from "./unreadagentsstore";
 import { showServiceMenu } from "./servicemenu";
 import { canRestart, serviceHeaderLine, serviceRowWords, serviceTreeWords, treeServiceInput } from "./servicesmodel";
-import { ensureServicesFeed, openService, restartService, servicesAtom } from "./servicesstore";
+import {
+    ensureServicesFeed,
+    hiddenServicesAtom,
+    openService,
+    restartService,
+    servicesAtom,
+    setServiceHidden,
+} from "./servicesstore";
 import { showTerminalMenu, splitCellMenuItems, ToolGlyph } from "./terminalsrail";
 import { PanelWeb, TreeSpider } from "./themedecorview";
 import { toolIcon, toolTerminalName, type ToolIconName } from "./toolsmodel";
@@ -3502,14 +3509,22 @@ export const AgentTree = memo(function AgentTree({ model }: { model: AgentsViewM
     const starting = useAtomValue(startingRunsAtom);
     // the New agent launches parked for later, after the queued plans
     const parked = useAtomValue(parkedLaunchesAtom);
-    // the held services (wavesrv's) that are up or in trouble: a row each in its project's folder, after the divider. A
-    // sleeping one has none (the selected one keeps its row), and its tab is still no terminal row.
+    // the held services (wavesrv's): a row each in its project's folder, after the divider, kept when one goes to sleep
+    // on its own; only the person's Hide takes one out (hiddenServicesAtom), and its tab is still no terminal row.
     useEffect(() => ensureServicesFeed(), []);
     const serviceList = useAtomValue(servicesAtom);
+    const hiddenServices = useAtomValue(hiddenServicesAtom);
     const { services, serviceTabs } = useMemo(
-        () => treeServiceInput(serviceList ?? [], focusId),
-        [serviceList, focusId]
+        () => treeServiceInput(serviceList ?? [], focusId, hiddenServices),
+        [serviceList, focusId, hiddenServices]
     );
+    // a hidden service opened again (its tab selected, from the palette or Setup → Tools) is back in the tree for good
+    useEffect(() => {
+        const opened = focusId == null ? undefined : serviceList?.find((s) => s.tabid === focusId);
+        if (opened != null && hiddenServices.has(opened.id)) {
+            setServiceHidden(opened.id, false);
+        }
+    }, [focusId, serviceList, hiddenServices]);
     // the councils (councilstore.ts) the tree keeps (councilInTree: live, pinned, unread or ended less than a day ago),
     // every project's, filed under the registered project each ran in. The minute clock lets one leave the tree a day
     // after it ended without a reload; the last-opened map (councilopened.ts) says which are unread.

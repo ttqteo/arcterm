@@ -17,6 +17,37 @@ import { addUserTool } from "./toolsstore";
 // null until the first reading
 export const servicesAtom = atom<ServiceStatus[] | null>(null) as PrimitiveAtom<ServiceStatus[] | null>;
 
+const HIDDEN_KEY = "apps.hidden";
+
+function readHidden(): string[] {
+    try {
+        const v: unknown = JSON.parse(localStorage.getItem(HIDDEN_KEY) ?? "[]");
+        return Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : [];
+    } catch {
+        return [];
+    }
+}
+
+const hiddenBaseAtom = atom<string[]>(readHidden());
+
+/** The services the person hid from the Agent tree (its row's Hide), kept across restarts (localStorage apps.hidden).
+ * A service that stops on its own keeps its row; only this list takes it out, until it is opened again. */
+export const hiddenServicesAtom = atom((get) => new Set(get(hiddenBaseAtom)));
+
+export function setServiceHidden(id: string, hidden: boolean): void {
+    const now = globalStore.get(hiddenBaseAtom);
+    if (now.includes(id) === hidden) {
+        return;
+    }
+    const next = hidden ? [...now, id] : now.filter((x) => x !== id);
+    globalStore.set(hiddenBaseAtom, next);
+    try {
+        localStorage.setItem(HIDDEN_KEY, JSON.stringify(next));
+    } catch {
+        // storage unavailable: the list holds for this session
+    }
+}
+
 /** The services that have a tab, by tab id. */
 export const serviceByTabAtom = atom((get) => {
     const byTab: Record<string, ServiceStatus> = {};

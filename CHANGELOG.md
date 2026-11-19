@@ -98,6 +98,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- An app in the Agent sidebar that stops on its own when nobody is using it keeps its row (it reads sleeping) instead
+  of vanishing; only its Hide takes it out, until you open it again.
 - Conversation History, the Canvas gallery and the Councils list now live on their own Library page (Ctrl+7, or g then l), with a
   tab for each, and the Agent sidebar keeps only what is live: your agents and terminals, with no History,
   Canvas gallery or Councils row and no Conversations section. A session opened from Usage, Jarvis or a project's
