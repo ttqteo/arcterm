@@ -17,13 +17,19 @@ import { useLocalImage } from "@/app/view/jarvis/localimage";
 import { cn } from "@/util/util";
 import { ArrowUpRight, ChevronDown, ChevronRight, ImageOff } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
-import { useState, type KeyboardEvent, type ReactNode } from "react";
+import { Fragment, useMemo, useState, type KeyboardEvent, type ReactNode } from "react";
 import { detailExceedsInline, type AgentActionEntry } from "./agentsviewmodel";
 import { editCounts, foldOf, pictureOf, stepOf, stepRows, stretchPictures, type StepChip } from "./chatsteps";
 import { stepSummary, stretchTime } from "./chatstepsummary";
 import { stretchMs, type WorkItem } from "./compacttimeline";
 import { PromptImages, ToolDetailBody, useNow } from "./narrationtimeline";
+import { OutputLines } from "./outputlines";
 import { PathLink } from "./pathlinkcontext";
+import { shellLine } from "./shellhighlight";
+import { codeOutputLine, readsCode } from "./stepoutput";
+
+// what an inverse ANSI run in a command's output swaps in for an unset side
+const OUTPUT_COLORS = { fg: "var(--color-secondary)", bg: "var(--color-surface-code)" };
 
 function baseName(path: string): string {
     return path.split(/[\\/]/).pop() || path;
@@ -173,6 +179,9 @@ function Opened({ children }: { children: ReactNode }) {
 // ToolDetailBody's)
 function CommandDetail({ action, command }: { action: AgentActionEntry; command: string }) {
     const output = action.detail?.kind === "bash" ? action.detail.output : "";
+    const lines = useMemo(() => output.replace(/\n$/, "").split("\n"), [output]);
+    // output with no ANSI of its own that prints source is drawn as code (stepoutput.ts); the rest in its own colours
+    const asCode = !output.includes("\u001b") && readsCode(command);
     return (
         <Opened>
             <div
@@ -180,14 +189,39 @@ function CommandDetail({ action, command }: { action: AgentActionEntry; command:
                 className="whitespace-pre-wrap rounded-[6px] bg-surface-code px-3 py-2 font-mono text-[12px] text-primary [overflow-wrap:anywhere]"
             >
                 <span className="select-none text-muted">$ </span>
-                {command}
+                {/* the command in the shell's colours, as Chat's bash box draws it */}
+                {command.split("\n").map((ln, i) => (
+                    <Fragment key={i}>
+                        {i > 0 ? "\n" : null}
+                        {shellLine(ln).map((tk, k) => (
+                            <span key={k} className={tk.cls}>
+                                {tk.t}
+                            </span>
+                        ))}
+                    </Fragment>
+                ))}
             </div>
             {output !== "" ? (
                 <pre
                     data-chat-step-output
+                    data-chat-step-output-code={asCode || undefined}
                     className="m-0 max-h-[320px] overflow-auto whitespace-pre-wrap px-3 py-1 font-mono text-[12px] leading-[1.6] text-secondary [overflow-wrap:anywhere]"
                 >
-                    {output}
+                    {asCode ? (
+                        lines.map((ln, i) => (
+                            <div key={i}>
+                                {ln === ""
+                                    ? "\n"
+                                    : codeOutputLine(ln).map((tk, k) => (
+                                          <span key={k} className={tk.cls}>
+                                              {tk.t}
+                                          </span>
+                                      ))}
+                            </div>
+                        ))
+                    ) : (
+                        <OutputLines lines={lines} colors={OUTPUT_COLORS} />
+                    )}
                 </pre>
             ) : null}
             <OpenFullView action={action} />

@@ -16,6 +16,12 @@ list (its number is not reused).
 Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) ·
 [part 4](hand-checks-4.md) · [part 3](hand-checks-3.md) · [part 2](hand-checks-2.md) (oldest).
 
+- [ ] (arcterm) **An opened command in Chat is in colour.** Open a Bash step in Chat: the `$ command` line draws the
+  program in the keyword colour and its arguments in the string colour; a `sed -n …p x.ts` or `grep -n … x.tsx` step's
+  output reads as code (keywords, strings, comments) with its `12:` line numbers dim; a test run's failing line is red.
+- [ ] (arcterm) **A `.jsonl` file opens in colour.** Open one (a Claude transcript, an audit `.jsonl`): keys, strings,
+  numbers and `true`/`false`/`null` in JSON's colours, and no red squiggle on line 2 onwards.
+
 - [ ] (arcterm) **Xử lý starts one real agent that handles the waiting bug reports.** With two reports saved and arcterm's
   repo known (Jarvis, Waiting on you: "2 báo lỗi arcterm chờ xử lý"), press Xử lý there (or in the Cockpit's Needs-you
   strip): a "Báo lỗi arcterm" Claude agent opens in arcterm's repo and starts on the prompt, the row turns "Đang xử lý 2

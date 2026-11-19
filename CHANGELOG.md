@@ -163,6 +163,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- An opened command in Chat is in colour: the command in the shell's colours, and its output either as code (a `sed`,
+  `cat` or `grep` of a source file, line numbers dim) or in the colours its program printed, a failure red.
+- A `.jsonl` or `.ndjson` file opens in colour, like JSON, with no error marked on every line after the first.
 - Sidecar shows every run in progress, not only the newest: a Runs box above Needs you lists up to three, a failed run
   first, and sums up the rest in one line ("+2 more · 1 failed") that opens them in Jarvis; a row opens its run. The box
   stays when the memory band shows, and the "due today" line it repeated from Needs you is gone.

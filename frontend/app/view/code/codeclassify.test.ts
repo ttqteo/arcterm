@@ -154,6 +154,12 @@ describe("languageForPath", () => {
         expect(languageForPath("base.bib")).toBe("bibtex");
     });
 
+    it("names jsonl for JSON Lines, which Monaco has no language for", () => {
+        for (const p of ["audit_guard_partial.jsonl", "C:\\x\\events.NDJSON"]) {
+            expect(languageForPath(p)).toBe("jsonl");
+        }
+    });
+
     it("leaves every other file to Monaco's own inference", () => {
         expect(languageForPath("main.go")).toBeUndefined();
         expect(languageForPath("notes.md")).toBeUndefined();
