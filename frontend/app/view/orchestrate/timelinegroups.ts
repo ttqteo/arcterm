@@ -4,7 +4,7 @@
 // one-line snippet, quiet gaps and the activity strip. Attention is ATTENTION_KINDS and titles are
 // runtimeline's, so this rail and any other timeline cannot disagree about either.
 
-import { detailOf, eventText, eventTitle, planReviewReviewers } from "../agents/runtimeline";
+import { detailOf, eventText, eventTitle, planReviewReviewers, tsLabel } from "../agents/runtimeline";
 import { ATTENTION_KINDS, taskIdOf, type TimelineFilter } from "./timelinefilter";
 
 // one phase of one task within BURST_MS reads as one row; a silence of QUIET_MS or more is worth a gap row
@@ -170,19 +170,100 @@ export function filterGroups(
     }
 }
 
-export type RailRow = { kind: "gap"; minutes: number } | { kind: "group"; group: EventGroup };
+// a fold is neighbouring task rows with the same title, shown as one row ("Cleanup complete ×14"); key names its
+// oldest group, so a row joining at the newest end keeps an open fold open
+export type FoldRow = { kind: "fold"; key: string; groups: EventGroup[]; first: number; last: number };
 
-// groups arrive newest first, so the quiet stretch is the newer group's start minus the older one's end
+export type RailRow = { kind: "gap"; minutes: number } | { kind: "group"; group: EventGroup } | FoldRow;
+
+// foldable: a task's row that shows nothing but its title, so folding it hides only its time. A warning never folds.
+export function foldable(g: EventGroup): boolean {
+    return g.taskId !== "" && !g.attention && g.steps.length <= 1 && groupSnippet(g) === "";
+}
+
+function foldRow(groups: EventGroup[]): FoldRow {
+    return {
+        kind: "fold",
+        key: `fold:${groups[groups.length - 1].key}`,
+        groups,
+        first: Math.min(...groups.map((g) => g.first)),
+        last: Math.max(...groups.map((g) => g.last)),
+    };
+}
+
+// groups arrive newest first, so the quiet stretch is the newer group's start minus the older one's end. Two or more
+// foldable rows side by side with one title and distinct tasks become a fold; a gap row or any other row ends it, so
+// the rail keeps its time order.
 export function railRows(groups: EventGroup[]): RailRow[] {
     const rows: RailRow[] = [];
+    let run: EventGroup[] = [];
+    const flush = () => {
+        if (run.length >= 2) {
+            rows.push(foldRow(run));
+        } else {
+            run.forEach((group) => rows.push({ kind: "group", group }));
+        }
+        run = [];
+    };
     groups.forEach((group, i) => {
         const prev = groups[i - 1];
         if (prev && prev.first - group.last >= QUIET_MS) {
+            flush();
             rows.push({ kind: "gap", minutes: Math.round((prev.first - group.last) / 60_000) });
         }
-        rows.push({ kind: "group", group });
+        const joins =
+            run.length > 0 &&
+            foldable(group) &&
+            eventTitle(group.head) === eventTitle(run[0].head) &&
+            !run.some((g) => g.taskId === group.taskId);
+        if (joins) {
+            run.push(group);
+            return;
+        }
+        flush();
+        if (foldable(group)) {
+            run = [group];
+        } else {
+            rows.push({ kind: "group", group });
+        }
     });
+    flush();
     return rows;
+}
+
+// taskRange names a fold's tasks: an arrow over consecutive numbers (the ids carry a hyphen already), a list of three
+// or fewer, else a count
+export function taskRange(taskIds: string[]): string {
+    const sorted = [...taskIds].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+    const nums = sorted.map((id) => /^t-(\d+)$/.exec(id)).map((m) => (m ? Number(m[1]) : NaN));
+    const consecutive = nums.every((n, i) => Number.isInteger(n) && (i === 0 || n === nums[i - 1] + 1));
+    if (consecutive && sorted.length > 1) {
+        return `${sorted[0]} → ${sorted[sorted.length - 1]}`;
+    }
+    if (sorted.length <= 3) {
+        return sorted.join(", ");
+    }
+    return `${sorted.length} tasks`;
+}
+
+function pad2(n: number): string {
+    return String(n).padStart(2, "0");
+}
+
+// rangeLabel writes a time range with its date and hour said once: "Nov 14 01:19–20", "01:55–02:03"; only a range
+// over two days repeats the date
+export function rangeLabel(first: number, last: number, withDate: boolean): string {
+    const start = tsLabel(first, withDate);
+    if (tsLabel(first, true) === tsLabel(last, true)) {
+        return start;
+    }
+    if (localDay(first) !== localDay(last)) {
+        return `${start}–${tsLabel(last, withDate)}`;
+    }
+    const a = new Date(first);
+    const b = new Date(last);
+    const end = a.getHours() === b.getHours() ? pad2(b.getMinutes()) : tsLabel(last, false);
+    return `${start}–${end}`;
 }
 
 // detail fields are telemetry: a value of the wrong type reads as absent rather than throwing mid-render
@@ -201,6 +282,15 @@ function secs(ms: number): string {
     // round once, so 119.6s reads "2m 0s" and never "1m 60s"
     const total = Math.round(ms / 1000);
     return `${Math.floor(total / 60)}m ${total % 60}s`;
+}
+
+// runpause's "by": auto (memory pressure), manual (the person), boot (reopened at startup)
+const PAUSE_BY: Record<string, string> = { auto: "auto", manual: "manual", boot: "at startup" };
+
+const GIB = 1024 ** 3;
+
+function gigs(bytes: number): string {
+    return bytes >= GIB ? `${(bytes / GIB).toFixed(1)} GB` : `${Math.round(bytes / 1024 ** 2)} MB`;
 }
 
 function shortPkg(s: string): string {
@@ -245,6 +335,13 @@ export function snippetOf(e: RunEvent): string {
             return num(d.sincespawnms) ? `first output ${secs(num(d.sincespawnms))} after spawn` : "";
         case "final-ended":
             return num(d.round) ? `round ${num(d.round)}` : "";
+        // who paused or resumed the run tree, and the RAM it held when it paused
+        case "run-paused":
+        case "run-resumed": {
+            const by = PAUSE_BY[str(d.by)] ?? str(d.by);
+            const held = e.kind === "run-paused" && num(d.heldbytes) ? `held ${gigs(num(d.heldbytes))}` : "";
+            return [by, held].filter(Boolean).join(" · ");
+        }
         default:
             return "";
     }
@@ -357,7 +454,7 @@ export function stripTicks(events: RunEvent[], endMs: number): StripTick[] {
     }));
 }
 
-export type GlyphName = "play" | "eye" | "merge" | "shield" | "check" | "msg" | "bell" | "alert" | "skip";
+export type GlyphName = "play" | "pause" | "eye" | "merge" | "shield" | "check" | "msg" | "bell" | "alert" | "skip";
 
 export function glyphOf(kind: string): GlyphName {
     if (ATTENTION_KINDS.has(kind)) {
@@ -381,6 +478,9 @@ export function glyphOf(kind: string): GlyphName {
     if (kind === "lead-woken") {
         return "bell";
     }
+    if (kind === "run-paused") {
+        return "pause";
+    }
     if (kind === "task-done" || kind === "dag-plan-approved") {
         return "check";
     }
@@ -390,6 +490,7 @@ export function glyphOf(kind: string): GlyphName {
 // 24x24 viewBox path data, stroked
 export const GLYPH_PATHS: Record<GlyphName, string> = {
     play: "M7 4.5v15l12-7.5z",
+    pause: "M9 5v14 M15 5v14",
     eye: "M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z",
     merge: "M21 18a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z M9 6a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z M6 21V9a9 9 0 0 0 9 9",
     shield: "M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z",

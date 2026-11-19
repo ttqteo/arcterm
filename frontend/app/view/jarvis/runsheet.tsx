@@ -53,7 +53,14 @@ import { openRunSheetDag } from "@/app/view/orchestrate/dagmodalstate";
 import { useDagGroup } from "@/app/view/orchestrate/dagstore";
 import { recoverySummary, recoveryText } from "@/app/view/orchestrate/recoverysummary";
 import { openTaskWorker, resolveTaskWorker, type TaskWorkerView } from "@/app/view/orchestrate/taskcorrelate";
-import { groupEvents, railRows, type EventGroup } from "@/app/view/orchestrate/timelinegroups";
+import {
+    groupEvents,
+    railRows,
+    rangeLabel,
+    taskRange,
+    type EventGroup,
+    type FoldRow,
+} from "@/app/view/orchestrate/timelinegroups";
 import { groupTime, SpineGlyph } from "@/app/view/orchestrate/timelinerail";
 import { cn, fireAndForget } from "@/util/util";
 import { atom, useAtomValue, type Atom } from "jotai";
@@ -643,6 +650,8 @@ function Tasks({
                             {rows.map((row, i) =>
                                 row.kind === "gap" ? (
                                     <SheetGapRow key={`gap:${i}`} minutes={row.minutes} />
+                                ) : row.kind === "fold" ? (
+                                    <SheetBurstRow key={row.key} ctx={ctx} group={row.groups[0]} fold={row} />
                                 ) : (
                                     <SheetBurstRow key={row.group.key} ctx={ctx} group={row.group} />
                                 )
@@ -705,10 +714,11 @@ function SheetGapRow({ minutes }: { minutes: number }) {
     );
 }
 
-// one line per burst; the modal keeps the steps, snippet and detail. Without a dag there is no modal to open,
-// so the row is plain.
-function SheetBurstRow({ ctx, group }: { ctx: SheetCtx; group: EventGroup }) {
+// one line per burst, or per fold of neighbouring bursts with one title (its count and task range in place of the
+// task); the modal keeps the steps, snippet and detail. Without a dag there is no modal to open, so the row is plain.
+function SheetBurstRow({ ctx, group, fold }: { ctx: SheetCtx; group: EventGroup; fold?: FoldRow }) {
     const { run } = ctx;
+    const taskId = fold ? "" : group.taskId;
     const body = (
         <>
             <SpineGlyph kind={group.head.kind} attention={group.attention} compact />
@@ -720,12 +730,19 @@ function SheetBurstRow({ ctx, group }: { ctx: SheetCtx; group: EventGroup }) {
             >
                 {eventTitle(group.head)}
             </span>
-            {group.taskId ? (
-                <span className="flex-none rounded bg-pill px-1.5 text-[10.5px] leading-4 text-ink-mid">
-                    {group.taskId}
+            {fold ? (
+                <span className="flex-none rounded-full bg-success/12 px-1.5 text-[10.5px] font-semibold leading-4 tabular-nums text-success">
+                    ×{fold.groups.length}
                 </span>
             ) : null}
-            <span className="ml-auto flex-none text-[10.5px] tabular-nums text-ink-mid">{groupTime(group)}</span>
+            {fold || group.taskId ? (
+                <span className="min-w-0 truncate rounded bg-pill px-1.5 text-[10.5px] leading-4 text-ink-mid">
+                    {fold ? taskRange(fold.groups.map((g) => g.taskId)) : group.taskId}
+                </span>
+            ) : null}
+            <span className="ml-auto flex-none text-[10.5px] tabular-nums text-ink-mid">
+                {fold ? rangeLabel(fold.first, fold.last, false) : groupTime(group)}
+            </span>
         </>
     );
     const rowClass = "relative flex w-full items-center gap-2 rounded-[6px] py-[3px] pl-[5px] pr-1.5 text-left";
@@ -735,9 +752,9 @@ function SheetBurstRow({ ctx, group }: { ctx: SheetCtx; group: EventGroup }) {
     return (
         <button
             type="button"
-            data-run-sheet-burst={group.taskId || undefined}
+            data-run-sheet-burst={taskId || undefined}
             title="Show in the DAG"
-            onClick={() => openRunSheetDag(run, group.taskId)}
+            onClick={() => openRunSheetDag(run, taskId)}
             className={cn(
                 rowClass,
                 "cursor-pointer hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent"
