@@ -9,6 +9,7 @@ import {
     isBareName,
     linkGesture,
     matchKnownPath,
+    matchListedPath,
     nearbyFolders,
     resolvePath,
     transcriptCwds,
@@ -210,6 +211,29 @@ describe("matchKnownPath", () => {
         expect(matchKnownPath("/huong_C/plan_C.md", known)).toBeNull();
         expect(matchKnownPath("../huong_C/plan_C.md", known)).toBeNull();
         expect(matchKnownPath("~/huong_C/plan_C.md", known)).toBeNull();
+    });
+});
+
+describe("matchListedPath", () => {
+    const files = [
+        "apps/portal/content/handbook/parsers/development.md",
+        "apps/portal/content/handbook/parsers/README.md",
+        "docs/README.md",
+    ];
+
+    it("finds the one listed file a path is the tail of, under the folder listed", () => {
+        expect(matchListedPath("handbook/parsers/development.md", "D:\\Workspace\\SIEM-parser", files)).toBe(
+            "D:/Workspace/SIEM-parser/apps/portal/content/handbook/parsers/development.md"
+        );
+        expect(matchListedPath("development.md", "D:/Workspace/SIEM-parser", files)).toBe(
+            "D:/Workspace/SIEM-parser/apps/portal/content/handbook/parsers/development.md"
+        );
+    });
+
+    it("gives up when several or none fit", () => {
+        expect(matchListedPath("README.md", "D:/w", files)).toBeNull();
+        expect(matchListedPath("handbook/other.md", "D:/w", files)).toBeNull();
+        expect(matchListedPath("../development.md", "D:/w", files)).toBeNull();
     });
 });
 

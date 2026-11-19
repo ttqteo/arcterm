@@ -38,6 +38,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - Claude Desktop's "Import Claude Code CLI sessions" no longer brings in the sessions an orchestrator run starts on its
   own (task workers, reviewers, judges), so its Code sidebar keeps the conversations you had; a run's lead and a quick
   run are still imported.
+- A file link in Chat that names only the end of a path (`handbook/parsers/development.md` for
+  `apps/portal/content/handbook/parsers/development.md`) now opens when exactly one file in the agent's repo ends that
+  way, even if the agent read it through a shell command, instead of saying "File not found".
 
 ## 1.6.1 — 2026-11-19
 

@@ -306,6 +306,17 @@ export function matchKnownPath(p: string, known: readonly string[]): string | nu
     return found;
 }
 
+// the one file of a folder's listing (paths relative to `cwd`, as git lists them) that a relative path names the tail
+// of, absolute, or null when none or several do. An agent that read a file through a shell command
+// (`sed -n 1,40p apps/portal/content/handbook/x.md`) names it by its end, and no tool of its touched it
+export function matchListedPath(p: string, cwd: string, files: readonly string[]): string | null {
+    const hit = matchKnownPath(
+        p,
+        files.map((f) => `/${f}`)
+    );
+    return hit == null ? null : resolvePath(cwd, hit.slice(1));
+}
+
 // Pure: the other folders an agent's shell has worked in, from its transcript's raw lines, the most recent first, once
 // each, without `cwd`. Claude Code writes the shell's cwd on each line, and it moves when a Bash command cds, so a
 // relative path the agent names after `cd sub; ls docs/` is under `sub`, not its own cwd. Lines with no cwd add none.

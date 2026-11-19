@@ -16,6 +16,11 @@ list (its number is not reused).
 Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) ·
 [part 4](hand-checks-4.md) · [part 3](hand-checks-3.md) · [part 2](hand-checks-2.md) (oldest).
 
+- [ ] (arcterm) **A Chat file link that names only a path's end opens** (`pathlinkroute.ts` listedMatch,
+  `pathlinks.ts` matchListedPath). In the SIEM-parser agent's "Bàn giao SIEM-1759" turn, click
+  `handbook/parsers/development.md`: it opens `apps/portal/content/handbook/parsers/development.md` in the agent's panel
+  instead of toasting "File not found". The first click in a repo with no kept listing waits on a git walk.
+  Commit: fix/pathlink-listing.
 - [ ] (arcterm) **Focus read's J/K glide** (`chatfocusreadview.ts` glide, `chatfocusread.ts` glideStep). In a long
   real conversation, turn on Focus read and tap J quickly, then hold it: the scroll moves on the first frame and keeps
   its pace through the presses, never easing to a stop at each block; a wheel scroll mid-glide takes over at once.
