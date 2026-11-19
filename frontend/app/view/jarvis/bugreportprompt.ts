@@ -7,7 +7,7 @@
 // (docs/superpowers/specs/2026-11-19-bug-report-design.md, "Process"). Pure.
 
 // what the prompt reads off a report (a wshrpc BugReport: Dir and HasScreen are the wire's, never in report.json)
-export type BugReportForPrompt = Pick<BugReport, "id" | "dir" | "text" | "surface" | "agent" | "hasscreen">;
+export type BugReportForPrompt = Pick<BugReport, "id" | "dir" | "text" | "surface" | "agent" | "hasscreen" | "region">;
 
 export interface BugReportPromptInput {
     repoPath: string; // arcterm's own checkout, where the agent runs
@@ -33,9 +33,12 @@ function reportBlock(r: BugReportForPrompt): string {
     const where = [r.surface ? `surface ${r.surface}` : "", r.agent?.name ? `agent in focus: ${r.agent.name}` : ""]
         .filter((s) => s !== "")
         .join(", ");
-    const files = ["report.json", r.hasscreen ? "screen.png" : "(no screen.png: the capture failed)", "log.txt"].join(
-        ", "
-    );
+    const screen = !r.hasscreen
+        ? "(no screen.png: the capture failed)"
+        : r.region != null
+          ? `screen.png (the person framed ${r.region.w}x${r.region.h} px at ${r.region.x},${r.region.y})`
+          : "screen.png";
+    const files = ["report.json", screen, "log.txt"].join(", ");
     return [
         `- ${r.id}`,
         `  folder: ${slash(r.dir ?? "")}`,
@@ -70,7 +73,7 @@ export function bugReportPrompt(input: BugReportPromptInput): string {
         "Each folder holds:",
         "",
         "- `report.json`: what the person typed (`text`), when (`ts`, unix ms), the app `version` and `commit`, the `surface` and the `agent` in focus at the press, and the report's `state`.",
-        "- `screen.png`: the window at the moment of the press. Look at it: the Read tool shows images.",
+        "- `screen.png`: the window at the moment of the press. Look at it: the Read tool shows images. When `report.json` has a `region`, the person framed where it went wrong: a rectangle in the accent colour is drawn on the picture there (`region` gives it in the picture's pixels). Start from what it frames.",
         "- `log.txt`: arcterm's log, the five minutes before the press and what was logged while the person typed. The tail is what explains the press.",
         "",
         "Read the folders, then read the code they point at in the repo. Do not guess at a cause you have not seen.",

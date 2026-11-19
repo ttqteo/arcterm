@@ -4,6 +4,8 @@
 //
 //   Task 4 — bug-report-box: the box opens from the footer button and from Ctrl+Alt+R, shows the thumbnail and the text
 //            box, sends, and the count rises.
+//   Step 7 — Khoanh vùng (canvas bug-report, boards Region-1-box, Region-2-select, Region-3-marked): the picture over the
+//            window, a dragged rectangle, Enter back to the box with the region in the thumb, and a save that keeps it.
 //
 // This file landed empty with the wire (Task 1) so Task 4 adds its scenario here and never edits scenarios.mjs.
 // `kit` is scenarios.mjs's RUN_START_KIT (see scenarios-run-start-choice.mjs for what it holds); this scenario needs none
@@ -265,6 +267,82 @@ const bugReportBoxScenario = () => ({
                 shownAgain,
                 waitingAttr: f6.waitingAttr,
                 waitingText: f6.waitingText,
+            })
+        );
+        await reset(h);
+
+        // 7. Khoanh vùng: a picture the page draws itself (so the region's scale is known), the button under the thumb,
+        //    the picture over the window, a drag, Enter, the region in the thumb, and a save that keeps it in report.json
+        await h.ev(`window.__bugReportCaptureFake = () => new Promise((resolve) => {
+            const c = document.createElement('canvas');
+            c.width = innerWidth * devicePixelRatio;
+            c.height = innerHeight * devicePixelRatio;
+            const g = c.getContext('2d');
+            g.fillStyle = '#2a2a2a';
+            g.fillRect(0, 0, c.width, c.height);
+            c.toBlob(resolve, 'image/png');
+        }); true`);
+        await h.ev(`${BUTTON}?.click()`);
+        const shown7 = await boxShown(h);
+        const startShown = await waitFor(h, `${BOX}?.querySelector('[data-bug-report-region-start]') != null`, 5000);
+        await h.shot("cdp-shots/bug-report-box-7-region-button.png");
+        await h.ev(`${BOX}?.querySelector('[data-bug-report-region-start]')?.click()`);
+        const picker = await waitFor(h, `document.querySelector('[data-bug-report-picker]') != null`, 3000);
+        const boxHidden = await h.ev(`!(${BOX}?.checkVisibility() ?? false)`);
+        const mouse = (type, x, y, buttons) =>
+            h.cdp("Input.dispatchMouseEvent", { type, x, y, button: "left", buttons, clickCount: type === "mouseMoved" ? 0 : 1 });
+        await mouse("mouseMoved", 300, 200, 0);
+        await mouse("mousePressed", 300, 200, 1);
+        await mouse("mouseMoved", 450, 240, 1);
+        await mouse("mouseMoved", 600, 280, 1);
+        await mouse("mouseReleased", 600, 280, 0);
+        await nap(200);
+        const rectAttr = await h.ev(`document.querySelector('[data-bug-report-picker-rect]')?.getAttribute('data-bug-report-picker-rect') ?? null`);
+        await h.shot("cdp-shots/bug-report-box-7-region-drag.png");
+        await h.ev(keydown("Enter", "Enter"));
+        const back = await waitFor(h, `document.querySelector('[data-bug-report-picker]') == null && (${BOX}?.checkVisibility() ?? false)`, 3000);
+        const dpr = await h.ev(`devicePixelRatio`);
+        const thumbRegion = await h.ev(`${BOX}?.querySelector('[data-bug-report-region]')?.getAttribute('data-bug-report-region') ?? null`);
+        const marked = await h.ev(`!!${BOX}?.querySelector('[data-bug-report-region-again]') && !!${BOX}?.querySelector('[data-bug-report-region-clear]')`);
+        await h.shot("cdp-shots/bug-report-box-7-region-marked.png");
+        const typed7 = `${TAG} a framed region`;
+        await h.ev(setText(typed7));
+        await nap(150);
+        await h.ev(CTRL_ENTER);
+        const closed7 = await boxGone(h);
+        const mine7 = (await listWaiting(h)).filter((r) => (r.text ?? "").startsWith(TAG));
+        for (const r of mine7) if (r.dir) ctx.dirs.push(r.dir);
+        const saved7 = mine7.find((r) => r.text === typed7);
+        const wantW = Math.round(300 * dpr);
+        const wantH = Math.round(80 * dpr);
+        rec(
+            "7. Khoanh vùng: the button under the thumb lays the picture over the window with the box hidden, a drag frames 300 × 80, Enter brings the box back with the region in the thumb and Khoanh lại / Bỏ vùng, and the saved report keeps the region in the picture's pixels with its screen.png",
+            shown7 &&
+                startShown &&
+                picker &&
+                boxHidden &&
+                rectAttr === "300x80" &&
+                back &&
+                thumbRegion === `${wantW}x${wantH}` &&
+                marked &&
+                closed7 &&
+                saved7 != null &&
+                saved7.hasscreen === true &&
+                saved7.region != null &&
+                saved7.region.w === wantW &&
+                saved7.region.h === wantH,
+            JSON.stringify({
+                shown7,
+                startShown,
+                picker,
+                boxHidden,
+                rectAttr,
+                back,
+                dpr,
+                thumbRegion,
+                marked,
+                closed7,
+                saved: saved7 && { id: saved7.id, hasscreen: saved7.hasscreen, region: saved7.region },
             })
         );
         return steps;

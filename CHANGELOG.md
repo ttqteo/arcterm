@@ -31,6 +31,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Added
 
+- The bug box can frame where it went wrong: Khoanh vùng under the picture lays the picture over the window, you drag a
+  rectangle and press Enter, and the report goes to Jarvis with that area framed on the picture.
 - The phone page's Computer section says whether the computer is **Locked** or **Unlocked** (Windows), and its Lock
   button rests while the screen is locked.
 - A message queued in Chat while Claude works has a **×** beside Send now: it takes the queued messages out of

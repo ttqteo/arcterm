@@ -7,7 +7,12 @@ import {
     anchorRight,
     buildSavePayload,
     canSend,
+    dragRect,
+    frameWidth,
+    MIN_REGION_PX,
     sentTitle,
+    thumbCrop,
+    toImageRegion,
     waitingLabel,
     type BugReportOpen,
 } from "./bugreportboxmodel";
@@ -16,6 +21,9 @@ function open(over: Partial<BugReportOpen> = {}): BugReportOpen {
     return {
         kind: "open",
         capture: null,
+        captureSize: null,
+        region: null,
+        selecting: false,
         surface: "cockpit",
         agent: null,
         ts: 1_700_000_000_000,
@@ -133,5 +141,73 @@ describe("anchorRight", () => {
 
     it("falls back when there is no button on screen", () => {
         expect(anchorRight(null, 1280)).toBe(88);
+    });
+});
+
+describe("buildSavePayload and the region", () => {
+    const region = { x: 10, y: 20, w: 300, h: 64 };
+
+    it("sends the region with the picture it was framed on", () => {
+        expect(buildSavePayload(open({ region }), "AAAA", "1.3.0", "").region).toEqual(region);
+    });
+
+    it("sends no region without a picture, and none when nothing was framed", () => {
+        expect(buildSavePayload(open({ region }), undefined, "1.3.0", "").region).toBeUndefined();
+        expect("region" in buildSavePayload(open(), "AAAA", "1.3.0", "")).toBe(false);
+    });
+});
+
+describe("dragRect", () => {
+    const bounds = { w: 1000, h: 600 };
+
+    it("spans the drag whichever way it went", () => {
+        expect(dragRect({ x: 100, y: 50 }, { x: 400, y: 114 }, bounds)).toEqual({ x: 100, y: 50, w: 300, h: 64 });
+        expect(dragRect({ x: 400, y: 114 }, { x: 100, y: 50 }, bounds)).toEqual({ x: 100, y: 50, w: 300, h: 64 });
+    });
+
+    it("is cut to the window", () => {
+        expect(dragRect({ x: -40, y: 500 }, { x: 60, y: 900 }, bounds)).toEqual({ x: 0, y: 500, w: 60, h: 100 });
+    });
+
+    it("is null for a click or a sliver", () => {
+        expect(dragRect({ x: 10, y: 10 }, { x: 10, y: 10 }, bounds)).toBeNull();
+        expect(dragRect({ x: 10, y: 10 }, { x: 10 + MIN_REGION_PX - 1, y: 200 }, bounds)).toBeNull();
+        expect(dragRect({ x: 995, y: 10 }, { x: 1400, y: 200 }, bounds)).toBeNull();
+    });
+});
+
+describe("toImageRegion", () => {
+    it("scales from the window to the picture's pixels (a 1.5x screen)", () => {
+        expect(toImageRegion({ x: 100, y: 50, w: 300, h: 64 }, { w: 1000, h: 600 }, { w: 1500, h: 900 })).toEqual({
+            x: 150,
+            y: 75,
+            w: 450,
+            h: 96,
+        });
+    });
+
+    it("keeps the region inside the picture", () => {
+        const r = toImageRegion({ x: 990, y: 590, w: 10, h: 10 }, { w: 1000, h: 600 }, { w: 1000, h: 600 });
+        expect(r.x + r.w).toBeLessThanOrEqual(1000);
+        expect(r.y + r.h).toBeLessThanOrEqual(600);
+    });
+});
+
+describe("frameWidth", () => {
+    it("is 3 CSS px at the picture's scale, never under 2", () => {
+        expect(frameWidth({ w: 2000, h: 1200 }, { w: 1000, h: 600 })).toBe(6);
+        expect(frameWidth({ w: 500, h: 300 }, { w: 1000, h: 600 })).toBe(2);
+    });
+});
+
+describe("thumbCrop", () => {
+    it("scales the picture so the region fills the thumb, centred", () => {
+        // a 300x64 region in a 96x60 thumb: the height decides (60/64), the width overflows and is centred
+        const c = thumbCrop({ x: 100, y: 50, w: 300, h: 64 }, { w: 1000, h: 600 }, { w: 96, h: 60 });
+        const s = 60 / 64;
+        expect(c.width).toBeCloseTo(1000 * s);
+        expect(c.height).toBeCloseTo(600 * s);
+        expect(c.top).toBeCloseTo(-50 * s);
+        expect(c.left).toBeCloseTo((96 - 300 * s) / 2 - 100 * s);
     });
 });

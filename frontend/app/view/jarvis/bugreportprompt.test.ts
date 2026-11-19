@@ -49,6 +49,13 @@ describe("bugReportPrompt", () => {
         expect(p).toContain("files: report.json, (no screen.png: the capture failed), log.txt");
     });
 
+    it("names the region a report framed, and says how to read it", () => {
+        const framed = [{ ...two[0], region: { x: 120, y: 40, w: 300, h: 64 } }];
+        const p = bugReportPrompt({ repoPath: REPO, project: PROJECT, reports: framed });
+        expect(p).toContain("screen.png (the person framed 300x64 px at 120,40)");
+        expect(p).toContain("When `report.json` has a `region`, the person framed where it went wrong");
+    });
+
     it("fills the three commands with the repo and the project", () => {
         const p = bugReportPrompt({ repoPath: REPO, project: PROJECT, reports: two });
         expect(p).toContain('wsh runs start --mode orchestrator --project "D:/work/arcterm"');

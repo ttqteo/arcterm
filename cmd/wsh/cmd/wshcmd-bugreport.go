@@ -18,8 +18,8 @@ var bugReportCmd = &cobra.Command{
 	Use:   "bugreport",
 	Short: "list the arcterm bug reports the person saved, and mark the ones you finished",
 	Long: `Bug reports are what the person saves with the bug button in arcterm's footer: a folder under reports/ in the
-data dir holding report.json (id, text, version, surface, agent, state), screen.png (missing when the capture failed)
-and log.txt (the last minutes of waveapp.log).
+data dir holding report.json (id, text, version, surface, agent, region, state), screen.png (missing when the
+capture failed; a region the person framed is drawn on it) and log.txt (the last minutes of waveapp.log).
 
 A report is in one of three states:
   waiting   saved, no agent has taken it yet

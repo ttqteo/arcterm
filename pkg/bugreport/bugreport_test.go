@@ -180,6 +180,43 @@ func TestSaveWithoutAScreenshot(t *testing.T) {
 	}
 }
 
+func TestSaveKeepsTheRegionOnlyWithAPicture(t *testing.T) {
+	h := newHarness(t)
+	region := &wshrpc.BugReportRegion{X: 10, Y: 20, W: 300, H: 64}
+
+	d := h.data("framed")
+	d.Screen64 = base64.StdEncoding.EncodeToString(pngBytes)
+	d.Region = region
+	r, err := h.s.Save(d, h.logDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := readReportFile(t, r.Dir).Region; got == nil || *got != *region {
+		t.Fatalf("report.json region = %+v, want %+v", got, region)
+	}
+
+	// no picture to have drawn it on, or a region with no size: none is kept
+	for i, tc := range []struct {
+		screen string
+		region *wshrpc.BugReportRegion
+	}{
+		{"", region},
+		{base64.StdEncoding.EncodeToString(pngBytes), &wshrpc.BugReportRegion{X: 1, Y: 1, W: 0, H: 5}},
+	} {
+		d := h.data("no region")
+		d.Ts += int64(i+1) * 60_000
+		d.Screen64 = tc.screen
+		d.Region = tc.region
+		r, err := h.s.Save(d, h.logDir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := readReportFile(t, r.Dir).Region; got != nil {
+			t.Errorf("case %d: report.json kept region %+v", i, got)
+		}
+	}
+}
+
 func TestSaveAcceptsADataURLPicture(t *testing.T) {
 	h := newHarness(t)
 	d := h.data("a bug")
