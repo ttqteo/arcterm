@@ -103,13 +103,16 @@ func PressureFromLevel(level uint32) Pressure {
 // Commit alone is not pressure: with a pagefile Windows commits memory nothing has touched yet, and a dev box often
 // sits past its RAM with a quarter of it free, where reading warn started jobs one at a time for no reason. So under
 // the RAM, or past it with a tenth or more free, there is no reading and the free-RAM rule decides; past it with
-// under a tenth free the machine pages, so jobs start one at a time; past 130% with under a fifth free it stalls
-// (2026-10-14: 46 GB on 32 GB, 5.2 GB free, paged to a hard disk until Postgres hung).
+// under a tenth free the machine pages, so jobs start one at a time; past 130% with under a tenth free it is about to
+// stall. Critical took under a fifth free until 2026-11-19, after the 2026-10-14 stall (46 GB on 32 GB, 5.2 GB free,
+// paged to a hard disk until Postgres hung); the [paging] log of 11-16..11-19 (machinestats) showed no stall in 203
+// such minutes on this SSD box, with pagefile reads faster than in no-pressure minutes, and 158 of them had a tenth
+// or more free, so the fifth held jobs and runs for nothing. Pages in/s and read latency did not separate them.
 func PressureFromCommit(commit, phys, availPhys uint64) Pressure {
 	switch {
 	case phys == 0 || commit < phys:
 		return PressureUnknown
-	case commit*10 >= phys*13 && availPhys*5 < phys:
+	case commit*10 >= phys*13 && availPhys*10 < phys:
 		return PressureCritical
 	case availPhys*10 < phys:
 		return PressureWarn
