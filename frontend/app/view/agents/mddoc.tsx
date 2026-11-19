@@ -29,9 +29,12 @@ import { openFileInPanel, openRefInCode, railMdModeAtom } from "./agentrailstore
 import type { FileRef } from "./agentrailtabs";
 import type { AgentsViewModel } from "./agents";
 import type { AgentVM } from "./agentsviewmodel";
+import { chatFocusReadSizeAtom, DOC_READER_PREFIX, docFocusReadOnAtom, setDocFocusReadOn } from "./chatfocusreadstore";
+import { useFocusRead } from "./chatfocusreadview";
 import { OUTLINE_SELECTOR, OutlineRail } from "./docoutlineview";
 import { savedScroll, saveScroll } from "./filescroll";
 import { toggleTaskInFile } from "./filetabload";
+import { FocusReadPill } from "./focusreadpill";
 import { CardSlot, MdDocContext, type MdDocCtx } from "./mdcommentcards";
 import {
     blockForLine,
@@ -110,7 +113,12 @@ export function MdDoc({
     const frameRef = useRef<HTMLDivElement>(null);
     const scrollRef = useRef<HTMLDivElement>(null);
     const contentRef = useRef<HTMLDivElement>(null);
-    const [railOn, setRailOn] = useState(false);
+    // Focus read over this document: its reader is this agent's view of this file, so two tabs of one file stay apart
+    const focusRead = useAtomValue(docFocusReadOnAtom);
+    const focusReadSize = useAtomValue(chatFocusReadSizeAtom);
+    const focusTickRef = useRef<HTMLDivElement>(null);
+    const readerId = `${DOC_READER_PREFIX}${agent.id}:${fileRef.abs}`;
+    useFocusRead(readerId, scrollRef, focusTickRef, focusRead, false, focusReadSize, false, "doc");
     const doc = useMemo(() => splitFrontmatter(text), [text]);
     const offset = useMemo(() => bodyOffset(text, doc.body), [text, doc]);
     const fileLines = useMemo(() => text.split(/\r?\n/), [text]);
@@ -445,7 +453,8 @@ export function MdDoc({
                         setHover(null);
                         setHoverImg(null);
                     }}
-                    className={cn("relative pb-10 pt-4", railOn ? "pr-9" : "pr-[18px]")}
+                    // pr-9 always: the right lane holds the Focus read pill, and the outline rail when there is one
+                    className="relative pb-10 pr-9 pt-4"
                     style={{ paddingLeft: GUTTER }}
                 >
                     <div data-md-overlay aria-hidden className="pointer-events-none absolute inset-0">
@@ -454,10 +463,7 @@ export function MdDoc({
                                 key={m.kind}
                                 data-md-mark={m.kind}
                                 data-lines={m.lines}
-                                className={cn(
-                                    "absolute left-5 rounded-r-[4px] bg-surface-hover",
-                                    railOn ? "right-8" : "right-3"
-                                )}
+                                className="absolute left-5 right-8 rounded-r-[4px] bg-surface-hover"
                                 style={{ top: m.top - 4, height: m.height + 8 }}
                             >
                                 <div className="absolute inset-y-0 left-0 w-0.5 bg-accent" />
@@ -473,8 +479,9 @@ export function MdDoc({
                             />
                         ))}
                     </div>
-                    {/* positioned, and after the overlay, so the text paints over the marks' fill */}
-                    <div className="relative">
+                    {/* positioned, and after the overlay, so the text paints over the marks' fill; focus read walks
+                        its blocks (data-md-doc-body) */}
+                    <div data-md-doc-body className="relative">
                         <MdDocContext.Provider value={ctx}>
                             <Markdown
                                 text={doc.body}
@@ -548,14 +555,39 @@ export function MdDoc({
                     ) : null}
                 </div>
             </div>
-            {/* centred on the right edge, clear of the scrollbar; the text keeps pr-9 off it */}
+            {/* centred on the right edge, clear of the scrollbar and of the Focus read pill above it in the same lane;
+                the text keeps pr-9 off both */}
             <OutlineRail
                 rootRef={frameRef}
                 selector={OUTLINE_SELECTOR.markdown}
                 textKey={text}
-                onShown={setRailOn}
-                className="absolute right-2.5 top-1/2 z-10 max-h-[calc(100%-24px)] -translate-y-1/2"
+                className={cn(
+                    "absolute right-2.5 top-1/2 z-10 -translate-y-1/2",
+                    focusRead ? "max-h-[calc(100%-256px)]" : "max-h-[calc(100%-80px)]"
+                )}
             />
+            {/* Focus read, one switch for every markdown Preview (chatfocusreadstore.ts): the pill in the top of the
+                rail's lane, and the reading line's tick in the gutter, placed by useFocusRead. No Q: a document has no
+                chat box to quote into. */}
+            <FocusReadPill
+                readerId={readerId}
+                on={focusRead}
+                setOn={setDocFocusReadOn}
+                scrollRef={scrollRef}
+                onTitle={(keys) => `Focus read: on for every markdown file (${keys} or click to turn off)`}
+                offTitle={(keys) => `Focus read: read this document one block at a time (${keys})`}
+                quote={false}
+                className="right-2.5 top-2"
+            />
+            {focusRead ? (
+                <div
+                    ref={focusTickRef}
+                    data-chat-focus-line
+                    aria-hidden
+                    style={{ display: "none" }}
+                    className="pointer-events-none absolute z-10 h-[20px] w-[3px] -translate-y-1/2 rounded-full bg-accent"
+                />
+            ) : null}
         </div>
     );
 }

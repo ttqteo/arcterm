@@ -58,11 +58,16 @@ import { activeChannelRunsAtom } from "@/app/view/agents/channelsstore";
 import {
     chatFocusReadIdsAtom,
     conversationShown,
+    DOC_READER_PREFIX,
+    docFocusReadOnAtom,
     FOCUS_READ_KEYS,
     focusConversation,
     focusedConversationAgent,
+    focusedDoc,
+    focusedDocReader,
     focusReaderOf,
     focusReadOn,
+    setDocFocusReadOn,
     setFocusReadOn,
 } from "@/app/view/agents/chatfocusreadstore";
 import { focusChatBox, hasChatBox, interruptChat } from "@/app/view/agents/chatinsert";
@@ -669,7 +674,7 @@ export function buildGlobalBindings(model: AgentsViewModel): Binding[] {
             id: "chat-focus-read",
             keys: FOCUS_READ_KEYS,
             group: "Global",
-            label: "Focus read in Chat: one block at a time, the rest dimmed",
+            label: "Focus read in Chat or a markdown Preview: one block at a time, the rest dimmed",
             when: (ctx) => !ctx.modalOpen,
             run: () => toggleFocusRead(model),
         },
@@ -1325,6 +1330,12 @@ const inAgentTree = () =>
 // Chat on screen it passes (inside a terminal the key is the TUI's). From another surface (What's new's Try it) it turns
 // focus read on for the agent in focus and opens the Agent surface.
 function toggleFocusRead(model: AgentsViewModel): false | void {
+    // in a markdown Preview it is the documents' one switch, and the focus stays in the document
+    const doc = focusedDoc();
+    if (doc != null) {
+        setDocFocusReadOn(!globalStore.get(docFocusReadOnAtom));
+        return;
+    }
     const id = globalStore.get(model.focusIdAtom);
     if (globalStore.get(model.surfaceAtom) !== "agent") {
         if (id) {
@@ -1344,8 +1355,9 @@ function toggleFocusRead(model: AgentsViewModel): false | void {
 }
 
 // Focus read's keys act in the Chat conversation that holds the focus, while that agent has focus read on
-// (chatfocusreadstore.ts). The list is read first: with no agent reading, the DOM is never asked.
-const focusReadAgent = (): string | null => {
+// (chatfocusreadstore.ts), or in the markdown Preview that holds it while the documents' switch is on: the reader's id,
+// an agent's or DOC_READER_PREFIX + its file. The switches are read first: with nothing reading, the DOM is never asked.
+const focusReadChatAgent = (): string | null => {
     const ids = globalStore.get(chatFocusReadIdsAtom);
     if (ids.length === 0) {
         return null;
@@ -1353,12 +1365,16 @@ const focusReadAgent = (): string | null => {
     const id = focusedConversationAgent();
     return id != null && ids.includes(id) ? id : null;
 };
-const focusReadKeys = (ctx: KeyContext) =>
-    navigateStrict(ctx) &&
-    ctx.surface === "agent" &&
-    centerAtRest() &&
-    initiativePopoverClosed() &&
-    focusReadAgent() != null;
+const focusReadAgent = (): string | null => focusReadChatAgent() ?? focusedDocReader();
+const focusReadKeys = (ctx: KeyContext) => {
+    if (!navigateStrict(ctx) || !initiativePopoverClosed()) {
+        return false;
+    }
+    if (focusedDocReader() != null) {
+        return true;
+    }
+    return ctx.surface === "agent" && centerAtRest() && focusReadChatAgent() != null;
+};
 const agentNavStrict = (ctx: KeyContext) =>
     navigateStrict(ctx) && ctx.surface === "agent" && centerAtRest() && initiativePopoverClosed();
 // Library's Canvases tab shows the Canvas gallery, with keys of its own: the arrows, Enter and `/` on its grid, the arrows,
@@ -2207,7 +2223,11 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
                 if (id == null) {
                     return false;
                 }
-                setFocusReadOn(id, false);
+                if (id.startsWith(DOC_READER_PREFIX)) {
+                    setDocFocusReadOn(false);
+                } else {
+                    setFocusReadOn(id, false);
+                }
             },
         },
         {
@@ -2216,10 +2236,10 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
             group: "Agent",
             label: "Focus read: quote the lit block into the chat box",
             when: focusReadKeys,
-            // a step list or a card quotes nothing, and the key is still taken
+            // a step list or a card quotes nothing, and the key is still taken; a document has no Q, so q passes on
             run: () => {
                 const reader = focusReaderOf(focusReadAgent() ?? "");
-                if (reader == null) {
+                if (reader?.quote == null) {
                     return false;
                 }
                 reader.quote();

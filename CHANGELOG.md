@@ -30,6 +30,12 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ## Unreleased
 
+### Added
+
+- Focus read works in a markdown file's Preview too: the same pill at the top of its right edge (or Alt+R with the
+  document in focus) lights a few blocks at a time and dims the rest, and J and K step through them. One switch for
+  every markdown file, remembered.
+
 ### Changed
 
 - On Windows, heavy jobs and runs are held back for memory only once less than a tenth of the RAM is free, not a
