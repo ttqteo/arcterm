@@ -100,7 +100,7 @@ func (h *Hooks) End(block, key, text string, failed bool) {
 	}
 	e.ended = true
 	if !failed {
-		e.out = Parse(text, e.question, false).Replies
+		e.out = Parse(text, e.question)
 		e.ok = true
 	}
 	close(e.done)
