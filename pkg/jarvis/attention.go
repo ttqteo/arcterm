@@ -624,7 +624,7 @@ func chunkDueItems(efforts []*waveobj.Effort, today string) []wshrpc.AttentionIt
 
 // planReviewItems are the initiatives whose plan waits on the person: proposed chunks, not yet accepted or dropped.
 // The key names only the initiative, so accepting some of the chunks keeps the one item and its count moves.
-// A proposal whose "proposed" note names a run (ProposalRun) is left out: those are the run's leftover and show in To
+// A proposal whose ProposedNote names a run (ProposalRun) is left out: those are the run's leftover and show in To
 // review, so an initiative whose proposals are all run work raises nothing.
 func planReviewItems(efforts []*waveobj.Effort) []wshrpc.AttentionItem {
 	var out []wshrpc.AttentionItem
@@ -648,7 +648,7 @@ func planReviewItems(efforts []*waveobj.Effort) []wshrpc.AttentionItem {
 				since = c.UpdatedTs
 			}
 			for _, note := range c.Notes {
-				if note.Session != "" && note.Text == "proposed" && note.Ts >= proposedTs {
+				if note.Session != "" && note.Text == ProposedNote && note.Ts >= proposedTs {
 					proposer, proposedTs = note.Session, note.Ts
 				}
 			}
