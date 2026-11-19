@@ -183,6 +183,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 - Chat's suggested replies no longer vanish when you paste or attach an image: they stay above the box, and a click
   sends the reply with the image attached.
+- A split of No folder's agents and terminals shows as one split row in the Agent tree again, as every project's does,
+  instead of its cells staying separate rows.
 - Sidecar's Resources no longer sits on "Measuring…" with empty charts after arcterm restarts with Sidecar open, or
   after the main window reloads: it asks for its readings again instead of waiting to be closed and opened.
 - Chat's last line (the Working line above all) is no longer dimmed by the fade over the box: the fade shows only
