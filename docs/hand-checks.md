@@ -38,6 +38,9 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
 - [ ] (arcterm) **An opened command in Chat is in colour.** Open a Bash step in Chat: the `$ command` line draws the
   program in the keyword colour and its arguments in the string colour; a `sed -n …p x.ts` or `grep -n … x.tsx` step's
   output reads as code (keywords, strings, comments) with its `12:` line numbers dim; a test run's failing line is red.
+  Then Open full view on a long one (the modal) and look at the same step in the live feed: both coloured the same. A
+  Grep step's matches in a `.ts` file are highlighted, in a `.md` plain; a DAG task's Verify tail shows a failing
+  line red.
 - [ ] (arcterm) **A `.jsonl` file opens in colour.** Open one (a Claude transcript, an audit `.jsonl`): keys, strings,
   numbers and `true`/`false`/`null` in JSON's colours, and no red squiggle on line 2 onwards.
 

@@ -1,7 +1,7 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// How an opened command step in Chat (chatstepsview.tsx CommandDetail) colours its output. A command that prints
+// How a command's output is coloured where a view shows it (commandtext.tsx CommandOutput). A command that prints
 // source (`sed -n 40,80p x.ts`, `cat a.go`, `grep -n foo b.tsx`) runs with no terminal, so its output carries no
 // colour of its own: it is drawn as code, each line's location (`12:`, `src/a.ts:12:`, `cat -n`'s `    12\t`) dim
 // in front of the highlighted text. Any other output goes to OutputLines (its ANSI colours, or the tones its text
@@ -15,6 +15,11 @@ const READER = /(?:^|[;&|(]\s*|\bxargs\s+)(?:cat|sed|head|tail|grep|egrep|rg|nl|
 // a source file named on the command line: a code extension at a word's end (`a.ts`, `"x/b.go"`, `c.tsx:12`)
 const CODE_FILE =
     /\.(?:tsx?|jsx?|mjs|cjs|go|rs|py|java|kt|swift|c|h|cc|cpp|hpp|cs|rb|php|sh|bash|ps1|css|scss|json|jsonl|ya?ml|toml|sql|html|vue|svelte|astro|lua|zig)(?::\d+)?(?=$|[\s"'),;|*])/i;
+
+/** Pure: whether the text names a source file (`src/a.ts`, `b.go:12`), so a line from it is drawn as code. */
+export function namesCodeFile(text: string): boolean {
+    return CODE_FILE.test(text);
+}
 
 /** Pure: whether the command prints source code, so its output is drawn as code. */
 export function readsCode(command: string): boolean {

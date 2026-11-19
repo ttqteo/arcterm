@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it } from "vitest";
-import { codeOutputLine, readsCode, splitLocation } from "./stepoutput";
+import { codeOutputLine, namesCodeFile, readsCode, splitLocation } from "./stepoutput";
 
 describe("readsCode", () => {
     it("is true for a command that prints a source file", () => {
@@ -20,9 +20,24 @@ describe("readsCode", () => {
     });
 });
 
+describe("namesCodeFile", () => {
+    it("is true for a grep location in a source file", () => {
+        expect(namesCodeFile("frontend/app/x.tsx:12")).toBe(true);
+        expect(namesCodeFile("D:\\x\\a.go:7")).toBe(true);
+    });
+
+    it("is false for prose and an empty location", () => {
+        expect(namesCodeFile("docs/notes.md:3")).toBe(false);
+        expect(namesCodeFile("")).toBe(false);
+    });
+});
+
 describe("splitLocation", () => {
     it("takes grep's line number, with or without a path", () => {
-        expect(splitLocation("12:export function insertAt(")).toEqual({ loc: "12:", code: "export function insertAt(" });
+        expect(splitLocation("12:export function insertAt(")).toEqual({
+            loc: "12:",
+            code: "export function insertAt(",
+        });
         expect(splitLocation("src/a.ts:30:const x = 1;")).toEqual({ loc: "src/a.ts:30:", code: "const x = 1;" });
         expect(splitLocation("D:\\x\\a.ts:7:let y")).toEqual({ loc: "D:\\x\\a.ts:7:", code: "let y" });
         expect(splitLocation("a.ts-8-  context line")).toEqual({ loc: "a.ts-8-", code: "  context line" });
