@@ -563,7 +563,7 @@ export function ChatLayer({ model, agent, barred }: { model: AgentsViewModel; ag
 const DOCK_BOTTOM = 20;
 const DOCK_MARGIN = 16;
 // how far above the dock's top the conversation fades out; under the dock the fade is solid, so nothing reads through
-// the strips, the summary line or the chips over the box
+// the strips or the chips over the box
 const DOCK_FADE = 72;
 
 // The scroller's bottom padding = the dock's height (the box, and the goal strip above it) + its 20px from the bottom + a
@@ -573,7 +573,7 @@ const DOCK_FADE = 72;
 // re-pins a stuck tail on, so the tail rides the box as it grows; a reader scrolled up is left where they are. The
 // observer's writes wait a frame: a write inside its own callback would loop the observers.
 // The fade under the dock is written the same way: as tall as the dock plus DOCK_FADE, solid from DOCK_FADE down, so a
-// dock grown by the usage strip, a summary line and the chips never stands over the conversation's text.
+// dock grown by the usage strip and the chips never stands over the conversation's text.
 function useDockPadding(
     scrollRef: RefObject<HTMLDivElement | null>,
     dockRef: RefObject<HTMLDivElement | null>,
@@ -1212,6 +1212,7 @@ function ChatPaneBody({ model, agent, barred }: { model: AgentsViewModel; agent:
                                     model={model}
                                     agent={agent}
                                     cwd={cwd}
+                                    summary={chips !== undefined && long ? turnSummary(modelSuggest) : undefined}
                                 />
                             </AgentPathLinks>
                         </ChatVisualHost>
@@ -1386,7 +1387,7 @@ function ChatPaneBody({ model, agent, barred }: { model: AgentsViewModel; agent:
                             }}
                             onOpenTerminal={() => setChatMode(agent.id, "terminal")}
                         />
-                        {/* the account's usage-limit warning, above the summary line and the chips (it is about the account,
+                        {/* the account's usage-limit warning, above the chips (it is about the account,
                             not the turn); only a Claude agent shown in Chat has one */}
                         <ChatLimitStrip model={model} agent={agent} />
                         <ChatComposer
@@ -1398,7 +1399,6 @@ function ChatPaneBody({ model, agent, barred }: { model: AgentsViewModel; agent:
                             onBoxState={setBoxNow}
                             onShowDiff={() => openDiff(model, agentDiffScope(agent.id, agent.name))}
                             chips={chips}
-                            summary={chips !== undefined && long ? turnSummary(modelSuggest) : undefined}
                             onMarkDone={markDone}
                             onClose={() => confirmCloseSession(agent, model, "chat chip")}
                             onGoOn={goOn}

@@ -3,10 +3,10 @@
 //
 //   chat-summary-line: a finished turn whose closing reply is over 1,200 characters asks the model call for a summary too
 //   (`summary: true` in what window.__chatSuggestFake is asked), and the line it answers with draws as [data-chat-summary]
-//   directly above the suggested chips, with or without a chip; a chip sent takes it away with the row; a short turn asks
-//   for none and draws none.
+//   in the conversation, under the last reply (not in the dock over the box), with or without a chip; a chip sent takes
+//   it away with the row; a short turn asks for none and draws none.
 //
-//   chat-limit-strip: [data-chat-limit-strip] above the summary line, the chips and the box, for the weekly window at 80%
+//   chat-limit-strip: [data-chat-limit-strip] above the chips and the box, for the weekly window at 80%
 //   or more (data-chat-limit-window="week", the 5-hour reading in the same line when it is past too) or the 5-hour at 90%
 //   or more ("fivehour"); with a second account it names the one the agent runs on ([data-chat-limit-account]) and offers
 //   [data-chat-limit-switch] to the one with the most room; the Switch writes claude:activeaccount and this agent's
@@ -304,7 +304,9 @@ export default function (kit) {
             const S = ctx.tabs.short.tabId;
             await h.cdp("Emulation.setFocusEmulationEnabled", { enabled: true });
 
-            // the summary line and the chips of one agent's Chat, as drawn, with where each sits
+            // the summary line and the chips of one agent's Chat, as drawn, with where each sits: the line's own text (less its
+            // "Summary" label), whether it is the conversation's (under its last item) and not the dock's, and each chip's
+            // label (less the key it shows)
             const read = (id) =>
                 h.ev(`(() => {
                     const flat = ${FLAT};
@@ -312,10 +314,15 @@ export default function (kit) {
                     const layer = ${layerOf(id)};
                     const line = layer?.querySelector("[data-chat-summary]");
                     const chips = [...(layer?.querySelectorAll("[data-chat-suggest-chip]") ?? [])];
+                    const items = [...(layer?.querySelectorAll("[data-chat-conversation] [data-chat-item]") ?? [])];
                     return {
                         has: !!line,
-                        text: flat(line),
-                        chips: chips.map(flat),
+                        text: flat(line?.querySelector("span:last-child") ?? null),
+                        label: flat(line?.querySelector("span:first-child") ?? null),
+                        inConversation: !!line?.closest("[data-chat-conversation]"),
+                        inDock: !!line?.closest("[data-agent-chat-composer]"),
+                        lastItem: rect(items.at(-1)),
+                        chips: chips.map((b) => flat(b.querySelector("span.truncate") ?? b)),
                         line: rect(line),
                         chip: rect(chips[0]),
                         box: rect(layer?.querySelector("[data-chat-box]")),
@@ -325,8 +332,9 @@ export default function (kit) {
             const asked = (start) =>
                 h.ev(`(window.__suggestCardAsked ?? []).filter((d) => d.reply.startsWith(${JSON.stringify(start.slice(0, 30))})).map((d) => ({ summary: d.summary, question: d.question, len: d.reply.length }))`);
 
-            // 1. a long turn with a chip: the call asked for a summary, and its line stands above the chip, in muted text
-            await run("1. a long turn's summary above its chip", async (name) => {
+            // 1. a long turn with a chip: the call asked for a summary, and its line stands under the last reply, in the
+            // conversation, above the chip and the box
+            await run("1. a long turn's summary under its reply", async (name) => {
                 await AC.focusAgent(h, L);
                 const up = await polishWaitFor(h, `!!${layerOf(L)}?.querySelector("[data-chat-summary]") && !!${layerOf(L)}?.querySelector("[data-chat-suggest-chip]")`, WAIT_MS);
                 await polishNap(500);
@@ -334,11 +342,16 @@ export default function (kit) {
                 const asks = await asked(LONG_A);
                 await shot(h, "summary-1-with-chip");
                 rec(
-                    `${name}: the call was asked with summary:true, [data-chat-summary] reads the model's line and sits above the [data-chat-suggest-chip] "${CHIP_A}", which sits above the box`,
+                    `${name}: the call was asked with summary:true, [data-chat-summary] reads Summary and the model's line, in [data-chat-conversation] under its last item and not in the dock, above the [data-chat-suggest-chip] "${CHIP_A}", which sits above the box`,
                     up &&
                         asks.length === 1 &&
                         asks[0].summary === true &&
                         got.text === SUMMARY_A &&
+                        got.label === "Summary" &&
+                        got.inConversation &&
+                        !got.inDock &&
+                        got.lastItem != null &&
+                        got.lastItem.bottom <= got.line.top &&
                         got.chips.length === 1 &&
                         got.chips[0] === CHIP_A &&
                         got.line.bottom <= got.chip.top &&
@@ -357,7 +370,7 @@ export default function (kit) {
                 await shot(h, "summary-2-no-chip");
                 rec(
                     `${name}: the call was asked with summary:true, [data-chat-summary] reads the line and no [data-chat-suggest-chip] stands under it, above the box`,
-                    up && asks.length === 1 && asks[0].summary === true && got.text === SUMMARY_B && got.chips.length === 0 && got.line.bottom <= got.box.top,
+                    up && asks.length === 1 && asks[0].summary === true && got.text === SUMMARY_B && got.inConversation && !got.inDock && got.chips.length === 0 && got.line.bottom <= got.box.top,
                     { up, asks, got }
                 );
             });
