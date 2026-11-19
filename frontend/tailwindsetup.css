@@ -943,6 +943,11 @@ html[data-md-selection]::selection {
     background: rgba(255, 255, 255, 0.06);
     padding: 0 3px;
     border-radius: 3px;
+    /* a long path or command has no spaces to break at: wrap it anywhere rather than run out of the bubble */
+    overflow-wrap: anywhere;
+    /* each wrapped line keeps its own padding and rounded ends */
+    -webkit-box-decoration-break: clone;
+    box-decoration-break: clone;
 }
 /* a code span the selection takes in (selectionpaint.ts): the band alone shows, one shade over the span and the words
    beside it */

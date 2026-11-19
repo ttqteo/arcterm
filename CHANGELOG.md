@@ -48,6 +48,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - In a narrow Chat, the text keeps clear of the Focus read and Skim buttons in the corner instead of running under them.
 - A file opened from a turn's Edited files card shows its change even once it is committed: its Diff shows the newest
   commit that changed it, named above the diff, instead of "No change since the last commit".
+- A long path or command in a Chat reply shows in full, wrapped over as many lines as it needs, instead of being cut
+  off with "…" on a line of its own.
 
 ## 1.6.1 — 2026-11-19
 

@@ -16,6 +16,12 @@ list (its number is not reused).
 Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) ·
 [part 4](hand-checks-4.md) · [part 3](hand-checks-3.md) · [part 2](hand-checks-2.md) (oldest).
 
+- [ ] (arcterm) **A long path in a Chat reply wraps in full** (`markdownmessage.tsx` code → `PathLink wrap`,
+  `tailwindsetup.css` `.agent-md code`). Ask an agent for a reply naming a long backticked Windows path mid-sentence:
+  it continues on the same line as the words before it and wraps over several lines, with no "…", and the full stop
+  after it stays on its last line. Hover underlines it, click opens it beside the agent, right-click shows Open /
+  Reveal / Copy path, and drag-selecting through it still copies it. Only a test path's wrapping was measured in the
+  dev app (3 lines in 300px); the link itself was not tried.
 - [ ] (arcterm) **The Agent panel's tabs are pills** (`agentrailpanel.tsx` TAB, RailFileTab). Open an agent's panel
   and a file in it: the tab on show is a filled pill, the others bare until hovered, centred in the 44px band; on
   File the file pills shrink and scroll as before, and a file's × is a round button inside its pill. Not tried in the

@@ -51,11 +51,14 @@ export function PathLink({
     path,
     line,
     className,
+    wrap,
     children,
 }: {
     path: string;
     line?: number;
     className?: string;
+    // flow inline and wrap with the text around it, in place of one line cut to an ellipsis
+    wrap?: boolean;
     children: ReactNode;
 }) {
     const opener = usePathOpener();
@@ -105,9 +108,10 @@ export function PathLink({
                     e
                 )
             }
-            // inline-block as the <button> was, so `truncate` still cuts a long path to an ellipsis
+            // inline-block as the <button> was, so `truncate` still cuts a long path to an ellipsis; `wrap` flows it inline
             className={cn(
-                "inline-block min-w-0 cursor-pointer truncate select-text hover:text-accent-soft hover:underline",
+                wrap ? "inline" : "inline-block min-w-0 truncate",
+                "cursor-pointer select-text hover:text-accent-soft hover:underline",
                 className
             )}
         >
