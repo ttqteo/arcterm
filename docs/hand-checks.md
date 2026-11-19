@@ -16,6 +16,14 @@ list (its number is not reused).
 Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) ·
 [part 4](hand-checks-4.md) · [part 3](hand-checks-3.md) · [part 2](hand-checks-2.md) (oldest).
 
+- [ ] (arcterm) **Charts in a council's saved report, and the bench rejudged** (`pkg/council/charts.go`,
+  `pkg/council/bench/chart.go`, `pkg/council/bench/rejudge.go`). Open the next finished Review council's document from
+  Library: "At a glance" draws D1…Dn in the quadrant ahead of the directions, and under Run facts the token bars, the
+  look-up bars (three nested layers) and the swimlane draw in arcterm's own markdown view, in a dark theme too. Every
+  block was parsed and rendered with the repo's mermaid 11 in headless Edge on council 4e9f4589 and the real bench
+  results; arcterm's viewer and themes were not tried. Then `wsh council bench rejudge --dry-run` lists 10 reports;
+  `wsh council bench rejudge` judges them (about 0.1–0.2M tokens), and `wsh council bench results` shows recall@all on
+  the council rows, `--chart` the two quadrants.
 - [ ] (arcterm) **A council's price on the Token burn card is the measured one** (`pkg/council/calibrate.go`,
   `CouncilEstimateCommand`, `councilmodel.ts` estimateLabel, `skills/council/SKILL.md`; council self-review fixes). After
   two finished councils, ask a Claude agent for a third ("hỏi council"): it quotes `wsh council estimate`, and the Token
