@@ -300,7 +300,28 @@ type CommandJarvisStateRtnData struct {
 type WorkState struct {
 	Projects []ProjectWork   `json:"projects,omitempty"`
 	Efforts  []EffortSummary `json:"efforts,omitempty"`
-	Sources  SourceHealth    `json:"sources"`
+	// RunReview is To review: the chunks runs' leads proposed, grouped by the run that proposed them. Groups are
+	// oldest run first.
+	RunReview []RunReviewGroup `json:"runreview,omitempty"`
+	Sources   SourceHealth     `json:"sources"`
+}
+
+// RunReviewGroup is one run's proposed chunks waiting on the person. Items are oldest proposal first.
+type RunReviewGroup struct {
+	RunId     string          `json:"runid"`
+	ChannelId string          `json:"channelid"`
+	Goal      string          `json:"goal"`
+	CreatedTs int64           `json:"createdts"`
+	Items     []RunReviewItem `json:"items"`
+}
+
+// RunReviewItem is one proposed chunk of a RunReviewGroup. The chunk is named by EffortOID and Label.
+type RunReviewItem struct {
+	EffortOID   string `json:"effortoid"`
+	EffortTitle string `json:"efforttitle"`
+	Project     string `json:"project,omitempty"` // the initiative's project; "" = fits any
+	Label       string `json:"label"`
+	ProposedTs  int64  `json:"proposedts"`
 }
 
 type ProjectWork struct {

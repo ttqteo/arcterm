@@ -256,6 +256,14 @@ import {
     reviewQueueAtom,
     setReviewCursor,
 } from "./reviewstore";
+import { RunReviewSheet, RunReviewStrip } from "./runreviewsheet";
+import {
+    runReviewListedAtom,
+    runReviewNavAtom,
+    runReviewOpenAtom,
+    setRunReviewCursor,
+    useRunReviewSettling,
+} from "./runreviewstore";
 import { loadTaskList, taskListAtom } from "./tasksstore";
 import { WaitingStrip } from "./waitingstrip";
 
@@ -642,6 +650,10 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
     useEffect(() => {
         loadBriefing();
     }, []);
+    // To review's rows that went through Later or Drop stay out until a snapshot no longer lists them
+    useRunReviewSettling(snapshot?.state.runreview);
+    // the proposals To review lists: an initiative row counts only the proposed chunks outside it (briefrows.ts)
+    const reviewListed = useAtomValue(runReviewListedAtom);
 
     // DEV-only: the resource-linking scenario's seams (linkingdevhooks.ts)
     useEffect(() => {
@@ -1022,7 +1034,14 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
         [showDone, doneShown, matches]
     );
     const listItems = useMemo(() => [...list.rows, ...doneItems, ...archivedItems], [list, doneItems, archivedItems]);
-    const ideaLines = useMemo(() => filterLines(ideaWindow.rows.map(initiativeLine), query), [ideaWindow, query]);
+    const ideaLines = useMemo(
+        () =>
+            filterLines(
+                ideaWindow.rows.map((c) => initiativeLine(c, reviewListed)),
+                query
+            ),
+        [ideaWindow, query, reviewListed]
+    );
 
     // --- Activity: Runs and Councils merged (briefactivity.ts) -----------------------------------------------------
     const councilList = useCouncils("");
@@ -1196,9 +1215,14 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
         () => [...activity.live, ...activity.earlier, ...(foldOpen(staleOpen, query) ? activity.older : [])],
         [activity, staleOpen, query]
     );
+    // With To review's sheet open, j/k walk its rows and nothing under it, on a cursor of its own: the page's cursor
+    // stays where it was until the sheet closes.
+    const reviewOpen = useAtomValue(runReviewOpenAtom);
+    const reviewNav = useAtomValue(runReviewNavAtom);
     const navIds = useMemo(
         () =>
             briefNavIds({
+                review: reviewOpen ? reviewNav.keys : undefined,
                 strip: mainShown
                     ? strip.rows.length > 0
                         ? strip.rows.map((l) => l.id)
@@ -1215,6 +1239,8 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
                 later: only == null ? laterWindow.rows.map((r) => r.navId) : [],
             }),
         [
+            reviewOpen,
+            reviewNav.keys,
             mainShown,
             sideShown,
             only,
@@ -1230,8 +1256,11 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
         ]
     );
 
-    const cursor = resolveBriefCursor(navIds, storedCursor);
-    const setCursor = useCallback((id: string) => setStoredCursor(id), [setStoredCursor]);
+    const cursor = resolveBriefCursor(navIds, reviewOpen ? reviewNav.cursor : storedCursor);
+    const setCursor = useCallback(
+        (id: string) => (reviewOpen ? setRunReviewCursor(id) : setStoredCursor(id)),
+        [reviewOpen, setStoredCursor]
+    );
 
     const sheetOpen = useAtomValue(briefSheetOpenAtom);
     const councilSheet = useAtomValue(councilSheetAtom);
@@ -1391,10 +1420,11 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
                           navigableIds: navIds,
                           cursorId: cursor,
                           setCursor,
-                          activate: sheetOpen || cursor == null ? undefined : activateCursor,
-                          peekTarget: sheetOpen ? undefined : () => lineOpenTarget(cursorTarget),
+                          // a To review row opens nothing: Enter and Space pass through
+                          activate: sheetOpen || reviewOpen || cursor == null ? undefined : activateCursor,
+                          peekTarget: sheetOpen || reviewOpen ? undefined : () => lineOpenTarget(cursorTarget),
                       },
-            [runNav, navIds, cursor, setCursor, openLine, sheetOpen, activateCursor, cursorTarget]
+            [runNav, navIds, cursor, setCursor, openLine, sheetOpen, reviewOpen, activateCursor, cursorTarget]
         )
     );
     // the regions scroll as one page, so a cursor moved off-screen has to be brought back
@@ -1650,7 +1680,7 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
                     if (oref === pass.current) {
                         return <ReviewOpenInitiative key={oref} model={model} card={card} since={reviewBodyOf(card)} />;
                     }
-                    const line = initiativeLine(card);
+                    const line = initiativeLine(card, reviewListed);
                     const marked = review != null && reviewedInSession(reviewed, oref, review.startedAt);
                     const live = liveCards.get(oref);
                     return (
@@ -2012,6 +2042,9 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
                             >
                                 {mainShown ? (
                                     <div data-jarvis-brief-main className="flex min-w-0 flex-col gap-5">
+                                        {/* what the runs left to be reviewed: absent with none, above Waiting (spec
+                                        2026-11-19-run-followups-visible-design.md decision 9) */}
+                                        <RunReviewStrip />
                                         {/* nothing waiting is said once, by the header chip: the strip comes back
                                         with the first gate or ask */}
                                         <WaitingStrip
@@ -2600,6 +2633,8 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
             {/* the detail sheet, drawing the surface's active subject: a channel's run body (or its launcher), an
                 initiative (initiativesheet.tsx), a council's report or a queued plan. */}
             <BriefSheet model={model} />
+            {/* To review's sheet: the strip above the Waiting strip opens it */}
+            <RunReviewSheet model={model} />
             {/* keyed by project so an open on a named project starts there, not on the last one picked */}
             <BriefProfileModal
                 key={profileTarget ?? ""}

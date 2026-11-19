@@ -433,6 +433,10 @@
     --zoomfactor: 1;
     --zoomfactor-inv: 1;
 
+    /* The To review sheet's width (runreviewsheet.tsx): the Brief's undo toast reads it too (brieftoast.tsx), to sit
+       in the part of the page left of the sheet while it is open. One value, so the two cannot drift apart. */
+    --run-review-sheet-w: min(560px, 92vw);
+
     /* Compat: the terminal search's SCSS (search.scss) reads these vars, which used to come from the Electron-era
        theme.scss (deleted 2026-08-14). Map to the @theme tokens. */
     --modal-bg-color: var(--color-surface-raised);

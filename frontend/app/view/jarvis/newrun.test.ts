@@ -256,4 +256,18 @@ describe("prefillToLaunch", () => {
         expect(out.specPath).toBeUndefined();
         expect(out.brainstorm).toBeUndefined();
     });
+
+    it("carries the To review chunks the start works", () => {
+        const chunks = [
+            { effortoid: "eff-1", chunklabel: "Fix the lag" },
+            { effortoid: "eff-2", chunklabel: "Hand-check the sheet" },
+        ];
+        expect(prefillToLaunch({ projectName: "p", goal: "g", shape: "orchestrator", chunks }, ["p"]).chunks).toEqual(
+            chunks
+        );
+    });
+
+    it("carries no chunks for a prefill that has none", () => {
+        expect(prefillToLaunch({ projectName: "p", goal: "g", shape: "quick" }, ["p"]).chunks).toBeUndefined();
+    });
 });

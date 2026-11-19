@@ -14,12 +14,13 @@ cockpit's briefing surfaces them as cards with an inline chunk tracker.
 At design approval (or when a task decomposes into 3+ ordered phases), create one tracker:
 
 ```bash
-wsh effort create "<title>" --chunk "<phase 1>" --chunk "<phase 2>" [--project X] [--ticket T] [--parent <oid>]
+wsh effort create "<title>" --chunk "<phase 1>" --chunk "<phase 2>" [--project X] [--ticket T] [--parent <oid>] [--proposed]
 ```
 
 Seed chunks from the plan's phase list — one `--chunk` per line is the CLI form of the cockpit's
 paste-and-tick list. Ticked lines become `done`; chunks you plan but have not started stay
-`pending` (never pre-mark done).
+`pending` (never pre-mark done). `--proposed` seeds them as proposals instead (they count once the
+person accepts them), as `chunk add --proposed` does: for chunks nobody asked for.
 
 The project defaults to the arcterm project holding the current directory; pass `--project` only when
 the effort belongs to another one.

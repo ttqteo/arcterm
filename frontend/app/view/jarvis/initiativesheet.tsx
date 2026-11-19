@@ -66,6 +66,7 @@ import { chunkRowId, initiativeRows, type DetailRow } from "./inlinetracker";
 import { IdeaDetail, InitiativeDetail, type TrackerEdits } from "./inlinetrackerview";
 import { briefInitiativeListAtom, initiativeSheetRequestAtom } from "./jarvisstore";
 import { openOrPeekAddress } from "./openref";
+import { runReviewListedAtom } from "./runreviewstore";
 import { STAGE_SCROLLER } from "./stagemeasure";
 
 export { openInitiativeChunk } from "./initiativesheetstore";
@@ -553,6 +554,7 @@ function PlanView({
     const { cursor, setCursor } = usePlanKeys(oref, state);
     const cards = useCards();
     const pendingDeletes = useAtomValue(pendingDeleteKeysAtom);
+    const listed = useAtomValue(runReviewListedAtom);
     const { subs, ideas } = linkedUnder(
         oref,
         cards.filter((c) => !pendingDeletes.has(effortKey(c.oref)))
@@ -573,6 +575,7 @@ function PlanView({
             <LinkedInitiatives
                 subs={subs}
                 ideas={ideas}
+                listed={listed}
                 onOpen={(c: EffortCardModel) => fireAndForget(() => openOrPeekAddress(model, c.oref))}
             />
         </>

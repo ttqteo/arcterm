@@ -364,7 +364,7 @@ func ApplyEffortOpsAs(e *waveobj.Effort, ops []wshrpc.EffortOp, cmdNote string, 
 			effortEvent(e, "chunk-added", op.Label, "", now)
 			// a proposed chunk keeps who proposed it, so its plan review opens that session (ProposerORef)
 			if status == "proposed" && by.Session != "" {
-				chunkNote(e, idx, "proposed", now, by)
+				chunkNote(e, idx, ProposedNote, now, by)
 			}
 		case "removeChunk":
 			idx, _ := ResolveChunkIndex(e, op.Chunk)

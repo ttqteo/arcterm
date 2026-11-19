@@ -5,8 +5,13 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/google/uuid"
 	"github.com/wavetermdev/waveterm/pkg/effortstore"
+	"github.com/wavetermdev/waveterm/pkg/jarvis"
+	"github.com/wavetermdev/waveterm/pkg/jarvisstate"
+	"github.com/wavetermdev/waveterm/pkg/waveobj"
 	"github.com/wavetermdev/waveterm/pkg/wshrpc"
+	"github.com/wavetermdev/waveterm/pkg/wstore"
 )
 
 func cleanupEffort(t *testing.T, oid string) {
@@ -43,6 +48,126 @@ func TestEffortCreateAndMutateRoundTrip(t *testing.T) {
 	}
 	if got.Effort.Chunks[0].Status != "done" || got.Effort.Chunks[1].Status != "active" || len(got.Effort.Chunks) != 3 {
 		t.Fatalf("mutate result: %+v", got.Effort.Chunks)
+	}
+}
+
+// agentBlock makes a block in a tab of its own, the terminal an agent runs `wsh effort` from, and returns the block's
+// oref and its tab's id.
+func agentBlock(t *testing.T) (blockORef, tabID string) {
+	t.Helper()
+	ctx := context.Background()
+	tabID, blockID := uuid.NewString(), uuid.NewString()
+	if err := wstore.DBInsert(ctx, &waveobj.Tab{OID: tabID, Meta: waveobj.MetaMapType{}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := wstore.DBInsert(ctx, &waveobj.Block{OID: blockID, ParentORef: "tab:" + tabID}); err != nil {
+		t.Fatal(err)
+	}
+	return "block:" + blockID, tabID
+}
+
+// createWithSeeds runs `effort create` for two seeded chunks and returns the stored effort.
+func createWithSeeds(t *testing.T, proposed bool, sourceBlock string) *waveobj.Effort {
+	t.Helper()
+	ctx := context.Background()
+	rtn, err := (&WshServer{}).EffortCreateCommand(ctx, wshrpc.CommandEffortCreateData{
+		Title:       "Standing bugs " + uuid.NewString()[:8],
+		Chunks:      []wshrpc.CommandEffortChunkSeed{{Label: "flaky scenario step"}, {Label: "stale doc line"}},
+		Proposed:    proposed,
+		SourceBlock: sourceBlock,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cleanupEffort(t, rtn.EffortOID)
+	e, err := effortstore.Get(ctx, rtn.EffortOID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(e.Chunks) != 2 {
+		t.Fatalf("chunks: %+v", e.Chunks)
+	}
+	return e
+}
+
+// `wsh effort create --proposed` from an agent's terminal seeds proposals, each with the "proposed" note that keeps
+// the proposer's session, as `chunk add --proposed` writes it.
+func TestEffortCreateProposedSeedsProposalsWithTheSessionNote(t *testing.T) {
+	block, tabID := agentBlock(t)
+	e := createWithSeeds(t, true, block)
+	for _, c := range e.Chunks {
+		if c.Status != "proposed" {
+			t.Errorf("chunk %q is %q, want proposed", c.Label, c.Status)
+		}
+		var proposed []waveobj.EffortNote
+		for _, n := range c.Notes {
+			if n.Text == jarvis.ProposedNote {
+				proposed = append(proposed, n)
+			}
+		}
+		if len(proposed) != 1 {
+			t.Fatalf("chunk %q has %d proposed notes: %+v", c.Label, len(proposed), c.Notes)
+		}
+		if n := proposed[0]; n.Session != "agent:"+tabID || n.Author != "agent" || n.Run != "" || n.Ts == 0 {
+			t.Errorf("chunk %q note: %+v, want agent session agent:%s and no run", c.Label, n, tabID)
+		}
+		if jarvis.ProposalRun(c) != "" {
+			t.Errorf("chunk %q names run %q though its tab belongs to none", c.Label, jarvis.ProposalRun(c))
+		}
+	}
+	// proposals stay out of the initiative's Total until accepted
+	if got := jarvisstate.EffortSummaryOf(e); got.Total != 0 {
+		t.Errorf("total %d, want 0 until the proposals are accepted", got.Total)
+	}
+}
+
+// a run's lead creating an initiative names its run on every seeded proposal: that is what makes them To review's
+func TestEffortCreateProposedNamesTheRunOfTheTab(t *testing.T) {
+	ctx := context.Background()
+	ch, err := wstore.CreateChannel(ctx, "effort-create-proposed", t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	block, tabID := agentBlock(t)
+	run := jarvis.NewRun("goal", "ws-1", ch.ProjectPath, nil, jarvis.RunMode_Orchestrator, jarvis.DefaultOrchestratorPlaybook(), 1)
+	run.Phases[0].WorkerOrefs = []string{"tab:" + tabID}
+	if err := wstore.AppendRun(ctx, ch.OID, run); err != nil {
+		t.Fatal(err)
+	}
+	e := createWithSeeds(t, true, block)
+	for _, c := range e.Chunks {
+		if got := jarvis.ProposalRun(c); got != "run:"+run.ID {
+			t.Errorf("chunk %q proposal names run %q, want run:%s", c.Label, got, run.ID)
+		}
+	}
+}
+
+// without --proposed the seeded chunks are plain pending work with no "proposed" note, whoever runs the command
+func TestEffortCreateWithoutProposedKeepsTheChunksPending(t *testing.T) {
+	block, _ := agentBlock(t)
+	for name, src := range map[string]string{"from an agent's terminal": block, "with no terminal": ""} {
+		e := createWithSeeds(t, false, src)
+		for _, c := range e.Chunks {
+			if c.Status != "pending" {
+				t.Errorf("%s: chunk %q is %q, want pending", name, c.Label, c.Status)
+			}
+			for _, n := range c.Notes {
+				if n.Text == jarvis.ProposedNote {
+					t.Errorf("%s: chunk %q has a proposed note: %+v", name, c.Label, n)
+				}
+			}
+		}
+	}
+}
+
+// with no terminal there is no session to keep: the chunks are still proposed, with no note, as `chunk add --proposed`
+// from the cockpit is
+func TestEffortCreateProposedWithNoTerminalWritesNoNote(t *testing.T) {
+	e := createWithSeeds(t, true, "")
+	for _, c := range e.Chunks {
+		if c.Status != "proposed" || len(c.Notes) != 0 {
+			t.Errorf("chunk %q: status %q, notes %+v; want proposed with none", c.Label, c.Status, c.Notes)
+		}
 	}
 }
 

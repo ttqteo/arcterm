@@ -750,6 +750,12 @@ export class RpcApiType {
         return client.wshRpcCall("effortbackfillbase", data, opts);
     }
 
+    // command "effortbackfillproposed" [call]
+    EffortBackfillProposedCommand(client: WshClient, opts?: RpcOpts): Promise<CommandEffortBackfillProposedRtnData> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "effortbackfillproposed", null, opts);
+        return client.wshRpcCall("effortbackfillproposed", null, opts);
+    }
+
     // command "effortchunkdrift" [call]
     EffortChunkDriftCommand(client: WshClient, data: CommandEffortChunkDriftData, opts?: RpcOpts): Promise<CommandEffortChunkDriftRtnData> {
         if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "effortchunkdrift", data, opts);

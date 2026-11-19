@@ -469,6 +469,11 @@ Review mode shows the focused agent's `Doc review` in place of its terminal; `r`
 | `s` | In a chunk opened inside the sheet: open its status menu |
 | `1`…`6` | In a chunk opened inside the sheet: mark it pending, active, blocked, deferred, skipped or done (blocked asks for a one-line reason) |
 | `Esc` | In a chunk opened inside the sheet: back to the initiative (a second `Esc` closes the sheet) |
+| `j` / `k` | With To review's sheet open (the strip's **Review**): next / previous row; the sheet takes the Brief's cursor and the page's stays where it was |
+| `t` | With To review's sheet open: tick the row under the cursor to do, or untick it |
+| `l` | With To review's sheet open: Later, keep the row's chunk on its initiative |
+| `Delete` | With To review's sheet open: Drop the row's chunk (skip it) |
+| `Esc` | With To review's sheet open: close it; the ticks stay until **Clear** |
 | `→` / `Enter` | While a Jarvis tour shows: next step |
 | `←` | While a Jarvis tour shows: previous step |
 | `Esc` | While a Jarvis tour shows: end the tour |

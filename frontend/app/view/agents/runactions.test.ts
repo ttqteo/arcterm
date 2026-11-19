@@ -106,6 +106,29 @@ describe("createRunPayload spec path", () => {
     });
 });
 
+describe("createRunPayload chunks", () => {
+    const lead: RoutePin = { runtime: "claude", model: "opus" };
+    const chunks: RunEffortRef[] = [
+        { effortoid: "eff-1", chunklabel: "Fix the lag" },
+        { effortoid: "eff-2", chunklabel: "Hand-check the sheet" },
+    ];
+
+    it.each(["quick", "orchestrator"])("carries the ticked chunks on a %s run", (mode) => {
+        expect(createRunPayload("ws-1", "ch-1", "goal", lead, { mode, chunks }).chunks).toEqual(chunks);
+    });
+
+    it("omits them when there are none", () => {
+        expect(createRunPayload("ws-1", "ch-1", "goal", lead, { mode: "quick" })).not.toHaveProperty("chunks");
+        expect(createRunPayload("ws-1", "ch-1", "goal", lead, { mode: "quick", chunks: [] })).not.toHaveProperty(
+            "chunks"
+        );
+    });
+
+    it("rides a start with no mode too: a queued start is built by the same function", () => {
+        expect(createRunPayload("ws-1", "ch-1", "goal", lead, { chunks }).chunks).toEqual(chunks);
+    });
+});
+
 describe("buildCreateRunData", () => {
     const route: RoutePin = { runtime: "claude", model: "opus" };
     const opts = { mode: "orchestrator", planPath: "C:/p/plan.md", specPath: "C:/p/spec.md", autonomous: false };

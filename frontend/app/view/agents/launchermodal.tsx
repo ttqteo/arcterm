@@ -143,6 +143,7 @@ import {
     launcherBranchAtom,
     launcherBranchListAtom,
     launcherBusyAtom,
+    launcherChunksAtom,
     launcherCommandAtom,
     launcherFlagMenuAtom,
     launcherGoalAtom,
@@ -390,6 +391,7 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
     const prototype = useAtomValue(launcherPrototypeAtom);
     const specPath = useAtomValue(launcherSpecPathAtom);
     const brainstorm = useAtomValue(launcherBrainstormAtom);
+    const chunks = useAtomValue(launcherChunksAtom);
     const when = useAtomValue(launcherWhenAtom);
     const worktreeOn = useAtomValue(launcherWorktreeAtom);
     const branchPick = useAtomValue(launcherBranchAtom);
@@ -1078,6 +1080,7 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
                 goal,
                 pickedRoute: routeTouched ? runRoute : null,
                 ...(specPath !== "" ? { specPath } : {}),
+                ...(chunks.length > 0 ? { chunks } : {}),
                 after: waitingOn(when),
                 ...(brainstorm != null ? { brainstorm } : {}),
             });
@@ -1125,6 +1128,7 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
                     goal,
                     pickedRoute,
                     ...(specPath !== "" ? { specPath } : {}),
+                    ...(chunks.length > 0 ? { chunks } : {}),
                 }),
             handback,
         });

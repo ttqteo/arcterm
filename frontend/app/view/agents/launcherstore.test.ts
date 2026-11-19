@@ -20,6 +20,7 @@ import {
     launcherBranchAtom,
     launcherBranchListAtom,
     launcherBusyAtom,
+    launcherChunksAtom,
     launcherCommandAtom,
     launcherFlagMenuAtom,
     launcherGoalAtom,
@@ -424,6 +425,55 @@ describe("applyLauncherPrefill", () => {
         applyLauncherPrefill(["arcterm"]);
         expect(globalStore.get(launcherSpecPathAtom)).toBe("");
         expect(globalStore.get(launcherBrainstormAtom)).toBeNull();
+    });
+
+    describe("the To review chunks of the run it starts", () => {
+        const chunks: RunEffortRef[] = [
+            { effortoid: "eff-1", chunklabel: "Fix the lag" },
+            { effortoid: "eff-2", chunklabel: "Hand-check the sheet" },
+        ];
+        it("reach the launch input, and a later prefill without them clears them", () => {
+            globalStore.set(launcherPrefillAtom, { ...prefill, chunks });
+            applyLauncherPrefill(["arcterm"]);
+            expect(globalStore.get(launcherChunksAtom)).toEqual(chunks);
+            globalStore.set(launcherPrefillAtom, prefill);
+            applyLauncherPrefill(["arcterm"]);
+            expect(globalStore.get(launcherChunksAtom)).toEqual([]);
+        });
+        it("wait for the project list with the rest of the prefill", () => {
+            globalStore.set(launcherPrefillAtom, { ...prefill, chunks });
+            expect(applyLauncherPrefill([])).toBe(false);
+            expect(globalStore.get(launcherChunksAtom)).toEqual([]);
+        });
+        it("are cleared by an open without a prefill, so a later New never carries them", () => {
+            globalStore.set(launcherPrefillAtom, { ...prefill, chunks });
+            applyLauncherPrefill(["arcterm"]);
+            openLauncher(model(), "agent");
+            expect(globalStore.get(launcherChunksAtom)).toEqual([]);
+            globalStore.set(launcherChunksAtom, chunks);
+            reopenLauncher(model());
+            expect(globalStore.get(launcherChunksAtom)).toEqual([]);
+        });
+        it("are an open's own: an earlier open's go at once, the prefill's arrive when it is applied", () => {
+            globalStore.set(launcherChunksAtom, chunks);
+            openLauncher(model(), "run", { ...prefill, chunks: [chunks[0]] });
+            expect(globalStore.get(launcherChunksAtom)).toEqual([]);
+            applyLauncherPrefill(["arcterm"]);
+            expect(globalStore.get(launcherChunksAtom)).toEqual([chunks[0]]);
+        });
+        it("go with the draft: Clear and a launch drop them, since the goal that named them is gone", () => {
+            globalStore.set(launcherChunksAtom, chunks);
+            clearLauncherDraft();
+            expect(globalStore.get(launcherChunksAtom)).toEqual([]);
+            globalStore.set(launcherChunksAtom, chunks);
+            endLauncherDraft();
+            expect(globalStore.get(launcherChunksAtom)).toEqual([]);
+        });
+        it("stay through a close, which keeps the draft their goal is in", () => {
+            globalStore.set(launcherChunksAtom, chunks);
+            closeLauncher(model());
+            expect(globalStore.get(launcherChunksAtom)).toEqual(chunks);
+        });
     });
 
     describe("the handback of the run it starts", () => {

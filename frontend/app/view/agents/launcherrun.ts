@@ -34,6 +34,8 @@ export interface LauncherRunInput {
     pickedRoute: RoutePin | null;
     // the spec the goal builds (absolute); the run keeps it
     specPath?: string;
+    // the To review chunks this start works, ticked in the sheet (launcherstore.ts launcherChunksAtom)
+    chunks?: RunEffortRef[];
 }
 
 // The steps a start and a queued start share: the project's channel, the route the run leads on, and what the run is
@@ -51,7 +53,11 @@ async function prepareLauncherRun(
         channelId,
         route,
         goal: launchGoal(input.config, input.goal),
-        opts: { ...launchOptsFromConfig(input.config), ...(input.specPath ? { specPath: input.specPath } : {}) },
+        opts: {
+            ...launchOptsFromConfig(input.config),
+            ...(input.specPath ? { specPath: input.specPath } : {}),
+            ...(input.chunks != null && input.chunks.length > 0 ? { chunks: input.chunks } : {}),
+        },
     };
 }
 

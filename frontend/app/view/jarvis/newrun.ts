@@ -131,6 +131,9 @@ export type NewRunPrefill = {
     // run's id when the entry starts
     brainstorm?: RunQueueBrainstorm;
     handback?: RunHandback;
+    // the To review chunks this start works: the launcher keeps them for that open and sends them on both its start
+    // paths (start now and queue), and a prefill-less open clears them
+    chunks?: RunEffortRef[];
 };
 
 // What the window opens on when something filled it (a canvas's Build this…, the palette's Quick and Orchestrate):
@@ -148,6 +151,7 @@ export function prefillToLaunch(
     prototype: string;
     specPath?: string;
     brainstorm?: RunQueueBrainstorm;
+    chunks?: RunEffortRef[];
 } {
     const { projectName, goal } = prefill;
     const prototype = prefill.prototype ?? "";
@@ -159,6 +163,7 @@ export function prefillToLaunch(
         prototype,
         specPath: prefill.specPath,
         brainstorm: prefill.brainstorm,
+        chunks: prefill.chunks,
     };
 }
 

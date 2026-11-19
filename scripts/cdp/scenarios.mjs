@@ -1737,6 +1737,627 @@ const briefChunkPanel = {
     },
 };
 
+// --- brief-run-review: To review, the strip and the sheet the runs' leftovers are reviewed in ------------------------
+// (docs/superpowers/specs/2026-11-19-run-followups-visible-design.md.) Two real orchestrator runs held by deferstart,
+// each with its own temp dir, and two initiatives on different projects whose pending chunks name a run's 8-character
+// id in their label, the shape leads wrote before they filed proposals: run 1 has one chunk on A, run 2 two on A and one
+// on B. `wsh effort backfill-proposed`'s RPC moves the four into To review, which is where a lead's own `--proposed`
+// chunks land. A is a registered project: the launcher fills a prefill's goal only once its project list holds one.
+// The pass is the store's: this scenario is for Final's throwaway store, since on a store with other runs' chunks it
+// would move those too and the counts below would not hold. The chunks are added after the initiatives are made (an
+// addChunk op records the chunk-added event the pass reads; a chunk seeded inside effortcreate records none).
+const RR_A = "verify-rr-a";
+const RR_B = "verify-rr-b";
+const RR_STRIP = "[data-run-review-strip]";
+const RR_SHEET = "[data-run-review-sheet]";
+const RR_HEADER = "[data-run-review-header]";
+const RR_TOAST = "[data-jarvis-brief-toast]";
+const RR_PROMPT = "Tick what to do, then start one run with it.";
+const RR_REFUSAL = "Tick items from one project to start a run";
+const RR_EMPTY = "Nothing a run left is waiting on you.";
+// what the Brief's undo gives a Later or a Drop before its status edit goes out (briefundo.ts UNDO_WINDOW_MS)
+const RR_UNDO_MS = 5000;
+
+// everything a step reads of the strip, the sheet and the launcher in one evaluate
+const RR_READ = `(() => {
+    const t = (el) => (el?.innerText ?? '').replace(/\\s+/g, ' ').trim();
+    const sheet = document.querySelector('${RR_SHEET}');
+    const rows = [...document.querySelectorAll('[data-run-review-row]')];
+    const start = document.querySelector('[data-run-review-start]');
+    const clear = document.querySelector('[data-run-review-clear]');
+    return {
+        strip: t(document.querySelector('${RR_STRIP}')),
+        stripShown: document.querySelector('${RR_STRIP}') != null,
+        brief: document.querySelector('[data-jarvis-brief-main]') != null,
+        sheet: sheet != null,
+        launcher: document.querySelector('[data-launcher]') != null,
+        goal: document.querySelector('#launcher-goal')?.value ?? null,
+        groups: [...document.querySelectorAll('[data-run-review-group]')].map((g) => ({
+            id: g.getAttribute('data-run-review-group'),
+            rows: [...g.querySelectorAll('[data-run-review-row]')].map((r) => r.getAttribute('data-run-review-row')),
+        })),
+        marked: rows.filter((r) => r.hasAttribute('data-run-review-marked')).map((r) => r.getAttribute('data-run-review-row')),
+        cursor: sheet?.querySelector('[data-jarvis-brief-cursor="true"]')?.getAttribute('data-run-review-row') ?? null,
+        cursors: sheet?.querySelectorAll('[data-jarvis-brief-cursor="true"]').length ?? 0,
+        line: t(document.querySelector('[data-run-review-marked-line]')) || null,
+        refusal: t(document.querySelector('[data-run-review-refusal]')) || null,
+        empty: t(document.querySelector('[data-run-review-empty]')) || null,
+        start: start ? { disabled: start.disabled, text: t(start) } : null,
+        clear: clear ? { disabled: clear.disabled } : null,
+    };
+})()`;
+
+// The undo toast and the sheet's panel as boxes (spec decision 13: the toast leaves the open sheet clear). `apart` says
+// their boxes do not intersect; `centredWouldCover` says where the toast would have landed centred on the page column,
+// as it did before it kept clear of the sheet, so the detail shows whether the check could catch the old placement at
+// this window size. `centred` is how far the toast's centre sits from its page column's.
+const RR_TOAST_BOXES = `(() => {
+    const box = (el) => {
+        if (el == null) return null;
+        const r = el.getBoundingClientRect();
+        return { left: Math.round(r.left), top: Math.round(r.top), right: Math.round(r.right), bottom: Math.round(r.bottom) };
+    };
+    const toastEl = document.querySelector('${RR_TOAST}');
+    const sheetEl = document.querySelector('${RR_SHEET}')?.closest('[role="dialog"]');
+    const toast = box(toastEl);
+    const sheet = box(sheetEl);
+    const col = box(toastEl?.offsetParent);
+    const apart =
+        toast != null && sheet != null &&
+        (toast.right <= sheet.left || sheet.right <= toast.left || toast.bottom <= sheet.top || sheet.bottom <= toast.top);
+    const mid = col == null ? null : (col.left + col.right) / 2;
+    const half = toast == null ? 0 : (toast.right - toast.left) / 2;
+    return {
+        toast, sheet, apart,
+        centredWouldCover: toast != null && sheet != null && mid != null ? mid + half > sheet.left : null,
+        centred: toast != null && mid != null ? Math.round(Math.abs((toast.left + toast.right) / 2 - mid)) : null,
+    };
+})()`;
+
+// a row, and a button inside it, as expressions; the row's key is its initiative's oid and its label
+const rrRow = (key) =>
+    `[...document.querySelectorAll('[data-run-review-row]')].find((r) => r.getAttribute('data-run-review-row') === ${JSON.stringify(key)})`;
+const rrBtn = (key, hook) => `(${rrRow(key)})?.querySelector('[${hook}]')`;
+const rrSame = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+
+// a key as the person presses it: a real key event from the page's focus, else (CDP keys did not arrive) a keydown on the
+// document, which the dispatcher's window capture still takes
+const RR_KEY_DEF = {
+    j: { code: "KeyJ", vk: 74 },
+    k: { code: "KeyK", vk: 75 },
+    t: { code: "KeyT", vk: 84 },
+    l: { code: "KeyL", vk: 76 },
+    Delete: { code: "Delete", vk: 46 },
+    Escape: { code: "Escape", vk: 27 },
+};
+async function rrKey(h, ctx, key) {
+    const { code, vk } = RR_KEY_DEF[key];
+    if (ctx.cdpKeys) {
+        for (const type of ["rawKeyDown", "keyUp"]) {
+            await h.cdp("Input.dispatchKeyEvent", { type, key, code, windowsVirtualKeyCode: vk });
+        }
+    } else {
+        await h.ev(
+            `document.dispatchEvent(new KeyboardEvent("keydown", { key: ${JSON.stringify(key)}, code: ${JSON.stringify(code)}, bubbles: true, cancelable: true }))`
+        );
+    }
+    await briefNap(350);
+}
+
+// an initiative's chunks by label, as the store holds them
+async function rrChunks(h, oid) {
+    const effort = (await h.rpc("effortget", { effortoid: oid }))?.effort;
+    return Object.fromEntries((effort?.chunks ?? []).map((c) => [c.label, c]));
+}
+
+const briefRunReview = {
+    name: "brief-run-review",
+    surface: "jarvis",
+    async arrange(h) {
+        const ctx = { a: {}, b: {} };
+        // a throw past this point still returns ctx, so teardown removes whatever was already made
+        try {
+            await briefDeleteEfforts(h, RR_A);
+            await briefDeleteEfforts(h, RR_B);
+            ctx.a.cwd = mkdtempSync(join(tmpdir(), "verify-rr-a-"));
+            ctx.b.cwd = mkdtempSync(join(tmpdir(), "verify-rr-b-"));
+            await h.rpc("createproject", { name: RR_A, path: ctx.a.cwd });
+            ctx.projectA = RR_A;
+            await waitForProjectInConfig(h, RR_A);
+            const norm = (p) => (p || "").replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
+            const channels = (await h.rpc("getchannels", null))?.channels ?? [];
+            ctx.a.channelId = channels.find((c) => norm(c.projectpath) === norm(ctx.a.cwd))?.oid;
+            if (!ctx.a.channelId) throw new Error("createproject made no channel at the project's path");
+            ctx.b.channelId = (await h.rpc("createchannel", { name: "verify-run-review-b", projectpath: ctx.b.cwd })).oid;
+            const wslist = await h.rpc("workspacelist", null);
+            // two orchestrator runs held in planning (a record with no agent), run 1 older than run 2
+            const makeRun = async (side, n) => {
+                const created = await h.rpc(
+                    "createrun",
+                    {
+                        channelid: side.channelId,
+                        workspaceid: wslist[0].workspacedata.oid,
+                        goal: `verify run-review ${n}: do nothing`,
+                        runtime: "claude",
+                        mode: "orchestrator",
+                        deferstart: true,
+                    },
+                    { timeout: 30000 }
+                );
+                side.runId = created.run.id;
+                side.landPath = created.run.landpath;
+            };
+            await makeRun(ctx.a, 1);
+            await briefNap(150);
+            await makeRun(ctx.b, 2);
+            const r1 = ctx.a.runId.slice(0, 8);
+            const r2 = ctx.b.runId.slice(0, 8);
+            ctx.labels = {
+                r1a: `Cache key drops the tenant id (run ${r1})`,
+                r2a1: `Retry loop never backs off (run ${r2})`,
+                r2a2: `Timeout is read once at start (run ${r2})`,
+                r2b: `Config drift between hosts (run ${r2})`,
+            };
+            const makeEffort = async (title) => (await h.rpc("effortcreate", { title, project: title })).effortoid;
+            ctx.oidA = await makeEffort(RR_A);
+            ctx.oidB = await makeEffort(RR_B);
+            const add = (label) => ({ op: "addChunk", label });
+            await h.rpc("effortmutate", {
+                effortoid: ctx.oidA,
+                author: "you",
+                ops: [add(ctx.labels.r1a), add(ctx.labels.r2a1), add(ctx.labels.r2a2)],
+            });
+            await h.rpc("effortmutate", { effortoid: ctx.oidB, author: "you", ops: [add(ctx.labels.r2b)] });
+            ctx.pass = await h.rpc("effortbackfillproposed", null);
+            if (ctx.pass?.chunks !== 4 || ctx.pass?.efforts !== 2) {
+                throw new Error(
+                    `the backlog pass moved ${ctx.pass?.chunks} chunks on ${ctx.pass?.efforts} initiatives, not 4 on 2: ` +
+                        `this store holds other runs' chunks, so run the scenario on a throwaway store (Final's)`
+                );
+            }
+            await briefViewport(h, 1600, 1000);
+            // the Brief reads a boot-primed snapshot, so the runs, the initiatives and the project need a reload
+            await briefReload(h);
+        } catch (e) {
+            ctx.arrangeError = String(e?.message ?? e);
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok: !!ok, detail });
+        if (ctx.arrangeError != null) {
+            rec("0. two runs, two initiatives and four chunks the backlog pass moved to To review were made", false, ctx.arrangeError);
+            return steps;
+        }
+        const read = () => h.ev(RR_READ);
+        const shot = (name) => h.shot(`cdp-shots/brief-run-review-${name}.png`);
+        const gone = (expr, ms = 6000) => polishWaitFor(h, `!(${expr})`, ms);
+        const r1 = ctx.a.runId;
+        const r2 = ctx.b.runId;
+        const key = (oid, label) => `${oid}:${label}`;
+        const K = {
+            r1a: key(ctx.oidA, ctx.labels.r1a),
+            r2a1: key(ctx.oidA, ctx.labels.r2a1),
+            r2a2: key(ctx.oidA, ctx.labels.r2a2),
+            r2b: key(ctx.oidB, ctx.labels.r2b),
+        };
+        const click = (expr) => bsMouseClick(h, expr);
+        const clickClear = async () => {
+            await click(`document.querySelector('[data-run-review-clear]')`);
+            await briefNap(300);
+        };
+        await h.goto("jarvis");
+
+        // 1. the strip, and Needs you holding none of it
+        const stripUp = await polishWaitFor(h, `document.querySelector('${RR_STRIP}') != null`, 20000);
+        await briefNap(700);
+        const s1 = await read();
+        const attention = (await h.rpc("getattention", null))?.items ?? [];
+        const planReviews = attention.filter((i) => i.kind === "plan-review" && [ctx.oidA, ctx.oidB].includes(i.effortoid));
+        await shot("strip");
+        rec(
+            "1. the strip shows '4 things 2 runs left', and Needs you holds no plan review for either initiative",
+            // the label is drawn upper case by its style, which innerText reads
+            stripUp && /to review/i.test(s1.strip) && s1.strip.includes("4 things 2 runs left") && planReviews.length === 0,
+            JSON.stringify({ pass: ctx.pass, strip: s1.strip, planReviews: planReviews.length })
+        );
+
+        // 2. Review opens the sheet: two groups, oldest run first, the footer's prompt, Start dimmed
+        await click(`document.querySelector('${RR_STRIP}')`);
+        const opened = await polishWaitFor(
+            h,
+            `document.querySelector('${RR_SHEET}') != null && document.querySelectorAll('[data-run-review-row]').length === 4`,
+            8000
+        );
+        await briefNap(900);
+        // the page has focus now (a real click), so this says whether CDP keys reach it
+        ctx.cdpKeys = await bsKeysArrive(h);
+        const s2 = await read();
+        // The two initiatives hold only proposed chunks, so they sit in the Ideas box; every one of those chunks is in To
+        // review, so neither row repeats them as "N proposed" (spec decision 12). Both rows must be found: a row the box
+        // did not draw would pass for the wrong reason.
+        const ideaCounts = await h.ev(`(() => {
+            const row = (name) =>
+                [...document.querySelectorAll('[data-jarvis-ideas] [data-jarvis-idea-row]')].find((r) => {
+                    const label = r.querySelector('[role="button"]')?.getAttribute('aria-label') ?? '';
+                    return label === 'Open ' + name || label === 'Collapse ' + name;
+                });
+            const read = (name) => {
+                const r = row(name);
+                return r == null ? null : { count: r.querySelector('[data-jarvis-proposed-count]')?.innerText.trim() ?? null };
+            };
+            return { a: read(${JSON.stringify(RR_A)}), b: read(${JSON.stringify(RR_B)}) };
+        })()`);
+        // The picture is framed on the sheet's header, padded out to take in its first groups: a 2:1 crop around the whole
+        // sheet is as tall as the window and starts below the header, which cut the title and the count line off (spec
+        // decision 13). The clip must hold the box of the title and the count line (the header's first two children),
+        // and they must read "To review" and the count. The clip is in CSS px, and a page the host zooms is captured a
+        // little smaller than that, so the shot is also looked at by eye: the check is a floor, not the whole proof.
+        let picture;
+        try {
+            picture = await h.whatsnewShot("run-review", { selector: RR_HEADER, pad: 200 });
+        } catch (e) {
+            picture = { error: String(e?.message ?? e) };
+        }
+        const header = await h.ev(`(() => {
+            const el = document.querySelector('${RR_HEADER}');
+            const [title, count] = el == null ? [] : [el.children[0], el.children[1]];
+            if (title == null || count == null) return null;
+            const a = title.getBoundingClientRect();
+            const b = count.getBoundingClientRect();
+            return {
+                left: Math.min(a.left, b.left),
+                top: Math.min(a.top, b.top),
+                right: Math.max(a.right, b.right),
+                bottom: Math.max(a.bottom, b.bottom),
+                title: (title.innerText ?? '').trim(),
+                count: (count.innerText ?? '').replace(/\\s+/g, ' ').trim(),
+            };
+        })()`);
+        const clip = picture.clip;
+        const headerWhole =
+            header != null &&
+            clip != null &&
+            clip.x <= header.left &&
+            clip.y <= header.top &&
+            clip.x + clip.width >= header.right &&
+            clip.y + clip.height >= header.bottom &&
+            /^to review$/i.test(header.title) &&
+            header.count === "4 things 2 runs left, oldest first";
+        await shot("sheet");
+        const run2Keys = [K.r2a1, K.r2a2, K.r2b].sort();
+        rec(
+            `2. Review opens the sheet with two groups, oldest run first; the footer reads the prompt and Start is dimmed; the ${RR_A} and ${RR_B} Ideas rows show no proposed count; the What's new picture holds the sheet's header, "To review" and its count line, whole`,
+            opened &&
+                rrSame(
+                    s2.groups.map((g) => g.id),
+                    [r1, r2]
+                ) &&
+                rrSame(s2.groups[0]?.rows, [K.r1a]) &&
+                rrSame([...(s2.groups[1]?.rows ?? [])].sort(), run2Keys) &&
+                s2.line === RR_PROMPT &&
+                s2.start?.disabled === true &&
+                ideaCounts?.a != null &&
+                ideaCounts?.b != null &&
+                ideaCounts.a.count == null &&
+                ideaCounts.b.count == null &&
+                picture.error == null &&
+                headerWhole,
+            JSON.stringify({ groups: s2.groups, line: s2.line, start: s2.start, ideaCounts, cdpKeys: ctx.cdpKeys, picture: picture.file ?? picture.error, clip, header, headerWhole })
+        );
+
+        // 3. a tick, Start opening the launcher on that row's line, Esc keeping the tick, Clear
+        const goalLine = `- ${ctx.labels.r2a1} (${RR_A})`;
+        await click(rrBtn(K.r2a1, "data-run-review-tick"));
+        await briefNap(300);
+        const s3a = await read();
+        await click(`document.querySelector('[data-run-review-start]')`);
+        const launched = await polishWaitFor(
+            h,
+            `document.querySelector('[data-launcher]') != null && (document.querySelector('#launcher-goal')?.value ?? '').includes(${JSON.stringify(goalLine)})`,
+            15000
+        );
+        await briefNap(500);
+        const s3b = await read();
+        await shot("launcher");
+        await rrKey(h, ctx, "Escape");
+        const launcherClosed = await gone(`document.querySelector('[data-launcher]')`, 5000);
+        const s3c = await read();
+        await clickClear();
+        const s3d = await read();
+        rec(
+            "3. one tick reads '1 marked to do' and enables Start; Start opens the launcher on that row's line; Esc closes it and keeps the tick; Clear empties it",
+            rrSame(s3a.marked, [K.r2a1]) &&
+                s3a.line === "1 marked to do" &&
+                s3a.start?.disabled === false &&
+                launched &&
+                s3b.goal?.includes(goalLine) === true &&
+                launcherClosed &&
+                s3c.sheet &&
+                rrSame(s3c.marked, [K.r2a1]) &&
+                s3c.line === "1 marked to do" &&
+                s3d.marked.length === 0 &&
+                s3d.line === RR_PROMPT &&
+                s3d.clear?.disabled === true &&
+                s3d.start?.disabled === true,
+            JSON.stringify({ a: [s3a.marked.length, s3a.line, s3a.start], goal: s3b.goal, closed: [launcherClosed, s3c.sheet, s3c.marked.length, s3c.line], cleared: [s3d.marked.length, s3d.line] })
+        );
+
+        // 4. two projects: the refusal line and no launcher
+        await click(rrBtn(K.r2a1, "data-run-review-tick"));
+        await click(rrBtn(K.r2b, "data-run-review-tick"));
+        await briefNap(300);
+        const s4a = await read();
+        await click(`document.querySelector('[data-run-review-start]')`);
+        await polishWaitFor(h, `document.querySelector('[data-run-review-refusal]') != null`, 3000);
+        await briefNap(500);
+        const s4b = await read();
+        await shot("refusal");
+        await clickClear();
+        const s4c = await read();
+        rec(
+            "4. ticking a row of project A and one of project B, then Start, shows the one-project refusal and opens no launcher; Clear takes it away",
+            s4a.marked.length === 2 &&
+                s4a.line === "2 marked to do" &&
+                s4b.refusal === RR_REFUSAL &&
+                s4b.launcher === false &&
+                s4b.marked.length === 2 &&
+                s4c.refusal == null &&
+                s4c.marked.length === 0,
+            JSON.stringify({ marked: s4a.marked.length, refusal: s4b.refusal, launcher: s4b.launcher, after: [s4c.refusal, s4c.marked.length] })
+        );
+
+        // 5. the keys: j and k walk the rows, t ticks, l is Later, Delete is Drop, Esc closes and Review reopens
+        const order = (await read()).groups.flatMap((g) => g.rows);
+        // the cursor rides the row last touched: touch the first row, then Clear, so the walk starts on the first
+        await click(rrBtn(order[0], "data-run-review-tick"));
+        await clickClear();
+        const s5start = await read();
+        const walk = [];
+        for (const [k, want] of [["j", order[1]], ["j", order[2]], ["k", order[1]], ["k", order[0]]]) {
+            await rrKey(h, ctx, k);
+            const s = await read();
+            walk.push({ k, cursor: s.cursor === want, one: s.cursors === 1 });
+        }
+        await rrKey(h, ctx, "j");
+        await rrKey(h, ctx, "t");
+        const s5tick = await read();
+        await shot("keys");
+        await clickClear();
+        await rrKey(h, ctx, "k");
+        const s5top = await read();
+        await rrKey(h, ctx, "l");
+        const laterGone = await gone(rrRow(order[0]));
+        const groupGone = await gone(`document.querySelector('[data-run-review-group="${r1}"]')`);
+        const s5later = await read();
+        // the undo toast Later raised is up beside the open sheet and does not cover it (spec decision 13)
+        const s5toastUp = await polishWaitFor(h, `document.querySelector('${RR_TOAST}') != null`, 3000);
+        await briefNap(450); // the toast's pop and move settle
+        const s5toast = await h.ev(RR_TOAST_BOXES);
+        await rrKey(h, ctx, "Delete");
+        const dropGone = await gone(rrRow(order[1]));
+        const s5drop = await read();
+        await rrKey(h, ctx, "Escape");
+        const sheetClosed = await gone(`document.querySelector('${RR_SHEET}')`);
+        // Delete's toast is still inside its undo window: with the sheet shut it is centred on the page column again
+        await polishWaitFor(h, `document.querySelector('${RR_TOAST}') != null`, 1500);
+        await briefNap(450);
+        const s5shut = await h.ev(RR_TOAST_BOXES);
+        const s5closed = await read();
+        await click(`document.querySelector('${RR_STRIP}')`);
+        const reopened = await polishWaitFor(h, `document.querySelector('${RR_SHEET}') != null`, 5000);
+        await briefNap(700);
+        const s5reopen = await read();
+        rec(
+            "5. j and k move the cursor row, t ticks it, l folds a row and its group (Later) with the undo toast clear of the open sheet, Delete folds one (Drop), Esc closes the sheet (the toast is centred again) and Review reopens it",
+            order.length === 4 &&
+                order[0] === K.r1a &&
+                s5start.cursor === order[0] &&
+                walk.every((w) => w.cursor && w.one) &&
+                rrSame(s5tick.marked, [order[1]]) &&
+                s5tick.cursor === order[1] &&
+                s5tick.line === "1 marked to do" &&
+                s5top.cursor === order[0] &&
+                laterGone &&
+                groupGone &&
+                s5later.groups.length === 1 &&
+                s5later.cursor === order[1] &&
+                s5toastUp &&
+                s5toast.apart === true &&
+                dropGone &&
+                rrSame([...s5drop.groups.flatMap((g) => g.rows)], [order[2], order[3]]) &&
+                sheetClosed &&
+                s5shut.toast != null &&
+                s5shut.centred != null &&
+                s5shut.centred <= 2 &&
+                s5closed.stripShown &&
+                s5closed.strip.includes("2 things 1 run left") &&
+                reopened &&
+                rrSame(s5reopen.groups.flatMap((g) => g.rows), [order[2], order[3]]),
+            JSON.stringify({ order, walk, tick: [s5tick.marked, s5tick.cursor], later: [laterGone, groupGone, s5later.groups.length, s5later.cursor], toast: s5toast, drop: [dropGone, s5drop.groups.flatMap((g) => g.rows)], closed: [sheetClosed, s5closed.strip], shut: s5shut, reopened: s5reopen.groups.flatMap((g) => g.rows) })
+        );
+
+        // 6. Later by click folds one of the two rows left and leaves the other
+        await click(rrBtn(order[2], "data-run-review-later"));
+        const laterClicked = await gone(rrRow(order[2]));
+        const s6 = await read();
+        const s6toastUp = await polishWaitFor(h, `document.querySelector('${RR_TOAST}') != null`, 3000);
+        await briefNap(450); // the toast's pop settles
+        const s6toast = await h.ev(RR_TOAST_BOXES);
+        await shot("later");
+        rec(
+            "6. Later by click folds its row and leaves the other one, and its undo toast and the open sheet do not intersect",
+            laterClicked &&
+                rrSame(s6.groups.flatMap((g) => g.rows), [order[3]]) &&
+                s6.groups.length === 1 &&
+                s6.empty == null &&
+                s6toastUp &&
+                s6toast.apart === true,
+            JSON.stringify({ laterClicked, rows: s6.groups.flatMap((g) => g.rows), toast: s6toast })
+        );
+
+        // 7. Drop by click on the last row shows the empty line, and past the undo window the rows stay gone and the store
+        //    holds what the four actions decided
+        await click(rrBtn(order[3], "data-run-review-drop"));
+        const emptied = await polishWaitFor(h, `document.querySelector('[data-run-review-empty]') != null`, 6000);
+        // the last group folds on its spring while the empty line is already up
+        await gone(`document.querySelector('[data-run-review-group]')`);
+        await briefNap(300);
+        const s7 = await read();
+        await shot("empty");
+        // watch past the undo window, the edits going out and the Brief's refetch: a row that came back in between is the
+        // flash the settled keys are there to stop
+        let maxRows = 0;
+        let decided = false;
+        const watchStart = Date.now();
+        while (Date.now() - watchStart < RR_UNDO_MS + 7000) {
+            const s = await read();
+            maxRows = Math.max(maxRows, s.groups.reduce((n, g) => n + g.rows.length, 0));
+            if (!decided && Date.now() - watchStart > RR_UNDO_MS) {
+                const a = await rrChunks(h, ctx.oidA);
+                const b = await rrChunks(h, ctx.oidB);
+                decided = [a[ctx.labels.r1a], a[ctx.labels.r2a1], a[ctx.labels.r2a2], b[ctx.labels.r2b]].every(
+                    (c) => c != null && c.status !== "proposed"
+                );
+            }
+            await briefNap(250);
+        }
+        // a surface switch remounts the Brief, which asks the store again; the sheet's open flag outlives it
+        await h.goto("cockpit");
+        await h.goto("jarvis");
+        await briefNap(2500);
+        const s7after = await read();
+        const finalA = await rrChunks(h, ctx.oidA);
+        const finalB = await rrChunks(h, ctx.oidB);
+        const status = {
+            r1a: finalA[ctx.labels.r1a]?.status,
+            r2a1: finalA[ctx.labels.r2a1]?.status,
+            r2a2: finalA[ctx.labels.r2a2]?.status,
+            r2b: finalB[ctx.labels.r2b]?.status,
+        };
+        // order[0] was folded by l (Later), order[1] by Delete (Drop), order[2] by the Later button, order[3] by Drop
+        const want = {};
+        for (const name of Object.keys(status)) want[name] = order.indexOf(K[name]) % 2 === 0 ? "pending" : "skipped";
+        await shot("settled");
+        rec(
+            "7. Drop on the last row shows the empty line; past the undo window and the Brief's refetch the rows are still gone and the chunks read pending (Later) and skipped (Drop)",
+            emptied &&
+                s7.empty === RR_EMPTY &&
+                s7.groups.length === 0 &&
+                s7.start == null &&
+                maxRows === 0 &&
+                decided &&
+                s7after.sheet &&
+                s7after.groups.length === 0 &&
+                s7after.empty === RR_EMPTY &&
+                rrSame(status, want),
+            JSON.stringify({ emptied, empty: s7.empty, groups: s7.groups, start: s7.start, maxRows, decided, after: [s7after.sheet, s7after.groups.length, s7after.empty], status, want })
+        );
+
+        // 8. closing the sheet leaves no strip; a run started on a ticked chunk holds it, a cancelled one lets go. Escape
+        //    only with the sheet open: without it Escape takes the person home, off the Brief
+        if (s7after.sheet) await rrKey(h, ctx, "Escape");
+        const closedAll = await gone(`document.querySelector('${RR_SHEET}')`);
+        await briefNap(500);
+        const s8 = await read();
+        const label3 = "Held by a run started from To review";
+        // two batches: a batch's ops are checked against the initiative as it was before the batch, so the status of a
+        // chunk the same batch adds would not resolve
+        await h.rpc("effortmutate", { effortoid: ctx.oidA, author: "you", ops: [{ op: "addChunk", label: label3 }] });
+        await h.rpc("effortmutate", {
+            effortoid: ctx.oidA,
+            author: "you",
+            ops: [{ op: "setChunkStatus", chunk: label3, status: "proposed" }],
+        });
+        const before = (await rrChunks(h, ctx.oidA))[label3];
+        const wslist = await h.rpc("workspacelist", null);
+        const created = await h.rpc(
+            "createrun",
+            {
+                channelid: ctx.b.channelId,
+                workspaceid: wslist[0].workspacedata.oid,
+                goal: "verify run-review 3: do nothing",
+                runtime: "claude",
+                mode: "orchestrator",
+                deferstart: true,
+                chunks: [{ effortoid: ctx.oidA, chunklabel: label3 }],
+            },
+            { timeout: 30000 }
+        );
+        ctx.run3 = { runId: created.run.id, landPath: created.run.landpath };
+        const held = (await rrChunks(h, ctx.oidA))[label3];
+        const holds = (c) => (c?.workrefs ?? []).some((w) => w.oref === `run:${ctx.run3.runId}`);
+        await h.rpc("cancelrun", { channelid: ctx.b.channelId, runid: ctx.run3.runId }, { timeout: 90000 });
+        ctx.run3.cancelled = true;
+        let released = (await rrChunks(h, ctx.oidA))[label3];
+        for (let waited = 0; holds(released) && waited < 15000; waited += 500) {
+            await briefNap(500);
+            released = (await rrChunks(h, ctx.oidA))[label3];
+        }
+        rec(
+            "8. closing the sheet leaves no strip; a run created on a proposed chunk holds it as pending, and cancelling that run frees it, still pending",
+            closedAll &&
+                s8.brief &&
+                s8.stripShown === false &&
+                s8.sheet === false &&
+                before?.status === "proposed" &&
+                !holds(before) &&
+                held?.status === "pending" &&
+                holds(held) &&
+                released?.status === "pending" &&
+                !holds(released),
+            JSON.stringify({ strip: s8.stripShown, before: before?.status, held: [held?.status, holds(held)], released: [released?.status, holds(released)] })
+        );
+        return steps;
+    },
+    async teardown(h, ctx) {
+        const step = async (what, fn) => {
+            try {
+                await fn();
+            } catch (e) {
+                console.error(`brief-run-review teardown: ${what} failed: ${e?.message ?? e}`);
+            }
+        };
+        await step("close the sheet", async () => {
+            for (const type of ["rawKeyDown", "keyUp"]) {
+                await h.cdp("Input.dispatchKeyEvent", { type, key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 });
+            }
+        });
+        // the third run, when a step ended before it was cancelled
+        if (ctx.run3 != null && !ctx.run3.cancelled) {
+            await step("cancel the third run", () =>
+                h.rpc("cancelrun", { channelid: ctx.b.channelId, runid: ctx.run3.runId }, { timeout: 90000 })
+            );
+        }
+        if (ctx.run3?.landPath && ctx.run3.landPath !== ctx.b.cwd) {
+            await step("remove the third run's tree", () =>
+                rmSync(ctx.run3.landPath, { recursive: true, force: true, maxRetries: 20, retryDelay: 500 })
+            );
+        }
+        // each side's run, channel and temp dir; A's project goes with it
+        if (ctx.b.cwd != null) await step("tear down run 2", () => teardownFixtureRun(h, ctx.b, "brief-run-review b"));
+        if (ctx.a.cwd != null) {
+            await step("tear down run 1", () =>
+                teardownFixtureRun(h, ctx.a, "brief-run-review a", {
+                    what: "delete project A",
+                    fn: () => (ctx.projectA ? h.rpc("deleteproject", { name: ctx.projectA }) : null),
+                })
+            );
+        }
+        // the initiatives after the runs: a cancelled run frees its chunks, and a deleted initiative has none to free
+        for (const oid of [ctx.oidA, ctx.oidB]) {
+            if (oid != null) await step("delete an initiative", () => h.rpc("effortdelete", { effortoid: oid }));
+        }
+        await step("delete leftover initiatives", async () => {
+            await briefDeleteEfforts(h, RR_A);
+            await briefDeleteEfforts(h, RR_B);
+        });
+        await step("clear the viewport", () => h.cdp("Emulation.clearDeviceMetricsOverride"));
+        await step("go home", () => h.goto("cockpit"));
+    },
+};
+
 // --- brief-run-sheet-order: the question first, the Timing under the tasks, one accent, the one run vocabulary ------
 // A real orchestrator run held by deferstart and given a chained plan (so a task group exists), its roster lead a dev
 // fixture. The stored run is written to put that fixture in its running phase, so the sheet has a live lead (the
@@ -73738,6 +74359,7 @@ export const SCENARIOS = [
     briefDumeLine,
     briefLayout,
     briefChunkPanel,
+    briefRunReview,
     briefRunSheetOrder,
     briefPeek,
     peekCtrlClick,

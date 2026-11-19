@@ -71,6 +71,11 @@ type CommandCreateRunData struct {
 	// Worktree is a directory in a linked worktree of the channel's repository: the run works in the project's
 	// place in that checkout, branches from its head and lands back into its branch. Empty = the channel's project.
 	Worktree string `json:"worktree,omitempty"`
+	// Chunks are the proposed chunks a run started from To review works. Each is validated up front like EffortOID;
+	// once the run has started (a deferred start counts) the server flips each to pending and attaches the run to it,
+	// and a start that never persists the run leaves them proposed. The first one is also the run's EffortRef unless
+	// EffortOID names another.
+	Chunks []waveobj.RunEffortRef `json:"chunks,omitempty"`
 }
 
 type CommandCreateRunRtnData struct {

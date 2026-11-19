@@ -64,6 +64,9 @@ export interface CreateRunOpts {
     autonomous?: boolean;
     // the spec the goal builds (absolute); the run keeps it, so the next launcher can read its files
     specPath?: string;
+    // the To review chunks the run works (effort, chunk); wavesrv flips them to pending and attaches the run once it
+    // has started. Empty or unset sends none.
+    chunks?: RunEffortRef[];
 }
 
 export function createRunPayload(
@@ -93,6 +96,8 @@ export function createRunPayload(
         ...(orchestrator && opts.autonomous != null ? { autonomous: opts.autonomous } : {}),
         // a quick run's goal can name a spec as well, so this is not an orchestrator option
         ...(opts?.specPath ? { specpath: opts.specPath } : {}),
+        // likewise for every mode: a quick run works ticked chunks as an orchestrator run does
+        ...(opts?.chunks != null && opts.chunks.length > 0 ? { chunks: opts.chunks } : {}),
         mode: opts?.mode,
         deferstart: opts?.deferStart,
     };
