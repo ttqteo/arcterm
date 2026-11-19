@@ -977,6 +977,44 @@ func (r *Runner) call(ctx context.Context, rn *run, id string, e CouncilExpert, 
 	return again, nil
 }
 
+// reread asks role seat e once more when the council could not read its reply (perr: no JSON block, or JSON of the
+// wrong shape), so a slip of format does not drop what the seat said: the same prompt with that reply and why it could
+// not be read added (RereadPrompt), and no tools, as the reply already holds what the seat found. parse reads the new
+// reply into the caller's variables. A live agent's reply is heard as it spoke instead, so it is never asked again. The
+// result books the tokens of both calls; an error names both failures.
+func (r *Runner) reread(ctx context.Context, rn *run, id string, e CouncilExpert, snap *Council, prompt string, first CouncilActivity, res CallRes, perr error, parse func(text string) error) (CallRes, error) {
+	if IsAgent(e) || ctx.Err() != nil {
+		return res, perr
+	}
+	caller, err := r.callerFor(e)
+	if err != nil {
+		return res, perr
+	}
+	log.Printf("[council] %s: %s's reply could not be read (%v); asking it again", id, e.Id, perr)
+	on := e
+	if res.fellBack != "" {
+		on.Model = res.fellBack // the model that answered, not the one its safeguards flagged
+	}
+	act := first
+	act.Text = "Reply unreadable: asking again"
+	again, err := r.callOnce(ctx, rn, id, caller, on, snap, RereadPrompt(prompt, res.Text, perr), false, false, nil, act)
+	again.Tokens += res.Tokens
+	again.fellBack = res.fellBack
+	if err == nil {
+		err = emptyReply(again)
+	}
+	if err == nil {
+		err = parse(again.Text)
+	}
+	if err != nil {
+		if ctx.Err() != nil {
+			return again, err
+		}
+		return again, fmt.Errorf("%s; asked again: %s", errText(perr), errText(err))
+	}
+	return again, nil
+}
+
 // rebind is agent seat e as its caller finds it now (SeatRebinder): its session kept, or moved to the tab that holds its
 // session after its own closed; a change is saved on the council, so the seat's name, chips and next turns follow it.
 // A role seat, a caller that cannot tell, or a failed read leaves e as it is: the call then reports what it finds.
@@ -1136,18 +1174,26 @@ func (r *Runner) round1(ctx context.Context, rn *run, id string, snap *Council, 
 	if IsAgent(e) {
 		prompt = agentPrompt(snap, e, 1)
 	}
-	res, err := r.call(ctx, rn, id, e, snap, prompt, true, questionLinks(snap), nil, CouncilActivity{Text: actStarting})
+	first := CouncilActivity{Text: actStarting}
+	res, err := r.call(ctx, rn, id, e, snap, prompt, true, questionLinks(snap), nil, first)
 	var (
 		props []CouncilProposal
 		plain string
 	)
+	parse := func(text string) (err error) {
+		props, _, err = ParseRound1(text) // the overall view has no field on the council, so it is not kept
+		return err
+	}
 	if err == nil {
 		err = emptyReply(res)
 	}
 	if err == nil {
-		props, _, err = ParseRound1(res.Text) // the overall view has no field on the council, so it is not kept
-		if err != nil && IsAgent(e) {
+		err = parse(res.Text)
+		switch {
+		case err != nil && IsAgent(e):
 			plain, err = PlainReply(res.Text), nil // a live agent is heard as it spoke, not failed for the shape
+		case err != nil:
+			res, err = r.reread(ctx, rn, id, e, snap, prompt, first, res, err, parse)
 		}
 	}
 	r.finishCall(ctx, rn, id, e, res, err, 1, func(c *Council) {
@@ -1587,10 +1633,17 @@ func (r *Runner) round2(ctx context.Context, rn *run, id string, snap *Council, 
 	if err == nil {
 		err = emptyReply(res)
 	}
+	parse := func(text string) (err error) {
+		out, err = ParseRound2(text)
+		return err
+	}
 	if err == nil {
-		out, err = ParseRound2(res.Text)
-		if err != nil && IsAgent(e) {
+		err = parse(res.Text)
+		switch {
+		case err != nil && IsAgent(e):
 			plain, err = PlainReply(res.Text), nil
+		case err != nil:
+			res, err = r.reread(ctx, rn, id, e, view, prompt, *target, res, err, parse)
 		}
 	}
 	r.finishCall(ctx, rn, id, e, res, err, round, func(c *Council) {
@@ -2128,10 +2181,17 @@ func (r *Runner) answerCall(ctx context.Context, rn *run, id string, snap *Counc
 	if err == nil {
 		err = emptyReply(res)
 	}
+	parse := func(text string) (err error) {
+		answers, err = ParseAnswers(text)
+		return err
+	}
 	if err == nil {
-		answers, err = ParseAnswers(res.Text)
-		if err != nil && IsAgent(e) {
+		err = parse(res.Text)
+		switch {
+		case err != nil && IsAgent(e):
 			plain, err = PlainReply(res.Text), nil
+		case err != nil:
+			res, err = r.reread(ctx, rn, id, e, snap, prompt, first, res, err, parse)
 		}
 	}
 	r.finishCall(ctx, rn, id, e, res, err, round, func(c *Council) {
@@ -2931,16 +2991,23 @@ func (r *Runner) synthesizeOn(ctx context.Context, rn *run, id string, model str
 		coord.Model = model
 	}
 	at := r.now() // the Summary reads what was said up to now; a reply posted while it is written reads as newer
-	res, err := r.call(ctx, rn, id, coord, snap, SynthesisPrompt(snap), false, false, nil, CouncilActivity{Text: actSummary})
+	prompt, first := SynthesisPrompt(snap), CouncilActivity{Text: actSummary}
+	res, err := r.call(ctx, rn, id, coord, snap, prompt, false, false, nil, first)
 	var (
 		sum  CouncilSummary
 		weak []WeakNote
 	)
+	parse := func(text string) (err error) {
+		sum, weak, err = ParseSynthesis(text)
+		return err
+	}
 	if err == nil {
 		err = emptyReply(res)
 	}
 	if err == nil {
-		sum, weak, err = ParseSynthesis(res.Text)
+		if err = parse(res.Text); err != nil {
+			res, err = r.reread(ctx, rn, id, coord, snap, prompt, first, res, err, parse)
+		}
 	}
 	if err == nil {
 		sum = cleanSummary(snap, sum)
