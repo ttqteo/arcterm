@@ -83,8 +83,6 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
   The box stays under the memory band when RAM is high. A click on a row opens that run in the main window; on the
   `+N more` line, Jarvis. The small form reads `Runs N` (`· 1 failed`). The `sidecar-orbit` scenario's new P-runs steps
   cover it but were not run (no dev app here). Commit: fix/sidecar-runs.
-- [ ] (arcterm) **Chat's Stop button sits after Send.** While an agent works, type in Chat's box: Send's return arrow
-  shows, then Stop at the far right. Commit: fix/sidecar-runs.
 - [ ] (arcterm) **Sidecar's Resources rows name agents by their task, and the arcterm mark reads evenly.** Open
   Sidecar → Resources with several agents in one project: each agent row shows its title (as in the Agent tree), not
   "arcterm"; a tab with no title yet still shows the tab's name. The Sidecar / arcterm rows' "t>" mark has strokes of

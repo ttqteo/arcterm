@@ -176,8 +176,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - Chat's last line (the Working line above all) is no longer dimmed by the fade over the box: the fade shows only
   while the conversation runs on under the box.
 - Chat's `@` list shows a run once: its lead agent, with the same title, is no longer listed beside it. A name typed
-  without its spaces still finds it (`buildl` finds "Build Library"), and the letters that matched are highlighted on
-  agent and run rows as on file rows.
+  without its spaces still finds it (`buildl` finds "Build Library"), Vietnamese matches whichever vowel the tone was
+  typed on (`baó` finds "báo"), and the letters that matched are highlighted on agent and run rows as on file rows.
 - Sidecar's Other apps lists WSL's and Docker's virtual machine (VmmemWSL, Vmmem) with the gigabytes Task Manager
   shows, and names each app's WebView2 panes after the app (`WebView2: ms-teams.exe`) instead of summing every app's
   into one msedgewebview2.exe row.

@@ -321,6 +321,19 @@ describe("refMatches", () => {
         expect(refMatches("buildx", all)).toEqual([]);
     });
 
+    it("matches Vietnamese whichever vowel the tone was typed on, and without the marks", () => {
+        const all: RefItem[] = [
+            ...runRefs([run("fdfa9bad-0fca", "Build Nút báo lỗi tại chỗ")]),
+            ...agentRefs([agent("4e0c5dfb-1", "SIEM-1746 báo cáo bảo mật web")], ""),
+        ];
+        // "baó": the tone on the o, as a new-style input method puts it; the labels have it on the a
+        expect(refMatches("baó", all).map((r) => r.kind)).toEqual(["agent", "run"]);
+        expect(refMatches("báo lỗi", all).map((r) => r.id)).toEqual(["fdfa9bad-0fca"]);
+        expect(refMatches("bao loi", all).map((r) => r.id)).toEqual(["fdfa9bad-0fca"]);
+        expect(refMatches("baoloi", all).map((r) => r.id)).toEqual(["fdfa9bad-0fca"]);
+        expect(refMatches("chô", all).map((r) => r.id)).toEqual(["fdfa9bad-0fca"]);
+    });
+
     it("shows at most REF_MAX_ROWS", () => {
         const many = agentRefs(
             Array.from({ length: 10 }, (_, i) => agent(`a${i}000000`, `task ${i}`)),
@@ -357,6 +370,11 @@ describe("refHitMask", () => {
 
     it("marks a query typed with no spaces across the label's spaces", () => {
         expect(marked("buildl", "Build Library")).toBe("Build_L______");
+    });
+
+    it("marks a word whichever vowel its tone was typed on", () => {
+        expect(marked("baó", "Nút báo lỗi")).toBe("____báo____");
+        expect(marked("baoloi", "Nút báo lỗi")).toBe("____báo_lỗi");
     });
 
     it("marks nothing for a kind word, an address, an id or no match", () => {

@@ -147,29 +147,46 @@ export function effortRefs(efforts: readonly EffortSummary[] | null | undefined,
     }));
 }
 
-// the text with its whitespace taken out, and where each kept character sits in the text
-function compact(text: string): { text: string; at: number[] } {
+// The text as the picker compares it: lowercase, with no diacritics (đ read as d) and, with `dropSpaces`, no whitespace,
+// and where each kept character sits in the text. Vietnamese is typed with its tone on either vowel ("báo", "baó"), so a
+// query only matches what it spells when both lose their marks.
+function fold(text: string, dropSpaces = false): { text: string; at: number[] } {
     let out = "";
     const at: number[] = [];
     for (let i = 0; i < text.length; i++) {
-        if (!/\s/.test(text[i])) {
-            out += text[i];
+        const c = text[i];
+        if (dropSpaces && /\s/.test(c)) {
+            continue;
+        }
+        const base = c.normalize("NFD").replace(/\p{M}/gu, "").replace(/đ/g, "d").replace(/Đ/g, "D").toLowerCase();
+        for (const b of base) {
+            out += b;
             at.push(i);
         }
     }
     return { text: out, at };
 }
 
-/** Whether `hay` holds `q` once the whitespace of both is taken out: `buildl` is in "Build Library". Lowercase both. */
+/** Whether `hay` holds `q` once both are folded and their whitespace taken out: `buildl` is in "Build Library". */
 function holdsCompact(hay: string, q: string): boolean {
-    const needle = compact(q).text;
-    return needle !== "" && compact(hay).text.includes(needle);
+    const needle = fold(q, true).text;
+    return needle !== "" && fold(hay, true).text.includes(needle);
+}
+
+/** Whether `hay` holds every word of `q`, both folded: `baó` is in "Nút báo lỗi". */
+function holdsWords(hay: string, q: string): boolean {
+    const folded = fold(hay).text;
+    return q
+        .split(/\s+/)
+        .filter((w) => w !== "")
+        .every((w) => folded.includes(fold(w).text));
 }
 
 /**
  * Which characters of a row's label the query matched, for the picker to draw in the accent: each word of the query
  * where it first sits in the label, or, when a word is not there, the whole query read without its spaces (`buildl`
- * marks "Build L" in "Build Library"). A kind word or an id the row matched by marks nothing.
+ * marks "Build L" in "Build Library"), both with the diacritics aside (`baó` marks "báo"). A kind word or an id the
+ * row matched by marks nothing.
  */
 export function refHitMask(query: string, label: string): boolean[] {
     const mask = new Array<boolean>(label.length).fill(false);
@@ -177,21 +194,24 @@ export function refHitMask(query: string, label: string): boolean[] {
     if (q === "" || queryKind(q) != null || ADDRESS_QUERY.test(q)) {
         return mask;
     }
-    const lower = label.toLowerCase();
-    const words = q.split(/\s+/);
-    if (words.every((w) => lower.includes(w))) {
+    const flat = fold(label);
+    const words = q
+        .split(/\s+/)
+        .map((w) => fold(w).text)
+        .filter((w) => w !== "");
+    if (words.length > 0 && words.every((w) => flat.text.includes(w))) {
         for (const w of words) {
-            const at = lower.indexOf(w);
-            mask.fill(true, at, at + w.length);
+            const at = flat.text.indexOf(w);
+            mask.fill(true, flat.at[at], flat.at[at + w.length - 1] + 1);
         }
         return mask;
     }
-    const flat = compact(lower);
-    const needle = compact(q).text;
-    const at = flat.text.indexOf(needle);
+    const tight = fold(label, true);
+    const needle = fold(q, true).text;
+    const at = tight.text.indexOf(needle);
     if (needle !== "" && at >= 0) {
         for (let i = at; i < at + needle.length; i++) {
-            mask[flat.at[i]] = true;
+            mask[tight.at[i]] = true;
         }
     }
     return mask;
@@ -221,7 +241,8 @@ const ADDRESS_QUERY = /^(agent|tab|run|council|session|effort):([0-9a-f-]*)$/;
  * The rows the `@` query lists, at most REF_MAX_ROWS: with no query none (a bare `@` lists files, as it always has); a
  * query that names a kind lists that kind's items; a query written as `kind:<id>` lists that kind's items whose id
  * starts with it; any other lists the items whose id starts with it, whose label or detail holds every word of it, or
- * whose label holds it once the spaces of both are taken out (`buildl` finds "Build Library").
+ * whose label holds it once the spaces of both are taken out (`buildl` finds "Build Library"), diacritics aside in
+ * both (`baó` finds "báo", the tone typed on the other vowel).
  * A query that holds a `/` or a `.` is a path, and lists none. Agents first, then runs, councils, conversations and
  * initiatives, each newest first.
  */
@@ -240,7 +261,6 @@ export function refMatches(query: string, items: readonly RefItem[]): RefItem[] 
             .slice(0, REF_MAX_ROWS);
     }
     const kind = queryKind(q);
-    const words = q.split(/\s+/);
     const hit = (it: RefItem) => {
         if (kind != null) {
             return it.kind === kind;
@@ -248,8 +268,7 @@ export function refMatches(query: string, items: readonly RefItem[]): RefItem[] 
         if (it.id.toLowerCase().startsWith(q)) {
             return true;
         }
-        const hay = `${it.label} ${it.detail}`.toLowerCase();
-        return words.every((w) => hay.includes(w)) || holdsCompact(it.label.toLowerCase(), q);
+        return holdsWords(`${it.label} ${it.detail}`, q) || holdsCompact(it.label, q);
     };
     return items
         .filter(hit)
