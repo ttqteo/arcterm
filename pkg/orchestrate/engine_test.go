@@ -546,6 +546,9 @@ func TestScheduleOnceTrimsAWorkersMCPButNotItsSkills(t *testing.T) {
 		if !opts.StrictMCP || opts.NoSlashCommands {
 			t.Fatalf("worker %s: StrictMCP=%v NoSlashCommands=%v, want true false", id, opts.StrictMCP, opts.NoSlashCommands)
 		}
+		if !opts.EngineSession {
+			t.Fatalf("worker %s is not marked an engine session, so Claude Desktop's CLI import lists it", id)
+		}
 	}
 }
 

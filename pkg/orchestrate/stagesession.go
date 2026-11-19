@@ -98,7 +98,7 @@ func LaunchJudgingSession(ctx context.Context, s JudgingSession) (string, error)
 	runID, sessionId := uuid.NewString(), jarvis.WorkerSessionId(pin.Runtime)
 	// a judge reads and gives its verdict: its prompt invokes no skill and no MCP tool, so both listings go
 	oref, err := spawnWorker(ctx, capability, s.WorkspaceId, channelProjectName(ctx, s.ChannelId), s.Tree, s.Prompt,
-		jarvis.RunWorkerOptions{SessionId: sessionId, RunId: runID, Label: s.Label, ShortCache: true, StrictMCP: true, NoSlashCommands: true})
+		jarvis.RunWorkerOptions{SessionId: sessionId, RunId: runID, Label: s.Label, ShortCache: true, StrictMCP: true, NoSlashCommands: true, EngineSession: true})
 	if err != nil {
 		return "", err
 	}
