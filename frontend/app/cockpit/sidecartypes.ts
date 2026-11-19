@@ -59,7 +59,6 @@ export interface SidecarRunBox {
     total: number;
     failed: boolean;
     since?: number; // run created, UnixMilli
-    due?: string; // the first due chunk's label
 }
 
 export interface SidecarUsage {
@@ -119,7 +118,7 @@ export interface SidecarSnapshot {
     machine?: SidecarMachine;
     strain?: SidecarStrain;
     needs?: SidecarNeed[]; // what waits on the person, oldest first
-    run?: SidecarRunBox; // the newest active orchestrator run
+    runs?: SidecarRunBox[]; // every active orchestrator run: the failed first, then the newest (none: left out)
     usage?: SidecarUsage; // the 5-hour and weekly plan rings
     more?: number; // agents past the orbit's eight, for the core's "+N"
     resources?: SidecarResources; // only while the page shows the resources (the wall's band, or the small form's panel)
@@ -169,6 +168,8 @@ export type SidecarAct =
     | { kind: "sleep"; id: string } // must be a heavy row
     | { kind: "endapp"; name: string } // End task: must be an endable other app of the last snapshot's resources
     | { kind: "needact"; key: string; act: string } // a Jarvis row's button: one of that need's acts in the last snapshot
+    // a run row: that run's sheet in the main window (a run of the last snapshot); no id, the runs in Jarvis
+    | { kind: "run"; id?: string }
     // the resource panel opened (with the pids the host says draw the page; re-sent as they change) or closed
     | { kind: "resources"; open: boolean; pids: number[] }
     // the page became hidden (minimized, on another Space, covered whole) or shown again: hidden, it is sent nothing

@@ -81,6 +81,7 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 - When the agent rewrites a brainstorm decision you confirmed, a sentence it changed in a few words now reads as one
   line, the old words struck right before the new ones, instead of the old lines all first and the new ones after.
+- In Chat's message box, Stop sits at the far right after Send, instead of before it.
 - Focus read in Chat starts at three blocks lit at a time, and its size button now goes up to five (×4, ×5). J and K
   slide the lit group one block at a time instead of jumping a whole group, the accent tick stays beside the lit block
   (at the end of a conversation too), Escape turns focus read off, and when a turn you were following ends, the new
@@ -155,6 +156,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- Sidecar shows every run in progress, not only the newest: a Runs box above Needs you lists up to three, a failed run
+  first, and sums up the rest in one line ("+2 more · 1 failed") that opens them in Jarvis; a row opens its run. The box
+  stays when the memory band shows, and the "due today" line it repeated from Needs you is gone.
 - Sidecar's Resources view names each agent by its task, as the cockpit does, instead of a row of "arcterm" (the
   project's name), and its arcterm mark no longer draws a bold "t" beside a thin, jagged chevron.
 - A question an agent asks stays in Chat with its choices while its background subagents keep working, instead of
