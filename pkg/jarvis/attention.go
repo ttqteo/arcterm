@@ -56,6 +56,10 @@ const (
 	// a council paused after step 1 for the person's cuts and questions: it names no channel either, so it
 	// addresses the council through ORef (council:<id>) and opens on its Discussion, where Continue is pressed
 	AttentionCouncil = "council"
+	// the footer's bug button's reports (pkg/bugreport): one row for all of them, in three forms the frontend tells apart
+	// without a wire field, by ORef agent: (open the agent that holds them), else by an empty ProjectPath (pick the
+	// repo), else process (start the agent)
+	AttentionBugReports = "bug-reports"
 )
 
 // mirrors orchestrate.TaskState_*, spelled here for the same reason as the dag statuses above.
@@ -98,6 +102,10 @@ type AttentionInput struct {
 	Learn []learn.Proposal
 	// Councils are every council; only the ones awaiting the person make an item.
 	Councils []*council.Council
+	// BugReports is what GatherBugReports read: the reports that wait or are held by an agent, and arcterm's repo. Nil
+	// (not read) and all-zero both make no row. BugReportsSince is when that wait began, unix ms.
+	BugReports      *wshrpc.BugReportStatus
+	BugReportsSince int64
 }
 
 // runForWorker finds the run whose phases claim this worker tab oref.
@@ -433,6 +441,7 @@ func BuildAttention(in AttentionInput) []wshrpc.AttentionItem {
 	queued := queueBlockedItems(in.Queue)
 	learned := learnItems(in.Learn)
 	councils := councilItems(in.Councils)
+	bugReports := bugReportItems(in.BugReports, in.BugReportsSince)
 	for _, group := range [][]wshrpc.AttentionItem{gates, escalations, asks, queued, plans, unverified, due, learned, councils} {
 		g := group
 		sort.SliceStable(g, func(i, j int) bool {
@@ -443,7 +452,7 @@ func BuildAttention(in AttentionInput) []wshrpc.AttentionItem {
 		})
 	}
 
-	out := make([]wshrpc.AttentionItem, 0, len(gates)+len(escalations)+len(asks)+len(queued)+len(plans)+len(unverified)+len(due)+len(learned)+len(councils))
+	out := make([]wshrpc.AttentionItem, 0, len(gates)+len(escalations)+len(asks)+len(queued)+len(plans)+len(unverified)+len(due)+len(learned)+len(councils)+len(bugReports))
 	out = append(out, gates...)
 	out = append(out, escalations...)
 	out = append(out, asks...)
@@ -460,7 +469,38 @@ func BuildAttention(in AttentionInput) []wshrpc.AttentionItem {
 	out = append(out, learned...)
 	// a paused council holds nothing running, but its experts' step 1 sits unread until the person continues
 	out = append(out, councils...)
+	// nothing is stopped while reports wait: nobody reads them until the person presses Process
+	out = append(out, bugReports...)
 	return out
+}
+
+// bugReportItems is the one row for the bug reports, or none. Handling wins over waiting: while an agent holds reports
+// the row opens it and offers no second Process. Otherwise the reports that wait are processed once the repo is found,
+// and the repo picked while it is not. A repo found rides in ProjectPath on the handling form too (the Needs-you strip
+// drops a row that names no project under a project filter); the frontend reads the agent: ORef first, so that does
+// not make it the process form. The no-repo form keeps no ProjectPath: that is how the frontend knows it.
+func bugReportItems(st *wshrpc.BugReportStatus, since int64) []wshrpc.AttentionItem {
+	if st == nil {
+		return nil
+	}
+	item := wshrpc.AttentionItem{Kind: AttentionBugReports, Key: "bug-reports", Source: "arcterm", WaitingSince: since}
+	switch {
+	case st.Handling > 0 && st.Handler != "":
+		item.Text = fmt.Sprintf("Đang xử lý %d báo lỗi", st.Handling)
+		item.Action = "Mở agent"
+		item.ORef = "agent:" + st.Handler
+		item.ProjectPath = st.RepoPath
+	case st.Waiting > 0 && st.RepoPath != "":
+		item.Text = fmt.Sprintf("%d báo lỗi arcterm chờ xử lý", st.Waiting)
+		item.Action = "Xử lý"
+		item.ProjectPath = st.RepoPath
+	case st.Waiting > 0:
+		item.Text = "Không tìm thấy repo arcterm"
+		item.Action = "Chọn thư mục…"
+	default:
+		return nil
+	}
+	return []wshrpc.AttentionItem{item}
 }
 
 // councilItems are the councils paused at the pause after step 1, one row each. A council in any other state
@@ -957,6 +997,12 @@ func GatherAttentionFromLedger(ctx context.Context, chans []*waveobj.Channel, ru
 		log.Printf("jarvis attention: councils unreadable, council rows omitted: %v", cerr)
 	} else {
 		in.Councils = councils
+	}
+	// and for the bug reports: an unreadable folder means no row, logged, so a bad reports folder cannot empty Needs you
+	if st, since, berr := GatherBugReports(ctx); berr != nil {
+		log.Printf("jarvis attention: bug reports unreadable, their row omitted: %v", berr)
+	} else {
+		in.BugReports, in.BugReportsSince = &st, since
 	}
 	queue, qerr := runqueue.List()
 	if qerr != nil {
