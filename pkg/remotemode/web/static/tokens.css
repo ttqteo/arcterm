@@ -51,6 +51,13 @@
     --color-on-warning: #171208;
     --color-askingbg: rgba(230, 180, 80, 0.12);
     --color-errorbg: rgba(224, 114, 108, 0.14);
+    --color-hud-bg: #061218;
+    --color-hud-panel: #0a1b22;
+    --color-hud-line: #123642;
+    --color-hud-glow: #3fd8ff;
+    --color-hud-glow-dim: color-mix(in srgb, var(--color-hud-glow) 22%, transparent);
+    --color-hud-text: #d4f4ff;
+    --color-hud-muted: #5f8c99;
     --color-provider-claude: #d97757;
     --color-provider-codex: #96aacd;
     --color-provider-opencode: #a78bfa;

@@ -213,6 +213,9 @@ function parseAnsiLines(lines) {
     return r.runs;
   });
 }
+function plainText(text) {
+  return parseAnsiLines(text.split("\n")).map((runs) => runs.map((r) => r.text).join("")).join("\n");
+}
 
 // frontend/app/view/agents/transcriptprojection.ts
 var READ_MODAL_MAX_LINES = 400;
@@ -325,7 +328,13 @@ var BASH_STDOUT = /<bash-stdout>([^]*?)<\/bash-stdout>/;
 var BASH_STDERR = /<bash-stderr>([^]*?)<\/bash-stderr>/;
 var BASH_NO_OUTPUT = "(Bash completed with no output)";
 function plainOutput(text) {
-  return parseAnsiLines(text.split("\n")).map((runs) => runs.map((r) => r.text).join("")).join("\n").trim();
+  return plainText(text).trim();
+}
+function unescapeBashText(text) {
+  return text.replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;|&apos;/g, "'").replace(/&amp;/g, "&");
+}
+function bashOutput(text) {
+  return unescapeBashText(text).trim();
 }
 var LOCAL_STDOUT = /<local-command-stdout>([^]*?)<\/local-command-stdout>/;
 var LOCAL_STDERR = /<local-command-stderr>([^]*?)<\/local-command-stderr>/;
@@ -571,14 +580,18 @@ function projectTranscript(lines) {
         } else if (isLocalOutput(content)) {
           attachLocalOutput(entries, content);
         } else if (BASH_INPUT.test(content)) {
-          entries.push({ kind: "command", name: "!", args: BASH_INPUT.exec(content)[1].trim() });
+          entries.push({
+            kind: "command",
+            name: "!",
+            args: unescapeBashText(BASH_INPUT.exec(content)[1].trim())
+          });
         } else if (BASH_STDOUT.test(content) || BASH_STDERR.test(content)) {
           const last = entries[entries.length - 1];
           if (last?.kind === "command" && last.name === "!" && last.shell == null) {
-            const output = plainOutput(BASH_STDOUT.exec(content)?.[1] ?? "");
+            const output = bashOutput(BASH_STDOUT.exec(content)?.[1] ?? "");
             last.shell = {
               output: output === BASH_NO_OUTPUT ? "" : output,
-              error: plainOutput(BASH_STDERR.exec(content)?.[1] ?? "")
+              error: bashOutput(BASH_STDERR.exec(content)?.[1] ?? "")
             };
           }
         } else if (isInterrupted(content)) {
