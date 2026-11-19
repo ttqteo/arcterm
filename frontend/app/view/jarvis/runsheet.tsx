@@ -59,12 +59,13 @@ import { cn, fireAndForget } from "@/util/util";
 import { atom, useAtomValue, type Atom } from "jotai";
 import { ArrowUpRight, ChevronDown, ChevronRight, CornerDownRight } from "lucide-react";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { landNeedsForce } from "./attentionact";
 import { RunComposer } from "./briefcomposer";
 import { RunSettingsPanel, SHEET_BTN, type WaitingQuestion } from "./briefrunsheet";
 import { finalCheckEntry, shotPath, shotRounds, type FinalCheckEntry, type ShotRound } from "./finalshotsmodel";
 import { FinalShotsViewer, VERDICT_DOT } from "./finalshotsviewer";
 import { briefEffortIndexAtom, briefRevealChunkAtom } from "./jarvisstore";
-import { landAgain } from "./landrun";
+import { confirmForceLand, landAgain } from "./landrun";
 import { useLocalImage } from "./localimage";
 import { openOrPeekAddress } from "./openref";
 import { RunReportView } from "./runreportview";
@@ -1084,6 +1085,8 @@ function Dock({
     const worker = run.mode !== "orchestrator" && !isTerminal(run.status) ? leadWorker(run, agents) : undefined;
     // a held land leads the dock: the run is done and waits only on the human clearing the reason and retrying
     const held = run.land?.state === "held";
+    // a failed final stage is a hold Land again only re-reads: the button is the forced land, behind a confirm
+    const force = held && landNeedsForce(run.land?.reason);
     const landLine = landDock(run, ctx.landPlace);
     const [landing, setLanding] = useState(false);
     // a blocked run's stopped worker, restarted in its own session (the palette's run:resume)
@@ -1105,19 +1108,20 @@ function Dock({
             }
         });
     };
-    const land = () => {
+    const settleLand = () => {
         setLanding(true);
         setResult(null);
         fireAndForget(async () => {
             try {
-                setResult(await landAgain(channel.oid, run.id));
+                setResult(await landAgain(channel.oid, run.id, force));
             } catch (e) {
-                setResult({ failed: true, text: `Couldn't save to this project's Profile: ${String(e)}` });
+                setResult({ failed: true, text: `The land failed: ${e instanceof Error ? e.message : String(e)}` });
             } finally {
                 setLanding(false);
             }
         });
     };
+    const land = () => (force ? confirmForceLand(runTitle(run, undefined), settleLand) : settleLand());
     return (
         <div data-run-sheet-dock className="flex flex-col gap-1.5 border-t border-edge-faint px-4 py-[11px]">
             {landLine?.kind === "held" ? (
@@ -1163,11 +1167,12 @@ function Dock({
                     <button
                         type="button"
                         data-run-sheet-land-again
+                        data-run-sheet-land-force={force || undefined}
                         disabled={landing}
                         onClick={land}
                         className={accent === "land" ? DOCK_ACCENT : DOCK_BTN}
                     >
-                        {landing ? "Landing…" : "Land again"}
+                        {landing ? "Landing…" : force ? "Land anyway" : "Land again"}
                     </button>
                 ) : null}
                 {run.dagoref ? (

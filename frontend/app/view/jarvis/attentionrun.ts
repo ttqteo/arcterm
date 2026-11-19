@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // How a waiting item's in-place button runs (the button attentionact.ts chose): Approve and Retry act on the
-// exact task the server named, Accept and Land again on the run, Start now and Remove on a blocked queue entry.
+// exact task the server named, Accept, Land again and Land anyway on the run, Start now and Remove on a blocked
+// queue entry.
 // The Brief's Waiting list and the Cockpit's Needs-you strip both call this, so the two cannot drift apart; each
 // brings its own feedback, because the Brief answers in its undo bar and the Cockpit has none. The creature's peek
 // has its own runner (petactrun.ts), which keeps its failures on the act that caused them.
@@ -13,7 +14,7 @@ import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { loadAttention } from "@/app/view/agents/attentionstore";
 import { fireAndForget } from "@/util/util";
 import type { AttentionAct, AttentionActInput } from "./attentionact";
-import { landAgain } from "./landrun";
+import { confirmForceLand, landAgain } from "./landrun";
 
 // Start now runs the whole start (worktree, Setup) before it answers: the budget the run launcher gives a create
 export const START_NOW_TIMEOUT_MS = 180_000;
@@ -43,6 +44,7 @@ export function attentionDoneText(
         case "ack-run":
             return `Accepted · ${what}`;
         case "land-run":
+        case "force-land":
             return `Landed · ${what}`;
         case "start-queued":
             return `Started · ${what}`;
@@ -68,9 +70,10 @@ async function call(act: AttentionAct, row: AttentionRunRow): Promise<string | v
         case "ack-run":
             await RpcApi.AckRunCommand(TabRpcClient, { channelid: row.channelId, runid: row.runId! });
             return;
-        case "land-run": {
+        case "land-run":
+        case "force-land": {
             // a held answer is not an rpc error, so it throws here and the feedback reads the reason rather than "Landed"
-            const outcome = await landAgain(row.channelId, row.runId!);
+            const outcome = await landAgain(row.channelId, row.runId!, act.kind === "force-land");
             if (outcome.failed) {
                 throw new Error(outcome.text);
             }
@@ -103,7 +106,7 @@ function confirmRemoveQueued(what: string, onConfirm: () => void): void {
 
 // Runs the item's button. true: it went through, and the attention list is reloaded so the item leaves now rather
 // than on the next poll. false: it failed (the feedback says why), or the act only opens, starts an agent or picks a
-// folder, which needs the cockpit and is the caller's to do, or it waits on a confirm (Remove) and runs, with the same feedback,
+// folder, which needs the cockpit and is the caller's to do, or it waits on a confirm (Remove, Land anyway) and runs, with the same feedback,
 // when the person confirms.
 export async function runAttentionAct(
     act: AttentionAct,
@@ -118,6 +121,10 @@ export async function runAttentionAct(
         confirmRemoveQueued(row.source || row.title, () => fireAndForget(() => settleAct(act, row, feedback)));
         return false;
     }
+    if (act.kind === "force-land") {
+        confirmForceLand(row.source || row.title, () => fireAndForget(() => settleAct(act, row, feedback)));
+        return false;
+    }
     return settleAct(act, row, feedback);
 }
 
@@ -130,7 +137,7 @@ async function settleAct(act: AttentionAct, row: AttentionRunRow, feedback: Atte
         return false;
     }
     // landAgain reloads it itself, a held answer included
-    if (act.kind !== "land-run") {
+    if (act.kind !== "land-run" && act.kind !== "force-land") {
         await loadAttention();
     }
     feedback.done(said || attentionDoneText(act.kind, row));

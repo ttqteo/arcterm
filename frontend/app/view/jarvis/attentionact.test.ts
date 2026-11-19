@@ -28,6 +28,20 @@ describe("attentionAct", () => {
         expect(attentionAct(a({ wireKind: "run-land-held" }))).toEqual({ label: "Land again", kind: "land-run" });
     });
 
+    // Land again re-reads the same failed final stage, so that hold is moved only by the forced land
+    it("offers Land anyway for a land held by a failed final stage, and Land again for any other hold", () => {
+        expect(attentionAct(a({ wireKind: "run-land-held", reason: "the final stage failed" }))).toEqual({
+            label: "Land anyway",
+            kind: "force-land",
+        });
+        expect(attentionAct(a({ wireKind: "run-land-held", reason: "the checkout has uncommitted changes" }))).toEqual({
+            label: "Land again",
+            kind: "land-run",
+        });
+        // the reason alone never forces anything on another kind
+        expect(attentionAct(a({ wireKind: "run-unverified", reason: "the final stage failed" })).kind).toBe("ack-run");
+    });
+
     // a blocked dag with no failed task (a failed final stage, a review or merge failure) needs a judgment,
     // not a button; and an approve or retry needs the exact task the server named
     it("opens what needs a judgment or names nothing exact to act on", () => {

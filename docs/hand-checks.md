@@ -16,6 +16,10 @@ list (its number is not reused).
 Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) ·
 [part 4](hand-checks-4.md) · [part 3](hand-checks-3.md) · [part 2](hand-checks-2.md) (oldest).
 
+- [ ] (arcterm) **Land anyway lands a run held by a failed final stage.** On a run whose card reads "Land held · The
+  final stage failed at …", the button reads Land anyway (peek, Needs you, the Brief's Waiting list, the run sheet's
+  dock); clicking it asks first, and confirming merges wave/<run> into the base and clears the card. A run held for
+  another reason still reads Land again. Commit: feat/land-anyway.
 - [ ] (arcterm) **Sidecar's Other apps shows VmmemWSL and each app's WebView2.** With WSL running and Teams open,
   open Sidecar → Resources: VmmemWSL is listed with about the RAM Task Manager shows, and Teams' panes read
   `WebView2: ms-teams.exe` on their own row (not endable). Commit: fix/resmon-vmmem.

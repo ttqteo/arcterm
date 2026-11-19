@@ -102,6 +102,25 @@ describe("actsForAttention", () => {
         expect(actsForAttention({ ...held, channelid: "" } as AttentionItem).map((a) => a.verb)).toEqual(["open"]);
     });
 
+    it("offers Land anyway, carrying the force and the run's name, when the final stage held the land", () => {
+        const held = {
+            ...gate(),
+            kind: "run-land-held",
+            key: "run-land-held:run1",
+            reason: "the final stage failed",
+        } as AttentionItem;
+        expect(actsForAttention(held)[0]).toEqual({
+            id: "run-land-held:run1:land",
+            verb: "land",
+            label: "Land anyway",
+            channelId: "ch1",
+            runId: "run1",
+            force: true,
+            what: "refactor the parser",
+        });
+        expect(actsForAttention(held).map((a) => a.label)).toEqual(["Land anyway", "Dismiss", "Open"]);
+    });
+
     it("escorts an unverified run that names no channel, since the ack needs one", () => {
         const unverified = { ...gate(), kind: "run-unverified", channelid: "" } as AttentionItem;
         expect(actsForAttention(unverified).map((a) => a.verb)).toEqual(["open"]);

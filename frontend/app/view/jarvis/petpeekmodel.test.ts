@@ -280,6 +280,8 @@ describe("enterHintLabel", () => {
         expect(enterHintLabel(queueRows([{ ...DAG_BLOCKED, taskid: "t-4", retry: true }])[0].primary)).toBe("retry");
         expect(enterHintLabel(queueRows([ESCALATION])[0].primary)).toBe("open");
         expect(enterHintLabel(queueRows([item({ kind: "run-land-held", key: "l" })])[0].primary)).toBe("land again");
+        const finalHeld = item({ kind: "run-land-held", key: "f", reason: "the final stage failed" });
+        expect(enterHintLabel(queueRows([finalHeld])[0].primary)).toBe("land anyway");
         expect(enterHintLabel(null)).toBe("open");
     });
 });

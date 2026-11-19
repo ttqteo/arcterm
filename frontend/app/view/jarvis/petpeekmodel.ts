@@ -228,7 +228,7 @@ export function enterHintLabel(act: PetAct | null): string {
         case "ack":
             return "acknowledge";
         case "land":
-            return "land again";
+            return act.force ? "land anyway" : "land again";
         case "approve-task":
             return "approve";
         case "retry-task":
