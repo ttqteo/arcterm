@@ -47,10 +47,11 @@ import { navRailCollapsed } from "./navrailwidth";
 import { agentTreeWidth } from "./rowfields";
 import { rowFieldsAtom } from "./rowfieldsstore";
 
+// the tabs are pills in the strip's 44px band: the one on show filled, the rest bare until hovered
 const TAB =
-    "flex min-w-[34px] cursor-pointer items-center justify-center gap-[5px] border-0 border-b-2 bg-transparent px-[9px] outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent";
-const TAB_ON = "border-primary text-primary";
-const TAB_OFF = "border-transparent text-muted hover:text-secondary";
+    "flex h-[28px] min-w-[32px] shrink-0 cursor-pointer items-center justify-center gap-[5px] rounded-full border-0 bg-transparent px-[8px] outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent";
+const TAB_ON = "bg-surface-selected text-primary";
+const TAB_OFF = "text-muted hover:bg-surface-hover hover:text-secondary";
 
 interface TabProps {
     role: "tab";
@@ -125,7 +126,7 @@ export function RailTabStrip({
             // on File the file tabs are as wide as their names, and the strip gives way only when the panel runs out of
             // room (RailStats holds its width there), cutting the names rather than the counts, then scrolling
             className={cn(
-                "flex items-stretch",
+                "flex items-center gap-[2px]",
                 shown === "file" && "min-w-0 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
             )}
         >
@@ -222,7 +223,7 @@ function RailFileTab({
                     : undefined
             }
             className={cn(
-                "ml-0.5 flex min-w-0 items-center border-b-2",
+                "ml-0.5 flex h-[28px] min-w-0 items-center rounded-full",
                 folded == null && "max-w-[200px]",
                 on ? TAB_ON : TAB_OFF
             )}
@@ -253,7 +254,7 @@ function RailFileTab({
                     aria-label={`Close ${label}`}
                     data-rail-file-close={label}
                     onClick={() => closeRailFile(agentId, id)}
-                    className="mr-1 flex h-5 w-5 shrink-0 cursor-pointer items-center justify-center rounded-[5px] border-0 bg-transparent text-muted hover:bg-surface-hover hover:text-secondary"
+                    className="mr-1 flex h-5 w-5 shrink-0 cursor-pointer items-center justify-center rounded-full border-0 bg-transparent text-muted hover:bg-pill hover:text-primary"
                 >
                     <X size={12} strokeWidth={2} aria-hidden />
                 </button>

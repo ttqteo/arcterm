@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // The toolbar under the agent header while a canvas or a Doc review stands in the terminal's place. It reads as the
-// header's second line: the header's background and side padding, buttons at the header's size, and tabs underlined
-// as the details rail's are, so the header's Terminal | Canvas | Review stays the one segmented control on screen.
+// header's second line: the header's background and side padding, buttons at the header's size, and underlined tabs,
+// so the header's Terminal | Canvas | Review stays the one segmented control on screen.
 
 import { cn } from "@/util/util";
 import type { ReactNode } from "react";

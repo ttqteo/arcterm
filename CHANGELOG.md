@@ -30,6 +30,11 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ## Unreleased
 
+### Changed
+
+- The tabs at the top of the Agent panel (Overview, Files, Changes, Transcript and the open files) are pills: the one
+  on show is filled, the others light up when you hover them, in place of an underline.
+
 ### Fixed
 
 - What a `!` command prints in Chat is in colour, as an agent's command output is: the program's own colours, passes
