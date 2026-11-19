@@ -29,6 +29,13 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ## Unreleased
 
+### Fixed
+
+- Focus read in Chat steps smoothly: J and K (and the arrows) move at once, and quick or held presses glide on instead
+  of stopping and starting at every block.
+
+## 1.6.0 — 2026-11-19
+
 ### Added
 
 - The Agent details rail's session block says when the agent last compacted: **Compacted · 202k → 13k · manual ·
@@ -98,8 +105,6 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
-- Focus read in Chat steps smoothly: J and K (and the arrows) move at once, and quick or held presses glide on instead
-  of stopping and starting at every block.
 - Chat's suggested replies no longer vanish when you paste or attach an image: they stay above the box, and a click
   sends the reply with the image attached.
 - Typing ``` in Chat's box and pasting right after it no longer turns the rest of the message into code: the paste goes
