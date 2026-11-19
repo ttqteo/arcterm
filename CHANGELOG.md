@@ -168,6 +168,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- Chat's last line (the Working line above all) is no longer dimmed by the fade over the box: the fade shows only
+  while the conversation runs on under the box.
 - Sidecar's Other apps lists WSL's and Docker's virtual machine (VmmemWSL, Vmmem) with the gigabytes Task Manager
   shows, and names each app's WebView2 panes after the app (`WebView2: ms-teams.exe`) instead of summing every app's
   into one msedgewebview2.exe row.

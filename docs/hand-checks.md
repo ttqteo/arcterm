@@ -16,6 +16,10 @@ list (its number is not reused).
 Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) ·
 [part 4](hand-checks-4.md) · [part 3](hand-checks-3.md) · [part 2](hand-checks-2.md) (oldest).
 
+- [ ] (arcterm) **Chat's last line is no longer dimmed by the fade over the box.** In an agent's Chat at the end of the
+  conversation, start a turn: the Working line above the box draws at full strength, as bright as the lines above it.
+  Scroll up a little: the conversation fades out under the box again, the fade coming in over the first ~70px.
+  `chatpane.tsx` (`useDockPadding`); not tried in the app.
 - [ ] (arcterm) **Library's look: the tab strip and the panes at full width.** Open Library (rail, Ctrl+7): the strip
   reads Conversations, Canvases, Councils with a small 1 2 3 key on each, the selected tab filled, and it is not clipped
   or doubled when the window is narrow (rail labels hidden). Open a session from Usage: it fills the page, no list

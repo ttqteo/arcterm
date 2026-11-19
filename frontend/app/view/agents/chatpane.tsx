@@ -582,6 +582,15 @@ function useDockPadding(
         if (scroller == null || dock == null) {
             return;
         }
+        // the fade shows only as far as the conversation runs on under the box: at the end the last line rests clear of
+        // the box with nothing under it, and a fade there only dimmed that line (the working line most of all)
+        const shade = () => {
+            const fade = fadeRef.current;
+            if (fade != null) {
+                const below = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight;
+                fade.style.opacity = String(Math.min(1, Math.max(0, below / DOCK_FADE)));
+            }
+        };
         const apply = () => {
             // a cell that is not on screen has no size: keep the padding it had, the observer writes the real one when
             // the cell is shown again
@@ -592,6 +601,7 @@ function useDockPadding(
                     fade.style.height = `${dock.offsetHeight + DOCK_BOTTOM + DOCK_FADE}px`;
                 }
             }
+            shade();
         };
         apply();
         let frame = 0;
@@ -600,9 +610,14 @@ function useDockPadding(
             frame = requestAnimationFrame(apply);
         });
         ro.observe(dock);
+        // the conversation's own growth is not observed: a stuck tail re-pins (a scroll event), and a reader scrolled up
+        // past DOCK_FADE has the fade whole already
+        ro.observe(scroller);
+        scroller.addEventListener("scroll", shade, { passive: true });
         return () => {
             ro.disconnect();
             cancelAnimationFrame(frame);
+            scroller.removeEventListener("scroll", shade);
         };
     }, []);
 }
@@ -1312,7 +1327,8 @@ function ChatPaneBody({ model, agent, barred }: { model: AgentsViewModel; agent:
                 ) : null}
                 {/* the conversation runs out under the box: transparent at the top, the pane's background from DOCK_FADE down
                     (a functional fade, DESIGN.md), clear of the scrollbar so that stays whole; useDockPadding sizes it to
-                    the dock, so the strips and chips over the box always sit on the solid part */}
+                    the dock, so the strips and chips over the box always sit on the solid part, and shows it only as far as
+                    the conversation runs on under the box (none at the end, where it would only dim the last line) */}
                 <div
                     ref={fadeRef}
                     data-chat-fade
