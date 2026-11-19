@@ -8,6 +8,7 @@
 
 import { Skeleton, SkeletonLine } from "@/app/element/skeleton";
 import { ContextMenuModel } from "@/app/store/contextmenu";
+import { getApi } from "@/app/store/global";
 import { openTarget } from "@/app/view/jarvis/openref";
 import { showLibrary, showLibrarySession } from "@/app/view/library/librarystore";
 import { cn, fireAndForget } from "@/util/util";
@@ -32,6 +33,7 @@ import { formatAgeShort } from "./agentsviewmodel";
 import { isPinnedCouncil } from "./councilmodel";
 import { CouncilPinButton } from "./councilpin";
 import { setCouncilPinned } from "./councilstore";
+import { claudeDesktopLink, OPEN_IN_DESKTOP_LABEL } from "./desktoplink";
 import { laterSince, laterTitle } from "./latermodel";
 import { laterMarksAtom, setLater } from "./laterstore";
 import { historyQueryAtom, type ProjectHistory } from "./projecthistorystore";
@@ -170,6 +172,14 @@ function sessionMenu(
                   click: () => setLater(s.transcriptpath, true),
               }
     );
+    const desktopLink = claudeDesktopLink(s);
+    if (desktopLink != null) {
+        items.push({
+            label: OPEN_IN_DESKTOP_LABEL,
+            icon: <ExternalLink size={15} />,
+            click: () => getApi().openExternal(desktopLink),
+        });
+    }
     items.push(copyTitleItem(s.task || "(untitled session)"));
     if (s.id) {
         items.push({

@@ -6,13 +6,14 @@
 
 import { launchAgent } from "@/app/cockpit/cockpit-actions";
 import { pushToast } from "@/app/cockpit/notificationstore";
+import { getApi } from "@/app/store/global";
 import { globalStore } from "@/app/store/jotaiStore";
 import { REGION_LABEL } from "@/app/view/jarvis/briefstyle";
 import { openOrPeek } from "@/app/view/jarvis/openref";
 import { landOn } from "@/app/view/jarvis/returnsurface";
 import { cn, fireAndForget } from "@/util/util";
 import { useAtom, useAtomValue } from "jotai";
-import { ArrowLeft, Check, GitFork, Trash2 } from "lucide-react";
+import { ArrowLeft, Check, ExternalLink, GitFork, Trash2 } from "lucide-react";
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { showTerminal } from "./agentcenter";
 import { openDiff, projectDiffScope } from "./agentdiffnav";
@@ -20,6 +21,7 @@ import type { AgentsViewModel } from "./agents";
 import { SLEEPABLE_AGENTS } from "./agentsleep";
 import { formatAgeShort, formatTokens } from "./agentsviewmodel";
 import { CompactTranscript } from "./compacttranscript";
+import { claudeDesktopLink, OPEN_IN_DESKTOP_LABEL } from "./desktoplink";
 import { runtimeMeta } from "./runtimemeta";
 import { canDeleteSession, confirmDeleteSession, DELETE_SESSION_LABEL } from "./sessiondelete";
 import { SessionFindBar, useFindPaint } from "./sessionfindbar";
@@ -146,6 +148,26 @@ function ForkButton({ model, session }: { model: AgentsViewModel; session: LiveS
         >
             <GitFork size={13} strokeWidth={2} aria-hidden />
             Fork
+        </button>
+    );
+}
+
+// the header's icon beside Fork: an ended Claude session opened in Claude Desktop's Code tab (desktoplink.ts)
+function DesktopButton({ session }: { session: LiveSession }) {
+    const link = claudeDesktopLink(session);
+    if (link == null) {
+        return null;
+    }
+    return (
+        <button
+            type="button"
+            data-session-desktop
+            onClick={() => getApi().openExternal(link)}
+            title={`${OPEN_IN_DESKTOP_LABEL}: continue this conversation in Desktop's Code tab`}
+            aria-label={OPEN_IN_DESKTOP_LABEL}
+            className="flex h-7 w-7 flex-none cursor-pointer items-center justify-center rounded-[7px] border border-edge-strong bg-surface-raised text-secondary hover:border-accent hover:text-accent-soft"
+        >
+            <ExternalLink size={13} strokeWidth={2} aria-hidden />
         </button>
     );
 }
@@ -638,6 +660,7 @@ export function SoloDetail({
                     session={session}
                     onDeleted={() => (onBack ? onBack() : globalStore.set(model.sessionsSelAtom, "all"))}
                 />
+                <DesktopButton session={session} />
                 <ForkButton model={model} session={session} />
                 {/* a resumable session resumes from its composer, below */}
                 {resumable ? null : <PrimaryButton model={model} session={session} strong />}

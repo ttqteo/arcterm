@@ -244,24 +244,34 @@ func TestMarkInterruptedRunsCancelsDagRunsNoTaskReferences(t *testing.T) {
 
 // An orchestrator lead's tab must outlive its process while the dag's children run, so the first spawn keeps it on
 // exit (jarvis.EnsureWorkers). A lead reopened in a new tab gets the same: without it, the tab closes at the lead's
-// next exit and every later pause makes yet another one. A quick run's worker closes with its process.
+// next exit and every later pause makes yet another one. A quick run's worker closes with its process. A session the
+// engine runs on its own (a task's worker, a judge) is reopened as an engine session, as its first spawn was, so
+// Claude Desktop's CLI import keeps skipping it.
 func TestResumeInNewTabKeepsALeadsTabOnExitOnly(t *testing.T) {
 	allowWorkerHarnessForTest(t)
 	stubResume(t, nil)
 	f := newPauseFixture(t, "t-0")
 	cases := []struct {
-		name  string
-		runID string
-		keep  bool
+		name   string
+		runID  string
+		mark   func(*waveobj.Run)
+		keep   bool
+		engine bool
 	}{
-		{"an orchestrator lead", f.ownerID, true},
-		{"a quick run's worker", f.workers["t-0"], false},
+		{"an orchestrator lead", f.ownerID, nil, true, false},
+		{"a quick run's worker", f.workers["t-0"], nil, false, false},
+		{"a dag task's worker", f.workers["t-0"], func(r *waveobj.Run) { r.TaskId = "t-0" }, false, true},
+		{"a judging session", f.workers["t-0"], func(r *waveobj.Run) { r.StageRole = "verifier" }, false, true},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			closed := "tab:" + uuid.NewString()
 			if err := wstore.UpdateRun(f.ctx, f.channel, c.runID, func(r *waveobj.Run) error {
 				r.Phases[0].WorkerOrefs = []string{closed}
+				r.TaskId, r.StageRole = "", ""
+				if c.mark != nil {
+					c.mark(r)
+				}
 				return nil
 			}); err != nil {
 				t.Fatal(err)
@@ -283,6 +293,9 @@ func TestResumeInNewTabKeepsALeadsTabOnExitOnly(t *testing.T) {
 			}
 			if spawned[0].KeepOnExit != c.keep {
 				t.Fatalf("KeepOnExit = %v, want %v", spawned[0].KeepOnExit, c.keep)
+			}
+			if spawned[0].EngineSession != c.engine {
+				t.Fatalf("EngineSession = %v, want %v", spawned[0].EngineSession, c.engine)
 			}
 			if spawned[0].RunId != c.runID {
 				t.Fatalf("RunId = %q, want %q: the new tab must resolve to its run", spawned[0].RunId, c.runID)

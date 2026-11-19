@@ -34,6 +34,15 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 - A council's first round and its pause now use the whole width of the pane: the experts' cards and the ideas fill it
   instead of stopping at 900 px with an empty strip on the right, while an idea's argument keeps a readable line length.
+### Added
+
+- Open in Claude Desktop: an ended Claude conversation opens in Claude Desktop's Code tab to carry on there, from the
+  icon beside Fork above its transcript or from its row's menu in a project's History.
+
+### Fixed
+
+- A task worker or judge reopened after its tab was closed stays out of Claude Desktop's CLI import, as it did when it
+  first started.
 
 ## 1.7.0 — 2026-11-19
 

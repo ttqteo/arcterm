@@ -1183,3 +1183,8 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
   commit's +/− with `Committed in <hash> <subject>` above it, not "No change since the last commit". Edit the file
   again without committing → Reread: the diff is against HEAD again and the line above it is gone. A file no commit
   ever changed and that matches HEAD still says "No change since the last commit". Unit-tested on the Go side only.
+- [ ] (arcterm) **Open in Claude Desktop** (`desktoplink.ts`, `sessionsdetail.tsx` DesktopButton,
+  `projecthistory.tsx` menu, `commands.rs` `is_claude_desktop_resume`). Open an ended Claude conversation in Library →
+  Conversations: the external-link icon beside Fork opens Claude Desktop on that conversation in its Code tab (Desktop
+  imports it if it does not hold it yet). A live session and a pi session show no icon. A project's History row menu
+  has the same item. Unit-tested only, not tried in the app.
