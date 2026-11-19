@@ -16,6 +16,12 @@ list (its number is not reused).
 Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) ·
 [part 4](hand-checks-4.md) · [part 3](hand-checks-3.md) · [part 2](hand-checks-2.md) (oldest).
 
+- [ ] (arcterm) **A resumed agent's Chat counts no ended turn.** Leave a Claude agent idle, quit arcterm (or put the
+  agent to sleep), reopen it later and open its Chat while it starts: if it reads "Working", nothing follows it, no
+  "(10h 24m · ↓ 841 tokens)" from the last turn before you left; once you send a prompt, the counter starts from it.
+  `turnStats` stops at a `turn_duration` record (transcriptprojection.ts); tried by unit tests, the typecheck and on
+  the real 2026-11-19 transcript cut at 09:11, not in the app. Why that agent read working before it reported in is
+  still unknown (2026-11-19);
 - [ ] (arcterm) **Live output in full view is in colour.** Run a coloured background task (`task tauri:build`, or
   `npx vite build`) from a Claude agent, open its peek → Open full view: the File tab shows vite's cyan/green and no
   `␛[36m` codes; with Live on it keeps to the end as lines arrive, scrolling up stops it, clicking Live jumps back;

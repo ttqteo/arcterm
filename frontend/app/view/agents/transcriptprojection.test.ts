@@ -48,6 +48,39 @@ describe("turnStats", () => {
     it("is null with no prompt in the lines read", () => {
         expect(turnStats([reply("m1", 10, "2026-11-10T14:30:05.000Z"), result("2026-11-10T14:30:06.000Z")])).toBeNull();
     });
+
+    // a session resumed (or woken) the next morning reads working before it reports in: the last prompt is last night's,
+    // whose turn ended, and Chat said "Working (10h 24m · ↓ 841 tokens)" (2026-11-19)
+    it("is null once the last turn has ended, a compaction after it included", () => {
+        const ended = [
+            prompt("ok xong rồi thì dừng dev đi", "2026-11-18T15:47:04.713Z"),
+            reply("m1", 295, "2026-11-18T15:47:09.041Z", "tool_use"),
+            result("2026-11-18T15:47:11.787Z"),
+            reply("m2", 128, "2026-11-18T15:47:25.037Z", "text"),
+            L({ type: "system", subtype: "stop_hook_summary", timestamp: "2026-11-18T15:47:25.346Z" }),
+            L({ type: "system", subtype: "turn_duration", timestamp: "2026-11-18T15:47:25.361Z" }),
+            L({ type: "last-prompt" }),
+        ];
+        expect(turnStats(ended)).toBeNull();
+        const compacted = [
+            ...ended,
+            L({ type: "system", subtype: "compact_boundary", timestamp: "2026-11-18T16:42:58.953Z" }),
+            L({ type: "user", isCompactSummary: true, timestamp: "2026-11-18T16:42:58.914Z", message: { content: "This session is being continued" } }),
+            L({ type: "attachment", timestamp: "2026-11-18T16:42:59.451Z" }),
+        ];
+        expect(turnStats(compacted)).toBeNull();
+    });
+
+    it("counts the turn a prompt opened after the last one ended", () => {
+        const lines = [
+            prompt("first", "2026-11-18T15:47:04.000Z"),
+            reply("m0", 999, "2026-11-18T15:47:09.000Z"),
+            L({ type: "system", subtype: "turn_duration", timestamp: "2026-11-18T15:47:25.000Z" }),
+            prompt("nhưng mà tôi điền rồi mà", "2026-11-19T02:12:00.000Z"),
+            reply("m1", 40, "2026-11-19T02:12:05.000Z"),
+        ];
+        expect(turnStats(lines)).toEqual({ startedAt: Date.parse("2026-11-19T02:12:00.000Z"), outputTokens: 40 });
+    });
 });
 
 const LINES: string[] = [

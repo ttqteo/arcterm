@@ -294,7 +294,9 @@ function isPrompt(rec: any): boolean {
 
 /** Pure: the turn at the end of a Claude transcript, read back from its last line to its prompt: each reply's output
  *  tokens once (Claude Code writes every block of a reply as its own record, repeating the reply's usage; a request's
- *  copy is skipped). Null when the lines hold no prompt. */
+ *  copy is skipped). Null when the lines hold no prompt, and when a turn's end (the system turn_duration Claude Code
+ *  writes after its Stop hooks, which wavesrv's wshserver_turnend.go reads too) comes before one: no turn is under way,
+ *  and an agent that reads working then (one resumed or woken, before it reports in) would count last night's turn. */
 export function turnStats(lines: string[]): TurnStats | null {
     const byReply = new Map<string, number>();
     for (let i = lines.length - 1; i >= 0; i--) {
@@ -311,6 +313,9 @@ export function turnStats(lines: string[]): TurnStats | null {
                 outputTokens += n;
             }
             return { startedAt, outputTokens };
+        }
+        if (rec?.type === "system" && rec.subtype === "turn_duration") {
+            return null;
         }
         const out = rec?.message?.usage?.output_tokens;
         if (rec?.type === "assistant" && !isRequestCopy(rec) && typeof out === "number") {
