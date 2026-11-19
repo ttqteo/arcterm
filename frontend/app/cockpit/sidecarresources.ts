@@ -4,7 +4,7 @@
 // Sidecar's resource panel (the title bar's machine figures, clicked): what Sidecar itself, the rest of arcterm and each
 // agent take in CPU and RAM, then the processes outside arcterm holding at least 200 MB. Built by the main window's
 // bridge from a Resource Manager snapshot (pkg/resmon) and the pids the host says draw Sidecar's page (`sidecar_pids`).
-// Pure: the bridge and the page both import it, the page for the types only.
+// Pure: the bridge and the page both import it, the page for the types and `resourcesLost`.
 
 import type { SidecarResourcePoint, SidecarResourceRow, SidecarResources } from "./sidecartypes";
 
@@ -184,4 +184,20 @@ export function resourcesOf(
             ? { swapTotal: roundMem(snap.machine.swaptotal) }
             : {}),
     };
+}
+
+/**
+ * Whether Sidecar's page must ask the bridge for the resources again: it wants them, and a snapshot that arrived after
+ * its last ask carries none, so the bridge has dropped the panel. The bridge shuts it on every hello, and it says hello
+ * on its own at mount when it finds Sidecar open (a main window reloaded, or arcterm restarted with Sidecar restored):
+ * a hello that lands after the page's open act wiped it, and the panel sat on "Measuring…" until it was closed and
+ * opened again. A snapshot from before the ask (`heardAt <= askedAt`) is not a refusal: the ask is on its way.
+ */
+export function resourcesLost(
+    want: boolean,
+    snap: { resources?: SidecarResources } | undefined,
+    heardAt: number,
+    askedAt: number
+): boolean {
+    return want && snap != null && snap.resources == null && heardAt > askedAt;
 }

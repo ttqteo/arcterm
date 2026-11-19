@@ -12,6 +12,7 @@ import { layoutFor, type FormChange, type SidecarLayout } from "@/app/cockpit/si
 import { SidecarMachineContext } from "@/app/cockpit/sidecarmachine";
 import { SidecarOrbit } from "@/app/cockpit/sidecarorbit";
 import { frameOf, frameReason, screenState } from "@/app/cockpit/sidecarorbitmodel";
+import { resourcesLost } from "@/app/cockpit/sidecarresources";
 import { SidecarResourcesPanel } from "@/app/cockpit/sidecarresourcespanel";
 import { NATIVE_MAC_FRAME, SidecarTitleBar, toggleSidecarFullscreen } from "@/app/cockpit/sidecartitlebar";
 import {
@@ -99,15 +100,23 @@ function useSidecarForm(): [SidecarForm, (change: FormChange) => void] {
 // is. The band takes the panel's place: a panel left open shuts when the window widens to the wall.
 // The page asks only once it has heard its first snapshot (`answered`): the bridge answers a hello by shutting the
 // resource panel ("a reloaded page starts with its panel shut", sidecarbridge.tsx), so an open act that reaches it before
-// the hello is wiped and never sent again. A snapshot heard means the hello was answered; the panel and the column still
-// show at once (measuring) from the page's own state, whatever the bridge has heard.
-function useResourcesPanel(band: boolean, answered: boolean, visible: boolean): [boolean, () => void, () => void] {
+// the hello is wiped. A snapshot heard means the page's hello was answered; the panel and the column still show at once
+// (measuring) from the page's own state, whatever the bridge has heard. The bridge also says hello on its own when it
+// mounts with Sidecar open, which can land after the open act: a later snapshot with no resources asks again
+// (`resourcesLost`).
+function useResourcesPanel(band: boolean, heard: Heard | null, visible: boolean): [boolean, () => void, () => void] {
     const [open, setOpen] = useState(false);
     if (band && open) {
         setOpen(false);
     }
     // a hidden page asks for no readings: the panel stays open and asks again once it shows
-    const want = (open || band) && answered && visible;
+    const want = (open || band) && heard != null && visible;
+    // the last open act: its pids, to ask again with, and when it went
+    const asked = useRef<{ pids: number[]; at: number }>({ pids: [], at: 0 });
+    const ask = useCallback((pids: number[]) => {
+        asked.current = { pids, at: Date.now() };
+        send({ kind: "resources", open: true, pids });
+    }, []);
     useEffect(() => {
         if (!want) {
             return;
@@ -124,12 +133,12 @@ function useResourcesPanel(band: boolean, answered: boolean, visible: boolean): 
                     const key = pids.join(",");
                     if (live && key !== last) {
                         last = key;
-                        send({ kind: "resources", open: true, pids });
+                        ask(pids);
                     }
                 });
         };
         // the panel shows at once (measuring) while the pids are read
-        send({ kind: "resources", open: true, pids: [] });
+        ask([]);
         tell();
         const timer = setInterval(tell, PIDS_REFRESH_MS);
         return () => {
@@ -137,7 +146,12 @@ function useResourcesPanel(band: boolean, answered: boolean, visible: boolean): 
             clearInterval(timer);
             send({ kind: "resources", open: false, pids: [] });
         };
-    }, [want]);
+    }, [want, ask]);
+    useEffect(() => {
+        if (heard != null && resourcesLost(want, heard.snap, heard.at, asked.current.at)) {
+            ask(asked.current.pids);
+        }
+    }, [heard, want, ask]);
     const toggle = useCallback(() => setOpen((o) => !o), []);
     const close = useCallback(() => setOpen(false), []);
     return [open, toggle, close];
@@ -190,7 +204,7 @@ function SidecarRoot() {
     const wall = layout === "wall";
     const [form, changeForm] = useSidecarForm();
     const visible = useVisible(heard != null);
-    const [resourcesOpen, toggleResources, closeResources] = useResourcesPanel(wall, heard != null, visible);
+    const [resourcesOpen, toggleResources, closeResources] = useResourcesPanel(wall, heard, visible);
     // Date.now() too: the dashboard adds (clock - heard.at) to the snapshot's own `now`, so the two must share one clock
     const [clock, setClock] = useState(() => Date.now());
 

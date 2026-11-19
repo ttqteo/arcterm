@@ -173,6 +173,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- Sidecar's Resources no longer sits on "Measuring…" with empty charts after arcterm restarts with Sidecar open, or
+  after the main window reloads: it asks for its readings again instead of waiting to be closed and opened.
 - Chat's last line (the Working line above all) is no longer dimmed by the fade over the box: the fade shows only
   while the conversation runs on under the box.
 - Chat's `@` list shows a run once: its lead agent, with the same title, is no longer listed beside it. A name typed

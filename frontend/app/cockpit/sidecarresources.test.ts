@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it } from "vitest";
-import { endNote, otherKey, pushHistory, resourcesOf } from "./sidecarresources";
+import { endNote, otherKey, pushHistory, resourcesLost, resourcesOf } from "./sidecarresources";
 
 const MB = 1024 * 1024;
 
@@ -179,5 +179,24 @@ describe("End task on the other apps", () => {
         );
         // the call itself failed
         expect(endNote(null, 18)).toBe("Couldn't end it");
+    });
+});
+
+describe("resourcesLost", () => {
+    const shown = { resources: { state: "measuring" as const, rows: [], others: [], history: [] } };
+
+    it("asks again when a snapshot after the ask comes without the panel (the bridge's own hello wiped it)", () => {
+        expect(resourcesLost(true, {}, 200, 100)).toBe(true);
+    });
+
+    it("waits on a snapshot from before the ask: the ask is still on its way", () => {
+        expect(resourcesLost(true, {}, 100, 100)).toBe(false);
+        expect(resourcesLost(true, {}, 90, 100)).toBe(false);
+    });
+
+    it("leaves a panel the bridge holds, a page that wants none, and a page that heard nothing", () => {
+        expect(resourcesLost(true, shown, 200, 100)).toBe(false);
+        expect(resourcesLost(false, {}, 200, 100)).toBe(false);
+        expect(resourcesLost(true, undefined, 200, 100)).toBe(false);
     });
 });
