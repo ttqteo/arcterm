@@ -38,6 +38,11 @@ export function ChatRefLinks({ value, children }: { value: RefLinksValue; childr
     return <RefLinks.Provider value={value}>{children}</RefLinks.Provider>;
 }
 
+// the tab whose Chat draws this, or null outside a Chat (a code block in another surface's markdown)
+export function useChatSelfId(): string | null {
+    return useContext(RefLinks)?.selfId ?? null;
+}
+
 // a bubble with ten badges asks for the project's runs or councils once, not ten times while the first read is on its way
 const loadingRuns = new Set<string>();
 const loadingCouncils = new Set<string>();

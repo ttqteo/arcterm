@@ -40,8 +40,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   wrapping away and keeps the paste.
 - When an agent's work is done (its last turn committed and you have read it), the suggested replies over Chat's box end
   with "close agent", which closes it as the header's ✓ Close does.
-- A shell command in a Chat reply (a `bash`, `sh` or `powershell` block) has a Run button: it opens a terminal in the
-  panel under the agent, in the folder the agent works in, and runs the command there.
+- A shell command in a Chat reply (a `bash`, `sh` or `powershell` block, or a `! command` line) has a Run button: it
+  sends the command to that agent as a `! command`, as if you typed it in the box, so the output shows in the
+  conversation and the agent sees it. With a draft in the box it asks you to send or clear it first.
 - A shell command shows in colour as you type it in Chat's bash mode and in a reply's shell block: the command apart
   from its arguments, flags and pipes dimmed, variables and strings in their own colours.
 - A picture the agent read shows as a small thumbnail in Chat: at the end of its folded line of steps and of its Read
@@ -152,6 +153,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- A question an agent asks stays in Chat with its choices while its background subagents keep working, instead of
+  turning into an "Answer in Terminal" card a few seconds later.
 - A line you type straight under a `>` quote, with no blank line between, shows in your sent message as its own line
   under the quote, as the box drew it, instead of inside the quote.
 - Clicking an agent whose Chat reads with focus read puts the keyboard in its conversation, so J/K step blocks at once

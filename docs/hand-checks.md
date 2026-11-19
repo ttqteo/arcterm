@@ -16,6 +16,11 @@ list (its number is not reused).
 Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) ·
 [part 4](hand-checks-4.md) · [part 3](hand-checks-3.md) · [part 2](hand-checks-2.md) (oldest).
 
+- [ ] (arcterm) **Run on a reply's command runs it in the agent.** In Chat, click ▷ on a `! git status` row of a reply:
+  the agent's box sends `! git status` (Claude Code's bash mode) and its output shows in the conversation, no new
+  terminal opens. With a draft in the box, ▷ toasts "The message box has a draft" and the draft stays. To a sleeping
+  agent it runs without waking it, as a typed `!` does. `codeblock.tsx` run; `chat-code-box` step 1b checks the
+  button's title only (not run, no dev app up).
 - [ ] (arcterm) **Focus read follows the new reply, its tick rides the lit block, Escape leaves it.** With focus read
   on, send a prompt and stay at the bottom while the agent works: when the turn ends the reply's first block is lit on
   the line. Step J to the very end: the accent tick sits beside the lit group, not left at a third of the view. Press
