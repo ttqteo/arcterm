@@ -15,6 +15,9 @@
 // (`data-chat-live`), an item that waits on you (the brainstorm row, a commit card, a handoff card), and the pending
 // bubbles, the ask and the local cards, which are in `data-chat-tail`, outside the conversation. A folded reply's Show
 // more goes with its last block.
+//
+// The same machinery reads the File tab's markdown Preview (kind "doc", mddoc.tsx): its blocks are the document's
+// markdown blocks, minus the comment cards' slots and the overlay, and it has no Q.
 
 import { useEffect, useRef, type RefObject } from "react";
 import {
@@ -46,12 +49,16 @@ export interface FocusBlock {
     extra: HTMLElement[];
 }
 
-// never a block, never walked into: the pinned prompt, Show earlier, the selection's ↩, the selection paint, a copy button
+// never a block, never walked into: the pinned prompt, Show earlier, the selection's ↩, the selection paint, a copy
+// button, and in a markdown Preview a comment card's slot and the overlay of marks and buttons
 const SKIP =
-    "[data-pinned-prompt],[data-chat-earlier],[data-chat-quote-button],[data-md-selection-layer],[data-chat-copy]";
+    "[data-pinned-prompt],[data-chat-earlier],[data-chat-quote-button],[data-md-selection-layer],[data-chat-copy]," +
+    "[data-md-slot],[data-md-overlay]";
 // what waits on you, never dimmed
 const WAITS = "[data-chat-brainstorm-row],[data-chat-ccard],[data-chat-hcard-title]";
 const LIVE = "[data-chat-live]";
+// where a change moves no block, so it collects nothing: the tail, a reply still being written, a document's overlay
+const STILL = `[data-chat-tail],${LIVE},[data-md-overlay]`;
 // markdown's own blocks, which a wrapper holding one of them is walked into for
 const MD_BLOCKS = "p,h1,h2,h3,h4,h5,h6,li,ul,ol,blockquote,[data-md-block],[data-md-li-head]";
 const TEXT_TAGS = new Set(["P", "H1", "H2", "H3", "H4", "H5", "H6"]);
@@ -61,6 +68,18 @@ const LIT_ATTR = "data-fr-lit";
 const NEAR_ATTR = "data-fr-near";
 const SKIP_ATTR = "data-fr-skip";
 const ON_ATTR = "data-focus-read";
+// the reader's id on its scroller, for the keys to find the one that holds the focus (focusedDocReader)
+const READER_ATTR = "data-fr-reader";
+
+/** Where focus read runs: an agent's Chat conversation, or the File tab's markdown Preview (mddoc.tsx), whose blocks are
+ *  the document's own (the same markdown blocks a reply's are) and which has no chat box for Q. */
+export type FocusReadKind = "chat" | "doc";
+
+// the element whose blocks focus read walks, inside the scroller
+const ROOT_OF: Record<FocusReadKind, string> = {
+    chat: "[data-chat-conversation]",
+    doc: "[data-md-doc-body]",
+};
 
 function shown(el: Element): el is HTMLElement {
     return el instanceof HTMLElement && el.getClientRects().length > 0;
@@ -132,6 +151,15 @@ export function collectBlocks(root: Element): FocusBlock[] {
     return out;
 }
 
+/** A markdown Preview's blocks, in document order: its paragraphs, headings, leaf list items, code blocks and tables,
+ *  as in a reply (proseBlocks); a markdown block that is neither code nor a table (a diagram) is a card, dimmed and
+ *  passed over. */
+export function collectDocBlocks(root: Element): FocusBlock[] {
+    const out: FocusBlock[] = [];
+    proseBlocks(root, out);
+    return out;
+}
+
 /** What Q puts in the box for a block, before it is made a quote: its text as rendered, a code block fenced, a table
  *  rebuilt; null for a card or a step list, where Q does nothing. */
 export function quoteTextOf(block: FocusBlock): string | null {
@@ -189,8 +217,10 @@ export function useFocusRead(
     on: boolean,
     following: boolean,
     size: number = 1,
-    working: boolean = false
+    working: boolean = false,
+    kind: FocusReadKind = "chat"
 ): void {
+    const rootSelector = ROOT_OF[kind];
     // the last following / working pair, to tell a turn that ended while you followed it from a scroll away from the bottom
     const prevRef = useRef({ following, working });
     // the running machinery's way to light the reply a turn just ended with
@@ -255,7 +285,7 @@ export function useFocusRead(
             if (tick == null) {
                 return;
             }
-            const conv = scroller.querySelector("[data-chat-conversation]");
+            const conv = scroller.querySelector(rootSelector);
             if (conv == null || blocks.length === 0) {
                 tick.style.display = "none";
                 return;
@@ -268,9 +298,9 @@ export function useFocusRead(
         // the blocks and where they are; the lit one stays lit while it is still drawn, else the line picks again
         const collect = () => {
             lastCollect = Date.now();
-            const conv = scroller.querySelector("[data-chat-conversation]");
+            const conv = scroller.querySelector(rootSelector);
             watchConv(conv);
-            const all = conv != null ? collectBlocks(conv) : [];
+            const all = conv != null ? (kind === "chat" ? collectBlocks(conv) : collectDocBlocks(conv)) : [];
             const next = all.filter((b) => b.kind !== "card");
             const nextSkipped = all.filter((b) => b.kind === "card");
             const keep = new Set(next.flatMap(marked));
@@ -406,7 +436,8 @@ export function useFocusRead(
         scroller.addEventListener("pointerdown", onIntent);
         // a change inside the tail or a reply still being written moves no block: only what changes elsewhere collects
         const mo = new MutationObserver((records) => {
-            if (records.some((r) => (r.target as Element).closest?.(`[data-chat-tail],${LIVE}`) == null)) {
+            // nor the document's overlay (the hover's +, the comment marks), redrawn as the pointer moves
+            if (records.some((r) => (r.target as Element).closest?.(STILL) == null)) {
                 scheduleCollect();
             }
         });
@@ -443,27 +474,28 @@ export function useFocusRead(
             paint(true);
         };
 
-        const unregister = registerFocusReader(agentId, {
-            step: (dir) => {
-                const from = lit >= 0 ? lit : litAt(spans, scroller.scrollTop + line());
-                const n = stepFrom(from, dir, blocks.length, sizeRef.current);
-                if (n == null) {
-                    return;
-                }
-                setLit(n);
-                scrollTo(scrollTopFor(spans[n], line(), maxScroll(scroller.scrollHeight, scroller.clientHeight)));
-            },
-            // the lit group as one quote, its blocks a blank quoted line apart; a step list or a card in it adds nothing
-            quote: () => {
-                const texts = litGroup(lit, blocks.length, sizeRef.current)
-                    .map((i) => quoteTextOf(blocks[i]))
-                    .filter((t): t is string => t != null && t.trim() !== "");
-                const next = texts.length > 0 ? withQuote(chatBoxText(agentId), texts.join("\n\n")) : null;
-                if (next != null) {
-                    writeChatBox(agentId, next);
-                }
-            },
-        });
+        const step = (dir: 1 | -1) => {
+            const from = lit >= 0 ? lit : litAt(spans, scroller.scrollTop + line());
+            const n = stepFrom(from, dir, blocks.length, sizeRef.current);
+            if (n == null) {
+                return;
+            }
+            setLit(n);
+            scrollTo(scrollTopFor(spans[n], line(), maxScroll(scroller.scrollHeight, scroller.clientHeight)));
+        };
+        // the lit group as one quote, its blocks a blank quoted line apart; a step list or a card in it adds nothing
+        const quote = () => {
+            const texts = litGroup(lit, blocks.length, sizeRef.current)
+                .map((i) => quoteTextOf(blocks[i]))
+                .filter((t): t is string => t != null && t.trim() !== "");
+            const next = texts.length > 0 ? withQuote(chatBoxText(agentId), texts.join("\n\n")) : null;
+            if (next != null) {
+                writeChatBox(agentId, next);
+            }
+        };
+        // a document has no chat box to quote into: Q is Chat's only
+        const unregister = registerFocusReader(agentId, kind === "chat" ? { step, quote } : { step });
+        scroller.setAttribute(READER_ATTR, agentId);
 
         return () => {
             unregister();
@@ -490,11 +522,12 @@ export function useFocusRead(
                 el.removeAttribute(SKIP_ATTR);
             }
             scroller.removeAttribute(ON_ATTR);
+            scroller.removeAttribute(READER_ATTR);
             if (tickRef.current != null) {
                 tickRef.current.style.display = "none";
             }
         };
-    }, [on, agentId]);
+    }, [on, agentId, kind]);
 
     useEffect(() => {
         const prev = prevRef.current;

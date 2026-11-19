@@ -16,6 +16,12 @@ list (its number is not reused).
 Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) ·
 [part 4](hand-checks-4.md) · [part 3](hand-checks-3.md) · [part 2](hand-checks-2.md) (oldest).
 
+- [ ] (arcterm) **Focus read in a markdown Preview** (`mddoc.tsx`, `focusreadpill.tsx`, `chatfocusreadview.ts` kind
+  `doc`). Open a long `.md` in the Agent panel's File tab (Preview): the pill sits at the top of the right edge, above
+  the outline dashes, and no text runs under it. Turn it on: a few blocks lit, the rest dimmed, the accent tick in the
+  left gutter; J/K/↓/↑/Space step, ×N cycles the size, there is no Q and `q` does nothing; Escape and Alt+R (with the
+  document focused) turn it off. Another `.md` opens already on. Hover + and `c` still comment, and the comment cards
+  are never lit. Chat's focus read is unchanged (its pill still has Q).
 - [ ] (arcterm) **The Agent panel's tabs are pills** (`agentrailpanel.tsx` TAB, RailFileTab). Open an agent's panel
   and a file in it: the tab on show is a filled pill, the others bare until hovered, centred in the 44px band; on
   File the file pills shrink and scroll as before, and a file's × is a round button inside its pill. Not tried in the

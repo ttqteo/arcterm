@@ -91,12 +91,61 @@ export function setFocusReadOn(agentId: string, on: boolean): void {
     globalStore.set(chatFocusReadOnAtom(agentId), on);
 }
 
-/** What the keys do in one agent's Chat while focus read is on. */
+/** What the keys do in one agent's Chat (or a markdown Preview) while focus read is on. */
 export interface FocusReader {
     /** J / ↓ / Space (1) and K / ↑ / Shift+Space (-1): the next or previous block onto the line */
     step(dir: 1 | -1): void;
-    /** Q: the lit blocks into the chat box as one quote, the focus left in the conversation */
-    quote(): void;
+    /** Q: the lit blocks into the chat box as one quote, the focus left in the conversation; a document has none */
+    quote?(): void;
+}
+
+// Focus read in the File tab's markdown Preview (mddoc.tsx): one switch for every document, remembered in localStorage
+// `doc.focusRead` (off unless it says true). Its reader registers as DOC_READER_PREFIX + the file's path, and the
+// Preview's scroller carries that id in `data-fr-reader`, so the keys find the document that holds the focus.
+const DOC_STORAGE_KEY = "doc.focusRead";
+export const DOC_READER_PREFIX = "doc:";
+
+function readDocOn(): boolean {
+    try {
+        return localStorage.getItem(DOC_STORAGE_KEY) === "true";
+    } catch {
+        return false;
+    }
+}
+
+const docOnBase = atom<boolean>(readDocOn());
+
+export const docFocusReadOnAtom = atom(
+    (get) => get(docOnBase),
+    (_get, set, next: boolean) => {
+        set(docOnBase, next);
+        try {
+            localStorage.setItem(DOC_STORAGE_KEY, next ? "true" : "false");
+        } catch {
+            // storage unavailable: the switch holds for this session
+        }
+    }
+);
+
+export function setDocFocusReadOn(on: boolean): void {
+    globalStore.set(docFocusReadOnAtom, on);
+}
+
+// The markdown Preview that holds the keyboard focus, else null: its scroller (`data-md-doc`), or a control inside it
+export function focusedDoc(): HTMLElement | null {
+    if (typeof document === "undefined") {
+        return null;
+    }
+    return document.activeElement?.closest?.<HTMLElement>("[data-md-doc]") ?? null;
+}
+
+// the reader id of the markdown Preview that holds the focus while doc focus read is on and its reader is registered
+export function focusedDocReader(): string | null {
+    if (!globalStore.get(docFocusReadOnAtom)) {
+        return null;
+    }
+    const id = focusedDoc()?.getAttribute("data-fr-reader");
+    return id != null && readers.has(id) ? id : null;
 }
 
 const readers = new Map<string, FocusReader>();

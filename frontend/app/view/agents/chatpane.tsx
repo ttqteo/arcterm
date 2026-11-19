@@ -26,7 +26,7 @@ import { loadEffortDetail } from "@/app/view/jarvis/effortstore";
 import { formatChordString } from "@/util/keysym";
 import { cn, fireAndForget, stringToBase64 } from "@/util/util";
 import { useAtom, useAtomValue } from "jotai";
-import { ArrowDown, ChevronDown, ChevronUp, Highlighter, Quote, TextSearch, X } from "lucide-react";
+import { ArrowDown, Highlighter, X } from "lucide-react";
 import {
     animate,
     AnimatePresence,
@@ -66,14 +66,7 @@ import { ChatDocReviewCard } from "./chatdocreviewcard";
 import { chatEmptyError, chatEmptyView } from "./chatempty";
 import { ChatFileCards } from "./chatfilecards";
 import { splitAttachments } from "./chatfiles";
-import { nextFocusReadSize } from "./chatfocusread";
-import {
-    chatFocusReadOnAtom,
-    chatFocusReadSizeAtom,
-    FOCUS_READ_KEYS,
-    focusReaderOf,
-    type FocusReader,
-} from "./chatfocusreadstore";
+import { chatFocusReadOnAtom, chatFocusReadSizeAtom } from "./chatfocusreadstore";
 import { useFocusRead } from "./chatfocusreadview";
 import { ChatGoalStrip } from "./chatgoal";
 import { isHandoffAsk } from "./chathandoff";
@@ -126,6 +119,7 @@ import { noteTakenBack, useTakenBack } from "./chattakebackstore";
 import { VERDICT_TOPIC } from "./chatverdict";
 import { ChatVisualHost } from "./chatvisualview";
 import { doneSuggestion } from "./donesuggest";
+import { FocusReadPill } from "./focusreadpill";
 import { switchAgentChunk } from "./initiativebandstore";
 import { startTranscriptStream, stopTranscriptStream } from "./livetranscript";
 import { activityAtomFor } from "./livetranscriptatoms";
@@ -669,100 +663,20 @@ function SkimToggle() {
 }
 
 // Chat's focus read toggle, beside Skim: one block at a time, the rest dimmed (chatfocusreadview.ts). Each agent's own,
-// remembered (chatfocusreadstore.ts). Turning it on puts the focus in the conversation, so J/K step at once; while it is
-// on, the toggle grows down into one pill with the step and quote buttons, which say their keys on their face.
+// remembered (chatfocusreadstore.ts); the pill itself is focusreadpill.tsx, shared with the markdown Preview.
 function FocusReadToggle({ agentId, scrollRef }: { agentId: string; scrollRef: RefObject<HTMLDivElement | null> }) {
     const [on, setOn] = useAtom(chatFocusReadOnAtom(agentId));
-    const keys = formatChordString(FOCUS_READ_KEYS);
     return (
-        <div
-            data-chat-focus-read-group
-            className="absolute right-[42px] top-2 z-20 flex w-[26px] flex-col overflow-hidden rounded-[8px] border border-edge-mid bg-surface-raised"
-        >
-            <button
-                type="button"
-                data-chat-focus-read-toggle
-                aria-pressed={on}
-                aria-label="Focus read"
-                title={
-                    on
-                        ? `Focus read: on for this agent (${keys} or click to turn off)`
-                        : `Focus read: read this agent's Chat one block at a time (${keys})`
-                }
-                onClick={() => {
-                    setOn(!on);
-                    if (!on) {
-                        scrollRef.current?.focus({ preventScroll: true });
-                    }
-                }}
-                className={cn(
-                    "flex h-[24px] w-full cursor-pointer items-center justify-center",
-                    on ? "bg-accentbg text-accent" : "text-muted hover:bg-surface-hover"
-                )}
-            >
-                <TextSearch size={13} strokeWidth={2} aria-hidden />
-            </button>
-            {on ? <FocusReadSteps agentId={agentId} scrollRef={scrollRef} /> : null}
-        </div>
-    );
-}
-
-// Focus read's buttons, the lower part of its pill (clear of the pinned prompt card, which keeps 70px of the corner):
-// how many blocks it lights at a time (×1, ×2, ×3, a click for the next), the previous and next group, then past a
-// hairline the quote, each step with its key on its face so the keys need no tooltip. A click leaves the focus in the
-// conversation, so the keys go on from there.
-const FOCUS_STEPS = [
-    { key: "K", label: "Previous blocks (K or ↑)", Icon: ChevronUp, act: (r: FocusReader) => r.step(-1) },
-    { key: "J", label: "Next blocks (J, ↓ or Space)", Icon: ChevronDown, act: (r: FocusReader) => r.step(1) },
-    { key: "Q", label: "Quote the lit blocks into the box (Q)", Icon: Quote, act: (r: FocusReader) => r.quote() },
-] as const;
-
-function FocusReadSteps({ agentId, scrollRef }: { agentId: string; scrollRef: RefObject<HTMLDivElement | null> }) {
-    const [size, setSize] = useAtom(chatFocusReadSizeAtom);
-    const next = nextFocusReadSize(size);
-    const sizeLabel = `${size} ${size === 1 ? "block" : "blocks"} at a time (click for ${next})`;
-    return (
-        <div data-chat-focus-read-steps className="flex flex-col border-t border-edge-mid">
-            <button
-                type="button"
-                data-chat-focus-read-size={size}
-                aria-label={sizeLabel}
-                title={sizeLabel}
-                onMouseDown={(e) => e.preventDefault()}
-                onClick={() => {
-                    setSize(next);
-                    scrollRef.current?.focus({ preventScroll: true });
-                }}
-                className="flex h-[24px] cursor-pointer items-center justify-center border-b border-edge-mid font-mono text-[10.5px] font-semibold text-secondary hover:bg-surface-hover hover:text-primary"
-            >
-                ×{size}
-            </button>
-            {FOCUS_STEPS.map(({ key, label, Icon, act }) => (
-                <button
-                    key={key}
-                    type="button"
-                    data-chat-focus-read-step={key.toLowerCase()}
-                    aria-label={label}
-                    title={label}
-                    // the conversation keeps the focus: a button that took it would leave J/K with nowhere to act
-                    onMouseDown={(e) => e.preventDefault()}
-                    onClick={() => {
-                        const reader = focusReaderOf(agentId);
-                        if (reader != null) {
-                            act(reader);
-                        }
-                        scrollRef.current?.focus({ preventScroll: true });
-                    }}
-                    className={cn(
-                        "group flex h-[30px] cursor-pointer flex-col items-center justify-center gap-[3px] text-secondary hover:bg-surface-hover hover:text-primary",
-                        key === "Q" && "border-t border-edge-mid"
-                    )}
-                >
-                    <Icon size={12} strokeWidth={2} aria-hidden />
-                    <kbd className="font-mono text-[9px] leading-none text-muted group-hover:text-secondary">{key}</kbd>
-                </button>
-            ))}
-        </div>
+        <FocusReadPill
+            readerId={agentId}
+            on={on}
+            setOn={setOn}
+            scrollRef={scrollRef}
+            onTitle={(keys) => `Focus read: on for this agent (${keys} or click to turn off)`}
+            offTitle={(keys) => `Focus read: read this agent's Chat one block at a time (${keys})`}
+            quote
+            className="right-[42px] top-2"
+        />
     );
 }
 
