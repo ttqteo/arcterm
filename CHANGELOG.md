@@ -35,6 +35,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - What a `!` command prints in Chat is in colour, as an agent's command output is: the program's own colours, passes
   and failures toned, and the commands Task runs (`task: [install:windows] …`) in the shell's colours. `&&`, `<` and
   `>` no longer read as `&amp;&amp;`, `&lt;` and `&gt;`, in the command and in its output.
+- A file opened from a turn's Edited files card shows its change even once it is committed: its Diff shows the newest
+  commit that changed it, named above the diff, instead of "No change since the last commit".
 
 ## 1.6.1 — 2026-11-19
 

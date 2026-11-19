@@ -193,6 +193,9 @@ type CommandGitFileAtRefData struct {
 	Raw bool `json:"raw,omitempty"`
 	// Worktree reads the file on disk under Cwd instead of a blob; Ref is ignored.
 	Worktree bool `json:"worktree,omitempty"`
+	// LastChange reads the file as it was before the newest commit that changed it (gitinfo.LastChange); Ref is
+	// ignored and the answer names that commit. A diff whose working copy matches HEAD shows that change this way.
+	LastChange bool `json:"lastchange,omitempty"`
 }
 
 // Mirrors gitinfo.FileContent one field for one field: Binary, Missing and TooLarge are answers the
@@ -206,6 +209,10 @@ type CommandGitFileAtRefRtnData struct {
 	IsRepo   bool   `json:"isrepo"`
 	// a Binary blob's bytes, base64, when the request set Raw
 	Data64 string `json:"data64,omitempty"`
+	// for a LastChange read: the commit whose change it is the side before, and its subject; empty when no commit
+	// changed the file
+	Commit  string `json:"commit,omitempty"`
+	Subject string `json:"subject,omitempty"`
 }
 
 type CommandGitReviewPatchData struct {

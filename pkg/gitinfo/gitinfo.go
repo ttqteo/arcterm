@@ -1359,6 +1359,20 @@ func FileAtRef(ctx context.Context, cwd, ref, path string, maxBytes int64) (*Fil
 	return &FileContent{IsRepo: true, Content: out, Size: size}, nil
 }
 
+// LastChange names the newest commit on HEAD that changed path (relative to cwd): its hash and subject, or "" for both
+// when no commit did (a file never committed) or cwd is not a repo. A diff whose working copy matches HEAD shows this
+// commit's change to the file instead of nothing: `<hash>^` is the side before it.
+func LastChange(ctx context.Context, cwd, path string) (hash, subject string, err error) {
+	ctx, cancel := context.WithTimeout(ctx, gitTimeout)
+	defer cancel()
+	out, err := run(ctx, cwd, "log", "-1", "--format=%H%n%s", "--", path)
+	if err != nil {
+		return "", "", nil // not a repo, unborn HEAD: no commit to show
+	}
+	hash, subject, _ = strings.Cut(strings.TrimRight(out, "\r\n"), "\n")
+	return strings.TrimSpace(hash), strings.TrimSpace(subject), nil
+}
+
 // FileInWorktree is FileAtRef for the file on disk under cwd: the "after" side of a live diff, which a
 // blob read cannot give for an edit that is not committed (or staged). It answers the same states, and
 // also treats a NUL byte as binary, which git itself does for a worktree file. A path that leaves cwd is
