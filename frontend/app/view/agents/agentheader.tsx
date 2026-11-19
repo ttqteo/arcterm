@@ -1139,26 +1139,6 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
                                 {words ? (ship.kind === "ship" ? "Ship" : "Commit") : null}
                             </button>
                         ) : null}
-                        {done ? (
-                            <button
-                                type="button"
-                                data-agent-header-done
-                                onClick={closeTerminal}
-                                disabled={held}
-                                // with the words gone the session's tokens move into the title
-                                title={`${!agent.committed && startedRunLanded(agent.id, lineageRuns) ? ORIGIN_DONE_TITLE : DONE_TITLE} (${formatChordString("Alt:w")})${!words && sessionTokens ? ` · ${formatTokens(sessionTokens)} tokens` : ""}`}
-                                aria-label="Close"
-                                className="flex cursor-pointer items-center gap-[6px] whitespace-nowrap rounded-[7px] border border-success/45 px-[9px] py-[5px] text-[12px] font-semibold text-success hover:border-success disabled:cursor-default disabled:opacity-40 disabled:hover:border-success/45"
-                            >
-                                <Check size={14} strokeWidth={2.2} aria-hidden />
-                                {words ? "Close" : null}
-                                {words && sessionTokens ? (
-                                    <span className="font-normal tabular-nums text-muted">
-                                        · {formatTokens(sessionTokens)} tok
-                                    </span>
-                                ) : null}
-                            </button>
-                        ) : null}
                         {handed ? (
                             <button
                                 type="button"
@@ -1229,21 +1209,44 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
                         >
                             <Ellipsis size={15} strokeWidth={1.8} aria-hidden />
                         </button>
-                        <button
-                            type="button"
-                            onClick={closeTerminal}
-                            disabled={waking}
-                            title={
-                                waking
-                                    ? "Waking…"
-                                    : agent.kind === "terminal"
-                                      ? `Close terminal — ends its shell (${formatChordString(closeAgentChord())})`
-                                      : `Close agent — ends its session (${formatChordString(closeAgentChord())})`
-                            }
-                            className={cn(ICON_BTN, "hover:bg-error/15 hover:text-error", ICON_BTN_OFF)}
-                        >
-                            <X size={15} strokeWidth={1.9} />
-                        </button>
+                        {/* one Close: its work done (donesuggest.ts), the × becomes ✓ Close with the session's tokens,
+                            the same close under a sign that says it is time */}
+                        {done ? (
+                            <button
+                                type="button"
+                                data-agent-header-done
+                                onClick={closeTerminal}
+                                disabled={held}
+                                // with the words gone the session's tokens move into the title
+                                title={`${!agent.committed && startedRunLanded(agent.id, lineageRuns) ? ORIGIN_DONE_TITLE : DONE_TITLE} (${formatChordString("Alt:w")})${!words && sessionTokens ? ` · ${formatTokens(sessionTokens)} tokens` : ""}`}
+                                aria-label="Close"
+                                className="flex cursor-pointer items-center gap-[6px] whitespace-nowrap rounded-[7px] border border-success/45 px-[9px] py-[5px] text-[12px] font-semibold text-success hover:border-success disabled:cursor-default disabled:opacity-40 disabled:hover:border-success/45"
+                            >
+                                <Check size={14} strokeWidth={2.2} aria-hidden />
+                                {words ? "Close" : null}
+                                {words && sessionTokens ? (
+                                    <span className="font-normal tabular-nums text-muted">
+                                        · {formatTokens(sessionTokens)} tok
+                                    </span>
+                                ) : null}
+                            </button>
+                        ) : (
+                            <button
+                                type="button"
+                                onClick={closeTerminal}
+                                disabled={waking}
+                                title={
+                                    waking
+                                        ? "Waking…"
+                                        : agent.kind === "terminal"
+                                          ? `Close terminal — ends its shell (${formatChordString(closeAgentChord())})`
+                                          : `Close agent — ends its session (${formatChordString(closeAgentChord())})`
+                                }
+                                className={cn(ICON_BTN, "hover:bg-error/15 hover:text-error", ICON_BTN_OFF)}
+                            >
+                                <X size={15} strokeWidth={1.9} />
+                            </button>
+                        )}
                     </>
                 ) : null}
             </div>

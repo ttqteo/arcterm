@@ -16,6 +16,10 @@ list (its number is not reused).
 Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) ·
 [part 4](hand-checks-4.md) · [part 3](hand-checks-3.md) · [part 2](hand-checks-2.md) (oldest).
 
+- [ ] (arcterm) **A done agent's header has one Close.** On an agent whose last turn committed and was read, the header
+  ends with More then the green ✓ Close · tokens, no × beside it; on a narrow split cell it is the ✓ alone, tokens in
+  its title; an agent not done keeps the ×. Both were `confirmCloseSession`; tried only by the typecheck, not in the
+  app (2026-11-19);
 - [ ] (arcterm) **A resumed agent's Chat counts no ended turn.** Leave a Claude agent idle, quit arcterm (or put the
   agent to sleep), reopen it later and open its Chat while it starts: if it reads "Working", nothing follows it, no
   "(10h 24m · ↓ 841 tokens)" from the last turn before you left; once you send a prompt, the counter starts from it.
