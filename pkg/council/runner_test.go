@@ -145,9 +145,15 @@ func (f *fakeCaller) gateOf(key string) *gate {
 
 func (f *fakeCaller) entered(t *testing.T, key string) {
 	t.Helper()
+	f.enteredWithin(t, key, 10*time.Second)
+}
+
+// enteredWithin is entered with its own wait, for a call that comes only after a whole council run.
+func (f *fakeCaller) enteredWithin(t *testing.T, key string, d time.Duration) {
+	t.Helper()
 	select {
 	case <-f.gateOf(key).entered:
-	case <-time.After(10 * time.Second):
+	case <-time.After(d):
 		t.Fatalf("the call %s never started", key)
 	}
 }
@@ -3786,7 +3792,9 @@ func TestQueueTwoStartsAtOnce(t *testing.T) {
 				t.Errorf("the queued council made %d calls while the other ran", n)
 			}
 			h.f.release(prefix[running.Id] + "ux/r1")
-			h.f.entered(t, prefix[waiting.Id]+"ux/r1") // the queued one starts when the first ends
+			// The queued one starts when the first ends: only after that council's whole run (rounds 2 and 3,
+			// synthesis, the document write), which takes over 10 s under the full suite's load.
+			h.f.enteredWithin(t, prefix[waiting.Id]+"ux/r1", time.Minute)
 			h.f.release(prefix[waiting.Id] + "ux/r1")
 			for _, id := range []string{running.Id, waiting.Id} {
 				if c := h.wait(id); c.State != StateDone {
