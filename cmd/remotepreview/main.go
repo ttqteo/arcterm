@@ -69,11 +69,13 @@ func main() {
 	fixture := flag.String("fixture", fixtureMain, "fixture to serve: main, empty or input")
 	// a restart must keep the port: the page's origin, its service worker and its last-reached time hang on it
 	port := flag.Int("port", 0, "loopback port to listen on; 0 picks a free one")
+	build := flag.String("build", "preview", "build the waiting list names; an open page reloads when it changes")
 	flag.Parse()
 	p, err := newPreview(*fixture, time.Now(), os.Stdout)
 	if err != nil {
 		log.Fatal(err)
 	}
+	p.build = *build
 	vapid, err := vapidPublic()
 	if err != nil {
 		log.Fatal(err)
@@ -105,6 +107,9 @@ type preview struct {
 	// locked is what the fake PCLocked answers: false until the page's Lock is pressed
 	locked bool
 	out    io.Writer
+	// build is what the waiting list names as the serving build (-build): restarting the preview on the same
+	// port with another one shows an open page reloading itself
+	build string
 }
 
 func newPreview(fixture string, now time.Time, out io.Writer) (*preview, error) {
@@ -158,6 +163,7 @@ func transcriptLines(data []byte) []string {
 func (p *preview) handler(origin, vapid string) http.Handler {
 	return remotemode.NewHandler(remotemode.Deps{
 		Static:      web.FS,
+		Build:       p.build,
 		Verify:      func(*http.Request) error { return nil },
 		Origin:      origin,
 		VapidPublic: vapid,

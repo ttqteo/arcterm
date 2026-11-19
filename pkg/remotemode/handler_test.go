@@ -217,6 +217,18 @@ func TestHandlerServesStatic(t *testing.T) {
 		if rec.Code != http.StatusOK || rec.Body.String() != want {
 			t.Errorf("GET %s: got %d %q", path, rec.Code, rec.Body.String())
 		}
+		// a phone must not keep an old page across an update
+		if cc := rec.Header().Get("Cache-Control"); cc != "no-cache" {
+			t.Errorf("GET %s: Cache-Control %q, want no-cache", path, cc)
+		}
+	}
+}
+
+func TestHandlerWaitingBuild(t *testing.T) {
+	d := handlerNewFake().deps()
+	d.Build = "1.6.2+1763540000"
+	if got := handlerWaitingFields(t, d)["build"]; got != `"1.6.2+1763540000"` {
+		t.Errorf("build = %s, want the deps' build", got)
 	}
 }
 

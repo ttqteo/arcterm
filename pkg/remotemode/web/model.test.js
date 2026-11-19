@@ -11,6 +11,7 @@ import {
     needYouCount,
     needYouTitle,
     optionCountLine,
+    pageOutdated,
     runCounts,
     runWorkerText,
     shownWord,
@@ -435,5 +436,17 @@ describe("base64UrlToBytes", () => {
         // 0xfb 0xff 0xbf encodes to "-_-_" in base64url, "+/+/" in base64
         expect(Array.from(base64UrlToBytes("-_-_"))).toEqual([0xfb, 0xff, 0xbf]);
         expect(Array.from(base64UrlToBytes("AQ"))).toEqual([1]);
+    });
+});
+
+describe("pageOutdated", () => {
+    it("is true only when both builds are known and differ", () => {
+        expect(pageOutdated("1.6.1+100", "1.6.2+200")).toBe(true);
+        expect(pageOutdated("1.6.1+100", "1.6.1+100")).toBe(false);
+        // a dev rebuild keeps the version but not the build time
+        expect(pageOutdated("1.6.1+100", "1.6.1+101")).toBe(true);
+        expect(pageOutdated("", "1.6.2+200")).toBe(false);
+        expect(pageOutdated("1.6.1+100", undefined)).toBe(false);
+        expect(pageOutdated("1.6.1+100", "")).toBe(false);
     });
 });

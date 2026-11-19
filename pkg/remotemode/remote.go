@@ -25,6 +25,7 @@ import (
 	"github.com/wavetermdev/waveterm/pkg/baseds"
 	"github.com/wavetermdev/waveterm/pkg/jarvis"
 	"github.com/wavetermdev/waveterm/pkg/remotemode/web"
+	"github.com/wavetermdev/waveterm/pkg/wavebase"
 	"github.com/wavetermdev/waveterm/pkg/waveobj"
 	"github.com/wavetermdev/waveterm/pkg/wps"
 	"github.com/wavetermdev/waveterm/pkg/wshrpc"
@@ -461,6 +462,7 @@ func remoteDeps(cfg Config, runCtx context.Context) Deps {
 	}
 	d := Deps{
 		Static:      web.FS,
+		Build:       wavebase.WaveVersion + "+" + wavebase.BuildTime,
 		Verify:      verify,
 		Origin:      "https://" + cfg.Host(),
 		VapidPublic: cfg.VapidPublic,
