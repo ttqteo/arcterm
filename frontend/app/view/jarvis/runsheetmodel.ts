@@ -31,6 +31,7 @@ import {
 } from "../orchestrate/dagdigest";
 import type { TaskWorkerView } from "../orchestrate/taskcorrelate";
 import { workerSortKey } from "../orchestrate/workertasksort";
+import { landNeedsForce } from "./attentionact";
 import {
     routeLabel,
     workersLabel,
@@ -193,7 +194,10 @@ function doneStatus(read: SheetRead): SheetStatus {
             pulse: true,
             meter: read.dag?.group != null ? STRIP : null,
             meta: [],
-            next: "Land again once the reason is cleared",
+            // a failed final stage is a reason no fix clears: only Land anyway (the forced land) moves it
+            next: landNeedsForce(run.land.reason)
+                ? "Land anyway lands it as it is, or Open shows what failed"
+                : "Land again once the reason is cleared",
             retry: false,
         };
     }

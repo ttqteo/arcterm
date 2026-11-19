@@ -17,6 +17,15 @@ export interface AttentionActInput {
     // agent holds the reports, no path while no arcterm repo is known
     oref?: string;
     projectPath?: string;
+    reason?: string; // why a run-land-held item is held (AttentionItem.reason, the run's RunLand.Reason)
+}
+
+// mirrors orchestrate.finalFailedHold, the reason a land is held with when the final stage failed
+export const FINAL_FAILED_HOLD = "the final stage failed";
+
+/** Pure: a held land only a forced land moves: the final stage failed, and Land again re-reads that same failure. */
+export function landNeedsForce(reason: string | null | undefined): boolean {
+    return reason === FINAL_FAILED_HOLD;
 }
 
 export type AttentionAct = {
@@ -25,6 +34,7 @@ export type AttentionAct = {
         | "Retry"
         | "Accept"
         | "Land again"
+        | "Land anyway"
         | "Work on"
         | "Go to agent"
         | "Start now"
@@ -38,6 +48,7 @@ export type AttentionAct = {
         | "retry-dag"
         | "ack-run"
         | "land-run"
+        | "force-land"
         | "work-on"
         | "start-queued"
         | "remove-queued"
@@ -59,9 +70,12 @@ export function attentionAct(x: AttentionActInput): AttentionAct {
     if (x.wireKind === "run-unverified" && x.channelId !== "" && x.runId != null) {
         return { label: "Accept", kind: "ack-run" };
     }
-    // a held land: the retry `wsh runs land` makes, once the human has cleared the reason the row names
+    // a held land: the retry `wsh runs land` makes, once the human has cleared the reason the row names. A failed
+    // final stage is a reason no retry clears, so there it is the forced land (`--force`), which asks first
     if (x.wireKind === "run-land-held" && x.channelId !== "" && x.runId != null) {
-        return { label: "Land again", kind: "land-run" };
+        return landNeedsForce(x.reason)
+            ? { label: "Land anyway", kind: "force-land" }
+            : { label: "Land again", kind: "land-run" };
     }
     // a chunk that came due: the row itself opens the initiative, so the button starts the work the chunk's
     // notes describe (initiativeworkaction.ts workOnDueChunk); it needs the cockpit, so callers run it. Once an

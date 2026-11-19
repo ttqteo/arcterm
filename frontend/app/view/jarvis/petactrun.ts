@@ -14,9 +14,10 @@ import { TabRpcClient } from "@/app/store/wshrpcutil";
 import type { AgentsViewModel } from "@/app/view/agents/agents";
 import { agentAnswer, markAskSent } from "@/app/view/agents/askanswer";
 import { loadAttention } from "@/app/view/agents/attentionstore";
+import { fireAndForget } from "@/util/util";
 import { START_NOW_TIMEOUT_MS } from "./attentionrun";
 import { workOnDueChunk } from "./initiativeworkaction";
-import { landAgain } from "./landrun";
+import { confirmForceLand, landAgain } from "./landrun";
 import { isPeekableAddress, openAddress, openOrPeekAddress, type OpenGesture } from "./openref";
 import { closePeek } from "./peekstore";
 import type { PetAct } from "./petacts";
@@ -99,11 +100,19 @@ function settleInPlace(act: PetAct): Promise<void> | null {
 }
 
 // A land retry settles its row in place too. A held answer is the act's error, carrying the reason, so the row
-// says why it is still there instead of quietly staying.
+// says why it is still there instead of quietly staying. Land anyway asks first and runs on the confirm.
 async function land(act: Extract<PetAct, { verb: "land" }>): Promise<void> {
+    if (act.force) {
+        confirmForceLand(act.what ?? "", () => fireAndForget(() => settleLand(act)));
+        return;
+    }
+    await settleLand(act);
+}
+
+async function settleLand(act: Extract<PetAct, { verb: "land" }>): Promise<void> {
     setActState(act.id, { status: "running" });
     try {
-        const outcome = await landAgain(act.channelId, act.runId);
+        const outcome = await landAgain(act.channelId, act.runId, act.force === true);
         setActState(act.id, { status: outcome.failed ? "error" : "done", text: outcome.text });
     } catch (e) {
         setActState(act.id, { status: "error", text: errText(e) });

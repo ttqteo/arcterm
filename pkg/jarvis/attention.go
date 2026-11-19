@@ -683,7 +683,7 @@ func landHeldItem(ch AttentionChannel, run *waveobj.Run, dags []*waveobj.TaskGro
 		if failed := finalFailure(dagOfRun(dags, run.ID)); failed != "" {
 			text = "The final stage failed" + failed
 		}
-		why = fmt.Sprintf("The work is on wave/%s. Landing again reads the same failed stage, and a fix on the branch does not clear it: `wsh runs land %s --force` lands it as it is, or Open shows what failed.", run.ID, run.ID)
+		why = fmt.Sprintf("The work is on wave/%s. Landing again reads the same failed stage, and a fix on the branch does not clear it: Land anyway (`wsh runs land %s --force`) lands it as it is, or Open shows what failed.", run.ID, run.ID)
 	} else if run.Land.Dirty {
 		why = fmt.Sprintf("The work is on wave/%s. It lands by itself once the checkout is clear (changes committed, stashed or moved aside, a merge, rebase or cherry-pick finished or aborted); `wsh runs land %s` tries now.", run.ID, run.ID)
 	}

@@ -542,6 +542,9 @@ describe("sheetStatus", () => {
         expect(s.tone).toBe("warning");
         expect(held({ state: "held", reason: "staged changes", dismissed: true }).verb).toBe("Done");
         expect(held({ state: "landed" }).verb).toBe("Done");
+        expect(s.next).toBe("Land again once the reason is cleared");
+        // a failed final stage is a reason no fix clears, so the line points at the forced land instead
+        expect(held({ state: "held", reason: "the final stage failed" }).next).toMatch(/^Land anyway/);
     });
 
     it("counts a cancelled run's survivors in the subtitle, so the count and the card cannot drift", () => {

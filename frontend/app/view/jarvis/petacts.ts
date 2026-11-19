@@ -24,7 +24,8 @@ export type PetAct =
     | { id: string; verb: "open"; label: string; target: PetTarget }
     // land: true dismisses the run's held land instead of acknowledging its unverified outcome
     | { id: string; verb: "ack"; label: string; channelId: string; runId: string; land?: boolean }
-    | { id: string; verb: "land"; label: string; channelId: string; runId: string }
+    // force: Land anyway, past a failed final stage; it asks first (petactrun.ts), naming the run by what
+    | { id: string; verb: "land"; label: string; channelId: string; runId: string; force?: boolean; what?: string }
     | { id: string; verb: "approve-task"; label: string; channelId: string; runId: string; taskId: string }
     | { id: string; verb: "retry-task"; label: string; channelId: string; runId: string; taskId: string }
     // a blocked queue entry (pkg/runqueue), started past the cap and its After; it names no run, so it has no escort
@@ -49,8 +50,8 @@ export interface PetActState {
 
 // The button a click settles, the same one the Brief's queue offers (attentionact.ts), followed by the Open
 // escort for reading the run first: Approve a dag gate, Retry a failed task, Acknowledge an unverified run.
-// A held land gets Land again (a branch merged by hand lands at once) and Dismiss beside it, the way out
-// for a branch that will never land. Everything else needs a written answer, a picked option or a judgment, so
+// A held land gets Land again (a branch merged by hand lands at once), or Land anyway when the final stage
+// failed, and Dismiss beside it, the way out for a branch that will never land. Everything else needs a written answer, a picked option or a judgment, so
 // the escort covers it here; a question one key can answer also gets its options in the peek (petpeekmodel.ts).
 export function actsForAttention(item: AttentionItem, agents: ReadonlyArray<AgentVM> = []): PetAct[] {
     // a plan to review has no run either: Review opens the agent that proposed it while one is open, else its initiative
@@ -131,7 +132,15 @@ export function actsForAttention(item: AttentionItem, agents: ReadonlyArray<Agen
     const channelId = item.channelid ?? "";
     const runId = item.runid;
     const taskId = item.taskid ?? "";
-    const act = attentionAct({ wireKind: item.kind, channelId, runId, taskId, retry: item.retry === true, queueId });
+    const act = attentionAct({
+        wireKind: item.kind,
+        channelId,
+        runId,
+        taskId,
+        retry: item.retry === true,
+        queueId,
+        reason: item.reason,
+    });
     switch (act.kind) {
         case "approve-dag":
             return [
@@ -146,8 +155,16 @@ export function actsForAttention(item: AttentionItem, agents: ReadonlyArray<Agen
         case "ack-run":
             return [{ id: `${item.key}:ack`, verb: "ack", label: act.label, channelId, runId }, escort];
         case "land-run":
+        case "force-land":
             return [
-                { id: `${item.key}:land`, verb: "land", label: act.label, channelId, runId },
+                {
+                    id: `${item.key}:land`,
+                    verb: "land",
+                    label: act.label,
+                    channelId,
+                    runId,
+                    ...(act.kind === "force-land" ? { force: true, what: item.source || item.text } : {}),
+                },
                 { id: `${item.key}:dismiss`, verb: "ack", label: "Dismiss", land: true, channelId, runId },
                 escort,
             ];

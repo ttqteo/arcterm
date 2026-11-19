@@ -163,6 +163,8 @@ export interface QueueRow {
     queueId?: string;
     // an agent is open on a due chunk's initiative, so its Work on reads Go to agent (attentionact.ts)
     agentOpen?: boolean;
+    // why a held land is held: a failed final stage makes its button Land anyway (attentionact.ts)
+    reason?: string;
     // the bug-reports row's three forms ride on these two (attentionact.ts): "agent:<tab>" while an agent holds the
     // reports, and the repo's path (none while no arcterm repo is known)
     oref?: string;
@@ -285,6 +287,8 @@ export function buildAttentionQueue(input: {
             taskId: a.taskid ?? "",
             retry: a.retry === true,
             queueId: a.queueid,
+            // a held land whose final stage failed offers Land anyway (attentionact.ts)
+            reason: a.kind === "run-land-held" ? a.reason : undefined,
             // Work on links the agent it starts to the initiative; while that agent is open the button goes to it
             agentOpen: dueORef != null && !!a.effortoid && openAgentFor(a.effortoid, input.roster ?? []) != null,
             ...(bugs ? { oref: a.oref ?? "", projectPath: a.projectpath ?? "" } : {}),

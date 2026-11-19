@@ -158,6 +158,8 @@ export function buildNeedsYouRows(input: {
             taskId: a.taskid ?? "",
             retry: a.retry === true,
             queueId: a.queueid,
+            // a held land whose final stage failed offers Land anyway, not a Land again that re-reads the failure
+            reason: a.kind === "run-land-held" ? a.reason : undefined,
             // a due chunk's Work on goes to the agent already open on its initiative, and says so
             agentOpen:
                 (a.kind === "chunk-due" && effortId !== "" && openAgentFor(effortId, input.roster) != null) ||

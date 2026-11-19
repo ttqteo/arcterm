@@ -3,8 +3,11 @@
 //
 // Land again: the button form of `wsh runs land <run-id>`, the retry for a run whose branch the engine held
 // instead of merging back. The peek, the Brief's queue and the run sheet all offer it, and all read its
-// outcome through landOutcome, so the three cannot disagree about what a held retry says.
+// outcome through landOutcome, so the three cannot disagree about what a held retry says. A land held because
+// the final stage failed is the one a retry can never clear (it reads the same failed stage), so there the
+// button is Land anyway, the form of `wsh runs land <run-id> --force`, behind a confirm.
 
+import { modalsModel } from "@/app/store/modalmodel";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { loadAttention } from "@/app/view/agents/attentionstore";
@@ -45,12 +48,25 @@ export function landOutcome(land: RunLand | null | undefined): LandOutcome {
 }
 
 // Retries the land, then reloads the attention list so a landed run's row leaves now rather than on the next poll.
-export async function landAgain(channelId: string, runId: string): Promise<LandOutcome> {
+// force lands past a failed final stage: only ever on the person's click through confirmForceLand.
+export async function landAgain(channelId: string, runId: string, force = false): Promise<LandOutcome> {
     const land = await RpcApi.LandRunCommand(
         TabRpcClient,
-        { channelid: channelId, runid: runId },
+        { channelid: channelId, runid: runId, ...(force ? { force: true } : {}) },
         { timeout: LAND_RPC_TIMEOUT_MS }
     );
     await loadAttention();
     return landOutcome(land);
+}
+
+// Land anyway merges work whose final check failed into the base, so it asks first, as Remove from queue does.
+export function confirmForceLand(what: string, onConfirm: () => void): void {
+    const run = what ? `"${what}"` : "this run";
+    modalsModel.pushModal("ConfirmModal", {
+        title: "Land anyway",
+        message: `The final stage failed on ${run}. Land its branch into the base as it is, without that check passing?`,
+        confirmLabel: "Land anyway",
+        destructive: true,
+        onConfirm,
+    });
 }

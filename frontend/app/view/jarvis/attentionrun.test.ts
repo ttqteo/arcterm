@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 const dagAction = vi.fn();
 const ackRun = vi.fn();
 const landAgain = vi.fn();
+const confirmForceLand = vi.fn();
 const loadAttention = vi.fn();
 const startNow = vi.fn();
 const removeQueued = vi.fn();
@@ -24,7 +25,10 @@ vi.mock("@/app/store/modalmodel", () => ({
 }));
 vi.mock("@/app/store/wshrpcutil", () => ({ TabRpcClient: {} }));
 vi.mock("@/app/view/agents/attentionstore", () => ({ loadAttention: (...a: any[]) => loadAttention(...a) }));
-vi.mock("./landrun", () => ({ landAgain: (...a: any[]) => landAgain(...a) }));
+vi.mock("./landrun", () => ({
+    landAgain: (...a: any[]) => landAgain(...a),
+    confirmForceLand: (...a: any[]) => confirmForceLand(...a),
+}));
 
 import { attentionAct, attentionSecondAct } from "./attentionact";
 import { attentionDoneText, runAttentionAct, START_NOW_TIMEOUT_MS, type AttentionRunRow } from "./attentionrun";
@@ -105,8 +109,23 @@ describe("runAttentionAct", () => {
         const fb = feedback();
         const r = row({ wireKind: "run-land-held", taskId: "" });
         await expect(runAttentionAct(attentionAct(r), r, fb)).resolves.toBe(true);
-        expect(landAgain).toHaveBeenCalledWith("ch1", "r1");
+        expect(landAgain).toHaveBeenCalledWith("ch1", "r1", false);
         expect(fb.done).toHaveBeenCalledWith("Landed · ship the thing");
+        expect(confirmForceLand).not.toHaveBeenCalled();
+    });
+
+    // a failed final stage: Land anyway asks first, and only the confirm lands, forced
+    it("lands a final-failed hold anyway only once the person confirms", async () => {
+        landAgain.mockResolvedValue({ failed: false, text: "Landed." });
+        loadAttention.mockResolvedValue(undefined);
+        const fb = feedback();
+        const r = row({ wireKind: "run-land-held", taskId: "", reason: "the final stage failed" });
+        await expect(runAttentionAct(attentionAct(r), r, fb)).resolves.toBe(false);
+        expect(landAgain).not.toHaveBeenCalled();
+        expect(confirmForceLand).toHaveBeenCalledWith("ship the thing", expect.any(Function));
+        confirmForceLand.mock.calls[0][1]();
+        await vi.waitFor(() => expect(fb.done).toHaveBeenCalledWith("Landed · ship the thing"));
+        expect(landAgain).toHaveBeenCalledWith("ch1", "r1", true);
     });
 
     // the server queues a land behind another of its project: the retry went through, but nothing landed yet

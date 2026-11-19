@@ -31,6 +31,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Added
 
+- A run held because its final stage failed now offers **Land anyway** in Needs you, the Brief, the creature's peek
+  and the run sheet, in place of a Land again that only re-read the same failure: after a confirm it lands the branch
+  as it is, the same as `wsh runs land <run> --force`.
 - A bug button at the footer's right end (also Ctrl+Alt+R, and "Báo lỗi arcterm" in the palette) reports a bug in
   arcterm on the spot: it captures the window, takes a line on what went wrong, and keeps the picture, the last 5
   minutes of the log, the version and the agent in focus on this machine. Nothing is sent anywhere.
