@@ -353,6 +353,66 @@ describe("buildNeedsYouRows: a plan to review", () => {
     });
 });
 
+// the waiting bug reports are one row in three forms; the strip gives each its button, and Mở agent opens the holding agent
+describe("buildNeedsYouRows: the waiting bug reports", () => {
+    const reports = (over: Partial<AttentionItem> = {}) =>
+        item({
+            kind: "bug-reports",
+            key: "bug-reports",
+            channelid: "",
+            runid: "",
+            taskid: "",
+            source: "arcterm",
+            text: "2 báo lỗi arcterm chờ xử lý",
+            action: "Xử lý",
+            projectpath: "D:/work/arcterm",
+            ...over,
+        });
+    const rowsOf = (attention: AttentionItem[], extra: Partial<Parameters<typeof buildNeedsYouRows>[0]> = {}) =>
+        buildNeedsYouRows({ ...base, attention, ...extra });
+
+    it("reads Báo lỗi and offers Xử lý once the repo is known", () => {
+        const [row] = rowsOf([reports()]);
+        expect(row.kindLabel).toBe("Báo lỗi");
+        expect(row.tone).toBe("asking");
+        expect(row.act).toEqual({ label: "Xử lý", kind: "process-reports" });
+        expect(row.secondAct).toBeNull();
+        expect(row.open).toBeNull();
+        // the act is chosen from these two, so they ride on the row's run input
+        expect(row.run).toMatchObject({ wireKind: "bug-reports", oref: "", projectPath: "D:/work/arcterm" });
+    });
+
+    it("offers Chọn thư mục… while no arcterm repo is known", () => {
+        const [row] = rowsOf([reports({ text: "Không tìm thấy repo arcterm", projectpath: undefined })]);
+        expect(row.act).toEqual({ label: "Chọn thư mục…", kind: "pick-repo" });
+        expect(row.open).toBeNull();
+    });
+
+    it("offers Mở agent, which opens the agent that holds the reports, while one does", () => {
+        const [row] = rowsOf([reports({ text: "Đang xử lý 2 báo lỗi", action: "Mở agent", oref: "agent:tab-9" })]);
+        expect(row.act).toEqual({ label: "Mở agent", kind: "open" });
+        // the agent need not be in the roster: its tab id rides in the item, so the button is never dead
+        expect(row.open).toEqual({ kind: "agent", agentId: "tab-9" });
+        expect(row.run).toMatchObject({ oref: "agent:tab-9" });
+    });
+
+    it("leaves oref and projectPath off the run of any other kind", () => {
+        const [row] = rowsOf([item({ kind: "council", oref: "council:c1", projectpath: "D:/x", channelid: "" })]);
+        expect(row.run.oref).toBeUndefined();
+        expect(row.run.projectPath).toBeUndefined();
+    });
+
+    // the handling form carries the repo path, so a project filter keeps it; the no-repo form has none and shows
+    // unfiltered only (it also shows in the Brief)
+    it("scopes by the repo's project: the filtered row stays, the one with no repo does not", () => {
+        const pathProject = projectsByPath({ arcterm: { path: "D:/work/arcterm" } });
+        expect(rowsOf([reports()], { filter: "arcterm", pathProject })).toHaveLength(1);
+        expect(rowsOf([reports()], { filter: "other", pathProject })).toHaveLength(0);
+        expect(rowsOf([reports({ projectpath: undefined })], { filter: "arcterm", pathProject })).toHaveLength(0);
+        expect(rowsOf([reports({ projectpath: undefined })], { filter: "all", pathProject })).toHaveLength(1);
+    });
+});
+
 describe("buildNeedsYouRows: a blocked queue entry", () => {
     const blocked = item({
         kind: "run-queue-blocked",

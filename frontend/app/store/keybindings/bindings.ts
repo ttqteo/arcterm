@@ -1,6 +1,7 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
+import { openBugReport } from "@/app/cockpit/bugreportstore";
 import { reopenClosedAgent } from "@/app/cockpit/cockpit-actions";
 import { peekClickLabel } from "@/app/cockpit/ctrlheld";
 import { cheatsheetOpenAtom } from "@/app/cockpit/shortcuts-cheatsheet";
@@ -747,6 +748,19 @@ export function buildGlobalBindings(model: AgentsViewModel): Binding[] {
             label: "Keyboard shortcuts",
             when: navigate,
             run: () => globalStore.set(cheatsheetOpenAtom, true),
+        },
+        {
+            // Not Ctrl+Shift+B: agent:view-chord has it. A chord, so it works from inside a terminal like Ctrl+Tab; the
+            // footer's bug button and this palette row open the same box (bugreportstore.ts). It yields to an open modal:
+            // the capture would hold the dialog, and the box would stack on it.
+            id: "global:bug-report",
+            keys: "Ctrl:Alt:r",
+            group: "Help",
+            label: "Báo lỗi arcterm",
+            when: (ctx) => !ctx.modalOpen,
+            run: () => {
+                void openBugReport(model);
+            },
         },
         {
             id: "surface:back-home",

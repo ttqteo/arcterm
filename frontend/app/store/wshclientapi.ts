@@ -282,6 +282,36 @@ export class RpcApiType {
         return client.wshRpcCall("brainstormjudgestop", data, opts);
     }
 
+    // command "bugreportclaim" [call]
+    BugReportClaimCommand(client: WshClient, data: CommandBugReportClaimData, opts?: RpcOpts): Promise<CommandBugReportClaimRtnData> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "bugreportclaim", data, opts);
+        return client.wshRpcCall("bugreportclaim", data, opts);
+    }
+
+    // command "bugreportdone" [call]
+    BugReportDoneCommand(client: WshClient, data: CommandBugReportDoneData, opts?: RpcOpts): Promise<void> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "bugreportdone", data, opts);
+        return client.wshRpcCall("bugreportdone", data, opts);
+    }
+
+    // command "bugreportlist" [call]
+    BugReportListCommand(client: WshClient, data: CommandBugReportListData, opts?: RpcOpts): Promise<BugReport[]> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "bugreportlist", data, opts);
+        return client.wshRpcCall("bugreportlist", data, opts);
+    }
+
+    // command "bugreportsave" [call]
+    BugReportSaveCommand(client: WshClient, data: CommandBugReportSaveData, opts?: RpcOpts): Promise<BugReportStatus> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "bugreportsave", data, opts);
+        return client.wshRpcCall("bugreportsave", data, opts);
+    }
+
+    // command "bugreportstatus" [call]
+    BugReportStatusCommand(client: WshClient, opts?: RpcOpts): Promise<BugReportStatus> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "bugreportstatus", null, opts);
+        return client.wshRpcCall("bugreportstatus", null, opts);
+    }
+
     // command "cancelrun" [call]
     CancelRunCommand(client: WshClient, data: CommandCancelRunData, opts?: RpcOpts): Promise<void> {
         if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "cancelrun", data, opts);

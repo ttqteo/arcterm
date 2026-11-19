@@ -55,6 +55,7 @@ import {
     shownDigitHint,
     type HintEvent,
 } from "./digithints";
+import { BugReportBox } from "./bugreportbox";
 import { ShortcutsCheatSheet } from "./shortcuts-cheatsheet";
 import { WhatsNewSheet } from "./whatsnewsheet";
 import { SproutMini } from "./sprout-mini";
@@ -247,6 +248,8 @@ function CockpitBody({ waveEnv }: { waveEnv: WaveEnv }) {
                 <InitiativeProjectPicker model={model} />
                 <CommandPalette model={model} />
                 <ShortcutsCheatSheet model={model} />
+                {/* the footer's bug button, Ctrl+Alt+R and the palette open this; it draws nothing while closed */}
+                <BugReportBox />
                 <WhatsNewSheet model={model} />
                 <ModalsRenderer />
                 <ContextMenuHost />

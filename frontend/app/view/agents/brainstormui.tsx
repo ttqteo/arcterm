@@ -32,17 +32,18 @@ import {
     type BrainstormFile,
     type BrainstormPart,
     type BrainstormQuestion,
+    type ChangedSentence,
     type EditLock,
     type JudgeWork,
     type LineBox,
     type PartAnswer,
     type PartState,
-    type SentenceDiff,
     type TrackSegment,
 } from "./brainstormmodel";
 import { optionHoverAtom } from "./brainstormrail";
 import { sendBrainstorm } from "./brainstormsend";
 import type { BrainstormState } from "./brainstormstore";
+import { DELETED, INSERTED } from "./prosetokens";
 
 export const WORKING_TITLE = "The agent is writing; this opens when it asks again";
 const CHECK_LOCK_TITLE = "Locked while the builder check runs; this opens when the agent has taken in its questions";
@@ -1182,26 +1183,48 @@ export function SaidLine({ said, open }: { said: PartAnswer; open: boolean }) {
     );
 }
 
-/** The sentences a rewritten decision changed (`changedSentences`), one line each: − removed, + added. The Brainstorm
- *  tab's review (`ChangeDiff`) and Chat's Confirm and check cards draw their changes with this one component. */
-export function SentenceDiffLines({ lines }: { lines: SentenceDiff }) {
+/** The sentences a rewritten decision changed (`changedSentences`), one line each: − removed, + added, and ~ for a
+ *  sentence edited in a few words, its old words struck right before the new ones. The Brainstorm tab's review
+ *  (`ChangeDiff`) and Chat's Confirm and check cards draw their changes with this one component. */
+export function SentenceDiffLines({ lines }: { lines: ChangedSentence[] }) {
     return (
         <>
-            {lines.map((d, i) => (
-                <div
-                    key={i}
-                    data-diff-line={d.kind === "added" ? "added" : "removed"}
-                    className={cn(
-                        "rounded-[6px] px-[10px] py-[6px] text-[13px] leading-[1.5] text-secondary",
-                        d.kind === "added" ? "bg-diff-added/10" : "bg-diff-removed/10"
-                    )}
-                >
-                    <span className={cn("font-mono", d.kind === "added" ? "text-diff-added" : "text-diff-removed")}>
-                        {d.kind === "added" ? "+ " : "− "}
-                    </span>
-                    {d.text}
-                </div>
-            ))}
+            {lines.map((d, i) =>
+                d.kind === "edited" ? (
+                    <div
+                        key={i}
+                        data-diff-line="edited"
+                        data-was={d.was}
+                        data-now={d.text}
+                        className="rounded-[6px] bg-surface-hover px-[10px] py-[6px] text-[13px] leading-[1.6] text-secondary"
+                    >
+                        <span className="font-mono text-accent-soft">~ </span>
+                        {d.words.map((w, k) =>
+                            w.op === "same" ? (
+                                <Fragment key={k}>{w.text}</Fragment>
+                            ) : (
+                                <span key={k} data-diff-op={w.op} className={w.op === "delete" ? DELETED : INSERTED}>
+                                    {w.text}
+                                </span>
+                            )
+                        )}
+                    </div>
+                ) : (
+                    <div
+                        key={i}
+                        data-diff-line={d.kind}
+                        className={cn(
+                            "rounded-[6px] px-[10px] py-[6px] text-[13px] leading-[1.5] text-secondary",
+                            d.kind === "added" ? "bg-diff-added/10" : "bg-diff-removed/10"
+                        )}
+                    >
+                        <span className={cn("font-mono", d.kind === "added" ? "text-diff-added" : "text-diff-removed")}>
+                            {d.kind === "added" ? "+ " : "− "}
+                        </span>
+                        {d.text}
+                    </div>
+                )
+            )}
         </>
     );
 }

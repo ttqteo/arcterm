@@ -32,7 +32,10 @@ export type PetAct =
     // one option of a one-question ask, sent to the agent that asked (askanswer.ts, the Cockpit's own send)
     | { id: string; verb: "answer"; label: string; agentId: string; option: number }
     // a chunk that came due: an agent on its initiative, asked to do what the chunk's notes say
-    | { id: string; verb: "work-on"; label: string; effortORef: string; chunk: string };
+    | { id: string; verb: "work-on"; label: string; effortORef: string; chunk: string }
+    // the waiting bug reports, before an agent holds them: the Brief (Jarvis surface), where Xử lý and the folder picker
+    // have room to explain themselves. Its row names no address to open, so it is a verb of its own
+    | { id: string; verb: "open-brief"; label: string };
 
 // An act's transient outcome, keyed by act id in petstore.ts. Transient on purpose: the row's real value
 // comes from its own poll, and letting an act's return value become the row's value would drift from the
@@ -96,6 +99,25 @@ export function actsForAttention(item: AttentionItem, agents: ReadonlyArray<Agen
         return start.kind === "start-queued"
             ? [{ id: `${item.key}:start`, verb: "start-queued", label: start.label, queueId }]
             : [];
+    }
+    // the waiting bug reports have no run either, and the peek has no room for Xử lý or the folder picker: it offers
+    // Open alone, to the agent that holds them, or else the Brief where the row's own button is (attentionact.ts)
+    if (item?.kind === "bug-reports") {
+        const oref = item.oref ?? "";
+        const act = attentionAct({
+            wireKind: item.kind,
+            channelId: "",
+            runId: null,
+            taskId: "",
+            retry: false,
+            oref,
+            projectPath: item.projectpath ?? "",
+        });
+        return [
+            act.kind === "open"
+                ? { id: `${item.key}:open`, verb: "open", label: "Open", target: { kind: "oref", ref: oref } }
+                : { id: `${item.key}:open-brief`, verb: "open-brief", label: "Open" },
+        ];
     }
     if (!item?.runid) {
         return []; // nothing addressable: an item with no run cannot be opened or resolved

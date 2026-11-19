@@ -72,6 +72,8 @@ import brainstormReviewScenarios from "./scenarios-brainstorm-review.mjs";
 import brainstormRunScenarios from "./scenarios-brainstorm-run.mjs";
 import runStartChoiceScenarios from "./scenarios-run-start-choice.mjs";
 import runQueueRecheckScenarios from "./scenarios-run-queue-recheck.mjs";
+import bugReportBoxScenarios from "./scenarios-bug-report-box.mjs";
+import bugReportJarvisScenarios from "./scenarios-bug-report-jarvis.mjs";
 import briefActScenarios from "./scenarios-brief-act.mjs";
 import chatBrainstormBandScenarios from "./scenarios-chat-brainstorm-band.mjs";
 import chatBrainstormReviewScenarios from "./scenarios-chat-brainstorm-review.mjs";
@@ -73825,6 +73827,8 @@ export const SCENARIOS = [
     ...brainstormRunScenarios(BS_KIT),
     ...runStartChoiceScenarios(RUN_START_KIT),
     ...runQueueRecheckScenarios(RUN_START_KIT),
+    ...bugReportBoxScenarios(RUN_START_KIT),
+    ...bugReportJarvisScenarios(RUN_START_KIT),
     canvasTabsScenario,
     canvasManyBoards,
     canvasGallery,

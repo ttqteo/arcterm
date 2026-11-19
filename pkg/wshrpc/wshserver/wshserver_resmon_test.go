@@ -8,9 +8,11 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
+	"github.com/wavetermdev/waveterm/pkg/baseds"
 	"github.com/wavetermdev/waveterm/pkg/resmon"
 	"github.com/wavetermdev/waveterm/pkg/util/jobobject"
 	"github.com/wavetermdev/waveterm/pkg/waveobj"
+	"github.com/wavetermdev/waveterm/pkg/wps"
 	"github.com/wavetermdev/waveterm/pkg/wshrpc"
 	"github.com/wavetermdev/waveterm/pkg/wstore"
 )
@@ -42,6 +44,9 @@ func TestResMonResolverLabels(t *testing.T) {
 	blockOwner := func(id string) jobobject.Owner { return jobobject.Owner{Kind: jobobject.OwnerKind_Block, Id: id} }
 
 	agentBlock, _ := seedResMonTab(t, "waveterm", "claude")
+	titledBlock, _ := seedResMonTab(t, "arcterm", "claude")
+	wps.Broker.Publish(wps.WaveEvent{Event: wps.Event_AgentStatus, Scopes: []string{"block:" + titledBlock}, Persist: 1,
+		Data: baseds.AgentStatusData{ORef: "block:" + titledBlock, State: "idle", Agent: "claude", Title: "Fix the sidecar labels", Ts: 1}})
 	shellBlock, _ := seedResMonTab(t, "scratch", "")
 	leadBlock, leadTab := seedResMonTab(t, "lead tab", "pi")
 	workerBlock, workerTab := seedResMonTab(t, "worker tab", "pi")
@@ -61,6 +66,8 @@ func TestResMonResolverLabels(t *testing.T) {
 		want  resmon.OwnerInfo
 	}{
 		{"agent tab", blockOwner(agentBlock), resmon.OwnerInfo{Kind: wshrpc.ResMonOwner_AgentTab, Label: "waveterm", Runtime: "claude", Agent: true}},
+		{"agent tab with a title", blockOwner(titledBlock),
+			resmon.OwnerInfo{Kind: wshrpc.ResMonOwner_AgentTab, Label: "Fix the sidecar labels", Runtime: "claude", Agent: true}},
 		{"terminal tab", blockOwner(shellBlock), resmon.OwnerInfo{Kind: wshrpc.ResMonOwner_AgentTab, Label: "scratch"}},
 		{"run worker", blockOwner(workerBlock), resmon.OwnerInfo{Kind: wshrpc.ResMonOwner_RunWorker, Label: "cache-miss notice · Task 2", Runtime: "pi", Agent: true}},
 		{"run lead", blockOwner(leadBlock), resmon.OwnerInfo{Kind: wshrpc.ResMonOwner_RunWorker, Label: "cache-miss notice · lead", Runtime: "pi", Agent: true}},

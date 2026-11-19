@@ -208,3 +208,33 @@ func TestReadStatMemIsThePrivateWorkingSet(t *testing.T) {
 		t.Errorf("mem %d KB is within 4 MB of the whole working set %d KB: the shared pages are counted", after.mem>>10, m.RSS>>10)
 	}
 }
+
+// The system list reads this process as readStat does: the same create time and a memory figure, and every pid the
+// toolhelp table lists that is still running.
+func TestReadSystemStatsMatchesReadStat(t *testing.T) {
+	self := os.Getpid()
+	sys := readSystemStats()
+	got, ok := sys[self]
+	if !ok || !got.ok {
+		t.Fatalf("readSystemStats has no entry for this process (%d of them)", len(sys))
+	}
+	own := readStat(self)
+	if got.createTs != own.createTs {
+		t.Errorf("createTs %d, readStat %d", got.createTs, own.createTs)
+	}
+	if got.mem <= 0 || got.cpuTime == 0 {
+		t.Errorf("mem %d cpuTime %d, want both read", got.mem, got.cpuTime)
+	}
+	if len(sys) < 20 {
+		t.Errorf("only %d processes listed", len(sys))
+	}
+	// what OpenProcess refuses (vmmemWSL with WSL running) the list still reads
+	table, _ := readTable()
+	for pid, p := range table {
+		if pid > 4 && !readStat(pid).ok {
+			if s := sys[pid]; s.ok {
+				t.Logf("unopenable %s (%d): %d MB from the system list", p.Name, pid, s.mem>>20)
+			}
+		}
+	}
+}

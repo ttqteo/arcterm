@@ -60,7 +60,7 @@ type proc struct {
 	Pid      int
 	Ppid     int
 	Name     string // image name
-	App      string // macOS: the name of the app it works for (its responsible process), when that is another; else ""
+	App      string // the app it works for, when that is another: macOS its responsible process, Windows a WebView2's host ("WebView2: ms-teams.exe"); else ""
 	Command  string
 	CreateTs int64 // epoch ms
 	Cpu      float64

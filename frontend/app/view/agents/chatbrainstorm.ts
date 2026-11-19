@@ -29,11 +29,11 @@ import {
     type BrainstormFile,
     type BrainstormQuestion,
     type BuilderCheckView,
+    type ChangedSentence,
     type PartAnswer,
     type QueueAfterRuns,
     type QueuedForBrainstorm,
     type SeenMark,
-    type SentenceDiff,
     type SentKind,
     type StartingRunMark,
 } from "./brainstormmodel";
@@ -349,7 +349,7 @@ export type DecisionRowModel = {
     view: "guess" | "changed";
     body: string;
     said?: PartAnswer;
-    diff: SentenceDiff;
+    diff: ChangedSentence[];
     why?: string;
     isNew: boolean;
 };

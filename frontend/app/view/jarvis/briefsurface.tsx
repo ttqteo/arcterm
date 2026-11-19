@@ -184,6 +184,7 @@ import { BriefSheet } from "./briefsheet";
 import { FAINT_TEXT, LINK_BTN, REGION_LABEL, SMALL_BTN } from "./briefstyle";
 import { BriefToastView } from "./brieftoast";
 import { briefUndo, effortKey, pendingDeleteKeysAtom } from "./briefundo";
+import { pickBugReportRepo, processBugReports } from "./bugreportprocess";
 import { councilSheetAtom, openCouncilSheet } from "./councilsheetstore";
 import { EffortCreateForm } from "./effortcreateform";
 import { buildEffortCard, type EffortCardModel } from "./effortmodel";
@@ -1727,6 +1728,16 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
                 const oref = q.nav.oref;
                 fireAndForget(() => workOnDueChunk(model, oref, q.title));
             }
+            return;
+        }
+        // the waiting bug reports: Xử lý starts the one agent that reads them, Chọn thư mục… keeps arcterm's repo for it
+        // (both toast their own failures; the Cockpit's strip runs the same two)
+        if (act.kind === "process-reports") {
+            fireAndForget(() => processBugReports(model));
+            return;
+        }
+        if (act.kind === "pick-repo") {
+            fireAndForget(() => pickBugReportRepo(model));
             return;
         }
         // the Cockpit's Needs-you strip runs the same call (attentionrun.ts), answering in its own toast

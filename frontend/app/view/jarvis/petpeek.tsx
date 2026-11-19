@@ -158,6 +158,8 @@ const ROW_DOT: Record<string, string> = {
     ask: "bg-accent",
     "run-land-held": "bg-warning",
     "run-queue-blocked": "bg-warning",
+    // waiting bug reports hold nothing up: a reminder's quiet dot
+    "bug-reports": "bg-muted",
 };
 
 const FOCUS_RING = "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent";

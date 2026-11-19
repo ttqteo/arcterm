@@ -46,11 +46,11 @@ import {
     planDonuts,
     savedRateLimitsAtom,
 } from "@/app/view/agents/ratelimitstore";
-import type { RunInfo } from "@/app/view/agents/runlineage";
 import { openAddress, openTarget } from "@/app/view/jarvis/openref";
 import { runAct } from "@/app/view/jarvis/petactrun";
 import { queueRows, rowPeekTarget, type PeekRow } from "@/app/view/jarvis/petpeekmodel";
 import { petActStateAtom } from "@/app/view/jarvis/petstore";
+import { landOn } from "@/app/view/jarvis/returnsurface";
 import { isMacOS, isWindows } from "@/util/platformutil";
 import { fireAndForget } from "@/util/util";
 import { emitTo, listen } from "@tauri-apps/api/event";
@@ -62,6 +62,7 @@ import {
     EMPTY_FEED,
     EMPTY_NOTES,
     MACHINE_POLL_MS,
+    activeRuns,
     afterClosed,
     afterEmit,
     afterHello,
@@ -69,11 +70,10 @@ import {
     applyPressure,
     attachNotes,
     decorateTiles,
-    dueLabel,
+    failedFirst,
     heavyPolls,
     machineChanged,
     machineOf,
-    newestActiveRun,
     planChange,
     readingFresh,
     readingOf,
@@ -142,10 +142,10 @@ declare global {
         // Needs you rows from Jarvis in place of the live attentionAtom while it is set (it sets attentionFixtureAtom; null:
         // back to the live list), then rebuilds now: the orbit scenarios show a gate, a failed run and a due chunk with it
         __sidecarAttention?: (items: AttentionItem[] | null) => void;
-        // a run box in place of the lineage's while it is set (null: back to the lineage), then rebuilds now. A fixture
-        // roster has no server run in lineageAtom, so a scenario could show no run box or failed lead without it. `failed`
-        // is not given: the build derives it from the needs, as it does for a real run
-        __sidecarRun?: (box: Omit<SidecarRunBox, "failed"> | null) => void;
+        // runs in place of the lineage's while it is set (one box or a list; null: back to the lineage), then rebuilds
+        // now. A fixture roster has no server run in lineageAtom, so a scenario could show no Runs box or failed lead
+        // without it. `failed` is not given: the build derives it from the needs, as it does for a real run
+        __sidecarRun?: (box: Omit<SidecarRunBox, "failed"> | Omit<SidecarRunBox, "failed">[] | null) => void;
     }
 }
 
@@ -201,7 +201,7 @@ export function SidecarBridge({ model }: { model: AgentsViewModel }) {
         const needNoteTimers = new Map<string, ReturnType<typeof setTimeout>>();
         // a tile with no state clock is dated by the first build that saw it, so its need row does not change every build
         let needSince = new Map<string, number>();
-        let runSeamBox: Omit<SidecarRunBox, "failed"> | null = null;
+        let runSeamBoxes: Omit<SidecarRunBox, "failed">[] | null = null;
         // a poll that keeps failing logs once, not every 2 s; a success lets the next failure log again
         const failedLogged = new Set<string>();
         const failure = (what: string, e: unknown) => {
@@ -306,8 +306,8 @@ export function SidecarBridge({ model }: { model: AgentsViewModel }) {
             hidden: hiddenAgentIds(agents, globalStore.get(idsWithEntriesAtom), globalStore.get(model.lineageAtom)),
         });
 
-        // the run box's source: a seam's box (DEV), else the newest active orchestrator run of the lineage
-        const runSeam = () => (import.meta.env.DEV ? runSeamBox : null);
+        // the Runs box's source: the seam's boxes (DEV), else every active orchestrator run of the lineage
+        const runSeam = () => (import.meta.env.DEV ? runSeamBoxes : null);
 
         const assemble = (): SidecarSnapshot => {
             const agents = globalStore.get(model.agentsAtom);
@@ -339,30 +339,26 @@ export function SidecarBridge({ model }: { model: AgentsViewModel }) {
                 return { ...n, ...(acts.length > 0 ? { acts } : {}), ...(note != null ? { note } : {}) };
             });
 
-            // ---- the run box (decisions 5 and 6)
+            // ---- the Runs box (decisions 5 and 6): every active run, the failed first
             const itemByKey = new Map(jarvis.map((i) => [i.key, i]));
             const lineage = globalStore.get(model.lineageAtom);
-            let run: SidecarRunBox | undefined;
-            let runInfo: RunInfo | null = null;
             const seam = runSeam();
-            if (seam != null) {
-                run = { ...seam, failed: runFailed(needs, itemByKey, seam.id) };
-            } else {
-                runInfo = newestActiveRun(lineage.runs);
-                if (runInfo != null) {
-                    run = runBoxOf(runInfo, {
-                        leadId: runLeadId(lineage.roles, runInfo.runId),
-                        failed: runFailed(needs, itemByKey, runInfo.runId),
-                        due: dueLabel(jarvis),
-                    });
-                }
-            }
-            // the failed run's lead: its node is in error
-            const failedLead = run?.failed === true ? run.leadId : undefined;
+            const runs = failedFirst(
+                seam != null
+                    ? seam.map((box) => ({ ...box, failed: runFailed(needs, itemByKey, box.id) }))
+                    : activeRuns(lineage.runs).map((info) =>
+                          runBoxOf(info, {
+                              leadId: runLeadId(lineage.roles, info.runId),
+                              failed: runFailed(needs, itemByKey, info.runId),
+                          })
+                      )
+            );
+            // a failed run's lead: its node is in error
+            const failedLeads = new Set(runs.flatMap((r) => (r.failed && r.leadId != null ? [r.leadId] : [])));
 
             // ---- the orbit
             const waiting = new Set(needs.flatMap((n) => (n.kind === "question" && n.id != null ? [n.id] : [])));
-            const decorated = decorateTiles(base.tiles, { failedLead, diffs: globalStore.get(diffStatsByIdAtom) });
+            const decorated = decorateTiles(base.tiles, { failedLeads, diffs: globalStore.get(diffStatsByIdAtom) });
             const shown = scopeTiles({ ...base, tiles: decorated }, wallAgentIds(agents, cockpitScope(agents)));
             const orbit = orbitTiles(shown.tiles, waiting);
 
@@ -404,7 +400,7 @@ export function SidecarBridge({ model }: { model: AgentsViewModel }) {
                 tiles: orbit.tiles,
                 more: orbit.more,
                 needs,
-                ...(run != null ? { run } : {}),
+                ...(runs.length > 0 ? { runs } : {}),
                 usage,
                 ...(stats != null ? { machine: machineOf(stats, platformName()) } : {}),
                 ...(strain != null ? { strain } : {}),
@@ -659,7 +655,7 @@ export function SidecarBridge({ model }: { model: AgentsViewModel }) {
                 noteNeed(key, "Couldn't do it: the item changed");
                 return;
             }
-            const leaves = act.verb === "open" || act.verb === "work-on";
+            const leaves = act.verb === "open" || act.verb === "work-on" || act.verb === "open-brief";
             try {
                 await runAct(model, act);
             } catch (e) {
@@ -763,6 +759,21 @@ export function SidecarBridge({ model }: { model: AgentsViewModel }) {
                 case "needact":
                     fireAndForget(() => runNeedAct(act.key, act.act));
                     return;
+                case "run":
+                    fireAndForget(async () => {
+                        if (act.id == null) {
+                            // the runs live in Jarvis: the rows Sidecar left out are there
+                            landOn(model.surfaceAtom, "jarvis");
+                        } else {
+                            const result = await openTarget(model, { kind: "run", runId: act.id });
+                            if (result.ok === false) {
+                                log(`open run ${act.id} failed: ${result.message}`);
+                            }
+                        }
+                        // raised either way: a failed open says why in a toast of the main window
+                        await showMain(model);
+                    });
+                    return;
                 case "endapp": {
                     const key = otherKey(act.name);
                     const count = resReading?.others?.find((o) => otherKey(o.name) === key)?.count;
@@ -849,7 +860,7 @@ export function SidecarBridge({ model }: { model: AgentsViewModel }) {
                 onChange();
             };
             window.__sidecarRun = (box) => {
-                runSeamBox = box;
+                runSeamBoxes = box == null ? null : Array.isArray(box) ? box : [box];
                 onChange();
             };
         }

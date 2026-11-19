@@ -66,6 +66,7 @@ const KIND_LABEL: Record<string, string> = {
     "run-queue-blocked": "Run not started",
     "learn-proposal": "Rule to approve",
     council: "Council report",
+    "bug-reports": "Báo lỗi",
 };
 
 /** A Jarvis item's label: its kind in words, "Task failed" for a blocked task a retry can rerun. */
@@ -99,7 +100,8 @@ export function needActsOf(row: PeekRow | undefined, item: AttentionItem | undef
             return;
         }
         seen.add(act.id);
-        out.push({ id: act.id, label, ...(act.verb !== "open" ? { strong: true } : {}) });
+        // an Open (to the Brief too) is a way to read the row, not the act that settles it
+        out.push({ id: act.id, label, ...(act.verb !== "open" && act.verb !== "open-brief" ? { strong: true } : {}) });
     };
     add(row.primary);
     row.answers.forEach((a, i) => add(a, `${i + 1} ${a.label}`));

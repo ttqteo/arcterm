@@ -1422,10 +1422,183 @@ export function sentenceDiff(was: string, now: string): SentenceDiff {
     return out;
 }
 
-/** What a rewritten decision changed: `sentenceDiff` without the sentences both sides share. The Brainstorm tab's
- *  review and Chat's Confirm and check cards draw exactly these lines. */
-export function changedSentences(was: string, body: string): SentenceDiff {
-    return sentenceDiff(was, body).filter((d) => d.kind !== "same");
+/** A piece of an edited sentence read in one line: a word kept, struck (`delete`) or new (`insert`). A struck run
+ *  stands right before the new one that takes its place. */
+export type WordOp = { text: string; op: "same" | "delete" | "insert" };
+
+/** A line of `changedSentences`: a sentence that left or came in whole, or one edited in a few words, drawn as one line
+ *  from its `was` to its `text`. */
+export type ChangedSentence =
+    | { kind: "added" | "removed"; text: string }
+    | { kind: "edited"; was: string; text: string; words: WordOp[] };
+
+// a removed and an added sentence that share at least this share of their words are one sentence edited
+export const REWORD_SIMILARITY = 0.5;
+
+/** What a rewritten decision changed: `sentenceDiff` without the sentences both sides share. Between two shared
+ *  sentences, a removed sentence and an added one that share most of their words are one sentence edited: one
+ *  `edited` line with the old words struck beside the new ones, so the eye reads the difference at once instead of
+ *  matching two lines far apart. The Brainstorm tab's review and Chat's Confirm and check cards draw exactly these
+ *  lines. */
+export function changedSentences(was: string, body: string): ChangedSentence[] {
+    const out: ChangedSentence[] = [];
+    let removed: string[] = [];
+    let added: string[] = [];
+    const flush = () => {
+        out.push(...pairReworded(removed, added));
+        removed = [];
+        added = [];
+    };
+    for (const d of sentenceDiff(was, body)) {
+        if (d.kind === "same") {
+            flush();
+        } else if (d.kind === "removed") {
+            removed.push(d.text);
+        } else {
+            added.push(d.text);
+        }
+    }
+    flush();
+    return out;
+}
+
+// one run of changed sentences: the edited pairs (a monotone pairing that maximizes the summed similarity) are one line
+// each; a sentence with no partner keeps its place before the next pair
+function pairReworded(removed: string[], added: string[]): ChangedSentence[] {
+    const rw = removed.map(words);
+    const aw = added.map(words);
+    const n = removed.length;
+    const m = added.length;
+    const sim = (i: number, j: number) => {
+        const s = wordSimilarity(rw[i], aw[j]);
+        return s >= REWORD_SIMILARITY ? s : -1;
+    };
+    // best[i][j]: the best summed similarity pairing removed[i..] with added[j..]
+    const best = Array.from({ length: n + 1 }, () => new Array<number>(m + 1).fill(0));
+    for (let i = n - 1; i >= 0; i--) {
+        for (let j = m - 1; j >= 0; j--) {
+            const s = sim(i, j);
+            best[i][j] = Math.max(best[i + 1][j], best[i][j + 1], s < 0 ? -1 : s + best[i + 1][j + 1]);
+        }
+    }
+    const out: ChangedSentence[] = [];
+    let rest: ChangedSentence[] = [];
+    // unpaired sentences: the removed ones before the added ones, as the lines read when nothing pairs
+    const flushRest = () => {
+        out.push(...rest.filter((d) => d.kind === "removed"), ...rest.filter((d) => d.kind === "added"));
+        rest = [];
+    };
+    let i = 0;
+    let j = 0;
+    while (i < n && j < m) {
+        const s = sim(i, j);
+        if (s >= 0 && best[i][j] === s + best[i + 1][j + 1]) {
+            flushRest();
+            out.push({ kind: "edited", was: removed[i], text: added[j], words: wordOps(removed[i], added[j]) });
+            i++;
+            j++;
+        } else if (best[i][j] === best[i + 1][j]) {
+            rest.push({ kind: "removed", text: removed[i++] });
+        } else {
+            rest.push({ kind: "added", text: added[j++] });
+        }
+    }
+    rest.push(...removed.slice(i).map((text) => ({ kind: "removed" as const, text })));
+    rest.push(...added.slice(j).map((text) => ({ kind: "added" as const, text })));
+    flushRest();
+    return out;
+}
+
+// a word's key ignores case and the punctuation around it: "lại;" and "lại" are the same word
+const wordKey = (w: string) =>
+    w
+        .trim()
+        .toLowerCase()
+        .replace(/^[\p{P}\p{S}]+|[\p{P}\p{S}]+$/gu, "");
+
+function words(text: string): string[] {
+    return text
+        .split(/\s+/)
+        .map(wordKey)
+        .filter((w) => w !== "");
+}
+
+function lcsTable(a: string[], b: string[]): number[][] {
+    const t = Array.from({ length: a.length + 1 }, () => new Array<number>(b.length + 1).fill(0));
+    for (let i = a.length - 1; i >= 0; i--) {
+        for (let j = b.length - 1; j >= 0; j--) {
+            t[i][j] = a[i] === b[j] ? t[i + 1][j + 1] + 1 : Math.max(t[i + 1][j], t[i][j + 1]);
+        }
+    }
+    return t;
+}
+
+// shared words over all words, both sides: 2·LCS / (|a| + |b|)
+function wordSimilarity(a: string[], b: string[]): number {
+    const total = a.length + b.length;
+    return total === 0 ? 0 : (2 * lcsTable(a, b)[0][0]) / total;
+}
+
+// both sentences cut into words (each with the spaces after it) and walked along their LCS: a kept word is drawn from
+// the new sentence, so the line without its struck runs reads exactly as the new sentence; at one place the struck
+// words come before the new ones
+function wordOps(was: string, now: string): WordOp[] {
+    const cut = (text: string) => text.match(/\S+\s*/g) ?? [];
+    const a = cut(was);
+    const b = cut(now);
+    const ak = a.map(wordKey);
+    const bk = b.map(wordKey);
+    const t = lcsTable(ak, bk);
+    const ops: WordOp[] = [];
+    const push = (op: WordOp["op"], text: string) => {
+        const last = ops[ops.length - 1];
+        if (last?.op === op) {
+            last.text += text;
+        } else {
+            ops.push({ op, text });
+        }
+    };
+    let i = 0;
+    let j = 0;
+    while (i < a.length || j < b.length) {
+        if (i < a.length && j < b.length && ak[i] === bk[j]) {
+            push("same", b[j]);
+            i++;
+            j++;
+        } else if (i < a.length && (j === b.length || t[i + 1][j] >= t[i][j + 1])) {
+            push("delete", a[i++]);
+        } else {
+            push("insert", b[j++]);
+        }
+    }
+    return hugMarks(ops);
+}
+
+// a mark hugs its words: the spaces closing a struck or new run move out of it, and a struck run that closes the
+// sentence ("project.") keeps a space from the new run after it
+function hugMarks(runs: WordOp[]): WordOp[] {
+    const out: WordOp[] = [];
+    const push = (op: WordOp["op"], text: string) => {
+        const last = out[out.length - 1];
+        if (text === "") {
+            return;
+        }
+        if (last?.op === op) {
+            last.text += text;
+        } else {
+            out.push({ op, text });
+        }
+    };
+    runs.forEach((r, k) => {
+        if (r.op === "same") {
+            push("same", r.text);
+            return;
+        }
+        const space = /\s*$/.exec(r.text)?.[0] ?? "";
+        push(r.op, r.text.slice(0, r.text.length - space.length));
+        push("same", space === "" && r.op === "delete" && runs[k + 1]?.op === "insert" ? " " : space);
+    });
+    return out;
 }
 
 export type HandoffView = {

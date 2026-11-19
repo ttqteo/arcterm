@@ -9,6 +9,7 @@ import {
     EMPTY_NOTES,
     HEAVY_STALE_MS,
     SNAPSHOT_THROTTLE_MS,
+    activeRuns,
     afterClosed,
     afterEmit,
     afterHello,
@@ -16,11 +17,10 @@ import {
     applyPressure,
     attachNotes,
     decorateTiles,
-    dueLabel,
+    failedFirst,
     heavyPolls,
     machineChanged,
     machineOf,
-    newestActiveRun,
     planChange,
     readingFresh,
     readingOf,
@@ -178,6 +178,17 @@ describe("validateAct", () => {
         expect(validateAct({ kind: "needact", key: "ask:a1", act: "x" }, withActs).ok).toBe(false);
         expect(validateAct({ kind: "needact", key: "gate:run1:2" }, withActs).ok).toBe(false);
         expect(validateAct({ kind: "needact", key: "gate:run1:2", act: "gate:run1:2:approve" }, null).ok).toBe(false);
+    });
+
+    it("opens a run row only for a run the last snapshot showed, and the runs in Jarvis with no id", () => {
+        const withRuns = snapWith({ runs: [{ id: "r1", title: "Build it", done: 1, total: 4, failed: false }] });
+        expect(validateAct({ kind: "run", id: "r1" }, withRuns)).toEqual({ ok: true, act: { kind: "run", id: "r1" } });
+        expect(validateAct({ kind: "run" }, withRuns)).toEqual({ ok: true, act: { kind: "run" } });
+        expect(validateAct({ kind: "run" }, null)).toEqual({ ok: true, act: { kind: "run" } });
+        // a run it did not show, an id that is not a string, no snapshot
+        expect(validateAct({ kind: "run", id: "r2" }, withRuns).ok).toBe(false);
+        expect(validateAct({ kind: "run", id: 7 }, withRuns).ok).toBe(false);
+        expect(validateAct({ kind: "run", id: "r1" }, null).ok).toBe(false);
     });
 
     it("takes End task only on an endable other app the last snapshot showed", () => {
@@ -505,11 +516,11 @@ describe("sameSnapshot", () => {
     // the dashboard's four fields: each one alone makes a different snapshot
     const run: SidecarRunBox = { id: "r1", title: "Build it", done: 1, total: 4, failed: false };
     const usage: SidecarUsage = { fiveHourPct: 40, weekPct: 12 };
-    const full = snapWith({ needs: [askNeed, jarvisNeed], run, usage, more: 2 });
+    const full = snapWith({ needs: [askNeed, jarvisNeed], runs: [run], usage, more: 2 });
     const again = () =>
-        snapWith({ needs: [{ ...askNeed }, { ...jarvisNeed }], run: { ...run }, usage: { ...usage }, more: 2 });
+        snapWith({ needs: [{ ...askNeed }, { ...jarvisNeed }], runs: [{ ...run }], usage: { ...usage }, more: 2 });
 
-    it("is the same when needs, run, usage and more are equal by value", () => {
+    it("is the same when needs, runs, usage and more are equal by value", () => {
         expect(sameSnapshot(full, again())).toBe(true);
         expect(sameSnapshot(snapWith({}), snapWith({}))).toBe(true);
     });
@@ -521,10 +532,11 @@ describe("sameSnapshot", () => {
         expect(sameSnapshot(snapWith({}), { ...snapWith({}), needs: [askNeed] })).toBe(false);
     });
 
-    it("sees a changed run alone", () => {
-        expect(sameSnapshot(full, { ...again(), run: { ...run, done: 2 } })).toBe(false);
-        expect(sameSnapshot(full, { ...again(), run: { ...run, failed: true } })).toBe(false);
-        expect(sameSnapshot(full, { ...again(), run: undefined })).toBe(false);
+    it("sees a changed run alone, and a run added", () => {
+        expect(sameSnapshot(full, { ...again(), runs: [{ ...run, done: 2 }] })).toBe(false);
+        expect(sameSnapshot(full, { ...again(), runs: [{ ...run, failed: true }] })).toBe(false);
+        expect(sameSnapshot(full, { ...again(), runs: [run, { ...run, id: "r2" }] })).toBe(false);
+        expect(sameSnapshot(full, { ...again(), runs: undefined })).toBe(false);
     });
 
     it("sees a changed usage alone", () => {
@@ -970,17 +982,17 @@ function runInfo(runId: string, over: Partial<RunInfo> = {}): RunInfo {
     return { runId, channelId: `ch-${runId}`, title: `Run ${runId}`, project: "arcterm", ...over };
 }
 
-describe("newestActiveRun", () => {
-    it("is the newest run that has not ended", () => {
+describe("activeRuns", () => {
+    it("is every run that has not ended, newest first", () => {
         const runs = {
             old: runInfo("old", { createdTs: 100, status: "running" }),
             mid: runInfo("mid", { createdTs: 200, status: "running" }),
             done: runInfo("done", { createdTs: 900, status: "done" }),
         };
-        expect(newestActiveRun(runs)?.runId).toBe("mid");
+        expect(activeRuns(runs).map((r) => r.runId)).toEqual(["mid", "old"]);
     });
 
-    it("skips a quick run, a done or cancelled run (by its dag too), and is null with none left", () => {
+    it("skips a quick run, a done or cancelled run (by its dag too), and is empty with none left", () => {
         const runs = {
             quick: runInfo("quick", { createdTs: 500, mode: "quick", status: "running" }),
             cancelled: runInfo("cancelled", { createdTs: 400, status: "cancelled" }),
@@ -990,18 +1002,27 @@ describe("newestActiveRun", () => {
                 dag: { status: "done", tasks: [] } as never,
             }),
         };
-        expect(newestActiveRun(runs)).toBeNull();
-        expect(newestActiveRun({})).toBeNull();
+        expect(activeRuns(runs)).toEqual([]);
+        expect(activeRuns({})).toEqual([]);
     });
 
     it("counts a blocked run, which waits on you, as active; a run with no createdTs is oldest; ties go by id", () => {
         const runs = {
+            none: runInfo("none", { status: "running" }),
             b: runInfo("b", { createdTs: 50, status: "blocked" }),
             a: runInfo("a", { createdTs: 50, status: "blocked" }),
-            none: runInfo("none", { status: "running" }),
         };
-        expect(newestActiveRun(runs)?.runId).toBe("a");
-        expect(newestActiveRun({ none: runs.none })?.runId).toBe("none");
+        expect(activeRuns(runs).map((r) => r.runId)).toEqual(["a", "b", "none"]);
+    });
+});
+
+describe("failedFirst", () => {
+    const box = (id: string, failed: boolean): SidecarRunBox => ({ id, title: id, done: 0, total: 1, failed });
+
+    it("puts the failed runs first, each part in the order it came", () => {
+        const out = failedFirst([box("n1", false), box("f1", true), box("n2", false), box("f2", true)]);
+        expect(out.map((b) => b.id)).toEqual(["f1", "f2", "n1", "n2"]);
+        expect(failedFirst([])).toEqual([]);
     });
 });
 
@@ -1039,19 +1060,6 @@ describe("runFailed", () => {
     });
 });
 
-describe("dueLabel", () => {
-    const item = (kind: string, chunklabel?: string) => ({ kind, chunklabel }) as AttentionItem;
-
-    it("is the first chunk-due item's label, and none when there is none", () => {
-        expect(dueLabel([item("dag-gate", "x"), item("chunk-due", "Re-measure RAM"), item("chunk-due", "Later")])).toBe(
-            "Re-measure RAM"
-        );
-        expect(dueLabel([item("dag-gate"), item("chunk-due")])).toBeUndefined();
-        expect(dueLabel([item("chunk-due", "")])).toBeUndefined();
-        expect(dueLabel([])).toBeUndefined();
-    });
-});
-
 describe("runBoxOf", () => {
     const dag = {
         status: "running",
@@ -1059,9 +1067,7 @@ describe("runBoxOf", () => {
     } as never;
 
     it("carries the title, the progress, when it began and what it was given", () => {
-        expect(
-            runBoxOf(runInfo("r1", { createdTs: 70, dag }), { leadId: "L", failed: false, due: "Re-measure" })
-        ).toEqual({
+        expect(runBoxOf(runInfo("r1", { createdTs: 70, dag }), { leadId: "L", failed: false })).toEqual({
             id: "r1",
             leadId: "L",
             title: "Run r1",
@@ -1069,14 +1075,13 @@ describe("runBoxOf", () => {
             total: 4,
             failed: false,
             since: 70,
-            due: "Re-measure",
         });
     });
 
-    it("leaves out the lead, since and due it has none of, and counts 0 of 0 before a dag", () => {
+    it("leaves out the lead and since it has none of, and counts 0 of 0 before a dag", () => {
         const box = runBoxOf(runInfo("r2"), { failed: true });
         expect(box).toEqual({ id: "r2", title: "Run r2", done: 0, total: 0, failed: true });
-        expect("leadId" in box || "since" in box || "due" in box).toBe(false);
+        expect("leadId" in box || "since" in box).toBe(false);
     });
 });
 
@@ -1104,11 +1109,12 @@ describe("usageOf", () => {
 });
 
 describe("decorateTiles", () => {
-    it("marks the lead of a failed run failed, and no one else", () => {
-        const tiles = [tile("L"), tile("w")];
-        const out = decorateTiles(tiles, { failedLead: "L", diffs: {} });
+    it("marks the lead of each failed run failed, and no one else", () => {
+        const tiles = [tile("L"), tile("w"), tile("L2")];
+        const out = decorateTiles(tiles, { failedLeads: new Set(["L", "L2"]), diffs: {} });
         expect(out[0].failed).toBe(true);
         expect(out[1].failed).toBeUndefined();
+        expect(out[2].failed).toBe(true);
     });
 
     it("gives a review tile its diff, and only a review tile with lines changed", () => {

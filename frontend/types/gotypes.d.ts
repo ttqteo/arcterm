@@ -358,6 +358,46 @@ declare global {
         remote?: boolean;
     };
 
+    // wshrpc.BugReport
+    type BugReport = {
+        id: string;
+        ts: number;
+        text: string;
+        version: string;
+        commit?: string;
+        surface?: string;
+        agent?: BugReportAgent;
+        state: string;
+        handler?: string;
+        claimedts?: number;
+        outcome?: BugReportOutcome;
+        donets?: number;
+        dir?: string;
+        hasscreen?: boolean;
+    };
+
+    // wshrpc.BugReportAgent
+    type BugReportAgent = {
+        id: string;
+        name: string;
+    };
+
+    // wshrpc.BugReportOutcome
+    type BugReportOutcome = {
+        text: string;
+        runid?: string;
+        effortoid?: string;
+    };
+
+    // wshrpc.BugReportStatus
+    type BugReportStatus = {
+        waiting: number;
+        handling: number;
+        handler?: string;
+        repopath?: string;
+        repoproject?: string;
+    };
+
     // wshrpc.CaptureEffortsStatus
     type CaptureEffortsStatus = {
         active: number;
@@ -774,6 +814,39 @@ declare global {
     // wshrpc.CommandBrainstormJudgeStopData
     type CommandBrainstormJudgeStopData = {
         blockid: string;
+    };
+
+    // wshrpc.CommandBugReportClaimData
+    type CommandBugReportClaimData = {
+        agentid: string;
+        ids: string[];
+    };
+
+    // wshrpc.CommandBugReportClaimRtnData
+    type CommandBugReportClaimRtnData = {
+        claimed: string[];
+    };
+
+    // wshrpc.CommandBugReportDoneData
+    type CommandBugReportDoneData = {
+        id: string;
+        outcome: BugReportOutcome;
+    };
+
+    // wshrpc.CommandBugReportListData
+    type CommandBugReportListData = {
+        state?: string;
+    };
+
+    // wshrpc.CommandBugReportSaveData
+    type CommandBugReportSaveData = {
+        text: string;
+        ts: number;
+        version: string;
+        commit?: string;
+        surface?: string;
+        agent?: BugReportAgent;
+        screen64?: string;
     };
 
     // wshrpc.CommandCancelRunData
@@ -5038,6 +5111,7 @@ declare global {
         "dume:enabled"?: boolean;
         "power:*"?: boolean;
         "power:keepawake"?: boolean;
+        "bugreport:repo"?: string;
     };
 
     // wshrpc.ShellRunResult

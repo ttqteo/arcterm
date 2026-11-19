@@ -45,6 +45,7 @@ import {
     orbitPoints,
     pings,
     ringDash,
+    runsShown,
     screenState,
     selectionAfter,
     waitingIds,
@@ -211,7 +212,7 @@ export const SidecarOrbit = memo(function SidecarOrbit({ snap, receivedAt, clock
     const waiting = useMemo(() => waitingIds(snap.needs), [snap.needs]);
 
     // the strain band: the x hides it until its level differs from the one it was hidden at; `nextHidden` forgets the
-    // memory once the level changes or goes. The run box steps aside only while the band shows.
+    // memory once the level changes or goes. The Runs box stays under it.
     const strain = snap.strain;
     const level = strain?.level ?? null;
     const [hidden, setHidden] = useState<StrainLevel | null>(null);
@@ -299,6 +300,9 @@ export const SidecarOrbit = memo(function SidecarOrbit({ snap, receivedAt, clock
                             <SidecarBand strain={strain} now={now} onHide={() => setHidden(level)} send={send} />
                         </div>
                     )}
+                    {snap.runs != null && snap.runs.length > 0 && (
+                        <RunsBox runs={snap.runs} snapNow={snap.now} sinceArrived={sinceArrived} send={send} />
+                    )}
                     <NeedsPanel
                         needs={needs}
                         sel={cur}
@@ -308,9 +312,6 @@ export const SidecarOrbit = memo(function SidecarOrbit({ snap, receivedAt, clock
                         onOpen={(i) => open("needs", i)}
                         send={send}
                     />
-                    {snap.run != null && !showBand && (
-                        <RunBox run={snap.run} snapNow={snap.now} sinceArrived={sinceArrived} />
-                    )}
                 </div>
             </div>
             <SidecarResourcesBand resources={snap.resources} onEnd={(name) => send({ kind: "endapp", name })} />
@@ -492,7 +493,7 @@ function OrbitCell(props: {
                         point={points[i]}
                         tone={nodeTone(t, waiting)}
                         ping={pings(t, waiting)}
-                        line={nodeLine(t, snap.run, snap.now, props.sinceArrived)}
+                        line={nodeLine(t, snap.runs, snap.now, props.sinceArrived)}
                         heavy={heavy.get(t.id)}
                         heavyTone={bandTone}
                         selected={t.id === selectedAgent}
@@ -811,36 +812,89 @@ function Marker(props: { tone: Tone; ping: boolean }) {
     );
 }
 
-// ---- Run ----
+// ---- Runs ----
 
-function RunBox(props: { run: SidecarRunBox; snapNow: number; sinceArrived: number }) {
-    const { run } = props;
-    const age = ageText(run.since, props.snapNow, props.sinceArrived);
-    const text = [`${run.done} of ${run.total} tasks`, run.due != null && run.due !== "" ? `due today: ${run.due}` : ""]
-        .filter((p) => p !== "")
-        .join(" · ");
+// Every active run, failed first, at most RUNS_SHOWN rows; the rest are one summary line that opens the runs in Jarvis.
+// It stays under the strain band: a run is what the person is watching, and a row is two short lines.
+function RunsBox(props: {
+    runs: SidecarRunBox[];
+    snapNow: number;
+    sinceArrived: number;
+    send: (act: SidecarAct) => void;
+}) {
+    const { runs, send } = props;
+    const { rows, more } = runsShown(runs);
+    const failed = runs.filter((r) => r.failed).length;
     return (
         <div
+            data-sidecar-runs={runs.length}
+            className="flex shrink-0 flex-col gap-3 rounded-lg border border-hud-line bg-hud-panel px-4 pb-3.5 pt-3"
+        >
+            <div className="flex items-baseline gap-2.5">
+                <HudLabel className="text-[12px]">Runs</HudLabel>
+                <span className="font-mono text-[13px] tabular-nums text-hud-text">
+                    {String(runs.length).padStart(2, "0")}
+                </span>
+                {failed > 0 && <span className="font-mono text-[13px] tabular-nums text-error">· {failed} failed</span>}
+            </div>
+            {rows.map((run) => (
+                <RunRow
+                    key={run.id}
+                    run={run}
+                    snapNow={props.snapNow}
+                    sinceArrived={props.sinceArrived}
+                    onOpen={() => send({ kind: "run", id: run.id })}
+                />
+            ))}
+            {more != null && (
+                <button
+                    type="button"
+                    data-sidecar-runs-more={more.count}
+                    onClick={() => send({ kind: "run" })}
+                    className="flex cursor-pointer items-baseline gap-2 border-t border-hud-line pt-2.5 text-left font-mono text-[12.5px] tabular-nums"
+                >
+                    <span className="text-hud-text">+{more.count} more</span>
+                    {more.failed > 0 && <span className="text-error">{more.failed} failed</span>}
+                    {more.working > 0 && <span className="text-hud-muted">· {more.working} working</span>}
+                    <span className="flex-1" />
+                    <span className="text-[11.5px] uppercase text-hud-muted">open in Jarvis</span>
+                </button>
+            )}
+        </div>
+    );
+}
+
+// A run's two lines: `Failed` (a failed run), its title, `done/total` and its age; then a segment per task, the done ones
+// dim, the one it is on bright (red when the run failed). A click opens the run in the main window.
+function RunRow(props: { run: SidecarRunBox; snapNow: number; sinceArrived: number; onOpen: () => void }) {
+    const { run } = props;
+    const age = ageText(run.since, props.snapNow, props.sinceArrived);
+    return (
+        <button
+            type="button"
             data-sidecar-run={run.id}
             data-run-failed={run.failed ? "true" : "false"}
-            className="flex shrink-0 flex-col gap-2 rounded-lg border border-hud-line bg-hud-panel px-4 py-3.5"
+            onClick={props.onOpen}
+            title={run.title}
+            className="flex cursor-pointer flex-col gap-1.5 text-left"
         >
-            <div className="flex items-baseline gap-2">
-                <HudLabel className="shrink-0 text-[12px]">Run</HudLabel>
-                <span className="min-w-0 flex-1 truncate text-[13.5px] text-hud-text" title={run.title}>
-                    {run.title}
+            <span className="flex w-full items-baseline gap-2.5">
+                {run.failed && <span className="shrink-0 text-[13px] font-semibold text-error">Failed</span>}
+                <span className="min-w-0 flex-1 truncate text-[13.5px] text-hud-text">{run.title}</span>
+                <span className="shrink-0 font-mono text-[12.5px] tabular-nums text-hud-text">
+                    {run.done}/{run.total}
                 </span>
-                {age !== "" && (
-                    <span className="shrink-0 font-mono text-[12px] tabular-nums text-hud-muted">{age}</span>
-                )}
-            </div>
+                <span className="min-w-[38px] shrink-0 text-right font-mono text-[12px] tabular-nums text-hud-muted">
+                    {age}
+                </span>
+            </span>
             {run.total > 0 && (
-                <div className="flex gap-[3px]">
+                <span className="flex w-full gap-[3px]">
                     {Array.from({ length: run.total }, (_, i) => (
                         <span
                             key={i}
                             className={cn(
-                                "h-1.5 flex-1 rounded-[1px]",
+                                "h-[5px] flex-1 rounded-[1px]",
                                 i < run.done
                                     ? "bg-success/45"
                                     : i === run.done
@@ -851,13 +905,9 @@ function RunBox(props: { run: SidecarRunBox; snapNow: number; sinceArrived: numb
                             )}
                         />
                     ))}
-                </div>
+                </span>
             )}
-            <span className="font-mono text-[12.5px] tabular-nums text-hud-muted">
-                {run.failed && <span className="mr-1.5 font-semibold text-error">Failed</span>}
-                {text}
-            </span>
-        </div>
+        </button>
     );
 }
 

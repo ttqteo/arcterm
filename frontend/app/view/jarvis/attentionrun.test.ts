@@ -207,6 +207,20 @@ describe("runAttentionAct", () => {
         });
     });
 
+    // Process and the folder picker are the caller's (bugreportprocess.ts): the row's call touches nothing and says nothing
+    it("leaves Xử lý and Chọn thư mục… to the caller", async () => {
+        for (const over of [{ projectPath: "D:/work/arcterm" }, { projectPath: "" }]) {
+            const fb = feedback();
+            const r = row({ wireKind: "bug-reports", channelId: "", runId: null, taskId: "", ...over });
+            await expect(runAttentionAct(attentionAct(r), r, fb)).resolves.toBe(false);
+            expect(loadAttention).not.toHaveBeenCalled();
+            expect(fb.done).not.toHaveBeenCalled();
+            expect(fb.fail).not.toHaveBeenCalled();
+        }
+        expect(attentionDoneText("process-reports", row())).toBe("");
+        expect(attentionDoneText("pick-repo", row())).toBe("");
+    });
+
     it("does nothing for an act that only opens", async () => {
         const fb = feedback();
         const r = row({ wireKind: "escalation", taskId: "" });

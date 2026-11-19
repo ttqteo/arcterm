@@ -110,6 +110,8 @@ const NAME_LANGUAGES: [RegExp, string][] = [
     [/\.(?:toml|conf|cfg)$|^\.npmrc$/i, "ini"],
     [/^\.(?:git|docker|npm|prettier|eslint)ignore$|^CODEOWNERS$/i, "ini"],
     [/\.(?:jsonc|json5)$/i, "json"],
+    // jsonllang.ts: one JSON value per line, coloured like JSON with no "End of file expected" on every later line
+    [/\.(?:jsonl|ndjson)$/i, "jsonl"],
     [/^(?:Dockerfile|Containerfile)(?:\..+)?$/i, "dockerfile"],
     [/\.(?:zsh|ksh)$|^\.(?:bashrc|bash_profile|bash_aliases|zshrc|zprofile|zshenv|profile|envrc)$/i, "shell"],
 ];

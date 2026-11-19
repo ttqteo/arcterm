@@ -31,6 +31,13 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Added
 
+- A bug button at the footer's right end (also Ctrl+Alt+R, and "Báo lỗi arcterm" in the palette) reports a bug in
+  arcterm on the spot: it captures the window, takes a line on what went wrong, and keeps the picture, the last 5
+  minutes of the log, the version and the agent in focus on this machine. Nothing is sent anywhere.
+  <!-- try: global:bug-report -->
+- Jarvis's Waiting on you shows the bug reports waiting as one row, and Xử lý starts one Claude agent in arcterm's own
+  repo that reads them all: it groups the ones about the same bug, starts a run for a small fix, files an initiative
+  for a large one, and asks you back when a report is unclear.
 - Chat warns above the box when the Claude account an agent runs on is near its weekly (80%) or 5-hour (90%) limit,
   with the reset time. With more than one account it names the one in use and offers Switch to the account with the
   most room, which moves this agent over and offers to restart the others; Snooze hides it for an hour, four hours or
@@ -84,6 +91,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   Canvas gallery or Councils row and no Conversations section. A session opened from Usage, Jarvis or a project's
   Overview reads at full width in Library with Back to where you were, and a council that has left the sidebar opens in
   Library's Councils tab. <!-- try: go:library -->
+- When the agent rewrites a brainstorm decision you confirmed, a sentence it changed in a few words now reads as one
+  line, the old words struck right before the new ones, instead of the old lines all first and the new ones after.
+- In Chat's message box, Stop sits at the far right after Send, instead of before it.
 - Focus read in Chat starts at three blocks lit at a time, and its size button now goes up to five (×4, ×5). J and K
   slide the lit group one block at a time instead of jumping a whole group, the accent tick stays beside the lit block
   (at the end of a conversation too), Escape turns focus read off, and when a turn you were following ends, the new
@@ -158,6 +168,17 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- Sidecar's Other apps lists WSL's and Docker's virtual machine (VmmemWSL, Vmmem) with the gigabytes Task Manager
+  shows, and names each app's WebView2 panes after the app (`WebView2: ms-teams.exe`) instead of summing every app's
+  into one msedgewebview2.exe row.
+- An opened command in Chat is in colour: the command in the shell's colours, and its output either as code (a `sed`,
+  `cat` or `grep` of a source file, line numbers dim) or in the colours its program printed, a failure red.
+- A `.jsonl` or `.ndjson` file opens in colour, like JSON, with no error marked on every line after the first.
+- Sidecar shows every run in progress, not only the newest: a Runs box above Needs you lists up to three, a failed run
+  first, and sums up the rest in one line ("+2 more · 1 failed") that opens them in Jarvis; a row opens its run. The box
+  stays when the memory band shows, and the "due today" line it repeated from Needs you is gone.
+- Sidecar's Resources view names each agent by its task, as the cockpit does, instead of a row of "arcterm" (the
+  project's name), and its arcterm mark no longer draws a bold "t" beside a thin, jagged chevron.
 - A question an agent asks stays in Chat with its choices while its background subagents keep working, instead of
   turning into an "Answer in Terminal" card a few seconds later.
 - A line you type straight under a `>` quote, with no blank line between, shows in your sent message as its own line

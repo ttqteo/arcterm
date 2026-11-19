@@ -130,11 +130,7 @@ describe("core stand-in", () => {
         await expect(invoke("open_sidecar")).rejects.toThrow(/Tauri host/);
         await expect(invoke("sidecar_form", { change: null })).rejects.toThrow(/Tauri host/);
         await expect(invoke("sidecar_form", { change: { small: true } })).rejects.toThrow(/Tauri host/);
-    });
-
-    it("answers null for the Sidecar window's corner: a page has no native window to read it from", async () => {
-        const { invoke } = await import("./core");
-        expect(await invoke("sidecar_corner")).toBeNull();
+        await expect(invoke("sidecar_corner")).rejects.toThrow(/Tauri host/);
     });
 });
 

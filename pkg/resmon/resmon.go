@@ -189,13 +189,21 @@ func (st *tickState) tick() *sample {
 	if st.others {
 		// every other process's memory and CPU: one OpenProcess each, ~300 on a busy machine, only while asked
 		var rest []otherProc
+		// read once, at the first process that cannot be opened (readSystemStats)
+		var system map[int]procStat
+		systemRead := false
 		for pid, p := range table {
 			if tracked[pid] || pid == 0 {
 				continue
 			}
 			s := stat(pid)
 			if !s.ok {
-				continue // a protected process, or gone since the table read
+				if !systemRead {
+					system, systemRead = readSystemStats(), true
+				}
+				if s = system[pid]; !s.ok {
+					continue // gone since the table read
+				}
 			}
 			id := procId{pid, s.createTs}
 			cpu := 0.0

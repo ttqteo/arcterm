@@ -25,6 +25,7 @@ const KIND_LABEL: Record<string, string> = {
     "plan-review": "Plan to review",
     "learn-proposal": "Learned rule",
     council: "Council",
+    "bug-reports": "Báo lỗi",
 };
 
 export type StripOpen =
@@ -161,10 +162,14 @@ export function buildNeedsYouRows(input: {
             agentOpen:
                 (a.kind === "chunk-due" && effortId !== "" && openAgentFor(effortId, input.roster) != null) ||
                 undefined,
+            // the waiting bug reports' three forms (Xử lý, Chọn thư mục…, Mở agent) are told apart by these two
+            ...(a.kind === "bug-reports" ? { oref: a.oref ?? "", projectPath: a.projectpath ?? "" } : {}),
             source: a.source,
             title: a.text,
         };
-        // a plan to review opens the agent that proposed it while one is open, else its initiative
+        // a plan to review opens the agent that proposed it while one is open, else its initiative; the bug reports
+        // open the agent that holds them (its tab id rides in the item's oref, "agent:<tab>"), so Mở agent is not dead
+        const bugAgentId = a.kind === "bug-reports" ? idOf(a.oref, "agent") : "";
         const agent =
             escalationAgent(a, input.channelMessages[channelId], input.roster) ?? planReviewAgent(a, input.roster);
         rows.push({
@@ -181,13 +186,15 @@ export function buildNeedsYouRows(input: {
             open:
                 agent != null
                     ? { kind: "agent", agentId: agent.id }
-                    : effortId !== ""
-                      ? { kind: "effort", effortId }
-                      : councilId !== ""
-                        ? { kind: "council", councilId }
-                        : channelId !== ""
-                          ? { kind: "channel", channelId, runId: run.runId }
-                          : null,
+                    : bugAgentId !== ""
+                      ? { kind: "agent", agentId: bugAgentId }
+                      : effortId !== ""
+                        ? { kind: "effort", effortId }
+                        : councilId !== ""
+                          ? { kind: "council", councilId }
+                          : channelId !== ""
+                            ? { kind: "channel", channelId, runId: run.runId }
+                            : null,
             learnId,
         });
     }

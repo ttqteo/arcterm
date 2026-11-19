@@ -124,7 +124,7 @@ function dot(...parts: string[]): string {
  */
 export function nodeLine(
     tile: SidecarTile,
-    run: SidecarRunBox | undefined,
+    runs: readonly SidecarRunBox[] | undefined,
     snapNow: number,
     sinceArrivedMs: number
 ): string {
@@ -136,7 +136,8 @@ export function nodeLine(
         const q = tile.ask == null ? "" : cutQuestion(tile.ask.question);
         return dot(q === "" ? "asks" : `asks: ${q}`, age);
     }
-    if (run != null && run.leadId === tile.id) {
+    const run = runs?.find((r) => r.leadId === tile.id);
+    if (run != null) {
         return dot("run", `${run.done} of ${run.total}`, ageText(run.since, snapNow, sinceArrivedMs));
     }
     switch (tile.state) {
@@ -415,4 +416,47 @@ export function selectionAfter(
     const at = sel.key == null ? -1 : keys.indexOf(sel.key);
     const index = at >= 0 ? at : Math.min(keys.length - 1, Math.max(0, sel.index));
     return { area: sel.area, index, key: keys[index] };
+}
+
+/** The Runs box shows at most this many rows; the rest are one summary line. */
+export const RUNS_SHOWN = 3;
+
+/** What the summary line under the rows counts: the runs left out, how many of them failed and how many still work. */
+export interface RunsMore {
+    count: number;
+    failed: number;
+    working: number;
+}
+
+/**
+ * The Runs box's rows and its summary line: the first `cap` runs (the snapshot puts the failed first, so a failed run
+ * is cut only when more than `cap` failed), and the rest counted, never dropped without a word. No summary when every
+ * run is shown.
+ */
+export function runsShown(
+    runs: readonly SidecarRunBox[] | undefined,
+    cap: number = RUNS_SHOWN
+): { rows: SidecarRunBox[]; more: RunsMore | null } {
+    const all = runs ?? [];
+    const rows = all.slice(0, cap);
+    const rest = all.slice(cap);
+    if (rest.length === 0) {
+        return { rows, more: null };
+    }
+    const failed = rest.filter((r) => r.failed).length;
+    return { rows, more: { count: rest.length, failed, working: rest.length - failed } };
+}
+
+/**
+ * The small form's one run line: one run reads `Run 7 of 9 · 1h 34m` (a failed one `failed` where its age would be,
+ * the age left out when it has no `since`); several read `Runs 3`, with `· 1 failed` when any failed.
+ */
+export function runsLine(runs: readonly SidecarRunBox[], firstAge: string): string {
+    if (runs.length === 1) {
+        const run = runs[0];
+        const tail = run.failed ? "failed" : firstAge;
+        return `Run ${run.done} of ${run.total}${tail === "" ? "" : ` · ${tail}`}`;
+    }
+    const failed = runs.filter((r) => r.failed).length;
+    return dot(`Runs ${runs.length}`, failed > 0 ? `${failed} failed` : "");
 }

@@ -34,6 +34,7 @@ func readTable() (map[int]proc, error) {
 	if !errors.Is(err, windows.ERROR_NO_MORE_FILES) {
 		return nil, fmt.Errorf("Process32Next: %w", err)
 	}
+	nameWebviewHosts(table)
 	return table, nil
 }
 
@@ -75,6 +76,55 @@ func readStat(pid int) procStat {
 	s := procStat{ok: true, createTs: created.Nanoseconds() / 1e6, cpuTime: filetime100ns(kernel) + filetime100ns(user), mem: -1}
 	s.mem = privateWorkingSet(h)
 	return s
+}
+
+// readSystemStats reads, from one system process list, every process's times and private working set, for the
+// processes OpenProcess refuses even limited query rights: the VMs of WSL and Docker (vmmemWSL, vmmem), which Task
+// Manager lists with gigabytes and which this list is how it reads them. Times and memory are the figures readStat
+// reads (the private working set, the whole working set when the list has none); nil when the list cannot be read.
+func readSystemStats() map[int]procStat {
+	size := uint32(512 << 10)
+	for range 4 {
+		// uint64s keep the entries' 8-byte fields aligned
+		buf := make([]uint64, size/8+1)
+		var need uint32
+		err := windows.NtQuerySystemInformation(windows.SystemProcessInformation, unsafe.Pointer(&buf[0]), uint32(len(buf)*8), &need)
+		if errors.Is(err, windows.STATUS_INFO_LENGTH_MISMATCH) {
+			// processes start between the two calls: ask for a margin over what it said
+			size = max(need, size) + 64<<10
+			continue
+		}
+		if err != nil {
+			log.Printf("resmon: NtQuerySystemInformation: %v", err)
+			return nil
+		}
+		return parseSystemProcesses(unsafe.Pointer(&buf[0]))
+	}
+	return nil
+}
+
+func parseSystemProcesses(base unsafe.Pointer) map[int]procStat {
+	out := map[int]procStat{}
+	for off := uintptr(0); ; {
+		p := (*windows.SYSTEM_PROCESS_INFORMATION)(unsafe.Add(base, off))
+		if pid := int(p.UniqueProcessID); pid != 0 {
+			created := windows.Filetime{LowDateTime: uint32(p.CreateTime), HighDateTime: uint32(uint64(p.CreateTime) >> 32)}
+			mem := p.WorkingSetPrivateSize
+			if mem <= 0 {
+				mem = int64(p.WorkingSetSize)
+			}
+			out[pid] = procStat{
+				ok:       true,
+				createTs: created.Nanoseconds() / 1e6,
+				cpuTime:  uint64(p.UserTime) + uint64(p.KernelTime),
+				mem:      mem,
+			}
+		}
+		if p.NextEntryOffset == 0 {
+			return out
+		}
+		off += uintptr(p.NextEntryOffset)
+	}
 }
 
 // privateWorkingSet is the RAM a process holds of its own: the Consumers panel's figure (pkg/memusage) and Task

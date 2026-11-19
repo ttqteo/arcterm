@@ -69,6 +69,7 @@ import { cn, fireAndForget } from "@/util/util";
 import { atom, useAtomValue } from "jotai";
 import {
     ArrowUpRight,
+    Bug,
     CircleX,
     Eye,
     Flag,
@@ -211,9 +212,13 @@ const NEEDS_STATUS: Record<string, string> = {
     "run-queue-blocked": "not started",
     "run-unverified": "unverified",
     "plan-review": "plan",
+    "bug-reports": "báo lỗi",
 };
 
 function needsIcon(row: NeedsRow): LucideIcon {
+    if (row.item.kind === "bug-reports") {
+        return Bug;
+    }
     if (row.agent == null) {
         return GitFork;
     }
@@ -221,6 +226,12 @@ function needsIcon(row: NeedsRow): LucideIcon {
 }
 
 function needsEcho(row: NeedsRow, t: NeedsTarget | null): string {
+    // the waiting bug reports: the agent that holds them, else the Cockpit where the row's button is
+    if (row.item.kind === "bug-reports") {
+        return t?.kind === "agent"
+            ? "Opens the agent that holds the bug reports"
+            : "Opens the Cockpit, where Xử lý starts the agent that reads the bug reports";
+    }
     const name = row.agent?.name ?? row.planAgent?.name ?? "";
     switch (t?.kind) {
         case "agent":

@@ -116,7 +116,8 @@ const joined = (parts: (string | undefined)[]) => parts.filter((p) => p != null 
 // The kind chip's colour says who is held up: amber where an agent or a run waits on your answer, grey for a
 // reminder or a pile to sort, red for anything stuck. One amber for every row made the column say nothing.
 const ANSWER_KINDS = new Set(["dag-gate", "ask", "escalation", "plan-review", "council"]);
-const REMINDER_KINDS = new Set(["chunk-due", "run-unverified", "learn-proposal"]);
+// the waiting bug reports are one too: nothing is held up while they wait
+const REMINDER_KINDS = new Set(["chunk-due", "run-unverified", "learn-proposal", "bug-reports"]);
 
 function queueTone(q: QueueRow): LineTone {
     if (q.tone === "error") {

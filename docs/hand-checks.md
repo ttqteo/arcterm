@@ -32,6 +32,43 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
   Library shows it: Library goes back to the Councils list. `councilnotifysync.tsx`, `councilremove.ts`; `library-tabs`
   step 13 covers the toast and the dot with fixtures, not removal.
 
+- [ ] (arcterm) **Sidecar's Other apps shows VmmemWSL and each app's WebView2.** With WSL running and Teams open,
+  open Sidecar → Resources: VmmemWSL is listed with about the RAM Task Manager shows, and Teams' panes read
+  `WebView2: ms-teams.exe` on their own row (not endable). Commit: fix/resmon-vmmem.
+- [ ] (arcterm) **An opened command in Chat is in colour.** Open a Bash step in Chat: the `$ command` line draws the
+  program in the keyword colour and its arguments in the string colour; a `sed -n …p x.ts` or `grep -n … x.tsx` step's
+  output reads as code (keywords, strings, comments) with its `12:` line numbers dim; a test run's failing line is red.
+- [ ] (arcterm) **A `.jsonl` file opens in colour.** Open one (a Claude transcript, an audit `.jsonl`): keys, strings,
+  numbers and `true`/`false`/`null` in JSON's colours, and no red squiggle on line 2 onwards.
+
+- [ ] (arcterm) **Xử lý starts one real agent that handles the waiting bug reports.** With two reports saved and arcterm's
+  repo known (Jarvis, Waiting on you: "2 báo lỗi arcterm chờ xử lý"), press Xử lý there (or in the Cockpit's Needs-you
+  strip): a "Báo lỗi arcterm" Claude agent opens in arcterm's repo and starts on the prompt, the row turns "Đang xử lý 2
+  báo lỗi" with Mở agent, and a second Xử lý is refused. Read what the agent does with them: a small fix is a run
+  (`wsh runs list`), a large one an initiative with chunks (`wsh effort list`), an unclear one a question at the end of
+  its turn with that report left `handling`; each finished report is `done` with its outcome
+  (`wsh bugreport list --state done --json`). Close the agent while it holds one: the row goes back to Xử lý. The
+  `bug-report-jarvis` scenario drives all of this through `window.__bugReportLaunchFake`, so no real agent has run.
+  `bugreportprocess.ts`, `bugreportprompt.ts`.
+- [ ] (arcterm) **A sentence changed in a few words reads as one line, old words struck before the new ones**
+  (`brainstormmodel.ts` `changedSentences`, `brainstormui.tsx` `SentenceDiffLines`). In a brainstorm where the agent
+  rewrites a confirmed decision, Chat's Confirm card (and the Brainstorm tab's review): a sentence that shares at least
+  half its words with its old version is one `~` line, the dropped words struck in red right before the new ones in
+  green, with spaces between them; a sentence with no close partner keeps its own − or + line. The
+  `chat-brainstorm-review` scenario checks the lines' text, not how they look (feat(brainstorm): one-line word diff).
+- [ ] (arcterm) **Sidecar's Runs box lists every active run.** With two or more orchestrator runs going, open Sidecar:
+  a Runs box above Needs you shows one row per run (title, `done/total`, age, a segment per task), `RUNS 0N` in its
+  head; with four or more, three rows and a `+N more · … working` line. A failed run sorts first with a red `Failed`.
+  The box stays under the memory band when RAM is high. A click on a row opens that run in the main window; on the
+  `+N more` line, Jarvis. The small form reads `Runs N` (`· 1 failed`). The `sidecar-orbit` scenario's new P-runs steps
+  cover it but were not run (no dev app here). Commit: fix/sidecar-runs.
+- [ ] (arcterm) **Chat's Stop button sits after Send.** While an agent works, type in Chat's box: Send's return arrow
+  shows, then Stop at the far right. Commit: fix/sidecar-runs.
+- [ ] (arcterm) **Sidecar's Resources rows name agents by their task, and the arcterm mark reads evenly.** Open
+  Sidecar → Resources with several agents in one project: each agent row shows its title (as in the Agent tree), not
+  "arcterm"; a tab with no title yet still shows the tab's name. The Sidecar / arcterm rows' "t>" mark has strokes of
+  one weight. `wshserver_resmon.go` resolveResMonOwner (unit-tested), `arctermmark.tsx` smoothing below 25x19; not run
+  in the app.
 - [ ] (arcterm) **Run on a reply's command runs it in the agent.** In Chat, click ▷ on a `! git status` row of a reply:
   the agent's box sends `! git status` (Claude Code's bash mode) and its output shows in the conversation, no new
   terminal opens. With a draft in the box, ▷ toasts "The message box has a draft" and the draft stays. To a sleeping
