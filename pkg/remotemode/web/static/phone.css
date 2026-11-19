@@ -548,6 +548,24 @@ input {
     display: flex;
     gap: 8px;
 }
+.btn:disabled {
+    color: var(--color-muted);
+    cursor: default;
+}
+.pc-head {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+}
+.pc-state {
+    margin-left: auto;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--color-muted);
+}
+.pc-state[data-pc-locked="true"] {
+    color: var(--color-warning);
+}
 
 /* footer */
 .foot {

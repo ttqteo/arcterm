@@ -15,6 +15,9 @@ import (
 // pcSupported: wavesrv runs in the owner's login session, so pmset and osascript reach it.
 const pcSupported = true
 
+// pcLocked is nil: the Mac does not read its lock state (only Windows does), so the waiting list's locked stays null.
+var pcLocked func(context.Context) (bool, error)
+
 // pcMacVolumeStep is how many points (of 100) one press of the phone's down or up moves the output volume.
 const pcMacVolumeStep = 6
 

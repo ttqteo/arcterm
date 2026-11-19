@@ -24,6 +24,7 @@ import {
 } from "./model.js";
 
 const REFRESH_MS = 10 * 1000;
+const PC_LOCK_REREAD_MS = 1500;
 // Leaving a chat waits for its release post so the list never reads the agent as still handed. The chat bounds
 // its own wait to about 2 s; this is the page's backstop, so the list can never wait longer than that.
 const LEAVE_WAIT_MS = 3 * 1000;
@@ -472,19 +473,36 @@ async function pcPress(path, body) {
         state.pcError = error;
         render();
     }
+    // the lock lands a moment after the call returns: read the state again then, not at the next 10 s tick
+    if (!error && path === "/api/pc/lock") {
+        setTimeout(refresh, PC_LOCK_REREAD_MS);
+    }
+}
+
+// The word beside the Computer heading: the waiting list's locked, which is null where the computer cannot tell.
+function pcLockState(locked) {
+    if (locked !== true && locked !== false) {
+        return null;
+    }
+    return h("span", { class: "pc-state", "data-pc-locked": String(locked) }, locked ? "Locked" : "Unlocked");
 }
 
 function pcSection() {
     if (!state.list?.pc) {
         return null;
     }
-    const button = (key, label, path, body) =>
-        h("button", { type: "button", class: "btn", "data-pc": key, onclick: () => pcPress(path, body) }, label);
+    const locked = state.list.locked === true;
+    const button = (key, label, path, body, disabled = false) =>
+        h(
+            "button",
+            { type: "button", class: "btn", "data-pc": key, disabled, onclick: () => pcPress(path, body) },
+            label
+        );
     return h(
         "section",
         { class: "section", "aria-label": "Computer" },
-        h("h2", null, "Computer"),
-        button("lock", "Lock", "/api/pc/lock", {}),
+        h("div", { class: "pc-head" }, h("h2", null, "Computer"), pcLockState(state.list.locked)),
+        button("lock", locked ? "Locked" : "Lock", "/api/pc/lock", {}, locked),
         h(
             "div",
             { class: "btn-row" },

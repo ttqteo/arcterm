@@ -31,7 +31,74 @@ var (
 	pcUser32          = windows.NewLazySystemDLL("user32.dll")
 	pcLockWorkStation = pcUser32.NewProc("LockWorkStation")
 	pcSendInput       = pcUser32.NewProc("SendInput")
+
+	pcWtsapi32                   = windows.NewLazySystemDLL("wtsapi32.dll")
+	pcWTSQuerySessionInformation = pcWtsapi32.NewProc("WTSQuerySessionInformationW")
 )
+
+const (
+	pcWtsCurrentSession     = 0xFFFFFFFF // WTS_CURRENT_SESSION: the session of the calling process
+	pcWtsSessionInfoEx      = 25         // WTSSessionInfoEx in WTS_INFO_CLASS
+	pcWtsSessionStateLock   = 0          // WTS_SESSIONSTATE_LOCK
+	pcWtsSessionStateUnlock = 1          // WTS_SESSIONSTATE_UNLOCK
+)
+
+// pcWtsInfoEx is the head of WTSINFOEXW up to WTSINFOEX_LEVEL1_W.SessionFlags. The union after Level holds a
+// LARGE_INTEGER, so it starts at offset 8 on 32 and on 64 bits alike, and SessionFlags sits at 16.
+type pcWtsInfoEx struct {
+	level        uint32
+	_            uint32
+	sessionId    uint32
+	sessionState int32
+	sessionFlags int32
+}
+
+// pcLocked reads whether this desktop session is locked. Win+L, the lock screen after idle and the phone's own
+// Lock all set it; a screen only turned off (remote mode keeps the computer awake, not the display) does not.
+var pcLocked = pcReadLocked
+
+func pcReadLocked(ctx context.Context) (bool, error) {
+	if err := ctx.Err(); err != nil {
+		return false, fmt.Errorf("read the lock state: %w", err)
+	}
+	if err := pcWTSQuerySessionInformation.Find(); err != nil {
+		return false, fmt.Errorf("read the lock state: wtsapi32.dll has no WTSQuerySessionInformationW: %w", err)
+	}
+	var buf *pcWtsInfoEx
+	var size uint32
+	r, _, err := pcWTSQuerySessionInformation.Call(
+		0, // WTS_CURRENT_SERVER_HANDLE
+		uintptr(pcWtsCurrentSession),
+		uintptr(pcWtsSessionInfoEx),
+		uintptr(unsafe.Pointer(&buf)),
+		uintptr(unsafe.Pointer(&size)),
+	)
+	if r == 0 {
+		return false, pcCallError("read the lock state: WTSQuerySessionInformationW failed", err)
+	}
+	if buf == nil {
+		return false, errors.New("read the lock state: WTSQuerySessionInformationW returned no buffer")
+	}
+	defer windows.WTSFreeMemory(uintptr(unsafe.Pointer(buf)))
+	if uintptr(size) < unsafe.Sizeof(*buf) {
+		return false, fmt.Errorf("read the lock state: WTSQuerySessionInformationW returned %d bytes", size)
+	}
+	return pcLockedFromInfo(buf.level, buf.sessionFlags)
+}
+
+// pcLockedFromInfo reads SessionFlags. Windows 7 and Server 2008 R2 swap the two values; arcterm needs Windows 10.
+func pcLockedFromInfo(level uint32, flags int32) (bool, error) {
+	if level != 1 {
+		return false, fmt.Errorf("read the lock state: WTSINFOEX level %d, want 1", level)
+	}
+	switch flags {
+	case pcWtsSessionStateLock:
+		return true, nil
+	case pcWtsSessionStateUnlock:
+		return false, nil
+	}
+	return false, fmt.Errorf("read the lock state: Windows does not know it (session flags %d)", flags)
+}
 
 // pcKeybdInput is KEYBDINPUT.
 type pcKeybdInput struct {

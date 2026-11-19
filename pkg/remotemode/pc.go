@@ -10,13 +10,15 @@ import (
 )
 
 // The computer controls of the phone page (spec "Controlling the computer from the phone"). Each platform file
-// defines the three things remoteDeps wires, so this file holds only what they share:
+// defines the four things remoteDeps wires, so this file holds only what they share:
 //
 //	const pcSupported bool                              whether this platform has the controls; it decides
 //	                                                    whether remoteDeps sets Deps.PCLock and Deps.PCVolume,
 //	                                                    which is the waiting list's pc flag
 //	func pcLock(ctx context.Context) error              Deps.PCLock: lock the screen
 //	func pcVolume(ctx context.Context, step string) error   Deps.PCVolume: press one volume button
+//	var pcLocked func(ctx context.Context) (bool, error)    Deps.PCLocked: whether the session is locked, the
+//	                                                    waiting list's locked; nil (Windows only reads it)
 //
 // pc_windows.go, pc_darwin.go and pc_other.go (no controls). A failure returns an error that names what failed:
 // the handler answers 500 with its text and the page shows it under the buttons.

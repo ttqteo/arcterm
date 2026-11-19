@@ -31,6 +31,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Added
 
+- The phone page's Computer section says whether the computer is **Locked** or **Unlocked** (Windows), and its Lock
+  button rests while the screen is locked.
 - A message queued in Chat while Claude works has a **×** beside Send now: it takes the queued messages out of
   Claude's queue and the turn runs on. ↑ in the empty box brings the text back if you want it.
 - A run held because its final stage failed now offers **Land anyway** in Needs you, the Brief, the creature's peek

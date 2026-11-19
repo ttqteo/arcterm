@@ -29,6 +29,9 @@ type WaitingList struct {
 	Runs []ListedRun `json:"runs"`
 	// PC is whether the computer's Lock and volume controls work here, set by the handler from its deps
 	PC bool `json:"pc"`
+	// Locked is whether the computer's session is locked, set by the handler from Deps.PCLocked; null where
+	// the computer cannot tell (no dep, or the read failed)
+	Locked *bool `json:"locked"`
 }
 
 // WaitingQuestion is an agent question the phone can answer.
