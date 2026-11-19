@@ -11,6 +11,7 @@ import { HudLabel } from "@/app/cockpit/sidecarhud";
 import { layoutFor, type FormChange, type SidecarLayout } from "@/app/cockpit/sidecarlayout";
 import { SidecarMachineContext } from "@/app/cockpit/sidecarmachine";
 import { SidecarOrbit } from "@/app/cockpit/sidecarorbit";
+import { frameOf, frameReason, screenState } from "@/app/cockpit/sidecarorbitmodel";
 import { SidecarResourcesPanel } from "@/app/cockpit/sidecarresourcespanel";
 import { NATIVE_MAC_FRAME, SidecarTitleBar, toggleSidecarFullscreen } from "@/app/cockpit/sidecartitlebar";
 import {
@@ -168,6 +169,18 @@ function useVisible(answered: boolean): boolean {
     return visible;
 }
 
+// End task on an other app's row, once the row has asked
+function endApp(name: string): void {
+    send({ kind: "endapp", name });
+}
+
+// why the alert frame is up, for the Resources view that covers the dashboard showing it
+function alertOf(snap: SidecarSnapshot): { tone: "error" | "warning"; text: string } | null {
+    const frame = frameOf(screenState(snap));
+    const text = frameReason(snap);
+    return frame === "none" || text == null ? null : { tone: frame, text };
+}
+
 function SidecarRoot() {
     useApplyCockpitTheme();
     const [heard, setHeard] = useState<Heard | null>(null);
@@ -266,7 +279,14 @@ function SidecarRoot() {
                         )}
                     </SidecarMachineContext.Provider>
                 </div>
-                {resourcesOpen && <SidecarResourcesPanel resources={heard?.snap.resources} onClose={closeResources} />}
+                {resourcesOpen && (
+                    <SidecarResourcesPanel
+                        resources={heard?.snap.resources}
+                        onClose={closeResources}
+                        onEnd={endApp}
+                        alert={heard == null ? null : alertOf(heard.snap)}
+                    />
+                )}
             </div>
         </div>
     );

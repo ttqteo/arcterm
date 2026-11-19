@@ -12,6 +12,7 @@ type ResMonCommands interface {
 	ResMonKillCommand(ctx context.Context, data CommandResMonKillData) (*ResMonKillRtnData, error)
 	ResMonKillChildrenCommand(ctx context.Context, data CommandResMonKillChildrenData) (*ResMonKillRtnData, error)
 	ResMonKillShellTaskCommand(ctx context.Context, data CommandResMonKillShellTaskData) (*ResMonKillRtnData, error) // kill one of a claude agent's background shell tasks
+	ResMonEndAppCommand(ctx context.Context, data CommandResMonEndAppData) (*ResMonKillRtnData, error)               // end every process of one of the other apps (Sidecar's End task)
 }
 
 const (
@@ -42,6 +43,8 @@ type ResMonOther struct {
 	Mem   int64   `json:"mem"`
 	Gpu   float64 `json:"gpu,omitempty"`  // the busiest GPU engine any of them holds, as Task Manager sums a group
 	Icon  string  `json:"icon,omitempty"` // the image's icon as a PNG data URL, as Task Manager draws it; none where unread
+	// Sidecar may offer to end them (resmon.Endable): false for the system's own processes and arcterm's
+	Endable bool `json:"endable,omitempty"`
 }
 
 // ResMonMachine is the whole machine, read with the others: what Sidecar's resource charts plot.
@@ -99,6 +102,11 @@ type CommandResMonKillShellTaskData struct {
 	TaskId    string `json:"taskid"`
 	Command   string `json:"command"`   // the Bash tool's command, verbatim
 	StartedTs int64  `json:"startedts"` // epoch ms; picks between two tasks running the same command
+}
+
+// CommandResMonEndAppData names one of the other apps by its image name, as ResMonOther.Name has it.
+type CommandResMonEndAppData struct {
+	Name string `json:"name"`
 }
 
 type ResMonKillRtnData struct {

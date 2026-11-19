@@ -2337,6 +2337,11 @@ declare global {
         error?: string;
     };
 
+    // wshrpc.CommandResMonEndAppData
+    type CommandResMonEndAppData = {
+        name: string;
+    };
+
     // wshrpc.CommandResMonKillChildrenData
     type CommandResMonKillChildrenData = {
         ownerid: string;
@@ -4526,6 +4531,7 @@ declare global {
         mem: number;
         gpu?: number;
         icon?: string;
+        endable?: boolean;
     };
 
     // wshrpc.ResMonSnapshotData

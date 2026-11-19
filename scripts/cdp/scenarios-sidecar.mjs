@@ -9,7 +9,7 @@
 // wall's scenario, kept), the waiting state before the first snapshot, F11, the strain band, the parked agents that get no
 // node, then the five states (P-calm, P-orbit-dashboard and its keys, P-high, P-critical, P-failed) and P-live, which
 // plays them in turn through the bridge's seams with no reload. sidecar-compact is Q, the small form: at 900 px wide, the
-// real S button (the window shrinks to 340x440 and pins), the same five states in that window, Q's keys, the pin, S again
+// real S button (the window shrinks to 340x640 and pins), the same five states in that window, Q's keys, the pin, S again
 // and the line for nothing waiting. The wall's tiling, tile arrows, per-tile answers, scrollback and the small form's
 // cards went with the wall (plan 2026-11-17-sidecar-orbit-dashboard.md, Task 11).
 //
@@ -58,7 +58,7 @@ const GLOW_WAIT_MS = 15_000;
 const STALE_SNAPSHOT_MS = 1500;
 // the keys step: how long the stubbed `answeragent` call takes to fail, so the ask's Sent mark stays up while the page reads it
 const ANSWER_FAILS_AFTER_MS = 2500;
-const MIN_WINDOW = { w: 340, h: 440 };
+const MIN_WINDOW = { w: 340, h: 640 };
 const SMALL_BREAK_PX = 1100; // layoutFor (sidecarlayout.ts): P from this width, Q under it
 const SIZE_SLACK = 2; // px: the window's size read back through the screen's scale
 const MIN = 60_000;
@@ -776,7 +776,7 @@ async function taskbarIdStep(rec, openedAt) {
 
 // the page's own window calls (capabilities/sidecar.json) work: leave full screen (a reopened window may be in it), ask for
 // 200x200, put the first size back. The page's innerWidth and innerHeight are logical px, read before any device override
-// pins them. Whether the host holds the 340x440 minimum against this call is recorded, not asserted: on Windows
+// pins them. Whether the host holds the 340x640 minimum against this call is recorded, not asserted: on Windows
 // `min_inner_size` clamps a person dragging an edge and not a programmatic set_size (a live run read 200x207 back), so the
 // minimum on a real drag is a hand check (docs/hand-checks.md)
 async function windowCallsStep(side, rec) {
@@ -1874,7 +1874,7 @@ export default function () {
                         { layout: got.layout, kind: got.kind, core: got.core, rows: got.needs.map((n) => n.key), s: got.s, pin: got.pin }
                     );
 
-                    // S: the real window shrinks to 340x440, the compact dashboard shows, S and the pin read pressed, the host
+                    // S: the real window shrinks to 340x640, the compact dashboard shows, S and the pin read pressed, the host
                     // says small and pinned, the title bar fits and keeps only S, the pin and close; the main window's size and
                     // focus do not move
                     await side.cdp("Emulation.clearDeviceMetricsOverride", {});
@@ -1893,7 +1893,7 @@ export default function () {
                     let mainNow = await mainState(h);
                     await shot(side, "small-s");
                     rec(
-                        "S shrinks the window to 340x440 and pins it: the compact dashboard shows, S and the pin are pressed, the host's form says small and pinned, the title bar fits and shows no minimize, maximize or full screen, and the main window's size and focus are untouched",
+                        "S shrinks the window to 340x640 and pins it: the compact dashboard shows, S and the pin are pressed, the host's form says small and pinned, the title bar fits and shows no minimize, maximize or full screen, and the main window's size and focus are untouched",
                         shrunk &&
                             near(got.w, MIN_WINDOW.w) &&
                             near(got.h, MIN_WINDOW.h) &&

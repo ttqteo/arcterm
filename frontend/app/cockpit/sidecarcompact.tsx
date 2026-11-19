@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // Q, Sidecar's compact window (spec 2026-11-17-sidecar-orbit-dashboard-design.md; board Q-compact-live): the same
-// dashboard as P (sidecarorbit.tsx) at the small form's 340 x 440, pinned beside the person's work. The core a small
+// dashboard as P (sidecarorbit.tsx) at the small form's 340 x 640, pinned beside the person's work. The core a small
 // three-ring dial of 128 px with its figures beside it, the strain as one line with the heaviest job's Stop and Sleep,
 // the Needs you rows (which scroll inside their own list, never the page), and at the bottom one dot per agent in the
 // orbit beside the run. No timeline. It draws the snapshot it is given and sends SidecarActs; it holds only the

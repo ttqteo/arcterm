@@ -1530,6 +1530,12 @@ export class RpcApiType {
         return client.wshRpcCall("rescanstorage", null, opts);
     }
 
+    // command "resmonendapp" [call]
+    ResMonEndAppCommand(client: WshClient, data: CommandResMonEndAppData, opts?: RpcOpts): Promise<ResMonKillRtnData> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "resmonendapp", data, opts);
+        return client.wshRpcCall("resmonendapp", data, opts);
+    }
+
     // command "resmonkill" [call]
     ResMonKillCommand(client: WshClient, data: CommandResMonKillData, opts?: RpcOpts): Promise<ResMonKillRtnData> {
         if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "resmonkill", data, opts);

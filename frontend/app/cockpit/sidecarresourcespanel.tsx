@@ -14,7 +14,7 @@
 import { ArctermMark } from "@/app/element/arctermmark";
 import { runtimeLogo } from "@/app/view/agents/runtimelogo";
 import { cn } from "@/util/util";
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { HudBrackets, HudDivider, HudLabel } from "./sidecarhud";
 import { SidecarResourceCharts } from "./sidecarresourcecharts";
 import { formatBytes } from "./sidecarstrainmodel";
@@ -67,40 +67,125 @@ function RowMark({ row }: { row: SidecarResourceRow }) {
     );
 }
 
-function Row({ row }: { row: SidecarResourceRow }) {
-    const own = row.kind === "sidecar";
+/** End task on the other apps' rows: which row asks "End …?" now, and what to do with an answer. */
+export interface EndTask {
+    confirming: string | null; // the row key asking
+    ask: (key: string | null) => void;
+    end: (name: string) => void;
+}
+
+const ACTION = "shrink-0 rounded-sm px-1.5 py-[1px] text-[11px] font-medium";
+
+// the x that asks to end an app: shown while the row is hovered or the x has the keyboard's focus
+function EndButton({ row, onAsk }: { row: SidecarResourceRow; onAsk: () => void }) {
+    return (
+        <button
+            type="button"
+            data-sidecar-end={row.key}
+            title={`End task: close every ${row.label} process`}
+            aria-label={`End ${row.label}`}
+            onClick={onAsk}
+            onKeyDown={(e) => e.stopPropagation()}
+            className="flex size-4 shrink-0 items-center justify-center rounded-sm text-hud-muted opacity-0 hover:bg-errorbg hover:text-error focus-visible:opacity-100 group-hover:opacity-100"
+        >
+            <svg width="9" height="9" viewBox="0 0 10 10" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round">
+                <path d="M2 2l6 6M8 2l-6 6" />
+            </svg>
+        </button>
+    );
+}
+
+// the row asking before it ends anything: Chrome's 18 processes and their unsaved tabs go together
+function ConfirmRow({ row, task }: { row: SidecarResourceRow; task: EndTask }) {
+    const endRef = useRef<HTMLButtonElement>(null);
+    useEffect(() => endRef.current?.focus(), []);
+    const what = row.count != null && row.count > 1 ? `${row.count} ${row.label}` : row.label;
     return (
         <div
             data-sidecar-resource={row.key}
-            className={cn("flex items-center gap-3 rounded-sm px-2 py-[3px]", own && "bg-hud-line")}
+            data-sidecar-end-confirm
+            role="group"
+            aria-label={`End ${row.label}?`}
+            // Enter and Space press these buttons only: the dashboard under the view hears keys on the window
+            onKeyDown={(e) => e.stopPropagation()}
+            className="flex items-center gap-2 rounded-sm bg-errorbg px-2 py-[3px]"
         >
-            <span className="flex min-w-0 flex-1 items-center gap-2">
-                <RowMark row={row} />
-                <span
-                    className={cn(
-                        "min-w-0 flex-1 truncate text-[12.5px]",
-                        own ? "font-semibold text-hud-text" : "text-hud-text/80"
-                    )}
-                    title={row.label}
-                >
-                    {row.label}
-                    {row.count != null && row.count > 1 ? <span className="text-hud-muted"> ({row.count})</span> : null}
-                </span>
+            <RowMark row={row} />
+            <span
+                className="min-w-0 flex-1 truncate text-[12.5px] text-error"
+                title={`End ${what}? Unsaved work in it is lost.`}
+            >
+                End {what}?
             </span>
-            <span className={cn(NUM, "w-11 text-hud-muted")}>{cpuText(row.cpu)}</span>
-            <span className={cn(NUM, "w-9 text-hud-muted")}>{row.gpu != null ? `${row.gpu}%` : "—"}</span>
-            <span className={cn(NUM, "w-16 text-hud-text")}>{row.mem != null ? formatBytes(row.mem) : "—"}</span>
+            <button
+                ref={endRef}
+                type="button"
+                data-sidecar-end-yes
+                onClick={() => {
+                    task.ask(null);
+                    task.end(row.label);
+                }}
+                className={cn(ACTION, "bg-error text-hud-bg hover:opacity-90")}
+            >
+                End
+            </button>
+            <button
+                type="button"
+                data-sidecar-end-no
+                onClick={() => task.ask(null)}
+                className={cn(ACTION, "text-hud-muted hover:text-hud-text")}
+            >
+                Cancel
+            </button>
+        </div>
+    );
+}
+
+function Row({ row, task }: { row: SidecarResourceRow; task?: EndTask }) {
+    const own = row.kind === "sidecar";
+    if (task != null && task.confirming === row.key) {
+        return <ConfirmRow row={row} task={task} />;
+    }
+    const endable = task != null && row.kind === "other" && row.endable === true;
+    return (
+        <div data-sidecar-resource={row.key} className={cn("group rounded-sm px-2 py-[3px]", own && "bg-hud-line")}>
+            <div className="flex items-center gap-3">
+                <span className="flex min-w-0 flex-1 items-center gap-2">
+                    <RowMark row={row} />
+                    <span
+                        className={cn(
+                            "min-w-0 flex-1 truncate text-[12.5px]",
+                            own ? "font-semibold text-hud-text" : "text-hud-text/80"
+                        )}
+                        title={row.label}
+                    >
+                        {row.label}
+                        {row.count != null && row.count > 1 ? (
+                            <span className="text-hud-muted"> ({row.count})</span>
+                        ) : null}
+                    </span>
+                    {endable && <EndButton row={row} onAsk={() => task.ask(row.key)} />}
+                </span>
+                <span className={cn(NUM, "w-11 text-hud-muted")}>{cpuText(row.cpu)}</span>
+                <span className={cn(NUM, "w-9 text-hud-muted")}>{row.gpu != null ? `${row.gpu}%` : "—"}</span>
+                <span className={cn(NUM, "w-16 text-hud-text")}>{row.mem != null ? formatBytes(row.mem) : "—"}</span>
+            </div>
+            {row.note != null && (
+                <div data-sidecar-end-note className="truncate pl-6 text-[11px] text-warning" title={row.note}>
+                    {row.note}
+                </div>
+            )}
         </div>
     );
 }
 
 // the section's title (CSS uppercases it) and the table's column heads, under a circuit-line divider where it follows
 // another section
-function Heading({ children, divider = true }: { children: string; divider?: boolean }) {
+function Heading({ children, divider = true, title }: { children: string; divider?: boolean; title?: string }) {
     return (
         <>
             {divider && <HudDivider className="mx-2 mt-2.5" />}
-            <div className="flex items-baseline gap-3 px-2 pb-1 pt-1.5">
+            <div className="flex items-baseline gap-3 px-2 pb-1 pt-1.5" title={title}>
                 <HudLabel className="min-w-0 flex-1 truncate">{children}</HudLabel>
                 <HudLabel className="w-11 text-right">CPU</HudLabel>
                 <HudLabel className="w-9 text-right">GPU</HudLabel>
@@ -142,16 +227,24 @@ function ArctermRows({ resources, divider }: { resources: SidecarResources | und
     );
 }
 
-function OtherRows({ resources, divider }: { resources: SidecarResources | undefined; divider?: boolean }) {
+// "Other apps" alone: with the floor in it ("Other apps over 200 MB") the uppercase title was cut at the small form's
+// 340 px, beside the three column heads. The floor is in its tooltip and in the note under the view.
+function OtherRows(props: { resources: SidecarResources | undefined; divider?: boolean; task?: EndTask }) {
+    const { resources, divider, task } = props;
     if (resources == null || resources.others.length === 0) {
         return null;
     }
     const min = resources.othersMin;
     return (
         <>
-            <Heading divider={divider}>{min != null ? `Other apps over ${formatBytes(min)}` : "Other apps"}</Heading>
+            <Heading
+                divider={divider}
+                title={min != null ? `Processes outside arcterm holding over ${formatBytes(min)}, by app` : undefined}
+            >
+                Other apps
+            </Heading>
             {resources.others.map((r) => (
-                <Row key={r.key} row={r} />
+                <Row key={r.key} row={r} task={task} />
             ))}
         </>
     );
@@ -160,11 +253,37 @@ function OtherRows({ resources, divider }: { resources: SidecarResources | undef
 // the page runs on the machine it measures, so its own user agent says whose figures pkg/resmon read
 const ON_MAC = /Mac/.test(navigator.userAgent);
 
-function noteText(state: SidecarResources["state"]): string {
+function noteText(state: SidecarResources["state"], othersMin?: number): string {
     const ram = ON_MAC
         ? "RAM is each process's memory footprint, as Activity Monitor shows it."
         : "RAM is each process's private working set and GPU its busiest engine, as Task Manager shows them.";
-    return `${ram} CPU is a share of the whole machine${state === "measuring" ? "; it reads after the second sample" : ""}.`;
+    const cpu = `CPU is a share of the whole machine${state === "measuring" ? "; it reads after the second sample" : ""}.`;
+    const others = othersMin != null ? ` Other apps lists those holding over ${formatBytes(othersMin)}.` : "";
+    return `${ram} ${cpu}${others}`;
+}
+
+/** End task's state for a view: the row asking, and the act that ends an app. Escape while a row asks cancels it. */
+function useEndTask(send: ((name: string) => void) | undefined): EndTask | undefined {
+    const [confirming, setConfirming] = useState<string | null>(null);
+    useEffect(() => {
+        if (confirming == null) {
+            return;
+        }
+        const onKey = (e: KeyboardEvent) => {
+            if (e.key === "Escape") {
+                // ahead of the panel's own Escape, which would leave the view
+                e.preventDefault();
+                e.stopImmediatePropagation();
+                setConfirming(null);
+            }
+        };
+        window.addEventListener("keydown", onKey, true);
+        return () => window.removeEventListener("keydown", onKey, true);
+    }, [confirming]);
+    if (send == null) {
+        return undefined;
+    }
+    return { confirming, ask: setConfirming, end: send };
 }
 
 // a column of the band: it scrolls on its own, so a long list never pushes the others
@@ -181,8 +300,13 @@ function BandCol({ children, name }: { children: ReactNode; name: string }) {
  * corner brackets, its title and the note on one line, then three columns side by side: the machine's charts, arcterm's
  * rows, the other apps. The brackets sit on the box, which never scrolls; each column scrolls inside it.
  */
-export function SidecarResourcesBand({ resources }: { resources: SidecarResources | undefined }) {
+export function SidecarResourcesBand(props: {
+    resources: SidecarResources | undefined;
+    onEnd?: (name: string) => void;
+}) {
+    const { resources } = props;
     const state = resources?.state ?? "measuring";
+    const task = useEndTask(props.onEnd);
     return (
         <section
             data-sidecar-resources="band"
@@ -194,7 +318,10 @@ export function SidecarResourcesBand({ resources }: { resources: SidecarResource
             <div className="flex shrink-0 items-center gap-[18px]">
                 <HudLabel className="shrink-0 text-[12px]">Resources</HudLabel>
                 <HudDivider className="min-w-0 flex-1" />
-                <span className="min-w-0 truncate text-[11px] text-hud-muted" title={noteText(state)}>
+                <span
+                    className="min-w-0 truncate text-[11px] text-hud-muted"
+                    title={noteText(state, resources?.othersMin)}
+                >
                     RAM: private working set · CPU: share of the machine
                 </span>
             </div>
@@ -209,7 +336,7 @@ export function SidecarResourcesBand({ resources }: { resources: SidecarResource
                         <ArctermRows resources={resources} divider={false} />
                     </BandCol>
                     <BandCol name="others">
-                        <OtherRows resources={resources} divider={false} />
+                        <OtherRows resources={resources} divider={false} task={task} />
                     </BandCol>
                 </div>
             )}
@@ -219,9 +346,16 @@ export function SidecarResourcesBand({ resources }: { resources: SidecarResource
 
 /** The small form's Resources view: the title bar's figures switch the body under the bar to it, as a tab does, and
  * back; the band's parts stacked. */
-export function SidecarResourcesPanel(props: { resources: SidecarResources | undefined; onClose: () => void }) {
-    const { resources, onClose } = props;
+export function SidecarResourcesPanel(props: {
+    resources: SidecarResources | undefined;
+    onClose: () => void;
+    onEnd?: (name: string) => void;
+    // why the window's alert frame is up: the view covers the dashboard that shows it
+    alert?: { tone: "error" | "warning"; text: string } | null;
+}) {
+    const { resources, onClose, alert } = props;
     const state = resources?.state ?? "measuring";
+    const task = useEndTask(props.onEnd);
 
     // Escape switches back; a press elsewhere does not, as a tab stays until another is picked (and the bar above it is
     // the window's drag region)
@@ -247,6 +381,25 @@ export function SidecarResourcesPanel(props: { resources: SidecarResources | und
             // dashboard, so no border, corner brackets or shadow
             className="absolute inset-0 z-40 flex flex-col overflow-hidden bg-hud-bg"
         >
+            {alert != null && (
+                // the frame stays up over this view: this says why, and switches back to the dashboard that shows it
+                <button
+                    type="button"
+                    data-sidecar-resources-alert={alert.tone}
+                    onClick={onClose}
+                    title={`${alert.text}. Back to the dashboard`}
+                    className={cn(
+                        "mx-2.5 mt-2.5 flex shrink-0 items-center gap-2 rounded-sm px-2.5 py-1.5 text-left text-[12px]",
+                        alert.tone === "error" ? "bg-errorbg text-error" : "bg-askingbg text-warning"
+                    )}
+                >
+                    <span className="shrink-0">⚠</span>
+                    <span className="min-w-0 flex-1 truncate">{alert.text}</span>
+                    <span className="shrink-0 font-mono text-[10.5px] uppercase tracking-[0.14em] opacity-80">
+                        Show
+                    </span>
+                </button>
+            )}
             <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-2.5 py-3">
                 {state === "unsupported" ? (
                     <Unsupported />
@@ -254,9 +407,9 @@ export function SidecarResourcesPanel(props: { resources: SidecarResources | und
                     <>
                         <Charts resources={resources} className="px-2 pb-1 pt-1.5" />
                         <ArctermRows resources={resources} />
-                        <OtherRows resources={resources} />
+                        <OtherRows resources={resources} task={task} />
                         <div className="px-2 pb-0.5 pt-2.5 text-[11px] leading-[1.4] text-hud-muted">
-                            {noteText(state)}
+                            {noteText(state, resources?.othersMin)}
                         </div>
                     </>
                 )}
