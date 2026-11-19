@@ -184,8 +184,9 @@ func (ws *WshServer) AgentAskPendingCommand(ctx context.Context, oref string) (s
 }
 
 // askResumeGraceMs is how far after an ask a working status has to land before it counts as the agent
-// having moved on. It mirrors the frontend's ASK_STALE_GRACE_MS: a reporter's own working events can
-// land in the same instant as the ask that follows them, and those must not retire it.
+// having moved on: a reporter's own working events can land in the same instant as the ask that follows
+// them, and those must not retire it. The cockpit keeps no rule of its own (liveAsk): this is the one place
+// a working status ends an ask, so a background subagent's working reports cannot take a question down.
 const askResumeGraceMs = 2000
 
 // retireAskOnResume drops a pending ask whose agent has demonstrably resumed work. PostToolUse ->

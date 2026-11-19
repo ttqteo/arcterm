@@ -1002,3 +1002,7 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
   the bubble and as it ends folds away, with the conversation gliding rather than jumping; a message typed straight in
   the terminal opens into Chat on the spring. Measured in headless Chrome with a fixture agent (a scripted send,
   live reply and transcript), not yet with a real Claude agent in the app.
+- [ ] (arcterm) A question asked while background subagents work (`agentsviewmodel.ts` liveAsk): in a Claude agent,
+  start two background subagents, then have the agent ask an AskUserQuestion; Chat keeps the question with its choices
+  for as long as it waits (past 10 s, while the subagents run tools), never turning into the "Wants to use
+  AskUserQuestion" card with only Answer in Terminal, and a pick in Chat or in the terminal both answer it.

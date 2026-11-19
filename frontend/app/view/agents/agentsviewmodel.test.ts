@@ -6,7 +6,6 @@ import {
     askNeedsSubmit,
     askReviewRows,
     applyAgentOrder,
-    ASK_STALE_GRACE_MS,
     askingCount,
     asksInTerminal,
     askingLabel,
@@ -28,7 +27,6 @@ import {
     groupAgents,
     groupTimeline,
     hasAnswerableAsk,
-    isAskStale,
     isEditAction,
     isNearBottom,
     revealScrollTop,
@@ -652,42 +650,16 @@ describe("streamableTranscriptAgents", () => {
     });
 });
 
-describe("isAskStale", () => {
-    it("stale when a materially newer working status shows the agent resumed", () => {
-        expect(isAskStale(1_000, 5_000, "working")).toBe(true);
-    });
-    it("not stale on a sub-second working update: the pi status reporter's message_end + tool_execution_start RPCs race the ask mirror RPC, so a same-instant newer status must not kill a just-rendered card", () => {
-        expect(isAskStale(1_000, 1_500, "working")).toBe(false);
-    });
-    it("not stale on a newer idle status: the pi prose bridge raises its ask at agent_settled, the same moment the status reporter emits settle-idle, so a same-tick idle must not kill the card", () => {
-        expect(isAskStale(1_000, 1_010, "idle")).toBe(false);
-        expect(isAskStale(1_000, 2_000, "idle")).toBe(false);
-        expect(isAskStale(1_000, 5_000, "idle")).toBe(false);
-    });
-    it("needs more than the grace: exactly ASK_STALE_GRACE_MS newer is not stale", () => {
-        expect(isAskStale(1_000, 1_000 + ASK_STALE_GRACE_MS, "working")).toBe(false);
-        expect(isAskStale(1_000, 1_000 + ASK_STALE_GRACE_MS + 1, "working")).toBe(true);
-    });
-    it("not stale while waiting, when status is not newer, or when a ts is missing", () => {
-        expect(isAskStale(1_000, 2_000, "waiting")).toBe(false);
-        expect(isAskStale(1_000, 1_000, "working")).toBe(false);
-        expect(isAskStale(1_000, 500, "working")).toBe(false);
-        expect(isAskStale(undefined, 2_000, "working")).toBe(false);
-        expect(isAskStale(1_000, undefined, "working")).toBe(false);
-    });
-});
-
 describe("liveAsk", () => {
     const ask = { oref: "block:b", askid: "a1", ts: 1_000, questions: [] } as AgentAskData;
     it("keeps a pending ask while the agent is awake", () => {
-        expect(liveAsk(ask, { ts: 2_000, state: "idle" }, false)).toBe(ask);
+        expect(liveAsk(ask, false)).toBe(ask);
     });
     it("drops an ask a sleeping agent's block still holds: its process is gone, so nothing is waiting on you", () => {
-        expect(liveAsk(ask, { ts: 2_000, state: "idle" }, true)).toBeNull();
+        expect(liveAsk(ask, true)).toBeNull();
     });
-    it("drops a stale ask, and passes no ask through", () => {
-        expect(liveAsk(ask, { ts: 5_000, state: "working" }, false)).toBeNull();
-        expect(liveAsk(null, { ts: 2_000, state: "idle" }, false)).toBeNull();
+    it("passes no ask through", () => {
+        expect(liveAsk(null, false)).toBeNull();
     });
 });
 
