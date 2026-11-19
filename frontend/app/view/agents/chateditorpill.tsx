@@ -6,6 +6,7 @@
 // mention (`mentionText`), so the box's plain text, which is what the agent receives, never changes with how a pill is
 // drawn. Inline, and keyboard-selectable: Backspace beside it selects it (the accent ring), the next one deletes it.
 
+import { FileIcon } from "@/app/element/fileicon";
 import { cn } from "@/util/util";
 import { useLexicalComposerContext } from "@lexical/react/LexicalComposerContext";
 import { useLexicalNodeSelection } from "@lexical/react/useLexicalNodeSelection";
@@ -19,7 +20,6 @@ import {
     type SerializedLexicalNode,
     type Spread,
 } from "lexical";
-import { File, Folder } from "lucide-react";
 import type { JSX } from "react";
 import { mentionText } from "./chateditormodel";
 import { mentionBaseName } from "./filementiontokens";
@@ -29,7 +29,7 @@ export type SerializedFileMentionNode = Spread<{ path: string }, SerializedLexic
 function FileMentionPill({ nodeKey, path }: { nodeKey: NodeKey; path: string }) {
     const [editor] = useLexicalComposerContext();
     const [selected] = useLexicalNodeSelection(nodeKey);
-    const Icon = /[\\/]$/.test(path) ? Folder : File;
+    const dir = /[\\/]$/.test(path);
     // a click selects the pill alone, so Backspace or Delete takes it away whole
     const select = () => {
         editor.update(() => {
@@ -52,7 +52,7 @@ function FileMentionPill({ nodeKey, path }: { nodeKey: NodeKey; path: string }) 
                 selected ? "border-accent bg-accent/12" : "border-edge-mid bg-surface"
             )}
         >
-            <Icon size={12} className={cn("shrink-0", selected ? "text-accent-soft" : "text-muted")} aria-hidden />
+            <FileIcon path={dir ? path.replace(/[\\/]+$/, "") : path} dir={dir} size={13} />
             <span className="truncate">{mentionBaseName(path)}</span>
         </span>
     );

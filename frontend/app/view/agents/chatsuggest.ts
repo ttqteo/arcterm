@@ -116,6 +116,16 @@ export function yesNoQuestion(reply: string): boolean {
     if (!endsWithQuestion(reply)) {
         return false;
     }
+    const words = lastSentenceWords(reply);
+    if (words.length === 0 || words.some((w) => NOT_YES_NO.has(w))) {
+        return false;
+    }
+    const lead = ["so", "then", "and", "also", "vậy", "thế"].includes(words[0]) ? words.slice(1) : words;
+    return (lead.length > 0 && YES_NO_OPENERS.has(lead[0])) || YES_NO_CLOSERS.has(words[words.length - 1]);
+}
+
+/** Pure: the words of the reply's last sentence of prose, lower case, its closing marks and question mark left out. */
+function lastSentenceWords(reply: string): string[] {
     const prose = reply.replace(/```[\s\S]*?(```|$)/g, "");
     const line = prose
         .split("\n")
@@ -123,20 +133,20 @@ export function yesNoQuestion(reply: string): boolean {
         .filter((l) => l !== "")
         .at(-1);
     if (line == null) {
-        return false;
+        return [];
     }
     // the last sentence: what follows the sentence before it, if the line holds two
     const bare = line.replace(/[=*_`"'”’)\]\s]+$/u, "").replace(/[?？]+$/u, "");
     const sentence = bare.split(/[.!?？。:]\s+/u).at(-1) ?? bare;
-    const words = sentence
+    return wordsOf(sentence);
+}
+
+function wordsOf(text: string): string[] {
+    return text
+        .normalize("NFC")
         .toLowerCase()
         .split(WORD_SPLIT)
         .filter((w) => w !== "");
-    if (words.length === 0 || words.some((w) => NOT_YES_NO.has(w))) {
-        return false;
-    }
-    const lead = ["so", "then", "and", "also", "vậy", "thế"].includes(words[0]) ? words.slice(1) : words;
-    return (lead.length > 0 && YES_NO_OPENERS.has(lead[0])) || YES_NO_CLOSERS.has(words[words.length - 1]);
 }
 
 /** Pure: the yes and the no a yes-or-no question gets at once, in the person's language. */
@@ -156,11 +166,20 @@ const PLAIN_ANSWER = new Set(
 
 /** Pure: a reply that is only a yes or a no ("ok làm đi", "không cần đâu"), which the yes and no chips already offer. */
 export function plainAnswer(text: string): boolean {
-    const words = text
-        .toLowerCase()
-        .split(WORD_SPLIT)
-        .filter((w) => w !== "");
-    return words.length > 0 && words.every((w) => PLAIN_ANSWER.has(w));
+    const ws = wordsOf(text);
+    return ws.length > 0 && ws.every((w) => PLAIN_ANSWER.has(w));
+}
+
+// the words that turn a reply against part of what was asked ("đổi, không sync"): such a reply says more than yes
+const NEGATION = new Set("không ko khỏi đừng chưa bỏ no not don't dont skip without".split(" "));
+
+/** Pure: a reply to a yes-or-no question that only says the question's own action back ("Đổi luôn đi" to "…đổi luôn
+ *  … không?"): every word of it is the question's or a plain yes word, and none says no to a part. It is a yes, which
+ *  the yes chip already offers. */
+export function restatesQuestion(text: string, reply: string): boolean {
+    const asked = new Set(lastSentenceWords(reply));
+    const ws = wordsOf(text);
+    return ws.length > 0 && !ws.some((w) => NEGATION.has(w)) && ws.every((w) => asked.has(w) || PLAIN_ANSWER.has(w));
 }
 
 /** Pure: the person's last messages, oldest first, each on one line, with what a paste or a picture brought along left
@@ -283,7 +302,8 @@ export function closeChip(done: boolean, vi: boolean): ChatChip | undefined {
 
 /** Pure: the row's chips, all of them: the row draws those that fit on its one line (fitChips). A question's are the
  *  model's answers (with "ok" only once the call failed or found none); a yes-or-no question's (`yesNo`, yesNoChips) are
- *  its yes and no at once, then the model's answers that say more than yes or no, after them so the chips already there
+ *  its yes and no at once, then the model's answers that say more than yes or no (not a plain answer, not the question's
+ *  action said back: restatesQuestion), after them so the chips already there
  *  do not move. Any other turn's are the rules' chips, then the model's next step when it is not one of them, and last
  *  the close chip (closeChip), which fitChips keeps in a full row. */
 export function chatChips(i: {
@@ -292,13 +312,19 @@ export function chatChips(i: {
     model: ModelSuggest | undefined;
     close?: ChatChip;
     yesNo?: ChatChip[];
+    /** the agent's reply, which a yes-or-no question's answers are checked against (restatesQuestion) */
+    reply?: string;
 }): ChatChip[] {
     const replies = i.model?.status === "done" ? i.model.replies : [];
     const fromModel = replies.map((text): ChatChip => ({ text, kind: "reply", source: "model" }));
     if (i.question) {
         if (i.yesNo != null && i.yesNo.length > 0) {
             const shown = new Set(i.yesNo.map((c) => c.text.toLowerCase()));
-            return [...i.yesNo, ...fromModel.filter((c) => !plainAnswer(c.text) && !shown.has(c.text.toLowerCase()))];
+            const saysMore = (c: ChatChip) =>
+                !plainAnswer(c.text) &&
+                !shown.has(c.text.toLowerCase()) &&
+                !(i.reply != null && restatesQuestion(c.text, i.reply));
+            return [...i.yesNo, ...fromModel.filter(saysMore)];
         }
         if (fromModel.length > 0) {
             return fromModel;

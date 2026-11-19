@@ -1236,3 +1236,7 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
   asking it again`, the seat's avatar reads "Reply unreadable: asking again", and its answer then lands in the thread;
   one that fails twice shows `- Failed: …` in the report's Run facts. Unit-tested with a fake caller only, not seen
   with a real model slip.
+- [ ] (arcterm) **Chat file pills show the file type's icon** (`chatfilepill.tsx`, `chateditorpill.tsx`). @-mention an
+  `.html`, a `.ts` and a folder in Chat's message box: each pill shows its Material icon (as in the Code tree), selected
+  or not, and the sent message's pills show the same; the 13 px icon sits centred on the 20 px pill. Typechecked only,
+  not seen in the app.

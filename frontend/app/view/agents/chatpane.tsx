@@ -1089,6 +1089,7 @@ function ChatPaneBody({ model, agent, barred }: { model: AgentsViewModel; agent:
                   question && reply != null && yesNoQuestion(reply)
                       ? yesNoChips(vi || writesVietnamese([reply.slice(-300)]))
                       : undefined,
+              reply: reply ?? undefined,
           })
         : undefined;
 
