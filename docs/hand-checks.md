@@ -25,6 +25,36 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
   (`wsh bugreport list --state done --json`). Close the agent while it holds one: the row goes back to Xử lý. The
   `bug-report-jarvis` scenario drives all of this through `window.__bugReportLaunchFake`, so no real agent has run.
   `bugreportprocess.ts`, `bugreportprompt.ts`.
+- [ ] (arcterm) **A sentence changed in a few words reads as one line, old words struck before the new ones**
+  (`brainstormmodel.ts` `changedSentences`, `brainstormui.tsx` `SentenceDiffLines`). In a brainstorm where the agent
+  rewrites a confirmed decision, Chat's Confirm card (and the Brainstorm tab's review): a sentence that shares at least
+  half its words with its old version is one `~` line, the dropped words struck in red right before the new ones in
+  green, with spaces between them; a sentence with no close partner keeps its own − or + line. The
+  `chat-brainstorm-review` scenario checks the lines' text, not how they look (feat(brainstorm): one-line word diff).
+- [ ] (arcterm) **Sidecar's Runs box lists every active run.** With two or more orchestrator runs going, open Sidecar:
+  a Runs box above Needs you shows one row per run (title, `done/total`, age, a segment per task), `RUNS 0N` in its
+  head; with four or more, three rows and a `+N more · … working` line. A failed run sorts first with a red `Failed`.
+  The box stays under the memory band when RAM is high. A click on a row opens that run in the main window; on the
+  `+N more` line, Jarvis. The small form reads `Runs N` (`· 1 failed`). The `sidecar-orbit` scenario's new P-runs steps
+  cover it but were not run (no dev app here). Commit: fix/sidecar-runs.
+- [ ] (arcterm) **Chat's Stop button sits after Send.** While an agent works, type in Chat's box: Send's return arrow
+  shows, then Stop at the far right. Commit: fix/sidecar-runs.
+- [ ] (arcterm) **Sidecar's Resources rows name agents by their task, and the arcterm mark reads evenly.** Open
+  Sidecar → Resources with several agents in one project: each agent row shows its title (as in the Agent tree), not
+  "arcterm"; a tab with no title yet still shows the tab's name. The Sidecar / arcterm rows' "t>" mark has strokes of
+  one weight. `wshserver_resmon.go` resolveResMonOwner (unit-tested), `arctermmark.tsx` smoothing below 25x19; not run
+  in the app.
+- [ ] (arcterm) **Run on a reply's command runs it in the agent.** In Chat, click ▷ on a `! git status` row of a reply:
+  the agent's box sends `! git status` (Claude Code's bash mode) and its output shows in the conversation, no new
+  terminal opens. With a draft in the box, ▷ toasts "The message box has a draft" and the draft stays. To a sleeping
+  agent it runs without waking it, as a typed `!` does. `codeblock.tsx` run; `chat-code-box` step 1b checks the
+  button's title only (not run, no dev app up).
+- [ ] (arcterm) **Focus read follows the new reply, its tick rides the lit block, Escape leaves it.** With focus read
+  on, send a prompt and stay at the bottom while the agent works: when the turn ends the reply's first block is lit on
+  the line. Step J to the very end: the accent tick sits beside the lit group, not left at a third of the view. Press
+  Escape in the conversation: focus read turns off (a second Escape goes back, or stops a working turn). Also type `>s`
+  in the box: the quote bar is a full line high, not a dot. `chatfocusread.ts` tickTop / latestReplyStart,
+  `chatfocusreadview.ts`, `bindings.ts` agent:focus-read-off, `chateditormarks.tsx` quote ends; no scenario run.
 - [ ] (arcterm) **A quote in Chat's box draws no `>`, and a line under it stays out.** Type `>xx`, Shift+Enter, `sss`:
   the box shows `xx` slanted beside the bar with no `>`, and `sss` plain; ← and Backspace across the hidden `> ` take one
   press per character (two presses to undo the quote) with the caret never lost. Send it: the bubble shows `xx` in the
@@ -1000,3 +1030,7 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
   the bubble and as it ends folds away, with the conversation gliding rather than jumping; a message typed straight in
   the terminal opens into Chat on the spring. Measured in headless Chrome with a fixture agent (a scripted send,
   live reply and transcript), not yet with a real Claude agent in the app.
+- [ ] (arcterm) A question asked while background subagents work (`agentsviewmodel.ts` liveAsk): in a Claude agent,
+  start two background subagents, then have the agent ask an AskUserQuestion; Chat keeps the question with its choices
+  for as long as it waits (past 10 s, while the subagents run tools), never turning into the "Wants to use
+  AskUserQuestion" card with only Answer in Terminal, and a pick in Chat or in the terminal both answer it.

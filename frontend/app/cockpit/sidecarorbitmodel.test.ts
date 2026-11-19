@@ -17,6 +17,8 @@ import {
     orbitPoints,
     pings,
     ringDash,
+    runsLine,
+    runsShown,
     screenState,
     selectionAfter,
     waitingIds,
@@ -179,17 +181,23 @@ describe("nodeLine", () => {
     });
 
     it("a run's lead: the run's progress and its age", () => {
-        const r = run({ since: NOW - 94 * MIN });
+        const r = [run({ since: NOW - 94 * MIN })];
         expect(nodeLine(tile("lead", { since }), r, NOW, 0)).toBe("run · 7 of 9 · 1h 34m");
-        expect(nodeLine(tile("lead", { since }), run(), NOW, 0)).toBe("run · 7 of 9");
+        expect(nodeLine(tile("lead", { since }), [run()], NOW, 0)).toBe("run · 7 of 9");
+    });
+
+    it("each run's lead reads its own run when several run", () => {
+        const runs = [run(), run({ id: "r2", leadId: "lead2", done: 1, total: 5 })];
+        expect(nodeLine(tile("lead", { since }), runs, NOW, 0)).toBe("run · 7 of 9");
+        expect(nodeLine(tile("lead2", { since }), runs, NOW, 0)).toBe("run · 1 of 5");
     });
 
     it("another agent while a run shows keeps its own line", () => {
-        expect(nodeLine(tile("w", { since }), run({ since: NOW - 94 * MIN }), NOW, 0)).toBe("working · 3m");
+        expect(nodeLine(tile("w", { since }), [run({ since: NOW - 94 * MIN })], NOW, 0)).toBe("working · 3m");
     });
 
     it("a lead that asks or failed says so before the run", () => {
-        const r = run({ since: NOW - 94 * MIN });
+        const r = [run({ since: NOW - 94 * MIN })];
         const asks = tile("lead", { state: "asking", since, ask: { question: "ok?", options: [], answerable: false } });
         expect(nodeLine(asks, r, NOW, 0)).toBe("asks: ok? · 3m");
         expect(nodeLine(tile("lead", { since: NOW - 4 * MIN, failed: true }), r, NOW, 0)).toBe("failed · 4m");
@@ -521,5 +529,40 @@ describe("selectionAfter", () => {
     it("an emptied list leaves no selection", () => {
         expect(selectionAfter({ area: "needs", index: 0, key: "a" }, [], t("x"))).toBeNull();
         expect(selectionAfter({ area: "orbit", index: 0, key: "x" }, n("a"), [])).toBeNull();
+    });
+});
+
+describe("runsShown", () => {
+    const runs = (n: number, failed = 0) =>
+        Array.from({ length: n }, (_, i) => run({ id: `r${i}`, failed: i < failed }));
+
+    it("shows every run up to the cap with no summary", () => {
+        expect(runsShown(undefined)).toEqual({ rows: [], more: null });
+        const two = runsShown(runs(2));
+        expect(two.rows.map((r) => r.id)).toEqual(["r0", "r1"]);
+        expect(two.more).toBeNull();
+        expect(runsShown(runs(3)).more).toBeNull();
+    });
+
+    it("past the cap shows three rows and counts the rest, the failed among them apart", () => {
+        const four = runsShown(runs(4, 1));
+        expect(four.rows.map((r) => r.id)).toEqual(["r0", "r1", "r2"]);
+        expect(four.more).toEqual({ count: 1, failed: 0, working: 1 });
+        // nine runs, four failed (failed first): three failed rows, and the summary holds the fourth
+        expect(runsShown(runs(9, 4)).more).toEqual({ count: 6, failed: 1, working: 5 });
+        expect(runsShown(runs(5), 1).more).toEqual({ count: 4, failed: 0, working: 4 });
+    });
+});
+
+describe("runsLine", () => {
+    it("one run reads its progress and age, or failed where the age would be", () => {
+        expect(runsLine([run()], "1h 34m")).toBe("Run 7 of 9 · 1h 34m");
+        expect(runsLine([run()], "")).toBe("Run 7 of 9");
+        expect(runsLine([run({ failed: true })], "1h 34m")).toBe("Run 7 of 9 · failed");
+    });
+
+    it("several runs read their count, and how many failed", () => {
+        expect(runsLine([run(), run({ id: "r2" })], "3m")).toBe("Runs 2");
+        expect(runsLine([run({ failed: true }), run({ id: "r2" }), run({ id: "r3" })], "3m")).toBe("Runs 3 · 1 failed");
     });
 });

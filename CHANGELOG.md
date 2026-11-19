@@ -47,8 +47,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   wrapping away and keeps the paste.
 - When an agent's work is done (its last turn committed and you have read it), the suggested replies over Chat's box end
   with "close agent", which closes it as the header's ✓ Close does.
-- A shell command in a Chat reply (a `bash`, `sh` or `powershell` block) has a Run button: it opens a terminal in the
-  panel under the agent, in the folder the agent works in, and runs the command there.
+- A shell command in a Chat reply (a `bash`, `sh` or `powershell` block, or a `! command` line) has a Run button: it
+  sends the command to that agent as a `! command`, as if you typed it in the box, so the output shows in the
+  conversation and the agent sees it. With a draft in the box it asks you to send or clear it first.
 - A shell command shows in colour as you type it in Chat's bash mode and in a reply's shell block: the command apart
   from its arguments, flags and pipes dimmed, variables and strings in their own colours.
 - A picture the agent read shows as a small thumbnail in Chat: at the end of its folded line of steps and of its Read
@@ -85,8 +86,13 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- When the agent rewrites a brainstorm decision you confirmed, a sentence it changed in a few words now reads as one
+  line, the old words struck right before the new ones, instead of the old lines all first and the new ones after.
+- In Chat's message box, Stop sits at the far right after Send, instead of before it.
 - Focus read in Chat starts at three blocks lit at a time, and its size button now goes up to five (×4, ×5). J and K
-  slide the lit group one block at a time instead of jumping a whole group.
+  slide the lit group one block at a time instead of jumping a whole group, the accent tick stays beside the lit block
+  (at the end of a conversation too), Escape turns focus read off, and when a turn you were following ends, the new
+  reply is lit from its start.
 - An agent whose work is done shows one Close in its header: the × turns into the green ✓ Close with the session's tokens, instead of the two sitting side by side.
 - Chat's suggested replies answer a yes-or-no question at once with ok and không (yes and no in English), and the
   model's fuller answers join after them when they come. The row is no longer capped at three: it shows every
@@ -157,6 +163,13 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- Sidecar shows every run in progress, not only the newest: a Runs box above Needs you lists up to three, a failed run
+  first, and sums up the rest in one line ("+2 more · 1 failed") that opens them in Jarvis; a row opens its run. The box
+  stays when the memory band shows, and the "due today" line it repeated from Needs you is gone.
+- Sidecar's Resources view names each agent by its task, as the cockpit does, instead of a row of "arcterm" (the
+  project's name), and its arcterm mark no longer draws a bold "t" beside a thin, jagged chevron.
+- A question an agent asks stays in Chat with its choices while its background subagents keep working, instead of
+  turning into an "Answer in Terminal" card a few seconds later.
 - A line you type straight under a `>` quote, with no blank line between, shows in your sent message as its own line
   under the quote, as the box drew it, instead of inside the quote.
 - Clicking an agent whose Chat reads with focus read puts the keyboard in its conversation, so J/K step blocks at once

@@ -32,6 +32,7 @@ import {
     nodeTone,
     pings,
     ringDash,
+    runsLine,
     screenState,
     selectionAfter,
     waitingIds,
@@ -40,14 +41,7 @@ import {
     type Tone,
 } from "./sidecarorbitmodel";
 import { formatBytes } from "./sidecarstrainmodel";
-import type {
-    SidecarAct,
-    SidecarHeavy,
-    SidecarNeed,
-    SidecarRunBox,
-    SidecarSnapshot,
-    SidecarStrain,
-} from "./sidecartypes";
+import type { SidecarAct, SidecarHeavy, SidecarNeed, SidecarSnapshot, SidecarStrain } from "./sidecartypes";
 
 export interface SidecarCompactProps {
     snap: SidecarSnapshot;
@@ -481,12 +475,6 @@ function AllClear() {
 
 // ---- The agents, as dots ----
 
-// `Run 7 of 9 · 1h 34m`; a failed run says so where its age would be (the age is left out when the run has no `since`)
-function runLine(run: SidecarRunBox, age: string): string {
-    const tail = run.failed ? "failed" : age;
-    return `Run ${run.done} of ${run.total}${tail === "" ? "" : ` · ${tail}`}`;
-}
-
 function Dot(props: { id: string; tone: Tone; ping: boolean; tip: string; halo?: string }) {
     return (
         <span
@@ -569,8 +557,9 @@ export const SidecarCompact = memo(function SidecarCompact({ snap, receivedAt, c
         }
     }, [selectedKey]);
 
-    const { run, strain } = snap;
-    const runAge = run == null ? "" : ageText(run.since, snap.now, sinceArrived);
+    const { runs, strain } = snap;
+    const runAge = runs == null || runs.length === 0 ? "" : ageText(runs[0].since, snap.now, sinceArrived);
+    const runsFailed = (runs ?? []).some((r) => r.failed);
     const heavyIds = new Set((strain?.heavy ?? []).map((h) => h.id));
 
     return (
@@ -641,22 +630,24 @@ export const SidecarCompact = memo(function SidecarCompact({ snap, receivedAt, c
                         id={tile.id}
                         tone={nodeTone(tile, waiting)}
                         ping={pings(tile, waiting)}
-                        tip={`${tile.name}: ${nodeLine(tile, run, snap.now, sinceArrived)}`}
+                        tip={`${tile.name}: ${nodeLine(tile, runs, snap.now, sinceArrived)}`}
                         halo={strain != null && heavyIds.has(tile.id) ? HALO[strain.level] : undefined}
                     />
                 ))}
                 <span className="flex-1" />
-                {run != null && (
+                {runs != null && runs.length > 0 && (
                     <span
                         data-sidecar-run
-                        data-run-failed={run.failed ? "true" : undefined}
+                        data-run-failed={runsFailed ? "true" : undefined}
                         className={cn(
                             "min-w-0 truncate whitespace-nowrap font-mono text-[11px] uppercase tabular-nums",
-                            run.failed ? "text-error" : "text-hud-muted"
+                            runsFailed ? "text-error" : "text-hud-muted"
                         )}
-                        title={run.title}
+                        title={runs
+                            .map((r) => `${r.failed ? "Failed: " : ""}${r.title} (${r.done} of ${r.total})`)
+                            .join("\n")}
                     >
-                        {runLine(run, runAge)}
+                        {runsLine(runs, runAge)}
                     </span>
                 )}
             </div>

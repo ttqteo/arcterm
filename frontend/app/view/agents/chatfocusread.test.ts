@@ -6,6 +6,7 @@ import {
     atEnd,
     fencedText,
     FOCUS_READ_KEEP,
+    latestReplyStart,
     lineOffset,
     litAt,
     litGroup,
@@ -19,6 +20,7 @@ import {
     settleTo,
     stepFrom,
     tableText,
+    tickTop,
     TOP_ABOVE,
     withFocusRead,
 } from "./chatfocusread";
@@ -145,6 +147,32 @@ describe("stepFrom with a group", () => {
     it("takes the first block of a conversation shorter than the group, and moves no further", () => {
         expect(stepFrom(-1, 1, 2, 3)).toBe(0);
         expect(stepFrom(0, 1, 2, 3)).toBeNull();
+    });
+});
+
+describe("tickTop", () => {
+    const span = { top: 900, bottom: 960 };
+    it("rides the lit block: its top TOP_ABOVE down, a short block's middle", () => {
+        // 900 - 700 = 200 px down, plus TOP_ABOVE (12)
+        expect(tickTop(200, span, 700, 600)).toBe(212);
+        expect(tickTop(200, { top: 40, bottom: 50 }, 0, 600)).toBe(45);
+    });
+    it("stays inside the view", () => {
+        expect(tickTop(200, span, 0, 600)).toBe(600);
+        expect(tickTop(200, span, 2000, 600)).toBe(0);
+    });
+    it("stays on the line with nothing lit", () => {
+        expect(tickTop(200, null, 0, 600)).toBe(200);
+    });
+});
+
+describe("latestReplyStart", () => {
+    it("is the first block after your last message", () => {
+        expect(latestReplyStart(["you", "text", "you", "text", "code"])).toBe(3);
+    });
+    it("is none when nothing follows it, and the first block with no message of yours", () => {
+        expect(latestReplyStart(["text", "you"])).toBe(-1);
+        expect(latestReplyStart(["text", "text"])).toBe(0);
     });
 });
 

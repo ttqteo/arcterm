@@ -1319,8 +1319,8 @@ function ComposerBox({
                                     }}
                                 />
                             </div>
-                            {/* Stop and Send at the row's right (grown, the bottom row's right): Stop where Send is while the agent
-                    works; Send folds out beside it with nothing to send */}
+                            {/* Send and Stop at the row's right (grown, the bottom row's right): Stop last, at the far right,
+                    while the agent works; Send folds out before it with nothing to send */}
                             <div className="ml-auto flex flex-none items-center gap-1.5">
                                 {/* bash mode, as Claude Desktop marks its shell: a pill naming the shell beside Send. The
                                 `!` before the command stays (Backspace at its start leaves bash mode); the pill's title says
@@ -1338,31 +1338,6 @@ function ComposerBox({
                                             >
                                                 Bash
                                             </span>
-                                        </Fold>
-                                    ) : null}
-                                </AnimatePresence>
-                                <AnimatePresence initial={false}>
-                                    {showStop ? (
-                                        <Fold key="stop">
-                                            <button
-                                                type="button"
-                                                data-chat-stop
-                                                aria-label="Stop (Esc)"
-                                                title="Stop the agent (sends Esc)"
-                                                // the Esc key's path, not a bare Esc: a turn with no answer yet is rewound,
-                                                // and Claude Code puts its message back in its own box, out of sight, where
-                                                // the next send was typed onto it ("làm đibáo council đi", 2026-11-16).
-                                                // interrupt() takes it back into this box; when it does nothing (the agent
-                                                // is not working), the plain Esc stops it as before
-                                                onClick={() => {
-                                                    if (!interrupt()) {
-                                                        stop();
-                                                    }
-                                                }}
-                                                className="flex size-[28px] flex-none cursor-pointer items-center justify-center rounded-full bg-primary hover:opacity-90 focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-surface-raised"
-                                            >
-                                                <span aria-hidden className="size-[9px] rounded-[2px] bg-background" />
-                                            </button>
                                         </Fold>
                                     ) : null}
                                 </AnimatePresence>
@@ -1420,6 +1395,31 @@ function ComposerBox({
                                                 >
                                                     {sendWord.current}
                                                 </span>
+                                            </button>
+                                        </Fold>
+                                    ) : null}
+                                </AnimatePresence>
+                                <AnimatePresence initial={false}>
+                                    {showStop ? (
+                                        <Fold key="stop">
+                                            <button
+                                                type="button"
+                                                data-chat-stop
+                                                aria-label="Stop (Esc)"
+                                                title="Stop the agent (sends Esc)"
+                                                // the Esc key's path, not a bare Esc: a turn with no answer yet is rewound,
+                                                // and Claude Code puts its message back in its own box, out of sight, where
+                                                // the next send was typed onto it ("làm đibáo council đi", 2026-11-16).
+                                                // interrupt() takes it back into this box; when it does nothing (the agent
+                                                // is not working), the plain Esc stops it as before
+                                                onClick={() => {
+                                                    if (!interrupt()) {
+                                                        stop();
+                                                    }
+                                                }}
+                                                className="flex size-[28px] flex-none cursor-pointer items-center justify-center rounded-full bg-primary hover:opacity-90 focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-surface-raised"
+                                            >
+                                                <span aria-hidden className="size-[9px] rounded-[2px] bg-background" />
                                             </button>
                                         </Fold>
                                     ) : null}

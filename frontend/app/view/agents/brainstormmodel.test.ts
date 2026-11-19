@@ -1303,6 +1303,70 @@ describe("changedSentences", () => {
         ]);
         expect(changedSentences("A?", "")).toEqual([{ kind: "removed", text: "A?" }]);
     });
+
+    it("draws a sentence edited in a few words as one line, its old words struck before the new ones", () => {
+        const was = [
+            "Sidebar của Agent bỏ ba nút ở đầu, chỉ còn cây project.",
+            "Mục Conversations và các council mà councilInTree giữ lại vẫn nằm trong cây và mở ở cột giữa Agent như hiện nay.",
+            "Library là kho đầy đủ, gồm cả những thứ đã rời cây.",
+        ].join(" ");
+        const now = [
+            "Sidebar của Agent bỏ ba nút ở đầu và bỏ hẳn mục Conversations.",
+            "Cây chỉ còn agent, terminal, tool và các council mà councilInTree giữ lại; những council này mở ở cột giữa Agent như hiện nay.",
+            "Hội thoại đã xong chỉ có trong tab Conversations của Library.",
+        ].join(" ");
+        const lines = changedSentences(was, now);
+        expect(lines.map((d) => [d.kind, d.text.slice(0, 12)])).toEqual([
+            ["edited", "Sidebar của "],
+            ["edited", "Cây chỉ còn "],
+            ["removed", "Library là k"],
+            ["added", "Hội thoại đã"],
+        ]);
+        expect(lines[0]).toEqual({
+            kind: "edited",
+            was: "Sidebar của Agent bỏ ba nút ở đầu, chỉ còn cây project.",
+            text: "Sidebar của Agent bỏ ba nút ở đầu và bỏ hẳn mục Conversations.",
+            words: [
+                { op: "same", text: "Sidebar của Agent bỏ ba nút ở đầu " },
+                { op: "delete", text: "chỉ còn cây project." },
+                { op: "same", text: " " },
+                { op: "insert", text: "và bỏ hẳn mục Conversations." },
+            ],
+        });
+        expect(lines[1].kind === "edited" ? lines[1].words : []).toEqual([
+            { op: "delete", text: "Mục Conversations" },
+            { op: "same", text: " " },
+            { op: "insert", text: "Cây chỉ còn agent, terminal, tool" },
+            { op: "same", text: " và các council mà councilInTree giữ lại; " },
+            { op: "delete", text: "vẫn nằm trong cây và" },
+            { op: "same", text: " " },
+            { op: "insert", text: "những council này" },
+            { op: "same", text: " mở ở cột giữa Agent như hiện nay." },
+        ]);
+    });
+
+    it("leaves out nothing: an edited line read without its struck words is the new sentence", () => {
+        const [d] = changedSentences("Keep retry logs for three days.", "Keep the retry logs for seven days!");
+        expect(d.kind).toBe("edited");
+        if (d.kind === "edited") {
+            const read = (skip: "delete" | "insert") =>
+                d.words
+                    .filter((w) => w.op !== skip)
+                    .map((w) => w.text)
+                    .join("")
+                    .replace(/\s+/g, " ");
+            expect(read("delete")).toBe("Keep the retry logs for seven days!");
+            // a kept word is drawn from the new sentence, so the old one reads with the new punctuation
+            expect(read("insert")).toBe("Keep retry logs for three days!");
+        }
+    });
+
+    it("keeps a removed sentence and an unrelated added one apart, with no marks", () => {
+        expect(changedSentences("Alpha beta gamma.", "Delta epsilon zeta.")).toEqual([
+            { kind: "removed", text: "Alpha beta gamma." },
+            { kind: "added", text: "Delta epsilon zeta." },
+        ]);
+    });
 });
 
 describe("handoffView", () => {

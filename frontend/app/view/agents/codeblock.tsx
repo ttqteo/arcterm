@@ -7,6 +7,8 @@ import { cn } from "@/util/util";
 import { useAtom } from "jotai";
 import { atomWithStorage } from "jotai/utils";
 import { Play } from "lucide-react";
+import { chatBoxText, submitIntoChatBox } from "./chatinsert";
+import { useChatSelfId } from "./chatrefbadge";
 import { isCompactBlock, isPromptedCommand, isRunnableLang, runnableCommand } from "./coderun";
 import { runInTerminal } from "./coderunstore";
 import { highlightLine, isPlainLang, type CodeToken } from "./highlight";
@@ -29,11 +31,28 @@ export function CodeBlock({ code, lang, path }: { code: string; lang?: string; p
     // a shell block in the shell's colours (the command apart from its arguments), as Chat's bash box draws it
     const tokens = (ln: string): CodeToken[] =>
         shell ? shellLine(ln) : plain ? [{ t: ln || " ", cls: "text-syntax-ident" }] : highlightLine(ln);
-    // a shell block is a command the reply means you to run: Run types it into a new terminal (coderunstore.ts)
+    // a shell block is a command the reply means you to run. In a Chat, Run sends it to that agent as a `! command`, as if
+    // typed in its box (Claude Code's bash mode: the output lands in the conversation, and the agent sees it); a draft in
+    // the box is never overwritten for it. Outside a Chat, or with no box to take it, it types into a new terminal.
+    const selfId = useChatSelfId();
     const command = shell ? runnableCommand(code) : undefined;
+    const runLabel = selfId != null ? "Run in this agent (! in Chat)" : "Run in a new terminal";
     const run = () => {
         if (command == null) {
             return;
+        }
+        if (selfId != null) {
+            if (chatBoxText(selfId).trim() !== "") {
+                pushToast({
+                    level: "warn",
+                    title: "The message box has a draft",
+                    message: "Send or clear it first, so Run does not replace it.",
+                });
+                return;
+            }
+            if (submitIntoChatBox(selfId, `! ${command}`)) {
+                return;
+            }
         }
         runInTerminal(command).catch((e) =>
             pushToast({
@@ -66,8 +85,8 @@ export function CodeBlock({ code, lang, path }: { code: string; lang?: string; p
                         <button
                             type="button"
                             data-code-run=""
-                            aria-label="Run in a new terminal"
-                            title="Run in a new terminal"
+                            aria-label={runLabel}
+                            title={runLabel}
                             onClick={run}
                             className="flex size-[24px] cursor-pointer items-center justify-center rounded-[5px] hover:bg-surface-hover hover:text-primary"
                         >
@@ -107,7 +126,7 @@ export function CodeBlock({ code, lang, path }: { code: string; lang?: string; p
                 {command != null ? (
                     <button
                         type="button"
-                        title="Run in a new terminal"
+                        title={runLabel}
                         onClick={run}
                         className={cnHeadButton("text-muted hover:text-accent")}
                     >

@@ -1112,34 +1112,14 @@ export function streamableTranscriptAgents(agents: AgentVM[], now: number, opts:
 /** Pure: overlay a pending ask onto an agent. A live ask makes the agent `asking` regardless of
  *  the reporter's status (a blocked AskCommand RPC may still report "working"); blockedMs is
  *  derived from now - ask.ts. A null/cleared ask leaves the agent untouched. */
-/** Pure: a pending ask is stale once the agent has demonstrably resumed — a working status update
- *  materially newer than the ask. Idle deliberately does NOT trigger: the pi prose bridge raises its
- *  ask at agent_settled, the same moment the status reporter emits its settle-idle, so a same-tick
- *  idle would kill every prose card before it renders. Working gets the same grace: the pi status
- *  reporter's message_end + tool_execution_start RPCs land in the same instant as the ask mirror RPC
- *  (a sub-second race), so without ASK_STALE_GRACE_MS every pi card dies before it renders. Real
- *  "moved on" signals arrive after the ask's tool completes (seconds later, when the clear fires).
- *  The PostToolUse/next-agent_start clear hook is the fast path; this is the fallback. */
-export const ASK_STALE_GRACE_MS = 2000;
-export function isAskStale(askTs: number | undefined, statusTs: number | undefined, statusState: string): boolean {
-    if (askTs == null || statusTs == null) {
-        return false;
-    }
-    if (statusState !== "working") {
-        return false;
-    }
-    return statusTs - askTs > ASK_STALE_GRACE_MS;
-}
-
 /** Pure: the ask a row overlays (withAsk), or null. A sleeping agent's process is gone, so nothing can be waiting on
  *  an answer from it: an ask its block still holds is one whose clear never reached the cockpit, and overlaying it
- *  read a parked session as asking above the agent that really was. */
-export function liveAsk(
-    ask: AgentAskData | null | undefined,
-    status: Pick<AgentStatusData, "ts" | "state">,
-    sleeping: boolean
-): AgentAskData | null {
-    if (ask == null || sleeping || isAskStale(ask.ts, status.ts, status.state)) {
+ *  read a parked session as asking above the agent that really was.
+ *  A working status does not drop it here: a background subagent's tool calls report working on the same block while
+ *  the question waits. wavesrv decides when the agent has moved past a question (retireAskOnResume, which reads the
+ *  transcript to see the question still open) and publishes the clear. */
+export function liveAsk(ask: AgentAskData | null | undefined, sleeping: boolean): AgentAskData | null {
+    if (ask == null || sleeping) {
         return null;
     }
     return ask;

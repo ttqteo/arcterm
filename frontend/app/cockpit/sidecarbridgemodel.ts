@@ -175,6 +175,20 @@ export function validateAct(raw: unknown, last: SidecarSnapshot | null): ActChec
             }
             return { ok: true, act: { kind: "needact", key, act } };
         }
+        case "run": {
+            if (raw.id === undefined) {
+                return { ok: true, act: { kind: "run" } };
+            }
+            if (typeof raw.id !== "string") {
+                return { ok: false, reason: "run: the id is not a string" };
+            }
+            // only a run the page showed
+            const id = raw.id;
+            if (!(last?.runs ?? []).some((r) => r.id === id)) {
+                return { ok: false, reason: `run: "${id}" is not a run of the last snapshot` };
+            }
+            return { ok: true, act: { kind: "run", id } };
+        }
         case "endapp": {
             if (typeof raw.name !== "string") {
                 return { ok: false, reason: "endapp: no name" };
@@ -249,7 +263,7 @@ export function sameSnapshot(a: SidecarSnapshot | null, b: SidecarSnapshot | nul
         same(a.tiles, b.tiles) &&
         same(a.strain, b.strain) &&
         same(a.needs, b.needs) &&
-        same(a.run, b.run) &&
+        same(a.runs, b.runs) &&
         same(a.usage, b.usage) &&
         same(a.resources, b.resources) &&
         a.more === b.more
@@ -285,23 +299,21 @@ export function stampSince(
 }
 
 /**
- * The newest orchestrator run that has not ended, for the run box. A quick run never plans, so it has no dag to show;
- * a run is over by `runFinished` (its dag's status or its own: done, cancelled). Newest by `createdTs` (none: oldest),
- * the lower run id on a tie so the choice does not move between builds.
+ * Every orchestrator run that has not ended, for the Runs box, newest first. A quick run never plans, so it has no dag
+ * to show; a run is over by `runFinished` (its dag's status or its own: done, cancelled). Newest by `createdTs` (none:
+ * oldest), the lower run id on a tie so the order does not move between builds.
  */
-export function newestActiveRun(runs: Readonly<Record<string, RunInfo>>): RunInfo | null {
-    let best: RunInfo | null = null;
-    for (const r of Object.values(runs)) {
-        if (r.mode === "quick" || runFinished(r)) {
-            continue;
-        }
-        const at = r.createdTs ?? 0;
-        const bestAt = best?.createdTs ?? 0;
-        if (best == null || at > bestAt || (at === bestAt && r.runId < best.runId)) {
-            best = r;
-        }
-    }
-    return best;
+export function activeRuns(runs: Readonly<Record<string, RunInfo>>): RunInfo[] {
+    return Object.values(runs)
+        .filter((r) => r.mode !== "quick" && !runFinished(r))
+        .sort(
+            (a, b) => (b.createdTs ?? 0) - (a.createdTs ?? 0) || (a.runId < b.runId ? -1 : a.runId > b.runId ? 1 : 0)
+        );
+}
+
+/** The run boxes with the failed ones first, each part keeping its order (newest first): a failed run is never cut. */
+export function failedFirst(boxes: readonly SidecarRunBox[]): SidecarRunBox[] {
+    return [...boxes.filter((b) => b.failed), ...boxes.filter((b) => !b.failed)];
 }
 
 /** The roster agent that leads a run: the one whose lineage role is lead of it. */
@@ -325,14 +337,8 @@ export function runFailed(
     return needs.some((n) => n.failed === true && items.get(n.key)?.runid === runId);
 }
 
-/** The first due chunk's label (Jarvis's `chunk-due` items), for the run box's "due today". */
-export function dueLabel(items: readonly AttentionItem[]): string | undefined {
-    const label = items.find((i) => i.kind === "chunk-due" && i.chunklabel != null && i.chunklabel !== "")?.chunklabel;
-    return label ?? undefined;
-}
-
 /** The run box of a run: its title, its progress over the dag's tasks, and what the bridge worked out around it. */
-export function runBoxOf(run: RunInfo, o: { leadId?: string; failed: boolean; due?: string }): SidecarRunBox {
+export function runBoxOf(run: RunInfo, o: { leadId?: string; failed: boolean }): SidecarRunBox {
     const { done, total } = runProgress(run.dag);
     return {
         id: run.runId,
@@ -342,7 +348,6 @@ export function runBoxOf(run: RunInfo, o: { leadId?: string; failed: boolean; du
         total,
         failed: o.failed,
         ...(run.createdTs != null ? { since: run.createdTs } : {}),
-        ...(o.due != null ? { due: o.due } : {}),
     };
 }
 
@@ -359,18 +364,18 @@ export function usageOf(donuts: readonly ProviderDonuts[]): SidecarUsage {
 }
 
 /**
- * The tiles with what only the bridge knows: the failed run's lead is `failed`, and a review tile carries the lines its
+ * The tiles with what only the bridge knows: a failed run's lead is `failed`, and a review tile carries the lines its
  * work added and removed (none when nothing changed). A tile it changes nothing on comes back as it was.
  */
 export function decorateTiles(
     tiles: SidecarTile[],
-    o: { failedLead?: string; diffs: Readonly<Record<string, DiffStats | undefined>> }
+    o: { failedLeads?: ReadonlySet<string>; diffs: Readonly<Record<string, DiffStats | undefined>> }
 ): SidecarTile[] {
     return tiles.map((t) => {
         const stats = t.state === "review" ? o.diffs[t.id] : undefined;
         const diff =
             stats != null && (stats.adds > 0 || stats.dels > 0) ? { adds: stats.adds, dels: stats.dels } : null;
-        const failed = o.failedLead != null && t.id === o.failedLead;
+        const failed = o.failedLeads?.has(t.id) === true;
         if (!failed && diff == null) {
             return t;
         }

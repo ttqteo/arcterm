@@ -19,7 +19,7 @@
 // the two PARKED agents (idle 40 min, asleep), which the orbit leaves out. Its calm form keeps only the working agents and
 // the period-ending one. Everything that waits on you beyond the agents comes through the bridge's DEV seams on the main
 // page (frontend/app/cockpit/sidecarbridge.tsx): window.__sidecarAttention (the Jarvis rows: a plan gate, and a blocked
-// task of the run, which is what fails it), window.__sidecarRun (the run box and its lead, since a fixture roster has no
+// task of the run, which is what fails it), window.__sidecarRun (the Runs box and its leads, since a fixture roster has no
 // server run in lineageAtom), window.__sidecarMachine / __sidecarHeavy / __sidecarFeed / __sidecarRefresh (the strain),
 // __sidecarHold and __sidecarActs (the hold, and every act the page sent). Real keys go to the Sidecar page with
 // Input.dispatchKeyEvent. The scenario changes only the roster file, the seams and the two windows; teardown puts them back,
@@ -482,6 +482,15 @@ const DASH_READ = `(() => {
         more: q("[data-sidecar-more]") == null ? null : txt(q("[data-sidecar-more]")),
         empty: q("[data-sidecar-empty]") == null ? null : txt(q("[data-sidecar-empty]")),
         run: run == null ? null : { text: txt(run), failed: run.dataset.runFailed === "true" },
+        runs:
+            q("[data-sidecar-runs]") == null
+                ? null
+                : {
+                      count: Number(q("[data-sidecar-runs]").dataset.sidecarRuns),
+                      head: txt(q("[data-sidecar-runs] > div")),
+                      rows: all("[data-sidecar-runs] [data-sidecar-run]").map((r) => ({ id: r.dataset.sidecarRun, failed: r.dataset.runFailed === "true" })),
+                      more: q("[data-sidecar-runs-more]") == null ? null : txt(q("[data-sidecar-runs-more]")),
+                  },
         band: band == null ? null : { level: band.dataset.level, stop: !!band.querySelector("[data-sidecar-heavy-stop]"), sleep: !!band.querySelector("[data-sidecar-heavy-sleep]") },
         strainLine:
             line == null
@@ -814,7 +823,52 @@ async function windowCallsStep(side, rec) {
 
 // ---- sidecar-orbit ----------------------------------------------------------------------------------------------------
 
-// the strain band on P: it sits on top of the right column (the run box steps aside while it shows), with the heavy jobs
+// the Runs box with more runs than it shows (canvas sidecar-runs, boards Many and Overflow): two runs show as two rows; five
+// show three rows and a `+2 more` line; a click on a row opens that run and on the summary the runs in Jarvis (the acts the
+// page sends). The run of the fixture goes back after.
+async function runsSteps(h, side, rec, shot, ctx) {
+    const since = ctx.now - 94 * MIN;
+    const extra = (i, done, total) => ({ id: `fx-sc-run-${i}`, title: `Fixture run ${i}`, done, total, since: since + i * MIN });
+    await setRun(h, [runBox(since), extra(2, 2, 5)]);
+    const two = await waitFor(side.ev, `${countOf("[data-sidecar-runs] [data-sidecar-run]")} === 2`, 4000);
+    let got = await readDash(side);
+    await shot(side, "p-runs-two");
+    rec(
+        "P-runs (board Main): two active runs are two rows of the Runs box above Needs you, `RUNS 02`, and no summary line",
+        two && got.runs?.count === 2 && got.runs.head.startsWith("Runs02") && got.runs.more == null,
+        { runs: got.runs }
+    );
+
+    await setRun(h, [runBox(since), extra(2, 2, 5), extra(3, 0, 7), extra(4, 1, 4), extra(5, 3, 6)]);
+    const five = await waitFor(side.ev, `${countOf("[data-sidecar-runs-more]")} === 1`, 4000);
+    got = await readDash(side);
+    await shot(side, "p-runs-many");
+    rec(
+        "P-runs (boards Many, Overflow): five runs show three rows and one `+2 more · 2 working` line that says where the rest are",
+        five &&
+            got.runs?.count === 5 &&
+            got.runs.rows.length === 3 &&
+            /^\+2 more\s*· 2 working/.test(got.runs.more ?? ""),
+        { runs: got.runs }
+    );
+
+    const before = await actCount(h);
+    await side.ev(`document.querySelector('[data-sidecar-runs] [data-sidecar-run]')?.click()`);
+    await side.ev(`document.querySelector('[data-sidecar-runs-more]')?.click()`);
+    await sleep(400);
+    const acts = (await actsSince(h, before)).filter((a) => a?.kind === "run");
+    rec(
+        "P-runs: a click on a run row sends that run's open, and one on the summary line the runs in Jarvis",
+        acts.length === 2 && acts[0].id === RUN_ID && acts[1].id === undefined,
+        { acts }
+    );
+    // the gate or run the clicks opened in the main window: back on the Cockpit, with the fixture's one run
+    await h.goto("cockpit");
+    await setRun(h, runBox(since));
+    await waitFor(side.ev, `${countOf("[data-sidecar-runs] [data-sidecar-run]")} === 1`, 4000);
+}
+
+// the strain band on P: it sits on top of the right column (the Runs box stays under it), with the heavy jobs
 async function bandSteps(h, side, rec, shot) {
     // a strained machine whose heaviest agents are not read yet: the amber band says it is finding them
     await setSeams(h, { machine: MACHINE_AMBER, heavy: { consumers: consumersOf([]) } });
@@ -1299,14 +1353,16 @@ async function orbitStates(h, ctx, side, rec, shot) {
         { state: got.state, frame: got.frame, core: got.core, rows: got.needs.map((n) => ({ key: n.key, text: n.text, how: n.how })) }
     );
     rec(
-        "P-orbit-dashboard: at most 8 nodes (here 6, none for the two parked agents), the Resources band under them where the lanes were, the lead's line reads `run · 7 of 9`, and the run box says `7 of 9 tasks`",
+        "P-orbit-dashboard: at most 8 nodes (here 6, none for the two parked agents), the Resources band under them where the lanes were, the lead's line reads `run · 7 of 9`, and the Runs box holds the one run at `7/9` with no summary line",
         got.nodes.length <= ORBIT_MAX &&
             !got.nodes.some((n) => PARKED_IDS.includes(n.id)) &&
             got.resources != null &&
             /run · 7 of 9 · 1h \d+m/.test(drawnOf(got, WORK_ID)?.line ?? "") &&
             got.run != null &&
-            got.run.text.includes("7 of 9 tasks") &&
+            got.run.text.includes("7/9") &&
             got.run.failed === false &&
+            got.runs?.count === 1 &&
+            got.runs.more == null &&
             got.band == null,
         { nodes: got.nodes.map((n) => n.id), resources: got.resources, lead: drawnOf(got, WORK_ID)?.line, run: got.run }
     );
@@ -1317,6 +1373,8 @@ async function orbitStates(h, ctx, side, rec, shot) {
             [NEED.ask, NEED.multi, NEED.question].every((key) => row(got, key)?.ping === true),
         { nodes: got.nodes.map((n) => `${n.id}:${n.tone}:${n.ping}`), rows: got.needs.map((n) => `${n.key}:${n.ping}`) }
     );
+
+    await runsSteps(h, side, rec, shot, ctx);
 
     // the HUD skin, read on this same state, before the keys select a row or answer an ask
     await hudSteps(side, rec);
@@ -1388,18 +1446,18 @@ async function orbitStates(h, ctx, side, rec, shot) {
     // the gate opened in the main window (a fixture run: it may say so in a toast): back on the Cockpit
     await h.goto("cockpit");
 
-    // P-high (board P-high): the memory pressure turns high: the band shows and the run box steps aside
+    // P-high (board P-high): the memory pressure turns high: the band shows and the Runs box stays under it
     await applyState(h, ctx, "high");
     settled = await settleState(side, "high", "orbit");
     await waitFor(side.ev, `${countOf("[data-sidecar-heavy]")} === 3`, 8000);
     got = await readDash(side);
     await shot(side, "p-high");
     rec(
-        "P-high (board P-high): at RAM high the state is `high` with a 3 px warning frame, the amber band shows and the run box does not, and the core reads `⚠ RAM high`",
+        "P-high (board P-high): at RAM high the state is `high` with a 3 px warning frame, the amber band shows with the Runs box still under it, and the core reads `⚠ RAM high`",
         settled &&
             shapeOk("high", got, "orbit") &&
             got.band?.level === "amber" &&
-            got.run == null &&
+            got.run != null &&
             got.coreAlert === "⚠ RAM high",
         { state: got.state, frame: got.frame, band: got.band, run: got.run, coreAlert: got.coreAlert }
     );
@@ -1411,13 +1469,13 @@ async function orbitStates(h, ctx, side, rec, shot) {
     got = await readDash(side);
     await shot(side, "p-critical");
     rec(
-        "P-critical (board P-critical): at RAM critical the state is `critical` with an error frame, the red band has Stop and Sleep, the core reads `⚠ RAM critical`, and the heavy agent's node says `3.2 GB · node vite dev`",
+        "P-critical (board P-critical): at RAM critical the state is `critical` with an error frame, the red band has Stop and Sleep with the Runs box still under it, the core reads `⚠ RAM critical`, and the heavy agent's node says `3.2 GB · node vite dev`",
         settled &&
             shapeOk("critical", got, "orbit") &&
             got.band?.level === "red" &&
             got.band.stop &&
             got.band.sleep &&
-            got.run == null &&
+            got.run != null &&
             got.coreAlert === "⚠ RAM critical" &&
             drawnOf(got, WORK_ID)?.heavy === "3.2 GB · node vite dev" &&
             got.nodes.filter((n) => n.heavy != null).length === 1,

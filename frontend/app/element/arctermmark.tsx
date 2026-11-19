@@ -16,13 +16,16 @@ export function ArctermMark({
     height?: number;
     className?: string;
 }) {
+    // crispEdges holds only at the grid's own size: scaled down (Sidecar's 15x11 row mark) each cell snaps to a
+    // different whole pixel, so the "t" reads bold and the chevron thin and jagged; smoothed, the cells scale alike
+    const crisp = width === 25 && height === 19;
     return (
         <svg
             width={width}
             height={height}
             viewBox="0 0 25 19"
             fill="currentColor"
-            shapeRendering="crispEdges"
+            shapeRendering={crisp ? "crispEdges" : "geometricPrecision"}
             aria-hidden="true"
             className={className ?? "pointer-events-none"}
         >

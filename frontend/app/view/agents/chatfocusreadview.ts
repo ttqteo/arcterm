@@ -19,6 +19,7 @@
 import { useEffect, useRef, type RefObject } from "react";
 import {
     fencedText,
+    latestReplyStart,
     lineOffset,
     litAt,
     litGroup,
@@ -28,6 +29,7 @@ import {
     settleTo,
     stepFrom,
     tableText,
+    tickTop,
     type Span,
 } from "./chatfocusread";
 import { registerFocusReader } from "./chatfocusreadstore";
@@ -173,17 +175,24 @@ const PROGRAMMATIC_MS = 1200;
 
 /** Focus read over one Chat scroller: `on` is the toggle, `paused` holds the dimming off (while you follow a live reply
  *  at the bottom) with the keys still working, `size` how many blocks the line lights at a time (the one on it and the
- *  ones after it; J/K slide it one block). `tickRef` is the accent tick in the gutter that marks the line. */
+ *  ones after it; J/K slide it one block). `tickRef` is the accent tick in the gutter beside the lit block. `working`:
+ *  the agent's turn is under way; one that ends while you follow it at the bottom lights the reply it wrote, from its
+ *  start, so focus read picks the new reply up. */
 export function useFocusRead(
     agentId: string,
     scrollRef: RefObject<HTMLDivElement | null>,
     tickRef: RefObject<HTMLDivElement | null>,
     on: boolean,
     paused: boolean,
-    size: number = 1
+    size: number = 1,
+    working: boolean = false
 ): void {
     const pausedRef = useRef(paused);
     pausedRef.current = paused;
+    // the last paused / working pair, to tell a turn that ended while you followed it from a scroll away from the bottom
+    const prevRef = useRef({ paused, working });
+    // the running machinery's way to light the reply a turn just ended with
+    const applyLatest = useRef<() => void>(() => {});
     const sizeRef = useRef(size);
     // the running machinery's way to show or hide the dimming when `paused` flips
     const applyPaused = useRef<() => void>(() => {});
@@ -236,6 +245,7 @@ export function useFocusRead(
             paint(false);
             lit = next;
             paint(true);
+            placeTick();
         };
         const line = () => lineOffset(scroller.clientHeight);
         const pickFromLine = () => setLit(litAt(spans, scroller.scrollTop + line()));
@@ -252,7 +262,7 @@ export function useFocusRead(
             }
             const base = scroller.getBoundingClientRect();
             tick.style.display = "block";
-            tick.style.top = `${line()}px`;
+            tick.style.top = `${tickTop(line(), spans[lit] ?? null, scroller.scrollTop, scroller.clientHeight)}px`;
             tick.style.left = `${Math.max(4, conv.getBoundingClientRect().left - base.left - 12)}px`;
         };
         applyPaused.current = () => {
@@ -345,11 +355,9 @@ export function useFocusRead(
                 clearTimeout(idleTimer);
                 idleTimer = setTimeout(stopped, IDLE_MS);
             }
-            if (programmatic) {
-                return;
-            }
             cancelAnimationFrame(frame);
-            frame = requestAnimationFrame(pickFromLine);
+            // one of ours keeps the lit block: only the tick follows it
+            frame = requestAnimationFrame(programmatic ? placeTick : pickFromLine);
         };
         // the reader taking the wheel or the bar mid-way through one of ours: theirs from here
         const onIntent = () => {
@@ -386,6 +394,16 @@ export function useFocusRead(
         collect();
         applyPaused.current();
 
+        applyLatest.current = () => {
+            collect();
+            const n = latestReplyStart(blocks.map((b) => b.kind));
+            if (n < 0) {
+                return;
+            }
+            setLit(n);
+            scrollTo(scrollTopFor(spans[n], line(), maxScroll(scroller.scrollHeight, scroller.clientHeight)));
+        };
+
         applySize.current = (next) => {
             paint(false);
             sizeRef.current = next;
@@ -418,6 +436,7 @@ export function useFocusRead(
             unregister();
             applyPaused.current = () => {};
             applySize.current = () => {};
+            applyLatest.current = () => {};
             scroller.removeEventListener("scroll", onScroll);
             scroller.removeEventListener("scrollend", stopped);
             scroller.removeEventListener("wheel", onIntent);
@@ -445,8 +464,13 @@ export function useFocusRead(
     }, [on, agentId]);
 
     useEffect(() => {
+        const prev = prevRef.current;
+        prevRef.current = { paused, working };
         applyPaused.current();
-    }, [paused]);
+        if (prev.working && !working && prev.paused) {
+            applyLatest.current();
+        }
+    }, [paused, working]);
 
     useEffect(() => {
         if (size !== sizeRef.current) {

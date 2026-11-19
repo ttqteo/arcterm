@@ -98,7 +98,7 @@ export const liveAgentBaseAtom: Atom<AgentVM[]> = atom((get) => {
             now
         );
         vm.usage = get(getAgentUsageAtom(row.termBlockOref));
-        const ask = liveAsk(get(getAgentAskAtom(row.termBlockOref)), status, vm.sleeping != null);
+        const ask = liveAsk(get(getAgentAskAtom(row.termBlockOref)), vm.sleeping != null);
         agents.push(withAsk(vm, ask, now));
     }
     return agents;

@@ -171,6 +171,7 @@ export default function (kit) {
                         text: line?.textContent ?? null,
                         head: !!row?.querySelector("[data-code-head]"),
                         run: !!row?.querySelector("[data-code-run]"),
+                        runTitle: row?.querySelector("[data-code-run]")?.getAttribute("title") ?? null,
                         copy: !!row?.querySelector("[data-code-copy] button"),
                         height: row ? Math.round(row.getBoundingClientRect().height) : null,
                         mono: line ? /mono/i.test(getComputedStyle(line).fontFamily) : false,
@@ -179,8 +180,8 @@ export default function (kit) {
                 await h.ev(`${layerOf(A)}?.querySelector("[data-code-compact]")?.scrollIntoView({ block: "center" })`);
                 await shot(h, "1b-compact-command");
                 rec(
-                    `${name}: "${COMPACT}" in the reply is one [data-code-compact] row in mono, no head, a Run and a Copy button, under 48px tall`,
-                    up && got.text === COMPACT && !got.head && got.run && got.copy && got.mono && got.height != null && got.height < 48,
+                    `${name}: "${COMPACT}" in the reply is one [data-code-compact] row in mono, no head, a Run (into this agent, as \`! command\`) and a Copy button, under 48px tall`,
+                    up && got.text === COMPACT && !got.head && got.run && got.runTitle === "Run in this agent (! in Chat)" && got.copy && got.mono && got.height != null && got.height < 48,
                     { up, ...got }
                 );
             });
