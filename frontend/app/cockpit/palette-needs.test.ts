@@ -160,6 +160,25 @@ describe("palette-needs: a plan to review", () => {
     });
 });
 
+describe("palette-needs: the waiting bug reports", () => {
+    const reports = (over: Partial<AttentionItem> = {}) =>
+        ({ ...item("bug-reports", "bug-reports"), projectpath: "D:/work/arcterm", ...over }) as AttentionItem;
+    it("is a group of its own, last: nothing is blocked while they wait", () => {
+        const g = needsGroups(needsRows([reports(), item("chunk-due"), item("dag-blocked")], []));
+        expect(g.map((x) => x.group)).toEqual(["blocked", "due", "bugs"]);
+    });
+    it("lands on the Cockpit, whose Needs-you strip has the row's button, before an agent holds them", () => {
+        expect(needsTarget(needsRows([reports()], [])[0])).toEqual({ kind: "cockpit" });
+        expect(needsTarget(needsRows([reports({ projectpath: undefined })], [])[0])).toEqual({ kind: "cockpit" });
+    });
+    it("lands on the agent that holds them, named in the item's oref", () => {
+        expect(needsTarget(needsRows([reports({ oref: "agent:t9" })], [])[0])).toEqual({
+            kind: "agent",
+            agentId: "t9",
+        });
+    });
+});
+
 describe("palette-needs: a council waiting on you", () => {
     const council = { ...item("council", "council:c1"), oref: "council:c1" } as AttentionItem;
     it("is a review, not a blocked item", () => {

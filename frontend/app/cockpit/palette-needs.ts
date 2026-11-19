@@ -8,7 +8,7 @@ import type { AgentVM } from "@/app/view/agents/agentsviewmodel";
 import { parseDocReview } from "@/app/view/agents/docreview";
 import { planReviewAgent } from "@/app/view/jarvis/planreviewtarget";
 
-export type NeedsGroup = "asks" | "reviews" | "plan" | "blocked" | "due";
+export type NeedsGroup = "asks" | "reviews" | "plan" | "blocked" | "due" | "bugs";
 
 export const NEEDS_GROUP_LABELS: Record<NeedsGroup, string> = {
     asks: "Asks",
@@ -16,11 +16,12 @@ export const NEEDS_GROUP_LABELS: Record<NeedsGroup, string> = {
     plan: "Plan to review",
     blocked: "Blocked",
     due: "Due",
+    bugs: "Báo lỗi",
 };
 
 // a plan to review waits on you before any work starts, so it reads after the asks and reviews that hold a
-// running agent; a chunk that came due blocks nothing, so it reads last
-const GROUP_ORDER: NeedsGroup[] = ["asks", "reviews", "plan", "blocked", "due"];
+// running agent; a chunk that came due blocks nothing, and neither do the waiting bug reports, so they read last
+const GROUP_ORDER: NeedsGroup[] = ["asks", "reviews", "plan", "blocked", "due", "bugs"];
 
 // anything not named here lands in Blocked, so nothing the badge counts is missing from the scope
 const KIND_GROUP: Record<string, NeedsGroup> = {
@@ -31,6 +32,7 @@ const KIND_GROUP: Record<string, NeedsGroup> = {
     "learn-proposal": "reviews",
     council: "reviews",
     "chunk-due": "due",
+    "bug-reports": "bugs",
 };
 
 // pkg/jarvis/attention.go keys an ask as "ask:" + its block oref, standalone or in a channel
@@ -116,6 +118,12 @@ export function needsTarget(row: NeedsRow): NeedsTarget | null {
     // a learned rule names no channel and no agent: it is decided on its card in the Cockpit's Needs you
     if (kind === "learn-proposal") {
         return { kind: "cockpit" };
+    }
+    // the waiting bug reports: the agent that holds them once one does, else the Cockpit, whose Needs-you strip has the row's
+    // Xử lý / Chọn thư mục… button (there is no palette target for the Jarvis surface)
+    if (kind === "bug-reports") {
+        const agentId = oref?.startsWith("agent:") ? oref.slice("agent:".length) : "";
+        return agentId !== "" ? { kind: "agent", agentId } : { kind: "cockpit" };
     }
     if ((kind === "chunk-due" || kind === "plan-review") && oref?.startsWith("effort:")) {
         return { kind: "effort", effortId: oref.slice("effort:".length) };

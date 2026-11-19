@@ -102,15 +102,16 @@ function confirmRemoveQueued(what: string, onConfirm: () => void): void {
 }
 
 // Runs the item's button. true: it went through, and the attention list is reloaded so the item leaves now rather
-// than on the next poll. false: it failed (the feedback says why), or the act only opens or starts an agent, which
-// needs the cockpit and is the caller's to do, or it waits on a confirm (Remove) and runs, with the same feedback,
+// than on the next poll. false: it failed (the feedback says why), or the act only opens, starts an agent or picks a
+// folder, which needs the cockpit and is the caller's to do, or it waits on a confirm (Remove) and runs, with the same feedback,
 // when the person confirms.
 export async function runAttentionAct(
     act: AttentionAct,
     row: AttentionRunRow,
     feedback: AttentionFeedback
 ): Promise<boolean> {
-    if (act.kind === "open" || act.kind === "work-on") {
+    // Process and the folder picker (the bug-reports row, bugreportprocess.ts) start an agent or open a dialog: callers run them
+    if (act.kind === "open" || act.kind === "work-on" || act.kind === "process-reports" || act.kind === "pick-repo") {
         return false;
     }
     if (act.kind === "remove-queued") {

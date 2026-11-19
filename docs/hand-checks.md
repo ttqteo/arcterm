@@ -16,6 +16,15 @@ list (its number is not reused).
 Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) ·
 [part 4](hand-checks-4.md) · [part 3](hand-checks-3.md) · [part 2](hand-checks-2.md) (oldest).
 
+- [ ] (arcterm) **Xử lý starts one real agent that handles the waiting bug reports.** With two reports saved and arcterm's
+  repo known (Jarvis, Waiting on you: "2 báo lỗi arcterm chờ xử lý"), press Xử lý there (or in the Cockpit's Needs-you
+  strip): a "Báo lỗi arcterm" Claude agent opens in arcterm's repo and starts on the prompt, the row turns "Đang xử lý 2
+  báo lỗi" with Mở agent, and a second Xử lý is refused. Read what the agent does with them: a small fix is a run
+  (`wsh runs list`), a large one an initiative with chunks (`wsh effort list`), an unclear one a question at the end of
+  its turn with that report left `handling`; each finished report is `done` with its outcome
+  (`wsh bugreport list --state done --json`). Close the agent while it holds one: the row goes back to Xử lý. The
+  `bug-report-jarvis` scenario drives all of this through `window.__bugReportLaunchFake`, so no real agent has run.
+  `bugreportprocess.ts`, `bugreportprompt.ts`.
 - [ ] (arcterm) **A quote in Chat's box draws no `>`, and a line under it stays out.** Type `>xx`, Shift+Enter, `sss`:
   the box shows `xx` slanted beside the bar with no `>`, and `sss` plain; ← and Backspace across the hidden `> ` take one
   press per character (two presses to undo the quote) with the caret never lost. Send it: the bubble shows `xx` in the

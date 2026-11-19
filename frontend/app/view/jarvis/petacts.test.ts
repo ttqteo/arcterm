@@ -224,3 +224,38 @@ describe("actsForAttention: a plan to review", () => {
         ]);
     });
 });
+
+// the peek has no room for Xử lý or the folder picker: the waiting bug reports get one Open, to the Brief, or to the agent
+// that holds them
+describe("actsForAttention: the waiting bug reports", () => {
+    const reports = (over: Partial<AttentionItem> = {}) =>
+        ({
+            kind: "bug-reports",
+            key: "bug-reports",
+            source: "arcterm",
+            text: "2 báo lỗi arcterm chờ xử lý",
+            action: "Xử lý",
+            phaseidx: 0,
+            waitingsince: 1000,
+            projectpath: "D:/work/arcterm",
+            ...over,
+        }) as AttentionItem;
+
+    it("is one Open to the Brief when Xử lý is what the row offers", () => {
+        expect(actsForAttention(reports())).toEqual([
+            { id: "bug-reports:open-brief", verb: "open-brief", label: "Open" },
+        ]);
+    });
+
+    it("is one Open to the Brief when no repo is known (the folder picker is the Brief's)", () => {
+        expect(actsForAttention(reports({ projectpath: undefined, action: "Chọn thư mục…" }))).toEqual([
+            { id: "bug-reports:open-brief", verb: "open-brief", label: "Open" },
+        ]);
+    });
+
+    it("opens the agent that holds the reports while one does", () => {
+        expect(actsForAttention(reports({ oref: "agent:tab-9", action: "Mở agent" }))).toEqual([
+            { id: "bug-reports:open", verb: "open", label: "Open", target: { kind: "oref", ref: "agent:tab-9" } },
+        ]);
+    });
+});

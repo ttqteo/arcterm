@@ -163,6 +163,10 @@ export interface QueueRow {
     queueId?: string;
     // an agent is open on a due chunk's initiative, so its Work on reads Go to agent (attentionact.ts)
     agentOpen?: boolean;
+    // the bug-reports row's three forms ride on these two (attentionact.ts): "agent:<tab>" while an agent holds the
+    // reports, and the repo's path (none while no arcterm repo is known)
+    oref?: string;
+    projectPath?: string;
     // a blocked initiative chunk: what Unblock and Done write to, and the open that lands on it
     chunk?: QueueChunk;
 }
@@ -202,6 +206,7 @@ const QUEUE_KIND_LABEL: Record<string, string> = {
     "plan-review": "plan",
     "learn-proposal": "Learned rule",
     council: "Council",
+    "bug-reports": "Báo lỗi",
 };
 
 export function buildAttentionQueue(input: {
@@ -231,6 +236,11 @@ export function buildAttentionQueue(input: {
             : planORef.startsWith("effort:")
               ? { kind: "effort", oref: planORef }
               : null;
+        // the waiting bug reports are one row that draws its button in all three forms (Xử lý, Chọn thư mục…, Mở agent) and
+        // names no channel; while an agent holds them the row and its Mở agent open that agent, as a plan's row does
+        const bugs = a.kind === "bug-reports";
+        const bugNav: QueueNav | null =
+            bugs && (a.oref ?? "").startsWith("agent:") ? { kind: "agent", oref: a.oref! } : null;
         return {
             key: a.key,
             kind: QUEUE_KIND_LABEL[a.kind] ?? a.kind,
@@ -242,7 +252,8 @@ export function buildAttentionQueue(input: {
             ts: a.waitingsince > 0 ? a.waitingsince : null,
             // a standalone item names no channel, so there is no run body to land on; it renders as
             // static info rather than a button that would navigate nowhere (NeedsRow's rule, kept).
-            action: channelId !== "" || dueORef != null || planNav != null || councilORef != null ? a.action : null,
+            action:
+                channelId !== "" || dueORef != null || planNav != null || councilORef != null || bugs ? a.action : null,
             nav:
                 dueORef != null
                     ? { kind: "effort", oref: dueORef }
@@ -250,13 +261,15 @@ export function buildAttentionQueue(input: {
                       ? planNav
                       : councilORef != null
                         ? { kind: "council", oref: councilORef }
-                        : channelId !== ""
-                          ? {
-                                kind: "channel",
-                                channelId,
-                                runId: a.runid != null && a.runid !== "" ? a.runid : null,
-                            }
-                          : null,
+                        : bugNav != null
+                          ? bugNav
+                          : channelId !== ""
+                            ? {
+                                  kind: "channel",
+                                  channelId,
+                                  runId: a.runid != null && a.runid !== "" ? a.runid : null,
+                              }
+                            : null,
             tone: a.kind === "dag-blocked" ? "error" : "asking",
             // a due chunk IS the initiative's row (detail carries the title), as a blocked chunk is below; so is
             // a plan to review, whose source is the initiative's title
@@ -274,6 +287,7 @@ export function buildAttentionQueue(input: {
             queueId: a.queueid,
             // Work on links the agent it starts to the initiative; while that agent is open the button goes to it
             agentOpen: dueORef != null && !!a.effortoid && openAgentFor(a.effortoid, input.roster ?? []) != null,
+            ...(bugs ? { oref: a.oref ?? "", projectPath: a.projectpath ?? "" } : {}),
         };
     });
     // Blocked chunks and blocked records are attention the server's attention leg never sees. They follow the wire
@@ -358,7 +372,8 @@ export type KindWord =
     | "held"
     | "not started"
     | "rule"
-    | "council";
+    | "council"
+    | "báo lỗi";
 
 // the same word from a wire kind alone, for a surface that holds no QueueRow (the tray popover's waits)
 export function kindWord(wireKind: string, retry = false): KindWord {
@@ -384,6 +399,8 @@ export function kindWord(wireKind: string, retry = false): KindWord {
             return "rule";
         case "council":
             return "council";
+        case "bug-reports":
+            return "báo lỗi";
         default:
             return "blocked";
     }
@@ -468,6 +485,8 @@ const KIND_PLURAL: Record<KindWord, string> = {
     "not started": "not started",
     rule: "rules",
     council: "councils",
+    // Vietnamese has no plural: the row is one, so the count is a count of one row anyway
+    "báo lỗi": "báo lỗi",
 };
 
 // What the queue holds in one line: a count for each kind word in queue order (ten blockers read as "10 blocked", not as
