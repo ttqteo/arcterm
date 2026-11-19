@@ -3119,10 +3119,10 @@ declare global {
         recall3: number;
         judged: number;
         recall_done?: number;
-        recall5?: number;
-        allscored?: number;
         decisions?: number;
         questions?: number;
+        recall5?: number;
+        allscored?: number;
     };
 
     // wshrpc.CouncilBenchRtnData
