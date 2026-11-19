@@ -70,6 +70,9 @@ type Deps struct {
 	// a computer that cannot: its route answers 501 and the waiting list's pc flag is false.
 	PCLock   func(ctx context.Context) error
 	PCVolume func(ctx context.Context, step string) error
+	// PCLocked reads whether the computer's session is locked. Nil, or a failed read, leaves the waiting
+	// list's locked null, and the page then says nothing about it.
+	PCLocked func(ctx context.Context) (bool, error)
 }
 
 // handlerUnsupported is what a route answers when its dep is nil.
@@ -181,6 +184,13 @@ func (d Deps) handleWaiting(w http.ResponseWriter, r *http.Request) {
 		list.Runs = []ListedRun{}
 	}
 	list.PC = d.PCLock != nil && d.PCVolume != nil
+	if d.PCLocked != nil {
+		if locked, err := d.PCLocked(r.Context()); err != nil {
+			log.Printf("remote mode: lock state: %v\n", err)
+		} else {
+			list.Locked = &locked
+		}
+	}
 	handlerWriteJSON(w, http.StatusOK, list)
 }
 

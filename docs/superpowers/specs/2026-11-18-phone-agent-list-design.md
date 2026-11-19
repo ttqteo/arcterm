@@ -132,6 +132,12 @@ Added at the owner's ask (brainstorm answer 6): the phone can lock the computer 
 - Other platforms answer 501 and the page hides the section (the waiting list carries a `pc` flag saying whether the
   controls work).
 - No confirm on Lock: unlocking needs the owner's password at the desk, and locking stops no agent.
+- **Lock state (added 2026-11-19, Windows only).** The waiting list carries `locked`: true or false from
+  `WTSQuerySessionInformationW(WTSSessionInfoEx)`'s `SessionFlags` for wavesrv's own session (`pc_windows.go`), null on a
+  Mac, on other platforms or when the read fails. The Computer heading shows Locked or Unlocked beside it (nothing when
+  null), the Lock button reads Locked and is disabled while locked, and the page reads the list again 1.5 s after a
+  Lock press instead of at the next 10 s tick. A screen only turned off is not locked: remote mode keeps the computer
+  awake, not the display.
 - The page shows no current volume level: the media keys cannot read it, and a level read needs Core Audio over COM,
   which is out of scope.
 

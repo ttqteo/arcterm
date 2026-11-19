@@ -488,6 +488,8 @@ func remoteDeps(cfg Config, runCtx context.Context) Deps {
 	if pcSupported {
 		d.PCLock, d.PCVolume = pcLock, pcVolume
 	}
+	// nil outside Windows: the waiting list's locked stays null
+	d.PCLocked = pcLocked
 	return d
 }
 

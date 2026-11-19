@@ -146,9 +146,12 @@ stops no agent. A refusal or a failure shows its reason under the buttons until 
 (`POST /api/pc/lock`, `POST /api/pc/volume` with `{"step": "down" | "mute" | "up"}`, `pkg/remotemode/pc*.go`).
 
 - **Windows:** Lock calls `LockWorkStation`; each volume button presses the keyboard's media key once (about 2%).
+  The heading also says **Locked** or **Unlocked**, read from the session's lock state (`/api/waiting`'s `locked`), and
+  Lock rests while the screen is locked. A display only turned off still reads Unlocked.
 - **macOS:** Lock runs `pmset displaysleepnow`, which locks the screen only when the account asks for its password at
   once on sleep (the default); volume moves the output volume by 6 points, and Mute toggles it.
 - **Elsewhere** there are no controls: `/api/waiting` carries `pc: false` and the page leaves the section out.
+- Off Windows `locked` is null and the heading names no state.
 
 The page shows no volume level: neither platform's media keys can read it.
 

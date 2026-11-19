@@ -1080,3 +1080,7 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
   start two background subagents, then have the agent ask an AskUserQuestion; Chat keeps the question with its choices
   for as long as it waits (past 10 s, while the subagents run tools), never turning into the "Wants to use
   AskUserQuestion" card with only Answer in Terminal, and a pick in Chat or in the terminal both answer it.
+- [ ] (arcterm) **The phone page reads Locked while the PC is locked (Windows).** With remote mode on, open the phone
+  page: Computer reads Unlocked. Press Win+L at the desk → within 10 s the phone reads Locked and its Lock button is
+  disabled; unlock at the desk → Unlocked again. Press Lock on the phone → the PC locks and the page reads Locked
+  within about 2 s. `TestPCWindowsReadLocked` only read the unlocked case.

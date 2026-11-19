@@ -6,6 +6,7 @@
 package remotemode
 
 import (
+	"context"
 	"testing"
 	"unsafe"
 )
@@ -19,6 +20,7 @@ func TestPCWindowsProcsResolve(t *testing.T) {
 	}{
 		{"LockWorkStation", pcLockWorkStation.Find},
 		{"SendInput", pcSendInput.Find},
+		{"WTSQuerySessionInformationW", pcWTSQuerySessionInformation.Find},
 	} {
 		if err := proc.find(); err != nil {
 			t.Errorf("user32.dll %s does not resolve: %v", proc.name, err)
@@ -61,6 +63,53 @@ func TestPCWindowsInputLayout(t *testing.T) {
 			t.Errorf("offsetof(KEYBDINPUT.%s) = %d, want %d", field.name, field.got, field.want)
 		}
 	}
+}
+
+// WTSINFOEXW keeps Level at 0 and its union, which holds a LARGE_INTEGER, at 8; SessionFlags is LEVEL1's third
+// 4-byte field, so 16 on 32 and on 64 bits alike.
+func TestPCWindowsWtsInfoLayout(t *testing.T) {
+	var info pcWtsInfoEx
+	for _, field := range []struct {
+		name      string
+		got, want uintptr
+	}{
+		{"Level", unsafe.Offsetof(info.level), 0},
+		{"SessionId", unsafe.Offsetof(info.sessionId), 8},
+		{"SessionState", unsafe.Offsetof(info.sessionState), 12},
+		{"SessionFlags", unsafe.Offsetof(info.sessionFlags), 16},
+	} {
+		if field.got != field.want {
+			t.Errorf("offsetof(%s) = %d, want %d", field.name, field.got, field.want)
+		}
+	}
+}
+
+func TestPCWindowsLockedFromInfo(t *testing.T) {
+	for _, c := range []struct {
+		level   uint32
+		flags   int32
+		want    bool
+		wantErr bool
+	}{
+		{1, 0, true, false},
+		{1, 1, false, false},
+		{1, -1, false, true}, // WTS_SESSIONSTATE_UNKNOWN
+		{2, 0, false, true},
+	} {
+		got, err := pcLockedFromInfo(c.level, c.flags)
+		if got != c.want || (err != nil) != c.wantErr {
+			t.Errorf("pcLockedFromInfo(%d, %d) = %v, %v; want %v, error %v", c.level, c.flags, got, err, c.want, c.wantErr)
+		}
+	}
+}
+
+// The real read answers without an error in this session; whether it is locked depends on the desk, so it is not checked.
+func TestPCWindowsReadLocked(t *testing.T) {
+	locked, err := pcReadLocked(context.Background())
+	if err != nil {
+		t.Fatalf("pcReadLocked = %v", err)
+	}
+	t.Logf("this session is locked: %v", locked)
 }
 
 // Each step maps to the key code of the keyboard's volume key, and a step the page has no button for maps to none.

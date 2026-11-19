@@ -102,7 +102,9 @@ type preview struct {
 	taken map[string]bool
 	// transcripts holds each recorded tab's lines: every hand-over's, and a listed agent's when it has a file
 	transcripts map[string][]string
-	out         io.Writer
+	// locked is what the fake PCLocked answers: false until the page's Lock is pressed
+	locked bool
+	out    io.Writer
 }
 
 func newPreview(fixture string, now time.Time, out io.Writer) (*preview, error) {
@@ -179,6 +181,7 @@ func (p *preview) handler(origin, vapid string) http.Handler {
 		Transcript: p.transcript,
 		PCLock:     p.pcLock,
 		PCVolume:   p.pcVolume,
+		PCLocked:   p.pcLocked,
 	})
 }
 
@@ -366,8 +369,18 @@ func (p *preview) release(_ context.Context, tab string) error {
 }
 
 func (p *preview) pcLock(context.Context) error {
+	p.mu.Lock()
+	p.locked = true
+	p.mu.Unlock()
 	p.record("pclock", struct{}{})
 	return nil
+}
+
+// pcLocked answers unlocked until Lock is pressed, then locked, so the page's Locked word and disabled button show.
+func (p *preview) pcLocked(context.Context) (bool, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.locked, nil
 }
 
 // pcVolume refuses mute, so the page's error line under the Computer buttons can be shown.

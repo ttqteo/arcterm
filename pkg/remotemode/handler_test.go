@@ -714,6 +714,29 @@ func TestHandlerWaitingPCFlag(t *testing.T) {
 	}
 }
 
+// locked is the dep's answer, and null when there is no dep or its read fails, so the page says nothing then
+func TestHandlerWaitingLocked(t *testing.T) {
+	f := handlerNewFake()
+	read := func(locked bool, err error) func(context.Context) (bool, error) {
+		return func(context.Context) (bool, error) { return locked, err }
+	}
+	for name, c := range map[string]struct {
+		dep  func(context.Context) (bool, error)
+		want string
+	}{
+		"locked":    {read(true, nil), "true"},
+		"unlocked":  {read(false, nil), "false"},
+		"read fail": {read(true, errors.New("no session")), "null"},
+		"no dep":    {nil, "null"},
+	} {
+		d := f.deps()
+		d.PCLocked = c.dep
+		if got := handlerWaitingFields(t, d)["locked"]; got != c.want {
+			t.Errorf("%s: locked = %s, want %s", name, got, c.want)
+		}
+	}
+}
+
 // only a lines event carries an id, the byte offset after its last line; an id of 0 is still sent, and the
 // agent and ended events leave the browser's last id alone
 func TestHandlerStreamLinesCarryID(t *testing.T) {

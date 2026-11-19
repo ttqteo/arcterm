@@ -15,6 +15,9 @@ import (
 // waiting list's pc flag is false.
 const pcSupported = false
 
+// pcLocked is nil: nothing here reads the lock state, so the waiting list's locked stays null.
+var pcLocked func(context.Context) (bool, error)
+
 // pcLock and pcVolume are never wired where pcSupported is false; they refuse by name if anything calls them.
 func pcLock(_ context.Context) error {
 	return fmt.Errorf("lock the screen: not supported on %s", runtime.GOOS)

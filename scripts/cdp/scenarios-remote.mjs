@@ -403,6 +403,8 @@ const PHONE_READ = `(() => {
                       heading: text(s.querySelector("h2")),
                       buttons: [...s.querySelectorAll("[data-pc]")].map((b) => [b.dataset.pc, text(b)]),
                       error: text(s.querySelector("[data-pc-error]")),
+                      state: text(s.querySelector("[data-pc-locked]")),
+                      lockDisabled: s.querySelector('[data-pc="lock"]')?.disabled ?? null,
                   }
                 : null;
         })(),
@@ -873,6 +875,7 @@ const remotePhone = {
                 empty.chip === "Remote on" &&
                 empty.sub === "Nothing waiting" &&
                 empty.computer?.heading === "Computer" &&
+                empty.computer.state === "Unlocked" &&
                 JSON.stringify(empty.computer.buttons) ===
                     JSON.stringify([
                         ["lock", "Lock"],
@@ -1165,6 +1168,11 @@ const remotePhone = {
         const computer = (await read()).computer;
         await page.ev(phoneClick('[data-pc="lock"]'));
         const locked = await recorded("pclock", lock0 + 1);
+        await polishWaitFor(page, `document.querySelector('[data-pc-locked="true"]') != null`, PHONE_WAIT_MS);
+        await pcScroll();
+        await polishNap(300);
+        await shot("14-computer-locked");
+        const lockedView = (await read()).computer;
         await page.ev(phoneClick('[data-pc="up"]'));
         const louder = await recorded("pcvolume", volume0 + 1);
         await page.ev(phoneClick('[data-pc="mute"]'));
@@ -1179,7 +1187,7 @@ const remotePhone = {
         await polishWaitFor(page, `document.querySelector("[data-pc-error]") == null`, PHONE_WAIT_MS);
         const pcCleared = (await read()).computer;
         rec(
-            "14. Computer: Lock records a pclock and Volume up a pcvolume up, Mute records nothing and shows its refusal under the buttons, and a later Volume down records and clears it",
+            "14. Computer: Unlocked beside the heading, Lock records a pclock and the page then reads Locked with the Lock button disabled, Volume up records a pcvolume up, Mute records nothing and shows its refusal under the buttons, and a later Volume down records and clears it",
             computer?.heading === "Computer" &&
                 JSON.stringify(computer.buttons) ===
                     JSON.stringify([
@@ -1189,7 +1197,12 @@ const remotePhone = {
                         ["up", "Volume up"],
                     ]) &&
                 computer.error === "" &&
+                computer.state === "Unlocked" &&
+                computer.lockDisabled === false &&
                 locked &&
+                lockedView?.state === "Locked" &&
+                JSON.stringify(lockedView.buttons[0]) === JSON.stringify(["lock", "Locked"]) &&
+                lockedView.lockDisabled === true &&
                 JSON.stringify(records("pclock")[lock0].data) === JSON.stringify({}) &&
                 louder &&
                 JSON.stringify(records("pcvolume")[volume0].data) === JSON.stringify({ step: "up" }) &&
@@ -1198,7 +1211,7 @@ const remotePhone = {
                 quieter &&
                 JSON.stringify(records("pcvolume")[volume0 + 1].data) === JSON.stringify({ step: "down" }) &&
                 pcCleared?.error === "",
-            JSON.stringify({ computer, muted, cleared: pcCleared, locks: records("pclock"), volumes: records("pcvolume") })
+            JSON.stringify({ computer, lockedView, muted, cleared: pcCleared, locks: records("pclock"), volumes: records("pcvolume") })
         );
         return steps;
     },
