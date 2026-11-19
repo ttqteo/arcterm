@@ -12,6 +12,8 @@ import {
     droppedLine,
     evidenceLabel,
     expertActivity,
+    hasGlanceFigures,
+    hasSpendFigures,
     initiativeSeed,
     isWeakEvidence,
     jumpLinks,
@@ -1038,6 +1040,36 @@ describe("reopenView", () => {
 
     it("opens a summary written since on the report even for a council left on its Map", () => {
         expect(reopenView(done, { view: "map", summaryAt: 0 })).toBe("summary");
+    });
+});
+
+describe("hasGlanceFigures", () => {
+    it("is true when the summary has a direction", () => {
+        expect(hasGlanceFigures(council())).toBe(true);
+    });
+
+    it("is false with no summary, or a summary with no direction", () => {
+        expect(hasGlanceFigures(council({ summary: undefined }))).toBe(false);
+        expect(hasGlanceFigures(council({ summary: { text: "", directions: [], outcomes: {}, at: 15 } }))).toBe(false);
+    });
+});
+
+describe("hasSpendFigures", () => {
+    it("is true when some seat in stats has tokens", () => {
+        const c = council({ stats: { ux: { ms: 0, tokens: 0, calls: 0 }, ram: { ms: 900, tokens: 1200, calls: 1 } } });
+        expect(hasSpendFigures(c)).toBe(true);
+    });
+
+    it("is true when only the timeline has a step with a time, so the lanes can draw", () => {
+        const c = council({ timeline: { ux: [{ ts: 1700000000000, kind: "read", target: "a.go" }] } });
+        expect(hasSpendFigures(c)).toBe(true);
+    });
+
+    it("is false with no stats and no timed step", () => {
+        expect(hasSpendFigures(council())).toBe(false);
+        expect(hasSpendFigures(council({ stats: {}, timeline: {} }))).toBe(false);
+        expect(hasSpendFigures(council({ stats: { ux: { ms: 5, tokens: 0, calls: 0 } } }))).toBe(false);
+        expect(hasSpendFigures(council({ timeline: { ux: [{ ts: 0, kind: "read", target: "a.go" }] } }))).toBe(false);
     });
 });
 

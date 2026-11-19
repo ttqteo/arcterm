@@ -625,3 +625,19 @@ export function outlineOf(c: Council): OutlineEntry[] {
 export function jumpLinks(c: Council): OutlineEntry[] {
     return outlineOf(c).filter((e) => e.depth === 0 && e.id !== "answer");
 }
+
+// ---- the figures' sections ----
+
+/** Pure: the Report's "At a glance" section draws (figure B, and A in a Review): the summary has a direction. The one
+ *  source of that condition: councilfiguresmodel.ts and `outlineOf` both read it, so this file never imports the figures
+ *  model. */
+export function hasGlanceFigures(c: Council): boolean {
+    return (c.summary?.directions.length ?? 0) > 0;
+}
+
+/** Pure: the Report's "What it spent" section draws (figures C and D): some seat in `c.stats` has tokens, or some seat's
+ *  `c.timeline` has a step with a time. Read by councilfiguresmodel.ts and `outlineOf`, like `hasGlanceFigures`. */
+export function hasSpendFigures(c: Council): boolean {
+    const spent = Object.values(c.stats ?? {}).some((s) => s.tokens > 0);
+    return spent || Object.values(c.timeline ?? {}).some((steps) => steps.some((s) => s.ts > 0));
+}
