@@ -130,8 +130,8 @@ Rules for all six (DESIGN.md "Status", the dataviz checks run 2026-11-19):
   folded, as `chartSeats` does.
 - **Round markers:** a muted vertical rule at the first post of each round, labelled R1, R2…. Round 1 is the earliest
   proposal `ts`; round n is the earliest reply with `round === n`.
-- When a seat's timeline holds `MAX_TIMELINE_STEPS` steps (200, Go's `MaxTimelineSteps`), the lane says "first N steps
-  kept".
+- When a seat's timeline holds `MAX_TIMELINE_STEPS` steps (200, Go's `MaxTimelineSteps`), the lane says "last N steps
+  kept": Go's `addStep` drops the oldest step past the cap, so a capped lane holds the seat's latest steps.
 - **Tooltip** on a stretch: from–to clock, the number of steps, its three most-read targets.
 - **Under the lanes:** a list headed "Read by more than one seat": file, the seats' avatars, the total reads. At most 8
   rows, sorted by seat count and then by reads; past 8, a last muted row "and N more: <the next file> (<its seats>, <its
