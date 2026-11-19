@@ -1105,3 +1105,6 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
 - [ ] (arcterm) **Suggested replies stay with an attachment** (`chatcomposer.tsx`). Once a Claude agent's turn ends with
   chips above Chat's box, paste an image: the chips stay. Click one: the message sent carries the chip's text and the
   image, and the box empties of both.
+- [ ] (arcterm) **A paste after a typed ``` closes the block** (`chatmarks.ts` afterOpenFence). In Chat's box type
+  ``` and paste two lines of anything: they land on the lines under the fence, a closing ``` follows, and a word typed
+  on the next line sits outside the code box. One undo leaves the raw paste beside the fence.

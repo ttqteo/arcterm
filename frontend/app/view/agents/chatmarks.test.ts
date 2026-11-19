@@ -140,4 +140,17 @@ describe("codePaste", () => {
         expect(codePaste("", 0, 0, "hello\nworld")).toBeNull();
         expect(codePaste("```\n", 4, 4, code)).toBeNull();
     });
+    it("closes a fence the person typed when the paste goes right after it", () => {
+        const log = 'PID 768\r\n"node" vite.js preview --port 5174\r\n';
+        expect(codePaste("```", 3, 3, log)).toEqual({
+            raw: 'PID 768\n"node" vite.js preview --port 5174\n',
+            fenced: '\nPID 768\n"node" vite.js preview --port 5174\n```',
+        });
+        expect(codePaste("look:\n~~~~bash", 14, 14, "npm i\nnpm t")?.fenced).toBe("\nnpm i\nnpm t\n~~~~");
+    });
+    it("leaves a paste after a fence alone when it is a language, the fence is closed, or text follows", () => {
+        expect(codePaste("```", 3, 3, "bash")).toBeNull();
+        expect(codePaste("```\n```", 3, 3, "a b")).toBeNull();
+        expect(codePaste("``` x", 3, 3, "a b")).toBeNull();
+    });
 });

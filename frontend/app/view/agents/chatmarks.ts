@@ -242,11 +242,15 @@ export interface CodePaste {
  *  not code, or one inside a fenced block already. The fence goes on lines of its own: a newline before it when the line
  *  has text before the caret, one after it when text follows. */
 export function codePaste(text: string, start: number, end: number, pasted: string): CodePaste | null {
+    const lines = text.split("\n");
+    const line = text.slice(0, start).split("\n").length - 1;
+    const opened = afterOpenFence(text, lines, line, start, end, pasted);
+    if (opened != null) {
+        return opened;
+    }
     if (!looksLikeCode(pasted)) {
         return null;
     }
-    const lines = text.split("\n");
-    const line = text.slice(0, start).split("\n").length - 1;
     if (fenceRanges(lines).some((r) => line >= r.open && line <= (r.close ?? lines.length - 1))) {
         return null;
     }
@@ -259,4 +263,35 @@ export function codePaste(text: string, start: number, end: number, pasted: stri
     const after = text.slice(end, nextBreak < 0 ? text.length : nextBreak);
     const fenced = `${before !== "" ? "\n" : ""}\`\`\`\n${body}\n\`\`\`${after !== "" ? "\n" : ""}`;
     return { raw, fenced };
+}
+
+// a line that is only an opening fence, with or without its language
+const BARE_OPENER = /^ {0,3}(`{3,}|~{3,})[^`\s]*$/;
+
+/** A paste right after an opening fence the person typed (```, ```bash) that nothing closes yet: whatever it is, it goes
+ *  on the lines under the fence and the fence is closed after it, so the block ends with the paste instead of running
+ *  on to the end of the message. A single word stays where it is: it reads as the block's language. */
+function afterOpenFence(
+    text: string,
+    lines: string[],
+    line: number,
+    start: number,
+    end: number,
+    pasted: string
+): CodePaste | null {
+    const lineStart = text.lastIndexOf("\n", start - 1) + 1;
+    const lineEnd = text.indexOf("\n", start);
+    if ((lineEnd < 0 ? text.length : lineEnd) !== end) {
+        return null;
+    }
+    const opener = BARE_OPENER.exec(text.slice(lineStart, start));
+    if (opener == null || !fenceRanges(lines).some((r) => r.open === line && r.close == null)) {
+        return null;
+    }
+    const raw = pasted.replace(/\r\n?/g, "\n");
+    const body = raw.replace(/^(?:[ \t]*\n)+/, "").replace(/\s+$/, "");
+    if (!/\s/.test(body)) {
+        return null;
+    }
+    return { raw, fenced: `\n${body}\n${opener[1]}` };
 }
