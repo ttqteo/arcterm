@@ -848,6 +848,7 @@ export function ChatConversation({
     model,
     agent,
     cwd,
+    summary,
     className,
 }: {
     entries: AgentEntry[];
@@ -885,6 +886,10 @@ export function ChatConversation({
     agent?: AgentVM;
     // the agent's working directory: the card of a finished turn's files names each one's folder relative to it
     cwd?: string | null;
+    // the one or two sentences the model wrote of where a long turn stands (chatsuggest.ts turnSummary): drawn as the
+    // conversation's last row, under the reply it sums up. The pane passes it while the turn's suggested replies stand,
+    // so it goes when the next message does. Left out, none.
+    summary?: string;
     className?: string;
 }) {
     const toolsLive = working ?? !!active;
@@ -1810,6 +1815,22 @@ export function ChatConversation({
             ) : null}
             {/* one wrapper per item, keyed by its first entry: the place kept and restored is found by it */}
             {rows}
+            {/* A long turn's summary, under the reply it sums up and its actions: muted, led by its label so it does not
+                read as the agent's own text. A row of its own, not an item (no data-chat-item), opening and leaving on
+                the spring as the end cards do. */}
+            <AnimatePresence initial={false}>
+                {summary != null && summary !== "" ? (
+                    <motion.div key="summary" {...endRow}>
+                        <p
+                            data-chat-summary=""
+                            className="m-0 flex min-w-0 items-baseline gap-2 text-[12.5px] leading-[18px] text-muted [overflow-wrap:anywhere]"
+                        >
+                            <span className="flex-none font-medium text-secondary">Summary</span>
+                            <span className="min-w-0">{summary}</span>
+                        </p>
+                    </motion.div>
+                ) : null}
+            </AnimatePresence>
             {/* Reply on the right-click menu of selected text: only a live agent has a box to quote it into */}
             {agent != null ? <ChatQuoteMenu agentId={agent.id} rootRef={rootRef} /> : null}
             {hasQueuedStart ? <RunQueueFeed /> : null}

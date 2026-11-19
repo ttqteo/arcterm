@@ -219,7 +219,6 @@ function ComposerBox({
     onBoxState,
     onShowDiff,
     chips,
-    summary,
     onMarkDone,
     onClose,
     onGoOn,
@@ -245,10 +244,6 @@ function ComposerBox({
     /** the replies suggested once the turn ended (chatsuggest.ts chatChips), drawn as chips, typing or not; a
      *  click sends one (asking first over typed text). Left out, none. */
     chips?: ChatChip[];
-    /** the one or two sentences the model wrote of where a long turn stands (chatsuggest.ts turnSummary), drawn as muted
-     *  text directly above the chip row, with or without a chip; the pane passes it only with `chips`, so it goes when
-     *  the turn does. Left out, none. */
-    summary?: string;
     /** a chunk's done chip: ticks it on the agent's initiative. Left out, that chip is not drawn. */
     onMarkDone?: (chunk: string) => void;
     /** the close chip (chatsuggest.ts closeChip): closes the agent as the header's ✓ Close does, asking as it does. Left
@@ -887,17 +882,6 @@ function ComposerBox({
     const rowChips = row.kind === "suggest" ? drawnChips(row.chips, onMarkDone != null, onClose != null) : NO_CHIPS;
     const [chipFit, setChipFit] = useState<ChipFit | null>(null);
     const tabChips = chipFit == null ? rowChips : fitChips(rowChips, chipFit.widths, chipFit.avail);
-    // the long turn's summary line: it stands with the chip row's own conditions, but not on its chips (the row is
-    // "suggest" only with a chip, and a summary can come with none); the running agent's actions take the line instead
-    const summaryShown =
-        summary != null &&
-        summary !== "" &&
-        !waking &&
-        !dozing &&
-        att.attachments.length === 0 &&
-        row.kind !== "actions"
-            ? summary
-            : undefined;
     const [pickedText, setPicked] = useState<string | null>(null);
     const picked = pickedChip(tabChips, pickedText);
     // the chip that asks before its text replaces the typed one (sendSuggested): it is always the picked chip, so
@@ -1025,10 +1009,7 @@ function ComposerBox({
                     of it once they hold something (the diff of what it changed, the terminal of a command running a
                     while); once its turn ends, the replies the person would likely send next, in their words, which a
                     click sends (asking first over typed text). One line goes before the next comes, and the actions come
-                    and go only once the agent's state has held (useChipRow). A long turn's summary line stands above it. */}
-                <AnimatePresence initial={false}>
-                    {summaryShown != null ? <SummaryLine key="summary" text={summaryShown} /> : null}
-                </AnimatePresence>
+                    and go only once the agent's state has held (useChipRow). */}
                 <AnimatePresence initial={false} mode="wait">
                     {row.kind === "actions" ? (
                         <ActionChips
@@ -1521,21 +1502,6 @@ function useChipRow<T extends { kind: ChipRowKind }>(target: T): T {
         return () => clearTimeout(t);
     }, [shownKind, target.kind, hold]);
     return shown.current;
-}
-
-// A long turn's summary: one or two sentences, in the person's language, of where things stand. Muted text with no frame
-// and no X, above the chips; it wraps, and fades in on the micro ease as the chips do.
-function SummaryLine({ text }: { text: string }) {
-    const part = usePartMotion(microFade);
-    return (
-        <motion.p
-            {...part}
-            data-chat-summary=""
-            className="mb-2 min-w-0 px-1 text-[12.5px] leading-[18px] text-muted [overflow-wrap:anywhere]"
-        >
-            {text}
-        </motion.p>
-    );
 }
 
 // The running agent's actions: what Chat already offers (no new commands), as chips with their names, each drawn only
