@@ -1,5 +1,4 @@
 import { confirmCloseSession } from "@/app/view/agents/agentactions";
-import { showSession } from "@/app/view/agents/agentcenter";
 import type { AgentVM } from "@/app/view/agents/agentsviewmodel";
 import { canDeleteSession, confirmDeleteSession, DELETE_SESSION_LABEL } from "@/app/view/agents/sessiondelete";
 import {
@@ -10,7 +9,7 @@ import {
 } from "@/app/view/agents/sessionsarchivestore";
 import { runSessionPrimary } from "@/app/view/agents/sessionsdetail";
 import { sessionPrimary, sessionSelection } from "@/app/view/agents/sessionsruns";
-import { landOn } from "@/app/view/jarvis/returnsurface";
+import { showLibrarySession } from "@/app/view/library/librarystore";
 import type { ThingKindDef } from "./types";
 
 // the session as Conversation History builds it, with the roster agent a live one is running in
@@ -35,11 +34,11 @@ export const SESSION_KIND: ThingKindDef<SessionThing> = {
             label: "Open session",
             group: "open",
             applies: () => true,
-            // a session reads in the Agent surface's centre, and one a run launched in its run's pane there.
-            // Neither has a router target, so this writes the selection as the sidebar's rows and History's list do
+            // a session reads in Library's Conversations tab, and one a run launched in its run's pane there.
+            // Neither has a router target, so this writes the selection as History's list does
             run: (t, { model }) => {
                 const to = sessionSelection(t.session);
-                showSession(model, to.sel, to.member);
+                showLibrarySession(model, to.sel, to.member);
             },
         },
         {

@@ -56,6 +56,7 @@ import {
 } from "@/app/view/jarvis/jarvisstore";
 import { petPeekOpenAtom } from "@/app/view/jarvis/petstore";
 import { reviewModeAtom } from "@/app/view/jarvis/reviewstore";
+import { libraryConvViewAtom, libraryCouncilSelAtom, libraryTabAtom } from "@/app/view/library/librarystore";
 import { dagModalStateAtom } from "@/app/view/orchestrate/dagmodalstate";
 import { atom, type Atom, type PrimitiveAtom } from "jotai";
 import { listNavAtom } from "./listnav";
@@ -85,13 +86,16 @@ export const PREDICATE_ATOMS: Atom<unknown>[] = [
     listNavAtom, // buildListNavBindings: active
     renamingRowAtom, // buildAgentBindings: subagent:back
     focusSubagentAtom, // buildAgentBindings: subagent:back, agent:back, agent:brainstorm-back, agent:leave-center
-    centerModeAtom, // buildAgentBindings: agentNav / agentNavStrict (every Agent key), agent:back, agent:leave-center
-    canvasGalleryAtom, // buildAgentBindings: the canvases:* keys, agent:leave-center; buildGlobalBindings: surface:next / prev
+    centerModeAtom, // buildAgentBindings: agentNav / agentNavStrict (every Agent key), agent:back, agent:leave-center; the council keys (onCouncil)
+    canvasGalleryAtom, // buildAgentBindings: the canvases:* keys; libraryOpen (surface:back-home, library:back); buildGlobalBindings: surface:next / prev
+    libraryTabAtom, // the canvases:* keys (onGallery), libraryOpen, library:tab-*, surface:next / prev
+    libraryConvViewAtom, // libraryOpen: surface:back-home, library:back
+    libraryCouncilSelAtom, // libraryOpen: surface:back-home, library:back, the council keys (onCouncil)
     tabSwitcherAtom, // buildGlobalBindings: switcher:cancel, and switcher:next / prev under the open switcher
     dockedTerminalAtom, // buildAgentBindings: agent:terminal-panel
     initiativePopoverAtom, // buildAgentBindings: agentNav / agentNavStrict (every single-key Agent binding yields to the popover)
     reviewModeAtom, // buildJarvisBindings: jarvis:review and the review keys; buildListNavBindings: active; surface:back-home
-    councilChatNavAtom, // buildCouncilBindings: every council:* key; buildAgentBindings: agent:leave-center
+    councilChatNavAtom, // buildCouncilBindings: every council:* key; buildAgentBindings: agent:leave-center; library:back
     escapeMenusOpenAtom, // surface:back-home and usage:back: a hand-rolled dropdown (Code's project picker) owns Escape
     usageLensAtom, // usage:back, and surface:back-home stands down to it
     usageWorkScopeAtom, // usage:back, surface:back-home

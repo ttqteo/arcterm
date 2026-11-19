@@ -4,9 +4,12 @@
 import {
     buildAgentBindings,
     buildCockpitBindings,
+    buildCouncilBindings,
+    buildCouncilTabBindings,
     buildFilesBindings,
     buildGlobalBindings,
     buildJarvisBindings,
+    buildLibraryBindings,
     buildListNavBindings,
 } from "@/app/store/keybindings/bindings";
 import { describe, expect, it } from "vitest";
@@ -25,6 +28,9 @@ describe("footer hints reference real bindings", () => {
                 ...buildListNavBindings(model),
                 ...buildCockpitBindings(),
                 ...buildJarvisBindings(model),
+                ...buildLibraryBindings(model), // Library's tab keys and Back; the council's keys are live on it too
+                ...buildCouncilBindings(),
+                ...buildCouncilTabBindings(),
             ].map((b) => b.id)
         );
         const referenced = [...GLOBAL_HINTS, ...Object.values(SURFACE_HINTS).flat()].flatMap((h) => h.ids);

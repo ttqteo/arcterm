@@ -543,8 +543,8 @@ export default (kit) => {
                 id: "canvas-link-picker",
                 title: "the canvas viewer's Link an older version picker",
                 async open(h) {
-                    await h.goto("agent");
-                    await click(h, q("[data-agent-canvases-open]"));
+                    await h.goto("library");
+                    await click(h, q('[data-library-tab="canvases"]'));
                     if (!(await waitFor(h, q("[data-canvas-grid]"), WAIT_MS))) return `the canvas gallery never opened: ${await seen(h)}`;
                     const wrap = q('[data-canvas-card-wrap="vs-home"]');
                     await waitFor(h, `!!${wrap}`, WAIT_MS);

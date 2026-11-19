@@ -14,7 +14,7 @@ import { sessionSelection } from "./sessionsruns";
 
 export type RunOrigin =
     | { kind: "live"; tabId: string; name: string }
-    // where opening it lands, as showSession takes it
+    // where opening it lands, as showLibrarySession takes it
     | { kind: "ended"; name: string; sel: string; member?: string }
     // its tab is closed and Conversation History has no session by its transcript
     | { kind: "gone" };

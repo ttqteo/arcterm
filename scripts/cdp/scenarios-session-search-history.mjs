@@ -162,17 +162,17 @@ const removeMock = (h) =>
     })()`);
 
 // the archive holds exactly the scenario's sessions (a scan that landed meanwhile would have kept the real ones behind its
-// first page), no older page, and History is the centre
+// first page), no older page, and Library shows Conversation History
 const openHistory = (loaded) => `
     const A = await mod("app/view/agents/sessionsarchivestore.ts");
-    const C = await mod("app/view/agents/agentcenter.ts");
+    const L = await mod("app/view/library/librarystore.ts");
     const model = agentsModel();
     globalStore.set(A.sessionsArchiveAtom, ${JSON.stringify(loaded)});
     globalStore.set(A.sessionsCursorAtom, "");
     globalStore.set(A.sessionsErrorAtom, false);
     globalStore.set(model.sessionsSelAtom, "all");
     globalStore.set(model.sessionsStatusFilterAtom, "all");
-    C.showHistory(model);
+    L.showLibrary(model, "conversations");
     return true;`;
 
 const readSelection = (h) =>

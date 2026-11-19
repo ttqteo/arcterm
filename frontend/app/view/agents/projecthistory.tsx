@@ -9,6 +9,7 @@
 import { Skeleton, SkeletonLine } from "@/app/element/skeleton";
 import { ContextMenuModel } from "@/app/store/contextmenu";
 import { openTarget } from "@/app/view/jarvis/openref";
+import { showLibrary, showLibrarySession } from "@/app/view/library/librarystore";
 import { cn, fireAndForget } from "@/util/util";
 import { useAtom, useAtomValue } from "jotai";
 import {
@@ -26,7 +27,6 @@ import {
     Trash2,
 } from "lucide-react";
 import { Fragment, useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
-import { showHistory, showSession } from "./agentcenter";
 import type { AgentsViewModel } from "./agents";
 import { formatAgeShort } from "./agentsviewmodel";
 import { isPinnedCouncil } from "./councilmodel";
@@ -144,7 +144,7 @@ function sessionMenu(
 ) {
     const items: ContextMenuItem[] = [
         { label: "Quick look", icon: <Eye size={15} />, click: quickLook },
-        { label: "Open transcript", icon: <FileText size={15} />, click: () => showSession(model, key) },
+        { label: "Open transcript", icon: <FileText size={15} />, click: () => showLibrarySession(model, key) },
     ];
     if (s.resumecommand || (s.live && s.liveId)) {
         items.push({
@@ -392,7 +392,7 @@ export function HistoryColumn({
         <button
             type="button"
             data-history-older
-            onClick={() => showHistory(model)}
+            onClick={() => showLibrary(model, "conversations")}
             className={`${ROW} text-[12px] text-muted`}
         >
             Older: Conversation History
@@ -589,7 +589,7 @@ export function HistoryColumn({
                     const key = peek?.key;
                     setPeek(null);
                     if (key != null) {
-                        showSession(model, key);
+                        showLibrarySession(model, key);
                     }
                 }}
             />

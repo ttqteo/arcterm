@@ -1,16 +1,17 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// The Agent surface's `run` centre mode: one orchestrator run's detail without History's list around it. It is RunDetail
-// (sessionsdetail.tsx) in the centre column, the read History gives a run: its members, and the one in view read. Which
-// run is the model's sessionsSelAtom ("run:<id>"), which member its sessionsMemberAtom, the run's first member with a
-// session (defaultMember) when that names none of them.
+// Library's Conversations tab, `run` view (librarystore.ts): one orchestrator run's detail at full width, without History's
+// list around it, when a run is opened from outside Library (showLibrarySession). It is RunDetail (sessionsdetail.tsx), the
+// read History gives a run: its members, and the one in view read. Which run is the model's sessionsSelAtom ("run:<id>"),
+// which member its sessionsMemberAtom, the run's first member with a session (defaultMember) when that names none of them.
+// Back (leaveLibraryDetail) returns to the surface that opened it, else to the Conversations list.
 
+import { leaveLibraryDetail } from "@/app/view/library/librarystore";
 import { fireAndForget } from "@/util/util";
 import { useAtomValue } from "jotai";
 import { ArrowLeft } from "lucide-react";
 import { useEffect, useMemo } from "react";
-import { backLabel, centerBackAtom, leaveCenter } from "./agentcenter";
 import type { AgentsViewModel } from "./agents";
 import type { RunInfo } from "./runlineage";
 import { runDigestsAtom, useRunDigests } from "./runlineagestore";
@@ -28,7 +29,6 @@ export function RunPane({ model }: { model: AgentsViewModel }) {
     const roster = useAtomValue(model.agentsAtom);
     const now = useAtomValue(model.nowAtom);
     const digests = useAtomValue(runDigestsAtom);
-    const back = backLabel(useAtomValue(centerBackAtom));
     const runId = runIdOfSel(sel) ?? "";
     // as SessionPane: the pane can open before the surface's scan has landed
     const archiveMissing = archive == null;
@@ -80,11 +80,11 @@ export function RunPane({ model }: { model: AgentsViewModel }) {
             <button
                 type="button"
                 data-agent-session-back
-                onClick={leaveCenter}
+                onClick={leaveLibraryDetail}
                 className="mb-3 flex w-fit flex-none cursor-pointer items-center gap-[6px] rounded-[6px] px-[6px] py-[3px] text-[12px] text-muted hover:bg-surface-hover hover:text-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
             >
                 <ArrowLeft size={13} aria-hidden />
-                {back}
+                Back
             </button>
             <div className="flex min-h-0 flex-1 flex-col">
                 {archive == null ? (

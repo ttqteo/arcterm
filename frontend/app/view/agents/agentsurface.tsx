@@ -13,8 +13,8 @@
 // terminal obeys one rule. With no explicit focus it defaults (resolveShownAgent, cockpitsurfacemodel.ts; handoff
 // dc.html:1790 `focusAgent = …find(fid) || list[0]`) — never the cockpit's card grid; only a zero-agent roster
 // shows an empty state. The center is not always the terminal: centerModeAtom (agentcenter.ts) swaps it for one
-// ended session's transcript or Conversation History, the terminal stack staying mounted but hidden, and
-// with no agent those two still get the tree beside them (the empty state is only for the terminal mode).
+// council, a project's Overview or a held agent, the terminal stack staying mounted but hidden, and
+// with no agent those still get the tree beside them (the empty state is only for the terminal mode).
 // Routing is shell-side (this file is imported only by cockpitshell.tsx) so agents.tsx
 // never imports CockpitFocusPane, keeping the agents -> focus-pane -> blockregistry -> agents eval
 // cycle broken.
@@ -54,13 +54,11 @@ import { AgentTree } from "./agenttree";
 import { appShows } from "./appmodel";
 import { AppPane } from "./apppane";
 import { appStatesAtom } from "./appstore";
-import { ConversationHistory } from "./conversationhistory";
 import { asksInTerminal, projectOf, type AgentVM } from "./agentsviewmodel";
 import { compactedSummary } from "./brainstormmodel";
 import { BrainstormPane } from "./brainstormpane";
 import { brainstormRailSlotAtom } from "./brainstormrail";
 import { brainstormAtom } from "./brainstormstore";
-import { CanvasGallery } from "./canvasgalleryview";
 import { CanvasPane } from "./canvaspane";
 import { useCanvasPoller } from "./canvaspoller";
 import { canvasStateAtom } from "./canvasstore";
@@ -70,7 +68,6 @@ import { chatCapable, shownChatMode } from "./chatmode";
 import { chatModeAtom } from "./chatmodestore";
 import { ChatLayer } from "./chatpane";
 import { closedNeighbour, keepFocused, resolveShownAgent, rosterLoadPhase } from "./cockpitsurfacemodel";
-import { CouncilHistory } from "./councilhistoryview";
 import { CouncilPane } from "./councilpane";
 import { autoOpenedAskIdsAtom, shouldAutoOpen } from "./docreview";
 import { DocReviewPane } from "./docreviewpane";
@@ -101,12 +98,10 @@ import { agentFocusFallback } from "./modalfocusfallback";
 import { NO_PANES, nextPaneMounts } from "./panemounts";
 import { ProjectOverview } from "./projectoverview";
 import { HeldPane } from "./heldpane";
-import { RunPane } from "./runpane";
 import { shownServices } from "./serviceseen";
 import { appSurfaceService } from "./railapps";
 import { appSurfaceIdAtom, railPinsAtom } from "./railappsstore";
 import { reportServicesSeen, serviceByTabAtom, servicesAtom } from "./servicesstore";
-import { SessionPane } from "./sessionpane";
 import {
     dockedTerminalAtom,
     moveToDock,
@@ -147,8 +142,8 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
     const stage = useAtomValue(model.finalStageAtom);
     const seeded = useAtomValue(rosterSeededAtom);
     const gridState = useAtomValue(agentGridAtom);
-    // what the centre column shows: the terminal, one session's transcript, or Conversation History (agentcenter.ts).
-    // The terminal stack below stays mounted, hidden, in the other two.
+    // what the centre column shows: the terminal, a council, a project's Overview or a held agent (agentcenter.ts).
+    // The terminal stack below stays mounted, hidden, in the others.
     const centerMode = useAtomValue(centerModeAtom);
     const wrapRef = useRef<HTMLDivElement>(null);
     // Focusable set = agents + background terminals. handoff (dc.html:1790): focusAgent = …find(fid) ||
@@ -263,9 +258,9 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
 
     // What the terminal stack shows: the grid's cells, or one cell alone (fullscreen; a tab that is not a cell yet,
     // such as an agent with no terminal). When the centre shows something else (a subagent's interior, a session or
-    // History, a canvas or a review, a done worker's transcript) the grid hides, every mounted pane staying mounted,
-    // and comes back as it was. stackHidden is also what hides the whole column (header and all) in the
-    // subagent-interior and session/History cases.
+    // a council, an Overview, a canvas or a review, a done worker's transcript) the grid hides, every mounted pane staying
+    // mounted, and comes back as it was. stackHidden is also what hides the whole column (header and all) in the
+    // subagent-interior and centre-mode cases.
     const stackHidden = showSub || centerMode !== "terminal";
     const terminalShown = agent != null && !stackHidden && swapped == null && !isEndedWorkerId(agent.id);
     // Until the roster is seeded the saved cells are not pruned, so a cell whose agent has not arrived yet still holds
@@ -441,7 +436,7 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
         }
     }, [agent?.id, swapped]);
 
-    // History and a session's transcript cover the terminal as canvas mode does, and a hidden xterm can still hold focus
+    // A council, an Overview and a held agent cover the terminal as canvas mode does, and a hidden xterm can still hold focus
     // and eat the surface's keys (Esc, j/k): leaving the terminal pulls focus to the wrapper, and returning to it hands
     // focus back to the focused agent's xterm, or to the wrapper when that xterm is not showing (canvas, subagent
     // interior, ended worker, no block), so it never drops to <body>
@@ -689,8 +684,8 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
         if (holdForGrid || rosterLoadPhase(seeded, agents.length) === "loading") {
             return <StartupLoader />;
         }
-        // with no agent the centre is the launch hero, or History or a session read; the tree stays beside it, since it is
-        // where conversations and terminals are opened from
+        // with no agent the centre is the launch hero, or a council, an Overview or a held agent; the tree stays beside it,
+        // since it is where agents and terminals are opened from
         return (
             <MotionConfig reducedMotion="user">
                 <div
@@ -718,7 +713,7 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
                 {/* the tree stays in canvas, review and brainstorm mode: hiding it made reaching another agent a round trip through the terminal */}
                 {!fullscreen || centerMode !== "terminal" ? <AgentTree model={model} /> : null}
                 <div className="flex min-w-0 flex-1 flex-col">
-                    {/* terminal stack stays mounted (hidden) while a subagent interior, a session or History is shown, so
+                    {/* terminal stack stays mounted (hidden) while a subagent interior or a centre mode is shown, so
                         returning to the parent never remounts/replays the live TUI (frame-stacking) */}
                     <div className={cn("flex min-h-0 flex-1 flex-col", stackHidden && "hidden")}>
                         {/* a maximized dock is the terminal's own view, its bar the only header: the agent's header
@@ -986,27 +981,16 @@ function seedTerminalName(blockId: string) {
     });
 }
 
-// History, the canvases, the councils' list, a council, a project's Overview and a session's transcript take the
-// centre column; the terminal stack stays mounted beside them
+// A council, a project's Overview and a held agent take the centre column; the terminal stack stays mounted beside them
 function AgentCenterPane({ model, mode }: { model: AgentsViewModel; mode: Exclude<CenterMode, "terminal"> }) {
     return (
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-            {mode === "history" ? (
-                <ConversationHistory model={model} />
-            ) : mode === "canvases" ? (
-                <CanvasGallery model={model} />
-            ) : mode === "councils" ? (
-                <CouncilHistory model={model} />
-            ) : mode === "council" ? (
+            {mode === "council" ? (
                 <CouncilPane model={model} />
-            ) : mode === "run" ? (
-                <RunPane model={model} />
             ) : mode === "project" ? (
                 <ProjectOverview model={model} />
-            ) : mode === "held" ? (
-                <HeldPane model={model} />
             ) : (
-                <SessionPane model={model} />
+                <HeldPane model={model} />
             )}
         </div>
     );

@@ -35,7 +35,7 @@ export const GLOBAL_HINTS: FooterHint[] = [
     { ids: ["help"], glyph: "?", label: "help" }, // Shift+?; drops in the terminal
 ];
 
-// The agent, Diff and Jarvis surfaces have surface-specific bindings; the rest fall back to
+// The agent, Library, Diff and Jarvis surfaces have surface-specific bindings; the rest fall back to
 // GLOBAL_HINTS only.
 export const SURFACE_HINTS: Partial<Record<SurfaceKey, FooterHint[]>> = {
     agent: [
@@ -52,7 +52,7 @@ export const SURFACE_HINTS: Partial<Record<SurfaceKey, FooterHint[]>> = {
         { ids: ["agent:view-cycle"], keys: "Alt:c", label: "switch view" }, // a canvas, brainstorm or review, also in the terminal
         { ids: ["agent:view-chord"], keys: "Ctrl:Shift:b", label: "brainstorm" }, // reachable in the terminal, and in the pane while b picks an answer
         { ids: ["agent:back", "agent:brainstorm-back"], keys: "Escape", label: "back" }, // also: shrink a board widened in the brainstorm's rail
-        { ids: ["agent:leave-center"], keys: "Escape", label: "terminal" }, // History or a session only, via its binding
+        { ids: ["agent:leave-center"], keys: "Escape", label: "terminal" }, // a council, a project's Overview or a held agent only, via its binding
         { ids: ["switcher:next", "switcher:prev"], keys: "Ctrl:Tab", label: "switch" },
         { ids: ["agent:return-nav"], keys: "Shift:Escape", label: "leave" }, // editable-only via its binding
         // canvas mode hides every chip above but leave; this order serves both canvas mode and marking
@@ -70,6 +70,31 @@ export const SURFACE_HINTS: Partial<Record<SurfaceKey, FooterHint[]>> = {
         { ids: ["agent:review-comment"], glyph: "c", label: "comment" },
         { ids: ["agent:review-close"], glyph: "r", label: "terminal" },
         { ids: ["agent:review-prev", "agent:review-next"], glyph: "[ ]", label: "tab" },
+    ],
+    // Library's chips: the tab keys always, then the keys of what its tab shows, each live only there (the Conversations list's
+    // cursor, the gallery's grid, viewer and clean up, a council's views), and the Escape of whatever is open. Escape with
+    // nothing open is GLOBAL_HINTS' "home".
+    library: [
+        { ids: ["library:tab-1", "library:tab-2", "library:tab-3"], glyph: "1 2 3", label: "tab" },
+        { ids: ["list:next-j", "list:prev-k", "list:next", "list:prev"], glyph: "j k", label: "move" },
+        {
+            ids: ["canvases:left", "canvases:right", "canvases:up", "canvases:down"],
+            glyph: "↑↓←→",
+            label: "move",
+        },
+        {
+            ids: ["canvases:cleanup-left", "canvases:cleanup-right", "canvases:cleanup-up", "canvases:cleanup-down"],
+            glyph: "↑↓←→",
+            label: "move",
+        },
+        { ids: ["list:activate", "canvases:open"], keys: "Enter", label: "open" },
+        { ids: ["canvases:search"], glyph: "/", label: "search" },
+        { ids: ["canvases:prev-board", "canvases:next-board"], glyph: "← →", label: "board" },
+        { ids: ["canvases:tick"], keys: "Space", label: "tick" },
+        { ids: ["council:tab-summary", "council:tab-discussion", "council:tab-map"], glyph: "r c m", label: "view" },
+        { ids: ["council:close-thread"], keys: "Escape", label: "close" },
+        { ids: ["canvases:scan-cancel", "canvases:cleanup-cancel"], keys: "Escape", label: "cancel" },
+        { ids: ["library:back", "canvases:back"], keys: "Escape", label: "back" },
     ],
     // ↑↓, Enter and g g left the footer for room; they still work and are in ? help.
     files: [

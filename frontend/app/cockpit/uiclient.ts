@@ -14,13 +14,13 @@ import { modalsModel } from "@/app/store/modalmodel";
 import { RpcResponseHelper, WshClient } from "@/app/store/wshclient";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { DefaultRouter, TabRpcClient } from "@/app/store/wshrpcutil";
-import { showHistory } from "@/app/view/agents/agentcenter";
 import type { AgentsViewModel } from "@/app/view/agents/agents";
 import { dismissBrainstorm, getBrainstorm } from "@/app/view/agents/brainstormstore";
 import { getCanvas } from "@/app/view/agents/canvasstore";
 import { briefPeekRecordAtom } from "@/app/view/jarvis/jarvisstore";
 import { activeRunIdAtom, activeSubjectAtom } from "@/app/view/jarvis/jarvissubjectstore";
 import { openAddress } from "@/app/view/jarvis/openref";
+import { showLibrary } from "@/app/view/library/librarystore";
 import {
     AWAITING_CONFIRMATION,
     brainstormCloseVerdict,
@@ -71,8 +71,8 @@ class CockpitUiClient extends WshClient {
             if ("error" in surfaceTarget) {
                 throw new Error(surfaceTarget.error);
             }
-            if (surfaceTarget.center === "history") {
-                showHistory(this.model);
+            if (surfaceTarget.tab != null) {
+                showLibrary(this.model, surfaceTarget.tab);
             } else {
                 globalStore.set(this.model.surfaceAtom, surfaceTarget.surface);
             }

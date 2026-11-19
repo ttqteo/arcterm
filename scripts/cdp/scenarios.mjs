@@ -97,6 +97,7 @@ import diffStatesScenarios from "./scenarios-diff-states.mjs";
 import jarvisActivityScenarios from "./scenarios-jarvis-activity.mjs";
 import jarvisCardsScenarios from "./scenarios-jarvis-cards.mjs";
 import jarvisLaterScenarios from "./scenarios-jarvis-later.mjs";
+import libraryScenarios, { openLibraryTab } from "./scenarios-library.mjs";
 import jarvisSheetScenarios from "./scenarios-jarvis-sheet.mjs";
 import kaelAskKeysScenarios from "./scenarios-kael-ask-keys.mjs";
 import kaelKeysScenarios from "./scenarios-kael-keys.mjs";
@@ -179,7 +180,7 @@ async function channelRuns(h, channelId) {
 // arrange needed; a populated-roster visual still relies on the manual inject-live-agents path.
 // Channels/Graph/Tasks merged into Jarvis and have no nav button left, so listing one here would make
 // h.goto throw before any step is recorded.
-const SMOKE_SURFACES = ["cockpit", "jarvis", "usage", "files", "settings", "code", "setup"];
+const SMOKE_SURFACES = ["cockpit", "jarvis", "usage", "library", "files", "settings", "code", "setup"];
 
 const surfaceSmoke = {
     name: "surface-smoke",
@@ -203,8 +204,8 @@ const surfaceSmoke = {
             });
             await h.shot(`cdp-shots/surface-${surface}.png`);
         }
-        // Radar is retired (run c2a6aebb): the rail, Mod+1..6 and the go-to
-        // leader name six surfaces and nothing else. Keys go to the document the way the Ctrl+P scenarios send them.
+        // Radar is retired (run c2a6aebb): the rail, Mod+1..7 and the go-to
+        // leader name seven surfaces and nothing else. Keys go to the document the way the Ctrl+P scenarios send them.
         const key = (k, code, mods = "") =>
             h.ev(
                 `(document.activeElement?.blur?.(), document.dispatchEvent(new KeyboardEvent('keydown', { key: '${k}', code: '${code}', ${mods} bubbles: true })))`
@@ -215,23 +216,59 @@ const surfaceSmoke = {
             `[...document.querySelectorAll("nav button")].map((b) => b.getAttribute("aria-label"))`
         );
         steps.push({
-            step: "nav rail lists no Radar, and its core and tool labels read Cockpit, Jarvis, Agent, Usage, Code, Diff",
+            step: "nav rail lists no Radar, and its core and tool labels read Cockpit, Jarvis, Agent, Usage, Library, Code, Diff",
             ok:
                 !navLabels.some((l) => /radar/i.test(l ?? "")) &&
-                JSON.stringify(navLabels.slice(0, 6)) ===
-                    JSON.stringify(["Cockpit", "Jarvis", "Agent", "Usage", "Code", "Diff"]),
+                JSON.stringify(navLabels.slice(0, 7)) ===
+                    JSON.stringify(["Cockpit", "Jarvis", "Agent", "Usage", "Library", "Code", "Diff"]),
             detail: JSON.stringify(navLabels),
         });
         await key("6", "Digit6", `${MOD_KEY_JS},`);
         await settleMs(800);
         const sixth = await h.activeSurfaceLabel();
         await key("7", "Digit7", `${MOD_KEY_JS},`);
-        await settleMs(500);
+        await settleMs(800);
         const seventh = await h.activeSurfaceLabel();
+        await h.shot("cdp-shots/surface-smoke-ctrl7.png");
+        await key("8", "Digit8", `${MOD_KEY_JS},`);
+        await settleMs(500);
+        const eighth = await h.activeSurfaceLabel();
         steps.push({
-            step: "Ctrl+6 lands on Diff, and Ctrl+7 leaves the surface on Diff",
-            ok: sixth === SURFACE_LABEL.files && seventh === SURFACE_LABEL.files,
-            detail: `after Ctrl+6=${sixth} after Ctrl+7=${seventh}`,
+            step: "Ctrl+6 lands on Diff, Ctrl+7 on Library, and Ctrl+8 leaves the surface on Library",
+            ok: sixth === SURFACE_LABEL.files && seventh === SURFACE_LABEL.library && eighth === SURFACE_LABEL.library,
+            detail: `after Ctrl+6=${sixth} after Ctrl+7=${seventh} after Ctrl+8=${eighth}`,
+        });
+        // holding Ctrl numbers the rail with the chord that works: Library sits fifth on the rail and is Ctrl+7, Code and
+        // Diff are Ctrl+5 and Ctrl+6 (the rail's order and the chord order differ). The key goes to the window the way the
+        // app's own listener reads it (cockpit-root.tsx), and the hints show once it has been held on its own for 300 ms
+        await h.goto("cockpit");
+        await h.ev(
+            `window.dispatchEvent(new KeyboardEvent('keydown', { key: ${JSON.stringify(ON_MAC ? "Meta" : "Control")}, code: ${JSON.stringify(ON_MAC ? "MetaLeft" : "ControlLeft")}, bubbles: true }))`
+        );
+        await settleMs(700);
+        const hints = await h.ev(`(() => {
+            const out = {};
+            for (const b of document.querySelectorAll('nav button:not([data-nav-app]):not([data-nav-translate])')) {
+                out[b.getAttribute('aria-label')] = b.querySelector('[data-digit-hint]')?.getAttribute('data-digit-hint') ?? null;
+            }
+            return out;
+        })()`);
+        await h.shot("cdp-shots/surface-smoke-digit-hints.png");
+        await h.ev(
+            `window.dispatchEvent(new KeyboardEvent('keyup', { key: ${JSON.stringify(ON_MAC ? "Meta" : "Control")}, code: ${JSON.stringify(ON_MAC ? "MetaLeft" : "ControlLeft")}, bubbles: true }))`
+        );
+        await settleMs(300);
+        steps.push({
+            step: "holding Ctrl shows the rail's digit hints: Cockpit 1, Jarvis 2, Agent 3, Usage 4, Code 5, Diff 6, Library 7",
+            ok:
+                hints.Cockpit === "1" &&
+                hints.Jarvis === "2" &&
+                hints.Agent === "3" &&
+                hints.Usage === "4" &&
+                hints.Code === "5" &&
+                hints.Diff === "6" &&
+                hints.Library === "7",
+            detail: JSON.stringify(hints),
         });
         await h.goto("cockpit");
         await key("g", "KeyG", `${MOD_KEY_JS},`);
@@ -282,6 +319,32 @@ const surfaceSmoke = {
         );
         // last: these swap the live roster for a fixture one, which the steps above must not see
         steps.push(...(await cacheMissNoticeSteps(h, ctx)));
+        // the fixture roster is what gives the Agent surface a sidebar to read (with no agent it draws its launch hero)
+        await h.goto("agent");
+        const treeUp = await polishWaitFor(h, `!!document.querySelector("[data-agent-tree]")`, 8000);
+        const sidebar = await h.ev(`(() => {
+            const tree = document.querySelector("[data-agent-tree]");
+            const flat = (el) => (el?.textContent ?? "").replace(/\\s+/g, " ").trim();
+            return {
+                rows: document.querySelectorAll("[data-agent-history-open], [data-agent-canvases-open], [data-agent-councils-open]").length,
+                conversations: document.querySelectorAll("[data-agent-conversations], [data-agent-section-toggle]").length,
+                named: /Conversation History|Canvas gallery|Conversations|Councils/.test(flat(tree)),
+                agents: document.querySelectorAll("[data-agent-tree] [data-agent-row]").length,
+            };
+        })()`);
+        await h.shot("cdp-shots/surface-smoke-agent-sidebar.png");
+        steps.push(
+            treeUp
+                ? {
+                      step: "Agent sidebar shows no History, Canvas gallery or Councils row and no Conversations section",
+                      ok: sidebar.rows === 0 && sidebar.conversations === 0 && !sidebar.named && sidebar.agents > 0,
+                      detail: JSON.stringify(sidebar),
+                  }
+                : skipStep(
+                      "Agent sidebar shows no History, Canvas gallery or Councils row and no Conversations section",
+                      "the Agent surface drew no sidebar (no agent on the roster: it shows its launch hero): rerun with a fixture roster"
+                  )
+        );
         return steps;
     },
     async teardown(h, ctx) {
@@ -4038,26 +4101,28 @@ const usageInsights = {
                 JSON.stringify({ j1: j1.cursor, j2: j2.cursor, k1: k1.cursor, current: [j1.current, j2.current, k1.current] })
             );
 
-            // 4: Enter and a click open an ended tab's transcript in Agent
+            // 4: Enter and a click open an ended tab's transcript in Library, full width; Back returns to Usage
             const ended = k1.cursor >= 0 && !k1.live.includes(k1.cursor);
             await uiPress(h, "Enter", "Enter", 13, "\r");
-            const enterOpened = await ahWait(h, `document.querySelector("[data-agent-session]")`, 6000);
+            const enterOpened = await ahWait(h, `document.querySelector("[data-library] [data-agent-session]")`, 6000);
             const enterSurface = await surface();
             await h.shot("cdp-shots/usage-insights-open-ended.png");
-            await h.goto("usage");
+            await h.ev(`document.querySelector("[data-agent-session-back]")?.click()`);
             await ahWait(h, `document.querySelectorAll("[data-usage-session]").length > 0`, 8000);
+            const enterBack = await surface();
             const clickIndex = 2;
             await h.ev(`document.querySelectorAll("[data-usage-session]")[${clickIndex}]?.click()`);
-            const clickOpened = await ahWait(h, `document.querySelector("[data-agent-session]")`, 6000);
+            const clickOpened = await ahWait(h, `document.querySelector("[data-library] [data-agent-session]")`, 6000);
             const clickSurface = await surface();
             rec(
-                "4. usage-insights-open-ended: Enter on an ended row, and a click on another, open the transcript in the Agent surface",
+                "4. usage-insights-open-ended: Enter on an ended row, and a click on another, open the transcript in the Library surface, and Back from the first returns to Usage",
                 ended &&
                     enterOpened === true &&
-                    enterSurface === SURFACE_LABEL.agent &&
+                    enterSurface === SURFACE_LABEL.library &&
+                    enterBack === SURFACE_LABEL.usage &&
                     clickOpened === true &&
-                    clickSurface === SURFACE_LABEL.agent,
-                JSON.stringify({ ended, enterOpened, enterSurface, clickOpened, clickSurface })
+                    clickSurface === SURFACE_LABEL.library,
+                JSON.stringify({ ended, enterOpened, enterSurface, enterBack, clickOpened, clickSurface })
             );
 
             // 5: the open row focuses its agent instead
@@ -4594,7 +4659,7 @@ const usageInsightsLevers = {
                 JSON.stringify({ selected: tips?.selected, detail: tips?.detail && { ...tips.detail, text: tips.detail.text.slice(0, 100) } })
             );
 
-            // 3: a chip opens its tab's transcript in Agent
+            // 3: a chip opens its tab's transcript in Library
             await clickLever("longctx");
             await ahNap(300);
             const chip = await h.ev(`(() => {
@@ -4604,12 +4669,12 @@ const usageInsightsLevers = {
                 c.click();
                 return id;
             })()`);
-            const opened = await ahWait(h, `document.querySelector("[data-agent-session]")`, 6000);
+            const opened = await ahWait(h, `document.querySelector("[data-library] [data-agent-session]")`, 6000);
             const openedSurface = await surface();
             await h.shot("cdp-shots/usage-insights-levers-chip.png");
             rec(
-                "3. usage-insights-levers-chip: a chip of an ended tab opens its transcript in the Agent surface",
-                chip != null && ctx.sessions.some((s) => s.id === chip) && opened === true && openedSurface === SURFACE_LABEL.agent,
+                "3. usage-insights-levers-chip: a chip of an ended tab opens its transcript in the Library surface",
+                chip != null && ctx.sessions.some((s) => s.id === chip) && opened === true && openedSurface === SURFACE_LABEL.library,
                 JSON.stringify({ chip, opened, openedSurface })
             );
 
@@ -17237,24 +17302,24 @@ const agentTreeQuickReturn = {
     async teardown() {},
 };
 
-// The Agent surface after the Sessions merge (docs/superpowers/specs/2026-10-05-agent-sessions-merge-design.md): the sidebar's Active section
-// (the live agents) over its Conversations section of ended sessions in a folder per project (Show more pages a folder), both sections and
-// the folders folding, the app bar's project switcher narrowing the sidebar, the session pane with Resume, Conversation History, Esc back
-// to the terminal, `g s`, History's list cursor leaving with the surface, and a rail with no Sessions item (Diff on
-// Ctrl+6). One live fixture agent gives the Active section a project folder; GetSessionsActivity is answered in-page (see installAhMock). The
-// ghost's project is registered for the run, since the switcher offers registered projects only. Resume is asserted present, never clicked:
-// it would start a real agent. Keys are synthetic keydowns at the focused element, as docReviewEscape sends them.
+// Past conversations after the Library surface (docs/superpowers/specs/2026-11-19-library-surface-design.md): the Agent sidebar is the
+// project tree of the live agents alone (no History row, no Conversations section), and Conversation History is Library's first tab: its
+// list of every ended session, a run's own pane at full width, a session read in place with Resume, Esc back to the surface that
+// opened it, `g s` and `g l`, the list cursor leaving with the surface, a scan that fails and retries, and a rail with Library on it
+// (Diff on Ctrl+6, Library on Ctrl+7). One live fixture agent gives the project tree its folder; GetSessionsActivity is answered
+// in-page (see installAhMock). The ghost's project is registered for the run, since the app bar's switcher offers registered projects
+// only. Resume is asserted present, never clicked: it would start a real agent. Keys are synthetic keydowns at the focused element,
+// as docReviewEscape sends them.
 const AH_LIVE_ID = "fx-ah-live";
 const AH_PROJECT = "waveterm";
 const AH_GHOST = "ah-ghost";
-// ended solo sessions ah-1 (newest) .. ah-<AH_SEEDS> under AH_PROJECT, AH_PAGE of them shown before Show more; the ghost's one is newer
+// ended solo sessions ah-1 (newest) .. ah-<AH_SEEDS> under AH_PROJECT; the ghost's one is newer
 const AH_SEEDS = 22;
-const AH_PAGE = 10; // CONVERSATION_PAGE (agentsidebarmodel.ts)
-const AH_FOLDS_KEYS = ["agent.tree.sections.collapsed", "agent.tree.conversations.collapsed"];
 const AH_ANSWER = "history seed answer";
 const AH_MOCK_KEY = "__arcAgentHistoryMock";
-const AH_CURSOR_STEP = "14. History's list cursor is withdrawn while another surface shows, and is back with the surface";
-const AH_SCAN_GAP_MS = 5400; // the sidebar rescans on re-entry at most every 5s (agentsidebarmodel.ts scanDue)
+const AH_CURSOR_STEP = "12. History's list cursor is withdrawn while another surface shows, and is back with the surface";
+// the longest gap the sessions scans of Library and the project Overview's History leave between two reads (a re-entry rescans)
+const AH_SCAN_GAP_MS = 5400;
 const AH_TERMINAL = `document.querySelector('[data-agent-terminal="${AH_LIVE_ID}"]')`;
 
 const ahNap = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -17483,21 +17548,10 @@ async function ahListNavSurface(h, urls) {
     }
 }
 
-// the Conversations section's rows in order: a folder as "folder:<project>", a session as its key, a run as "run:<id>", Show more as
-// "more:<project>:<hidden>"; the recency headings are left out (step 3b reads them)
-const ahList = (h) =>
-    h.ev(`[...document.querySelectorAll(
-        "[data-agent-conversations] [data-agent-folder], [data-agent-conversations] [data-agent-session-row], [data-agent-conversations] [data-agent-run-conversation], [data-agent-sessions-more]"
-    )].map((r) =>
-        r.hasAttribute("data-agent-folder")
-            ? "folder:" + r.getAttribute("data-agent-folder")
-            : r.hasAttribute("data-agent-sessions-more")
-              ? "more:" + r.getAttribute("data-agent-sessions-more") + ":" + (r.textContent.match(/\\d+/)?.[0] ?? "")
-              : r.hasAttribute("data-agent-run-conversation")
-                ? "run:" + r.getAttribute("data-agent-run-conversation")
-                : r.getAttribute("data-agent-session-row")
-    )`);
-const ahKeys = (n, from = 1) => Array.from({ length: n }, (_, i) => `claude:ah-${i + from}`);
+// Library's Conversations list, as the one scenarios read cards from: History's left column, whose cards are its buttons
+// and (for a run) its rounded boxes. A card is found by text, since a card carries no key of its own.
+const AH_CARDS = `[...document.querySelectorAll('[data-agent-history] [data-history-list] button.border, [data-agent-history] [data-history-list] div.border')]`;
+const ahCardWith = (text) => `(${AH_CARDS}.find((c) => c.textContent.includes(${JSON.stringify(text)})))`;
 
 const ahMockCalls = (h) => h.ev(`window.${AH_MOCK_KEY}?.state.calls ?? -1`);
 
@@ -17528,7 +17582,6 @@ const agentHistory = {
         const ctx = {
             cwd,
             prevCollapsed: await h.ev(`localStorage.getItem(${JSON.stringify(TREE_COLLAPSED_KEY)})`),
-            prevFolds: await h.ev(`${JSON.stringify(AH_FOLDS_KEYS)}.map((k) => localStorage.getItem(k))`),
         };
         // a throw past this point still returns ctx, so teardown removes whatever was already made
         try {
@@ -17564,15 +17617,14 @@ const agentHistory = {
             );
             ctx.wroteFixture = true;
             await h.ev(`localStorage.removeItem(${JSON.stringify(TREE_COLLAPSED_KEY)})`);
-            await h.ev(`${JSON.stringify(AH_FOLDS_KEYS)}.forEach((k) => localStorage.removeItem(k))`);
             // the switcher offers registered projects only; the reload below boots a frontend that has it
             ctx.ghostDir = join(cwd, "ghost");
             mkdirSync(ctx.ghostDir);
             await h.rpc("createproject", { name: AH_GHOST, path: ctx.ghostDir });
             ctx.ghostRegistered = true;
             await waitForProjectInConfig(h, AH_GHOST);
-            // the sidebar's Conversations lists registered projects only (registeredConversations), so the seeds'
-            // project is registered too, unless this store already has it
+            // the live agent's project folder in the tree belongs to a registered project, so the seeds' project is
+            // registered too, unless this store already has it
             if ((await h.rpc("getfullconfig", null))?.projects?.[AH_PROJECT] == null) {
                 ctx.mainDir = join(cwd, AH_PROJECT);
                 mkdirSync(ctx.mainDir);
@@ -17602,184 +17654,111 @@ const agentHistory = {
                 ctx.arrangeError ?? `mock=${ctx.mock}`
             );
 
-            // the runner has entered Agent, which starts the scan; if the rows are not there, enter again once the scan gap has passed
-            let loaded = await ahWait(h, `document.querySelectorAll('[data-agent-session-row]').length > 0`, 8000);
-            if (!loaded) {
-                await h.goto("cockpit");
-                await ahNap(AH_SCAN_GAP_MS);
-                await h.goto("agent");
-                loaded = await ahWait(h, `document.querySelectorAll('[data-agent-session-row]').length > 0`, 8000);
-            }
-            rec("1. the first scan filled the sidebar's session rows", loaded === true, `loaded=${loaded}`);
+            // Library's Conversations tab scans when it mounts: the rail opens it, and the mock answers the scan
+            await openLibraryTab(h, "conversations");
+            const loaded = await ahWait(h, `${ahCardWith("history seed 1")} != null`, 10_000);
+            rec("1. the rail's Library opens Conversation History, and its scan filled the list", loaded === true, `loaded=${loaded}`);
 
-            const head = await h.ev(`(() => {
-                const tree = document.querySelector("[data-agent-tree]");
-                return tree ? [...tree.querySelectorAll("button")].slice(0, 1).map((b) => b.textContent.trim()) : null;
+            await h.goto("agent");
+            const tree = await h.ev(`(() => {
+                const t = document.querySelector("[data-agent-tree]");
+                return {
+                    present: t != null,
+                    first: t ? [...t.querySelectorAll("button")].slice(0, 1).map((b) => b.textContent.trim()) : null,
+                    openers: document.querySelectorAll("[data-agent-history-open], [data-agent-canvases-open], [data-agent-councils-open], [data-agent-conversations]").length,
+                    live: !!t?.querySelector('[data-agent-row="${AH_LIVE_ID}"]'),
+                };
             })()`);
             rec(
-                "2. the tree opens with Conversation History (New agent is the app bar's)",
-                JSON.stringify(head) === JSON.stringify(["Conversation History"]),
-                JSON.stringify(head)
+                "2. the Agent tree opens on its live agents: no Conversation History, Canvas gallery or Councils row, no Conversations section",
+                tree.present &&
+                    tree.live &&
+                    tree.openers === 0 &&
+                    !/Conversation History|Canvas gallery|Councils|Conversations/.test((tree.first ?? []).join(" ")),
+                JSON.stringify(tree)
             );
 
-            const first = await ahList(h);
-            // the ghost's session moved after ah-1, so its folder comes first
-            const firstPage = [
-                `folder:${AH_GHOST}`,
-                "claude:ah-g1",
-                "run:ah-run-1",
-                `folder:${AH_PROJECT}`,
-                ...ahKeys(AH_PAGE),
-                `more:${AH_PROJECT}:${AH_SEEDS - AH_PAGE}`,
-            ];
-            rec(
-                `3. Conversations files the ended sessions in a folder per project, the newest folder first, ${AH_PAGE} of a folder before its Show more; not the live agent's own session, and a run's sessions as one run entry`,
-                JSON.stringify(first) === JSON.stringify(firstPage),
-                JSON.stringify(first)
-            );
-
-            // no recency headings: each row reads its own age. Conversations are one line since 3d2c74b6e: a session's line holds
-            // its title, tokens and age, and a second line comes only for a branch other than the default (the seeds' "main" is
-            // not shown) or a title another row shares; a run's second line is its task progress, ahead of its segment bar
-            const rich = await h.ev(`(() => {
-                const convo = document.querySelector("[data-agent-conversations]");
-                const row = convo?.querySelector('[data-agent-session-row="claude:ah-1"]');
-                const run = convo?.querySelector('[data-agent-run-conversation="ah-run-1"]');
+            await openLibraryTab(h, "conversations");
+            const listed = await h.ev(`(() => {
+                const text = (document.querySelector("[data-history-list]")?.textContent ?? "").replace(/\\s+/g, " ");
                 return {
-                    headings: [...(convo?.querySelectorAll("[data-agent-recency]") ?? [])].map((e) => e.getAttribute("data-agent-recency")),
-                    meta: row?.lastElementChild?.textContent?.replace(/\\s+/g, " ").trim() ?? null,
-                    run: run?.children[1]?.textContent?.replace(/\\s+/g, " ").trim() ?? null,
+                    oldest: text.includes("history seed ${AH_SEEDS}"),
+                    ghost: text.includes("ghost prompt"),
+                    live: text.includes("ah live prompt"),
+                    liveCount: (document.querySelector("[data-agent-history]")?.textContent ?? "").match(/(\\d+) live/)?.[1] ?? null,
                 };
             })()`);
             await h.shot("cdp-shots/agent-history-rows.png");
             rec(
-                "3b. no recency heading splits a folder, and a row's line reads its tokens and age without the default branch, a run's second line its progress",
-                rich.headings.length === 0 &&
-                    !/main/.test(rich.meta ?? "") &&
-                    /1k10m$/.test(rich.meta ?? "") &&
-                    /landed|no tasks|complete/.test(rich.run ?? ""),
-                JSON.stringify(rich)
+                "3. Conversation History lists every session down to the oldest seed, the ghost project's too, and the live agent's own as live",
+                listed.oldest && listed.ghost && listed.live && listed.liveCount === "1",
+                JSON.stringify(listed)
             );
 
-            // a run's row reads its detail in the centre, on its first member with a session (ah-run-1 has no lead), not
-            // inside History; its back button returns to the terminal
-            await h.ev(`document.querySelector('[data-agent-run-conversation="ah-run-1"]')?.click()`);
-            const runPane = await ahWait(h, `document.querySelector('[data-agent-run-pane="ah-run-1"]')`, 4000);
+            // a run opened from outside Library (the Agent tree's run origin, a Brief row) reads in a pane of its own at full
+            // width, on its first member with a session (ah-run-1 has no lead), with no list beside it; its Back returns to the
+            // Agent surface it was opened from. The run's card in the list reads the same detail in place, so the run is
+            // opened here the way those routes open a run's worker (the run origin, a Brief row): showLibrarySession on the
+            // selection sessionSelection gives its session, which names the run and the member in view
+            await h.goto("agent");
+            await agentPageFixtures.agentPage(
+                h,
+                `const L = await mod("app/view/library/librarystore.ts");
+                const A = await mod("app/view/agents/sessionsarchivestore.ts");
+                const R = await mod("app/view/agents/sessionsruns.ts");
+                const worker = (globalStore.get(A.sessionsArchiveAtom) ?? []).find((s) => s.id === "ah-run");
+                const to = R.sessionSelection(worker);
+                L.showLibrarySession(agentsModel(), to.sel, to.member);
+                return true;`
+            );
+            const runPane = await ahWait(h, `document.querySelector('[data-agent-run-pane="ah-run-1"]')`, 6000);
             const runOpen = await h.ev(`(() => ({
                 history: !!document.querySelector("[data-agent-history]"),
                 member: [...document.querySelectorAll('[data-agent-run-pane] h3')].at(-1)?.textContent?.trim() ?? null,
-                selected: document.querySelector('[data-agent-run-conversation="ah-run-1"]')?.className.includes("bg-surface-selected") ?? false,
+                surface: null,
             }))()`);
+            runOpen.surface = await h.activeSurfaceLabel();
             await h.shot("cdp-shots/agent-history-run.png");
             await h.ev(`document.querySelector("[data-agent-run-pane] [data-agent-session-back]")?.click()`);
             const runClosed = await ahWait(h, `!document.querySelector("[data-agent-run-pane]")`, 3000);
+            const runBack = await h.activeSurfaceLabel();
             rec(
-                "3c. a run's row opens its own pane, not History, on its first task, and Back returns to the terminal",
-                runPane && !runOpen.history && /Task 1/.test(runOpen.member ?? "") && runOpen.selected && runClosed,
-                JSON.stringify({ runPane, ...runOpen, runClosed })
+                "3c. a run opened from Agent reads in Library's own pane, not beside the list, on its first task, and Back returns to Agent",
+                runPane && !runOpen.history && /Task 1/.test(runOpen.member ?? "") && runOpen.surface === "Library" && runClosed && runBack === "Agent",
+                JSON.stringify({ runPane, ...runOpen, runClosed, runBack })
             );
 
+            // the Agent tree is the project tree alone: the live agent sits in its project's folder, a project with no live
+            // agent has no folder, no ended session is listed in it and no section header splits it
+            await h.goto("agent");
             const split = await h.ev(`(() => {
                 const tree = document.querySelector("[data-agent-tree]");
                 const active = tree?.querySelector("[data-agent-active-rows]");
-                const convo = tree?.querySelector("[data-agent-conversations]");
-                const ghostRow = tree?.querySelector('[data-agent-session-row][data-agent-session-project="${AH_GHOST}"]');
                 return {
                     headings: [...(tree?.querySelectorAll("span") ?? [])]
                         .map((s) => s.textContent.trim())
                         .filter((t) => t === "Conversations"),
                     liveInActive: !!active?.querySelector('[data-agent-row="${AH_LIVE_ID}"]'),
-                    liveInConversations: !!convo?.querySelector('[data-agent-row="${AH_LIVE_ID}"]'),
-                    sessionsInActive: active?.querySelectorAll("[data-agent-session-row]").length ?? -1,
-                    activeAboveConversations: !!active && !!convo && !!(active.compareDocumentPosition(convo) & Node.DOCUMENT_POSITION_FOLLOWING),
-                    ghostRows: tree?.querySelectorAll('[data-agent-session-project="${AH_GHOST}"]').length ?? -1,
-                    ghostActiveFolder: !!tree?.querySelector('[data-agent-folder-section="active"][data-agent-folder="${AH_GHOST}"]'),
-                    ghostConversationsFolder: !!ghostRow && !!convo?.querySelector('[data-agent-folder-section="conversations"][data-agent-folder="${AH_GHOST}"]'),
-                    toggles: [...(tree?.querySelectorAll("[data-agent-section-toggle]") ?? [])]
-                        .map((b) => b.getAttribute("data-agent-section-toggle") + ":" + b.getAttribute("aria-expanded")),
+                    projectFolder: !!tree?.querySelector('[data-agent-folder-section="active"][data-project-folder="${AH_PROJECT}"]'),
+                    ghostFolder: !!tree?.querySelector('[data-agent-folder-section="active"][data-project-folder="${AH_GHOST}"]'),
+                    endedRows: tree?.querySelectorAll("[data-agent-session-row], [data-agent-run-conversation]").length ?? -1,
+                    toggles: tree?.querySelectorAll("[data-agent-section-toggle]").length ?? -1,
                 };
             })()`);
             rec(
-                "4. live agents are in the project tree and ended sessions in Conversations below it, never mixed; a project with no live agent has a Conversations folder and no project one; the Conversations header folds, open by default, and the project tree has no header of its own",
-                JSON.stringify(split.headings) === JSON.stringify(["Conversations"]) &&
+                "4. live agents are in the project tree, in their project's folder; a project with no live agent has no folder, and the tree lists no ended session and has no section header",
+                split.headings.length === 0 &&
                     split.liveInActive &&
-                    !split.liveInConversations &&
-                    split.sessionsInActive === 0 &&
-                    split.activeAboveConversations &&
-                    split.ghostRows === 2 &&
-                    !split.ghostActiveFolder &&
-                    split.ghostConversationsFolder &&
-                    JSON.stringify(split.toggles) === JSON.stringify(["conversations:true"]),
+                    split.projectFolder &&
+                    !split.ghostFolder &&
+                    split.endedRows === 0 &&
+                    split.toggles === 0,
                 JSON.stringify(split)
             );
 
-            const age = await h.ev(
-                `document.querySelector('[data-agent-session-row="claude:ah-1"] [data-agent-session-age]')?.textContent?.trim() ?? null`
-            );
-            rec("5. a row carries its relative time (ah-1 moved 10 minutes ago)", /^\d+m$/.test(age ?? ""), `age=${age}`);
-
-            // a press shows one page more: AH_SEEDS (22) takes two
-            const more = `document.querySelector('[data-agent-sessions-more="${AH_PROJECT}"]')`;
-            await h.ev(`${more}?.click()`);
-            await ahWait(h, `document.querySelectorAll("[data-agent-conversations] [data-agent-session-row]").length === ${2 * AH_PAGE + 1}`, 4000);
-            const once = await ahList(h);
-            await h.ev(`${more}?.click()`);
-            await ahWait(
-                h,
-                `document.querySelectorAll("[data-agent-conversations] [data-agent-session-row]").length === ${AH_SEEDS + 1} &&
-                    !document.querySelector("[data-agent-sessions-more]")`,
-                4000
-            );
-            const all = await ahList(h);
-            rec(
-                "6. each Show more press lists one page more of its folder, and the button goes once nothing is hidden",
-                once[once.length - 1] === `more:${AH_PROJECT}:${AH_SEEDS - 2 * AH_PAGE}` &&
-                    JSON.stringify(all) ===
-                        JSON.stringify([
-                            `folder:${AH_GHOST}`,
-                            "claude:ah-g1",
-                            "run:ah-run-1",
-                            `folder:${AH_PROJECT}`,
-                            ...ahKeys(AH_SEEDS),
-                        ]),
-                JSON.stringify({ once: once.length, onceLast: once[once.length - 1], rows: all.length, last: all[all.length - 1] })
-            );
-
-            // Show less folds the folder back to its first page in one press; two Show more presses put it back for what follows
-            const less = `document.querySelector('[data-agent-sessions-less="${AH_PROJECT}"]')`;
-            const lessShown = await h.ev(`!!${less}`);
-            await h.ev(`${less}?.click()`);
-            await ahWait(h, `document.querySelectorAll("[data-agent-conversations] [data-agent-session-row]").length === ${AH_PAGE + 1}`, 4000);
-            const folded1 = await ahList(h);
-            const lessGone = await h.ev(`!${less}`);
-            await h.ev(`${more}?.click()`);
-            await ahWait(h, `document.querySelectorAll("[data-agent-conversations] [data-agent-session-row]").length === ${2 * AH_PAGE + 1}`, 4000);
-            await h.ev(`${more}?.click()`);
-            await ahWait(h, `document.querySelectorAll("[data-agent-conversations] [data-agent-session-row]").length === ${AH_SEEDS + 1}`, 4000);
-            rec(
-                "6a. Show less, offered once a press opened more, folds the folder back to its first page",
-                lessShown === true && lessGone === true && folded1[folded1.length - 1] === `more:${AH_PROJECT}:${AH_SEEDS - AH_PAGE}`,
-                JSON.stringify({ lessShown, lessGone, last: folded1[folded1.length - 1] })
-            );
-
-            // a folder folds to its row, keeping its count; a section folds to its header. Each click is undone at once.
-            // A fold slides shut (7725cc8da, foldReveal's 0.28 s exit) and its rows stay in the page until it ends, so each
-            // step waits for the rows to go or come back rather than napping
-            const sessionRows = `document.querySelectorAll("[data-agent-conversations] [data-agent-session-row]").length`;
-            const folderBtn = `document.querySelector('[data-agent-folder-section="conversations"][data-agent-folder="${AH_PROJECT}"]')`;
-            await h.ev(`${folderBtn}?.querySelector("[data-agent-folder-toggle]")?.click()`);
-            await ahWait(h, `${sessionRows} === 1`, 4000);
-            const folded = await ahList(h);
-            const foldedCount = await h.ev(`${folderBtn}?.textContent?.trim() ?? null`);
-            await h.ev(`${folderBtn}?.querySelector("[data-agent-folder-toggle]")?.click()`);
-            await ahWait(h, `${sessionRows} === ${AH_SEEDS + 1}`, 4000);
-            const conversationsToggle = `document.querySelector('[data-agent-section-toggle="conversations"]')`;
-            await h.ev(`${conversationsToggle}?.click()`);
-            await ahWait(h, `document.querySelectorAll("[data-agent-conversations] [data-agent-folder]").length === 0`, 4000);
-            const noConversations = await h.ev(`document.querySelectorAll("[data-agent-conversations] [data-agent-folder]").length === 0`);
-            await h.ev(`${conversationsToggle}?.click()`);
-            await ahWait(h, `${sessionRows} === ${AH_SEEDS + 1}`, 4000);
-            // the project tree has no section header: its project's folder folds to its row, taking the agent with it
+            // a project's folder folds to its row, taking its agent with it, and the click is undone at once. A fold slides shut
+            // (7725cc8da, foldReveal's 0.28 s exit) and its rows stay in the page until it ends, so each step waits for the
+            // rows to go or come back rather than napping
             const activeToggle = `document.querySelector('[data-project-folder="${AH_PROJECT}"]')`;
             const activeRow = `document.querySelector('[data-agent-active-rows] [data-agent-row="${AH_LIVE_ID}"]')`;
             await h.ev(`${activeToggle}?.querySelector("[data-agent-folder-toggle]")?.click()`);
@@ -17792,22 +17771,16 @@ const agentHistory = {
             await ahWait(h, activeRow, 4000);
             const restored = await h.ev(`!!${activeRow}`);
             rec(
-                "6b. a Conversations folder folds to its row and count, the Conversations section folds to its header and back, and a project folder of the tree folds to its row and back",
-                JSON.stringify(folded) ===
-                    JSON.stringify([`folder:${AH_GHOST}`, "claude:ah-g1", "run:ah-run-1", `folder:${AH_PROJECT}`]) &&
-                    (foldedCount ?? "").endsWith(String(AH_SEEDS)) &&
-                    noConversations === true &&
-                    activeFolded.rows === false &&
-                    activeFolded.expanded === "false" &&
-                    restored === true,
-                JSON.stringify({ folded, foldedCount, noConversations, activeFolded, restored })
+                "5. a project folder of the tree folds to its row, taking its agent with it, and back",
+                activeFolded.rows === false && activeFolded.expanded === "false" && restored === true,
+                JSON.stringify({ activeFolded, restored })
             );
 
             // the app bar's switcher narrows the whole sidebar to its project, flat (one project needs no folder), and names the
-            // project plainly; Active says how many live agents it hides, and that line widens the sidebar again
+            // project plainly; Active says how many live agents it hides, and that line widens the sidebar again. Library lists
+            // every project whatever the switcher says: a conversation from any folder is found there
             const picked = await setBarProject(h, AH_GHOST);
             await ahNap(400);
-            const narrowed = await ahList(h);
             const narrowedMarks = await h.ev(`(() => ({
                 label: document.querySelector('[data-project-switcher="bar"]')?.textContent?.trim() ?? null,
                 live: !!document.querySelector('[data-agent-tree] [data-agent-row="${AH_LIVE_ID}"]'),
@@ -17817,140 +17790,140 @@ const agentHistory = {
             await h.shot("cdp-shots/agent-history-filtered.png");
             await h.ev(`document.querySelector("[data-agent-elsewhere]")?.click()`);
             await ahNap(400);
-            const widened = await ahList(h);
+            const widened = await h.ev(`!!document.querySelector('[data-agent-tree] [data-agent-row="${AH_LIVE_ID}"]')`);
             const widenedLabel = await h.ev(`document.querySelector('[data-project-switcher="bar"]')?.textContent?.trim() ?? null`);
             rec(
-                "6c. choosing a project in the app bar narrows the sidebar to it, flat, under a plain label; Active counts the agents it hides, and that line brings every project back",
+                "6. choosing a project in the app bar narrows the sidebar to it, flat, under a plain label; Active counts the agents it hides, and that line brings every project back",
                 picked === true &&
-                    JSON.stringify(narrowed) === JSON.stringify(["claude:ah-g1", "run:ah-run-1"]) &&
                     narrowedMarks.label === AH_GHOST &&
                     narrowedMarks.live === false &&
                     /^1 in other project/.test(narrowedMarks.elsewhere ?? "") &&
                     narrowedMarks.folders === 0 &&
-                    widened.length === AH_SEEDS + 4 &&
+                    widened === true &&
                     widenedLabel === "All projects",
-                JSON.stringify({ picked, narrowed, ...narrowedMarks, widened: widened.length, widenedLabel })
+                JSON.stringify({ picked, ...narrowedMarks, widened, widenedLabel })
             );
 
-            await h.ev(`document.querySelector('[data-agent-session-row="claude:ah-1"]')?.click()`);
-            const sessionShown = await ahWait(h, `document.querySelector('[data-agent-session]')`);
+            // a session's card reads its transcript in place, beside the list: Resume, and the answer the transcript holds. Library
+            // is a surface of its own, so the Agent terminal stays mounted under it, hidden
+            await h.goto("agent");
+            await openLibraryTab(h, "conversations");
+            await ahWait(h, `${ahCardWith("history seed 1")} != null`, 10_000);
+            await h.ev(`(() => { const c = ${ahCardWith("history seed 1")}; (c?.querySelector?.("button") ?? c)?.click(); })()`);
             const answered = await ahWait(
                 h,
-                `document.querySelector('[data-agent-session]')?.textContent?.includes(${JSON.stringify(AH_ANSWER)})`
+                `document.querySelector('[data-history-detail]')?.textContent?.includes(${JSON.stringify(AH_ANSWER)})`,
+                8000
             );
             const pane = await h.ev(`(() => {
                 const t = ${AH_TERMINAL};
+                const detail = document.querySelector("[data-history-detail]");
                 return {
-                    resume: [...(document.querySelector("[data-agent-session]")?.querySelectorAll("button") ?? [])]
-                        .some((b) => /^Resume/.test((b.textContent || "").trim())),
+                    resume: [...(detail?.querySelectorAll("button") ?? [])].some((b) => /^Resume/.test((b.textContent || "").trim())),
+                    inPlace: document.querySelector("[data-history-list]") != null && document.querySelector("[data-agent-session]") == null,
                     terminalMounted: t != null,
                     terminalVisible: t?.checkVisibility() ?? null,
-                    rail: document.querySelector('aside[aria-label="Agent details"]') != null,
-                    selected: document.querySelector('[data-agent-session-row="claude:ah-1"]')?.className.includes("bg-surface-selected") ?? false,
+                    selected: (document.querySelector("[data-history-list] .bg-surface-selected")?.textContent ?? "").includes("history seed 1"),
                 };
             })()`);
             rec(
-                "7. clicking an ended session reads its transcript with Resume, over a terminal that stays mounted but hidden, with no rail",
-                sessionShown &&
-                    answered === true &&
-                    pane.resume &&
-                    pane.terminalMounted &&
-                    pane.terminalVisible === false &&
-                    !pane.rail &&
-                    pane.selected,
-                JSON.stringify({ sessionShown: !!sessionShown, answered, ...pane })
+                "7. clicking an ended session's card reads its transcript beside the list with Resume, and the Agent terminal stays mounted but hidden",
+                answered === true && pane.resume && pane.inPlace && pane.terminalMounted && pane.terminalVisible === false && pane.selected,
+                JSON.stringify({ answered, ...pane })
             );
             await h.shot("cdp-shots/agent-history-session.png");
 
+            // Library opened by hand from the rail has nowhere to go back to (the rail clears the jump trail): Esc, with nothing
+            // open in it, goes home to the Cockpit
+            await h.ev(`document.activeElement?.blur?.()`);
             await ahKey(h, "Escape", "Escape");
-            await ahNap(500);
-            const back = await h.ev(`(() => {
-                const t = ${AH_TERMINAL};
-                return {
-                    session: document.querySelector("[data-agent-session]") != null,
-                    terminalVisible: t?.checkVisibility() ?? null,
-                    // the rail's own selector, so its absence under the session and History (steps 7 and 9) means something
-                    rail: document.querySelector('aside[aria-label="Agent details"]') != null,
-                };
-            })()`);
+            await ahNap(600);
+            const home = await h.ev(`document.querySelector("[data-library]") == null`);
+            const homeSurface = await h.activeSurfaceLabel();
             rec(
-                "8. Esc returns from the session to the terminal and its rail",
-                back.session === false && back.terminalVisible === true && back.rail === true,
-                JSON.stringify(back)
+                "8. Esc on Library opened from the rail, with nothing open in it, leaves it for the Cockpit",
+                home === true && homeSurface === "Cockpit",
+                JSON.stringify({ home, homeSurface })
             );
 
-            await h.ev(`document.querySelector("[data-agent-history-open]")?.click()`);
-            await ahNap(800);
-            const hist = await h.ev(`(() => {
-                const root = document.querySelector("[data-agent-history]");
-                return {
-                    open: root != null,
-                    title: root?.querySelector("h1")?.textContent ?? null,
-                    feed: root?.textContent?.includes("All activity") ?? false,
-                    oldest: root?.textContent?.includes(${JSON.stringify(`history seed ${AH_SEEDS}`)}) ?? false,
-                    rail: document.querySelector('aside[aria-label="Agent details"]') != null,
-                    terminalVisible: ${AH_TERMINAL}?.checkVisibility() ?? null,
-                    current: document.querySelector("[data-agent-history-open]")?.getAttribute("aria-current") === "true",
-                };
-            })()`);
-            rec(
-                "9. Conversation History lists every session (down to the oldest seed), marks its button current, hides the rail, and keeps the terminal mounted",
-                hist.open &&
-                    hist.title === "Conversation History" &&
-                    hist.feed &&
-                    hist.oldest &&
-                    hist.current &&
-                    !hist.rail &&
-                    hist.terminalVisible === false,
-                JSON.stringify(hist)
-            );
-            await h.shot("cdp-shots/agent-history-history.png");
-
-            await ahKey(h, "Escape", "Escape");
-            await ahNap(500);
-            const closed = await h.ev(`document.querySelector("[data-agent-history]") == null`);
-            rec("10. Esc closes History", closed === true, `closed=${closed}`);
-
-            // Ctrl+g is the leader alias that works wherever focus is, even if the terminal took it back
+            // Ctrl+g is the leader alias that works wherever focus is, even if the terminal took it back: g s keeps its id
+            // (go:history) and opens Library on Conversations, g l opens Library; a jump by the leader remembers Agent, so Esc
+            // returns there, onto the terminal and its rail
+            await h.goto("agent");
             await ahKey(h, "g", "KeyG", MOD_KEY);
             await ahNap(150);
             await ahKey(h, "s", "KeyS");
-            const viaLeader = await ahWait(h, `document.querySelector("[data-agent-history]")`, 3000);
-            rec("11. g s opens Conversation History in the Agent surface", !!viaLeader, `history=${!!viaLeader}`);
+            const viaLeader = await ahWait(h, `document.querySelector('[data-library][data-library-active="conversations"] [data-agent-history]')`, 3000);
+            const leaderSurface = await h.activeSurfaceLabel();
+            await h.shot("cdp-shots/agent-history-history.png");
             await ahKey(h, "Escape", "Escape");
-            await ahNap(400);
+            await ahNap(600);
+            const back = await h.ev(`(() => {
+                const t = ${AH_TERMINAL};
+                return {
+                    library: document.querySelector("[data-library]") != null,
+                    terminalVisible: t?.checkVisibility() ?? null,
+                    rail: document.querySelector('aside[aria-label="Agent details"]') != null,
+                };
+            })()`);
+            const backSurface = await h.activeSurfaceLabel();
+            await ahKey(h, "g", "KeyG", MOD_KEY);
+            await ahNap(150);
+            await ahKey(h, "l", "KeyL");
+            const viaL = await ahWait(h, `document.querySelector("[data-library]")`, 3000);
+            await ahKey(h, "Escape", "Escape");
+            await ahNap(600);
+            // g l is a plain surface jump, as Ctrl+7 and the rail are: it leaves no way back, so Esc goes home to the Cockpit
+            const backAgain = await h.activeSurfaceLabel();
+            rec(
+                "9. g s opens Conversation History in Library and Esc returns to the Agent surface the leader left, on its terminal and rail; g l opens Library like the chord does, and Esc from it goes home to the Cockpit",
+                !!viaLeader &&
+                    leaderSurface === "Library" &&
+                    back.library === false &&
+                    back.terminalVisible === true &&
+                    back.rail === true &&
+                    backSurface === "Agent" &&
+                    !!viaL &&
+                    backAgain === "Cockpit",
+                JSON.stringify({ viaLeader: !!viaLeader, leaderSurface, ...back, backSurface, viaL: !!viaL, backAgain })
+            );
 
             const nav = await h.ev(`[...document.querySelectorAll("nav button")].map((b) => b.getAttribute("aria-label"))`);
             await ahKey(h, "6", "Digit6", MOD_KEY);
             await ahNap(800);
             const afterChord = await h.activeSurfaceLabel();
+            await ahKey(h, "7", "Digit7", MOD_KEY);
+            await ahNap(800);
+            const afterLibraryChord = await h.activeSurfaceLabel();
             rec(
-                "12. the rail has six surfaces in two groups and no Sessions or Radar, and Ctrl+6 opens Diff",
+                "10. the rail has seven surfaces in two groups with Library fifth and no Sessions or Radar, Ctrl+6 opens Diff and Ctrl+7 opens Library",
                 !nav.includes("Sessions") &&
                     !nav.includes("Radar") &&
-                    JSON.stringify(nav.slice(0, 6)) === JSON.stringify(["Cockpit", "Jarvis", "Agent", "Usage", "Code", "Diff"]) &&
-                    afterChord === "Diff",
-                JSON.stringify({ nav, afterChord })
+                    JSON.stringify(nav.slice(0, 7)) ===
+                        JSON.stringify(["Cockpit", "Jarvis", "Agent", "Usage", "Library", "Code", "Diff"]) &&
+                    afterChord === "Diff" &&
+                    afterLibraryChord === "Library",
+                JSON.stringify({ nav, afterChord, afterLibraryChord })
             );
 
-            // coming back after the scan gap rescans (the mock counts the calls); away from the surface nothing scans
+            // coming back to Library rescans (the mock counts the calls); away from the surface nothing scans
             const before = await ahMockCalls(h);
             await h.goto("cockpit");
             await ahNap(AH_SCAN_GAP_MS);
             const away = await ahMockCalls(h);
-            await h.goto("agent");
+            await h.goto("library");
             // the scan starts after the next paint
             await ahWait(h, `window.${AH_MOCK_KEY}?.state.calls > ${away}`, 5000);
             const after = await ahMockCalls(h);
             rec(
-                "13. entering the Agent surface again rescans, and nothing polls in between",
+                "11. entering Library again rescans, and nothing polls in between",
                 before >= 0 && away === before && after > away,
                 `calls ${before} -> ${away} -> ${after}`
             );
 
-            // History stays open under a hidden Agent surface, and its list cursor must go with the surface: left published
-            // (surface "agent") it would take j/k from the list of whichever surface shows. Not reaching the app's store is a SKIP,
-            // reaching it and reading the wrong owner a FAIL.
+            // The list cursor must go with the surface: Library unmounts when another surface shows, and left published (surface
+            // "library") its cursor would take j/k from the list of whichever surface shows. Not reaching the app's store is a
+            // SKIP, reaching it and reading the wrong owner a FAIL.
             const modules = ctx.modules ?? { error: "arrange stopped before it resolved them" };
             if (modules.urls == null) {
                 steps.push(
@@ -17960,16 +17933,17 @@ const agentHistory = {
                     )
                 );
             } else {
-                await h.ev(`document.querySelector("[data-agent-history-open]")?.click()`);
-                const reopened = await ahWait(h, `document.querySelector("[data-agent-history]")`, 4000);
+                await openLibraryTab(h, "conversations");
+                const reopened = await ahWait(h, `document.querySelector("[data-library] [data-agent-history]")`, 4000);
                 await ahNap(300);
                 const owner = await ahListNavSurface(h, modules.urls);
                 await ahKey(h, "6", "Digit6", MOD_KEY);
                 await ahNap(800);
                 const elsewhere = await h.activeSurfaceLabel();
                 const withdrawn = await ahListNavSurface(h, modules.urls);
-                await h.goto("agent");
-                const kept = await h.ev(`document.querySelector("[data-agent-history]") != null`);
+                await openLibraryTab(h, "conversations");
+                const kept = await h.ev(`document.querySelector("[data-library] [data-agent-history]") != null`);
+                await ahNap(300);
                 const republished = await ahListNavSurface(h, modules.urls);
                 const unreachable = [owner, withdrawn, republished].find((r) => r.unreachable != null)?.unreachable;
                 steps.push(
@@ -17982,28 +17956,28 @@ const agentHistory = {
                               step: AH_CURSOR_STEP,
                               ok:
                                   reopened === true &&
-                                  owner.surface === "agent" &&
+                                  owner.surface === "library" &&
                                   elsewhere === "Diff" &&
-                                  withdrawn.surface !== "agent" &&
+                                  withdrawn.surface !== "library" &&
                                   kept === true &&
-                                  republished.surface === "agent",
+                                  republished.surface === "library",
                               detail: JSON.stringify({
                                   reopened,
-                                  onAgent: owner.surface,
+                                  onLibrary: owner.surface,
                                   elsewhere,
                                   onDiff: withdrawn.surface,
                                   historyKept: kept,
-                                  backOnAgent: republished.surface,
+                                  backOnLibrary: republished.surface,
                               }),
                           }
                 );
             }
 
-            // A scan that fails with nothing loaded (a boot scan past its deadline): the Conversations section says it could
-            // not read them, with a Retry, rather than "No past conversations", and the store retries on its own after 5 s.
+            // A scan that fails with nothing loaded (a boot scan past its deadline): Conversation History says it could not
+            // load the sessions, with a Retry, and the store retries on its own after 5 s.
             if (modules.urls != null) {
                 const u = modules.urls;
-                await h.goto("agent");
+                await openLibraryTab(h, "conversations");
                 const failed = await h.ev(`(async () => {
                     const { globalStore } = await import(${JSON.stringify(u.store)});
                     const A = await import(${JSON.stringify(u.archive)});
@@ -18012,13 +17986,14 @@ const agentHistory = {
                     await A.loadSessionsArchive();
                     return { error: globalStore.get(A.sessionsErrorAtom), archive: globalStore.get(A.sessionsArchiveAtom)?.length ?? null };
                 })()`);
-                const errorShown = await ahWait(h, `document.querySelector("[data-agent-conversations-error]") != null`, 4000);
-                const errorText = await h.ev(`document.querySelector("[data-agent-conversations-error]")?.textContent ?? null`);
-                const emptyText = await h.ev(`/No past conversations/.test(document.querySelector("[data-agent-conversations]")?.textContent ?? "")`);
+                // the banner is SurfaceError's (surfacescaffold.tsx), which has no attribute of its own: found by its words
+                const bannerText = `([...document.querySelectorAll("[data-agent-history] span")].find((s) => /Couldn.t load sessions/.test(s.textContent))?.parentElement?.textContent ?? null)`;
+                const errorShown = await ahWait(h, `${bannerText} != null`, 4000);
+                const errorText = await h.ev(bannerText);
                 await h.shot("cdp-shots/agent-history-scan-failed.png");
                 const recovered = await ahWait(
                     h,
-                    `document.querySelector("[data-agent-conversations-error]") == null && window.${AH_MOCK_KEY}?.state.fail === 0`,
+                    `${bannerText} == null && window.${AH_MOCK_KEY}?.state.fail === 0`,
                     12000
                 );
                 const after = await h.ev(`(async () => {
@@ -18028,17 +18003,16 @@ const agentHistory = {
                 })()`);
                 await h.shot("cdp-shots/agent-history-scan-retried.png");
                 rec(
-                    "15. a failed scan shows 'Could not read past conversations' with Retry, not 'No past conversations', and retries on its own",
+                    "13. a failed scan shows 'Couldn’t load sessions.' with Retry above Conversation History's list, and retries on its own",
                     failed?.error === true &&
                         failed.archive === 0 &&
                         errorShown === true &&
-                        /Could not read past conversations/.test(errorText ?? "") &&
+                        /Couldn.t load sessions/.test(errorText ?? "") &&
                         /Retry/.test(errorText ?? "") &&
-                        emptyText === false &&
                         recovered === true &&
                         after?.error === false &&
                         after.archive > 0,
-                    JSON.stringify({ failed, errorShown, errorText, emptyText, recovered, after })
+                    JSON.stringify({ failed, errorShown, errorText, recovered, after })
                 );
             }
         } catch (e) {
@@ -18057,9 +18031,6 @@ const agentHistory = {
         await step("remove the sessions mock", () => removeAhMock(h));
         if (ctx.wroteFixture) await step("remove the fixture roster", () => rmSync(TREE_RAIL_FIXTURE, { force: true }));
         await step("restore the tree fold preference", () => h.ev(restoreStorageKey(TREE_COLLAPSED_KEY, ctx.prevCollapsed)));
-        for (const [i, key] of AH_FOLDS_KEYS.entries()) {
-            await step(`restore ${key}`, () => h.ev(restoreStorageKey(key, ctx.prevFolds?.[i] ?? null)));
-        }
         await step("clear the project scope", () => setBarProject(h, "all"));
         if (ctx.ghostRegistered) {
             await step("delete the ghost's project", () => h.rpc("deleteproject", { name: AH_GHOST }));
@@ -27864,7 +27835,7 @@ const launcherResume = {
         })()`);
         await h.shot("cdp-shots/launcher-resume-6-asleep-button.png");
         rec(
-            "6a. a picked Claude session reads in the resume step with its Quick look beside Resume and Back; the dialog has no Open asleep or Transcript button (the session is opened asleep from the Agent tree's Conversations menu)",
+            "6a. a picked Claude session reads in the resume step with its Quick look beside Resume and Back; the dialog has no Open asleep or Transcript button (the session is opened asleep from a project Overview's History menu)",
             footer?.picked === ctx.sessionId &&
                 footer.peek === "Quick look" &&
                 footer.peekSession === ctx.sessionId &&
@@ -27877,36 +27848,28 @@ const launcherResume = {
         await launcherPress(h, "Escape");
         await polishWaitFor(h, `!${LAUNCHER}`, 3000);
 
-        // Open asleep is the Conversations menu's (the Agent tree and a project's History); the session is the first row
-        // of this project's folder. The dialog no longer has it.
+        // Open asleep is a project Overview History row's menu item now (the Agent tree's Conversations menu that also carried
+        // it is gone), and this project has no folder in the tree to open an Overview from: the action itself is called on the
+        // session the scan found, which is what the menu item runs.
         await h.goto("agent");
-        const sessionRow = `document.querySelector('[data-agent-session-row="claude:${ctx.sessionId}"]')`;
-        // the row comes from the Agent tree's one scan of every transcript on disk (the first 100, newest first), which
-        // takes over 30 s on a loaded machine, and a load that fails (its backend deadline passes) leaves the tree on "No
-        // past conversations" until something asks again (sessionsarchivestore.ts): so the row is waited for, and after
-        // each wait that brings nothing the store is asked again (not awaited: the call can outlast one CDP command). The
-        // section is opened only when it is folded: its header toggles, so a click on an open one folded it and hid the row.
-        let rowUp = await polishWaitFor(h, `!!${sessionRow}`, 15000);
-        for (let ask = 0; !rowUp && ask < 4; ask++) {
-            await h.ev(`(() => {
-                const head = document.querySelector('[data-agent-section-toggle="conversations"]');
-                if (head?.getAttribute('aria-expanded') === 'false') head.click();
-            })()`);
-            await agentPageFixtures.agentPage(
+        // the session comes from the app's one scan of every transcript on disk (the first 100, newest first), which takes over
+        // 30 s on a loaded machine, and a load that fails (its backend deadline passes) leaves the archive empty until something
+        // asks again (sessionsarchivestore.ts): so the archive is waited on, and after each wait that brings nothing the store is
+        // asked again (not awaited: the call can outlast one CDP command)
+        const askAsleep = (ask) =>
+            agentPageFixtures.agentPage(
                 h,
-                `const S = await mod("app/view/agents/sessionsarchivestore.ts"); void S.loadSessionsArchive(); return true;`
+                `const S = await mod("app/view/agents/sessionsarchivestore.ts");
+                const found = () => (globalStore.get(S.sessionsArchiveAtom) ?? []).find((s) => s.id === ${JSON.stringify(ctx.sessionId)});
+                if (${ask}) void S.loadSessionsArchive();
+                if (!(await until(found, ${ask ? 30000 : 15000}))) return false;
+                const D = await mod("app/view/agents/sessionsdetail.tsx");
+                D.openSessionAsleep(agentsModel(), found());
+                return true;`
             );
-            rowUp = await polishWaitFor(h, `!!${sessionRow}`, 30000);
-        }
-        if (rowUp) {
-            await h.ev(`(() => {
-                const el = ${sessionRow};
-                el.scrollIntoView({ block: "center" });
-                const r = el.getBoundingClientRect();
-                el.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: r.left + 24, clientY: r.top + r.height / 2, button: 2 }));
-            })()`);
-            await polishWaitFor(h, caMenuHas("Open asleep"), 3000);
-            await h.ev(caMenuClick("Open asleep"));
+        let rowUp = await askAsleep(false);
+        for (let ask = 0; !rowUp && ask < 4; ask++) {
+            rowUp = await askAsleep(true);
         }
         const appeared = await polishWaitFor(h, `!!(${asleepCover})`, 30000);
         const tabId = appeared ? await h.ev(`(${asleepCover})?.getAttribute('data-sleeping-transcript') ?? null`) : null;
@@ -27943,7 +27906,7 @@ const launcherResume = {
         }
         await h.shot("cdp-shots/launcher-resume-6-asleep-agent.png");
         rec(
-            "6b. Open asleep from the Agent tree's Conversations menu makes the session a new agent row with the moon; its cell shows the conversation as a bubble and the box to wake it, which says Asleep since",
+            "6b. Open asleep, the action of a project Overview's History menu, makes the session a new agent row with the moon; its cell shows the conversation as a bubble and the box to wake it, which says Asleep since",
             appeared && tabId != null && cell?.moon && cell.conversation && cell.bubble === LAUNCHER_RESUME_TASK &&
                 !cell.card && cell.asleepNote.includes("Asleep since") && /to wake it/.test(cell.composer ?? ""),
             JSON.stringify({ rowUp, appeared, tabId, bubbleUp, cell })
@@ -29062,7 +29025,7 @@ async function historyOlderReload(h) {
 }
 
 async function historyOlderOpen(h) {
-    await h.ev(`document.querySelector("[data-agent-history-open]")?.click()`);
+    await openLibraryTab(h, "conversations");
     const open = await ahWait(h, `document.querySelector("[data-agent-history]")`, 5000);
     // page 1 is the list's first rows
     const rows = await ahWait(h, `(${HISTORY_CARDS})?.length > 0`, 10000);
@@ -35496,7 +35459,7 @@ const canvasManyBoards = {
     teardown: (h, ctx) => teardownCanvasBoards(h, ctx, "canvas-many-boards"),
 };
 
-// --- Agent → Canvas gallery: the gallery, the viewer, Clean up, and the Storage card ------------------------------------
+// --- Library → Canvases: the gallery, the viewer, Clean up, and the Storage card ------------------------------------
 // docs/superpowers/specs/2026-10-14-canvas-gallery-design.md. A temp project, registered mid-run so the empty board can
 // be shown first, holds three topics: gallery-beta (one board, no preview, newest), gallery-alpha (boards Main and States,
 // a 1x1 thumb.png newer than both) and gallery-old (one board, every file 40 days back), so the grid reads beta, alpha,
@@ -35599,10 +35562,10 @@ async function cgHeap(h) {
 }
 
 // Esc out of whatever the gallery shows (a search, a canvas and its link picker, clean up, the version scan's review,
-// then the grid itself), so the next scenario meets the terminal and not a centre mode. Best effort: a teardown step
-// never throws
+// then the grid itself, which leaves Library for the Cockpit), so the next scenario meets a surface with nothing open in it.
+// Best effort: a teardown step never throws
 async function cgLeaveGallery(h) {
-    await h.goto("agent");
+    await h.goto("library");
     for (let i = 0; i < 4; i++) {
         const open = await h.ev(
             `document.querySelector("[data-canvas-gallery], [data-canvas-viewer], [data-canvas-cleanup], [data-canvas-scan], [data-canvas-link-picker]") != null`
@@ -35638,7 +35601,7 @@ async function cgTeardown(h, ctx, name, project) {
 
 const canvasGallery = {
     name: "canvas-gallery",
-    surface: "agent",
+    surface: "library",
     async arrange() {
         const ctx = { cwd: mkdtempSync(join(tmpdir(), "verify-canvas-gallery-")), registered: false };
         try {
@@ -35668,7 +35631,7 @@ const canvasGallery = {
                 ),
             ];
         }
-        await h.ev(`document.querySelector("[data-agent-canvases-open]")?.click()`);
+        await openLibraryTab(h, "canvases");
         const emptyUp = await polishWaitFor(h, `document.querySelector('[data-canvas-gallery-empty="none"]') != null`, 8000);
         const empty = await h.ev(`(() => ({
             text: document.querySelector('[data-canvas-gallery-empty="none"]')?.textContent ?? "",
@@ -35682,13 +35645,13 @@ const canvasGallery = {
             JSON.stringify({ emptyUp, ...empty })
         );
 
-        // the project is registered now; the grid reads the list when the mode mounts, so leave it and come back
+        // the project is registered now; the grid reads the list when its tab mounts, so leave the tab and come back
         ctx.registered = true;
         await h.rpc("createproject", { name: CG_PROJECT, path: ctx.cwd });
         await waitForProjectInConfig(h, CG_PROJECT);
-        await h.ev(`document.querySelector("[data-agent-history-open]")?.click()`);
+        await openLibraryTab(h, "conversations");
         await polishNap(400);
-        await h.ev(`document.querySelector("[data-agent-canvases-open]")?.click()`);
+        await openLibraryTab(h, "canvases");
 
         // 1. board Main: the grid, the card without a preview, the key hints, the arrow cursor
         const three = await polishWaitFor(h, `${CG_CARDS}.length === 3`, 10000);
@@ -35989,24 +35952,30 @@ const canvasGallery = {
             JSON.stringify({ storageUp, listed: listed.map((c) => c.topic), want, onShip, ...storage })
         );
 
-        // 6b. Open the gallery lands on Agent → Canvas gallery
+        // 6b. Open the gallery lands on Library → Canvases
         await h.ev(`document.querySelector("[data-storage-canvases-open]")?.click()`);
         const opened = await polishWaitFor(h, `document.querySelector("[data-canvas-gallery]") != null`, 5000);
         const surface = await h.activeSurfaceLabel();
-        rec("6b. Open the gallery switches to Agent with the gallery showing", opened && surface === "Agent", JSON.stringify({ opened, surface }));
+        const tab6b = await h.ev(`document.querySelector("[data-library]")?.getAttribute("data-library-active") ?? null`);
+        await h.shot("cdp-shots/canvas-gallery-storage-open.png");
+        rec(
+            "6b. Open the gallery switches to Library with the Canvases tab showing the gallery",
+            opened && surface === "Library" && tab6b === "canvases",
+            JSON.stringify({ opened, surface, tab6b })
+        );
         return steps;
     },
     teardown: (h, ctx) => cgTeardown(h, ctx, "canvas-gallery", CG_PROJECT),
 };
 
-// --- Agent → Canvas gallery previews: opening a canvas takes its thumb.png ---------------------------------------------------
+// --- Library → Canvases previews: opening a canvas takes its thumb.png ---------------------------------------------------
 // A canvas with no preview is captured about a second after its board settles in the viewer (canvasthumb.ts): the host's
 // capture_webview, cropped to the board and scaled to at most 480 px, written over <topic>/thumb.png. The card then shows
 // it. The browser app has no window to capture, so this one is host-only; canvas-gallery runs there without it.
 const canvasGalleryPreview = {
     name: "canvas-gallery-preview",
     host: true,
-    surface: "agent",
+    surface: "library",
     async arrange(h) {
         const ctx = { cwd: mkdtempSync(join(tmpdir(), "verify-canvas-gallery-preview-")), registered: false };
         try {
@@ -36039,7 +36008,7 @@ const canvasGalleryPreview = {
         }
         const thumb = join(ctx.topicDir, "thumb.png");
 
-        await h.ev(`document.querySelector("[data-agent-canvases-open]")?.click()`);
+        await openLibraryTab(h, "canvases");
         const carded = await polishWaitFor(h, `JSON.stringify(${CG_CARDS}) === '["preview-beta"]'`, 10000);
         const before = await h.ev(`(() => {
             const card = document.querySelector('[data-canvas-card="preview-beta"]');
@@ -36082,7 +36051,7 @@ const canvasGalleryPreview = {
     teardown: (h, ctx) => cgTeardown(h, ctx, "canvas-gallery-preview", CG_PREVIEW_PROJECT),
 };
 
-// --- Agent → Canvas gallery: the viewer offers the session that made the canvas -----------------------------------------
+// --- Library → Canvases: the viewer offers the session that made the canvas -----------------------------------------
 // The viewer reads the transcripts for the sessions that wrote into the canvas (agentsessions.CanvasSessions) and offers
 // the latest in its header: Resume, or Jump while an agent runs it. A temp project holds one topic; two Claude
 // transcripts this scenario writes under ~/.claude/projects touch it, one with a Write of its Main board, the other, a
@@ -36107,7 +36076,7 @@ function cgmTranscript(dir, cwd, task, at, tool) {
 
 const canvasGalleryMaker = {
     name: "canvas-gallery-maker",
-    surface: "agent",
+    surface: "library",
     async arrange(h) {
         const ctx = { cwd: mkdtempSync(join(tmpdir(), "verify-canvas-gallery-maker-")), registered: false };
         try {
@@ -36136,7 +36105,7 @@ const canvasGalleryMaker = {
             rec("0. the project, its topic and the transcripts were made", false, ctx.arrangeError);
             return steps;
         }
-        await h.ev(`document.querySelector("[data-agent-canvases-open]")?.click()`);
+        await openLibraryTab(h, "canvases");
         const carded = await polishWaitFor(h, `document.querySelector('[data-canvas-card="maker-beta"]') != null`, 10000);
         await h.ev(`document.querySelector('[data-canvas-card="maker-beta"]')?.click()`);
         const viewerUp = await polishWaitFor(h, `document.querySelector("[data-canvas-viewer]") != null`, 10000);
@@ -36161,7 +36130,7 @@ const canvasGalleryMaker = {
     },
 };
 
-// --- Agent → Canvas gallery: versions, a newer canvas outdates the one it replaces ----------------------------------------
+// --- Library → Canvases: versions, a newer canvas outdates the one it replaces ----------------------------------------
 // docs/superpowers/specs/2026-11-05-canvas-related-design.md; the boards are A-viewer-header (the cards, the viewer's
 // header and its picker), A-scan-suggest (the dashed row) and C-scan-review (Scan for versions). A temp project holds ten
 // canvases, oldest first by canvas.json's createdOnFiles.at (CV_SEED). vs-home-fresh already replaces vs-home. The scan
@@ -36249,7 +36218,7 @@ const cvClick = (h, expr) => h.ev(`${expr}?.click()`);
 const cvTopics = (rows) => rows.map((r) => r.topic).sort();
 
 async function cvOpenGallery(h) {
-    await h.ev(`document.querySelector("[data-agent-canvases-open]")?.click()`);
+    await openLibraryTab(h, "canvases");
     return polishWaitFor(h, `document.querySelector("[data-canvas-grid]") != null`, 10000);
 }
 
@@ -36260,9 +36229,9 @@ async function cvParkPointer(h) {
     await polishNap(400);
 }
 
-// mount the grid again (it reads the list and the scan key when it mounts): History, then back
+// mount the grid again (it reads the list and the scan key when it mounts): the Conversations tab, then back
 async function cvReopenGallery(h) {
-    await h.ev(`document.querySelector("[data-agent-history-open]")?.click()`);
+    await openLibraryTab(h, "conversations");
     await polishNap(400);
     return cvOpenGallery(h);
 }
@@ -36309,7 +36278,7 @@ async function cvOpenPicker(h) {
 
 const canvasVersions = {
     name: "canvas-versions",
-    surface: "agent",
+    surface: "library",
     async arrange(h) {
         const ctx = { cwd: mkdtempSync(join(tmpdir(), "verify-canvas-versions-")), registered: false, base: Date.now() - 3 * 3600_000 };
         ctx.folder = basename(ctx.cwd);
@@ -38251,8 +38220,8 @@ const agentRailTabs = {
         const afterChord = await h.activeSurfaceLabel();
         await h.shot("cdp-shots/agent-rail-tabs-nav.png");
         rec(
-            "10. the nav lists the core surfaces, a divider, then shorter tool items, and Ctrl+4 opens Usage",
-            JSON.stringify(nav.map((n) => n.label)) === JSON.stringify(["Cockpit", "Jarvis", "Agent", "Usage", "Code", "Diff", "Setup", "Settings"]) &&
+            "10. the nav lists the core surfaces (Library after Usage), a divider, then shorter tool items, and Ctrl+4 opens Usage",
+            JSON.stringify(nav.map((n) => n.label)) === JSON.stringify(["Cockpit", "Jarvis", "Agent", "Usage", "Library", "Code", "Diff", "Setup", "Settings"]) &&
                 divider &&
                 height("Code") < height("Usage") &&
                 afterChord === "Usage",
@@ -56761,22 +56730,22 @@ const agyHarness = {
             );
 
             // 3. Conversation History lists the agy session; opening it reads the transcript in the compact reader
-            let listed = await polishWaitFor(h, `!!document.querySelector('[data-agent-session-row="agy:${AGY_SESSION_ID}"]')`, 8000);
+            // Library's Conversations tab scans when it mounts; the agy session's card is the one holding its task
+            const agyCard = `[...document.querySelectorAll("[data-agent-history] [data-history-list] button.border")].find((b) => b.textContent.includes(${JSON.stringify(AGY_TASK)}))`;
+            await openLibraryTab(h, "conversations");
+            let listed = await polishWaitFor(h, `!!(${agyCard})`, 8000);
             if (!listed) {
                 await h.goto("cockpit");
                 await ahNap(AH_SCAN_GAP_MS);
-                await h.goto("agent");
-                listed = await polishWaitFor(h, `!!document.querySelector('[data-agent-session-row="agy:${AGY_SESSION_ID}"]')`, 8000);
+                await openLibraryTab(h, "conversations");
+                listed = await polishWaitFor(h, `!!(${agyCard})`, 8000);
             }
-            await h.ev(`document.querySelector("[data-agent-history-open]")?.click()`);
             const historyListsIt = await ahWait(
                 h,
                 `document.querySelector("[data-agent-history]")?.textContent?.includes(${JSON.stringify(AGY_TASK)})`,
                 6000
             );
-            await ahKey(h, "Escape", "Escape");
-            await ahNap(500);
-            await h.ev(`document.querySelector('[data-agent-session-row="agy:${AGY_SESSION_ID}"]')?.click()`);
+            await h.ev(`(${agyCard})?.click()`);
             const answered = await ahWait(
                 h,
                 `document.querySelector("[data-compact-transcript]")?.textContent?.includes(${JSON.stringify(AGY_ANSWER)})`,
@@ -64010,6 +63979,18 @@ const JARVIS_KIT = {
     openLauncherStart,
 };
 
+// what the Library scenario (scenarios-library.mjs) needs of this file: the sessions mock agent-history built (the page's
+// module urls, the mock and its removal), the project wait, the Mod key and the route a `wsh ui` reveal goes through, and
+// the helpers ./council/fixtures.mjs takes as its `fx` (the same ones the Jarvis kit carries)
+const LIBRARY_KIT = {
+    ...JARVIS_KIT,
+    ahResolveModules,
+    installAhMock,
+    removeAhMock,
+    MOD_BIT,
+    UI_ROUTE,
+};
+
 // what the lobby tree's scenario (xmastreescenarios.mjs) needs of this file and of cockpitofficescenarios.mjs: the
 // Christmas preset's keys, the christmas-office roster with its asker, the clip, the wait, the reload and the Office's
 // helpers
@@ -65450,7 +65431,7 @@ async function insertTextInto(h, selector, text, replace = false) {
 const NOIDEAS_AGENT = "fx-rail-check";
 const NOIDEAS_PROJECT = "verify-rail-check";
 const NOIDEAS_SESSION = "rail-check-fixture";
-const NOIDEAS_KEYS = [RAIL_VISIBLE_KEY, RAIL_SECTIONS_KEY, "agent.rail.tab", GRID_KEY, TREE_COLLAPSED_KEY, ...AH_FOLDS_KEYS, "agent.chatmode"];
+const NOIDEAS_KEYS = [RAIL_VISIBLE_KEY, RAIL_SECTIONS_KEY, "agent.rail.tab", GRID_KEY, TREE_COLLAPSED_KEY, "agent.chatmode"];
 const NOIDEAS_ASIDE = `document.querySelector('aside[aria-label="Agent details"]')`;
 
 // what of Ideas the page shows: the rail's count and section (and any word of it in the rail), the chip, the Add box, a toast
@@ -71012,8 +70993,8 @@ const codeStaleBarLook = {
 // opens it in the Agent surface's centre, and it says what in the project waits on you and what runs in it, and starts
 // new work there. The arrangement: two throwaway projects, each with a channel bound to its folder (step 8's held runs
 // are scoped to a project through its channel's path), one throwaway terminal in the first, which puts its folder in the
-// Active section, and an ended session filed under it, which puts its folder in Conversations (a mock of
-// getsessionsactivity as agent-history's: the store holds none). Step 8's fixture roster replaces only the agents, so
+// Active section, and an ended session filed under it (a mock of getsessionsactivity as agent-history's: the store holds
+// none). Step 8's fixture roster replaces only the agents, so
 // the terminals stay live. Teardown puts the roster file, the Needs you list and the mock back.
 const OV_PROJECT = "verify-overview";
 const OV_OTHER = "verify-overview-other";
@@ -71024,9 +71005,8 @@ const OV_SESSION_ID = "ov-1";
 const OV_TERM_NAME = "verify-overview terminal";
 const OV_OTHER_TERM_NAME = "verify-overview-other terminal";
 const OV_QUIET = `Nothing needs you and nothing is running in ${OV_PROJECT}.`;
-// the project's folder row in the Active section, and in Conversations
+// the project's folder row in the Agent tree
 const OV_ACTIVE_FOLDER = `[data-agent-folder-section="active"][data-project-folder="${OV_PROJECT}"]`;
-const OV_CONVO_FOLDER = `[data-agent-folder-section="conversations"][data-agent-folder="${OV_PROJECT}"]`;
 // the other project's folder in Active (its terminal is there) and its page: the Activity steps that need a read the page has
 // not made yet (loading, a failure) open it, since a project's last read stays in the page across Overview mounts
 const OV_OTHER_FOLDER = `[data-agent-folder-section="active"][data-project-folder="${OV_OTHER}"]`;
@@ -71507,26 +71487,8 @@ const projectOverview = {
                 JSON.stringify({ focused, menu2, ...items2 })
             );
 
-            // 3. the Conversations folder has the menu too, and its Open overview selects that folder's row
-            let convoUp = await polishWaitFor(h, ovHas(OV_CONVO_FOLDER), 10000);
-            if (!convoUp) {
-                // the sidebar rescans on re-entry at most every 5s: enter Agent again once the gap has passed
-                await h.goto("cockpit");
-                await polishNap(AH_SCAN_GAP_MS);
-                await h.goto("agent");
-                convoUp = await polishWaitFor(h, ovHas(OV_CONVO_FOLDER), 10000);
-            }
-            await ovContext(h, OV_CONVO_FOLDER);
-            const menu3 = await polishWaitFor(h, caMenuHas("Open overview"), 3000);
-            await h.shot("cdp-shots/project-overview-3.png");
-            await h.ev(caMenuClick("Open overview"));
-            const opened3 = await polishWaitFor(h, ovUp, 5000);
-            const convoSelected = await polishWaitFor(h, `${ovClass(OV_CONVO_FOLDER)}.includes("bg-surface-selected")`, 3000);
-            rec(
-                "3. a right-click on the Conversations folder row shows the menu with Open overview, which opens the Overview and fills that folder row selected",
-                convoUp && menu3 && opened3 && convoSelected,
-                JSON.stringify({ convoUp, menu3, opened3, convoSelected })
-            );
+            // (there is no step 3: it was the menu of the Conversations folder row, and the Agent tree's Conversations section
+            // went to Library, which has no folder rows)
 
             // 4. from the Active row's menu: the header, the four buttons, and the quiet line
             const opened4 = await ovOpenFromMenu(h);
@@ -72693,8 +72655,13 @@ const projectOverviewHistory = {
             const quick7 = await polishWaitFor(h, `${ovHas("[data-session-peek]")} && ${ovHas("[data-project-overview]")}`, 5000);
             await shot("7-quicklook");
             await h.ev(`document.querySelector("[data-session-peek-open]")?.click()`);
+            // the session view is Library's: its full-width pane, on the Library surface, with the Overview still behind it on the
+            // Agent surface (which Back returns to)
             const session7 =
-                quick7 && (await polishWaitFor(h, `${ovHas("[data-agent-session]")} && !${ovHas("[data-project-overview]")}`, 5000));
+                quick7 &&
+                (await polishWaitFor(h, ovHas("[data-library] [data-agent-session]"), 5000)) &&
+                (await h.activeSurfaceLabel()) === "Library";
+            await h.goto("agent");
             const reopen7b = await ovhOpen(h, OVH_A);
             // a council opens in two steps: its row unfolds in place (the answer, its directions by rank, Open council), and
             // only Open council leaves the Overview
@@ -72727,10 +72694,12 @@ const projectOverviewHistory = {
             await h.goto("agent");
             const reopen7d = await ovhOpen(h, OVH_A);
             await h.ev(`document.querySelector("[data-history-older]")?.click()`);
-            const history7 = await polishWaitFor(h, `${ovHas("[data-agent-history]")} && !${ovHas("[data-project-overview]")}`, 5000);
+            const history7 =
+                (await polishWaitFor(h, ovHas('[data-library][data-library-active="conversations"] [data-agent-history]'), 5000)) &&
+                (await h.activeSurfaceLabel()) === "Library";
             await shot("7");
             rec(
-                "7. a session row opens Quick look over the Overview and its Open opens the session view; the nested council row unfolds in place (`Keep it short.`, then its directions by rank) and its Open council opens the council view; the nested run row opens the run's sheet, and Older: Conversation History opens Conversation History",
+                "7. a session row opens Quick look over the Overview and its Open opens the session view in Library; the nested council row unfolds in place (`Keep it short.`, then its directions by rank) and its Open council opens the council view; the nested run row opens the run's sheet, and Older: Conversation History opens Conversation History in Library",
                 session7 && reopen7b && council7 && reopen7c && run7 && reopen7d && history7,
                 JSON.stringify({ quick7, session7, reopen7b, peek7, peekText7, council7, reopen7c, run7, sheet7, surface7, sheetGone, reopen7d, history7 })
             );
@@ -73900,6 +73869,7 @@ export const SCENARIOS = [
     ...jarvisActivityScenarios(JARVIS_KIT),
     ...jarvisSheetScenarios(JARVIS_KIT),
     ...jarvisLaterScenarios(JARVIS_KIT),
+    ...libraryScenarios(LIBRARY_KIT),
     agentRailWorktreeFiles,
     agentRailChangesCommits,
     agentRailCommitMode,

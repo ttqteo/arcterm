@@ -26,7 +26,6 @@ import { atomFamily, selectAtom } from "jotai/utils";
 import { Check, ListChecks, Square, X } from "lucide-react";
 import { motion } from "motion/react";
 import { startTransition, useEffect, useMemo, useState } from "react";
-import { showCouncil } from "./agentcenter";
 import type { AgentsViewModel } from "./agents";
 import { useActions, type Actions } from "./councilactions";
 import { CouncilAvatar, CouncilChat, CouncilText } from "./councilchat";
@@ -51,6 +50,7 @@ import {
     type FailedExpert,
 } from "./councildiscussionmodel";
 import { CouncilHeaderRow } from "./councilheader";
+import { useCouncilHost } from "./councilhost";
 import { mapWords } from "./councilmapmodel";
 import {
     callSegments,
@@ -70,7 +70,6 @@ import { claimOf } from "./councilsources";
 import { EvidenceChips } from "./councilsourcespanel";
 import {
     continueCouncil,
-    councilSelAtom,
     councilTimelineAtom,
     retryExpert,
     startSavedCouncil,
@@ -106,7 +105,7 @@ const councilPauseAtom = atomFamily(
 // ---- the view ----
 
 export function CouncilDiscussion({ model }: { model: AgentsViewModel }) {
-    const id = useAtomValue(councilSelAtom);
+    const id = useAtomValue(useCouncilHost().selAtom);
     const c = useCouncil(id);
     if (c == null) {
         return (
@@ -194,7 +193,7 @@ function Discussion({ c, model }: { c: Council; model: AgentsViewModel }) {
     }, [chatReady]);
     return (
         <div data-council-discussion={c.id} data-council-id={c.id} data-council-state={c.state} className={ROOT}>
-            <Header c={c} body={body} acts={acts} onOpenTerminal={(tab) => model.openTerminal(tab)} />
+            <Header c={c} body={body} acts={acts} model={model} onOpenTerminal={(tab) => model.openTerminal(tab)} />
             {/* the body fades in as the view opens (a tab click, a council picked); the header stays put */}
             <motion.div
                 variants={viewFade}
@@ -251,13 +250,16 @@ function Header({
     c,
     body,
     acts,
+    model,
     onOpenTerminal,
 }: {
     c: Council;
     body: DiscussionBody;
     acts: Actions;
+    model: AgentsViewModel;
     onOpenTerminal: (tab: string) => void;
 }) {
+    const host = useCouncilHost();
     const action = summarizeAction(c);
     const enabled = canSummarize(c);
     const summarizing = acts.busy.has("summarize");
@@ -265,7 +267,7 @@ function Header({
         if (action.call && !(await acts.run("summarize", "Summarize", () => summarizeCouncil(c.id)))) {
             return;
         }
-        showCouncil(c.id, "summary");
+        host.open(c.id, "summary");
     };
     const title = enabled ? "Rank the directions and fill the matrix from the discussion so far" : summarizeHold(c);
     // the call bar is the first step's and the pause's; the chat's seat chips say who is at work
@@ -305,6 +307,7 @@ function Header({
                 titleAttr="data-council-title"
                 items={items}
                 stop={stop}
+                model={model}
                 onOpenTerminal={onOpenTerminal}
             />
             {(showBar || (c.state === "running" && c.round <= 1) || acts.error != null) && (

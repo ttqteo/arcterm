@@ -130,14 +130,25 @@ describe("parseSurfaceAddress", () => {
         expect(parseAddress("radarreport:rr1", { anchor: "f1" }).kind).toBe("unsupported");
     });
 
-    it("takes surface:history, and its old name sessions, to Conversation History in the Agent surface", () => {
-        expect(parseSurfaceAddress("surface:history")).toEqual({ surface: "agent", center: "history" });
-        expect(parseSurfaceAddress("surface:sessions")).toEqual({ surface: "agent", center: "history" });
+    it("takes surface:library to Library plain, on the tab it was left on", () => {
+        expect(parseSurfaceAddress("surface:library")).toEqual({ surface: "library" });
     });
 
-    it("lists history among the valid surfaces in its error", () => {
+    it("takes surface:history, and its old name sessions, to Library's Conversations tab", () => {
+        expect(parseSurfaceAddress("surface:history")).toEqual({ surface: "library", tab: "conversations" });
+        expect(parseSurfaceAddress("surface:sessions")).toEqual({ surface: "library", tab: "conversations" });
+    });
+
+    it("takes surface:canvases and surface:councils to their Library tabs", () => {
+        expect(parseSurfaceAddress("surface:canvases")).toEqual({ surface: "library", tab: "canvases" });
+        expect(parseSurfaceAddress("surface:councils")).toEqual({ surface: "library", tab: "councils" });
+    });
+
+    it("lists the names that open a Library tab among the valid surfaces in its error", () => {
         const r = parseSurfaceAddress("surface:nope");
-        expect(r != null && "error" in r && r.error).toMatch(/, history$/);
+        expect(r != null && "error" in r && r.error).toMatch(
+            /, files, library, setup, settings, history, canvases, councils$/
+        );
     });
 });
 

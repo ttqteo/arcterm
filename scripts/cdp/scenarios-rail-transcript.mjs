@@ -9,6 +9,7 @@ import { appendFileSync, closeSync, copyFileSync, existsSync, mkdirSync, mkdtemp
 import { execFileSync } from "node:child_process";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
+import { openLibraryTab } from "./scenarios-library.mjs";
 
 const AGENT = "fx-rail-transcript";
 const AGENT_MISSING = "fx-rail-transcript-missing";
@@ -410,7 +411,7 @@ export default function (kit) {
                 );
 
                 // 6. the same file as a past session, in Conversation History's session view: scrolled to the top, items past the first 200
-                await h.ev(`document.querySelector("[data-agent-history-open]")?.click()`);
+                await openLibraryTab(h, "conversations");
                 const history = await polishWaitFor(h, `!!document.querySelector("[data-agent-history]")`, 8000);
                 const card = await polishWaitFor(h, `[...(document.querySelectorAll('[data-agent-history] button.border[class*="rounded-[10px]"]') ?? [])].some((b) => b.textContent.includes(${JSON.stringify(ctx.title)}))`, 30000);
                 await h.ev(`[...document.querySelectorAll('[data-agent-history] button.border[class*="rounded-[10px]"]')].find((b) => b.textContent.includes(${JSON.stringify(ctx.title)}))?.click()`);
@@ -558,7 +559,7 @@ export default function (kit) {
                 roster13.push(fixtureAgent({ id: AGENT_LIVE, name: "rail transcript live", blockId: "fx-blk-rail-transcript-live", transcriptPath: ctx.sessionFile }));
                 writeFileSync(TREE_RAIL_FIXTURE, JSON.stringify(roster13, null, 2));
                 await h.ev(`window.__reloadDevMockRoster?.()`);
-                await h.ev(`document.querySelector("[data-agent-history-open]")?.click()`);
+                await openLibraryTab(h, "conversations");
                 const history13 = await polishWaitFor(h, `!!document.querySelector("[data-agent-history]")`, 8000);
                 const CARD13 = `[...(document.querySelectorAll('[data-agent-history] button.border[class*="rounded-[10px]"]') ?? [])].find((b) => b.textContent.includes(${JSON.stringify(ctx.title)}))`;
                 // the roster agent holds the session's transcript, so its card reads running, not an age

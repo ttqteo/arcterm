@@ -20,6 +20,7 @@ export const SURFACE_CONTEXT = {
     agent: { project: "filter" },
     files: { project: "subject" },
     usage: { project: "unsupported" },
+    library: { project: "unsupported" },
     code: { project: "subject" },
     setup: { project: "unsupported" },
     settings: { project: "unsupported" },

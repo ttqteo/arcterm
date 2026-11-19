@@ -11,7 +11,7 @@ import { confirmCloseSession } from "@/app/view/agents/agentactions";
 import { centerModeAtom } from "@/app/view/agents/agentcenter";
 import { getProcExitAtom } from "@/app/view/agents/agentcontrollerstore";
 import { railPanelsAtom, railTranscriptFocusAtom } from "@/app/view/agents/agentrailstore";
-import { SURFACE_ORDER, type SurfaceKey } from "@/app/view/agents/agents";
+import { RAIL_ORDER, SURFACE_ORDER, type SurfaceKey } from "@/app/view/agents/agents";
 import { setAgentView } from "@/app/view/agents/agentview";
 import type { BrainstormFile } from "@/app/view/agents/brainstormmodel";
 import { sendBrainstorm } from "@/app/view/agents/brainstormsend";
@@ -109,7 +109,14 @@ import { peekTarget } from "@/app/view/jarvis/openref";
 import { itemKeyCommand } from "@/app/view/jarvis/peekitemmodel";
 import { peekKeyCommand } from "@/app/view/jarvis/petpeekmodel";
 import { petPeekOpenAtom } from "@/app/view/jarvis/petstore";
+import { forgetOrigin } from "@/app/view/jarvis/returnsurface";
 import { enterReview, exitReview, reviewedAtom, reviewModeAtom, reviewQueueAtom } from "@/app/view/jarvis/reviewstore";
+import {
+    libraryConvViewAtom,
+    libraryCouncilSelAtom,
+    libraryTabAtom,
+    type LibraryTab,
+} from "@/app/view/library/librarystore";
 import { dagModalStateAtom } from "@/app/view/orchestrate/dagmodalstate";
 import { focusedTerminalBlockId, redrawTerminal } from "@/app/view/term/termwrap";
 import { setPlatform } from "@/util/platformutil";
@@ -122,12 +129,14 @@ import {
     buildCockpitBindings,
     buildCodeBindings,
     buildCouncilBindings,
+    buildCouncilTabBindings,
     buildFilesBindings,
     buildFinalShotsBindings,
     buildGlobalBindings,
     buildInitiativeSheetBindings,
     buildJarvisBindings,
     buildJarvisTourBindings,
+    buildLibraryBindings,
     buildListNavBindings,
     buildUsageBindings,
     closeTarget,
@@ -376,8 +385,8 @@ describe("Ctrl+Tab switcher", () => {
         expect(ctrlTabRuns(model())).toBe("switcher:next");
     });
 
-    it("opens the switcher over History too", () => {
-        globalStore.set(centerModeAtom, "history");
+    it("opens the switcher over a project's Overview too", () => {
+        globalStore.set(centerModeAtom, "project");
         expect(ctrlTabRuns(model())).toBe("switcher:next");
     });
 
@@ -404,7 +413,7 @@ describe("Ctrl+Tab switcher", () => {
 });
 
 describe("surface switch [ / ]", () => {
-    it("cycles SURFACE_ORDER forward/back with wrap, past Diff back to the cockpit", () => {
+    it("cycles RAIL_ORDER forward/back with wrap, past Diff back to the cockpit", () => {
         const model = { surfaceAtom: atom<SurfaceKey>("cockpit") } as any;
         const bindings = buildGlobalBindings(model);
         const next = bindings.find((b) => b.id === "surface:next")!;
@@ -416,25 +425,44 @@ describe("surface switch [ / ]", () => {
         expect(globalStore.get(model.surfaceAtom)).toBe("jarvis");
 
         globalStore.set(model.surfaceAtom, "files");
-        next.run(ctx()); // files (Diff) is last: it wraps to the cockpit
+        next.run(ctx()); // files (Diff) is last on the rail: it wraps to the cockpit
         expect(globalStore.get(model.surfaceAtom)).toBe("cockpit");
 
-        globalStore.set(model.surfaceAtom, SURFACE_ORDER[SURFACE_ORDER.length - 1]);
+        globalStore.set(model.surfaceAtom, RAIL_ORDER[RAIL_ORDER.length - 1]);
         next.run(ctx()); // wrap forward to first
-        expect(globalStore.get(model.surfaceAtom)).toBe(SURFACE_ORDER[0]);
+        expect(globalStore.get(model.surfaceAtom)).toBe(RAIL_ORDER[0]);
 
         prev.run(ctx()); // wrap back to last
-        expect(globalStore.get(model.surfaceAtom)).toBe(SURFACE_ORDER[SURFACE_ORDER.length - 1]);
+        expect(globalStore.get(model.surfaceAtom)).toBe(RAIL_ORDER[RAIL_ORDER.length - 1]);
     });
 
-    it("binds Mod+1..6 to SURFACE_ORDER, so Usage is Mod+4 and Diff is Mod+6", () => {
+    it("steps through Library where the rail has it, fifth, not where its chord is, last", () => {
+        const model = { surfaceAtom: atom<SurfaceKey>("usage") } as any;
+        const bindings = buildGlobalBindings(model);
+        const next = bindings.find((b) => b.id === "surface:next")!;
+        const prev = bindings.find((b) => b.id === "surface:prev")!;
+        next.run(ctx("usage")); // Usage -> Library
+        expect(globalStore.get(model.surfaceAtom)).toBe("library");
+        next.run(ctx("library")); // Library -> Code
+        expect(globalStore.get(model.surfaceAtom)).toBe("code");
+        prev.run(ctx("code")); // Code -> Library
+        expect(globalStore.get(model.surfaceAtom)).toBe("library");
+        prev.run(ctx("library")); // Library -> Usage
+        expect(globalStore.get(model.surfaceAtom)).toBe("usage");
+    });
+
+    it("binds Mod+1..7 to SURFACE_ORDER, so Usage is Mod+4, Code Mod+5, Diff Mod+6 and Library Mod+7", () => {
         const model = { surfaceAtom: atom<SurfaceKey>("cockpit") } as any;
         const chords = buildGlobalBindings(model).filter((b) => /^Mod:\d$/.test(b.keys) && b.id.startsWith("surface:"));
-        expect(chords.map((b) => b.keys)).toEqual(["Mod:1", "Mod:2", "Mod:3", "Mod:4", "Mod:5", "Mod:6"]);
+        expect(chords.map((b) => b.keys)).toEqual(["Mod:1", "Mod:2", "Mod:3", "Mod:4", "Mod:5", "Mod:6", "Mod:7"]);
         chords.find((b) => b.keys === "Mod:4")!.run(ctx());
         expect(globalStore.get(model.surfaceAtom)).toBe("usage");
+        chords.find((b) => b.keys === "Mod:5")!.run(ctx());
+        expect(globalStore.get(model.surfaceAtom)).toBe("code");
         chords.find((b) => b.keys === "Mod:6")!.run(ctx());
         expect(globalStore.get(model.surfaceAtom)).toBe("files");
+        chords.find((b) => b.keys === "Mod:7")!.run(ctx());
+        expect(globalStore.get(model.surfaceAtom)).toBe("library");
     });
 
     it("binds Alt+1..9 to the Active list's agents on the Agent surface, inside a terminal too", () => {
@@ -1812,7 +1840,7 @@ describe("agent:transcript", () => {
         expect(b.when!({ ...inTerm, editable: false })).toBe(true);
         expect(b.when!({ ...inTerm, surface: "cockpit" })).toBe(false);
         expect(b.when!({ ...inTerm, modalOpen: true })).toBe(false);
-        globalStore.set(centerModeAtom, "history");
+        globalStore.set(centerModeAtom, "project");
         expect(b.when!(inTerm)).toBe(false);
     });
 
@@ -1871,7 +1899,7 @@ describe("chat mode keys", () => {
         expect(b.when!({ ...inTerm, editable: false })).toBe(true);
         expect(b.when!({ ...inTerm, modalOpen: true })).toBe(false);
         expect(b.when!({ ...inTerm, surface: "cockpit" })).toBe(false);
-        globalStore.set(centerModeAtom, "history");
+        globalStore.set(centerModeAtom, "project");
         expect(b.when!(inTerm)).toBe(false);
     });
 
@@ -2357,10 +2385,10 @@ describe("agent review mode keys", () => {
         expect(onKey("Mod:Enter", typing)).toEqual(["agent:review-request"]);
     });
 
-    it("Ctrl+Enter stands down in History and a session, which hide the review pane without leaving review mode", () => {
+    it("Ctrl+Enter stands down over a council, a project's Overview or a held agent, which hide the review pane without leaving review mode", () => {
         setAgentView("a1", "review", 1);
         try {
-            for (const mode of ["history", "session", "canvases"] as const) {
+            for (const mode of ["council", "project", "held"] as const) {
                 globalStore.set(centerModeAtom, mode);
                 expect(onKey("Mod:Enter", typing)).toEqual([]);
                 setGeneralNote("a1", "tighten §3");
@@ -2442,7 +2470,8 @@ describe("Agent centre modes", () => {
     const agentCtx: KeyContext = { surface: "agent", editable: false, modalOpen: false, leader: null };
     const typing: KeyContext = { ...agentCtx, editable: true };
     const find = (id: string, model: any = stubModel()) => buildAgentBindings(model).find((b) => b.id === id)!;
-    const CENTER_MODES = ["history", "session", "canvases"] as const;
+    // what covers the terminal on Agent: a council, a project's Overview, a held agent
+    const CENTER_MODES = ["council", "project", "held"] as const;
 
     afterEach(() => {
         vi.unstubAllGlobals();
@@ -2463,7 +2492,7 @@ describe("Agent centre modes", () => {
         return stubModel("a1");
     };
 
-    it("keeps the agent keys live on the terminal and stands them down while History or a session is open", () => {
+    it("keeps the agent keys live on the terminal and stands them down while a council, an Overview or a held agent covers it", () => {
         const next = find("agent:next-j");
         const rail = find("agent:toggle-rail");
         expect(next.when!(agentCtx)).toBe(true);
@@ -2475,7 +2504,7 @@ describe("Agent centre modes", () => {
         }
     });
 
-    it("stands the F11 chord down while History or a session is open, and keeps it live in the terminal", () => {
+    it("stands the F11 chord down while a council, an Overview or a held agent covers the terminal, and keeps it live in it", () => {
         const f11 = find("agent:fullscreen-chord");
         expect(f11.when!(agentCtx)).toBe(true);
         expect(f11.when!(typing)).toBe(true);
@@ -2486,7 +2515,7 @@ describe("Agent centre modes", () => {
         }
     });
 
-    it("stands the canvas send down while History or a session is open, and keeps it live in a note input", () => {
+    it("stands the canvas send down while a council, an Overview or a held agent covers the terminal, and keeps it live in a note input", () => {
         const model = focusedWithCanvas();
         setAgentView("a1", "canvas", 1);
         setMarking("a1", true);
@@ -2502,7 +2531,7 @@ describe("Agent centre modes", () => {
         expect(send.when!(typing)).toBe(true);
     });
 
-    it("gives Escape to the terminal while History or a session is open, and to the Cockpit otherwise", () => {
+    it("gives Escape to the terminal while a council, an Overview or a held agent is open, and to the Cockpit otherwise", () => {
         const back = find("agent:back");
         const leave = find("agent:leave-center");
         expect(leave.keys).toBe("Escape");
@@ -2517,21 +2546,21 @@ describe("Agent centre modes", () => {
 
     it("lets a focused subagent's Escape close it before leaving the centre mode", () => {
         vi.stubGlobal("document", { activeElement: null });
-        globalStore.set(centerModeAtom, "session");
+        globalStore.set(centerModeAtom, "project");
         globalStore.set(focusSubagentAtom, { parentId: "p", agentId: "s" } as any);
         expect(find("agent:leave-center").when!(agentCtx)).toBe(false);
         expect(find("subagent:back").when!(agentCtx)).toBe(true);
     });
 
     it("leaves Escape inside a text field to the field, and to an open modal", () => {
-        globalStore.set(centerModeAtom, "history");
+        globalStore.set(centerModeAtom, "project");
         const leave = find("agent:leave-center");
         expect(leave.when!({ ...agentCtx, editable: true })).toBe(false);
         expect(leave.when!({ ...agentCtx, modalOpen: true })).toBe(false);
         expect(leave.when!(agentCtx)).toBe(true);
     });
 
-    it("still leaves History or a session while the focused agent's canvas or review is on", () => {
+    it("still leaves a council, an Overview or a held agent while the focused agent's canvas or review is on", () => {
         const model = focusedWithCanvas();
         const leave = find("agent:leave-center", model);
         const back = find("agent:back", model);
@@ -2552,44 +2581,231 @@ describe("Agent centre modes", () => {
     });
 
     it("returns to the terminal when run", () => {
-        globalStore.set(centerModeAtom, "history");
+        globalStore.set(centerModeAtom, "project");
         find("agent:leave-center").run(agentCtx);
         expect(globalStore.get(centerModeAtom)).toBe("terminal");
     });
 });
 
-describe("g s: Conversation History", () => {
-    afterEach(() => globalStore.set(centerModeAtom, "terminal"));
+// What Library shows is module state that outlives a test: put it back to its defaults
+function resetLibrary() {
+    forgetOrigin();
+    globalStore.set(libraryTabAtom, "conversations");
+    globalStore.set(libraryConvViewAtom, "list");
+    globalStore.set(libraryCouncilSelAtom, null);
+}
 
-    it("opens History in the Agent surface and leaves g a on the Agent surface itself", () => {
+describe("g l, g s, g v, g o: Library and its tabs", () => {
+    beforeEach(resetLibrary);
+    afterEach(resetLibrary);
+
+    // each target, from the Cockpit: the id (What's new's Try it links name go:history, go:canvases and go:councils), the
+    // letter, and the tab Library opens on
+    const TARGETS: [id: string, keys: string, tab: LibraryTab][] = [
+        ["go:history", "g s", "conversations"],
+        ["go:canvases", "g v", "canvases"],
+        ["go:councils", "g o", "councils"],
+    ];
+
+    it.each(TARGETS)(
+        "%s (%s) opens Library on its %s tab, and leaves g a on the Agent surface itself",
+        (id, keys, tab) => {
+            const model = { surfaceAtom: atom<SurfaceKey>("cockpit") } as any;
+            const bindings = buildGlobalBindings(model);
+            const target = bindings.find((b) => b.id === id)!;
+            expect(target.keys).toBe(keys);
+            expect(bindings.find((b) => b.id === "go:agent")!.keys).toBe("g a");
+            globalStore.set(libraryTabAtom, tab === "canvases" ? "councils" : "canvases"); // not already there
+            target.run(ctx());
+            expect(globalStore.get(model.surfaceAtom)).toBe("library");
+            expect(globalStore.get(libraryTabAtom)).toBe(tab);
+        }
+    );
+
+    it("keeps the Canvas gallery's label", () => {
         const model = { surfaceAtom: atom<SurfaceKey>("cockpit") } as any;
-        const bindings = buildGlobalBindings(model);
-        const history = bindings.find((b) => b.id === "go:history")!;
-        expect(history.keys).toBe("g s");
-        expect(bindings.find((b) => b.id === "go:agent")!.keys).toBe("g a");
-        history.run(ctx());
-        expect(globalStore.get(model.surfaceAtom)).toBe("agent");
-        expect(globalStore.get(centerModeAtom)).toBe("history");
+        expect(buildGlobalBindings(model).find((b) => b.id === "go:canvases")!.label).toBe("Canvas gallery");
+    });
+
+    it("g l opens Library on the tab it was left on, with its own id go:library", () => {
+        const model = { surfaceAtom: atom<SurfaceKey>("cockpit") } as any;
+        const library = buildGlobalBindings(model).find((b) => b.id === "go:library")!;
+        expect(library.keys).toBe("g l");
+        expect(library.label).toMatch(/^Library/);
+        globalStore.set(libraryTabAtom, "councils");
+        library.run(ctx());
+        expect(globalStore.get(model.surfaceAtom)).toBe("library");
+        expect(globalStore.get(libraryTabAtom)).toBe("councils");
+    });
+
+    it("the Go to letters are each used once", () => {
+        const keys = buildGlobalBindings({ surfaceAtom: atom<SurfaceKey>("cockpit") } as any)
+            .filter((b) => b.group === "Go to")
+            .map((b) => b.keys);
+        expect(new Set(keys).size).toBe(keys.length);
+        expect(keys).toContain("g l");
     });
 });
 
-describe("g v: Canvas gallery", () => {
-    afterEach(() => globalStore.set(centerModeAtom, "terminal"));
+describe("Library's own keys", () => {
+    const libCtx: KeyContext = { surface: "library", editable: false, modalOpen: false, leader: null };
+    const typing: KeyContext = { ...libCtx, editable: true };
+    const model = { surfaceAtom: atom<SurfaceKey>("library") } as any;
+    const find = (id: string) => buildLibraryBindings(model).find((b) => b.id === id)!;
+    const TAB_KEYS = ["library:tab-1", "library:tab-2", "library:tab-3"];
+    const navNode = (inThread = false) =>
+        vi.stubGlobal("document", {
+            activeElement: { tagName: "DIV", closest: () => (inThread ? {} : null) },
+        });
 
-    it("opens the Canvas gallery in the Agent surface", () => {
-        const model = { surfaceAtom: atom<SurfaceKey>("cockpit") } as any;
-        const canvases = buildGlobalBindings(model).find((b) => b.id === "go:canvases")!;
-        expect(canvases.keys).toBe("g v");
-        expect(canvases.label).toBe("Canvas gallery");
-        canvases.run(ctx());
-        expect(globalStore.get(model.surfaceAtom)).toBe("agent");
-        expect(globalStore.get(centerModeAtom)).toBe("canvases");
+    beforeEach(resetLibrary);
+    afterEach(() => {
+        resetLibrary();
+        globalStore.set(councilChatNavAtom, null);
+        vi.unstubAllGlobals();
+    });
+
+    it("binds 1 2 3 to the three tabs, in the order the strip draws them", () => {
+        expect(TAB_KEYS.map((id) => find(id).keys)).toEqual(["1", "2", "3"]);
+        expect(TAB_KEYS.map((id) => find(id).label)).toEqual(["Show Conversations", "Show Canvases", "Show Councils"]);
+        for (const [i, tab] of (["conversations", "canvases", "councils"] as const).entries()) {
+            globalStore.set(libraryTabAtom, tab === "councils" ? "conversations" : "councils");
+            find(TAB_KEYS[i]).run(libCtx);
+            expect(globalStore.get(libraryTabAtom)).toBe(tab);
+        }
+    });
+
+    it("the tab keys are live on Library only, off a text field and an open modal", () => {
+        for (const id of TAB_KEYS) {
+            expect(find(id).when!(libCtx)).toBe(true);
+            expect(find(id).when!(typing)).toBe(false);
+            expect(find(id).when!({ ...libCtx, modalOpen: true })).toBe(false);
+            for (const surface of ["agent", "jarvis", "cockpit", "usage"] as const) {
+                expect(find(id).when!({ ...libCtx, surface })).toBe(false);
+            }
+        }
+    });
+
+    it("Escape goes back from a session or a run opened in Conversations, and from nowhere else", () => {
+        const back = find("library:back");
+        expect(back.keys).toBe("Escape");
+        // the list at rest has nothing to go back out of: Escape is surface:back-home's
+        expect(back.when!(libCtx)).toBe(false);
+        for (const view of ["session", "run"] as const) {
+            globalStore.set(libraryConvViewAtom, view);
+            expect(back.when!(libCtx)).toBe(true);
+            expect(back.when!(typing)).toBe(false); // a field keeps its Escape
+            expect(back.when!({ ...libCtx, modalOpen: true })).toBe(false);
+            expect(back.when!({ ...libCtx, surface: "agent" })).toBe(false);
+            // the session is on Conversations only: another tab's Escape is its own
+            globalStore.set(libraryTabAtom, "canvases");
+            expect(back.when!(libCtx)).toBe(false);
+            globalStore.set(libraryTabAtom, "conversations");
+        }
+    });
+
+    it("Escape in a session leaves it, and the Conversations list shows again", () => {
+        globalStore.set(libraryConvViewAtom, "session");
+        find("library:back").run(libCtx);
+        expect(globalStore.get(libraryConvViewAtom)).toBe("list");
+        expect(globalStore.get(libraryTabAtom)).toBe("conversations");
+    });
+
+    it("Escape goes back from an open council to the Councils list, unless the council's thread or sources hold it", () => {
+        const back = find("library:back");
+        globalStore.set(libraryTabAtom, "councils");
+        expect(back.when!(libCtx)).toBe(false); // the list: nothing to leave
+        globalStore.set(libraryCouncilSelAtom, "c1");
+        expect(back.when!(libCtx)).toBe(true);
+        // another tab does not take the council's Escape
+        globalStore.set(libraryTabAtom, "canvases");
+        expect(back.when!(libCtx)).toBe(false);
+        globalStore.set(libraryTabAtom, "councils");
+        // a thread open with focus inside it: council:close-thread takes the press first
+        navNode(true);
+        globalStore.set(councilChatNavAtom, { openId: "P2", sourcesOpen: false } as CouncilChatNav);
+        expect(back.when!(libCtx)).toBe(false);
+        // the thread open with focus elsewhere: this Escape leaves the council, as agent:leave-center does
+        navNode(false);
+        expect(back.when!(libCtx)).toBe(true);
+        back.run(libCtx);
+        expect(globalStore.get(libraryCouncilSelAtom)).toBeNull();
+        expect(globalStore.get(libraryTabAtom)).toBe("councils");
+    });
+
+    it("Escape in Library has exactly one claimant at each step, none of them two", () => {
+        const all = () => [
+            ...buildGlobalBindings(model),
+            ...buildAgentBindings(stubModel()),
+            ...buildLibraryBindings(model),
+            ...buildCouncilBindings(),
+        ];
+        const escapes = (c: KeyContext = libCtx) =>
+            all()
+                .filter((b) => b.keys === "Escape" && b.when?.(c) === true)
+                .map((b) => b.id);
+        navNode(false);
+        // Conversations, the list at rest: back over the jump, else Cockpit
+        expect(escapes()).toEqual(["surface:back-home"]);
+        // a session or run: Library's Back
+        globalStore.set(libraryConvViewAtom, "run");
+        expect(escapes()).toEqual(["library:back"]);
+        globalStore.set(libraryConvViewAtom, "list");
+        // the gallery: at rest navigates; each open view takes its own
+        globalStore.set(libraryTabAtom, "canvases");
+        expect(escapes()).toEqual(["surface:back-home"]);
+        for (const [view, id] of [
+            ["viewer", "canvases:back"],
+            ["scan", "canvases:scan-cancel"],
+            ["cleanup", "canvases:cleanup-cancel"],
+        ] as const) {
+            globalStore.set(canvasGalleryAtom, {
+                view,
+                dir: "/p/.superpowers/design/a",
+                board: 0,
+                query: "",
+                cursor: 0,
+            });
+            expect(escapes()).toEqual([id]);
+        }
+        globalStore.set(canvasGalleryAtom, { view: "grid", dir: null, board: 0, query: "", cursor: 0 });
+        // Councils: the list navigates, an open council is Library's Back, its open thread closes first
+        globalStore.set(libraryTabAtom, "councils");
+        expect(escapes()).toEqual(["surface:back-home"]);
+        globalStore.set(libraryCouncilSelAtom, "c1");
+        expect(escapes()).toEqual(["library:back"]);
+        navNode(true);
+        globalStore.set(councilChatNavAtom, { openId: "P1", sourcesOpen: false, focusedId: null } as CouncilChatNav);
+        expect(escapes()).toEqual(["council:close-thread"]);
+        // a text field has its own Escape in every one of these
+        expect(escapes(typing)).toEqual([]);
+        // and none of it reaches another surface
+        expect(escapes({ ...libCtx, surface: "usage" })).toEqual(["surface:back-home"]);
+    });
+
+    it("no two Library keys share a chord in any posture", () => {
+        const all = [...buildGlobalBindings(model), ...buildLibraryBindings(model)];
+        for (const tab of ["conversations", "canvases", "councils"] as const) {
+            globalStore.set(libraryTabAtom, tab);
+            for (const editable of [false, true]) {
+                for (const leader of [null, "g"]) {
+                    const c = { ...libCtx, editable, leader };
+                    // a binding with no chord is reached by name, so it claims no key
+                    const keys = all
+                        .filter((b) => b.when?.(c) ?? true)
+                        .map((b) => b.keys)
+                        .filter((k) => k !== "");
+                    expect(new Set(keys).size).toBe(keys.length);
+                }
+            }
+        }
     });
 });
 
-describe("Agent → Canvas gallery keys", () => {
-    const agentCtx: KeyContext = { surface: "agent", editable: false, modalOpen: false, leader: null };
-    const typing: KeyContext = { ...agentCtx, editable: true };
+describe("Library → Canvases keys", () => {
+    // Library holds the gallery's keys now: built with the Agent surface's and live only on Library's Canvases tab
+    const libCtx: KeyContext = { surface: "library", editable: false, modalOpen: false, leader: null };
+    const typing: KeyContext = { ...libCtx, editable: true };
     const find = (id: string) => buildAgentBindings(stubModel()).find((b) => b.id === id)!;
     const galleryNow = () => globalStore.get(canvasGalleryAtom);
     const gallery = (patch: Partial<ReturnType<typeof galleryNow>>) =>
@@ -2632,15 +2848,16 @@ describe("Agent → Canvas gallery keys", () => {
         "canvases:cleanup-cancel",
     ];
     const SCAN_KEYS = ["canvases:scan-cancel"];
-    const live = (ids: string[]) => ids.map((id) => find(id).when!(agentCtx));
-    // the Escape bindings of the Agent surface (and the global ones) that claim the key right now
+    const live = (ids: string[]) => ids.map((id) => find(id).when!(libCtx));
+    // the Escape bindings of the Agent surface, Library and the global ones that claim the key right now
     const escapes = () =>
-        [...buildGlobalBindings(stubModel()), ...buildAgentBindings(stubModel())]
-            .filter((b) => b.keys === "Escape" && b.when?.(agentCtx) === true)
+        [...buildGlobalBindings(stubModel()), ...buildAgentBindings(stubModel()), ...buildLibraryBindings(stubModel())]
+            .filter((b) => b.keys === "Escape" && b.when?.(libCtx) === true)
             .map((b) => b.id);
 
     beforeEach(() => {
-        globalStore.set(centerModeAtom, "canvases");
+        resetLibrary();
+        globalStore.set(libraryTabAtom, "canvases");
         globalStore.set(canvasGalleryAtom, FRESH);
         // two today, one long ago: the cursor walks across the group edge. One now for all three: the gallery draws the
         // newest first and keeps this order only on a tie, so a clock tick between two Date.now() calls put beta first
@@ -2655,20 +2872,36 @@ describe("Agent → Canvas gallery keys", () => {
 
     afterEach(() => {
         vi.unstubAllGlobals();
+        resetLibrary();
         globalStore.set(centerModeAtom, "terminal");
         globalStore.set(canvasGalleryAtom, FRESH);
         globalStore.set(canvasListAtom, null);
     });
 
-    it("is live only while the centre mode is canvases, on the Agent surface, outside a field", () => {
+    it("is live only on Library's Canvases tab, outside a field, and dead on Agent whatever its centre shows", () => {
         const right = find("canvases:right");
-        expect(right.when!(agentCtx)).toBe(true);
+        expect(right.when!(libCtx)).toBe(true);
         expect(right.when!(typing)).toBe(false);
-        expect(right.when!({ ...agentCtx, modalOpen: true })).toBe(false);
-        expect(right.when!({ ...agentCtx, surface: "jarvis" })).toBe(false);
-        for (const mode of ["terminal", "history", "session"] as const) {
+        expect(right.when!({ ...libCtx, modalOpen: true })).toBe(false);
+        expect(right.when!({ ...libCtx, surface: "jarvis" })).toBe(false);
+        // the gallery is not a mode of Agent any more: no centre mode brings its keys back there
+        for (const mode of ["terminal", "project", "council", "held"] as const) {
             globalStore.set(centerModeAtom, mode);
-            expect(right.when!(agentCtx)).toBe(false);
+            expect(right.when!({ ...libCtx, surface: "agent" })).toBe(false);
+        }
+        // the other tabs
+        for (const tab of ["conversations", "councils"] as const) {
+            globalStore.set(libraryTabAtom, tab);
+            expect(right.when!(libCtx)).toBe(false);
+        }
+    });
+
+    it("every gallery key is dead on the Agent surface, in each of the gallery's views", () => {
+        const agent: KeyContext = { ...libCtx, surface: "agent" };
+        const ids = [...GRID_KEYS, ...VIEWER_KEYS, ...CLEANUP_KEYS, ...SCAN_KEYS];
+        for (const view of ["grid", "viewer", "cleanup", "scan"] as const) {
+            gallery({ view, dir: "/p/.superpowers/design/alpha" });
+            expect(ids.filter((id) => find(id).when!(agent))).toEqual([]);
         }
     });
 
@@ -2703,19 +2936,22 @@ describe("Agent → Canvas gallery keys", () => {
         expect(find("canvases:scan-cancel").when!(typing)).toBe(false);
     });
 
-    it("lets exactly one Escape claim the key in the viewer and in the scan's review, never the one that leaves the centre", () => {
+    it("lets exactly one Escape claim the key in the viewer, the scan's review and clean up, never the one that navigates", () => {
         gallery({ view: "viewer", dir: "/p/.superpowers/design/alpha" });
         expect(escapes()).toEqual(["canvases:back"]);
         gallery({ view: "scan", dir: null });
         expect(escapes()).toEqual(["canvases:scan-cancel"]);
+        gallery({ view: "cleanup", dir: null });
+        expect(escapes()).toEqual(["canvases:cleanup-cancel"]);
+        // the grid has nothing to back out of: Escape navigates, back over the jump or to the Cockpit
         gallery({ view: "grid", dir: null });
-        expect(escapes()).toEqual(["agent:leave-center"]);
+        expect(escapes()).toEqual(["surface:back-home"]);
     });
 
     it("cancels the scan's review on Escape: back to the grid, nothing ticked", () => {
         gallery({ view: "scan", dir: null, cursor: 2 });
         globalStore.set(scanAtom, { pairs: [], ticked: new Set(["/p/.superpowers/design/alpha"]), linking: false });
-        find("canvases:scan-cancel").run(agentCtx);
+        find("canvases:scan-cancel").run(libCtx);
         expect(galleryNow()).toMatchObject({ view: "grid", dir: null, cursor: 0 });
         expect(globalStore.get(scanAtom).ticked).toEqual(new Set());
     });
@@ -2723,10 +2959,10 @@ describe("Agent → Canvas gallery keys", () => {
     it("closes the link picker on the first Escape in a canvas, and leaves the canvas on the second", () => {
         gallery({ view: "viewer", dir: "/p/.superpowers/design/alpha", cursor: 0 });
         openLinkPicker();
-        find("canvases:back").run(agentCtx);
+        find("canvases:back").run(libCtx);
         expect(globalStore.get(linkPickerAtom).open).toBe(false);
         expect(galleryNow()).toMatchObject({ view: "viewer", dir: "/p/.superpowers/design/alpha" });
-        find("canvases:back").run(agentCtx);
+        find("canvases:back").run(libCtx);
         expect(galleryNow()).toMatchObject({ view: "grid", dir: null });
     });
 
@@ -2755,41 +2991,41 @@ describe("Agent → Canvas gallery keys", () => {
 
         it("walks the suggested group and then Newer with the arrows, clamping at the ends", () => {
             const at = () => galleryNow().cursor;
-            find("canvases:cleanup-right").run(agentCtx);
+            find("canvases:cleanup-right").run(libCtx);
             expect(at()).toBe(1);
-            find("canvases:cleanup-down").run(agentCtx);
+            find("canvases:cleanup-down").run(libCtx);
             expect(at()).toBe(2);
-            find("canvases:cleanup-down").run(agentCtx);
+            find("canvases:cleanup-down").run(libCtx);
             expect(at()).toBe(2);
-            find("canvases:cleanup-up").run(agentCtx);
+            find("canvases:cleanup-up").run(libCtx);
             expect(at()).toBe(1);
-            find("canvases:cleanup-left").run(agentCtx);
+            find("canvases:cleanup-left").run(libCtx);
             expect(at()).toBe(0);
-            find("canvases:cleanup-left").run(agentCtx);
+            find("canvases:cleanup-left").run(libCtx);
             expect(at()).toBe(0);
         });
 
         it("ticks and unticks the card under the cursor with Space", () => {
-            find("canvases:tick").run(agentCtx);
+            find("canvases:tick").run(libCtx);
             expect(sel()).toEqual(new Set());
-            find("canvases:tick").run(agentCtx);
+            find("canvases:tick").run(libCtx);
             expect(sel()).toEqual(new Set(["/p/.superpowers/design/old"]));
-            find("canvases:cleanup-right").run(agentCtx);
-            find("canvases:tick").run(agentCtx);
+            find("canvases:cleanup-right").run(libCtx);
+            find("canvases:tick").run(libCtx);
             expect(sel()).toEqual(new Set(["/p/.superpowers/design/old", "/p/.superpowers/design/beta"]));
         });
 
         it("lets Space pass when there is no card, and does not tick while a move is under way", () => {
             globalStore.set(cleanupAtom, { ...globalStore.get(cleanupAtom), moving: true });
-            find("canvases:tick").run(agentCtx);
+            find("canvases:tick").run(libCtx);
             expect(sel()).toEqual(new Set(["/p/.superpowers/design/old"]));
             globalStore.set(canvasListAtom, []);
-            expect(find("canvases:tick").run(agentCtx)).toBe(false);
+            expect(find("canvases:tick").run(libCtx)).toBe(false);
         });
 
         it("cancels back to the grid on Escape and forgets the ticks", () => {
-            find("canvases:cleanup-down").run(agentCtx);
-            find("canvases:cleanup-cancel").run(agentCtx);
+            find("canvases:cleanup-down").run(libCtx);
+            find("canvases:cleanup-cancel").run(libCtx);
             expect(galleryNow()).toMatchObject({ view: "grid", dir: null, cursor: 0 });
             expect(sel()).toEqual(new Set());
         });
@@ -2809,64 +3045,64 @@ describe("Agent → Canvas gallery keys", () => {
 
     it("moves the card cursor over the cards in drawn order and clamps at the ends", () => {
         const at = () => galleryNow().cursor;
-        find("canvases:down").run(agentCtx);
+        find("canvases:down").run(libCtx);
         expect(at()).toBe(1);
-        find("canvases:down").run(agentCtx);
+        find("canvases:down").run(libCtx);
         expect(at()).toBe(2);
-        find("canvases:down").run(agentCtx);
+        find("canvases:down").run(libCtx);
         expect(at()).toBe(2);
-        find("canvases:left").run(agentCtx);
+        find("canvases:left").run(libCtx);
         expect(at()).toBe(1);
-        find("canvases:up").run(agentCtx);
+        find("canvases:up").run(libCtx);
         expect(at()).toBe(0);
-        find("canvases:up").run(agentCtx);
+        find("canvases:up").run(libCtx);
         expect(at()).toBe(0);
     });
 
     it("moves the cursor over what the search leaves", () => {
         gallery({ query: "old", cursor: 0 });
-        find("canvases:right").run(agentCtx);
+        find("canvases:right").run(libCtx);
         expect(galleryNow().cursor).toBe(0);
     });
 
     it("opens the card under the cursor, and lets Enter pass on an empty grid", () => {
         gallery({ cursor: 1 });
-        find("canvases:open").run(agentCtx);
+        find("canvases:open").run(libCtx);
         expect(galleryNow()).toMatchObject({ view: "viewer", dir: "/p/.superpowers/design/beta", board: 0, cursor: 1 });
         gallery({ view: "grid", dir: null, query: "no such canvas" });
-        expect(find("canvases:open").run(agentCtx)).toBe(false);
+        expect(find("canvases:open").run(libCtx)).toBe(false);
         expect(galleryNow().view).toBe("grid");
     });
 
     it("steps the open canvas' boards round the ends and goes back to the grid", () => {
         gallery({ view: "viewer", dir: "/p/.superpowers/design/alpha", board: 0, cursor: 0 });
-        find("canvases:next-board").run(agentCtx);
+        find("canvases:next-board").run(libCtx);
         expect(galleryNow().board).toBe(1);
-        find("canvases:next-board-bracket").run(agentCtx);
+        find("canvases:next-board-bracket").run(libCtx);
         expect(galleryNow().board).toBe(0);
-        find("canvases:prev-board").run(agentCtx);
+        find("canvases:prev-board").run(libCtx);
         expect(galleryNow().board).toBe(1);
-        find("canvases:back").run(agentCtx);
+        find("canvases:back").run(libCtx);
         expect(galleryNow()).toMatchObject({ view: "grid", dir: null, cursor: 0 });
     });
 
     it("lets / pass when no search box is on screen, and focuses the box when there is one", () => {
         vi.stubGlobal("document", { querySelector: () => null });
-        expect(find("canvases:search").run(agentCtx)).toBe(false);
+        expect(find("canvases:search").run(libCtx)).toBe(false);
         const input = { focus: vi.fn(), select: vi.fn() };
         vi.stubGlobal("document", { querySelector: vi.fn(() => input) });
-        find("canvases:search").run(agentCtx);
+        find("canvases:search").run(libCtx);
         expect(input.focus).toHaveBeenCalled();
         expect(input.select).toHaveBeenCalled();
     });
 
     it("keeps the surface switch's [ ] for the grid and gives them to the viewer", () => {
         const next = buildGlobalBindings(stubModel()).find((b) => b.id === "surface:next")!;
-        expect(next.when!(agentCtx)).toBe(true);
+        expect(next.when!(libCtx)).toBe(true);
         gallery({ view: "viewer", dir: "/p/.superpowers/design/alpha" });
-        expect(next.when!(agentCtx)).toBe(false);
+        expect(next.when!(libCtx)).toBe(false);
         // another surface is unaffected
-        expect(next.when!({ ...agentCtx, surface: "jarvis" })).toBe(true);
+        expect(next.when!({ ...libCtx, surface: "jarvis" })).toBe(true);
     });
 });
 
@@ -2889,7 +3125,7 @@ describe("Agent → project Overview keys", () => {
         expect(search.when!({ ...agentCtx, surface: "jarvis" })).toBe(false);
         // the gallery's / is its own: the two never share the key
         expect(find("canvases:search").when!(agentCtx)).toBe(false);
-        globalStore.set(centerModeAtom, "canvases");
+        globalStore.set(centerModeAtom, "council");
         expect(search.when!(agentCtx)).toBe(false);
     });
 
@@ -3537,11 +3773,11 @@ describe("brainstorm pane view keys", () => {
         expect(getBrainstorm("a1")!.mode).toBe("terminal");
     });
 
-    it("the chord stands down over a modal, off the Agent surface, with nothing to switch to, and while History covers the terminal", () => {
+    it("the chord stands down over a modal, off the Agent surface, with nothing to switch to, and while a council covers the terminal", () => {
         const chord = find("agent:view-chord");
         expect(chord.when!({ ...nav, modalOpen: true })).toBe(false);
         expect(chord.when!({ ...nav, surface: "cockpit" })).toBe(false);
-        globalStore.set(centerModeAtom, "history");
+        globalStore.set(centerModeAtom, "council");
         expect(chord.when!(nav)).toBe(false);
         globalStore.set(centerModeAtom, "terminal");
         detachBrainstorm("a1");
@@ -3724,6 +3960,157 @@ describe("council chat keys", () => {
             const active = all.filter((b) => b.when!({ ...council, editable: typing }));
             const keys = active.map((b) => b.keys);
             expect(new Set(keys).size).toBe(keys.length);
+        }
+    });
+});
+
+// A council open in Library's Councils tab has the keys it has in Agent's centre column: the chat's j k Enter p Tab Escape
+// (buildCouncilBindings) and the views' r c m (buildCouncilTabBindings), live on Library with a council open, never on its lists
+describe("council keys on Library", () => {
+    const lib: KeyContext = { surface: "library", editable: false, modalOpen: false, leader: null };
+    const agent: KeyContext = { ...lib, surface: "agent" };
+    const chatKeys = () => buildCouncilBindings();
+    const tabKeys = () => buildCouncilTabBindings();
+    const nav = (extra: Partial<CouncilChatNav> = {}): CouncilChatNav => ({
+        order: ["P1", "P2"],
+        focusedId: "P1",
+        openId: null,
+        sourcesOpen: false,
+        focus: vi.fn(),
+        open: vi.fn(),
+        close: vi.fn(),
+        chot: vi.fn(() => true),
+        ...extra,
+    });
+    const focusIn = (inside: boolean) =>
+        vi.stubGlobal("document", { activeElement: { tagName: "DIV", closest: () => (inside ? {} : null) } });
+    // Library on a council: the Councils tab, with one open
+    const openCouncilInLibrary = () => {
+        globalStore.set(libraryTabAtom, "councils");
+        globalStore.set(libraryCouncilSelAtom, "c1");
+    };
+
+    beforeEach(() => {
+        resetLibrary();
+        globalStore.set(centerModeAtom, "terminal");
+    });
+    afterEach(() => {
+        vi.unstubAllGlobals();
+        resetLibrary();
+        globalStore.set(centerModeAtom, "terminal");
+        globalStore.set(councilChatNavAtom, null);
+    });
+
+    it("the view keys r c m are live on the Councils tab with a council open, and on no list, tab or other surface", () => {
+        const tabs = tabKeys();
+        expect(tabs.map((b) => b.keys)).toEqual(["r", "c", "m"]);
+        // the Councils list: nothing open
+        globalStore.set(libraryTabAtom, "councils");
+        expect(tabs.some((b) => b.when!(lib))).toBe(false);
+        openCouncilInLibrary();
+        expect(tabs.every((b) => b.when!(lib))).toBe(true);
+        // a text field keeps its letters, and so does an open modal
+        expect(tabs.some((b) => b.when!({ ...lib, editable: true }))).toBe(false);
+        expect(tabs.some((b) => b.when!({ ...lib, modalOpen: true }))).toBe(false);
+        // another tab with the council still selected, another surface
+        globalStore.set(libraryTabAtom, "conversations");
+        expect(tabs.some((b) => b.when!(lib))).toBe(false);
+        globalStore.set(libraryTabAtom, "councils");
+        expect(tabs.some((b) => b.when!({ ...lib, surface: "jarvis" }))).toBe(false);
+        // the Agent surface follows its own centre, not Library's council: Library's open one does not light it
+        expect(tabs.some((b) => b.when!(agent))).toBe(false);
+        globalStore.set(centerModeAtom, "council");
+        expect(tabs.every((b) => b.when!(agent))).toBe(true);
+    });
+
+    it("the view keys press the tab of the surface they were typed on", () => {
+        openCouncilInLibrary();
+        const click = vi.fn();
+        const querySelector = vi.fn(() => ({ click }));
+        vi.stubGlobal("document", { querySelector });
+        const map = tabKeys().find((b) => b.id === "council:tab-map")!;
+        map.run(lib);
+        expect(querySelector).toHaveBeenLastCalledWith('[data-library] [data-council-tab="map"]');
+        expect(click).toHaveBeenCalledTimes(1);
+        globalStore.set(centerModeAtom, "council");
+        map.run(agent);
+        expect(querySelector).toHaveBeenLastCalledWith('[data-council-tab="map"]');
+    });
+
+    it("the chat's keys are live on Library with the chat published, a council open and focus inside it", () => {
+        const keys = ["council:next-idea", "council:prev-idea", "council:chot", "council:open-thread"].map(
+            (id) => chatKeys().find((b) => b.id === id)!
+        );
+        focusIn(true);
+        globalStore.set(councilChatNavAtom, nav());
+        // the Councils list, or nothing published: not the chat's
+        globalStore.set(libraryTabAtom, "councils");
+        expect(keys.some((b) => b.when!(lib))).toBe(false);
+        openCouncilInLibrary();
+        expect(keys.every((b) => b.when!(lib))).toBe(true);
+        globalStore.set(councilChatNavAtom, null);
+        expect(keys.some((b) => b.when!(lib))).toBe(false);
+        globalStore.set(councilChatNavAtom, nav());
+        // focus outside the chat, a field, a modal, another tab
+        focusIn(false);
+        expect(keys.some((b) => b.when!(lib))).toBe(false);
+        focusIn(true);
+        expect(keys.some((b) => b.when!({ ...lib, editable: true }))).toBe(false);
+        expect(keys.some((b) => b.when!({ ...lib, modalOpen: true }))).toBe(false);
+        globalStore.set(libraryTabAtom, "canvases");
+        expect(keys.some((b) => b.when!(lib))).toBe(false);
+    });
+
+    it("Tab puts the focus back in the box of Library's council, searching from Library's root", () => {
+        openCouncilInLibrary();
+        const focus = vi.fn();
+        const querySelector = vi.fn((sel: string) =>
+            sel === '[data-library] [data-council-composer="channel"] [data-council-composer-input]'
+                ? { focus, disabled: false }
+                : null
+        );
+        vi.stubGlobal("document", { activeElement: { closest: () => null }, querySelector });
+        const tab = chatKeys().find((b) => b.id === "council:focus-box")!;
+        expect(tab.when!(lib)).toBe(true);
+        tab.run(lib);
+        expect(focus).toHaveBeenCalledTimes(1);
+    });
+
+    it("Escape closes the open thread first, then library:back leaves the council: never both on one press", () => {
+        openCouncilInLibrary();
+        focusIn(true);
+        globalStore.set(councilChatNavAtom, nav({ openId: "P1" }));
+        const close = chatKeys().find((b) => b.id === "council:close-thread")!;
+        const back = buildLibraryBindings(stubModel()).find((b) => b.id === "library:back")!;
+        expect(close.when!(lib)).toBe(true);
+        expect(back.when!(lib)).toBe(false);
+        // the thread closed: the press now leaves the council
+        globalStore.set(councilChatNavAtom, nav({ openId: null }));
+        expect(close.when!(lib)).toBe(false);
+        expect(back.when!(lib)).toBe(true);
+    });
+
+    it("shares no key with Library's, the global ones or the gallery's while a council is open on Library", () => {
+        openCouncilInLibrary();
+        focusIn(true);
+        globalStore.set(councilChatNavAtom, nav({ openId: "P1" }));
+        const model = { ...stubModel(), surfaceAtom: atom<SurfaceKey>("library") } as any;
+        const all = [
+            ...buildGlobalBindings(model),
+            ...buildAgentBindings(model),
+            ...buildListNavBindings(model),
+            ...buildLibraryBindings(model),
+            ...buildCouncilBindings(),
+            ...buildCouncilTabBindings(),
+        ];
+        for (const editable of [false, true]) {
+            for (const leader of [null, "g"]) {
+                const keys = all
+                    .filter((b) => b.when?.({ ...lib, editable, leader }) ?? true)
+                    .map((b) => b.keys)
+                    .filter((k) => k !== "");
+                expect(keys.filter((k, i) => keys.indexOf(k) !== i)).toEqual([]);
+            }
         }
     });
 });

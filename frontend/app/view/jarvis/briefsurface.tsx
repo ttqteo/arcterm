@@ -29,7 +29,6 @@ import { useSurfaceListNav, type ListNavController } from "@/app/store/keybindin
 import { useKeybindings } from "@/app/store/keybindings/store";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
-import { showSession } from "@/app/view/agents/agentcenter";
 import type { AgentsViewModel } from "@/app/view/agents/agents";
 import { formatAgeShort } from "@/app/view/agents/agentsviewmodel";
 import { attentionAtom } from "@/app/view/agents/attentionstore";
@@ -49,6 +48,7 @@ import {
     type LiveSession,
 } from "@/app/view/agents/sessionsarchivestore";
 import { runSessionPrimary } from "@/app/view/agents/sessionsdetail";
+import { showLibrarySession } from "@/app/view/library/librarystore";
 import { DagModal } from "@/app/view/orchestrate/dagmodal";
 import { setDagModalAgentsContext } from "@/app/view/orchestrate/dagmodalstate";
 import { formatChordString } from "@/util/keysym";
@@ -848,7 +848,7 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
             if (s.live) {
                 runSessionPrimary(model, s);
             } else {
-                showSession(model, `${s.runtime}:${s.id}`);
+                showLibrarySession(model, `${s.runtime}:${s.id}`);
             }
         },
         [model, setStoredCursor]

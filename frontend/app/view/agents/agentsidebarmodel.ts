@@ -1,23 +1,19 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// Pure model for the Agent surface's sidebar once it carries conversations as well as live agents. Two parts, each
-// collapsible. The project tree (projectTree) is one collapsible folder per project: the live agents as the tree builds
-// them (agenttreemodel.ts), the project's councils (its pinned ones at the folder's top, the others after the agents,
-// peers of them with no label, those the tree rule councilInTree keeps), a divider, then
+// Pure model for the Agent surface's sidebar. The project tree (projectTree) is one collapsible folder per project: the
+// live agents as the tree builds them (agenttreemodel.ts), the project's councils (its pinned ones at the folder's top,
+// the others after the agents, peers of them with no label, those the tree rule councilInTree keeps), a divider, then
 // the project's held services, then its plain terminals and tools. Terminals with no project sit in a
-// Home folder at the end; a project's split is one row in its folder, in place of its cells' rows. Conversations holds every ended session, in a collapsible folder per
-// project (the folder with the newest conversation first, newest first inside it, each row reading its own age), and
-// "Show more" pages a folder (CONVERSATION_PAGE per press). The app bar's project switcher narrows both to one
-// project, which then needs no folder: each part is a flat list, and agentsElsewhere counts the agents it hides so one
-// asking elsewhere is not lost. Live and ended never mix: a live agent and its session record are one row, in the
-// tree, joined by normalized transcript path (overlayLive), and the sessions an orchestrator run launched fold into one
-// entry for the run, listed once none of them is live (until then the run is in the tree). Status filters live in
-// History only. No React. It imports overlayLive from sessionsarchivestore, which pulls in the RPC client and the
-// store; nothing here calls either.
+// Home folder at the end; a project's split is one row in its folder, in place of its cells' rows. The app bar's
+// project switcher narrows it to one project, which then needs no folder: the list is flat, and agentsElsewhere counts
+// the agents it hides so one asking elsewhere is not lost. A live agent and its session record are one row, joined by
+// normalized transcript path (overlayLive, for the branch a row names). Ended sessions and runs are not here: they are
+// the Library surface's Conversations tab. No React. It imports overlayLive from sessionsarchivestore, which pulls in
+// the RPC client and the store; nothing here calls either.
 
 import { placesOf, splitGrids, type CellPlacement, type GridState, type ProjectGrids } from "./agentgrid";
-import { formatAgeShort, projectOf, type AgentVM } from "./agentsviewmodel";
+import { projectOf, type AgentVM } from "./agentsviewmodel";
 import { UNGROUPED_PROJECT, type AgentTreeRow } from "./agenttreemodel";
 import { avatarTone, isLit, seatInitials, type AvatarTone } from "./councildiscussionmodel";
 import {
@@ -34,73 +30,15 @@ import { isClosedCouncil, isUnreadCouncil, keptSince, type CouncilOpenedMap } fr
 import { HOME_NAME } from "./launcher";
 import type { Lineage, RunInfo } from "./runlineage";
 import type { QueuedRow } from "./runqueuemodel";
-import { overlayLive, type LiveSession } from "./sessionsarchivestore";
-import { groupRunSessions, memberSession, runSelKey, sessionKey, type RunSessions } from "./sessionsruns";
+import { overlayLive } from "./sessionsarchivestore";
 import type { StartingRun } from "./startingrunsmodel";
 
-export const CONVERSATION_PAGE = 10;
 // the project filter's value for no filter (the model's projectFilterAtom)
 export const ALL_PROJECTS = "all";
-export const UNTITLED_SESSION = "(untitled session)";
 export { UNTITLED_COUNCIL };
-
-// an ended session, with the project it is filed under
-export interface EndedSessionRow {
-    kind: "session";
-    project: string;
-    key: string; // sessionKey: the value sessionsSelAtom takes to read it
-    title: string; // the first human prompt, on one line
-    tooltip: string; // the full prompt, for the row's title attribute
-    lastactivets: number;
-    session: LiveSession;
-}
-
-// an ended orchestrator run, its sessions folded into one entry; its title and progress come from runView, which needs
-// the run's own objects, so the row carries the group they are read for
-export interface EndedRunRow {
-    kind: "run";
-    project: string;
-    key: string; // runSelKey: the value sessionsSelAtom takes to open the run in History
-    lastactivets: number;
-    group: RunSessions;
-}
-
-// one entry of the Conversations section: an ended session on its own, or an ended run
-export type ConversationEntry = EndedSessionRow | EndedRunRow;
-
-// a project's folder in the Conversations section: its ended conversations, how many of them wait on you, and whether
-// it is open
-export interface ConversationFolderRow {
-    kind: "folder";
-    project: string;
-    count: number;
-    attn: number;
-    open: boolean;
-}
-
-// the pager at the end of a project's folder: "Show more" counting its conversations still hidden, and "Show less" once
-// a press has opened more than the first page
-export interface MoreConversationsRow {
-    kind: "more";
-    project: string;
-    hidden: number;
-    less: boolean;
-}
-
-export type ConversationTreeRow = ConversationFolderRow | ConversationEntry | MoreConversationsRow;
 
 // a total order on strings (code units, not locale), so a tie broken by it never depends on the input's order
 const byText = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
-
-/** Pure: a session's title, its first prompt (the scan already trims it) with whitespace collapsed to one line. */
-export function sessionTitle(task: string): string {
-    return task.replace(/\s+/g, " ").trim() || UNTITLED_SESSION;
-}
-
-/** Pure: the start of the local day `now` falls in, a clock that moves once a day. */
-export function startOfDay(now: number): number {
-    return new Date(now).setHours(0, 0, 0, 0);
-}
 
 // the branches a conversation is on unless it says otherwise, and a detached HEAD: a row naming one would tell rows
 // apart by nothing
@@ -112,185 +50,12 @@ export function notableBranch(branch: string | undefined): string | undefined {
     return b && !DEFAULT_BRANCHES.has(b) ? b : undefined;
 }
 
-/** Pure: the keys of the shown session rows whose title another shown session row of the same project also has; those
- *  rows name when they started, the one thing left to tell them apart at a glance. */
-export function collidingTitles(rows: readonly ConversationTreeRow[]): Set<string> {
-    const byTitle = new Map<string, string[]>();
-    for (const r of rows) {
-        if (r.kind === "session") {
-            const id = JSON.stringify([r.project, r.title]);
-            byTitle.set(id, [...(byTitle.get(id) ?? []), r.key]);
-        }
-    }
-    return new Set([...byTitle.values()].filter((keys) => keys.length > 1).flat());
-}
-
-/** Pure: the tokens an orchestrator run spent, every session of it together. */
-export function runTokens(group: RunSessions): number {
-    return group.sessions.reduce((n, s) => n + (s.tokenstotal || 0), 0);
-}
-
-const pad2 = (n: number): string => String(n).padStart(2, "0");
-
-/** Pure: when a session started, in local time: "started 09:12" today, "started Oct 6 09:12" before. */
-export function startedLabel(startedts: number, now: number): string {
-    const d = new Date(startedts);
-    const clock = `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
-    if (startedts >= startOfDay(now)) {
-        return `started ${clock}`;
-    }
-    return `started ${d.toLocaleDateString("en-US", { month: "short", day: "numeric" })} ${clock}`;
-}
-
-/** Pure: how long ago a session last moved, as the tree's other rows read ("<1m", "16m", "3h", "3d"). */
-export function sessionAgeLabel(lastactivets: number, now: number): string {
-    return formatAgeShort(Math.max(0, now - lastactivets));
-}
-
 // the registered projects (projects.json), as the config atom holds them: name -> { path }
 export type ProjectRegistry = Readonly<Record<string, { path?: string }>>;
 
 // a path compared without case, separator or trailing separator
 export function normPath(p: string): string {
     return p.replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
-}
-
-// A Claude Code transcript lives in <home>/.claude/projects/<encoded-cwd>/<id>.jsonl, so its folder is one working
-// directory. "" for any other layout: codex keeps one folder per day for every project, so two transcripts sharing it
-// say nothing about sharing a project.
-function claudeTranscriptFolder(path: string | undefined): string {
-    if (!path) {
-        return "";
-    }
-    const parts = normPath(path).split("/");
-    const at = parts.lastIndexOf("projects");
-    return at >= 0 && at + 3 === parts.length ? parts.slice(0, at + 2).join("/") : "";
-}
-
-/** Pure: how the sidebar names the project of each ended session, so that it is the folder its live agents are in. The
- *  tree files an agent under projectOf (the registered name it was launched into, else the last hyphen segment of its
- *  transcript folder), while the scan names a session for the last segment of its cwd, which differs whenever a
- *  project is registered under another name or its folder has a hyphen. In order: the project of a live agent writing
- *  into the session's own transcript folder (the agent's folder is where the eye is, though its name is the lossy one);
- *  the registered project at the session's path; the scan's own name. A path inside an engine worktree reads as the
- *  project checkout the tree was made from (projectroot, which wavesrv sets for a tree under the shared root, else
- *  engineWorktreeRoot), for the last two as for the first. */
-function projectKeyResolver(roster: AgentVM[], registered: ProjectRegistry): (s: SessionActivity) => string {
-    const byFolder = new Map<string, string>();
-    for (const a of roster) {
-        const folder = claudeTranscriptFolder(a.transcriptPath);
-        if (folder && !byFolder.has(folder)) {
-            byFolder.set(folder, projectOf(a) || UNGROUPED_PROJECT);
-        }
-    }
-    const byPath = new Map<string, string>();
-    for (const [name, project] of Object.entries(registered)) {
-        const path = project?.path ? normPath(project.path) : "";
-        if (path && !byPath.has(path)) {
-            byPath.set(path, name);
-        }
-    }
-    return (s) => {
-        // wavesrv names the checkout of a tree under the shared root (<cache>/arc-wt/<key>), whose path names none
-        const root = s.projectroot ? s.projectroot.replace(/\\/g, "/") : engineWorktreeRoot(s.projectpath ?? "");
-        return (
-            byFolder.get(claudeTranscriptFolder(s.transcriptpath)) ??
-            byPath.get(normPath(root ?? s.projectpath ?? "")) ??
-            ((root != null ? root.replace(/\/+$/, "").split("/").pop() : s.projectname) || UNGROUPED_PROJECT)
-        );
-    };
-}
-
-const ENGINE_WORKTREES = "/.waveterm/worktrees/";
-
-// The project checkout an orchestrator worker's working directory belongs to, as the path the session reports: the engine
-// runs each task in <project>/.waveterm/worktrees/<run id>-<task> (pkg/orchestrate, runOfWorktree), and the scan names a
-// session for the last segment of its cwd, which there is the tree's key. Undefined for a path outside one.
-function engineWorktreeRoot(path: string): string | undefined {
-    const p = path.replace(/\\/g, "/");
-    const at = p.toLowerCase().indexOf(ENGINE_WORKTREES);
-    return at > 0 ? p.slice(0, at) : undefined;
-}
-
-/** Pure: the archive's ended conversations by project (see projectKeyResolver: the project a live agent of it is filed
- *  under, else "ungrouped"), newest first, equal times in key order. `base` is null until the scan loads. A session a
- *  roster agent is writing the transcript of is live, so it is that agent's row and not an ended one. The sessions of an
- *  orchestrator run are one entry, filed under the project of its lead (else its newest session), and only once none of
- *  them is live: until then the run is in Active. */
-export function endedConversationsByProject(
-    base: SessionActivity[] | null,
-    roster: AgentVM[],
-    registered: ProjectRegistry = {}
-): Map<string, ConversationEntry[]> {
-    const out = new Map<string, ConversationEntry[]>();
-    if (base == null) {
-        return out;
-    }
-    const projectKey = projectKeyResolver(roster, registered);
-    const add = (row: ConversationEntry) => {
-        const list = out.get(row.project);
-        if (list == null) {
-            out.set(row.project, [row]);
-        } else {
-            list.push(row);
-        }
-    };
-    // overlayLive's third argument (`now`) is unused, so 0 stands in for it
-    const { runs, solos } = groupRunSessions(overlayLive(base, roster, 0));
-    for (const s of solos) {
-        if (s.live) {
-            continue;
-        }
-        add({
-            kind: "session",
-            project: projectKey(s),
-            key: sessionKey(s),
-            title: sessionTitle(s.task),
-            tooltip: s.task.trim() || UNTITLED_SESSION,
-            lastactivets: s.lastactivets,
-            session: s,
-        });
-    }
-    for (const group of runs) {
-        if (group.live) {
-            continue;
-        }
-        const newest = [...group.sessions].sort((a, b) => b.lastactivets - a.lastactivets)[0];
-        add({
-            kind: "run",
-            project: projectKey(memberSession(group.lead) ?? newest),
-            key: runSelKey(group.runId),
-            lastactivets: group.lastactivets,
-            group,
-        });
-    }
-    for (const list of out.values()) {
-        list.sort((a, b) => b.lastactivets - a.lastactivets || byText(a.key, b.key));
-    }
-    return out;
-}
-
-/** Pure: the sidebar's share of endedConversationsByProject, the folders of projects added to arcterm (the registry's
- *  names), and how many conversations the rest hold: those are Conversation History's alone, so a transcript from a
- *  folder never added does not crowd the sidebar. With nothing registered there is nothing to scope to, so all stay. */
-export function registeredConversations(
-    ended: ReadonlyMap<string, ConversationEntry[]>,
-    registered: ProjectRegistry
-): { ended: Map<string, ConversationEntry[]>; elsewhere: number } {
-    const names = new Set(Object.keys(registered ?? {}));
-    if (names.size === 0) {
-        return { ended: new Map(ended), elsewhere: 0 };
-    }
-    const kept = new Map<string, ConversationEntry[]>();
-    let elsewhere = 0;
-    for (const [project, list] of ended) {
-        if (names.has(project)) {
-            kept.set(project, list);
-        } else {
-            elsewhere += list.length;
-        }
-    }
-    return { ended: kept, elsewhere };
 }
 
 /** Pure: what the project filter hides, for the row under the tree: the agents of every other project (`tree` being
@@ -1063,98 +828,6 @@ export function liveBranches(base: SessionActivity[] | null, roster: AgentVM[]):
         }
     }
     return out;
-}
-
-// a folder row and the rows under it, which fold as one block; a flat list (filtered to a project) is one block with no
-// head
-export interface FolderBlock<R> {
-    head: R | null;
-    body: R[];
-}
-
-/** Pure: a section's rows (conversationTree's) cut at each folder row, so each folder's rows render
- *  in one block that can open and close under it. A collapsed folder's block has an empty body. */
-export function folderBlocks<R extends { kind: string }>(rows: readonly R[]): FolderBlock<R>[] {
-    const out: FolderBlock<R>[] = [];
-    for (const r of rows) {
-        if (r.kind === "folder") {
-            out.push({ head: r, body: [] });
-        } else if (out.length === 0) {
-            out.push({ head: null, body: [r] });
-        } else {
-            out[out.length - 1].body.push(r);
-        }
-    }
-    return out;
-}
-
-/** Pure: the projects with at least one ended conversation, the one with the newest conversation first (equal times in
- *  name order): the order of the Conversations section's folders. */
-export function conversationProjects(ended: ReadonlyMap<string, ConversationEntry[]>): string[] {
-    const newest = new Map<string, number>();
-    for (const [project, list] of ended) {
-        if (list.length > 0) {
-            let latest = -Infinity;
-            for (const r of list) {
-                latest = Math.max(latest, r.lastactivets);
-            }
-            newest.set(project, latest);
-        }
-    }
-    return [...newest.keys()].sort((a, b) => newest.get(b) - newest.get(a) || byText(a, b));
-}
-
-// the folders the filter keeps, in conversationProjects' order: every one for ALL_PROJECTS, else the chosen project's
-// alone, or none when it has no ended conversation (the app bar offers every project, not only those with one)
-function projectsInScope(ended: ReadonlyMap<string, ConversationEntry[]>, filter: string): string[] {
-    const projects = conversationProjects(ended);
-    return filter === ALL_PROJECTS ? projects : projects.filter((p) => p === filter);
-}
-
-/** Pure: the Conversations section. A folder row per project the filter (the app bar's project switcher: ALL_PROJECTS or
- *  a project's name) keeps, then, unless the folder is collapsed, its ended conversations in the order `ended` holds them
- *  (endedConversationsByProject's, newest first, after laterFirst): the first CONVERSATION_PAGE plus one page per
- *  "Show more" press on that folder, then a pager row
- *  counting what is still hidden and, once a press opened more, offering to fold back to the first page. Filtered to a project, the one folder's rows alone: no folder row, so no fold
- *  applies. */
-export function conversationTree(
-    ended: ReadonlyMap<string, ConversationEntry[]>,
-    filter: string,
-    collapsed: ReadonlySet<string>,
-    presses: ReadonlyMap<string, number>
-): ConversationTreeRow[] {
-    const out: ConversationTreeRow[] = [];
-    const flat = filter !== ALL_PROJECTS;
-    for (const project of projectsInScope(ended, filter)) {
-        // in the order given: endedConversationsByProject's newest first, then laterFirst's marked ones ahead (sorting
-        // again here would put a marked session back under "Show more")
-        const list = ended.get(project);
-        const open = flat || !collapsed.has(project);
-        const attn = list.filter((r) => r.kind === "session" && r.session.needsAttention).length;
-        if (!flat) {
-            out.push({ kind: "folder", project, count: list.length, attn, open });
-        }
-        if (!open) {
-            continue;
-        }
-        const shown = list.slice(0, CONVERSATION_PAGE * (1 + Math.max(0, presses.get(project) ?? 0)));
-        out.push(...shown);
-        const hidden = list.length - shown.length;
-        const less = shown.length > CONVERSATION_PAGE;
-        if (hidden > 0 || less) {
-            out.push({ kind: "more", project, hidden, less });
-        }
-    }
-    return out;
-}
-
-/** Pure: how many ended conversations the filter keeps, for the Conversations header. */
-export function conversationCount(ended: ReadonlyMap<string, ConversationEntry[]>, filter: string): number {
-    let n = 0;
-    for (const project of projectsInScope(ended, filter)) {
-        n += ended.get(project).length;
-    }
-    return n;
 }
 
 /** Pure: what the roster holds for agentExited: each agent's tab id and, apart, each transcript an agent is writing. A

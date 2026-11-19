@@ -1,10 +1,11 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// The council centre mode of the Agent surface (agentcenter.ts "council"): the Discussion, the Summary, the Map or Setup,
-// whichever councilViewAtom names. Thin: each view reads its own council (or the project's draft) from councilstore.ts. The
-// Summary takes the model: Start an agent on it opens an agent through launchAgent. Leaving a council (another one shown,
-// Setup, or the pane gone) marks it opened in the last-opened map (councilopened.ts).
+// A council's pane: the Discussion, the Summary, the Map or Setup, whichever the host's view atom names (councilhost.ts: the
+// Agent centre's councilViewAtom for the `council` mode of the Agent surface, Library's own for its Councils tab; Setup is
+// Agent only). Thin: each view reads its own council (or the project's draft) from councilstore.ts and the host around it.
+// The Summary takes the model: Start an agent on it opens an agent through launchAgent. Leaving a council (another one
+// shown, Setup, or the pane gone) marks it opened in the last-opened map (councilopened.ts).
 
 import { globalStore } from "@/app/store/jotaiStore";
 import { useAtomValue } from "jotai";
@@ -12,16 +13,11 @@ import { useEffect } from "react";
 import { showCouncil, showCouncilSetup } from "./agentcenter";
 import type { AgentsViewModel } from "./agents";
 import { CouncilDiscussion } from "./councildiscussion";
+import { useCouncilHost } from "./councilhost";
 import { CouncilMap } from "./councilmap";
 import { councilOpenedAtom, markCouncilOpened, saveOpenedMap, type CouncilOpenedMap } from "./councilopened";
 import { CouncilSetup } from "./councilsetup";
-import {
-    councilMapOpenAtom,
-    councilOpenProposalAtom,
-    councilSelAtom,
-    councilTimelineAtom,
-    councilViewAtom,
-} from "./councilstore";
+import { councilMapOpenAtom, councilOpenProposalAtom, councilTimelineAtom } from "./councilstore";
 import { CouncilSummary } from "./councilsummary";
 
 // DEV only: lets a CDP scenario open a fixture council, or Setup prefilled, without clicking through the tree, and read
@@ -44,8 +40,9 @@ if (import.meta.env.DEV) {
 }
 
 export function CouncilPane({ model }: { model: AgentsViewModel }) {
-    const view = useAtomValue(councilViewAtom);
-    const sel = useAtomValue(councilSelAtom);
+    const host = useCouncilHost();
+    const view = useAtomValue(host.viewAtom);
+    const sel = useAtomValue(host.selAtom);
     // the council on screen, none while Setup shows; the one left behind is marked opened as it goes
     const shown = view === "setup" ? null : sel;
     useEffect(() => {

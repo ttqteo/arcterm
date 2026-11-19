@@ -1,10 +1,10 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-// State of Agent → Canvas gallery (agentcenter.ts' `canvases` mode): where the gallery is (the grid, one open canvas, the
+// State of Library → Canvases tab (library/librarysurface.tsx): where the gallery is (the grid, one open canvas, the
 // clean-up selection, or the version scan's review), the list of canvases it shows, and the link picker of an open
-// canvas. Module-level atoms, like railstore.ts, so the place survives a surface switch (the mode's components unmount,
-// like History's) and the key bindings can read and move it.
+// canvas. Module-level atoms, like railstore.ts, so the place survives a surface switch (Library's components unmount,
+// like every surface's but Agent's) and the key bindings can read and move it.
 
 import { pushToast } from "@/app/cockpit/notificationstore";
 import { globalStore } from "@/app/store/jotaiStore";

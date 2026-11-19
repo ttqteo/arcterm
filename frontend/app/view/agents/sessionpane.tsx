@@ -1,16 +1,17 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// The Agent surface's `session` centre mode: one ended session read as its transcript, with Resume. It is SoloDetail
-// (sessionsdetail.tsx) in the centre column, so it is the same read History gives a solo session: useTranscript feeding
-// NarrationTimeline, and a primary button on runSessionPrimary, which resumes through launchAgent into a new tab on the
-// same transcript. Which session is the model's sessionsSelAtom.
+// Library's Conversations tab, `session` view (librarystore.ts): one ended session read as its transcript at full width, with
+// Resume, when a session is opened from outside Library (showLibrarySession). It is SoloDetail (sessionsdetail.tsx), so it is
+// the same read History gives a solo session: useTranscript feeding NarrationTimeline, and a primary button on
+// runSessionPrimary, which resumes through launchAgent into a new tab on the same transcript. Which session is the model's
+// sessionsSelAtom. Back (leaveLibraryDetail) returns to the surface that opened it, else to the Conversations list.
 
+import { leaveLibraryDetail } from "@/app/view/library/librarystore";
 import { fireAndForget } from "@/util/util";
 import { useAtomValue } from "jotai";
 import { ArrowLeft } from "lucide-react";
 import { useEffect, useMemo } from "react";
-import { backLabel, centerBackAtom, leaveCenter } from "./agentcenter";
 import type { AgentsViewModel } from "./agents";
 import {
     loadSessionsArchive,
@@ -31,8 +32,6 @@ export function SessionPane({ model }: { model: AgentsViewModel }) {
     const lookedUp = useAtomValue(sessionLookupAtom).sessions;
     const loadError = useAtomValue(sessionsErrorAtom);
     const roster = useAtomValue(model.agentsAtom);
-    // Back returns where the session was opened from: a project's Overview, History, else the terminal
-    const back = backLabel(useAtomValue(centerBackAtom));
     // the archive is scanned on entering the surface, but this pane can open before that scan has landed (or without
     // one); a call made while a scan is running is folded into it (which then runs once more), and a failure still ends
     // the skeleton (archive null -> [])
@@ -57,11 +56,11 @@ export function SessionPane({ model }: { model: AgentsViewModel }) {
                 <button
                     type="button"
                     data-agent-session-back
-                    onClick={leaveCenter}
+                    onClick={leaveLibraryDetail}
                     className="mb-3 flex w-fit flex-none cursor-pointer items-center gap-[6px] rounded-[6px] px-[6px] py-[3px] text-[12px] text-muted hover:bg-surface-hover hover:text-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                 >
                     <ArrowLeft size={13} aria-hidden />
-                    {back}
+                    Back
                 </button>
             ) : null}
             <div className="flex min-h-0 flex-1 flex-col">
@@ -72,7 +71,7 @@ export function SessionPane({ model }: { model: AgentsViewModel }) {
                         {loadError ? "Could not read the session archive." : "This session is not in the archive yet."}
                     </div>
                 ) : (
-                    <SoloDetail model={model} session={session} onBack={leaveCenter} backLabel={back} />
+                    <SoloDetail model={model} session={session} onBack={leaveLibraryDetail} backLabel="Back" />
                 )}
             </div>
         </div>

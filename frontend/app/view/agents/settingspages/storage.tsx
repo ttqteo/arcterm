@@ -10,11 +10,11 @@
 import { pushToast } from "@/app/cockpit/notificationstore";
 import { getSettingsKeyAtom } from "@/app/store/global";
 import { modalsModel } from "@/app/store/modalmodel";
+import { showLibrary } from "@/app/view/library/librarystore";
 import { cn, fireAndForget } from "@/util/util";
 import { useAtomValue } from "jotai";
 import { ChevronRight, Loader2 } from "lucide-react";
 import { useState } from "react";
-import { showCanvases } from "../agentcenter";
 import type { AgentsViewModel } from "../agents";
 import { formatAgo } from "../agentsviewmodel";
 import { CardFooter, Segmented, SettingCard, SettingRow, Toggle, writeConfig } from "../settingsui";
@@ -301,7 +301,7 @@ function CategoryCard({
                             type="button"
                             data-storage-canvases-open
                             className={BUTTON}
-                            onClick={() => showCanvases(model)}
+                            onClick={() => showLibrary(model, "canvases")}
                         >
                             Open the gallery
                         </button>

@@ -16,6 +16,7 @@ export const SURFACE_LABEL = {
     agent: "Agent",
     files: "Diff",
     usage: "Usage",
+    library: "Library",
     code: "Code",
     settings: "Settings",
     setup: "Setup",

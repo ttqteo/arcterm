@@ -3,16 +3,18 @@
 //
 // Tells you when a council ends, in the always-mounted shell since that can happen while any surface shows: a toast that
 // opens its Summary (when Settings → In-app toasts is on), and an unread dot on its row in the Agent tree
-// (councilUnreadAtom, whatever that setting says). Nothing for a council you are looking at, nor for those already done
-// when the list first loads. councilnotify.ts decides what is said.
+// (councilUnreadAtom, whatever that setting says). Nothing for a council you are looking at, in Agent's centre column or
+// open in Library's Councils tab, nor for those already done when the list first loads. councilnotify.ts decides what is
+// said; the toast's open goes through openCouncil, which picks the host (Agent for a council the tree keeps).
 
 import { pushToast } from "@/app/cockpit/notificationstore";
 import { getSettingsKeyAtom } from "@/app/store/global";
 import { useAtom, useAtomValue } from "jotai";
 import { useEffect, useRef } from "react";
-import { centerModeAtom, showCouncil } from "./agentcenter";
+import { libraryCouncilSelAtom, libraryTabAtom, openCouncil } from "../library/librarystore";
+import { centerModeAtom } from "./agentcenter";
 import type { AgentsViewModel } from "./agents";
-import { endedNotice, markRead, markUnread, noticeRoute, viewingCouncil } from "./councilnotify";
+import { endedNotice, markRead, markUnread, noticeRoute, viewingCouncil, type LibraryShown } from "./councilnotify";
 import { councilSelAtom, councilUnreadAtom, councilViewAtom, useCouncils } from "./councilstore";
 
 export function CouncilNotifySync({ model }: { model: AgentsViewModel }): null {
@@ -21,12 +23,15 @@ export function CouncilNotifySync({ model }: { model: AgentsViewModel }): null {
     const center = useAtomValue(centerModeAtom);
     const view = useAtomValue(councilViewAtom);
     const selected = useAtomValue(councilSelAtom);
+    const libraryTab = useAtomValue(libraryTabAtom);
+    const librarySelected = useAtomValue(libraryCouncilSelAtom);
     const [unread, setUnread] = useAtom(councilUnreadAtom);
 
     // the shown view at the moment of a change, through a ref so the list effect below runs on the list alone
     const toastsOn = (useAtomValue(getSettingsKeyAtom("notify:toast")) as boolean | undefined) ?? true;
-    const shown = useRef({ surface, center, view, selected, toastsOn });
-    shown.current = { surface, center, view, selected, toastsOn };
+    const library: LibraryShown = { tab: libraryTab, selected: librarySelected };
+    const shown = useRef({ surface, center, view, selected, library, toastsOn });
+    shown.current = { surface, center, view, selected, library, toastsOn };
 
     // the last record of each council; null until the first list has loaded, which is only recorded
     const prev = useRef<Map<string, Council> | null>(null);
@@ -44,7 +49,7 @@ export function CouncilNotifySync({ model }: { model: AgentsViewModel }): null {
             const notice = endedNotice(
                 before.get(next.id),
                 next,
-                viewingCouncil(at.surface, at.center, at.view, at.selected, next.id)
+                viewingCouncil(at.surface, at.center, at.view, at.selected, next.id, at.library)
             );
             const route = noticeRoute(notice, at.toastsOn);
             if (notice == null) {
@@ -58,17 +63,19 @@ export function CouncilNotifySync({ model }: { model: AgentsViewModel }): null {
                     title: notice.title,
                     message: notice.body,
                     level: next.state === "failed" ? "error" : "info",
-                    onOpen: () => showCouncil(next.id, "summary", model),
+                    onOpen: () => openCouncil(model, next.id, "summary"),
                 });
             }
         }
     }, [councils]);
 
-    // a council in view is read, whichever of its views shows
+    // a council in view is read, whichever of its views shows and whichever host (Agent's centre or Library) shows it
     useEffect(() => {
-        if (selected != null && viewingCouncil(surface, center, view, selected, selected)) {
-            setUnread((set) => markRead(set, selected));
+        for (const id of [selected, librarySelected]) {
+            if (id != null && viewingCouncil(surface, center, view, selected, id, library)) {
+                setUnread((set) => markRead(set, id));
+            }
         }
-    }, [surface, center, view, selected, unread]);
+    }, [surface, center, view, selected, libraryTab, librarySelected, unread]);
     return null;
 }

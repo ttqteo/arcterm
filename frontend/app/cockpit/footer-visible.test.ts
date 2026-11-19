@@ -5,7 +5,9 @@ import { globalStore } from "@/app/store/jotaiStore";
 import {
     buildAgentBindings,
     buildCockpitBindings,
+    buildCouncilTabBindings,
     buildGlobalBindings,
+    buildLibraryBindings,
     buildListNavBindings,
 } from "@/app/store/keybindings/bindings";
 import { listNavAtom } from "@/app/store/keybindings/listnav";
@@ -13,8 +15,10 @@ import type { Binding, KeyContext, SurfaceKey } from "@/app/store/keybindings/ty
 import { centerModeAtom } from "@/app/view/agents/agentcenter";
 import { setAgentView } from "@/app/view/agents/agentview";
 import { attachBrainstorm, detachBrainstorm, openBrainstormBoard } from "@/app/view/agents/brainstormstore";
+import { canvasGalleryAtom } from "@/app/view/agents/canvasgallerystore";
 import { attachCanvas, detachCanvas, setCanvasMode, setMarking, updateCanvas } from "@/app/view/agents/canvasstore";
 import type { OpenTarget } from "@/app/view/jarvis/address";
+import { libraryConvViewAtom, libraryCouncilSelAtom, libraryTabAtom } from "@/app/view/library/librarystore";
 import { setPlatform } from "@/util/platformutil";
 import { atom, type PrimitiveAtom } from "jotai";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -139,8 +143,8 @@ describe("agent canvas mode chips", () => {
         expect(chipsInTerm).not.toContain("c canvas");
     });
 
-    it("History, the canvases and a session offer only esc terminal and switch: F11 and send stand down, even mid-marking", () => {
-        for (const mode of ["history", "session", "canvases"] as const) {
+    it("a council, a project's Overview and a held agent offer only esc terminal and switch: F11 and send stand down, even mid-marking", () => {
+        for (const mode of ["council", "project", "held"] as const) {
             globalStore.set(centerModeAtom, mode);
             expect(chips()).toEqual(["Escape terminal", "Ctrl:Tab switch", ...globals()]);
             setCanvasMode("a1", "canvas", 1);
@@ -249,6 +253,80 @@ describe("agent brainstorm mode chips", () => {
         expect(chips({ ...rest, editable: true })).not.toContain("Enter send");
         inPane();
         expect(chips(rest)).not.toContain("Enter send"); // a focused button, not a field
+    });
+});
+
+// Library's footer: the tab keys always, then the keys of what the tab shows, then the Escape of whatever is open in it
+describe("Library chips", () => {
+    const model = { surfaceAtom: atom<SurfaceKey>("library"), focusIdAtom: atom<string | undefined>(undefined) } as any;
+    const real = [
+        ...buildGlobalBindings(model),
+        ...buildListNavBindings(model),
+        ...buildAgentBindings(model),
+        ...buildLibraryBindings(model),
+        ...buildCouncilTabBindings(),
+    ];
+    const lib: KeyContext = { surface: "library", editable: false, modalOpen: false, leader: null };
+    // Library's own chips only: the globals ("go", "home", "palette"…) are the same on every surface
+    const chips = (ctx: KeyContext = lib) =>
+        visibleHints(ctx, real, SURFACE_HINTS.library!, []).map((c) => `${c.glyph ?? c.keys} ${c.label}`);
+    const gallery = (view: "grid" | "viewer" | "cleanup" | "scan") =>
+        globalStore.set(canvasGalleryAtom, {
+            view,
+            dir: view === "grid" ? null : "/p/.superpowers/design/t",
+            board: 0,
+            query: "",
+            cursor: 0,
+        });
+
+    afterEach(() => {
+        globalStore.set(libraryTabAtom, "conversations");
+        globalStore.set(libraryConvViewAtom, "list");
+        globalStore.set(libraryCouncilSelAtom, null);
+        globalStore.set(listNavAtom, null);
+        gallery("grid");
+    });
+
+    it("Conversations: the tab keys, and the list's j k and Enter once its cursor is published", () => {
+        expect(chips()).toEqual(["1 2 3 tab"]);
+        globalStore.set(listNavAtom, { surface: "library", navigableIds: ["a"], cursorId: "a", setCursor() {} });
+        expect(chips()).toEqual(["1 2 3 tab", "j k move", "Enter open"]);
+    });
+
+    it("a session or a run open in Conversations offers Escape back", () => {
+        globalStore.set(libraryConvViewAtom, "session");
+        expect(chips()).toEqual(["1 2 3 tab", "Escape back"]);
+    });
+
+    it("Canvases: the grid's move, open and search; the viewer's boards and back; clean up's move, tick and cancel", () => {
+        globalStore.set(libraryTabAtom, "canvases");
+        gallery("grid");
+        expect(chips()).toEqual(["1 2 3 tab", "↑↓←→ move", "Enter open", "/ search"]);
+        gallery("viewer");
+        expect(chips()).toEqual(["1 2 3 tab", "← → board", "Escape back"]);
+        gallery("cleanup");
+        expect(chips()).toEqual(["1 2 3 tab", "↑↓←→ move", "Space tick", "Escape cancel"]);
+        gallery("scan");
+        expect(chips()).toEqual(["1 2 3 tab", "Escape cancel"]);
+    });
+
+    it("Councils: the list shows the tab keys alone; an open council adds r c m and Escape back", () => {
+        globalStore.set(libraryTabAtom, "councils");
+        expect(chips()).toEqual(["1 2 3 tab"]);
+        globalStore.set(libraryCouncilSelAtom, "c1");
+        expect(chips()).toEqual(["1 2 3 tab", "r c m view", "Escape back"]);
+    });
+
+    it("in a text field the single keys drop out, and Escape stays the field's", () => {
+        globalStore.set(libraryTabAtom, "councils");
+        globalStore.set(libraryCouncilSelAtom, "c1");
+        expect(chips({ ...lib, editable: true })).toEqual([]);
+    });
+
+    it("with nothing open, Escape is the global Home chip, not a Library one", () => {
+        expect(visibleHints(lib, real, [], GLOBAL_HINTS).map((c) => c.label)).toContain("home");
+        globalStore.set(libraryConvViewAtom, "run");
+        expect(visibleHints(lib, real, [], GLOBAL_HINTS).map((c) => c.label)).not.toContain("home");
     });
 });
 

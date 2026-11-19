@@ -43,9 +43,11 @@ import type { AgentVM } from "../agents/agentsviewmodel";
 import { attachBrainstorm, detachBrainstorm, getBrainstorm } from "../agents/brainstormstore";
 import { attachCanvas, detachCanvas, getCanvas, setCanvasMode } from "../agents/canvasstore";
 import { activeChannelIdAtom } from "../agents/channelsstore";
-import { councilSelAtom, councilViewAtom } from "../agents/councilstore";
+import { councilOpenedAtom } from "../agents/councilopened";
+import { councilAtom, councilLastViewAtom, councilSelAtom, councilViewAtom } from "../agents/councilstore";
 import { memorySelectedChangeAtom, memorySelectedProjectAtom } from "../agents/memorystore";
 import { setupTabAtom } from "../agents/setupstore";
+import { libraryCouncilSelAtom, libraryCouncilViewAtom, libraryTabAtom } from "../library/librarystore";
 import { dagModalStateAtom, dismissDagModal } from "../orchestrate/dagmodalstate";
 import { selectedTaskIdAtom } from "../orchestrate/dagstore";
 import type { OpenTarget } from "./address";
@@ -503,6 +505,65 @@ describe("council landings", () => {
         globalStore.set(councilViewAtom, "summary");
         expect(await openTarget(model, { kind: "council", councilId: "c-2" })).toEqual({ ok: true });
         expect(globalStore.get(councilViewAtom)).toBe("discussion");
+    });
+
+    describe("by whether the Agent tree still lists the council (openCouncil)", () => {
+        const DAY = 24 * 60 * 60 * 1000;
+        const known = (id: string, over: Partial<Council> = {}): Council =>
+            ({
+                id,
+                project: "/work/a",
+                feature: "F",
+                experts: [],
+                state: "done",
+                round: 3,
+                updated: Date.now() - 2 * DAY,
+                summary: { text: "t", directions: [], outcomes: {}, at: Date.now() - 2 * DAY },
+                ...over,
+            }) as Council;
+
+        beforeEach(() => {
+            globalStore.set(centerModeAtom, "terminal");
+            globalStore.set(councilSelAtom, null);
+            globalStore.set(councilViewAtom, "discussion");
+            globalStore.set(libraryTabAtom, "conversations");
+            globalStore.set(libraryCouncilSelAtom, null);
+            globalStore.set(libraryCouncilViewAtom, "discussion");
+            // a council never opened counts as opened now, so a day-old one is read and has left the tree
+            globalStore.set(councilOpenedAtom, { seededAt: Date.now(), opened: {} });
+        });
+        afterEach(() => {
+            for (const id of ["c-run", "c-old"]) {
+                globalStore.set(councilAtom(id), null);
+                globalStore.set(councilLastViewAtom(id), null);
+            }
+        });
+
+        it("opens a running council on Agent's council mode", async () => {
+            const model = makeModel();
+            globalStore.set(councilAtom("c-run"), known("c-run", { state: "running" }));
+            expect(await openAddress(model, "council:c-run")).toEqual({ ok: true });
+            expect(globalStore.get(councilSelAtom)).toBe("c-run");
+            expect(globalStore.get(centerModeAtom)).toBe("council");
+            expect(globalStore.get(model.surfaceAtom)).toBe("agent");
+            expect(globalStore.get(libraryCouncilSelAtom)).toBeNull();
+        });
+
+        it("opens a council that left the tree in Library's Councils tab, on the view the target names", async () => {
+            const model = makeModel();
+            // with no summary its default view is the Discussion, so landing on the summary is the target's doing
+            globalStore.set(councilAtom("c-old"), known("c-old", { summary: undefined }));
+            expect(await openTarget(model, { kind: "council", councilId: "c-old", view: "summary" })).toEqual({
+                ok: true,
+            });
+            expect(globalStore.get(libraryCouncilSelAtom)).toBe("c-old");
+            expect(globalStore.get(libraryCouncilViewAtom)).toBe("summary");
+            expect(globalStore.get(libraryTabAtom)).toBe("councils");
+            expect(globalStore.get(model.surfaceAtom)).toBe("library");
+            // Agent's own selection and centre are left as they were
+            expect(globalStore.get(councilSelAtom)).toBeNull();
+            expect(globalStore.get(centerModeAtom)).toBe("terminal");
+        });
     });
 
     it("is not peekable: a peek lands", async () => {

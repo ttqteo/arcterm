@@ -6,9 +6,9 @@
 // reads the atoms and acts.
 
 import type { CommandItem } from "@/app/cockpit/palette-commands";
-import type { CenterMode } from "@/app/view/agents/agentcenter";
 import { SURFACE_ORDER, type SurfaceKey } from "@/app/view/agents/agents";
 import { parseAddress } from "@/app/view/jarvis/address";
+import type { LibraryTab } from "@/app/view/library/librarystore";
 import { sameRepoPath } from "@/util/paths";
 
 // mirrors wshutil.RouteId_Cockpit
@@ -93,21 +93,32 @@ export function resolveAction(
     return { item };
 }
 
-// null = not a surface address; the shared router (openAddress) owns every other kind. Conversation History is a mode of the
-// Agent surface rather than a surface, so its address names the Agent surface and the mode; "sessions" is the old name of
-// the surface it replaced, kept so a worker following an old instruction still lands somewhere sensible.
+// Conversation History, the Canvas gallery and Councils are tabs of the Library surface rather than surfaces, so their
+// addresses name Library and the tab; "sessions" is the old name of the surface History replaced, kept (and left out of the
+// error's list) so a worker following an old instruction still lands somewhere sensible.
+const LIBRARY_TAB_ADDRESSES: ReadonlyMap<string, LibraryTab> = new Map<string, LibraryTab>([
+    ["history", "conversations"],
+    ["sessions", "conversations"],
+    ["canvases", "canvases"],
+    ["councils", "councils"],
+]);
+const LIBRARY_TAB_NAMES = ["history", "canvases", "councils"];
+
+// null = not a surface address; the shared router (openAddress) owns every other kind. `surface:library` is a surface like any
+// other (it opens on the tab it was left on); a name in LIBRARY_TAB_ADDRESSES opens Library on that tab.
 export function parseSurfaceAddress(
     address: string
-): { surface: SurfaceKey; center?: Extract<CenterMode, "history"> } | { error: string } | null {
+): { surface: SurfaceKey; tab?: LibraryTab } | { error: string } | null {
     if (!address.startsWith(SURFACE_PREFIX)) {
         return null;
     }
     const key = address.slice(SURFACE_PREFIX.length);
-    if (key === "history" || key === "sessions") {
-        return { surface: "agent", center: "history" };
+    const tab = LIBRARY_TAB_ADDRESSES.get(key);
+    if (tab != null) {
+        return { surface: "library", tab };
     }
     if (!SURFACES.includes(key as SurfaceKey)) {
-        return { error: `unknown surface "${key}"; one of ${[...SURFACES, "history"].join(", ")}` };
+        return { error: `unknown surface "${key}"; one of ${[...SURFACES, ...LIBRARY_TAB_NAMES].join(", ")}` };
     }
     return { surface: key as SurfaceKey };
 }

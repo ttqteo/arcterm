@@ -2,18 +2,22 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // Remove council: the tree row's menu asks it of an ended council (canRemoveCouncil); Close is the everyday action. Its own
-// module so agentcenter.ts, which many tests import, stays free of the modal and the config store.
+// module so agentcenter.ts, which many tests import, stays free of the modal and the config store. It is also where the
+// Library case is handled: councilstore.ts cannot import Library's store (librarystore.ts reaches councilstore through
+// agentcenter.ts, so that would be a cycle), so a council removed while Library has it open is let go of here.
 
 import { globalStore } from "@/app/store/jotaiStore";
 import { modalsModel } from "@/app/store/modalmodel";
+import { libraryCouncilSelAtom } from "../library/librarystore";
 import { centerModeAtom, showProjectOverview, showTerminal } from "./agentcenter";
 import { councilProjectName } from "./councilmodel";
 import { councilSelAtom, councilViewAtom, deleteCouncil } from "./councilstore";
 import { projectsAtom } from "./projectsstore";
 
-/** Removes an ended council behind a confirm. When it is the one open, the centre goes to its project's Overview, or
- *  back to the terminal when its folder is no registered project. A refusal (a council that started again meanwhile)
- *  is logged by the store. */
+/** Removes an ended council behind a confirm. When it is the one open in Agent's centre, the centre goes to its project's
+ *  Overview, or back to the terminal when its folder is no registered project; when Library's Councils tab has it open,
+ *  Library goes back to its list of councils (a council that is gone would otherwise sit on "Loading the council…"). A
+ *  refusal (a council that started again meanwhile) is logged by the store. */
 export function confirmRemoveCouncil(c: Pick<Council, "id" | "feature" | "project">): void {
     modalsModel.pushModal("ConfirmModal", {
         title: "Remove council",
@@ -26,7 +30,14 @@ export function confirmRemoveCouncil(c: Pick<Council, "id" | "feature" | "projec
                 globalStore.get(councilViewAtom) !== "setup" &&
                 globalStore.get(councilSelAtom) === c.id;
             void deleteCouncil(c.id).then((r) => {
-                if (!r.ok || !open) {
+                if (!r.ok) {
+                    return;
+                }
+                // the store lets go of Agent's selection itself (councilstore.ts); Library's is its own atom
+                if (globalStore.get(libraryCouncilSelAtom) === c.id) {
+                    globalStore.set(libraryCouncilSelAtom, null);
+                }
+                if (!open) {
                     return;
                 }
                 const project = councilProjectName(globalStore.get(projectsAtom), c.project);

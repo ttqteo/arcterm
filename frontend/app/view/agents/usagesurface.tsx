@@ -24,11 +24,11 @@ import { useSurfaceListNav, type ListNavController } from "@/app/store/keybindin
 import { useKeybindings } from "@/app/store/keybindings/store";
 import { REGION_LABEL } from "@/app/view/jarvis/briefstyle";
 import { openTarget } from "@/app/view/jarvis/openref";
+import { showLibrarySession } from "@/app/view/library/librarystore";
 import { cn } from "@/util/util";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import { motion, MotionConfig } from "motion/react";
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, type ReactNode } from "react";
-import { showSession } from "./agentcenter";
 import type { AgentsViewModel } from "./agents";
 import { formatReset, moveCursor, usageLevel } from "./agentsviewmodel";
 import { providerDot, providerLabel, usageBarVisible } from "./cockpitrailmodel";
@@ -707,14 +707,14 @@ export function UsageSurface({ model }: { model: AgentsViewModel }) {
     analyzeRef.current = analyze;
 
     // A row opens the way every other route to a session does: a live tab through the router, an ended one as its
-    // transcript in the Agent surface.
+    // transcript in Library, whose Back returns here.
     const openSession = useCallback(
         (row: SessionRow) => {
             setSessionCursor(row.id);
             if (row.liveTabId != null) {
                 void openTarget(model, { kind: "agent", tabId: row.liveTabId });
             } else {
-                showSession(model, sessionKey({ runtime: "claude", id: row.id }));
+                showLibrarySession(model, sessionKey({ runtime: "claude", id: row.id }));
             }
         },
         [model, setSessionCursor]

@@ -12,13 +12,7 @@ import { pushToast } from "@/app/cockpit/notificationstore";
 import { resmonSnapshotAtom } from "@/app/cockpit/resmonstore";
 import { useSettle } from "@/app/element/motionhooks";
 import { Tooltip } from "@/app/element/tooltip";
-import {
-    cardVariants,
-    composerReveal,
-    computeEntrances,
-    foldReveal,
-    initialEntranceState,
-} from "@/app/element/motiontokens";
+import { cardVariants, composerReveal, computeEntrances, initialEntranceState } from "@/app/element/motiontokens";
 import { globalStore } from "@/app/store/jotaiStore";
 import { ContextMenuModel } from "@/app/store/contextmenu";
 import * as WOS from "@/app/store/wos";
@@ -51,12 +45,9 @@ import {
     Folder,
     FolderOpen,
     GitBranch,
-    GitFork,
     Hash,
-    History as HistoryIcon,
     Hourglass,
     LayoutDashboard,
-    LayoutGrid,
     Loader2,
     MessageCircleQuestion,
     MessagesSquare,
@@ -79,7 +70,7 @@ import {
     X,
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
-import { Fragment, memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { confirmCloseAgents, confirmCloseProject, confirmCloseRun, confirmCloseSession } from "./agentactions";
 import { DONE_TITLE, doneSuggestion, ORIGIN_DONE_TITLE, startedRunLanded } from "./donesuggest";
 import { DRAFT_TITLE, draftAgentIdsAtom } from "./draftmarks";
@@ -120,7 +111,7 @@ import { runStepView, runTreeText } from "./brainstormrunmodel";
 import { brainstormAtom, shownBrainstormFile } from "./brainstormstore";
 import { isUnseen } from "./canvasmodel";
 import { canvasStateAtom } from "./canvasstore";
-import { laterFirst, laterSince, laterTitle, type LaterMarks } from "./latermodel";
+import { laterSince, laterTitle } from "./latermodel";
 import { laterMarksAtom, setLater } from "./laterstore";
 import { openLauncher } from "./launcherstore";
 import { machineServersReadingAtom } from "./machineserversstore";
@@ -163,25 +154,16 @@ import {
     centerModeAtom,
     heldSelAtom,
     overviewProjectAtom,
-    showCanvases,
     showCouncil,
-    showCouncils,
     showCouncilSetupWithAgents,
-    showHistory,
     showProjectOverview,
-    showSession,
     showTerminal,
 } from "./agentcenter";
 import {
     agentDigits,
     agentsElsewhere,
     ALL_PROJECTS,
-    collidingTitles,
-    conversationCount,
-    conversationTree,
     councilRowsByProject,
-    endedConversationsByProject,
-    folderBlocks,
     folderCounts,
     HOME_PROJECT,
     projectClose,
@@ -190,19 +172,11 @@ import {
     notableBranch,
     projectLabel,
     projectTree,
-    registeredConversations,
-    runTokens,
-    sessionAgeLabel,
-    startedLabel,
-    startOfDay,
     terminalRowState,
     terminalShows,
     treeNavIds,
-    type ConversationEntry,
     type CouncilRowSeat,
     type CouncilRowVM,
-    type EndedRunRow,
-    type EndedSessionRow,
     type ProjectTreeRow,
     type SplitRowCell,
     type TerminalRowState,
@@ -222,31 +196,13 @@ import {
     useCouncils,
 } from "./councilstore";
 import { projectsAtom } from "./projectsstore";
-import { useRunObjects } from "./runobjects";
 import { openRunFromAgent } from "./runopen";
 import { runtimeMeta } from "./runtimemeta";
-import { loadSessionsArchive, sessionsArchiveAtom, sessionsErrorAtom } from "./sessionsarchivestore";
+import { sessionsArchiveAtom } from "./sessionsarchivestore";
 import { liveTokensAtom, useLiveTokens } from "./livetokensstore";
-import { canDeleteSession, confirmDeleteSession, DELETE_SESSION_LABEL } from "./sessiondelete";
-import {
-    forkSession,
-    offersOpenAsleep,
-    openSessionAsleep,
-    runSessionPrimary,
-    SEG_COLOR,
-    StatusMark,
-} from "./sessionsdetail";
-import { defaultMember, forkLaunchOpts, runView, type RunView } from "./sessionsruns";
 import { duplicateSession } from "./session-models/sessionsidebarmodel";
 import { sleepingAge, sleepWithConfirm, wakeAgent, wakeErrorToast } from "./agentsleep";
-import {
-    askingCount,
-    askingLabel,
-    displayAgeMs,
-    formatAgeShort,
-    formatTokens,
-    type AgentVM,
-} from "./agentsviewmodel";
+import { askingCount, askingLabel, displayAgeMs, formatAgeShort, type AgentVM } from "./agentsviewmodel";
 import { parseDocReview } from "./docreview";
 import { openReview } from "./docreviewstore";
 import { placementStyle } from "./agentgrid";
@@ -255,13 +211,7 @@ import { finalRowFocusId, type FinalTone } from "./finalstage";
 import { useFinalStageView } from "./finalstageviews";
 import { LEAD_MARK_CLASS, leadMark } from "./leadcardmodel";
 import { rosterSeededAtom } from "./liveagents";
-import {
-    collapsedConversationProjectsAtom,
-    collapsedProjectsAtom,
-    collapsedSectionsAtom,
-    toggleFold,
-    type SidebarSection,
-} from "./projectfoldstore";
+import { collapsedProjectsAtom, toggleFold } from "./projectfoldstore";
 import {
     endedWorkerId,
     isEndedWorkerId,
@@ -335,32 +285,12 @@ const SUB_COLOR: Record<SubagentState, string> = {
     done: "var(--color-muted)",
 };
 
-// How many times "Show more" was pressed on each project's Conversations folder (one more page of ended sessions per
-// press). Sidebar UI state in a module-level atom, so it outlives the tree's re-renders and unmounts; not persisted. Cast
-// like agentDragAtom: with strictNullChecks off, atom<T>(...) resolves to the read-only overload.
-const conversationPressesAtom = atom<ReadonlyMap<string, number>>(new Map()) as PrimitiveAtom<
-    ReadonlyMap<string, number>
->;
-
-function showMoreConversations(project: string): void {
-    globalStore.set(conversationPressesAtom, (prev) => new Map(prev).set(project, (prev.get(project) ?? 0) + 1));
-}
-
-// back to the first page in one press: one opens more to look, then wants the list short again
-function showLessConversations(project: string): void {
-    globalStore.set(conversationPressesAtom, (prev) => {
-        const next = new Map(prev);
-        next.delete(project);
-        return next;
-    });
-}
-
 // The agent rows picked with Ctrl/Cmd+click or Shift+click (agenttreemodel.ts), beside focusIdAtom, which stays the one
 // selected agent: with none picked the focused agent is the selection. A plain click on any row empties it
 // (selectAgentRow). Not persisted.
 export const rowSelectionAtom = atom<RowSelection>(NO_ROW_SELECTION) as PrimitiveAtom<RowSelection>;
 
-// choosing an agent's row brings its terminal back from a session, History or one of its subagents; one whose Chat reads
+// choosing an agent's row brings its terminal back from a council, an Overview or one of its subagents; one whose Chat reads
 // with focus read takes the keyboard in its conversation, so J/K step its blocks without a click there first (j/k in
 // the tree do not come through here, so they still move from agent to agent), unless the pick is to type into it
 export function selectAgentRow(model: AgentsViewModel, id: string): void {
@@ -374,7 +304,7 @@ export function selectAgentRow(model: AgentsViewModel, id: string): void {
     }
 }
 
-// the row that reads as selected: the focused agent's, unless the centre is showing a session or History instead
+// the row that reads as selected: the focused agent's, unless the centre is showing a council, an Overview or a held agent instead
 function useSelectedRowId(model: AgentsViewModel): string | undefined {
     const focusId = useAtomValue(model.focusIdAtom);
     const mode = useAtomValue(centerModeAtom);
@@ -2231,76 +2161,11 @@ function FoldRow({
     );
 }
 
-// A conversation row's shell: two lines, filled while selected, the tooltip and menu its caller's
-function ConversationShell({
-    selected,
-    title,
-    onClick,
-    onContextMenu,
-    data,
-    children,
-}: {
-    selected: boolean;
-    title: string;
-    onClick: () => void;
-    onContextMenu: (e: React.MouseEvent) => void;
-    data: Record<string, string>;
-    children: React.ReactNode;
-}) {
-    return (
-        <div
-            {...data}
-            onClick={onClick}
-            onContextMenu={onContextMenu}
-            title={title}
-            className={cn(
-                "flex min-w-0 cursor-pointer flex-col gap-[3px] rounded-[6px] px-[10px] py-[8px] transition-colors duration-[140ms]",
-                selected ? "bg-surface-selected" : "hover:bg-surface-hover"
-            )}
-        >
-            {children}
-        </div>
-    );
-}
-
-// a conversation row's first line: its title, `mark` after it, its tokens, and how long ago it last moved
-function ConversationHead({
-    selected,
-    title,
-    age,
-    icon,
-    mark,
-    tokens,
-}: {
-    selected: boolean;
-    title: string;
-    age: string;
-    icon?: React.ReactNode;
-    mark?: React.ReactNode;
-    tokens?: number;
-}) {
-    return (
-        <div className="flex min-w-0 items-center gap-[6px]">
-            {icon}
-            <span className={cn("min-w-0 flex-1 truncate text-[13px]", selected ? "text-primary" : "text-secondary")}>
-                {title}
-            </span>
-            {mark}
-            {tokens ? <span className={TOKENS_COL}>{formatTokens(tokens)}</span> : null}
-            <span data-agent-session-age className={AGE_COL}>
-                {age}
-            </span>
-        </div>
-    );
-}
-
 const CONVERSATION_META = "flex min-w-0 items-center gap-[5px] text-[10.5px] tabular-nums text-muted";
 // a row's RAM, tokens and age end its meta line as right-aligned columns of fixed least widths, so they line up down
 // the list. Every figure is faint; the RAM cell alone turns to the warning colour (rowcols.ts)
 const COL = "flex-none whitespace-nowrap text-right text-[11px] tabular-nums";
 const COL_WIDTH: Record<RowColKey, string> = { ram: "min-w-[40px]", tokens: "min-w-[34px]", age: "min-w-[24px]" };
-const TOKENS_COL = `${COL_WIDTH.tokens} ${COL} text-ink-faint`;
-const AGE_COL = `${COL_WIDTH.age} ${COL} text-ink-faint`;
 
 // The cells that end an agent's, a lead's, a run's or a worker's second line, one per field that is on (rowCols), in a
 // group of its own so every row spaces them alike. An empty cell keeps its width, so a row with no RAM read yet still
@@ -2388,14 +2253,6 @@ function BranchLabel({ branch }: { branch: string }) {
     );
 }
 
-function copyTitleItem(title: string): ContextMenuItem {
-    return {
-        label: "Copy title",
-        icon: <Copy size={15} />,
-        click: () => void navigator.clipboard.writeText(title),
-    };
-}
-
 // A row menu's id item: the short tab id, shown beside the label so it can be typed without copying. Bare, so
 // pasting it to tell an agent about this one keeps the prompt there; a leading @id would send it here instead.
 function idMenuItem(agent: AgentVM): ContextMenuItem {
@@ -2449,278 +2306,9 @@ function DraftMark({ id }: { id: string }) {
     );
 }
 
-// laterLabel is an ended conversation's later tooltip, or undefined when it is not marked (a run is never one)
-function laterLabel(marks: LaterMarks, row: ConversationEntry, now: number): string | undefined {
-    const since = row.kind === "session" ? laterSince(marks, row.session.transcriptpath) : undefined;
-    return since != null ? laterTitle(since, now, formatAgeShort) : undefined;
-}
-
-// An ended conversation in the Conversations section, on one line: its runtime, first prompt, tokens and how long ago
-// it last moved (the folder, or the app bar's filter, names the project). A second line comes only when it tells the
-// row apart: a branch other than the default, or, when another shown row has the same title, when it started.
-// A click reads its transcript in the centre, where Resume lives. It is not a live row, so it carries no state dot (only
-// a small one when it is waiting for you); the title is the prompt on one line and the row's tooltip holds all of it.
-// Memoized on strings and booleans: the list re-renders with the 1s clock, a row only when its age label or its
-// selection changes.
-const ConversationRow = memo(function ConversationRow({
-    model,
-    row,
-    age,
-    started,
-    selected,
-    later,
-}: {
-    model: AgentsViewModel;
-    row: EndedSessionRow;
-    age: string;
-    started?: string; // startedLabel, for a row whose title another shown row shares
-    selected: boolean;
-    later?: string; // laterTitle, for a session marked for later
-}) {
-    const { session } = row;
-    const branch = notableBranch(session.branch);
-    const onContextMenu = (e: React.MouseEvent) => {
-        const items: ContextMenuItem[] = [];
-        if (session.resumecommand) {
-            items.push({
-                label: "Resume",
-                icon: <Play size={15} />,
-                click: () => runSessionPrimary(model, session),
-            });
-        }
-        if (offersOpenAsleep(session)) {
-            items.push({
-                label: "Open asleep",
-                icon: <Moon size={15} />,
-                click: () => openSessionAsleep(model, session),
-            });
-        }
-        if (forkLaunchOpts(session) != null) {
-            items.push({
-                label: "Fork",
-                sublabel: "a new session from this conversation",
-                icon: <GitFork size={15} />,
-                click: () => forkSession(model, session),
-            });
-        }
-        items.push(copyTitleItem(row.title), laterMenuItem(session.transcriptpath, later != null));
-        if (canDeleteSession(session)) {
-            items.push(
-                { type: "separator" },
-                {
-                    label: DELETE_SESSION_LABEL,
-                    icon: <Trash2 size={15} />,
-                    danger: true,
-                    click: () => confirmDeleteSession(session),
-                }
-            );
-        }
-        ContextMenuModel.getInstance().showContextMenu(items, e);
-    };
-    return (
-        <ConversationShell
-            data={{ "data-agent-session-row": row.key, "data-agent-session-project": row.project }}
-            selected={selected}
-            title={row.tooltip}
-            onClick={() => showSession(model, row.key)}
-            onContextMenu={onContextMenu}
-        >
-            <ConversationHead
-                selected={selected}
-                title={row.title}
-                age={age}
-                tokens={session.tokenstotal}
-                icon={<RuntimeGlyph runtime={session.runtime} />}
-                mark={
-                    <>
-                        {later != null ? <LaterMark title={later} /> : null}
-                        {session.needsAttention ? (
-                            <span
-                                role="img"
-                                aria-label="waiting for you"
-                                className="h-[6px] w-[6px] flex-none rounded-full bg-warning"
-                            />
-                        ) : null}
-                    </>
-                }
-            />
-            {branch || started ? (
-                <div className={CONVERSATION_META}>
-                    {branch ? <BranchLabel branch={branch} /> : null}
-                    {branch && started ? (
-                        <span aria-hidden className="flex-none text-ink-faint">
-                            ·
-                        </span>
-                    ) : null}
-                    {started ? <span className="flex-none whitespace-nowrap">{started}</span> : null}
-                </div>
-            ) : null}
-        </ConversationShell>
-    );
-});
-
-// An ended orchestrator run in the Conversations section, read like a live lead's row: its title, the tokens of all its
-// sessions and its age, then how many landed, with its state when that is more than done (cancelled, a task that needs
-// you), and a segment per task across the row.
-// A click reads its detail in the centre (the run pane), on the member it opens on.
-const RunConversationRow = memo(function RunConversationRow({
-    model,
-    row,
-    view,
-    age,
-    selected,
-}: {
-    model: AgentsViewModel;
-    row: EndedRunRow;
-    view: RunView;
-    age: string;
-    selected: boolean;
-}) {
-    const landed = view.total > 0 ? `${view.landed}/${view.total} landed` : view.complete ? "complete" : "no tasks";
-    return (
-        <ConversationShell
-            data={{ "data-agent-run-conversation": view.runId, "data-agent-session-project": row.project }}
-            selected={selected}
-            title={view.title}
-            onClick={() => showSession(model, row.key, defaultMember(view))}
-            onContextMenu={(e) => ContextMenuModel.getInstance().showContextMenu([copyTitleItem(view.title)], e)}
-        >
-            <ConversationHead
-                selected={selected}
-                title={view.title}
-                age={age}
-                tokens={runTokens(row.group)}
-                icon={<Workflow size={12} strokeWidth={1.8} aria-hidden className="flex-none text-ink-mid" />}
-            />
-            <div className={CONVERSATION_META}>
-                {view.complete ? (
-                    <span className="flex min-w-0 items-center gap-[4px] text-success">
-                        <Check size={11} aria-hidden className="flex-none" />
-                        <span className="truncate">{landed}</span>
-                    </span>
-                ) : (
-                    <span className="min-w-0 truncate">{landed}</span>
-                )}
-                <span className="flex-1" />
-                {view.head.key !== "done" ? <StatusMark status={view.head} /> : null}
-            </div>
-            {/* a segment per task across the whole row, coloured as a live lead's row draws its plan: a landed task green */}
-            {view.segs.length > 0 ? (
-                <div aria-hidden className="mt-[3px] flex h-[3px] gap-[2px]">
-                    {view.segs.map((k, i) => (
-                        <span
-                            key={i}
-                            className="min-w-[2px] flex-1 rounded-[1.5px]"
-                            style={{ backgroundColor: k === "done" ? "var(--color-success)" : SEG_COLOR[k] }}
-                        />
-                    ))}
-                </div>
-            ) : null}
-        </ConversationShell>
-    );
-});
-
-const PAGER_BUTTON =
-    "flex cursor-pointer items-center gap-[6px] rounded-[6px] px-[10px] py-[5px] text-left text-[11.5px] text-ink-mid outline-none transition-colors duration-[140ms] hover:bg-surface-hover hover:text-secondary focus-visible:ring-1 focus-visible:ring-accent";
-
-// The end of a project's ended conversations: one more page, saying how many are still hidden (the count inside the
-// words, so it never reads as an age in the column above), and once a press opened more, back to the first page
-function ShowMoreConversations({ project, hidden, less }: { project: string; hidden: number; less: boolean }) {
-    return (
-        <div className="flex items-center gap-[4px]">
-            {hidden > 0 ? (
-                <button
-                    type="button"
-                    data-agent-sessions-more={project}
-                    aria-label={`Show ${hidden} more ${project} conversations`}
-                    onClick={() => showMoreConversations(project)}
-                    className={PAGER_BUTTON}
-                >
-                    <ChevronDown size={11} aria-hidden className="w-[12px] flex-none" />
-                    <span className="tabular-nums">Show {hidden} more</span>
-                </button>
-            ) : null}
-            {less ? (
-                <button
-                    type="button"
-                    data-agent-sessions-less={project}
-                    aria-label={`Show fewer ${project} conversations`}
-                    onClick={() => showLessConversations(project)}
-                    className={cn(PAGER_BUTTON, hidden > 0 && "ml-auto")}
-                >
-                    {hidden > 0 ? null : <ChevronUp size={11} aria-hidden className="w-[12px] flex-none" />}
-                    Show less
-                    {hidden > 0 ? <ChevronUp size={11} aria-hidden className="flex-none" /> : null}
-                </button>
-            ) : null}
-        </div>
-    );
-}
-
-const SECTION_LABEL = "flex-none text-[11.5px] font-semibold text-muted";
-
 // a row under a folder row sits one step in; a list the project filter left flat has no folder to sit under
 const UNDER_FOLDER = "pl-[14px]";
 const rowIndent = (filtered: boolean): string | undefined => (filtered ? undefined : UNDER_FOLDER);
-
-// A sidebar section's header: its label and count, and a chevron that folds the section, read like the details rail's
-// section headers. `trailing` sits at the far end and stays while the section is folded, so Active's asking badge is
-// never folded away.
-function SectionHeader({
-    section,
-    label,
-    count,
-    first,
-    trailing,
-}: {
-    section: SidebarSection;
-    label: string;
-    count: number;
-    first?: boolean;
-    trailing?: React.ReactNode;
-}) {
-    const collapsed = useAtomValue(collapsedSectionsAtom);
-    const open = !collapsed.includes(section);
-    return (
-        <div className={cn("flex items-center gap-[6px] px-[8px] pb-[2px]", first ? "pt-[4px]" : "pt-[14px]")}>
-            <button
-                type="button"
-                data-agent-section-toggle={section}
-                aria-expanded={open}
-                onClick={() => globalStore.set(collapsedSectionsAtom, toggleFold(collapsed, section))}
-                className="group flex min-w-0 cursor-pointer items-center gap-[6px] rounded-[5px] text-left outline-none focus-visible:ring-1 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
-            >
-                <span className={cn(SECTION_LABEL, "group-hover:text-secondary")}>{label}</span>
-                {count > 0 ? <span className="text-[11px] tabular-nums text-ink-faint">{count}</span> : null}
-                <ChevronRight
-                    size={12}
-                    aria-hidden
-                    className={cn("flex-none text-ink-faint transition-transform", open && "rotate-90")}
-                />
-            </button>
-            {trailing}
-        </div>
-    );
-}
-
-// is a sidebar section open (its header folds it)
-function useSectionOpen(section: SidebarSection): boolean {
-    return !useAtomValue(collapsedSectionsAtom).includes(section);
-}
-
-// The rows under a section's or a folder's header, opening and closing with foldReveal. initial={false}, so the first
-// paint does not reveal them, nor does a section opening replay the folders inside it.
-function FoldBody({ open, children }: { open: boolean; children: React.ReactNode }) {
-    return (
-        <AnimatePresence initial={false}>
-            {open ? (
-                <motion.div key="body" variants={foldReveal} initial="initial" animate="animate" exit="exit">
-                    {children}
-                </motion.div>
-            ) : null}
-        </AnimatePresence>
-    );
-}
 
 // A project folder's right-click menu: a new agent in it (the launcher with the project picked), its Overview, then its
 // path's copy and reveal (the Code tree's items), and last Close project…, which closes every agent and terminal in it
@@ -2772,14 +2360,13 @@ function openFolderMenu(model: AgentsViewModel, project: string, e: React.MouseE
     ContextMenuModel.getInstance().showContextMenu(items, e);
 }
 
-// A project's folder row, in either section: the chevron and the folder say whether it is open, then the project's name
+// A project's folder row: the chevron and the folder say whether it is open, then the project's name
 // (`label` where the folder's key reads otherwise: Home) and, at the far end, `trailing`, which a folded folder keeps
 // (what in it wants you, how much it holds); a click opens its Overview in the centre, which then fills it, and the
 // chevron and the folder icon fold it (Home, which has no Overview, folds from anywhere on the row); a right-click
 // opens its menu (openFolderMenu).
 function FolderRow({
     model,
-    section,
     project,
     label,
     open,
@@ -2789,7 +2376,6 @@ function FolderRow({
     jarvis = 0,
 }: {
     model: AgentsViewModel;
-    section: SidebarSection;
     project: string;
     label?: string;
     open: boolean;
@@ -2816,8 +2402,8 @@ function FolderRow({
             onContextMenu={(e) => openFolderMenu(model, project, e)}
             aria-expanded={open}
             data-agent-folder={project}
-            data-agent-folder-section={section}
-            data-project-folder={section === "active" ? project : undefined}
+            data-agent-folder-section="active"
+            data-project-folder={project}
             className={cn(
                 "flex w-full cursor-pointer items-center gap-[7px] overflow-hidden rounded-[6px] px-[8px] py-[6px] text-left outline-none focus-visible:ring-1 focus-visible:ring-accent",
                 selected ? "bg-surface-selected" : "hover:bg-surface-hover"
@@ -3831,189 +3417,6 @@ function StartingRunRow({ model, row }: { model: AgentsViewModel; row: StartingR
     );
 }
 
-// The sidebar's second section: every ended conversation and orchestrator run, in a folder per project (the one with the
-// newest conversation first), or the chosen project's alone when the app bar narrows the sidebar
-// (the switcher names it). A plain list, not the Active section's animated one: it can run
-// past a hundred rows (a page at a time per folder), and a row that slid when the filter changed would be noise. The scan
-// fills it after first paint, so nothing renders under the header until the archive has loaded.
-function ConversationsSection({ model }: { model: AgentsViewModel }) {
-    const agents = useAtomValue(model.agentsAtom);
-    const archive = useAtomValue(sessionsArchiveAtom);
-    const archiveError = useAtomValue(sessionsErrorAtom);
-    const registered = useAtomValue(projectsAtom);
-    const filter = useAtomValue(model.projectFilterAtom);
-    const collapsedList = useAtomValue(collapsedConversationProjectsAtom);
-    const presses = useAtomValue(conversationPressesAtom);
-    const now = useAtomValue(model.nowAtom);
-    const mode = useAtomValue(centerModeAtom);
-    const overviewProject = useAtomValue(overviewProjectAtom);
-    const sel = useAtomValue(model.sessionsSelAtom);
-    const open = useSectionOpen("conversations");
-    // filed under the project name the Active section's folders use (agentsidebarmodel.ts); only the projects added to
-    // arcterm, the rest being Conversation History's
-    const laterMarks = useAtomValue(laterMarksAtom);
-    const { ended, elsewhere } = useMemo(
-        () =>
-            registeredConversations(
-                laterFirst(endedConversationsByProject(archive, agents, registered), laterMarks),
-                registered
-            ),
-        [archive, agents, registered, laterMarks]
-    );
-    // a clock that moves once a day, so the run views below do not rebuild on every tick
-    const today = startOfDay(now);
-    const rows = useMemo(
-        () => conversationTree(ended, filter, new Set(collapsedList), presses),
-        [ended, filter, collapsedList, presses]
-    );
-    // each shown run's view, from its own objects (loaded on first read); an ended run's dag no longer moves
-    const shownRuns = useMemo(() => rows.filter((r): r is EndedRunRow => r.kind === "run"), [rows]);
-    const runObjs = useRunObjects(shownRuns.map((r) => r.group.runId));
-    const runViews = useMemo(() => {
-        const out = new Map<string, RunView>();
-        for (const r of shownRuns) {
-            const o = runObjs[r.group.runId];
-            // `now` reads only into a done run's age text, which the row does not show: it shows its own
-            out.set(r.key, runView({ group: r.group, run: o?.run, dag: o?.dag, now: today }));
-        }
-        return out;
-    }, [shownRuns, runObjs, today]);
-    const filtered = filter !== ALL_PROJECTS;
-    const colliding = useMemo(() => collidingTitles(rows), [rows]);
-
-    return (
-        <div data-agent-conversations>
-            <SectionHeader section="conversations" label="Conversations" count={conversationCount(ended, filter)} />
-            <FoldBody open={open}>
-                {archive == null ? null : rows.length === 0 && archiveError ? (
-                    // a failed scan is not an empty past: it retries on its own (sessionsarchivestore), and Retry is for
-                    // when those retries are spent
-                    <div
-                        data-agent-conversations-error
-                        className="flex items-center gap-2 px-[10px] py-[6px] text-[12px] text-muted"
-                    >
-                        <span className="min-w-0 flex-1">Could not read past conversations</span>
-                        <button
-                            type="button"
-                            className="flex-none cursor-pointer text-accent-soft hover:underline"
-                            onClick={() => fireAndForget(loadSessionsArchive)}
-                        >
-                            Retry
-                        </button>
-                    </div>
-                ) : rows.length === 0 ? (
-                    <div className="px-[10px] py-[6px] text-[12px] text-muted">
-                        {filtered ? `No past conversations in ${filter}` : "No past conversations"}
-                    </div>
-                ) : (
-                    <div className="flex flex-col">
-                        {folderBlocks(rows).map(({ head, body }) => (
-                            <Fragment key={head?.kind === "folder" ? `f-${head.project}` : "flat"}>
-                                {head?.kind === "folder" ? (
-                                    <FolderRow
-                                        model={model}
-                                        section="conversations"
-                                        project={head.project}
-                                        selected={mode === "project" && overviewProject === head.project}
-                                        open={head.open}
-                                        onToggle={() =>
-                                            globalStore.set(
-                                                collapsedConversationProjectsAtom,
-                                                toggleFold(collapsedList, head.project)
-                                            )
-                                        }
-                                        trailing={
-                                            <>
-                                                {head.attn > 0 && !head.open ? (
-                                                    <span
-                                                        role="img"
-                                                        aria-label={`${head.attn} waiting for you`}
-                                                        className="h-[6px] w-[6px] flex-none rounded-full bg-warning"
-                                                    />
-                                                ) : null}
-                                                <span className="whitespace-nowrap text-[11px] tabular-nums text-ink-faint">
-                                                    {head.count}
-                                                </span>
-                                            </>
-                                        }
-                                    />
-                                ) : null}
-                                <FoldBody open={body.length > 0}>
-                                    {body.map((r) => {
-                                        switch (r.kind) {
-                                            case "more":
-                                                return (
-                                                    <div key={`more-${r.project}`} className={rowIndent(filtered)}>
-                                                        <ShowMoreConversations
-                                                            project={r.project}
-                                                            hidden={r.hidden}
-                                                            less={r.less}
-                                                        />
-                                                    </div>
-                                                );
-                                            case "run":
-                                                return (
-                                                    <div key={r.key} className={rowIndent(filtered)}>
-                                                        <RunConversationRow
-                                                            model={model}
-                                                            row={r}
-                                                            view={runViews.get(r.key)}
-                                                            age={sessionAgeLabel(r.lastactivets, now)}
-                                                            selected={mode === "run" && sel === r.key}
-                                                        />
-                                                    </div>
-                                                );
-                                            case "session":
-                                                return (
-                                                    <div key={r.key} className={rowIndent(filtered)}>
-                                                        <ConversationRow
-                                                            model={model}
-                                                            row={r}
-                                                            age={sessionAgeLabel(r.lastactivets, now)}
-                                                            started={
-                                                                colliding.has(r.key) && r.session.startedts > 0
-                                                                    ? startedLabel(r.session.startedts, now)
-                                                                    : undefined
-                                                            }
-                                                            selected={mode === "session" && sel === r.key}
-                                                            later={laterLabel(laterMarks, r, now)}
-                                                        />
-                                                    </div>
-                                                );
-                                            default:
-                                                return null;
-                                        }
-                                    })}
-                                </FoldBody>
-                            </Fragment>
-                        ))}
-                    </div>
-                )}
-                {archive != null && !filtered && elsewhere > 0 ? (
-                    <HistoryElsewhereRow model={model} count={elsewhere} />
-                ) : null}
-            </FoldBody>
-        </div>
-    );
-}
-
-// Under Conversations: how many conversations belong to folders never added to arcterm, which only Conversation History
-// lists. A click opens it.
-function HistoryElsewhereRow({ model, count }: { model: AgentsViewModel; count: number }) {
-    return (
-        <button
-            type="button"
-            data-agent-conversations-elsewhere
-            title="Open Conversation History"
-            onClick={() => showHistory(model)}
-            className="flex w-full cursor-pointer items-center gap-[6px] rounded-[6px] px-[10px] py-[5px] text-left text-[11.5px] tabular-nums text-ink-mid transition-colors duration-[140ms] hover:bg-surface-hover hover:text-secondary"
-        >
-            <span className="min-w-0 truncate">{count} in projects not added · History</span>
-            <ArrowUpRight size={11} aria-hidden className="ml-auto flex-none" />
-        </button>
-    );
-}
-
 // Under Active while the app bar narrows the sidebar to a project: how many live agents the filter hides, and how many
 // of them are asking, so one waiting in another project is not lost. A click widens the sidebar to every project.
 function ElsewhereRow({ model, agents, asking }: { model: AgentsViewModel; agents: number; asking: number }) {
@@ -4052,7 +3455,7 @@ export const AgentTree = memo(function AgentTree({ model }: { model: AgentsViewM
     // 280px while RAM and tokens are both on; either one off and the tree is back to 248px (rowfields.ts)
     const wide = agentTreeWidth(useAtomValue(rowFieldsAtom)) === AGENT_TREE_WIDE_PX;
     // One tree per project: each project's live agents, a divider, then its terminals and tools (projectTree), a collapsed
-    // project folding to its folder row. The ended conversations are the section under it (ConversationsSection).
+    // project folding to its folder row. Ended conversations are the Library surface's.
     const filter = useAtomValue(model.projectFilterAtom);
     const filtered = filter !== ALL_PROJECTS;
     // an agent waiting on another (a `wsh agents wait`, a watch loop naming its tab) nests under it (agentwaits.ts)
@@ -4207,7 +3610,7 @@ export const AgentTree = memo(function AgentTree({ model }: { model: AgentsViewM
     // every project's, whatever the filter: it lights the spider, so an agent asking in a project the filter hides is
     // never out of sight
     const asking = askingCount(agents);
-    // each live agent's branch, for its row's second line (as a Conversations row reads its own)
+    // each live agent's branch, for its row's second line
     const archive = useAtomValue(sessionsArchiveAtom);
     const branches = useMemo(() => liveBranches(archive, agents), [archive, agents]);
     useLiveTokens(agents);
@@ -4235,56 +3638,8 @@ export const AgentTree = memo(function AgentTree({ model }: { model: AgentsViewM
         >
             <PanelWeb />
             <TreeSpider sensing={asking > 0} />
-            <div className="flex flex-col gap-[4px] px-[8px] pb-[4px] pt-[10px]">
-                {/* no New agent button here: the app bar's is always on screen above it */}
-                <button
-                    type="button"
-                    data-agent-history-open
-                    aria-current={center === "history" ? "true" : undefined}
-                    onClick={() => showHistory(model)}
-                    className={cn(
-                        "flex w-full cursor-pointer items-center gap-[8px] rounded-[8px] px-[10px] py-[7px] text-[13px]",
-                        center === "history"
-                            ? "bg-surface-selected text-primary"
-                            : "text-secondary hover:bg-surface-hover hover:text-primary"
-                    )}
-                >
-                    <HistoryIcon size={14} aria-hidden />
-                    Conversation History
-                </button>
-                {/* no count: the row reads nothing from disk until the gallery opens */}
-                <button
-                    type="button"
-                    data-agent-canvases-open
-                    aria-current={center === "canvases" ? "true" : undefined}
-                    onClick={() => showCanvases(model)}
-                    className={cn(
-                        "flex w-full cursor-pointer items-center gap-[8px] rounded-[8px] px-[10px] py-[7px] text-[13px]",
-                        center === "canvases"
-                            ? "bg-surface-selected text-primary"
-                            : "text-secondary hover:bg-surface-hover hover:text-primary"
-                    )}
-                >
-                    <LayoutGrid size={14} aria-hidden />
-                    Canvas gallery
-                </button>
-                {/* every council: the tree lists only the live, pinned, unread and recent ones (councilInTree) */}
-                <button
-                    type="button"
-                    data-agent-councils-open
-                    aria-current={center === "councils" ? "true" : undefined}
-                    onClick={() => showCouncils(model)}
-                    className={cn(
-                        "flex w-full cursor-pointer items-center gap-[8px] rounded-[8px] px-[10px] py-[7px] text-[13px]",
-                        center === "councils"
-                            ? "bg-surface-selected text-primary"
-                            : "text-secondary hover:bg-surface-hover hover:text-primary"
-                    )}
-                >
-                    <Users size={14} aria-hidden />
-                    Councils
-                </button>
-            </div>
+            {/* no New agent button here: the app bar's is always on screen above it. History, the Canvas gallery and the
+                councils' list are the Library surface's tabs, not rows of this tree */}
             <div className="min-h-0 flex-1 overflow-y-auto p-[8px]">
                 {/* the rows are this wrapper's direct children (AnimatePresence renders no element); relative so popLayout
                     pops an exiting row out of flow in this wrapper's own coordinates */}
@@ -4308,7 +3663,6 @@ export const AgentTree = memo(function AgentTree({ model }: { model: AgentsViewM
                                         >
                                             <FolderRow
                                                 model={model}
-                                                section="active"
                                                 project={r.project}
                                                 selected={center === "project" && overviewProject === r.project}
                                                 jarvis={jarvisCounts.get(r.project) ?? 0}
@@ -4556,7 +3910,6 @@ export const AgentTree = memo(function AgentTree({ model }: { model: AgentsViewM
                 {elsewhere.agents > 0 ? (
                     <ElsewhereRow model={model} agents={elsewhere.agents} asking={elsewhere.asking} />
                 ) : null}
-                <ConversationsSection model={model} />
             </div>
         </div>
     );

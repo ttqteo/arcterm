@@ -118,9 +118,9 @@ describe("viewingIds", () => {
         expect([...viewingIds(true, true, "terminal", "c", grid)]).toEqual(["c"]);
     });
 
-    it("is nothing off the Agent surface, or with History, a session or a run over the terminal", () => {
+    it("is nothing off the Agent surface, or with a council, an Overview or a held agent over the terminal", () => {
         expect(viewingIds(true, false, "terminal", "a", grid).size).toBe(0);
-        for (const center of ["history", "session", "run"] as const) {
+        for (const center of ["council", "project", "held"] as const) {
             expect(viewingIds(true, true, center, "a", grid).size).toBe(0);
         }
         expect(viewingIds(true, true, "terminal", undefined, grid).size).toBe(0);

@@ -3,6 +3,8 @@ import { centerModeAtom } from "@/app/view/agents/agentcenter";
 import type { AgentsViewModel, SurfaceKey } from "@/app/view/agents/agents";
 import type { AgentVM } from "@/app/view/agents/agentsviewmodel";
 import { sessionsArchiveAtom, type LiveSession } from "@/app/view/agents/sessionsarchivestore";
+import { forgetOrigin } from "@/app/view/jarvis/returnsurface";
+import { libraryConvViewAtom, libraryTabAtom } from "@/app/view/library/librarystore";
 import { atom, createStore } from "jotai";
 import { beforeEach, describe, expect, it } from "vitest";
 import { SESSION_KIND, type SessionThing } from "./session";
@@ -39,8 +41,13 @@ const stub = (member = "lead") =>
     }) as unknown as AgentsViewModel;
 
 describe("session actions", () => {
-    // centerModeAtom is module-level state in the shared globalStore
-    beforeEach(() => globalStore.set(centerModeAtom, "terminal"));
+    // Agent's centre mode, Library's tab and view and the return trail are module-level state in the shared globalStore
+    beforeEach(() => {
+        forgetOrigin();
+        globalStore.set(centerModeAtom, "terminal");
+        globalStore.set(libraryTabAtom, "canvases");
+        globalStore.set(libraryConvViewAtom, "list");
+    });
     it("resume applies only to an ended session that can be resumed", () => {
         expect(action("session:resume").applies(thing(mk()))).toBe(true);
         expect(action("session:resume").applies(thing(mk({ live: true, liveId: "tab-1" }), agent))).toBe(false);
@@ -63,28 +70,32 @@ describe("session actions", () => {
     it("open session always applies", () => {
         expect(action("session:open").applies(thing(mk({ resumecommand: "" })))).toBe(true);
     });
-    it("open session reads a solo session in the Agent surface's centre", () => {
+    it("open session reads a solo session in Library's Conversations tab, at full width", () => {
         const model = stub("t-9");
         action("session:open").run(thing(mk({ id: "s9", runtime: "pi" })), { model });
         expect(globalStore.get(model.sessionsSelAtom)).toBe("pi:s9");
         expect(globalStore.get(model.sessionsMemberAtom)).toBe("t-9");
-        expect(globalStore.get(centerModeAtom)).toBe("session");
-        expect(globalStore.get(model.surfaceAtom)).toBe("agent");
+        expect(globalStore.get(libraryTabAtom)).toBe("conversations");
+        expect(globalStore.get(libraryConvViewAtom)).toBe("session");
+        expect(globalStore.get(model.surfaceAtom)).toBe("library");
+        expect(globalStore.get(centerModeAtom)).toBe("terminal");
     });
     it("open session reads a live session the same way, as its own session", () => {
         const model = stub();
         action("session:open").run(thing(mk({ live: true, liveId: "tab-1" }), agent), { model });
         expect(globalStore.get(model.sessionsSelAtom)).toBe("claude:s1");
-        expect(globalStore.get(centerModeAtom)).toBe("session");
-        expect(globalStore.get(model.surfaceAtom)).toBe("agent");
+        expect(globalStore.get(libraryConvViewAtom)).toBe("session");
+        expect(globalStore.get(model.surfaceAtom)).toBe("library");
     });
-    it("open session opens a run's session in the run pane with its member in view", () => {
+    it("open session opens a run's session in Library's run pane with its member in view", () => {
         const model = stub();
         action("session:open").run(thing(mk({ runid: "r1", role: "worker", taskid: "t-2" })), { model });
         expect(globalStore.get(model.sessionsSelAtom)).toBe("run:r1");
         expect(globalStore.get(model.sessionsMemberAtom)).toBe("t-2");
-        expect(globalStore.get(centerModeAtom)).toBe("run");
-        expect(globalStore.get(model.surfaceAtom)).toBe("agent");
+        expect(globalStore.get(libraryTabAtom)).toBe("conversations");
+        expect(globalStore.get(libraryConvViewAtom)).toBe("run");
+        expect(globalStore.get(model.surfaceAtom)).toBe("library");
+        expect(globalStore.get(centerModeAtom)).toBe("terminal");
     });
 });
 

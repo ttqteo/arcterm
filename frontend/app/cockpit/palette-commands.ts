@@ -161,6 +161,7 @@ const SURFACE_GROUP: Partial<Record<SurfaceKey, string>> = {
     cockpit: "Cockpit",
     jarvis: "Jarvis",
     agent: "Agent",
+    library: "Library",
     code: "Code",
     files: "Diff",
 };

@@ -5,16 +5,17 @@
 // board Council.dc.html). The head names the council; the body is the verdict (or the round of a council at work, or
 // what a failed or stopped one finished), the ranked directions with their First step and two actions, Ask next, the
 // folded Also raised / Matrix line, and the foot's Open chat and Full report. What each shows is councilsheetmodel.ts.
-// The Agent surface's own report (councilsummary.tsx) stays the full one; Open chat goes there.
+// The council view's own report (councilsummary.tsx) stays the full one; Open chat goes there (openCouncil: Agent's centre for
+// a council the tree still lists, Library's Councils tab for one that has left it).
 
 import { globalStore } from "@/app/store/jotaiStore";
-import { showCouncil } from "@/app/view/agents/agentcenter";
 import { openRefInCode } from "@/app/view/agents/agentrailstore";
 import type { AgentsViewModel } from "@/app/view/agents/agents";
 import { councilChatDraftAtom, useCouncil } from "@/app/view/agents/councilstore";
 import { projectNameOf } from "@/app/view/agents/councilsummarymodel";
 import { openAgentLauncher } from "@/app/view/agents/launcherstore";
 import { projectListAtom, projectsAtom } from "@/app/view/agents/projectsstore";
+import { openCouncil } from "@/app/view/library/librarystore";
 import { cn, fireAndForget } from "@/util/util";
 import { useAtomValue } from "jotai";
 import { ChevronDown, ChevronRight, X } from "lucide-react";
@@ -99,7 +100,7 @@ function Verdict({ c, model }: { c: Council; model: AgentsViewModel }) {
                 <button
                     type="button"
                     data-council-sheet-live
-                    onClick={() => showCouncil(c.id, "discussion", model)}
+                    onClick={() => openCouncil(model, c.id, "discussion")}
                     className={cn(
                         "self-start cursor-pointer rounded-[4px] border-0 bg-transparent p-0 text-[12px] font-semibold text-accent hover:text-accenthover",
                         FOCUS
@@ -302,7 +303,7 @@ export function CouncilSheetBody({ model, councilId }: { model: AgentsViewModel;
     // Ask in chat drafts the question in the Discussion's box, to edit and send there (as the report's Ask next does)
     const askInChat = (fill: string) => {
         globalStore.set(councilChatDraftAtom(c.id), (d) => ({ ...d, texts: { ...d.texts, [""]: fill } }));
-        showCouncil(c.id, "discussion", model);
+        openCouncil(model, c.id, "discussion");
     };
     const addTo = (oref: string) => {
         const pick = adding;
@@ -388,7 +389,7 @@ export function CouncilSheetBody({ model, councilId }: { model: AgentsViewModel;
                 <button
                     type="button"
                     data-council-sheet-chat
-                    onClick={() => showCouncil(c.id, "discussion", model)}
+                    onClick={() => openCouncil(model, c.id, "discussion")}
                     className={FOOT_BTN}
                 >
                     Open chat

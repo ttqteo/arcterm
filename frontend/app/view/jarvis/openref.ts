@@ -16,7 +16,6 @@ import { globalStore } from "@/app/store/global";
 import * as WOS from "@/app/store/wos";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
-import { showCouncil } from "../agents/agentcenter";
 import { resolveCwd } from "../agents/agentcwdresolve";
 import type { AgentsViewModel } from "../agents/agents";
 import { setAgentView } from "../agents/agentview";
@@ -31,6 +30,7 @@ import { currentSize, restoreFromSprout } from "../agents/floatstore";
 import { selectMemoryProject } from "../agents/memorystore";
 import { setupTabAtom } from "../agents/setupstore";
 import { afterOpen } from "../agents/windowsize";
+import { openCouncil } from "../library/librarystore";
 import { openDagLive, openDagTask } from "../orchestrate/dagmodalstate";
 import { isCanvasSegment, parseAddress, type AddressHint, type OpenTarget } from "./address";
 import { effortDetailAtom, loadEffortDetail } from "./effortstore";
@@ -760,9 +760,10 @@ function selectMemHygiene(model: AgentsViewModel, project: string): OpenResult {
     return OK;
 }
 
-// A council has no load to prove: the Agent surface's council view reads it by id itself (useCouncil).
+// A council has no load to prove: the council view reads it by id itself (useCouncil). openCouncil picks the host: Agent's
+// centre for a council the tree still lists (or one not loaded yet), Library's Councils tab for one that has left it.
 function selectCouncil(model: AgentsViewModel, target: CouncilTarget): OpenResult {
-    showCouncil(target.councilId, target.view, model);
+    openCouncil(model, target.councilId, target.view);
     return OK;
 }
 

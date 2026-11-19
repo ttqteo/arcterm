@@ -6,7 +6,7 @@
 
 import type { PrimitiveAtom } from "jotai";
 import { atomWithStorage } from "jotai/utils";
-import { SURFACE_ORDER, type SurfaceKey } from "./agents";
+import { RAIL_ORDER, SURFACE_ORDER, type SurfaceKey } from "./agents";
 
 // Which surface opens on launch: a surface, or "last" for the one that was open when the app last closed.
 export type StartupSurface = SurfaceKey | "last";
@@ -59,9 +59,10 @@ export function bootSurface(startup: StartupSurface | "activity" | "sessions", l
 
 // Choices offered for the startup surface: "last" first, then the numbered workflow set minus "agent", which is not
 // offered as a picked default (it is only meaningful with a live agent); "last" still reopens it. A legacy value that
-// coerces to "agent" above still boots there. "settings" is naturally absent — it was never in SURFACE_ORDER.
+// coerces to "agent" above still boots there. "settings" is naturally absent — it was never in SURFACE_ORDER. They follow
+// the rail (RAIL_ORDER), the order the person sees, not the chords'.
 export function startupSurfaceOptions(): StartupSurface[] {
-    return ["last", ...SURFACE_ORDER.filter((k) => k !== "agent")];
+    return ["last", ...RAIL_ORDER.filter((k) => k !== "agent")];
 }
 
 export type StartupMenuEntry = { choice: StartupSurface; checked: boolean; hint?: string } | { divider: true };

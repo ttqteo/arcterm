@@ -27,6 +27,7 @@
 // The second agent works in a second registered project (ROOM_AGENTS), so Discuss together can find its path.
 
 import { waitFor } from "../attach.mjs";
+import { openLibraryTab } from "../scenarios-library.mjs";
 import {
     announceCouncil,
     arrangeCouncilProject,
@@ -221,6 +222,11 @@ async function pressEscape(h) {
         await h.cdp("Input.dispatchKeyEvent", { type, key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 });
     }
 }
+
+// Councils (every council, the ones the tree no longer lists too) is Library's tab, opened from the rail. The rail clears
+// Library's jump trail, so Escape there would go home to the Cockpit: the steps return to the Agent tree by its own rail item
+const openCouncilsList = (h) => openLibraryTab(h, "councils");
+const leaveCouncilsList = (h) => h.goto("agent");
 
 // a bare letter through the real input pipeline (j, k), after taking focus off whatever the last click left it on: the
 // agent keys stand down in a text field and the terminal
@@ -654,7 +660,7 @@ export const councilTree = {
             JSON.stringify({ stays, pinnedBare, runningBare, noPinInTree, pinnedItems, unpins, closeOnUnpinned })
         );
 
-        // 11c. Councils (the button at the sidebar's top) marks the pinned council's row with a pin, and the row's hover
+        // 11c. Councils (Library's tab, opened from the rail) marks the pinned council's row with a pin, and the row's hover
         // button reads Unpin there (Pin on an unpinned one) and asks wavesrv to unpin it; once saved, the mark goes
         writeCouncil(ctx, "done", { edit: (c) => (c.pinned = Date.now()) });
         await announceCouncil(h, ctx, doneId);
@@ -667,7 +673,7 @@ export const councilTree = {
         })()`;
         const markOn = (id) =>
             `!!document.querySelector(${JSON.stringify(`${historyRow(id)}[data-council-history-pinned] [data-council-history-pin-mark]`)})`;
-        const listOpened = await h.ev(click("[data-agent-councils-open]"));
+        const listOpened = await openCouncilsList(h);
         const listShown = await until(present(historyRow(doneId)));
         const marked = await until(markOn(doneId));
         const unmarkedOther = await h.ev(`!${markOn(runningId)}`);
@@ -684,8 +690,8 @@ export const councilTree = {
         writeCouncil(ctx, "done");
         await announceCouncil(h, ctx, doneId);
         const unmarked = await until(`${present(historyRow(doneId))} && !${markOn(doneId)}`);
-        // back to the terminal for the steps that follow (the search box is not focused, so one Escape leaves Councils)
-        await pressEscape(h);
+        // back to the Agent tree for the steps that follow
+        await leaveCouncilsList(h);
         rec(
             "11c. Councils marks a pinned council's row with a pin; the row's hover button reads Unpin there and Pin on an unpinned one, and Unpin asks wavesrv to unpin it, after which the mark goes",
             listOpened &&
@@ -748,9 +754,9 @@ export const councilTree = {
         // 11e. the unpinned one, ended three days ago and opened since, is in no folder of the tree, though Councils
         // lists it
         const readGone = await h.ev(`!${present(`[data-council-row="${oldRead}"]`)}`);
-        await h.ev(click("[data-agent-councils-open]"));
+        await openCouncilsList(h);
         const readListed = await until(present(historyRow(oldRead)));
-        await pressEscape(h);
+        await leaveCouncilsList(h);
         rec(
             "11e. an ended, unpinned council older than a day that was opened is not in the tree, and Councils still lists it",
             readGone && readListed,
@@ -816,7 +822,7 @@ export const councilTree = {
         await seedCouncil(h, ctx, "done", { id: oldStopped, now: threeDaysAgo, edit: stoppedEdit(Date.now()) });
         const stoppedDrawn = await until(present(`[data-council-row="${oldStopped}"]`), ROWS_WAIT_MS);
         const stoppedRead = await h.ev(`!${unreadDot(oldStopped)}`);
-        await h.ev(click("[data-agent-councils-open]"));
+        await openCouncilsList(h);
         await until(present(historyRow(oldStopped)));
         const stoppedUnpinOffered = await hoverUntil(h, historyRow(oldStopped), historyActShown(oldStopped, "unpin"));
         await stubRpc(h, ["CouncilPinCommand"]);
@@ -829,7 +835,7 @@ export const councilTree = {
         await announceCouncil(h, ctx, oldStopped);
         const stoppedGone = await until(`!${present(`[data-council-row="${oldStopped}"]`)}`);
         await h.shot("cdp-shots/council-tree-unpinned-stopped-gone.png");
-        await pressEscape(h);
+        await leaveCouncilsList(h);
         rec(
             "11g. a pinned, stopped council with no summary, ended three days ago and opened, is in the tree; Unpin from its row in Councils asks wavesrv to unpin it, and once saved it leaves the tree",
             stoppedDrawn &&
@@ -858,9 +864,9 @@ export const councilTree = {
         await h.ev(`${actOf(freshClosed, "close")}?.click()`);
         const closedGone = await until(`!${present(`[data-council-row="${freshClosed}"]`)}`);
         const closedKept = await h.ev(`!!window.__arcCouncil.opened().closed?.[${JSON.stringify(freshClosed)}]`);
-        await h.ev(click("[data-agent-councils-open]"));
+        await openCouncilsList(h);
         const closedListed = await until(present(historyRow(freshClosed)));
-        await pressEscape(h);
+        await leaveCouncilsList(h);
         rec(
             "11h. an ended, unpinned council offers Close on hover; Close takes it off the tree at once and Councils still lists it",
             closableDrawn &&
@@ -877,12 +883,12 @@ export const councilTree = {
         // click there puts it back in the tree (the resumed map, kept per browser), opens its Discussion with the
         // channel's box focused, and the button goes, since the tree lists it now; nothing is sent to wavesrv. Close then
         // takes it off again.
-        await h.ev(click("[data-agent-councils-open]"));
+        await openCouncilsList(h);
         await until(present(historyRow(oldRead)));
         const listResumeOffered = await hoverUntil(h, historyRow(oldRead), historyActShown(oldRead, "resume"));
         const runningNoResume = await h.ev(`!${historyAct(runningId, "resume")}`);
         await h.shot("cdp-shots/council-history-resume.png");
-        await pressEscape(h);
+        await leaveCouncilsList(h);
         await openCouncil(h, oldRead, "summary");
         await until(present("[data-council-tabbar] [data-council-actions]"));
         await h.ev(click("[data-council-tabbar] [data-council-actions]"));

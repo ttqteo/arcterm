@@ -11,10 +11,10 @@ import { anyModalOpen } from "@/app/modals/modalstack";
 import { globalStore } from "@/app/store/jotaiStore";
 import { activeNavOrder } from "@/app/view/agents/activenav";
 import { closeAgentChord, confirmCloseSession } from "@/app/view/agents/agentactions";
-import { centerModeAtom, leaveCenter, showCanvases, showCouncils, showHistory } from "@/app/view/agents/agentcenter";
+import { centerModeAtom, leaveCenter } from "@/app/view/agents/agentcenter";
 import { getProcExitAtom } from "@/app/view/agents/agentcontrollerstore";
 import { openRailTranscript } from "@/app/view/agents/agentrailstore";
-import { AgentsViewModel, SURFACE_ORDER, type SurfaceKey } from "@/app/view/agents/agents";
+import { AgentsViewModel, RAIL_ORDER, SURFACE_ORDER, type SurfaceKey } from "@/app/view/agents/agents";
 import { AGENT_DIGITS } from "@/app/view/agents/agentsidebarmodel";
 import { answerDigitTarget, canSubmitAsk, moveCursor, type AgentVM } from "@/app/view/agents/agentsviewmodel";
 import { setAgentView, type AgentView } from "@/app/view/agents/agentview";
@@ -194,6 +194,16 @@ import {
     reviewModeAtom,
     reviewQueueAtom,
 } from "@/app/view/jarvis/reviewstore";
+import {
+    leaveLibraryCouncil,
+    leaveLibraryDetail,
+    LIBRARY_TABS,
+    libraryConvViewAtom,
+    libraryCouncilSelAtom,
+    libraryTabAtom,
+    showLibrary,
+    type LibraryTab,
+} from "@/app/view/library/librarystore";
 import { dagModalStateAtom } from "@/app/view/orchestrate/dagmodalstate";
 import { focusedTerminalBlockId, redrawTerminal } from "@/app/view/term/termwrap";
 import { isMacOS } from "@/util/platformutil";
@@ -240,7 +250,8 @@ function focusCodeSearchInput(): void {
 }
 
 // g-leader surface teleports (collision-free letters; see design spec). Conversation History, the Canvas gallery and
-// Councils are modes of the Agent surface, not surfaces, so each target carries its own id and the opener that shows its mode.
+// Councils are tabs of the Library surface, not surfaces, so each target carries its own id (What's new's Try it links name
+// them) and the opener that shows its tab; `g l` opens Library on the tab it was left on.
 const GO_TARGETS: {
     letter: string;
     surface: SurfaceKey;
@@ -251,9 +262,28 @@ const GO_TARGETS: {
     { letter: "c", surface: "cockpit", label: "Cockpit (home)" },
     { letter: "a", surface: "agent", label: "Agent" },
     { letter: "j", surface: "jarvis", label: "Jarvis (projects, records, recall)" },
-    { letter: "s", surface: "agent", label: "Conversation History", id: "go:history", open: showHistory },
-    { letter: "v", surface: "agent", label: "Canvas gallery", id: "go:canvases", open: showCanvases },
-    { letter: "o", surface: "agent", label: "Councils", id: "go:councils", open: showCouncils },
+    { letter: "l", surface: "library", label: "Library (conversations, canvases, councils)" },
+    {
+        letter: "s",
+        surface: "library",
+        label: "Conversation History",
+        id: "go:history",
+        open: (m) => showLibrary(m, "conversations"),
+    },
+    {
+        letter: "v",
+        surface: "library",
+        label: "Canvas gallery",
+        id: "go:canvases",
+        open: (m) => showLibrary(m, "canvases"),
+    },
+    {
+        letter: "o",
+        surface: "library",
+        label: "Councils",
+        id: "go:councils",
+        open: (m) => showLibrary(m, "councils"),
+    },
     { letter: "f", surface: "files", label: "Diff" },
     { letter: "u", surface: "usage", label: "Usage" },
     { letter: "b", surface: "code", label: "Code (browse source)" },
@@ -274,8 +304,33 @@ const navigate = (ctx: KeyContext) => (!ctx.editable || ctx.leader != null) && !
 const navigateStrict = (ctx: KeyContext) => !ctx.editable && !ctx.modalOpen;
 
 // Deep (non-home) surfaces whose Escape returns to the Cockpit. Excludes cockpit (already home), agent
-// (owns Escape via buildAgentBindings: exit fullscreen / back), and settings.
-const ESC_HOME_SURFACES = new Set<SurfaceKey>(["jarvis", "files", "usage", "code"]);
+// (owns Escape via buildAgentBindings: exit fullscreen / back), and settings. Library's Escape is its Back while a canvas,
+// a session, a run or a council is open in it (libraryOpen), and navigates only from its lists.
+const ESC_HOME_SURFACES = new Set<SurfaceKey>(["jarvis", "files", "usage", "code", "library"]);
+
+// What Library has open past its lists, whichever tab shows: a canvas, clean up or the version scan's review in the gallery
+// (its card grid is the gallery at rest), a session or a run on Conversations, a council on Councils. Each says so in its
+// own atom and only on its own tab. Every atom is read whatever the others hold, so the PREDICATE_ATOMS completeness sweep
+// (whenstate.ts) sees each of them.
+function libraryOpen(): { gallery: boolean; detail: boolean; council: boolean } {
+    const tab = globalStore.get(libraryTabAtom);
+    const conv = globalStore.get(libraryConvViewAtom);
+    const council = globalStore.get(libraryCouncilSelAtom);
+    const gallery = globalStore.get(canvasGalleryAtom).view;
+    return {
+        gallery: tab === "canvases" && gallery !== "grid",
+        detail: tab === "conversations" && conv !== "list",
+        council: tab === "councils" && council != null,
+    };
+}
+
+// Escape on Library goes to what is open in it: the gallery's own keys (canvases:back, -scan-cancel, -cleanup-cancel),
+// library:back (a session, a run, a council) or a council's open thread (council:close-thread). Only when none is open does
+// it navigate (surface:back-home), so one press never means two things.
+const libraryHoldsEscape = (ctx: KeyContext): boolean => {
+    const open = libraryOpen();
+    return ctx.surface === "library" && (open.gallery || open.detail || open.council);
+};
 
 // Escape on a deep surface navigates (back, else home) only when nothing on screen owns it.
 // The autonomy panel owns Escape while it is open: closing an overlay is what the user means by
@@ -295,6 +350,9 @@ const escapeNavigates = (ctx: KeyContext): boolean =>
     // the Diff surface's compare state owns Escape while it is on: leaving compare is what
     // Escape means there, and going home instead would strand a two-ref read behind the Cockpit
     !globalStore.get(compareOnAtom) &&
+    // and Library's: an open canvas, clean up, the version scan's review, a session, a run or a council each takes the
+    // press for its own Back, so one Escape never leaves the surface and steps back too
+    !libraryHoldsEscape(ctx) &&
     // and with filters active, Escape clears them — the history header says so ("Clear filters", esc)
     !(ctx.surface === "files" && anyFilterActive(globalStore.get(historyFiltersAtom))) &&
     // the Brief's record peek is a ModalShell and the Brief is where every record destination
@@ -343,9 +401,9 @@ const terminalSwapped = (model: AgentsViewModel) => {
     );
 };
 
-// A canvas open in Agent → Canvas gallery pages through its boards with `[` `]` as the agent's canvas does.
+// A canvas open in Library → Canvases pages through its boards with `[` `]` as the agent's canvas does.
 const galleryViewerOpen = () =>
-    globalStore.get(centerModeAtom) === "canvases" && globalStore.get(canvasGalleryAtom).view === "viewer";
+    globalStore.get(libraryTabAtom) === "canvases" && globalStore.get(canvasGalleryAtom).view === "viewer";
 
 // A board widened in the brainstorm's rail (BrainstormState.board, in the design or the check) is drawn from the agent's
 // canvas state, so it takes the canvas's board keys: `[` `]` and ← → step its boards there. The question stays on
@@ -367,14 +425,15 @@ const brainstormBoardOpen = (model: AgentsViewModel): boolean => {
 const brainstormBoardMarking = (model: AgentsViewModel): boolean =>
     brainstormBoardOpen(model) && focusedCanvas(model)?.marking === true;
 
-// `[` `]` belong to the boards in canvas mode (and in the gallery's viewer, and on a board widened in the brainstorm) and
-// to the tabs in review mode, so the surface switch stands down while the focused agent shows either. The agent switches
-// stay live: the tree stays on screen beside them. The rest of the brainstorm pane has no use for them, so it leaves the
-// surface switch alone.
+// `[` `]` belong to the boards in canvas mode (and on a board widened in the brainstorm) and to the tabs in review mode, so
+// the surface switch stands down while the focused agent shows either. The agent switches stay live: the tree stays on
+// screen beside them. The rest of the brainstorm pane has no use for them, so it leaves the surface switch alone. On Library
+// they are the boards' while the gallery's viewer is open, which is a clause of its own: Library has no focused agent.
 const inAgentSwap = (model: AgentsViewModel, ctx: KeyContext) =>
-    ctx.surface === "agent" &&
-    ((terminalSwapped(model) && (focusedBrainstorm(model)?.mode !== "brainstorm" || brainstormBoardOpen(model))) ||
-        galleryViewerOpen());
+    (ctx.surface === "agent" &&
+        terminalSwapped(model) &&
+        (focusedBrainstorm(model)?.mode !== "brainstorm" || brainstormBoardOpen(model))) ||
+    (ctx.surface === "library" && galleryViewerOpen());
 
 // The close-agent chord closes the tab the keys were typed in: the pane that took them (paneId), which is not the selected
 // agent when they went to the terminal docked under it (terminaldock.ts); the selected agent when the pane names none. A
@@ -422,14 +481,15 @@ function backOrHome(model: AgentsViewModel): void {
 }
 
 export function buildGlobalBindings(model: AgentsViewModel): Binding[] {
-    // `[`/`]` cycle the rail order (SURFACE_ORDER). A surface outside the cycle (settings) enters at an end.
+    // `[`/`]` cycle the rail order (RAIL_ORDER, the order the person sees, which is not the chords'). A surface outside
+    // the cycle (settings) enters at an end.
     const cycleSurface = (delta: number) => {
         const cur = globalStore.get(model.surfaceAtom);
-        const idx = SURFACE_ORDER.indexOf(cur);
+        const idx = RAIL_ORDER.indexOf(cur);
         const next =
             idx === -1
-                ? SURFACE_ORDER[delta > 0 ? 0 : SURFACE_ORDER.length - 1]
-                : SURFACE_ORDER[(idx + delta + SURFACE_ORDER.length) % SURFACE_ORDER.length];
+                ? RAIL_ORDER[delta > 0 ? 0 : RAIL_ORDER.length - 1]
+                : RAIL_ORDER[(idx + delta + RAIL_ORDER.length) % RAIL_ORDER.length];
         globalStore.set(model.surfaceAtom, next);
     };
 
@@ -1246,8 +1306,9 @@ export function buildUsageBindings(handlers: {
     ];
 }
 
-// History and a session's transcript cover the terminal, so the keys that act on the focused agent (j/k, the arrows, d, f,
-// r, c) stand down there: History publishes its own list cursor on this surface, and j/k must belong to it alone
+// A council, a project's Overview or a held agent cover the terminal, so the keys that act on the focused agent (j/k, the
+// arrows, d, f, r, c) stand down there. Conversation History, the Canvas gallery and the sessions are on Library, a surface
+// of its own: its keys never meet the agent's.
 const centerAtRest = () => globalStore.get(centerModeAtom) === "terminal";
 // The initiative popover on the agent header owns its keys (m, n, the arrows, Enter, Escape) while it is open, so every
 // single-key Agent binding stands down: this dispatcher runs on window capture, ahead of the popover's own handler.
@@ -1300,11 +1361,12 @@ const focusReadKeys = (ctx: KeyContext) =>
     focusReadAgent() != null;
 const agentNavStrict = (ctx: KeyContext) =>
     navigateStrict(ctx) && ctx.surface === "agent" && centerAtRest() && initiativePopoverClosed();
-// The Canvas gallery covers the terminal as History does, with keys of its own: the arrows, Enter and `/` on its grid,
-// the arrows, `[` `]` and Escape on an open canvas, the arrows, Space and Escape in clean up. Each takes its view from
-// canvasGalleryAtom, so they never share a key.
-const onGallery = (ctx: KeyContext) =>
-    ctx.surface === "agent" && globalStore.get(centerModeAtom) === "canvases" && initiativePopoverClosed();
+// Library's Canvases tab shows the Canvas gallery, with keys of its own: the arrows, Enter and `/` on its grid, the arrows,
+// `[` `]` and Escape on an open canvas, the arrows, Space and Escape in clean up. Each takes its view from
+// canvasGalleryAtom, so they never share a key. The bindings are built with the Agent surface's (buildAgentBindings, which
+// stays mounted) and live only on Library, so no agent key meets them. The initiative popover on the agent header is not
+// on Library: it never holds these keys.
+const onGallery = (ctx: KeyContext) => ctx.surface === "library" && globalStore.get(libraryTabAtom) === "canvases";
 // A project's Overview covers the terminal too; its one key is `/`, into the History column's search box. Escape inside
 // the box is the box's own: the Escape that leaves the centre is strict, so it stands down while the box holds focus.
 const onOverview = (ctx: KeyContext) =>
@@ -1317,14 +1379,21 @@ const galleryView = () => globalStore.get(canvasGalleryAtom).view;
 const inGalleryGrid = (ctx: KeyContext) => galleryNav(ctx) && galleryView() === "grid";
 const inGalleryViewer = (ctx: KeyContext) => galleryNav(ctx) && galleryView() === "viewer";
 const inGalleryCleanup = (ctx: KeyContext) => galleryNav(ctx) && galleryView() === "cleanup";
-// An open canvas, the clean-up mode and the version scan's review go back to the grid on Escape, so the Escape that
-// leaves the centre stands down; the grid has nothing to back out of, and leaves. Escape inside the search box is the
-// box's own.
-const galleryHoldsEscape = () =>
-    globalStore.get(centerModeAtom) === "canvases" && globalStore.get(canvasGalleryAtom).view !== "grid";
+// A council's view is on screen: Agent's centre column on a council, or Library's Councils tab with one open. Both reads
+// happen whatever the surface, so every council predicate depends on both atoms however the rest short-circuits.
+const onCouncil = (ctx: KeyContext): boolean => {
+    const centre = globalStore.get(centerModeAtom) === "council";
+    const library = libraryOpen().council;
+    return (ctx.surface === "agent" && centre) || (ctx.surface === "library" && library);
+};
+// The prefix of a selector for a council's own controls (its tabs, its message boxes), from the root of the surface the key
+// was typed on: the Agent surface stays mounted behind Library, so a bare selector could find the controls of a council on
+// the surface that is not showing, and press them.
+const councilRoot = (ctx: KeyContext): string => (ctx.surface === "library" ? "[data-library] " : "");
 // A council's chat keeps the keys of its channel and thread (buildCouncilBindings) while focus is inside either: the
-// centre is on the council, so none of the agent keys is live, and Escape closes an open thread before it leaves the
-// council for the terminal; the Sources panel closes the same way, back to its thread.
+// council covers the terminal (or Library's list), so none of the agent keys is live, and Escape closes an open thread
+// before it leaves the council (agent:leave-center, library:back); the Sources panel closes the same way, back to its
+// thread.
 const focusInCouncilChat = () =>
     typeof document !== "undefined" &&
     document.activeElement?.closest?.("[data-council-channel], [data-council-thread], [data-council-sources]") != null;
@@ -1606,22 +1675,21 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
             id: "agent:leave-center",
             keys: "Escape",
             group: "Agent",
-            // a session or run goes back to the Overview or History it was opened from (leaveCenter)
-            label: "Back to the terminal (from History, the canvases or the councils), or from a session to where it was opened",
+            label: "Back to the terminal (from a council, a project's Overview or a held agent)",
             // exclusive with agent:back (which needs the centre at rest) and with subagent:back (which needs a focused
             // subagent), so Escape never means two things. Deliberately not gated on noCanvas(): the focused agent's
-            // canvas or review can still be on while History covers the terminal, and Escape must leave History then
-            // too. The palette lists it only while it applies (buildCommandItems filters on when()).
+            // canvas or review can still be on while a council covers the terminal, and Escape must leave the council
+            // then too. The palette lists it only while it applies (buildCommandItems filters on when()).
             when: (ctx) =>
                 navigateStrict(ctx) &&
                 ctx.surface === "agent" &&
                 !centerAtRest() &&
                 globalStore.get(focusSubagentAtom) == null &&
-                !galleryHoldsEscape() &&
                 !councilHoldsEscape(),
             run: () => leaveCenter(),
         },
-        // Agent → Canvas gallery. Moving over cards and paging through boards are postures, not actions to search for.
+        // Library → Canvases. Moving over cards and paging through boards are postures, not actions to search for. The
+        // group is Library's, though these are built with the Agent surface's keys: they are live on Library only.
         ...(
             [
                 ["ArrowLeft", "canvases:left", "Previous canvas"],
@@ -1633,7 +1701,7 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
             ([key, id, label]): Binding => ({
                 id,
                 keys: key,
-                group: "Agent",
+                group: "Library",
                 label,
                 paletteHidden: true,
                 when: inGalleryGrid,
@@ -1643,7 +1711,7 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
         {
             id: "canvases:open",
             keys: "Enter",
-            group: "Agent",
+            group: "Library",
             label: "Open the canvas",
             paletteHidden: true,
             when: inGalleryGrid,
@@ -1653,7 +1721,7 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
         {
             id: "canvases:search",
             keys: "/",
-            group: "Agent",
+            group: "Library",
             label: "Search canvases",
             paletteHidden: true,
             when: inGalleryGrid,
@@ -1685,7 +1753,7 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
         {
             id: "canvases:prev-board",
             keys: "ArrowLeft",
-            group: "Agent",
+            group: "Library",
             label: "Previous board",
             paletteHidden: true,
             when: inGalleryViewer,
@@ -1694,7 +1762,7 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
         {
             id: "canvases:next-board",
             keys: "ArrowRight",
-            group: "Agent",
+            group: "Library",
             label: "Next board",
             paletteHidden: true,
             when: inGalleryViewer,
@@ -1705,7 +1773,7 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
         {
             id: "canvases:prev-board-bracket",
             keys: "[",
-            group: "Agent",
+            group: "Library",
             label: "Previous board",
             paletteHidden: true,
             when: inGalleryViewer,
@@ -1714,7 +1782,7 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
         {
             id: "canvases:next-board-bracket",
             keys: "]",
-            group: "Agent",
+            group: "Library",
             label: "Next board",
             paletteHidden: true,
             when: inGalleryViewer,
@@ -1723,10 +1791,10 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
         {
             id: "canvases:back",
             keys: "Escape",
-            group: "Agent",
+            group: "Library",
             label: "Back to the canvases",
             paletteHidden: true,
-            // strict like every Escape here; agent:leave-center stands down while a canvas is open (galleryHoldsEscape).
+            // strict like every Escape here; surface:back-home stands down while a canvas is open (libraryHoldsEscape).
             // The link picker, when it is open, takes the first Escape; the viewer closes on the second. (Inside the
             // picker's search box the Escape is the box's own, like the grid's.)
             when: (ctx) => navigateStrict(ctx) && onGallery(ctx) && galleryView() === "viewer",
@@ -1739,10 +1807,10 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
         {
             id: "canvases:scan-cancel",
             keys: "Escape",
-            group: "Agent",
+            group: "Library",
             label: "Cancel the version scan",
             paletteHidden: true,
-            // strict like every Escape here; agent:leave-center stands down in the review (galleryHoldsEscape)
+            // strict like every Escape here; surface:back-home stands down in the review (libraryHoldsEscape)
             when: (ctx) => navigateStrict(ctx) && onGallery(ctx) && galleryView() === "scan",
             run: () => cancelScan(),
         },
@@ -1758,7 +1826,7 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
             ([key, id, label]): Binding => ({
                 id,
                 keys: key,
-                group: "Agent",
+                group: "Library",
                 label,
                 paletteHidden: true,
                 when: inGalleryCleanup,
@@ -1768,7 +1836,7 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
         {
             id: "canvases:tick",
             keys: "Space",
-            group: "Agent",
+            group: "Library",
             label: "Tick or untick the canvas",
             paletteHidden: true,
             when: inGalleryCleanup,
@@ -1778,10 +1846,10 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
         {
             id: "canvases:cleanup-cancel",
             keys: "Escape",
-            group: "Agent",
+            group: "Library",
             label: "Cancel clean up",
             paletteHidden: true,
-            // strict like every Escape here; agent:leave-center stands down in clean up (galleryHoldsEscape)
+            // strict like every Escape here; surface:back-home stands down in clean up (libraryHoldsEscape)
             when: (ctx) => navigateStrict(ctx) && onGallery(ctx) && galleryView() === "cleanup",
             run: () => cancelCleanup(),
         },
@@ -2490,18 +2558,13 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
 // the channel, Enter opens the focused idea's thread, p Chốts it (pins it as the council's direction), Escape closes
 // the thread. Active only while the chat is on screen and focus is inside its channel or thread (an input is never
 // inside: it stays editable, and its keys are its own), so elsewhere on the Agent surface nothing here is live and the
-// agent keys keep j and k. Registered by the chat itself.
+// agent keys keep j and k. The council is on screen in Agent's centre column or in Library's Councils tab (onCouncil).
+// Registered by the chat itself.
 export function buildCouncilBindings(): Binding[] {
     // the nav is read first and unconditionally, so every predicate depends on it however the rest short-circuits
     const keys = (ctx: KeyContext) => {
         const nav = globalStore.get(councilChatNavAtom);
-        return (
-            nav != null &&
-            navigateStrict(ctx) &&
-            ctx.surface === "agent" &&
-            globalStore.get(centerModeAtom) === "council" &&
-            focusInCouncilChat()
-        );
+        return nav != null && navigateStrict(ctx) && onCouncil(ctx) && focusInCouncilChat();
     };
     const move = (dir: 1 | -1) => {
         const nav = globalStore.get(councilChatNavAtom);
@@ -2573,14 +2636,13 @@ export function buildCouncilBindings(): Binding[] {
             keys: "Tab",
             group: "Agent",
             label: "Type in the council's message box",
-            when: (ctx) =>
-                navigateStrict(ctx) && ctx.surface === "agent" && globalStore.get(centerModeAtom) === "council",
+            when: (ctx) => navigateStrict(ctx) && onCouncil(ctx),
             paletteHidden: true,
-            run: () => {
+            run: (ctx) => {
                 const inThread = document.activeElement?.closest?.("[data-council-thread]") != null;
                 const pick = (scope: "channel" | "thread") =>
                     document.querySelector<HTMLTextAreaElement>(
-                        `[data-council-composer="${scope}"] [data-council-composer-input]`
+                        `${councilRoot(ctx)}[data-council-composer="${scope}"] [data-council-composer-input]`
                     );
                 const box = (inThread ? pick("thread") : null) ?? pick("channel") ?? pick("thread");
                 if (box == null || box.disabled) {
@@ -2604,14 +2666,12 @@ export function buildCouncilBindings(): Binding[] {
 // A council's view keys: r the Report, c the Discussion (its chat), m the Map. Each clicks its tab in the strip the view
 // draws (counciltabs.tsx), so a key on the view already shown does what that click does (the Report glides to its
 // body). Live wherever a council's view is on screen and focus is not in an input; the agent keys that share r, c and m
-// want the terminal at rest, so they never overlap. Registered by the tab strip itself.
+// want the terminal at rest, so they never overlap. In Agent's centre column and in Library's Councils tab alike (onCouncil);
+// only the Agent header's initiative popover holds them, and it is not on Library. Registered by the tab strip itself.
 export const COUNCIL_TAB_KEYS = { summary: "r", discussion: "c", map: "m" } as const;
 export function buildCouncilTabBindings(): Binding[] {
     const on = (ctx: KeyContext) =>
-        navigateStrict(ctx) &&
-        ctx.surface === "agent" &&
-        globalStore.get(centerModeAtom) === "council" &&
-        initiativePopoverClosed();
+        navigateStrict(ctx) && onCouncil(ctx) && (ctx.surface !== "agent" || initiativePopoverClosed());
     const tab = (id: keyof typeof COUNCIL_TAB_KEYS, label: string): Binding => ({
         id: `council:tab-${id}`,
         keys: COUNCIL_TAB_KEYS[id],
@@ -2619,7 +2679,7 @@ export function buildCouncilTabBindings(): Binding[] {
         label,
         when: on,
         paletteHidden: true,
-        run: () => clickThrough(`[data-council-tab="${id}"]`),
+        run: (ctx) => clickThrough(`${councilRoot(ctx)}[data-council-tab="${id}"]`),
     });
     return [
         tab("summary", "Show the council's Report"),
@@ -2646,6 +2706,60 @@ function stepListFile(dir: 1 | -1): false | undefined {
         globalStore.set(collapsedDirsAtom, expandToShow(globalStore.get(collapsedDirsAtom), next));
     }
     active.select(next);
+}
+
+// The name each Library tab carries on its strip (librarysurface.tsx), which the tab keys' labels repeat
+const LIBRARY_TAB_LABEL: Record<LibraryTab, string> = {
+    conversations: "Conversations",
+    canvases: "Canvases",
+    councils: "Councils",
+};
+
+// Library's own keys, which LibrarySurface activates with useKeybindings: `1` `2` `3` show its tabs, in the order the strip
+// draws them, and Escape goes back out of what is open in it (the stand-in for the Back the panes draw): a session or a run
+// on Conversations (leaveLibraryDetail), a council on Councils (leaveLibraryCouncil) unless the council's own panel holds
+// the key. The rest of Library's keys are built elsewhere and gated on Library: the gallery's (canvases:*, built with the
+// Agent surface's), the council's (buildCouncilBindings, buildCouncilTabBindings) and the Conversations list's cursor
+// (buildListNavBindings, the cursor ConversationHistory publishes on `library`). With nothing open Escape is
+// surface:back-home's: back over the jump that brought the person here, else Cockpit.
+export function buildLibraryBindings(_model: AgentsViewModel): Binding[] {
+    const tabKeys = LIBRARY_TABS.map(
+        (tab, i): Binding => ({
+            id: `library:tab-${i + 1}`,
+            keys: String(i + 1),
+            group: "Library",
+            label: `Show ${LIBRARY_TAB_LABEL[tab]}`,
+            when: (ctx) => navigate(ctx) && ctx.surface === "library",
+            run: () => globalStore.set(libraryTabAtom, tab),
+        })
+    );
+    return [
+        ...tabKeys,
+        {
+            id: "library:back",
+            keys: "Escape",
+            group: "Library",
+            label: "Back from the session, run or council",
+            // strict like every Escape here. Exclusive with surface:back-home (which stands down while any of these is open,
+            // libraryHoldsEscape), with the gallery's Escapes (another tab) and with council:close-thread (the council's open
+            // thread or Sources panel takes the press first, and this one stands down while that holds it)
+            when: (ctx) => {
+                const open = libraryOpen();
+                return (
+                    navigateStrict(ctx) &&
+                    ctx.surface === "library" &&
+                    (open.detail || (open.council && !councilHoldsEscape()))
+                );
+            },
+            run: () => {
+                if (libraryOpen().detail) {
+                    leaveLibraryDetail();
+                } else {
+                    leaveLibraryCouncil();
+                }
+            },
+        },
+    ];
 }
 
 // Diff-surface keys. `c` is the entry gesture the mockup names; Escape is the single exit; Tab jumps

@@ -31,7 +31,7 @@ Surface Agent là surface duy nhất arcterm **giữ nguyên trong nền** khi b
 - Từ Cockpit: `t` hoặc `Enter` trên một thẻ, hoặc nút terminal của thẻ.
 - Từ bất kỳ đâu: `Ctrl+P`, gõ tên agent hoặc terminal, `Enter`.
 
-Khi chưa có terminal nào, trung tâm hiện màn **No terminal running** với nút **Launch new terminal** (mở hộp thoại **New agent**), nút **Conversation History**, và danh sách **Recent sessions** (bấm một dòng để resume nó).
+Khi chưa có terminal nào, trung tâm hiện màn **No terminal running** với nút **Launch new terminal** (mở hộp thoại **New agent**), nút **Conversation History** (mở trang [Library](#library)), và danh sách **Recent sessions** (bấm một dòng để resume nó).
 
 Nếu bạn đang chọn một project ở app bar mà agent đang xem thuộc project khác, dưới header có dòng `Showing <project của agent> · project is <project đã chọn>` với nút **Show the project** để quay lại project đã chọn.
 
@@ -142,7 +142,7 @@ Khi một agent land nhánh và worktree của nó bị xóa, terminal nào đan
 
 ## Sidebar
 
-Cột trái 248 px, từ trên xuống: nút **Conversation History**, rồi hai mục cuộn được: **cây project** (không có tiêu đề) và **Conversations**. Bộ chọn project ở app bar lọc cả hai theo project. Không còn mục **Terminals** riêng ở đáy: terminal nằm trong cây, cạnh agent của project.
+Cột trái 248 px chỉ có **cây project** (không có tiêu đề), cuộn được. Bộ chọn project ở app bar lọc cây theo project. Không còn mục **Terminals** riêng ở đáy: terminal nằm trong cây, cạnh agent của project. Hội thoại đã kết thúc, Canvas gallery và Councils không nằm ở sidebar mà ở trang **Library** (`Ctrl+7`, xem [Library](#library)).
 
 ### Cây project — agent và terminal
 
@@ -182,14 +182,9 @@ Run orchestrator được vẽ như một nhóm: hàng của **lead** (biểu t�
 
 Một run mà lead đã đóng nhưng worker còn tab hiện thành một hàng *run* riêng (chuột phải: **Open run**, **Close run**). Run do một agent khởi động bằng `wsh runs start` giữ chỗ của nó trong cây; header của lead (hay của agent run Quick) có link `↰ <session>` về agent đó, mở terminal khi agent còn sống và transcript khi đã kết thúc ("↰ a closed session" khi không tìm được nữa). Chiều ngược lại, header của agent đã khởi động run có link `↳` tới run đó: một run thì là goal của nó và mở run sheet, nhiều run thì là `N runs, k active` và mở menu chọn run, run còn chạy lên trước. Chi tiết run: [Orchestrator](orchestrator.md).
 
-### Conversations — các cuộc hội thoại đã kết thúc
+### Hội thoại đã kết thúc không nằm ở sidebar
 
-Mỗi hàng một dòng: biểu tượng harness, tiêu đề (prompt đầu tiên), số token và tuổi; dòng thứ hai chỉ xuất hiện khi giúp phân biệt (nhánh khác `main`, hoặc giờ bắt đầu khi hai hàng trùng tiêu đề). Một run đã kết thúc là **một** hàng, có tổng token của mọi phiên và thanh các task.
-
-- Gom theo thư mục project (project có hội thoại mới nhất lên trước); mỗi thư mục hiện 10 hàng, **Show more** cho thêm 10 nữa (ghi rõ còn bao nhiêu), **Show less** gấp lại.
-- Chỉ liệt kê các project bạn đã thêm vào arcterm. Hội thoại ở thư mục khác chỉ có trong **Conversation History**; dòng `N in projects not added · History` ở cuối mục đếm chúng và mở History.
-- Chấm cam nhỏ: hội thoại đó còn câu hỏi chưa trả lời.
-- Bấm một hàng để đọc transcript ở giữa, nơi có nút **Resume →**. Chuột phải: **Resume** (khi resume được), **Copy title**, **Delete session** (xem bên dưới).
+Cây project chỉ liệt kê cái đang sống. Các hội thoại đã kết thúc, Canvas gallery và danh sách Councils nằm ở trang **Library** (xem [Library](#library)); sidebar không còn hàng **Conversation History**, **Canvas gallery**, **Councils** hay mục **Conversations**.
 
 ### Hàng terminal và tool
 
@@ -476,24 +471,36 @@ Agent dùng skill arc:design có thể đính kèm một **canvas** — các boa
 
 ### Thư viện canvas
 
-Mọi canvas mà agent đã vẽ trong các project của bạn nằm ở **Agent → Canvas gallery**: bấm nút **Canvas gallery** dưới Conversation History ở đầu sidebar, hoặc `Ctrl+G` `v`. Nó thay terminal như Conversation History. Mỗi canvas là một thẻ có ảnh xem trước (chụp một lần, khi bạn mở board của nó lần đầu), xếp mới nhất trước theo Today / Yesterday / Earlier; `/` tìm theo tên topic, board và project, `↑` `↓` `←` `→` chọn thẻ, `Enter` mở.
+Mọi canvas mà agent đã vẽ trong các project của bạn nằm ở **Library → Canvases**: mở Library (`Ctrl+7`) rồi bấm tab **Canvases** (hoặc phím `2`), hoặc `Ctrl+G` `v`. Mỗi canvas là một thẻ có ảnh xem trước (chụp một lần, khi bạn mở board của nó lần đầu), xếp mới nhất trước theo Today / Yesterday / Earlier; `/` tìm theo tên topic, board và project, `↑` `↓` `←` `→` chọn thẻ, `Enter` mở.
 
-Mở một canvas thì xem từng board một: `←` `→` đổi board, `Esc` về lưới. Viewer không gắn với agent nào nên không có đánh dấu hay Send; muốn sửa canvas cùng một agent thì mở nó từ nhóm **Canvases** của agent đó trong palette `Ctrl+P`.
+Mở một canvas thì xem từng board một: `←` `→` hoặc `[` `]` đổi board, `Esc` về lưới. Viewer không gắn với agent nào nên không có đánh dấu hay Send; muốn sửa canvas cùng một agent thì mở nó từ nhóm **Canvases** của agent đó trong palette `Ctrl+P`.
 
 **Clean up** (nút ở đầu lưới) biến lưới thành các ô tick: canvas không đổi từ 30 ngày trở lên được tick sẵn, nhóm còn lại thì chưa. `Space` tick hoặc bỏ tick thẻ đang chọn, **Untick all** bỏ hết, **Move to trash** chuyển các thẻ đã tick vào `~/.arc/trash`, nơi chúng nằm 7 ngày rồi mới bị xóa hẳn; `Esc` thoát mà không làm gì. Đây là chỗ duy nhất trong thư viện xóa canvas.
 
 Canvas được giữ lại: agent không xóa canvas khi tính năng của nó đã ship, trừ khi bạn bật **Agents delete a canvas when its feature ships** ở Settings → Storage → Auto-clean. Cũng ở Storage, thẻ **Design canvases** cho biết dung lượng và số canvas, với nút **Open the gallery**.
 
+## Library
+
+**Library** là một trang riêng cho những gì đã qua, tách khỏi những gì đang sống ở sidebar Agent. Mở nó bằng hàng **Library** (thứ năm trên nav rail), `Ctrl+7`, hoặc `Ctrl+G` rồi `l`. Dải tab ở đầu trang có ba tab, bấm hoặc bấm phím `1` `2` `3`:
+
+| Tab | Nội dung |
+|---|---|
+| **Conversations** | [Conversation History](#conversation-history-và-phiên-đã-kết-thúc): danh sách mọi phiên đã kết thúc và chi tiết của phiên đang chọn. `Ctrl+G` `s` mở thẳng tab này. |
+| **Canvases** | [Thư viện canvas](#thư-viện-canvas). `Ctrl+G` `v` mở thẳng tab này. |
+| **Councils** | Danh sách mọi council, kể cả những council đã đóng mà cây không còn liệt kê. Một council đã rời cây mở ngay trong Library, dưới nút **Back**; `Ctrl+G` `o` mở thẳng tab này. |
+
+Tab đang xem được nhớ khi bạn sang trang khác. Một phiên hoặc run được mở từ ngoài Library (từ Usage, Jarvis, Overview của project, hay hộp thoại New agent) hiện ở giữa trang, trọn chiều rộng, không có danh sách bên cạnh; nút **Back** hoặc `Esc` đưa bạn về trang đã mở nó. Một council còn trong sidebar (đang chạy, đang chờ bạn, được ghim, vừa kết thúc trong vòng một ngày, hoặc chưa đọc) vẫn mở ở giữa trang Agent như trước, và Resume một council luôn đưa bạn về Agent.
+
 ## Conversation History và phiên đã kết thúc
 
 ### Làm thế nào
 
-- Mở **Conversation History**: bấm nút đầu sidebar, hoặc `Ctrl+G` `s`, hoặc nút **Conversation History** ở màn *No terminal running*.
-- Đọc một phiên đã kết thúc: bấm hàng của nó trong **Conversations**. Transcript hiện ở giữa; **Activity | Transcript** chuyển giữa dòng sự kiện và bản chép lời.
+- Mở **Conversation History**: tab **Conversations** của Library (`Ctrl+7`, hoặc `Ctrl+G` `s`, hoặc nút **Conversation History** ở màn *No terminal running*).
+- Đọc một phiên đã kết thúc: bấm thẻ của nó trong danh sách. Transcript hiện ở cột phải; **Activity | Transcript** chuyển giữa dòng sự kiện và bản chép lời.
 - **Resume** một phiên: bấm **Resume →** (hoặc chuột phải hàng → **Resume**, hoặc `Enter` khi hàng đang chọn trong History). arcterm mở một agent mới trong cùng project và nối lại đúng phiên đó: `claude --resume <id>`, `codex resume <id>`, `opencode -s <id>`, `pi --session <đường dẫn>`, hoặc `agy --conversation <id>`.
-- Quay về terminal: `Esc` hoặc nút mũi tên "Back to terminal".
+- Rời Library: `Esc` (không có gì đang mở trong nó) đưa bạn về trang đã đưa bạn tới đây, hoặc về Cockpit nếu bạn vào bằng nav rail, `Ctrl+7` hay `Ctrl+G` `l`.
 
-**Conversation History** là danh sách toàn bộ phiên của mọi project, kể cả project chưa thêm vào arcterm. Cột trái 380 px có nút quay lại, tiêu đề, số phiên `live`, và bộ lọc **All | Live | Needs you | Done**; mục ghim **All activity** là dòng thời gian gộp của mọi phiên. Phiên xếp nhóm **Live now**, **Today**, **Earlier**. Một run là **một** mục (chọn thành viên của nó ở cột phải). Phiên đang chạy có nút **Jump →** thay cho Resume. Nút bộ lọc project ở app bar chỉ thu hẹp sidebar, không thu hẹp History.
+**Conversation History** là danh sách toàn bộ phiên của mọi project, kể cả project chưa thêm vào arcterm. Cột trái 380 px có tiêu đề, số phiên `live`, và bộ lọc **All | Live | Needs you | Done**; mục ghim **All activity** là dòng thời gian gộp của mọi phiên. Phiên xếp nhóm **Live now**, **Today**, **Earlier**. Một run là **một** mục (chọn thành viên của nó ở cột phải). Phiên đang chạy có nút **Jump →** thay cho Resume. Bộ chọn project ở app bar chỉ thu hẹp sidebar, không thu hẹp History. `j` / `k` đưa con trỏ qua danh sách, `1` `2` `3` chuyển tab.
 
 <!-- shot: agent-history.png | Conversation History: cột trái có bộ lọc All/Live/Needs you/Done, các nhóm Live now/Today/Earlier, cột phải là chi tiết một phiên với nút Resume → | Scenario CDP `agent-history` (scripts/cdp/scenarios.mjs) dựng sẵn các phiên đã kết thúc và một run; vào bằng `Ctrl+G` `s`, selector `[data-agent-history]` -->
 
@@ -531,7 +538,8 @@ Phím đơn (`j`, `k`, `d`, `f`, `r`, `c`, `Esc`…) chỉ có tác dụng khi b
 | `Cmd+Shift+W` (macOS) / `Ctrl+Shift+W` (Windows) | Đóng agent hoặc terminal đang focus, có hỏi xác nhận (dùng được cả trong terminal; trên Windows `Ctrl+W` vẫn là xóa một từ trong terminal) |
 | `Cmd+Shift+T` (macOS) / `Ctrl+Shift+T` (Windows) | Mở lại agent vừa đóng, ở trạng thái ngủ (tối đa 5 agent gần nhất; dùng được cả trong terminal) |
 | `Ctrl+N` / `Ctrl+Shift+R` | Hộp thoại New agent / New run |
-| `Ctrl+G` `s` | Mở Conversation History |
+| `Ctrl+7` / `Ctrl+G` `l` | Mở Library |
+| `Ctrl+G` `s` | Mở Conversation History (tab Conversations của Library) |
 
 `Ctrl+P`, `Ctrl+N`, `Ctrl+G`, `Ctrl+M` (`⌘` trên Mac) dùng được cả khi đang gõ trong terminal. `Ctrl+J` (What's waiting) cũng vậy; trong terminal xuống dòng bằng `Shift+Enter`. Chỉ đóng agent cần thêm `Shift` (`Ctrl+Shift+W`, `⌘⇧W` trên Mac), vì `Ctrl+W` là xóa một từ trong terminal.
 

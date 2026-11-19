@@ -6,7 +6,6 @@
 // stem of its transcript file, so a mark outlives the agent: closed, its conversation keeps it, and a resume that writes
 // the same transcript brings it back on the live row. Pure, no React or jotai: laterstore.ts reads and writes the meta.
 
-import type { ConversationEntry } from "./agentsidebarmodel";
 import { sessionIdFromTranscript } from "./launch";
 
 export type LaterMarks = Readonly<Record<string, number>>;
@@ -32,24 +31,6 @@ export function withLater(marks: LaterMarks, key: string, on: boolean, now: numb
         delete next[key];
     }
     return next;
-}
-
-function entryLater(marks: LaterMarks, e: ConversationEntry): boolean {
-    return e.kind === "session" && laterSince(marks, e.session.transcriptpath) != null;
-}
-
-/** Pure: each project's ended conversations with the ones marked for later first, so a page of "Show more" never hides
- *  one; the order within each part is kept. */
-export function laterFirst(
-    ended: ReadonlyMap<string, ConversationEntry[]>,
-    marks: LaterMarks
-): Map<string, ConversationEntry[]> {
-    const out = new Map<string, ConversationEntry[]>();
-    for (const [project, list] of ended) {
-        const marked = list.filter((e) => entryLater(marks, e));
-        out.set(project, marked.length === 0 ? list : [...marked, ...list.filter((e) => !entryLater(marks, e))]);
-    }
-    return out;
 }
 
 /** Pure: a mark's tooltip, "Later · marked 2d ago". */

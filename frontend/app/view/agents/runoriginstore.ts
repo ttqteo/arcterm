@@ -10,10 +10,10 @@ import { waveEventSubscribeSingle } from "@/app/store/wps";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { openTarget } from "@/app/view/jarvis/openref";
+import { showLibrarySession } from "@/app/view/library/librarystore";
 import { fireAndForget } from "@/util/util";
 import { atom, useAtomValue, type PrimitiveAtom } from "jotai";
 import { useEffect, useMemo } from "react";
-import { showSession } from "./agentcenter";
 import type { AgentsViewModel } from "./agents";
 import type { AgentVM } from "./agentsviewmodel";
 import { channelsAtom, loadChannels } from "./channelsstore";
@@ -74,12 +74,12 @@ export function useRunOrigin(model: AgentsViewModel, run: Run | undefined): RunO
     return origin;
 }
 
-// openRunOrigin goes to the session: its terminal while it lives, its transcript once it has ended
+// openRunOrigin goes to the session: its terminal while it lives, its transcript (in Library) once it has ended
 export function openRunOrigin(model: AgentsViewModel, origin: RunOrigin): void {
     if (origin.kind === "live") {
         fireAndForget(() => openTarget(model, { kind: "agent", tabId: origin.tabId }));
     } else if (origin.kind === "ended") {
-        showSession(model, origin.sel, origin.member);
+        showLibrarySession(model, origin.sel, origin.member);
     }
 }
 
