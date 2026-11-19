@@ -163,6 +163,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- Sidecar's Other apps lists WSL's and Docker's virtual machine (VmmemWSL, Vmmem) with the gigabytes Task Manager
+  shows, and names each app's WebView2 panes after the app (`WebView2: ms-teams.exe`) instead of summing every app's
+  into one msedgewebview2.exe row.
 - An opened command in Chat is in colour: the command in the shell's colours, and its output either as code (a `sed`,
   `cat` or `grep` of a source file, line numbers dim) or in the colours its program printed, a failure red.
 - A `.jsonl` or `.ndjson` file opens in colour, like JSON, with no error marked on every line after the first.
