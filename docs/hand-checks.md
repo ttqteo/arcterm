@@ -16,6 +16,18 @@ list (its number is not reused).
 Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) ·
 [part 4](hand-checks-4.md) · [part 3](hand-checks-3.md) · [part 2](hand-checks-2.md) (oldest).
 
+- [ ] (arcterm) After installing, run `wsh effort backfill-proposed` once: the backlog since 2026-11-13 moves to To
+  review (about 56 chunks), and Needs you shows none of them. Then have a run's lead run
+  `wsh effort create "<title>" --chunk "<issue>" --proposed` from its terminal through the real `wsh` and wavesrv (the
+  cobra flag wiring is only compiled and vetted, the RPC handler and the prompt text are unit-tested): the chunk
+  appears in To review under that run, not in Needs you.
+- [ ] (arcterm) **Start a real run from ticked To review items** (`runreviewstore.ts` `startRunReview`,
+  `wshserver_runchunks.go`). On the Brief tick two or three items of one project, press Start, pick the run type and
+  start it: the chunks read `pending` on their initiatives with the run attached (the initiative sheet's chunk shows
+  the run), and they leave To review. When the run ends (done or cancelled) the run is detached from each chunk, and
+  a done run leaves its "Run finished" note on each. The CDP scenario `brief-run-review` covers the ticking, the
+  launcher's goal and a deferred run's attach and release by RPC; nobody has started a real run from it.
+
 - [ ] (arcterm) **Charts in a council's saved report, and the bench rejudged** (`pkg/council/charts.go`,
   `pkg/council/bench/chart.go`, `pkg/council/bench/rejudge.go`). Open the next finished Review council's document from
   Library: "At a glance" draws D1…Dn in the quadrant ahead of the directions, and under Run facts the token bars, the
