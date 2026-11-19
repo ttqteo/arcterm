@@ -1412,6 +1412,12 @@ declare global {
         efforts: number;
     };
 
+    // wshrpc.CommandEffortBackfillProposedRtnData
+    type CommandEffortBackfillProposedRtnData = {
+        chunks: number;
+        efforts: number;
+    };
+
     // wshrpc.CommandEffortChunkDriftData
     type CommandEffortChunkDriftData = {
         effortoid: string;
