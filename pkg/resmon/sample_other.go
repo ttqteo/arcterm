@@ -19,6 +19,10 @@ func readStat(pid int) procStat {
 	return procStat{}
 }
 
+func readSystemStats() map[int]procStat {
+	return nil
+}
+
 func readCmdline(pid int) string {
 	return ""
 }
