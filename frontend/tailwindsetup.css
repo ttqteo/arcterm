@@ -264,6 +264,18 @@
     --color-graphlane-6: #5cc8d8;
     --color-graphlane-fold: #6b7178;
 
+    /* Council benchmark chart: one colour per variant (solo, council, team, brainstorm), a categorical identity palette
+       that stays the same across themes (DESIGN.md "Identity palettes"), so a variant keeps its colour from one theme
+       to the next. Not --color-conn-*: those sit above the lightness band for a dark surface and failed the check as a
+       chart series, and a blue/purple pair failed too. These four passed every check of the dataviz validator on
+       #1c1c1c with --pairs all (worst colour-blind ΔE 10.1, worst normal-vision ΔE 18.5); the figure also gives each a
+       shape and a direct label, so colour never carries a variant alone. Per-theme results and the validator run:
+       docs/agents/council-chart-palette.md. */
+    --color-chart-1: #497bf8; /* solo */
+    --color-chart-2: #c97a30; /* council */
+    --color-chart-3: #2a9d8f; /* team */
+    --color-chart-4: #b04fbf; /* brainstorm */
+
     /* Runtime accents — trademark colors: Claude coral (claude-color.svg #D97757); Codex is a
        monochrome mark (codex.svg #111), inverted to near-white for legibility on the dark cockpit.
        The Claude mark is the one runtime color a theme tints (ThemePalette.claudeMark in
