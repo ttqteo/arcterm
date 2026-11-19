@@ -257,11 +257,37 @@ describe("projectTranscript commands and isMeta", () => {
                 kind: "command",
                 name: "!",
                 args: "task install",
-                shell: { output: "task: [install:macos] node scripts/install-mac.mjs\nreopens in a few seconds.", error: "" },
+                // its colours kept: the bubble draws them (commandtext.tsx CommandOutput)
+                shell: {
+                    output: "task: [install:macos] node scripts/install-mac.mjs\n\x1b[32mreopens\x1b[0m in a few seconds.",
+                    error: "",
+                },
             },
             { kind: "command", name: "!", args: "ls nope", shell: { output: "", error: "ls: nope: No such file or directory" } },
             // its output has not landed yet
             { kind: "command", name: "!", args: "sleep 60" },
+        ]);
+    });
+
+    // Claude Code writes a bash-mode record HTML-escaped: `&&` reaches the transcript as `&amp;&amp;`
+    it("unescapes a bash-mode command and its output", () => {
+        const out = projectTranscript([
+            L({ type: "user", message: { content: "<bash-input>a &amp;&amp; b &gt; out.txt</bash-input>" } }),
+            L({
+                type: "user",
+                message: {
+                    content:
+                        '<bash-stdout>if [ -n "$X" ] &amp;&amp; [ -f &quot;$Y&quot; ]; then &lt;ok&gt; &amp;lt;kept&amp;gt;</bash-stdout><bash-stderr>it&#39;s</bash-stderr>',
+                },
+            }),
+        ]);
+        expect(out).toEqual([
+            {
+                kind: "command",
+                name: "!",
+                args: "a && b > out.txt",
+                shell: { output: 'if [ -n "$X" ] && [ -f "$Y" ]; then <ok> &lt;kept&gt;', error: "it's" },
+            },
         ]);
     });
 

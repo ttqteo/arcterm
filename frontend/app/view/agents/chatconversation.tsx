@@ -66,6 +66,7 @@ import {
     type BtwAnswer,
     type ShellResult,
 } from "./agentsviewmodel";
+import { plainText } from "./ansitext";
 import { procExited } from "./brainstormmodel";
 import type { BrainstormState } from "./brainstormstore";
 import { arrivalFrom, tailArrivals } from "./chatarrival";
@@ -127,7 +128,7 @@ import { turnCanvas } from "./chatcanvaspeek";
 import { ChatCanvasPeekCard } from "./chatcanvaspeekcard";
 import { VERDICT_TOPIC, verdictMode, type VerdictMode } from "./chatverdict";
 import { ChatVerdictCard } from "./chatverdictcard";
-import { ShellCommand } from "./commandtext";
+import { CommandOutput, ShellCommand } from "./commandtext";
 import { CouncilText } from "./councilchat";
 import { firstExistingFile } from "./filetabload";
 import { CompactionDivider, InterruptedDivider, PromptImages, TaskNotificationRow } from "./narrationtimeline";
@@ -286,8 +287,8 @@ export function CommandCard({
     onContextMenu?: CopyMenu;
 }) {
     const printed = shell != null && (shell.output !== "" || shell.error !== "");
-    // what Copy takes: the command and what it printed, as the terminal shows them
-    const copyText = [bash ? `! ${command}` : command, shell?.output ?? "", shell?.error ?? ""]
+    // what Copy takes: the command and what it printed, as the terminal shows them (its colours left out)
+    const copyText = [bash ? `! ${command}` : command, plainText(shell?.output ?? ""), plainText(shell?.error ?? "")]
         .filter((s) => s !== "")
         .join("\n");
     return (
@@ -332,8 +333,17 @@ export function CommandCard({
                     >
                         {printed ? (
                             <>
-                                {shell.output !== "" ? <div className="text-ink-mid">{shell.output}</div> : null}
-                                {shell.error !== "" ? <div className="text-error-soft">{shell.error}</div> : null}
+                                {/* in colour, as an agent's command output is: its ANSI, its tones, Task's echoes */}
+                                {shell.output !== "" ? (
+                                    <div className="text-ink-mid">
+                                        <CommandOutput command={command} output={shell.output} />
+                                    </div>
+                                ) : null}
+                                {shell.error !== "" ? (
+                                    <div className="text-error-soft">
+                                        <CommandOutput command={command} output={shell.error} />
+                                    </div>
+                                ) : null}
                             </>
                         ) : (
                             <span className="font-sans text-muted">No output</span>
