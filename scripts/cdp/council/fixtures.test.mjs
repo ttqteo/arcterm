@@ -69,7 +69,7 @@ const NOW = Date.UTC(2026, 9, 21, 12, 0, 0);
 const placed = (name, now = NOW) => placeCouncil(loadCouncilFixture(name), name, "/work/fixture", now);
 
 describe("the fixtures as records", () => {
-    it("has the six the plan names, the two rooms and the room with an attachment, each under its own id", () => {
+    it("has the six the plan names, the two rooms, the room with an attachment and the figures council, each under its own id", () => {
         expect(COUNCIL_FIXTURES).toEqual([
             "round1",
             "round2",
@@ -80,6 +80,7 @@ describe("the fixtures as records", () => {
             "room",
             "room-awaiting",
             "room-attached",
+            "figures",
         ]);
         for (const name of COUNCIL_FIXTURES) {
             expect(loadCouncilFixture(name).id).toBe(councilFixtureId(name));
@@ -118,9 +119,19 @@ describe("the fixtures as records", () => {
             seen.set(r.id, r);
         }
         // every time on it is epoch milliseconds, from the first call on
-        for (const ts of [...(c.proposals ?? []).map((p) => p.ts), ...(c.replies ?? []).map((r) => r.ts)]) {
+        const steps = Object.values(c.timeline ?? {}).flat();
+        for (const ts of [
+            ...(c.proposals ?? []).map((p) => p.ts),
+            ...(c.replies ?? []).map((r) => r.ts),
+            ...steps.map((s) => s.ts),
+        ]) {
             expect(ts).toBeGreaterThan(c.created);
             expect(ts).toBeLessThanOrEqual(c.updated);
+        }
+        // a seat's timeline steps come in the order they were taken, and are a seat's of the council
+        for (const [id, list] of Object.entries(c.timeline ?? {})) {
+            expect(c.experts.some((e) => e.id === id)).toBe(true);
+            expect(list.map((s) => s.ts)).toEqual(list.map((s) => s.ts).sort((a, b) => a - b));
         }
         for (const id of Object.keys(c.activity ?? {})) expect(ids.has(id)).toBe(true);
         for (const id of Object.keys(c.failed ?? {})) expect(c.experts.some((e) => e.id === id)).toBe(true);
@@ -412,6 +423,39 @@ describe("placeCouncil", () => {
         expect(placed("notrun").started).toBeUndefined();
     });
 
+    it("moves the timeline's steps with the rest, so the lanes and the round markers keep the gaps they were authored with", () => {
+        const raw = loadCouncilFixture("figures");
+        const before = JSON.stringify(raw);
+        const c = placeCouncil(raw, "figures", "/work/fixture", NOW);
+        expect(JSON.stringify(raw)).toBe(before);
+        const delta = c.created - raw.created;
+        expect(delta).not.toBe(0);
+        // every seat's every step moved by delta, in the same order, its kind and target as authored
+        expect(Object.keys(c.timeline)).toEqual(Object.keys(raw.timeline));
+        for (const [id, steps] of Object.entries(raw.timeline)) {
+            expect(steps.length).toBeGreaterThan(0);
+            expect(c.timeline[id].map((s, i) => s.ts - steps[i].ts)).toEqual(steps.map(() => delta));
+            expect(c.timeline[id].map(({ kind, target }) => [kind, target])).toEqual(
+                steps.map(({ kind, target }) => [kind, target])
+            );
+        }
+        // a step's gap to the first proposal is as authored (the round 1 marker is that proposal's `ts`)
+        const rawFirst = Math.min(...raw.proposals.map((p) => p.ts));
+        const first = Math.min(...c.proposals.map((p) => p.ts));
+        for (const [id, steps] of Object.entries(raw.timeline)) {
+            expect(c.timeline[id].map((s) => s.ts - first)).toEqual(steps.map((s) => s.ts - rawFirst));
+        }
+        // and a step still comes after the council was created and no later than it was last updated
+        for (const s of Object.values(c.timeline).flat()) {
+            expect(s.ts).toBeGreaterThan(c.created);
+            expect(s.ts).toBeLessThanOrEqual(c.updated);
+        }
+    });
+
+    it("leaves a council with no timeline with none", () => {
+        expect(placed("done").timeline).toBeUndefined();
+    });
+
     it("places room-attached as the room is: ended at now, its person's post moved with the rest, no live agent seated", () => {
         const raw = loadCouncilFixture("room-attached");
         const c = placed("room-attached");
@@ -447,7 +491,7 @@ describe("placeCouncil", () => {
         expect(c.skips[0].ts).toBeLessThan(c.updated);
     });
 
-    it("sorts the tree newest created first: round1, round2, awaiting, room-awaiting, room-attached, room, failed, done, notrun", () => {
+    it("sorts the tree newest created first: round1, round2, awaiting, room-awaiting, room-attached, room, failed, done, figures, notrun", () => {
         const order = [...COUNCIL_FIXTURES].sort((a, b) => placed(b).created - placed(a).created);
         expect(order).toEqual([
             "round1",
@@ -458,6 +502,7 @@ describe("placeCouncil", () => {
             "room",
             "failed",
             "done",
+            "figures",
             "notrun",
         ]);
         // the four Task 13 lists keep the plan's order: Running, Waiting on you, Done, Not run

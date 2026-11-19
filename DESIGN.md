@@ -270,7 +270,8 @@ clay; `CLAUDE_BRAND` in `themes.ts` holds the clay) / `rt-codex` `#ececec` /
 `-line` variants), **memory note types** (`mem-project` blue, `mem-reference`
 green, `mem-feedback` amber, `mem-user` purple), **jarvis graph node kinds**
 (`graph-task/decision/memory/run/semantic`), **connection status icons**
-(`conn-1..8`), and **provider brand dots**
+(`conn-1..8`), **the council benchmark's variants** (`chart-1..4`: solo, council,
+team, brainstorm; `docs/agents/council-chart-palette.md`), and **provider brand dots**
 (`provider-*`). Neutral white overlays (`hover`, `hoverbg`, `highlightbg`,
 `pill`) are also preserved across themes.
 

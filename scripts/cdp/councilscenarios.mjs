@@ -9,7 +9,10 @@
 // (docs/superpowers/plans/2026-11-03-council-stronger.md), council-needs-you and council-regions (the screenshot regions a
 // seat cites, 2026-11-04-council-screenshot-regions-design.md) and council-final-proposal (Copy and Pin to Report on a
 // message, and the Report's Final proposal section, 2026-11-04-council-final-proposal-design.md) and jarvis-council-sheet
-// (a council's report in the Brief's sheet, 2026-11-05-jarvis-revamp-design.md decision 8). Each one's
+// (a council's report in the Brief's sheet, 2026-11-05-jarvis-revamp-design.md decision 8), and the three of the council
+// figures (docs/superpowers/plans/2026-11-19-council-figures.md): council-figures (the Report's At a glance and What it
+// spent), council-figures-graph (the Map's argument map and its Matrix | Graph switch) and council-bench-chart (Library →
+// Councils' folded Benchmark). Each one's
 // arrange / assert / teardown live in ./council/<view>.mjs, so the tasks that build a view touch only their own file; the
 // shared fixtures (a temp project, the six rail-apps councils, the RpcApi stand-ins) are ./council/fixtures.mjs.
 //
@@ -19,6 +22,7 @@
 // agent: an action that would call a model has its RpcApi command replaced in the page (fixtures.mjs stubRpc).
 
 import { councilDiscussion } from "./council/discussion.mjs";
+import { councilBenchChart, councilFigures, councilFiguresGraph } from "./council/figures.mjs";
 import { councilFinalProposal } from "./council/finalproposal.mjs";
 import { councilIdeas } from "./council/ideas.mjs";
 import { councilMap } from "./council/map.mjs";
@@ -50,6 +54,9 @@ export function makeCouncilScenarios(fx) {
         scenario("council-routing", councilRouting),
         scenario("council-summary", councilSummary),
         scenario("council-map", councilMap),
+        scenario("council-figures", councilFigures),
+        scenario("council-figures-graph", councilFiguresGraph),
+        scenario("council-bench-chart", councilBenchChart),
         scenario("council-needs-you", councilNeedsYou),
         scenario("council-regions", councilRegions),
         scenario("council-final-proposal", councilFinalProposal),

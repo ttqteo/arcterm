@@ -586,10 +586,11 @@ export interface OutlineEntry {
     rank: number | null;
 }
 
-/** Pure: the report's outline, in page order: the answer, the directions (each one under them), the kept or
- *  also-raised ideas, and last the Final proposal while a message is pinned (finalProposal). Who agrees with which idea
- *  is the Map tab's, not a section here. Empty before a summary unless a message is pinned: then the Final proposal
- *  alone, which the report shows without one. */
+/** Pure: the report's outline, in page order: the answer, At a glance (the figures of how the panel stands, while the
+ *  summary has a direction), the directions (each one under them), the kept or also-raised ideas, What it spent (the
+ *  figures of the tokens and the time, while the council recorded any), and last the Final proposal while a message is
+ *  pinned (finalProposal). Who agrees with which idea is the Map tab's, not a section here. Empty before a summary
+ *  unless a message is pinned: then the Final proposal alone, which the report shows without one. */
 export function outlineOf(c: Council): OutlineEntry[] {
     const final: OutlineEntry[] =
         finalProposal(c) == null ? [] : [{ id: "final", label: "Final proposal", count: null, depth: 0, rank: null }];
@@ -598,6 +599,9 @@ export function outlineOf(c: Council): OutlineEntry[] {
         return final;
     }
     const entries: OutlineEntry[] = [{ id: "answer", label: "The answer", count: null, depth: 0, rank: null }];
+    if (hasGlanceFigures(c)) {
+        entries.push({ id: "glance", label: "At a glance", count: null, depth: 0, rank: null });
+    }
     const directions = [...summary.directions].sort((a, b) => a.rank - b.rank);
     if (directions.length > 0) {
         const heading = directionsHeading(c);
@@ -616,12 +620,31 @@ export function outlineOf(c: Council): OutlineEntry[] {
     if (kept.length > 0) {
         entries.push({ id: "kept", label: keptHeading(c), count: kept.length, depth: 0, rank: null });
     }
+    if (hasSpendFigures(c)) {
+        entries.push({ id: "spend", label: "What it spent", count: null, depth: 0, rank: null });
+    }
     return [...entries, ...final];
 }
 
 /** Pure: the tab bar's jump links: the outline's sections after the answer (the answer is the cover), in page order:
- *  the directions and the kept ideas when there are any, then the Final proposal while a message is pinned. Empty
- *  before a summary unless a message is pinned: then the Final proposal alone. */
+ *  At a glance, the directions and the kept ideas when there are any, What it spent, then the Final proposal while a
+ *  message is pinned. Empty before a summary unless a message is pinned: then the Final proposal alone. */
 export function jumpLinks(c: Council): OutlineEntry[] {
     return outlineOf(c).filter((e) => e.depth === 0 && e.id !== "answer");
+}
+
+// ---- the figures' sections ----
+
+/** Pure: the Report's "At a glance" section draws (figure B, and A in a Review): the summary has a direction. The one
+ *  source of that condition: councilfiguresmodel.ts and `outlineOf` both read it, so this file never imports the figures
+ *  model. */
+export function hasGlanceFigures(c: Council): boolean {
+    return (c.summary?.directions.length ?? 0) > 0;
+}
+
+/** Pure: the Report's "What it spent" section draws (figures C and D): some seat in `c.stats` has tokens, or some seat's
+ *  `c.timeline` has a step with a time. Read by councilfiguresmodel.ts and `outlineOf`, like `hasGlanceFigures`. */
+export function hasSpendFigures(c: Council): boolean {
+    const spent = Object.values(c.stats ?? {}).some((s) => s.tokens > 0);
+    return spent || Object.values(c.timeline ?? {}).some((steps) => steps.some((s) => s.ts > 0));
 }

@@ -16,6 +16,8 @@ list (its number is not reused).
 Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) ·
 [part 4](hand-checks-4.md) · [part 3](hand-checks-3.md) · [part 2](hand-checks-2.md) (oldest).
 
+- [ ] (arcterm) Council figures on a real council (4e9f4589d6d9c6f8): the takeaways read right, and the argument map
+  stays legible at 22 ideas
 - [ ] (arcterm) After installing, run `wsh effort backfill-proposed` once: the backlog since 2026-11-13 moves to To
   review (about 56 chunks), and Needs you shows none of them. Then have a run's lead run
   `wsh effort create "<title>" --chunk "<issue>" --proposed` from its terminal through the real `wsh` and wavesrv (the

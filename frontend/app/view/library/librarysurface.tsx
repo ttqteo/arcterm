@@ -8,8 +8,10 @@
 //                  session's or run's pane at full width, shown when a session is opened from outside Library
 //                  (showLibrarySession), whose Back (leaveLibraryDetail) returns to the surface that opened it
 //   Canvases       the Canvas gallery and its viewer
-//   Councils       the list of every council; a council opened from it (or from Jarvis, a notification, `wsh ui`) reads
-//                  under a slim Back row, its views on Library's own selection through LIBRARY_COUNCIL_HOST
+//   Councils       the list of every council, under the folded Benchmark chart (councilbenchchart.tsx: key lines found
+//                  against tokens per run, once the bench has a scored row); a council opened from it (or from Jarvis, a
+//                  notification, `wsh ui`) reads under a slim Back row, its views on Library's own selection through
+//                  LIBRARY_COUNCIL_HOST
 // Thin: the views are the ones the Agent surface used to hold as centre modes. The keys are buildLibraryBindings', so this
 // file holds no key handler but the tab strip's arrows.
 
@@ -23,6 +25,7 @@ import { useMemo, type KeyboardEvent, type ReactNode } from "react";
 import type { AgentsViewModel } from "../agents/agents";
 import { CanvasGallery } from "../agents/canvasgalleryview";
 import { ConversationHistory } from "../agents/conversationhistory";
+import { CouncilBenchChart } from "../agents/councilbenchchart";
 import { CouncilHistory } from "../agents/councilhistoryview";
 import { CouncilHostContext } from "../agents/councilhost";
 import { CouncilPane } from "../agents/councilpane";
@@ -102,7 +105,18 @@ function Councils({ model }: { model: AgentsViewModel }) {
     return (
         <CouncilHostContext.Provider value={LIBRARY_COUNCIL_HOST}>
             {sel == null ? (
-                <CouncilHistory model={model} />
+                <>
+                    {/* the benchmark, folded to one line until opened, over the list; it draws nothing (and `empty:hidden`
+                        takes this box with it) until the bench has a scored row. Its box scrolls when the open chart is
+                        taller than the pane lets it be, so the list under it keeps a place. */}
+                    <div
+                        data-library-bench
+                        className="max-h-[60vh] flex-none overflow-y-auto px-[24px] pb-[6px] pt-[14px] empty:hidden"
+                    >
+                        <CouncilBenchChart />
+                    </div>
+                    <CouncilHistory model={model} />
+                </>
             ) : (
                 <>
                     <div className="flex h-9 flex-none items-center border-b border-edge-faint px-4">
