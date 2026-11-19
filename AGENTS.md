@@ -282,21 +282,30 @@ Load-bearing rules:
 
 What this project's councils settled, newest first. Where two councils differ, the newer one stands. Each council's report is the file named under it.
 
-### 2026-11-19 · Chat's suggested replies (chatsuggest): the fix for slow and meaningless reply chips, merged as 786a11648
-Report: `docs\council\2026-11-19-chat-s-suggested-replies-chatsuggest-the-fix-for-slow-and-me.md`
+### 2026-11-19 · arcterm's council feature itself, after a while of real use (rounds, seats, report, memory, Token burn gate, docs/council)
+Report: `docs/council/2026-11-19-arcterm-s-council-feature-itself-after-a-while-of-real-use-r.md`
+
+- Agreed: Khối Council decisions trong AGENTS.md chỉ giữ luật và điều đã loại, không gắn Agreed cho việc chưa làm; việc còn phải làm thành chunk có hạn.
+- Agreed: Cite check khớp tên file viết trần trong các đường dẫn đầy đủ mà báo cáo đã trích, không quét đĩa; file không khớp thì đưa vào nhóm chưa kiểm.
+- Agreed: Run facts đếm cả cache read (Input + CacheRead + CacheCreation + Output, pkg/consult/consult.go:150), cùng đơn vị với đồng hồ 5 giờ.
+- Ruled out: Không ước tính chi phí council bằng trung vị của ba lần chạy. (why: Mới có ba điểm đo, và 8,7M là số của thiết kế đầu nên kéo lệch kết quả; nên lấy số lượt gọi nhân chi phí mỗi lượt từ các council xong gần nhất.)
+
+### 2026-11-19 · Chat's suggested replies (chatsuggest): the fix for slow and meaningless reply chips
+Report: `docs/council/2026-11-19-chat-s-suggested-replies-chatsuggest-the-fix-for-slow-and-me.md`
 
 - Agreed: Chưa bỏ chip ok nào trước khi đo; chỉ xét bỏ ở câu A hay B không nghiêng bên nào, sau khi có số.
-- Agreed: Đã làm ở b496dd0df: lượt hỏi mà mod đang ở reply khác không chạy headless (27/27 lượt như vậy trong log mod chưa từng begin).
-- Agreed: Đã làm ở b496dd0df: mod cắt cuộc gọi haiku ở 5 s và gửi end --failed ngay; wavesrv vẫn chờ 10 s.
-- Agreed: Đã làm ở b496dd0df: mỗi chip bấm ghi một dòng 'pick' trong waveapp.log (source model/rule/fallback, vị trí, loại câu hỏi yesno/open/none, đuôi reply), và dòng via= có question=.
+- Agreed: Lượt hỏi mà mod đang ở một reply khác không chạy headless (27/27 lượt như vậy trong log mod chưa từng begin).
+- Agreed: Mod cắt cuộc gọi haiku ở 5 s và gửi end --failed ngay; wavesrv vẫn chờ 10 s.
+- Agreed: Mỗi chip bấm ghi một dòng 'pick' trong waveapp.log (source model/rule/fallback, vị trí, loại câu hỏi yesno/open/none, đuôi reply), và dòng via= có question=.
 - Agreed: Đường mod chạy thật trên 1.7.0: 8/8 lượt 'mod end taken' 0,9–1,5 s sau begin (log 17:09–17:16, 2026-11-19).
 
 ### 2026-11-17 · Sidecar: the second window that shows the agents on another screen (wall of agent cards)
-Report: `docs\council\2026-11-17-sidecar-the-second-window-that-shows-the-agents-on-another-s.md`
+Report: `docs/council/2026-11-17-sidecar-the-second-window-that-shows-the-agents-on-another-s.md`
 
-- Agreed: Tường hiện trông giống cockpit và khó nhìn.
-- Agreed: Đã sửa ở 38d789b52 (nhánh fix/sidecar-council): agent đang hỏi luôn hiện bất kể bộ lọc project hay lane Background (agent bị ẩn vẫn ẩn); phím 1–9 gửi kèm key của ask và bị từ chối khi ask đã đổi; cửa sổ phủ kín màn hình scale cao hiện tường dù dưới 1100 CSS px.
+- Agreed: Tường không được trông giống cockpit, và phải dễ nhìn.
+- Agreed: Agent đang hỏi luôn hiện trên tường bất kể bộ lọc project hay lane Background; agent bị ẩn vẫn ẩn.
 - Agreed: Tường xếp thẻ theo trạng thái: hỏi, working, review, idle, asleep; trong nhóm hỏi agent chờ lâu nhất đứng đầu, trong working agent chạy lâu nhất đứng đầu (sidecarsnapshot.ts STATE_ORDER).
 - Agreed: Snapshot chở được việc chờ bạn ở Jarvis: attentionAtom (attentionstore.ts, danh sách do pkg/jarvis/attention.go tính và poll) đã có gate, run chờ xác nhận hoặc land, escalation, chunk đến hạn; bridge Sidecar chỉ cần subscribe, hiện chưa đọc.
-- Open: Ngưỡng 60 giây mất liên lạc của tường có bị WebView2 kéo giãn khi cửa sổ chính thu nhỏ hoặc ẩn xuống tray hay không, cần đo cả hai kiểu ẩn trước khi chốt.
+- Agreed: Phím 1–9 gửi kèm key của ask, và bị từ chối khi ask đã đổi.
+- Agreed: Cửa sổ phủ kín một màn hình scale cao hiện tường dù dưới 1100 CSS px.
 <!-- arc:council-decisions:end -->
