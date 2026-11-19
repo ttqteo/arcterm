@@ -13,7 +13,7 @@ import (
 )
 
 // The repeat guard. Seven councils on one thesis direction in five days (2026-10-31 to 11-04) mostly gave back what was
-// already known: a new council on the topic of a recent one is worth its 0.5-1.5M tokens only when something changed
+// already known: a new council on the topic of a recent one is worth its several million tokens only when something changed
 // since, new evidence or a council that has itself been upgraded. `wsh council start` asks RecentLike before the Token
 // burn gate and refuses without a reason, printing what the earlier one said to do first.
 

@@ -16,6 +16,13 @@ list (its number is not reused).
 Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) ·
 [part 4](hand-checks-4.md) · [part 3](hand-checks-3.md) · [part 2](hand-checks-2.md) (oldest).
 
+- [ ] (arcterm) **A council's price on the Token burn card is the measured one** (`pkg/council/calibrate.go`,
+  `CouncilEstimateCommand`, `councilmodel.ts` estimateLabel, `skills/council/SKILL.md`; council self-review fixes). After
+  two finished councils, ask a Claude agent for a third ("hỏi council"): it quotes `wsh council estimate`, and the Token
+  burn card shows the same figure as Setup's cost line, which ends "from your last N councils" (N = 2 to 5). Without being
+  asked, the agent only offers the council in one line and starts it on your yes. The `council-setup` and `launcher`
+  scenarios check Setup's line and the launcher note on stubbed answers; the card itself and the agent's offer were not
+  tried.
 - [ ] (arcterm) **No headless suggest call for a mid-turn line; chip picks logged** (`pkg/chatsuggest/hook.go`
   AwaitWhy `headless`, `chatsuggest.ts` chipPickLogLine, `suggest-core.ts` SUGGEST_TIMEOUT_MS 5 s; branch
   `fix/chatsuggest-council`). After installing, use Claude agents in Chat for a while: where waveapp.log shows `mod not

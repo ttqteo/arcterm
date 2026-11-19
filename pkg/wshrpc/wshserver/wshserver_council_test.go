@@ -189,6 +189,53 @@ func TestCouncilEstimateWholeCouncil(t *testing.T) {
 	}
 }
 
+// TestCouncilEstimateIsCalibratedByFinishedCouncils: a start of role experts only is priced from the finished councils the
+// store holds (council.Calibration), and says how many in Measured; a start that seats a chat keeps the formula, which
+// prices each chat at its own context.
+func TestCouncilEstimateIsCalibratedByFinishedCouncils(t *testing.T) {
+	useCouncilStore(t)
+	facts := threeAgents()
+	facts.Tabs[0].Status.TranscriptPath = writeTranscript(t, "lead", claudeTurn)        // 95,010 tokens of context
+	facts.Tabs[1].Status.TranscriptPath = writeTranscript(t, "design", claudeSmallTurn) // 40,010
+	scriptAgents(t, facts)
+	ws := &WshServer{}
+	ctx := context.Background()
+	experts, err := council.ExpertsFor("ui-feature")
+	if err != nil {
+		t.Fatalf("ExpertsFor: %v", err)
+	}
+	// Save stamps Updated itself; two councils are inside the newest five whatever their order
+	var saved []*council.Council
+	for id, tokens := range map[string]int64{"d1": 4_000_000, "d2": 6_000_000} {
+		saved = append(saved, saveCouncil(t, &council.Council{
+			Id: id, Project: t.TempDir(), Feature: "Idle sleep", Experts: experts, State: council.StateDone, Calls: 20, Tokens: tokens,
+		}))
+	}
+
+	formula := council.Estimate(experts, 0, 0)
+	want := council.CalibrationFrom(saved).Calibrated(formula)
+	if want.Measured != 2 || want.Tokens <= formula.Tokens {
+		t.Fatalf("the two councils do not calibrate above the formula: %+v from %+v", want, formula)
+	}
+	got, err := ws.CouncilEstimateCommand(ctx, wshrpc.CommandCouncilEstimateData{Experts: experts})
+	if err != nil {
+		t.Fatalf("CouncilEstimateCommand: %v", err)
+	}
+	if wantRtn := (wshrpc.CouncilEstimateRtnData{Calls: want.Calls, Tokens: want.Tokens, Minutes: want.Minutes, Measured: 2}); *got != wantRtn {
+		t.Errorf("expert-only start = %+v, want %+v", *got, wantRtn)
+	}
+
+	// the same estimate with chats seated keeps the formula and measures nothing
+	panel := []council.CouncilExpert{experts[3], experts[4]} // the Skeptic and the coordinator
+	got, err = ws.CouncilEstimateCommand(ctx, wshrpc.CommandCouncilEstimateData{Experts: panel, Agents: []string{agentsTabA, agentsTabB}})
+	if err != nil {
+		t.Fatalf("estimate with chats: %v", err)
+	}
+	if wantRtn := (wshrpc.CouncilEstimateRtnData{Calls: 8, Tokens: 140_000 + 45_000 + 2*135_020 + 18_000 + 80_000, Minutes: 6, AgentTokens: 2 * 135_020}); *got != wantRtn {
+		t.Errorf("start with chats = %+v, want the formula %+v and Measured 0", *got, wantRtn)
+	}
+}
+
 // TestCouncilEstimatePricesAgentSeats: an estimate that names tabs prices each seat as its context a round, as
 // council.Estimate does for a seat with Context, so the gate counts what the chats cost.
 func TestCouncilEstimatePricesAgentSeats(t *testing.T) {

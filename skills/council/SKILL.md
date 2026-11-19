@@ -1,6 +1,6 @@
 ---
 name: council
-description: Use when the conversation holds a clear problem or a thing to judge and a real open question more viewpoints would settle (two directions weighed and neither won, a spec or plan just written, a draft about to be submitted), or when the person asks for a council ("ask a council", "hỏi council", /arc:council) — start it yourself with `wsh council start`, wait for it, and sum its report up in the conversation.
+description: Use when the conversation holds a clear problem or a thing to judge and a real open question more viewpoints would settle (two directions weighed and neither won, a spec or plan just written, a draft about to be submitted), or when the person asks for a council ("ask a council", "hỏi council", /arc:council) — offer it with its estimate and start it with `wsh council start` on a yes, or at once when the person asks; wait for it and sum its report up in the conversation.
 ---
 
 # Starting a Council
@@ -16,13 +16,15 @@ two modes, which you pick:
   its why and a first step, plus the wild ideas kept aside.
 
 arcterm shows it as a group chat while it runs, then as a report, and saves every finished council as a document in the
-project's `docs/council/` with its whole discussion. One council costs roughly 0.5–1.5M tokens. The Token burn gate
-prices every start and asks the person when it is costly, so you start one without asking first.
+project's `docs/council/` with its whole discussion. One council costs several million tokens: `wsh council estimate`
+prices it from what the last finished councils cost (calls × cost per call, cache reads included, the unit of the
+5-hour meter). The Token burn gate shows that price and asks the person.
 
 ## When to start one
 
-**Without being asked**, when the conversation holds a clear problem or a thing to judge *and* a real open question
-that more viewpoints would settle:
+**Without being asked**, *offer* a council, in one line with its `wsh council estimate`, when the conversation holds a
+clear problem or a thing to judge *and* a real open question that more viewpoints would settle. Start it on their yes;
+on a no, or no answer, do not start it:
 
 - two directions were weighed and neither won;
 - a spec or a plan was just written, before it goes to the engine;
@@ -103,10 +105,10 @@ When a seat goes to opus, before `start`:
 1. Run `wsh council estimate` with the same flags as the start, the `--model` ones included.
 2. Say in one line which seats go to opus and why, with that estimate, and that the estimate counts tokens only: it does
    not show that opus costs more than sonnet for the same tokens, and the Token burn card shows the same number. E.g.
-   "Bug hunter and Reviewer A on opus (they judge whether the method holds); ~0.9M tokens, counted, not priced: opus
+   "Bug hunter and Reviewer A on opus (they judge whether the method holds); ~4.5M tokens, counted, not priced: opus
    costs more per token."
-3. Run `start` with those flags. The person approves on the Token burn card as for any council; do not ask them
-   anything more first.
+3. Run `start` with those flags. The Token burn card is the price approval, as for any council. A council you offered
+   was already agreed to, so ask nothing more first.
 
 Say in **one line** what happened, from the line `start` printed:
 
@@ -132,7 +134,8 @@ markdown. Sum it up in the conversation in a few lines: for a review, the top di
 step and where the panel disagreed; for a brainstorm, the ideas worth trying with their first steps, and a wild idea only when it
 changes the choice. Then carry on from there with the spec, the plan, the draft or the problem. `wait` prints no cite
 check: before you repeat a `path:line` of the report as fact, read the saved document's Cite check section (or run
-`wsh council cites <document>`), and say so when the place is listed wrong or with no keyword near the line.
+`wsh council cites <document>`), and say so when the place is listed wrong, with no keyword near the line, as not
+checked (a bare file name no full path of the report names), or as a line with nothing to look for: read those by hand.
 
 A council's directions are only in its report. Its document is saved under the project's `docs/council/` when it ends
 (done or stopped); `wsh council show <id> --json` carries its path as `docpath`.

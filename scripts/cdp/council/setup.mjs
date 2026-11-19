@@ -259,6 +259,9 @@ const AGENT_NOTE =
     "An agent takes its turn in its own session, so the talk also lands in its transcript. A busy agent is waited for up to 10 min, then skips that round.";
 const AGENT_ESTIMATE = { calls: 11, tokens: 1_900_000, minutes: 8, agenttokens: 1_250_000 };
 const AGENT_ESTIMATE_TEXT = "≈ 11 calls · ~1.9M tokens · ~8 min · agents ~1.3M of it";
+// the estimate wavesrv answers once it has calibrated the price on the last 3 finished councils (step 13a)
+const MEASURED_ESTIMATE = { calls: 18, tokens: 4_500_000, minutes: 6, measured: 3 };
+const MEASURED_ESTIMATE_TEXT = "≈ 18 calls · ~4.5M tokens · ~6 min · from your last 3 councils";
 
 // ---- council-setup ----
 
@@ -693,6 +696,24 @@ export const councilSetup = {
                     queued.modewhy === "picked by hand" &&
                     queued.feature === "Rail apps",
                 { idle, start: v?.start, calls: queueCalls.length, queued: { mode: queued?.mode, modewhy: queued?.modewhy } }
+            );
+
+            // 13a. a price wavesrv calibrated on finished councils says so: the estimate carries measured 3 (only the
+            // estimate is stubbed, as step 14 does), and the Setup opened again asks for a new one
+            await stubRpc(h, ["CouncilEstimateCommand"], { CouncilEstimateCommand: { value: MEASURED_ESTIMATE } });
+            await openCouncilSetup(h, ctx.repo, { feature: "Rail apps", files: [FILES[1]] });
+            const measuredShown = await until(
+                `(document.querySelector("[data-council-estimate]")?.textContent ?? "").includes("from your last 3 councils")`
+            );
+            v = await view();
+            await h.shot("cdp-shots/council-setup-measured.png");
+            rec(
+                "13a. with the estimate stubbed to a price measured on 3 councils, Setup's cost line reads ≈ 18 calls · ~4.5M tokens · ~6 min · from your last 3 councils",
+                measuredShown &&
+                    v?.estimate === MEASURED_ESTIMATE_TEXT &&
+                    v.estimate.endsWith("· from your last 3 councils") &&
+                    (v.inComposer?.estimate ?? "") === MEASURED_ESTIMATE_TEXT,
+                { measuredShown, estimate: v?.estimate, inComposer: v?.inComposer?.estimate }
             );
 
             // ---- live agents seated (steps 14 to 19) ----

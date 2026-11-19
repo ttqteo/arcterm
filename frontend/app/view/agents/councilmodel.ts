@@ -816,7 +816,9 @@ function rangeTokens(n: number): string {
 
 /** Pure: `≈ 9 calls · ~0.8M tokens · ~6 min`; `minutes` false leaves the time out (`≈ 5 calls · ~0.3M tokens`). An
  *  estimate that holds a high end (`callsmax`, `tokensmax`: a message the router picks the seats for) draws each end that
- *  differs from its low end as a range: `≈ 2–3 calls · ~35k–235k tokens`. */
+ *  differs from its low end as a range: `≈ 2–3 calls · ~35k–235k tokens`. A price wavesrv calibrated on finished
+ *  councils (`measured`, always 2 or more) ends with where it came from: `· from your last 3 councils`; a range never
+ *  carries one. */
 export function estimateLabel(est: CouncilEstimateRtnData, minutes = true): string {
     const callsMax = est.callsmax != null && est.callsmax !== est.calls ? est.callsmax : null;
     const tokensMax = est.tokensmax != null && est.tokensmax !== est.tokens ? est.tokensmax : null;
@@ -830,6 +832,9 @@ export function estimateLabel(est: CouncilEstimateRtnData, minutes = true): stri
     ];
     if (minutes) {
         parts.push(`~${est.minutes} min`);
+    }
+    if ((est.measured ?? 0) > 0) {
+        parts.push(`from your last ${est.measured} councils`);
     }
     return parts.join(" · ");
 }

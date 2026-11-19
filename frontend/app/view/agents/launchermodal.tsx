@@ -1853,7 +1853,8 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
                                                     className="px-2 text-[12px] leading-normal text-muted"
                                                 >
                                                     Setup opens in the Agent surface: write what to review or
-                                                    brainstorm, then Start council. A council costs 0.5–1.5M tokens.
+                                                    brainstorm, then Start council. Setup shows what it will cost, from
+                                                    your last councils.
                                                 </span>
                                             </>
                                         ) : thirdList === "resume" ? (

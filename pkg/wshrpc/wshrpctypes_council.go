@@ -197,6 +197,7 @@ type CouncilEstimateRtnData struct {
 	AgentTokens int64 `json:"agenttokens,omitempty"`
 	CallsMax    int   `json:"callsmax,omitempty"`
 	TokensMax   int64 `json:"tokensmax,omitempty"`
+	Measured    int   `json:"measured,omitempty"` // how many finished councils the price was calibrated on; 0 is the formula alone
 }
 
 // CommandCouncilSaveDocData writes a council's Summary and Matrix as markdown. An empty Path is

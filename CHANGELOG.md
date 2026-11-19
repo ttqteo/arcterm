@@ -55,9 +55,17 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   paused while the machine still runs smoothly.
 - The tabs at the top of the Agent panel (Overview, Files, Changes, Transcript and the open files) are pills: the one
   on show is filled, the others light up when you hover them, in place of an underline.
+- The Council decisions block arcterm writes into a project's CLAUDE.md or AGENTS.md now lists only what was agreed or
+  ruled out, without commit hashes or open questions, and with `/` paths on every OS.
+- Claude agents now offer a council and wait for your yes, instead of starting one on their own; Setup's cost line says
+  how many past councils its price came from.
 
 ### Fixed
 
+- A council's price on the Token burn card and in Setup now comes from what your last councils actually cost, instead of
+  a fixed guess that read 3 to 5 times low.
+- A council report's Cite check no longer lists a file named by its bare name as Wrong: it reads it through the full path
+  the report cites elsewhere, or lists it as not checked.
 - A task worker or judge reopened after its tab was closed stays out of Claude Desktop's CLI import, as it did when it
   first started.
 - Chat no longer starts a background claude (~470 MB) to suggest replies to a line a Claude agent wrote mid-turn or

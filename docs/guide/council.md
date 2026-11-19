@@ -24,13 +24,17 @@ arcterm tự chọn chế độ theo câu hỏi của bạn; chip chế độ tr
   council…" cũng mở đúng màn đó.
 - **Ngồi chung với các agent đang chạy**: trong cây Agent, `Ctrl`+click (hay `Shift`+click) để chọn hai agent trở lên,
   chuột phải → **Discuss together**. Màn Setup mở với các agent đó đã được xếp ghế.
-- **Nhờ agent tự mở**: agent Claude có skill `arc:council`. Nó tự mở council khi cuộc trò chuyện có một câu hỏi thật sự
-  còn bỏ ngỏ, và mở ngay khi bạn bảo "hỏi council". Khi council xong, agent tóm tắt báo cáo ngay trong cuộc trò chuyện.
+- **Nhờ agent mở**: agent Claude có skill `arc:council`. Khi cuộc trò chuyện có một câu hỏi thật sự còn bỏ ngỏ, nó đề
+  nghị một council kèm chi phí ước tính và chỉ mở khi bạn đồng ý; nó mở ngay khi bạn bảo "hỏi council". Khi council xong,
+  agent tóm tắt báo cáo ngay trong cuộc trò chuyện.
 
 Màn **Setup** là một ô duy nhất: viết bạn muốn review hay hỏi gì, các tùy chọn nằm bên dưới. Nút **Auto-generate** viết
 sẵn chủ đề, câu hỏi và chế độ từ những gì các agent được xếp ghế vừa nói với nhau, và hỏi trước khi ghi đè chữ bạn đã
-viết. Dòng chi phí cho biết council này tốn khoảng bao nhiêu token; một council thường tốn khoảng 0,5–1,5M token và phải
-qua thẻ **Token burn** như một lần mở subagent tốn kém.
+viết. Dòng chi phí cho biết council này tốn khoảng bao nhiêu token. Con số được tính từ các council bạn đã chạy xong (số
+lượt gọi nhân với chi phí trung bình mỗi lượt, đã gồm cache read, cùng đơn vị với đồng hồ 5 giờ) và kết thúc bằng "from
+your last N councils"; với dưới hai council đã xong, dòng dùng công thức mà không có đuôi đó. Một council thường tốn vài
+triệu token. Một council cần qua thẻ **Token burn** như một lần mở subagent tốn kém, và một agent luôn hỏi bạn trước khi
+tự mở council.
 
 Mỗi lúc chỉ chạy một council, tính chung mọi project. Council bạn mở khi đang có cái khác chạy sẽ hiện **Queued** trong
 cây, có thể gỡ khỏi hàng đợi, và tự bắt đầu khi cái đang chạy kết thúc hoặc dừng lại chờ bạn.
@@ -276,8 +280,11 @@ agrees with which idea in Map" mở nó.
 - **Cite check** trong tài liệu đã lưu, ngay sau Matrix: Go đọc lại mọi `path:line` mà báo cáo trích, cả câu của
   coordinator (phần nhãn ở trên chỉ kiểm bằng chứng chuyên gia tự khai), không gọi model. Mỗi chỗ được trích là **hold**
   (file có, dòng nằm trong file, và một từ khóa của câu trích nó có ở dòng đó hoặc trong ba dòng quanh), **no keyword**
-  (dòng có thật nhưng không chứa từ nào của câu trích: đọc tay), **wrong** (không có file, hay dòng vượt cuối file) hoặc
-  **outside** (ngoài các thư mục council đọc, không kiểm). Từ khóa là định danh (`n_paired`, `curve.json`), số từ hai chữ
+  (dòng có thật nhưng không chứa từ nào của câu trích: đọc tay), **wrong** (không có file, hay dòng vượt cuối file),
+  **outside** (ngoài các thư mục council đọc, không kiểm), **not checked (bare file name)** (báo cáo chỉ viết tên file
+  trần, như `setup.mjs:40`: Go tìm đường dẫn đầy đủ mà chính báo cáo trích ở chỗ khác và đọc file đó; không có đường nào
+  khớp, hay có hai đường trở lên, thì chỗ đó không được kiểm thay vì bị gọi là wrong) hoặc **line there, nothing to look
+  for** (dòng có thật nhưng câu trích nó không có từ khóa nào để tìm: không tính là hold, đọc tay). Từ khóa là định danh (`n_paired`, `curve.json`), số từ hai chữ
   số, và từ từ năm chữ cái, đã bỏ dấu; từ có mặt ở hơn một phần mười số mục của báo cáo (tên đề tài, tên benchmark) không
   được tính, vì gần dòng nào của project cũng có. Đây là sàng lọc, không phải bằng chứng: hold chỉ nói dòng đó có nói tới
   điều câu trích nói. `wsh council cites <báo cáo.md>` chạy cùng bước kiểm trên một báo cáo đã có (`--root` để chọn thư

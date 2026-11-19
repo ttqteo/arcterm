@@ -11,9 +11,11 @@ import (
 	"strings"
 )
 
-// The estimate is calibrated to the canvas: the four-expert UI group with no files is "≈ 9 calls · ~0.8M tokens ·
-// ~6 min", and Paused's "Rounds 2 and 3" is "≈ 5 calls · ~0.3M tokens", each a call more now for the round check after
-// a reply pass (the boards predate it; the tokens round to the same figures).
+// These constants are the formula's starting point. Calibration (calibrate.go) scales it from what the newest finished
+// councils measured, and that is the price a start shows once two have finished. The canvas figures are only the
+// uncalibrated case: the four-expert UI group with no files is "≈ 9 calls · ~0.8M tokens · ~6 min", and Paused's
+// "Rounds 2 and 3" is "≈ 5 calls · ~0.3M tokens", each a call more now for the round check after a reply pass (the
+// boards predate it; the tokens round to the same figures).
 const (
 	round1BaseTokens     = 140_000 // one expert's round 1 call: its tools reading the code, before any file is attached
 	round2Tokens         = 45_000  // one expert's round 2 call: text in, a few stances out
@@ -40,6 +42,7 @@ type CouncilEstimate struct {
 	AgentTokens int64 `json:"agenttokens,omitempty"` // the share of Tokens the seated agents' turns take
 	CallsMax    int   `json:"callsmax,omitempty"`
 	TokensMax   int64 `json:"tokensmax,omitempty"`
+	Measured    int   `json:"measured,omitempty"` // how many finished councils the price was calibrated on (Calibrated); 0 is the formula alone
 }
 
 // seatRounds is how many rounds the seats of c answer before the summary. Rounds counts only when an agent is seated,

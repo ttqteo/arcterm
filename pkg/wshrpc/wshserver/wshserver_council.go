@@ -392,10 +392,17 @@ func (ws *WshServer) CouncilEstimateCommand(ctx context.Context, data wshrpc.Com
 			return nil, err
 		}
 		est = council.Estimate(append(seats, data.Experts...), councilFileBytes(data.Project, data.Files), data.Rounds)
+		// an expert-only start is priced from the newest finished councils of every project (Calibration); a
+		// council that seats a chat keeps the formula, which prices each chat at its own context
+		if len(seats) == 0 {
+			if all, err := council.List(""); err == nil {
+				est = council.CalibrationFrom(all).Calibrated(est)
+			}
+		}
 	}
 	return &wshrpc.CouncilEstimateRtnData{
 		Calls: est.Calls, Tokens: est.Tokens, Minutes: est.Minutes, AgentTokens: est.AgentTokens,
-		CallsMax: est.CallsMax, TokensMax: est.TokensMax,
+		CallsMax: est.CallsMax, TokensMax: est.TokensMax, Measured: est.Measured,
 	}, nil
 }
 

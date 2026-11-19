@@ -47,8 +47,9 @@ var councilCmd = &cobra.Command{
 	Long: `A council is a panel of expert agents that works one question in three rounds, shown in arcterm as a group
 chat while it runs and as a report when it is done. It runs in one of two modes: review (a thing that exists, judged,
 and the directions ranked) or brainstorm (a problem or a goal, ideas worth trying with a first step each). Each start
-costs roughly 0.5-1.5M tokens. "wsh council start" asks the Token burn gate like a costly subagent spawn, so start one
-when the conversation is ready or the person asks, without asking first; a refusal saves the council as not run, and
+costs several million tokens, priced by "wsh council estimate" from the last finished councils. Offer one with that
+estimate and start it on a yes, or at once when the person asks. "wsh council start" asks the Token burn gate like a
+costly subagent spawn; a refusal saves the council as not run, and
 Start council in the app runs it. One council runs at a time across all projects: a start while another runs is queued
 and begins when it ends. A finished council saves its document, with the whole discussion, under the project's
 docs/council/. "wsh council estimate" prints the group, the models and the cost without starting anything.`,
@@ -381,8 +382,17 @@ func councilEstimateLine(group council.CouncilGroup, experts []council.CouncilEx
 	if name == "" {
 		name = group.Id
 	}
-	return fmt.Sprintf("group \"%s\": %s · ≈ %d calls · ~%s tokens · ~%d min",
-		name, councilModelsText(experts), est.Calls, council.FormatTokens(est.Tokens), est.Minutes)
+	return fmt.Sprintf("group \"%s\": %s · ≈ %d calls · ~%s tokens · ~%d min%s",
+		name, councilModelsText(experts), est.Calls, council.FormatTokens(est.Tokens), est.Minutes, councilMeasuredText(est))
+}
+
+// councilMeasuredText is the tail of an estimate line whose price wavesrv calibrated on finished councils (Measured is
+// how many): " · from your last 3 councils". Empty for the formula alone.
+func councilMeasuredText(est *wshrpc.CouncilEstimateRtnData) string {
+	if est.Measured <= 0 {
+		return ""
+	}
+	return fmt.Sprintf(" · from your last %d councils", est.Measured)
 }
 
 // councilSpawn is the spawn the gate is asked about: a Council of the panel's role experts, priced at the council's own
@@ -443,8 +453,9 @@ func councilSeatsText(experts []council.CouncilExpert) string {
 
 // councilStartedLine is the line a started council prints: the mode and the group it works in, who sits, then the cost.
 func councilStartedLine(c *council.Council, feature, mode, group string, est *wshrpc.CouncilEstimateRtnData) string {
-	return fmt.Sprintf("council %s started: %s · %s · %s · %s · ≈ %d calls · ~%s tokens",
-		c.Id, councilOneLine(feature), mode, group, councilSeatsText(c.Experts), est.Calls, council.FormatTokens(est.Tokens))
+	return fmt.Sprintf("council %s started: %s · %s · %s · %s · ≈ %d calls · ~%s tokens%s",
+		c.Id, councilOneLine(feature), mode, group, councilSeatsText(c.Experts), est.Calls, council.FormatTokens(est.Tokens),
+		councilMeasuredText(est))
 }
 
 // councilQueuedLine is the line a start prints when another council runs: the council it waits for (running is that
