@@ -1112,3 +1112,9 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
 - [ ] (arcterm) **A paste after a typed ``` closes the block** (`chatmarks.ts` afterOpenFence). In Chat's box type
   ``` and paste two lines of anything: they land on the lines under the fence, a closing ``` follows, and a word typed
   on the next line sits outside the code box. One undo leaves the raw paste beside the fence.
+- [ ] (arcterm) **A long run's lifecycle rail folds its repeated rows** (`timelinegroups.ts` fold rows,
+  `timelinerail.tsx`). Open a finished orchestrator run with many tasks (one with a dozen cleanups at its end): the
+  run's end shows one `Cleanup complete ×N · t-1 → t-N` row instead of N rows, and opening it lists each task. A row
+  whose range spans minutes reads `Nov 14 01:19–20`, its title no longer cut to `Veri…`. Pause and resume a run → the
+  rail reads it in words, with who paused it and the RAM it held, not `run-paused`. The `kael1113-timeline` CDP
+  scenario covers the fold; nobody has looked at it in the app.
