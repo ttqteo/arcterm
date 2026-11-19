@@ -935,6 +935,8 @@ func tableFields(table string) [][]string {
 // 2026-11-12.1 on, and a row before it was scored the old way, a council cut at 3.
 const benchBrainstormNote = "note: council and brainstorm are both judged on their whole list; rows of a harness before 2026-11-12.1 were scored the old way (a council cut at 3)"
 
+const benchReviewNote = "note: a Review report is judged on its whole list; a run scored before that has recall@5 only (a dash for recall@all) until `wsh council bench rejudge` judges it again; a team keeps 5 items, so its recall@5 is its whole list"
+
 func TestCouncilBenchResultsTable(t *testing.T) {
 	const skill = "3f9a01bc superpowers@4.0.3"
 	runs := []bench.CouncilBenchResult{
@@ -944,6 +946,11 @@ func TestCouncilBenchResultsTable(t *testing.T) {
 		{Harness: "2026-10-22.1", Mode: council.ModeReview, Variant: bench.VariantCouncil, State: "failed", Tokens: 600_000},
 		{Harness: "2026-10-23.2", Mode: council.ModeReview, Variant: bench.VariantCouncil, State: "done", Recall: 4, Keys: 6, Tokens: 1_000_000},
 		{Harness: "", Mode: council.ModeReview, Variant: bench.VariantSolo, State: "done", Recall: 1, Keys: 6, Tokens: 500_000},
+		// a team's report keeps 5 items, so its old line's recall is its whole list's too
+		{Harness: "2026-10-23.2", Mode: council.ModeReview, Variant: bench.VariantTeam, State: "done", Recall: 2, Keys: 6, Tokens: 1_000_000},
+		// a Review run judged whole: recall@5 beside recall@all, and wrong against the items judged
+		{Harness: "2026-11-19.1", Mode: council.ModeReview, Variant: bench.VariantCouncil, State: "done",
+			Recall: 3, Recall5: 1, Keys: 6, Judged: 10, Wrong: 2, Tokens: 2_000_000},
 		// the Brainstorm cases of an earlier harness: no recall3 and no judged, so recall@3 prints a dash and wrong is a
 		// count alone. A council beside the brainstorm skill, which also shows its done mark and its design
 		{Harness: "2026-10-23.2", Mode: council.ModeBrainstorm, Variant: bench.VariantCouncil, State: "done", Recall: 1, Keys: 4, Tokens: 1_000_000},
@@ -970,11 +977,14 @@ func TestCouncilBenchResultsTable(t *testing.T) {
 	// has none (and in recall@3, wrong's denominator, for a row of a harness that counted neither), and the note under it
 	want := [][]string{
 		{"Review"},
-		{"harness", "variant", "scored/runs", "recall", "wrong", "tokens", "recall/M", "tokens"},
-		{"2026-10-23.2", "council", "1/1", "4/6", "0", "1M", "4.0"},
-		{"2026-10-22.1", "solo", "1/1", "2/6", "1", "0.6M", "3.6"},
-		{"2026-10-22.1", "council", "1/2", "3/6", "0", "2M", "1.5"},
-		{"unknown", "solo", "1/1", "1/6", "0", "0.5M", "2.0"},
+		{"harness", "variant", "scored/runs", "recall@5", "recall@all", "wrong", "tokens", "recall@5/M", "tokens"},
+		{"2026-11-19.1", "council", "1/1", "1/6", "3/6", "2/10", "2M", "0.5"},
+		{"2026-10-23.2", "council", "1/1", "4/6", "-", "0", "1M", "4.0"},
+		{"2026-10-23.2", "team", "1/1", "2/6", "2/6", "0", "1M", "2.0"},
+		{"2026-10-22.1", "solo", "1/1", "2/6", "-", "1", "0.6M", "3.6"},
+		{"2026-10-22.1", "council", "1/2", "3/6", "-", "0", "2M", "1.5"},
+		{"unknown", "solo", "1/1", "1/6", "-", "0", "0.5M", "2.0"},
+		strings.Fields(benchReviewNote),
 		{},
 		{"Brainstorm"},
 		{"harness", "variant", "skill", "scored/runs", "recall@3", "recall@all", "recall@done", "wrong", "decisions", "questions", "tokens", "recall@all/M", "tokens"},
@@ -1000,6 +1010,56 @@ func TestCouncilBenchResultsTable(t *testing.T) {
 	}
 }
 
+func TestCouncilBenchRejudge(t *testing.T) {
+	pending := []bench.CouncilBenchResult{
+		{Harness: "2026-11-12.1", Case: "bugs-orchestrate", Variant: bench.VariantCouncil, Run: 1, Council: "c1", Recall: 0, Keys: 4},
+		{Harness: "2026-11-12.1", Case: "spec-live-agents", Variant: bench.VariantCouncil, Run: 2, Council: "c2", Recall: 2, Keys: 3},
+	}
+	var asked []string
+	orig := councilBenchRejudgeCall
+	t.Cleanup(func() { councilBenchRejudgeCall = orig })
+	councilBenchRejudgeCall = func(id string) (*wshrpc.CouncilBenchRejudgeRtnData, error) {
+		asked = append(asked, id)
+		switch id {
+		case "":
+			return &wshrpc.CouncilBenchRejudgeRtnData{Pending: pending}, nil
+		case "c1":
+			return &wshrpc.CouncilBenchRejudgeRtnData{Line: &bench.CouncilBenchRejudge{Council: "c1", Recall: 1, Recall5: 0, Keys: 4, Judged: 12, Wrong: 3}}, nil
+		}
+		return nil, errors.New("the judge's call failed")
+	}
+
+	var dry strings.Builder
+	if err := councilBenchRejudge(&dry, true); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(asked, []string{""}) || !strings.Contains(dry.String(), "2 reports to judge again") ||
+		!strings.Contains(dry.String(), "bugs-orchestrate council run 1 (c1): recall 0/4 on its first 5 items") {
+		t.Errorf("dry run asked %q and printed %q, want the list only and no judging", asked, dry.String())
+	}
+
+	asked = nil
+	var out strings.Builder
+	err := councilBenchRejudge(&out, false)
+	if !reflect.DeepEqual(asked, []string{"", "c1", "c2"}) {
+		t.Errorf("asked %q, want the list then each report once, the failed one not stopping the rest", asked)
+	}
+	if !strings.Contains(out.String(), "(c1): recall@5 0/4 (was 0), recall@all 1/4, wrong 3/12") || !strings.Contains(out.String(), "(c2): not judged: the judge's call failed") {
+		t.Errorf("output = %q, want c1's new score beside its old one and c2's failure", out.String())
+	}
+	if err == nil || !strings.Contains(err.Error(), "1 of 2 reports were not judged again") {
+		t.Errorf("err = %v, want it to count the one that failed", err)
+	}
+
+	councilBenchRejudgeCall = func(id string) (*wshrpc.CouncilBenchRejudgeRtnData, error) {
+		return &wshrpc.CouncilBenchRejudgeRtnData{}, nil
+	}
+	var none strings.Builder
+	if err := councilBenchRejudge(&none, false); err != nil || !strings.Contains(none.String(), "no bench report waits to be judged again") {
+		t.Errorf("nothing pending: %q, %v", none.String(), err)
+	}
+}
+
 func TestCouncilBenchTableSectionsAreOnlyThoseWithRows(t *testing.T) {
 	row := func(mode, variant string) bench.CouncilBenchResult {
 		return bench.CouncilBenchResult{Harness: "2026-11-10.1", Mode: mode, Variant: variant, State: "done", Recall: 1, Keys: 2, Tokens: 1_000_000}
@@ -1018,8 +1078,8 @@ func TestCouncilBenchTableSectionsAreOnlyThoseWithRows(t *testing.T) {
 	}
 
 	review := table(row(council.ModeReview, bench.VariantCouncil))
-	if got := headings(review); !reflect.DeepEqual(got, []string{"Review"}) || strings.Contains(review, "note:") {
-		t.Errorf("a Review row alone: headings = %v, table = %q, want a Review section and no Brainstorm section or note", got, review)
+	if got := headings(review); !reflect.DeepEqual(got, []string{"Review"}) || !strings.Contains(review, benchReviewNote+"\n") || strings.Contains(review, benchBrainstormNote) {
+		t.Errorf("a Review row alone: headings = %v, table = %q, want a Review section with its own note and no Brainstorm section or note", got, review)
 	}
 	brainstorm := table(row(council.ModeBrainstorm, bench.VariantBrainstorm))
 	if got := headings(brainstorm); !reflect.DeepEqual(got, []string{"Brainstorm"}) || !strings.Contains(brainstorm, benchBrainstormNote+"\n") {
@@ -1035,8 +1095,8 @@ func TestCouncilBenchTableSectionsAreOnlyThoseWithRows(t *testing.T) {
 	if got := tableFields(unknown); len(got) != 4 || got[1][1] != "variant" || got[1][2] != "scored/runs" || slices.Contains(got[1], "skill") {
 		t.Errorf("Unknown mode section = %q, want a heading, today's header and its two rows", got)
 	}
-	if note := strings.Index(all, "note:"); note < 0 || note > strings.Index(all, "Unknown mode") || strings.Contains(unknown, "note:") {
-		t.Errorf("table = %q, want the note under the Brainstorm section and none under Unknown mode", all)
+	if note := strings.Index(all, benchBrainstormNote); note < 0 || note > strings.Index(all, "Unknown mode") || strings.Contains(unknown, "note:") {
+		t.Errorf("table = %q, want the notes under the Review and Brainstorm sections and none under Unknown mode", all)
 	}
 }
 
@@ -1054,8 +1114,8 @@ func TestCouncilBenchTablePrintsTheVerdict(t *testing.T) {
 	// under the runs sections, before the ratings
 	lines := strings.Split(strings.TrimRight(councilBenchTable(&wshrpc.CouncilBenchResultsRtnData{Runs: runs, Ratings: ratings, Verdict: verdict}), "\n"), "\n")
 	at := slices.Index(lines, line)
-	if at != 5 || lines[0] != "Review" || lines[4] != "" || !strings.HasPrefix(lines[1], "harness") || len(lines) < 8 || lines[6] != "" || !strings.HasPrefix(lines[7], "harness") {
-		t.Errorf("table lines = %q, want the Review section (heading, header and 2 rows), a blank line, the verdict line, a blank line, then the ratings", lines)
+	if at != 6 || lines[0] != "Review" || lines[4] != benchReviewNote || lines[5] != "" || !strings.HasPrefix(lines[1], "harness") || len(lines) < 9 || lines[7] != "" || !strings.HasPrefix(lines[8], "harness") {
+		t.Errorf("table lines = %q, want the Review section (heading, header, 2 rows and its note), a blank line, the verdict line, a blank line, then the ratings", lines)
 	}
 
 	// no runs yet: the verdict stands in for "no bench results yet"

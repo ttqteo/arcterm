@@ -329,9 +329,9 @@ func runCouncilItem(ctx context.Context, c Case, item CouncilBenchPlanItem, f Fu
 }
 
 // judgeRow judges a done item's report and puts the verdict's scores in its row, with which key lines matched and at
-// what rank (Matches), and what the judge's call spent (the bench's cap counts it). A Brainstorm case's row also takes
-// Recall3 (the matches ranked 1 to 3) and Judged (the items the judge was shown), and its Recall is recall@all, since a
-// Brainstorm report is judged whole. A judge that fails leaves the row failed with no scores and no matches: done but
+// what rank (Matches), and what the judge's call spent (the bench's cap counts it). Every report is judged whole, so
+// Recall is recall@all and Judged the items the judge was shown; a Brainstorm case's row also takes Recall3 (the matches
+// ranked 1 to 3), a Review case's Recall5 (ranked 1 to TopReview). A judge that fails leaves the row failed with no scores and no matches: done but
 // unscored is not a result to read as done with nothing found. Its error is ctx's.
 func judgeRow(ctx context.Context, f Funcs, c Case, name string, report *council.Council, row *CouncilBenchResult) error {
 	verdict, err := f.Judge(ctx, c, report)
@@ -346,9 +346,11 @@ func judgeRow(ctx context.Context, f Funcs, c Case, name string, report *council
 	}
 	row.Keys = len(c.KeyLines)
 	row.Recall = verdict.Recall()
+	row.Judged = verdict.Judged
 	if c.Mode == council.ModeBrainstorm {
 		row.Recall3 = verdict.RecallAt(recallCut)
-		row.Judged = verdict.Judged
+	} else {
+		row.Recall5 = verdict.RecallAt(TopReview)
 	}
 	row.Wrong = verdict.Wrong()
 	row.Matches = verdict.Matches

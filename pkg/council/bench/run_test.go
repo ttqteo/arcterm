@@ -360,14 +360,15 @@ func TestRunRowFields(t *testing.T) {
 }
 
 func TestJudgeRowKeepsTheMatches(t *testing.T) {
-	// a Review row: scored on the top items, with no recall at 3 and no count of items judged
+	// a Review row: judged whole, so Recall is recall@all, Recall5 the matches ranked 1 to 5, and Judged the items shown;
+	// it has no recall at 3
 	c := Case{Id: "a", Mode: council.ModeReview, KeyLines: []KeyLine{{Id: "K1"}, {Id: "K2"}, {Id: "K3"}}}
 	report := &council.Council{Id: "c1"}
 	f := Funcs{Judge: func(ctx context.Context, c Case, report *council.Council) (Verdict, error) {
 		return Verdict{
-			Matches: map[string]int{"K1": 2, "K3": 1},
-			Judged:  5,
-			Items:   []ItemVerdict{{Rank: 1, Verdict: "key:K3"}, {Rank: 2, Verdict: "key:K1"}, {Rank: 3, Verdict: "wrong"}},
+			Matches: map[string]int{"K1": 2, "K3": 7},
+			Judged:  8,
+			Items:   []ItemVerdict{{Rank: 7, Verdict: "key:K3"}, {Rank: 2, Verdict: "key:K1"}, {Rank: 3, Verdict: "wrong"}},
 			Tokens:  50_000,
 		}, nil
 	}}
@@ -376,8 +377,8 @@ func TestJudgeRowKeepsTheMatches(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := CouncilBenchResult{
-		State: "done", Recall: 2, Keys: 3, Wrong: 1, JudgeTokens: 50_000,
-		Matches: map[string]int{"K1": 2, "K3": 1},
+		State: "done", Recall: 2, Recall5: 1, Judged: 8, Keys: 3, Wrong: 1, JudgeTokens: 50_000,
+		Matches: map[string]int{"K1": 2, "K3": 7},
 	}
 	if !reflect.DeepEqual(row, want) {
 		t.Errorf("row\n got %+v\nwant %+v", row, want)

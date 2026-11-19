@@ -45,42 +45,40 @@ func judgeReport(mode string, n int, kept ...string) *council.Council {
 }
 
 func TestJudgePrompt(t *testing.T) {
-	t.Run("review: the key, the rubric and the top 5", func(t *testing.T) {
-		p := judgePrompt(judgeCase(council.ModeReview), judgeReport(council.ModeReview, 7, "A wild one"))
+	t.Run("review: the key, the rubric, the answer and every item", func(t *testing.T) {
+		p := judgePrompt(judgeCase(council.ModeReview), judgeReport(council.ModeReview, 7))
 		for _, want := range []string{
 			"K1: Open a finished council on its report first.", "K3: The vote as top-3 picks.",
 			phase0Rubric,
 			"Open the report first.", "The panel agrees the report leads.",
-			"1. Direction title 1", "Reasoning for direction 1.", "5. Direction title 5",
+			"1. Direction title 1", "Reasoning for direction 1.", "7. Direction title 7", "judge all 7 items",
 		} {
 			if !strings.Contains(p, want) {
 				t.Errorf("prompt lacks %q:\n%s", want, p)
 			}
 		}
-		if strings.Contains(p, "Direction title 6") || strings.Contains(p, "Direction title 7") {
-			t.Errorf("a Review report is cut to its top 5 items, but the prompt holds a later one:\n%s", p)
-		}
-		if strings.Contains(p, "A wild one") || strings.Contains(strings.ToLower(p), "kept aside") {
-			t.Errorf("a Review report has no Kept list, but the prompt mentions one:\n%s", p)
+		if strings.Contains(p, "first 5 items") {
+			t.Errorf("a Review report is judged whole, but the prompt cuts it:\n%s", p)
 		}
 	})
 
-	t.Run("review: Also raised fills the top 5 after the directions", func(t *testing.T) {
-		report := judgeReport(council.ModeReview, 3, "Also one", "Also two", "Also three")
+	t.Run("review: Also raised follows the directions and nothing is cut", func(t *testing.T) {
+		// bench council ae5ca3af693e88e7 named its case's K4 as item 8, in Also raised, and scored 0 of 4 when the cut was 5
+		report := judgeReport(council.ModeReview, 3, "Also one", "Also two", "Also three", "Also four", "Also five")
 		p := judgePrompt(judgeCase(council.ModeReview), report)
-		if !strings.Contains(p, "3. Direction title 3") || !strings.Contains(p, "4. Also one") || !strings.Contains(p, "5. Also two") {
-			t.Errorf("prompt lacks the directions then Also raised as items 4 and 5:\n%s", p)
+		if !strings.Contains(p, "3. Direction title 3") || !strings.Contains(p, "4. Also one") || !strings.Contains(p, "8. Also five") {
+			t.Errorf("prompt lacks the directions then every Also raised item, 4 to 8:\n%s", p)
 		}
-		if strings.Contains(p, "Also three") || strings.Contains(strings.ToLower(p), "kept aside") {
-			t.Errorf("a Review is cut at 5 items and has no kept list apart:\n%s", p)
+		v, err := parseVerdict(`{"matches":{"K1":8,"K2":9},"items":[{"rank":8,"verdict":"key:K1"},{"rank":2,"verdict":"wrong"}]}`, judgeCase(council.ModeReview), report)
+		if err != nil || len(v.Matches) != 1 || v.Matches["K1"] != 8 || v.Judged != 8 {
+			t.Errorf("verdict = %+v, %v, want the match at item 8 kept, the rank past the list dropped, 8 judged", v, err)
 		}
-		v, err := parseVerdict(`{"matches":{"K1":5,"K2":6},"items":[{"rank":5,"verdict":"key:K1"}]}`, judgeCase(council.ModeReview), report)
-		if err != nil || len(v.Matches) != 1 || v.Matches["K1"] != 5 || len(v.Items) != 1 {
-			t.Errorf("verdict = %+v, %v, want the match at item 5 kept and the one past the cut dropped", v, err)
+		if v.RecallAt(TopReview) != 0 || v.Recall() != 1 || v.Wrong() != 1 {
+			t.Errorf("recall@5 = %d, recall@all = %d, wrong = %d, want 0, 1 and 1", v.RecallAt(TopReview), v.Recall(), v.Wrong())
 		}
 	})
 
-	t.Run("a report with fewer items than the cut", func(t *testing.T) {
+	t.Run("a report with two items", func(t *testing.T) {
 		p := judgePrompt(judgeCase(council.ModeReview), judgeReport(council.ModeReview, 2))
 		if !strings.Contains(p, "2. Direction title 2") || strings.Contains(p, "3. Direction title 3") {
 			t.Errorf("prompt should hold exactly the two items:\n%s", p)

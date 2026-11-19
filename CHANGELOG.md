@@ -41,6 +41,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 - A council's first round and its pause now use the whole width of the pane: the experts' cards and the ideas fill it
   instead of stopping at 900 px with an empty strip on the right, while an idea's argument keeps a readable line length.
+- The council benchmark judges a Review report on its whole list, not its first 5 items, and `wsh council bench results`
+  shows recall@5 beside recall@all. `wsh council bench rejudge` scores the reports already saved the same way, one opus
+  call each, without running a council again.
 
 ### Fixed
 

@@ -17,9 +17,11 @@ import (
 	"github.com/wavetermdev/waveterm/pkg/council"
 )
 
-// How many of a Review's items are judged. A Brainstorm is judged whole, every item of its one list; TopBrainstorm is how
-// many items a Brainstorm's team lead is told to keep (teamprompt.go) and the figure `wsh council bench results` names
-// in its note on rows of earlier harnesses, which cut a council's report there.
+// Every report is judged whole, every item of its one list. TopReview and TopBrainstorm are how many items a team's lead
+// is told to keep (teamprompt.go) and the ranks a row's head recall counts up to: a Review row's Recall5 (the matches
+// ranked 1 to TopReview), which is also what a Review row scored before 2026-11-19 held as its Recall, when its report
+// was cut there; TopBrainstorm is the cut `wsh council bench results` names in its note on Brainstorm rows of earlier
+// harnesses.
 const (
 	TopReview     = 5
 	TopBrainstorm = 3
@@ -83,17 +85,12 @@ func (v Verdict) Wrong() int {
 	return n
 }
 
-// judgedItems is the report's items the judge scores. A Brainstorm is judged whole: its directions, then its wild ideas
-// kept aside, as the one list a design's decisions make, with nothing cut, so a variant that writes a longer list is not
-// marked down for it and both sides are scored alike. A Review is cut at TopReview: the directions, then its Also
-// raised, which holds the directions past the first three, so a Review is judged on the same five items as before the
-// cap.
-func judgedItems(c Case, s *council.CouncilSummary) []council.CouncilDirection {
-	items := append(slices.Clone(s.Directions), s.Kept...)
-	if c.Mode == council.ModeBrainstorm {
-		return items
-	}
-	return items[:min(TopReview, len(items))]
+// judgedItems is the report's items the judge scores: its directions, then its Kept list (a Brainstorm's wild ideas
+// kept aside, a Review's Also raised), as one list with nothing cut. A Review was once cut at TopReview, which left a
+// key line named in Also raised unscored: bench council ae5ca3af693e88e7 named bugs-orchestrate's K4 as its 8th item
+// and scored 0 of 4. Wrong is read against the items shown, so a longer list pays for what it gets wrong.
+func judgedItems(s *council.CouncilSummary) []council.CouncilDirection {
+	return append(slices.Clone(s.Directions), s.Kept...)
 }
 
 // Judge scores a done council's report against the case's key with one opus call and no tools. A call that fails, and a
@@ -159,20 +156,15 @@ type judgeInput struct {
 }
 
 // judgePrompt is the whole of the judge's input for a council's report: the rubric, the key and the report's items
-// (judgedItems). A Brainstorm's are one list with no text around them, as a design's are; a Review's are its top five,
-// built as Phase 0 built them: the Summary's answer and text, then each direction's rank, title and reasoning.
+// (judgedItems). A Brainstorm's are one list with no text around them, as a design's are; a Review's come after the
+// Summary's answer and text, as Phase 0 built them, each item its rank, title and reasoning.
 func judgePrompt(c Case, report *council.Council) string {
 	s := report.Summary
-	items := judgedItems(c, s)
-	if c.Mode == council.ModeBrainstorm {
-		return buildJudgePrompt(c, wholeList(items))
+	in := wholeList(judgedItems(s))
+	if c.Mode != council.ModeBrainstorm {
+		in.answer, in.text = s.Answer, s.Text
 	}
-	return buildJudgePrompt(c, judgeInput{
-		answer: s.Answer,
-		text:   s.Text,
-		cut:    fmt.Sprintf("judge its first %d items only", TopReview),
-		items:  items,
-	})
+	return buildJudgePrompt(c, in)
 }
 
 // buildJudgePrompt writes the judge's prompt: the rubric, the key, then what in holds, then the shape of the reply.
@@ -245,7 +237,7 @@ func decodeVerdict(reply string) (verdictJSON, bool) {
 
 // parseVerdict reads the judge's reply to a council's report and keeps only what the case and the report can hold.
 func parseVerdict(reply string, c Case, report *council.Council) (Verdict, error) {
-	return readVerdict(reply, c, len(judgedItems(c, report.Summary)))
+	return readVerdict(reply, c, len(judgedItems(report.Summary)))
 }
 
 // readVerdict reads the judge's reply and keeps only what the case and the prompt can hold: a key line the case has and a

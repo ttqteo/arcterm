@@ -41,6 +41,7 @@ type CouncilCommands interface {
 	CouncilBenchCommand(ctx context.Context, data CommandCouncilBenchData) (*CouncilBenchRtnData, error)
 	CouncilBenchResultsCommand(ctx context.Context) (*CouncilBenchResultsRtnData, error)
 	CouncilBenchStopCommand(ctx context.Context) (*CouncilBenchStopRtnData, error)
+	CouncilBenchRejudgeCommand(ctx context.Context, data CommandCouncilBenchRejudgeData) (*CouncilBenchRejudgeRtnData, error)
 }
 
 // CommandCouncilStartData starts a council. Id alone starts the saved not-run council of that id and every other
@@ -303,6 +304,18 @@ type CouncilBenchResultsRtnData struct {
 	Results []bench.CouncilBenchResult    `json:"results"`
 	Ratings []bench.CouncilBenchRatingRow `json:"ratings"`
 	Verdict *bench.CouncilBenchDecision   `json:"verdict,omitempty"`
+}
+
+// CommandCouncilBenchRejudgeData picks what to judge again. With no Council it judges nothing and lists the run lines
+// whose report can be judged again (bench.NeedsRejudge); with one, it judges that council's report and records it.
+type CommandCouncilBenchRejudgeData struct {
+	Council string `json:"council,omitempty"`
+}
+
+// CouncilBenchRejudgeRtnData is the run lines still to judge again (a call with no Council), or the line a judging wrote.
+type CouncilBenchRejudgeRtnData struct {
+	Pending []bench.CouncilBenchResult `json:"pending,omitempty"`
+	Line    *bench.CouncilBenchRejudge `json:"line,omitempty"`
 }
 
 // CouncilBenchStopRtnData says whether a bench was running to stop.

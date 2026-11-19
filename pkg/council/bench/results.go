@@ -28,6 +28,9 @@ const ResultsFile = "council-bench.jsonl"
 const (
 	KindRun    = "run"
 	KindRating = "rating"
+	// KindRejudge is a later judging of a run line's report (rejudge.go): reading the file back puts its scores in the
+	// run line it names, which stays as it was written.
+	KindRejudge = "rejudge"
 )
 
 const (
@@ -61,6 +64,11 @@ type CouncilBenchResult struct {
 	// Wrong. Both are 0 on any other row.
 	Recall3 int `json:"recall3,omitempty"`
 	Judged  int `json:"judged,omitempty"`
+
+	// Recall5 is a Review row's key lines matched at rank 1 to TopReview, when the row was judged on its whole list
+	// (Judged set, Recall recall@all). A Review row with no Judged was scored on its top TopReview items alone, so its
+	// Recall is that same head recall and it has no recall@all.
+	Recall5 int `json:"recall5,omitempty"`
 
 	// Kept is the Brainstorm key lines matched among the wild ideas kept aside, outside recall, and KeptMatches the same
 	// as key line id -> rank among them. Only a row of a harness before 2026-11-12.1 carries them (those judged the
@@ -159,7 +167,8 @@ func appendLine(dataDir string, v any) error {
 	return werr
 }
 
-// LoadResults reads the file back: the run lines and the rating lines, each in file order. A missing file is no lines.
+// LoadResults reads the file back: the run lines and the rating lines, each in file order, with each rejudge line's
+// scores put in the run line it names (applyRejudges). A missing file is no lines.
 // A line of an unknown kind, one that is not JSON, and a rating that is not useful or not (or has no council) are
 // skipped.
 func LoadResults(dataDir string) ([]CouncilBenchResult, []CouncilBenchRating, error) {
@@ -174,6 +183,7 @@ func LoadResults(dataDir string) ([]CouncilBenchResult, []CouncilBenchRating, er
 	}
 	var runs []CouncilBenchResult
 	var ratings []CouncilBenchRating
+	var rejudges []CouncilBenchRejudge
 	for line := range strings.SplitSeq(string(data), "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" {
@@ -196,8 +206,14 @@ func LoadResults(dataDir string) ([]CouncilBenchResult, []CouncilBenchRating, er
 			if json.Unmarshal([]byte(line), &r) == nil && validRating(r) {
 				ratings = append(ratings, r)
 			}
+		case KindRejudge:
+			var r CouncilBenchRejudge
+			if json.Unmarshal([]byte(line), &r) == nil && r.Council != "" {
+				rejudges = append(rejudges, r)
+			}
 		}
 	}
+	applyRejudges(runs, rejudges)
 	return runs, ratings, nil
 }
 
@@ -233,6 +249,12 @@ type CouncilBenchRow struct {
 	RecallDone int `json:"recall_done,omitempty"`
 	Decisions  int `json:"decisions,omitempty"`
 	Questions  int `json:"questions,omitempty"`
+
+	// A Review row's: Recall5 is the key lines matched at rank 1 to TopReview over its scored runs, the head recall
+	// (HeadRecall per run), and AllScored how many of those runs were judged whole, so a recall@all summed over a mix of
+	// whole and cut runs is not printed as one.
+	Recall5   int `json:"recall5,omitempty"`
+	AllScored int `json:"allscored,omitempty"`
 }
 
 // Summarize groups the runs by harness version, mode, variant and skill text, the newest harness first (within it
@@ -267,6 +289,12 @@ func Summarize(results []CouncilBenchResult, modes map[string]string) []CouncilB
 		row.Keys += r.Keys
 		row.Recall3 += r.Recall3
 		row.Judged += r.Judged
+		if mode != council.ModeBrainstorm { // a Review row's, or one whose mode is unknown, printed as a Review one is
+			row.Recall5 += HeadRecall(r)
+			if JudgedWhole(r) {
+				row.AllScored++
+			}
+		}
 		row.Wrong += r.Wrong
 		row.RecallDone += r.RecallDone
 		row.Decisions += r.Decisions
@@ -274,7 +302,12 @@ func Summarize(results []CouncilBenchResult, modes map[string]string) []CouncilB
 	}
 	for i := range rows {
 		if rows[i].Tokens > 0 {
-			rows[i].RecallPerM = float64(rows[i].Recall) / (float64(rows[i].Tokens) / 1e6)
+			// a Review row's is its head recall's: the one figure every run of it has, judged whole or cut
+			recall := rows[i].Recall
+			if rows[i].Mode != council.ModeBrainstorm {
+				recall = rows[i].Recall5
+			}
+			rows[i].RecallPerM = float64(recall) / (float64(rows[i].Tokens) / 1e6)
 		}
 	}
 	slices.SortStableFunc(rows, func(a, b CouncilBenchRow) int {
