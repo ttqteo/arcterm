@@ -250,25 +250,38 @@ export default function (kit) {
             );
             await h.ev(`document.querySelector('[data-jarvis-brief-later-more]')?.click()`);
 
-            // 6. a click on the ended row opens its transcript on Agent, no agent started
+            // 6. a click on the ended row opens its transcript in Library, full width, no agent started; Back returns to Jarvis
             await h.ev(`[...document.querySelectorAll('[data-jarvis-brief-row="later"]')].find((r) => r.dataset.jarvisLaterState === 'found')?.click()`);
             await briefNap(800);
             const opened6 = await agentPage(
                 h,
-                `const C = await mod("app/view/agents/agentcenter.ts");
-                const pane = document.querySelector('[data-agent-session]');
+                `const L = await mod("app/view/library/librarystore.ts");
+                const pane = document.querySelector('[data-library] [data-agent-session]');
                 return {
-                    mode: globalStore.get(C.centerModeAtom),
+                    tab: globalStore.get(L.libraryTabAtom),
+                    view: globalStore.get(L.libraryConvViewAtom),
                     pane: !!pane,
+                    list: document.querySelector('[data-library] [data-agent-history]') != null,
                     notInArchive: (pane?.textContent ?? '').includes('not in the archive'),
                     title: (pane?.textContent ?? '').includes(${JSON.stringify(ENDED_TITLE)}),
                 };`
             );
+            opened6.surface = await h.activeSurfaceLabel();
             await h.shot("cdp-shots/jarvis-brief-later-open.png");
+            await h.ev(`document.querySelector("[data-agent-session-back]")?.click()`);
+            await briefNap(500);
+            const back6 = await h.activeSurfaceLabel();
             rec(
-                "6. a click on an ended row opens its transcript on Agent",
-                opened6?.mode === "session" && opened6.pane === true && opened6.notInArchive === false && opened6.title === true,
-                JSON.stringify(opened6)
+                "6. a click on an ended row opens its transcript in Library at full width, and its Back returns to Jarvis",
+                opened6?.surface === "Library" &&
+                    opened6.tab === "conversations" &&
+                    opened6.view === "session" &&
+                    opened6.pane === true &&
+                    opened6.list === false &&
+                    opened6.notInArchive === false &&
+                    opened6.title === true &&
+                    back6 === "Jarvis",
+                JSON.stringify({ ...opened6, back6 })
             );
 
             // 7. no marks: the region says so instead of an empty frame

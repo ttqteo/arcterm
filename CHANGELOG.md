@@ -79,6 +79,11 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- Conversation History, the Canvas gallery and the Councils list now live on their own Library page (Ctrl+7, or g then l), with a
+  tab for each, and the Agent sidebar keeps only what is live: your agents and terminals, with no History,
+  Canvas gallery or Councils row and no Conversations section. A session opened from Usage, Jarvis or a project's
+  Overview reads at full width in Library with Back to where you were, and a council that has left the sidebar opens in
+  Library's Councils tab. <!-- try: go:library -->
 - Focus read in Chat starts at three blocks lit at a time, and its size button now goes up to five (×4, ×5). J and K
   slide the lit group one block at a time instead of jumping a whole group, the accent tick stays beside the lit block
   (at the end of a conversation too), Escape turns focus read off, and when a turn you were following ends, the new

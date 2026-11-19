@@ -172,10 +172,20 @@ before working in an area you don't already know.
   `~/.arc/bin/` — not PATH. The managed hook list is `cmd/wsh/cmd/wshcmd-installhooks.go`.
 - **Frontend — React 19 + Vite + Tailwind 4 + jotai (`frontend/`)** — `frontend/tauri/main.tsx` is the
   sole shipping entry. The cockpit is **one window with N surfaces, not tabs**. Surface keys are not
-  their labels: `files` renders as "Diff"; the order is
-  `SURFACE_ORDER` in `frontend/app/view/agents/agents.tsx`. Past conversations are not a surface: Conversation History and an
-  ended session's transcript are centre modes of Agent (`centerModeAtom`, `view/agents/agentcenter.ts`; open them with
-  `showHistory` / `showSession`, and `showTerminal` whenever a route chooses an agent). The Office (floors, rooms, the
+  their labels: `files` renders as "Diff"; the chord order (Ctrl+1..7) is `SURFACE_ORDER` in
+  `frontend/app/view/agents/agents.tsx`, the rail's own order is `RAIL_ORDER` beside it (Cockpit, Jarvis, Agent, Usage,
+  Library, Code, Diff: Library sits fifth on the rail and is Ctrl+7, so the rail's Ctrl-held digit hint reads
+  `SURFACE_ORDER`, and `[` `]` and the start-surface options follow `RAIL_ORDER`; `navrail.tsx` reads both from
+  `surfaceorder.ts`, never a value import of `agents.tsx`). What is over is the **Library** surface
+  (`view/library/`), kept apart from what is live: its three tabs are Conversations (Conversation History's list and
+  detail, or one session's or run's pane at full width when opened from outside Library), Canvases (the Canvas gallery)
+  and Councils (every council; one the Agent tree still lists opens on Agent, any other inside Library). Its state is
+  module-level in `librarystore.ts` (`libraryTabAtom`, `libraryConvViewAtom`, the open council), and every route into it
+  goes through that file: `showLibrary(model, tab)`, `showLibrarySession(model, sel)`, and `openCouncil(model, id)` for a
+  council, which picks the host (Agent's centre through `showCouncil`, or Library's `LIBRARY_COUNCIL_HOST`; the council
+  views read their host through `useCouncilHost`, `agents/councilhost.ts`). Agent's centre keeps four modes only
+  (`centerModeAtom`, `view/agents/agentcenter.ts`: terminal, council, project, held; `showTerminal` whenever a route
+  chooses an agent). The Office (floors, rooms, the
   notice board) is a view of the Cockpit surface (`cockpitoffice.tsx`), unrelated to Jarvis. The nav badges are
   disjoint (`navrail.tsx`): Cockpit counts the agents that need you, Jarvis the rest that waits on you (gates, runs
   to confirm or land, escalations), Agent the agents with an unread turn,
@@ -210,7 +220,8 @@ Load-bearing rules:
   the split kept aside.
 - **The Agent sidebar is one tree per project**, not an Active section plus a Terminals section: `projectTree` in
   `agentsidebarmodel.ts` builds a folder per project holding its agents, a divider, then its terminals and tools
-  (Home holds the terminals with no project), and Conversations is the one other section. A plain terminal is a peer of
+  (Home holds the terminals with no project), and it is the whole sidebar: past conversations, the Canvas gallery and the
+  councils the tree no longer lists are Library's, not rows or a section here. A plain terminal is a peer of
   an agent and takes the centre when picked; the panel under the agent is a place you move a terminal to, and it folds
   to a strip. A **tool** is a plain terminal (`controller: "shell"`, `cmd:firstcommand` the tool's command) whose block
   meta `tool:id` is its only lasting marker. The catalog is Go (`pkg/arctools`, plus the user's `tools.json` in the

@@ -151,14 +151,15 @@ Theo dõi run trên [Jarvis](jarvis.md) (thẻ run và đồ thị task), trả 
 
 ## Bản đồ các surface
 
-Nav rail bên trái có sáu surface đánh số (`Ctrl+1`…`Ctrl+6`, theo thứ tự dưới đây), thêm **Setup** và **Settings** ở đáy. `Ctrl+G` rồi một chữ cái nhảy tới surface đó từ bất kỳ đâu, kể cả trong terminal.
+Nav rail bên trái có bảy surface đánh số (`Ctrl+1`…`Ctrl+7`; Library thứ năm trên rail nhưng là `Ctrl+7`), thêm **Setup** và **Settings** ở đáy. `Ctrl+G` rồi một chữ cái nhảy tới surface đó từ bất kỳ đâu, kể cả trong terminal.
 
 | Surface | Phím | Dùng để | Trang |
 |---|---|---|---|
 | **Cockpit** | `Ctrl+1`, `Ctrl+G` `c` | Tổng quan: thẻ mọi agent, dải **Needs you**, trả lời câu hỏi tại chỗ | [Cockpit](cockpit.md) |
 | **Jarvis** | `Ctrl+2`, `Ctrl+G` `j` | Brief: initiative, run, kênh theo project, việc đang chờ bạn | [Jarvis](jarvis.md) |
-| **Agent** | `Ctrl+3`, `Ctrl+G` `a` | Terminal thật của từng agent, sidebar Active và Conversations, Conversation History | [Agent](agent.md) |
+| **Agent** | `Ctrl+3`, `Ctrl+G` `a` | Terminal thật của từng agent, cây project của agent và terminal đang sống | [Agent](agent.md) |
 | **Usage** | `Ctrl+4`, `Ctrl+G` `u` | Quota 5 giờ/tuần, token và chi phí ước tính, phân tích nơi quota đi | [Usage](usage.md) |
+| **Library** | `Ctrl+7`, `Ctrl+G` `l` | Những gì đã qua: Conversation History, Canvas gallery và danh sách Councils | [Agent → Library](agent.md#library) |
 | **Code** | `Ctrl+5`, `Ctrl+G` `b` | Duyệt và sửa file của project | [Code](code.md) |
 | **Diff** | `Ctrl+6`, `Ctrl+G` `f` | Lịch sử git, file đã đổi và diff, chỉ đọc | [Diff](diff.md) |
 | **Setup** | `Ctrl+G` `.` | Instructions và skills dùng chung cho mọi harness | [Setup](setup.md) |

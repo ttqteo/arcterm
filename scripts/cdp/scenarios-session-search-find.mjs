@@ -13,6 +13,7 @@
 // does. scenarios.mjs exports neither helper, so the few lines they need are repeated here.
 
 import { randomUUID } from "node:crypto";
+import { openLibraryTab } from "./scenarios-library.mjs";
 
 const NAME = "session-search-find";
 const TERM = "zebra";
@@ -442,7 +443,7 @@ export default function (_kits) {
                     const { result, turnHit, eventHit } = buildResult(ctx.sessions[0]);
 
                     // History, with the session opened on its tail first: a find that targets it must read it afresh
-                    await h.ev(`document.querySelector("[data-agent-history-open]")?.click()`);
+                    await openLibraryTab(h, "conversations");
                     const historyShown = await until(h, `document.querySelector("[data-agent-history]") != null`);
                     const CARD = `[...document.querySelectorAll("[data-agent-history] button")].find(
                         (b) => b.textContent.includes(${JSON.stringify(SOLO_TITLE)}) && !b.hasAttribute("aria-pressed")

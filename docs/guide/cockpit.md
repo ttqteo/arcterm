@@ -326,11 +326,13 @@ Tám mục, chia ba nhóm:
 
 | Nhóm | Mục | Phím nhảy |
 |---|---|---|
-| Dùng hằng ngày | **Cockpit**, **Jarvis**, **Agent**, **Usage** | `Ctrl+1` … `Ctrl+4` |
+| Dùng hằng ngày | **Cockpit**, **Jarvis**, **Agent**, **Usage**, **Library** | `Ctrl+1` … `Ctrl+4`, và `Ctrl+7` cho Library |
 | Công cụ | **Code**, **Diff** | `Ctrl+5` … `Ctrl+6` |
 | Đáy rail | **Setup**, **Settings** | `Ctrl+G` `.` và `Ctrl+G` `,` (không có `Ctrl+số`) |
 
-Phím `Ctrl+G` rồi: `c` Cockpit, `j` Jarvis, `a` Agent, `s` Conversation History, `u` Usage, `b` Code, `f` Diff, `.` Setup, `,` Settings, `p` Search, `w` việc đang chờ (popup của Jarvis). `[` và `]` đi lùi/tiến qua các surface.
+Library nằm thứ năm trên rail nhưng là `Ctrl+7`: số hiện trên rail khi bạn giữ `Ctrl` là phím thật sự chạy.
+
+Phím `Ctrl+G` rồi: `c` Cockpit, `j` Jarvis, `a` Agent, `l` Library, `s` Conversation History, `u` Usage, `b` Code, `f` Diff, `.` Setup, `,` Settings, `p` Search, `w` việc đang chờ (popup của Jarvis). `[` và `]` đi lùi/tiến qua các surface.
 
 Các huy hiệu trên rail:
 

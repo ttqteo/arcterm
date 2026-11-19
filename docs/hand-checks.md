@@ -16,6 +16,22 @@ list (its number is not reused).
 Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) ·
 [part 4](hand-checks-4.md) · [part 3](hand-checks-3.md) · [part 2](hand-checks-2.md) (oldest).
 
+- [ ] (arcterm) **Library's look: the tab strip and the panes at full width.** Open Library (rail, Ctrl+7): the strip
+  reads Conversations, Canvases, Councils with a small 1 2 3 key on each, the selected tab filled, and it is not clipped
+  or doubled when the window is narrow (rail labels hidden). Open a session from Usage: it fills the page, no list
+  beside it, with Back at its top left. Switch tabs and the body fades in once, with nothing jumping. `librarysurface.tsx`;
+  `library-tabs` shows the structure and its shots, not whether it looks right.
+- [ ] (arcterm) **Resume from a council read in Library lands on Agent; Run again from its Summary lands on Agent's
+  Setup.** Open a council that left the Agent tree (Library → Councils → a council ended days ago), press Resume on its
+  row or in its Report's menu: the surface becomes Agent, the council is back in the tree and its Discussion is open
+  with the box focused. From the same Summary press Run again: Agent's council Setup opens with that council's draft.
+  `councilresume.tsx`, `councilsetup.tsx`; no scenario.
+- [ ] (arcterm) **A council that ends while open in Library gives no toast and no dot; removing it returns Library to its
+  list.** With a running council open inside Library (Library → Councils, open one with `wsh ui` or the list) let it
+  end: no "Council done" toast and no unread dot on its row in the Agent tree. Remove a council (its menu → Remove) while
+  Library shows it: Library goes back to the Councils list. `councilnotifysync.tsx`, `councilremove.ts`; `library-tabs`
+  step 13 covers the toast and the dot with fixtures, not removal.
+
 - [ ] (arcterm) **Run on a reply's command runs it in the agent.** In Chat, click ▷ on a `! git status` row of a reply:
   the agent's box sends `! git status` (Claude Code's bash mode) and its output shows in the conversation, no new
   terminal opens. With a draft in the box, ▷ toasts "The message box has a draft" and the draft stays. To a sleeping
