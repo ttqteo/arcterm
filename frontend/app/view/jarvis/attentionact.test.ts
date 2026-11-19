@@ -83,6 +83,47 @@ describe("attentionAct: a plan to review", () => {
     });
 });
 
+// the waiting bug reports are one row in three forms, told apart by what the item names (pkg/jarvis/attention.go)
+describe("attentionAct: the bug-reports row", () => {
+    const reports = (over: Partial<AttentionActInput> = {}): AttentionActInput =>
+        a({ wireKind: "bug-reports", channelId: "", runId: null, ...over });
+
+    it("offers Xử lý once an arcterm repo is known and nothing holds the reports", () => {
+        expect(attentionAct(reports({ projectPath: "D:/work/arcterm", oref: "" }))).toEqual({
+            label: "Xử lý",
+            kind: "process-reports",
+        });
+        // an oref that is not an agent's does not make it the handling form
+        expect(attentionAct(reports({ projectPath: "D:/work/arcterm", oref: "effort:abc" }))).toEqual({
+            label: "Xử lý",
+            kind: "process-reports",
+        });
+    });
+
+    it("offers Chọn thư mục… when no repo path rides on the item", () => {
+        const pick = { label: "Chọn thư mục…", kind: "pick-repo" };
+        expect(attentionAct(reports({ projectPath: "" }))).toEqual(pick);
+        expect(attentionAct(reports({ projectPath: undefined, oref: "" }))).toEqual(pick);
+    });
+
+    it("offers Mở agent while an agent holds them, whether or not the item carries the repo path", () => {
+        const open = { label: "Mở agent", kind: "open" };
+        expect(attentionAct(reports({ oref: "agent:tab-1", projectPath: "D:/work/arcterm" }))).toEqual(open);
+        expect(attentionAct(reports({ oref: "agent:tab-1" }))).toEqual(open);
+    });
+
+    it("has no second act", () => {
+        expect(attentionSecondAct(reports({ projectPath: "D:/work/arcterm" }))).toBeNull();
+    });
+
+    it("does not touch any other kind that happens to carry an oref or a path", () => {
+        expect(attentionAct(a({ wireKind: "council", oref: "council:c1", projectPath: "D:/x" }))).toEqual({
+            label: "Open",
+            kind: "open",
+        });
+    });
+});
+
 describe("a blocked queue entry", () => {
     const blocked = (over: Partial<AttentionActInput> = {}): AttentionActInput =>
         a({ wireKind: "run-queue-blocked", channelId: "", runId: null, queueId: "q-1a2b", ...over });

@@ -6,9 +6,11 @@ package wshserver
 import (
 	"context"
 	"fmt"
+	"log"
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/wavetermdev/waveterm/pkg/chatsuggest"
 	"github.com/wavetermdev/waveterm/pkg/wavebase"
@@ -47,7 +49,9 @@ func chatHabitTexts() []string {
 // person's habits for the model to offer one word for word. A Claude agent's arc mod works them out itself at the turn's
 // end: its answer is taken when it comes in time, and the headless call runs only when it does not.
 func (ws *WshServer) ChatSuggestCommand(ctx context.Context, data wshrpc.CommandChatSuggestData) (*wshrpc.CommandChatSuggestRtnData, error) {
+	start := time.Now()
 	if replies, ok := chatHooks().Await(ctx, data.BlockId, data.Reply, data.Question, data.Hook); ok {
+		log.Print(chatSuggestLogLine(data.BlockId, "mod", time.Since(start), len(replies), nil))
 		return &wshrpc.CommandChatSuggestRtnData{Replies: replies}, nil
 	}
 	replies, err := chatSuggester().Suggest(ctx, chatsuggest.Request{
@@ -56,10 +60,25 @@ func (ws *WshServer) ChatSuggestCommand(ctx context.Context, data wshrpc.Command
 		Question: data.Question,
 		Habits:   chatHabitTexts(),
 	})
+	log.Print(chatSuggestLogLine(data.BlockId, "headless", time.Since(start), len(replies), err))
 	if err != nil {
 		return nil, err
 	}
 	return &wshrpc.CommandChatSuggestRtnData{Replies: replies}, nil
+}
+
+// chatSuggestLogLine is the one line each answer leaves in waveapp.log: which way it came (the arc mod's own, or the
+// headless call), how long it took and how many chips it made, with the error when the headless call failed. It is
+// what a "no chips" report can be read against.
+func chatSuggestLogLine(blockID, via string, took time.Duration, chips int, err error) string {
+	if len(blockID) > 8 {
+		blockID = blockID[:8]
+	}
+	line := fmt.Sprintf("chatsuggest: block=%s via=%s %dms chips=%d", blockID, via, took.Milliseconds(), chips)
+	if err != nil {
+		line += " err=" + err.Error()
+	}
+	return line
 }
 
 // ChatSuggestHookBeginCommand begins a Claude agent's turn for its arc mod: the completion it runs in its own claude.

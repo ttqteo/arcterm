@@ -590,6 +590,8 @@ underneath takes no keys while it is open.
 | `?` (`Shift`+`/`) | Open the shortcut cheat sheet (Navigate posture) |
 | The `?` button at the bottom bar's right end | Open the cheat sheet with the mouse, on every surface |
 | Search → Commands → "Keyboard shortcuts" | Open the cheat sheet while typing |
+| `Ctrl`+`Alt`+`R` | Report an arcterm bug: capture the window, then a box takes a line of text; works inside the terminal (`Ctrl`+`Enter` sends, `Esc` closes) |
+| The bug button at the bottom bar's right end, or Search → Commands → "Báo lỗi arcterm" | Open the same box with the mouse, or while typing |
 
 ---
 

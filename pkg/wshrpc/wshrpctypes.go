@@ -75,6 +75,7 @@ type WshRpcInterface interface {
 	WorkflowScanCommands
 	TranslateCommands
 	ChatSuggestCommands
+	BugReportCommands
 	WshRpcRemoteFileInterface
 	WshRpcFileInterface
 }

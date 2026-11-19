@@ -1138,8 +1138,89 @@ describe("buildAttentionQueue: a council waiting on you", () => {
     });
 });
 
+// one row in three forms (pkg/jarvis/attention.go): it names no channel, so the row would be static without the gate that
+// lets its button draw, and the handling form opens the agent that holds the reports
+describe("buildAttentionQueue: the waiting bug reports", () => {
+    const reports = (over: Partial<AttentionItem> = {}): AttentionItem =>
+        ({
+            kind: "bug-reports",
+            key: "bug-reports",
+            source: "arcterm",
+            text: "2 báo lỗi arcterm chờ xử lý",
+            action: "Xử lý",
+            phaseidx: 0,
+            waitingsince: 1000,
+            projectpath: "D:/work/arcterm",
+            ...over,
+        }) as AttentionItem;
+
+    it("draws Xử lý once the repo is known, with nothing to open", () => {
+        const [row] = buildAttentionQueue({ attention: [reports()], efforts: [] });
+        expect(row.kind).toBe("Báo lỗi");
+        expect(row.title).toBe("2 báo lỗi arcterm chờ xử lý");
+        expect(row.action).toBe("Xử lý");
+        expect(row.nav).toBeNull();
+        expect(row.tone).toBe("asking");
+        expect(queueKindLabel(row)).toBe("báo lỗi");
+        expect(queueAction(row)).toEqual({ label: "Xử lý", kind: "process-reports" });
+        expect(queueActions(row)).toEqual([{ label: "Xử lý", kind: "process-reports" }]);
+    });
+
+    it("draws Chọn thư mục… while no repo path rides on the item", () => {
+        const [row] = buildAttentionQueue({
+            attention: [
+                reports({ text: "Không tìm thấy repo arcterm", action: "Chọn thư mục…", projectpath: undefined }),
+            ],
+            efforts: [],
+        });
+        expect(row.action).toBe("Chọn thư mục…");
+        expect(row.nav).toBeNull();
+        expect(queueAction(row)).toEqual({ label: "Chọn thư mục…", kind: "pick-repo" });
+    });
+
+    it("draws Mở agent, and the row opens that agent, while an agent holds the reports", () => {
+        const [row] = buildAttentionQueue({
+            attention: [reports({ text: "Đang xử lý 2 báo lỗi", action: "Mở agent", oref: "agent:tab-9" })],
+            efforts: [],
+        });
+        expect(row.action).toBe("Mở agent");
+        expect(row.nav).toEqual({ kind: "agent", oref: "agent:tab-9" });
+        expect(queueAction(row)).toEqual({ label: "Mở agent", kind: "open" });
+        expect(queueOpenTarget(row.nav)).toEqual({ kind: "oref", oref: "agent:tab-9" });
+        // the handling form keeps the repo path (the Cockpit's project filter keeps the row), and it does not change the act
+        expect(row.projectPath).toBe("D:/work/arcterm");
+    });
+
+    it("leaves oref and projectPath off every other kind", () => {
+        const [row] = buildAttentionQueue({
+            attention: [
+                {
+                    kind: "council",
+                    key: "council:c1",
+                    source: "",
+                    text: "Council",
+                    action: "Open",
+                    phaseidx: 0,
+                    waitingsince: 1,
+                    oref: "council:c1",
+                    projectpath: "D:/x",
+                } as AttentionItem,
+            ],
+            efforts: [],
+        });
+        expect(row.oref).toBeUndefined();
+        expect(row.projectPath).toBeUndefined();
+    });
+
+    it("counts as its own word in the queue's summary", () => {
+        const q = buildAttentionQueue({ attention: [reports()], efforts: [] });
+        expect(summarizeAttentionQueue(q, 1000 + 5 * 60_000)).toBe("báo lỗi · oldest 5m");
+    });
+});
+
 describe("kindWord", () => {
     it("is the Brief's short kind for a wire kind", () => {
+        expect(kindWord("bug-reports")).toBe("báo lỗi");
         expect(kindWord("ask")).toBe("ask");
         expect(kindWord("escalation")).toBe("ask");
         expect(kindWord("dag-gate")).toBe("gate");

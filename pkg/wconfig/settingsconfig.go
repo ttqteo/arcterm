@@ -146,6 +146,10 @@ type SettingsType struct {
 
 	PowerClear     bool  `json:"power:*,omitempty"`
 	PowerKeepAwake *bool `json:"power:keepawake,omitempty"` // hold off the Mac's idle sleep while work runs (pkg/keepawake); unset is true
+
+	// BugReportRepo is arcterm's own checkout, where the Jarvis agent that handles bug reports works. Unset means found
+	// among the registered projects (pkg/bugreport); a path that no longer exists reads as not found.
+	BugReportRepo string `json:"bugreport:repo,omitempty"`
 }
 
 type ConfigError struct {

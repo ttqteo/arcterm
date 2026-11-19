@@ -31,6 +31,13 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Added
 
+- A bug button at the footer's right end (also Ctrl+Alt+R, and "Báo lỗi arcterm" in the palette) reports a bug in
+  arcterm on the spot: it captures the window, takes a line on what went wrong, and keeps the picture, the last 5
+  minutes of the log, the version and the agent in focus on this machine. Nothing is sent anywhere.
+  <!-- try: global:bug-report -->
+- Jarvis's Waiting on you shows the bug reports waiting as one row, and Xử lý starts one Claude agent in arcterm's own
+  repo that reads them all: it groups the ones about the same bug, starts a run for a small fix, files an initiative
+  for a large one, and asks you back when a report is unclear.
 - Chat warns above the box when the Claude account an agent runs on is near its weekly (80%) or 5-hour (90%) limit,
   with the reset time. With more than one account it names the one in use and offers Switch to the account with the
   most room, which moves this agent over and offers to restart the others; Snooze hides it for an hour, four hours or

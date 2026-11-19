@@ -655,7 +655,7 @@ export function SidecarBridge({ model }: { model: AgentsViewModel }) {
                 noteNeed(key, "Couldn't do it: the item changed");
                 return;
             }
-            const leaves = act.verb === "open" || act.verb === "work-on";
+            const leaves = act.verb === "open" || act.verb === "work-on" || act.verb === "open-brief";
             try {
                 await runAct(model, act);
             } catch (e) {

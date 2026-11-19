@@ -47,6 +47,8 @@ const DETAIL_KINDS = new Set([
     "run-queue-blocked",
     "chunk-due",
     "plan-review",
+    // the row's source is just "arcterm": its text ("2 báo lỗi arcterm chờ xử lý") is the count and the state
+    "bug-reports",
 ]);
 
 // A row names its kind in a word beside its dot, so the kind never rides on colour alone.
@@ -59,6 +61,7 @@ const ROW_KIND_LABEL: Record<string, string> = {
     "run-queue-blocked": "Run to start",
     "chunk-due": "Due",
     "plan-review": "Plan to review",
+    "bug-reports": "Báo lỗi",
 };
 
 export function rowKindLabel(kind: string): string {

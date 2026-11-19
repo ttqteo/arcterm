@@ -32,6 +32,7 @@ export const BROWSER_COMMANDS: readonly string[] = [
     "open_sidecar",
     "sidecar_form",
     "sidecar_pids",
+    "sidecar_corner",
     "app_frame_action",
     "clipboard_text",
     ...NO_OPS,
@@ -65,6 +66,9 @@ export async function invoke<T>(cmd: string, args?: Record<string, unknown>): Pr
         case "sidecar_pids":
             // no WebView2 to ask which process draws the page: the resource panel's Sidecar row reads "—"
             return [] as T;
+        case "sidecar_corner":
+            // a page has no native Mac window whose corner radius could be read: sidecar.tsx keeps its 12px frame when the call fails
+            throw new Error("Sidecar is a window of the Tauri host");
         case "app_frame_action":
             return false as T; // a page cannot reach into a cross-origin frame: Home and the window's history stand in
         case "clipboard_text":

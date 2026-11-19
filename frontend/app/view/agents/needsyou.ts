@@ -11,6 +11,7 @@ import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import type { AttentionAct } from "@/app/view/jarvis/attentionact";
 import { runAttentionAct } from "@/app/view/jarvis/attentionrun";
+import { pickBugReportRepo, processBugReports } from "@/app/view/jarvis/bugreportprocess";
 import { workOnDueChunk } from "@/app/view/jarvis/initiativeworkaction";
 import { openOrPeek } from "@/app/view/jarvis/openref";
 import { fireAndForget } from "@/util/util";
@@ -131,6 +132,19 @@ export function useNeedsYou(
                 const effortId = row.open.effortId;
                 fireAndForget(() => workOnDueChunk(model, "effort:" + effortId, row.text));
             }
+            return;
+        }
+        // the waiting bug reports: Xử lý starts the agent that reads them, Chọn thư mục… keeps arcterm's repo (both toast
+        // their own failures, as the Brief's row does). Busy holds the button while the agent launches
+        if (which.kind === "process-reports" || which.kind === "pick-repo") {
+            setRowBusy(row.key, true);
+            fireAndForget(async () => {
+                try {
+                    await (which.kind === "process-reports" ? processBugReports(model) : pickBugReportRepo(model));
+                } finally {
+                    setRowBusy(row.key, false);
+                }
+            });
             return;
         }
         setRowBusy(row.key, true);

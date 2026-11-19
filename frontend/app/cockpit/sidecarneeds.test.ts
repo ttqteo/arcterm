@@ -352,6 +352,14 @@ describe("needActsOf", () => {
         ]);
     });
 
+    // the waiting bug reports' one act in the peek is an Open to the Brief: a way to read the row, not one that settles it
+    it("draws an Open to the Brief as quiet as any other Open", () => {
+        const toBrief = { id: "bug-reports:open-brief", verb: "open-brief" as const, label: "Open" };
+        expect(needActsOf(peek({ key: "bug-reports", kind: "bug-reports", primary: toBrief }), undefined)).toEqual([
+            { id: "bug-reports:open-brief", label: "Open" },
+        ]);
+    });
+
     it("numbers a question's options, and never repeats an act", () => {
         const a = (i: number) => ({
             id: `k:a${i}`,

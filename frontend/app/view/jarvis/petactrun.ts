@@ -21,6 +21,7 @@ import { isPeekableAddress, openAddress, openOrPeekAddress, type OpenGesture } f
 import { closePeek } from "./peekstore";
 import type { PetAct } from "./petacts";
 import { petErrandAtom, setActState } from "./petstore";
+import { landOn } from "./returnsurface";
 
 // The same budget the Channels surface gives a consult (CONSULT_RPC_TIMEOUT_MS in channelactions.ts): the
 // backend's consultTimeout is 120s and the rpc layer's 5s default would kill the stream long before a reply
@@ -143,6 +144,12 @@ export async function runAct(model: AgentsViewModel, act: PetAct, gesture?: Open
         await workOnDueChunk(model, act.effortORef, act.chunk);
         return;
     }
+    // the waiting bug reports' row lives in the Brief's Waiting list: land there, as any other jump does, so back returns
+    if (act.verb === "open-brief") {
+        closePeek();
+        landOn(model.surfaceAtom, "jarvis");
+        return;
+    }
     if (act.verb === "open") {
         await escort(model, act, gesture);
     }
@@ -151,7 +158,7 @@ export async function runAct(model: AgentsViewModel, act: PetAct, gesture?: Open
 // only an escort leaves the peek, and not when the peek key (ctrlheld.ts) turns it into a peek; the caller drops
 // focus-return for it and nothing else
 export function actNavigates(act: PetAct, gesture?: { ctrlKey: boolean; metaKey?: boolean }): boolean {
-    return (act.verb === "open" && !gesturePeeks(act, gesture)) || act.verb === "work-on";
+    return (act.verb === "open" && !gesturePeeks(act, gesture)) || act.verb === "work-on" || act.verb === "open-brief";
 }
 
 // the peek key peeks only a target the popup can show; a canvas opens on its own surface either way

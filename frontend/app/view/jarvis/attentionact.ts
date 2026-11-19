@@ -13,11 +13,37 @@ export interface AttentionActInput {
     retry: boolean; // the blocked dag's task failed and a retry can rerun it (attention.go blockedTask)
     queueId?: string; // the queue entry a run-queue-blocked item is about (AttentionItem.queueid)
     agentOpen?: boolean; // an agent is open on a due chunk's initiative (initiativework.ts openAgentFor)
+    // the bug-reports row's three forms ride on these two (AttentionItem.oref / projectpath): "agent:<tab>" while an
+    // agent holds the reports, no path while no arcterm repo is known
+    oref?: string;
+    projectPath?: string;
 }
 
 export type AttentionAct = {
-    label: "Approve" | "Retry" | "Accept" | "Land again" | "Work on" | "Go to agent" | "Start now" | "Remove" | "Open";
-    kind: "approve-dag" | "retry-dag" | "ack-run" | "land-run" | "work-on" | "start-queued" | "remove-queued" | "open";
+    label:
+        | "Approve"
+        | "Retry"
+        | "Accept"
+        | "Land again"
+        | "Work on"
+        | "Go to agent"
+        | "Start now"
+        | "Remove"
+        | "Open"
+        | "Xử lý"
+        | "Mở agent"
+        | "Chọn thư mục…";
+    kind:
+        | "approve-dag"
+        | "retry-dag"
+        | "ack-run"
+        | "land-run"
+        | "work-on"
+        | "start-queued"
+        | "remove-queued"
+        | "open"
+        | "process-reports"
+        | "pick-repo";
 };
 
 // Approve and Retry need the exact task the server named; without it, and for anything that needs a
@@ -49,6 +75,18 @@ export function attentionAct(x: AttentionActInput): AttentionAct {
     // act, and only the Needs you strip offers the Remove beside it (attentionSecondAct)
     if (x.wireKind === "run-queue-blocked" && (x.queueId ?? "") !== "") {
         return { label: "Start now", kind: "start-queued" };
+    }
+    // the waiting bug reports (pkg/jarvis/attention.go, one row) tell their three forms apart by what the item names,
+    // with no field of their own: an agent already holds them -> it opens; no arcterm repo known -> pick the folder;
+    // else Process starts the agent. Process and the folder picker need the cockpit, so callers run them (like work-on)
+    if (x.wireKind === "bug-reports") {
+        if ((x.oref ?? "").startsWith("agent:")) {
+            return { label: "Mở agent", kind: "open" };
+        }
+        if ((x.projectPath ?? "") === "") {
+            return { label: "Chọn thư mục…", kind: "pick-repo" };
+        }
+        return { label: "Xử lý", kind: "process-reports" };
     }
     return { label: "Open", kind: "open" };
 }
