@@ -13,7 +13,7 @@ import { closeAgentChord, confirmCloseSession } from "@/app/view/agents/agentact
 import { centerModeAtom, leaveCenter, showCanvases, showCouncils, showHistory } from "@/app/view/agents/agentcenter";
 import { getProcExitAtom } from "@/app/view/agents/agentcontrollerstore";
 import { openRailTranscript } from "@/app/view/agents/agentrailstore";
-import { AgentsViewModel, SURFACE_ORDER, type SurfaceKey } from "@/app/view/agents/agents";
+import { AgentsViewModel, RAIL_ORDER, SURFACE_ORDER, type SurfaceKey } from "@/app/view/agents/agents";
 import { AGENT_DIGITS } from "@/app/view/agents/agentsidebarmodel";
 import { answerDigitTarget, canSubmitAsk, moveCursor, type AgentVM } from "@/app/view/agents/agentsviewmodel";
 import { setAgentView, type AgentView } from "@/app/view/agents/agentview";
@@ -421,14 +421,15 @@ function backOrHome(model: AgentsViewModel): void {
 }
 
 export function buildGlobalBindings(model: AgentsViewModel): Binding[] {
-    // `[`/`]` cycle the rail order (SURFACE_ORDER). A surface outside the cycle (settings) enters at an end.
+    // `[`/`]` cycle the rail order (RAIL_ORDER, the order the person sees, which is not the chords'). A surface outside
+    // the cycle (settings) enters at an end.
     const cycleSurface = (delta: number) => {
         const cur = globalStore.get(model.surfaceAtom);
-        const idx = SURFACE_ORDER.indexOf(cur);
+        const idx = RAIL_ORDER.indexOf(cur);
         const next =
             idx === -1
-                ? SURFACE_ORDER[delta > 0 ? 0 : SURFACE_ORDER.length - 1]
-                : SURFACE_ORDER[(idx + delta + SURFACE_ORDER.length) % SURFACE_ORDER.length];
+                ? RAIL_ORDER[delta > 0 ? 0 : RAIL_ORDER.length - 1]
+                : RAIL_ORDER[(idx + delta + RAIL_ORDER.length) % RAIL_ORDER.length];
         globalStore.set(model.surfaceAtom, next);
     };
 
@@ -2632,6 +2633,12 @@ function stepListFile(dir: 1 | -1): false | undefined {
         globalStore.set(collapsedDirsAtom, expandToShow(globalStore.get(collapsedDirsAtom), next));
     }
     active.select(next);
+}
+
+// Library's own keys (the tab switch, Escape's Back out of a session, run or council). Library's surface activates them with
+// useKeybindings; none are bound yet, so this returns an empty list until they are written.
+export function buildLibraryBindings(_model: AgentsViewModel): Binding[] {
+    return [];
 }
 
 // Diff-surface keys. `c` is the entry gesture the mockup names; Escape is the single exit; Tab jumps

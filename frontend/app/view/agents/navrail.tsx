@@ -18,6 +18,7 @@ import {
     GitCompare,
     Languages,
     LayoutDashboard,
+    Library,
     Settings,
     type LucideIcon,
 } from "lucide-react";
@@ -37,6 +38,7 @@ import { railDot, railItemTitle, railPins } from "./railapps";
 import { appSurfaceIdAtom, moveRailPin, railPinsAtom, setRailPinned } from "./railappsstore";
 import { ensureServicesFeed, servicesAtom } from "./servicesstore";
 import { focusSubagentAtom } from "./subagentsstore";
+import { surfaceChordDigit } from "./surfaceorder";
 import { PanelWeb } from "./themedecorview";
 import { toggleTranslate, translateOpenAtom } from "./translatestore";
 import { latestUnreadId, unreadLabel } from "./unreadagents";
@@ -49,18 +51,21 @@ const ICON: Record<SurfaceKey, LucideIcon> = {
     agent: Bot,
     files: GitCompare,
     usage: Gauge,
+    library: Library,
     code: FileCode2,
     setup: FileCog,
     settings: Settings,
     app: AppWindow,
 };
 
-// the surfaces used all day, then the tools reached for now and then; Ctrl+1..6 follow this order (SURFACE_ORDER)
+// the surfaces used all day, then the tools reached for now and then: the rail's visual order (RAIL_ORDER). Ctrl+1..7
+// follow SURFACE_ORDER instead, which moves Library, fifth here, to the last chord, so the rail's digit hint reads that
 export const CORE_ITEMS: { key: SurfaceKey; label: string }[] = [
     { key: "cockpit", label: "Cockpit" },
     { key: "jarvis", label: "Jarvis" },
     { key: "agent", label: "Agent" },
     { key: "usage", label: "Usage" },
+    { key: "library", label: "Library" },
 ];
 
 export const TOOL_ITEMS: { key: SurfaceKey; label: string }[] = [
@@ -193,7 +198,8 @@ export function NavRail({ model }: { model: AgentsViewModel }) {
         globalStore.set(focusSubagentAtom, null);
         showTerminal();
     };
-    // while Ctrl is held each surface shows the digit Ctrl+1..6 jumps to (ITEMS is SURFACE_ORDER; digithints.ts)
+    // while Ctrl is held each surface shows the digit Ctrl+1..7 jumps to: its place in SURFACE_ORDER, not on the rail,
+    // which differ for Library, Code and Diff (digithints.ts)
     const ctrlHeld = useAtomValue(digitHintAtom) === "ctrl";
     // the apps pinned under Diff: the pins that still name a held service, at most three (railapps.ts)
     const services = useAtomValue(servicesAtom);
@@ -219,8 +225,7 @@ export function NavRail({ model }: { model: AgentsViewModel }) {
         const isActive = active === key;
         const busy = key === "agent" ? working : 0;
         const jumps = key === "agent" && isActive;
-        const at = ITEMS.findIndex((it) => it.key === key);
-        const digit = ctrlHeld && at >= 0 ? at + 1 : undefined;
+        const digit = ctrlHeld ? surfaceChordDigit(key) : undefined;
         return (
             <button
                 key={key}

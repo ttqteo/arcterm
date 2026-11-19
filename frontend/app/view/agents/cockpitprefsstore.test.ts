@@ -27,6 +27,9 @@ describe("startupSurfaceOptions", () => {
     it("offers the last opened surface first", () => {
         expect(startupSurfaceOptions()[0]).toBe("last");
     });
+    it("lists the surfaces in the rail's order, with Library fifth, not in the chords' order", () => {
+        expect(startupSurfaceOptions()).toEqual(["last", "cockpit", "jarvis", "usage", "library", "code", "files"]);
+    });
 });
 
 describe("startupMenuEntries", () => {
@@ -62,6 +65,10 @@ describe("bootSurface", () => {
     it("sends a remembered retired surface to the Agent surface", () => {
         expect(bootSurface("last", "sessions")).toBe("agent");
     });
+    it("reopens Library when it was the last surface open, and opens it when picked", () => {
+        expect(bootSurface("last", "library")).toBe("library");
+        expect(bootSurface("library", "agent")).toBe("library");
+    });
     it("opens a picked surface whatever was last open", () => {
         expect(bootSurface("usage", "agent")).toBe("usage");
         expect(bootSurface("activity", "radar")).toBe("agent");
@@ -72,6 +79,7 @@ describe("rememberSurface", () => {
     it("remembers a numbered surface", () => {
         expect(rememberSurface("agent")).toBe("agent");
         expect(rememberSurface("cockpit")).toBe("cockpit");
+        expect(rememberSurface("library")).toBe("library");
     });
     it("keeps the stored one for Setup and Settings", () => {
         expect(rememberSurface("setup")).toBeNull();

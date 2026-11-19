@@ -11,7 +11,7 @@ import { confirmCloseSession } from "@/app/view/agents/agentactions";
 import { centerModeAtom } from "@/app/view/agents/agentcenter";
 import { getProcExitAtom } from "@/app/view/agents/agentcontrollerstore";
 import { railPanelsAtom, railTranscriptFocusAtom } from "@/app/view/agents/agentrailstore";
-import { SURFACE_ORDER, type SurfaceKey } from "@/app/view/agents/agents";
+import { RAIL_ORDER, SURFACE_ORDER, type SurfaceKey } from "@/app/view/agents/agents";
 import { setAgentView } from "@/app/view/agents/agentview";
 import type { BrainstormFile } from "@/app/view/agents/brainstormmodel";
 import { sendBrainstorm } from "@/app/view/agents/brainstormsend";
@@ -128,6 +128,7 @@ import {
     buildInitiativeSheetBindings,
     buildJarvisBindings,
     buildJarvisTourBindings,
+    buildLibraryBindings,
     buildListNavBindings,
     buildUsageBindings,
     closeTarget,
@@ -404,7 +405,7 @@ describe("Ctrl+Tab switcher", () => {
 });
 
 describe("surface switch [ / ]", () => {
-    it("cycles SURFACE_ORDER forward/back with wrap, past Diff back to the cockpit", () => {
+    it("cycles RAIL_ORDER forward/back with wrap, past Diff back to the cockpit", () => {
         const model = { surfaceAtom: atom<SurfaceKey>("cockpit") } as any;
         const bindings = buildGlobalBindings(model);
         const next = bindings.find((b) => b.id === "surface:next")!;
@@ -416,25 +417,48 @@ describe("surface switch [ / ]", () => {
         expect(globalStore.get(model.surfaceAtom)).toBe("jarvis");
 
         globalStore.set(model.surfaceAtom, "files");
-        next.run(ctx()); // files (Diff) is last: it wraps to the cockpit
+        next.run(ctx()); // files (Diff) is last on the rail: it wraps to the cockpit
         expect(globalStore.get(model.surfaceAtom)).toBe("cockpit");
 
-        globalStore.set(model.surfaceAtom, SURFACE_ORDER[SURFACE_ORDER.length - 1]);
+        globalStore.set(model.surfaceAtom, RAIL_ORDER[RAIL_ORDER.length - 1]);
         next.run(ctx()); // wrap forward to first
-        expect(globalStore.get(model.surfaceAtom)).toBe(SURFACE_ORDER[0]);
+        expect(globalStore.get(model.surfaceAtom)).toBe(RAIL_ORDER[0]);
 
         prev.run(ctx()); // wrap back to last
-        expect(globalStore.get(model.surfaceAtom)).toBe(SURFACE_ORDER[SURFACE_ORDER.length - 1]);
+        expect(globalStore.get(model.surfaceAtom)).toBe(RAIL_ORDER[RAIL_ORDER.length - 1]);
     });
 
-    it("binds Mod+1..6 to SURFACE_ORDER, so Usage is Mod+4 and Diff is Mod+6", () => {
+    it("steps through Library where the rail has it, fifth, not where its chord is, last", () => {
+        const model = { surfaceAtom: atom<SurfaceKey>("usage") } as any;
+        const bindings = buildGlobalBindings(model);
+        const next = bindings.find((b) => b.id === "surface:next")!;
+        const prev = bindings.find((b) => b.id === "surface:prev")!;
+        next.run(ctx("usage")); // Usage -> Library
+        expect(globalStore.get(model.surfaceAtom)).toBe("library");
+        next.run(ctx("library")); // Library -> Code
+        expect(globalStore.get(model.surfaceAtom)).toBe("code");
+        prev.run(ctx("code")); // Code -> Library
+        expect(globalStore.get(model.surfaceAtom)).toBe("library");
+        prev.run(ctx("library")); // Library -> Usage
+        expect(globalStore.get(model.surfaceAtom)).toBe("usage");
+    });
+
+    it("binds Mod+1..7 to SURFACE_ORDER, so Usage is Mod+4, Code Mod+5, Diff Mod+6 and Library Mod+7", () => {
         const model = { surfaceAtom: atom<SurfaceKey>("cockpit") } as any;
         const chords = buildGlobalBindings(model).filter((b) => /^Mod:\d$/.test(b.keys) && b.id.startsWith("surface:"));
-        expect(chords.map((b) => b.keys)).toEqual(["Mod:1", "Mod:2", "Mod:3", "Mod:4", "Mod:5", "Mod:6"]);
+        expect(chords.map((b) => b.keys)).toEqual(["Mod:1", "Mod:2", "Mod:3", "Mod:4", "Mod:5", "Mod:6", "Mod:7"]);
         chords.find((b) => b.keys === "Mod:4")!.run(ctx());
         expect(globalStore.get(model.surfaceAtom)).toBe("usage");
+        chords.find((b) => b.keys === "Mod:5")!.run(ctx());
+        expect(globalStore.get(model.surfaceAtom)).toBe("code");
         chords.find((b) => b.keys === "Mod:6")!.run(ctx());
         expect(globalStore.get(model.surfaceAtom)).toBe("files");
+        chords.find((b) => b.keys === "Mod:7")!.run(ctx());
+        expect(globalStore.get(model.surfaceAtom)).toBe("library");
+    });
+
+    it("has a Library binding builder that binds nothing yet: the surface activates it and its keys come later", () => {
+        expect(buildLibraryBindings({ surfaceAtom: atom<SurfaceKey>("library") } as any)).toEqual([]);
     });
 
     it("binds Alt+1..9 to the Active list's agents on the Agent surface, inside a terminal too", () => {
