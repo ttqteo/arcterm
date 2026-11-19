@@ -13,8 +13,10 @@ export const SUGGEST_EFFORT = "low";
 /** the reply's cap: the replies are up to five short lines, with a little thinking first */
 export const SUGGEST_MAX_TOKENS = 2048;
 
-/** how long the completion may take before it is given up; wavesrv waits 10 s for it, then runs its own call */
-export const SUGGEST_TIMEOUT_MS = 15_000;
+/** how long the completion may take before it is cut (`timeoutMs` abandons the request): well inside the 10 s wavesrv
+ *  waits for the end (hook.go hookMax), so a slow call ends the turn as failed and Chat's own call starts at once instead
+ *  of after wavesrv's wait runs out, while this one still runs. The call takes ~1-1.5 s (log, 2026-11-19) */
+export const SUGGEST_TIMEOUT_MS = 5_000;
 
 /** the person's last messages the model reads for their words and language */
 const RECENT = 6;

@@ -7,6 +7,7 @@ import {
     chatChips,
     chipEditable,
     chipIcon,
+    chipPickLogLine,
     closeChip,
     drawnChips,
     endsWithQuestion,
@@ -188,6 +189,33 @@ describe("a close chip in the row", () => {
 
     it("has its own icon", () => {
         expect(chipIcon(close)).toBe("close");
+    });
+});
+
+describe("chipPickLogLine", () => {
+    const ok: ChatChip = { text: "ok", kind: "reply", source: "fallback" };
+    const a: ChatChip = { text: "làm A", kind: "reply", source: "model" };
+
+    it("names where the chip came from, its place and the question's kind", () => {
+        const line = chipPickLogLine(
+            "d29ef42b-1111",
+            ok,
+            [a, ok],
+            "Nên làm A hay B?\n\nMình nghiêng về A.  Bạn chọn?",
+            "send"
+        );
+        expect(line).toBe(
+            'chatsuggest: block=d29ef42b pick send source=fallback kind=reply at=2/2 question=open text="ok" ' +
+                'tail="Nên làm A hay B? Mình nghiêng về A. Bạn chọn?"'
+        );
+    });
+
+    it("reads a yes-or-no question and a turn that asks nothing", () => {
+        expect(chipPickLogLine("b", a, [a], "Commit nhé?", "edit")).toContain(
+            "pick edit source=model kind=reply at=1/1 question=yesno"
+        );
+        expect(chipPickLogLine("b", a, [a], "Xong rồi.", "send")).toContain("question=none");
+        expect(chipPickLogLine(undefined, a, [a], null, "send")).toContain("block= pick send");
     });
 });
 

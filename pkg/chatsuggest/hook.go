@@ -130,12 +130,28 @@ func (h *Hooks) End(block, key, text string, failed bool) string {
 // the mod did not begin that turn within the wait (expect: the agent is a Claude agent, which has a mod; otherwise no
 // wait), began it for another kind of reply, failed, or did not end it in time. False means: run the headless call.
 func (h *Hooks) Await(ctx context.Context, block, reply string, question, expect bool) ([]string, bool) {
-	out, ok, _ := h.AwaitWhy(ctx, block, reply, question, expect)
+	out, ok, _, _ := h.AwaitWhy(ctx, block, reply, question, expect)
 	return out, ok
 }
 
-// AwaitWhy is Await, with why it took no answer from the mod, for waveapp.log ("" when it took one).
-func (h *Hooks) AwaitWhy(ctx context.Context, block, reply string, question, expect bool) ([]string, bool, string) {
+// AwaitWhy is Await, with why it took no answer from the mod, for waveapp.log ("" when it took one), and whether the
+// headless call is worth running for the ask (headless). It is not when the block's mod is at work and its latest
+// begin is another reply's: the ask is for a reply that is no turn's end. Either the mod has begun a newer reply (Chat
+// read the transcript late), or the reply is a line the agent wrote mid-turn, which the mod never begins: of 27 such
+// asks in waveapp.log (2026-11-19), the mod began none, and each ran a ~470 MB claude for chips nobody read.
+func (h *Hooks) AwaitWhy(ctx context.Context, block, reply string, question, expect bool) (out []string, ok bool, why string, headless bool) {
+	out, ok, why = h.awaitWhy(ctx, block, reply, question, expect)
+	if ok {
+		return out, true, "", false
+	}
+	h.mu.Lock()
+	e := h.byBlock[block]
+	h.mu.Unlock()
+	other := expect && e != nil && !strings.HasPrefix(e.key, ReplyKey(reply)+keySep)
+	return out, false, why, !other
+}
+
+func (h *Hooks) awaitWhy(ctx context.Context, block, reply string, question, expect bool) ([]string, bool, string) {
 	if block == "" {
 		return nil, false, "no block"
 	}

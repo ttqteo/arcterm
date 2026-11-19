@@ -16,6 +16,14 @@ list (its number is not reused).
 Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) ·
 [part 4](hand-checks-4.md) · [part 3](hand-checks-3.md) · [part 2](hand-checks-2.md) (oldest).
 
+- [ ] (arcterm) **No headless suggest call for a mid-turn line; chip picks logged** (`pkg/chatsuggest/hook.go`
+  AwaitWhy `headless`, `chatsuggest.ts` chipPickLogLine, `suggest-core.ts` SUGGEST_TIMEOUT_MS 5 s; branch
+  `fix/chatsuggest-council`). After installing, use Claude agents in Chat for a while: where waveapp.log shows `mod not
+  taken … another reply's`, the next line is `no headless call: the mod is on another reply` and no `via=headless`
+  follows for that ask; `via=` lines end in `question=true|false`. Take a chip by click, Enter, Cmd+Enter and
+  Shift+Enter: each leaves one `chatsuggest: … pick send|edit source=model|rule|fallback … question=yesno|open|none`
+  line (an armed chip over typed text only on the press that sends). The 5 s cut of the mod's call was not seen live:
+  every call measured took 0.9-1.5 s. Unit tests only.
 - [ ] (arcterm) **A long path in a Chat reply wraps in full** (`markdownmessage.tsx` code → `PathLink wrap`,
   `tailwindsetup.css` `.agent-md code`). Ask an agent for a reply naming a long backticked Windows path mid-sentence:
   it continues on the same line as the words before it and wraps over several lines, with no "…", and the full stop
@@ -32,12 +40,6 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
   and a file in it: the tab on show is a filled pill, the others bare until hovered, centred in the 44px band; on
   File the file pills shrink and scroll as before, and a file's × is a round button inside its pill. Not tried in the
   app (no dev app was running).
-- [ ] (arcterm) **A Claude agent's suggested replies come from its mod** (`pkg/chatsuggest/hook.go` keySep). After
-  installing a build with this fix, end a few Claude agent turns in Chat: waveapp.log shows `chatsuggest: … mod end
-  taken: N chips` and `via=mod`, and the chips appear about 2 s after the turn. Before it, every answer was
-  `via=headless` (6 to 15 s) and no `mod end` line ever appeared. Tested by `go test ./pkg/chatsuggest` only. The new
-  prompt (no facts the person did not give, NONE when the agent carries on) and `effort: "low"` were replayed on 29
-  real turns through the headless runner; the mod's `$.model.complete` with `effort` has not run live.
 - [ ] (arcterm) **Focus read stays on at the bottom of a working agent; a narrow Chat keeps clear of its pill**
   (`chatfocusreadview.ts`, `chatpane.tsx` scroller padding, branch `fix/focus-read-bottom`). With focus read on, send a
   prompt and stay at the bottom while the agent works: the finished blocks stay dimmed, the reply being written is not,

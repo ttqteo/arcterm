@@ -36,6 +36,7 @@
 
 import { pushToast } from "@/app/cockpit/notificationstore";
 import { microFade, MOTION, springReveal, turnTransition } from "@/app/element/motiontokens";
+import { getApi } from "@/app/store/global";
 import * as WOS from "@/app/store/wos";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
@@ -118,8 +119,10 @@ import { putBackSleepRuns, runWhileAsleep, takeSleepRuns } from "./chatsleepbash
 import {
     chipEditable,
     chipIcon,
+    chipPickLogLine,
     drawnChips,
     fitChips,
+    lastReply,
     pickedChip,
     pickedHint,
     quickChip,
@@ -915,7 +918,14 @@ function ComposerBox({
         document.addEventListener("pointerdown", off, true);
         return () => document.removeEventListener("pointerdown", off, true);
     }, [armed]);
+    // which chip the person takes goes to waveapp.log (chatsuggest.ts chipPickLogLine); a reply chip over typed text
+    // only arms on its first press (sendSuggested), so it is logged on the press that sends
+    const logPick = (c: ChatChip, how: "send" | "edit") =>
+        getApi().sendLog(chipPickLogLine(agent.blockId, c, rowChips, lastReply(entries ?? []), how));
     const activateChip = (c: ChatChip) => {
+        if (c.kind !== "reply" || suggestTake(text, armed, c.text) === "send") {
+            logPick(c, "send");
+        }
         if (c.kind === "close" && onClose != null) {
             onClose();
         } else if (c.kind === "done" && c.chunk != null && onMarkDone != null) {
@@ -931,6 +941,7 @@ function ComposerBox({
     // twice, replaces. The chip lets go, so Shift+Enter is a new line again
     const pickedEditable = picked != null && chipEditable(picked, onGoOn != null);
     const editChip = (c: ChatChip) => {
+        logPick(c, "edit");
         recalled.current = { at: null, shown: "" };
         const next = withChipText(text, c.text);
         setTextAt(next, next.length);

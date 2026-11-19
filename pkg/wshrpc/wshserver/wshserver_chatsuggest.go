@@ -52,19 +52,23 @@ func chatHabitTexts() []string {
 func (ws *WshServer) ChatSuggestCommand(ctx context.Context, data wshrpc.CommandChatSuggestData) (*wshrpc.CommandChatSuggestRtnData, error) {
 	start := time.Now()
 	log.Printf("chatsuggest: block=%s ask %s", shortBlock(data.BlockId), replyFacts(data.Reply, data.Question))
-	replies, ok, why := chatHooks().AwaitWhy(ctx, data.BlockId, data.Reply, data.Question, data.Hook)
+	replies, ok, why, headless := chatHooks().AwaitWhy(ctx, data.BlockId, data.Reply, data.Question, data.Hook)
 	if ok {
-		log.Print(chatSuggestLogLine(data.BlockId, "mod", time.Since(start), len(replies), nil))
+		log.Print(chatSuggestLogLine(data.BlockId, "mod", time.Since(start), len(replies), data.Question, nil))
 		return &wshrpc.CommandChatSuggestRtnData{Replies: replies}, nil
 	}
 	log.Printf("chatsuggest: block=%s mod not taken after %dms: %s", shortBlock(data.BlockId), time.Since(start).Milliseconds(), why)
+	if !headless {
+		log.Printf("chatsuggest: block=%s no headless call: the mod is on another reply", shortBlock(data.BlockId))
+		return &wshrpc.CommandChatSuggestRtnData{}, nil
+	}
 	replies, err := chatSuggester().Suggest(ctx, chatsuggest.Request{
 		Reply:    data.Reply,
 		Recent:   data.Recent,
 		Question: data.Question,
 		Habits:   chatHabitTexts(),
 	})
-	log.Print(chatSuggestLogLine(data.BlockId, "headless", time.Since(start), len(replies), err))
+	log.Print(chatSuggestLogLine(data.BlockId, "headless", time.Since(start), len(replies), data.Question, err))
 	if err != nil {
 		return nil, err
 	}
@@ -72,10 +76,11 @@ func (ws *WshServer) ChatSuggestCommand(ctx context.Context, data wshrpc.Command
 }
 
 // chatSuggestLogLine is the one line each answer leaves in waveapp.log: which way it came (the arc mod's own, or the
-// headless call), how long it took and how many chips it made, with the error when the headless call failed. It is
-// what a "no chips" report can be read against.
-func chatSuggestLogLine(blockID, via string, took time.Duration, chips int, err error) string {
-	line := fmt.Sprintf("chatsuggest: block=%s via=%s %dms chips=%d", shortBlock(blockID), via, took.Milliseconds(), chips)
+// headless call), how long it took and how many chips it made for a reply that did or did not end on a question, with
+// the error when the headless call failed. It is what a "no chips" report, and the share of calls that make none for a
+// turn that asks nothing, can be read against.
+func chatSuggestLogLine(blockID, via string, took time.Duration, chips int, question bool, err error) string {
+	line := fmt.Sprintf("chatsuggest: block=%s via=%s %dms chips=%d question=%v", shortBlock(blockID), via, took.Milliseconds(), chips, question)
 	if err != nil {
 		line += " err=" + err.Error()
 	}

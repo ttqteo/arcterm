@@ -35,6 +35,12 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - A council's first round and its pause now use the whole width of the pane: the experts' cards and the ideas fill it
   instead of stopping at 900 px with an empty strip on the right, while an idea's argument keeps a readable line length.
 
+### Fixed
+
+- Chat no longer starts a background claude (~470 MB) to suggest replies to a line a Claude agent wrote mid-turn or
+  to a reply it has already moved past, and an agent's own suggestion that takes over 5 s gives up so Chat's own call
+  starts at once instead of 10 s later.
+
 ## 1.7.0 — 2026-11-19
 
 ### Added

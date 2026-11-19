@@ -317,6 +317,27 @@ export function chatChips(i: {
     return i.close == null ? out : [...out, i.close];
 }
 
+/** Pure: the waveapp.log line a chip the person takes leaves (`send` sends it or acts on it, `edit` puts its text in
+ *  the box first), so which chips get used can be counted by where they came from (the model, a rule, or the "ok" the
+ *  row adds itself when the model gave none), by place in the row, and by the kind of question the reply ended on.
+ *  The reply's end rides along to judge a choice question by hand: whether the agent leaned to one side. */
+export function chipPickLogLine(
+    block: string | undefined,
+    c: ChatChip,
+    row: readonly ChatChip[],
+    reply: string | null,
+    how: "send" | "edit"
+): string {
+    const at = row.findIndex((r) => r.text === c.text && r.kind === c.kind) + 1;
+    const question = reply != null && endsWithQuestion(reply);
+    const shape = !question ? "none" : yesNoQuestion(reply) ? "yesno" : "open";
+    const tail = (reply ?? "").replace(/\s+/g, " ").trim().slice(-120);
+    return (
+        `chatsuggest: block=${(block ?? "").slice(0, 8)} pick ${how} source=${c.source} kind=${c.kind} ` +
+        `at=${at}/${row.length} question=${shape} text=${JSON.stringify(c.text)} tail=${JSON.stringify(tail)}`
+    );
+}
+
 /** the gap between two chips in the row, px (gap-1.5) */
 export const CHIP_GAP = 6;
 /** the room the row keeps for the key a chip shows (Cmd+Enter's on the first, ↵ on the picked one), px */
