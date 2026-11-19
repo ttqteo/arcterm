@@ -6,10 +6,8 @@
 // (bindings.ts) read it on keypress. Only one surface is showing at a time (cockpitshell; the Agent
 // surface stays mounted while hidden, so a surface publishes only while it is the one on screen), so at
 // most one controller is active. The rich surfaces (cockpit/agent) own their own keys and MUST NOT
-// register a controller, with one exception: the Agent surface's Conversation History (ConversationHistory,
-// `surface: "agent"`), while the centre is on it and the Agent surface is showing. Every Agent key that
-// would share j/k with it stands down there (agentNav in bindings.ts), so the list's keys never meet the
-// agent's.
+// register a controller, with one exception: Library's Conversation History (ConversationHistory,
+// `surface: "library"`), while Library's Conversations tab shows its list.
 
 import { globalStore } from "@/app/store/jotaiStore";
 import type { SurfaceKey } from "@/app/view/agents/agents";

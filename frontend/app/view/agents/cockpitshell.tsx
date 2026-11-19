@@ -8,6 +8,7 @@ import { atoms } from "@/app/store/global-atoms";
 import { globalStore } from "@/app/store/jotaiStore";
 import { CodeSurface } from "@/app/view/code/codesurface";
 import { JarvisSurface } from "@/app/view/jarvis/jarvissurface";
+import { LibrarySurface } from "@/app/view/library/librarysurface";
 import { cn, fireAndForget } from "@/util/util";
 import { useAtomValue, type PrimitiveAtom } from "jotai";
 import { useEffect, useRef } from "react";
@@ -190,6 +191,8 @@ export function CockpitShell({ model, tabId }: { model: AgentsViewModel; tabId: 
                             <FilesSurface model={model} />
                         ) : surface === "usage" ? (
                             <UsageSurface model={model} />
+                        ) : surface === "library" ? (
+                            <LibrarySurface model={model} />
                         ) : surface === "code" ? (
                             <CodeSurface model={model} />
                         ) : surface === "setup" ? (

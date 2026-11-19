@@ -1,10 +1,10 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// Agent → Canvas gallery (agentcenter.ts' `canvases` mode): every registered project's design canvases as a grid of cards with
+// Library → Canvases tab (library/librarysurface.tsx): every registered project's design canvases as a grid of cards with
 // a cached preview, and a viewer that opens one canvas a board at a time. Thin: grouping, search and the card text come
 // from canvasgallery.ts, the place and the list from canvasgallerystore.ts, the board frame from canvaspane.tsx. The
-// keys are buildAgentBindings' (the arrows, Enter, `/`, `[` `]`, Space, Escape), so this file holds no key handler but
+// keys are bindings.ts' (the arrows, Enter, `/`, `[` `]`, Space, Escape), so this file holds no key handler but
 // the search box's own.
 
 import { Skeleton, SkeletonLine } from "@/app/element/skeleton";
@@ -596,7 +596,7 @@ function CanvasScan({ model }: { model: AgentsViewModel }) {
 }
 
 // Clean up (board Cleanup): the same cards with a tick box, the long-unchanged ones ticked, and a bar that acts on the
-// selection. The keys (arrows, Space, Escape) are buildAgentBindings'; the cards also toggle on a click
+// selection. The keys (arrows, Space, Escape) are bindings.ts'; the cards also toggle on a click
 function CanvasCleanup() {
     const g = useAtomValue(canvasGalleryAtom);
     const list = useAtomValue(canvasListAtom);

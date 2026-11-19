@@ -1,8 +1,8 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-// Conversation History: the old Sessions surface's master-detail, now the Agent surface's `history` centre mode
-// (agentcenter.ts). A recency-grouped list with a pinned "All activity" entry. An orchestrator run is one entry, with
+// Conversation History: the old Sessions surface's master-detail, now Library's Conversations tab, `list` view
+// (library/librarysurface.tsx). A recency-grouped list with a pinned "All activity" entry. An orchestrator run is one entry, with
 // a row under it only for the members that need you; its detail lists the lead and every task and reads the one in
 // view. Every other session is its own entry. Live agents are overlaid (matched by transcript path) so the primary
 // action is Jump (live) or Resume (ended). A search box under the title finds a conversation by what was said in it
@@ -16,10 +16,9 @@ import { useSurfaceListNav, type ListNavController } from "@/app/store/keybindin
 import { REGION_LABEL } from "@/app/view/jarvis/briefstyle";
 import { cn, fireAndForget } from "@/util/util";
 import { useAtom, useAtomValue } from "jotai";
-import { Activity, ArrowLeft, Check, Search, Workflow } from "lucide-react";
+import { Activity, Check, Search, Workflow } from "lucide-react";
 import { AnimatePresence, motion, MotionConfig } from "motion/react";
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
-import { showTerminal } from "./agentcenter";
 import type { AgentsViewModel } from "./agents";
 import { formatAge, formatAgeShort, formatTokens } from "./agentsviewmodel";
 import { nearListEnd } from "./listend";
@@ -122,7 +121,7 @@ export function ConversationHistory({ model }: { model: AgentsViewModel }) {
     const loadError = useAtomValue(sessionsErrorAtom);
     const cursor = useAtomValue(sessionsCursorAtom);
     const loadingMore = useAtomValue(sessionsLoadingMoreAtom);
-    const onSurface = useAtomValue(model.surfaceAtom) === "agent";
+    const onSurface = useAtomValue(model.surfaceAtom) === "library";
     const roster = useAtomValue(model.agentsAtom);
     const now = useAtomValue(model.nowAtom);
     const [sel, setSel] = useAtom(model.sessionsSelAtom);
@@ -141,7 +140,7 @@ export function ConversationHistory({ model }: { model: AgentsViewModel }) {
     // older pages load as the list scrolls to its end. The same check runs after each page lands and when the status
     // filter changes: a list that does not fill its container has no scrollbar and so no scroll event, and keeps
     // loading until it fills or the store's cursor is "" (the store sends one request at a time and none after that).
-    // A hidden History (the Agent surface stays mounted) measures 0 high, which would read as "at the end" and load
+    // A hidden History measures 0 high, which would read as "at the end" and load
     // every page: it checks only while it has a height, and again when its surface comes back. While the search box
     // holds a query it loads none: a short results list fills no scroll and would page through the whole archive, and
     // the cursor it leaves is where the paged list picks up again when the box is cleared
@@ -314,7 +313,7 @@ export function ConversationHistory({ model }: { model: AgentsViewModel }) {
           : sel;
     const listNav = useMemo<ListNavController>(
         () => ({
-            surface: "agent",
+            surface: "library",
             navigableIds: navIds,
             cursorId,
             setCursor: (id) => selectRef.current(id),
@@ -322,9 +321,8 @@ export function ConversationHistory({ model }: { model: AgentsViewModel }) {
         }),
         [navIds, cursorId]
     );
-    // The Agent surface stays mounted, hidden, with its centre mode kept, so History can be mounted while another
-    // surface is showing. Publish only while this surface is: a hidden History would otherwise take listNavAtom
-    // from the visible surface's own list (Usage, Diff, Brief), whose j/k then go dead.
+    // Publish only while Library is the surface on screen: a History mounted while another surface shows would otherwise
+    // take listNavAtom from that surface's own list (Usage, Diff, Brief), whose j/k then go dead.
     useSurfaceListNav(onSurface ? listNav : null);
 
     const runTitles = Object.fromEntries(runRows.map((r) => [r.run!.group.runId, r.run!.view.title]));
@@ -340,22 +338,13 @@ export function ConversationHistory({ model }: { model: AgentsViewModel }) {
                     />
                 ) : null}
 
-                {/* no page-wide header: the list column heads itself (back, title, live count, status filter) and the
-                    detail column keeps its own session or run header, the two starting on one line */}
+                {/* no page-wide header: the list column heads itself (title, live count, status filter) and the
+                    detail column keeps its own session or run header, the two starting on one line. Library's tab strip
+                    is above all of it, and there is nothing to close back to */}
                 <div className="flex min-h-0 flex-1">
                     <div className="flex w-[380px] flex-none flex-col border-r border-edge-faint">
                         <div className="flex flex-none flex-col gap-2.5 border-b border-edge-faint px-3 pb-3 pt-[18px]">
                             <div className="flex h-7 items-center gap-1.5">
-                                <button
-                                    type="button"
-                                    data-agent-history-close
-                                    onClick={showTerminal}
-                                    title="Back to terminal"
-                                    aria-label="Back to terminal"
-                                    className="-ml-1 flex h-7 w-7 flex-none cursor-pointer items-center justify-center rounded-[6px] text-muted hover:bg-surface-hover hover:text-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-                                >
-                                    <ArrowLeft size={14} aria-hidden />
-                                </button>
                                 <h1 className="min-w-0 flex-1 truncate text-[15px] font-semibold tracking-[-0.01em] text-primary">
                                     Conversation History
                                 </h1>
