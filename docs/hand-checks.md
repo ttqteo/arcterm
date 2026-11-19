@@ -16,6 +16,13 @@ list (its number is not reused).
 Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) ·
 [part 4](hand-checks-4.md) · [part 3](hand-checks-3.md) · [part 2](hand-checks-2.md) (oldest).
 
+- [ ] (arcterm) **Sidecar's End task, the frame's reason and the 340 × 640 small form.** Press S: the window shrinks to
+  340 × 640 and drags no smaller. Open Resources (the title bar's figures): the "Other apps" title is whole; hovering
+  chrome.exe (or any app you can lose) shows an × beside its name, svchost.exe and msedgewebview2.exe show none; × asks
+  "End N chrome.exe?", Escape or Cancel takes it back, End closes it and the row leaves within a second. With a failed
+  run (or RAM critical) the frame is red and a red line at the top of Resources names why; pressing it goes back to the
+  dashboard. The wall's Resources band has the same × on its other apps. Tried only by unit tests and the typecheck
+  (bbbfd4007, 2026-11-19);
 - [ ] (arcterm) **Live output in full view is in colour.** Run a coloured background task (`task tauri:build`, or
   `npx vite build`) from a Claude agent, open its peek → Open full view: the File tab shows vite's cyan/green and no
   `␛[36m` codes; with Live on it keeps to the end as lines arrive, scrolling up stops it, clicking Live jumps back;
