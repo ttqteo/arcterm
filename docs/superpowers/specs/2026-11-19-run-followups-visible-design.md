@@ -198,6 +198,15 @@ Each settles a point left above, or a gap the code showed.
 11. **Picture and size.** The CHANGELOG line is `<!-- big -->`: the CDP scenario takes the What's new picture
    (`h.whatsnewShot("run-review", …)`), and until that file is committed the line carries `<!-- shot: none -->`.
    No RAM to measure: no new long-lived process.
+12. **One place per proposal on the Brief** (fix round). An initiative row's "N proposed" count (the Ideas box and
+   every initiative line, `briefrows.ts initiativeLine`) leaves out the chunks To review lists
+   (`WorkState.runreview`, by initiative and label), so a run's proposal is decided in To review only. A proposal To
+   review does not list (no run, an unknown run) still counts there; a row whose proposals are all in To review shows
+   no count. The initiative sheet's own Proposed group is unchanged: opening the initiative still shows all of them.
+   Reason: Final's picture showed the same four proposals in the sheet and as "3 proposed" / "1 proposed" in Ideas.
+13. **The undo toast covers none of the sheet** (fix round). While the To review sheet is open, the Brief's toast is
+   centred in the part of the page left of the sheet, not under the sheet's footer. The What's new picture shows the
+   sheet's header (title and count line) whole.
 
 ## Verification
 
