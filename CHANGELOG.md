@@ -30,6 +30,11 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ## Unreleased
 
+### Added
+
+- An agent that started a council has a chat button after its panel's tabs, with a dot while the council works or
+  waits on you: click it, or press `c`, to open that council's Discussion.
+
 ### Changed
 
 - A council's first round and its pause now use the whole width of the pane: the experts' cards and the ideas fill it

@@ -16,6 +16,12 @@ list (its number is not reused).
 Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) ·
 [part 4](hand-checks-4.md) · [part 3](hand-checks-3.md) · [part 2](hand-checks-2.md) (oldest).
 
+- [ ] (arcterm) **The council chat button in the Agent panel** (`agentrailpanel.tsx` `RailCouncilButton`,
+  `railcouncilstore.ts`, binding `agent:council-chat`; canvas `rail-council-chat` board A). Have an agent run
+  `wsh council start …`: a chat icon with a `c` key chip fades in after the panel's tabs, with a green dot while the
+  council runs, amber when it waits on you, none once done; its tooltip names the feature and round. Click it, and with
+  focus off the terminal press `c`: both open that council's Discussion in the centre. An agent with no council shows no
+  button and `c` does nothing; an agent with a canvas keeps `c` for the canvas.
 - [ ] (arcterm) **A long path in a Chat reply wraps in full** (`markdownmessage.tsx` code → `PathLink wrap`,
   `tailwindsetup.css` `.agent-md code`). Ask an agent for a reply naming a long backticked Windows path mid-sentence:
   it continues on the same line as the words before it and wraps over several lines, with no "…", and the full stop

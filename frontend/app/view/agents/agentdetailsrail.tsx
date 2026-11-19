@@ -6,6 +6,7 @@ import { easeFluidCss, MOTION, popoverReveal } from "@/app/element/motiontokens"
 import { railSectionOpenAtom } from "@/app/element/railsections";
 import { SkeletonLine } from "@/app/element/skeleton";
 import { globalStore } from "@/app/store/jotaiStore";
+import { openCouncil } from "@/app/view/library/librarystore";
 import { formatChordString } from "@/util/keysym";
 import { joinRepoPath } from "@/util/paths";
 import { isWindows } from "@/util/platformutil";
@@ -42,7 +43,7 @@ import {
     shortIds,
     worktreeName,
 } from "./agentrailmodel";
-import { RailResizeGrip, RailStats, RailTabStrip, useWideWidth } from "./agentrailpanel";
+import { RailCouncilButton, RailResizeGrip, RailStats, RailTabStrip, useWideWidth } from "./agentrailpanel";
 import {
     bgSessionLive,
     bgTaskElapsed,
@@ -100,6 +101,7 @@ import {
     setRailCommitMode,
     setRailCommitsOpen,
 } from "./railcommitsstore";
+import { useAgentCouncil } from "./railcouncilstore";
 import { RAIL_ICON } from "./railicons";
 import { RAIL_ROW, RAIL_ROW_ACTION } from "./railrow";
 import { clearRailSectionRequest, railSectionRequestAtom } from "./railsection";
@@ -779,6 +781,8 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
     const openTab = activeFile(panel);
     const fileRef = openTab?.current ?? null;
     const railVisible = useAtomValue(railVisibleAtom);
+    // the council this agent started, which the button after the tabs opens; a subagent's interior shows its parent's
+    const council = useAgentCouncil(agent);
     const showRail = () => globalStore.set(railVisibleAtom, true);
     // a subagent's interior and an ended session have no project of their own to read: nothing polls for them
     const polls = sub == null && ended == null;
@@ -1460,6 +1464,13 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
             tabs={
                 <>
                     <RailTabStrip agentId={agent.id} panel={panel} hasTree={hasTree} hasTranscript={hasTranscript} />
+                    {council != null ? (
+                        <RailCouncilButton
+                            key={council.id}
+                            council={council}
+                            onOpen={() => openCouncil(model, council.id, "discussion")}
+                        />
+                    ) : null}
                     <RailStats
                         stats={planRailStats(railInput)}
                         canAttach={agent.blockId != null}
