@@ -1533,8 +1533,13 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
             keys: "Escape",
             group: "Agent",
             label: "Back, else to Cockpit (or exit fullscreen)",
+            // a Chat read with focus read takes the first Escape to turn it off (agent:focus-read-off)
             when: (ctx) =>
-                agentNavStrict(ctx) && globalStore.get(focusSubagentAtom) == null && noCanvas() && !chatWorking(),
+                agentNavStrict(ctx) &&
+                globalStore.get(focusSubagentAtom) == null &&
+                noCanvas() &&
+                !chatWorking() &&
+                focusReadAgent() == null,
             run: () => {
                 if (globalStore.get(terminalFullscreenAtom)) {
                     globalStore.set(terminalFullscreenAtom, false);
@@ -1552,7 +1557,11 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
             group: "Agent",
             label: "Stop the agent's turn (in Chat, while it works)",
             when: (ctx) =>
-                agentNavStrict(ctx) && globalStore.get(focusSubagentAtom) == null && noCanvas() && chatWorking(),
+                agentNavStrict(ctx) &&
+                globalStore.get(focusSubagentAtom) == null &&
+                noCanvas() &&
+                chatWorking() &&
+                focusReadAgent() == null,
             run: () => {
                 const agent = chatAgent();
                 return agent != null && interruptChat(agent.id) ? undefined : false;
@@ -2103,6 +2112,22 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
                 },
             })
         ),
+        {
+            // Escape leaves focus read, as it leaves the other reading modes; the focus stays in the conversation, so a
+            // second Escape goes back or stops a working turn as it would have (agent:back, agent:chat-interrupt)
+            id: "agent:focus-read-off",
+            keys: "Escape",
+            group: "Agent",
+            label: "Focus read: turn it off",
+            when: focusReadKeys,
+            run: () => {
+                const id = focusReadAgent();
+                if (id == null) {
+                    return false;
+                }
+                setFocusReadOn(id, false);
+            },
+        },
         {
             id: "agent:focus-read-quote",
             keys: "q",

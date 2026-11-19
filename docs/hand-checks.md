@@ -16,6 +16,12 @@ list (its number is not reused).
 Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) ·
 [part 4](hand-checks-4.md) · [part 3](hand-checks-3.md) · [part 2](hand-checks-2.md) (oldest).
 
+- [ ] (arcterm) **Focus read follows the new reply, its tick rides the lit block, Escape leaves it.** With focus read
+  on, send a prompt and stay at the bottom while the agent works: when the turn ends the reply's first block is lit on
+  the line. Step J to the very end: the accent tick sits beside the lit group, not left at a third of the view. Press
+  Escape in the conversation: focus read turns off (a second Escape goes back, or stops a working turn). Also type `>s`
+  in the box: the quote bar is a full line high, not a dot. `chatfocusread.ts` tickTop / latestReplyStart,
+  `chatfocusreadview.ts`, `bindings.ts` agent:focus-read-off, `chateditormarks.tsx` quote ends; no scenario run.
 - [ ] (arcterm) **A quote in Chat's box draws no `>`, and a line under it stays out.** Type `>xx`, Shift+Enter, `sss`:
   the box shows `xx` slanted beside the bar with no `>`, and `sss` plain; ← and Backspace across the hidden `> ` take one
   press per character (two presses to undo the quote) with the caret never lost. Send it: the bubble shows `xx` in the

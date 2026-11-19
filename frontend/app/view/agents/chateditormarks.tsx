@@ -147,8 +147,12 @@ function readMarks(state: EditorState, bash: boolean): Read {
         const fences = fenceRanges(texts)
             .map((r) => ends(nodes, r.open, r.close ?? texts.length - 1))
             .filter((e) => e != null);
+        // a quote's bar is measured from its text, not its `>`: drawn at no size, that node has no height to measure
+        const text = nodes.map((on, line) =>
+            on.filter(({ node, start }) => start + node.getTextContentSize() > marks[line].marker)
+        );
         const quotes = quoteBlocks(marks)
-            .map(([a, b]) => ends(nodes, a, b))
+            .map(([a, b]) => ends(text, a, b) ?? ends(nodes, a, b))
             .filter((e) => e != null);
         return { fixes, fences, quotes };
     });

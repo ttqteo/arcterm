@@ -858,7 +858,7 @@ function ChatPaneBody({ model, agent, barred }: { model: AgentsViewModel; agent:
     const focusRead = useAtomValue(chatFocusReadOnAtom(agent.id));
     const focusTickRef = useRef<HTMLDivElement>(null);
     const focusReadSize = useAtomValue(chatFocusReadSizeAtom);
-    useFocusRead(agent.id, scrollRef, focusTickRef, focusRead, agent.state === "working" && atBottom, focusReadSize);
+    useFocusRead(agent.id, scrollRef, focusTickRef, focusRead, agentWorking && atBottom, focusReadSize, agentWorking);
     // false while ChatLayer's exit plays: the pane is still drawn (fading) but already gone as far as input goes
     const present = useIsPresent();
     const streaming = surface === "agent";

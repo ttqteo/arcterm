@@ -79,7 +79,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 ### Changed
 
 - Focus read in Chat starts at three blocks lit at a time, and its size button now goes up to five (×4, ×5). J and K
-  slide the lit group one block at a time instead of jumping a whole group.
+  slide the lit group one block at a time instead of jumping a whole group, the accent tick stays beside the lit block
+  (at the end of a conversation too), Escape turns focus read off, and when a turn you were following ends, the new
+  reply is lit from its start.
 - An agent whose work is done shows one Close in its header: the × turns into the green ✓ Close with the session's tokens, instead of the two sitting side by side.
 - Chat's suggested replies answer a yes-or-no question at once with ok and không (yes and no in English), and the
   model's fuller answers join after them when they come. The row is no longer capped at three: it shows every

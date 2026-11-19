@@ -70,6 +70,24 @@ export function scrollTopFor(span: Span, line: number, max: number): number {
     return Math.min(Math.max(Math.round(target), 0), max);
 }
 
+/** Where the tick marks the lit block, in px from the scroller's top: beside the block itself, where the step puts it
+ *  on the line, so it rides the block wherever it sits (above the line at the start, below it at the end, wherever a
+ *  reply that grew left it), kept inside the view. On the line with nothing lit. `span` is the lit block in content px. */
+export function tickTop(line: number, span: Span | null, scrollTop: number, height: number): number {
+    if (span == null) {
+        return line;
+    }
+    const at = Math.round(span.top - scrollTop + Math.min((span.bottom - span.top) / 2, TOP_ABOVE));
+    return Math.min(Math.max(at, 0), height);
+}
+
+/** The block a reply that just ended starts at: the first after your last message, or none when nothing follows it
+ *  (a turn that ended with no text). With no message of yours, the first block. */
+export function latestReplyStart(kinds: readonly string[]): number {
+    const you = kinds.lastIndexOf("you");
+    return kinds.findIndex((k, i) => i > you && k !== "you");
+}
+
 /** How many blocks the line lights at a time: the one on it and the ones after it. The reader picks one of these. */
 export const FOCUS_READ_SIZES = [1, 2, 3, 4, 5] as const;
 export type FocusReadSize = (typeof FOCUS_READ_SIZES)[number];
