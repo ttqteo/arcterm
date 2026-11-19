@@ -131,6 +131,21 @@ describe("startLauncherRun", () => {
         });
         expect(createRun).toHaveBeenCalledWith("ch-1", "g", route, { mode: "quick", specPath: "C:/p/spec.md" });
     });
+
+    it("hands the ticked chunks to the run it creates, and none when there are none", async () => {
+        const chunks: RunEffortRef[] = [{ effortoid: "eff-1", chunklabel: "Fix the lag" }];
+        const base = {
+            target: { kind: "existing", oid: "ch-1" } as const,
+            projectName: "arcterm",
+            config: quick,
+            goal: "g",
+            pickedRoute: null,
+        };
+        await startLauncherRun({ ...base, chunks });
+        expect(createRun).toHaveBeenLastCalledWith("ch-1", "g", route, { mode: "quick", chunks });
+        await startLauncherRun({ ...base, chunks: [] });
+        expect(createRun).toHaveBeenLastCalledWith("ch-1", "g", route, { mode: "quick" });
+    });
 });
 
 describe("queueLauncherRun", () => {
@@ -158,6 +173,17 @@ describe("queueLauncherRun", () => {
         expect(noteRecentProject).toHaveBeenCalledWith("arcterm");
         expect(endRunConfigDraft).toHaveBeenCalledWith(profile);
         expect(out).toEqual({ channelId: "ch-1", entry });
+    });
+
+    it("builds the queued data with the ticked chunks, as a start does, and none when there are none", async () => {
+        const chunks: RunEffortRef[] = [
+            { effortoid: "eff-1", chunklabel: "Fix the lag" },
+            { effortoid: "eff-2", chunklabel: "Hand-check the sheet" },
+        ];
+        await queueLauncherRun({ ...input, chunks });
+        expect(buildCreateRunData).toHaveBeenLastCalledWith("ch-1", "fix it", route, { mode: "quick", chunks });
+        await queueLauncherRun({ ...input, chunks: [] });
+        expect(buildCreateRunData).toHaveBeenLastCalledWith("ch-1", "fix it", route, { mode: "quick" });
     });
 
     it("sends every run ticked in After to the queue, in order: the entry waits for all of them", async () => {

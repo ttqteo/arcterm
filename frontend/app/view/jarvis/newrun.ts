@@ -151,6 +151,7 @@ export function prefillToLaunch(
     prototype: string;
     specPath?: string;
     brainstorm?: RunQueueBrainstorm;
+    chunks?: RunEffortRef[];
 } {
     const { projectName, goal } = prefill;
     const prototype = prefill.prototype ?? "";
@@ -162,6 +163,7 @@ export function prefillToLaunch(
         prototype,
         specPath: prefill.specPath,
         brainstorm: prefill.brainstorm,
+        chunks: prefill.chunks,
     };
 }
 
