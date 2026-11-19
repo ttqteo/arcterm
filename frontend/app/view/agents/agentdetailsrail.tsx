@@ -120,6 +120,7 @@ import { agentProject, roleRunId } from "./runlineage";
 import { NeedsYouSection, RunSection, TaskSection, useRunAsks } from "./runrailsections";
 import { SubLabel } from "./sectionlabel";
 import type { SubagentState } from "./session-models/sessionviewmodel";
+import { RailCompactionLine } from "./railcompactionline";
 import { SessionSection } from "./sessionsection";
 import { spendHeadline } from "./sessionusage";
 import { StatusDot } from "./statusdot";
@@ -1182,6 +1183,7 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
         status: () => (
             <SessionSection
                 head={!sub && ctxPct != null ? <ContextLine pct={ctxPct} max={usage?.contextmax} /> : undefined}
+                compaction={sub ? undefined : <RailCompactionLine agentId={agent.id} now={now} />}
                 spend={spend}
                 state={
                     sub ? undefined : (

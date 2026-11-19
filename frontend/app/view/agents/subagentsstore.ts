@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // Disk-backed subagent lists per parent agent, plus the "which child interior is open" selection.
-// Also holds each parent's background shell tasks, read from the same transcript tail (no extra RPC).
+// Also holds each parent's background shell tasks and its compactions, read from the same transcript tail (no extra
+// RPC).
 // Mirrors cardgitstore.ts: refresh on enter, scheduleSubagents (debounced) on parent-transcript
 // activity, drop on leave. The source of truth is the on-disk subagents/ dir (GetSubagentsCommand);
 // the parent transcript tail supplies the Task spawns that correlate type + outcome onto each file.
@@ -14,6 +15,7 @@ import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { atom, type PrimitiveAtom } from "jotai";
 import { bgTaskStopNote } from "./agentrailsections";
 import { outputTail } from "./monitortasks";
+import { extractCompactions, type RailCompaction } from "./railcompaction";
 import type { SubagentVM } from "./session-models/sessionviewmodel";
 import { correlateSubagents } from "./subagentcorrelate";
 import { extractBackgroundTasks, extractSubagentSpawns, type BackgroundTask } from "./transcriptprojection";
@@ -30,6 +32,10 @@ export const subagentsByIdAtom = atom<Record<string, SubagentVM[]>>({}) as Primi
 // per parent-agent-id -> its background shell tasks, from the same transcript tail as the subagent spawns
 export const backgroundTasksByIdAtom = atom<Record<string, BackgroundTask[]>>({}) as PrimitiveAtom<
     Record<string, BackgroundTask[]>
+>;
+// per parent-agent-id -> the compactions in that same tail, oldest first (the rail's Compacted line)
+export const compactionsByIdAtom = atom<Record<string, RailCompaction[]>>({}) as PrimitiveAtom<
+    Record<string, RailCompaction[]>
 >;
 
 /** The background task whose peek (Events and Output) is open: its agent, its task id, and who draws it. "tree" is
@@ -114,6 +120,7 @@ export async function refreshSubagents(id: string, transcriptPath: string | unde
     if (!transcriptPath) {
         setIn(subagentsByIdAtom, id, null);
         setIn(backgroundTasksByIdAtom, id, null);
+        setIn(compactionsByIdAtom, id, null);
         return;
     }
     try {
@@ -126,6 +133,7 @@ export async function refreshSubagents(id: string, transcriptPath: string | unde
         }
         // now on every read, so a Monitor past its timeout reads stopped at the next poll
         setIn(backgroundTasksByIdAtom, id, extractBackgroundTasks(tr.lines ?? [], { now: Date.now() }));
+        setIn(compactionsByIdAtom, id, extractCompactions(tr.lines ?? []));
         const files = subs.subagents ?? [];
         if (files.length === 0) {
             setIn(subagentsByIdAtom, id, null);
@@ -136,6 +144,7 @@ export async function refreshSubagents(id: string, transcriptPath: string | unde
         if (loadSeq.get(id) === seq) {
             setIn(subagentsByIdAtom, id, null);
             setIn(backgroundTasksByIdAtom, id, null);
+            setIn(compactionsByIdAtom, id, null);
         }
     }
 }
@@ -166,6 +175,7 @@ export function dropSubagents(id: string): void {
     loadSeq.set(id, (loadSeq.get(id) ?? 0) + 1);
     setIn(subagentsByIdAtom, id, null);
     setIn(backgroundTasksByIdAtom, id, null);
+    setIn(compactionsByIdAtom, id, null);
     const fs = globalStore.get(focusSubagentAtom);
     if (fs && fs.parentId === id) {
         globalStore.set(focusSubagentAtom, null);

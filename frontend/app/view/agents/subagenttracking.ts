@@ -1,9 +1,10 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// Load each agent's disk-backed subagents into subagentsByIdAtom (and its background tasks into
-// backgroundTasksByIdAtom): refresh on enter and when its transcript path changes, debounce on parent transcript
-// activity or a parent state change, poll while a child or a background task still reads as working, drop on leave.
+// Load each agent's disk-backed subagents into subagentsByIdAtom (and its background tasks and compactions into
+// backgroundTasksByIdAtom and compactionsByIdAtom): refresh on enter and when its transcript path changes, debounce on
+// parent transcript activity or a parent state change, poll while a child or a background task still reads as
+// working, drop on leave.
 // The shell (cockpitshell AgentStreams) is its one caller, over the roster on every surface. Safe to mount in more
 // than one place at once: refreshSubagents is seq-guarded and dropSubagents only clears ids this caller tracked.
 
