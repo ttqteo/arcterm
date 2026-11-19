@@ -1,4 +1,7 @@
 import react from "@vitejs/plugin-react-swc";
+import { realpathSync } from "fs";
+import { resolve } from "path";
+import { searchForWorkspaceRoot } from "vite";
 import svgr from "vite-plugin-svgr";
 import tsconfigPaths from "vite-tsconfig-paths";
 import { configDefaults, defineConfig } from "vitest/config";
@@ -22,6 +25,12 @@ export default defineConfig({
         }),
         react({}),
     ],
+    // a worktree's node_modules is a junction to the main checkout's, which vite resolves to its real path, outside
+    // the worktree: without this, fileicon.tsx's `?url` glob over material-icon-theme is refused ("Denied ID") and
+    // every suite that imports it fails before a test runs (as frontend/tauri/vite.config.ts allows for the dev app)
+    server: {
+        fs: { allow: [searchForWorkspaceRoot(process.cwd()), realpathSync(resolve(__dirname, "node_modules"))] },
+    },
     css: {
         preprocessorOptions: {
             scss: {
