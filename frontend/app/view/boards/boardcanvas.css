@@ -1,0 +1,61 @@
+/* Copyright 2026, Command Line Inc. */
+/* SPDX-License-Identifier: Apache-2.0 */
+
+/* Excalidraw's controls on arcterm's @theme tokens, so a runtime theme re-skins the board too. Scoped to the board's
+   wrapper and the dark theme, the only one the board uses. Excalidraw defines its own --color-primary,
+   --color-muted and --color-surface-*, so they are overridden here from tokens it does not redefine. */
+.arc-board .excalidraw.theme--dark {
+    --ui-font: var(--font-sans);
+    --default-bg-color: var(--color-background);
+    --island-bg-color: var(--color-surface-raised);
+    --popup-secondary-bg-color: var(--color-surface-raised);
+    --input-bg-color: var(--color-surface);
+    --input-border-color: var(--color-edge-mid);
+    --input-hover-bg-color: var(--color-surface-hover);
+    --input-label-color: var(--color-foreground);
+    --dialog-border-color: var(--color-edge-mid);
+    --default-border-color: var(--color-edge-mid);
+    --popup-text-color: var(--color-foreground);
+    --keybinding-color: var(--color-ink-mid);
+    --button-gray-1: var(--color-surface-hover);
+    --button-gray-2: var(--color-surface-raised);
+    --button-gray-3: var(--color-surface);
+    --button-hover-bg: var(--color-surface-hover);
+    --button-active-bg: var(--color-surface-selected);
+    --focus-highlight-color: var(--color-accent);
+    --select-highlight-color: var(--color-accent);
+    --link-color: var(--color-accent);
+    --color-selection: var(--color-accent);
+    --color-primary: var(--color-accent);
+    --color-primary-darker: var(--color-accenthover);
+    --color-primary-darkest: var(--color-accent-soft);
+    --color-primary-hover: var(--color-accenthover);
+    --color-primary-light: var(--color-accentbg);
+    --color-primary-light-darker: var(--color-accentbg);
+    --color-brand-hover: var(--color-accenthover);
+    --color-brand-active: var(--color-accent-soft);
+    --color-on-primary-container: var(--color-accent-soft);
+    --color-surface-primary-container: var(--color-accentbg);
+    --color-surface-lowest: var(--color-background);
+    --color-surface-low: var(--color-surface-raised);
+    --color-surface-mid: var(--color-surface);
+    --color-surface-high: var(--color-surface-hover);
+    --color-on-surface: var(--color-foreground);
+    --color-border-outline: var(--color-edge-strong);
+    --color-border-outline-variant: var(--color-edge-mid);
+    --color-icon-white: var(--color-foreground);
+    --icon-fill-color: var(--color-foreground);
+    --text-primary-color: var(--color-foreground);
+    --scrollbar-thumb: var(--color-edge-strong);
+    --scrollbar-thumb-hover: var(--color-edge-mid);
+    --shadow-island: var(--shadow-popover-line);
+    background: var(--color-background);
+}
+
+/* the board keeps itself: no export, open or save menu, no library, no help overlay */
+.arc-board .excalidraw .main-menu-trigger,
+.arc-board .excalidraw .sidebar-trigger,
+.arc-board .excalidraw .default-sidebar-trigger,
+.arc-board .excalidraw .help-icon {
+    display: none;
+}

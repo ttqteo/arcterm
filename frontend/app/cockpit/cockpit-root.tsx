@@ -25,6 +25,7 @@ import { setCodeRunModel } from "@/app/view/agents/coderunstore";
 import { BackgroundAgentsPoller } from "@/app/view/agents/backgroundagentspoller";
 import { AttentionPoller } from "@/app/view/agents/attentionpoller";
 import { BrainstormPoller } from "@/app/view/agents/brainstormpoller";
+import { BoardsFeed } from "@/app/view/boards/boardsfeed";
 import { LauncherModal } from "@/app/view/agents/launchermodal";
 import { setupMouseHistoryButtons, setupPageChordKeys, setupPageReloadKey } from "@/app/view/agents/appstore";
 import { floatMiniAtom, floatModeAtom, setupFloatMode } from "@/app/view/agents/floatstore";
@@ -214,6 +215,7 @@ function CockpitBody({ waveEnv }: { waveEnv: WaveEnv }) {
             <RemoteStatusPoller />
             <AttentionPoller model={model} />
             <BrainstormPoller model={model} />
+            <BoardsFeed model={model} />
             <PulseDriver />
             {/* the Christmas snow: a fixed canvas over the window, nothing unless the Christmas decor is on */}
             <SnowLayer />
