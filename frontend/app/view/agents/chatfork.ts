@@ -34,12 +34,13 @@ function folderName(p: string): string {
     return p.split(/[\\/]/).filter(Boolean).pop() ?? "";
 }
 
-/** The launch that starts a fork: a new tab of its own (no resumeOf), named as a fork of the agent's task. */
+/** The launch that starts a fork: a new tab of its own (no resumeOf), named as a fork of the agent. A live agent's task
+ *  is empty (liveToVM), so its name, the title its row shows, names it then; a fork of a fork is not "(fork) (fork)". */
 export function chatForkLaunchOpts(
-    agent: Pick<AgentVM, "task" | "project">,
+    agent: Pick<AgentVM, "task" | "project"> & Partial<Pick<AgentVM, "name">>,
     rtn: { command: string; projectpath: string }
 ): LaunchAgentOpts {
-    const title = agent.task?.trim();
+    const title = (agent.task?.trim() || agent.name?.trim() || "").replace(/\s*\(fork\)$/i, "");
     return {
         runtime: "claude",
         startupCommand: rtn.command,

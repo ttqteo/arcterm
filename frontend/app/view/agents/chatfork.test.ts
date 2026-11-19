@@ -57,6 +57,17 @@ describe("chatForkLaunchOpts", () => {
             label: "Fork",
         });
     });
+    it("names a live agent's fork after the title its row shows, its task being empty", () => {
+        expect(
+            chatForkLaunchOpts({ task: "", name: "Tạo initiatives sau khi run" }, { command: "c", projectpath: "D:/a" })
+                .label
+        ).toBe("Tạo initiatives sau khi run (fork)");
+    });
+    it("names a fork of a fork once", () => {
+        expect(
+            chatForkLaunchOpts({ task: "", name: "Fix sync (fork)" }, { command: "c", projectpath: "D:/a" }).label
+        ).toBe("Fix sync (fork)");
+    });
 });
 
 describe("runChatFork", () => {
