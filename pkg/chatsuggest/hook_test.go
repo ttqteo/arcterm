@@ -176,30 +176,52 @@ func TestHooksAwaitWhySaysWhyItTookNoAnswer(t *testing.T) {
 			t.Fatalf("why = %q, want it to say %q", why, part)
 		}
 	}
+	wantHeadless := func(t *testing.T, headless, want bool) {
+		t.Helper()
+		if headless != want {
+			t.Fatalf("headless = %v, want %v", headless, want)
+		}
+	}
 	t.Run("no begin", func(t *testing.T) {
-		_, ok, why := fastHooks().AwaitWhy(ctx, "b1", askReply, true, true)
+		_, ok, why, headless := fastHooks().AwaitWhy(ctx, "b1", askReply, true, true)
 		if ok {
 			t.Fatal("took an answer")
 		}
 		wantWhy(t, why, "no begin within")
+		wantHeadless(t, headless, true)
 	})
 	t.Run("not a Claude agent", func(t *testing.T) {
-		_, _, why := fastHooks().AwaitWhy(ctx, "b1", askReply, true, false)
+		_, _, why, headless := fastHooks().AwaitWhy(ctx, "b1", askReply, true, false)
 		wantWhy(t, why, "not a Claude agent")
+		wantHeadless(t, headless, true)
 	})
-	t.Run("another reply begun: both ends shown", func(t *testing.T) {
+	t.Run("another reply begun: both ends shown, no headless call", func(t *testing.T) {
 		h := fastHooks()
 		h.Begin("b1", Request{Reply: "Done, the rail shows it."})
-		_, _, why := h.AwaitWhy(ctx, "b1", "Done, the rail shows it now.", false, true)
+		_, _, why, headless := h.AwaitWhy(ctx, "b1", "Done, the rail shows it now.", false, true)
 		wantWhy(t, why, "another reply's")
 		wantWhy(t, why, `"Done, the rail shows it."`)
 		wantWhy(t, why, `"Done, the rail shows it now."`)
+		wantHeadless(t, headless, false)
+	})
+	t.Run("a stale ask: the mod begins a newer reply while it waits", func(t *testing.T) {
+		h := fastHooks()
+		go func() {
+			time.Sleep(20 * time.Millisecond)
+			h.Begin("b1", Request{Reply: askReply})
+		}()
+		_, ok, _, headless := h.AwaitWhy(ctx, "b1", "Building it now, then I'll merge.", false, true)
+		if ok {
+			t.Fatal("a stale ask took the newer reply's answer")
+		}
+		wantHeadless(t, headless, false)
 	})
 	t.Run("question differs", func(t *testing.T) {
 		h := fastHooks()
 		h.Begin("b1", Request{Reply: askReply})
-		_, _, why := h.AwaitWhy(ctx, "b1", askReply, false, true)
+		_, _, why, headless := h.AwaitWhy(ctx, "b1", askReply, false, true)
 		wantWhy(t, why, "question differs")
+		wantHeadless(t, headless, true)
 	})
 	t.Run("the mod got no answer", func(t *testing.T) {
 		h := fastHooks()
@@ -207,22 +229,24 @@ func TestHooksAwaitWhySaysWhyItTookNoAnswer(t *testing.T) {
 		if got := h.End("b1", call.Key, "", true); got != "taken: the mod got no answer" {
 			t.Fatalf("End = %q", got)
 		}
-		_, _, why := h.AwaitWhy(ctx, "b1", askReply, true, true)
+		_, _, why, headless := h.AwaitWhy(ctx, "b1", askReply, true, true)
 		wantWhy(t, why, "the mod got no answer")
+		wantHeadless(t, headless, true)
 	})
 	t.Run("no end in time", func(t *testing.T) {
 		h := fastHooks()
 		h.Begin("b1", Request{Reply: askReply})
-		_, _, why := h.AwaitWhy(ctx, "b1", askReply, true, true)
+		_, _, why, headless := h.AwaitWhy(ctx, "b1", askReply, true, true)
 		wantWhy(t, why, "did not end its turn within")
+		wantHeadless(t, headless, true)
 	})
 	t.Run("taken", func(t *testing.T) {
 		h := fastHooks()
 		call := h.Begin("b1", Request{Reply: askReply})
 		wantWhy(t, h.End("b1", call.Key, "làm A đi", false), "taken: 1 chips")
-		out, ok, why := h.AwaitWhy(ctx, "b1", askReply, true, true)
-		if !ok || why != "" || len(out) != 1 {
-			t.Fatalf("AwaitWhy = %v %v %q", out, ok, why)
+		out, ok, why, headless := h.AwaitWhy(ctx, "b1", askReply, true, true)
+		if !ok || why != "" || headless || len(out) != 1 {
+			t.Fatalf("AwaitWhy = %v %v %q %v", out, ok, why, headless)
 		}
 		wantWhy(t, h.End("b1", call.Key, "làm B đi", false), "already ended")
 		wantWhy(t, h.End("b2", call.Key, "làm B đi", false), "no turn begun")

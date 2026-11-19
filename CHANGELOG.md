@@ -44,6 +44,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 - A task worker or judge reopened after its tab was closed stays out of Claude Desktop's CLI import, as it did when it
   first started.
+- Chat no longer starts a background claude (~470 MB) to suggest replies to a line a Claude agent wrote mid-turn or
+  to a reply it has already moved past, and an agent's own suggestion that takes over 5 s gives up so Chat's own call
+  starts at once instead of 10 s later.
 
 ## 1.7.0 — 2026-11-19
 
