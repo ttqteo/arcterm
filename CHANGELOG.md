@@ -79,6 +79,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- When the agent rewrites a brainstorm decision you confirmed, a sentence it changed in a few words now reads as one
+  line, the old words struck right before the new ones, instead of the old lines all first and the new ones after.
 - Focus read in Chat starts at three blocks lit at a time, and its size button now goes up to five (×4, ×5). J and K
   slide the lit group one block at a time instead of jumping a whole group, the accent tick stays beside the lit block
   (at the end of a conversation too), Escape turns focus read off, and when a turn you were following ends, the new

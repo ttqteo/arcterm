@@ -16,6 +16,12 @@ list (its number is not reused).
 Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) ·
 [part 4](hand-checks-4.md) · [part 3](hand-checks-3.md) · [part 2](hand-checks-2.md) (oldest).
 
+- [ ] (arcterm) **A sentence changed in a few words reads as one line, old words struck before the new ones**
+  (`brainstormmodel.ts` `changedSentences`, `brainstormui.tsx` `SentenceDiffLines`). In a brainstorm where the agent
+  rewrites a confirmed decision, Chat's Confirm card (and the Brainstorm tab's review): a sentence that shares at least
+  half its words with its old version is one `~` line, the dropped words struck in red right before the new ones in
+  green, with spaces between them; a sentence with no close partner keeps its own − or + line. The
+  `chat-brainstorm-review` scenario checks the lines' text, not how they look (feat(brainstorm): one-line word diff).
 - [ ] (arcterm) **Sidecar's Resources rows name agents by their task, and the arcterm mark reads evenly.** Open
   Sidecar → Resources with several agents in one project: each agent row shows its title (as in the Agent tree), not
   "arcterm"; a tab with no title yet still shows the tab's name. The Sidecar / arcterm rows' "t>" mark has strokes of

@@ -10,7 +10,8 @@
 //               [data-chat-bscard-decision="<part>"][data-view="guess|changed"], [data-chat-bscard-new],
 //               [data-chat-bscard-right|edit|keep|restore], [data-chat-bscard-editor]; a changed row also draws what
 //               changed as the Brainstorm tab's review does: [data-diff-line="removed|added"] (one per sentence that left
-//               or came in), [data-chat-bscard-why] and, when its part came from an answered question, [data-brainstorm-said]
+//               or came in whole) or [data-diff-line="edited"][data-was][data-now] (a sentence edited in a few words,
+//               its [data-diff-op="delete|insert"] words marked in one line), [data-chat-bscard-why] and, when its part came from an answered question, [data-brainstorm-said]
 //   check      [data-chat-bscard-stage="reading|taking-in|failed|asking|review"], [data-chat-bscard-clock],
 //               [data-chat-bscard-check-reason], [data-chat-bscard-retry], [data-chat-bscard-builder="<n>"],
 //               [data-chat-bscard-option], [data-chat-bscard-decide], [data-chat-bscard-own], [data-chat-bscard-approve],
@@ -548,12 +549,18 @@ export default function (kit) {
                 h.ev(`(() => {
                     ${HELP}
                     const row = ${cardOf(A, kind)}?.querySelector('[data-chat-bscard-decision="${id}"]');
-                    const lines = (k) => [...(row?.querySelectorAll('[data-diff-line="' + k + '"]') ?? [])].map((e) => flat(e).replace(/^[+\\u2212]\\s*/, ""));
+                    // an edited line stands for both: its old sentence among the removed, its new one among the added
+                    const lines = (k) => [...(row?.querySelectorAll("[data-diff-line]") ?? [])].flatMap((e) => {
+                        const kind = e.getAttribute("data-diff-line");
+                        if (kind === "edited") return [e.getAttribute(k === "removed" ? "data-was" : "data-now")];
+                        return kind === k ? [flat(e).replace(/^[+\\u2212]\\s*/, "")] : [];
+                    });
                     return {
                         row: !!row,
                         view: row?.getAttribute("data-view") ?? null,
                         removed: lines("removed"),
                         added: lines("added"),
+                        edited: row?.querySelectorAll('[data-diff-line="edited"]').length ?? 0,
                         why: flat(row?.querySelector("[data-chat-bscard-why]")),
                         said: flat(row?.querySelector("[data-brainstorm-said]")),
                         saidCount: row?.querySelectorAll("[data-brainstorm-said]").length ?? 0,
@@ -662,12 +669,14 @@ export default function (kit) {
                 await polishNap(300);
                 await shot("2a-confirm-diff");
                 rec(
-                    `${name}: the changed limits and timeout rows draw [data-diff-line="removed"] with the old sentence, [data-diff-line="added"] with the new body's sentences, [data-chat-bscard-why] with the cause and no Was: text; limits, which came from answer 2, also draws [data-brainstorm-said]; timeout and a guess row draw none, and the guess draws no diff or why`,
+                    `${name}: the changed limits and timeout rows draw the old sentence and the new body's sentences ([data-diff-line="removed|added"], and timeout's "Thirty → Ten seconds per attempt." as one [data-diff-line="edited"] line, limits' "Three attempts." → "Five attempts, then give up." as separate lines), [data-chat-bscard-why] with the cause and no Was: text; limits, which came from answer 2, also draws [data-brainstorm-said]; timeout and a guess row draw none, and the guess draws no diff or why`,
                     up &&
                         drewChange(limits, "limits") &&
+                        limits.edited === 0 &&
                         limits.saidCount === 1 &&
                         limits.said === `answer 2: “${ANSWER_LIMITS}”` &&
                         drewChange(timeout, "timeout") &&
+                        timeout.edited === 1 &&
                         timeout.saidCount === 0 &&
                         guess.view === "guess" &&
                         guess.removed.length === 0 &&
@@ -1061,8 +1070,8 @@ export default function (kit) {
                 const retention = await readChange("check", "retention");
                 await shot("12a-review-diff");
                 rec(
-                    `${name}: the check's review draws the changed retention row with [data-diff-line="removed"] for the old sentence, [data-diff-line="added"] for the new body's sentences, [data-chat-bscard-why] with the cause, no Was: text and [data-brainstorm-said] for answer 3`,
-                    review && drewChange(retention, "retention") && retention.saidCount === 1 && retention.said === `answer 3: “${ANSWER_RETENTION}”`,
+                    `${name}: the check's review draws the changed retention row with "three → seven days" as one [data-diff-line="edited"] line and [data-diff-line="added"] for the body's other sentence, [data-chat-bscard-why] with the cause, no Was: text and [data-brainstorm-said] for answer 3`,
+                    review && drewChange(retention, "retention") && retention.edited === 1 && retention.saidCount === 1 && retention.said === `answer 3: “${ANSWER_RETENTION}”`,
                     { review, retention }
                 );
             });

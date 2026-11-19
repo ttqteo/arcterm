@@ -889,10 +889,8 @@ describe("brainstormCard: Confirm the design", () => {
             said: { n: 3, text: "Thirty seconds" },
             // the sentence both sides share is left out
             diff: [
-                { kind: "removed", text: "Time out after 10 s." },
-                { kind: "added", text: "Time out after 30 s." },
-                { kind: "removed", text: "Log nothing." },
-                { kind: "added", text: "Log failures." },
+                { kind: "edited", was: "Time out after 10 s.", text: "Time out after 30 s.", words: expect.any(Array) },
+                { kind: "edited", was: "Log nothing.", text: "Log failures.", words: expect.any(Array) },
             ],
             why: "You said ten seconds is too short",
             isNew: false,
@@ -901,7 +899,7 @@ describe("brainstormCard: Confirm the design", () => {
         const lone = review({ parts: [SCOPE, MOTION, limits] });
         const bare = pick(brainstormCard(inp({ file: lone })), "confirm").rows.find((r) => r.id === "limits");
         expect(bare).not.toHaveProperty("said");
-        expect(bare?.diff).toHaveLength(4);
+        expect(bare?.diff).toHaveLength(2);
     });
 
     it("gives a guess row the part's body and no diff, whatever its from says", () => {
@@ -1107,8 +1105,7 @@ describe("brainstormCard: the builder check", () => {
             body: "Time out after 30 s. Retry twice.",
             said: { n: 2, text: "Thirty seconds" },
             diff: [
-                { kind: "removed", text: "Time out after 10 s." },
-                { kind: "added", text: "Time out after 30 s." },
+                { kind: "edited", was: "Time out after 10 s.", text: "Time out after 30 s.", words: expect.any(Array) },
             ],
             isNew: false,
         });
