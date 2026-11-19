@@ -16,6 +16,11 @@ list (its number is not reused).
 Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) ·
 [part 4](hand-checks-4.md) · [part 3](hand-checks-3.md) · [part 2](hand-checks-2.md) (oldest).
 
+- [ ] (arcterm) **Sidecar's Resources fills in after a restart.** Open Sidecar with its Resources showing (the wall's
+  band, or the small form's panel), quit arcterm and start it again so Sidecar comes back on its own: within a few
+  seconds the arcterm rows and the three charts fill in, not "Measuring…" for good. Same after a dev full reload of the
+  main window. `sidecar.tsx` (`useResourcesPanel`, `resourcesLost`); the race was read from the log, not reproduced.
+  Branch fix/sidecar-measuring.
 - [ ] (arcterm) **The × cancels a queued Chat message.** While an agent works, send it two messages from Chat: under
   them reads "2 queued · Send now Ctrl+Enter ×". Click ×: both bubbles go, Claude Code's own queue under its prompt is
   empty, the turn keeps running and never reads them; ↑ in the empty box brings the last one back. Commit:
