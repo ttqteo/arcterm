@@ -44,6 +44,10 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - The council benchmark judges a Review report on its whole list, not its first 5 items, and `wsh council bench results`
   shows recall@5 beside recall@all. `wsh council bench rejudge` scores the reports already saved the same way, one opus
   call each, without running a council again.
+- A council's saved report now opens with a chart of its directions by checked evidence and the panel's backing, and
+  ends with charts of where the tokens went, how each seat looked things up (and how often it read a file another seat
+  had already read) and when each seat worked. `wsh council bench results --chart` draws each variant's key lines found
+  against its tokens per run.
 
 ### Fixed
 

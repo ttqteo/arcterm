@@ -1442,6 +1442,10 @@ var councilBenchResultsCmd = &cobra.Command{
 		if isJSON(cmd) {
 			return jsonOut(res)
 		}
+		if chart, _ := cmd.Flags().GetBool("chart"); chart {
+			fmt.Print(bench.ChartMarkdown(res.Runs))
+			return nil
+		}
 		fmt.Print(councilBenchTable(res))
 		return nil
 	},
@@ -1553,6 +1557,7 @@ func init() {
 	councilBenchCmd.Flags().StringArray("variant", nil, "run only this variant: council, team, solo or brainstorm (repeatable; default council, team and brainstorm; brainstorm runs only on Brainstorm cases)")
 	councilBenchCmd.Flags().Int("runs", 2, "runs of each case × variant (the team verdict needs 2 scored runs of each)")
 	councilBenchResultsCmd.Flags().Bool("json", false, "JSON output")
+	councilBenchResultsCmd.Flags().Bool("chart", false, "print the results as Mermaid charts (markdown): key lines found against tokens per run, one chart per mode")
 	councilPinCmd.Flags().Bool("off", false, "unpin the council")
 	councilRetryCmd.Flags().String("expert", "", "the seat to retry, by id or name (default: the failed summary, else the one failed seat)")
 	councilRetryCmd.Flags().StringArray("model", nil, "run this retry once on another model (opus, sonnet, fable, haiku, claude-opus-4-8); the seat keeps its own. With --all, <model> for every seat or <seat>=<model> (repeatable)")
