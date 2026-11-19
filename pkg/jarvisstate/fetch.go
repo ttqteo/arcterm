@@ -196,6 +196,11 @@ func FetchWorkState(ctx context.Context, projectFilter string, sinceMs int64) (w
 		st.Projects = append(st.Projects, *byProject[key])
 	}
 	st.Efforts = Efforts(efforts)
+	// To review matches a chunk to a run: with either leg degraded a proposal would be left out for want of its run
+	// (or a run for want of its chunks), which reads as "nothing to review". Show none rather than a partial list.
+	if runsHealthy && effortsHealthy {
+		st.RunReview = RunReview(efforts, runs)
+	}
 	return st, nil
 }
 
