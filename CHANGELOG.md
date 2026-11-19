@@ -75,6 +75,8 @@ and a picture given to a line that is not big.
   paused while the machine still runs smoothly.
 - The tabs at the top of the Agent panel (Overview, Files, Changes, Transcript and the open files) are pills: the one
   on show is filled, the others light up when you hover them, in place of an underline.
+- A file you @-mention in Chat shows its file type's icon (HTML, TypeScript, Markdown…) in the message box and in the
+  sent message, the same icons as the Code tree, instead of one plain page glyph for every file.
 
 ### Fixed
 
