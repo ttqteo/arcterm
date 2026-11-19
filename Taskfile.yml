@@ -107,10 +107,18 @@ tasks:
             - task: install:macos
 
     install:windows:
-        desc: "The NSIS installer with no pages: /P passive, /UPDATE installs over instead of uninstalling first, /R reopens arcterm."
+        desc: "The NSIS installer with no pages: /P passive, /UPDATE installs over instead of uninstalling first, /R reopens arcterm. From a terminal inside arcterm it starts through `wsh detach`, out of arcterm's job: started as the terminal's child, the job's kill-on-close took the installer down with the arcterm it closes, before it copied a file or reopened anything."
         internal: true
         platforms: [windows]
-        cmd: '"src-tauri/target/release/bundle/nsis/arcterm_{{.VERSION}}_x64-setup.exe" /P /UPDATE /R'
+        cmd: |
+            installer="{{.ROOT_DIR}}/src-tauri/target/release/bundle/nsis/arcterm_{{.VERSION}}_x64-setup.exe"
+            wsh="$USERPROFILE/.arc/bin/wsh.exe"
+            if [ -n "$WAVETERM_BLOCKID" ] && [ -f "$wsh" ]; then
+                "$wsh" detach -- "$installer" /P /UPDATE /R
+                echo "the installer runs on its own: arcterm closes, updates and reopens"
+            else
+                "$installer" /P /UPDATE /R
+            fi
 
     install:macos:
         desc: "Quits arcterm, puts the built arcterm.app in /Applications and reopens it, from a detached process so it survives a terminal inside arcterm. `node scripts/install-mac.mjs --dry-run` says what it would do."
