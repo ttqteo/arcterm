@@ -16,6 +16,11 @@ list (its number is not reused).
 Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) ·
 [part 4](hand-checks-4.md) · [part 3](hand-checks-3.md) · [part 2](hand-checks-2.md) (oldest).
 
+- [ ] (arcterm) **Sidecar's Resources rows name agents by their task, and the arcterm mark reads evenly.** Open
+  Sidecar → Resources with several agents in one project: each agent row shows its title (as in the Agent tree), not
+  "arcterm"; a tab with no title yet still shows the tab's name. The Sidecar / arcterm rows' "t>" mark has strokes of
+  one weight. `wshserver_resmon.go` resolveResMonOwner (unit-tested), `arctermmark.tsx` smoothing below 25x19; not run
+  in the app.
 - [ ] (arcterm) **Run on a reply's command runs it in the agent.** In Chat, click ▷ on a `! git status` row of a reply:
   the agent's box sends `! git status` (Claude Code's bash mode) and its output shows in the conversation, no new
   terminal opens. With a draft in the box, ▷ toasts "The message box has a draft" and the draft stays. To a sleeping

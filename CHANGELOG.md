@@ -153,6 +153,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- Sidecar's Resources view names each agent by its task, as the cockpit does, instead of a row of "arcterm" (the
+  project's name), and its arcterm mark no longer draws a bold "t" beside a thin, jagged chevron.
 - A question an agent asks stays in Chat with its choices while its background subagents keep working, instead of
   turning into an "Answer in Terminal" card a few seconds later.
 - A line you type straight under a `>` quote, with no blank line between, shows in your sent message as its own line

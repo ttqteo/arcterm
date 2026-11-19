@@ -8,6 +8,7 @@ import (
 	"log"
 	"strings"
 
+	"github.com/wavetermdev/waveterm/pkg/orchestrate"
 	"github.com/wavetermdev/waveterm/pkg/resmon"
 	"github.com/wavetermdev/waveterm/pkg/util/jobobject"
 	"github.com/wavetermdev/waveterm/pkg/waveobj"
@@ -82,7 +83,15 @@ func resolveResMonOwner(ctx context.Context, o jobobject.Owner) resmon.OwnerInfo
 		return closed
 	}
 	runtime := tab.Meta.GetString(waveobj.MetaKey_SessionAgent, "")
-	info := resmon.OwnerInfo{Kind: wshrpc.ResMonOwner_AgentTab, Label: tab.Name, Runtime: runtime, Agent: runtime != ""}
+	label := tab.Name
+	if runtime != "" {
+		// an agent tab is named after its project, so several read "arcterm": the harness's summary of the session's
+		// task is the label the cockpit gives it
+		if title := strings.TrimSpace(orchestrate.LatestAgentStatus(o.Id, tab.OID).Title); title != "" {
+			label = title
+		}
+	}
+	info := resmon.OwnerInfo{Kind: wshrpc.ResMonOwner_AgentTab, Label: label, Runtime: runtime, Agent: runtime != ""}
 	if run, _, ok := ownerRunForBlock(ctx, "block:"+o.Id); ok {
 		info.Kind, info.Label = wshrpc.ResMonOwner_RunWorker, resMonWorkerLabel(ctx, run)
 	}
