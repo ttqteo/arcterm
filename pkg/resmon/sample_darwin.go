@@ -174,6 +174,11 @@ var timebase = sync.OnceValue(func() float64 {
 	return float64(tb.numer) / float64(tb.denom)
 })
 
+// readSystemStats is Windows' read of the processes it will not open; here readStat reads every one it may
+func readSystemStats() map[int]procStat {
+	return nil
+}
+
 // readStat reads pid's CPU time, memory and start; a process of another user (root's daemons) cannot be read and
 // comes back not ok. The memory is its physical footprint: Activity Monitor's Memory column, and like the private
 // working set on Windows it leaves out the pages shared with other processes.

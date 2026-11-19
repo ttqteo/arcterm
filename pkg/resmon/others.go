@@ -22,6 +22,38 @@ const (
 	othersHold = 6 * time.Second
 )
 
+// webviewImage is the image every WebView2 pane runs as, whichever app it draws for.
+const webviewImage = "msedgewebview2.exe"
+
+// webviewPrefix starts the name of a WebView2 group drawn for another app (nameWebviewHosts).
+const webviewPrefix = "WebView2: "
+
+// nameWebviewHosts names each WebView2 process after the app it draws for, as Task Manager lists "WebView2: Microsoft
+// Teams": `WebView2: ms-teams.exe`, from its first ancestor that is not a WebView2 process. Without it every app's panes
+// sum into one msedgewebview2.exe row that says whose they are nowhere. One whose ancestors leave the table keeps its
+// image name; a process already named for an app is left alone.
+func nameWebviewHosts(table map[int]proc) {
+	for pid, p := range table {
+		if p.App != "" || !strings.EqualFold(p.Name, webviewImage) {
+			continue
+		}
+		cur := p
+		// a few levels at most (the browser process, then its children); the bound guards a ppid cycle
+		for range 16 {
+			parent, ok := table[cur.Ppid]
+			if !ok || cur.Ppid == cur.Pid {
+				break
+			}
+			if !strings.EqualFold(parent.Name, webviewImage) {
+				p.App = webviewPrefix + parent.Name
+				table[pid] = p
+				break
+			}
+			cur = parent
+		}
+	}
+}
+
 // otherProc is one process outside arcterm and its agents, as one tick read it.
 type otherProc struct {
 	Pid  int

@@ -78,3 +78,37 @@ func TestWithIconsReadsEachNameOnceAndTriesTheNextProcess(t *testing.T) {
 		t.Fatalf("asked %v on the second tick, icons %+v", asked, again)
 	}
 }
+
+func TestNameWebviewHostsNamesEachPaneAfterItsApp(t *testing.T) {
+	table := map[int]proc{
+		1:  {Pid: 1, Name: "explorer.exe"},
+		10: {Pid: 10, Ppid: 1, Name: "ms-teams.exe"},
+		11: {Pid: 11, Ppid: 10, Name: "msedgewebview2.exe"},
+		12: {Pid: 12, Ppid: 11, Name: "msedgewebview2.exe"},
+		20: {Pid: 20, Ppid: 1, Name: "Outlook.exe"},
+		21: {Pid: 21, Ppid: 20, Name: "MSEdgeWebView2.exe"},
+		30: {Pid: 30, Ppid: 999, Name: "msedgewebview2.exe"}, // its parent has left
+		40: {Pid: 40, Ppid: 41, Name: "msedgewebview2.exe"},  // a ppid cycle of panes
+		41: {Pid: 41, Ppid: 40, Name: "msedgewebview2.exe"},
+		50: {Pid: 50, Ppid: 1, Name: "msedgewebview2.exe", App: "Already"},
+	}
+	nameWebviewHosts(table)
+	want := map[int]string{
+		1: "", 10: "", 11: "WebView2: ms-teams.exe", 12: "WebView2: ms-teams.exe", 20: "",
+		21: "WebView2: Outlook.exe", 30: "", 40: "", 41: "", 50: "Already",
+	}
+	for pid, app := range want {
+		if table[pid].App != app {
+			t.Errorf("pid %d: App = %q, want %q", pid, table[pid].App, app)
+		}
+	}
+}
+
+func TestEndableRefusesAnotherAppsWebviewPanes(t *testing.T) {
+	if Endable("WebView2: ms-teams.exe") {
+		t.Fatal("another app's WebView2 panes are endable")
+	}
+	if !Endable("ms-teams.exe") {
+		t.Fatal("the app itself is not endable")
+	}
+}

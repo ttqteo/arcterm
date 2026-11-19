@@ -36,10 +36,12 @@ var keepRunning = map[string]bool{
 }
 
 // Endable reports whether Sidecar may offer to end every process of an image name: not one of keepRunning, nor any
-// wsh (an agent hook in flight), nor a name it could not read.
+// wsh (an agent hook in flight), nor a name it could not read, nor another app's WebView2 panes (ended alone they leave
+// the app open with blank panes, and msedgewebview2.exe is kept running too).
 func Endable(name string) bool {
 	key := strings.ToLower(strings.TrimSpace(name))
-	return key != "" && !keepRunning[key] && !strings.HasPrefix(key, "wsh")
+	return key != "" && !keepRunning[key] && !strings.HasPrefix(key, "wsh") &&
+		!strings.HasPrefix(key, strings.ToLower(webviewPrefix))
 }
 
 // endTarget is one process EndApp will end: its pid and the create time that tells it from a later process given the
