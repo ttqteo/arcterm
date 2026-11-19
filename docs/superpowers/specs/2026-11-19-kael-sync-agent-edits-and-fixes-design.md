@@ -72,8 +72,10 @@ Reference: fork commit `931cb350a` (the frontend half) and `d30a0310f`; take the
 Fork commit `fd40f2cf3`: one shared read, `agentchanges.ts`, that for a Claude agent asks `GitAgentEditsCommand` and
 reads only B..H (nothing until the agent edits); other runtimes keep the session-start read. On `main` its readers
 are `cardgitstore.ts` (card counts), `railstore.ts` (Agent details rail; its `branchbase` read stays as is) and
-`peekagent.tsx` (Hub peek). A Claude agent's chip and card stop saying "repo" in a shared checkout, since the numbers
-are its own. Leave the fork's workspace-pane and `GitPatchCommand` hunks of that commit out.
+`peekagent.tsx` (Hub peek). The fork's hunk that stops a chip and card saying "repo" in a shared checkout
+(`agentrailmodel.ts`/`agentrow.tsx`) has no counterpart on `main`, which has no such prefix: nothing to port. Leave
+the fork's workspace-pane and `GitPatchCommand` hunks of that commit out too. `docreviewload.ts`'s session-start read
+stays: it reads one file's text for a doc review, not the agent's files or counts.
 
 ### Verification
 
@@ -86,8 +88,9 @@ are its own. Leave the fork's workspace-pane and `GitPatchCommand` hunks of that
   Bash caption and the commit pane heading, then flipping the switch to Since session start and back; a step showing a
   fixture agent card with its own counts. The fork's `scripts/cdp/scenarios-files-edits.mjs` is the reference.
 - `CHANGELOG.md` under Unreleased: one `Added` line for Agent's edits, marked `<!-- big -->` with its
-  `<!-- shot: ... -->` (`node scripts/whatsnew-shot.mjs agent-edits`), and one `Changed` line for the cards counting
-  only the agent's own edits.
+  `<!-- shot: ... -->`, and one `Changed` line for the cards counting only the agent's own edits. The picture is taken
+  by the CDP scenario during Final (`h.whatsnewShot("agent-edits", …)`); the line lands as `<!-- shot: none -->` and
+  the run's lead commits the picture and the shot comment at wrap-up (as the Boards run did).
 
 ## Part 2: the small fixes
 
@@ -115,9 +118,9 @@ with its test; most need a rewrite because the surrounding file drifted.
    (`frontend/app/view/jarvis/runreportview.tsx`). Check first that `main`'s callers pass stable props.
 5. **An effort sync loses a field only the older side changed** (fork `2e9d949e5`). Present: `MergeEffort`
    (`pkg/wavevault/effortmerge.go:49-57`) takes every scalar from the side with the newer `UpdatedTs`. Merge Title,
-   Project, Ticket, Status, ParentOID, Jira and Meta (and a chunk's Status, Stage, Owner) per field against the base;
-   both changed takes the newer side, tie ours; Jira follows the side the merged Ticket came from; no base keeps the
-   newer-side rule.
+   Project, Ticket, Status, ParentOID and Meta (and a chunk's Status, Stage, Owner) per field against the base;
+   both changed takes the newer side, tie ours; no base keeps the newer-side rule. The fork's Jira field does not exist
+   on `main`'s `waveobj.Effort`, so its Jira rule is not ported.
 6. **A left-over vault merge blocks every later sync** (fork `381f06723`). Present: `pkg/wavevault/sync.go:99-100` runs
    `git merge --abort`, which exits 128 once a cleanly staged path was edited. Port the fork's recovery: save every
    stage-0 path whose worktree differs from the index (deletions included, unmerged paths skipped), `reset --hard`,

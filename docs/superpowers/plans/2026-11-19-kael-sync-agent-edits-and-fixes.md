@@ -19,7 +19,7 @@ seven fixes are independent tasks in their own packages.
 fork's own design for Agent's edits is `git show kael/main:docs/superpowers/specs/2026-11-18-agent-edits-range-design.md`.
 **Verify:** `node scripts/verify.mjs ./pkg/agentedits ./pkg/gitinfo ./pkg/wconfig ./pkg/agentsessions ./pkg/wavevault ./pkg/wshrpc/... ./cmd/wsh/cmd`
 **Check:** `task check:ts`
-**Final:** `node scripts/cdp/final-verify.mjs diff-agent-edits diff-scope diff-comments diff-file-keys diff-states kael-keys run-sheet-done`
+**Final:** `node scripts/cdp/final-verify.mjs diff-agent-edits diff-scope diff-compare-refresh diff-comments diff-file-keys diff-file-states kael-keys diff-log-tab diff-compare diff-review-marks diff-worktrees agent-rail-file-link run-sheet-done`
 
 Working rules for every task: prefer simple, direct code (KISS, YAGNI, DRY, one source of truth); no abstraction for a
 single implementation; handle errors at boundaries and never swallow one silently (log it or return it). Colors come
@@ -130,7 +130,7 @@ miss; nothing under `~/.claude` is written by the tests.
 ### Task 3: Agent's edits in the Diff surface, default for a Claude agent, with a switch
 **Depends on:** Task 1 (uses `GitAgentEditsCommand`'s generated client and types, and `editsApply` from `agentedits.ts`)
 **Model:** sonnet
-**Files:** `frontend/app/view/agents/diffscope.ts`, `frontend/app/view/agents/diffscope.test.ts`, `frontend/app/view/agents/diffrangechoice.ts`, `frontend/app/view/agents/filesstore.ts`, `frontend/app/view/agents/filesstore.test.ts`, `frontend/app/view/agents/agentdiffnav.ts`, `frontend/app/view/agents/agentdiffnav.test.ts`, `frontend/app/view/agents/githistorystore.ts`, `frontend/app/view/agents/githistorystore.test.ts`, `frontend/app/view/agents/historyrows.ts`, `frontend/app/view/agents/historyrows.test.ts`, `frontend/app/view/agents/commitpane.tsx`, `frontend/app/view/agents/changedfilelist.tsx`, `frontend/app/view/agents/filessurface.tsx`, `frontend/app/view/agents/diffsource.ts`, `frontend/app/view/agents/diffsource.test.ts`, `frontend/app/cockpit/actions/agent.ts`, `frontend/app/view/agents/agentdetailsrail.tsx`, `frontend/app/view/agents/chatconversation.tsx`, `frontend/app/view/agents/chatpane.tsx`, `frontend/app/view/agents/cockpitsurface.tsx`, `frontend/app/view/agents/filetab.tsx`, `scripts/cdp/scenarios-diff-agent-edits.mjs`, `scripts/cdp/scenarios.mjs`, `scripts/cdp/scenarios-diff-scope.mjs`, `scripts/cdp/scenarios-diff-comments.mjs`, `scripts/cdp/scenarios-diff-file-keys.mjs`, `scripts/cdp/scenarios-diff-states.mjs`, `scripts/cdp/scenarios-kael-keys.mjs`
+**Files:** `frontend/app/view/agents/diffscope.ts`, `frontend/app/view/agents/diffscope.test.ts`, `frontend/app/view/agents/diffrangechoice.ts`, `frontend/app/view/agents/filesstore.ts`, `frontend/app/view/agents/filesstore.test.ts`, `frontend/app/view/agents/agentdiffnav.ts`, `frontend/app/view/agents/agentdiffnav.test.ts`, `frontend/app/view/agents/githistorystore.ts`, `frontend/app/view/agents/githistorystore.test.ts`, `frontend/app/view/agents/historyrows.ts`, `frontend/app/view/agents/historyrows.test.ts`, `frontend/app/view/agents/commitpane.tsx`, `frontend/app/view/agents/diffpanel.tsx`, `frontend/app/view/agents/changedfilelist.tsx`, `frontend/app/view/agents/filessurface.tsx`, `frontend/app/view/agents/diffsource.ts`, `frontend/app/view/agents/diffsource.test.ts`, `frontend/app/cockpit/actions/agent.ts`, `frontend/app/view/agents/agentdetailsrail.tsx`, `frontend/app/view/agents/chatconversation.tsx`, `frontend/app/view/agents/chatpane.tsx`, `frontend/app/view/agents/cockpitsurface.tsx`, `frontend/app/view/agents/filetab.tsx`, `scripts/cdp/scenarios-diff-agent-edits.mjs`, `scripts/cdp/scenarios.mjs`, `scripts/cdp/scenarios-diff-scope.mjs`, `scripts/cdp/scenarios-diff-comments.mjs`, `scripts/cdp/scenarios-diff-file-keys.mjs`, `scripts/cdp/scenarios-diff-states.mjs`, `scripts/cdp/scenarios-kael-keys.mjs`, `scripts/cdp/surfaces-spring/diff.mjs`, `scripts/cdp/overlays-frost/chat.mjs`
 
 The spec's "Diff surface (rewrite for main)" section is the contract. Fork reference for the logic only: commits
 `931cb350a` and `d30a0310f`, and `git show kael/main:scripts/cdp/scenarios-files-edits.mjs` for the fixture. `main`'s
@@ -174,17 +174,25 @@ calling the command with `{ timeout: HISTORY_RPC_TIMEOUT_MS }`. Run
 `npx vitest run frontend/app/view/agents/filesstore.test.ts`.
 
 **Step 5 (history pane):** `githistorystore.ts` honours `noCommits` (no git log call; only the scope's own row), and
-`historyrows.ts` gives that row the label "Agent's edits". Tests beside both.
+`historyrows.ts` gives that row the label "Agent's edits". `buildRows` keeps the scope's own row when `noCommits` is
+set even at 0 files (today it drops the working-tree row at 0 files, `historyrows.ts` `buildRows`; with no commits
+either, the pane would fall to "Select a commit" and show no caption for an agent with no edits). Add a pure
+`paneCaption(range, state)` in `historyrows.ts`: `editsCaption(...)` from `state.edits` for the edits range,
+`worktreeCaption(...)` otherwise (`worktreeCaption`'s `default:` would otherwise swallow the edits range silently);
+`diffpanel.tsx` (:303) calls `paneCaption` instead of `worktreeCaption`. Tests beside both, including the 0-file edits
+row and the edits caption.
 
 **Step 6 (the view):**
 - `commitpane.tsx` `WorkingTreeHeader`: the region label reads "Agent's edits" instead of "Working tree" for the edits
-  range (fork `d30a0310f`); its caption is `editsCaption`. Put `data-commit-pane` on the pane and
+  range (fork `d30a0310f`); its caption is the one `paneCaption` gives. Put `data-commit-pane` on the pane and
   `data-files-range-summary` on the caption.
-- The switch: a two-state segmented control "Agent's edits | Since session start" in that header, shown only when the
-  scope is an agent whose `editsApply(runtime)` holds. Each button carries `data-range-choice="edits"` or
-  `"session"` with `aria-pressed`; a click calls `setRangeChoice` and sets `model.diffScopeAtom` to the agent's scope
-  with that range. Follow `DESIGN.md` for the control (existing tokens and an existing segmented-control look in the
-  Diff surface if there is one).
+- The switch lives in `diffpanel.tsx`, not in `WorkingTreeHeader` (that header draws only while the scope's own row is
+  selected, so a selected commit in Since session start would hide the way back): a two-state segmented control
+  "Agent's edits | Since session start" in a strip directly under the panel's 40 px header row, shown whenever the
+  scope is an agent whose `editsApply(runtime)` holds, whatever row is selected and outside compare. Each button
+  carries `data-range-choice="edits"` or `"session"` with `aria-pressed`; a click calls `setRangeChoice` and sets
+  `model.diffScopeAtom` to the agent's scope with that range. Follow `DESIGN.md` for the control (existing tokens and
+  an existing segmented-control look in the Diff surface if there is one).
 - `changedfilelist.tsx`: a flagged row carries `data-edit-flag="approximate" | "outside"` and a small marker with a
   `title` ("No backup: compared with the session start" / "Changed outside this agent between its edits").
 
@@ -206,22 +214,27 @@ unrelated working-tree edit the agent never made. Nothing is written under `~/.c
 5. A fixture agent with `agent: "pi"`: no switch, the range is Since session start.
 
 **Step 8 (existing scenarios):** fixture Claude agents in older Diff scenarios get their files from writes to disk, not
-from Edit calls in their transcripts, so they would now open on an empty Agent's edits. Read `scenarios-diff-scope.mjs`,
-`scenarios-diff-comments.mjs`, `scenarios-diff-file-keys.mjs`, `scenarios-diff-states.mjs`, `scenarios-kael-keys.mjs`
-and every `scenarios.mjs` scenario that opens an agent's Diff (grep `data-changed-file-row` near an agent scope). Where
-one asserts on an agent's file list, set its choice to `session` in its arrange (import `diffrangechoice.ts` through the
-page's module loader, as `scenarios-diff-scope.mjs`'s `MOD_LIB` does) so it keeps testing what it tested. Do not reseed
-them. List the scenarios you changed in your commit message.
+from Edit calls in their transcripts, so they would now open on an empty Agent's edits. Check each of these (they
+assert on `data-changed-file-row` lists): `scenarios-diff-scope.mjs` (`diff-scope`, `diff-compare-refresh`),
+`scenarios-diff-comments.mjs` (`diff-comments`), `scenarios-diff-file-keys.mjs` (`diff-file-keys`),
+`scenarios-diff-states.mjs` (`diff-file-states`), `scenarios-kael-keys.mjs` (`kael-keys`), in `scenarios.mjs`
+`diff-log-tab`, `diff-compare`, `diff-review-marks`, `diff-worktrees` and `doc-review-canvas`, and
+`surfaces-spring/diff.mjs`, `overlays-frost/chat.mjs`. Where one opens a Claude agent's Diff and asserts on its file
+list, set its choice to `session` in its arrange (import `diffrangechoice.ts` through the page's module loader, as
+`scenarios-diff-scope.mjs`'s `MOD_LIB` does) so it keeps testing what it tested; one on a project or run scope needs
+nothing. Do not reseed them. List the scenarios you changed in your commit message; Final runs all the named Diff
+ones (`doc-review-canvas` and the two overlay scenarios are not in Final: if you change one, run it yourself with
+`task verify:ui -- <name>` and say so in your report).
 
 **Step 9:** `task check:ts`, then the vitest files of this task. Commit.
 
 **Acceptance:** `diff-agent-edits` steps 1-5 pass and their screenshots show the switch, the flagged rows and the
-caption; `diff-scope`, `diff-comments`, `diff-file-keys`, `diff-states` and `kael-keys` still pass.
+caption; step 4's screenshot shows the switch and the "no edits" caption; the Diff scenarios Step 8 names still pass.
 
 ### Task 4: An agent's card, rail and peek count only its own edits
 **Depends on:** Task 3
 **Model:** sonnet
-**Files:** `frontend/app/view/agents/agentchanges.ts`, `frontend/app/view/agents/agentchanges.test.ts`, `frontend/app/view/agents/cardgitstore.ts`, `frontend/app/view/agents/cardgitstore.test.ts`, `frontend/app/view/agents/railstore.ts`, `frontend/app/view/agents/railstore.test.ts`, `frontend/app/view/agents/usecardstreams.ts`, `frontend/app/view/agents/agentdetailsrail.tsx`, `frontend/app/view/agents/cockpitsurface.tsx`, `frontend/app/view/jarvis/peek/peekagent.tsx`, `scripts/cdp/scenarios-diff-agent-edits.mjs`
+**Files:** `frontend/app/view/agents/agentchanges.ts`, `frontend/app/view/agents/agentchanges.test.ts`, `frontend/app/view/agents/cardgitstore.ts`, `frontend/app/view/agents/cardgitstore.test.ts`, `frontend/app/view/agents/railstore.ts`, `frontend/app/view/agents/railstore.test.ts`, `frontend/app/view/agents/usecardstreams.ts`, `frontend/app/view/agents/agentdetailsrail.tsx`, `frontend/app/view/agents/cockpitsurface.tsx`, `frontend/app/view/jarvis/peek/peekagent.tsx`, `scripts/cdp/scenarios-diff-agent-edits.mjs`, `scripts/cdp/scenarios.mjs`
 
 Depends on Task 3 because both edit `agentdetailsrail.tsx`, `cockpitsurface.tsx` and the new scenario. Fork reference:
 commit `fd40f2cf3` (`git show fd40f2cf3 -- frontend/app/view/agents/agentchanges.ts` is the shared read); leave out its
@@ -239,18 +252,29 @@ the plain read's branch and `isrepo` with an empty `statusz` and `numstat`. Then
 `peekagent.tsx` `useAgentGit`. Where a reader keeps a `ref` for per-file diffs (the rail's `ref`), check what reads it
 and give it the edits read's base and end so a click shows the same B..H the list came from. Update the readers' tests.
 
-**Step 3:** add a step 6 to `diff-agent-edits`: the edits fixture agent's cockpit card shows a diff count of its 3
-files, not 4 (the unrelated file stays out). Find the card's diff pill selector in `cockpitsurface.tsx` / the card
-component and add a `data-` hook if it has none.
+**Step 3:** add steps to `diff-agent-edits`, each its own shot:
+- step 6: the edits fixture agent's cockpit card shows a diff count of its 3 files, not 4 (the unrelated file stays
+  out). Find the card's diff pill selector in `cockpitsurface.tsx` / the card component and add a `data-` hook if it
+  has none.
+- step 7: the same agent's Agent details rail (open it with `railVisibleAtom`, as `scenarios-agent-streams.mjs` does)
+  lists exactly its 3 files, not the unrelated one.
+- step 8, the Hub peek: if an existing scenario helper opens an agent's peek, show it counting 3 files; if none does,
+  leave the step out and name the peek under Not verified in your report.
 
-**Step 4:** grep the scenarios for assertions on a fixture Claude agent's card diff count or details-rail file list
-(`diffStatsByIdAtom`, the rail's file rows); give each the same `session`-free fix as Task 3's step 8 cannot (the card
-has no switch): seed the files they expect through Edit/Write records in that fixture's transcript instead. List them
-in the commit message.
+**Step 4:** the card and the rail have no switch, so a scenario whose fixture Claude agent's card count or rail file
+list came from files written to disk now reads nothing. Reseed those fixtures through Edit/Write records in the
+fixture's transcript (with the file-history records the fork's fixture uses), so the agent's own edits are the files
+the scenario expects. Known case: `agent-rail-file-link` in `scenarios.mjs` (asserts on the rail's file rows). Grep
+`scripts/cdp/` for other asserts on `diffStatsByIdAtom` or the rail's file rows (`railVisibleAtom` users that only
+toggle the rail, such as `agent-streams`, `agent-subagents`, `chat-council`, `chat-verdict-handoff`,
+`brainstorm-builder`, assert nothing about files and need no change). List the scenarios you changed in the commit
+message; one not in Final's list you run yourself with `task verify:ui -- <name>` and say so in your report.
 
 **Step 5:** `task check:ts`, the vitest files above. Commit.
 
-**Acceptance:** `diff-agent-edits` step 6 passes; the readers' unit tests pass.
+**Acceptance:** `diff-agent-edits` steps 6 and 7 pass and their shots show 3 files; `agent-rail-file-link` passes; the
+readers' unit tests pass. `docreviewload.ts`'s session-start read stays as is: it reads one file's text at the session
+start for a doc review, not the agent's file list or counts.
 
 ### Task 5: A timed-out git is an error, not "no upstream" or "detached"
 **Depends on:** none
@@ -276,9 +300,16 @@ func gitFault(ctx context.Context, err error) bool {
 }
 ```
 
-and use it in `Push` (the branch read, :1751), `Pull` (the upstream read, :1729) and `upstreamCounts` (:68): on a fault
-return the error described with `describeGitError`; `upstreamCounts` gains an `error` return its callers handle (a
-fault in `Push` returns the error, never publishes). A real exit status keeps today's meaning.
+and use it in `Push` (the branch read, :1751), `Pull` (the upstream read, :1729) and `upstreamCounts` (:68).
+`upstreamCounts` gains an `error` return: on a fault it returns the git error; a real exit status (no upstream) keeps
+today's empty upstream and a nil error. Its callers:
+- `Push` and `Pull` report a fault the way they report every other git failure on `main`, as data:
+  `return syncFailure(args, err), nil` (a `SyncResult.Failure` built by `failureOf`, with `args` the read that faulted),
+  never "HEAD is detached" or "no upstream", and `Push` never goes on to `push -u origin`.
+- `GetChanges` (:146) and the range read (:251) ignore the error and keep today's empty upstream and zero counts, so a
+  slow upstream read never fails the Diff list; add a one-line comment saying so at each.
+
+A real exit status keeps today's meaning everywhere.
 
 **Step 3:** the tests pass. Commit.
 
@@ -353,7 +384,9 @@ rebuilt per tick.
 
 **Step 3:** `task check:ts`. Commit.
 
-**Acceptance:** `run-sheet-done` passes (the report still renders).
+**Acceptance:** `run-sheet-done` passes (the report still renders). That the re-parse stopped is a code check, not a
+measured one (there is no render-count harness): the commit message names each `PlainInlineMarkdown` and
+`RunReportView` caller and why its props are stable across the 1 s tick, so the reviewer can check it.
 
 ### Task 9: Vault sync: per-field effort merge, and recovery from an interrupted merge
 **Depends on:** none
@@ -364,10 +397,10 @@ rebuilt per tick.
 with the newer `UpdatedTs`, so a field only the older side changed is lost.
 1. Tests first in `effortmerge_test.go` (model: `git show 2e9d949e5 -- pkg/wavevault/effortmerge_test.go`): a field
    changed only on the older side survives; both changed takes the newer side, tie ours; a chunk's Status, Stage and
-   Owner merge the same way; Jira follows the side the merged Ticket came from when the tickets differ; with no base
-   (and a chunk new on both sides) the newer-side rule stays. FAIL.
-2. Port the fork's per-field merge for Title, Project, Ticket, Status, ParentOID, Jira and Meta (Jira and Meta compared
-   whole). `go test ./pkg/wavevault -run 'MergeEffort'`: PASS.
+   Owner merge the same way; with no base (and a chunk new on both sides) the newer-side rule stays. FAIL.
+2. Port the fork's per-field merge for Title, Project, Ticket, Status, ParentOID and Meta (Meta compared whole).
+   `main`'s `waveobj.Effort` has no Jira field (`pkg/waveobj/wtype.go`), so leave out the fork's Jira handling and its
+   test. `go test ./pkg/wavevault -run 'MergeEffort'`: PASS.
 
 **Part B, interrupted merge** (fork `381f06723`). `sync.go:99-100` runs `git merge --abort`, which exits 128 once a
 cleanly staged path was edited, so that sync and every later one fail.
@@ -390,7 +423,7 @@ Task 4 already waits on Tasks 1 and 3, so this task runs last. Read each listed 
 - `### Added`: Agent's edits: a Claude agent's Diff now lists only the files it changed itself, rebuilt from its own
   edits, with a switch back to everything since its session started; files it could not rebuild exactly are marked,
   and Bash calls that may have changed other files are counted. End with `<!-- big --> <!-- shot: none -->`: the
-  picture `diff-agent-edits` takes in Final lands after the run (see below), and `whatsnew.test.ts` fails a shot file
+  picture `diff-agent-edits` takes in Final is added by the lead after Final (see the last section), and `whatsnew.test.ts` fails a shot file
   that is not in `public/whatsnew/` yet.
 - `### Changed`: an agent's card, details rail and Hub peek count only that agent's own edits in a shared checkout.
 - `### Fixed`: a git that timed out no longer reads as "no upstream" (Push no longer publishes the branch anew);
@@ -407,10 +440,11 @@ while arcterm runs (a project registered from a script) showing up without a res
 
 **Step 4:** `npx vitest run frontend/app/cockpit/whatsnew.test.ts`. Commit.
 
-## After the run lands
+## The What's new picture (the lead's wrap-up, after Final)
 
-`diff-agent-edits` step 1 leaves `1.9.0-agent-edits.webp` in the Final output (or the run's tree). Copy it to
-`public/whatsnew/`, check it is under 120 KB and shows the switch and the flagged rows, change the Added line's
-`<!-- shot: none -->` to `<!-- shot: 1.9.0-agent-edits.webp -->`, and commit both, as `7576b19f4` did for run-review.
-If no picture was taken, run `node scripts/whatsnew-shot.mjs agent-edits --selector "[data-commit-pane]"` on a dev app
-showing the fixture.
+The run's lead owns this, at the run-finished wake before completing, as the Boards run did (`05341f99c`):
+`diff-agent-edits` step 1 leaves `<version>-agent-edits.webp` in the Final output (or the run's tree). The lead copies
+it to `public/whatsnew/`, checks it is under 120 KB and shows the switch and the flagged rows, changes the Added line's
+`<!-- shot: none -->` to `<!-- shot: <that file> -->`, runs `npx vitest run frontend/app/cockpit/whatsnew.test.ts`, and
+commits both. If Final took no picture, the line keeps `<!-- shot: none -->` and the lead files a chunk for it
+(`node scripts/whatsnew-shot.mjs agent-edits --selector "[data-commit-pane]"` on a dev app showing the fixture).
