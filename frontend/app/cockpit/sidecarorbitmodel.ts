@@ -19,7 +19,7 @@ export type AlertFrame = "none" | "warning" | "error";
 export type Tone = "warning" | "error" | "success" | "secondary" | "muted";
 
 /**
- * The state the screen is in: `failed` while any need failed (a run held at Final or with a failed task), else
+ * The state the screen is in: `failed` while any need failed (a task that failed and can be retried), else
  * `critical` at a red strain (RAM critical), else `high` at an amber one, else `calm` when nothing waits on you.
  */
 export function screenState(snap: Pick<SidecarSnapshot, "needs" | "strain">): ScreenState {
@@ -36,7 +36,7 @@ export function screenState(snap: Pick<SidecarSnapshot, "needs" | "strain">): Sc
     return needs.length === 0 ? "calm" : "normal";
 }
 
-/** The alert frame of a state: RAM critical and a failed run frame the window red, RAM high amber, the rest not. */
+/** The alert frame of a state: RAM critical and a failed task frame the window red, RAM high amber, the rest not. */
 export function frameOf(state: ScreenState): AlertFrame {
     switch (state) {
         case "failed":
@@ -51,13 +51,13 @@ export function frameOf(state: ScreenState): AlertFrame {
 
 /**
  * Why the alert frame is up, in one line, for a view that covers what shows the cause (the small form's Resources
- * view): a failed run first, as the frame ranks it, then the strain. Null while the frame is down.
+ * view): a failed task first, as the frame ranks it, then the strain. Null while the frame is down.
  */
 export function frameReason(snap: Pick<SidecarSnapshot, "needs" | "strain">): string | null {
     const failed = (snap.needs ?? []).filter((n) => n.failed === true);
     if (failed.length > 0) {
         const more = failed.length > 1 ? ` (+${failed.length - 1} more)` : "";
-        return `Run failed${more}: ${failed[0].text}`;
+        return `Task failed${more}: ${failed[0].text}`;
     }
     const s = snap.strain;
     if (s == null) {
@@ -257,6 +257,53 @@ export function needHow(need: SidecarNeed): string {
         }
     }
     return "Enter: reply in the main window";
+}
+
+/** A row's age in words: how late a chunk past its due day is, how long anything else has waited. */
+export function needAge(need: Pick<SidecarNeed, "late">, age: string): string {
+    if (age === "") {
+        return "";
+    }
+    return need.late === true ? `${age} late` : `${age} ago`;
+}
+
+/** One button of a Needs you row: what it says and the act it sends. */
+export interface NeedButton {
+    key: string;
+    label: string;
+    act: SidecarAct;
+    strong: boolean; // the act that settles the row, drawn filled
+}
+
+/**
+ * A Needs you row's buttons. An answerable, unsent ask: its first NEED_HOW_OPTIONS options, which 1-9 also send. A
+ * Jarvis row: the acts the bridge gave it (Accept, Approve, Retry, Work on, a rule's Accept and Dismiss, Open). Any
+ * other ask and a question: Open, as Enter does. A sent ask has none.
+ */
+export function needButtons(need: SidecarNeed): NeedButton[] {
+    if (need.kind === "jarvis") {
+        return (need.acts ?? []).map((a) => ({
+            key: a.id,
+            label: a.label,
+            act: { kind: "needact", key: need.key, act: a.id },
+            strong: a.strong === true,
+        }));
+    }
+    if (need.id == null || (need.kind === "ask" && need.sent === true)) {
+        return [];
+    }
+    const ask = askOf(need);
+    if (ask != null && canAnswer(ask, 0)) {
+        const buttons: NeedButton[] = [];
+        (need.options ?? []).slice(0, NEED_HOW_OPTIONS).forEach((o, i) => {
+            const act = answerAct(ask, i);
+            if (act != null) {
+                buttons.push({ key: `answer:${i}`, label: `${i + 1} ${o}`, act, strong: false });
+            }
+        });
+        return buttons;
+    }
+    return [{ key: "open", label: "Open", act: { kind: "open", id: need.id }, strong: false }];
 }
 
 // ---- Keys and the selection ----

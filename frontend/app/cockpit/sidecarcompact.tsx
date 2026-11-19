@@ -21,12 +21,12 @@ import { memo, useEffect, useMemo, useRef, useState, type MouseEvent } from "rea
 import { GlowCircle, HudBrackets, HudDivider, HudLabel, HudTickRing } from "./sidecarhud";
 import { ageText } from "./sidecarkeys";
 import { useSidecarMachine } from "./sidecarmachine";
+import { NeedButtons, NeedHead } from "./sidecarneedbuttons";
 import {
     coreLabel,
     coreTone,
     dashKey,
     frameOf,
-    needHow,
     needPings,
     nodeLine,
     nodeTone,
@@ -407,6 +407,7 @@ function NeedRow(props: {
     rowRef: (el: HTMLElement | null) => void;
     onSelect: () => void;
     onOpen: () => void;
+    send: (act: SidecarAct) => void;
 }) {
     const { need, selected } = props;
     const failed = need.failed === true;
@@ -452,30 +453,14 @@ function NeedRow(props: {
                     <span aria-hidden="true" className={cn("absolute inset-[1px] rounded-full", BG[tone])} />
                 </span>
                 <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-                    <div className="flex items-baseline gap-1.5">
-                        {failed && (
-                            <span className="shrink-0 font-mono text-[11px] font-medium text-error">Failed</span>
-                        )}
-                        <span
-                            className="min-w-0 flex-1 truncate text-[13px] font-semibold text-hud-text"
-                            title={need.who}
-                        >
-                            {need.who}
-                        </span>
-                        {!failed && need.kind === "jarvis" && need.word != null && (
-                            <span className="shrink-0 font-mono text-[11px] text-hud-muted">{need.word}</span>
-                        )}
-                        <span className="shrink-0 whitespace-nowrap font-mono text-[11px] tabular-nums text-hud-muted">
-                            {props.age}
-                        </span>
-                    </div>
+                    <NeedHead need={need} age={props.age} />
                     <span
                         className="line-clamp-2 break-words text-[14px] leading-[1.35] text-hud-text"
                         title={need.text}
                     >
                         {need.text}
                     </span>
-                    <span className="font-mono text-[11px] text-hud-muted">{needHow(need)}</span>
+                    <NeedButtons need={need} send={props.send} />
                 </div>
             </div>
         </motion.div>
@@ -632,6 +617,7 @@ export const SidecarCompact = memo(function SidecarCompact({ snap, receivedAt, c
                                 }
                             }}
                             onSelect={() => setPicked({ area: "needs", index, key: need.key })}
+                            send={send}
                             onOpen={() => {
                                 const action = dashKey(
                                     "Enter",

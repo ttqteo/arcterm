@@ -73,6 +73,10 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   every process of it closes, as Task Manager's End task does. The system's own processes and arcterm's have no ×.
   While the window's frame is red or amber, Resources says why in a line at the top; pressing it goes back to the
   dashboard.
+- Sidecar's Needs you rows can be settled from Sidecar: each has its buttons (Accept or Dismiss a learned rule, Accept
+  a run to check, Approve a gate, Retry a failed task, Work on a due chunk, an agent's options, Open). Each row also
+  says what kind of thing waits ("Rule to approve", "Due", "Run to check", "Asks you") and how long it has waited, or
+  how late a due chunk is. A run that finished with something unverified no longer turns the window's frame red.
 
 ### Changed
 

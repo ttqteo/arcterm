@@ -2,8 +2,17 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { IDLE_GRACE_MS, type AgentEntry } from "@/app/view/agents/agentsviewmodel";
+import type { PeekRow } from "@/app/view/jarvis/petpeekmodel";
 import { describe, expect, it } from "vitest";
-import { endsInQuestion, lastQuestion, sidecarNeeds, type NeedsInput } from "./sidecarneeds";
+import {
+    endsInQuestion,
+    lastQuestion,
+    learnActOf,
+    needActsOf,
+    needLabel,
+    sidecarNeeds,
+    type NeedsInput,
+} from "./sidecarneeds";
 import type { SidecarTile, SidecarTileState } from "./sidecartypes";
 
 const NOW = 1_800_000_000_000;
@@ -112,6 +121,7 @@ describe("sidecarNeeds", () => {
                 kind: "ask",
                 id: "a1",
                 who: "agent-a1",
+                label: "Asks you",
                 since: NOW - 3 * MIN,
                 text: "Which one?",
                 options: ["A", "B"],
@@ -133,7 +143,15 @@ describe("sidecarNeeds", () => {
         const t = tile("r1", "review", { since: NOW - 4 * MIN });
         const needs = sidecarNeeds(input({ tiles: [t], entriesById: { r1: [say("Done. Merge it?")] } }));
         expect(needs).toEqual([
-            { key: "q:r1", kind: "question", id: "r1", who: "agent-r1", since: NOW - 4 * MIN, text: "Merge it?" },
+            {
+                key: "q:r1",
+                kind: "question",
+                id: "r1",
+                who: "agent-r1",
+                label: "Question",
+                since: NOW - 4 * MIN,
+                text: "Merge it?",
+            },
         ]);
     });
 
@@ -158,7 +176,15 @@ describe("sidecarNeeds", () => {
         const t = tile("i1", "idle");
         const needs = sidecarNeeds(input({ tiles: [t], entriesById: { i1: [say("Merge it?")] } }));
         expect(needs).toEqual([
-            { key: "q:i1", kind: "question", id: "i1", who: "agent-i1", since: NOW, text: "Merge it?" },
+            {
+                key: "q:i1",
+                kind: "question",
+                id: "i1",
+                who: "agent-i1",
+                label: "Question",
+                since: NOW,
+                text: "Merge it?",
+            },
         ]);
     });
 
@@ -192,7 +218,15 @@ describe("sidecarNeeds", () => {
             })
         );
         expect(n).toEqual([
-            { key: "g1", kind: "jarvis", who: "Ship it", since: NOW - 10 * MIN, text: "Approve t-2", word: "gate" },
+            {
+                key: "g1",
+                kind: "jarvis",
+                who: "Ship it",
+                since: NOW - 10 * MIN,
+                text: "Approve t-2",
+                word: "gate",
+                label: "Gate to approve",
+            },
         ]);
     });
 
@@ -201,7 +235,7 @@ describe("sidecarNeeds", () => {
         expect(n.who).toBe("Release run");
     });
 
-    it("marks failed exactly for run-unverified and a retryable dag-blocked", () => {
+    it("marks failed exactly for a retryable dag-blocked: an unverified run finished", () => {
         const needs = sidecarNeeds(
             input({
                 jarvis: [
@@ -215,7 +249,7 @@ describe("sidecarNeeds", () => {
             })
         );
         const by = Object.fromEntries(needs.map((n) => [n.key, n]));
-        expect(by.u.failed).toBe(true);
+        expect(by.u.failed).toBeUndefined();
         expect(by.br.failed).toBe(true);
         expect(by.b.failed).toBeUndefined();
         expect(by.g.failed).toBeUndefined();
@@ -225,6 +259,17 @@ describe("sidecarNeeds", () => {
         expect(by.br.word).toBe("failed");
         expect(by.b.word).toBe("blocked");
         expect(by.d.word).toBe("due");
+        // the kind in words, and a due chunk's age is how late it is
+        expect([by.u, by.br, by.b, by.g, by.h, by.d].map((n) => n.label)).toEqual([
+            "Run to check",
+            "Task failed",
+            "Blocked",
+            "Gate to approve",
+            "Land held",
+            "Due",
+        ]);
+        expect(by.d.late).toBe(true);
+        expect(by.u.late).toBeUndefined();
     });
 
     it("skips items of kind ask", () => {
@@ -275,5 +320,70 @@ describe("sidecarNeeds", () => {
             ["ask:a2", NOW - MIN],
             ["ask:a1", NOW],
         ]);
+    });
+});
+
+describe("needActsOf", () => {
+    const open = {
+        id: "k:open",
+        verb: "open" as const,
+        label: "Open",
+        target: { kind: "oref" as const, ref: "run:r1" },
+    };
+    const peek = (over: Partial<PeekRow>): PeekRow => ({
+        key: "k",
+        kind: "run-unverified",
+        source: "Release",
+        detail: null,
+        waitingsince: NOW,
+        primary: null,
+        links: [],
+        answers: [],
+        form: null,
+        ...over,
+    });
+    const learnItem = { kind: "learn-proposal", key: "l1", learnid: "lp-9" } as AttentionItem;
+
+    it("puts the act that settles the row first, filled, then the escort", () => {
+        const ack = { id: "k:ack", verb: "ack" as const, label: "Accept", channelId: "c", runId: "r1" };
+        expect(needActsOf(peek({ primary: ack, links: [open] }), undefined)).toEqual([
+            { id: "k:ack", label: "Accept", strong: true },
+            { id: "k:open", label: "Open" },
+        ]);
+    });
+
+    it("numbers a question's options, and never repeats an act", () => {
+        const a = (i: number) => ({
+            id: `k:a${i}`,
+            verb: "answer" as const,
+            label: `opt${i}`,
+            agentId: "x",
+            option: i,
+        });
+        expect(needActsOf(peek({ primary: open, answers: [a(0), a(1)], links: [open] }), undefined)).toEqual([
+            { id: "k:open", label: "Open" },
+            { id: "k:a0", label: "1 opt0", strong: true },
+            { id: "k:a1", label: "2 opt1", strong: true },
+        ]);
+    });
+
+    it("gives a learned rule Accept and Dismiss, and nothing addressable none", () => {
+        expect(needActsOf(undefined, learnItem)).toEqual([
+            { id: "l1:learn-accept", label: "Accept", strong: true },
+            { id: "l1:learn-dismiss", label: "Dismiss" },
+        ]);
+        expect(learnActOf("l1:learn-accept")).toEqual({ key: "l1", accept: true });
+        expect(learnActOf("chunk-due:e:x:2026-11-19:learn-dismiss")).toEqual({
+            key: "chunk-due:e:x:2026-11-19",
+            accept: false,
+        });
+        expect(learnActOf("k:ack")).toBeNull();
+        expect(needActsOf(undefined, undefined)).toEqual([]);
+        expect(needActsOf(peek({}), undefined)).toEqual([]);
+    });
+
+    it("names an unknown kind plainly", () => {
+        expect(needLabel("learn-proposal")).toBe("Rule to approve");
+        expect(needLabel("something-new")).toBe("Waiting");
     });
 });

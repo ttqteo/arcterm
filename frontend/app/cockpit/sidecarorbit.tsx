@@ -33,12 +33,12 @@ import { SidecarBand } from "./sidecarband";
 import { GlowCircle, HudBrackets, HudLabel, HudTickRing } from "./sidecarhud";
 import { ageText } from "./sidecarkeys";
 import { useSidecarMachine } from "./sidecarmachine";
+import { NeedButtons, NeedHead } from "./sidecarneedbuttons";
 import {
     coreLabel,
     coreTone,
     dashKey,
     frameOf,
-    needHow,
     needPings,
     nodeLine,
     nodeTone,
@@ -306,6 +306,7 @@ export const SidecarOrbit = memo(function SidecarOrbit({ snap, receivedAt, clock
                         sinceArrived={sinceArrived}
                         onSelect={(i) => select("needs", i, needs[i].key)}
                         onOpen={(i) => open("needs", i)}
+                        send={send}
                     />
                     {snap.run != null && !showBand && (
                         <RunBox run={snap.run} snapNow={snap.now} sinceArrived={sinceArrived} />
@@ -668,6 +669,7 @@ function NeedsPanel(props: {
     sinceArrived: number;
     onSelect: (index: number) => void;
     onOpen: (index: number) => void;
+    send: (act: SidecarAct) => void;
 }) {
     const { needs, sel } = props;
     const reduce = useReducedMotion();
@@ -724,6 +726,7 @@ function NeedsPanel(props: {
                                     age={ageText(need.since, props.snapNow, props.sinceArrived)}
                                     onSelect={() => props.onSelect(i)}
                                     onOpen={() => props.onOpen(i)}
+                                    send={props.send}
                                 />
                             </motion.div>
                         ))}
@@ -749,6 +752,7 @@ function NeedRow(props: {
     age: string;
     onSelect: () => void;
     onOpen: () => void;
+    send: (act: SidecarAct) => void;
 }) {
     const { need, selected } = props;
     const failed = need.failed === true;
@@ -778,28 +782,14 @@ function NeedRow(props: {
         >
             <div className="flex items-baseline gap-2">
                 <Marker tone={failed ? "error" : "warning"} ping={ping} />
-                {failed && <span className="shrink-0 text-[12.5px] font-semibold text-error">Failed</span>}
-                <span className="min-w-0 flex-1 truncate text-[13.5px] font-semibold text-hud-text" title={need.who}>
-                    {need.who}
-                </span>
-                {need.kind === "jarvis" && !failed && need.word != null && need.word !== "" && (
-                    <span className="shrink-0 text-[12.5px] text-hud-muted">{need.word}</span>
-                )}
-                <span className="shrink-0 whitespace-nowrap font-mono text-[12px] tabular-nums text-hud-muted">
-                    {props.age}
-                </span>
+                <div className="min-w-0 flex-1">
+                    <NeedHead need={need} age={props.age} wall />
+                </div>
             </div>
             <span className="line-clamp-2 break-words text-[15.5px] leading-[1.35] text-hud-text" title={need.text}>
                 {need.text}
             </span>
-            <span
-                className={cn(
-                    "break-words font-mono text-[12px] tabular-nums",
-                    failed ? "text-error" : ping ? "text-warning" : "text-hud-muted"
-                )}
-            >
-                {needHow(need)}
-            </span>
+            <NeedButtons need={need} send={props.send} wall />
         </div>
     );
 }

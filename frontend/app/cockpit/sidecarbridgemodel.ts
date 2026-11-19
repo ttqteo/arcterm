@@ -159,6 +159,22 @@ export function validateAct(raw: unknown, last: SidecarSnapshot | null): ActChec
             }
             return { ok: true, act: { kind: "sleep", id: row.heavy.id } };
         }
+        case "needact": {
+            if (typeof raw.key !== "string" || typeof raw.act !== "string") {
+                return { ok: false, reason: "needact: no key or act" };
+            }
+            const key = raw.key;
+            const act = raw.act;
+            // only a button the page drew: a Jarvis row still waiting, and one of its own acts
+            const need = (last?.needs ?? []).find((n) => n.kind === "jarvis" && n.key === key);
+            if (need == null) {
+                return { ok: false, reason: `needact: "${key}" is not waiting` };
+            }
+            if (!(need.acts ?? []).some((a) => a.id === act)) {
+                return { ok: false, reason: `needact: "${act}" is not an act of "${key}"` };
+            }
+            return { ok: true, act: { kind: "needact", key, act } };
+        }
         case "endapp": {
             if (typeof raw.name !== "string") {
                 return { ok: false, reason: "endapp: no name" };
