@@ -64,21 +64,30 @@ func run(ctx context.Context, cwd string, args ...string) (string, error) {
 	return string(out), err
 }
 
-// upstreamCounts names HEAD's upstream and counts the commits each side has that the other lacks.
-func upstreamCounts(ctx context.Context, cwd string) (string, int, int) {
-	up, err := run(ctx, cwd, "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}")
+// upstreamArgs is the read that names HEAD's upstream; git exits non-zero for a branch with none.
+var upstreamArgs = []string{"rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"}
+
+// upstreamCounts names HEAD's upstream and counts the commits each side has that the other lacks. A branch with no
+// upstream is git's own exit status and answers "" with a nil error; a git that did not answer (gitFault) is the
+// error, so a timeout never reads as "no upstream". The count is a figure to show: a failed count read keeps the
+// upstream with zero counts, and a deadline that cut it fails whatever git call comes next.
+func upstreamCounts(ctx context.Context, cwd string) (string, int, int, error) {
+	up, err := run(ctx, cwd, upstreamArgs...)
 	if err != nil {
-		return "", 0, 0
+		if gitFault(ctx, err) {
+			return "", 0, 0, err
+		}
+		return "", 0, 0, nil
 	}
 	up = strings.TrimSpace(up)
 	out, err := run(ctx, cwd, "rev-list", "--left-right", "--count", "@{u}...HEAD")
 	f := strings.Fields(out)
 	if err != nil || len(f) != 2 {
-		return up, 0, 0
+		return up, 0, 0, nil
 	}
 	behind, _ := strconv.Atoi(f[0])
 	ahead, _ := strconv.Atoi(f[1])
-	return up, ahead, behind
+	return up, ahead, behind, nil
 }
 
 // describeGitError names the command and carries git's own stderr, which run's bare exit status lacks.
@@ -143,7 +152,8 @@ func GetChanges(ctx context.Context, cwd, ref string) (*Changes, error) {
 		return noRepo(ctx)
 	}
 	branch, head := facts.branch, facts.head
-	up, ahead, behind := upstreamCounts(ctx, cwd)
+	// a failed upstream read leaves the upstream empty and the counts zero: a slow one must not fail the Diff list
+	up, ahead, behind, _ := upstreamCounts(ctx, cwd)
 	// cwd's path within the repo (e.g. "services/foo/"), empty when cwd is the repo root. When cwd is
 	// a subdirectory — a microservice inside a monorepo — this scopes the surface to cwd's subtree and
 	// makes every path cwd-relative, so a path fed back as a `git -C cwd` pathspec
@@ -248,7 +258,8 @@ func GetChangesTo(ctx context.Context, cwd, base, end string) (*Changes, error) 
 	if out, herr := run(ctx, cwd, "rev-parse", "HEAD"); herr == nil {
 		ch.Head = strings.TrimSpace(out)
 	}
-	ch.Upstream, ch.UpstreamAhead, ch.UpstreamBehind = upstreamCounts(ctx, cwd)
+	// a failed upstream read leaves the upstream empty and the counts zero: a slow one must not fail the Diff list
+	ch.Upstream, ch.UpstreamAhead, ch.UpstreamBehind, _ = upstreamCounts(ctx, cwd)
 	return ch, nil
 }
 
@@ -1726,7 +1737,10 @@ func syncFailure(args []string, err error) *SyncResult {
 func Pull(ctx context.Context, cwd string) (*SyncResult, error) {
 	ctx, cancel := context.WithTimeout(ctx, pullTimeout)
 	defer cancel()
-	up, err := run(ctx, cwd, "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}")
+	up, err := run(ctx, cwd, upstreamArgs...)
+	if err != nil && gitFault(ctx, err) {
+		return syncFailure(upstreamArgs, err), nil // a git that never answered is not "no upstream"
+	}
 	if err != nil || strings.TrimSpace(up) == "" {
 		return &SyncResult{Failure: &GitFailure{Command: "git pull --ff-only", ExitCode: -1, Stderr: "this branch has no upstream to pull from"}}, nil
 	}
@@ -1748,12 +1762,19 @@ func Pull(ctx context.Context, cwd string) (*SyncResult, error) {
 func Push(ctx context.Context, cwd string) (*SyncResult, error) {
 	ctx, cancel := context.WithTimeout(ctx, pushTimeout)
 	defer cancel()
-	b, err := run(ctx, cwd, "rev-parse", "--abbrev-ref", "HEAD")
+	branchArgs := []string{"rev-parse", "--abbrev-ref", "HEAD"}
+	b, err := run(ctx, cwd, branchArgs...)
+	if err != nil && gitFault(ctx, err) {
+		return syncFailure(branchArgs, err), nil // a git that never answered is not a detached HEAD
+	}
 	branch := strings.TrimSpace(b)
 	if err != nil || branch == "HEAD" || branch == "" {
 		return &SyncResult{Failure: &GitFailure{Command: "git push", ExitCode: -1, Stderr: "HEAD is detached: check out a branch to push"}}, nil
 	}
-	up, ahead, _ := upstreamCounts(ctx, cwd)
+	up, ahead, _, err := upstreamCounts(ctx, cwd)
+	if err != nil {
+		return syncFailure(upstreamArgs, err), nil // never publish with `push -u origin` on a read that timed out
+	}
 	args := []string{"push"}
 	if up == "" {
 		args = []string{"push", "-u", "origin", branch}
@@ -1783,6 +1804,12 @@ func exitCodeOf(err error) int {
 		return ee.ExitCode()
 	}
 	return -1
+}
+
+// gitFault reports a git call that did not answer: it never ran, or ctx ran out. A git killed at the
+// deadline exits 1 on Windows, the code git uses for "no such ref", so the exit code alone cannot tell.
+func gitFault(ctx context.Context, err error) bool {
+	return ctx.Err() != nil || exitCodeOf(err) <= 0
 }
 
 // failureOf turns the error run() already returns into a GitFailure. cmd.Output() populates
