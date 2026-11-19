@@ -367,6 +367,7 @@ declare global {
         commit?: string;
         surface?: string;
         agent?: BugReportAgent;
+        region?: BugReportRegion;
         state: string;
         handler?: string;
         claimedts?: number;
@@ -387,6 +388,14 @@ declare global {
         text: string;
         runid?: string;
         effortoid?: string;
+    };
+
+    // wshrpc.BugReportRegion
+    type BugReportRegion = {
+        x: number;
+        y: number;
+        w: number;
+        h: number;
     };
 
     // wshrpc.BugReportStatus
@@ -847,6 +856,7 @@ declare global {
         surface?: string;
         agent?: BugReportAgent;
         screen64?: string;
+        region?: BugReportRegion;
     };
 
     // wshrpc.CommandCancelRunData

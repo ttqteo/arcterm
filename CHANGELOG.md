@@ -34,6 +34,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - The Agent details rail's session block says when the agent last compacted: **Compacted · 202k → 13k · manual ·
   12m ago**, with ×2 ahead when it compacted more than once. A click opens the summary Claude kept, as Chat's divider
   does.
+- The bug box can frame where it went wrong: Khoanh vùng under the picture lays the picture over the window, you drag a
+  rectangle and press Enter, and the report goes to Jarvis with that area framed on the picture.
 - The phone page's Computer section says whether the computer is **Locked** or **Unlocked** (Windows), and its Lock
   button rests while the screen is locked.
 - A message queued in Chat while Claude works has a **×** beside Send now: it takes the queued messages out of

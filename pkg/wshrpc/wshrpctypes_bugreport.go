@@ -18,6 +18,15 @@ type BugReportAgent struct {
 	Name string `json:"name"`
 }
 
+// BugReportRegion is the part of screen.png the person framed as where it went wrong, in the picture's pixels. The
+// picture already has it drawn on; this says where, for an agent that reads report.json first.
+type BugReportRegion struct {
+	X int `json:"x"`
+	Y int `json:"y"`
+	W int `json:"w"`
+	H int `json:"h"`
+}
+
 // BugReportOutcome is what the Jarvis agent says it did with a report, written by `wsh bugreport done`.
 type BugReportOutcome struct {
 	Text      string `json:"text"`
@@ -34,6 +43,7 @@ type BugReport struct {
 	Commit    string            `json:"commit,omitempty"`
 	Surface   string            `json:"surface,omitempty"`
 	Agent     *BugReportAgent   `json:"agent,omitempty"`
+	Region    *BugReportRegion  `json:"region,omitempty"` // the area framed in screen.png, when the person marked one
 	State     string            `json:"state"`
 	Handler   string            `json:"handler,omitempty"` // the Jarvis agent's tab id
 	ClaimedTs int64             `json:"claimedts,omitempty"`
@@ -53,13 +63,14 @@ type BugReportStatus struct {
 }
 
 type CommandBugReportSaveData struct {
-	Text     string          `json:"text"`
-	Ts       int64           `json:"ts"`
-	Version  string          `json:"version"`
-	Commit   string          `json:"commit,omitempty"`
-	Surface  string          `json:"surface,omitempty"`
-	Agent    *BugReportAgent `json:"agent,omitempty"`
-	Screen64 string          `json:"screen64,omitempty"` // the PNG, base64; empty when the capture failed
+	Text     string           `json:"text"`
+	Ts       int64            `json:"ts"`
+	Version  string           `json:"version"`
+	Commit   string           `json:"commit,omitempty"`
+	Surface  string           `json:"surface,omitempty"`
+	Agent    *BugReportAgent  `json:"agent,omitempty"`
+	Screen64 string           `json:"screen64,omitempty"` // the PNG, base64; empty when the capture failed
+	Region   *BugReportRegion `json:"region,omitempty"`   // the area the person framed, already drawn on the PNG
 }
 
 type CommandBugReportListData struct {

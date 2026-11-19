@@ -1,8 +1,9 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-// The bug box's state and its three moves (docs/superpowers/specs/2026-11-19-bug-report-design.md, "The box"): open it
-// (capture the window first, so the box is never in the picture), send it (one wshrpc save), close it (keep nothing).
+// The bug box's state and its moves (docs/superpowers/specs/2026-11-19-bug-report-design.md, "The box"): open it
+// (capture the window first, so the box is never in the picture), frame a region of the picture (the box steps aside
+// while the person drags over it), send it (one wshrpc save, the region drawn on the picture), close it (keep nothing).
 // The pure parts, when Send is allowed and what the save carries, are in bugreportboxmodel.ts.
 
 import { anyDialogOpen } from "@/app/modals/modalstack";
@@ -17,9 +18,12 @@ import {
     agentInFocus,
     buildSavePayload,
     canSend,
+    frameWidth,
     sentTitle,
     type BugReportBoxState,
     type BugReportOpen,
+    type Region,
+    type Size,
 } from "./bugreportboxmodel";
 import { pushToast } from "./notificationstore";
 import { versionInfoAtom } from "./versioninfo";
@@ -63,6 +67,21 @@ async function captureWindow(): Promise<Blob | null> {
     }
 }
 
+// the picture's own size, for the region's scale and the thumb's crop; null when it does not decode
+async function imageSize(blob: Blob | null): Promise<Size | null> {
+    if (blob == null) {
+        return null;
+    }
+    try {
+        const bitmap = await createImageBitmap(blob);
+        const size = { w: bitmap.width, h: bitmap.height };
+        bitmap.close();
+        return size.w > 0 && size.h > 0 ? size : null;
+    } catch {
+        return null;
+    }
+}
+
 // the reports waiting for Jarvis; a server that cannot say reads as none, since the box's count is a courtesy
 async function waitingCount(): Promise<number> {
     try {
@@ -92,16 +111,84 @@ export async function openBugReport(model: AgentsViewModel): Promise<void> {
         await new Promise<void>((resolve) => setTimeout(resolve, DIALOG_EXIT_MS));
     }
     const [capture, waiting] = await Promise.all([captureWindow(), waitingCount()]);
+    const captureSize = await imageSize(capture);
     if (globalStore.get(bugReportAtom).kind !== "capturing") {
         return;
     }
-    globalStore.set(bugReportAtom, { kind: "open", capture, surface, agent, ts, waiting, text: "", sending: false });
+    globalStore.set(bugReportAtom, {
+        kind: "open",
+        capture,
+        captureSize,
+        region: null,
+        selecting: false,
+        surface,
+        agent,
+        ts,
+        waiting,
+        text: "",
+        sending: false,
+    });
 }
 
 export function setBugReportText(text: string): void {
     const s = globalStore.get(bugReportAtom);
     if (s.kind === "open") {
         globalStore.set(bugReportAtom, { ...s, text });
+    }
+}
+
+function setOpen(change: (box: BugReportOpen) => BugReportOpen): void {
+    const s = globalStore.get(bugReportAtom);
+    if (s.kind === "open") {
+        globalStore.set(bugReportAtom, change(s));
+    }
+}
+
+/** Khoanh vùng and Khoanh lại: the box steps aside for the picture, over the whole window, to drag a region on. Only
+ *  with a picture that decoded. */
+export function startBugRegion(): void {
+    setOpen((box) => (box.captureSize != null && !box.sending ? { ...box, selecting: true } : box));
+}
+
+/** The drag is over: Enter keeps `region` (the picture's pixels), Esc passes null and keeps what was framed before. */
+export function finishBugRegion(region: Region | null): void {
+    setOpen((box) => ({ ...box, selecting: false, region: region ?? box.region }));
+}
+
+/** Bỏ vùng: the report goes with the picture as it was taken. */
+export function clearBugRegion(): void {
+    setOpen((box) => ({ ...box, region: null }));
+}
+
+// the picture with the region drawn on in the accent, as the saved screen.png; the plain picture when drawing fails
+async function framedPicture(box: BugReportOpen): Promise<Blob | null> {
+    if (box.capture == null || box.region == null || box.captureSize == null) {
+        return box.capture;
+    }
+    try {
+        const bitmap = await createImageBitmap(box.capture);
+        const canvas = new OffscreenCanvas(bitmap.width, bitmap.height);
+        const ctx = canvas.getContext("2d");
+        if (ctx == null) {
+            bitmap.close();
+            return box.capture;
+        }
+        ctx.drawImage(bitmap, 0, 0);
+        bitmap.close();
+        const width = frameWidth(box.captureSize, { w: window.innerWidth, h: window.innerHeight });
+        const accent = getComputedStyle(document.documentElement).getPropertyValue("--color-accent").trim();
+        if (accent === "") {
+            // no theme to read the colour from: the region still goes in report.json
+            return box.capture;
+        }
+        ctx.strokeStyle = accent;
+        ctx.lineWidth = width;
+        const { x, y, w, h } = box.region;
+        // the line sits outside the region, so the framed pixels stay as they were
+        ctx.strokeRect(x - width / 2, y - width / 2, w + width, h + width);
+        return await canvas.convertToBlob({ type: "image/png" });
+    } catch {
+        return box.capture;
     }
 }
 
@@ -113,7 +200,8 @@ export function closeBugReport(): void {
 }
 
 async function save(box: BugReportOpen): Promise<BugReportStatus> {
-    const screen64 = box.capture == null ? undefined : arrayToBase64(new Uint8Array(await box.capture.arrayBuffer()));
+    const picture = await framedPicture(box);
+    const screen64 = picture == null ? undefined : arrayToBase64(new Uint8Array(await picture.arrayBuffer()));
     const info = globalStore.get(versionInfoAtom);
     const payload = buildSavePayload(box, screen64, info.app, info.commit);
     const fake = import.meta.env.DEV && typeof window !== "undefined" ? window.__bugReportSaveFake : undefined;

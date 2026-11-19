@@ -16,6 +16,11 @@ list (its number is not reused).
 Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) ·
 [part 4](hand-checks-4.md) · [part 3](hand-checks-3.md) · [part 2](hand-checks-2.md) (oldest).
 
+- [ ] (arcterm) **The bug box's Khoanh vùng frames an area on the real capture.** Open the bug box (Ctrl+Alt+R), press
+  Khoanh vùng: the window's picture covers it, a drag frames an area with its size under it, Enter brings the box back
+  with that area in the thumb, Khoanh lại and Bỏ vùng. Send, then open the report's screen.png: the area has an accent
+  frame, and report.json a `region`. The `bug-report-box` scenario's step 7 covers the flow on a drawn picture but was
+  not run. Commit: feat/bug-region.
 - [ ] (arcterm) **Sidecar's Resources fills in after a restart.** Open Sidecar with its Resources showing (the wall's
   band, or the small form's panel), quit arcterm and start it again so Sidecar comes back on its own: within a few
   seconds the arcterm rows and the three charts fill in, not "Measuring…" for good. Same after a dev full reload of the

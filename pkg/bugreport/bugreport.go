@@ -119,6 +119,11 @@ func (s *Store) Save(data wshrpc.CommandBugReportSaveData, logDir string) (wshrp
 		agent := *data.Agent
 		report.Agent = &agent
 	}
+	// a region means something only on the picture it was drawn on, and an empty one is no region
+	if data.Region != nil && len(screen) > 0 && data.Region.W > 0 && data.Region.H > 0 {
+		region := *data.Region
+		report.Region = &region
+	}
 	// report.json goes last: a folder with none is not a report yet, and a failed save leaves no folder at all
 	writeAll := func() error {
 		if len(screen) > 0 {
