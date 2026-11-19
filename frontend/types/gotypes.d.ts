@@ -1223,6 +1223,7 @@ declare global {
         afterrunid?: string;
         autonomous?: boolean;
         worktree?: string;
+        chunks?: RunEffortRef[];
     };
 
     // wshrpc.CommandCreateRunRtnData
@@ -1440,6 +1441,8 @@ declare global {
         ticket?: string;
         parentoid?: string;
         chunks?: CommandEffortChunkSeed[];
+        proposed?: boolean;
+        sourceblock?: string;
     };
 
     // wshrpc.CommandEffortCreateRtnData
@@ -4909,6 +4912,24 @@ declare global {
         runid: string;
     };
 
+    // wshrpc.RunReviewGroup
+    type RunReviewGroup = {
+        runid: string;
+        channelid: string;
+        goal: string;
+        createdts: number;
+        items: RunReviewItem[];
+    };
+
+    // wshrpc.RunReviewItem
+    type RunReviewItem = {
+        effortoid: string;
+        efforttitle: string;
+        project?: string;
+        label: string;
+        proposedts: number;
+    };
+
     // waveobj.RunSpec
     type RunSpec = {
         runtime?: string;
@@ -5798,6 +5819,7 @@ declare global {
     type WorkState = {
         projects?: ProjectWork[];
         efforts?: EffortSummary[];
+        runreview?: RunReviewGroup[];
         sources: SourceHealth;
     };
 

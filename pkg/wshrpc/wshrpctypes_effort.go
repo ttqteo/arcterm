@@ -55,6 +55,11 @@ type CommandEffortCreateData struct {
 	Ticket    string                   `json:"ticket,omitempty"`
 	ParentOID string                   `json:"parentoid,omitempty"`
 	Chunks    []CommandEffortChunkSeed `json:"chunks,omitempty"` // may be empty; chunks can be added later
+	// Proposed seeds every chunk as a proposal (status proposed, with the "proposed" note), the way `chunk add
+	// --proposed` does. SourceBlock is the calling terminal ("block:<id>"), from which the server derives the notes'
+	// author, session and run, as on CommandEffortMutateData.
+	Proposed    bool   `json:"proposed,omitempty"`
+	SourceBlock string `json:"sourceblock,omitempty"`
 }
 
 type CommandEffortChunkSeed struct {
