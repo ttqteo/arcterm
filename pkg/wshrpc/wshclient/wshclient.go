@@ -279,6 +279,36 @@ func BrainstormJudgeStopCommand(w *wshutil.WshRpc, data wshrpc.CommandBrainstorm
 	return err
 }
 
+// command "bugreportclaim", wshserver.BugReportClaimCommand
+func BugReportClaimCommand(w *wshutil.WshRpc, data wshrpc.CommandBugReportClaimData, opts *wshrpc.RpcOpts) (*wshrpc.CommandBugReportClaimRtnData, error) {
+	resp, err := sendRpcRequestCallHelper[*wshrpc.CommandBugReportClaimRtnData](w, "bugreportclaim", data, opts)
+	return resp, err
+}
+
+// command "bugreportdone", wshserver.BugReportDoneCommand
+func BugReportDoneCommand(w *wshutil.WshRpc, data wshrpc.CommandBugReportDoneData, opts *wshrpc.RpcOpts) error {
+	_, err := sendRpcRequestCallHelper[any](w, "bugreportdone", data, opts)
+	return err
+}
+
+// command "bugreportlist", wshserver.BugReportListCommand
+func BugReportListCommand(w *wshutil.WshRpc, data wshrpc.CommandBugReportListData, opts *wshrpc.RpcOpts) ([]wshrpc.BugReport, error) {
+	resp, err := sendRpcRequestCallHelper[[]wshrpc.BugReport](w, "bugreportlist", data, opts)
+	return resp, err
+}
+
+// command "bugreportsave", wshserver.BugReportSaveCommand
+func BugReportSaveCommand(w *wshutil.WshRpc, data wshrpc.CommandBugReportSaveData, opts *wshrpc.RpcOpts) (*wshrpc.BugReportStatus, error) {
+	resp, err := sendRpcRequestCallHelper[*wshrpc.BugReportStatus](w, "bugreportsave", data, opts)
+	return resp, err
+}
+
+// command "bugreportstatus", wshserver.BugReportStatusCommand
+func BugReportStatusCommand(w *wshutil.WshRpc, opts *wshrpc.RpcOpts) (*wshrpc.BugReportStatus, error) {
+	resp, err := sendRpcRequestCallHelper[*wshrpc.BugReportStatus](w, "bugreportstatus", nil, opts)
+	return resp, err
+}
+
 // command "cancelrun", wshserver.CancelRunCommand
 func CancelRunCommand(w *wshutil.WshRpc, data wshrpc.CommandCancelRunData, opts *wshrpc.RpcOpts) error {
 	_, err := sendRpcRequestCallHelper[any](w, "cancelrun", data, opts)

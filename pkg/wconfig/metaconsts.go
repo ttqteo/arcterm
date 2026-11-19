@@ -108,5 +108,7 @@ const (
 
 	ConfigKey_PowerClear                     = "power:*"
 	ConfigKey_PowerKeepAwake                 = "power:keepawake"
+
+	ConfigKey_BugReportRepo                  = "bugreport:repo"
 )
 

@@ -259,6 +259,9 @@
         },
         "power:keepawake": {
           "type": "boolean"
+        },
+        "bugreport:repo": {
+          "type": "string"
         }
       },
       "additionalProperties": false,
