@@ -1515,7 +1515,13 @@ export function ChatConversation({
             // a stretch of tools: folded, running or not, until the person opens it
             case "work":
                 return (
-                    <ChatSteps work={part.work} open={opened.has(key)} live={toolsLive} onToggle={() => toggle(key)} />
+                    <ChatSteps
+                        work={part.work}
+                        open={opened.has(key)}
+                        live={toolsLive}
+                        growing={toolsLive && last && p === item.parts.length - 1}
+                        onToggle={() => toggle(key)}
+                    />
                 );
             // a reviewer's verdict: a card while it waits on you (or the agent works, or has exited), its ✓ row once it folds
             case "verdict":

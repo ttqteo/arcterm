@@ -44551,8 +44551,8 @@ const agentChat = {
             await h.ev(`${W5}?.querySelector("[data-fold]")?.click()`);
             await polishWaitFor(h, `!${W5}?.querySelector("[data-chat-tools]")`, 3000);
 
-            // 5c. Calm.dc.html: a stretch of one described command reads as its description, with no counts and no time under
-            // 10 s; each finished turn ends in the card of the files its edits changed, the first turn's one file as a row
+            // 5c. a finished stretch of one described command is its box alone, the row reading its description (a line
+            // over it said the same words); each finished turn ends in the card of the files its edits changed, the first turn's one file as a row
             // alone (no header, no See all), the last turn's two as Edited 2 files, a row each in the order first touched with
             // its folder and its +N, then See all with the turn's totals
             // with the agent idle, so its last turn is finished; working again after, as the steps below expect
@@ -44586,6 +44586,10 @@ const agentChat = {
                 };
                 return {
                     fold: f == null ? null : { sentence: t(f, "[data-fold-sentence]"), counts: t(f, "[data-fold-counts]"), time: t(f, "[data-fold-time]"), state: f.getAttribute("data-fold-state") },
+                    // a finished stretch of one call is its box alone, no line over it
+                    single: ${W5c}?.hasAttribute("data-chat-work-single") ?? false,
+                    rows: ${W5c}?.querySelectorAll("[data-chat-tools] [data-chat-step]").length ?? 0,
+                    row: t(${W5c}, '[data-chat-step-chip="description"]'),
                     one: card(1),
                     two: card(2),
                     cards: ${acLayer(A)}?.querySelectorAll("[data-chat-turn-files]").length ?? 0,
@@ -44598,8 +44602,8 @@ const agentChat = {
             const wantPaths5c = [ctx.files.edited, ctx.files.notes];
             const sum5c = (turn5c.two?.rows ?? []).reduce((n, r) => n + Number(/^\+(\d+)/.exec(r.counts ?? "")?.[1] ?? NaN), 0);
             rec(
-                "5c. the one-command stretch reads Checked the working tree after the edit, with no counts and no time; the first turn ends in a one-file card (client.ts, src/sync, +N, no header, no See all); the last turn ends in a card reading Edited 2 files, client.ts in src/sync then retry-notes.md in docs, each with its +N, then See all with the summed +N, in a 10px bordered box after the turn's last part",
-                idle5c && turn5c.fold?.sentence === AC_STATUS_DESCRIPTION && turn5c.fold.counts === null && turn5c.fold.time === null && turn5c.fold.state === "done" &&
+                "5c. the finished one-command stretch is its bordered box alone, with no folded line over it, its one row reading Checked the working tree after the edit; the first turn ends in a one-file card (client.ts, src/sync, +N, no header, no See all); the last turn ends in a card reading Edited 2 files, client.ts in src/sync then retry-notes.md in docs, each with its +N, then See all with the summed +N, in a 10px bordered box after the turn's last part",
+                idle5c && turn5c.fold === null && turn5c.single && turn5c.rows === 1 && turn5c.row === AC_STATUS_DESCRIPTION &&
                     turn5c.cards === 2 &&
                     turn5c.one?.head === null && turn5c.one.all === null && turn5c.one.rows.length === 1 &&
                     turn5c.one.rows[0].path === ctx.files.edited && turn5c.one.rows[0].name === "client.ts" && turn5c.one.rows[0].folder === "src/sync" &&

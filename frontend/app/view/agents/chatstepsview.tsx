@@ -494,10 +494,14 @@ function StepList({ work, live }: { work: WorkItem; live: boolean }) {
 // opening to its box of rows on a click; "◌ Run the told tests +2 · 12s ›" while a call in it is in flight. A running
 // stretch stays folded too (Calm.dc.html): its line already names what runs, and a box growing under the paragraphs read
 // as noise. A finished stretch's line shows its time from 10 s up (stretchTime).
+// A stretch of one call that can no longer grow is its box alone, the row already open: its line said what the row says
+// ("Check shared registration files…" over "Check shared registration files… ›"). The stretch still growing keeps its
+// line, so a second call landing does not turn a box back into a line.
 export function ChatSteps({
     work,
     open,
     live,
+    growing,
     onToggle,
 }: {
     work: WorkItem;
@@ -505,12 +509,23 @@ export function ChatSteps({
     open: boolean;
     // the session is working: a tool with no result is running, and the stretch counts up to now
     live: boolean;
+    // the last part of the turn being written: another call may still join it
+    growing: boolean;
     onToggle: () => void;
 }) {
     const shown = open;
     const summary = stepSummary(work.actions, live);
     const running = summary.running;
     const now = useNow(running);
+    if (work.actions.length === 1 && !growing) {
+        return (
+            <div data-chat-work data-chat-work-single className="flex flex-col">
+                <div data-chat-tools className="overflow-hidden rounded-[10px] border border-edge-mid">
+                    <StepList work={work} live={live} />
+                </div>
+            </div>
+        );
+    }
     const time = stretchTime(running ? stretchMs(work, now, live) : work.durationMs, running);
     // the pictures it read, on its folded line: opened, each sits on its own row instead
     const pictures = shown ? [] : stretchPictures(work.actions, MAX_LINE_PICTURES);
