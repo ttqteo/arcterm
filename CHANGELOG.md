@@ -43,6 +43,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - Claude Desktop's "Import Claude Code CLI sessions" no longer brings in the sessions an orchestrator run starts on its
   own (task workers, reviewers, judges), so its Code sidebar keeps the conversations you had; a run's lead and a quick
   run are still imported.
+- Focus read in Chat stays on when you scroll to the bottom while the agent is working, instead of the dimming
+  switching off there with the button still on; the reply being written stays undimmed.
+- In a narrow Chat, the text keeps clear of the Focus read and Skim buttons in the corner instead of running under them.
 
 ## 1.6.1 — 2026-11-19
 
