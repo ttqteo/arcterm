@@ -21,6 +21,10 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
   bordered box with one row ("Check shared registration files… ›") that opens to `$ command` and its output, with no
   "… · 15s ˅" line over it. While the agent works, its latest stretch stays a line even with one call, and does not
   flip to a box and back as a second call lands. Branch `fix/single-step-stretch`.
+- [ ] (arcterm) **A picture's thumbnail opens it in one click** (`chatstepsview.tsx` PictureThumb). In Chat, after the
+  agent read a screenshot, click the small thumbnail at the end of the folded steps line: the picture opens full size
+  over Chat (wheel zooms, Esc closes) and the line stays folded; the thumbnail on an opened Read row does the same
+  without opening the row. Branch `fix/single-step-stretch`.
 - [ ] (arcterm) **A sent `!` command keeps its colours.** In a Claude agent's Chat, type `! taskkill //T //F //PID 1`:
   the box colours the command, the arguments green. Send it: the bubble's command line has the same colours, not
   plain white. `CommandCard` (chatconversation.tsx) draws a bash command with `ShellCommand`. Branch

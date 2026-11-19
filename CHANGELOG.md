@@ -180,6 +180,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   and no longer writes the suggestion as an `arc-commit` code block.
 - A step the agent took alone between two paragraphs in Chat (one command, one file read) shows as its own row in a
   box, which opens to its output, instead of a line that opened to a row saying the same words again.
+- A click on the thumbnail of a picture the agent read in Chat opens the picture full size at once, instead of opening
+  the line, then its row, then the picture.
 
 ### Fixed
 

@@ -118,6 +118,22 @@ export default function (kit) {
                     rec(`${name}: the stretch's folded line ends with the thumbnail of the one picture it read`, ok && s.rows.length === 0, s);
                 });
 
+                await run("1b. thumbnail zooms", async (name) => {
+                    await click("[data-fold-thumbs] [data-chat-step-thumb-open]");
+                    const zoom = `document.querySelector("[data-image-zoom] [data-image-zoom-img]")`;
+                    const ok = await polishWaitFor(h, `!!${zoom}`, WAIT_MS);
+                    await polishNap(400);
+                    const s = await h.ev(seen(id));
+                    await h.shot("cdp-shots/chat-read-picture-1b-zoom.png");
+                    await h.ev(`document.querySelector("[data-modal-scrim]")?.click()`);
+                    await polishWaitFor(h, `!document.querySelector("[data-image-zoom]")`, 3000);
+                    rec(
+                        `${name}: one click on the folded line's thumbnail opens the picture full size over Chat, and leaves the line folded`,
+                        ok && s.rows.length === 0,
+                        { ok, rows: s.rows.length }
+                    );
+                });
+
                 await run("2. opened rows", async (name) => {
                     await click("[data-chat-work] [data-fold]");
                     const ok = await until(`s.rows.length === 2`);
