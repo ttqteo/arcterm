@@ -16,6 +16,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"fmt"
 	"regexp"
 	"strings"
 	"sync"
@@ -31,7 +32,12 @@ const (
 	hookMax = 10 * time.Second
 	// the end of a reply that names its turn: Chat's transcript entry and the mod's answer can differ in spacing only
 	replyKeyRunes = 400
+	// the end of a reply waveapp.log shows when the mod's turn and Chat's ask name different replies
+	logTailRunes = 48
 )
+
+// what joins a begin key's reply key to its call's own (Begin)
+var keySep = string(rune(0))
 
 // HookCall is what Begin gives the mod: the completion to run, and the key End hands back.
 type HookCall struct {
@@ -43,6 +49,7 @@ type HookCall struct {
 
 type hookEntry struct {
 	key      string
+	tail     string // logTail of the reply begun, for the log line of an ask that does not match it
 	question bool
 	started  time.Time
 	done     chan struct{}
@@ -76,8 +83,9 @@ func (h *Hooks) Begin(block string, req Request) HookCall {
 	// reply (the person sent nothing new and the turn ran again) is told apart
 	sum := sha256.Sum256([]byte(prompt + "\x00" + time.Now().String()))
 	e := &hookEntry{
-		key:      ReplyKey(req.Reply) + "\x00" + hex.EncodeToString(sum[:8]),
+		key:      ReplyKey(req.Reply) + keySep + hex.EncodeToString(sum[:8]),
 		question: req.Question,
+		tail:     logTail(req.Reply),
 		started:  time.Now(),
 		done:     make(chan struct{}),
 	}
@@ -90,13 +98,19 @@ func (h *Hooks) Begin(block string, req Request) HookCall {
 }
 
 // End brings back the model's answer to the turn Begin keyed `key`; failed says the mod got none. An end for a turn a
-// newer Begin replaced, or one already ended, is dropped.
-func (h *Hooks) End(block, key, text string, failed bool) {
+// newer Begin replaced, or one already ended, is dropped. It answers what became of the end, for waveapp.log: "taken",
+// or why it was dropped.
+func (h *Hooks) End(block, key, text string, failed bool) string {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	e := h.byBlock[block]
-	if e == nil || e.key != key || e.ended {
-		return
+	switch {
+	case e == nil:
+		return "dropped: no turn begun for the block"
+	case e.key != key:
+		return "dropped: a newer begin replaced its turn"
+	case e.ended:
+		return "dropped: the turn already ended"
 	}
 	e.ended = true
 	if !failed {
@@ -104,14 +118,24 @@ func (h *Hooks) End(block, key, text string, failed bool) {
 		e.ok = true
 	}
 	close(e.done)
+	if failed {
+		return "taken: the mod got no answer"
+	}
+	return fmt.Sprintf("taken: %d chips, %dms after begin", len(e.out), time.Since(e.started).Milliseconds())
 }
 
 // Await answers the replies the mod worked out for block's turn that ended on reply, and whether it did: false when
 // the mod did not begin that turn within the wait (expect: the agent is a Claude agent, which has a mod; otherwise no
 // wait), began it for another kind of reply, failed, or did not end it in time. False means: run the headless call.
 func (h *Hooks) Await(ctx context.Context, block, reply string, question, expect bool) ([]string, bool) {
+	out, ok, _ := h.AwaitWhy(ctx, block, reply, question, expect)
+	return out, ok
+}
+
+// AwaitWhy is Await, with why it took no answer from the mod, for waveapp.log ("" when it took one).
+func (h *Hooks) AwaitWhy(ctx context.Context, block, reply string, question, expect bool) ([]string, bool, string) {
 	if block == "" {
-		return nil, false
+		return nil, false, "no block"
 	}
 	key := ReplyKey(reply)
 	var appearBy time.Time
@@ -123,34 +147,54 @@ func (h *Hooks) Await(ctx context.Context, block, reply string, question, expect
 		e := h.byBlock[block]
 		changed := h.changed
 		h.mu.Unlock()
-		if e != nil && strings.HasPrefix(e.key, key+"\x00") {
+		if e != nil && strings.HasPrefix(e.key, key+keySep) {
 			if e.question != question {
-				return nil, false
+				return nil, false, fmt.Sprintf("question differs: mod %v, chat %v", e.question, question)
 			}
 			return h.wait(ctx, e)
 		}
 		left := time.Until(appearBy)
 		if left <= 0 {
-			return nil, false
+			return nil, false, h.missWhy(block, key, reply, expect)
 		}
 		timer := time.NewTimer(left)
 		select {
 		case <-changed:
 			timer.Stop()
 		case <-timer.C:
-			return nil, false
+			return nil, false, h.missWhy(block, key, reply, expect)
 		case <-ctx.Done():
 			timer.Stop()
-			return nil, false
+			return nil, false, "the ask ended before the mod began"
 		}
 	}
 }
 
-func (h *Hooks) wait(ctx context.Context, e *hookEntry) ([]string, bool) {
-	answer := func() ([]string, bool) {
+// missWhy says why no begin matched the ask's reply: none came for the block, or the latest one is another reply's,
+// with both keys and the end of each reply, so a mismatch shows where the two texts part.
+func (h *Hooks) missWhy(block, key, reply string, expect bool) string {
+	h.mu.Lock()
+	e := h.byBlock[block]
+	h.mu.Unlock()
+	if !expect && e == nil {
+		return "not a Claude agent: no wait for a mod"
+	}
+	if e == nil {
+		return fmt.Sprintf("no begin within %s", h.appear)
+	}
+	modKey, _, _ := strings.Cut(e.key, keySep)
+	return fmt.Sprintf("the latest begin (%dms ago) is another reply's: mod key %s %q, chat key %s %q",
+		time.Since(e.started).Milliseconds(), modKey[:8], e.tail, key[:8], logTail(reply))
+}
+
+func (h *Hooks) wait(ctx context.Context, e *hookEntry) ([]string, bool, string) {
+	answer := func() ([]string, bool, string) {
 		h.mu.Lock()
 		defer h.mu.Unlock()
-		return e.out, e.ok
+		if !e.ok {
+			return e.out, false, "the mod got no answer"
+		}
+		return e.out, true, ""
 	}
 	select {
 	case <-e.done:
@@ -159,7 +203,7 @@ func (h *Hooks) wait(ctx context.Context, e *hookEntry) ([]string, bool) {
 	}
 	left := time.Until(e.started.Add(h.max))
 	if left <= 0 {
-		return nil, false
+		return nil, false, fmt.Sprintf("the mod's turn began %s ago and has not ended", time.Since(e.started).Round(time.Millisecond))
 	}
 	timer := time.NewTimer(left)
 	defer timer.Stop()
@@ -167,10 +211,19 @@ func (h *Hooks) wait(ctx context.Context, e *hookEntry) ([]string, bool) {
 	case <-e.done:
 		return answer()
 	case <-timer.C:
-		return nil, false
+		return nil, false, fmt.Sprintf("the mod did not end its turn within %s of begin", h.max)
 	case <-ctx.Done():
-		return nil, false
+		return nil, false, "the ask ended while the mod worked"
 	}
+}
+
+// logTail is the end of a reply as ReplyKey reads it (the spacing folded), short enough for a log line.
+func logTail(reply string) string {
+	s := strings.Join(strings.Fields(reply), " ")
+	if n := utf8.RuneCountInString(s); n > logTailRunes {
+		s = string([]rune(s)[n-logTailRunes:])
+	}
+	return s
 }
 
 // ReplyKey is what names a turn by its reply: its last replyKeyRunes runes with the spacing folded, so Chat's

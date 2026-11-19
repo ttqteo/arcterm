@@ -159,3 +159,64 @@ func TestReplyKey(t *testing.T) {
 		t.Fatal("spacing must not matter")
 	}
 }
+
+func TestHooksAwaitWhySaysWhyItTookNoAnswer(t *testing.T) {
+	ctx := context.Background()
+	wantWhy := func(t *testing.T, why, part string) {
+		t.Helper()
+		if !strings.Contains(why, part) {
+			t.Fatalf("why = %q, want it to say %q", why, part)
+		}
+	}
+	t.Run("no begin", func(t *testing.T) {
+		_, ok, why := fastHooks().AwaitWhy(ctx, "b1", askReply, true, true)
+		if ok {
+			t.Fatal("took an answer")
+		}
+		wantWhy(t, why, "no begin within")
+	})
+	t.Run("not a Claude agent", func(t *testing.T) {
+		_, _, why := fastHooks().AwaitWhy(ctx, "b1", askReply, true, false)
+		wantWhy(t, why, "not a Claude agent")
+	})
+	t.Run("another reply begun: both ends shown", func(t *testing.T) {
+		h := fastHooks()
+		h.Begin("b1", Request{Reply: "Done, the rail shows it."})
+		_, _, why := h.AwaitWhy(ctx, "b1", "Done, the rail shows it now.", false, true)
+		wantWhy(t, why, "another reply's")
+		wantWhy(t, why, `"Done, the rail shows it."`)
+		wantWhy(t, why, `"Done, the rail shows it now."`)
+	})
+	t.Run("question differs", func(t *testing.T) {
+		h := fastHooks()
+		h.Begin("b1", Request{Reply: askReply})
+		_, _, why := h.AwaitWhy(ctx, "b1", askReply, false, true)
+		wantWhy(t, why, "question differs")
+	})
+	t.Run("the mod got no answer", func(t *testing.T) {
+		h := fastHooks()
+		call := h.Begin("b1", Request{Reply: askReply})
+		if got := h.End("b1", call.Key, "", true); got != "taken: the mod got no answer" {
+			t.Fatalf("End = %q", got)
+		}
+		_, _, why := h.AwaitWhy(ctx, "b1", askReply, true, true)
+		wantWhy(t, why, "the mod got no answer")
+	})
+	t.Run("no end in time", func(t *testing.T) {
+		h := fastHooks()
+		h.Begin("b1", Request{Reply: askReply})
+		_, _, why := h.AwaitWhy(ctx, "b1", askReply, true, true)
+		wantWhy(t, why, "did not end its turn within")
+	})
+	t.Run("taken", func(t *testing.T) {
+		h := fastHooks()
+		call := h.Begin("b1", Request{Reply: askReply})
+		wantWhy(t, h.End("b1", call.Key, "làm A đi", false), "taken: 1 chips")
+		out, ok, why := h.AwaitWhy(ctx, "b1", askReply, true, true)
+		if !ok || why != "" || len(out) != 1 {
+			t.Fatalf("AwaitWhy = %v %v %q", out, ok, why)
+		}
+		wantWhy(t, h.End("b1", call.Key, "làm B đi", false), "already ended")
+		wantWhy(t, h.End("b2", call.Key, "làm B đi", false), "no turn begun")
+	})
+}
