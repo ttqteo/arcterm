@@ -51,6 +51,19 @@ describe("briefNavIds", () => {
     it("leaves out a part with nothing drawn", () => {
         expect(briefNavIds({ ...PARTS, strip: [], cards: [], activity: [] })[0]).toBe("list:effort:l1");
     });
+
+    // To review's sheet is open over the page: j/k walk its rows and nothing under the scrim
+    it("walks only the To review sheet's rows while it is open", () => {
+        expect(briefNavIds({ ...PARTS, review: ["chunk:a", "chunk:b"] })).toEqual(["chunk:a", "chunk:b"]);
+    });
+
+    it("has no row to walk when the open sheet is empty", () => {
+        expect(briefNavIds({ ...PARTS, review: [] })).toEqual([]);
+    });
+
+    it("walks the page again once the sheet is closed", () => {
+        expect(briefNavIds({ ...PARTS, review: undefined })).toEqual(briefNavIds(PARTS));
+    });
 });
 
 describe("navInitiative", () => {

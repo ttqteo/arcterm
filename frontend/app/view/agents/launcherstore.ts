@@ -43,6 +43,12 @@ export const launcherSpecPathAtom = atom("") as PrimitiveAtom<string>;
 // The brainstorm waiting for this run (its tab and brainstorm.json), kept on the queue entry when the start is queued so
 // wavesrv can tell it the run's id. Cleared with the draft.
 export const launcherBrainstormAtom = atom<RunQueueBrainstorm | null>(null) as PrimitiveAtom<RunQueueBrainstorm | null>;
+// The To review chunks this start works (the sheet's Start a run with K items), as (effort, chunk) pairs: both start paths
+// send them, and wavesrv flips them to pending once the run has started. They belong to the open the prefill came with, so
+// every open drops them, a prefill's arrive when it is applied, and Clear and a launch drop them with the goal that named
+// them; a close keeps them with that goal.
+const NO_CHUNKS: RunEffortRef[] = [];
+export const launcherChunksAtom = atom<RunEffortRef[]>(NO_CHUNKS) as PrimitiveAtom<RunEffortRef[]>;
 // The run launcher's When row: Run now, After run… or Queue, with Jarvis's suggestion (launcherwhen.ts). It lasts as the
 // draft does, so a pick survives a close; a launch ends it.
 export const launcherWhenAtom = atom<WhenState>(WHEN_START) as PrimitiveAtom<WhenState>;
@@ -147,6 +153,8 @@ export function openLauncher(
     globalStore.set(launcherKindAtom, kind);
     globalStore.set(launcherRestoredAtom, prefill == null && draftShown(keptDraft()));
     globalStore.set(launcherPrefillAtom, prefill ?? null);
+    // a later New never inherits ticked chunks: a prefill's own are set when the dialog applies it
+    globalStore.set(launcherChunksAtom, NO_CHUNKS);
     // the dialog takes a new prefill's handback when it applies it; an earlier open's is no longer this one's
     globalStore.set(launcherHandbackAtom, null);
     globalStore.set(launcherOwnProjectAtom, project ?? null);
@@ -193,6 +201,7 @@ export function clearLauncherDraft(): void {
     globalStore.set(launcherPrototypeAtom, "");
     globalStore.set(launcherSpecPathAtom, "");
     globalStore.set(launcherBrainstormAtom, null);
+    globalStore.set(launcherChunksAtom, NO_CHUNKS);
     globalStore.set(launcherWorktreeAtom, false);
     globalStore.set(launcherBranchAtom, null);
     globalStore.set(launcherResumeAtom, null);
@@ -370,6 +379,7 @@ export function applyLauncherPrefill(projectNames: string[]): boolean {
     globalStore.set(launcherPrototypeAtom, p.prototype);
     globalStore.set(launcherSpecPathAtom, p.specPath ?? "");
     globalStore.set(launcherBrainstormAtom, p.brainstorm ?? null);
+    globalStore.set(launcherChunksAtom, p.chunks ?? NO_CHUNKS);
     // a new run is no earlier draft's pick: the row asks again for its own (its inputs have just changed)
     globalStore.set(launcherWhenAtom, WHEN_START);
     return true;

@@ -583,14 +583,17 @@ const LINKED_ROW =
 
 // What is linked under an opened initiative: its sub-initiatives (title, done/total, status), then the ideas linked to it
 // (title, and how many chunks wait for a decision). A row opens that initiative's own row on the List; the idea stays in
-// the Ideas column as well. Each row reads its card through initiativeLine, so it says what the card's own row says.
+// the Ideas column as well. Each row reads its card through initiativeLine, so it says what the card's own row says;
+// `listed` is the proposals To review lists, which an idea's "N proposed" leaves out as the Ideas box's row does.
 export function LinkedInitiatives({
     subs,
     ideas,
+    listed,
     onOpen,
 }: {
     subs: EffortCardModel[];
     ideas: EffortCardModel[];
+    listed?: ReadonlySet<string>;
     onOpen: (card: EffortCardModel) => void;
 }) {
     if (subs.length === 0 && ideas.length === 0) {
@@ -640,7 +643,7 @@ export function LinkedInitiatives({
                         Ideas <span className="font-normal tabular-nums">{ideas.length}</span>
                     </h4>
                     {ideas.map((card) => {
-                        const proposed = initiativeLine(card).proposed;
+                        const proposed = initiativeLine(card, listed).proposed;
                         return (
                             <button
                                 key={card.oref}

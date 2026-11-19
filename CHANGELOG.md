@@ -37,6 +37,10 @@ and a picture given to a line that is not big.
 - A council's Report draws what its panel found and spent: where each direction stands on evidence and agreement, who
   backed or opposed it, what each seat spent and read twice, and, on the Map, who answered which idea. Library's
   Councils tab charts the benchmark. <!-- big --> <!-- shot: none -->
+- What your runs leave behind now waits under To review on the Brief, grouped by run: tick the things you want done and
+  start one run with them, keep an item for later, or drop it. A run's lead files each open issue as a proposal, and a
+  proposal from a run no longer lands in Needs you; `wsh effort backfill-proposed` moves what runs left since
+  2026-11-13 into To review. <!-- big --> <!-- shot: 1.9.0-run-review.webp -->
 
 ### Changed
 

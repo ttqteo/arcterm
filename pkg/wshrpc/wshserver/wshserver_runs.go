@@ -11,7 +11,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/wavetermdev/waveterm/pkg/effortstore"
 	"github.com/wavetermdev/waveterm/pkg/gitinfo"
 	"github.com/wavetermdev/waveterm/pkg/harness"
 	"github.com/wavetermdev/waveterm/pkg/jarvis"
@@ -188,10 +187,9 @@ func sealDoneRunEvidence(channelId, runId string) {
 		// the task's reviewer waits on this evidence; without a poke it starts on the next watchdog tick
 		scheduleDag(run.DagORef)
 	}
-	if run.EffortRef != nil {
-		// same seal-ctx expiry concern as the event append below: the note is a quick write.
-		noteFinishedRunOnChunk(context.WithoutCancel(ctx), run, "AdvanceRun")
-	}
+	// the run's chunks are freed and each notes the finish. Same seal-ctx expiry concern as the event append below:
+	// releaseRunChunks runs on a context of its own.
+	releaseRunChunks(ctx, run, "AdvanceRun")
 	// run: carries the sealed evidence to the focused view (RunCompletion needs status==done && evidence).
 	publishRunUpdate(channelId, runId)
 	if run.Evidence != nil {
@@ -208,14 +206,6 @@ func sealDoneRunEvidence(channelId, runId string) {
 	jarvisvolunteer.EvaluateAsync(jarvisvolunteer.Trigger{
 		Kind: jarvisvolunteer.TriggerRunRest, ChannelID: channelId, RunID: runId,
 	})
-}
-
-// noteFinishedRunOnChunk leaves the sealed run's note (and its oref, which the Chunk sidebar renders the
-// report from) on the chunk it executed. Non-fatal: the note is a pointer, the run itself holds the record.
-func noteFinishedRunOnChunk(ctx context.Context, run *waveobj.Run, logPrefix string) {
-	if nerr := jarvisstate.NoteRunFinished(ctx, *run.EffortRef, "run:"+run.ID, jarvisstate.RunFinishedText(run)); nerr != nil {
-		log.Printf("%s: noting the finished run on its chunk failed (non-fatal): %v", logPrefix, nerr)
-	}
 }
 
 // spawnRunWorkers starts each newly running phase's worker on the prompt its phase derives.
@@ -446,17 +436,25 @@ func (ws *WshServer) createRun(ctx context.Context, data wshrpc.CommandCreateRun
 	// effortref validated up front so its error path never depends on harness setup
 	var effortRef *waveobj.RunEffortRef
 	if data.EffortOID != "" {
-		eff, err := effortstore.Get(ctx, data.EffortOID)
-		if err != nil {
-			return nil, fmt.Errorf("EC-UNKNOWN-EFFORT: %v", err)
-		}
-		if data.ChunkLabel == "" {
-			return nil, fmt.Errorf("EC-UNKNOWN-CHUNK: chunklabel is required when effortoid is set")
-		}
-		if _, err := jarvis.ResolveChunkIndex(eff, data.ChunkLabel); err != nil {
+		if err := checkEffortChunk(ctx, data.EffortOID, data.ChunkLabel); err != nil {
 			return nil, err
 		}
 		effortRef = &waveobj.RunEffortRef{EffortOID: data.EffortOID, ChunkLabel: data.ChunkLabel}
+	}
+	// the chunks a run started from To review works: each is checked now, so a stale tick never leaves a half-started run
+	for _, ref := range data.Chunks {
+		if err := checkEffortChunk(ctx, ref.EffortOID, ref.ChunkLabel); err != nil {
+			return nil, err
+		}
+	}
+	// The first of them is the run's EffortRef (the run sheet, attention and every other reader of it stay as they
+	// are) unless the request named its own. It is set on the run only: the effortRef handed on to startCreatedRun
+	// stays the request's own, so the early detached attach never touches a To review chunk, which is held, with its
+	// status flipped, only once the run has started (applyRunChunks).
+	runEffortRef := effortRef
+	if runEffortRef == nil && len(data.Chunks) > 0 {
+		first := data.Chunks[0]
+		runEffortRef = &first
 	}
 	// Resolve and validate the complete route before loading or persisting any run state.
 	cap, err := runroute.Resolve(waveobj.RoutePin{Runtime: data.Runtime, Model: data.Model})
@@ -558,7 +556,7 @@ func (ws *WshServer) createRun(ctx context.Context, data wshrpc.CommandCreateRun
 	run.AfterRunId = data.AfterRunId
 	run.OriginNotify = data.OriginTabId != "" // the session that started it hears how it ended (notifyOrigins)
 	run.OriginTranscript = tabTranscriptPath(ctx, data.OriginTabId)
-	run.EffortRef = effortRef
+	run.EffortRef = runEffortRef
 	run.WorkflowScan = scan
 	if err := wstore.AppendRun(ctx, data.ChannelId, run); err != nil {
 		return nil, fmt.Errorf("appending run: %w", err)
@@ -665,6 +663,7 @@ func (ws *WshServer) startCreatedRun(ctx context.Context, data wshrpc.CommandCre
 				}
 			}
 			if handSetupToLead(ctx, data.ChannelId, run, data.PlanPath, err) {
+				// the run lives on for its lead's resubmit, so it holds its chunks (applied after the switch)
 				break
 			}
 			// a run with no dag and no lead would wait in planning forever
@@ -683,11 +682,17 @@ func (ws *WshServer) startCreatedRun(ctx context.Context, data wshrpc.CommandCre
 		phaseZero := 0
 		appendRunEvent(ctx, data.ChannelId, run.ID, waveobj.RunEventKindPhaseStarted, &phaseZero, map[string]any{})
 		if err := spawnRunWorkers(ctx, data.ChannelId, run.ID, projectName); err != nil {
+			// the run is persisted and stays so, blocked and retryable: it holds its chunks, so a retry works them and
+			// a cancel releases them
+			applyRunChunks(ctx, data, &run)
 			// the run is persisted; surface the spawn failure but return the run so the UI can show blocked/retry
 			wcore.SendWaveObjUpdate(waveobj.MakeORef(waveobj.OType_Channel, data.ChannelId))
 			return fmt.Errorf("spawning first worker: %w", err)
 		}
 	}
+	// started: the plan's dag is submitted (or its lead has the Setup to repair), the first worker is up, or the start
+	// is deferred. A path that cancelled the run, or never persisted it, returned above with its chunks still proposed.
+	applyRunChunks(ctx, data, &run)
 	return nil
 }
 
@@ -1109,6 +1114,8 @@ func (ws *WshServer) CancelRunCommand(ctx context.Context, data wshrpc.CommandCa
 			appendRunEvent(ctx, data.ChannelId, data.RunId, waveobj.RunEventKindRunCancelled, nil, map[string]any{})
 			if cerr == nil {
 				clearPauseAfterCancel(ctx, data.ChannelId, data.RunId)
+				// linkedRun was loaded not done (a done run is refused above), so this only frees the chunks
+				releaseRunChunks(ctx, linkedRun, "CancelRun")
 			}
 			publishRunUpdate(data.ChannelId, data.RunId)
 			if cerr == nil {
@@ -1131,6 +1138,8 @@ func (ws *WshServer) CancelRunCommand(ctx context.Context, data wshrpc.CommandCa
 	if err != nil {
 		return fmt.Errorf("cancelling run: %w", err)
 	}
+	// a cancelled run finished nothing: its chunks are freed (linkedRun was loaded not done, so no finish note)
+	releaseRunChunks(ctx, linkedRun, "CancelRun")
 	if run, gerr := wstore.GetRun(ctx, data.ChannelId, data.RunId); gerr == nil {
 		appendRunEvent(ctx, data.ChannelId, data.RunId, waveobj.RunEventKindRunCancelled, nil, map[string]any{})
 		stopRunWorkers(ctx, run)
@@ -1354,14 +1363,9 @@ func (ws *WshServer) SealRunEvidenceCommand(ctx context.Context, data wshrpc.Com
 	}); uerr != nil {
 		return fmt.Errorf("persisting evidence: %w", uerr)
 	}
-	if run.EffortRef != nil {
-		// a sealed run no longer claims its chunk; the workref is advisory, so a failure here only
-		// leaves a stale marker, and the next seal attempt (idempotent backfill) re-runs the detach.
-		if derr := jarvisstate.DetachRunFromChunk(ctx, run.EffortRef.EffortOID, "run:"+run.ID); derr != nil {
-			log.Printf("SealRunEvidence: detaching effort workref failed (non-fatal): %v", derr)
-		}
-		noteFinishedRunOnChunk(ctx, run, "SealRunEvidence")
-	}
+	// a sealed run no longer claims its chunks, and each notes the finish; the workref is advisory, so a failure
+	// here only leaves a stale marker
+	releaseRunChunks(ctx, run, "SealRunEvidence")
 	publishRunUpdate(data.ChannelId, data.RunId)
 	return nil
 }

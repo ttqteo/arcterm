@@ -24,6 +24,7 @@ import { usageLensAtom, usageWorkItemAtom, usageWorkScopeAtom } from "@/app/view
 import { codeTreeFocusedAtom } from "@/app/view/code/codestore";
 import { autonomyPanelOpenAtom } from "@/app/view/jarvis/autonomyladder";
 import { petPeekOpenAtom } from "@/app/view/jarvis/petstore";
+import { runReviewOpenAtom } from "@/app/view/jarvis/runreviewstore";
 import { atom, type PrimitiveAtom } from "jotai";
 import { afterEach, describe, expect, it } from "vitest";
 import { listNavAtom } from "./listnav";
@@ -41,6 +42,7 @@ afterEach(() => {
     globalStore.set(lineReviewsAtom, {});
     globalStore.set(activeReviewKeyAtom, "");
     globalStore.set(tabSwitcherAtom, null);
+    globalStore.set(runReviewOpenAtom, false);
 });
 
 describe("whenVersionAtom", () => {
@@ -95,6 +97,13 @@ describe("whenVersionAtom", () => {
     it("bumps when the pet peek opens", () => {
         const before = globalStore.get(whenVersionAtom);
         globalStore.set(petPeekOpenAtom, true);
+        expect(globalStore.get(whenVersionAtom)).toBeGreaterThan(before);
+    });
+
+    // buildJarvisBindings' To review keys (t, l, Delete, Escape) read whether the sheet is open
+    it("bumps when the To review sheet opens", () => {
+        const before = globalStore.get(whenVersionAtom);
+        globalStore.set(runReviewOpenAtom, true);
         expect(globalStore.get(whenVersionAtom)).toBeGreaterThan(before);
     });
 

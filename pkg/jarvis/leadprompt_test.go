@@ -200,6 +200,39 @@ func TestOrchestrationRulesNameTheRunsEffort(t *testing.T) {
 	}
 }
 
+// a run's open issues are proposals for the person to review (To review), not pending work: the lead files each one
+// with --proposed, whether it adds to an effort or has to create one.
+func TestOrchestrationRulesFileIssuesProposed(t *testing.T) {
+	r := OrchestrationRules("r1", "", "", "", false)
+	var finished string
+	for _, line := range strings.Split(r, "\n") {
+		if strings.HasPrefix(line, "- run finished:") {
+			finished = line
+		}
+	}
+	if finished == "" {
+		t.Fatalf("rules have no run-finished line:\n%s", r)
+	}
+	for _, want := range []string{
+		"Add each open issue as a proposed chunk",
+		"wsh effort chunk add <effort> \"<issue>\" --proposed",
+		"wsh effort create \"<title>\" --chunk \"<issue>\" --proposed --parent <topic oid>",
+		// the rest of the filing rule is unchanged: the duplicate is noted, never added twice
+		"wsh effort chunk note <effort>",
+		"never on one made for this run",
+		"never after the run",
+	} {
+		if !strings.Contains(finished, want) {
+			t.Fatalf("run-finished rule missing %q:\n%s", want, finished)
+		}
+	}
+	for _, gone := range []string{"as a pending chunk", "`wsh effort chunk add <effort> \"<issue>\"`"} {
+		if strings.Contains(finished, gone) {
+			t.Fatalf("run-finished rule still files an issue as pending (%q):\n%s", gone, finished)
+		}
+	}
+}
+
 // a lead that waited for the human's word to complete left finished runs open for hours (finding 17): it
 // completes on its own, and asks first only when a decision is needed, since complete closes its tab.
 func TestOrchestrationRulesCompleteOnTheirOwn(t *testing.T) {

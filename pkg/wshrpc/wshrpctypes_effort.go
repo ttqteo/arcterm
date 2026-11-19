@@ -26,6 +26,9 @@ type EffortCommands interface {
 	EffortStaleCommand(ctx context.Context, data CommandEffortStaleData) (*CommandEffortStaleRtnData, error)
 	// EffortBackfillBaseCommand stamps a BaseCommit on the open chunks written before chunks kept one.
 	EffortBackfillBaseCommand(ctx context.Context, data CommandEffortBackfillBaseData) (*CommandEffortBackfillBaseRtnData, error)
+	// EffortBackfillProposedCommand moves the pending chunks that name a recent orchestrator run to proposed, so they
+	// show in To review (the one-time backlog pass; see jarvis.PickBacklogProposals).
+	EffortBackfillProposedCommand(ctx context.Context) (*CommandEffortBackfillProposedRtnData, error)
 }
 
 // CommandEffortPinData pins (Pin true) or unpins an effort. Past the cap (jarvis.MaxPinnedEfforts), a pin
@@ -55,6 +58,11 @@ type CommandEffortCreateData struct {
 	Ticket    string                   `json:"ticket,omitempty"`
 	ParentOID string                   `json:"parentoid,omitempty"`
 	Chunks    []CommandEffortChunkSeed `json:"chunks,omitempty"` // may be empty; chunks can be added later
+	// Proposed seeds every chunk as a proposal (status proposed, with the "proposed" note), the way `chunk add
+	// --proposed` does. SourceBlock is the calling terminal ("block:<id>"), from which the server derives the notes'
+	// author, session and run, as on CommandEffortMutateData.
+	Proposed    bool   `json:"proposed,omitempty"`
+	SourceBlock string `json:"sourceblock,omitempty"`
 }
 
 type CommandEffortChunkSeed struct {
@@ -196,6 +204,11 @@ type CommandEffortBackfillBaseData struct {
 
 type CommandEffortBackfillBaseRtnData struct {
 	Chunks  int `json:"chunks"`  // chunks stamped
+	Efforts int `json:"efforts"` // initiatives touched
+}
+
+type CommandEffortBackfillProposedRtnData struct {
+	Chunks  int `json:"chunks"`  // chunks moved to proposed
 	Efforts int `json:"efforts"` // initiatives touched
 }
 

@@ -746,6 +746,12 @@ func EffortBackfillBaseCommand(w *wshutil.WshRpc, data wshrpc.CommandEffortBackf
 	return resp, err
 }
 
+// command "effortbackfillproposed", wshserver.EffortBackfillProposedCommand
+func EffortBackfillProposedCommand(w *wshutil.WshRpc, opts *wshrpc.RpcOpts) (*wshrpc.CommandEffortBackfillProposedRtnData, error) {
+	resp, err := sendRpcRequestCallHelper[*wshrpc.CommandEffortBackfillProposedRtnData](w, "effortbackfillproposed", nil, opts)
+	return resp, err
+}
+
 // command "effortchunkdrift", wshserver.EffortChunkDriftCommand
 func EffortChunkDriftCommand(w *wshutil.WshRpc, data wshrpc.CommandEffortChunkDriftData, opts *wshrpc.RpcOpts) (*wshrpc.CommandEffortChunkDriftRtnData, error) {
 	resp, err := sendRpcRequestCallHelper[*wshrpc.CommandEffortChunkDriftRtnData](w, "effortchunkdrift", data, opts)

@@ -62,10 +62,15 @@ export type BriefNavParts = {
     shipped: string[];
     ideas: string[];
     later: string[];
+    // To review's sheet, open over the page: its rows in drawn order, undefined with the sheet closed
+    review?: string[];
 };
 
-/** The page's j/k order. */
+/** The page's j/k order; with To review's sheet open, its rows only. */
 export function briefNavIds(p: BriefNavParts): string[] {
+    if (p.review != null) {
+        return p.review;
+    }
     return [
         ...p.strip,
         ...p.cards.map(cardNavId),

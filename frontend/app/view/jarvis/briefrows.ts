@@ -29,6 +29,7 @@ import {
 } from "./briefingmodel";
 import { headline, noteBody } from "./effortfeed";
 import type { ChunkTone, EffortCardModel } from "./effortmodel";
+import { unlistedProposals } from "./runreview";
 
 export type LineTone = "ok" | "active" | "running" | "asking" | "error" | "muted" | "faint";
 export type LineTarget = { queue: QueueOpenTarget } | { oref: string } | { runQueue: string } | null;
@@ -200,8 +201,11 @@ function nestingFields(card: EffortCardModel & Partial<Nesting>): Partial<BriefL
     };
 }
 
-export function initiativeLine(card: EffortCardModel & Partial<Nesting>): BriefLine {
-    const proposed = card.proposed.length > 0 ? { proposed: `${card.proposed.length} proposed` } : {};
+// `listed` is the set of proposals To review lists (runreview.ts listedKeys): a run's proposal is decided there, so the
+// row's "N proposed" counts only the proposed chunks the sheet does not carry, and says nothing when none is left.
+export function initiativeLine(card: EffortCardModel & Partial<Nesting>, listed?: ReadonlySet<string>): BriefLine {
+    const waiting = unlistedProposals(card.oref, card.proposed, listed).length;
+    const proposed = waiting > 0 ? { proposed: `${waiting} proposed` } : {};
     if (isIdea(card)) {
         return {
             id: "initiatives:" + card.oref,

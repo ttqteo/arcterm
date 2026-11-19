@@ -200,6 +200,7 @@ import {
     reviewModeAtom,
     reviewQueueAtom,
 } from "@/app/view/jarvis/reviewstore";
+import { closeRunReview, foldCursorRow, runReviewOpenAtom, tickCursorRow } from "@/app/view/jarvis/runreviewstore";
 import {
     leaveLibraryCouncil,
     leaveLibraryDetail,
@@ -1004,6 +1005,26 @@ export function buildJarvisBindings(model: LauncherModel): Binding[] {
         ),
     ];
 
+    // To review's sheet (runreviewsheet.tsx): t, l and Delete act on the row under its cursor (j and k are the Brief's
+    // own, walking only the sheet's rows while it is open) and Esc closes it. The sheet is no dialog, so ctx.modalOpen
+    // stays false under it; the launcher Start opens over it stands these down. None is a Telex key.
+    const onRunReview = (ctx: KeyContext) => onJarvis(ctx) && globalStore.get(runReviewOpenAtom);
+    const runReviewKey = (id: string, keys: string, label: string, run: () => boolean | void): Binding => ({
+        id: `jarvis:run-review-${id}`,
+        keys,
+        group: "Jarvis",
+        label,
+        when: onRunReview,
+        paletteHidden: true,
+        run,
+    });
+    const runReviewKeys: Binding[] = [
+        runReviewKey("tick", "t", "Mark the To review row under the cursor to do", tickCursorRow),
+        runReviewKey("later", "l", "Keep the To review row for later", () => foldCursorRow("later")),
+        runReviewKey("drop", "Delete", "Drop the To review row", () => foldCursorRow("drop")),
+        runReviewKey("close", "Escape", "Close To review", closeRunReview),
+    ];
+
     // an open status or stage menu sits above everything: Escape closes the menu and nothing else
     const trackerMenuEscape: Binding = {
         id: "jarvis:close-tracker-menu",
@@ -1159,6 +1180,7 @@ export function buildJarvisBindings(model: LauncherModel): Binding[] {
         // while a pass is on, it owns j, k, Enter, the horizontal arrows and Escape (list nav and esc-home stand
         // down), and Escape leaves the pass only once the Chunk sidebar and the plan menu above it are closed
         ...reviewKeys,
+        ...runReviewKeys,
         {
             id: "jarvis:focus-composer",
             keys: "i",

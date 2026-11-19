@@ -56,13 +56,20 @@ var effortCreateCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		rtn, err := wshclient.EffortCreateCommand(RpcClient, wshrpc.CommandEffortCreateData{
+		proposed, _ := cmd.Flags().GetBool("proposed")
+		data := wshrpc.CommandEffortCreateData{
 			Title:     args[0],
 			Project:   project,
 			Ticket:    mustFlagString(cmd, "ticket"),
 			ParentOID: parent,
 			Chunks:    seed,
-		}, nil)
+			Proposed:  proposed,
+		}
+		// the calling terminal, as `chunk add` sends it: the server reads the proposer's session and run off it
+		if RpcContext.BlockId != "" {
+			data.SourceBlock = "block:" + RpcContext.BlockId
+		}
+		rtn, err := wshclient.EffortCreateCommand(RpcClient, data, nil)
 		if err != nil {
 			return err
 		}
@@ -823,6 +830,7 @@ func init() {
 	effortCreateCmd.Flags().String("ticket", "", "ticket id")
 	effortCreateCmd.Flags().StringArray("chunk", nil, "chunk label (repeatable)")
 	effortCreateCmd.Flags().String("parent", "", "parent effort oid")
+	effortCreateCmd.Flags().Bool("proposed", false, "propose the seeded chunks; they count once accepted")
 	effortCreateCmd.Flags().Bool("json", false, "JSON output")
 	effortListCmd.Flags().String("project", "", "filter by project")
 	effortListCmd.Flags().Bool("archived", false, "include archived efforts")
