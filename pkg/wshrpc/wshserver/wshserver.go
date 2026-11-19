@@ -231,6 +231,8 @@ func publishEvent(ctx context.Context, data wps.WaveEvent) {
 		orchestrate.NoteWorkerContext(&data)
 		noteAgentTurnEnded(ctx, &data)
 		noteAgentInTurn(ctx, &data)
+		// a question a board forwarded to this agent goes once it is free, and takes its reply at its turn end
+		noteBoardForwardStatus(&data)
 		noteRunSleepStatus(ctx, &data)
 		noteUsageLimit(ctx, &data)
 		// a turn whose Stop never reported still ends in its transcript (wshserver_turnend.go)
