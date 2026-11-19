@@ -113,6 +113,7 @@ import {
 import { setAgentView } from "./agentview";
 import { waitMap } from "./agentwaits";
 import { BackgroundTaskPeek } from "./backgroundtaskpeek";
+import { focusConversationSoon, focusReadOn } from "./chatfocusreadstore";
 import { backgroundActivity, launchedServers, shownState, type ShownState } from "./bgactivity";
 import { treeLine, treeLineAsks, waitsOnUser, type BrainstormFile, type BuilderCheckRecord } from "./brainstormmodel";
 import { runStepView, runTreeText } from "./brainstormrunmodel";
@@ -359,13 +360,18 @@ function showLessConversations(project: string): void {
 // (selectAgentRow). Not persisted.
 export const rowSelectionAtom = atom<RowSelection>(NO_ROW_SELECTION) as PrimitiveAtom<RowSelection>;
 
-// choosing an agent's row brings its terminal back from a session, History or one of its subagents
+// choosing an agent's row brings its terminal back from a session, History or one of its subagents; one whose Chat reads
+// with focus read takes the keyboard in its conversation, so J/K step its blocks without a click there first (j/k in
+// the tree do not come through here, so they still move from agent to agent), unless the pick is to type into it
 export function selectAgentRow(model: AgentsViewModel, id: string): void {
     globalStore.set(rowSelectionAtom, selectOnly(id));
     globalStore.set(model.focusIdAtom, id);
     globalStore.set(model.focusReplyAtom, false);
     globalStore.set(focusSubagentAtom, null);
     showTerminal();
+    if (focusReadOn(id) && globalStore.get(model.typingFollowsAtom) !== id) {
+        focusConversationSoon(id);
+    }
 }
 
 // the row that reads as selected: the focused agent's, unless the centre is showing a session or History instead

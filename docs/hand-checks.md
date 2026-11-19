@@ -16,6 +16,11 @@ list (its number is not reused).
 Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) ·
 [part 4](hand-checks-4.md) · [part 3](hand-checks-3.md) · [part 2](hand-checks-2.md) (oldest).
 
+- [ ] (arcterm) **A click on a focus-read agent's row lets J/K step at once.** With focus read on for an agent, click
+  another agent's row, then that agent's row in the tree: J/K step its blocks with no click in Chat (before, they
+  moved to the next agent). j/k pressed in the tree still go from agent to agent; a run row picked to type into
+  (`typingFollowsAtom`) still lands in the box. `agenttree.tsx` selectAgentRow, `chatfocusreadstore.ts`
+  focusConversationSoon; scenario step 6d of `chat-focus-read` was not run (no dev app up).
 - [ ] (arcterm) **Focus read starts at ×3 and goes to ×5.** With `chat.focusRead.size` cleared from localStorage, turn
   Focus read on (Alt+R): three blocks are lit and the size button reads ×3; clicks go ×4, ×5, ×1. At ×5 the lit group
   still reads well on a short window (the group can run taller than the view). The `chat-focus-read` scenario's step 6c

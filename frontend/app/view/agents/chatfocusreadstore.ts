@@ -148,3 +148,19 @@ export function focusConversation(agentId: string): boolean {
     scroller?.focus({ preventScroll: true });
     return scroller != null;
 }
+
+// After a pick, so J/K step at once: the conversation shows only once the pick has rendered (a pane mounting the first
+// time it shows takes a frame or two), so it is tried on the next few frames, and given up when it never shows (the agent
+// in Terminal, asleep). Not when something else took the focus meanwhile (a dialog, a field, a terminal).
+const SOON_FRAMES = 6;
+export function focusConversationSoon(agentId: string, frames: number = SOON_FRAMES): void {
+    const from = document.activeElement;
+    requestAnimationFrame(() => {
+        if (document.activeElement !== from) {
+            return;
+        }
+        if (!focusConversation(agentId) && frames > 1) {
+            focusConversationSoon(agentId, frames - 1);
+        }
+    });
+}

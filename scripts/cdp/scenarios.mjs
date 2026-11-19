@@ -49566,6 +49566,21 @@ const chatFocusRead = {
                 { size6c, s6c, s6k, text6q, quoted6, size5, s6five, size6end, litEnd: s6end?.litCount }
             );
 
+            // 6d. picking the agent's row in the tree puts the focus in its conversation, so K steps at once, no click there
+            // (K, not J: the steps above left the line near the end, where J may have nothing left to light)
+            await h.ev(`document.activeElement?.blur?.()`);
+            const out6d = await state();
+            await click(`document.querySelector('[data-agent-row="${A}"]')`);
+            const in6d = await polishWaitFor(h, `!!document.activeElement?.closest?.("[data-chat-scroller]")`, 2000);
+            const s6d = await state();
+            await K();
+            const s6dk = await state();
+            rec(
+                "6d. a click on the agent's tree row hands the keyboard to its conversation: K steps a block with no click in Chat first",
+                out6d?.focusIn === false && in6d && s6d?.focusIn === true && s6d.lit > 0 && s6dk?.lit === s6d.lit - 1 && (await focusId()) === A,
+                { out6d: out6d?.focusIn, in6d, s6d: s6d?.lit, s6dk: s6dk?.lit }
+            );
+
             // 7. Alt+R turns it off: nothing dimmed, no tick, the toggle up
             await press("r", "KeyR", 82, 1);
             const off7 = await polishWaitFor(h, `!${scroller}?.hasAttribute("data-focus-read") && !${pane}?.querySelector("[data-fr-block]")`, 3000);

@@ -147,6 +147,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- Clicking an agent whose Chat reads with focus read puts the keyboard in its conversation, so J/K step blocks at once
+  instead of moving to the next agent in the tree.
 - An agent resumed or woken after a night idle no longer reads "Working (10h 24m · ↓ 841 tokens)" in Chat while it starts: the time and tokens of a turn that already ended are not counted again.
 - A background task's or server's output opened in full view shows its colours, as its peek does, instead of the raw escape codes.
 - On a Mac, Sidecar's Resources panel and the agents' RAM now show figures instead of "read on
