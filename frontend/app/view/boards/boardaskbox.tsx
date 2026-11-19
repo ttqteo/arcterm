@@ -1,0 +1,81 @@
+// Copyright 2026, Command Line Inc.
+// SPDX-License-Identifier: Apache-2.0
+
+// The line under the board where you ask, or ask the drawer to draw. It says what is selected on the canvas (the shapes
+// go with the line, and the drawer or the agent reads them) or, with nothing selected, that selecting shapes asks about
+// them. Ask is off while the drawer answers: one turn at a time per board.
+
+import { useState } from "react";
+import type { BoardSelection } from "./boardcanvas";
+
+export interface BoardAskBoxProps {
+    selection: BoardSelection | null;
+    // askAllowed(talk, alive): no turn is running or queued
+    allowed: boolean;
+    // true once the line went; false keeps the words in the box (the caller says why)
+    onAsk: (question: string) => Promise<boolean>;
+}
+
+export function BoardAskBox({ selection, allowed, onAsk }: BoardAskBoxProps) {
+    const [text, setText] = useState("");
+    const [sending, setSending] = useState(false);
+    const question = text.trim();
+    const canSend = allowed && !sending && question !== "";
+
+    async function send(): Promise<void> {
+        if (!canSend) {
+            return;
+        }
+        setSending(true);
+        try {
+            if (await onAsk(question)) {
+                setText("");
+            }
+        } finally {
+            setSending(false);
+        }
+    }
+
+    return (
+        <div
+            data-board-ask
+            className="mx-3 mb-3.5 flex flex-none flex-col gap-1.5 rounded-[10px] border border-edge-strong px-2.5 py-2"
+        >
+            <span data-board-ask-selected className="truncate text-[11.5px] text-muted">
+                {selection?.label != null ? (
+                    <>
+                        Selected <span className="text-primary">{selection.label}</span>
+                    </>
+                ) : (
+                    "Select shapes to ask about them"
+                )}
+            </span>
+            <div className="flex items-center gap-2">
+                <input
+                    data-board-ask-input
+                    value={text}
+                    onChange={(e) => setText(e.target.value)}
+                    onKeyDown={(e) => {
+                        // Enter that commits an IME composition is not a send
+                        if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+                            e.preventDefault();
+                            void send();
+                        }
+                    }}
+                    placeholder="Ask, or ask for a drawing…"
+                    aria-label="Ask about this board"
+                    className="min-w-0 flex-1 bg-transparent text-[13px] text-primary outline-none placeholder:text-ink-faint"
+                />
+                <button
+                    type="button"
+                    data-board-ask-send
+                    disabled={!canSend}
+                    onClick={() => void send()}
+                    className="flex-none cursor-pointer rounded-[6px] bg-accent px-2.5 py-[3px] text-[12px] text-background hover:bg-accenthover disabled:cursor-default disabled:opacity-45 disabled:hover:bg-accent"
+                >
+                    Ask
+                </button>
+            </div>
+        </div>
+    );
+}

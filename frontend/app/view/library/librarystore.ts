@@ -2,10 +2,11 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // Library's state and the routes into it. Library is the surface that holds what is over: Conversation History, the Canvas
-// gallery and the councils that left the Agent tree. Its state lives in module-level atoms (like railstore.ts), not in the
-// surface component, so the tab and the open council survive a switch to another surface (Library unmounts like every
-// surface but Agent) and any opener can set them without holding the model.
-//   tab          conversations | canvases | councils: which of the three shows
+// gallery, the councils that left the Agent tree and the boards agents drew. Its state lives in module-level atoms (like
+// railstore.ts), not in the surface component, so the tab and the open council survive a switch to another surface (Library
+// unmounts like every surface but Agent) and any opener can set them without holding the model.
+//   tab          conversations | canvases | councils | boards: which of the four shows
+//   board        which board is open on Boards (null = none picked yet), by project and id
 //   conv view    list | session | run, on Conversations: `list` is Conversation History's master-detail (a row read in place);
 //                `session` and `run` are one session's or one run's pane at full width, shown when a session is opened from
 //                outside Library (showLibrarySession), whose Back leaves it (leaveLibraryDetail)
@@ -28,10 +29,10 @@ import { councilAtom, councilLastViewAtom, councilListAtom } from "../agents/cou
 import { reopenView } from "../agents/councilsummarymodel";
 import { runIdOfSel } from "../agents/sessionsruns";
 
-export type LibraryTab = "conversations" | "canvases" | "councils";
+export type LibraryTab = "conversations" | "canvases" | "councils" | "boards";
 
-/** The tabs, in the order Library draws them (and `1` `2` `3` switch them). */
-export const LIBRARY_TABS: readonly LibraryTab[] = ["conversations", "canvases", "councils"];
+/** The tabs, in the order Library draws them (and `1` `2` `3` `4` switch them). */
+export const LIBRARY_TABS: readonly LibraryTab[] = ["conversations", "canvases", "councils", "boards"];
 
 /** Which tab shows. */
 export const libraryTabAtom = atom<LibraryTab>("conversations") as PrimitiveAtom<LibraryTab>;
@@ -41,6 +42,14 @@ export type LibraryConvView = "list" | "session" | "run";
 /** What Conversations shows: its list with a detail pane, or one session or one run at full width. Which session or run is
  *  the model's sessionsSelAtom, as Conversation History's list and detail already use it. */
 export const libraryConvViewAtom = atom<LibraryConvView>("list") as PrimitiveAtom<LibraryConvView>;
+
+export interface LibraryBoardSel {
+    project: string;
+    boardId: string;
+}
+
+/** The board open on Boards (its canvas and turns beside the list), or null before one is picked. */
+export const libraryBoardSelAtom = atom<LibraryBoardSel | null>(null) as PrimitiveAtom<LibraryBoardSel | null>;
 
 /** The council open on Councils, or null while the list of councils shows. */
 export const libraryCouncilSelAtom = atom<string | null>(null) as PrimitiveAtom<string | null>;
@@ -77,6 +86,14 @@ export function showLibrarySession(
     }
     globalStore.set(libraryTabAtom, "conversations");
     globalStore.set(libraryConvViewAtom, sel === "all" ? "list" : runIdOfSel(sel) != null ? "run" : "session");
+    landOn(model.surfaceAtom, "library");
+}
+
+/** Open one board in Library's Boards tab, from any surface: the list with the board's canvas and turns beside it. The route
+ *  for a board whose agent ended; a live agent's board opens beside its Chat instead (openref.ts, `board` target). */
+export function showLibraryBoard(model: Pick<AgentsViewModel, "surfaceAtom">, project: string, boardId: string): void {
+    globalStore.set(libraryBoardSelAtom, { project, boardId });
+    globalStore.set(libraryTabAtom, "boards");
     landOn(model.surfaceAtom, "library");
 }
 

@@ -1,5 +1,6 @@
 // library-tabs: the Library surface (docs/superpowers/specs/2026-11-19-library-surface-design.md). What is over lives here,
-// off the Agent tree: Conversation History, the Canvas gallery and every council, as three tabs of one surface. The steps
+// off the Agent tree: Conversation History, the Canvas gallery and every council, as tabs of one surface (the fourth, Boards,
+// is walked by boards-library; here only its tab key and button are). The steps
 // walk the rail and the chord into it, the list cursor and the tab keys, the gallery and its viewer, a session opened from
 // outside Library (full width, Back to where it came from, Escape the same), and the councils: a closed one opens inside
 // Library on Library's own selection (Agent's stays put), a live one opened by address lands on Agent.
@@ -29,7 +30,7 @@ import {
 
 const nap = (ms) => new Promise((r) => setTimeout(r, ms));
 
-const LIBRARY_TAB_NAMES = ["conversations", "canvases", "councils"];
+const LIBRARY_TAB_NAMES = ["conversations", "canvases", "councils", "boards"];
 
 /** Opens Library on `tab` (Conversations by default) from wherever the page is, by the rail and then the tab's own button,
  *  and waits for the tab's body. True when the tab is the one selected. */
@@ -50,6 +51,7 @@ const KEYS = {
     1: { key: "1", code: "Digit1", windowsVirtualKeyCode: 49 },
     2: { key: "2", code: "Digit2", windowsVirtualKeyCode: 50 },
     3: { key: "3", code: "Digit3", windowsVirtualKeyCode: 51 },
+    4: { key: "4", code: "Digit4", windowsVirtualKeyCode: 52 },
     7: { key: "7", code: "Digit7", windowsVirtualKeyCode: 55 },
     j: { key: "j", code: "KeyJ", windowsVirtualKeyCode: 74 },
     k: { key: "k", code: "KeyK", windowsVirtualKeyCode: 75 },
@@ -255,12 +257,12 @@ export default function (kit) {
                 }))()`);
                 await shot(h, "1-rail");
                 rec(
-                    "1. the rail's Library opens on Conversations: the tab strip reads Conversations, Canvases, Councils, and Conversation History lists the three seeded sessions",
+                    "1. the rail's Library opens on Conversations: the tab strip reads Conversations, Canvases, Councils, Boards, and Conversation History lists the three seeded sessions",
                     (await surface(h)) === "Library" &&
                         listed &&
                         first.active === "conversations" &&
                         first.selected === "true" &&
-                        JSON.stringify(first.tabs) === JSON.stringify(["conversations", "canvases", "councils"]) &&
+                        JSON.stringify(first.tabs) === JSON.stringify(["conversations", "canvases", "councils", "boards"]) &&
                         first.history &&
                         first.cards === 3,
                     JSON.stringify(first)
@@ -292,10 +294,11 @@ export default function (kit) {
                     JSON.stringify({ viaChord, surface: await surface(h), tab: await active(h) })
                 );
 
-                // 4. the keys 1 2 3 switch the tabs
+                // 4. the keys 1 2 3 4 switch the tabs
                 const seen = [];
                 for (const [key, want] of [
                     ["2", "canvases"],
+                    ["4", "boards"],
                     ["3", "councils"],
                     ["1", "conversations"],
                 ]) {
@@ -304,7 +307,7 @@ export default function (kit) {
                 }
                 await shot(h, "4-tab-keys");
                 rec(
-                    "4. the keys 1, 2 and 3 show Conversations, Canvases and Councils in turn (2, 3, 1 walked here), and the strip marks the one shown",
+                    "4. the keys 1, 2, 3 and 4 show Conversations, Canvases, Councils and Boards in turn (2, 4, 3, 1 walked here), and the strip marks the one shown",
                     seen.every((s) => s.split(":")[1] === s.split(":")[2]) &&
                         (await h.ev(`document.querySelector('[data-library-tab="conversations"]')?.getAttribute("aria-selected")`)) === "true",
                     JSON.stringify(seen)

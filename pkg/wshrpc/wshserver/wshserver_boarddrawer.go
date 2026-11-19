@@ -1,0 +1,199 @@
+// Copyright 2026, Command Line Inc.
+// SPDX-License-Identifier: Apache-2.0
+
+package wshserver
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"slices"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/wavetermdev/waveterm/pkg/agentsessions"
+	"github.com/wavetermdev/waveterm/pkg/boarddrawer"
+	"github.com/wavetermdev/waveterm/pkg/boardstore"
+	"github.com/wavetermdev/waveterm/pkg/wshrpc"
+	"github.com/wavetermdev/waveterm/pkg/wstore"
+)
+
+const (
+	errClaudeOnly = "boards are for Claude agents"
+	errNeedsText  = "pass --ask, or --context to brief a new board"
+
+	// boardAgentReadRunes caps what one drawer turn reads of its agent: the newest words, since what a line asks about
+	// is the latest. A long stretch between two reads, or the first read of a long session, would otherwise put the
+	// whole talk in the drawer's prompt.
+	boardAgentReadRunes = 30000
+	boardAgentCutMark   = "[earlier part cut]\n"
+
+	boardStoppedReason   = "the drawer was stopped before it finished"
+	boardForwardedReason = "the drawer flagged the request as a question instead of drawing it"
+)
+
+// boardDrawWait is how long `wsh board draw` waits for its turn. Claude's Bash tool caps a call at 10 minutes; past
+// this the command returns "still drawing" and the board's card in Chat shows the drawing when it lands. A var so tests
+// shorten it.
+var boardDrawWait = 9 * time.Minute
+
+// boardCreate serializes find-or-create: Create does not look for a board of that name, so two requests for one new
+// name that arrive together would each make one.
+var boardCreate sync.Mutex
+
+// BoardAgentDrawCommand is `wsh board draw`: an agent's request to the drawer of a board named in its project, which
+// its briefing makes when the project has none of that name. It returns once the turn is over: drawn (the frontend
+// landed the drawing and acked it) or failed, or "answering" when the wait ran out.
+func (ws *WshServer) BoardAgentDrawCommand(ctx context.Context, data wshrpc.CommandBoardAgentDrawData) (*wshrpc.BoardAgentDrawRtnData, error) {
+	name := strings.TrimSpace(data.Board)
+	if data.BlockId == "" || name == "" {
+		return nil, errors.New("a block id and a board name are required")
+	}
+	brief, ask := strings.TrimSpace(data.Context), strings.TrimSpace(data.Ask)
+	if brief == "" && ask == "" {
+		return nil, errors.New(errNeedsText)
+	}
+	facts, rows, err := boardRoster(ctx)
+	if err != nil {
+		return nil, err
+	}
+	row, err := boardCaller(facts, rows, data.BlockId)
+	if err != nil {
+		return nil, err
+	}
+	info, created, err := findOrCreateBoard(row, name, brief)
+	if err != nil {
+		return nil, err
+	}
+	if info.LoadError != "" {
+		return nil, fmt.Errorf("board %q won't open: %s", info.Name, info.LoadError)
+	}
+	if created {
+		publishBoardList(row.Project, info.ID)
+	}
+	b := boarddrawer.Board{Project: row.Project, BoardId: info.ID, Name: info.Name, ProjectPath: row.ProjectPath}
+	turn, err := boardDrawer.Ask(b, wshrpc.BoardTurn{Kind: boarddrawer.KindRequest, Question: ask, Context: brief})
+	if err != nil {
+		return nil, err
+	}
+	waitCtx, cancel := context.WithTimeout(ctx, boardDrawWait)
+	defer cancel()
+	end, err := boardDrawer.Wait(waitCtx, b, turn.ID)
+	if err != nil {
+		return nil, err
+	}
+	return boardDrawResult(b, created, end), nil
+}
+
+// boardDrawResult is what became of a request, in BoardAgentDrawRtnData's states: a turn the wait left unfinished is
+// still answering.
+func boardDrawResult(b boarddrawer.Board, created bool, end wshrpc.BoardTurn) *wshrpc.BoardAgentDrawRtnData {
+	rtn := &wshrpc.BoardAgentDrawRtnData{BoardId: b.BoardId, BoardName: b.Name, Project: b.Project, Created: created}
+	switch end.State {
+	case boarddrawer.StateAnswered:
+		rtn.State, rtn.Added, rtn.Changed, rtn.Removed = boarddrawer.StateAnswered, end.Added, end.Changed, end.Removed
+	case boarddrawer.StateFailed:
+		rtn.State, rtn.Reason = boarddrawer.StateFailed, end.Reason
+	case boarddrawer.StateStopped:
+		rtn.State, rtn.Reason = boarddrawer.StateFailed, boardStoppedReason
+	case boarddrawer.StateForwarded: // a request is never flagged back; the drawer fails it first
+		rtn.State, rtn.Reason = boarddrawer.StateFailed, boardForwardedReason
+	default:
+		rtn.State = boarddrawer.StateAnswering
+	}
+	return rtn
+}
+
+// boardCaller is the roster row of the agent that ran `wsh board draw` in blockId. A harness other than claude, and a
+// folder no registered project holds, are refused: a board needs a claude transcript to read and a registered project
+// to be listed under.
+func boardCaller(facts *agentRosterFacts, rows []agentRow, blockId string) (*agentRow, error) {
+	i := slices.IndexFunc(facts.Tabs, func(tf agentTabFacts) bool { return slices.Contains(tf.Tab.BlockIds, blockId) })
+	if i < 0 {
+		return nil, fmt.Errorf("block %s is in no tab, so it is not an agent's terminal", blockId)
+	}
+	tf := facts.Tabs[i]
+	row := agentRowByTab(rows, tf.Tab.OID)
+	switch {
+	case row == nil && tf.Status.Agent != "" && tf.Status.Agent != "claude":
+		return nil, errors.New(errClaudeOnly) // a harness the roster leaves out, a codex agent
+	case row == nil:
+		return nil, fmt.Errorf("block %s is not a live agent session", blockId)
+	case row.Harness != "claude":
+		return nil, errors.New(errClaudeOnly)
+	case wstore.MatchChannelAtPath(facts.Channels, row.ProjectPath) == nil:
+		// row.Project alone is not enough: the roster falls back to the folder's basename for an unregistered folder,
+		// and a board keyed by that name could not be listed or retried once its agent ended.
+		return nil, fmt.Errorf("%s is not in a registered project", row.Name)
+	}
+	return row, nil
+}
+
+// boardAgentTitle names an agent as its tab does, else by its harness and project.
+func boardAgentTitle(row *agentRow) string {
+	if name := strings.TrimSpace(row.Name); name != "" {
+		return name
+	}
+	return row.Harness + " · " + row.Project
+}
+
+// findOrCreateBoard is the board named name in the agent's project, and whether this call made it: a new board needs
+// the briefing, and is tied to this agent. A board that exists keeps its tie, whoever asks. Its first read of the agent
+// starts at the beginning of the session (the read is capped), so "draw what we just discussed" has the discussion.
+func findOrCreateBoard(row *agentRow, name, brief string) (info wshrpc.BoardInfo, created bool, err error) {
+	boardCreate.Lock()
+	defer boardCreate.Unlock()
+	dir := boardstore.ProjectDir(row.Project)
+	info, found, err := boardstore.FindByName(dir, row.Project, name)
+	if err != nil || found {
+		return info, false, err
+	}
+	if brief == "" {
+		return wshrpc.BoardInfo{}, false, fmt.Errorf("there is no board %q in %s: pass the briefing with --context to make it", name, row.Project)
+	}
+	agent := wshrpc.BoardAgent{TabId: row.TabId, Title: boardAgentTitle(row), SessionId: row.status.SessionID}
+	info, err = boardstore.Create(dir, row.Project, name, agent, time.Now().UnixMilli())
+	return info, err == nil, err
+}
+
+// readBoardAgent is the drawer's ReadAgent: what the board's agent said since sinceTs, read from the claude transcript
+// of the agent's current session (so it follows /clear and compaction), with that session's id and the time of the last
+// turn read, which the drawer keeps as the next cursor. An agent whose tab is gone reads nothing.
+func readBoardAgent(ctx context.Context, agent wshrpc.BoardAgent, sinceTs int64) (text, sessionId string, cursorTs int64, err error) {
+	_, rows, err := boardRoster(ctx)
+	if err != nil {
+		return "", "", sinceTs, err
+	}
+	row := agentRowByTab(rows, agent.TabId)
+	if row == nil {
+		return "", "", sinceTs, nil
+	}
+	tpath, err := agentTranscriptPath(ctx, row)
+	if err != nil {
+		return "", "", sinceTs, err
+	}
+	if tpath == "" {
+		return "", row.status.SessionID, sinceTs, nil
+	}
+	turns := agentsessions.TurnsSince(tpath, row.Harness, sinceTs)
+	if len(turns) == 0 {
+		return "", row.status.SessionID, sinceTs, nil
+	}
+	var words []string
+	for _, t := range turns {
+		if t.Speaker == "agent" {
+			words = append(words, t.Text)
+		}
+	}
+	return capNewest(strings.Join(words, "\n\n"), boardAgentReadRunes), row.status.SessionID, turns[len(turns)-1].Ts, nil
+}
+
+// capNewest keeps the last limit characters of text, cut on a character boundary, behind a mark.
+func capNewest(text string, limit int) string {
+	r := []rune(text)
+	if len(r) <= limit {
+		return text
+	}
+	return boardAgentCutMark + string(r[len(r)-limit:])
+}

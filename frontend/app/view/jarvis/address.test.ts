@@ -170,6 +170,31 @@ describe("parseAddress", () => {
         });
     });
 
+    describe("board:", () => {
+        it("reads a project and a board id", () => {
+            expect(parseAddress("board:arcterm/b0a5b001")).toEqual({
+                kind: "board",
+                project: "arcterm",
+                boardId: "b0a5b001",
+            });
+        });
+
+        // a project name may hold ":" or "/", so this kind alone splits at the first colon and the last slash (a board id is a
+        // slug with neither)
+        it("keeps a ':' or a '/' in the project name", () => {
+            expect(parseAddress("board:a:b/b0a5b001")).toEqual({ kind: "board", project: "a:b", boardId: "b0a5b001" });
+            expect(parseAddress("board:org/repo/b0a5b001")).toEqual({
+                kind: "board",
+                project: "org/repo",
+                boardId: "b0a5b001",
+            });
+        });
+
+        it.each(["board:", "board:arcterm", "board:arcterm/", "board:/b0a5b001"])("refuses %s", (address) => {
+            expect(parseAddress(address)).toEqual({ kind: "unsupported", message: CANNOT_OPEN });
+        });
+    });
+
     it.each(["commit:abc", "decision:dec-1"])("leaves %s unsupported", (address) => {
         expect(parseAddress(address)).toEqual({ kind: "unsupported", message: CANNOT_OPEN });
     });

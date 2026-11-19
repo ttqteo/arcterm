@@ -15,8 +15,21 @@ package agentobserve
 // calls someone remembered to add.
 const HeadlessEntrypoint = "sdk-cli"
 
+// BoardDrawerEntrypoint is the CLAUDE_CODE_ENTRYPOINT a board's drawer runs its print-mode claude under. It is a
+// headless run like any other (IsHeadlessEntrypoint is true: no session history, no nested-session reports, the same
+// archive sweep), but its tokens are the person's own spend on the board's project, so Usage counts them
+// (CountsInUsage). The sdk- prefix keeps Claude Desktop's Import of CLI sessions hiding the drawer's transcripts, as it
+// hides sdk-cli's.
+const BoardDrawerEntrypoint = "sdk-arc-board"
+
 // IsHeadlessEntrypoint reports whether a transcript record's entrypoint marks a print-mode run, which
 // is never a session a user typed into and never work they could usefully resume.
 func IsHeadlessEntrypoint(entrypoint string) bool {
-	return entrypoint == HeadlessEntrypoint
+	return entrypoint == HeadlessEntrypoint || entrypoint == BoardDrawerEntrypoint
+}
+
+// CountsInUsage reports whether a print-mode run's tokens are the person's spend, so the Usage scan keeps its records
+// where it drops every other headless run as arcterm's own maintenance.
+func CountsInUsage(entrypoint string) bool {
+	return entrypoint == BoardDrawerEntrypoint
 }

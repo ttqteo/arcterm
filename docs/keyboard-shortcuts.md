@@ -118,10 +118,11 @@ agent's header `…` menu, and Search → Commands → "Open a tool…". The sea
 | `Mod`+`G` `c` | Cockpit (home) |
 | `Mod`+`G` `a` | Agent |
 | `Mod`+`G` `j` | Jarvis — channels, records, recall |
-| `Mod`+`G` `l` | Library — Conversation History, the Canvas gallery and Councils, on the tab you left it on |
+| `Mod`+`G` `l` | Library — Conversation History, the Canvas gallery, Councils and Boards, on the tab you left it on |
 | `Mod`+`G` `s` | Conversation History (opens Library on its Conversations tab) |
 | `Mod`+`G` `v` | Canvas gallery — every project's design canvases (opens Library on its Canvases tab) |
 | `Mod`+`G` `o` | Councils — every project's councils, closed ones too (opens Library on its Councils tab) |
+| `Mod`+`G` `d` | Boards — the boards agents drew, an ended agent's included (opens Library on its Boards tab) |
 | `Mod`+`G` `f` | Files |
 | `Mod`+`G` `u` | Usage |
 | `Mod`+`G` `b` | Code — browse source |
@@ -284,16 +285,17 @@ A link inside an item view does a full open, even with `Mod` held.
 
 ### Library
 
-Opened with `Mod`+`7`, `Mod`+`G` `l` or the rail's Library button: the archive of what is over, in three tabs across the top.
+Opened with `Mod`+`7`, `Mod`+`G` `l` or the rail's Library button: the archive of what is over, in four tabs across the top.
 **Conversations** is Conversation History (a past session's transcript, a run's detail), **Canvases** is the Canvas gallery
-and its viewer, and **Councils** is every council that has left the Agent tree, with a finished council's Discussion, Report
-and Map. Library opens on the tab you left it on; `Mod`+`G` `s`, `v` and `o` open it on Conversations, Canvases and
-Councils. It is a surface of its own, so the agent keys (`j` / `k` on agents, `d`, `f`, `r`, `c`…) never reach it. Resume, a
-live agent and a running council open on the Agent surface instead.
+and its viewer, **Councils** is every council that has left the Agent tree, with a finished council's Discussion, Report
+and Map, and **Boards** is every board agents drew (see Library: Boards below). Library opens on the tab you left it on;
+`Mod`+`G` `s`, `v`, `o` and `d` open it on Conversations, Canvases, Councils and Boards. It is a surface of its own, so the
+agent keys (`j` / `k` on agents, `d`, `f`, `r`, `c`…) never reach it. Resume, a live agent, a running council and a live
+agent's board open on the Agent surface instead.
 
 | Keys | Action |
 |---|---|
-| `1` / `2` / `3` | Show the Conversations / Canvases / Councils tab. Not while a text field has focus |
+| `1` / `2` / `3` / `4` | Show the Conversations / Canvases / Councils / Boards tab. Not while a text field has focus |
 | `Esc` | In a session or a run opened in Conversations: back to the list, and to the surface it was opened from (Usage, the Brief…) when it came from one. In a council opened in Library: back to the Councils list, after closing an open thread or the Sources panel. Anywhere else (a list, the canvas grid): back to the surface you jumped from, else the Cockpit |
 
 #### Library: Conversations
@@ -325,6 +327,14 @@ The gallery is a grid of cards (Today / Yesterday / Earlier); a card opens in a 
 A council opened here has the keys of a council on the Agent surface (see Agent: council chat below): the chat's `j` / `k`,
 `Enter`, `p`, `Tab` and `Esc`, and `r` / `c` / `m` for the Report, Discussion and Map. They act on the council in Library, never
 on the one Agent's centre column may be showing. `Esc` with no thread open goes back to the list of councils.
+
+#### Library: Boards
+
+The list is the project picked in the app bar (every project when none is), newest first, with a search box over it. A row
+opens the board: a live agent's beside that agent's Chat on the Agent surface, an ended agent's here, with its canvas, its
+turns and **Open conversation**. The list has no keys of its own beyond the tab keys (`Tab` moves over the rows, `Enter` opens
+one); inside the canvas the keys are Excalidraw's, and `Esc` there stays Excalidraw's too. Anywhere else `Esc` goes back to
+the surface you jumped from, else the Cockpit.
 
 ### Agent: project Overview
 

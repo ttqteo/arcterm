@@ -1,0 +1,340 @@
+import type { ExcalidrawElement } from "@excalidraw/excalidraw/element/types";
+import { describe, expect, it } from "vitest";
+import {
+    BoardFileError,
+    applyAnswer,
+    parseBoardFile,
+    selectionLabel,
+    serializeBoard,
+    shapeCount,
+    type BoardScene,
+} from "./boardmodel";
+
+const NOW = new Date(2026, 10, 12, 16, 4).getTime();
+
+function base(id: string, type: string, x: number, y: number, w: number, h: number, extra: object = {}) {
+    return {
+        id,
+        type,
+        x,
+        y,
+        width: w,
+        height: h,
+        strokeColor: "#1e1e1e",
+        backgroundColor: "transparent",
+        fillStyle: "solid",
+        strokeWidth: 2,
+        strokeStyle: "solid",
+        roundness: null,
+        roughness: 1,
+        opacity: 100,
+        angle: 0,
+        seed: 1,
+        version: 1,
+        versionNonce: 1,
+        index: null,
+        isDeleted: false,
+        groupIds: [],
+        frameId: null,
+        boundElements: null,
+        updated: 1,
+        link: null,
+        locked: false,
+        ...extra,
+    } as unknown as ExcalidrawElement;
+}
+
+function rect(id: string, x: number, y: number, w: number, h: number, extra: object = {}) {
+    return base(id, "rectangle", x, y, w, h, extra);
+}
+
+function text(id: string, x: number, y: number, t: string, extra: object = {}) {
+    return base(id, "text", x, y, t.length * 10, 20, {
+        text: t,
+        originalText: t,
+        fontSize: 20,
+        fontFamily: 5,
+        textAlign: "left",
+        verticalAlign: "top",
+        containerId: null,
+        autoResize: true,
+        lineHeight: 1.25,
+        ...extra,
+    });
+}
+
+function emptyScene(elements: ExcalidrawElement[] = []): BoardScene {
+    return { arc: { name: "Startup flow", createdts: 1 }, elements, appState: {}, files: {} };
+}
+
+// a box with a bound label, as Excalidraw links them both ways
+function labelled(id: string, x: number, y: number, label: string): ExcalidrawElement[] {
+    return [
+        rect(id, x, y, 200, 80, { boundElements: [{ type: "text", id: `${id}-label` }] }),
+        text(`${id}-label`, x + 60, y + 30, label, {
+            containerId: id,
+            textAlign: "center",
+            verticalAlign: "middle",
+        }),
+    ];
+}
+
+const userNote = text("user-note", 0, 0, "my note");
+const userRect = rect("user-rect", 0, 40, 100, 60);
+
+function drawnOnce(): BoardScene {
+    return emptyScene([userNote, userRect, ...labelled("box", 200, 0, "wavesrv")]);
+}
+
+describe("parseBoardFile / serializeBoard", () => {
+    it("round-trips and keeps arc as the first key", () => {
+        const scene = drawnOnce();
+        const textOut = serializeBoard(scene);
+        expect(Object.keys(JSON.parse(textOut))[0]).toBe("arc");
+        expect(textOut.indexOf('"arc"')).toBeLessThan(textOut.indexOf('"elements"'));
+        const back = parseBoardFile(textOut);
+        expect(back.arc).toEqual(JSON.parse(JSON.stringify(scene.arc)));
+        expect(back.elements).toEqual(JSON.parse(JSON.stringify(scene.elements)));
+    });
+
+    it("drops deleted elements when saving", () => {
+        const scene = emptyScene([userRect, { ...userNote, isDeleted: true } as ExcalidrawElement]);
+        expect(parseBoardFile(serializeBoard(scene)).elements.map((el) => el.id)).toEqual(["user-rect"]);
+    });
+
+    it("refuses a damaged file", () => {
+        const good = serializeBoard(drawnOnce());
+        expect(() => parseBoardFile(good.slice(0, good.length - 40))).toThrow(BoardFileError);
+        expect(() => parseBoardFile("[]")).toThrow(BoardFileError);
+        expect(() => parseBoardFile('{"type":"excalidraw","elements":[]}')).toThrow(/no arc record/);
+        expect(() => parseBoardFile('{"arc":{"name":"x"},"elements":{}}')).toThrow(/elements/);
+    });
+
+    it("reads a file with no elements, appState or files as an empty board", () => {
+        const scene = parseBoardFile('{"arc":{"name":"x","createdts":1}}');
+        expect(scene).toMatchObject({ elements: [], appState: {}, files: {} });
+    });
+});
+
+function answer(extra: Partial<BoardAnswer> = {}): BoardAnswer {
+    return { id: "ans1", project: "arcterm", boardid: "0a1b2c3d", turnid: "turn1", ts: NOW, ...extra };
+}
+
+function byId(scene: BoardScene, id: string): any {
+    return scene.elements.find((el) => el.id === id);
+}
+
+describe("applyAnswer", () => {
+    it("adds the converted shapes", () => {
+        const scene = emptyScene(labelled("wavesrv", 0, 0, "wavesrv"));
+        const added = labelled("db", 0, 200, "SQLite");
+        const { scene: next, shapeIds, textIds } = applyAnswer(scene, answer({ add: "[]" }), added, NOW);
+        expect(next.elements.map((el) => el.id)).toEqual(["wavesrv", "wavesrv-label", "db", "db-label"]);
+        // the bound label is part of its box: Show selects the box
+        expect(shapeIds).toEqual(["db"]);
+        expect(textIds).toEqual([]);
+        expect(scene.elements).toHaveLength(2);
+    });
+
+    it("patches an update and bumps its version", () => {
+        const scene = emptyScene([rect("a", 0, 0, 100, 40), text("note", 0, 100, "old")]);
+        const update = JSON.stringify([
+            { id: "a", x: 10, width: 150, strokeColor: "#e03131", backgroundColor: "#ffc9c9" },
+            { id: "note", text: "new words" },
+        ]);
+        const { scene: next, shapeIds, textIds } = applyAnswer(scene, answer({ update }), [], NOW);
+        const a = byId(next, "a");
+        expect(a).toMatchObject({
+            x: 10,
+            y: 0,
+            width: 150,
+            height: 40,
+            strokeColor: "#e03131",
+            backgroundColor: "#ffc9c9",
+            version: 2,
+            updated: NOW,
+        });
+        expect(byId(next, "note")).toMatchObject({ text: "new words", originalText: "new words", version: 2 });
+        expect(shapeIds).toEqual(["a", "note"]);
+        expect(textIds).toEqual(["note"]);
+    });
+
+    it("moves a container's bound text with it", () => {
+        const scene = emptyScene(labelled("wavesrv", 0, 0, "wavesrv"));
+        const update = JSON.stringify([{ id: "wavesrv", x: 100, y: 50 }]);
+        const { scene: next, shapeIds } = applyAnswer(scene, answer({ update }), [], NOW);
+        expect(byId(next, "wavesrv")).toMatchObject({ x: 100, y: 50 });
+        expect(byId(next, "wavesrv-label")).toMatchObject({ x: 160, y: 80, version: 2 });
+        expect(shapeIds).toEqual(["wavesrv"]);
+    });
+
+    it("sets a label on the container's bound text", () => {
+        const scene = emptyScene([...labelled("wavesrv", 0, 0, "wavesrv"), rect("bare", 300, 0, 100, 40)]);
+        const update = JSON.stringify([
+            { id: "wavesrv", label: "wavesrv (Go)" },
+            { id: "bare", label: "store" },
+        ]);
+        const { scene: next, shapeIds, textIds } = applyAnswer(scene, answer({ update }), [], NOW);
+        expect(byId(next, "wavesrv-label")).toMatchObject({
+            text: "wavesrv (Go)",
+            originalText: "wavesrv (Go)",
+            version: 2,
+        });
+        // a box with no label gets one, bound both ways
+        const made = next.elements.find((el) => el.type === "text" && (el as any).containerId === "bare") as any;
+        expect(made).toMatchObject({ text: "store", originalText: "store", isDeleted: false });
+        expect(byId(next, "bare").boundElements).toEqual([{ type: "text", id: made.id }]);
+        expect(shapeIds).toEqual(["wavesrv", "bare"]);
+        expect(textIds).toEqual(["wavesrv-label", made.id]);
+    });
+
+    it("removes a shape with its bound text", () => {
+        const scene = emptyScene([...labelled("wavesrv", 0, 0, "wavesrv"), rect("keep", 300, 0, 100, 40)]);
+        const { scene: next, shapeIds } = applyAnswer(scene, answer({ remove: ["wavesrv"] }), [], NOW);
+        expect(byId(next, "wavesrv")).toMatchObject({ isDeleted: true, version: 2 });
+        expect(byId(next, "wavesrv-label")).toMatchObject({ isDeleted: true, version: 2 });
+        expect(byId(next, "keep").isDeleted).toBe(false);
+        expect(shapeIds).toEqual([]);
+    });
+
+    it("skips ids the board no longer has", () => {
+        const gone = rect("gone", 0, 0, 100, 40, { isDeleted: true });
+        const mine = rect("mine", 0, 200, 100, 40);
+        const scene = emptyScene([gone, mine]);
+        const update = JSON.stringify([
+            { id: "gone", x: 50 },
+            { id: "missing", label: "x" },
+        ]);
+        const { scene: next, shapeIds } = applyAnswer(
+            scene,
+            answer({ update, remove: ["missing", "gone"] }),
+            [rect("added", 0, 400, 100, 40)],
+            NOW
+        );
+        expect(byId(next, "gone")).toBe(gone);
+        expect(byId(next, "mine")).toBe(mine);
+        expect(next.elements.map((el) => el.id)).toEqual(["gone", "mine", "added"]);
+        expect(shapeIds).toEqual(["added"]);
+    });
+
+    it("refuses an update that is not a list", () => {
+        expect(() => applyAnswer(emptyScene(), answer({ update: '{"id":"a"}' }), [], NOW)).toThrow(/not a list/);
+    });
+});
+
+// an arrow as convertToExcalidrawElements leaves one bound to existing shapes: a 100px stub where its x, y put it
+function arrow(id: string, x: number, y: number, start: string | null, end: string | null, extra: object = {}) {
+    return base(id, "arrow", x, y, 99, 0, {
+        points: [
+            [0, 0],
+            [99, 0],
+        ],
+        startBinding: start ? { elementId: start, focus: 0.4, gap: 1 } : null,
+        endBinding: end ? { elementId: end, focus: 0.4, gap: 20 } : null,
+        elbowed: false,
+        ...extra,
+    });
+}
+
+function ends(el: any): [number, number][] {
+    return [el.points[0], el.points[el.points.length - 1]].map(([px, py]) => [el.x + px, el.y + py]);
+}
+
+// distance from a point to a box's outline, negative inside
+function outside([x, y]: [number, number], b: any): number {
+    const dx = Math.max(b.x - x, x - (b.x + b.width));
+    const dy = Math.max(b.y - y, y - (b.y + b.height));
+    return dx > 0 || dy > 0 ? Math.hypot(Math.max(dx, 0), Math.max(dy, 0)) : Math.max(dx, dy);
+}
+
+describe("applyAnswer arrow routing", () => {
+    it("lays an added arrow between the shapes it binds", () => {
+        const a = rect("a", 0, 0, 200, 80);
+        const b = rect("b", 600, 400, 200, 80);
+        const scene = emptyScene([a, b]);
+        const stub = arrow("ab", 200, 40, "a", "b", { boundElements: [{ type: "text", id: "ab-label" }] });
+        const label = text("ab-label", 230, 30, "calls", { containerId: "ab" });
+        const { scene: next } = applyAnswer(scene, answer({ add: "[]" }), [stub, label], NOW);
+        const routed = byId(next, "ab");
+        const [start, end] = ends(routed);
+        expect(outside(start, a)).toBeGreaterThan(0);
+        expect(outside(start, a)).toBeLessThan(20);
+        expect(outside(end, b)).toBeGreaterThan(0);
+        expect(outside(end, b)).toBeLessThan(20);
+        expect(routed.width).toBeCloseTo(Math.abs(end[0] - start[0]));
+        expect(routed.height).toBeCloseTo(Math.abs(end[1] - start[1]));
+        // the label sits on the arrow's middle
+        const l = byId(next, "ab-label");
+        expect(l.x + l.width / 2).toBeCloseTo((start[0] + end[0]) / 2);
+        expect(l.y + l.height / 2).toBeCloseTo((start[1] + end[1]) / 2);
+    });
+
+    it("re-routes an arrow whose shape the answer moves, and leaves other arrows alone", () => {
+        const a = rect("a", 0, 0, 200, 80);
+        const b = rect("b", 300, 0, 200, 80);
+        const c = rect("c", 0, 300, 200, 80);
+        const ab = arrow("ab", 200, 40, "a", "b");
+        const ac = arrow("ac", 100, 80, "a", "c");
+        const scene = emptyScene([a, b, c, ab, ac]);
+        const update = JSON.stringify([{ id: "b", x: 300, y: 500 }]);
+        const { scene: next, shapeIds } = applyAnswer(scene, answer({ update }), [], NOW);
+        const [, end] = ends(byId(next, "ab"));
+        expect(outside(end, byId(next, "b"))).toBeGreaterThan(0);
+        expect(outside(end, byId(next, "b"))).toBeLessThan(20);
+        expect(byId(next, "ab").version).toBe(2);
+        expect(byId(next, "ac")).toBe(ac);
+        expect(shapeIds).toEqual(["b"]);
+    });
+
+    it("keeps an arrow's free end where it was", () => {
+        const a = rect("a", 0, 0, 200, 80);
+        const free = arrow("free", 500, 300, "a", null);
+        const { scene: next } = applyAnswer(emptyScene([a]), answer({ add: "[]" }), [free], NOW);
+        const [start, end] = ends(byId(next, "free"));
+        expect(end).toEqual([599, 300]);
+        expect(outside(start, a)).toBeGreaterThan(0);
+        expect(outside(start, a)).toBeLessThan(20);
+    });
+
+    it("leaves an arrow between overlapping shapes as drawn", () => {
+        const a = rect("a", 0, 0, 200, 80);
+        const b = rect("b", 50, 20, 200, 80);
+        const ab = arrow("ab", 200, 40, "a", "b");
+        const { scene: next } = applyAnswer(emptyScene([a, b]), answer({ add: "[]" }), [ab], NOW);
+        expect(byId(next, "ab")).toBe(ab);
+    });
+});
+
+describe("selectionLabel", () => {
+    it("names the first selected shape", () => {
+        const els = [
+            ...labelled("wavesrv", 0, 0, "wavesrv"),
+            text("note", 0, 200, "a note"),
+            rect("r1", 0, 300, 10, 10),
+            rect("r2", 0, 400, 10, 10),
+            rect("r3", 0, 500, 10, 10),
+        ];
+        expect(selectionLabel(els, ["wavesrv"])).toBe("wavesrv");
+        // a selected container's own bound text is not counted again
+        expect(selectionLabel(els, ["wavesrv", "wavesrv-label"])).toBe("wavesrv");
+        expect(selectionLabel(els, ["note"])).toBe("a note");
+        expect(selectionLabel(els, ["wavesrv", "r1", "r2"])).toBe("wavesrv and 2 more");
+        expect(selectionLabel(els, ["r1", "wavesrv", "r2"])).toBe("wavesrv and 2 more");
+        expect(selectionLabel(els, ["r1", "r2", "r3"])).toBe("3 shapes");
+        expect(selectionLabel(els, ["r1"])).toBe("1 shape");
+        expect(selectionLabel(els, [])).toBeNull();
+        expect(selectionLabel(els, ["missing"])).toBeNull();
+    });
+});
+
+describe("shapeCount", () => {
+    it("skips bound text and deleted elements", () => {
+        const els = [
+            ...labelled("wavesrv", 0, 0, "wavesrv"),
+            text("note", 0, 200, "a note"),
+            rect("gone", 0, 300, 10, 10, { isDeleted: true }),
+        ];
+        expect(shapeCount(els)).toBe(2);
+        expect(shapeCount([])).toBe(0);
+    });
+});

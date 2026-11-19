@@ -16,7 +16,9 @@ const rpc = vi.hoisted(() => ({
     SetMetaCommand: vi.fn(),
     ReadVaultNoteCommand: vi.fn(),
     ListMemoryHygieneCommand: vi.fn(),
+    BoardListCommand: vi.fn(),
 }));
+const openBoardSpy = vi.hoisted(() => vi.fn());
 const loadAndPin = vi.hoisted(() => vi.fn());
 const resolveCwd = vi.hoisted(() => vi.fn());
 const pushToast = vi.hoisted(() => vi.fn());
@@ -33,6 +35,11 @@ vi.mock("@/app/store/wos", async () => {
 });
 vi.mock("../agents/agentcwdresolve", () => ({ resolveCwd: (...a: unknown[]) => resolveCwd(...a) }));
 vi.mock("@/app/cockpit/notificationstore", () => ({ pushToast: (...a: unknown[]) => pushToast(...a) }));
+// openBoard drives the cell (focus, chat mode, the grid), which the split's own tests cover: here only that the router calls it
+vi.mock("../boards/boardsplitstore", async (importOriginal) => ({
+    ...(await importOriginal<typeof import("../boards/boardsplitstore")>()),
+    openBoard: (...a: unknown[]) => openBoardSpy(...a),
+}));
 
 import { globalStore } from "@/app/store/jotaiStore";
 import { setPlatform } from "@/util/platformutil";
@@ -47,7 +54,12 @@ import { councilOpenedAtom } from "../agents/councilopened";
 import { councilAtom, councilLastViewAtom, councilSelAtom, councilViewAtom } from "../agents/councilstore";
 import { memorySelectedChangeAtom, memorySelectedProjectAtom } from "../agents/memorystore";
 import { setupTabAtom } from "../agents/setupstore";
-import { libraryCouncilSelAtom, libraryCouncilViewAtom, libraryTabAtom } from "../library/librarystore";
+import {
+    libraryBoardSelAtom,
+    libraryCouncilSelAtom,
+    libraryCouncilViewAtom,
+    libraryTabAtom,
+} from "../library/librarystore";
 import { dagModalStateAtom, dismissDagModal } from "../orchestrate/dagmodalstate";
 import { selectedTaskIdAtom } from "../orchestrate/dagstore";
 import type { OpenTarget } from "./address";
@@ -572,6 +584,105 @@ describe("council landings", () => {
         expect(isPeekable(target)).toBe(false);
         expect(await peekTarget(model, target)).toEqual({ ok: true });
         expect(globalStore.get(model.surfaceAtom)).toBe("agent");
+        expect(globalStore.get(peekItemAtom)).toBeNull();
+    });
+});
+
+describe("board landings", () => {
+    const board = (over: Partial<BoardInfo> = {}): BoardInfo => ({
+        id: "b1",
+        name: "wavesrv-startup",
+        project: "arcterm",
+        path: "/data/boards/arcterm/b1.excalidraw",
+        createdts: 1,
+        activets: 2,
+        agenttabid: "t1",
+        agenttitle: "claude · startup",
+        ...over,
+    });
+
+    beforeEach(() => {
+        globalStore.set(libraryBoardSelAtom, null);
+        globalStore.set(libraryTabAtom, "conversations");
+    });
+
+    it("opens a board beside the Chat of its agent while the agent is in the roster", async () => {
+        const model = makeModel(["t1"]);
+        rpc.BoardListCommand.mockResolvedValue({ boards: [board()] });
+        expect(await openAddress(model, "board:arcterm/b1")).toEqual({ ok: true });
+        expect(rpc.BoardListCommand).toHaveBeenCalledWith(expect.anything(), { project: "arcterm" });
+        expect(openBoardSpy).toHaveBeenCalledTimes(1);
+        expect(openBoardSpy).toHaveBeenCalledWith(model, "t1", "arcterm", "b1");
+        // Library stays as it was
+        expect(globalStore.get(libraryBoardSelAtom)).toBeNull();
+        expect(globalStore.get(libraryTabAtom)).toBe("conversations");
+    });
+
+    it("counts a sleeping agent: its tab is in the roster", async () => {
+        const asleep = {
+            id: "t1",
+            name: "t1",
+            task: "",
+            state: "idle",
+            blockId: "block-t1",
+            sleeping: { since: 1, freedBytes: 0 },
+        } as AgentVM;
+        const model = { ...makeModel(), agentsAtom: atom([asleep]) } as unknown as AgentsViewModel;
+        rpc.BoardListCommand.mockResolvedValue({ boards: [board()] });
+        expect(await openTarget(model, { kind: "board", project: "arcterm", boardId: "b1" })).toEqual({ ok: true });
+        expect(openBoardSpy).toHaveBeenCalledWith(model, "t1", "arcterm", "b1");
+    });
+
+    it("opens a board whose agent ended in Library's Boards tab", async () => {
+        const model = makeModel(["t9"]);
+        rpc.BoardListCommand.mockResolvedValue({ boards: [board()] });
+        expect(await openTarget(model, { kind: "board", project: "arcterm", boardId: "b1" })).toEqual({ ok: true });
+        expect(openBoardSpy).not.toHaveBeenCalled();
+        expect(globalStore.get(libraryBoardSelAtom)).toEqual({ project: "arcterm", boardId: "b1" });
+        expect(globalStore.get(libraryTabAtom)).toBe("boards");
+        expect(globalStore.get(model.surfaceAtom)).toBe("library");
+        expect(globalStore.get(model.focusIdAtom)).toBeUndefined();
+    });
+
+    it("opens a board tied to no agent in Library too", async () => {
+        const model = makeModel(["t1"]);
+        rpc.BoardListCommand.mockResolvedValue({ boards: [board({ agenttabid: undefined })] });
+        expect(await openAddress(model, "board:arcterm/b1")).toEqual({ ok: true });
+        expect(openBoardSpy).not.toHaveBeenCalled();
+        expect(globalStore.get(libraryTabAtom)).toBe("boards");
+    });
+
+    it("reports a board the project no longer holds, and goes nowhere", async () => {
+        const model = makeModel(["t1"]);
+        rpc.BoardListCommand.mockResolvedValue({ boards: [board({ id: "other" })] });
+        expect(await openAddress(model, "board:arcterm/b1")).toEqual({
+            ok: false,
+            reason: "unavailable",
+            message: "That board no longer exists",
+        });
+        expect(openBoardSpy).not.toHaveBeenCalled();
+        expect(globalStore.get(model.surfaceAtom)).toBe("cockpit");
+        expect(globalStore.get(libraryBoardSelAtom)).toBeNull();
+    });
+
+    it("reports a board list that cannot be read", async () => {
+        const model = makeModel(["t1"]);
+        rpc.BoardListCommand.mockRejectedValue(new Error("wavesrv is down"));
+        expect(await openAddress(model, "board:arcterm/b1")).toEqual({
+            ok: false,
+            reason: "failed",
+            message: "Couldn't open board b1: wavesrv is down",
+        });
+        expect(globalStore.get(model.surfaceAtom)).toBe("cockpit");
+    });
+
+    it("is not peekable: a peek lands", async () => {
+        const model = makeModel(["t9"]);
+        rpc.BoardListCommand.mockResolvedValue({ boards: [board()] });
+        const target: OpenTarget = { kind: "board", project: "arcterm", boardId: "b1" };
+        expect(isPeekable(target)).toBe(false);
+        expect(await peekTarget(model, target)).toEqual({ ok: true });
+        expect(globalStore.get(model.surfaceAtom)).toBe("library");
         expect(globalStore.get(peekItemAtom)).toBeNull();
     });
 });

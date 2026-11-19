@@ -847,6 +847,100 @@ describe("chatItems: verdict, handoff, run-start, council-start and Doc review p
         });
     });
 
+    describe("a wsh board draw call", () => {
+        const DRAWN = 'Drawn on board "wavesrv-startup": +9 shapes, 0 changed, 0 removed.';
+        const COMMAND = 'wsh board draw --board wavesrv-startup --context "how wavesrv starts"';
+        const boardDraw = (output: string | null, command = COMMAND): AgentEntry =>
+            output == null
+                ? // still running: a draw waits for the drawer, and a call with no result has no detail
+                  action("ran", { target: command })
+                : action("ran", { outcome: "ok", detail: { kind: "bash", command, output, exit: 0 } });
+
+        it("adds a part naming the board, and leaves the call a tool line in its stretch", () => {
+            const items = chatItems([you("draw it"), action("read"), boardDraw(DRAWN)]);
+            expect(kinds(items)).toEqual(["boarddraw", "work"]);
+            expect(part(items, 0)).toEqual({ kind: "boarddraw", key: "boarddraw:2", board: "wavesrv-startup" });
+            const work = part(items, 1);
+            // not cut: the read and the draw are one stretch, which is why the part sits before it
+            expect(work.kind === "work" && work.work.actions.map((a) => a.verb)).toEqual(["read", "ran"]);
+        });
+
+        it("adds it while the call still runs, and keeps the stretch's work as the last part", () => {
+            const items = chatItems([you("draw it"), boardDraw(null)]);
+            expect(kinds(items)).toEqual(["boarddraw", "work"]);
+            expect(part(items, 0)).toMatchObject({ board: "wavesrv-startup" });
+        });
+
+        it("adds a part for each call, so two draws on one board are two parts for the card to fold into one", () => {
+            const items = chatItems([
+                you("draw it"),
+                boardDraw(DRAWN),
+                action("read"),
+                boardDraw("", 'wsh board draw --board "Wavesrv-Startup" --ask "add the key"'),
+            ]);
+            const draws = agentOf(items, 1).parts.filter((p) => p.kind === "boarddraw");
+            expect(draws.map((p) => p.kind === "boarddraw" && p.board)).toEqual(["wavesrv-startup", "Wavesrv-Startup"]);
+        });
+
+        it("draws the call's part for a failed draw too: the board may exist, and the call's own output says what failed", () => {
+            const items = chatItems([you("x"), boardDraw('Couldn\'t draw on board "startup": the drawer failed')]);
+            expect(kinds(items)).toEqual(["boarddraw", "work"]);
+        });
+
+        it("makes no part for another command, a call that named no board, one that never ran, or another tool", () => {
+            expect(kinds(chatItems([you("x"), boardDraw(DRAWN, "wsh board list")]))).toEqual(["work"]);
+            expect(kinds(chatItems([you("x"), boardDraw(DRAWN, 'wsh board draw --ask "x"')]))).toEqual(["work"]);
+            expect(kinds(chatItems([you("x"), boardDraw(DRAWN, "echo wsh board draw --board a")]))).toEqual(["work"]);
+            expect(
+                kinds(
+                    chatItems([
+                        you("x"),
+                        action("blocked", { outcome: "blocked", target: "wsh board draw --board a --ask x" }),
+                    ])
+                )
+            ).toEqual(["work"]);
+            expect(
+                kinds(chatItems([you("x"), action("grep", { target: "wsh board draw --board a --ask x" })]))
+            ).toEqual(["work"]);
+        });
+
+        it("keeps its stretch whole: a draw does not split the tool line the way a run or a council does", () => {
+            const items = chatItems([you("x"), action("read"), boardDraw(DRAWN), action("grep")]);
+            expect(kinds(items)).toEqual(["boarddraw", "work"]);
+            const work = part(items, 1);
+            expect(work.kind === "work" && work.work.actions).toHaveLength(3);
+        });
+
+        it("keeps the key of a draw as entries append after it", () => {
+            const entries: AgentEntry[] = [you("go"), action("read"), boardDraw(DRAWN)];
+            const keysOf = (es: AgentEntry[]): string[] =>
+                agentOf(chatItems(es), 1)
+                    .parts.filter((p) => p.kind === "boarddraw")
+                    .map((p) => (p as { key: string }).key);
+            expect(keysOf(entries)).toEqual(["boarddraw:2"]);
+            expect(keysOf([...entries, says("Here it is."), action("grep")])).toEqual(["boarddraw:2"]);
+        });
+
+        it("leaves a wsh council start and a wsh runs start call to their own cards", () => {
+            const items = chatItems([
+                you("x"),
+                councilStart("council 9f3a1c04d27b58e6 started: x · review · g · 4 experts · ≈ 1 calls · ~1k tokens\n"),
+                runsStart("started run 3fa21b0c (x)\n"),
+            ]);
+            expect(kinds(items)).toEqual(["work", "councilstart", "work", "runstart"]);
+        });
+    });
+
+    describe("a message forwarded from a board", () => {
+        const FORWARD = '[From board "wavesrv-startup" · on wavesrv, SQLite · turn t-9]\nwhy two stores?';
+
+        it("stays your message, with the marker as the text: a bubble draws the chip, not a card of arcterm's", () => {
+            const items = chatItems([you(FORWARD), says("Because…")]);
+            expect(items[0]).toMatchObject({ kind: "you", text: FORWARD });
+            expect(items[0]).not.toHaveProperty("command");
+        });
+    });
+
     describe("a Doc review ask", () => {
         it("cuts a Doc review ask out of its stretch as a docreview part holding the question, with no tool line", () => {
             const items = chatItems([you("review it"), action("read"), docReview()]);

@@ -72,7 +72,8 @@ type Bucket struct {
 // carries message.usage + message.model + a parseable timestamp. Malformed/incomplete lines are
 // skipped, as are print-mode records: those tokens are real, but they are Wave's own backend model
 // calls rather than the user's agent activity, and several of them run inside a real project directory
-// where the headless-directory prune in walkClaudeFiles cannot reach them.
+// where the headless-directory prune in walkClaudeFiles cannot reach them. A board drawer's print-mode records are
+// kept (agentobserve.CountsInUsage): its turns are the person's spend on the board's project.
 func extractClaude(lines []string) []Record {
 	var out []Record
 	for _, line := range lines {
@@ -102,7 +103,7 @@ func extractClaude(lines []string) []Record {
 		if rec.Type != "assistant" || rec.Message.Usage == nil || rec.Message.Model == "" {
 			continue
 		}
-		if agentobserve.IsHeadlessEntrypoint(rec.Entrypoint) {
+		if agentobserve.IsHeadlessEntrypoint(rec.Entrypoint) && !agentobserve.CountsInUsage(rec.Entrypoint) {
 			continue
 		}
 		ts, err := time.Parse(time.RFC3339, rec.Timestamp)

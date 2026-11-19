@@ -22,6 +22,7 @@ export type PeekTarget = Exclude<
     | { kind: "workflowscan" }
     | { kind: "council" }
     | { kind: "session" }
+    | { kind: "board" }
 >;
 
 export type PeekItem = { target: PeekTarget; status: "loading" | "ready" };

@@ -29,6 +29,7 @@ import { useKeybindings } from "@/app/store/keybindings/store";
 import * as WOS from "@/app/store/wos";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
+import { BoardSplitLayer } from "@/app/view/boards/boardsplit";
 import { CodePeekContext } from "@/app/view/code/codepeekhost";
 import { dismissRouteBand } from "@/app/view/jarvis/jarvisroutestore";
 import { getLastCommandAtom, setLastCommand } from "@/app/view/term/lastcommand";
@@ -885,7 +886,12 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
                                             {cell != null && a.sleeping != null && !chatCapable(a) ? (
                                                 <SleepingTranscript agent={a} barred={multi} />
                                             ) : cell != null ? (
-                                                <ChatLayer model={model} agent={a} barred={multi} />
+                                                <>
+                                                    <ChatLayer model={model} agent={a} barred={multi} />
+                                                    {/* a board beside the Chat: a layer after it in the same cell, never
+                                                        around it, so the pane and the xterm keep their parent and size */}
+                                                    <BoardSplitLayer model={model} agent={a} barred={multi} />
+                                                </>
                                             ) : null}
                                             {/* a terminal whose folder is gone: the card over its dimmed last screen, the
                                                 pane staying mounted under it; the bar above it (a grid cell's or the

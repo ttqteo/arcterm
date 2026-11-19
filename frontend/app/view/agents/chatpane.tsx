@@ -39,6 +39,7 @@ import {
 } from "motion/react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
 import { goalFromLines } from "../../../../claude/arc-mod/hooks/goal-core";
+import { boardSplitAtom, splitExpanded } from "../boards/boardsplitstore";
 import { confirmCloseSession } from "./agentactions";
 import { canStop } from "./agentcomposer";
 import { getProcExitAtom } from "./agentcontrollerstore";
@@ -80,9 +81,8 @@ import { liveReplyAtom, startLiveReplyStream, stopLiveReplyStream } from "./chat
 import { ChatLocalCard } from "./chatlocalcards";
 import { closeLocalCard, showLocalCard, useLocalCards } from "./chatlocalstore";
 import { useLostBash } from "./chatlostbashstore";
-import { chatCapable } from "./chatmode";
 import { canSendNow, compactingNow, SEND_NOW_KEYS, turnStatsLabel, workingLine } from "./chatmodel";
-import { setChatMode, useChatMode } from "./chatmodestore";
+import { setChatMode, useChatShown } from "./chatmodestore";
 import {
     btwQuestion,
     landedIds,
@@ -552,7 +552,12 @@ function ChatEmpty({ agent, error }: { agent: AgentVM; error: string | null }) {
 // flex item, and the layer keeps ChatPane's own z-20 place in the cell while it fades (opacity < 1 makes the wrapper a
 // stacking context, which would otherwise drop it to z-auto).
 export function ChatLayer({ model, agent, barred }: { model: AgentsViewModel; agent: AgentVM; barred: boolean }) {
-    const shown = useChatMode(agent) === "chat" || (agent.sleeping != null && chatCapable(agent));
+    const shown = useChatShown(agent);
+    // A board split beside the Chat (boards/boardsplit.tsx) takes the right half of the cell. The pane keeps its place
+    // and its mount, only its right edge moves in, so the xterm under both never refits; an expanded board covers
+    // the pane, which then takes no focus (a grid of several cells always shows its board expanded).
+    const split = useAtomValue(boardSplitAtom(agent.id));
+    const covered = split != null && splitExpanded(split, barred);
     return (
         <MotionConfig reducedMotion="user">
             <AnimatePresence initial={false}>
@@ -564,8 +569,9 @@ export function ChatLayer({ model, agent, barred }: { model: AgentsViewModel; ag
                         initial="initial"
                         animate="animate"
                         exit="exit"
+                        inert={covered}
                     >
-                        <ChatPane model={model} agent={agent} barred={barred} />
+                        <ChatPane model={model} agent={agent} barred={barred} besideBoard={split != null} />
                     </motion.div>
                 ) : null}
             </AnimatePresence>
@@ -684,18 +690,39 @@ function FocusReadToggle({ agentId, scrollRef }: { agentId: string; scrollRef: R
 // What an `agent:`, `run:` or `council:` reference resolves against (chatrefbadge.tsx) wraps the whole pane, so the
 // conversation, the pending bubbles and the box's pills all draw their badges from it. The project is the registered
 // project's path, which is what runs and councils are kept under: never the agent's cwd, a worktree for a run's worker.
-export function ChatPane({ model, agent, barred }: { model: AgentsViewModel; agent: AgentVM; barred: boolean }) {
+// `besideBoard`: a board is split beside the Chat, so the pane's right edge is the cell's middle, not its edge.
+export function ChatPane({
+    model,
+    agent,
+    barred,
+    besideBoard = false,
+}: {
+    model: AgentsViewModel;
+    agent: AgentVM;
+    barred: boolean;
+    besideBoard?: boolean;
+}) {
     const projects = useAtomValue(projectsAtom);
     const project = projects[agent.project ?? ""]?.path ?? "";
     const refLinks = useMemo(() => ({ model, project, selfId: agent.id }), [model, project, agent.id]);
     return (
         <ChatRefLinks value={refLinks}>
-            <ChatPaneBody model={model} agent={agent} barred={barred} />
+            <ChatPaneBody model={model} agent={agent} barred={barred} besideBoard={besideBoard} />
         </ChatRefLinks>
     );
 }
 
-function ChatPaneBody({ model, agent, barred }: { model: AgentsViewModel; agent: AgentVM; barred: boolean }) {
+function ChatPaneBody({
+    model,
+    agent,
+    barred,
+    besideBoard,
+}: {
+    model: AgentsViewModel;
+    agent: AgentVM;
+    barred: boolean;
+    besideBoard: boolean;
+}) {
     const path = agent.transcriptPath ?? "";
     const surface = useAtomValue(model.surfaceAtom);
     const { view, catchingUp, error, loadEarlier, requestAppend } = useTranscriptWindow(path, agent.agent);
@@ -1104,7 +1131,8 @@ function ChatPaneBody({ model, agent, barred }: { model: AgentsViewModel; agent:
             data-chat-leaving={present ? undefined : ""}
             inert={!present}
             className={cn(
-                "absolute inset-x-0 bottom-0 z-20 flex flex-col bg-background",
+                "absolute bottom-0 left-0 z-20 flex flex-col bg-background",
+                besideBoard ? "right-1/2" : "right-0",
                 barred ? "top-[26px]" : "top-0"
             )}
         >

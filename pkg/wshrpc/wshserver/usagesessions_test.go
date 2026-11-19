@@ -5,13 +5,16 @@ package wshserver
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
+	"github.com/wavetermdev/waveterm/pkg/agentobserve"
 	"github.com/wavetermdev/waveterm/pkg/effortstore"
 	"github.com/wavetermdev/waveterm/pkg/jarvis"
 	"github.com/wavetermdev/waveterm/pkg/usagestats"
@@ -408,6 +411,68 @@ func TestUsageSessionsProjectName(t *testing.T) {
 	}
 	if got[1].ProjectName != "" {
 		t.Fatalf("an unregistered folder has no project name, got %q", got[1].ProjectName)
+	}
+}
+
+// writeUsageTranscript writes a claude transcript of one assistant turn under home's projects folder, recorded as the
+// given entrypoint with cwd as its working directory, and returns the session id.
+func writeUsageTranscript(t *testing.T, home, cwd, entrypoint string) string {
+	t.Helper()
+	session := uuid.NewString()
+	line, err := json.Marshal(map[string]any{
+		"type": "assistant", "timestamp": time.Now().UTC().Format(time.RFC3339), "entrypoint": entrypoint, "cwd": cwd,
+		"message": map[string]any{
+			"id": "msg_" + session, "model": "claude-sonnet-4-6",
+			"usage": map[string]any{"input_tokens": 120, "output_tokens": 40},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := filepath.Join(home, ".claude", "projects", agentobserve.SlugifyCwd(cwd))
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, session+".jsonl"), append(line, '\n'), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return session
+}
+
+// A board drawer's headless sessions are written under the project's folder. They count in Usage under that project:
+// the scan keeps the drawer's print-mode entrypoint, while another print-mode run in the same folder stays out.
+func TestUsageSessionsDrawerSessionCountsUnderItsProject(t *testing.T) {
+	ctx := context.Background()
+	registered := `C:\Users\u\proj-` + uuid.NewString()
+	ch, err := wstore.CreateChannel(ctx, "Drawn project", registered)
+	if err != nil {
+		t.Fatal(err)
+	}
+	home := t.TempDir()
+	t.Setenv("USERPROFILE", home) // os.UserHomeDir reads one or the other, by OS
+	t.Setenv("HOME", home)
+	drawer := writeUsageTranscript(t, home, registered, agentobserve.BoardDrawerEntrypoint)
+	maintenance := writeUsageTranscript(t, home, registered, agentobserve.HeadlessEntrypoint)
+
+	_, metas, err := usagestats.ScanUsage(0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var drawerMeta *usagestats.SessionMeta
+	for i, m := range metas {
+		if m.Session == maintenance {
+			t.Errorf("another print-mode run is arcterm's own maintenance and must stay out of Usage: %+v", m)
+		}
+		if m.Session == drawer {
+			drawerMeta = &metas[i]
+		}
+	}
+	if drawerMeta == nil {
+		t.Fatalf("the drawer's session is not in the usage scan: %+v", metas)
+	}
+	got := usageSessionsOf(t, *drawerMeta)[0]
+	if got.Session != drawer || got.Harness != "claude" || got.Project != registered || got.ProjectName != ch.Name {
+		t.Errorf("the drawer's session must count under its project %q (%q): %+v", ch.Name, registered, got)
 	}
 }
 

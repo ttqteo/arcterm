@@ -177,11 +177,14 @@ before working in an area you don't already know.
   Library, Code, Diff: Library sits fifth on the rail and is Ctrl+7, so the rail's Ctrl-held digit hint reads
   `SURFACE_ORDER`, and `[` `]` and the start-surface options follow `RAIL_ORDER`; `navrail.tsx` reads both from
   `surfaceorder.ts`, never a value import of `agents.tsx`). What is over is the **Library** surface
-  (`view/library/`), kept apart from what is live: its three tabs are Conversations (Conversation History's list and
-  detail, or one session's or run's pane at full width when opened from outside Library), Canvases (the Canvas gallery)
-  and Councils (every council; one the Agent tree still lists opens on Agent, any other inside Library). Its state is
-  module-level in `librarystore.ts` (`libraryTabAtom`, `libraryConvViewAtom`, the open council), and every route into it
-  goes through that file: `showLibrary(model, tab)`, `showLibrarySession(model, sel)`, and `openCouncil(model, id)` for a
+  (`view/library/`), kept apart from what is live: its four tabs are Conversations (Conversation History's list and
+  detail, or one session's or run's pane at full width when opened from outside Library), Canvases (the Canvas gallery),
+  Councils (every council; one the Agent tree still lists opens on Agent, any other inside Library) and Boards (every
+  board agents drew, `libraryboards.tsx`: a live agent's board opens beside its Chat on the Agent surface through the
+  router's `board:<project>/<id>` target, an ended agent's reads here with its canvas and turns). Its state is
+  module-level in `librarystore.ts` (`libraryTabAtom`, `libraryConvViewAtom`, the open council, `libraryBoardSelAtom`), and
+  every route into it goes through that file: `showLibrary(model, tab)`, `showLibrarySession(model, sel)`,
+  `showLibraryBoard(model, project, boardId)`, and `openCouncil(model, id)` for a
   council, which picks the host (Agent's centre through `showCouncil`, or Library's `LIBRARY_COUNCIL_HOST`; the council
   views read their host through `useCouncilHost`, `agents/councilhost.ts`). Agent's centre keeps four modes only
   (`centerModeAtom`, `view/agents/agentcenter.ts`: terminal, council, project, held; `showTerminal` whenever a route

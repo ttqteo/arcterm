@@ -49,6 +49,7 @@
         "vitest": "^3.0.9"
     },
     "dependencies": {
+        "@excalidraw/excalidraw": "0.18.1",
         "@floating-ui/react": "^0.27.16",
         "@lexical/react": "0.53.0",
         "@react-hook/resize-observer": "^2.0.2",

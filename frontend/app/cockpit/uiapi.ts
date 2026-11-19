@@ -93,7 +93,7 @@ export function resolveAction(
     return { item };
 }
 
-// Conversation History, the Canvas gallery and Councils are tabs of the Library surface rather than surfaces, so their
+// Conversation History, the Canvas gallery, Councils and Boards are tabs of the Library surface rather than surfaces, so their
 // addresses name Library and the tab; "sessions" is the old name of the surface History replaced, kept (and left out of the
 // error's list) so a worker following an old instruction still lands somewhere sensible.
 const LIBRARY_TAB_ADDRESSES: ReadonlyMap<string, LibraryTab> = new Map<string, LibraryTab>([
@@ -101,8 +101,9 @@ const LIBRARY_TAB_ADDRESSES: ReadonlyMap<string, LibraryTab> = new Map<string, L
     ["sessions", "conversations"],
     ["canvases", "canvases"],
     ["councils", "councils"],
+    ["boards", "boards"],
 ]);
-const LIBRARY_TAB_NAMES = ["history", "canvases", "councils"];
+const LIBRARY_TAB_NAMES = ["history", "canvases", "councils", "boards"];
 
 // null = not a surface address; the shared router (openAddress) owns every other kind. `surface:library` is a surface like any
 // other (it opens on the tab it was left on); a name in LIBRARY_TAB_ADDRESSES opens Library on that tab.

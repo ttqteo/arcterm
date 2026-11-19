@@ -11,7 +11,15 @@ import { atom, useAtomValue } from "jotai";
 import { atomFamily } from "jotai/utils";
 import type { AgentVM } from "./agentsviewmodel";
 import { setAgentView } from "./agentview";
-import { parseChatModes, shownChatMode, withChatMode, type CellView, type ChatMode, type ChatModes } from "./chatmode";
+import {
+    chatCapable,
+    parseChatModes,
+    shownChatMode,
+    withChatMode,
+    type CellView,
+    type ChatMode,
+    type ChatModes,
+} from "./chatmode";
 
 const STORAGE_KEY = "agent.chatmode";
 
@@ -35,6 +43,13 @@ type ChatAgent = Pick<AgentVM, "id" | "agent" | "kind" | "blockId">;
 // what the agent's cell shows in its terminal slot: Terminal for an agent that is not chat-capable
 export function useChatMode(agent: ChatAgent): ChatMode {
     return shownChatMode(agent, useAtomValue(chatModeAtom(agent.id)));
+}
+
+// Whether the agent's cell shows Chat: its chat mode, or a Claude agent asleep (its terminal holds only the kill, so the
+// conversation is what the cell shows, whatever its stored chat mode). The chat layer and the board split beside it ask
+// the same.
+export function useChatShown(agent: ChatAgent & Pick<AgentVM, "sleeping">): boolean {
+    return useChatMode(agent) === "chat" || (agent.sleeping != null && chatCapable(agent));
 }
 
 export function getChatMode(agent: ChatAgent): ChatMode {

@@ -34,6 +34,11 @@ and a picture given to a line that is not big.
 
 ### Added
 
+- Claude agents can draw an explanation on a board: they run `wsh board draw` and a cheap drawer sketches the flow, the
+  architecture or the choice in Excalidraw, while their turn in Chat gets a card with Open that splits the board beside
+  Chat. Select shapes on the board and Ask: a question the drawer can't answer by drawing goes to the agent as your own
+  message, and its reply is copied under it. Library's new Boards tab (key 4) brings every board of a project back.
+  <!-- big --> <!-- shot: 1.9.0-boards.webp -->
 - A council's Report draws what its panel found and spent: where each direction stands on evidence and agreement, who
   backed or opposed it, what each seat spent and read twice, and, on the Map, who answered which idea. Library's
   Councils tab charts the benchmark. <!-- big --> <!-- shot: none -->

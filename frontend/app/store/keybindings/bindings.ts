@@ -257,8 +257,8 @@ function focusCodeSearchInput(): void {
     }
 }
 
-// g-leader surface teleports (collision-free letters; see design spec). Conversation History, the Canvas gallery and
-// Councils are tabs of the Library surface, not surfaces, so each target carries its own id (What's new's Try it links name
+// g-leader surface teleports (collision-free letters; see design spec). Conversation History, the Canvas gallery, Councils
+// and Boards are tabs of the Library surface, not surfaces, so each target carries its own id (What's new's Try it links name
 // them) and the opener that shows its tab; `g l` opens Library on the tab it was left on.
 const GO_TARGETS: {
     letter: string;
@@ -270,7 +270,7 @@ const GO_TARGETS: {
     { letter: "c", surface: "cockpit", label: "Cockpit (home)" },
     { letter: "a", surface: "agent", label: "Agent" },
     { letter: "j", surface: "jarvis", label: "Jarvis (projects, records, recall)" },
-    { letter: "l", surface: "library", label: "Library (conversations, canvases, councils)" },
+    { letter: "l", surface: "library", label: "Library (conversations, canvases, councils, boards)" },
     {
         letter: "s",
         surface: "library",
@@ -291,6 +291,13 @@ const GO_TARGETS: {
         label: "Councils",
         id: "go:councils",
         open: (m) => showLibrary(m, "councils"),
+    },
+    {
+        letter: "d",
+        surface: "library",
+        label: "Boards",
+        id: "go:boards",
+        open: (m) => showLibrary(m, "boards"),
     },
     { letter: "f", surface: "files", label: "Diff" },
     { letter: "u", surface: "usage", label: "Usage" },
@@ -2782,9 +2789,10 @@ const LIBRARY_TAB_LABEL: Record<LibraryTab, string> = {
     conversations: "Conversations",
     canvases: "Canvases",
     councils: "Councils",
+    boards: "Boards",
 };
 
-// Library's own keys, which LibrarySurface activates with useKeybindings: `1` `2` `3` show its tabs, in the order the strip
+// Library's own keys, which LibrarySurface activates with useKeybindings: `1` `2` `3` `4` show its tabs, in the order the strip
 // draws them, and Escape goes back out of what is open in it (the stand-in for the Back the panes draw): a session or a run
 // on Conversations (leaveLibraryDetail), a council on Councils (leaveLibraryCouncil) unless the council's own panel holds
 // the key. The rest of Library's keys are built elsewhere and gated on Library: the gallery's (canvases:*, built with the

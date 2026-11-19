@@ -16,12 +16,13 @@ import {
     councilSelAtom,
     councilViewAtom,
 } from "../agents/councilstore";
-import { forgetOrigin } from "../jarvis/returnsurface";
+import { backToOrigin, forgetOrigin } from "../jarvis/returnsurface";
 import {
     LIBRARY_COUNCIL_HOST,
     LIBRARY_TABS,
     leaveLibraryCouncil,
     leaveLibraryDetail,
+    libraryBoardSelAtom,
     libraryConvViewAtom,
     libraryCouncilOnlyAtom,
     libraryCouncilSelAtom,
@@ -30,6 +31,7 @@ import {
     openCouncil,
     setLibraryCouncil,
     showLibrary,
+    showLibraryBoard,
     showLibraryCouncil,
     showLibrarySession,
 } from "./librarystore";
@@ -63,6 +65,7 @@ beforeEach(() => {
     globalStore.set(libraryConvViewAtom, "list");
     globalStore.set(libraryCouncilSelAtom, null);
     globalStore.set(libraryCouncilViewAtom, "discussion");
+    globalStore.set(libraryBoardSelAtom, null);
     globalStore.set(centerModeAtom, "terminal");
     globalStore.set(councilSelAtom, null);
     globalStore.set(councilViewAtom, "discussion");
@@ -72,10 +75,11 @@ beforeEach(() => {
 });
 
 describe("Library's state", () => {
-    it("has the Conversations, Canvases and Councils tabs, in that order, and opens on Conversations", () => {
-        expect(LIBRARY_TABS).toEqual(["conversations", "canvases", "councils"]);
+    it("has the Conversations, Canvases, Councils and Boards tabs, in that order, and opens on Conversations", () => {
+        expect(LIBRARY_TABS).toEqual(["conversations", "canvases", "councils", "boards"]);
         expect(globalStore.get(libraryTabAtom)).toBe("conversations");
         expect(globalStore.get(libraryConvViewAtom)).toBe("list");
+        expect(globalStore.get(libraryBoardSelAtom)).toBeNull();
         expect(globalStore.get(libraryCouncilSelAtom)).toBeNull();
         expect(globalStore.get(libraryCouncilViewAtom)).toBe("discussion");
         expect(globalStore.get(libraryCouncilOnlyAtom("c1"))).toBeNull();
@@ -96,6 +100,31 @@ describe("showLibrary", () => {
         showLibrary(model, "canvases");
         expect(globalStore.get(libraryTabAtom)).toBe("canvases");
         expect(globalStore.get(model.surfaceAtom)).toBe("library");
+    });
+});
+
+describe("showLibraryBoard", () => {
+    it("opens Library's Boards tab on the board, from any surface", () => {
+        const model = stub("cockpit");
+        globalStore.set(libraryTabAtom, "councils");
+        showLibraryBoard(model, "arcterm", "b0a5b001");
+        expect(globalStore.get(libraryBoardSelAtom)).toEqual({ project: "arcterm", boardId: "b0a5b001" });
+        expect(globalStore.get(libraryTabAtom)).toBe("boards");
+        expect(globalStore.get(model.surfaceAtom)).toBe("library");
+    });
+
+    it("remembers where the person came from, so Escape returns there", () => {
+        const model = stub("jarvis");
+        showLibraryBoard(model, "arcterm", "b0a5b001");
+        backToOrigin();
+        expect(globalStore.get(model.surfaceAtom)).toBe("jarvis");
+    });
+
+    it("replaces the board that was open", () => {
+        const model = stub();
+        showLibraryBoard(model, "arcterm", "b1");
+        showLibraryBoard(model, "other", "b2");
+        expect(globalStore.get(libraryBoardSelAtom)).toEqual({ project: "other", boardId: "b2" });
     });
 });
 

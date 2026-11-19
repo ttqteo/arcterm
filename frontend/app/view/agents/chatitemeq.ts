@@ -113,6 +113,8 @@ function samePart(a: AgentPart, b: AgentPart): boolean {
             return (
                 b.kind === "docreview" && a.key === b.key && JSON.stringify(a.question) === JSON.stringify(b.question)
             );
+        case "boarddraw":
+            return b.kind === "boarddraw" && a.key === b.key && a.board === b.board;
     }
 }
 
