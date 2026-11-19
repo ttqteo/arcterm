@@ -566,11 +566,23 @@ export function projectTree(input: {
         councilsOf(project)
             .filter((c) => !c.pinned)
             .map((c) => councilRow(project, c));
-    const splits = input.splits != null ? splitGrids(input.splits) : new Map<string, GridState>();
+    // A grid is keyed by the project its tabs name (gridProjects), a folder by treeFolder: a No folder launch names
+    // "Home", so its split is keyed "Home" and filed here under No folder, as its rows are. Two keys landing in one
+    // folder: the shown one's split is drawn.
+    const splits = new Map<string, { grid: GridState; shown: boolean }>();
+    if (input.splits != null) {
+        for (const [key, grid] of splitGrids(input.splits)) {
+            const folder = treeFolder(key, roots);
+            const shown = input.splits.project === key;
+            if (shown || !splits.has(folder)) {
+                splits.set(folder, { grid, shown });
+            }
+        }
+    }
     const byId = new Map((input.roster ?? []).map((a) => [a.id, a]));
     const fold = (project: string, body: ProjectTreeRow[]) => {
-        const grid = splits.get(project);
-        return grid == null ? body : foldSplit(body, project, grid, input.splits?.project === project, byId);
+        const split = splits.get(project);
+        return split == null ? body : foldSplit(body, project, split.grid, split.shown, byId);
     };
 
     if (filter !== ALL_PROJECTS) {

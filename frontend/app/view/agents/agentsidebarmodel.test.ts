@@ -858,6 +858,16 @@ describe("projectTree", () => {
             ]);
         });
 
+        it("folds a No folder split, whose grid is keyed by the Home a launch there is stamped with", () => {
+            // gridProjects keys the grid by the project the tabs name ("Home"); the tree files them under No folder
+            const rows = withSplits(
+                [agent("y", undefined, "Home")],
+                [term("n", "Home")],
+                grids("Home", { Home: ["y", "n"] })
+            );
+            expect(shape(rows)).toEqual([`group:${HOME_PROJECT}:1a:1t`, `split:${HOME_PROJECT}:shown:y,n`]);
+        });
+
         it("leaves a grid of one cell as plain rows", () => {
             const rows = withSplits([agent("a"), agent("b")], [], grids("waveterm", { waveterm: ["a"] }));
             expect(shape(rows)).toEqual(["group:waveterm:2a:0t", "a:a", "a:b"]);

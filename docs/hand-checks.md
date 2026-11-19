@@ -16,6 +16,10 @@ list (its number is not reused).
 Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) ·
 [part 4](hand-checks-4.md) · [part 3](hand-checks-3.md) · [part 2](hand-checks-2.md) (oldest).
 
+- [ ] (arcterm) **No folder's split is one row in the Agent tree.** Launch an agent in No folder, open a plain
+  terminal there, put it in a split with the agent (Open in split): No folder in the tree shows one split row holding
+  both, in the accent frame, not two separate rows. `projectTree` keys a grid by `treeFolder` (a No folder launch's
+  grid is keyed "Home"); covered by a unit test, not tried in the app. Branch fix/tree-home-split.
 - [ ] (arcterm) **The bug box's Khoanh vùng frames an area on the real capture.** Open the bug box (Ctrl+Alt+R), press
   Khoanh vùng: the window's picture covers it, a drag frames an area with its size under it, Enter brings the box back
   with that area in the thumb, Khoanh lại and Bỏ vùng. Send, then open the report's screen.png: the area has an accent
