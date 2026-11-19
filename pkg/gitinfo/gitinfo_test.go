@@ -3233,3 +3233,37 @@ func TestChangeReadsOutOfTimeFailInsteadOfReadingAsNoRepo(t *testing.T) {
 		}
 	}
 }
+
+// A file whose change is committed: the newest commit that touched it, so a diff can show that change, from a subdir
+// too; one no commit holds names none.
+func TestLastChange(t *testing.T) {
+	dir := t.TempDir()
+	git(t, dir, "init", "-b", "main")
+	writeAt(t, dir, "sub/c.txt", "one\n")
+	writeAt(t, dir, "other.txt", "x\n")
+	git(t, dir, "add", ".")
+	git(t, dir, "commit", "-m", "init")
+	writeAt(t, dir, "sub/c.txt", "two\n")
+	git(t, dir, "add", ".")
+	git(t, dir, "commit", "-m", "c says two")
+	writeAt(t, dir, "other.txt", "y\n")
+	git(t, dir, "add", ".")
+	git(t, dir, "commit", "-m", "other moves on")
+
+	ctx := context.Background()
+	hash, subject, err := LastChange(ctx, filepath.Join(dir, "sub"), "c.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if subject != "c says two" || len(hash) != 40 {
+		t.Fatalf("LastChange = %q %q, want the commit that changed c.txt", hash, subject)
+	}
+	before, err := FileAtRef(ctx, filepath.Join(dir, "sub"), hash+"^", "c.txt", 0)
+	if err != nil || before.Content != "one\n" {
+		t.Fatalf("the side before it = %+v %v, want one", before, err)
+	}
+	writeAt(t, dir, "new.txt", "n\n")
+	if hash, subject, _ := LastChange(ctx, dir, "new.txt"); hash != "" || subject != "" {
+		t.Errorf("an uncommitted file named %q %q, want none", hash, subject)
+	}
+}

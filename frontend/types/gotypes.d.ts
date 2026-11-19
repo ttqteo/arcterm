@@ -2008,6 +2008,7 @@ declare global {
         maxbytes?: number;
         raw?: boolean;
         worktree?: boolean;
+        lastchange?: boolean;
     };
 
     // wshrpc.CommandGitFileAtRefRtnData
@@ -2019,6 +2020,8 @@ declare global {
         size?: number;
         isrepo: boolean;
         data64?: string;
+        commit?: string;
+        subject?: string;
     };
 
     // wshrpc.CommandGitGrepData
