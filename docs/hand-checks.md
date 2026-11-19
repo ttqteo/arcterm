@@ -16,6 +16,29 @@ list (its number is not reused).
 Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) ·
 [part 4](hand-checks-4.md) · [part 3](hand-checks-3.md) · [part 2](hand-checks-2.md) (oldest).
 
+- [ ] (arcterm) **Boards, a real drawer turn** (`pkg/boarddrawer`, `wsh board draw`; the CDP scenarios stub every
+  board RPC, so no drawer has run in them). From a live claude agent in a registered project, ask it to draw how
+  something works, or run `wsh board draw --board demo --context "<a short briefing>"` yourself: the command prints
+  `Drawn on board "demo": +N shapes, …`, the agent's turn in Chat carries a card (name, shape count, Open), and Open
+  splits the board beside Chat with the drawing on it. A second one-line `--ask` changes the same board, and
+  Ctrl+Z on the canvas removes that turn's shapes in one step. With another agent focused, a toast says the drawer
+  drew on `demo`, with Open.
+- [ ] (arcterm) **Boards, a forwarded question** (`pkg/wshrpc/wshserver/wshserver_boardforward.go`). On a real board,
+  select a shape and ask something the drawer can't answer by drawing ("why does this call that?"): the turn reads
+  forwarded, the agent's Chat shows it as your message under a chip `from demo · on <shape>`, and when the agent's
+  turn ends the turn reads `forwarded · answered in Chat` (expand the board, or Library → Boards, to see its reply
+  copied under the question). Also with the agent mid-turn (the forward queues behind it) and with a question or
+  permission prompt open (the turn waits on it, then goes once it is answered).
+- [ ] (arcterm) **Boards, a sleeping agent woken by a forward.** Put the agent that drew the board to sleep (Sleep in
+  the Agent tree), then ask a question on its board (Library → Boards opens a sleeping agent's board beside its Chat
+  too): the agent wakes, as a message you type in Chat would wake it, and the question arrives as above. Then close
+  the agent's tab: Library → Boards keeps the board read-only, with `The agent ended, so you can't ask here`.
+- [ ] (arcterm) **Boards, the What's new picture.** The `boards-split` scenario writes
+  `public/whatsnew/<version>-boards.webp` on the first Final run (or run `node scripts/whatsnew-shot.mjs boards` in the
+  dev app with a board open beside Chat). Commit that file, then change the Boards line in `CHANGELOG.md` from
+  `<!-- shot: none -->` to `<!-- shot: <that file> -->` (`whatsnew.test.ts` fails a shot naming a file that is not
+  there yet, so the line waits on the file). Also read the heap pair in the `boards-split` step 11 detail into
+  `docs/open-issues.md`'s RAM watch row for Boards.
 - [ ] (arcterm) Council figures on a real council (4e9f4589d6d9c6f8): the takeaways read right, and the argument map
   stays legible at 22 ideas
 - [ ] (arcterm) After installing, run `wsh effort backfill-proposed` once: the backlog since 2026-11-13 moves to To
