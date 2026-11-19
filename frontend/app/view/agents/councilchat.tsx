@@ -45,7 +45,9 @@ import { reloadFileIndex } from "@/app/view/code/codestore";
 import { cn } from "@/util/util";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import {
+    ArrowDown,
     ArrowRight,
+    ArrowUp,
     Check,
     ChevronDown,
     ChevronUp,
@@ -3679,10 +3681,10 @@ function Channel({
             </div>
             <div className="pointer-events-none absolute bottom-3 right-4 z-20 flex items-center gap-[6px]">
                 <JumpPill show={jumps.pills.top} jump="top" label="Jump to the top" onClick={jumps.toTop}>
-                    ↑
+                    <ArrowUp size={14} strokeWidth={2} />
                 </JumpPill>
                 <JumpPill show={jumps.pills.latest} jump="latest" label="Jump to the latest" onClick={jumps.toLatest}>
-                    ↓
+                    <ArrowDown size={14} strokeWidth={2} />
                 </JumpPill>
             </div>
         </div>
