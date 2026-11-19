@@ -89,8 +89,22 @@ func writeGlanceChart(b *strings.Builder, c *Council) {
 	b.WriteString("    x-axis Thin evidence --> Checked evidence\n")
 	b.WriteString("    y-axis Contested --> Backed\n")
 	b.WriteString("    quadrant-1 Stands\n    quadrant-2 Backed on thin evidence\n    quadrant-3 A guess\n    quadrant-4 Shown but contested\n")
+	for i, p := range glancePlaced(c) {
+		fmt.Fprintf(b, "    D%d: [%.2f, %.2f]\n", i+1, p[0], p[1])
+	}
+	b.WriteString("```\n\n")
+}
+
+// glancePlaced is where each direction of the summary is drawn in the at-a-glance quadrant, in the order the summary
+// lists them (D1 is the first): its directionPoint kept off the chart's edges (ChartUnit) and, when it would sit on a
+// point already placed, nudged inward. The cockpit's Report draws the same quadrant (frontend councilfiguresmodel.ts),
+// held to these numbers by testdata/glance-golden.json. Nil with no summary.
+func glancePlaced(c *Council) [][2]float64 {
+	if c.Summary == nil {
+		return nil
+	}
 	var placed [][2]float64
-	for i, d := range c.Summary.Directions {
+	for _, d := range c.Summary.Directions {
 		x, y := directionPoint(c, d)
 		x, y = ChartUnit(x), ChartUnit(y)
 		// at most a few nudges: near the middle a nudge can swing a point back onto one already placed
@@ -98,9 +112,8 @@ func writeGlanceChart(b *strings.Builder, c *Council) {
 			x, y = nudge(x), nudge(y)
 		}
 		placed = append(placed, [2]float64{x, y})
-		fmt.Fprintf(b, "    D%d: [%.2f, %.2f]\n", i+1, x, y)
 	}
-	b.WriteString("```\n\n")
+	return placed
 }
 
 // QuadrantHead opens a Mermaid quadrant chart wider than Mermaid's 500 px default, so a point's label, centred under it,
