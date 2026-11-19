@@ -50,6 +50,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   commit that changed it, named above the diff, instead of "No change since the last commit".
 - A long path or command in a Chat reply shows in full, wrapped over as many lines as it needs, instead of being cut
   off with "…" on a line of its own.
+- A file link in Chat that names only the end of a path (`handbook/parsers/development.md` for
+  `apps/portal/content/handbook/parsers/development.md`) now opens when exactly one file in the agent's repo ends that
+  way, even if the agent read it through a shell command, instead of saying "File not found".
 
 ## 1.6.1 — 2026-11-19
 

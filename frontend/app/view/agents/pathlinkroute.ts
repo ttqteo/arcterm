@@ -19,7 +19,7 @@ import type { FileRef } from "./agentrailtabs";
 import type { AgentsViewModel, SurfaceKey } from "./agents";
 import type { AgentEntry, AgentVM } from "./agentsviewmodel";
 import { liveEntriesByIdAtom } from "./livetranscriptatoms";
-import { knownPathTail, matchKnownPath, resolvePath, transcriptCwds } from "./pathlinks";
+import { knownPathTail, matchKnownPath, matchListedPath, resolvePath, transcriptCwds } from "./pathlinks";
 import { railStateAtom } from "./railstore";
 import { projectorFor } from "./transcriptregistry";
 
@@ -207,7 +207,32 @@ async function locateAgentPath(agent: AgentVM, cwd: string | null, path: string)
             return there;
         }
     }
-    return null;
+    return cwd == null ? null : listedMatch(cwd, path);
+}
+
+// a git walk of a big repo takes well over 10s on a cold disk cache
+const LIST_TIMEOUT_MS = 30_000;
+
+// the one file in the repo at cwd that a path is the tail of: the listing wavesrv kept from the last walk (the Files tab
+// and Code keep one), else a fresh one. An agent names a file it read through a shell command by its end
+// (`sed -n 1,40p apps/portal/content/handbook/parsers/development.md`, then handbook/parsers/development.md), and
+// none of its tools touched it
+async function listedMatch(cwd: string, path: string): Promise<string | null> {
+    const found = async (files: string[] | undefined): Promise<string | null> => {
+        const hit = matchListedPath(path, cwd, files ?? []);
+        return hit != null && (await fileExists(hit)) ? hit : null;
+    };
+    try {
+        const kept = await RpcApi.GitListFilesCommand(TabRpcClient, { cwd, cached: true });
+        const hit = kept.cached ? await found(kept.files) : null;
+        if (hit != null) {
+            return hit;
+        }
+        const fresh = await RpcApi.GitListFilesCommand(TabRpcClient, { cwd }, { timeout: LIST_TIMEOUT_MS });
+        return await found(fresh.files);
+    } catch {
+        return null;
+    }
 }
 
 // a transcript's link: resolved against the agent's working directory, checked, then opened in its panel

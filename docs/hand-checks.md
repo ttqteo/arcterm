@@ -32,6 +32,11 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
   and when the turn ends its reply is lit from its start. Then narrow the Agent pane to about 700px: no line of text or
   your bubble runs under the ×N / K / J / Q pill or the highlighter; at 1000px wide or more the column sits centred as
   before, and the pinned prompt card spans the column.
+- [ ] (arcterm) **A Chat file link that names only a path's end opens** (`pathlinkroute.ts` listedMatch,
+  `pathlinks.ts` matchListedPath). In the SIEM-parser agent's "Bàn giao SIEM-1759" turn, click
+  `handbook/parsers/development.md`: it opens `apps/portal/content/handbook/parsers/development.md` in the agent's panel
+  instead of toasting "File not found". The first click in a repo with no kept listing waits on a git walk.
+  Commit: fix/pathlink-listing.
 - [ ] (arcterm) **Focus read's J/K glide** (`chatfocusreadview.ts` glide, `chatfocusread.ts` glideStep). In a long
   real conversation, turn on Focus read and tap J quickly, then hold it: the scroll moves on the first frame and keeps
   its pace through the presses, never easing to a stop at each block; a wheel scroll mid-glide takes over at once.
