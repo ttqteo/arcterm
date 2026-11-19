@@ -37,6 +37,12 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- A Claude agent's suggested replies in Chat come about 2 s after its turn ends, as 1.6.0 promised: the agent's own
+  claude worked them out, but its answer never reached Chat, which then started a claude of its own each time and
+  showed the chips 6 to 15 s later.
+- Chat's suggested replies are shorter and fit the turn better: no "build đi" or "làm đi" for work the agent already
+  said it will do or that has nothing to build, and no reply that states something only you know ("no customer runs
+  Wazuh"); a turn that only reports what was done gets none.
 - What a `!` command prints in Chat is in colour, as an agent's command output is: the program's own colours, passes
   and failures toned, and the commands Task runs (`task: [install:windows] …`) in the shell's colours. `&&`, `<` and
   `>` no longer read as `&amp;&amp;`, `&lt;` and `&gt;`, in the command and in its output.

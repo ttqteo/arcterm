@@ -36,8 +36,10 @@ const (
 	logTailRunes = 48
 )
 
-// what joins a begin key's reply key to its call's own (Begin)
-var keySep = string(rune(0))
+// what joins a begin key's reply key to its call's own (Begin). Both halves are hex, so any other printable character
+// tells them apart; the key travels back as `wsh chatsuggest end --key`, and a process argument cannot hold a NUL (a
+// NUL here made every end fail to spawn, so no mod answer was ever taken)
+const keySep = "."
 
 // HookCall is what Begin gives the mod: the completion to run, and the key End hands back.
 type HookCall struct {

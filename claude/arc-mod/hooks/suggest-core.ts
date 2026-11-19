@@ -6,7 +6,11 @@
 /** the model the replies are worked out on: picking a next reply from a few lines is a short classification */
 export const SUGGEST_MODEL = "haiku";
 
-/** the reply's cap: the replies are up to five short lines, but haiku thinks first, a few hundred tokens */
+/** how hard it thinks first: low, as the replies are a short pick; it cuts haiku's ~300 tokens of thinking to ~80 and
+ *  the call from ~2 s to ~1.3 s (measured 2026-11-19) */
+export const SUGGEST_EFFORT = "low";
+
+/** the reply's cap: the replies are up to five short lines, with a little thinking first */
 export const SUGGEST_MAX_TOKENS = 2048;
 
 /** how long the completion may take before it is given up; wavesrv waits 10 s for it, then runs its own call */

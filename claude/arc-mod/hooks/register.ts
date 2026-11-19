@@ -32,6 +32,7 @@ import {
     endArgs,
     parseBegin,
     recentPrompts,
+    SUGGEST_EFFORT,
     SUGGEST_MAX_TOKENS,
     SUGGEST_MODEL,
     SUGGEST_TIMEOUT_MS,
@@ -296,15 +297,24 @@ async function suggestReplies($: EngineInterface, answer: string) {
         if (call == null) {
             return;
         }
-        const r = await $.model.complete({
-            model: SUGGEST_MODEL,
-            system: call.system,
-            prompt: call.prompt,
-            maxTokens: SUGGEST_MAX_TOKENS,
-            timeoutMs: SUGGEST_TIMEOUT_MS,
-        });
-        const ended = await $.process.run([WSH, ...endArgs(call.key, !r.isAnswered)], {
-            stdin: r.isAnswered ? r.text : "",
+        // a completion that throws still ends the turn, as failed, so Chat's ask runs its own call at once instead of
+        // waiting out wavesrv's 10 s for an end that never comes
+        let text: string | null = null;
+        try {
+            const r = await $.model.complete({
+                model: SUGGEST_MODEL,
+                system: call.system,
+                prompt: call.prompt,
+                effort: SUGGEST_EFFORT,
+                maxTokens: SUGGEST_MAX_TOKENS,
+                timeoutMs: SUGGEST_TIMEOUT_MS,
+            });
+            text = r.isAnswered ? r.text : null;
+        } catch (err) {
+            $.ui.log(`arc: the suggest completion failed: ${String(err)}`, { to: "debug" });
+        }
+        const ended = await $.process.run([WSH, ...endArgs(call.key, text == null)], {
+            stdin: text ?? "",
             timeoutMs: 10_000,
         });
         if (ended.exitCode !== 0) {

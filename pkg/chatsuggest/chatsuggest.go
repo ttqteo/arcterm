@@ -12,8 +12,8 @@
 // The headless call runs claude with no tools, no MCP servers and no settings (so no hooks and no plugins), its own
 // short system prompt, and an empty working folder (no project CLAUDE.md, no auto memory): about 1.9k tokens before
 // the reply, against 10-15k for a bare `claude -p`. It takes 5-7 s, 3-5 s of it claude starting, and holds ~470 MB
-// while it runs (measured 2026-11-18). Haiku thinks before it answers, 150-500 tokens, which no flag of the CLI turns
-// off.
+// while it runs (measured 2026-11-18). Haiku thinks before it answers, 150-500 tokens; `--effort low` (Effort) cuts
+// that to ~80 and the API time from ~2 s to ~1.3 s (measured 2026-11-19).
 package chatsuggest
 
 import (
@@ -36,6 +36,8 @@ import (
 const (
 	// Model is the alias the call runs on: picking a next reply from a few lines is a short classification
 	Model = "haiku"
+	// how hard it thinks first: low, as the replies are a short pick, not a judgment
+	Effort = "low"
 	// the end of the reply that is sent: the question or the next step is in its last lines
 	replyTailRunes = 1500
 	// the person's last messages that are sent, and the length each is cut to
@@ -68,13 +70,15 @@ type Request struct {
 
 const systemPrompt = `You suggest what a person will send next to a coding agent, as one-tap replies in a chat app.
 
-Write each reply the way this person writes: their language and their short, casual wording, as in their messages. At most 60 characters each.
+Write each reply the way this person writes: their language and their short, casual wording, as in their messages. Keep each under 40 characters when you can, never over 60.
 
-When the agent's reply ends with a question, give up to 5 short replies that answer it. First the answer the agent recommends, spelled out in full when the question asks several things (for example "B, và ẩn thẻ Pin"), then the other options it named. Each reply must pick a different answer: never two that say the same thing in other words ("build đi" and "ok build đi" are one answer). Fewer replies are better than repeats. Never a bare "ok" or "yes" when the question offers options.
+A reply only chooses or asks; it never states a fact. Never write something only the person knows (whether a customer uses a product, what they tried, what they saw, a name, a number) as if you knew it: offer the choice and leave the fact out.
 
-When it does not end with a question, give at most 1 reply, and only for a clear next step: one the agent offered, or a natural follow-up such as drawing a mockup of a layout it described in words, running the tests, or building. Never suggest commit or push: the app offers those itself. When no next step is clear, write NONE.
+When the agent's reply ends with a question, give up to 5 short replies that answer it. First the answer the agent recommends, then the other options it named, each in a few words ("hướng 1 đi", "sửa code luôn"); when the question asks several things, the first reply answers all of them ("B, và ẩn thẻ Pin"). Each reply must pick a different answer: never two that say the same thing in other words ("build đi" and "ok build đi" are one answer). Fewer replies are better than repeats. Never a bare "ok" or "yes" when the question offers options.
 
-You may be given messages this person sends often. When one of them is the right reply, give it exactly as written; never pick one only because it is listed.
+When it does not end with a question, give at most 1 reply, and only when the agent has stopped and offers a next step the person must start: one it named ("I can also add tests"), or one its work plainly leads to, such as drawing a mockup of a layout it described in words. Write NONE when the agent says it is still working, will carry on, is waiting on something running, or will report back; when it only reports what it did; or when no next step is clear. Never tell it to go ahead with work it already said it will do. Never suggest commit or push: the app offers those itself.
+
+You may be given messages this person sends often. They show how the person words things. Give one exactly as written only when it is exactly the reply this turn calls for, never because it is listed: "build đi" after a reply about a script that has nothing to build is wrong.
 
 Output only the replies, one per line, with no numbering, quotes or commentary.`
 
@@ -242,7 +246,8 @@ func RunClaude(ctx context.Context, prompt string) (string, error) {
 		return "", err
 	}
 	spec.BaseArgs = append(consult.ClaudeArgs(consult.CallOpts{Model: Model}),
-		"--setting-sources", "", "--system-prompt", systemPrompt, "--no-session-persistence", "--disable-slash-commands")
+		"--setting-sources", "", "--system-prompt", systemPrompt, "--no-session-persistence", "--disable-slash-commands",
+		"--effort", Effort)
 	return consult.Run(ctx, spec, dir, prompt, func(string) {})
 }
 

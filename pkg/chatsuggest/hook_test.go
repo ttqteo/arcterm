@@ -36,6 +36,14 @@ func TestHooksAwaitTakesTheModsAnswer(t *testing.T) {
 	}
 }
 
+// the key comes back as a process argument (`wsh chatsuggest end --key`), which holds no NUL or other control byte
+func TestHooksKeyIsAProcessArgument(t *testing.T) {
+	call := NewHooks().Begin("b1", Request{Reply: askReply})
+	if strings.IndexFunc(call.Key, func(r rune) bool { return r < 0x21 || r == 0x7f }) >= 0 {
+		t.Fatalf("Begin key %q holds a control byte or a space", call.Key)
+	}
+}
+
 func TestHooksAwaitWaitsForABeginThatComesLate(t *testing.T) {
 	h := fastHooks()
 	go func() {
