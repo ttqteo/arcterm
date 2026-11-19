@@ -52,6 +52,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - Focus read in Chat stays on when you scroll to the bottom while the agent is working, instead of the dimming
   switching off there with the button still on; the reply being written stays undimmed.
 - In a narrow Chat, the text keeps clear of the Focus read and Skim buttons in the corner instead of running under them.
+- A file opened from a turn's Edited files card shows its change even once it is committed: its Diff shows the newest
+  commit that changed it, named above the diff, instead of "No change since the last commit".
 
 ## 1.6.1 — 2026-11-19
 

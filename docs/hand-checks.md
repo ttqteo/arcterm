@@ -1156,3 +1156,8 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
   Taskfile command spans lines: the `task: [name]` prefix is muted and the command under it in the shell's colours up to
   the blank line, the output after it plain; `&&` reads `&&`, never `&amp;&amp;`. Run `! git -c color.ui=always status`
   → its colours show. Copy on the bubble pastes text with no escape codes. Unit-tested only, not tried in the app.
+- [ ] (arcterm) **A committed file's Diff shows its commit** (`filetabdiff.tsx`, `gitinfo.LastChange`). Have a Claude
+  agent edit a file and commit it, then click the file in the turn's Edited files card: the rail's Diff shows the
+  commit's +/− with `Committed in <hash> <subject>` above it, not "No change since the last commit". Edit the file
+  again without committing → Reread: the diff is against HEAD again and the line above it is gone. A file no commit
+  ever changed and that matches HEAD still says "No change since the last commit". Unit-tested on the Go side only.

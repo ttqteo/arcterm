@@ -142,13 +142,25 @@ func (ws *WshServer) GitFileAtRefCommand(ctx context.Context, data wshrpc.Comman
 			return gitinfo.FileInWorktree(ctx, cwd, path, maxBytes)
 		}
 	}
-	fc, err := read(ctx, data.Cwd, data.Ref, data.Path, data.MaxBytes)
+	ref := data.Ref
+	var commit, subject string
+	if data.LastChange && !data.Worktree {
+		commit, subject, _ = gitinfo.LastChange(ctx, data.Cwd, data.Path)
+		if commit == "" {
+			// no commit changed it: nothing to show the side before of
+			return &wshrpc.CommandGitFileAtRefRtnData{IsRepo: true}, nil
+		}
+		// the side before that commit; a file it added has none, which reads as Missing
+		ref = commit + "^"
+	}
+	fc, err := read(ctx, data.Cwd, ref, data.Path, data.MaxBytes)
 	if err != nil {
 		return nil, err
 	}
 	rtn := &wshrpc.CommandGitFileAtRefRtnData{
 		Content: fc.Content, Binary: fc.Binary, Missing: fc.Missing,
 		TooLarge: fc.TooLarge, Size: fc.Size, IsRepo: fc.IsRepo,
+		Commit: commit, Subject: subject,
 	}
 	if data.Raw && fc.Binary {
 		rtn.Data64 = base64.StdEncoding.EncodeToString(fc.Data)
