@@ -12,10 +12,12 @@ import {
     needsDate,
     phaseOf,
     railRows,
+    rangeLabel,
     snippetOf,
     spanText,
     stepLabel,
     stripTicks,
+    taskRange,
 } from "./timelinegroups";
 
 const MIN = 60_000;
@@ -267,5 +269,116 @@ describe("eventCount", () => {
         expect(groups.length).toBeLessThan(taskLifecycle(evs, "t-3").length);
         expect(eventCount(groups)).toBe(taskLifecycle(evs, "t-3").length);
         expect(eventCount(groupEvents(evs))).toBe(evs.length);
+    });
+});
+
+describe("railRows folds neighbouring rows with one title", () => {
+    const cleanup = (min: number, task: string) => ev(min, "task-cleanup-completed", task);
+    const kinds = (rows: ReturnType<typeof railRows>) =>
+        rows.map((r) => (r.kind === "fold" ? `fold×${r.groups.length}` : r.kind));
+
+    it("folds two or more side by side, newest first, keyed by the oldest", () => {
+        const rows = railRows(groupEvents([cleanup(0, "t-1"), cleanup(0.2, "t-2"), cleanup(0.4, "t-3")]));
+        expect(kinds(rows)).toEqual(["fold×3"]);
+        const fold = rows[0];
+        if (fold.kind !== "fold") throw new Error("not a fold");
+        expect(fold.groups.map((g) => g.taskId)).toEqual(["t-3", "t-2", "t-1"]);
+        expect(fold.key).toBe(`fold:${fold.groups[2].key}`);
+        expect([fold.first, fold.last]).toEqual([0, 0.4 * MIN]);
+    });
+    it("leaves a lone row alone", () => {
+        expect(kinds(railRows(groupEvents([cleanup(0, "t-1"), ev(0.2, "evidence-sealed")])))).toEqual([
+            "group",
+            "group",
+        ]);
+    });
+    it("splits at an interleaved row, keeping time order", () => {
+        const groups = groupEvents([
+            cleanup(0, "t-1"),
+            cleanup(0.1, "t-2"),
+            ev(0.2, "evidence-sealed"),
+            cleanup(0.3, "t-3"),
+            cleanup(0.4, "t-4"),
+        ]);
+        expect(kinds(railRows(groups))).toEqual(["fold×2", "group", "fold×2"]);
+    });
+    it("splits at a quiet gap", () => {
+        expect(kinds(railRows(groupEvents([cleanup(0, "t-1"), cleanup(30, "t-2")])))).toEqual([
+            "group",
+            "gap",
+            "group",
+        ]);
+    });
+    it("never folds a warning, a row with steps or a snippet, or two titles", () => {
+        const failed = groupEvents([ev(0, "task-failed", "t-1"), ev(0.1, "task-failed", "t-2")]);
+        expect(kinds(railRows(failed))).toEqual(["group", "group"]);
+        const merged = groupEvents([
+            ev(0, "task-merged", "t-1", { commit: "abcdef123" }),
+            ev(0.1, "task-merged", "t-2", { commit: "123abcdef" }),
+        ]);
+        expect(kinds(railRows(merged))).toEqual(["group", "group"]);
+        const steps = groupEvents([
+            ev(0, "task-merged", "t-1"),
+            cleanup(0.05, "t-1"),
+            ev(0.1, "task-merged", "t-2"),
+            cleanup(0.15, "t-2"),
+        ]);
+        expect(kinds(railRows(steps))).toEqual(["group", "group"]);
+        expect(kinds(railRows(groupEvents([cleanup(0, "t-1"), ev(0.1, "task-done", "t-2")])))).toEqual([
+            "group",
+            "group",
+        ]);
+    });
+    it("never folds rows outside a task", () => {
+        expect(kinds(railRows(groupEvents([ev(0, "lead-woken"), ev(4, "lead-woken")])))).toEqual(["group", "group"]);
+    });
+});
+
+describe("taskRange", () => {
+    it("draws an arrow over consecutive numbers", () => {
+        expect(taskRange(["t-14", "t-13", "t-12", "t-11", "t-10", "t-9", "t-8", "t-7", "t-6"])).toBe("t-6 → t-14");
+        expect(taskRange(["t-5", "t-4"])).toBe("t-4 → t-5");
+    });
+    it("lists three or fewer otherwise", () => {
+        expect(taskRange(["t-12", "t-3", "t-7"])).toBe("t-3, t-7, t-12");
+        expect(taskRange(["build", "lint"])).toBe("build, lint");
+    });
+    it("counts more than three otherwise", () => {
+        expect(taskRange(["t-1", "t-3", "t-5", "t-9"])).toBe("4 tasks");
+        expect(taskRange(["a", "b", "c", "d"])).toBe("4 tasks");
+    });
+});
+
+describe("rangeLabel", () => {
+    const at = (day: number, h: number, m: number) => new Date(2026, 10, day, h, m).getTime();
+    it("says one minute once", () => {
+        expect(rangeLabel(at(14, 1, 20), at(14, 1, 20) + 20_000, false)).toBe("01:20");
+        expect(rangeLabel(at(14, 1, 20), at(14, 1, 20), true)).toBe("Nov 14 01:20");
+    });
+    it("says the hour once within one hour", () => {
+        expect(rangeLabel(at(14, 1, 19), at(14, 1, 20), false)).toBe("01:19–20");
+        expect(rangeLabel(at(14, 1, 19), at(14, 1, 20), true)).toBe("Nov 14 01:19–20");
+    });
+    it("says the date once within one day", () => {
+        expect(rangeLabel(at(14, 1, 55), at(14, 2, 3), false)).toBe("01:55–02:03");
+        expect(rangeLabel(at(14, 1, 55), at(14, 2, 3), true)).toBe("Nov 14 01:55–02:03");
+    });
+    it("repeats the date over two days", () => {
+        expect(rangeLabel(at(13, 23, 58), at(14, 0, 4), false)).toBe("23:58–00:04");
+        expect(rangeLabel(at(13, 23, 58), at(14, 0, 4), true)).toBe("Nov 13 23:58–Nov 14 00:04");
+    });
+});
+
+describe("run pause rows", () => {
+    it("reads who paused it and what it held", () => {
+        expect(snippetOf(ev(0, "run-paused", undefined, { by: "manual", heldbytes: 3.2 * 1024 ** 3 }))).toBe(
+            "manual · held 3.2 GB"
+        );
+        expect(snippetOf(ev(0, "run-paused", undefined, { by: "auto", heldbytes: 512 * 1024 ** 2 }))).toBe(
+            "auto · held 512 MB"
+        );
+        expect(snippetOf(ev(0, "run-resumed", undefined, { by: "boot" }))).toBe("at startup");
+        expect(glyphOf("run-paused")).toBe("pause");
+        expect(glyphOf("run-resumed")).toBe("play");
     });
 });

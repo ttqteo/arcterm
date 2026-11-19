@@ -20,6 +20,8 @@ const KIND_TITLE: Record<string, string> = {
     "child-done": "Child done",
     "child-cancelled": "Child cancelled",
     "run-cancelled": "Run cancelled",
+    "run-paused": "Run paused",
+    "run-resumed": "Run resumed",
     "evidence-sealed": "Evidence sealed",
     "task-spawned": "Task spawned",
     "task-first-activity": "Task produced its first output",

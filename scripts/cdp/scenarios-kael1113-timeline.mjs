@@ -15,6 +15,8 @@
 //      the events span days, and it draws no now marker and no live pill (652fa1a3d)
 //   4. a digest refresh that fails marks the held digest stale, and the hook asks again by itself: the sheet reads 'as of',
 //      then recovers with no further event (5459268f8)
+//   5. neighbouring task rows with one title fold into one row with a count, a task range and a time range, which opens
+//      to each task; a paused and a resumed run read in words, with who paused it and the RAM it held
 // `kael1113-tree-lanes`, on a fixture lead nested under a run whose tasks are seeded (t-2 done and waiting at the merge gate,
 // t-3 failed Verify), with the engine's digest patched on the page to hold t-2's merge behind t-3 (the engine port that
 // writes `mergeheldby` is another task's): the Agent tree draws the failed tone and the gate row, the rail's lanes read the
@@ -376,6 +378,55 @@ export default function (kits) {
                     calls.some((c) => !c.failed && c.at > flippedAt),
                 { stub, before, stale, recovered, recoveredMs, calls }
             );
+
+            // 5. neighbouring rows with one title fold into one row, which opens to each task; a paused run reads in words
+            const opened5 = await openDag(h);
+            const live5 = opened5 && (await polishWaitFor(h, `!!${RAIL_IN_MODAL}?.querySelector("[data-timeline-row]")`, 15000));
+            await publish(h, ctx, "fold", [
+                // stamped within the last second, so step 4's event sits below them and nothing interleaves the fold
+                ["run-paused", { by: "manual", heldbytes: 3.2 * 1024 ** 3 }, 900],
+                ["run-resumed", { by: "manual" }, 800],
+                ["task-cleanup-completed", { taskid: "t-11" }, 400],
+                ["task-cleanup-completed", { taskid: "t-12" }, 300],
+                ["task-cleanup-completed", { taskid: "t-13" }, 200],
+                ["task-cleanup-completed", { taskid: "t-14" }, 100],
+            ]);
+            const FOLD = `${MODAL}?.querySelector("[data-timeline-fold]")`;
+            const FOLD_HEAD = `${FOLD}?.querySelector("[data-timeline-row]")`;
+            const folded = live5 && (await polishWaitFor(h, `${FOLD}?.getAttribute("data-timeline-fold") === "4"`, 8000));
+            const closed = folded
+                ? await h.ev(`(() => ({ text: ${FOLD_HEAD}.textContent, expanded: ${FOLD_HEAD}.getAttribute("aria-expanded") }))()`)
+                : null;
+            const pause = await h.ev(`(() => {
+                const rows = [...(${MODAL}?.querySelectorAll("[data-timeline-row]") ?? [])].map((b) => b.textContent ?? "");
+                return {
+                    paused: rows.find((t) => t.startsWith("Run paused")) ?? null,
+                    resumed: rows.some((t) => t.startsWith("Run resumed")),
+                    raw: rows.some((t) => /run-(paused|resumed)/.test(t)),
+                };
+            })()`);
+            await h.shot("cdp-shots/kael1113-timeline-5-fold.png");
+            if (folded) await h.ev(`${FOLD_HEAD}.click()`);
+            const unfolded =
+                folded &&
+                (await polishWaitFor(h, `(${FOLD}?.querySelectorAll("[data-timeline-fold-list] [data-timeline-task]").length ?? 0) === 4`, 5000));
+            const list = unfolded
+                ? await h.ev(`[...${FOLD}.querySelectorAll("[data-timeline-fold-list] [data-timeline-task]")].map((b) => b.getAttribute("data-timeline-task"))`)
+                : null;
+            await h.shot("cdp-shots/kael1113-timeline-5-fold-open.png");
+            rec(
+                "5. four neighbouring cleanups fold into 'Cleanup complete ×4 · t-11 → t-14', which opens to each task newest first, and a paused run reads 'Run paused · manual · held 3.2 GB', never its kind",
+                folded &&
+                    /^Cleanup complete×4t-11 → t-14/.test(closed?.text ?? "") &&
+                    closed.expanded === "false" &&
+                    unfolded &&
+                    JSON.stringify(list) === JSON.stringify(["t-14", "t-13", "t-12", "t-11"]) &&
+                    /manual · held 3\.2 GB/.test(pause?.paused ?? "") &&
+                    pause.resumed &&
+                    !pause.raw,
+                { opened5, live5, folded, closed, unfolded, list, pause }
+            );
+            await closeDag(h);
             return steps;
         },
         async teardown(h, ctx) {

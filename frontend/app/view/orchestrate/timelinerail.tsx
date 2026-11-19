@@ -37,10 +37,13 @@ import {
     groupSnippet,
     needsDate,
     railRows,
+    rangeLabel,
     spanText,
     stepLabel,
     stripTicks,
+    taskRange,
     type EventGroup,
+    type FoldRow as FoldRowData,
 } from "./timelinegroups";
 
 const FILTERS: { id: TimelineFilter; label: string }[] = [
@@ -204,6 +207,19 @@ export function TimelineRail({ channelId, runId, layout, ended }: TimelineRailPr
                                 {rows.map((row, i) =>
                                     row.kind === "gap" ? (
                                         <GapRow key={`gap:${i}`} ms={row.minutes * MINUTE_MS} />
+                                    ) : row.kind === "fold" ? (
+                                        <FoldRow
+                                            key={row.key}
+                                            fold={row}
+                                            enter={row.groups.some((g) => entering.has(g.key))}
+                                            withDate={withDate}
+                                            open={openGroupId === row.key}
+                                            selectedTaskId={selectedTaskId}
+                                            onToggle={() => setOpenGroupId((id) => (id === row.key ? null : row.key))}
+                                            onSubClick={(group) => applyTarget(eventClickTarget(group.head), channelId)}
+                                            onSubEnter={(group) => setHovered({ id: group.taskId, from: "timeline" })}
+                                            onLeave={() => setHovered((h) => (h?.from === "timeline" ? null : h))}
+                                        />
                                     ) : (
                                         <GroupRow
                                             key={row.group.key}
@@ -492,9 +508,7 @@ export function SpineGlyph({ kind, attention, compact }: { kind: string; attenti
 }
 
 export function groupTime(group: EventGroup, withDate = false): string {
-    const first = tsLabel(group.first, withDate);
-    const last = tsLabel(group.last, withDate);
-    return first === last ? first : `${first}–${last}`;
+    return rangeLabel(group.first, group.last, withDate);
 }
 
 function GroupRow({
@@ -617,6 +631,100 @@ function GroupRow({
                         relaunchError={relaunchError}
                         onRelaunch={onRelaunch}
                     />
+                )}
+            </div>
+        </motion.div>
+    );
+}
+
+// FoldRow is neighbouring task rows with one title folded into one ("Cleanup complete ×14 · t-1 → t-14"); open, it
+// lists each task with its time, and a task's line selects that task as its own row would
+function FoldRow({
+    fold,
+    enter,
+    withDate,
+    open,
+    selectedTaskId,
+    onToggle,
+    onSubClick,
+    onSubEnter,
+    onLeave,
+}: {
+    fold: FoldRowData;
+    enter: boolean;
+    withDate: boolean;
+    open: boolean;
+    selectedTaskId: string | null;
+    onToggle: () => void;
+    onSubClick: (group: EventGroup) => void;
+    onSubEnter: (group: EventGroup) => void;
+    onLeave: () => void;
+}) {
+    const head = fold.groups[0].head;
+    return (
+        <motion.div
+            variants={viewFade}
+            initial={enter ? "initial" : false}
+            animate="animate"
+            data-timeline-fold={fold.groups.length}
+            className="relative flex gap-2 py-0.5 pr-2.5 pl-[11px]"
+        >
+            <SpineGlyph kind={head.kind} attention={false} />
+            <div className="flex min-w-0 flex-1 flex-col">
+                <button
+                    type="button"
+                    data-timeline-row
+                    aria-expanded={open}
+                    onClick={onToggle}
+                    className={cn(
+                        "my-0.5 flex w-full cursor-pointer items-center gap-1.5 rounded-lg border px-2 py-1.5 text-left focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent",
+                        open ? "border-edge-mid bg-surface-raised" : "border-transparent hover:bg-surface-hover"
+                    )}
+                >
+                    <span className="min-w-0 truncate text-[12px] font-semibold text-ink-hi">{eventTitle(head)}</span>
+                    <span className="flex-none rounded-full bg-success/12 px-1.5 text-[10.5px] font-semibold leading-4 tabular-nums text-success">
+                        ×{fold.groups.length}
+                    </span>
+                    <span className="min-w-0 truncate rounded bg-pill px-1.5 text-[10.5px] leading-4 text-ink-mid">
+                        {taskRange(fold.groups.map((g) => g.taskId))}
+                    </span>
+                    <span className="ml-auto flex-none text-[10.5px] tabular-nums text-ink-mid">
+                        {rangeLabel(fold.first, fold.last, withDate)}
+                    </span>
+                    <ChevronRight
+                        size={11}
+                        aria-hidden="true"
+                        className={cn("flex-none text-muted transition-transform", open && "rotate-90")}
+                    />
+                </button>
+                {open && (
+                    <div data-timeline-fold-list className="mb-1 ml-3 flex flex-col border-l border-edge-mid">
+                        {fold.groups.map((group) => (
+                            <button
+                                key={group.key}
+                                type="button"
+                                data-timeline-task={group.taskId}
+                                onClick={() => onSubClick(group)}
+                                onPointerEnter={() => onSubEnter(group)}
+                                onPointerLeave={onLeave}
+                                className="flex cursor-pointer items-center gap-1.5 py-[3px] pr-2 pl-2 text-left hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent"
+                            >
+                                <span
+                                    className={cn(
+                                        "flex-none rounded px-1.5 text-[10.5px] leading-4",
+                                        group.taskId === selectedTaskId
+                                            ? "bg-accent/12 text-accent-soft"
+                                            : "bg-pill text-ink-mid"
+                                    )}
+                                >
+                                    {group.taskId}
+                                </span>
+                                <span className="ml-auto flex-none text-[10.5px] tabular-nums text-muted">
+                                    {groupTime(group, withDate)}
+                                </span>
+                            </button>
+                        ))}
+                    </div>
                 )}
             </div>
         </motion.div>

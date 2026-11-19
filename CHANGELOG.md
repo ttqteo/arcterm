@@ -161,6 +161,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   on top too.
 - The Comment button on text you select in a markdown doc now floats above the selection, at its start, instead of
   under it.
+- A run's lifecycle timeline folds neighbouring rows with the same title into one ("Cleanup complete ×14 · t-1 →
+  t-14", open it for each task), writes a time range with its date and hour once ("Nov 14 01:19–20") so titles no
+  longer cut off, and names a paused or resumed run in words, with who paused it and the RAM it held.
 - Agents with no project now sit in No folder in the Agent tree, with the terminals that have none, rather than in a
   separate "ungrouped" folder.
 - An app's row in the Agent tree says its state in a word or two (external, port taken, no page, retry in 8s), so it
