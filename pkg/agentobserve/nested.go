@@ -5,7 +5,6 @@ package agentobserve
 
 import (
 	"os"
-	"path/filepath"
 
 	"github.com/shirou/gopsutil/v4/process"
 )
@@ -29,11 +28,7 @@ type procLink struct {
 // whose ~/.local/bin/claude links to versions/<version>: the process is named "2.1.322" there, and only its
 // command line's first word still reads claude.
 func (p procLink) isClaude() bool {
-	if isClaudeProc(p.name) {
-		return true
-	}
-	tokens := cmdTokens(p.cmdline)
-	return len(tokens) > 0 && isClaudeProc(filepath.Base(tokens[0]))
+	return IsClaude(p.name, p.cmdline)
 }
 
 // NestedSession reports whether the calling process (a hook, `wsh agentctl`) belongs to a claude session that runs

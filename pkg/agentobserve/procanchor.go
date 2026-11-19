@@ -4,6 +4,7 @@
 package agentobserve
 
 import (
+	"path/filepath"
 	"strings"
 
 	"github.com/shirou/gopsutil/v4/process"
@@ -59,6 +60,37 @@ func isClaudeProc(name string) bool {
 	return name == "claude" || name == "claude.exe"
 }
 
+// MaybeClaude is the cheap first test of a process for IsClaude, on its name alone: true for claude / claude.exe and
+// for a name that is a version number. The native install on a Mac runs ~/.local/bin/claude, a link to
+// ~/.local/share/claude/versions/<version>, and the OS names the process after the file the link points to
+// ("2.1.328"). A scan of every process reads the command line of these alone.
+func MaybeClaude(name string) bool {
+	return isClaudeProc(name) || isVersionName(name)
+}
+
+// IsClaude reports whether a process is the Claude Code binary, from its name and its command line: the name, or,
+// when the OS named it after a versioned file, the command line's first word (still `claude` there).
+func IsClaude(name, cmdline string) bool {
+	if isClaudeProc(name) {
+		return true
+	}
+	tokens := cmdTokens(cmdline)
+	return len(tokens) > 0 && isClaudeProc(filepath.Base(tokens[0]))
+}
+
+// isVersionName reports whether name is digits and dots with at least one dot ("2.1.328").
+func isVersionName(name string) bool {
+	if name == "" || !strings.Contains(name, ".") {
+		return false
+	}
+	for _, r := range name {
+		if r != '.' && (r < '0' || r > '9') {
+			return false
+		}
+	}
+	return true
+}
+
 // EnumerateAgents returns every live claude agent process (helpers excluded). Per-process introspection
 // errors are skipped rather than failing the sweep — a process may exit mid-enumeration, and a pilot
 // sweep must be resilient. Reading Environ/Cwd may fail for some processes on Windows; such a process
@@ -71,11 +103,11 @@ func EnumerateAgents() ([]ProcInfo, error) {
 	var out []ProcInfo
 	for _, p := range procs {
 		name, err := p.Name()
-		if err != nil || !isClaudeProc(name) {
+		if err != nil || !MaybeClaude(name) {
 			continue
 		}
 		cmdline, _ := p.Cmdline()
-		if isHelperCmdline(cmdline) {
+		if !IsClaude(name, cmdline) || isHelperCmdline(cmdline) {
 			continue
 		}
 		environ, _ := p.Environ()

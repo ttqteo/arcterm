@@ -279,7 +279,12 @@ func hostKey() (key, cmdline string) {
 		if err != nil {
 			return "", ""
 		}
-		if name, _ := p.Name(); isClaudeProc(name) {
+		name, _ := p.Name()
+		var own string
+		if MaybeClaude(name) {
+			own, _ = p.Cmdline()
+		}
+		if MaybeClaude(name) && IsClaude(name, own) {
 			parent, err := p.Parent()
 			if err != nil {
 				return "", ""
@@ -289,8 +294,7 @@ func hostKey() (key, cmdline string) {
 			if key == "" {
 				return "", ""
 			}
-			cmdline, _ = p.Cmdline()
-			return key, cmdline
+			return key, own
 		}
 		ppid, err := p.Ppid()
 		if err != nil || ppid <= 0 || ppid == pid {
@@ -326,10 +330,14 @@ func displayCandidates(key, forkSource string) []ProcInfo {
 	}
 	var out []ProcInfo
 	for _, p := range procs {
-		if name, err := p.Name(); err != nil || !isClaudeProc(name) {
+		name, err := p.Name()
+		if err != nil || !MaybeClaude(name) {
 			continue
 		}
 		cmdline, _ := p.Cmdline()
+		if !IsClaude(name, cmdline) {
+			continue
+		}
 		if AttachKey(cmdline) != key && !isForkSourceViewer(cmdline, forkSource) &&
 			(forkSource == "" || !isUnnamedTerminal(cmdline)) {
 			continue

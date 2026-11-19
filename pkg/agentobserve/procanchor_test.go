@@ -45,3 +45,29 @@ func TestIsClaudeProc(t *testing.T) {
 		}
 	}
 }
+
+// the native install on a Mac: ~/.local/bin/claude links to versions/2.1.328, and the OS names the process "2.1.328"
+func TestIsClaudeNativeMacInstall(t *testing.T) {
+	for _, c := range []struct {
+		name, cmdline string
+		maybe, is     bool
+	}{
+		{"claude", "", true, true},
+		{"claude.exe", "", true, true},
+		{"2.1.328", "claude --resume 7204", true, true},
+		{"2.1.328", "/Users/u/.local/bin/claude", true, true},
+		{"2.1.328", "python3 -m http.server", true, false},
+		{"node", "claude", false, true},
+		{"node", "node server.js", false, false},
+		{"v2.1", "claude", false, true},
+		{"1", "", false, false},
+		{"", "", false, false},
+	} {
+		if got := MaybeClaude(c.name); got != c.maybe {
+			t.Errorf("MaybeClaude(%q) = %v, want %v", c.name, got, c.maybe)
+		}
+		if got := IsClaude(c.name, c.cmdline); got != c.is {
+			t.Errorf("IsClaude(%q, %q) = %v, want %v", c.name, c.cmdline, got, c.is)
+		}
+	}
+}

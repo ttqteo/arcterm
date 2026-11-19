@@ -15,11 +15,12 @@ import (
 	"github.com/wavetermdev/waveterm/pkg/memusage"
 )
 
-// List returns the servers listening in the project at cwd, and those started by the agent in block blockId. An
-// empty cwd falls back to the agent process's cwd. A process the OS won't describe (another user's, say) is read as
+// List returns the servers listening in the project at cwd, and those started by the agent in block blockId, whose
+// process wavesrv started as agentPid (0: none known, and the claude processes are scanned for the one in that block).
+// An empty cwd falls back to the agent process's cwd. A process the OS won't describe (another user's, say) is read as
 // far as it allows: one whose cwd can't be read just isn't in the project. holders maps arcterm blocks' shell pids to
 // their blocks: a server a terminal block holds (and the agent didn't start) carries it as its owner.
-func List(ctx context.Context, cwd, blockId string, holders map[int32]ServerOwner) ([]Server, error) {
+func List(ctx context.Context, cwd, blockId string, agentPid int32, holders map[int32]ServerOwner) ([]Server, error) {
 	listeners, err := readListeners(ctx)
 	if err != nil {
 		return nil, err
@@ -28,8 +29,7 @@ func List(ctx context.Context, cwd, blockId string, holders map[int32]ServerOwne
 		return []Server{}, nil
 	}
 	root := cwd
-	var agentPid int32
-	if blockId != "" {
+	if blockId != "" && (agentPid == 0 || root == "") {
 		// an enumerate error leaves the agent unknown: the listing still goes by cwd
 		if agents, err := agentobserve.EnumerateAgents(); err == nil {
 			want := agentobserve.NormalizeBlockID(blockId)
@@ -37,7 +37,9 @@ func List(ctx context.Context, cwd, blockId string, holders map[int32]ServerOwne
 				if a.BlockID != want {
 					continue
 				}
-				agentPid = a.Pid
+				if agentPid == 0 {
+					agentPid = a.Pid
+				}
 				if root == "" {
 					root = a.Cwd
 				}
