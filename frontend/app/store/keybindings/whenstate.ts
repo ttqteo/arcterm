@@ -56,6 +56,7 @@ import {
 } from "@/app/view/jarvis/jarvisstore";
 import { petPeekOpenAtom } from "@/app/view/jarvis/petstore";
 import { reviewModeAtom } from "@/app/view/jarvis/reviewstore";
+import { runReviewOpenAtom } from "@/app/view/jarvis/runreviewstore";
 import { libraryConvViewAtom, libraryCouncilSelAtom, libraryTabAtom } from "@/app/view/library/librarystore";
 import { dagModalStateAtom } from "@/app/view/orchestrate/dagmodalstate";
 import { atom, type Atom, type PrimitiveAtom } from "jotai";
@@ -95,6 +96,7 @@ export const PREDICATE_ATOMS: Atom<unknown>[] = [
     dockedTerminalAtom, // buildAgentBindings: agent:terminal-panel
     initiativePopoverAtom, // buildAgentBindings: agentNav / agentNavStrict (every single-key Agent binding yields to the popover)
     reviewModeAtom, // buildJarvisBindings: jarvis:review and the review keys; buildListNavBindings: active; surface:back-home
+    runReviewOpenAtom, // buildJarvisBindings: the To review sheet's t, l, Delete and Escape
     councilChatNavAtom, // buildCouncilBindings: every council:* key; buildAgentBindings: agent:leave-center; library:back
     escapeMenusOpenAtom, // surface:back-home and usage:back: a hand-rolled dropdown (Code's project picker) owns Escape
     usageLensAtom, // usage:back, and surface:back-home stands down to it
