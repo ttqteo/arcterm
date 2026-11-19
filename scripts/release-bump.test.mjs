@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { bumpTooSmall, describeCounts, suggestBump, unreleasedSection } from "./release-bump.mjs";
+import { MIN_RELEASE_LINES, bumpTooSmall, describeCounts, suggestBump, unreleasedSection } from "./release-bump.mjs";
 
 const HEADER = "# Changelog\n\nAdd one line under `### Added` in the top section.\n\n";
 
@@ -21,27 +21,40 @@ describe("unreleasedSection", () => {
 });
 
 describe("suggestBump", () => {
-    it("is minor when the release adds something", () => {
+    const items = (n, prefix) => Array.from({ length: n }, (_, i) => `- ${prefix} ${i}`).join("\n");
+
+    it("waits when a few lines add something but none is big", () => {
         const md = `${HEADER}## Unreleased\n\n### Added\n\n- new thing\n\n### Fixed\n\n- a fix\n\n## 1.1.3 — 2026-11-14\n`;
         expect(suggestBump(md)).toEqual({
-            bump: "minor",
+            bump: "none",
             counts: { added: 1, changed: 0, fixed: 1, other: 0, big: 0 },
+            lines: 2,
         });
     });
 
-    it("is minor for a big line even outside Added", () => {
+    it("is minor once the lines reach the threshold, whatever their sections", () => {
+        const md = `## Unreleased\n\n### Changed\n\n${items(5, "c")}\n\n### Fixed\n\n${items(MIN_RELEASE_LINES - 5, "f")}\n`;
+        expect(suggestBump(md)).toMatchObject({ bump: "minor", lines: MIN_RELEASE_LINES });
+        const short = `## Unreleased\n\n### Added\n\n${items(MIN_RELEASE_LINES - 1, "a")}\n`;
+        expect(suggestBump(short)).toMatchObject({ bump: "none", lines: MIN_RELEASE_LINES - 1 });
+    });
+
+    it("is minor for one big line, below the threshold and even outside Added", () => {
         expect(suggestBump(`## Unreleased\n\n### Changed\n\n- reworked <!-- big -->\n`).bump).toBe("minor");
     });
 
-    it("is patch for changes and fixes only, counting wrapped lines once", () => {
+    it("never picks patch, counting wrapped lines once", () => {
         const md = `## Unreleased\n\n### Changed\n\n- one\n  wrapped onto two\n\n### Fixed\n\n- two\n- three\n\n## 1.0.0 — 2026-11-04\n\n### Added\n\n- old\n`;
-        expect(suggestBump(md)).toEqual({ bump: "patch", counts: { added: 0, changed: 1, fixed: 2, other: 0, big: 0 } });
+        expect(suggestBump(md)).toEqual({
+            bump: "none",
+            counts: { added: 0, changed: 1, fixed: 2, other: 0, big: 0 },
+            lines: 3,
+        });
     });
 
-    it("ignores the Added heading of an older release", () => {
-        expect(suggestBump(`## Unreleased\n\n### Fixed\n\n- f\n\n## 1.1.3 — 2026-11-14\n\n### Added\n\n- old\n`).bump).toBe(
-            "patch"
-        );
+    it("ignores the lines and big marks of an older release", () => {
+        const md = `## Unreleased\n\n### Fixed\n\n- f\n\n## 1.1.3 — 2026-11-14\n\n### Added\n\n- old <!-- big -->\n${items(30, "o")}\n`;
+        expect(suggestBump(md)).toMatchObject({ bump: "none", lines: 1 });
     });
 
     it("is none with nothing unreleased", () => {
@@ -51,7 +64,7 @@ describe("suggestBump", () => {
 
     it("reads the repo's own CHANGELOG.md", () => {
         const md = readFileSync(fileURLToPath(new URL("../CHANGELOG.md", import.meta.url)), "utf8");
-        expect(["none", "patch", "minor"]).toContain(suggestBump(md).bump);
+        expect(["none", "minor"]).toContain(suggestBump(md).bump);
     });
 });
 

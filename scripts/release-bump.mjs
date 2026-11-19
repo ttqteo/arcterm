@@ -3,15 +3,21 @@
 
 // How big a release is, read from the top `## Unreleased` section of CHANGELOG.md (release-build.mjs, BUMP=auto):
 //
-//   minor  a line under `### Added`, or a line marked `<!-- big -->`: something new to try
-//   patch  only `### Changed` / `### Fixed` lines
-//   none   no Unreleased section, or one with no lines: nothing a user would notice
+//   minor  a line marked `<!-- big -->` (a feature worth opening the app for: What's new shows it at once), or
+//          MIN_RELEASE_LINES lines or more of any kind
+//   none   fewer lines and none big: they wait in Unreleased for the next minor, so a day of builds does not cut a
+//          release of one line and another of eight (the person's ask, 2026-11-19); also with no lines at all
+//
+// patch is never picked: a build for the person makes no patch release, fix-only lines ship under the next minor.
 //
 // major is never picked: whether a release breaks something for the person (a feature removed, a config format
 // changed without migrating it, a `wsh` command or hook contract that old agents rely on) is a judgement, so it is
 // passed by hand, BUMP=major.
 
 const RANK = { none: 0, patch: 1, minor: 2, major: 3 };
+
+// The fewest Unreleased lines that make a release of their own when none is big.
+export const MIN_RELEASE_LINES = 20;
 
 // The body of the top `## ` section when it is Unreleased, without its heading; null when the top section is dated
 // (a release already took its lines) or the file has no sections.
@@ -26,7 +32,7 @@ export function unreleasedSection(changelog) {
     return (end < 0 ? rest : rest.slice(0, end)).join("\n");
 }
 
-// The bump the Unreleased lines call for, with the counts behind it.
+// The bump the Unreleased lines call for, with the counts behind it and their total.
 export function suggestBump(changelog) {
     const section = unreleasedSection(changelog);
     const counts = { added: 0, changed: 0, fixed: 0, other: 0, big: 0 };
@@ -48,8 +54,8 @@ export function suggestBump(changelog) {
         }
     }
     const lines = counts.added + counts.changed + counts.fixed + counts.other;
-    const bump = counts.added > 0 || counts.big > 0 ? "minor" : lines > 0 ? "patch" : "none";
-    return { bump, counts };
+    const bump = counts.big > 0 || lines >= MIN_RELEASE_LINES ? "minor" : "none";
+    return { bump, counts, lines };
 }
 
 // Why a bump passed by hand is too small for the Unreleased lines, or null when it is big enough. A bigger bump than
