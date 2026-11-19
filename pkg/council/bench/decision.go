@@ -75,7 +75,8 @@ func Decide(results []CouncilBenchResult, caseIds []string) CouncilBenchDecision
 	for _, cell := range cells {
 		var recall, tokens float64
 		for _, r := range cell.runs {
-			recall += float64(r.Recall)
+			// the head recall: a team keeps at most TopReview items, so a council's whole list would not be a fair match
+			recall += float64(HeadRecall(r))
 			tokens += float64(r.Tokens)
 		}
 		recall /= decisionRuns

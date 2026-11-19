@@ -452,6 +452,12 @@ func CouncilBenchCommand(w *wshutil.WshRpc, data wshrpc.CommandCouncilBenchData,
 	return resp, err
 }
 
+// command "councilbenchrejudge", wshserver.CouncilBenchRejudgeCommand
+func CouncilBenchRejudgeCommand(w *wshutil.WshRpc, data wshrpc.CommandCouncilBenchRejudgeData, opts *wshrpc.RpcOpts) (*wshrpc.CouncilBenchRejudgeRtnData, error) {
+	resp, err := sendRpcRequestCallHelper[*wshrpc.CouncilBenchRejudgeRtnData](w, "councilbenchrejudge", data, opts)
+	return resp, err
+}
+
 // command "councilbenchresults", wshserver.CouncilBenchResultsCommand
 func CouncilBenchResultsCommand(w *wshutil.WshRpc, opts *wshrpc.RpcOpts) (*wshrpc.CouncilBenchResultsRtnData, error) {
 	resp, err := sendRpcRequestCallHelper[*wshrpc.CouncilBenchResultsRtnData](w, "councilbenchresults", nil, opts)

@@ -799,6 +799,68 @@ func (ws *WshServer) CouncilBenchResultsCommand(ctx context.Context) (*wshrpc.Co
 	return rtn, nil
 }
 
+// councilBenchRejudgeJudge is the judge a rejudge calls; a test replaces it so no claude runs.
+var councilBenchRejudgeJudge bench.JudgeFunc = bench.Judge
+
+// CouncilBenchRejudgeCommand judges a bench report again as reports are judged now. With no council it lists the run
+// lines that can be (bench.NeedsRejudge, a line's mode taken from cases.json when it has none) and judges nothing; with
+// one, it judges that council's report against its case's current key and appends the rejudge line, which reading the
+// results back puts in the run line. It refuses while a bench runs, whose own judging would be read beside it.
+func (ws *WshServer) CouncilBenchRejudgeCommand(ctx context.Context, data wshrpc.CommandCouncilBenchRejudgeData) (*wshrpc.CouncilBenchRejudgeRtnData, error) {
+	councilBenchMu.Lock()
+	running := councilBenchCur != nil
+	councilBenchMu.Unlock()
+	if running {
+		return nil, errors.New("a bench is running; judge its reports again once it ends")
+	}
+	dataDir := wavebase.GetWaveDataDir()
+	runs, _, err := bench.LoadResults(dataDir)
+	if err != nil {
+		return nil, err
+	}
+	cases, _, err := bench.LoadCases(dataDir)
+	if err != nil {
+		return nil, err
+	}
+	byId := make(map[string]bench.Case, len(cases))
+	for _, c := range cases {
+		byId[c.Id] = c
+	}
+	var pending []bench.CouncilBenchResult
+	for _, r := range runs {
+		mode := r.Mode
+		if mode == "" {
+			mode = byId[r.Case].Mode
+		}
+		if _, known := byId[r.Case]; known && bench.NeedsRejudge(r, mode) {
+			pending = append(pending, r)
+		}
+	}
+	if data.Council == "" {
+		return &wshrpc.CouncilBenchRejudgeRtnData{Pending: pending}, nil
+	}
+	idx := slices.IndexFunc(pending, func(r bench.CouncilBenchResult) bool { return r.Council == data.Council })
+	if idx < 0 {
+		return nil, fmt.Errorf("council %s is not a bench report waiting to be judged again", data.Council)
+	}
+	run := pending[idx]
+	report, err := council.Load(run.Council)
+	if err != nil {
+		return nil, fmt.Errorf("loading council %s: %w", run.Council, err)
+	}
+	line, err := bench.Rejudge(ctx, councilBenchRejudgeJudge, byId[run.Case], run, report)
+	if err != nil {
+		if line.JudgeTokens > 0 {
+			log.Printf("[council-bench] rejudge of %s failed after %d judge tokens: %v", run.Council, line.JudgeTokens, err)
+		}
+		return nil, err
+	}
+	if err := bench.AppendRejudge(dataDir, line); err != nil {
+		return nil, err
+	}
+	return &wshrpc.CouncilBenchRejudgeRtnData{Line: &line}, nil
+}
+
 // The initiative a full bench reminds through, and the chunk it adds: due a month after the bench, so the council is
 // measured again whenever its prompts or models have changed since.
 const (

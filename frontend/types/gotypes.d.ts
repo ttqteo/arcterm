@@ -1019,6 +1019,11 @@ declare global {
         dryrun?: boolean;
     };
 
+    // wshrpc.CommandCouncilBenchRejudgeData
+    type CommandCouncilBenchRejudgeData = {
+        council?: string;
+    };
+
     // wshrpc.CommandCouncilContinueData
     type CommandCouncilContinueData = {
         id: string;
@@ -3035,6 +3040,29 @@ declare global {
         not: number;
     };
 
+    // bench.CouncilBenchRejudge
+    type CouncilBenchRejudge = {
+        kind: string;
+        date: string;
+        council: string;
+        case: string;
+        variant: string;
+        run: number;
+        recall: number;
+        recall5: number;
+        keys: number;
+        judged: number;
+        wrong: number;
+        matches?: {[key: string]: number};
+        judgetokens: number;
+    };
+
+    // wshrpc.CouncilBenchRejudgeRtnData
+    type CouncilBenchRejudgeRtnData = {
+        pending?: CouncilBenchResult[];
+        line?: CouncilBenchRejudge;
+    };
+
     // bench.CouncilBenchResult
     type CouncilBenchResult = {
         kind: string;
@@ -3054,6 +3082,7 @@ declare global {
         judgetokens?: number;
         recall3?: number;
         judged?: number;
+        recall5?: number;
         kept?: number;
         keptmatches?: {[key: string]: number};
         matches?: {[key: string]: number};
@@ -3090,6 +3119,8 @@ declare global {
         recall3: number;
         judged: number;
         recall_done?: number;
+        recall5?: number;
+        allscored?: number;
         decisions?: number;
         questions?: number;
     };

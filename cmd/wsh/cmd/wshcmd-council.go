@@ -1175,6 +1175,10 @@ var (
 		// stopping waits for the council in flight to save itself stopped: 15 seconds at the longest
 		return wshclient.CouncilBenchStopCommand(RpcClient, &wshrpc.RpcOpts{Timeout: 30_000})
 	}
+	councilBenchRejudgeCall = func(id string) (*wshrpc.CouncilBenchRejudgeRtnData, error) {
+		// one opus judging, bounded by the judge's own 10-minute limit
+		return wshclient.CouncilBenchRejudgeCommand(RpcClient, wshrpc.CommandCouncilBenchRejudgeData{Council: id}, &wshrpc.RpcOpts{Timeout: 11 * 60_000})
+	}
 	councilBenchGate = tokengateDecide
 )
 
@@ -1316,7 +1320,7 @@ func writeCouncilBenchSection(b *strings.Builder, s councilBenchSection) {
 	if s.brainstorm {
 		fmt.Fprintln(w, "harness\tvariant\tskill\tscored/runs\trecall@3\trecall@all\trecall@done\twrong\tdecisions\tquestions\ttokens\trecall@all/M tokens")
 	} else {
-		fmt.Fprintln(w, "harness\tvariant\tscored/runs\trecall\twrong\ttokens\trecall/M tokens")
+		fmt.Fprintln(w, "harness\tvariant\tscored/runs\trecall@5\trecall@all\twrong\ttokens\trecall@5/M tokens")
 	}
 	for _, r := range s.rows {
 		perM := "-"
@@ -1324,8 +1328,17 @@ func writeCouncilBenchSection(b *strings.Builder, s councilBenchSection) {
 			perM = fmt.Sprintf("%.1f", r.RecallPerM)
 		}
 		if !s.brainstorm {
-			fmt.Fprintf(w, "%s\t%s\t%d/%d\t%d/%d\t%d\t%s\t%s\n", councilBenchHarness(r.Harness), r.Variant, r.Scored, r.Runs,
-				r.Recall, r.Keys, r.Wrong, council.FormatTokens(r.Tokens), perM)
+			// recall@all and wrong/judged read only when every scored run was judged whole: a sum over a mix of whole
+			// and cut runs is neither figure
+			all, wrong := "-", fmt.Sprint(r.Wrong)
+			if r.Scored > 0 && r.AllScored == r.Scored {
+				all = fmt.Sprintf("%d/%d", r.Recall, r.Keys)
+				if r.Judged > 0 {
+					wrong = fmt.Sprintf("%d/%d", r.Wrong, r.Judged)
+				}
+			}
+			fmt.Fprintf(w, "%s\t%s\t%d/%d\t%d/%d\t%s\t%s\t%s\t%s\n", councilBenchHarness(r.Harness), r.Variant, r.Scored, r.Runs,
+				r.Recall5, r.Keys, all, wrong, council.FormatTokens(r.Tokens), perM)
 			continue
 		}
 		recall3, wrong := "-", fmt.Sprint(r.Wrong)
@@ -1347,7 +1360,15 @@ func writeCouncilBenchSection(b *strings.Builder, s councilBenchSection) {
 	w.Flush()
 	if s.brainstorm {
 		fmt.Fprintln(b, councilBenchBrainstormNote())
+	} else if s.heading == "Review" {
+		fmt.Fprintln(b, councilBenchReviewNote())
 	}
+}
+
+// councilBenchReviewNote is the line under the Review section: a Review report is judged whole now, recall@5 is what a
+// row scored before that held, and `wsh council bench rejudge` scores a council's old report whole.
+func councilBenchReviewNote() string {
+	return "note: a Review report is judged on its whole list; a run scored before that has recall@5 only (a dash for recall@all) until `wsh council bench rejudge` judges it again; a team keeps 5 items, so its recall@5 is its whole list"
 }
 
 // councilBenchTable is the results as tables, as wavesrv grouped them (the newest harness version first, so an old
@@ -1432,6 +1453,10 @@ var councilBenchResultsCmd = &cobra.Command{
 		if isJSON(cmd) {
 			return jsonOut(res)
 		}
+		if chart, _ := cmd.Flags().GetBool("chart"); chart {
+			fmt.Print(bench.ChartMarkdown(res.Runs))
+			return nil
+		}
 		fmt.Print(councilBenchTable(res))
 		return nil
 	},
@@ -1454,6 +1479,55 @@ var councilBenchStopCmd = &cobra.Command{
 		fmt.Println("bench stopped; the runs it scored stay in the results")
 		return nil
 	},
+}
+
+var councilBenchRejudgeCmd = &cobra.Command{
+	Use:   "rejudge",
+	Short: "judge again the Review reports scored before Review reports were judged whole",
+	Long: "Judge again, one at a time, every saved bench council of a Review case (council and solo variants) that was " +
+		"scored on its first 5 items only, so its score counts every item as a run scored now does. Each is one opus " +
+		"call with no tools (tens of thousands of tokens); no council runs again. --dry-run lists them and judges nothing. " +
+		"The results file keeps the old line and gains a rejudge line that `wsh council bench results` reads in its place.",
+	Args:    cobra.NoArgs,
+	PreRunE: preRunSetupRpcClient,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		dry, _ := cmd.Flags().GetBool("dry-run")
+		return councilBenchRejudge(os.Stdout, dry)
+	},
+}
+
+// councilBenchRejudge lists the reports to judge again, then, without dry, judges each and prints its new score beside
+// the old one. A judging that fails is printed and the rest go on; the error at the end says how many failed.
+func councilBenchRejudge(out io.Writer, dry bool) error {
+	res, err := councilBenchRejudgeCall("")
+	if err != nil {
+		return err
+	}
+	if len(res.Pending) == 0 {
+		fmt.Fprintln(out, "no bench report waits to be judged again")
+		return nil
+	}
+	fmt.Fprintf(out, "%d reports to judge again, one opus call each\n", len(res.Pending))
+	failed := 0
+	for _, r := range res.Pending {
+		name := fmt.Sprintf("%s %s %s run %d (%s)", councilBenchHarness(r.Harness), r.Case, r.Variant, r.Run, r.Council)
+		if dry {
+			fmt.Fprintf(out, "  %s: recall %d/%d on its first %d items\n", name, r.Recall, r.Keys, bench.TopReview)
+			continue
+		}
+		got, err := councilBenchRejudgeCall(r.Council)
+		if err != nil {
+			failed++
+			fmt.Fprintf(out, "  %s: not judged: %v\n", name, err)
+			continue
+		}
+		l := got.Line
+		fmt.Fprintf(out, "  %s: recall@5 %d/%d (was %d), recall@all %d/%d, wrong %d/%d\n", name, l.Recall5, l.Keys, r.Recall, l.Recall, l.Keys, l.Wrong, l.Judged)
+	}
+	if failed > 0 {
+		return fmt.Errorf("%d of %d reports were not judged again; run it again to retry them", failed, len(res.Pending))
+	}
+	return nil
 }
 
 func addCouncilPanelFlags(cmd *cobra.Command) {
@@ -1494,11 +1568,13 @@ func init() {
 	councilBenchCmd.Flags().StringArray("variant", nil, "run only this variant: council, team, solo or brainstorm (repeatable; default council, team and brainstorm; brainstorm runs only on Brainstorm cases)")
 	councilBenchCmd.Flags().Int("runs", 2, "runs of each case × variant (the team verdict needs 2 scored runs of each)")
 	councilBenchResultsCmd.Flags().Bool("json", false, "JSON output")
+	councilBenchResultsCmd.Flags().Bool("chart", false, "print the results as Mermaid charts (markdown): key lines found against tokens per run, one chart per mode")
 	councilPinCmd.Flags().Bool("off", false, "unpin the council")
 	councilRetryCmd.Flags().String("expert", "", "the seat to retry, by id or name (default: the failed summary, else the one failed seat)")
 	councilRetryCmd.Flags().StringArray("model", nil, "run this retry once on another model (opus, sonnet, fable, haiku, claude-opus-4-8); the seat keeps its own. With --all, <model> for every seat or <seat>=<model> (repeatable)")
 	councilRetryCmd.Flags().Bool("all", false, "retry every failed seat but the coordinator at once, in one run")
-	councilBenchCmd.AddCommand(councilBenchResultsCmd, councilBenchStopCmd)
+	councilBenchRejudgeCmd.Flags().Bool("dry-run", false, "list the reports to judge again and judge nothing")
+	councilBenchCmd.AddCommand(councilBenchResultsCmd, councilBenchStopCmd, councilBenchRejudgeCmd)
 	councilCmd.AddCommand(councilEstimateCmd, councilStartCmd, councilListCmd, councilShowCmd, councilMemoryCmd, councilWaitCmd, councilStopCmd, councilSummarizeCmd, councilRetryCmd, councilPinCmd, councilRmCmd, councilBenchCmd)
 	rootCmd.AddCommand(councilCmd)
 }

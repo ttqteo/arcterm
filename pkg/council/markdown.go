@@ -20,7 +20,11 @@ const matrixReasonRunes = 120 // a matrix cell keeps one line of the reason, cut
 // each with its first step and each expert's stance, then one line each for a Brainstorm's wild ideas kept aside or a
 // Review's directions also raised, the questions to ask next, then proposals × experts, and last the message the person
 // pinned as the Final proposal, while one is pinned. Document adds the whole discussion and the run facts to it.
-func Markdown(c *Council) string {
+func Markdown(c *Council) string { return markdownWith(c, false) }
+
+// markdownWith is Markdown, with the at-a-glance chart of a Review's directions ahead of them when charts is set: the
+// saved document draws it; what `wsh council show` and `wait` print for an agent leaves it out.
+func markdownWith(c *Council, charts bool) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "# Council: %s\n\n", c.Feature)
 	if q := oneLine(c.Question); q != "" {
@@ -35,6 +39,9 @@ func Markdown(c *Council) string {
 		}
 		if t := strings.TrimSpace(c.Summary.Text); t != "" {
 			b.WriteString(t + "\n\n")
+		}
+		if charts {
+			writeGlanceChart(&b, c)
 		}
 		if len(c.Summary.Directions) > 0 {
 			if isBrainstorm(c) {
@@ -394,8 +401,9 @@ func matrixOutcome(c *Council, p CouncilProposal) string {
 
 // ---- the saved document ----
 
-// Document is what a finished council saves into its project: the report (Markdown), then "The discussion", every
-// proposal and reply in the order it was said, then the run facts.
+// Document is what a finished council saves into its project: the report (Markdown, with a Review's at-a-glance chart
+// ahead of its directions), then "The discussion", every proposal and reply in the order it was said, then the run facts
+// and the charts of what each seat spent (charts.go).
 func Document(c *Council) string { return documentWith(c, nil, nil) }
 
 // documentWith is Document with each message's screenshot regions embedded under its evidence line: crops maps a region's
@@ -403,7 +411,7 @@ func Document(c *Council) string { return documentWith(c, nil, nil) }
 // stays the text ref alone. With roots it also checks every `path:line` the report and the discussion cite against them
 // (AuditReportCites) and puts the "Cite check" section between the matrix and the discussion; with none it reads no file.
 func documentWith(c *Council, crops map[string]string, roots []string) string {
-	head := strings.TrimRight(Markdown(c), "\n") + "\n\n"
+	head := strings.TrimRight(markdownWith(c, true), "\n") + "\n\n"
 	var disc strings.Builder
 	writeDiscussion(&disc, c, crops)
 	var b strings.Builder
@@ -415,6 +423,7 @@ func documentWith(c *Council, crops map[string]string, roots []string) string {
 	b.WriteString(disc.String())
 	b.WriteString("\n## Run facts\n\n")
 	writeRunFacts(&b, c)
+	writeRunCharts(&b, c)
 	return b.String()
 }
 

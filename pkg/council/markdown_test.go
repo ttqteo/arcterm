@@ -513,8 +513,9 @@ func TestMarkdownDiscussion(t *testing.T) {
 	c := documentCouncil()
 	doc := Document(c)
 
-	// the report comes first and is what Markdown returns; the discussion and the run facts follow it
-	report := strings.TrimRight(Markdown(c), "\n")
+	// the report comes first and is what Markdown returns with the glance chart ahead of the directions; the discussion
+	// and the run facts follow it
+	report := strings.TrimRight(markdownWith(c, true), "\n")
 	if !strings.HasPrefix(doc, report+"\n\n## The discussion\n\n") {
 		t.Errorf("the document does not open with the report then the discussion\n%s", doc)
 	}

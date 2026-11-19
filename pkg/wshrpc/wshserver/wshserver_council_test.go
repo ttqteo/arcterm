@@ -2498,6 +2498,77 @@ func TestCouncilBenchResultsGroupsByHarness(t *testing.T) {
 
 // A line written before a run line carried its case's mode takes it from cases.json, retired cases included; a line whose
 // case is gone, or any line when cases.json cannot be read, groups under no mode. Every line still comes back as written.
+func TestCouncilBenchRejudgeCommand(t *testing.T) {
+	useCouncilStore(t)
+	dataDir := useCouncilBench(t, nil)
+	writeBenchCases(t, dataDir, false, "alpha")
+	report := &council.Council{Id: "c-old", Project: t.TempDir(), Feature: "Idle sleep", State: council.StateDone, Bench: true,
+		Summary: &council.CouncilSummary{Directions: []council.CouncilDirection{{Rank: 1, Title: "One"}}}}
+	if err := council.Save(report); err != nil {
+		t.Fatal(err)
+	}
+	lines := []bench.CouncilBenchResult{
+		// cut at 5: waits to be judged again
+		{Harness: "h", Case: "alpha", Variant: bench.VariantCouncil, Run: 1, Council: "c-old", State: "done", Recall: 0, Keys: 2, JudgeTokens: 30_000},
+		// already judged whole, a team with no saved report, a failed run, and a case no longer in cases.json: none waits
+		{Harness: "h", Case: "alpha", Variant: bench.VariantCouncil, Run: 2, Council: "c-new", State: "done", Recall: 1, Recall5: 1, Judged: 6, Keys: 2},
+		{Harness: "h", Case: "alpha", Variant: bench.VariantTeam, Run: 1, Council: "lead-1", State: "done", Recall: 1, Keys: 2},
+		{Harness: "h", Case: "alpha", Variant: bench.VariantCouncil, Run: 3, Council: "c-failed", State: "failed"},
+		{Harness: "h", Case: "gone", Variant: bench.VariantCouncil, Run: 1, Council: "c-gone", State: "done", Keys: 3},
+	}
+	for _, r := range lines {
+		if err := bench.AppendResult(dataDir, r); err != nil {
+			t.Fatal(err)
+		}
+	}
+	prevJudge := councilBenchRejudgeJudge
+	t.Cleanup(func() { councilBenchRejudgeJudge = prevJudge })
+	var judged []string
+	councilBenchRejudgeJudge = func(ctx context.Context, c bench.Case, r *council.Council) (bench.Verdict, error) {
+		judged = append(judged, c.Id+"/"+r.Id)
+		return bench.Verdict{Matches: map[string]int{"K2": 7}, Judged: 9, Items: []bench.ItemVerdict{{Rank: 1, Verdict: "wrong"}}, Tokens: 20_000}, nil
+	}
+	ws := &WshServer{}
+
+	list, err := ws.CouncilBenchRejudgeCommand(context.Background(), wshrpc.CommandCouncilBenchRejudgeData{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(list.Pending) != 1 || list.Pending[0].Council != "c-old" || len(judged) != 0 {
+		t.Fatalf("pending = %+v, judged %v; want c-old alone and nothing judged", list.Pending, judged)
+	}
+
+	if _, err := ws.CouncilBenchRejudgeCommand(context.Background(), wshrpc.CommandCouncilBenchRejudgeData{Council: "c-new"}); err == nil {
+		t.Error("a report already judged whole was judged again")
+	}
+	got, err := ws.CouncilBenchRejudgeCommand(context.Background(), wshrpc.CommandCouncilBenchRejudgeData{Council: "c-old"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if l := got.Line; l == nil || l.Recall != 1 || l.Recall5 != 0 || l.Judged != 9 || l.Wrong != 1 || l.Keys != 2 || !reflect.DeepEqual(judged, []string{"alpha/c-old"}) {
+		t.Fatalf("line = %+v, judged %v; want recall@all 1, recall@5 0, 9 judged, 1 wrong, c-old judged against alpha", got.Line, judged)
+	}
+
+	runs, _, err := bench.LoadResults(dataDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r := runs[0]; r.Recall != 1 || r.Judged != 9 || r.JudgeTokens != 50_000 {
+		t.Errorf("c-old's run line read back = %+v, want the rejudge's scores and both judgings' tokens", r)
+	}
+	if again, _ := ws.CouncilBenchRejudgeCommand(context.Background(), wshrpc.CommandCouncilBenchRejudgeData{}); len(again.Pending) != 0 {
+		t.Errorf("pending after the rejudge = %+v, want none", again.Pending)
+	}
+
+	councilBenchMu.Lock()
+	councilBenchCur = &councilBenchRun{}
+	councilBenchMu.Unlock()
+	t.Cleanup(func() { councilBenchMu.Lock(); councilBenchCur = nil; councilBenchMu.Unlock() })
+	if _, err := ws.CouncilBenchRejudgeCommand(context.Background(), wshrpc.CommandCouncilBenchRejudgeData{}); err == nil {
+		t.Error("a rejudge ran while a bench was running")
+	}
+}
+
 func TestCouncilBenchResultsFillsAnOldLinesModeFromCases(t *testing.T) {
 	useCouncilStore(t)
 	dataDir := useCouncilBench(t, nil)
