@@ -192,6 +192,45 @@ export const councilFigures = {
                         const b = document.querySelector('[data-council-figure="stance-grid"]')?.getBoundingClientRect();
                         return !!a && !!b && a.right <= b.left + 1 && Math.abs(a.top - b.top) < 40;
                     })(),
+                    // B sits beside A only when its columns fit there, and drops under A otherwise: this window's pane
+                    // leaves B 499px, a 4-seat grid needs 598, so it stacks here
+                    stacked: (() => {
+                        const a = document.querySelector('[data-council-figure="glance"]')?.getBoundingClientRect();
+                        const b = document.querySelector('[data-council-figure="stance-grid"]')?.getBoundingClientRect();
+                        return !!a && !!b && a.bottom <= b.top + 1 && Math.abs(a.left - b.left) < 2;
+                    })(),
+                    // either way the grid shows every column: its own scroll box has nothing to scroll, and the last
+                    // seat's header and the Backing header sit inside it (columns are sized to their content, and only
+                    // the Direction title gives way)
+                    grid: (() => {
+                        const box = document.querySelector('[data-council-figure="stance-grid"] [data-stance-scroll]');
+                        const heads = [...document.querySelectorAll('[data-council-figure="stance-grid"] thead th[data-stance-head]')];
+                        const backing = heads.find((th) => th.dataset.stanceHead === "backing");
+                        const lastSeat = heads.length >= 3 ? heads[heads.length - 2] : null;
+                        if (!box || !backing || !lastSeat) return null;
+                        const r = box.getBoundingClientRect();
+                        const inside = (el) => {
+                            const e = el.getBoundingClientRect();
+                            return e.width > 0 && e.left >= r.left - 1 && e.right <= r.right + 1;
+                        };
+                        const cells = [...document.querySelectorAll('[data-council-figure="stance-grid"] tbody [data-stance-glyph]')];
+                        return {
+                            scrollWidth: box.scrollWidth,
+                            clientWidth: box.clientWidth,
+                            lastSeat: lastSeat.dataset.stanceHead,
+                            lastSeatInside: inside(lastSeat),
+                            backingInside: inside(backing),
+                            // a pill is never cut: it is as wide as its own content
+                            pillsWhole: cells.every((p) => p.getBoundingClientRect().height < 24 && p.scrollWidth <= p.clientWidth + 1),
+                            seats: heads.length - 2,
+                            // each column's width, Direction first and Backing last, and the widest pill of each seat
+                            cols: [...document.querySelectorAll('[data-council-figure="stance-grid"] thead th')].map((th) => Math.round(th.getBoundingClientRect().width)),
+                            widestPill: heads.slice(1, -1).map((_, i) =>
+                                Math.round(Math.max(0, ...[...document.querySelectorAll('[data-council-figure="stance-grid"] tbody tr')].map((tr) => tr.children[i + 1]?.querySelector("[data-stance-glyph]")?.getBoundingClientRect().width ?? 0)))
+                            ),
+                            backingCell: Math.round(document.querySelector('[data-council-figure="stance-grid"] tbody tr td:last-child > span')?.getBoundingClientRect().width ?? 0),
+                        };
+                    })(),
                 };
             })()`);
             // the header's link brings At a glance to the top of the page: the board's picture and the What's new one
@@ -214,7 +253,12 @@ export const councilFigures = {
                 facts.jumps === "glance,directions,kept,spend" &&
                 facts.points === 3 &&
                 facts.rows === 3 &&
-                facts.sideBySide;
+                (facts.sideBySide || facts.stacked) &&
+                !!facts.grid &&
+                facts.grid.scrollWidth <= facts.grid.clientWidth + 1 &&
+                facts.grid.lastSeatInside &&
+                facts.grid.backingInside &&
+                facts.grid.pillsWhole;
             return { ok, detail: JSON.stringify({ ...facts, pic }) };
         });
 
@@ -322,7 +366,7 @@ export const councilFigures = {
             return { ok, detail: JSON.stringify({ before, after, ram, labelBefore, labelAfter }) };
         });
 
-        await step("the glance figure's Table shows the same numbers as a table, and a pane under 900px stacks the quadrant above the stance grid", async () => {
+        await step("the glance figure's Table shows the same numbers as a table, and a pane narrower than the stance grid's columns keeps the quadrant above it, the grid scrolling inside its own box", async () => {
             await h.ev(`document.querySelector("[data-council-scroll]").scrollTop = 0`);
             await sleep(300);
             const toggled = await click(h, '[data-council-figure="glance"] [data-figure-table-toggle]');

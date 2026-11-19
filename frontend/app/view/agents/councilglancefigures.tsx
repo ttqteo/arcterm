@@ -8,8 +8,9 @@
 //     point for its numbers; click or Enter opens that direction's card.
 //   - B, the stance grid: a real <table>, direction × seat, with each seat's stance as its glyph and word, and an
 //     agreement bar last. Click a row, or Enter on its direction, opens that direction's card.
-// A beside B in one row when the pane is 900px or wider (a container query: the pane, not the window), stacked under
-// it. A figure the model returns null for is not drawn, and with both null nothing is. The section's heading and the
+// A beside B in one row when B's columns, sized to their content, fit in what A leaves (the pane's width, not the
+// window's: B's flex basis is its min-content), B stacked under A otherwise, so B never hides a column behind a sideways
+// scroll beside A. A figure the model returns null for is not drawn, and with both null nothing is. The section's heading and the
 // card the click opens are the Report's (councilsummary.tsx). A stance is never a colour alone: the glyph and the word
 // come with the tint, and a seat is told apart by its column and name, its avatar tone is never a series colour.
 //
@@ -351,9 +352,12 @@ function GlanceFigure({
 
 // ── B: the stance grid ──────────────────────────────────────────────────────────────────────────────────────────────
 
-const SEAT_COL_PX = 92; // a seat's column never squeezes under its widest pill ("? Challenge")
-const DIRECTION_COL_PX = 200;
-const BACKING_COL_PX = 150;
+// The columns are sized to their content, as the Main board draws them: a seat's column is as wide as its widest pill
+// ("? Challenge" never wraps or clips) or its header, and so is Backing. Direction is the one that gives way: it takes
+// what is left, ellipses its title, and never goes under this (room for "D<rank>" and a few letters of the title).
+// The table's own minimum width is then this plus the other columns' content. B sits beside A only when that fits, so
+// the grid scrolls sideways in its box only in a pane narrower than that, B stacked.
+const DIRECTION_MIN_PX = 96;
 
 function SeatAvatar({ c, seat }: { c: Council; seat: CouncilExpert }) {
     return (
@@ -403,7 +407,6 @@ function StanceGridFigure({
 }) {
     const { seats, rows, takeaway } = data;
     const builds = rows.some((r) => r.cells.some((cell) => cell.kind === "builds"));
-    const minWidth = DIRECTION_COL_PX + seats.length * SEAT_COL_PX + BACKING_COL_PX;
     return (
         <ChartFigure
             id="stance-grid"
@@ -411,12 +414,17 @@ function StanceGridFigure({
             takeaway={takeaway}
             className={cn(FRAME, className)}
         >
-            {/* a narrow pane scrolls the grid sideways in its own box rather than squeezing the columns */}
-            <div className="max-w-full overflow-x-auto">
-                <table className="w-full border-separate border-spacing-0 text-[12px]" style={{ minWidth }}>
+            {/* a pane too narrow for the columns' content scrolls the grid sideways in its own box */}
+            <div data-stance-scroll="" className="max-w-full overflow-x-auto">
+                <table className="w-full border-separate border-spacing-0 text-[12px]">
                     <thead>
                         <tr>
-                            <th scope="col" className="py-[6px] pb-2 pr-2 text-left font-medium text-muted">
+                            <th
+                                scope="col"
+                                data-stance-head="direction"
+                                style={{ minWidth: DIRECTION_MIN_PX }}
+                                className="py-[6px] pb-2 pr-2 text-left font-medium text-muted"
+                            >
                                 Direction
                             </th>
                             {seats.map((seat) => (
@@ -424,6 +432,7 @@ function StanceGridFigure({
                                     key={seat.id}
                                     scope="col"
                                     title={seat.name}
+                                    data-stance-head={seat.id}
                                     className="whitespace-nowrap px-1 py-[6px] pb-2 font-medium text-secondary"
                                 >
                                     <span className="inline-flex items-center gap-[5px]">
@@ -432,7 +441,11 @@ function StanceGridFigure({
                                     </span>
                                 </th>
                             ))}
-                            <th scope="col" className="py-[6px] pb-2 pl-2 text-left font-medium text-muted">
+                            <th
+                                scope="col"
+                                data-stance-head="backing"
+                                className="whitespace-nowrap py-[6px] pb-2 pl-2 text-left font-medium text-muted"
+                            >
                                 Backing
                             </th>
                         </tr>
@@ -448,10 +461,12 @@ function StanceGridFigure({
                                     style={hoverFadeStyle}
                                     className="cursor-pointer transition-colors hover:bg-surface-hover focus-within:bg-surface-hover motion-reduce:transition-none"
                                 >
+                                    {/* width 100% with max-width 0 is what lets a table cell ellipse: it takes what the
+                                        other columns leave, and the title is cut to it */}
                                     <th
                                         scope="row"
-                                        style={{ maxWidth: DIRECTION_COL_PX }}
-                                        className="rounded-l-md border-t border-edge-mid py-[7px] pl-[6px] pr-2 text-left font-normal"
+                                        style={{ minWidth: DIRECTION_MIN_PX, maxWidth: 0 }}
+                                        className="w-full rounded-l-md border-t border-edge-mid py-[7px] pl-[6px] pr-2 text-left font-normal"
                                     >
                                         <button
                                             type="button"
@@ -491,8 +506,8 @@ function StanceGridFigure({
 
 // ── the pair ────────────────────────────────────────────────────────────────────────────────────────────────────────
 
-/** The Report's "At a glance" figures: A beside B at 900px or wider, stacked under it. `onOpenDirection(rank)` is what a
- *  click or Enter on a point or a row calls. A figure the model has nothing for is left out, and with neither the
+/** The Report's "At a glance" figures: A beside B when B's columns fit beside it, B under A otherwise. `onOpenDirection(rank)`
+ *  is what a click or Enter on a point or a row calls. A figure the model has nothing for is left out, and with neither the
  *  component draws nothing. */
 export function GlanceFigures({ c, onOpenDirection }: { c: Council; onOpenDirection: (rank: number) => void }) {
     const glance = useMemo(() => glancePoints(c), [c]);
@@ -500,18 +515,28 @@ export function GlanceFigures({ c, onOpenDirection }: { c: Council; onOpenDirect
     if (glance == null && grid == null) {
         return null;
     }
+    // A wrapping row. A's basis is its width (452px). B's is its own min-content: the widest its columns need with
+    // Direction at its minimum, so B only joins A's line when every column fits beside it, and drops under A at full
+    // width otherwise. B's huge grow keeps A at its 452px (it gets a thousandth of any free space, under a pixel) while
+    // a lone A, or a lone B, fills its line. B may shrink to a pane narrower than its columns (min-w-0): then its own
+    // box scrolls sideways, and the page never does.
     return (
-        <div data-glance-figures="" className="@container min-w-0">
-            <div className="flex min-w-0 flex-col gap-5 @[900px]:flex-row @[900px]:items-stretch">
+        <div data-glance-figures="" className="min-w-0">
+            <div className="flex min-w-0 flex-wrap gap-5">
                 {glance != null && (
                     <GlanceFigure
                         data={glance}
                         onOpenDirection={onOpenDirection}
-                        className="@[900px]:w-[452px] @[900px]:flex-none"
+                        className="min-w-0 shrink grow basis-[452px]"
                     />
                 )}
                 {grid != null && (
-                    <StanceGridFigure c={c} data={grid} onOpenDirection={onOpenDirection} className="flex-1" />
+                    <StanceGridFigure
+                        c={c}
+                        data={grid}
+                        onOpenDirection={onOpenDirection}
+                        className="min-w-0 shrink grow-[1000] basis-[min-content]"
+                    />
                 )}
             </div>
         </div>
