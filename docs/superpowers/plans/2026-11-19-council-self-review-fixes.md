@@ -47,7 +47,7 @@ the `arc:council` skill, the user guide.
 - Calibrating the follow-up and routed estimates.
 - Resolving bare names in the per-claim `CheckEvidence`.
 
-**Verify:** `node scripts/verify.mjs ./pkg/council/... ./pkg/wshrpc/... ./cmd/wsh/...`
+**Verify:** `node scripts/verify.mjs ./pkg/council/... ./pkg/wshrpc/... ./cmd/wsh/... ./skills/...`
 
 **Check:** `task check:ts`
 
@@ -57,7 +57,7 @@ the `arc:council` skill, the user guide.
 
 **Depends on:** none
 
-**Files:** `pkg/council/calibrate.go`, `pkg/council/calibrate_test.go`, `pkg/council/estimate.go`, `pkg/wshrpc/wshrpctypes_council.go`, `pkg/wshrpc/wshserver/wshserver_council.go`, `frontend/types/gotypes.d.ts`
+**Files:** `pkg/council/calibrate.go`, `pkg/council/calibrate_test.go`, `pkg/council/estimate.go`, `pkg/wshrpc/wshrpctypes_council.go`, `pkg/wshrpc/wshserver/wshserver_council.go`, `pkg/wshrpc/wshserver/wshserver_council_test.go`, `frontend/types/gotypes.d.ts`
 
 Create `calibrate.go` and `calibrate_test.go`. In `estimate.go`, change the `CouncilEstimate` struct and the comment at
 lines 14–16. In `wshrpctypes_council.go:193`, change `CouncilEstimateRtnData`. In `wshserver_council.go:389-399`,
@@ -242,10 +242,20 @@ In `pkg/wshrpc/wshserver/wshserver_council.go`, in the `default:` branch after
 
 Then add `Measured: est.Measured` to the returned `CouncilEstimateRtnData`.
 
+Test that wiring in `pkg/wshrpc/wshserver/wshserver_council_test.go`, beside `TestCouncilEstimateWholeCouncil`. Add
+`TestCouncilEstimateIsCalibratedByFinishedCouncils`: after `useCouncilStore(t)`, save two done expert-only councils
+with `saveCouncil` (the helper `TestCouncilEstimateOfASavedCouncil` uses; give each `Experts`, `State: StateDone`,
+`Calls`, `Tokens` and distinct `Updated`). An estimate of `council.ExpertsFor("ui-feature")` with no `Agents` then
+returns `Measured: 2` and the calls and tokens `council.CalibrationFrom` of those two gives for the formula's estimate
+(compute the want from `CalibrationFrom(...).Calibrated(...)`, not a hand figure). The same request with `Agents` set,
+as in `TestCouncilEstimatePricesAgentSeats`, keeps the formula and `Measured: 0`. `TestCouncilEstimateWholeCouncil`
+saves no council, so its figures stay as they are.
+
 **Step 4: Regenerate and run the tests**
 
 Run: `task generate`, then
-`CGO_ENABLED=1 CC="zig cc -target x86_64-windows-gnu" go test ./pkg/council -run '^(TestCalibration|TestEstimate)'`
+`CGO_ENABLED=1 CC="zig cc -target x86_64-windows-gnu" go test ./pkg/council -run '^(TestCalibration|TestEstimate)'` and
+`CGO_ENABLED=1 CC="zig cc -target x86_64-windows-gnu" go test ./pkg/wshrpc/wshserver -run '^TestCouncilEstimate'`
 Expected: PASS.
 
 **Step 5: Commit** (Task 4 writes this task's CHANGELOG line; leave `CHANGELOG.md` alone)
@@ -254,7 +264,7 @@ The line Task 4 adds for it, under `### Fixed`: "A council's price on the Token 
 your last councils actually cost, instead of a fixed guess that read 3 to 5 times low."
 
 ```bash
-git add pkg/council/calibrate.go pkg/council/calibrate_test.go pkg/council/estimate.go pkg/wshrpc/wshrpctypes_council.go pkg/wshrpc/wshserver/wshserver_council.go frontend/types/gotypes.d.ts
+git add pkg/council/calibrate.go pkg/council/calibrate_test.go pkg/council/estimate.go pkg/wshrpc/wshrpctypes_council.go pkg/wshrpc/wshserver/wshserver_council.go pkg/wshrpc/wshserver/wshserver_council_test.go frontend/types/gotypes.d.ts
 git commit -m "fix(council): price a council's start from measured councils, calls x cost per call"
 ```
 
@@ -315,6 +325,12 @@ func TestAuditReportCitesKeepsALineWithNoKeywordApart(t *testing.T) {
 In `TestCiteCheckSectionTalliesAndLists`, add one assertion for a doc holding an unchecked cite. The section gets the
 sentence "1 name a file only by its bare name and are not checked" and a list titled "Not checked (a bare file name)".
 
+`TestWriteDocumentChecksItsCites` (`reportcites_test.go:198`) asserts that P2's bare `b.go:2` is listed as
+"file not found". No full path of that report names `b.go`, so it now becomes `CiteUnchecked`. Change that assertion:
+`b.go:2` is listed under "Not checked (a bare file name)" with the note "a bare file name no full path of the report
+names", and the section holds no "file not found" line. Keep the rest of the test (the section sits before the
+discussion; `Document` reads no file).
+
 **Step 2: Run them to make sure they fail**
 
 Run: `CGO_ENABLED=1 CC="zig cc -target x86_64-windows-gnu" go test ./pkg/council -run '^(TestAuditReportCites|TestCiteCheckSection)'`
@@ -349,9 +365,6 @@ Expected: FAIL to compile with `undefined: CiteUnchecked`.
 
 Run: `CGO_ENABLED=1 CC="zig cc -target x86_64-windows-gnu" go test ./pkg/council -run '^(TestAuditReportCites|TestCiteCheckSection|TestWriteDocument)'`
 Expected: PASS.
-
-Then check that `reportcites_real_test.go` still passes. If a real report there relied on a line-only "holds", update
-its expected count and write the reason in the test.
 
 **Step 5: Commit** (Task 4 writes this task's CHANGELOG line; leave `CHANGELOG.md` alone)
 
@@ -408,20 +421,25 @@ Expected: FAIL.
 
 **Step 3: Implement**
 
-- Add `docSettled(c)`: a chosen direction, or any Agreed or Ruled out entry. `DocBlock` uses it instead of
-  `docHasMemory`. Keep `docHasMemory` only where other callers need it (grep them).
+- Add `docSettled(c)`: a chosen direction, or any Agreed or Ruled out entry. It returns false for a nil `c.Memory`
+  (`EntriesOf` on a nil memory panics; the doc-sync tests save a council with none). `DocBlock` uses it instead of
+  `docHasMemory`, whose only caller is `DocBlock` (`projectdoc.go:50`): delete `docHasMemory`.
 - In `DocBlock`, loop over `{EntryAgreed, "Agreed"}, {EntryRuledOut, "Ruled out"}` only. Comment: Open lines stay in
   the council's own Memory and Library. In the block, every agent would read them as settled.
 - Add `commitRe` and `dropCommits(s string) string`:
 
   ```go
   // commitRe is a commit hash with the word that points at it: "merged as 786a11648", "ở 38d789b52", "in 5472f0692".
-  // A run of 7–40 hex digits counts only when it holds a digit and a letter, so a number or a word is never taken.
-  var commitRe = regexp.MustCompile(`(?i)\s*(?:,\s*)?(?:merged as|fixed in|in|at|as|ở|tại)?\s*\b[0-9a-f]{7,40}\b`)
+  // The pointing word must start the text or follow whitespace, so "domain 786a11648" keeps "domain" (Go's \b is
+  // ASCII-only, which would not bound ở or tại). A run of 7–40 hex digits counts only when it holds a digit and a
+  // letter, so a number or a word is never taken.
+  var commitRe = regexp.MustCompile(`(?i),?(?:(?:^|\s+)(?:merged as|fixed in|in|at|as|ở|tại))?\s*\b[0-9a-f]{7,40}\b`)
   ```
 
   `dropCommits` uses `ReplaceAllStringFunc`. It keeps a match unchanged unless its hex part holds both a digit and a
-  letter in a–f. Then it collapses double spaces and trims. Apply it to the heading's `routerShown(c.Feature, …)` and
+  letter in a–f. Then it collapses double spaces and trims. Add a table test `TestDropCommits` with at least: "Chat's suggested replies, merged as 786a11648" → "Chat's
+  suggested replies"; "Đã sửa ở 38d789b52 (nhánh fix/sidecar): x" → "Đã sửa (nhánh fix/sidecar): x"; "domain
+  786a11648 x" → "domain x"; "plain 5472f0692" → "plain"; "a 1234567 count" and "deadbeef cafe" unchanged. Apply it to the heading's `routerShown(c.Feature, …)` and
   to every entry line and the Direction line.
 - `docReportPath`: return `filepath.ToSlash(rel)` and `filepath.ToSlash(path)`.
 - In `memorycheck.go`, add the const below and append it to the rules list after the entry rule:
@@ -437,7 +455,7 @@ Expected: FAIL.
 **Step 4: Run the tests**
 
 Run the command of Step 2 → PASS. Then run
-`CGO_ENABLED=1 CC="zig cc -target x86_64-windows-gnu" go test ./pkg/council -run 'TestSyncProjectDoc|TestDocSection'`
+`CGO_ENABLED=1 CC="zig cc -target x86_64-windows-gnu" go test ./pkg/council -run '^(TestSyncProjectDoc|TestWithDocBlock|TestDropCommits)'`
 → PASS.
 
 **Step 5: Commit** (Task 4 writes this task's CHANGELOG line; leave `CHANGELOG.md` alone)
@@ -452,18 +470,22 @@ git commit -m "fix(council): the decisions block keeps rules only, drops commit 
 
 ### Task 4: Say where the price comes from, and stop telling agents to start a council unasked
 
-**Depends on:** Task 1 (uses the `measured` field it adds to `CouncilEstimateRtnData` and the generated `gotypes.d.ts`), Task 2 (writes its CHANGELOG line), Task 3 (writes its CHANGELOG line)
+**Depends on:** Task 1 (uses the `measured` field it adds to `CouncilEstimateRtnData` and the generated `gotypes.d.ts`)
 
-**Files:** `skills/council/SKILL.md`, `docs/guide/council.md`, `frontend/app/view/agents/launchermodal.tsx`, `frontend/app/view/agents/launcher.ts`, `frontend/app/view/agents/councilmodel.ts`, `frontend/app/view/agents/councilmodel.test.ts`, `cmd/wsh/cmd/wshcmd-council.go`, `cmd/wsh/cmd/wshcmd-council_test.go`, `docs/hand-checks.md`, `CHANGELOG.md`
+**Files:** `skills/council/SKILL.md`, `skills/skills_test.go`, `docs/guide/council.md`, `docs/keyboard-shortcuts.md`, `frontend/app/view/agents/launchermodal.tsx`, `frontend/app/view/agents/launcher.ts`, `frontend/app/view/agents/councilmodel.ts`, `frontend/app/view/agents/councilmodel.test.ts`, `frontend/app/store/keybindings/bindings.ts`, `frontend/app/store/keybindings/bindings.test.ts`, `pkg/council/repeat.go`, `cmd/wsh/cmd/wshcmd-council.go`, `cmd/wsh/cmd/wshcmd-council_test.go`, `scripts/cdp/council/setup.mjs`, `docs/hand-checks.md`, `CHANGELOG.md`
 
 Where to edit:
 
-- `SKILL.md:19-20`
-- `council.md:32-33`
+- `SKILL.md`: the frontmatter `description` (line 3), lines 19-20, "When to start one" (line 22), and the opus step 3
+  (lines 108-109)
+- the comment at `skills_test.go:114-116`
+- `council.md:27` and `:32-33`
+- `keyboard-shortcuts.md:48`
 - `launchermodal.tsx:1856`
 - the comment at `launcher.ts:44`
 - `estimateLabel` at `councilmodel.ts:820`
-- `wshcmd-council.go:384` and `:446`
+- the comments at `bindings.ts:641`, `bindings.test.ts:1451` and `repeat.go:16`
+- `wshcmd-council.go`: the `councilCmd` `Long` text (lines 47-54), and the two estimate lines at `:384` and `:446`
 
 **Step 1: Write the failing tests**
 
@@ -477,8 +499,9 @@ In `frontend/app/view/agents/councilmodel.test.ts`, beside the `estimateLabel` c
     });
 ```
 
-In `cmd/wsh/cmd/wshcmd-council_test.go`, add a case beside the one at line 461. It feeds an estimate with
-`Measured: 3` and wants the same `· from your last 3 councils` tail on the `group "…"` line.
+In `cmd/wsh/cmd/wshcmd-council_test.go`, add a case to `TestCouncilEstimateLine` (line ~480; not the `councilPanel`
+test at :461). It feeds an estimate with `Measured: 3` and wants the same `· from your last 3 councils` tail on the
+`group "…"` line. If `TestCouncilStartedLine` (~:531) prints the estimate too, add the same case there.
 
 **Step 2: Run them to make sure they fail**
 
@@ -499,18 +522,43 @@ Run: `CGO_ENABLED=1 CC="zig cc -target x86_64-windows-gnu" go test ./cmd/wsh/cmd
 
 - In the same file, change **Without being asked** under "When to start one" so the agent *offers* the council in one
   line with the estimate, and starts it on a yes. "At once when the person asks for one" stays as it is.
+- The frontmatter `description` ends "— start it yourself with `wsh council start`, …". Change it to: offer it with
+  its estimate and start it on a yes, or at once when the person asks; wait for it and sum its report up.
+- Opus step 3 ("do not ask them anything more first"): keep the Token burn card as the price approval, and say that a
+  council the agent offered was already agreed to, so it asks nothing more.
+- `skills_test.go:114-116`: the comment says the agent starts a council itself and the skill no longer offers with an
+  estimate. Rewrite it: the skill offers with `wsh council estimate`, and add `"wsh council estimate"` to the
+  `want` list it checks.
+- `cmd/wsh/cmd/wshcmd-council.go` `councilCmd.Long`: replace "Each start costs roughly 0.5-1.5M tokens. … so start one
+  when the conversation is ready or the person asks, without asking first;" with: each start costs several million
+  tokens, priced by "wsh council estimate" from the last finished councils; offer one with that estimate and start it
+  on a yes, or at once when the person asks; the Token burn gate still asks for a costly start, and a refusal saves
+  the council as not run (keep the rest of the text).
+- `docs/keyboard-shortcuts.md:48`, and the comments at `bindings.ts:641`, `bindings.test.ts:1451` and `repeat.go:16`:
+  replace "0.5–1.5M tokens" (or "0.5-1.5M") with "several million tokens". No behaviour changes there.
 - `docs/guide/council.md:32-33`: replace the 0,5–1,5M sentence with one in the guide's Vietnamese. The cost line is
   computed from the councils you have finished (number of calls × average cost per call), and an agent asks you before
   it starts a council on its own. Fix the "Nhờ agent tự mở" bullet at line 27 the same way.
 - `launchermodal.tsx:1856`: replace "A council costs 0.5–1.5M tokens." with "Setup shows what it will cost, from your
   last councils." Update `launcher.ts:44`'s comment to drop the figure.
-- `docs/hand-checks.md`: add a `- [ ]` line. After two finished councils, open Setup and check that the cost line ends
-  "from your last N councils" and that the Token burn card shows the same figure.
+- `scripts/cdp/council/setup.mjs`: add step **13a** to the first `council-setup` scenario, between step 13 and step 14
+  (no renumbering). It stubs only `CouncilEstimateCommand` with
+  `{ calls: 18, tokens: 4_500_000, minutes: 6, measured: 3 }` (as step 14 stubs it with `AGENT_ESTIMATE`), makes Setup
+  ask for a new estimate (reopen Setup, or change a row, whichever the scenario's helpers already do), waits until
+  `[data-council-estimate]` reads `≈ 18 calls · ~4.5M tokens · ~6 min · from your last 3 councils`, shoots
+  `cdp-shots/council-setup-measured.png`, and asserts the text ends `· from your last 3 councils`. Leave step 14's own
+  stub as it is, so the steps after it are unchanged. Steps 2-3 assert the formula's figures from the live wavesrv:
+  they hold in Final's fresh store (no finished council, so no calibration); leave them.
+- `docs/hand-checks.md`: add a `- [ ] (arcterm) …` line, as the file's other entries are titled. After two finished
+  councils, start a third from a Claude agent and check that the Token burn card shows the same figure as Setup's cost
+  line, which ends "from your last N councils".
 
 **Step 4: Run the tests**
 
-Run the two commands of Step 2 → PASS. Then run `npx vitest run frontend/app/view/agents/councilsetupmodel.test.ts`
-→ PASS. Its `setupEstimate` cases carry no `measured`, so they are unchanged.
+Run the two commands of Step 2 → PASS. Then run
+`npx vitest run frontend/app/view/agents/councilsetupmodel.test.ts frontend/app/store/keybindings/bindings.test.ts`
+→ PASS (the `setupEstimate` cases carry no `measured`, so they are unchanged), and
+`CGO_ENABLED=1 CC="zig cc -target x86_64-windows-gnu" go test ./skills -run 'Council'` → PASS.
 
 **Step 5: CHANGELOG and commit**
 
@@ -519,12 +567,12 @@ names, and this one. Under `### Changed`, add: "Claude agents now offer a counci
 own; Setup's cost line says how many past councils its price came from."
 
 ```bash
-git add skills/council/SKILL.md docs/guide/council.md frontend/app/view/agents/launchermodal.tsx frontend/app/view/agents/launcher.ts frontend/app/view/agents/councilmodel.ts frontend/app/view/agents/councilmodel.test.ts cmd/wsh/cmd/wshcmd-council.go cmd/wsh/cmd/wshcmd-council_test.go docs/hand-checks.md CHANGELOG.md
+git add skills/council/SKILL.md skills/skills_test.go docs/guide/council.md docs/keyboard-shortcuts.md frontend/app/view/agents/launchermodal.tsx frontend/app/view/agents/launcher.ts frontend/app/view/agents/councilmodel.ts frontend/app/view/agents/councilmodel.test.ts frontend/app/store/keybindings/bindings.ts frontend/app/store/keybindings/bindings.test.ts pkg/council/repeat.go cmd/wsh/cmd/wshcmd-council.go cmd/wsh/cmd/wshcmd-council_test.go scripts/cdp/council/setup.mjs docs/hand-checks.md CHANGELOG.md
 git commit -m "fix(council): the skill offers a council instead of starting one unasked; the price says where it came from"
 ```
 
-UI shown by: `launcher` step 10 (the council note in the third column). `council-setup` shows the estimate line. A dev
-app has no finished councils, so the measured tail stays a hand check.
+UI shown by: `launcher` step 10 (the council note in the third column), and `council-setup` step 13a (the estimate
+line's measured tail). The Token burn card's figure stays a hand check.
 
 ## After the run (the lead, by hand, not the engine)
 
