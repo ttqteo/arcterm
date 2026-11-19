@@ -164,6 +164,22 @@ describe("validateAct", () => {
         expect(validateAct({ kind: "visible" }, null).ok).toBe(false);
     });
 
+    it("takes a Jarvis row's button only when the last snapshot gave that row that act", () => {
+        const withActs = snapWith({
+            needs: [askNeed, { ...jarvisNeed, acts: [{ id: "gate:run1:2:approve", label: "Approve", strong: true }] }],
+        });
+        expect(validateAct({ kind: "needact", key: "gate:run1:2", act: "gate:run1:2:approve" }, withActs)).toEqual({
+            ok: true,
+            act: { kind: "needact", key: "gate:run1:2", act: "gate:run1:2:approve" },
+        });
+        // an act the row was not given, a row that is not waiting, an ask row, no act, no snapshot
+        expect(validateAct({ kind: "needact", key: "gate:run1:2", act: "gate:run1:2:retry" }, withActs).ok).toBe(false);
+        expect(validateAct({ kind: "needact", key: "gone", act: "gate:run1:2:approve" }, withActs).ok).toBe(false);
+        expect(validateAct({ kind: "needact", key: "ask:a1", act: "x" }, withActs).ok).toBe(false);
+        expect(validateAct({ kind: "needact", key: "gate:run1:2" }, withActs).ok).toBe(false);
+        expect(validateAct({ kind: "needact", key: "gate:run1:2", act: "gate:run1:2:approve" }, null).ok).toBe(false);
+    });
+
     it("takes End task only on an endable other app the last snapshot showed", () => {
         const other = (label: string, endable?: boolean) => ({
             key: `other:${label.toLowerCase()}`,

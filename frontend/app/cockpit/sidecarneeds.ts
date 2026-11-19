@@ -7,7 +7,9 @@
 
 import { IDLE_GRACE_MS, type AgentEntry } from "@/app/view/agents/agentsviewmodel";
 import { kindWord } from "@/app/view/jarvis/briefingmodel";
-import type { SidecarNeed, SidecarTile } from "./sidecartypes";
+import type { PetAct } from "@/app/view/jarvis/petacts";
+import type { PeekRow } from "@/app/view/jarvis/petpeekmodel";
+import type { SidecarNeed, SidecarNeedAct, SidecarTile } from "./sidecartypes";
 
 const FENCE = /```[\s\S]*?```/g;
 // closing marks a question may carry after its "?": markdown emphasis, code, quotes, brackets
@@ -46,8 +48,69 @@ export interface NeedsInput {
     now: number; // UnixMilli: the `since` of a tile that has none
 }
 
+// Only a task that failed is a failure. An unverified run finished: one thing in it was not checked, which waits on a
+// look and an Accept, not on a repair, so it no longer frames the window red (2026-11-19).
 function isFailedItem(i: AttentionItem): boolean {
-    return i.kind === "run-unverified" || (i.kind === "dag-blocked" && i.retry === true);
+    return i.kind === "dag-blocked" && i.retry === true;
+}
+
+// What kind of thing waits, in words a glance reads, by AttentionItem.kind (pkg/jarvis/attention.go)
+const KIND_LABEL: Record<string, string> = {
+    "dag-gate": "Gate to approve",
+    escalation: "Asks you",
+    "dag-blocked": "Blocked",
+    "chunk-due": "Due",
+    "plan-review": "Plan to review",
+    "run-unverified": "Run to check",
+    "run-land-held": "Land held",
+    "run-queue-blocked": "Run not started",
+    "learn-proposal": "Rule to approve",
+    council: "Council report",
+};
+
+/** A Jarvis item's label: its kind in words, "Task failed" for a blocked task a retry can rerun. */
+export function needLabel(kind: string, retry = false): string {
+    if (kind === "dag-blocked" && retry) {
+        return "Task failed";
+    }
+    return KIND_LABEL[kind] ?? "Waiting";
+}
+
+/**
+ * A Jarvis row's buttons, from the tray peek's row for the same item (petpeekmodel.queueRows): the act that settles it
+ * (Accept, Approve, Retry, Land again, Work on, Start now), the options of a question one key answers, then the rest
+ * (Dismiss, the Open escort). A learned rule has none there: its Accept and Dismiss are the Needs you strip's
+ * (LearnDecideCommand), named `<key>:learn-accept` and `<key>:learn-dismiss`.
+ */
+export function needActsOf(row: PeekRow | undefined, item: AttentionItem | undefined): SidecarNeedAct[] {
+    if (item?.kind === "learn-proposal" && item.learnid) {
+        return [
+            { id: `${item.key}:learn-accept`, label: "Accept", strong: true },
+            { id: `${item.key}:learn-dismiss`, label: "Dismiss" },
+        ];
+    }
+    if (row == null) {
+        return [];
+    }
+    const out: SidecarNeedAct[] = [];
+    const seen = new Set<string>();
+    const add = (act: PetAct | null, label = act?.label) => {
+        if (act == null || label == null || seen.has(act.id)) {
+            return;
+        }
+        seen.add(act.id);
+        out.push({ id: act.id, label, ...(act.verb !== "open" ? { strong: true } : {}) });
+    };
+    add(row.primary);
+    row.answers.forEach((a, i) => add(a, `${i + 1} ${a.label}`));
+    row.links.forEach((a) => add(a));
+    return out;
+}
+
+/** The id of a learned rule's Accept or Dismiss, and which it is; null for any other act. */
+export function learnActOf(actId: string): { key: string; accept: boolean } | null {
+    const m = /^(.*):learn-(accept|dismiss)$/.exec(actId);
+    return m == null ? null : { key: m[1], accept: m[2] === "accept" };
 }
 
 export function sidecarNeeds(input: NeedsInput): SidecarNeed[] {
@@ -60,6 +123,7 @@ export function sidecarNeeds(input: NeedsInput): SidecarNeed[] {
                 kind: "ask",
                 id: t.id,
                 who: t.name,
+                label: "Asks you",
                 since: t.since ?? input.now,
                 text: t.ask.question,
                 options: t.ask.options,
@@ -83,6 +147,7 @@ export function sidecarNeeds(input: NeedsInput): SidecarNeed[] {
                     kind: "question",
                     id: t.id,
                     who: t.name,
+                    label: "Question",
                     since: t.since ?? input.now,
                     text: q,
                 });
@@ -101,7 +166,12 @@ export function sidecarNeeds(input: NeedsInput): SidecarNeed[] {
                 since: i.waitingsince,
                 text: i.text,
                 word: kindWord(i.kind, i.retry),
+                label: needLabel(i.kind, i.retry === true),
             };
+            // a chunk's waitingsince is its due day: its age is how late it is
+            if (i.kind === "chunk-due") {
+                n.late = true;
+            }
             if (isFailedItem(i)) {
                 n.failed = true;
             }

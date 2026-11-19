@@ -35,7 +35,7 @@ import type { AgentsViewModel } from "@/app/view/agents/agents";
 import { sleepWithConfirm } from "@/app/view/agents/agentsleep";
 import type { AgentEntry, AgentVM } from "@/app/view/agents/agentsviewmodel";
 import { answerAgentAsk } from "@/app/view/agents/askanswer";
-import { attentionAtom, attentionFixtureAtom, splitAttention } from "@/app/view/agents/attentionstore";
+import { attentionAtom, attentionFixtureAtom, loadAttention, splitAttention } from "@/app/view/agents/attentionstore";
 import { diffStatsByIdAtom } from "@/app/view/agents/cardgitstore";
 import { hiddenAgentIds } from "@/app/view/agents/cockpitsurfacemodel";
 import { CONSUMERS_POLL_MS, consumersReadingAtom, loadConsumers } from "@/app/view/agents/consumersstore";
@@ -48,7 +48,9 @@ import {
 } from "@/app/view/agents/ratelimitstore";
 import type { RunInfo } from "@/app/view/agents/runlineage";
 import { openAddress, openTarget } from "@/app/view/jarvis/openref";
+import { runAct } from "@/app/view/jarvis/petactrun";
 import { queueRows, rowPeekTarget, type PeekRow } from "@/app/view/jarvis/petpeekmodel";
+import { petActStateAtom } from "@/app/view/jarvis/petstore";
 import { isMacOS, isWindows } from "@/util/platformutil";
 import { fireAndForget } from "@/util/util";
 import { emitTo, listen } from "@tauri-apps/api/event";
@@ -91,7 +93,7 @@ import {
     type FeedState,
     type HeavyNotes,
 } from "./sidecarbridgemodel";
-import { sidecarNeeds } from "./sidecarneeds";
+import { learnActOf, needActsOf, sidecarNeeds } from "./sidecarneeds";
 import { END_NOTE_MS, endNote, otherKey, pushHistory, resourcesOf } from "./sidecarresources";
 import { orbitTiles, scopeTiles, sidecarSnapshot, wallAgentIds, type CockpitScope } from "./sidecarsnapshot";
 import {
@@ -192,6 +194,11 @@ export function SidecarBridge({ model }: { model: AgentsViewModel }) {
         // The dashboard (plan Task 4): what waits on you, the active run and who leads it.
         // the Jarvis rows' peek rows of the last build, by need key: a `need` act opens the target the tray's peek opens
         let peekRows = new Map<string, PeekRow>();
+        // the Jarvis items of the last build, by key: a learned rule's Accept and Dismiss decide its learnid
+        let jarvisItems = new Map<string, AttentionItem>();
+        // what an act pressed on a Jarvis row came to when it did not settle the row, by need key, each until its timer
+        const needNotes = new Map<string, string>();
+        const needNoteTimers = new Map<string, ReturnType<typeof setTimeout>>();
         // a tile with no state clock is dated by the first build that saw it, so its need row does not change every build
         let needSince = new Map<string, number>();
         let runSeamBox: Omit<SidecarRunBox, "failed"> | null = null;
@@ -321,8 +328,16 @@ export function SidecarBridge({ model }: { model: AgentsViewModel }) {
             }
             const stamped = stampSince(base.tiles, needSince, base.now);
             needSince = stamped.seen;
-            const needs = sidecarNeeds({ tiles: stamped.tiles, entriesById, jarvis, now: base.now });
             peekRows = new Map(queueRows(jarvis, agents).map((r) => [r.key, r]));
+            jarvisItems = new Map(jarvis.map((i) => [i.key, i]));
+            const needs = sidecarNeeds({ tiles: stamped.tiles, entriesById, jarvis, now: base.now }).map((n) => {
+                if (n.kind !== "jarvis") {
+                    return n;
+                }
+                const acts = needActsOf(peekRows.get(n.key), jarvisItems.get(n.key));
+                const note = needNotes.get(n.key);
+                return { ...n, ...(acts.length > 0 ? { acts } : {}), ...(note != null ? { note } : {}) };
+            });
 
             // ---- the run box (decisions 5 and 6)
             const itemByKey = new Map(jarvis.map((i) => [i.key, i]));
@@ -603,6 +618,64 @@ export function SidecarBridge({ model }: { model: AgentsViewModel }) {
             onChange();
         };
 
+        // an act's failure onto the row it was pressed on, for END_NOTE_MS
+        const noteNeed = (key: string, note: string) => {
+            clearTimeout(needNoteTimers.get(key));
+            needNotes.set(key, note);
+            needNoteTimers.set(
+                key,
+                setTimeout(() => {
+                    needNoteTimers.delete(key);
+                    needNotes.delete(key);
+                    onChange();
+                }, END_NOTE_MS)
+            );
+            onChange();
+        };
+
+        // A Jarvis row's button: a learned rule's Accept or Dismiss (the Needs you strip's LearnDecideCommand), else the
+        // tray peek's own act for the item, run as the peek runs it. An act that leaves for the main window (Open, Work
+        // on) raises it; one that settles in place (Accept, Approve, Retry, Land again) reloads the attention, which
+        // drops the row, or puts its error on the row.
+        const runNeedAct = async (key: string, actId: string): Promise<void> => {
+            const learn = learnActOf(actId);
+            if (learn != null) {
+                const learnId = jarvisItems.get(key)?.learnid;
+                if (learnId == null) {
+                    noteNeed(key, "Couldn't decide it: the rule is gone");
+                    return;
+                }
+                try {
+                    await RpcApi.LearnDecideCommand(TabRpcClient, { id: learnId, accept: learn.accept });
+                    await loadAttention();
+                } catch (e) {
+                    noteNeed(key, e instanceof Error ? e.message : String(e));
+                }
+                return;
+            }
+            const row = peekRows.get(key);
+            const act = [row?.primary, ...(row?.links ?? []), ...(row?.answers ?? [])].find((a) => a?.id === actId);
+            if (act == null) {
+                noteNeed(key, "Couldn't do it: the item changed");
+                return;
+            }
+            const leaves = act.verb === "open" || act.verb === "work-on";
+            try {
+                await runAct(model, act);
+            } catch (e) {
+                noteNeed(key, e instanceof Error ? e.message : String(e));
+                return;
+            }
+            // runAct puts a failure on the act (the peek shows it there): Sidecar shows it on the row
+            const state = globalStore.get(petActStateAtom)[act.id];
+            if (state?.status === "error") {
+                noteNeed(key, state.text ?? "Couldn't do it");
+            }
+            if (leaves) {
+                await showMain(model);
+            }
+        };
+
         const carryOut = (act: SidecarAct) => {
             switch (act.kind) {
                 case "resources":
@@ -686,6 +759,9 @@ export function SidecarBridge({ model }: { model: AgentsViewModel }) {
                         }
                         await refreshHeavy();
                     });
+                    return;
+                case "needact":
+                    fireAndForget(() => runNeedAct(act.key, act.act));
                     return;
                 case "endapp": {
                     const key = otherKey(act.name);
@@ -822,6 +898,8 @@ export function SidecarBridge({ model }: { model: AgentsViewModel }) {
             mounted = false;
             cancelTimer();
             stopFeeds();
+            needNoteTimers.forEach((t) => clearTimeout(t));
+            needNoteTimers.clear();
             if (import.meta.env.DEV) {
                 delete window.__sidecarRefresh;
                 delete window.__sidecarFeed;

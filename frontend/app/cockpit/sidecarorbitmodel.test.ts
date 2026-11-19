@@ -8,6 +8,8 @@ import {
     dashKey,
     frameOf,
     frameReason,
+    needAge,
+    needButtons,
     needHow,
     needPings,
     nodeLine,
@@ -104,13 +106,13 @@ describe("frameReason", () => {
         expect(frameReason({ needs: [need("j1")] })).toBeNull();
     });
 
-    it("names a failed run first, then the strain", () => {
+    it("names a failed task first, then the strain", () => {
         const failed = need("j1", { failed: true, text: "Sidecar orbit held at Final" });
         expect(frameReason({ needs: [failed], strain: strain("red", "ram") })).toBe(
-            "Run failed: Sidecar orbit held at Final"
+            "Task failed: Sidecar orbit held at Final"
         );
         expect(frameReason({ needs: [failed, need("j2", { failed: true })] })).toBe(
-            "Run failed (+1 more): Sidecar orbit held at Final"
+            "Task failed (+1 more): Sidecar orbit held at Final"
         );
         expect(frameReason({ strain: strain("red", "ram") })).toBe(
             "RAM critical: the machine is about to run out of memory"
@@ -355,6 +357,39 @@ describe("needHow", () => {
 
     it("a Jarvis row opens in the main window", () => {
         expect(needHow(need("g"))).toBe("Enter: open in the main window");
+    });
+});
+
+describe("needAge and needButtons", () => {
+    it("says how late a due chunk is and how long anything else has waited", () => {
+        expect(needAge({ late: true }, "9h 49m")).toBe("9h 49m late");
+        expect(needAge({}, "1d 20h")).toBe("1d 20h ago");
+        expect(needAge({}, "")).toBe("");
+    });
+
+    it("a Jarvis row's buttons send its acts by id", () => {
+        const g = need("g", {
+            acts: [
+                { id: "g:ack", label: "Accept", strong: true },
+                { id: "g:open", label: "Open" },
+            ],
+        });
+        expect(needButtons(g)).toEqual([
+            { key: "g:ack", label: "Accept", act: { kind: "needact", key: "g", act: "g:ack" }, strong: true },
+            { key: "g:open", label: "Open", act: { kind: "needact", key: "g", act: "g:open" }, strong: false },
+        ]);
+        expect(needButtons(need("h"))).toEqual([]);
+    });
+
+    it("an answerable ask's buttons are its options, a sent one has none, anything else opens", () => {
+        expect(needButtons(ask("a")).map((b) => [b.label, b.act])).toEqual([
+            ["1 Merge", { kind: "answer", id: "a", option: 0, key: "k-a" }],
+            ["2 Keep the branch", { kind: "answer", id: "a", option: 1, key: "k-a" }],
+        ]);
+        expect(needButtons(ask("a", { options: ["a", "b", "c", "d", "e"] }))).toHaveLength(4);
+        expect(needButtons(ask("a", { sent: true }))).toEqual([]);
+        expect(needButtons(ask("a", { answerable: false })).map((b) => b.act)).toEqual([{ kind: "open", id: "a" }]);
+        expect(needButtons(question("q")).map((b) => b.act)).toEqual([{ kind: "open", id: "q" }]);
     });
 });
 

@@ -32,11 +32,23 @@ export interface SidecarNeed {
     since: number; // UnixMilli it began waiting; the list is oldest first
     text: string; // the question in its own words, or the item's text
     word?: string; // jarvis rows: kindWord(kind, retry), "gate", "blocked", "due"…
-    failed?: boolean; // a run held at Final or with a failed task
+    label?: string; // what kind of thing waits, in words: "Rule to approve", "Due", "Asks you" (needLabel)
+    late?: boolean; // its age is how late it is (a chunk past its due day), not how long it has waited
+    failed?: boolean; // a task that failed and can be retried
     options?: string[]; // ask rows
     answerable?: boolean; // ask rows: 1-9 answers it here
     askKey?: string; // ask rows: SidecarAsk.key
     sent?: boolean; // ask rows: the answer went out
+    acts?: SidecarNeedAct[]; // jarvis rows: what can be done about it from Sidecar, in-place acts first
+    note?: string; // what the last act pressed on it came to, when it did not settle it, for a few seconds
+}
+
+/** A button on a Jarvis row of Needs you: the bridge runs the act it names (the tray peek's own PetAct, or a rule's
+ * Accept and Dismiss). */
+export interface SidecarNeedAct {
+    id: string;
+    label: string;
+    strong?: boolean; // the act that settles the row (Accept, Approve, Retry…), drawn filled; an Open is not
 }
 
 export interface SidecarRunBox {
@@ -156,6 +168,7 @@ export type SidecarAct =
     | { kind: "stop"; id: string; pid: number } // must match a heavy row's process
     | { kind: "sleep"; id: string } // must be a heavy row
     | { kind: "endapp"; name: string } // End task: must be an endable other app of the last snapshot's resources
+    | { kind: "needact"; key: string; act: string } // a Jarvis row's button: one of that need's acts in the last snapshot
     // the resource panel opened (with the pids the host says draw the page; re-sent as they change) or closed
     | { kind: "resources"; open: boolean; pids: number[] }
     // the page became hidden (minimized, on another Space, covered whole) or shown again: hidden, it is sent nothing
