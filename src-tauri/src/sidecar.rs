@@ -36,9 +36,10 @@ const TITLE: &str = if cfg!(debug_assertions) {
     "arcterm Sidecar"
 };
 
-// logical px: the smallest the person can drag it to (the small form, spec 1a), and the size a first open takes on a
-// screen that fits it
-const MIN_SIZE: (f64, f64) = (340.0, 440.0);
+// logical px: the smallest the person can drag it to (the small form, spec 1a; 640 tall since 2026-11-19, so the
+// Resources view shows its charts, arcterm's rows and the other apps without scrolling), and the size a first open
+// takes on a screen that fits it
+const MIN_SIZE: (f64, f64) = (340.0, 640.0);
 const FIRST_SIZE: (f64, f64) = (1280.0, 800.0);
 // a first open never takes more than this much of the screen it is centred on
 const FIRST_SHARE: f64 = 0.9;
@@ -296,7 +297,7 @@ fn good_scale(scale: Option<f64>) -> f64 {
     }
 }
 
-/// The frame the S button shrinks the window to, in physical pixels: 340x440 logical at the scale of the screen holding
+/// The frame the S button shrinks the window to, in physical pixels: 340x640 logical at the scale of the screen holding
 /// the window's centre (else the first), keeping the window's top-right corner where it was, then moved into that
 /// screen's work area. `from` is the window as it is, maximized or full screen included, so a maximized Sidecar shrinks
 /// to its screen's top-right corner. A screen smaller than the form cuts it. With no screen known the corner stays and
@@ -1497,7 +1498,7 @@ mod tests {
     fn small_pinned_on_the_4k() -> Remembered {
         Remembered {
             open: true,
-            frame: Some(frame(6270, 0, 510, 660, false)),
+            frame: Some(frame(6270, 0, 510, 960, false)),
             fullscreen: false,
             small: Some(Back {
                 frame: frame(4220, 680, 1280, 800, true),
@@ -1826,32 +1827,32 @@ mod tests {
     const ONE_SCREEN: Screen = (0, 0, 1920, 1040);
 
     #[test]
-    fn sidecar_small_frame_is_340_by_440_logical_keeping_the_top_right_corner() {
-        assert_eq!(SMALL_SIZE, (340.0, 440.0));
+    fn sidecar_small_frame_is_340_by_640_logical_keeping_the_top_right_corner() {
+        assert_eq!(SMALL_SIZE, (340.0, 640.0));
         // 1280x800 at 320,120 ends at x = 1600: the small window's right edge is there too
         assert_eq!(
             small_frame((320, 120, 1280, 800), &[ONE_SCREEN], &[1.0]),
-            (1260, 120, 340, 440)
+            (1260, 120, 340, 640)
         );
     }
 
     #[test]
     fn sidecar_small_frame_takes_the_scale_of_the_screen_holding_the_windows_centre() {
         let screens = [LAPTOP, FOUR_K];
-        // centre (4860, 1080) is on the 4K, at 1.5x: 510x660 physical
+        // centre (4860, 1080) is on the 4K, at 1.5x: 510x960 physical
         assert_eq!(
             small_frame((4220, 680, 1280, 800), &screens, &SCALES),
-            (4990, 680, 510, 660)
+            (4990, 680, 510, 960)
         );
-        // centre (1470, 900) is on the laptop panel, at 2x: 680x880
+        // centre (1470, 900) is on the laptop panel, at 2x: 680x1280
         assert_eq!(
             small_frame((700, 400, 1540, 1000), &screens, &SCALES),
-            (1560, 400, 680, 880)
+            (1560, 400, 680, 1280)
         );
         // one screen at 1.5x
         assert_eq!(
             small_frame((510, 356, 1920, 1200), &[LAPTOP], &[1.5]),
-            (1920, 356, 510, 660)
+            (1920, 356, 510, 960)
         );
     }
 
@@ -1861,18 +1862,18 @@ mod tests {
         // maximized on the 4K: the window is the screen's work area
         assert_eq!(
             small_frame(FOUR_K, &screens, &[1.0, 1.0]),
-            (2940 + 3840 - 340, 0, 340, 440)
+            (2940 + 3840 - 340, 0, 340, 640)
         );
         // and on the laptop panel
         assert_eq!(
             small_frame(LAPTOP, &screens, &[1.0, 1.0]),
-            (2940 - 340, 0, 340, 440)
+            (2940 - 340, 0, 340, 640)
         );
         // full screen covers the screen, the taskbar's strip too: the corner is pulled up into the work area
         let monitor = (0, -40, 1920, 1080);
         assert_eq!(
             small_frame(monitor, &[ONE_SCREEN], &[1.0]),
-            (1920 - 340, 0, 340, 440)
+            (1920 - 340, 0, 340, 640)
         );
     }
 
@@ -1881,22 +1882,22 @@ mod tests {
         // the right edge is past the screen (centre on none: the first screen)
         assert_eq!(
             small_frame((1700, 100, 1280, 800), &[ONE_SCREEN], &[1.0]),
-            (1920 - 340, 100, 340, 440)
+            (1920 - 340, 100, 340, 640)
         );
         // above the screen
         assert_eq!(
             small_frame((320, -50, 1280, 800), &[ONE_SCREEN], &[1.0]),
-            (1260, 0, 340, 440)
+            (1260, 0, 340, 640)
         );
         // the top near the bottom edge: the whole form stays on screen
         assert_eq!(
             small_frame((100, 1000, 800, 600), &[ONE_SCREEN], &[1.0]),
-            (560, 1040 - 440, 340, 440)
+            (560, 1040 - 640, 340, 640)
         );
         // left of the screen
         assert_eq!(
             small_frame((0, 0, 200, 300), &[ONE_SCREEN], &[1.0]),
-            (0, 0, 340, 440)
+            (0, 0, 340, 640)
         );
         // a screen smaller than the form cuts it
         assert_eq!(
@@ -1909,13 +1910,13 @@ mod tests {
     fn sidecar_small_frame_with_no_screen_known_keeps_the_corner_at_scale_one() {
         assert_eq!(
             small_frame((100, 50, 800, 600), &[], &[]),
-            (560, 50, 340, 440)
+            (560, 50, 340, 640)
         );
         // a bad scale is one
         for bad in [0.0, -1.0, f64::NAN] {
             assert_eq!(
                 small_frame((320, 120, 1280, 800), &[ONE_SCREEN], &[bad]),
-                (1260, 120, 340, 440)
+                (1260, 120, 340, 640)
             );
         }
     }
@@ -1968,7 +1969,7 @@ mod tests {
         };
         let back = back_from(&start, seen_full);
         let (x, y, w, h) = small_frame((2940, 0, 3840, 2160), &[LAPTOP, FOUR_K], &SCALES);
-        assert_eq!((x, y, w, h), (6270, 0, 510, 660));
+        assert_eq!((x, y, w, h), (6270, 0, 510, 960));
         let small_frame_kept = frame(x, y, w, h, false);
         let shrunk = start.after(Change::Shrunk {
             back,
@@ -2009,7 +2010,7 @@ mod tests {
         let back = back_from(&plain, seen(320, 120, 1280, 800));
         let there = plain.after(Change::Shrunk {
             back,
-            frame: frame(1260, 120, 340, 440, false),
+            frame: frame(1260, 120, 340, 640, false),
         });
         assert_eq!(there.after(Change::Restored(back)), plain);
     }
@@ -2021,15 +2022,15 @@ mod tests {
             fullscreen: true,
         };
         // the 4K is unplugged while the window is small on the laptop panel: centred there, not maximized, not full screen
-        let to = restore_to(back, (2400, 0, 510, 660), &[LAPTOP], &[2.0]);
+        let to = restore_to(back, (2400, 0, 510, 960), &[LAPTOP], &[2.0]);
         assert_eq!(to.frame, frame(190, 156, 2560, 1600, false));
         assert!(!to.fullscreen);
         // a frame still on a screen stands, as does one with no screen known
         assert_eq!(
-            restore_to(back, (6270, 0, 510, 660), &[LAPTOP, FOUR_K], &SCALES),
+            restore_to(back, (6270, 0, 510, 960), &[LAPTOP, FOUR_K], &SCALES),
             back
         );
-        assert_eq!(restore_to(back, (0, 0, 510, 660), &[], &[]), back);
+        assert_eq!(restore_to(back, (0, 0, 510, 960), &[], &[]), back);
     }
 
     #[test]
@@ -2164,7 +2165,7 @@ mod tests {
         assert_eq!(
             launch_place(&read, &screens),
             Some(Place::Frame {
-                frame: frame(6270, 0, 510, 660, false),
+                frame: frame(6270, 0, 510, 960, false),
                 fullscreen: false
             })
         );
@@ -2216,7 +2217,7 @@ mod tests {
         assert_eq!(
             place_for(&reopened, &[LAPTOP, FOUR_K]),
             Place::Frame {
-                frame: frame(6270, 0, 510, 660, false),
+                frame: frame(6270, 0, 510, 960, false),
                 fullscreen: false
             }
         );

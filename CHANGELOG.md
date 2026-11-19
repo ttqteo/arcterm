@@ -69,6 +69,10 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   paperclip or Cmd+U / Ctrl+U), not only images.
 - A Jarvis theme in Settings → Appearance: a deep navy ground, thin cyan-tinted edges and a cyan accent, like a
   heads-up display.
+- Sidecar's Resources can end an app: hover one of the other apps (Chrome, Docker…), press its × and then End, and
+  every process of it closes, as Task Manager's End task does. The system's own processes and arcterm's have no ×.
+  While the window's frame is red or amber, Resources says why in a line at the top; pressing it goes back to the
+  dashboard.
 
 ### Changed
 
@@ -77,6 +81,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - Chat's suggested replies answer a yes-or-no question at once with ok and không (yes and no in English), and the
   model's fuller answers join after them when they come. The row is no longer capped at three: it shows every
   suggestion that fits whole on its one line.
+- Sidecar's small form (the S button) and the smallest the window drags to are now 340 × 640, tall enough for
+  Resources to show its charts, arcterm's rows and the other apps without scrolling. Resources' "Other apps" title is
+  no longer cut off in it.
 - The phone page's Agents list shows only live agents (a session back at its shell is gone from it), with a dot that
   shows what the agent is doing and a line under its name: its question when it asks, the first sentence of its last
   reply when it is idle. A run's workers are one row under Runs that opens to its worker lines, the header counts what

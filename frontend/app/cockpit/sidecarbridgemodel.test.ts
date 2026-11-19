@@ -164,6 +164,33 @@ describe("validateAct", () => {
         expect(validateAct({ kind: "visible" }, null).ok).toBe(false);
     });
 
+    it("takes End task only on an endable other app the last snapshot showed", () => {
+        const other = (label: string, endable?: boolean) => ({
+            key: `other:${label.toLowerCase()}`,
+            label,
+            kind: "other" as const,
+            ...(endable ? { endable } : {}),
+        });
+        const shown = snapWith({
+            resources: {
+                state: "ready",
+                rows: [],
+                others: [other("chrome.exe", true), other("svchost.exe")],
+                history: [],
+            },
+        });
+        expect(validateAct({ kind: "endapp", name: "chrome.exe" }, shown)).toEqual({
+            ok: true,
+            act: { kind: "endapp", name: "chrome.exe" },
+        });
+        // a system process, a name not listed, no name, no resources sent, no snapshot at all
+        expect(validateAct({ kind: "endapp", name: "svchost.exe" }, shown).ok).toBe(false);
+        expect(validateAct({ kind: "endapp", name: "notepad.exe" }, shown).ok).toBe(false);
+        expect(validateAct({ kind: "endapp" }, shown).ok).toBe(false);
+        expect(validateAct({ kind: "endapp", name: "chrome.exe" }, snapWith({})).ok).toBe(false);
+        expect(validateAct({ kind: "endapp", name: "chrome.exe" }, null).ok).toBe(false);
+    });
+
     it("refuses what is not an act, and an unknown kind", () => {
         for (const raw of [null, undefined, 3, "open", [], {}, { kind: 4 }, { kind: "close" }]) {
             const r = validateAct(raw, roster);

@@ -1524,6 +1524,12 @@ func RescanStorageCommand(w *wshutil.WshRpc, opts *wshrpc.RpcOpts) error {
 	return err
 }
 
+// command "resmonendapp", wshserver.ResMonEndAppCommand
+func ResMonEndAppCommand(w *wshutil.WshRpc, data wshrpc.CommandResMonEndAppData, opts *wshrpc.RpcOpts) (*wshrpc.ResMonKillRtnData, error) {
+	resp, err := sendRpcRequestCallHelper[*wshrpc.ResMonKillRtnData](w, "resmonendapp", data, opts)
+	return resp, err
+}
+
 // command "resmonkill", wshserver.ResMonKillCommand
 func ResMonKillCommand(w *wshutil.WshRpc, data wshrpc.CommandResMonKillData, opts *wshrpc.RpcOpts) (*wshrpc.ResMonKillRtnData, error) {
 	resp, err := sendRpcRequestCallHelper[*wshrpc.ResMonKillRtnData](w, "resmonkill", data, opts)

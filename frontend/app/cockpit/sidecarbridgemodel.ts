@@ -159,6 +159,21 @@ export function validateAct(raw: unknown, last: SidecarSnapshot | null): ActChec
             }
             return { ok: true, act: { kind: "sleep", id: row.heavy.id } };
         }
+        case "endapp": {
+            if (typeof raw.name !== "string") {
+                return { ok: false, reason: "endapp: no name" };
+            }
+            const name = raw.name;
+            // only a row the page showed, and one it may end: the name alone never reaches the backend
+            const row = last?.resources?.others.find((r) => r.label === name);
+            if (row == null) {
+                return { ok: false, reason: `endapp: "${name}" is not an other app in the last snapshot` };
+            }
+            if (row.endable !== true) {
+                return { ok: false, reason: `endapp: "${name}" is not one Sidecar ends` };
+            }
+            return { ok: true, act: { kind: "endapp", name } };
+        }
         case "resources": {
             // it only reads: no snapshot needs to have gone out, and the pids only pick a row out of what is read
             if (typeof raw.open !== "boolean") {

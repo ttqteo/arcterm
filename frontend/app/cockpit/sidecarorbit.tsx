@@ -312,7 +312,7 @@ export const SidecarOrbit = memo(function SidecarOrbit({ snap, receivedAt, clock
                     )}
                 </div>
             </div>
-            <SidecarResourcesBand resources={snap.resources} />
+            <SidecarResourcesBand resources={snap.resources} onEnd={(name) => send({ kind: "endapp", name })} />
             <Footer />
         </div>
     );

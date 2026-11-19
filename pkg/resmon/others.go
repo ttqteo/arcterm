@@ -43,7 +43,7 @@ func groupOthers(procs []otherProc, min int64, limit int) []wshrpc.ResMonOther {
 		key := strings.ToLower(p.Name)
 		g, ok := byKey[key]
 		if !ok {
-			g = &wshrpc.ResMonOther{Name: p.Name}
+			g = &wshrpc.ResMonOther{Name: p.Name, Endable: Endable(p.Name)}
 			byKey[key] = g
 		}
 		g.Count++

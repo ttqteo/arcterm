@@ -78,6 +78,33 @@ export function pushHistory(
     return [...history.filter((p) => p.t >= from), point];
 }
 
+/** An other app's row key: its image name, case aside, as pkg/resmon groups them. */
+export function otherKey(name: string): string {
+    return `other:${name.toLowerCase()}`;
+}
+
+/** How long an End task's note stays on its row, ms. */
+export const END_NOTE_MS = 8_000;
+
+/**
+ * What an End task came to, in the row's words: nothing when every process ended (the row leaves at the next reading,
+ * and that is the answer), else why it did not, or how many did when some held out.
+ */
+export function endNote(rtn: ResMonKillRtnData | null, count: number | undefined): string | null {
+    switch (rtn?.outcome) {
+        case "killed":
+            return count != null && rtn.killed < count ? `Ended ${rtn.killed} of ${count}` : null;
+        case "gone":
+            return "Already closed";
+        case "refused":
+            return "arcterm doesn't end this one";
+        case "failed":
+            return rtn.error ? `Couldn't end it: ${rtn.error}` : "Couldn't end it";
+        default:
+            return "Couldn't end it";
+    }
+}
+
 const byMemDesc = (a: SidecarResourceRow, b: SidecarResourceRow) =>
     (b.mem ?? -1) - (a.mem ?? -1) || a.label.localeCompare(b.label);
 
@@ -89,7 +116,8 @@ const byMemDesc = (a: SidecarResourceRow, b: SidecarResourceRow) =>
 export function resourcesOf(
     snap: ResMonSnapshotData | null,
     sidecarPids: readonly number[],
-    history: SidecarResourcePoint[] = []
+    history: SidecarResourcePoint[] = [],
+    notes: ReadonlyMap<string, string> = new Map()
 ): SidecarResources {
     if (snap == null) {
         return { state: "measuring", rows: [], others: [], history };
@@ -131,14 +159,20 @@ export function resourcesOf(
             ...figures(g.cpu, g.mem, ready, gpuOf(g.rows)),
         }))
         .sort(byMemDesc);
-    const others: SidecarResourceRow[] = (snap.others ?? []).map((o) => ({
-        key: `other:${o.name.toLowerCase()}`,
-        label: o.name,
-        kind: "other" as const,
-        count: o.count,
-        ...(o.icon ? { icon: o.icon } : {}),
-        ...figures(o.cpu, o.mem, ready, o.gpu ?? 0),
-    }));
+    const others: SidecarResourceRow[] = (snap.others ?? []).map((o) => {
+        const key = otherKey(o.name);
+        const note = notes.get(key);
+        return {
+            key,
+            label: o.name,
+            kind: "other" as const,
+            count: o.count,
+            ...(o.icon ? { icon: o.icon } : {}),
+            ...(o.endable ? { endable: true } : {}),
+            ...(note != null ? { note } : {}),
+            ...figures(o.cpu, o.mem, ready, o.gpu ?? 0),
+        };
+    });
     return {
         state: ready ? "ready" : "measuring",
         rows: [sidecar, rest, ...agents],

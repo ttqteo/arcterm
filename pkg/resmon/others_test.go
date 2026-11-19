@@ -22,8 +22,8 @@ func TestGroupOthersSumsByNameAndKeepsTheHeavy(t *testing.T) {
 	}
 	got := groupOthers(procs, 200*mb, 12)
 	want := []wshrpc.ResMonOther{
-		{Name: "gopls.exe", Count: 1, Cpu: 0, Mem: 366 * mb},
-		{Name: "chrome.exe", Count: 2, Cpu: 3, Mem: 250 * mb},
+		{Name: "gopls.exe", Count: 1, Cpu: 0, Mem: 366 * mb, Endable: true},
+		{Name: "chrome.exe", Count: 2, Cpu: 3, Mem: 250 * mb, Endable: true},
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("got %+v, want %+v", got, want)

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it } from "vitest";
-import { pushHistory, resourcesOf } from "./sidecarresources";
+import { endNote, otherKey, pushHistory, resourcesOf } from "./sidecarresources";
 
 const MB = 1024 * 1024;
 
@@ -150,5 +150,34 @@ describe("pushHistory", () => {
         expect(pushHistory(h, snap({ ts: 2000 }))).toBe(h);
         expect(pushHistory(h, snap({ ts: 2000, ready: false, machine: machine(1, 1) }))).toBe(h);
         expect(pushHistory(h, snap({ ts: 1000, machine: machine(1, 1) }))).toBe(h);
+    });
+});
+
+describe("End task on the other apps", () => {
+    const others: ResMonOther[] = [
+        { name: "chrome.exe", count: 18, cpu: 0.5, mem: 1400 * MB, endable: true },
+        { name: "svchost.exe", count: 90, cpu: 1, mem: 600 * MB },
+    ];
+
+    it("marks the rows Sidecar may end and lays an End task's note on its row", () => {
+        const notes = new Map([[otherKey("Chrome.exe"), "Ended 15 of 18"]]);
+        const got = resourcesOf(snap({ others }), [], [], notes).others;
+        expect(got.map((r) => [r.key, r.endable, r.note])).toEqual([
+            ["other:chrome.exe", true, "Ended 15 of 18"],
+            ["other:svchost.exe", undefined, undefined],
+        ]);
+    });
+
+    it("says nothing when every process ended, and why or how many when not", () => {
+        expect(endNote({ outcome: "killed", killed: 18 }, 18)).toBeNull();
+        expect(endNote({ outcome: "killed", killed: 3 }, undefined)).toBeNull();
+        expect(endNote({ outcome: "killed", killed: 15 }, 18)).toBe("Ended 15 of 18");
+        expect(endNote({ outcome: "gone", killed: 0 }, 18)).toBe("Already closed");
+        expect(endNote({ outcome: "refused", killed: 0 }, 18)).toBe("arcterm doesn't end this one");
+        expect(endNote({ outcome: "failed", killed: 0, error: "Access is denied." }, 1)).toBe(
+            "Couldn't end it: Access is denied."
+        );
+        // the call itself failed
+        expect(endNote(null, 18)).toBe("Couldn't end it");
     });
 });

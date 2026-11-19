@@ -92,7 +92,7 @@ import {
     type HeavyNotes,
 } from "./sidecarbridgemodel";
 import { sidecarNeeds } from "./sidecarneeds";
-import { pushHistory, resourcesOf } from "./sidecarresources";
+import { END_NOTE_MS, endNote, otherKey, pushHistory, resourcesOf } from "./sidecarresources";
 import { orbitTiles, scopeTiles, sidecarSnapshot, wallAgentIds, type CockpitScope } from "./sidecarsnapshot";
 import {
     EMPTY_TRACK,
@@ -182,6 +182,9 @@ export function SidecarBridge({ model }: { model: AgentsViewModel }) {
         // the machine's readings for the charts, the last 5 minutes; kept only while the band or the panel shows
         let resHistory: SidecarResourcePoint[] = [];
         let resTimer: ReturnType<typeof setInterval> | null = null;
+        // what an End task came to, by the other app's row key, each until its timer drops it
+        const endNotes = new Map<string, string>();
+        const endNoteTimers = new Map<string, ReturnType<typeof setTimeout>>();
         // the page is hidden (it said so): nothing is built or sent until it shows again. Each snapshot is parsed and
         // drawn in Sidecar's own WebContent process, whose heap climbs with them (95 to 110 MB on a Mac, 2026-11-18)
         let hidden = false;
@@ -220,6 +223,9 @@ export function SidecarBridge({ model }: { model: AgentsViewModel }) {
             resPanel = null;
             resReading = null;
             resHistory = [];
+            endNoteTimers.forEach((t) => clearTimeout(t));
+            endNoteTimers.clear();
+            endNotes.clear();
         };
 
         // Stops every timer and subscription of the machine and the heavy polls and forgets what they read: the page is
@@ -387,7 +393,9 @@ export function SidecarBridge({ model }: { model: AgentsViewModel }) {
                 usage,
                 ...(stats != null ? { machine: machineOf(stats, platformName()) } : {}),
                 ...(strain != null ? { strain } : {}),
-                ...(resPanel != null ? { resources: resourcesOf(resReading, resPanel.pids, resHistory) } : {}),
+                ...(resPanel != null
+                    ? { resources: resourcesOf(resReading, resPanel.pids, resHistory, endNotes) }
+                    : {}),
             };
         };
 
@@ -580,6 +588,21 @@ export function SidecarBridge({ model }: { model: AgentsViewModel }) {
             }
         };
 
+        // an End task's outcome onto its row, for END_NOTE_MS
+        const noteApp = (key: string, note: string) => {
+            clearTimeout(endNoteTimers.get(key));
+            endNotes.set(key, note);
+            endNoteTimers.set(
+                key,
+                setTimeout(() => {
+                    endNoteTimers.delete(key);
+                    endNotes.delete(key);
+                    onChange();
+                }, END_NOTE_MS)
+            );
+            onChange();
+        };
+
         const carryOut = (act: SidecarAct) => {
             switch (act.kind) {
                 case "resources":
@@ -664,6 +687,27 @@ export function SidecarBridge({ model }: { model: AgentsViewModel }) {
                         await refreshHeavy();
                     });
                     return;
+                case "endapp": {
+                    const key = otherKey(act.name);
+                    const count = resReading?.others?.find((o) => otherKey(o.name) === key)?.count;
+                    fireAndForget(async () => {
+                        let rtn: ResMonKillRtnData | null = null;
+                        try {
+                            rtn = await RpcApi.ResMonEndAppCommand(TabRpcClient, { name: act.name });
+                        } catch (e) {
+                            log(`end ${act.name} failed: ${e instanceof Error ? e.message : String(e)}`);
+                        }
+                        const note = endNote(rtn, count);
+                        if (note != null) {
+                            noteApp(key, note);
+                        }
+                        // the row leaves (or shows what is left) at once, not at the next 2 s poll
+                        if (resPanel != null) {
+                            await pollResources();
+                        }
+                    });
+                    return;
+                }
                 case "sleep":
                     fireAndForget(async () => {
                         if (heavySeam() != null) {

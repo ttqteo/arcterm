@@ -124,6 +124,8 @@ export interface SidecarResourceRow {
     count?: number; // an "other" row's processes of that name
     runtime?: string; // an agent row's runtime (claude, pi…), for its logo
     icon?: string; // an "other" row's image icon, a PNG data URL (pkg/resmon reads it on Windows)
+    endable?: boolean; // an "other" row Sidecar may end (resmon.Endable): not the system's own processes or arcterm's
+    note?: string; // what the last End task on this row came to, for a few seconds
 }
 
 /** One reading of the whole machine for the resource charts: whole percents, `gpu` left out where not read. */
@@ -153,6 +155,7 @@ export type SidecarAct =
     | { kind: "answer"; id: string; option: number; key: string } // key: the ask the page showed (SidecarAsk.key)
     | { kind: "stop"; id: string; pid: number } // must match a heavy row's process
     | { kind: "sleep"; id: string } // must be a heavy row
+    | { kind: "endapp"; name: string } // End task: must be an endable other app of the last snapshot's resources
     // the resource panel opened (with the pids the host says draw the page; re-sent as they change) or closed
     | { kind: "resources"; open: boolean; pids: number[] }
     // the page became hidden (minimized, on another Space, covered whole) or shown again: hidden, it is sent nothing

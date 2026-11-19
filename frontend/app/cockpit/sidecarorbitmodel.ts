@@ -49,6 +49,26 @@ export function frameOf(state: ScreenState): AlertFrame {
     }
 }
 
+/**
+ * Why the alert frame is up, in one line, for a view that covers what shows the cause (the small form's Resources
+ * view): a failed run first, as the frame ranks it, then the strain. Null while the frame is down.
+ */
+export function frameReason(snap: Pick<SidecarSnapshot, "needs" | "strain">): string | null {
+    const failed = (snap.needs ?? []).filter((n) => n.failed === true);
+    if (failed.length > 0) {
+        const more = failed.length > 1 ? ` (+${failed.length - 1} more)` : "";
+        return `Run failed${more}: ${failed[0].text}`;
+    }
+    const s = snap.strain;
+    if (s == null) {
+        return null;
+    }
+    const what = `${s.by === "ram" ? "RAM" : "CPU"} ${s.level === "red" ? "critical" : "high"}`;
+    return s.level === "red"
+        ? `${what}: the machine is about to run out of memory`
+        : `${what}: the machine is strained`;
+}
+
 /** The core's colour: `error` when a need failed, `muted` at 0 needs, else `warning`. */
 export function coreTone(snap: Pick<SidecarSnapshot, "needs">): "error" | "muted" | "warning" {
     const needs = snap.needs ?? [];

@@ -7,6 +7,7 @@ import {
     coreTone,
     dashKey,
     frameOf,
+    frameReason,
     needHow,
     needPings,
     nodeLine,
@@ -94,6 +95,27 @@ describe("frameOf", () => {
         expect(frameOf("high")).toBe("warning");
         expect(frameOf("normal")).toBe("none");
         expect(frameOf("calm")).toBe("none");
+    });
+});
+
+describe("frameReason", () => {
+    it("is null while the frame is down", () => {
+        expect(frameReason(noStrain)).toBeNull();
+        expect(frameReason({ needs: [need("j1")] })).toBeNull();
+    });
+
+    it("names a failed run first, then the strain", () => {
+        const failed = need("j1", { failed: true, text: "Sidecar orbit held at Final" });
+        expect(frameReason({ needs: [failed], strain: strain("red", "ram") })).toBe(
+            "Run failed: Sidecar orbit held at Final"
+        );
+        expect(frameReason({ needs: [failed, need("j2", { failed: true })] })).toBe(
+            "Run failed (+1 more): Sidecar orbit held at Final"
+        );
+        expect(frameReason({ strain: strain("red", "ram") })).toBe(
+            "RAM critical: the machine is about to run out of memory"
+        );
+        expect(frameReason({ strain: strain("amber", "cpu") })).toBe("CPU high: the machine is strained");
     });
 });
 
