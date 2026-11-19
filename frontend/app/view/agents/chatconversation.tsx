@@ -127,6 +127,7 @@ import { turnCanvas } from "./chatcanvaspeek";
 import { ChatCanvasPeekCard } from "./chatcanvaspeekcard";
 import { VERDICT_TOPIC, verdictMode, type VerdictMode } from "./chatverdict";
 import { ChatVerdictCard } from "./chatverdictcard";
+import { ShellCommand } from "./commandtext";
 import { CouncilText } from "./councilchat";
 import { firstExistingFile } from "./filetabload";
 import { CompactionDivider, InterruptedDivider, PromptImages, TaskNotificationRow } from "./narrationtimeline";
@@ -304,7 +305,8 @@ export function CommandCard({
                             !
                         </span>
                     ) : null}
-                    <span className="min-w-0">{command}</span>
+                    {/* a `!` command in the shell's colours, as the box drew it while you typed it */}
+                    <span className="min-w-0">{bash ? <ShellCommand command={command} /> : command}</span>
                 </div>
                 {terminal ? (
                     <div
