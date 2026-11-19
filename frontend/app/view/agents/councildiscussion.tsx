@@ -573,7 +573,10 @@ function ProposalsSoFar({ c }: { c: Council }) {
                     />
                     <div className="flex min-w-0 flex-1 flex-col gap-1">
                         <span className="text-[14px] font-semibold">{p.title}</span>
-                        <CouncilText text={p.argument} className="text-[13px] leading-[1.5] text-secondary" />
+                        <CouncilText
+                            text={p.argument}
+                            className="max-w-[75ch] text-[13px] leading-[1.5] text-secondary"
+                        />
                         <EvidenceChips {...claimOf(c, p)} />
                     </div>
                 </div>
@@ -586,7 +589,8 @@ function ExpertsBody({ c, acts }: { c: Council; acts: Actions }) {
     const running = c.state === "running";
     return (
         <div className="min-h-0 flex-1 overflow-y-auto px-8 py-5">
-            <div className="flex max-w-[900px] flex-col gap-4">
+            {/* the body fills the pane: the cards' grid grows columns, only the argument text keeps a reading width */}
+            <div data-council-experts-body className="flex flex-col gap-4">
                 <FailureNotes c={c} acts={acts} withExperts={false} />
                 <div className="grid grid-cols-[repeat(auto-fit,minmax(190px,1fr))] gap-2">
                     {panel(c).map((e) => (
@@ -668,13 +672,13 @@ function PauseBody({ c, acts }: { c: Council; acts: Actions }) {
     };
     return (
         <div data-council-pause className="min-h-0 flex-1 overflow-y-auto px-8 py-5">
-            <div className="flex max-w-[900px] flex-col gap-3">
+            <div className="flex flex-col gap-3">
                 <div className="flex items-center gap-[10px]">
                     <span className={SECTION_LABEL}>Ideas so far</span>
                     <span className="text-[10.5px] tabular-nums text-muted">{proposals.length}</span>
                     <div className="h-px flex-1 bg-edge-faint" />
                 </div>
-                <p className="m-0 text-[15px] leading-[1.55] text-ink-hi">
+                <p className="m-0 max-w-[75ch] text-[15px] leading-[1.55] text-ink-hi">
                     Untick the ideas not worth a review: the argument reads only the ones you keep, and anything you ask
                     below.
                 </p>

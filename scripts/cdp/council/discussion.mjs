@@ -861,6 +861,21 @@ async function round1(h, ctx, rec) {
     );
     await h.shot("cdp-shots/council-discussion-round1.png");
 
+    // the body fills the pane (no 900px cap left of an empty strip); only the argument text keeps a reading width
+    const fill = await h.ev(`(() => {
+        const b = document.querySelector("[data-council-experts-body]");
+        const pane = b?.parentElement;
+        if (b == null || pane == null) return null;
+        const cs = getComputedStyle(pane);
+        const inner = pane.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+        return { body: Math.round(b.getBoundingClientRect().width), inner: Math.round(inner) };
+    })()`);
+    rec(
+        "round 1: the experts' body spans the pane's width",
+        fill != null && Math.abs(fill.body - fill.inner) <= 1,
+        fill
+    );
+
     // no idea yet: the empty state
     await openFixture(h, ctx, "round1", {
         id: `${councilFixtureId("round1")}-empty`,
