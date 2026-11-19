@@ -100,7 +100,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   line, the old words struck right before the new ones, instead of the old lines all first and the new ones after.
 - In Chat's message box, Stop sits at the far right after Send, instead of before it.
 - Focus read in Chat starts at three blocks lit at a time, and its size button now goes up to five (×4, ×5). J and K
-  slide the lit group one block at a time instead of jumping a whole group, the accent tick stays beside the lit block
+  slide the lit group one block at a time instead of jumping a whole group, J goes on to the last block (the group
+  shrinking to the blocks left) instead of stopping when the group reaches the end, the accent tick stays beside the lit block
   (at the end of a conversation too), Escape turns focus read off, and when a turn you were following ends, the new
   reply is lit from its start.
 - An agent whose work is done shows one Close in its header: the × turns into the green ✓ Close with the session's tokens, instead of the two sitting side by side.

@@ -139,14 +139,16 @@ describe("stepFrom with a group", () => {
         expect(stepFrom(1, -1, 10, 3)).toBe(0);
         expect(stepFrom(0, -1, 10, 3)).toBeNull();
     });
-    it("stops once the group ends on the last block", () => {
-        expect(stepFrom(6, 1, 10, 3)).toBe(7);
-        expect(stepFrom(7, 1, 10, 3)).toBeNull();
-        expect(stepFrom(8, 1, 10, 3)).toBeNull();
+    it("goes on past the group's end, shrinking it, to the last block alone, and no further", () => {
+        expect(stepFrom(7, 1, 10, 3)).toBe(8);
+        expect(stepFrom(8, 1, 10, 3)).toBe(9);
+        expect(stepFrom(9, 1, 10, 3)).toBeNull();
+        expect(litGroup(9, 10, 3)).toEqual([9]);
     });
-    it("takes the first block of a conversation shorter than the group, and moves no further", () => {
+    it("steps through a conversation shorter than the group too", () => {
         expect(stepFrom(-1, 1, 2, 3)).toBe(0);
-        expect(stepFrom(0, 1, 2, 3)).toBeNull();
+        expect(stepFrom(0, 1, 2, 3)).toBe(1);
+        expect(stepFrom(1, 1, 2, 3)).toBeNull();
     });
 });
 

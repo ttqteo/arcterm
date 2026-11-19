@@ -117,8 +117,9 @@ export function litGroup(first: number, count: number, size: number = 1): number
 }
 
 /** The first block J (dir 1) or K (dir -1) lights from the lit group's first: one block on, so the group slides a block
- *  at a time, or null past either end. J stops once the group ends on the last block (it would only shrink from there).
- *  With none lit, J takes the first and K none. */
+ *  at a time, or null past either end. Past the point where the group ends on the last block, J keeps going and the
+ *  group shrinks to the blocks left, down to the last one alone, so every block can lead the group. With none lit, J
+ *  takes the first and K none. */
 export function stepFrom(lit: number, dir: 1 | -1, count: number, size: number = 1): number | null {
     if (count === 0) {
         return null;
@@ -127,7 +128,7 @@ export function stepFrom(lit: number, dir: 1 | -1, count: number, size: number =
         return dir > 0 ? 0 : null;
     }
     const next = Math.min(lit, count - 1) + dir;
-    if (next < 0 || next >= count || (dir > 0 && next + size > count)) {
+    if (next < 0 || next >= count) {
         return null;
     }
     return next;

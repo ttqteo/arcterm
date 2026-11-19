@@ -102,7 +102,8 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
   button's title only (not run, no dev app up).
 - [ ] (arcterm) **Focus read follows the new reply, its tick rides the lit block, Escape leaves it.** With focus read
   on, send a prompt and stay at the bottom while the agent works: when the turn ends the reply's first block is lit on
-  the line. Step J to the very end: the accent tick sits beside the lit group, not left at a third of the view. Press
+  the line. Step J to the very end: J keeps going after the group reaches the last block (at ×3 the group shrinks to
+  two, then the last block alone), and the accent tick sits beside the lit group, not left at a third of the view. Press
   Escape in the conversation: focus read turns off (a second Escape goes back, or stops a working turn). Also type `>s`
   in the box: the quote bar is a full line high, not a dot. `chatfocusread.ts` tickTop / latestReplyStart,
   `chatfocusreadview.ts`, `bindings.ts` agent:focus-read-off, `chateditormarks.tsx` quote ends; no scenario run.
