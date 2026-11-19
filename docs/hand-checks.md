@@ -20,6 +20,12 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
   and a file in it: the tab on show is a filled pill, the others bare until hovered, centred in the 44px band; on
   File the file pills shrink and scroll as before, and a file's × is a round button inside its pill. Not tried in the
   app (no dev app was running).
+- [ ] (arcterm) **A Claude agent's suggested replies come from its mod** (`pkg/chatsuggest/hook.go` keySep). After
+  installing a build with this fix, end a few Claude agent turns in Chat: waveapp.log shows `chatsuggest: … mod end
+  taken: N chips` and `via=mod`, and the chips appear about 2 s after the turn. Before it, every answer was
+  `via=headless` (6 to 15 s) and no `mod end` line ever appeared. Tested by `go test ./pkg/chatsuggest` only. The new
+  prompt (no facts the person did not give, NONE when the agent carries on) and `effort: "low"` were replayed on 29
+  real turns through the headless runner; the mod's `$.model.complete` with `effort` has not run live.
 - [ ] (arcterm) **Focus read stays on at the bottom of a working agent; a narrow Chat keeps clear of its pill**
   (`chatfocusreadview.ts`, `chatpane.tsx` scroller padding, branch `fix/focus-read-bottom`). With focus read on, send a
   prompt and stay at the bottom while the agent works: the finished blocks stay dimmed, the reply being written is not,
