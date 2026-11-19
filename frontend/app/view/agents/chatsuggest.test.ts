@@ -19,6 +19,7 @@ import {
     plainAnswer,
     quickChip,
     recentPrompts,
+    restatesQuestion,
     ROW_ENTER_ACTIONS_MS,
     ROW_LEAVE_ACTIONS_MS,
     rowHold,
@@ -615,6 +616,24 @@ describe("yes and no chips", () => {
             yesNo,
         });
         expect(done.map((c) => c.text)).toEqual(["ok", "không", "build rồi push luôn", "để sau"]);
+    });
+
+    it("leave out an answer that only says the question's action back", () => {
+        const reply =
+            'Chỉ code mới còn giữ `witness`.\n\nBạn muốn mình đổi luôn "witness" thành "candidate PoC" trong report này, rồi commit và sync không?';
+        const row = chatChips({
+            question: true,
+            rules: [],
+            model: {
+                status: "done",
+                replies: ["Đổi luôn đi", "Đổi witness thành candidate PoC", "đổi, không sync", "đổi cả trong code"],
+            },
+            yesNo: yesNoChips(true),
+            reply,
+        });
+        expect(row.map((c) => c.text)).toEqual(["ok", "không", "đổi, không sync", "đổi cả trong code"]);
+        expect(restatesQuestion("ok đổi luôn đi", reply)).toBe(true);
+        expect(restatesQuestion("chỉ đổi, chưa commit", reply)).toBe(false);
     });
 
     it("are not a plain yes or no once the reply says what to do", () => {

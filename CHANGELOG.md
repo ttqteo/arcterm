@@ -80,6 +80,8 @@ and a picture given to a line that is not big.
 
 ### Fixed
 
+- Chat's suggested replies to a yes-or-no question no longer repeat the yes in other words ("Đổi luôn đi" next to
+  "ok"): an answer that only says the question's own action back is left out, and the ones left say something more.
 - A task worker or judge reopened after its tab was closed stays out of Claude Desktop's CLI import, as it did when it
   first started.
 - Chat no longer starts a background claude (~470 MB) to suggest replies to a line a Claude agent wrote mid-turn or
