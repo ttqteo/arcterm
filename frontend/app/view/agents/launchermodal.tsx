@@ -28,6 +28,7 @@ import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { resolveChannelTarget, type NewRunPrefill, type RunConfig } from "@/app/view/jarvis/newrun";
 import { homeFromInfo } from "@/app/view/jarvis/projectpicker";
+import { showLibrarySession } from "@/app/view/library/librarystore";
 import { formatChordString } from "@/util/keysym";
 import { cn, fireAndForget } from "@/util/util";
 import { useAtomValue } from "jotai";
@@ -46,7 +47,7 @@ import {
 } from "lucide-react";
 import { motion } from "motion/react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
-import { centerModeAtom, overviewProjectAtom, showCouncilSetup, showSession } from "./agentcenter";
+import { centerModeAtom, overviewProjectAtom, showCouncilSetup } from "./agentcenter";
 import type { AgentsViewModel } from "./agents";
 import { channelsAtom, primeChannels } from "./channelsstore";
 import type { EditorLike } from "./chateditor";
@@ -928,10 +929,10 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
         globalStore.set(model.newProjectOpenAtom, true);
     };
 
-    // the session read back on the Agent surface, where its own Resume button is one click away
+    // the session read back in Library, where its own Resume button is one click away
     const viewTranscript = (s: SessionInfo) => {
         close();
-        showSession(model, sessionKey(s));
+        showLibrarySession(model, sessionKey(s));
     };
 
     const launchAgentRow = async (p: ProjectRow) => {

@@ -170,9 +170,9 @@ describe("openReview", () => {
         expect(globalStore.get(docReviewAtom)).toBeNull();
     });
 
-    it("on a Doc review: brings the centre column back from History or a session to the terminal", () => {
+    it("on a Doc review: brings the centre column back from an Overview or a council to the terminal", () => {
         const model = stubModel([agentVM("a1", docAsk("k1"))]);
-        globalStore.set(centerModeAtom, "history");
+        globalStore.set(centerModeAtom, "project");
         openReview(model, "a1");
         expect(globalStore.get(centerModeAtom)).toBe("terminal");
     });

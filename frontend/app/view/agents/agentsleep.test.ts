@@ -165,9 +165,9 @@ describe("viewingTabIds", () => {
         expect(viewingTabIds(true, "terminal", "z", solo)).toEqual(["z"]);
     });
 
-    it("is nothing off the Agent surface, showing history, or with nothing focused", () => {
+    it("is nothing off the Agent surface, showing an Overview, or with nothing focused", () => {
         expect(viewingTabIds(false, "terminal", "b", grid)).toEqual([]);
-        expect(viewingTabIds(true, "history", "b", grid)).toEqual([]);
+        expect(viewingTabIds(true, "project", "b", grid)).toEqual([]);
         expect(viewingTabIds(true, "terminal", undefined, grid)).toEqual([]);
     });
 

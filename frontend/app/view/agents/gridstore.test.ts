@@ -127,16 +127,16 @@ describe("dropAgentOnGrid", () => {
     it("ignores an agent that is not live", () => {
         const m = model(["a"], "a");
         globalStore.set(agentGridAtom, g(["a"]));
-        globalStore.set(centerModeAtom, "history");
+        globalStore.set(centerModeAtom, "project");
         dropAgentOnGrid(m, "ghost", 0, "right");
         expect(globalStore.get(agentGridAtom)).toEqual(g(["a"]));
         expect(globalStore.get(m.focusIdAtom)).toBe("a");
-        expect(globalStore.get(centerModeAtom)).toBe("history");
+        expect(globalStore.get(centerModeAtom)).toBe("project");
     });
-    it("brings the terminal back over History, as every route that chooses an agent does", () => {
+    it("brings the terminal back over an Overview, as every route that chooses an agent does", () => {
         const m = model(["a", "b"], "a");
         globalStore.set(agentGridAtom, g(["a"]));
-        globalStore.set(centerModeAtom, "history");
+        globalStore.set(centerModeAtom, "project");
         dropAgentOnGrid(m, "b", 0, "right");
         expect(globalStore.get(centerModeAtom)).toBe("terminal");
     });
@@ -168,10 +168,10 @@ describe("endSplit", () => {
     it("leaves a grid that is not split, and the centre, alone", () => {
         const m = model(["a", "b"], "a");
         globalStore.set(agentGridAtom, g(["a"], "a"));
-        globalStore.set(centerModeAtom, "history");
+        globalStore.set(centerModeAtom, "project");
         endSplit(m);
         expect(globalStore.get(agentGridAtom)).toEqual(g(["a"], "a"));
-        expect(globalStore.get(centerModeAtom)).toBe("history");
+        expect(globalStore.get(centerModeAtom)).toBe("project");
     });
 });
 
@@ -199,12 +199,12 @@ describe("removeFromGrid", () => {
     it("leaves the grid, the focus and the centre alone for an agent that has no cell", () => {
         const m = model(["a", "b", "c"], "a");
         globalStore.set(agentGridAtom, g(["a", "b"], "a"));
-        globalStore.set(centerModeAtom, "history");
+        globalStore.set(centerModeAtom, "project");
         removeFromGrid(m, "c"); // live, but not a cell
         removeFromGrid(m, "ghost");
         expect(globalStore.get(agentGridAtom)).toEqual(g(["a", "b"], "a"));
         expect(globalStore.get(m.focusIdAtom)).toBe("a");
-        expect(globalStore.get(centerModeAtom)).toBe("history");
+        expect(globalStore.get(centerModeAtom)).toBe("project");
     });
 });
 
@@ -256,17 +256,17 @@ describe("openInSplit", () => {
     it("does nothing for an agent that already has a cell, on a full grid, or for a ghost", () => {
         const m = model(["a", "b", "c", "d", "e"], "a");
         globalStore.set(agentGridAtom, g(["a", "b", "c", "d"], "a"));
-        globalStore.set(centerModeAtom, "history");
+        globalStore.set(centerModeAtom, "project");
         expect(openInSplit(m, "e")).toBe(false);
         expect(openInSplit(m, "b")).toBe(false);
         expect(openInSplit(m, "ghost")).toBe(false);
         expect(globalStore.get(agentGridAtom)).toEqual(g(["a", "b", "c", "d"], "a"));
-        expect(globalStore.get(centerModeAtom)).toBe("history");
+        expect(globalStore.get(centerModeAtom)).toBe("project");
     });
-    it("brings the terminal back over History when it opens the split", () => {
+    it("brings the terminal back over a council when it opens the split", () => {
         const m = model(["a", "b"], "a");
         globalStore.set(agentGridAtom, g(["a"]));
-        globalStore.set(centerModeAtom, "session");
+        globalStore.set(centerModeAtom, "council");
         expect(openInSplit(m, "b")).toBe(true);
         expect(globalStore.get(centerModeAtom)).toBe("terminal");
     });
