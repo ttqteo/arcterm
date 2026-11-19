@@ -15,7 +15,6 @@ import { globalStore } from "@/app/store/jotaiStore";
 import { waveEventSubscribeSingle } from "@/app/store/wps";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
-import { showCanvases } from "@/app/view/agents/agentcenter";
 import type { AgentsViewModel } from "@/app/view/agents/agents";
 import { attentionAtom } from "@/app/view/agents/attentionstore";
 import { channelMessagesAtom } from "@/app/view/agents/channelsstore";
@@ -29,6 +28,7 @@ import { usePlanDonuts } from "@/app/view/agents/usagemeters";
 import { openTarget } from "@/app/view/jarvis/openref";
 import { runAct } from "@/app/view/jarvis/petactrun";
 import { queueRows } from "@/app/view/jarvis/petpeekmodel";
+import { showLibrary } from "@/app/view/library/librarystore";
 import { isMacOS, isWindows } from "@/util/platformutil";
 import { fireAndForget } from "@/util/util";
 import { invoke } from "@tauri-apps/api/core";
@@ -221,7 +221,7 @@ export function TrayBridge({ model }: { model: AgentsViewModel }) {
                     globalStore.set(model.surfaceAtom, step.surface);
                     return;
                 case "gallery":
-                    showCanvases(model);
+                    showLibrary(model, "canvases");
                     return;
                 case "act":
                     await runAct(model, step.act);
