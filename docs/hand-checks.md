@@ -16,6 +16,9 @@ list (its number is not reused).
 Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) ·
 [part 4](hand-checks-4.md) · [part 3](hand-checks-3.md) · [part 2](hand-checks-2.md) (oldest).
 
+- [ ] (arcterm) **Chat's `@` list: one row per run, spaceless match, highlighted letters.** In Chat type `@buil` with a
+  run going: the run is listed once (no agent row for its lead), `@buildl` still finds "Build Library", and the matched
+  letters of agent and run rows are in the accent. Commit: fix/chat-ref-picker.
 - [ ] (arcterm) **Sidecar's Other apps shows VmmemWSL and each app's WebView2.** With WSL running and Teams open,
   open Sidecar → Resources: VmmemWSL is listed with about the RAM Task Manager shows, and Teams' panes read
   `WebView2: ms-teams.exe` on their own row (not endable). Commit: fix/resmon-vmmem.

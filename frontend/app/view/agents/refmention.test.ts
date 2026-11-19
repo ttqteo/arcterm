@@ -10,6 +10,7 @@ import {
     insertRef,
     queryKind,
     REF_MAX_ROWS,
+    refHitMask,
     refMatches,
     refToken,
     runRefs,
@@ -93,6 +94,21 @@ describe("agentRefs", () => {
             "self0000-1"
         );
         expect(refMatches("agent", many)[0].id).toBe("b9b1b3ba-1");
+    });
+});
+
+describe("agentRefs and the runs listed", () => {
+    it("leaves out the lead of a run the picker lists, and keeps a worker of it and the lead of a run it does not", () => {
+        const refs = agentRefs(
+            [
+                agent("lead-1", "Build Library", { runId: "run-a" }),
+                agent("worker-1", "Task 3", { runId: "run-a-t-3" }),
+                agent("lead-2", "Old run", { runId: "run-b" }),
+            ],
+            "",
+            new Set(["run-a"])
+        );
+        expect(refs.map((r) => r.id)).toEqual(["worker-1", "lead-2"]);
     });
 });
 
@@ -294,6 +310,17 @@ describe("refMatches", () => {
         expect(refMatches("polish", all).map((r) => r.kind)).toEqual(["agent", "run", "council", "session", "effort"]);
     });
 
+    it("matches a query typed with no spaces against a label that has them", () => {
+        const all: RefItem[] = [
+            ...runRefs([run("a73099e9-d931", "Build Library: trang riêng cho History")]),
+            ...agentRefs([agent("d51ce43b-1", "Builder check · Nút báo lỗi")], ""),
+        ];
+        expect(refMatches("buildl", all).map((r) => r.id)).toEqual(["a73099e9-d931"]);
+        expect(refMatches("buildlib", all).map((r) => r.id)).toEqual(["a73099e9-d931"]);
+        expect(refMatches("buil", all).map((r) => r.kind)).toEqual(["agent", "run"]);
+        expect(refMatches("buildx", all)).toEqual([]);
+    });
+
     it("shows at most REF_MAX_ROWS", () => {
         const many = agentRefs(
             Array.from({ length: 10 }, (_, i) => agent(`a${i}000000`, `task ${i}`)),
@@ -314,5 +341,28 @@ describe("insertRef", () => {
             text: "đọc agent:5065bd8c ",
             caret: 19,
         });
+    });
+});
+
+describe("refHitMask", () => {
+    const marked = (query: string, label: string) =>
+        refHitMask(query, label)
+            .map((hit, i) => (hit ? label[i] : "_"))
+            .join("");
+
+    it("marks each word of the query where it sits in the label", () => {
+        expect(marked("buil", "Build Library")).toBe("Buil_________");
+        expect(marked("docs draft", "Docs rewrite draft")).toBe("Docs_________draft");
+    });
+
+    it("marks a query typed with no spaces across the label's spaces", () => {
+        expect(marked("buildl", "Build Library")).toBe("Build_L______");
+    });
+
+    it("marks nothing for a kind word, an address, an id or no match", () => {
+        expect(marked("run", "run the tests")).toBe("_____________");
+        expect(marked("agent:5065", "agent 5065")).toBe("__________");
+        expect(marked("zzz", "Build")).toBe("_____");
+        expect(marked("", "Build")).toBe("_____");
     });
 });

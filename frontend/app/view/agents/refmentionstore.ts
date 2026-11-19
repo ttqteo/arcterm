@@ -93,14 +93,15 @@ export function useRefItems(
             loadRefSessions();
         }
     }, [want, sessionsUnread]);
-    return useMemo(
-        () => [
-            ...agentRefs(agents, selfId),
-            ...(project === "" ? [] : runRefs(runs)),
+    return useMemo(() => {
+        const runItems = project === "" ? [] : runRefs(runs);
+        return [
+            // a run's lead is left to its run's row
+            ...agentRefs(agents, selfId, new Set(runItems.map((r) => r.id))),
+            ...runItems,
             ...(project === "" ? [] : councilRefs(councils)),
             ...sessionRefs(sessions, projectPath, Date.now()),
             ...effortRefs(efforts, projectName),
-        ],
-        [agents, selfId, project, runs, councils, sessions, projectPath, efforts, projectName]
-    );
+        ];
+    }, [agents, selfId, project, runs, councils, sessions, projectPath, efforts, projectName]);
 }
