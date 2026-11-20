@@ -1378,3 +1378,6 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
   session `.jsonl` away) and Resume from the palette → it reports why, and the Agent tree gains no extra terminal for
   the run; put the file back and Resume again → one new tab opens and the worker continues. Unit-tested only. Commit:
   5019e90c8 (`interrupted.go` `resumeInNewTab`, `swapPhaseWorker`).
+- [ ] (arcterm) A bug report's picture survives done: in the session that handled a bug report, after `wsh bugreport done`
+  moves its folder to `reports/done/<id>/`, the screen.png thumb on the step row still shows and a click zooms it (not
+  the crossed-out "no longer on disk" frame). Unit-tested only. Commit: 1b016b95d (`localimage.ts` `doneReportPath`).
