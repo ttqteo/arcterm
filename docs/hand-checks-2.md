@@ -581,13 +581,14 @@ are in that file. Tick a line here when it holds, then remove it; a part left em
   `[chat-send] enter-unechoed … echo=unknown` for every send (it read so 36 of 36 times before), and an
   `enter-linebreak … retry=1` line, when one shows, is followed by the message going out. While Claude works, ↑ in an
   empty Chat box takes the queued messages back (`chattakeback.ts` splitRules; no scenario runs a live Claude Code).
-- [ ] (arcterm) **The initiative band on a live Claude agent and on a Mac.** Link a real Claude agent to an initiative,
-  let a turn end on a chunk, then click its `go on with: <label>` chip: the band moves to that chunk at once, the
-  waiting line never draws over the box, and the agent's next prompt starts with
-  `initiative: switched you to chunk <n> <label>`. Mark done from the band: the agent moves to the next chunk. Press
-  `i` from the message box: the band opens and `m`, `n`, `w` and the arrows work without a click. Once on a Mac
-  (`task dev:browser`, then `task verify:ui -- chat-initiative-band initiative-popover initiative-link`): the scenarios
-  ran only on WebView2 in run 175af141, with fixture agents (`initiativebandview.tsx`, `chatpane.tsx` goOn).
+- [ ] (arcterm) **The Initiative rail tab on a live Claude agent and on a Mac.** Link a real Claude agent to an
+  initiative, let a turn end on a chunk, then click its `go on with: <label>` chip: the Initiative tab's head moves to
+  that chunk at once, the waiting line never draws over the box, and the agent's next prompt starts with
+  `initiative: switched you to chunk <n> <label>`. Mark done from the tab: the agent moves to the next chunk. Press `i`
+  from the sidebar: the rail shows the Initiative tab and `m`, `n`, `w` and the arrows work without a click; `i`
+  again goes back to the tab before it. Once on a Mac (`task dev:browser`, then `task verify:ui -- rail-initiative-tab
+  rail-brainstorm-tab rail-tabs-split initiative-link`): the scenarios ran only on WebView2 in run d2c39b10, with
+  fixture agents (`railinitiativepane.tsx`, `chatpane.tsx` goOn).
 - [ ] (arcterm) **A reply draws once when you send the next message as it ends.** In a Claude agent's Chat, send a
   message while the reply's last paragraph is still streaming (once queued, once with Send now), and once right after it
   ends: the reply stays one copy above your message, with no second copy under it and no flicker (`chatlive.ts`

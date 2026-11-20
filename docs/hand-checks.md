@@ -869,9 +869,8 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
 - [ ] (arcterm) Heavy jobs popover from a tree tag: with a job queued, click an agent's `#1` (or a run's `×2`) in the
   Agent tree → the popover opens with that agent's (or run's) job rows drawn selected and scrolled into view; the app
   bar's Jobs chip opens it with none selected. Unit-tested only (`jobqueuestore.ts` `toggleJobQueue`), not tried in the app.
-- [ ] (arcterm) No keycaps beside the view switch and Mark done: open an agent with a canvas → no Alt+C keycap in the
-  header, Alt+C still walks the views; an agent on an initiative chunk → the band's and the ◇ popover's Mark done show
-  no `m`, and `m` still marks it done. Typecheck only, not tried in the app.
+- [ ] (arcterm) No keycap beside the view switch: open an agent with a canvas → no Alt+C keycap in the header, Alt+C
+  still walks the views. Typecheck only, not tried in the app.
 - [ ] (arcterm) Chat's tool box in the real app: in a live Claude agent's Chat, open a finished stretch → one bordered
   box, a plain row per tool with past-tense verbs and no icons; open a Bash row → `$ command`, its output, Open full
   view; click an edited file's name → the File tab opens it; a stretch with a failed Edit → "Edit failed" in red on its
@@ -955,7 +954,7 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
   and wavesrv's log has no "dropped PreToolUse's working … reported after its turn ended" lines for it.
 - [ ] (arcterm) **A Work on session keeps its initiative.** Go tests only, no dev app ran. In Jarvis, Work on an
   initiative whose notes point at another one, and ask the agent to `wsh effort show` that other initiative: the Agent
-  header and initiative band keep the one you picked (63184f53b).
+  header's ◇ chip and the rail's Initiative tab keep the one you picked (63184f53b).
 - [ ] (arcterm) **The chat box answers a single question.** Unit tests and typecheck only, no dev app ran. Have a
   Claude agent ask one AskUserQuestion, then type a reply in the chat box (not the card) and press Send: it goes at
   once, the card closes, and the agent goes on with your words as the answer, with no "Queued · sends once you answer"
@@ -1268,7 +1267,7 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
   mounts (it had one per mount). Commit: fix(tauri) the CSP lets the terminal's sixel decoder compile its WASM
 - [ ] (arcterm) **Jarvis and initiatives polish batch, in the app.** Unit tests and the typecheck only; no dev app
   ran. Check each: (1) the initiative link in an agent's header has the tooltip "… Ctrl+click to peek at it in
-  Sprout"; (2) the initiative band's Mark done and Add note show their m / n hints as key caps that sit level in the
+  Sprout"; (2) the rail's Initiative tab: Mark done and Add note show their m / n hints as key caps that sit level in the
   button; (3) a run whose lead process died (kill the lead's claude) reads "Failed · n/m" in red in the Agent tree,
   "failed" on the Brief and Failed in the run sheet; (4) on a fresh launch, open Sprout before Jarvis: the "N
   initiatives changed · M idle" line shows once the briefing loads; (5) a plan a run worker proposes
@@ -1305,13 +1304,14 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
   over the chat, not over its parent menu), and muted text stays readable. Then fold Sprout into its own window and
   open its bubble or peek → it draws a solid panel, not a see-through one. Commit: feat(ui) Overlays in the Chat
   look: the frosted fill (run 04bd30dc)
-- [ ] (arcterm) **Switch to this chunk tells a real agent at once.** The CDP scenario `chat-initiative-band` (4, 4c,
-  4d) passes against fixture agents whose sends go to a mock; no real Claude Code session took one. In a real Claude
-  agent linked to an initiative, with the message box empty, open the band and press Switch to this chunk on a free
-  chunk → the agent answers on the new chunk at once, Chat shows the `Chunk N · name` divider and `Moved to chunk N ·
-  sent by arcterm` (no bubble reading `Go on with this chunk.`); while the agent works the send waits for its turn to
-  end. With a draft in the box the framed line waits and rides with the draft. Commit: feat(chat) initiative band:
-  Switch to this chunk tells the agent at once, a how-to.
+- [ ] (arcterm) **Work on this tells a real agent at once.** The CDP scenario `rail-initiative-tab` (its draft and
+  empty-box steps) passes against fixture agents whose sends go to a mock; no real Claude Code session took one. In a
+  real Claude agent linked to an initiative, with the message box empty, open the rail's Initiative tab (`i`) and press
+  Work on this (`w`) on a free chunk → the agent answers on the new chunk at once, Chat shows the `Chunk N · name`
+  divider and `Moved to chunk N · sent by arcterm` (no bubble reading `Go on with this chunk.`); while the agent works
+  the send waits for its turn to end. With a draft in the box the framed line waits and rides with the draft. Commits:
+  feat(chat) initiative band: Switch to this chunk tells the agent at once, a how-to; moved onto the rail tab by
+  feat(rail) Brainstorm and Initiative rail tabs.
 - [ ] (arcterm) **Agent composer image cap, 3.5 MB.** Unit-tested only (`composerattachments.test.ts`); no scenario
   attaches to the agent composer. Agent → paste a 4 MB image into the message box → it is refused at once with
   `over 3.5 MB`, not lost on send; a 3 MB image sends. Commit: fix(council) the Report's summary Retry needs a sent
@@ -1364,14 +1364,15 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
   <file>", and Request changes from Review into "↺ … changes requested · N comments". An exited agent shows both cards
   without Stop, Continue, Review and Approve. The `chat-council` scenario covers these states from fixtures, not the output of a real agent's
   `wsh council start`. Commit: feat(chat) place the council cards and the Doc review rows in the conversation
-- [ ] (arcterm) **The brainstorm part of the Chat band on a live agent.** Link a real Claude agent to an initiative and
-  have it run a brainstorm that draws boards. While it works between two questions, its Chat band reads `Brainstorm`,
-  `N boards` and `Decided N` beside the initiative, with no Mark done on the line. Let it draw another board while
-  Chat is shown → within a few seconds `1 new` with a dot appears, and the header's Brainstorm tab carries the same
-  dot. Open the part → the decisions that are yours and the boards, the new one tagged `new`, the conversation moved
-  down and not under it. Click the new board → the Brainstorm tab opens and both dots go; from inside the band, `b`
-  opens the same tab. Checked only with fixture agents in the `chat-brainstorm-band` scenario (`chatband.tsx`,
-  `brainstormbandview.tsx`).
+- [ ] (arcterm) **The Brainstorm rail tab on a live agent.** Have a real Claude agent run a brainstorm that draws
+  boards. While it works between two questions, its rail has a Brainstorm tab: the title, `Open` with `b`, the line
+  `<state> · Decided N · M boards`, and the decisions as a numbered timeline with each board's chip under the decision
+  it illustrates. Let it draw another board while the tab is not shown → within a few seconds the tab's icon and the
+  header's Brainstorm switch carry the accent dot, and on the tab the chip reads `new` under its decision, whose number
+  is filled. Click the chip → the board opens in the dialog over the agent's cell (Chat and Terminal), ← / → step through
+  the boards, `b` opens the Brainstorm view, and both dots go. Checked only with fixture agents in the
+  `rail-brainstorm-tab` scenario (`railbrainstormpane.tsx`, `brainstormbandview.tsx`). Commit: feat(rail) Brainstorm
+  and Initiative rail tabs.
 - [ ] (arcterm) Esc in Chat before the reply, on Windows: after a build, in a Claude agent's Chat send a long ask
   ("write 3000 words on …") and press Esc once its bubble shows as sent, before any reply → the text comes back into the
   box and the bubble leaves the conversation at the same moment, with no Queued bubble after; send it again → it shows
