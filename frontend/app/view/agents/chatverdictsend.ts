@@ -32,19 +32,13 @@ export function sendVerdict(
     );
 }
 
-/** A Chat card's one line to the agent (a verdict's Fix or Skip, a commit suggestion's Commit): sent as a prompt, or as
- *  the wake of a sleeping agent, then `record` (given how many user messages already held the line) is kept. */
-export async function sendCardLine(
-    agent: AgentVM,
-    line: string,
-    record: (seen: number) => SentAnswer,
-    io: PromptIO = tauriPromptIO
-): Promise<void> {
+/** One line to the agent, sent as a prompt, or as the wake of a sleeping agent, with no Chat record: the message it
+ *  causes draws as any other the person sent (Verify's Ask the agent to rerun). Throws with the agent's name when it
+ *  cannot be sent. */
+export async function sendAgentLine(agent: AgentVM, line: string, io: PromptIO = tauriPromptIO): Promise<void> {
     if (!agent.blockId) {
         throw new Error("This agent has no terminal to send to");
     }
-    // counted before the line goes: `seen` must not include the message the send is about to cause
-    const seen = userTextCount(io.entries?.(agent) ?? [], line);
     const fail = (what: string, e: unknown): Error =>
         new Error(`${what} ${agent.name}: ${e instanceof Error ? e.message : String(e)}`);
     if (agent.sleeping) {
@@ -60,5 +54,18 @@ export async function sendCardLine(
             throw fail("Couldn't send to", e);
         }
     }
+}
+
+/** A Chat card's one line to the agent (a verdict's Fix or Skip, a commit suggestion's Commit): sent as a prompt, or as
+ *  the wake of a sleeping agent, then `record` (given how many user messages already held the line) is kept. */
+export async function sendCardLine(
+    agent: AgentVM,
+    line: string,
+    record: (seen: number) => SentAnswer,
+    io: PromptIO = tauriPromptIO
+): Promise<void> {
+    // counted before the line goes: `seen` must not include the message the send is about to cause
+    const seen = userTextCount(io.entries?.(agent) ?? [], line);
+    await sendAgentLine(agent, line, io);
     recordBrainstormAnswer(agent.id, record(seen));
 }

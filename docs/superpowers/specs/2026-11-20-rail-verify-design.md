@@ -17,8 +17,9 @@ A tile on the rail's Overview, after the session block and Needs you, before the
 the session block (`surface-raised`, `rounded-lg`), not like a folded section, so it cannot scroll out of sight under
 the lists.
 
-- **Head row:** a monitor icon, `Verify`, the verdict in words and colour (`1 failed · 1 no result`), and the number
-  of scenarios at the right (`3 scenarios`).
+- **Head row:** a monitor icon, `Verify`, the verdict in words and colour, and the number of scenarios at the right
+  (`3 scenarios`). The verdict names each red or amber kind present, in row order, joined by ` · `
+  (`1 failed · 1 no result · 1 out of date`); with none, `running` or `N passed`; the not-run warning adds `not run`.
 - **Warning line** (amber, `askingbg`), when a watched UI file changed after the newest run, or when one changed and no
   run happened: `agentrailtabs.tsx and 2 more UI files changed after agent-rail-tabs last ran.` /
   `councilrail.tsx and 2 more UI files changed, and no scenario has run in this session.`
@@ -89,7 +90,8 @@ When the agent runs `git merge` (not `--abort`, `--continue`, `--quit`, `--skip`
 project's default branch, and its Verify is red or amber, the arc mod's `tool.check` hook answers `ask` with the
 reason: `Verify: chat-council-card failed steps 7, 8, 9; rail-council-tab has no result. Merge anyway?` The person
 approves or refuses in Claude Code's own prompt. Where nobody can be asked (an engine worker), the engine turns the
-ask into a deny and the reason tells the model to ask. Trouble reaching wsh passes the merge on (`passOn`) with a
+ask into a deny and the reason tells the model to ask (the hook words it on `e.approver`, as the foreign-repo edit
+check's `foreignReason` does). Trouble reaching wsh passes the merge on (`passOn`) with a
 debug log: Verify is advice, and arcterm's own trouble must not hold the person's work.
 
 ## How it works
@@ -112,9 +114,8 @@ One JSON document on stdin per report:
   "pid": 12345,
   "cwd": "D:/work/arcterm/.worktrees/x",
   "command": "task verify:ui -- chat-council-card",
-  "watch": ["frontend/**/*.tsx", "frontend/**/*.css"],
   "shotsdir": "D:/…/cdp-shots",
-  "scenarios": [{ "name": "chat-council-card", "steps": [{ "step": "7. …", "state": "pass | fail | skip" }], "done": false }],
+  "scenarios": [{ "name": "chat-council-card", "files": ["chat-council-card-01.png"], "steps": [{ "step": "7. …", "state": "pass | fail | skip" }], "done": false }],
   "reason": "optional: why it ended without results (out of memory, timeout)"
 }
 ```
@@ -124,7 +125,9 @@ One JSON document on stdin per report:
   the contact sheet's path. `pid` is the outer process (Final's when Final runs it); a later report keeps the first.
 - `command` is what the person would type to rerun: `task verify:ui -- <names>` for verify.mjs (the scenario names it
   was given), `node scripts/cdp/final-verify.mjs <names>` for Final.
-- `watch` comes from the project's `.arc/verify.json` (below), so another project's harness can name its own.
+- `shotsdir` is absolute; each scenario's `files` are its screenshots (`shotsManifest`'s), and `Open the N
+  screenshots` counts them. The report carries no watch list: wavesrv reads `.arc/verify.json` itself.
+- A repeat `start` of the same run id (verify.mjs under Final) adds its scenarios to that run and keeps its first pid.
 
 ### A project opts in with `.arc/verify.json`
 
@@ -141,7 +144,8 @@ its agents run. `watch` is the UI files whose change wants a scenario run (`**` 
 A new `pkg/verifyruns`:
 
 - Stores, per block id, the newest run of each scenario, in `verify/<blockid>.json` in the data dir, so a restart keeps
-  them. A report for a block that no longer exists is dropped; the file goes when the block is deleted.
+  them. A report for a block that no longer exists is dropped; the file goes when the block is deleted (wavesrv
+  listens to `blockclose`, as `pkg/services` does). A file untouched for 30 days is removed at startup.
 - Derives the state (a pure function with its tests): a run whose last phase is not `end` and whose `pid` is gone is
   **no result**; with its pid alive it is **running**; an `end` run with a failed step is **failed**, else **passed**.
 - Watched changes, read in the agent's checkout (the `cwd` the cockpit or the gate passes) when the state is asked
@@ -160,7 +164,9 @@ A new `pkg/verifyruns`:
 
 - `view/agents/verifymodel.ts` (pure): the tile's rows in order, the head verdict, the warning line, the chip, the
   strip count and the rerun line. `verifymodel.test.ts` beside it.
-- `view/agents/verifystore.ts`: an atom per agent, read on mount and on `verify:changed`.
+- `view/agents/verifystore.ts`: an atom per agent, read on mount, on `verify:changed`, and each time the agent's state
+  changes (a turn starting or ending). A file change publishes no event, and an agent edits during its turns, so the
+  turn's end is when an edit after a passed run shows as out of date; wavesrv still never polls.
 - `view/agents/railverify.tsx`: the tile; the strip count and the header chip go where the other counts and the state
   word are drawn.
 
@@ -168,7 +174,9 @@ A new `pkg/verifyruns`:
 
 `claude/arc-mod/hooks/verifygate-core.ts` (pure, tested): whether a Bash command is a merge, and the `-C <dir>` or `cd`
 it runs in. `register.ts` adds a `tool.check` on Bash that calls `wsh verify gate` for a merge and answers `ask` with
-its reason, with `.catch(passOn)`.
+its reason, with `.catch(passOn)`. It sits beside the existing commit reminder (`withUiCheck`, which tells the model
+after a commit that changed UI no one tried in the app) and does not replace it: that one nudges at commit time, this
+one asks the person at merge time. The default branch and merge base are `gitinfo.BranchBase`'s (it prefers the local default branch).
 
 ## Motion
 

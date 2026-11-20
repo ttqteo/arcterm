@@ -21,6 +21,15 @@ list (its number is not reused).
 Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) ·
 [part 4](hand-checks-4.md) · [part 3](hand-checks-3.md) · [part 2](hand-checks-2.md) (oldest).
 
+- [ ] (arcterm) **The agent asks before a merge while Verify is red or amber** (`verifyGateAsk` in
+  `claude/arc-mod/hooks/register.ts`, `verifygate-core.ts`; the rail's Verify tile, `docs/agents/verify.md`). After
+  installing a build with it, in a Claude agent on this repo's default branch (a checkout with `.arc/verify.json`), run a
+  scenario that fails (or stop one mid-run, which reads No result) so the rail's Verify tile is red or amber, then have
+  the agent run `git merge <branch>`: Claude Code's own prompt asks "Verify: <scenario> failed steps … Merge anyway?";
+  approving runs the merge, refusing cancels it. Skip the row on the rail first and the same merge runs with no ask. A
+  merge from another checkout (`cd ../main && git merge x`) is judged in that checkout, where the agent branch's own
+  commits cannot make a row out of date (a failed or no-result row still asks). In an engine worker, where nobody can be
+  asked, the ask comes back as a refusal whose reason tells the agent to ask you first.
 ## 2026-11-20
 
 - [ ] (arcterm) Diagram zoom and Copy image in the installed app (WebView2): ask a Claude agent to explain a flow and

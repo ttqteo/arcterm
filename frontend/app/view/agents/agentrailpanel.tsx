@@ -19,6 +19,7 @@ import {
     LayoutList,
     LayoutTemplate,
     MessagesSquare,
+    Monitor,
     Paperclip,
     ScrollText,
     Server,
@@ -49,6 +50,7 @@ import {
 } from "./agentrailtabs";
 import { navRailCollapsed } from "./navrailwidth";
 import { railCouncilTab } from "./railcouncil";
+import { verifyStripIcon, verifyStripTone } from "./railverify";
 import { agentTreeWidth } from "./rowfields";
 import { rowFieldsAtom } from "./rowfieldsstore";
 
@@ -359,6 +361,7 @@ const STAT_ICON: Record<AgentRailStatId, LucideIcon> = {
     uploads: Paperclip,
     servers: Server,
     bgtasks: SquareTerminal,
+    verify: Monitor, // the strip's own figures (the stat's `verify`) pick the glyph
 };
 
 const STAT_LABEL: Record<AgentRailStatId, string> = {
@@ -368,10 +371,15 @@ const STAT_LABEL: Record<AgentRailStatId, string> = {
     uploads: "Uploads",
     servers: "Servers",
     bgtasks: "Background tasks",
+    verify: "Verify",
 };
 
-function statTitle(s: AgentRailStat, canAttach: boolean): string {
+function statTitle(s: AgentRailStat, canAttach: boolean, verifyTitle?: string): string {
     const label = STAT_LABEL[s.id];
+    // Verify's count is a tone and a figure, not a number of rows: its title says what the tile's head says
+    if (s.id === "verify") {
+        return verifyTitle ?? label;
+    }
     switch (railStatAction(s)) {
         case "attach":
             return canAttach ? "Attach files: insert their paths at this agent's prompt" : "No uploads";
@@ -389,12 +397,14 @@ function statTitle(s: AgentRailStat, canAttach: boolean): string {
 // `hold`: on File, where the file tab's name gives way first (RailTabStrip), the counts keep their width.
 export function RailStats({
     stats,
+    verifyTitle,
     canAttach,
     hold,
     onOpen,
     onAttach,
 }: {
     stats: AgentRailStat[];
+    verifyTitle?: string; // the Verify count's title: "Verify: 1 failed · 1 no result"
     canAttach: boolean;
     hold?: boolean;
     onOpen: (id: AgentRailStatId) => void;
@@ -455,14 +465,18 @@ export function RailStats({
             {stats.map((s) => {
                 const action = railStatAction(s);
                 const live = action === "open" || (action === "attach" && canAttach);
-                const Icon = STAT_ICON[s.id];
-                const title = statTitle(s, canAttach);
+                const verify = s.verify;
+                const Icon = verify ? verifyStripIcon(verify) : STAT_ICON[s.id];
+                const title = statTitle(s, canAttach, verifyTitle);
                 return (
                     <button
                         key={s.id}
                         type="button"
                         data-rail-stat={s.id}
-                        data-count={s.count ?? ""}
+                        data-rail-count={verify ? "verify" : undefined}
+                        data-count={verify ? verify.label : (s.count ?? "")}
+                        data-verify-tone={verify?.tone}
+                        data-verify-pulsing={verify ? String(verify.pulsing) : undefined}
                         aria-disabled={!live}
                         aria-label={title}
                         title={title}
@@ -479,11 +493,24 @@ export function RailStats({
                                 ? "cursor-pointer text-muted hover:bg-surface-hover hover:text-primary"
                                 : live
                                   ? "cursor-pointer text-ink-faint hover:bg-surface-hover hover:text-secondary"
-                                  : "cursor-default text-ink-faint"
+                                  : "cursor-default text-ink-faint",
+                            // red or amber read at a glance, over the strip's muted default; a pulsing one is running
+                            verify && verifyStripTone(verify)
                         )}
                     >
-                        <Icon size={13} strokeWidth={1.8} aria-hidden />
-                        {s.count ? <span>{s.count}</span> : null}
+                        <Icon
+                            size={13}
+                            strokeWidth={1.8}
+                            aria-hidden
+                            className={verify?.pulsing ? "text-success pulse-dot-slow" : undefined}
+                        />
+                        {verify ? (
+                            verify.label !== "" ? (
+                                <span>{verify.label}</span>
+                            ) : null
+                        ) : s.count ? (
+                            <span>{s.count}</span>
+                        ) : null}
                     </button>
                 );
             })}

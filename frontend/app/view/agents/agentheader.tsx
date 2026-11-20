@@ -111,6 +111,7 @@ import { planEditChunks } from "./planreviewmodel";
 import { useInitiativeReread, usePlanReview } from "./planreviewstore";
 import { openRailSection } from "./railsection";
 import { railVisibleAtom, terminalFullscreenAtom } from "./railstore";
+import { VerifyChip } from "./railverify";
 import { remoteStatusAtom, toggleHandToPhone } from "./remotestore";
 import { agentProject, isEndedWorkerId, leadAgentOf } from "./runlineage";
 import { finishedRun, startedRunsShown } from "./runorigin";
@@ -919,6 +920,10 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
                                 >
                                     {stateText}
                                 </span>
+                            )}
+                            {/* Verify: 1 failed — only while the agent's scenario results are red or amber */}
+                            {ended || agent.blockId == null || agent.kind === "terminal" ? null : (
+                                <VerifyChip agent={agent} />
                             )}
                             {failed ? (
                                 // why, in the row: the full text is the title when the pane is too narrow for it

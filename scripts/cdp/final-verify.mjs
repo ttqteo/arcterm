@@ -7,6 +7,9 @@
 // ports, WebView2 profile, store, cargo target dir and dist/bin, and it installs no global agent hooks or skills.
 // Exit 0 passes, verify.mjs's nonzero code fails, and EXIT_UNVERIFIED with the reason as the last stdout line means
 // the UI could not be checked at all (verify.mjs gives it too, when the dev app's code never started).
+// Inside an agent's terminal it also reports the run to wavesrv (`wsh verify report`, report.mjs's makeRunReporter) for the
+// agent's Verify tile: `start` before anything slow, and an `end` with the reason on every exit as unverified; the
+// verify.mjs it runs reports the scenarios under the same run id (ARC_VERIFY_RUNID, ARC_VERIFY_COMMAND).
 //
 //   ARC_FINAL_OUT=<dir> node scripts/cdp/final-verify.mjs [scenario...]
 //
@@ -20,14 +23,14 @@
 //
 // The user's packaged arcterm shares the dev app's image names, so only the PID this script spawned is ever killed.
 import { execFileSync, spawn } from "node:child_process";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { closeSync, cpSync, existsSync, lstatSync, mkdirSync, openSync, readdirSync, readFileSync, rmSync, rmdirSync, statSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
 import { connect, createServer } from "node:net";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
-import { EXIT_UNVERIFIED, unknownScenarios } from "./report.mjs";
+import { EXIT_UNVERIFIED, makeRunReporter, unknownScenarios } from "./report.mjs";
 export { EXIT_UNVERIFIED };
 
 const DEFAULT_PORT = 9230;
@@ -180,7 +183,13 @@ export async function acquireBuildSlot(base, waitMs, slots = BUILD_SLOTS) {
     }
 }
 
+// reports this Final's run to the agent's rail (report.mjs), set in main() once the scenario names are checked; every
+// exit as unverified goes through unverified() below, so one dev app that never started reads as no result there
+let runReporter = null;
+
 export function unverified(reason) {
+    // reported first: when wsh cannot be reached the reporter logs a line, and the reason must stay the last one for the engine
+    runReporter?.unverified(reason);
     console.log(reason);
     process.exit(EXIT_UNVERIFIED);
 }
@@ -351,18 +360,20 @@ export function writeFinalManifest(shotsDir, out) {
 
 // The environment verify.mjs runs in: the dev app's CDP port, and the store it was started on (ARC_DEV_DATA_DIR, the one
 // the app itself gets below), so a scenario that reads the app's own files (sidecar-orbit reads <store>/data/waveapp.log)
-// reads this app's and never the person's own dev app's, which a process-wide ARC_DEV_DATA_DIR would otherwise name or leave unset
-export function verifyEnv(port, store, env = process.env) {
-    return { ...env, CDP_PORT: String(port), ARC_DEV_DATA_DIR: store };
+// reads this app's and never the person's own dev app's, which a process-wide ARC_DEV_DATA_DIR would otherwise name or leave unset.
+// runId and command are this Final's run (ARC_VERIFY_RUNID, ARC_VERIFY_COMMAND, read by report.mjs's makeRunReporter): verify.mjs
+// reports under them, so the two report one run and the command shown for a rerun is Final's, not verify.mjs's
+export function verifyEnv(port, store, runId, command, env = process.env) {
+    return { ...env, CDP_PORT: String(port), ARC_DEV_DATA_DIR: store, ARC_VERIFY_RUNID: runId, ARC_VERIFY_COMMAND: command };
 }
 
-function runVerify(port, scenarios, store) {
+function runVerify(port, scenarios, store, runId, command) {
     const script = fileURLToPath(new URL("./verify.mjs", import.meta.url));
     return new Promise((resolve) => {
         // node 20 (what a Mac often has) has no global WebSocket without the flag, which attach.mjs needs; later nodes take it
         const child = spawn(process.execPath, ["--experimental-websocket", script, ...scenarios], {
             stdio: "inherit",
-            env: verifyEnv(port, store),
+            env: verifyEnv(port, store, runId, command),
         });
         child.on("exit", (code) => resolve(code ?? 1));
         child.on("error", () => resolve(1));
@@ -375,11 +386,18 @@ async function main() {
     const scenarios = process.argv.slice(2);
     // checked before the dev app boots (minutes): a name no scenario has is the plan's or the build's mistake, so the
     // Final fails and the run fixes it, rather than passing with that screen unchecked
-    const unknown = unknownScenarios((await import("./scenarios.mjs")).SCENARIOS, scenarios);
+    const { SCENARIOS } = await import("./scenarios.mjs");
+    const unknown = unknownScenarios(SCENARIOS, scenarios);
     if (unknown.length) {
         console.log(`no scenario is named ${unknown.join(", ")}: add it to scripts/cdp/scenarios.mjs or drop it from the Final line`);
         process.exit(1);
     }
+    // reported before anything slow (the wait for a build slot, the app's build and boot), so a Final that never gets its
+    // app up still shows on the agent's rail, as no result with the reason. The run id and command go down to verify.mjs
+    const runId = process.env.ARC_VERIFY_RUNID || randomUUID();
+    const command = process.env.ARC_VERIFY_COMMAND || `node scripts/cdp/final-verify.mjs${scenarios.length ? ` ${scenarios.join(" ")}` : ""}`;
+    runReporter = makeRunReporter({ env: { ...process.env, ARC_VERIFY_RUNID: runId, ARC_VERIFY_COMMAND: command } });
+    runReporter.start(scenarios.length ? scenarios : SCENARIOS.map((s) => s.name));
     const bootMs = Number(process.env.ARC_FINAL_BOOT_MS) || DEFAULT_BOOT_MS;
     const lockWaitMs = Number(process.env.ARC_FINAL_LOCK_WAIT_MS) || DEFAULT_LOCK_WAIT_MS;
     mkdirSync(FINAL_BASE, { recursive: true });
@@ -465,11 +483,10 @@ async function main() {
                     ? `dev app did not answer on :${port}`
                     : `dev app exited with code ${dev.exitCode} before answering on :${port}`) + (said ? `: ${said}` : "");
         } else {
-            code = await runVerify(port, scenarios, store);
+            code = await runVerify(port, scenarios, store, runId, command);
             // its reason line is printed already, but the store cleanup below may print after it; say it again last
             if (code === EXIT_UNVERIFIED) reason = `the dev app's code on :${vitePort} did not start, so no scenario ran`;
             if (mode === "browser" && code === 0) {
-                const { SCENARIOS } = await import("./scenarios.mjs");
                 const hostOnly = hostOnlyScenarios(SCENARIOS, scenarios);
                 if (hostOnly.length) {
                     reason = `${hostOnly.join(", ")} need the Tauri host, which the browser app on ${process.platform} has not: run them on Windows`;
@@ -484,7 +501,12 @@ async function main() {
         stop();
         dropStore(store, out);
     }
-    if (reason) unverified(reason);
+    if (reason) {
+        // exit 0 with a reason is the browser app's host-only scenarios: verify.mjs already reported the run's real steps
+        // (those scenarios as skips), and a second end carrying none would replace them with "no result"
+        if (code === 0) runReporter = null;
+        unverified(reason);
+    }
     process.exit(code);
 }
 

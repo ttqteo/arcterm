@@ -26,6 +26,7 @@ import {
     LayoutList,
     LayoutTemplate,
     MessagesSquare,
+    Monitor,
     ScrollText,
 } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
@@ -129,6 +130,7 @@ import {
 import { RailTranscript } from "./railtranscript";
 import { RailTreePane } from "./railtreepane";
 import { UploadsSection } from "./railuploads";
+import { openVerifyTile, useAgentVerify, VerifyTile } from "./railverify";
 import { agentProject, roleRunId } from "./runlineage";
 import { NeedsYouSection, RunSection, TaskSection, useRunAsks } from "./runrailsections";
 import { SubLabel } from "./sectionlabel";
@@ -142,6 +144,7 @@ import { loadSessionUsage, sessionUsageAtom, UsageUnavailable } from "./transcri
 import { pickAndAttach } from "./uploadsingest";
 import { uploadsAtom } from "./uploadsstore";
 import { fmt } from "./usagestats";
+import { verifyTile } from "./verifymodel";
 
 const GAUGE_FILL: Record<"ok" | "warn" | "hot", string> = {
     ok: "bg-accent",
@@ -798,6 +801,11 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
     const showRail = () => globalStore.set(railVisibleAtom, true);
     // a subagent's interior and an ended session have no project of their own to read: nothing polls for them
     const polls = sub == null && ended == null;
+    // Verify is the agent's own: an ended session, the final stage and a plain terminal have none. Read while a subagent's
+    // interior is open too (the plan leaves its tile out), so coming back to the parent shows the tile where it was
+    const verifyOn = ended == null && agent.blockId != null && agent.kind !== "terminal" && !isFinalStageId(agent.id);
+    const { st: verifyState, cwd: verifyCwd } = useAgentVerify(agent, verifyOn);
+    const verify = verifyTile(verifyOn ? verifyState : null, now);
     const { servers, failed: serversFailed } = useDevServers(
         agent.id,
         polls ? (railState?.cwd ?? null) : null,
@@ -992,6 +1000,7 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
         servers: servers.length,
         bgTasks: bgTasks.length,
         hasRun: role != null && roleRun != null,
+        verify: verify.strip,
     };
     const plan = planAgentRail(railInput);
     const usageLoaded = sessionUsage != null && sessionUsage !== UsageUnavailable ? sessionUsage : null;
@@ -1014,6 +1023,10 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
     const revealSection = (id: AgentRailSectionId) => {
         selectRailTab(agent.id, "overview", hasTree, hasTranscript);
         showRail();
+        // the Verify tile keeps its own open state (a folded tile opens; one open stays as it is)
+        if (id === "verify" && agent.blockId != null && verify.folded) {
+            openVerifyTile(agent.blockId);
+        }
         globalStore.set(railSectionOpenAtom, (prev) => ({ ...prev, [id]: true }));
         requestAnimationFrame(() => {
             const smooth = !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -1058,6 +1071,7 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
         uploads: "Uploads",
         servers: "Servers",
         bgtasks: "Background tasks",
+        verify: "Verify",
         run: role?.kind === "worker" ? "Task" : "Run",
     };
     const ICON: Record<AgentRailSectionId, ReactNode> = {
@@ -1071,6 +1085,7 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
         uploads: RAIL_ICON.attach,
         servers: RAIL_ICON.server,
         bgtasks: RAIL_ICON.terminal,
+        verify: <Monitor size={20} strokeWidth={1.8} />,
         run: RAIL_ICON.autonomy,
     };
     // Files changed: Overview's section lists the first few (RailFilesCap), the Changes tab every one
@@ -1422,6 +1437,11 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
                 )}
             />
         ),
+        // planned only while the agent has a tile (railInput.verify), which needs a state read against its checkout
+        verify: () =>
+            verifyState != null ? (
+                <VerifyTile key={agent.id} model={model} agent={agent} tile={verify} st={verifyState} cwd={verifyCwd} />
+            ) : null,
         run: () =>
             role?.kind === "worker" ? (
                 <TaskSection key={agent.id} model={model} run={roleRun!} taskId={role.taskId} asks={asks} />
@@ -1488,6 +1508,9 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
                     />
                     <RailStats
                         stats={planRailStats(railInput)}
+                        verifyTitle={
+                            verify.shown ? `Verify: ${verify.head.parts.map((p) => p.text).join(" · ")}` : undefined
+                        }
                         canAttach={agent.blockId != null}
                         hold={shown === "file"}
                         onOpen={openSection}

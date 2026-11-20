@@ -124,6 +124,52 @@ describe("Files changed with a branch to switch to", () => {
     });
 });
 
+describe("Verify", () => {
+    const red = { tone: "red", label: "1", struck: true, pulsing: false } as const;
+    const verifyId = (id: string) => id === "verify";
+
+    it("has no stat and no tile for an agent with no Verify strip", () => {
+        expect(planRailStats(base).some((s) => verifyId(s.id))).toBe(false);
+        expect(ids(base).some(verifyId)).toBe(false);
+        expect(planRailStats({ ...base, verify: null }).some((s) => verifyId(s.id))).toBe(false);
+        expect(ids({ ...base, verify: null }).some(verifyId)).toBe(false);
+    });
+    it("the strip counts Verify after Background tasks, carrying the tile's own strip", () => {
+        const stats = planRailStats({ ...base, verify: red });
+        expect(stats.map((s) => s.id)).toEqual(["files", "uploads", "bgtasks", "verify"]);
+        expect(stats[stats.length - 1]).toEqual({ id: "verify", count: null, verify: red });
+    });
+    it("counts Verify even with nothing else to count", () => {
+        const i: AgentRailInput = { ...base, files: 0, bgTasks: 0, uploads: 0, verify: red };
+        expect(planRailStats(i).map((s) => s.id)).toEqual(["uploads", "verify"]);
+    });
+    it("the tile sits after the session block and Needs you, before the counted sections, with no header of its own", () => {
+        expect(ids({ ...base, verify: red })).toEqual(["status", "verify", "files", "bgtasks"]);
+        expect(ids({ ...base, verify: red, needsYou: 2 })).toEqual(["status", "needs", "verify", "files", "bgtasks"]);
+        expect(header({ ...base, verify: red }, "verify")).toBeUndefined();
+    });
+    it("a plan to review still comes first, and the run section still comes last", () => {
+        expect(ids({ ...base, verify: red, proposed: 3, hasRun: true })).toEqual([
+            "plan",
+            "status",
+            "verify",
+            "files",
+            "bgtasks",
+            "run",
+        ]);
+    });
+    it("a subagent interior shows neither the tile nor the count: Verify is its parent's", () => {
+        expect(ids({ ...base, verify: red, inSubagent: true })).toEqual(["subagent", "status"]);
+        expect(planRailStats({ ...base, verify: red, inSubagent: true })).toEqual([]);
+    });
+    it("its count opens the tile: strip and body agree", () => {
+        const i: AgentRailInput = { ...base, verify: red };
+        const stat = planRailStats(i).find((s) => s.id === "verify")!;
+        expect(railStatAction(stat)).toBe("open");
+        expect(ids(i)).toContain("verify");
+    });
+});
+
 describe("railStatAction", () => {
     it("opens a section with something in it, or one not counted yet", () => {
         expect(railStatAction({ id: "files", count: 3 })).toBe("open");

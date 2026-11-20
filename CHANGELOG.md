@@ -34,6 +34,9 @@ and a picture given to a line that is not big.
 
 ### Added
 
+- The agent rail shows your agent's UI checks in a Verify tile: a failed step in red, a run that never finished or a UI
+  change nobody checked in amber, with Ask the agent to rerun and Skip; the agent asks you before it merges while Verify
+  is red or amber. <!-- big --> <!-- shot: 1.11.0-rail-verify.webp -->
 - A diagram in Chat opens full size: click it, or Expand in the toolbar that shows over it on hover, then zoom with the
   wheel or + and -, drag to pan, and 0 or a double click to fit. Copy image puts the whole diagram on the clipboard as
   a sharp PNG on the app's background, ready to paste into a doc or a message. Agents now draw a flow or pipeline as a

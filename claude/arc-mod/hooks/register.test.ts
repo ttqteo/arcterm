@@ -225,6 +225,132 @@ describe("a background Bash command", () => {
     });
 });
 
+describe("the verify gate before a merge", () => {
+    type Answer = { exitCode: number; stdout: string; stderr: string };
+    const ask = '{"ask":true,"reason":"Verify: rail-verify failed steps 7, 8. Merge anyway?"}\n';
+    const reason = "Verify: rail-verify failed steps 7, 8. Merge anyway?";
+    const merge = "git merge --no-ff feat/x";
+
+    // an engine in an arcterm block whose wsh answers with `answer` (or throws), logging what it is asked and what it logs
+    async function gateEngine(answer: Answer | Error) {
+        const ran: string[][] = [];
+        const logged: string[] = [];
+        const $ = arcEngine([]);
+        const engine = {
+            ...$,
+            ui: { ...$.ui, log: (line: string) => logged.push(line) },
+            process: {
+                ...$.process,
+                run: async (argv: string[]) => {
+                    ran.push(argv);
+                    if (answer instanceof Error) {
+                        throw answer;
+                    }
+                    return answer;
+                },
+            },
+        };
+        const handlers = registered();
+        await handlers.get("session.start")!(engine, { cwd: "/repo" }, async () => undefined);
+        ran.length = 0;
+        logged.length = 0;
+        return { engine, handlers, ran, logged };
+    }
+
+    for (const tool of ["Bash", "PowerShell"]) {
+        it(`${tool} asks the person where the gate asks, over an allow`, async () => {
+            const { engine, handlers, ran } = await gateEngine({ exitCode: 0, stdout: ask, stderr: "" });
+            const next = vi.fn(async () => ({ decision: "allow" }));
+            const e = { tool, input: { command: merge }, approver: "person" };
+            expect(await handlers.get(`tool.check:${tool}`)!(engine, e, next)).toEqual({ decision: "ask", reason });
+            expect(ran).toEqual([["__WSH_PATH__", "verify", "gate", "--cwd", "/repo", "--command", merge]]);
+        });
+
+        it(`${tool} tells the model to ask where nobody can be asked (no approver)`, async () => {
+            const { engine, handlers } = await gateEngine({ exitCode: 0, stdout: ask, stderr: "" });
+            const next = vi.fn(async () => ({ decision: "allow" }));
+            const out = (await handlers.get(`tool.check:${tool}`)!(
+                engine,
+                { tool, input: { command: merge } },
+                next
+            )) as { decision: string; reason: string };
+            expect(out.decision).toBe("ask");
+            expect(out.reason.startsWith(reason)).toBe(true);
+            expect(out.reason).toMatch(/ask the person before merging/);
+        });
+    }
+
+    it("asks for the directory the command merges in", async () => {
+        const { engine, handlers, ran } = await gateEngine({ exitCode: 0, stdout: ask, stderr: "" });
+        const next = vi.fn(async () => ({ decision: "allow" }));
+        const command = "cd ../main && git merge x";
+        await handlers.get("tool.check:Bash")!(engine, { tool: "Bash", input: { command }, approver: "person" }, next);
+        expect(ran).toEqual([["__WSH_PATH__", "verify", "gate", "--cwd", "/main", "--command", command]]);
+    });
+
+    it("keeps a deny without running the gate, and the verdict of a gate that does not ask", async () => {
+        const { engine, handlers, ran } = await gateEngine({ exitCode: 0, stdout: '{"ask":false}', stderr: "" });
+        const denied = { decision: "deny", reason: "rule" };
+        const e = { tool: "Bash", input: { command: merge }, approver: "person" };
+        expect(await handlers.get("tool.check:Bash")!(engine, e, async () => denied)).toBe(denied);
+        expect(ran).toEqual([]);
+        const allowed = { decision: "allow" };
+        expect(await handlers.get("tool.check:Bash")!(engine, e, async () => allowed)).toBe(allowed);
+        expect(ran).toHaveLength(1);
+    });
+
+    it.each(["git status", "git merge --abort", "git log --merges", "echo 'git merge x'", "ls"])(
+        "runs no wsh for %s",
+        async (command) => {
+            const { engine, handlers, ran } = await gateEngine({ exitCode: 0, stdout: ask, stderr: "" });
+            const allowed = { decision: "allow" };
+            const e = { tool: "Bash", input: { command }, approver: "person" };
+            expect(await handlers.get("tool.check:Bash")!(engine, e, async () => allowed)).toBe(allowed);
+            expect(ran).toEqual([]);
+        }
+    );
+
+    it.each<[string, Answer | Error, RegExp | null]>([
+        ["a gate that exits nonzero", { exitCode: 1, stdout: "", stderr: "no block" }, /exited 1: no block/],
+        ["a gate that throws", new Error("wsh gone"), /verify gate failed: Error: wsh gone/],
+        ["a gate that prints no JSON", { exitCode: 0, stdout: "oops", stderr: "" }, null],
+    ])("lets the merge through on %s", async (_name, answer, log) => {
+        const { engine, handlers, logged } = await gateEngine(answer);
+        const allowed = { decision: "allow" };
+        const e = { tool: "Bash", input: { command: merge }, approver: "person" };
+        expect(await handlers.get("tool.check:Bash")!(engine, e, async () => allowed)).toBe(allowed);
+        // a failure is logged for debugging; output the gate never gave as JSON is no failure of wsh's, so nothing
+        if (log === null) {
+            expect(logged).toEqual([]);
+        } else {
+            expect(logged.join("\n")).toMatch(log);
+        }
+    });
+
+    it("stays out of a session outside arcterm", async () => {
+        const ran: string[][] = [];
+        const $ = arcEngine([]);
+        const outside = {
+            ...$,
+            env: { get: async () => undefined },
+            process: {
+                ...$.process,
+                run: async (argv: string[]) => {
+                    ran.push(argv);
+                    return { exitCode: 0, stdout: ask, stderr: "" };
+                },
+            },
+        };
+        const handlers = registered();
+        await handlers.get("session.start")!(outside, { cwd: "/repo" }, async () => undefined);
+        ran.length = 0;
+        const allowed = { decision: "allow" };
+        const e = { tool: "Bash", input: { command: merge }, approver: "person" };
+        expect(await handlers.get("tool.check:Bash")!(outside, e, async () => allowed)).toBe(allowed);
+        expect(ran).toEqual([]);
+    });
+});
+
 // an engine in arcterm's repo (or another, isArcRepo false) whose git moves HEAD from a1 to b2 on a commit and
 // lists files as the commit's paths
 function repoEngine(files: string[], isArcRepo = true) {

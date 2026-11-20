@@ -1188,6 +1188,12 @@ export class RpcApiType {
         return client.wshRpcCall("getusagestats", data, opts);
     }
 
+    // command "getverifystate" [call]
+    GetVerifyStateCommand(client: WshClient, data: CommandVerifyStateData, opts?: RpcOpts): Promise<VerifyStateData> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "getverifystate", data, opts);
+        return client.wshRpcCall("getverifystate", data, opts);
+    }
+
     // command "getwindowtokens" [call]
     GetWindowTokensCommand(client: WshClient, data: CommandGetWindowTokensData, opts?: RpcOpts): Promise<CommandGetWindowTokensRtnData> {
         if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "getwindowtokens", data, opts);
@@ -2062,6 +2068,24 @@ export class RpcApiType {
     VaultSyncCommand(client: WshClient, data: CommandVaultSyncData, opts?: RpcOpts): Promise<void> {
         if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "vaultsync", data, opts);
         return client.wshRpcCall("vaultsync", data, opts);
+    }
+
+    // command "verifygate" [call]
+    VerifyGateCommand(client: WshClient, data: CommandVerifyGateData, opts?: RpcOpts): Promise<VerifyGateData> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "verifygate", data, opts);
+        return client.wshRpcCall("verifygate", data, opts);
+    }
+
+    // command "verifyreport" [call]
+    VerifyReportCommand(client: WshClient, data: CommandVerifyReportData, opts?: RpcOpts): Promise<void> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "verifyreport", data, opts);
+        return client.wshRpcCall("verifyreport", data, opts);
+    }
+
+    // command "verifyskip" [call]
+    VerifySkipCommand(client: WshClient, data: CommandVerifySkipData, opts?: RpcOpts): Promise<void> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "verifyskip", data, opts);
+        return client.wshRpcCall("verifyskip", data, opts);
     }
 
     // command "waveinfo" [call]
