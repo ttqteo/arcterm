@@ -202,7 +202,7 @@ export function putBackResultLines(agentId: string, lines: readonly string[]): v
     update(pendingAtom, PENDING_STORAGE_KEY, (prev) => putBackLines(prev, agentId, lines));
 }
 
-// ---- the switched line (the initiative band moved the agent to another chunk) ----
+// ---- the switched line (the Initiative tab moved the agent to another chunk) ----
 
 /** Keeps the line that tells the agent it was moved to another chunk, in place of any earlier switched line: several
  *  switches before a message send only the last. The agent's other waiting lines stay. */
@@ -216,7 +216,7 @@ export function dropSwitchLine(agentId: string): void {
 }
 
 // the chunk the agent's waiting switched line names; selectAtom keeps the same object while it names the same chunk, so
-// an unrelated agent's pending line does not redraw this agent's band
+// an unrelated agent's pending line does not redraw this agent's box
 const switchOf = atomFamily((agentId: string) =>
     selectAtom(
         pendingAtom,

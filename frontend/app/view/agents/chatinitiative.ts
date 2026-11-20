@@ -530,7 +530,7 @@ export function switchLine(n: number, label: string, oref: string): string {
     return `initiative: switched you to chunk ${n} ${flat(label)}${o === "" ? "" : ` (${o})`}`;
 }
 
-/** The message the band's Switch to this chunk sends on its own when the box is empty, so the agent is told at once: the
+/** The message the Initiative tab's Work on this sends on its own when the box is empty, so the agent is told at once: the
  *  switched line rides in front of it. Chat draws a message that is exactly this, after a switched line, as a muted row
  *  ("Moved to chunk N · sent by arcterm") instead of a bubble of yours. */
 export const SWITCH_NOTE = "Go on with this chunk.";

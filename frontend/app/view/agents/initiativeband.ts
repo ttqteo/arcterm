@@ -1,11 +1,13 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// What the initiative band under a linked agent's Chat header reads and decides (docs/superpowers/specs/
-// 2026-11-14-chat-initiative-link-design.md and its plan): the rows of its expanded left column, which chunks offer Work
-// on this and who holds the others, the two writes of a chunk switch with the line that tells the agent, what Mark done
-// carries the agent to, and the narrow cell's labels. Reuses initiativepopovermodel.ts, whose `agentChunk` is the one
-// definition of "the chunk this agent is on". Pure: no jotai, no RPC; initiativebandstore.ts sends the writes.
+// The chunk logic of a linked agent's initiative, first written for the Chat band (docs/superpowers/specs/
+// 2026-11-14-chat-initiative-link-design.md) and read now by the rail's Initiative tab (railinitiative.ts,
+// railinitiativepane.tsx; spec 2026-11-20-agent-rail-brainstorm-initiative-tabs-design.md): the rows of its Chunks
+// section, which chunks offer Work on this and who holds the others, the two writes of a chunk switch with the line that
+// tells the agent, and what Mark done carries the agent to. The Band* names are the band's, kept. Reuses
+// initiativepopovermodel.ts, whose `agentChunk` is the one definition of "the chunk this agent is on". Pure: no jotai, no
+// RPC; initiativebandstore.ts sends the writes.
 
 import { attachAgentOp } from "@/app/view/jarvis/proposedmodel";
 import { chunkRef } from "@/app/view/jarvis/trackeredit";
@@ -15,7 +17,7 @@ import { planEditChunks } from "./planreviewmodel";
 
 type BandWorkRef = { kind: string; oref: string; ts?: number };
 
-/** The part of a chunk the band reads. */
+/** The part of a chunk the Initiative tab reads. */
 export type BandChunk = {
     label: string;
     status: string;
@@ -23,7 +25,7 @@ export type BandChunk = {
     workrefs?: BandWorkRef[];
 };
 
-/** The part of an initiative the band reads: `oid` (a bare oid) names it in the switch line. */
+/** The part of an initiative the Initiative tab reads: `oid` (a bare oid) names it in the switch line. */
 export type BandEffort = { oid?: string; chunks?: BandChunk[] };
 
 const settled = (status: string) => status === "done" || status === "skipped";
@@ -31,7 +33,7 @@ const settled = (status: string) => status === "done" || status === "skipped";
 /** Who holds a chunk: an agent (by its tab id) or a run (by its oid). */
 export type BandHolder = { kind: "agent" | "run"; id: string };
 
-/** One row of the band's chunk list. `n` is the chunk's place in the plan from 1 (a proposed chunk before it counts), as
+/** One row of the Initiative tab's chunk list. `n` is the chunk's place in the plan from 1 (a proposed chunk before it counts), as
  *  the switch line numbers it. `kind` says why it is listed: `done` the chunk this agent finished last, `mine` the one it
  *  is on, `next` one of the next two, `other` a live chunk someone else holds, `plan` only in the full list. */
 export type BandRow = {
@@ -61,7 +63,7 @@ export function canWorkOn(chunk: BandChunk): boolean {
     );
 }
 
-/** Pure: the band's rows. `window` is the fixed window of the expanded left column, in plan order and without repeats:
+/** Pure: the Chunks section's rows. `window` is the fixed window the section shows, in plan order and without repeats:
  *  the last done chunk this agent holds (the newest of its workrefs among its done chunks), its own chunk, the next two
  *  (`nextChunks`, as the popover has them: a pending chunk before its own is not next), and every live chunk another
  *  holder has. `all` is every non-proposed chunk in plan order, the window's rows keeping their kinds and the rest `plan`
@@ -120,7 +122,7 @@ export function holderTag(holder: BandHolder, tabId: string, nameOf: (tabId: str
 }
 
 /** Pure: the index of the first row that offers Work on this, or -1: where Pick a chunk…'s cursor goes, and with -1 the
- *  band shows no Pick a chunk…. The caller picks the rows: the window's, or `all`'s when the window has none. */
+ *  tab shows no Pick a chunk…. The caller picks the rows: the window's, or `all`'s when the window has none. */
 export function firstWorkOn(rows: readonly { workOn: boolean }[]): number {
     return rows.findIndex((r) => r.workOn);
 }
@@ -185,20 +187,4 @@ export function carryForward(before: BandEffort, after: BandEffort, tabId: strin
  *  active. */
 export function doneIsAdvance(effort: BandEffort, label: string): boolean {
     return (effort.chunks ?? []).find((c) => c.status === "active")?.label === label;
-}
-
-/** Below this band width (px) the band is narrow. */
-export const NARROW_BAND_PX = 640;
-
-/** Pure: the band's labels and what it draws, by its width: in a narrow cell no segment bar (the count stays), the title
- *  clipped to 150px and `Mark done` shortened to `Done`. The chunk label is clipped by the view, and left out
- *  (`chunkLabel` false) only in a narrow cell with a brainstorm part beside the initiative part, which needs the room; a
- *  narrow initiative-only band keeps it. `titleMax` is a px width. */
-export function bandLabels(
-    narrow: boolean,
-    brainstormBeside = false
-): { markDone: "Mark done" | "Done"; segments: boolean; titleMax: number; chunkLabel: boolean } {
-    return narrow
-        ? { markDone: "Done", segments: false, titleMax: 150, chunkLabel: !brainstormBeside }
-        : { markDone: "Mark done", segments: true, titleMax: 320, chunkLabel: true };
 }

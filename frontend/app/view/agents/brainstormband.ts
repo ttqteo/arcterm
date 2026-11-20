@@ -1,9 +1,11 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// What the Chat band's brainstorm part reads (docs/superpowers/specs/2026-11-14-chat-brainstorm-status-design.md): how
-// many boards the brainstorm has, which are new since the user last looked at the Brainstorm tab, and the decisions that
-// are the user's. Pure: the store, the poller, the band and the header's tab dot all read "which boards are new" from
+// What the rail's Brainstorm tab reads of an attached brainstorm, first written for the Chat band's brainstorm part
+// (docs/superpowers/specs/2026-11-14-chat-brainstorm-status-design.md; the band went for the tab,
+// 2026-11-20-agent-rail-brainstorm-initiative-tabs-design.md): how many boards the brainstorm has, which are new since the
+// user last looked at the Brainstorm view, and the decisions that are the user's. The Band* names are the band's, kept.
+// Pure: the store, the poller, the tab (railbrainstorm.ts) and the header's dot all read "which boards are new" from
 // here, so it is defined once. The names the user has seen are kept per brainstorm.json path (brainstormstore.ts).
 
 import type { BrainstormFile } from "./brainstormmodel";
@@ -48,7 +50,7 @@ export function boardNames(f: BrainstormFile): string[] {
     return listedBoards(f).map((b) => b.name);
 }
 
-/** The brainstorm part of the band. `seen` is the names the user last saw, or null when there is no entry for this file
+/** What the Brainstorm tab reads of a brainstorm. `seen` is the names the user last saw, or null when there is no entry for this file
  *  (a brainstorm never looked at: every board is new). */
 export function brainstormBandModel(f: BrainstormFile, seen: readonly string[] | null): BrainstormBandModel {
     const known = seen != null ? new Set(seen) : null;
@@ -136,7 +138,7 @@ export function withSeenBoards(map: SeenBoards, path: string, names: readonly st
 }
 
 /** `map` with the one board `name` added to what the user saw of the brainstorm at `path` (a path with no entry starts
- *  from none, so its other boards stay new): a board looked at from Chat's band, without the Brainstorm tab. The same
+ *  from none, so its other boards stay new): a board looked at in the board dialog, without the Brainstorm view. The same
  *  object back when the name is already there. */
 export function withBoardSeen(map: SeenBoards, path: string, name: string, now: number): SeenBoards {
     const names = seenNamesOf(map, path) ?? [];

@@ -821,7 +821,7 @@ function openedFor(opened: ReadonlySet<string>, itemKey: string): string {
     return out;
 }
 
-// where a chunk's work begins: the message that moved the agent to it (the initiative band's Work on this) carries the
+// where a chunk's work begins: the message that moved the agent to it (the Initiative tab's Work on this) carries the
 // chunk, and the rule across the column says which one the turns below are for
 function ChunkDivider({ n, label }: { n: number; label: string }) {
     return (
@@ -840,7 +840,7 @@ function ChunkDivider({ n, label }: { n: number; label: string }) {
     );
 }
 
-// what stands for the message the band sent to tell the agent of a switch: arcterm's words, on your side of the column
+// what stands for the message the Initiative tab sent to tell the agent of a switch: arcterm's words, on your side of the column
 function SwitchNoteRow({ n }: { n: number }) {
     return (
         <div data-chat-switch-note={n} className="flex items-center gap-1.5 text-[12px] text-muted">
@@ -1677,8 +1677,8 @@ export function ChatConversation({
                         onAddInitiative={canAddInitiative ? addToInitiative : undefined}
                     />
                 );
-                // a message that moved the agent to another chunk opens that chunk's stretch of the conversation; the band's
-                // own message (Switch to this chunk with an empty box) is a muted row of arcterm's, not a bubble of yours
+                // a message that moved the agent to another chunk opens that chunk's stretch of the conversation; the tab's
+                // own message (Work on this with an empty box) is a muted row of arcterm's, not a bubble of yours
                 return "command" in item || item.chunk == null ? (
                     bubble
                 ) : (
@@ -1898,7 +1898,7 @@ export function ChatConversation({
         >
             {/* the sticky row is a flex child of a gap-4 column: -mb-4 cancels the gap its zero-height row would add. The
                 card spans the column, which Chat's scroller already keeps clear of the Focus read and Skim toggles in the
-                pane's corner (its right padding, chatpane.tsx), as does the band under it, so a reply scrolling beneath
+                pane's corner (its right padding, chatpane.tsx), so a reply scrolling beneath
                 never shows beside the card */}
             <PinnedPromptBar
                 rootRef={rootRef}

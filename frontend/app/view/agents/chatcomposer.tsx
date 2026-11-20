@@ -168,7 +168,7 @@ const INTERRUPT_SETTLE_MS = 1_500;
 // the box's content height while it is a drop zone: the board's dashed zone is 120px high in an 8px margin
 const DropMinH = 136;
 
-/** The box, with the line that waits over it after the initiative band moved the agent to another chunk. The line is not
+/** The box, with the line that waits over it after the Initiative tab moved the agent to another chunk. The line is not
  *  in the box: the box's height is its content's, and this line is no part of what the box holds. */
 export function ChatComposer(props: Parameters<typeof ComposerBox>[0]) {
     return (
@@ -658,9 +658,9 @@ function ComposerBox({
                 // pending bubble up beside it for minutes. A /btw, a bare panel command and a `! cmd` are: nothing of
                 // them lands until the side answer comes, the panel closes or the command finishes (chatpending.ts
                 // pendingKind)
-                // the band's own switch message draws as arcterm's row once it lands, never as a bubble of yours
-                const bandNote = sent === SWITCH_NOTE && lines.length > 0;
-                if (entries != null && pendsAsBubble(sent) && !bandNote) {
+                // the Initiative tab's own switch message draws as arcterm's row once it lands, never as a bubble of yours
+                const switchNote = sent === SWITCH_NOTE && lines.length > 0;
+                if (entries != null && pendsAsBubble(sent) && !switchNote) {
                     pendingId = addPending(agent.id, sent, entries, agent.state !== "idle", false, !deliveredEarly);
                     // a `! cmd` is kept past a restart too: one that closes arcterm never reaches the transcript
                     noteLostBash(agent.transcriptPath, sent, entries);
@@ -1647,7 +1647,7 @@ function sameFit(a: ChipFit | null, b: ChipFit): boolean {
 
 // The finished turn's suggested replies (chatsuggest.ts drawnChips: the ones the row can act on), a click or Enter on the
 // chip Tab picked takes one (onActivate): a reply is sent as typed, a chunk's done chip ticks it on the initiative, as the
-// band's Mark done does, and a go on with: chip moves the agent to its chunk first, then sends its text. A chip the model
+// Initiative tab's Mark done does, and a go on with: chip moves the agent to its chunk first, then sends its text. A chip the model
 // adds a few seconds after the rules' fades in beside them.
 function SuggestChips({
     chips,

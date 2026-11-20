@@ -2,17 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it } from "vitest";
-import {
-    NARROW_BAND_PX,
-    bandLabels,
-    bandRows,
-    canWorkOn,
-    carryForward,
-    doneIsAdvance,
-    firstWorkOn,
-    holderTag,
-    switchPlan,
-} from "./initiativeband";
+import { bandRows, canWorkOn, carryForward, doneIsAdvance, firstWorkOn, holderTag, switchPlan } from "./initiativeband";
 
 type Ref = { kind: string; oref: string; ts: number };
 const me = (ts = 1): Ref => ({ kind: "agent", oref: "agent:t1", ts });
@@ -333,28 +323,5 @@ describe("doneIsAdvance", () => {
         expect(doneIsAdvance(effort, "D")).toBe(false);
         expect(doneIsAdvance(effort, "Nope")).toBe(false);
         expect(doneIsAdvance({}, "A")).toBe(false);
-    });
-});
-
-describe("bandLabels", () => {
-    it("is the full band at width", () => {
-        expect(bandLabels(false)).toEqual({ markDone: "Mark done", segments: true, titleMax: 320, chunkLabel: true });
-    });
-
-    it("drops the bar, clips the title to 150px and shortens Mark done in a narrow cell", () => {
-        expect(bandLabels(true)).toEqual({ markDone: "Done", segments: false, titleMax: 150, chunkLabel: true });
-    });
-
-    it("keeps the chunk label beside a brainstorm part at width, and drops it only in a narrow cell", () => {
-        expect(bandLabels(false, true).chunkLabel).toBe(true);
-        expect(bandLabels(true, true)).toEqual({ markDone: "Done", segments: false, titleMax: 150, chunkLabel: false });
-    });
-
-    it("keeps the chunk label of a narrow initiative-only band, which the view clips", () => {
-        expect(bandLabels(true, false).chunkLabel).toBe(true);
-    });
-
-    it("is narrow below 640px", () => {
-        expect(NARROW_BAND_PX).toBe(640);
     });
 });

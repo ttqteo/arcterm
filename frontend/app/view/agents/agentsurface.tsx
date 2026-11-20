@@ -43,7 +43,6 @@ import { MotionConfig } from "motion/react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { activeNavOrder } from "./activenav";
 import { boardAloneAtom, centerModeAtom, leaveCenter, showTerminal, type CenterMode } from "./agentcenter";
-import type { AgentsViewModel } from "./agents";
 import { AgentDetailsRail } from "./agentdetailsrail";
 import {
     onScreenGrid,
@@ -56,12 +55,13 @@ import {
 } from "./agentgrid";
 import { AgentHeader } from "./agentheader";
 import { AgentLaunchHero } from "./agentlaunchhero";
+import type { AgentsViewModel } from "./agents";
+import { asksInTerminal, projectOf, type AgentVM } from "./agentsviewmodel";
 import { AgentTree } from "./agenttree";
 import { AgentTreeSlot } from "./agenttreeslot";
 import { appShows } from "./appmodel";
 import { AppPane } from "./apppane";
 import { appStatesAtom } from "./appstore";
-import { asksInTerminal, projectOf, type AgentVM } from "./agentsviewmodel";
 import { ChatBoardDialog } from "./brainstormbandview";
 import { compactedSummary } from "./brainstormmodel";
 import { BrainstormPane } from "./brainstormpane";
@@ -80,19 +80,18 @@ import { typedIntoChat } from "./chattypeinto";
 import { chatTypingAgent } from "./chattypingtarget";
 import { closedNeighbour, keepFocused, resolveShownAgent, rosterLoadPhase } from "./cockpitsurfacemodel";
 import { CouncilPane } from "./councilpane";
+import { DivergenceBanner } from "./divergencebanner";
 import { autoOpenedAskIdsAtom, shouldAutoOpen } from "./docreview";
 import { DocReviewPane } from "./docreviewpane";
 import { docReviewStateAtom, openReview } from "./docreviewstore";
 import { EndedTranscript } from "./endedtranscript";
+import { finalRowFocusId } from "./finalstage";
+import { FinalStagePane } from "./finalstagepane";
 import { floatModeAtom } from "./floatstore";
-import { DivergenceBanner } from "./divergencebanner";
 import { subjectDecision } from "./focussubject";
 import { BoardCellBar, GridCellBar } from "./gridcellbar";
 import { mentionTarget } from "./griddrop";
 import { GridDropOverlay } from "./griddropoverlay";
-import { HeldAskBar } from "./heldaskbar";
-import { JarvisRouteBand } from "./jarvisrouteband";
-import { typedIntoAgent } from "./jarvisroutebandmodel";
 import {
     agentGridAtom,
     currentGrid,
@@ -102,30 +101,31 @@ import {
     projectGridsAtom,
     removeFromGrid,
 } from "./gridstore";
-import { finalRowFocusId } from "./finalstage";
-import { FinalStagePane } from "./finalstagepane";
+import { HeldAskBar } from "./heldaskbar";
+import { HeldPane } from "./heldpane";
+import { JarvisRouteBand } from "./jarvisrouteband";
+import { typedIntoAgent } from "./jarvisroutebandmodel";
 import { rosterSeededAtom } from "./liveagents";
 import { agentFocusFallback } from "./modalfocusfallback";
 import { NO_PANES, nextPaneMounts } from "./panemounts";
 import { ProjectOverview } from "./projectoverview";
-import { HeldPane } from "./heldpane";
-import { shownServices } from "./serviceseen";
 import { appSurfaceService } from "./railapps";
 import { appSurfaceIdAtom, railPinsAtom } from "./railappsstore";
-import { reportServicesSeen, serviceByTabAtom, servicesAtom } from "./servicesstore";
 import {
     dockedTerminalAtom,
     moveToDock,
+    railVisibleAtom,
     terminalDockDragAtom,
     terminalDockFoldedAtom,
     terminalDockHeightAtom,
     terminalDockMaxAtom,
-    railVisibleAtom,
     terminalFullscreenAtom,
     undock,
 } from "./railstore";
 import { projectFocusTarget } from "./railterminals";
 import { isEndedWorkerId } from "./runlineage";
+import { shownServices } from "./serviceseen";
+import { reportServicesSeen, serviceByTabAtom, servicesAtom } from "./servicesstore";
 import { SleepingCard } from "./sleepingcard";
 import { SleepingTranscript } from "./sleepingtranscript";
 import { StartupLoader } from "./startuploader";
@@ -164,7 +164,8 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
     // default, never empty). A done task's worker has no terminal to mount, so it is focusable without being
     // mountable; so is a run's final stage before a verifier session stands for it.
     const mountable = [...agents, ...terminals];
-    const found = focusId != null ? (mountable.find((a) => a.id === focusId) ?? ended?.agent ?? stage?.agent) : undefined;
+    const found =
+        focusId != null ? (mountable.find((a) => a.id === focusId) ?? ended?.agent ?? stage?.agent) : undefined;
     // a tab that drops off the roster for a moment without closing keeps the centre and the focus (keepFocused)
     const tabIds = useAtomValue(atoms.workspace)?.tabids;
     const lastFoundRef = useRef<AgentVM | undefined>(undefined);
@@ -227,7 +228,15 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
     const appMode = appShows(app) !== "terminal";
     // what shows in the terminal's place; the canvas, the review and the brainstorm are exclusive (agentview.ts), and
     // an app is a terminal, which has none of them
-    const swapped = reviewMode ? "review" : brainstormMode ? "brainstorm" : canvasMode ? "canvas" : appMode ? "app" : null;
+    const swapped = reviewMode
+        ? "review"
+        : brainstormMode
+          ? "brainstorm"
+          : canvasMode
+            ? "canvas"
+            : appMode
+              ? "app"
+              : null;
     // a compaction the user has not seen, said above the terminal; with the pane up the pane says it itself
     const compacted = brainstorm?.file?.compacted;
     const showCompacted = swapped == null && compacted != null && compacted > brainstorm!.lastViewedMs;
@@ -297,7 +306,10 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
     const multi = cells.length > 1;
     // Expand: a board cell on screen that has it on takes the whole grid and the other cells hide under it, still
     // mounted. The panel's maximize (dockMax, below) wins over it.
-    const boardCellKey = cells.filter((cell) => boardCellRef(cell.id) != null).map((cell) => cell.id).join("\n");
+    const boardCellKey = cells
+        .filter((cell) => boardCellRef(cell.id) != null)
+        .map((cell) => cell.id)
+        .join("\n");
     const maxedBoardAtom = useMemo(
         () =>
             atom(
@@ -360,7 +372,10 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
     // resets the Chat being read in it to the top. Stored during render like the mounts above.
     const cellTabs = mountable.filter((a) => a.blockId != null);
     const [storedCellOrder, setCellOrder] = useState<readonly string[]>([]);
-    const cellOrder = nextCellOrder(storedCellOrder, cellTabs.map((a) => a.id));
+    const cellOrder = nextCellOrder(
+        storedCellOrder,
+        cellTabs.map((a) => a.id)
+    );
     if (cellOrder !== storedCellOrder) {
         setCellOrder(cellOrder);
     }
@@ -389,7 +404,6 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
     const dockHeight = clampDockHeight(dragDockHeight ?? storedDockHeight, gridHeight);
     // folded, the row is the strip; untiled it keeps a 6px margin around it, as the cells do when tiled
     const dockRowPx = dockFolded ? DOCK_STRIP_PX + (tiled ? 0 : 12) : dockHeight;
-
 
     // the stage's row becomes its verifier's session once that is in the roster, and the focus goes with the row
     const stageFocusId = stage ? finalRowFocusId(stage.run, agents) : undefined;
@@ -510,7 +524,13 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
     useEffect(() => {
         const prev = lastMode.current;
         lastMode.current = agent != null ? { id: agent.id, mode: shownMode } : null;
-        if (agent == null || prev == null || prev.id !== agent.id || prev.mode === shownMode || agent.sleeping != null) {
+        if (
+            agent == null ||
+            prev == null ||
+            prev.id !== agent.id ||
+            prev.mode === shownMode ||
+            agent.sleeping != null
+        ) {
             return;
         }
         if (surface !== "agent" || centerMode !== "terminal" || swapped != null) {
@@ -633,7 +653,14 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
     // agent is chosen or this one asks again.
     const asking = asksInTerminal(agent);
     useEffect(() => {
-        if (!asking || agent == null || surface !== "agent" || centerMode !== "terminal" || showSub || swapped != null) {
+        if (
+            !asking ||
+            agent == null ||
+            surface !== "agent" ||
+            centerMode !== "terminal" ||
+            showSub ||
+            swapped != null
+        ) {
             return;
         }
         if (focusClaimed()) {
@@ -776,7 +803,12 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
 
     return (
         <MotionConfig reducedMotion="user">
-            <div ref={wrapRef} tabIndex={0} data-cockpit-surface-wrap className="flex h-full w-full bg-background outline-none">
+            <div
+                ref={wrapRef}
+                tabIndex={0}
+                data-cockpit-surface-wrap
+                className="flex h-full w-full bg-background outline-none"
+            >
                 {/* the tree stays in canvas, review and brainstorm mode: hiding it made reaching another agent a round trip through the terminal */}
                 {/* beside a board the tree folds to a strip (agenttreeslot.tsx); only in terminal mode, where the board shows */}
                 {!fullscreen || centerMode !== "terminal" ? (
@@ -825,7 +857,10 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
                                         data-brainstorm-compacted
                                         className="mx-[16px] mt-[12px] flex flex-none items-center gap-[10px] rounded-[8px] border border-edge-mid bg-surface-raised px-[12px] py-[10px]"
                                     >
-                                        <span className="h-[7px] w-[7px] flex-none rounded-full bg-accent" aria-hidden />
+                                        <span
+                                            className="h-[7px] w-[7px] flex-none rounded-full bg-accent"
+                                            aria-hidden
+                                        />
                                         <span className="flex-1 text-[13px] leading-[1.45] text-secondary">
                                             {compactedSummary(brainstorm!.file!)}
                                         </span>
