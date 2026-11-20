@@ -46,6 +46,11 @@ and a picture given to a line that is not big.
   start one run with them, keep an item for later, or drop it. A run's lead files each open issue as a proposal, and a
   proposal from a run no longer lands in Needs you; `wsh effort backfill-proposed` moves what runs left since
   2026-11-13 into To review. <!-- big --> <!-- shot: 1.9.0-run-review.webp -->
+- Agent's edits: a Claude agent's Diff now lists only the files it changed itself, rebuilt from its own edits, instead
+  of everything that changed in the checkout since its session started. A switch under the panel's header takes you
+  back to Since session start. A file the rebuild could not match exactly is marked (no backup, or changed outside the
+  agent between its edits), and a caption counts the Bash calls that may have changed files it cannot show.
+  <!-- big --> <!-- shot: none -->
 
 ### Changed
 
@@ -60,6 +65,8 @@ and a picture given to a line that is not big.
   ends with charts of where the tokens went, how each seat looked things up (and how often it read a file another seat
   had already read) and when each seat worked. `wsh council bench results --chart` draws each variant's key lines found
   against its tokens per run.
+- A Claude agent's card, Agent details rail and Hub peek count only the files that agent changed itself, so a second
+  agent in the same checkout no longer shows the first one's uncommitted work as its own.
 
 ### Fixed
 
@@ -68,6 +75,15 @@ and a picture given to a line that is not big.
   a fixed guess that read 3 to 5 times low.
 - A council report's Cite check no longer lists a file named by its bare name as Wrong: it reads it through the full path
   the report cites elsewhere, or lists it as not checked.
+- A git that times out no longer reads as "no upstream" or a detached HEAD: Push no longer publishes the branch anew,
+  and Pull says the read did not answer instead of reporting no upstream.
+- Sessions counts the tokens of a session's subagents, so a session that fanned out reads the same there as in the
+  details rail.
+- A session opened with `!` is named by your first typed prompt (until then `! <command>`), not by the raw command tags.
+- A field only one side changed (title, status, project…) is no longer lost when the vault syncs an initiative.
+- An interrupted vault merge no longer blocks every later sync; the edits made since are kept.
+- A config file replaced while arcterm runs (a project registered from a script, say) shows up without a restart, even
+  when Windows still held the file for a moment.
 
 ## 1.8.0 — 2026-11-19
 

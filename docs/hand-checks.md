@@ -16,6 +16,30 @@ list (its number is not reused).
 Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) ·
 [part 4](hand-checks-4.md) · [part 3](hand-checks-3.md) · [part 2](hand-checks-2.md) (oldest).
 
+- [ ] (arcterm) Kael sync 11-19: two Claude agents on one checkout, each Diff lists only its own files
+  (`pkg/agentedits`, `GitAgentEditsCommand`; `frontend/app/view/agents/agentchanges.ts`). The CDP scenario
+  `diff-agent-edits` fakes the transcript, so no real Claude session has been replayed. Open two live Claude agents on
+  the same project checkout (no worktree) and have each edit and write a different file, one of them with an Edit to a
+  file the other has also touched. Focus the first agent → Diff opens on **Agent's edits** and lists only the files
+  that agent edited or wrote, with the other agent's files absent (they show under **Since session start**); its card
+  chip, the Agent details rail's Files changed and the Hub peek's Changed files all count those same files. Repeat for
+  the second agent. A file one of them edited with no Claude Code backup (a session older than its file-history) carries
+  the dashed-circle mark, and one whose Edit no longer applies because the other agent changed it carries the warning
+  triangle; make one agent run a Bash `sed -i` on a file → the caption reads `· 1 Bash call may have changed files not
+  shown`. A fresh Claude agent that has edited nothing lists no file and its card shows no changes chip.
+- [ ] (arcterm) Kael sync 11-19: the Agent's edits / Since session start switch keeps its choice across surfaces
+  (`diffrangechoice.ts`, `RangeSwitch` in `diffpanel.tsx`). On a Claude agent's Diff, click **Since session start** →
+  the list grows to everything changed in the checkout since the session began; go to Cockpit (or Code) and back to
+  Diff → it still opens on Since session start for that agent, and a second Claude agent still opens on **Agent's
+  edits**. Click **Agent's edits** again and leave and come back → it stays. A pi agent's Diff shows no switch and opens
+  on Since session start. The choice is kept in memory only, so it is gone after a restart. Scenario-tested only.
+- [ ] (arcterm) Kael sync 11-19: a config file replaced while arcterm runs shows up without a restart
+  (`pkg/wconfig` `readFullConfigSettled`, `rereadIfChanged`). With arcterm open, register a project from a script that
+  rewrites `projects.json` by writing a temp file and renaming it over the original, and do it a few times in a row,
+  quickly → the Agent tree and the project picker list the project each time with no restart, and none of the
+  registrations is missing after a few seconds. Windows is where the rename can leave the file refusing its next open
+  ("used by another process", a virus scanner or indexer holding it); the Go half is unit-tested with a fake refusing
+  read only, never against a real held file.
 - [ ] (arcterm) **Boards, a real drawer turn** (`pkg/boarddrawer`, `wsh board draw`; the CDP scenarios stub every
   board RPC, so no drawer has run in them). From a live claude agent in a registered project, ask it to draw how
   something works, or run `wsh board draw --board demo --context "<a short briefing>"` yourself: the command prints
