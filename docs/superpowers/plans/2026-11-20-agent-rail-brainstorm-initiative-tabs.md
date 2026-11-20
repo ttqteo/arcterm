@@ -287,7 +287,7 @@ export function railBrainstormRows(m: BrainstormBandModel): RailBrainstormView {
 
 ### Task 3: The Brainstorm tab
 
-**Depends on:** Task 1, Task 2
+**Depends on:** Task 1, Task 2 (uses railBrainstormRows for the timeline and the dialog's board order)
 **Files:** `frontend/app/view/agents/railbrainstormpane.tsx`, `frontend/app/view/agents/brainstormbandview.tsx`, `frontend/app/view/agents/chatband.tsx`, `frontend/app/view/agents/agentsurface.tsx`
 
 Fill the stub `railbrainstormpane.tsx` Task 1 created (the strip entry, its dot and the body case are already there).
@@ -429,7 +429,7 @@ Terminal, a split of four shows the chip in each linked cell.
 
 ### Task 6: The rail tab scenarios and What's new
 
-**Depends on:** Task 5
+**Depends on:** Task 5 (the scenarios assert the band and popover are gone and the chip and i open the Initiative tab)
 **Files:** `scripts/cdp/scenarios-rail-brainstorm-initiative.mjs`, `scripts/cdp/scenarios.mjs`, `scripts/cdp/scenarios-chat-brainstorm-band.mjs`, `scripts/cdp/scenarios-chat-initiative-band.mjs`, `scripts/cdp/scenarios-chat-suggest-card.mjs`, `CHANGELOG.md`, `public/whatsnew/`
 
 Create `scenarios-rail-brainstorm-initiative.mjs` and register it in `scenarios.mjs` (the import list near line 79 and
