@@ -37,7 +37,7 @@ and a picture given to a line that is not big.
 - The council an agent started now shows in the Agent panel itself: a Council tab after Transcript holds the
   council's chat beside the agent's terminal, the seats' messages as they come, whose move it is (send held drafts on,
   read the report) and a box to message the council. `c` opens it, and Open shows the full Discussion. It replaces the
-  chat button after the panel's tabs. <!-- big --> <!-- shot: none -->
+  chat button after the panel's tabs. <!-- big --> <!-- shot: 1.10.0-rail-council.webp -->
 - A compaction's summary no longer opens in the middle of Chat: Chat keeps only the thin Compacted line, and the
   Compacted line in the Agent details rail opens the summary in a wide sheet at the window's right edge. A pi agent's
   compaction now shows in the rail too.

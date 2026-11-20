@@ -108,9 +108,8 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
   tested.
 
 - [ ] (arcterm) **The Agent panel's Council tab** (`agentrailpanel.tsx` `RailCouncilTab`, `railcouncilpane.tsx`,
-  `railcouncil.ts`, binding `agent:council-chat`). The CDP scenario `rail-council-tab` went through every step once
-  (its screenshots show the running, drafts and done states right) but was stopped for low memory before it printed its
-  results, so steps 3 to 5 (Show more, Open, `c`) and the two clicks are unconfirmed: run it again, then by hand: have a live agent run `wsh council start …` (through Bash, and once
+  `railcouncil.ts`, binding `agent:council-chat`). The CDP scenario `rail-council-tab` passes (tab, chat, Show more, Open,
+  `c`, Send to the others, Read the report, on fixture councils); still by hand, on a real council: have a live agent run `wsh council start …` (through Bash, and once
   through PowerShell on Windows): the Council tab fades in after Transcript with a green dot, and Chat gets the council
   card. On the tab: the messages come in as the seats write, the list follows them while you are at the end and stays put
   when you scrolled up, a long message opens with Show more, Open shows the full Discussion, and a message sent from the

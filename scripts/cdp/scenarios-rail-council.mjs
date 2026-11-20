@@ -131,6 +131,9 @@ export default function (kit) {
                 const end2 = await h.ev(AT_END);
                 const box2 = await h.ev(`!!${PANE}?.querySelector("[data-council-composer-input]")`);
                 const w2 = await h.ev(ASIDE_WIDTH);
+                // the reveal's toast would cover the panel in the pictures
+                await h.ev(`(() => { for (const b of document.querySelectorAll("[data-notification-close]")) b.click(); return true; })()`);
+                await polishNap(500);
                 await h.shot("cdp-shots/rail-council-tab-running.png");
                 await h.whatsnewShot("rail-council", { selector: 'aside[aria-label="Agent details"]' });
                 rec(
