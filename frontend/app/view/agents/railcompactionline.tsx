@@ -34,6 +34,8 @@ export function RailCompactionLine({ agentId, now }: { agentId: string; now: num
         return () => globalStore.set(compactionSheetOpenAtom, false);
     }, [open]);
     const facts = compactionFacts(list, now);
+    // the rail's line leaves out manual or auto, so it fits the rail; the sheet's head has the whole of it
+    const lineFacts = compactionFacts(list, now, { trigger: false });
     if (facts == null) {
         return null;
     }
@@ -60,7 +62,7 @@ export function RailCompactionLine({ agentId, now }: { agentId: string; now: num
                 <span className="flex-none text-[10px] font-semibold uppercase tracking-[0.1em] text-accent-soft">
                     Compacted
                 </span>
-                <span className="min-w-0 flex-1 truncate text-muted">{facts}</span>
+                <span className="min-w-0 flex-1 truncate text-muted">{lineFacts}</span>
                 {canOpen ? <ChevronRight size={12} aria-hidden className="flex-none text-accent-soft" /> : null}
             </button>
             {canOpen && frame != null

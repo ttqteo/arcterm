@@ -76,6 +76,13 @@ describe("compactionFacts", () => {
         );
     });
 
+    it("leaves out the trigger when asked, for the rail's one line", () => {
+        const at = Date.parse("2026-11-19T10:00:00.000Z");
+        expect(
+            compactionFacts([{ trigger: "manual", preTokens: 202000, postTokens: 13000, at }], now, { trigger: false })
+        ).toBe("202k → 13k · 12m ago");
+    });
+
     it("leads with the count when the tail holds more than one", () => {
         expect(
             compactionFacts([{ trigger: "auto" }, { trigger: "manual", preTokens: 90000, postTokens: 9000 }], now)

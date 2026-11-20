@@ -101,9 +101,14 @@ export function extractCompactions(lines: string[]): RailCompaction[] {
     return out;
 }
 
-/** Pure: the rail's words for the last compaction, "202k → 13k · manual · 12m ago", with how many the tail holds
- *  ("×2") ahead of them when more than one. Null when there is none. */
-export function compactionFacts(list: RailCompaction[] | undefined, now: number): string | null {
+/** Pure: the words for the last compaction, "202k → 13k · manual · 12m ago", with how many the tail holds ("×2")
+ *  ahead of them when more than one. Null when there is none. `trigger: false` leaves out manual or auto: the rail's
+ *  one line keeps to what fits its width, and the summary sheet's head says it. */
+export function compactionFacts(
+    list: RailCompaction[] | undefined,
+    now: number,
+    opts: { trigger?: boolean } = {}
+): string | null {
     if (list == null || list.length === 0) {
         return null;
     }
@@ -115,7 +120,7 @@ export function compactionFacts(list: RailCompaction[] | undefined, now: number)
     if (c.preTokens != null && c.postTokens != null) {
         parts.push(`${formatTokens(c.preTokens)} → ${formatTokens(c.postTokens)}`);
     }
-    if (c.trigger) {
+    if (c.trigger && opts.trigger !== false) {
         parts.push(c.trigger);
     }
     if (c.at != null) {
