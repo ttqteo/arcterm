@@ -172,7 +172,10 @@ function DirectionCard({
             {d.step !== "" ? (
                 <div data-council-sheet-step className="flex flex-col gap-0.5 pl-[29px]">
                     <span className="text-[10.5px] font-semibold text-accent">First step</span>
-                    <span title={d.step} className="line-clamp-2 text-[12px] leading-[17px] text-secondary">
+                    <span
+                        title={d.step}
+                        className="line-clamp-2 text-[12px] leading-[17px] text-secondary [overflow-wrap:anywhere]"
+                    >
                         {d.step}
                     </span>
                 </div>

@@ -23,6 +23,10 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
 
 ## 2026-11-20
 
+- [ ] (arcterm) **A council card wraps a long path** (`councilsummary.tsx`, `councilsheet.tsx`). Open a council whose
+  First step names a long path with no spaces (`obsidian_harness/20261113_paper_v1_be…`): it breaks inside the card
+  in the report's direction cards and in Jarvis's council sheet, nothing runs past the edge. Not tried in the app.
+
 - [ ] (arcterm) **Typing below a one-question ask answers it** (`permissionHolds`, fix/box-answers-ask). In a Claude
   agent's Chat, have it ask one AskUserQuestion (a plan Handoff is one): the box shows no "Answer the permission prompt
   first" line, and words typed and sent go as the typed answer (the TUI's "Type something"), not "Queued · sends once

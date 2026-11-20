@@ -306,7 +306,10 @@ function DirectionCard({
                     <span className="min-w-0">{row.tag}</span>
                 </span>
             </span>
-            <span data-council-title className="text-[16.5px] font-semibold leading-[1.4] text-primary">
+            <span
+                data-council-title
+                className="text-[16.5px] font-semibold leading-[1.4] text-primary [overflow-wrap:anywhere]"
+            >
                 {d.title}
             </span>
             {row.step !== "" ? (
@@ -315,7 +318,7 @@ function DirectionCard({
                         <CornerDownRight size={13} aria-hidden />
                         First step
                     </span>
-                    <span className="text-[13.5px] leading-[1.5] text-ink-hi">{row.step}</span>
+                    <span className="text-[13.5px] leading-[1.5] text-ink-hi [overflow-wrap:anywhere]">{row.step}</span>
                 </span>
             ) : null}
             <span data-council-direction-footer className="mt-auto flex w-full items-end gap-2">
