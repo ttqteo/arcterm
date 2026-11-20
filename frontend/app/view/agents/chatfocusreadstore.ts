@@ -179,6 +179,9 @@ export function focusedConversationAgent(): string | null {
 // an agent's Chat conversation on screen (not a pane fading out to Terminal, not one hidden), else null; by the DOM, since
 // the reader registers only once focus read is on
 function conversationOf(agentId: string): HTMLElement | null {
+    if (typeof document === "undefined") {
+        return null;
+    }
     const scroller = document.querySelector<HTMLElement>(
         `[data-agent-chat="${CSS.escape(agentId)}"]:not([data-chat-leaving]) [data-chat-scroller]`
     );

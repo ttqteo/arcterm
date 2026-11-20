@@ -6,6 +6,7 @@ import {
     atEnd,
     fencedText,
     FOCUS_READ_KEEP,
+    focusReadEscapeTarget,
     GLIDE_LAND,
     GLIDE_TAU_MS,
     glideStep,
@@ -334,5 +335,32 @@ describe("withFocusRead", () => {
         expect(next).toHaveLength(FOCUS_READ_KEEP);
         expect(next[0]).toBe("x1");
         expect(next.at(-1)).toBe("new");
+    });
+});
+
+describe("focusReadEscapeTarget", () => {
+    const shownAll = () => true;
+    it("takes the reader that holds the focus first, without asking the DOM", () => {
+        let asked = false;
+        const shown = () => ((asked = true), true);
+        expect(focusReadEscapeTarget("a1", "a2", ["a2"], shown)).toBe("a1");
+        expect(focusReadEscapeTarget("doc:/x.md", "a2", ["a2"], shown)).toBe("doc:/x.md");
+        expect(asked).toBe(false);
+    });
+    it("falls back to the agent in focus with focus read on and its Chat on screen, wherever the focus is", () => {
+        expect(focusReadEscapeTarget(null, "a1", ["a1"], shownAll)).toBe("a1");
+    });
+    it("is null when the agent in focus has focus read off, or none is in focus", () => {
+        expect(focusReadEscapeTarget(null, "a1", ["a2"], shownAll)).toBeNull();
+        expect(focusReadEscapeTarget(null, undefined, ["a1"], shownAll)).toBeNull();
+        expect(focusReadEscapeTarget(null, "", [""], shownAll)).toBeNull();
+    });
+    it("is null when the agent's Chat is not on screen (Terminal, fading out, hidden)", () => {
+        expect(focusReadEscapeTarget(null, "a1", ["a1"], () => false)).toBeNull();
+    });
+    it("asks the DOM only for an agent with focus read on", () => {
+        let asked = false;
+        focusReadEscapeTarget(null, "a1", [], () => ((asked = true), true));
+        expect(asked).toBe(false);
     });
 });

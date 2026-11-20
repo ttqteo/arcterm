@@ -219,3 +219,19 @@ export function withFocusRead(ids: readonly string[], agentId: string, on: boole
     const rest = ids.filter((id) => id !== agentId);
     return on ? [...rest, agentId].slice(-FOCUS_READ_KEEP) : rest;
 }
+
+/** Whose focus read Escape turns off: the reader that holds the keyboard focus (a Chat conversation, a markdown Preview),
+ *  else the agent in focus when it has focus read on and its Chat conversation shows, wherever the focus is (after a
+ *  click on the tree, the header or the Wake box, which leave it on the page body), else null. `shown` is asked last and
+ *  only for an agent with focus read on, since it reads the DOM. */
+export function focusReadEscapeTarget(
+    held: string | null,
+    focusId: string | null | undefined,
+    onIds: readonly string[],
+    shown: (agentId: string) => boolean
+): string | null {
+    if (held != null) {
+        return held;
+    }
+    return focusId != null && focusId !== "" && onIds.includes(focusId) && shown(focusId) ? focusId : null;
+}
