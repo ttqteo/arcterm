@@ -16,6 +16,11 @@ list (its number is not reused).
 Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) ·
 [part 4](hand-checks-4.md) · [part 3](hand-checks-3.md) · [part 2](hand-checks-2.md) (oldest).
 
+- [ ] (arcterm) **A council started through PowerShell draws its card in Chat** (`transcriptprojection.ts` shell
+  tools, `33c6f49d0`). After installing a build with it, open the mit-thesis agent `773ab9d0` in Chat: council
+  `0f74c5be` ("Truc chi phi cross-model…") shows its council card where the report came back, and the reply that
+  starts "Council xong." draws in the council panel. A PowerShell command's row in Chat also opens its output, like
+  a Bash one.
 - [ ] (arcterm) Resume reads resuming, not working (`pendingToVM` in `frontend/app/view/agents/agentsviewmodel.ts`;
   `fix/resume-working-flicker`). Library → Conversations → resume a long Claude conversation with no message. While it
   loads, its tree row ends in a muted "resuming…" with no working dot, the header pill reads "resuming" in muted ink
