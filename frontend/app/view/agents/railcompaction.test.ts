@@ -46,6 +46,19 @@ describe("extractCompactions", () => {
     it("ignores a prompt that only quotes the words, and a broken line", () => {
         expect(extractCompactions([prompt('what is "compact_boundary"?'), "{not json compact_boundary"])).toEqual([]);
     });
+
+    it("reads pi's compaction records, the summary inside each", () => {
+        const pi = (rec: object) => JSON.stringify({ type: "compaction", id: "c", parentId: "a", ...rec });
+        const lines = [
+            JSON.stringify({ type: "message", message: { role: "user", content: "a compaction" } }),
+            pi({ timestamp: "2026-11-19T10:00:00.000Z", summary: "kept the essentials", tokensBefore: 120000 }),
+            pi({ summary: "  " }),
+        ];
+        expect(extractCompactions(lines)).toEqual([
+            { summary: "kept the essentials", preTokens: 120000, at: Date.parse("2026-11-19T10:00:00.000Z") },
+            {},
+        ]);
+    });
 });
 
 describe("compactionFacts", () => {

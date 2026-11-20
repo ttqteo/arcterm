@@ -1248,9 +1248,10 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
   run it.
 - [ ] (arcterm) **The rail says when the agent last compacted** (`railcompactionline.tsx`). In a Claude agent, run
   `/compact`; within a few seconds the Agent details rail's session block, under the tokens bar, reads
-  `Compacted · <before> → <after> · manual · just now`. Click it: the summary opens under it and scrolls inside a
-  320px box; click again to close. Compact once more → the line leads with `×2`. An agent that never compacted shows
-  no line, and a subagent's interior shows none.
+  `Compacted · <before> → <after> · manual · just now`. Click it: the summary opens in a sheet pinned to the window's
+  right edge, wider than the rail; Esc or ✕ closes it. Chat shows only the thin Compacted line, which opens nothing. A
+  pi agent's compaction shows the line too. Compact once more → the line leads with `×2`. An agent that never
+  compacted shows no line, and a subagent's interior shows none.
 - [ ] (arcterm) **Suggested replies stay with an attachment** (`chatcomposer.tsx`). Once a Claude agent's turn ends with
   chips above Chat's box, paste an image: the chips stay. Click one: the message sent carries the chip's text and the
   image, and the box empties of both.

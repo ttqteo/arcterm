@@ -608,7 +608,6 @@ export function CompactTranscript({
                         trigger={item.trigger}
                         preTokens={item.preTokens}
                         postTokens={item.postTokens}
-                        summary={item.summary}
                     />
                 );
             case "notification":

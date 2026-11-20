@@ -47867,10 +47867,10 @@ const agentChat = {
                 { repo79, files79, dirs79, cmds79, vars79 }
             );
 
-            // 80. A compaction at the end of the conversation, its summary long. The chat is at its end (stuck to the tail); a click
-            // on the COMPACTED chip opens the summary, and the feed rises with it until the divider rests 56 px under the chat's
-            // top (narrationtimeline.tsx REVEAL_MARGIN_PX), so the summary shows: not left below the fold, and not the view
-            // following the opened summary to its last line
+            // 80. A compaction at the end of the conversation, its summary long. Chat marks it with one thin Compacted line that
+            // opens nothing (narrationtimeline.tsx CompactionDivider): the summary is not in the conversation. The rail's session
+            // block reads the same compaction (railcompactionline.tsx), and a click on its line opens the summary in a sheet
+            // pinned to the window's right edge, wider than the rail; Esc closes it
             await showAgent(A);
             await polishWaitFor(h, `!!${acBox(A)}`, AC_WAIT_MS);
             const at80 = { cwd: ctx.dir, ts: new Date().toISOString() };
@@ -47887,29 +47887,23 @@ const agentChat = {
             acAppend(ctx.files.main, boundary80, summary80);
             const divider80 = `${acLayer(A)}?.querySelector("[data-compaction-divider]")`;
             const shown80 = await polishWaitFor(h, `!!${divider80}`, 15000);
-            // to the chat's end, where it sticks to the tail: the divider's nearest scrolling parent is the chat's scroller
-            await h.ev(`(() => {
-                let s = ${divider80}?.parentElement;
-                while (s && getComputedStyle(s).overflowY !== "auto") s = s.parentElement;
-                if (s) s.scrollTop = s.scrollHeight;
-            })()`);
-            await polishNap(400);
-            const top80 = await h.ev(`${divider80}?.getBoundingClientRect().top ?? null`);
-            await h.ev(`${divider80}?.querySelector("button")?.click()`);
-            const opened80 = await polishWaitFor(h, `(${divider80}?.textContent ?? "").includes("Kept point 60")`, 5000);
-            await polishNap(700);
-            const after80 = await h.ev(`${divider80}?.getBoundingClientRect().top ?? null`);
-            const scrollerTop80 = await h.ev(`(() => {
-                let s = ${divider80}?.parentElement;
-                while (s && getComputedStyle(s).overflowY !== "auto") s = s.parentElement;
-                return s ? s.getBoundingClientRect().top : null;
-            })()`);
-            await h.shot("cdp-shots/agent-chat-80-compaction-open.png");
+            const thin80 = await h.ev(`(() => { const d = ${divider80}; return !!d && !d.querySelector("button") && !d.textContent.includes("Kept point"); })()`);
+            // an earlier step left the rail on a File tab: back to its sections, where the session block is
+            await h.ev(`${RAIL_ASIDE}?.querySelector('[data-rail-tab="overview"]')?.click()`);
+            const line80 = `${RAIL_ASIDE}?.querySelector("[data-rail-compaction] button")`;
+            const railLine80 = await polishWaitFor(h, `(${line80}?.textContent ?? "").includes("144k")`, 15000);
+            await h.ev(`${line80}?.click()`);
+            const sheet80 = `document.querySelector("[data-rail-compaction-summary]")`;
+            const opened80 = await polishWaitFor(h, `(${sheet80}?.textContent ?? "").includes("Kept point 60")`, 5000);
+            await polishNap(500);
+            const widths80 = await h.ev(`({ sheet: Math.round(${sheet80}?.getBoundingClientRect().width ?? 0), rail: Math.round(${RAIL_ASIDE}?.getBoundingClientRect().width ?? 0) })`);
+            await h.shot("cdp-shots/agent-chat-80-compaction-sheet.png");
+            await h.ev(`${sheet80}?.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", code: "Escape", bubbles: true }))`);
+            const closed80 = await polishWaitFor(h, `!${sheet80}`, 3000);
             rec(
-                "80. with the chat at its end, opening a compaction's long summary brings the divider up to rest 56 px under the chat's top (within 4 px), so the summary shows below it, not left below the fold or scrolled to its end",
-                shown80 && top80 != null && opened80 && after80 != null && scrollerTop80 != null && top80 - scrollerTop80 > 120 &&
-                    Math.abs(after80 - scrollerTop80 - 56) <= 4,
-                { shown80, top80, opened80, after80, scrollerTop80 }
+                "80. a compaction shows in Chat as one thin Compacted line with no summary and nothing to open; the rail's Compacted line opens the long summary in a sheet wider than the rail, and Esc closes it",
+                shown80 && thin80 && railLine80 && opened80 && widths80.sheet > widths80.rail + 100 && closed80,
+                { shown80, thin80, railLine80, opened80, widths80, closed80 }
             );
 
             // 81. Tab in bash mode puts a file whose name holds a space or a shell metacharacter in the box with a backslash before each of

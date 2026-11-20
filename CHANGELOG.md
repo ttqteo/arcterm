@@ -30,6 +30,14 @@ in the dev app: `node scripts/whatsnew-shot.mjs <topic> [--selector <css>]` writ
 `whatsnew.test.ts` fails a big line with neither (in Unreleased and from 1.9.0 on), a missing file, one over 120 KB,
 and a picture given to a line that is not big.
 
+## Unreleased
+
+### Changed
+
+- A compaction's summary no longer opens in the middle of Chat: Chat keeps only the thin Compacted line, and the
+  Compacted line in the Agent details rail opens the summary in a wide sheet at the window's right edge. A pi agent's
+  compaction now shows in the rail too.
+
 ## 1.9.0 — 2026-11-20
 
 ### Added
