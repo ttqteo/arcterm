@@ -13,6 +13,7 @@ import { floatMiniAtom } from "@/app/view/agents/floatstore";
 import { heldAskOpenAtom } from "@/app/view/agents/heldaskpopup";
 import { machineServersOpenAtom } from "@/app/view/agents/machineserversstore";
 import { tabSwitcherAtom } from "@/app/view/agents/tabswitcherstore";
+import { compactionSheetOpenAtom } from "@/app/view/agents/railcompactionsheetatom";
 import { uploadsLightboxOpenAtom } from "@/app/view/agents/uploadslightboxatom";
 import { finalShotsViewerOpenAtom } from "@/app/view/jarvis/finalshotsstore";
 import { tourAtom, tourMenuOpenAtom } from "@/app/view/jarvis/jarvistourstore";
@@ -136,6 +137,8 @@ export function deriveKeyContext(): KeyContext {
         // the Agent rail's Uploads lightbox is a ModalShell too, but one the dispatcher cannot see (component state);
         // uncounted, Escape left the surface with the lightbox still up, and j/k, the arrows, d and f acted behind it
         globalStore.get(uploadsLightboxOpenAtom) ||
+        // and the rail's compaction summary sheet: a sheet, so anyDialogOpen below skips it, and agent:back took its Escape
+        globalStore.get(compactionSheetOpenAtom) ||
         // and the footer's Consumers and Servers popovers, whose Escape listeners run after this capture handler
         globalStore.get(consumersOpenAtom) != null ||
         globalStore.get(machineServersOpenAtom) ||

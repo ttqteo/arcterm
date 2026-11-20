@@ -1,10 +1,11 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// The Agent details rail's compaction line: the compactions in a Claude transcript's tail (each compact_boundary record
-// with the summary Claude Code writes after it), and the words the rail's session block says about the last one. Chat
-// draws the same records as its Compacted divider (transcriptprojection.ts); the rail reads them from the tail the
-// subagents store already reads (subagentsstore.ts), so a compaction older than that tail is not counted.
+// The Agent details rail's compaction line: the compactions in a transcript's tail (Claude's compact_boundary records
+// with the summary Claude Code writes after each, or pi's compaction records), and the words the rail's session block
+// says about the last one. Chat draws the same records as a thin Compacted divider (transcriptprojection.ts) and leaves
+// the summary to the rail; the rail reads them from the tail the subagents store already reads (subagentsstore.ts), so
+// a compaction older than that tail is not counted.
 
 import { formatAgo, formatTokens } from "./agentsviewmodel";
 import { compactSummaryText } from "./transcriptprojection";
@@ -35,8 +36,12 @@ function summaryOf(rec: any): string {
 export function extractCompactions(lines: string[]): RailCompaction[] {
     const out: RailCompaction[] = [];
     for (const line of lines) {
-        // most lines are neither: skip the parse
-        if (!line.includes("compact_boundary") && !line.includes("isCompactSummary")) {
+        // most lines are none of them: skip the parse
+        if (
+            !line.includes("compact_boundary") &&
+            !line.includes("isCompactSummary") &&
+            !line.includes('"compaction"')
+        ) {
             continue;
         }
         let rec: any;
@@ -56,6 +61,22 @@ export function extractCompactions(lines: string[]): RailCompaction[] {
             }
             if (typeof m.postTokens === "number") {
                 c.postTokens = m.postTokens;
+            }
+            const at = typeof rec.timestamp === "string" ? Date.parse(rec.timestamp) : NaN;
+            if (Number.isFinite(at)) {
+                c.at = at;
+            }
+            out.push(c);
+            continue;
+        }
+        // pi writes one record per compaction, its summary inside (pitranscriptprojection.ts reads the same)
+        if (rec?.type === "compaction") {
+            const c: RailCompaction = {};
+            if (typeof rec.summary === "string" && rec.summary.trim() !== "") {
+                c.summary = rec.summary;
+            }
+            if (typeof rec.tokensBefore === "number") {
+                c.preTokens = rec.tokensBefore;
             }
             const at = typeof rec.timestamp === "string" ? Date.parse(rec.timestamp) : NaN;
             if (Number.isFinite(at)) {

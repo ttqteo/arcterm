@@ -12,7 +12,6 @@ import {
     Check,
     ChevronDown,
     ChevronRight,
-    ChevronUp,
     Copy,
     ImageOff,
     Layers,
@@ -20,7 +19,7 @@ import {
     X,
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
-import { MOTION, composerReveal, shouldFadeEntry, springReveal } from "@/app/element/motiontokens";
+import { MOTION, composerReveal, shouldFadeEntry } from "@/app/element/motiontokens";
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import {
     burstRenderMode,
@@ -28,7 +27,6 @@ import {
     detailExceedsInline,
     formatTokens,
     groupTimeline,
-    revealScrollTop,
     summarizeActions,
     type ActionDetail,
     type AgentActionEntry,
@@ -42,8 +40,7 @@ import { userNeedsClamp } from "./compacttimeline";
 import { splitAttachedImages } from "./launcherimages";
 import { MarkdownMessage } from "./markdownmessage";
 import { PathLink } from "./pathlinkcontext";
-import { PinnedPromptBar, scrollParent, usePinnedPrompt } from "./pinnedpromptbar";
-import { RELEASE_TAIL_EVENT } from "./sticktobottom";
+import { PinnedPromptBar, usePinnedPrompt } from "./pinnedpromptbar";
 import { highlightLine } from "./highlight";
 import { namesCodeFile } from "./stepoutput";
 import { formatDuration } from "./tooldetail";
@@ -634,131 +631,37 @@ export function CommandChip({ name, args, isSkill }: { name: string; args?: stri
     );
 }
 
-// how far below the feed's top an opened compaction summary's divider comes to rest: clear of the pinned prompt bar
-const REVEAL_MARGIN_PX = 56;
-
+// Chat's mark where the agent compacted: one thin line with what it cut. The summary it kept is not drawn here; it
+// opens from the rail's session block (railcompactionline.tsx), so a long summary never sits in the conversation.
 export function CompactionDivider({
     trigger,
     preTokens,
     postTokens,
-    summary,
 }: {
     trigger?: string;
     preTokens?: number;
     postTokens?: number;
-    summary?: string;
 }) {
-    const [open, setOpen] = useState(false);
     const stat = preTokens != null && postTokens != null ? `${formatTokens(preTokens)} → ${formatTokens(postTokens)} tokens` : null;
-    const canExpand = !!summary;
-    const rootRef = useRef<HTMLDivElement>(null);
-    // A divider low in the view (as it is right after a compaction, at the end of the conversation) would open its
-    // summary below the fold: while the summary springs open, the feed rises with it until the divider sits just under
-    // the pinned prompt bar, so the summary shows. Each frame, because the feed cannot scroll past height the summary
-    // has not grown yet. A divider already near the top stays where it is.
-    const revealingRef = useRef(false);
-    // opening the summary lets go of a feed stuck to its end (sticktobottom.tsx), so the summary grows down from this
-    // divider instead of the view following it to its last line
-    const toggle = (e: React.MouseEvent<HTMLButtonElement>) => {
-        if (!open) {
-            e.currentTarget.dispatchEvent(new Event(RELEASE_TAIL_EVENT, { bubbles: true }));
-        }
-        revealingRef.current = !open;
-        setOpen((v) => !v);
-    };
-    const reveal = () => {
-        const root = rootRef.current;
-        const scroller = scrollParent(root);
-        if (!revealingRef.current || root == null || scroller == null) {
-            return;
-        }
-        const offset = root.getBoundingClientRect().top - scroller.getBoundingClientRect().top;
-        const top = revealScrollTop(scroller, offset, REVEAL_MARGIN_PX);
-        if (top != null) {
-            scroller.scrollTop = top;
-        }
-    };
-    // a long summary ends far below the divider: closing it from its foot brings the divider back on screen, so the
-    // reader is not left wherever the feed lands once the summary's height is gone; the scroll is smooth so it rides
-    // along with the summary's closing height rather than jumping ahead of it
-    const collapse = (fromFoot: boolean) => {
-        revealingRef.current = false;
-        setOpen(false);
-        if (fromFoot) {
-            rootRef.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
-        }
-    };
-    const collapseButton = (fromFoot: boolean) => (
-        <button
-            type="button"
-            onClick={() => collapse(fromFoot)}
-            className="inline-flex cursor-pointer items-center gap-1 rounded-[5px] px-1.5 py-0.5 text-[10.5px] text-muted hover:bg-hover hover:text-ink-mid"
-        >
-            <ChevronUp size={11} strokeWidth={2.2} aria-hidden />
-            Collapse
-        </button>
-    );
     return (
-        <div ref={rootRef} className="mt-3.5" data-compaction-divider>
-            <button type="button" disabled={!canExpand} onClick={toggle} className={cn("flex w-full items-center gap-2.5", canExpand ? "cursor-pointer" : "cursor-default")}>
-                <span className="h-px flex-1 bg-edge-mid" />
-                <span className="inline-flex items-center gap-2 whitespace-nowrap rounded-full border border-accent/30 bg-accent/[0.07] px-2.5 py-0.5 text-[10.5px] tabular-nums leading-[1.6]">
-                    <span className="font-semibold uppercase tracking-[0.1em] text-accent-soft">Compacted</span>
-                    {stat ? (
-                        <>
-                            <span className="text-ink-faint">·</span>
-                            <span className="text-ink-mid">{stat}</span>
-                        </>
-                    ) : null}
-                    {trigger ? (
-                        <>
-                            <span className="text-ink-faint">·</span>
-                            <span className="text-muted">{trigger}</span>
-                        </>
-                    ) : null}
-                    {canExpand ? (
-                        <span className="flex text-muted">
-                            {open ? (
-                                <ChevronUp size={10} strokeWidth={2.4} aria-hidden />
-                            ) : (
-                                <ChevronDown size={10} strokeWidth={2.4} aria-hidden />
-                            )}
-                        </span>
-                    ) : null}
-                </span>
-                <span className="h-px flex-1 bg-edge-mid" />
-            </button>
-            <AnimatePresence initial={false}>
-                {open && summary ? (
-                    // the motion box holds only the height: the box's margin, border and padding sit inside it, so they
-                    // fold away with the height instead of snapping when it reaches 0 (a summary is long, so the
-                    // spring, as Chat's other folds, not the 0.14 s tween that read as no animation at all)
-                    <motion.div
-                        key="sum"
-                        variants={springReveal}
-                        initial="initial"
-                        animate="animate"
-                        exit="exit"
-                        onUpdate={reveal}
-                        onAnimationComplete={() => {
-                            reveal();
-                            revealingRef.current = false;
-                        }}
-                        className="overflow-hidden"
-                    >
-                        <div className="my-2 rounded-[8px] border border-edge-mid bg-surface-code px-3.5 py-3">
-                            <div className="mb-1.5 flex items-center justify-between gap-2">
-                                <span className="text-[10.5px] font-semibold uppercase tracking-[0.1em] text-muted">
-                                    Summary — kept context
-                                </span>
-                                {collapseButton(false)}
-                            </div>
-                            <MarkdownMessage text={summary} />
-                            <div className="mt-2 flex justify-end">{collapseButton(true)}</div>
-                        </div>
-                    </motion.div>
+        <div className="mt-3.5 flex w-full items-center gap-2.5" data-compaction-divider>
+            <span className="h-px flex-1 bg-edge-mid" />
+            <span className="inline-flex items-center gap-2 whitespace-nowrap rounded-full border border-accent/30 bg-accent/[0.07] px-2.5 py-0.5 text-[10.5px] tabular-nums leading-[1.6]">
+                <span className="font-semibold uppercase tracking-[0.1em] text-accent-soft">Compacted</span>
+                {stat ? (
+                    <>
+                        <span className="text-ink-faint">·</span>
+                        <span className="text-ink-mid">{stat}</span>
+                    </>
                 ) : null}
-            </AnimatePresence>
+                {trigger ? (
+                    <>
+                        <span className="text-ink-faint">·</span>
+                        <span className="text-muted">{trigger}</span>
+                    </>
+                ) : null}
+            </span>
+            <span className="h-px flex-1 bg-edge-mid" />
         </div>
     );
 }
@@ -1011,7 +914,7 @@ export function NarrationTimeline({
                             animate={{ opacity: 1 }}
                             transition={{ duration: MOTION.durMicro, ease: MOTION.easeFluid }}
                         >
-                            <CompactionDivider trigger={item.trigger} preTokens={item.preTokens} postTokens={item.postTokens} summary={item.summary} />
+                            <CompactionDivider trigger={item.trigger} preTokens={item.preTokens} postTokens={item.postTokens} />
                         </motion.div>
                     );
                 }
