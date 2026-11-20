@@ -588,10 +588,13 @@ func userText(raw json.RawMessage) string {
 	return ""
 }
 
+var bashInputRe = regexp.MustCompile(`(?s)^<bash-input>(.*)</bash-input>$`)
+
 // readFirstUserPrompt returns the text of the first user turn the human typed: the session's ask, for the
 // head-text fallback when there is no ai-title (Claude Code writes none for a session opened with a slash
 // command). Not the latest turn: in a brainstorm that is an answer to the agent. Meta turns (caveats, skill
-// bodies) are skipped.
+// bodies) are skipped. A `!` shell run is no prompt: it reads "! <command>" only when no typed prompt follows,
+// and its output never counts. Mirrors the title rule in pkg/agentsessions (sessionTitle).
 func readFirstUserPrompt(path string) string {
 	f, err := os.Open(path)
 	if err != nil {
@@ -599,6 +602,7 @@ func readFirstUserPrompt(path string) string {
 	}
 	defer f.Close()
 	r := bufio.NewReader(f)
+	shellRun := ""
 	for {
 		ln, err := r.ReadBytes('\n')
 		var rec struct {
@@ -609,12 +613,17 @@ func readFirstUserPrompt(path string) string {
 			} `json:"message"`
 		}
 		if json.Unmarshal(ln, &rec) == nil && rec.Type == "user" && !rec.IsMeta {
-			if txt := userText(rec.Message.Content); txt != "" {
+			txt := userText(rec.Message.Content)
+			if m := bashInputRe.FindStringSubmatch(txt); m != nil {
+				if shellRun == "" {
+					shellRun = "! " + strings.TrimSpace(m[1])
+				}
+			} else if txt != "" && !strings.HasPrefix(txt, "<bash-stdout>") && !strings.HasPrefix(txt, "<bash-stderr>") {
 				return txt
 			}
 		}
 		if err != nil {
-			return ""
+			return shellRun
 		}
 	}
 }

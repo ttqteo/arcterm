@@ -10,10 +10,12 @@
 import { normalizeRepoPath, repoBasename } from "@/util/paths";
 import { defaultRangeFor, type DiffOrigin, type DiffScope } from "./diffscope";
 
-// the surface needs no more of an agent than this
+// the surface needs no more of an agent than this; `agent` is its runtime (absent = claude), which decides whether its
+// scope opens on its own edits
 export interface SourceAgent {
     id: string;
     name: string;
+    agent?: string;
 }
 
 // The agent the surface should re-scope to when focus moves, or null to stay put. Focus only moves a

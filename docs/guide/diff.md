@@ -30,7 +30,7 @@ from the top**, và tự tắt sau 6 giây.
 
 | Từ đâu | Thao tác | Diff mở ở |
 |---|---|---|
-| Thẻ agent trong Cockpit | Menu của thẻ → **Review changes** (chỉ có khi agent có thay đổi) | Agent đó, range **Since session start** |
+| Thẻ agent trong Cockpit | Menu của thẻ → **Review changes** (chỉ có khi agent có thay đổi) | Agent đó, range mặc định của nó: **Agent's edits** với agent Claude, **Since session start** với runtime khác |
 | Rail của agent → **Files changed** hay tab **Changes** → bấm một file | Mở ngay | Tab File cạnh terminal, dạng diff (chưa phải surface Diff) |
 | Tab File của agent | Nút **Open in Diff** | Agent đó, đúng file đó |
 | Rail của agent → **View diff** | Bấm nút | Agent đó; với công tắc Branch thì là phép so sánh cả branch với `main` |
@@ -78,9 +78,35 @@ từ chứng cứ của một run (bảng trên).
 | Range | Khi nào | Nghĩa |
 |---|---|---|
 | **Working tree** | Mặc định | Công việc chưa commit so với `HEAD` |
-| **Since session start** | Nguồn là agent | Worktree so với commit đang là `HEAD` lúc session của agent bắt đầu |
+| **Agent's edits** | Nguồn là agent Claude (mặc định của nó) | Chỉ những file chính agent đó đã sửa, dựng lại từ transcript của nó, xem [Agent's edits](#agents-edits) |
+| **Since session start** | Nguồn là agent: mặc định với runtime khác Claude, còn với agent Claude thì bấm công tắc | Worktree so với commit đang là `HEAD` lúc session của agent bắt đầu |
 | **This run** | Đi vào từ một run | Từ base commit của run đến `HEAD` (hàng đầu ghi **Run changes**) |
 | **Compare** | Bấm **Compare…** trong tab Log, hoặc `c` | Hai ref so với nhau, xem [So sánh hai ref](#so-sánh-hai-ref) |
+
+### Agent's edits
+
+Hai agent Claude làm trong cùng một checkout thì **Since session start** của mỗi agent hiện luôn công việc chưa commit
+của agent kia. Vì vậy Diff của một agent Claude mở ở **Agent's edits**: arcterm đọc các lần Edit, Write và MultiEdit
+trong transcript của agent, phát lại chúng trên các bản sao lưu file-history của Claude Code, rồi chỉ liệt kê những file
+mà chính agent đó đã đổi, với diff của đúng phần nó đổi.
+
+- **Công tắc** nằm dưới hàng đầu của panel, hai nút **Agent's edits** và **Since session start**. Bấm nút kia để xem cả
+  worktree như trước; lựa chọn được nhớ cho từng agent, nên quay lại từ surface khác Diff vẫn mở ở nút bạn đã chọn.
+  Agent không phải Claude không có công tắc và luôn ở Since session start.
+- Range này không có lịch sử commit: tab Log chỉ có một dòng **Agent's edits**, và dòng chú thích dưới nó đếm file, ví dụ
+  `3 files by this agent`. Agent chưa sửa gì thì dòng ấy ghi lý do, ví dụ "this agent has made no edits yet".
+- **Hai dấu trên hàng file** cho biết arcterm không dựng lại được file đó chính xác. Vòng tròn nét đứt (**No backup:
+  compared with the session start**): Claude Code không có bản sao lưu trước lần sửa đầu, nên file so với lúc session bắt
+  đầu. Tam giác cảnh báo (**Changed outside this agent between its edits**): file bị đổi bởi chỗ khác giữa các lần sửa
+  của agent nên một lần sửa không áp lại được; arcterm lấy nội dung hiện có trên đĩa, nên diff có thể lẫn cả phần đổi
+  ấy. Rê chuột vào dấu để đọc lại câu này.
+- **Lệnh Bash**: arcterm không biết một lệnh Bash đã đổi file nào. Khi agent có gọi Bash, dòng chú thích thêm
+  `· 2 Bash calls may have changed files not shown`: có thể còn file đổi mà danh sách không có, và **Since session
+  start** là nơi tìm chúng.
+
+Chip số thay đổi trên thẻ agent trong Cockpit, mục **Files changed** của rail chi tiết trong tab Agent và danh sách
+**Changed files** của peek trên Hub đếm theo cách này, nên cả ba khớp với Diff của agent. Agent Claude chưa sửa file nào thì không hiện file lẫn chip số
+thay đổi.
 
 ## Tab Log: lịch sử
 
@@ -90,8 +116,9 @@ Nửa trên của tab là đồ thị lịch sử, nửa dưới là commit đan
 mang chữ cái đầu tên tác giả, và tuổi; rê chuột để xem tên, email và ngày chính xác.
 
 - **Dòng đầu là working tree** khi có file thay đổi: hash vẽ thành vòng nét đứt, thời gian là `now`, nhãn theo range
-  (**Uncommitted changes**, **Since session start** hay **Run changes**).
+  (**Uncommitted changes**, **Since session start**, **Agent's edits** hay **Run changes**).
 - **Dải phân cách** đánh dấu điểm neo của range (`session start` hoặc `run base`); các commit trước điểm neo bị làm mờ.
+  **Agent's edits** không có điểm neo và không đọc commit nào.
 - **Graph** vẽ tối đa 7 lane, lane thừa gộp vào một cột xám. `Shift+G` bật hoặc tắt nó. Graph tự tắt khi có bộ lọc.
 - Lịch sử nạp 50 commit mỗi trang và nạp thêm khi bạn cuộn tới gần đáy. Lần đọc đầu kéo dài quá 10 giây thì cột báo
   "Still reading history" kèm **Retry**.

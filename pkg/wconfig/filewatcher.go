@@ -8,8 +8,11 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"reflect"
 	"regexp"
+	"strings"
 	"sync"
+	"time"
 
 	"github.com/fsnotify/fsnotify"
 	"github.com/wavetermdev/waveterm/pkg/panichandler"
@@ -118,13 +121,19 @@ func (w *Watcher) Start() {
 		defer func() {
 			panichandler.PanicHandler("filewatcher:Start", recover())
 		}()
+		var settle <-chan time.Time
 		for {
 			select {
 			case event, ok := <-fileWatcher.Events:
 				if !ok {
 					return
 				}
-				w.handleEvent(event)
+				if w.handleEvent(event) {
+					settle = time.After(settleRereadAfter)
+				}
+			case <-settle:
+				settle = nil
+				w.rereadIfChanged()
 			case err, ok := <-fileWatcher.Errors:
 				if !ok {
 					return
@@ -177,15 +186,17 @@ func (w *Watcher) GetFullConfig() FullConfigType {
 	return w.fullConfig
 }
 
-func (w *Watcher) handleEvent(event fsnotify.Event) {
+// handleEvent reports whether the event made it read the config.
+func (w *Watcher) handleEvent(event fsnotify.Event) bool {
 	fileName := filepath.ToSlash(event.Name)
 	if event.Op == fsnotify.Chmod {
-		return
+		return false
 	}
 	if !isValidSubSettingsFileName(fileName) {
-		return
+		return false
 	}
 	w.handleSettingsFileEvent(event, fileName)
+	return true
 }
 
 var validFileRe = regexp.MustCompile(`^[a-zA-Z0-9_@.-]+\.json$`)
@@ -209,10 +220,62 @@ func (w *Watcher) handleSettingsFileEvent(_ fsnotify.Event, _ string) {
 func (w *Watcher) Reload() {
 	w.reloadMu.Lock()
 	defer w.reloadMu.Unlock()
-	fullConfig := ReadFullConfig()
+	fullConfig := readFullConfigSettled(ReadFullConfig)
 	w.retargetVaultConfigDir()
 	w.mutex.Lock()
 	w.fullConfig = fullConfig
 	w.mutex.Unlock()
 	w.broadcast(WatcherUpdate{FullConfig: fullConfig})
+}
+
+// An event's read can still miss the write that caused it: on windows a file just replaced by a rename can refuse
+// the open for a moment ("used by another process"), which drops that file's part from the whole config, and a
+// read can land between a replace's events. Nothing reads again until the next config change, so a project
+// registered last would stay missing. The open is retried, and once the events go quiet the config is read once
+// more and broadcast if it differs.
+const (
+	settleRereadAfter = 100 * time.Millisecond
+	openRetryFor      = time.Second
+	openRetryMaxDelay = 50 * time.Millisecond
+	openFailurePrefix = "open "
+)
+
+// readFullConfigSettled retries while a config file failed to open, up to openRetryFor, and returns the last read.
+// A parse error is the file's content and is not retried.
+func readFullConfigSettled(read func() FullConfigType) FullConfigType {
+	deadline := time.Now().Add(openRetryFor)
+	for delay := time.Millisecond; ; delay = min(delay*2, openRetryMaxDelay) {
+		fullConfig := read()
+		if !hasOpenFailure(fullConfig.ConfigErrors) || time.Now().After(deadline) {
+			return fullConfig
+		}
+		time.Sleep(delay)
+	}
+}
+
+// a failed open is an fs.PathError, whose message starts with its op whatever the os's locale
+func hasOpenFailure(errs []ConfigError) bool {
+	for _, e := range errs {
+		if strings.HasPrefix(e.Err, openFailurePrefix) {
+			return true
+		}
+	}
+	return false
+}
+
+// rereadIfChanged reads the config once more after the events went quiet and broadcasts it only if it differs from
+// the held one. It takes reloadMu like Reload, so it cannot land an older read after a newer Reload's.
+func (w *Watcher) rereadIfChanged() {
+	w.reloadMu.Lock()
+	defer w.reloadMu.Unlock()
+	fullConfig := readFullConfigSettled(ReadFullConfig)
+	w.mutex.Lock()
+	same := reflect.DeepEqual(fullConfig, w.fullConfig)
+	if !same {
+		w.fullConfig = fullConfig
+	}
+	w.mutex.Unlock()
+	if !same {
+		w.broadcast(WatcherUpdate{FullConfig: fullConfig})
+	}
 }

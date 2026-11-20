@@ -472,6 +472,32 @@ func TestReadFirstUserPrompt(t *testing.T) {
 	}
 }
 
+// a session opened with `!`: the shell run names it only until a typed prompt exists, never as raw tags
+func TestReadFirstUserPromptShellRun(t *testing.T) {
+	shell := []string{
+		`{"type":"user","message":{"content":"<bash-input>ls</bash-input>"}}`,
+		`{"type":"user","message":{"content":"<bash-stdout>a.go</bash-stdout><bash-stderr></bash-stderr>"}}`,
+	}
+	write := func(lines ...string) string {
+		path := filepath.Join(t.TempDir(), "t.jsonl")
+		if err := os.WriteFile(path, []byte(strings.Join(lines, "\n")), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return path
+	}
+	if got := titleFromPrompt(readFirstUserPrompt(write(shell...))); got != "! ls" {
+		t.Fatalf("no prompt yet: title = %q, want %q", got, "! ls")
+	}
+	withPrompt := append(append([]string{}, shell...), `{"type":"user","message":{"content":"fix the build"}}`)
+	if got := titleFromPrompt(readFirstUserPrompt(write(withPrompt...))); got != "fix the build" {
+		t.Fatalf("title = %q, want the typed prompt", got)
+	}
+	// the output alone is no prompt
+	if got := readFirstUserPrompt(write(shell[1])); got != "" {
+		t.Fatalf("output alone -> %q, want empty", got)
+	}
+}
+
 func TestReadFirstUserPromptNone(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "t.jsonl")
 	os.WriteFile(path, []byte(`{"type":"assistant","message":{"content":"x"}}`+"\n"+`{"type":"user","message":{"content":[{"type":"tool_result","content":"r"}]}}`), 0o644)

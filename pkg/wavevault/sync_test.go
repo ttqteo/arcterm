@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -533,6 +534,62 @@ func TestSyncRecoversInterruptedMerge(t *testing.T) {
 	}
 	if got := string(readVaultFile(t, b, "memory/n.md")); got != "edited on b\n" {
 		t.Fatalf("local side not kept: %q", got)
+	}
+	assertPublished(t, b, remote)
+}
+
+// An edit to a path the interrupted merge staged cleanly made `merge --abort` exit 128, failing that sync
+// and every later one.
+func TestSyncRecoversAnInterruptedMergeKeepingEdits(t *testing.T) {
+	ctx := context.Background()
+	remote := newBareRemote(t)
+	a, b := newSyncVault(t, remote), newSyncVault(t, remote)
+	writeVaultFile(t, a, "memory/n.md", []byte("base\n"))
+	writeVaultFile(t, a, "memory/clean.md", []byte("base clean\n"))
+	mustSync(t, a)
+	mustSync(t, b)
+
+	writeVaultFile(t, a, "memory/n.md", []byte("edited on a\n"))
+	writeVaultFile(t, a, "memory/clean.md", []byte("clean edited on a\n"))
+	mustSync(t, a)
+	writeVaultFile(t, b, "memory/n.md", []byte("edited on b\n"))
+	mustCommit(t, b)
+	if _, err := runGitErr(ctx, b.Root, "fetch", "origin"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := runGitErr(ctx, b.Root, "merge", "origin/main"); err == nil {
+		t.Fatal("precondition: the manual merge must conflict")
+	}
+	// clean.md merged cleanly (staged with a's side); editing it is what `merge --abort` refuses
+	writeVaultFile(t, b, "memory/clean.md", []byte("edited on b after the merge\n"))
+
+	res := mustSync(t, b)
+	if _, err := runGit(ctx, b.Root, "rev-parse", "--verify", "-q", "MERGE_HEAD"); err == nil {
+		t.Fatal("MERGE_HEAD still present after sync")
+	}
+	if got := string(readVaultFile(t, b, "memory/clean.md")); got != "edited on b after the merge\n" {
+		t.Fatalf("edit to the cleanly merged file lost: %q", got)
+	}
+	if got := string(readVaultFile(t, b, "memory/n.md")); got != "edited on b\n" {
+		t.Fatalf("local side not kept: %q", got)
+	}
+	// no conflict markers are committed: both conflicted paths keep the local side and save a's
+	for rel, want := range map[string]string{
+		"conflicts/memory/n.md":     "edited on a\n",
+		"conflicts/memory/clean.md": "clean edited on a\n",
+	} {
+		if got := string(readVaultFile(t, b, rel)); got != want {
+			t.Fatalf("%s = %q, want %q", rel, got, want)
+		}
+	}
+	for _, rel := range []string{"memory/n.md", "memory/clean.md"} {
+		if strings.Contains(string(readVaultFile(t, b, rel)), "<<<<<<<") {
+			t.Fatalf("%s holds conflict markers", rel)
+		}
+	}
+	want := []string{"conflicts/memory/clean.md", "conflicts/memory/n.md"}
+	if got := slices.Sorted(slices.Values(res.NewConflicts)); !reflect.DeepEqual(got, want) {
+		t.Fatalf("NewConflicts = %v, want %v", got, want)
 	}
 	assertPublished(t, b, remote)
 }

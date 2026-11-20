@@ -1196,6 +1196,12 @@ func GetWorkerCapacityCommand(w *wshutil.WshRpc, opts *wshrpc.RpcOpts) (*wshrpc.
 	return resp, err
 }
 
+// command "gitagentedits", wshserver.GitAgentEditsCommand
+func GitAgentEditsCommand(w *wshutil.WshRpc, data wshrpc.CommandGitAgentEditsData, opts *wshrpc.RpcOpts) (*wshrpc.CommandGitAgentEditsRtnData, error) {
+	resp, err := sendRpcRequestCallHelper[*wshrpc.CommandGitAgentEditsRtnData](w, "gitagentedits", data, opts)
+	return resp, err
+}
+
 // command "gitblame", wshserver.GitBlameCommand
 func GitBlameCommand(w *wshutil.WshRpc, data wshrpc.CommandGitBlameData, opts *wshrpc.RpcOpts) (*wshrpc.CommandGitBlameRtnData, error) {
 	resp, err := sendRpcRequestCallHelper[*wshrpc.CommandGitBlameRtnData](w, "gitblame", data, opts)

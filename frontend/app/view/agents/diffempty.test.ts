@@ -86,6 +86,32 @@ describe("emptyDiffState", () => {
         it("keeps asking for a file when there is no list to pick from", () => {
             expect(emptyDiffState(input({ fileCount: null }))?.kind).toBe("nofile");
         });
+    });
+
+    describe("the Agent's edits range", () => {
+        it("says the agent has made no edits, with the backend's reason as the body", () => {
+            expect(
+                emptyDiffState(input({ fileCount: 0, edits: { reason: "this agent has made no edits yet" } }))
+            ).toEqual({
+                kind: "nofiles",
+                title: "No edits by this agent yet",
+                body: "this agent has made no edits yet",
+            });
+        });
+        it("still says so when the read gave no reason", () => {
+            const empty = emptyDiffState(input({ fileCount: 0, edits: { reason: "" } }));
+            expect(empty?.title).toBe("No edits by this agent yet");
+            expect(empty?.body).toBeTruthy();
+        });
+        it("has nothing to say about a list that holds files", () => {
+            expect(emptyDiffState(input({ fileCount: 2, edits: { reason: "" } }))?.kind).toBe("nofile");
+        });
+        it("keeps the skeleton up while the list loads", () => {
+            expect(emptyDiffState(input({ listStatus: "loading", fileCount: 0, edits: { reason: "" } }))).toBeNull();
+        });
+        it("leaves the commit words to a pane that is not showing the agent's edits", () => {
+            expect(emptyDiffState(input({ fileCount: 0, edits: null }))?.title).toBe("This commit changes no files");
+        });
         it("never blanks a file that is already open", () => {
             expect(
                 emptyDiffState(input({ path: "a.ts", pair: pair(), listStatus: "loading", fileCount: null }))

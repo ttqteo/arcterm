@@ -1344,7 +1344,7 @@ export function ChatConversation({
         ? (path) => {
               const abs = path == null ? null : turnFileAbs(path, cwd);
               if (abs == null) {
-                  openDiff(model!, agentDiffScope(agent!.id, agent!.name), path);
+                  openDiff(model!, agentDiffScope(agent!.id, agent!.name, agent!.agent), path);
                   return;
               }
               // reread: the agent may have changed it since its tab was last open; it opens on its Diff against the

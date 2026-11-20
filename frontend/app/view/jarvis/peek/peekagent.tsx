@@ -1,8 +1,7 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-import { RpcApi } from "@/app/store/wshclientapi";
-import { TabRpcClient } from "@/app/store/wshrpcutil";
+import { readAgentChanges } from "@/app/view/agents/agentchanges";
 import { resolveCwd } from "@/app/view/agents/agentcwdresolve";
 import type { AgentsViewModel } from "@/app/view/agents/agents";
 import { displayAgeMs, formatAgeShort, type AgentVM } from "@/app/view/agents/agentsviewmodel";
@@ -34,6 +33,9 @@ function useAgentGit(agent: AgentVM | undefined): GitView | null {
     const transcriptPath = agent?.transcriptPath;
     const blockId = agent?.blockId;
     const cwdHint = agent?.cwd;
+    // a plain terminal has no transcript to rebuild edits from and no runtime of its own (which would read as claude):
+    // it keeps the checkout read
+    const runtime = agent?.kind === "terminal" ? "shell" : agent?.agent;
     useEffect(() => {
         let live = true;
         const load = async () => {
@@ -42,7 +44,8 @@ function useAgentGit(agent: AgentVM | undefined): GitView | null {
                 return { cwd: null, branch: "", changes: null };
             }
             const startTs = await ensureSessionStart(transcriptPath);
-            const ch = await RpcApi.GitChangesCommand(TabRpcClient, { cwd, sessionstartts: startTs ?? undefined });
+            // the files are the same list the card and the rail count: a Claude agent's own edits
+            const { ch } = await readAgentChanges(cwd, { transcriptPath, runtime }, startTs);
             return {
                 cwd,
                 branch: ch.branch,
@@ -56,7 +59,7 @@ function useAgentGit(agent: AgentVM | undefined): GitView | null {
         return () => {
             live = false;
         };
-    }, [id, transcriptPath, blockId, cwdHint]);
+    }, [id, transcriptPath, blockId, cwdHint, runtime]);
     return git;
 }
 
@@ -121,6 +124,7 @@ export function PeekAgentBody({ model, target }: { model: AgentsViewModel; targe
                         {shown.map((f) => (
                             <div
                                 key={f.path}
+                                data-peek-file={f.path}
                                 className="grid grid-cols-[14px_minmax(0,1fr)_auto_auto] items-center gap-2.5 px-3 py-1.5"
                             >
                                 <span className={cn("text-[10.5px] font-bold", statusColor(f.status))}>

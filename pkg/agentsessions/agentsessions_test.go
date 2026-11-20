@@ -206,9 +206,10 @@ func TestScanRoot_skipsSubagentTranscripts(t *testing.T) {
 	if len(got) != 1 || got[0].ID != "parent" || got[0].Task != "Build the uploads list" {
 		t.Fatalf("want only the parent, titled by its own prompt, got %+v", got)
 	}
-	// a third of a real scan's bytes were subagent files parsed only to be dropped: the walk skips their folder
-	if r := reads(); !reflect.DeepEqual(r, []string{"parent.jsonl"}) {
-		t.Errorf("a subagents folder must not be read, read %v", r)
+	// the walk skips their folder: a subagent file is never a candidate parsed as a session, which was a third of a real
+	// scan's bytes. Its tokens bill to its parent, so deriving the parent reads it once, for that sum and nothing else.
+	if r := reads(); !reflect.DeepEqual(r, []string{"agent-a3f6fcb8fdd0390b8.jsonl", "parent.jsonl"}) {
+		t.Errorf("want the parent read as a candidate and its subagent only for the parent's tokens, read %v", r)
 	}
 }
 

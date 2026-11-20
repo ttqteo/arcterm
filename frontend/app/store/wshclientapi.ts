@@ -1200,6 +1200,12 @@ export class RpcApiType {
         return client.wshRpcCall("getworkercapacity", null, opts);
     }
 
+    // command "gitagentedits" [call]
+    GitAgentEditsCommand(client: WshClient, data: CommandGitAgentEditsData, opts?: RpcOpts): Promise<CommandGitAgentEditsRtnData> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "gitagentedits", data, opts);
+        return client.wshRpcCall("gitagentedits", data, opts);
+    }
+
     // command "gitblame" [call]
     GitBlameCommand(client: WshClient, data: CommandGitBlameData, opts?: RpcOpts): Promise<CommandGitBlameRtnData> {
         if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "gitblame", data, opts);

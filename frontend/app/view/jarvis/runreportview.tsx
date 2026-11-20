@@ -10,7 +10,7 @@ import { InlineMarkdown } from "@/app/view/agents/inlinemarkdown";
 import { SectionLabel } from "@/app/view/agents/sectionlabel";
 import { cn, fireAndForget } from "@/util/util";
 import { ArrowUpRight } from "lucide-react";
-import { useState } from "react";
+import { memo, useState } from "react";
 import { briefUndo } from "./briefundo";
 import { parseRunReport, type ReportItem } from "./runreport";
 
@@ -23,7 +23,17 @@ const DOT: Record<ReportItem["dot"], string> = {
     muted: "bg-ink-mid",
 };
 
-export function RunReportView({ model, run, compact }: { model: AgentsViewModel; run: Run; compact?: boolean }) {
+// memoized: the run sheet re-renders on the 1 s now tick, and its model and run (a WOS atom's object) do not change
+// with it, so the report is not re-parsed every second
+export const RunReportView = memo(function RunReportView({
+    model,
+    run,
+    compact,
+}: {
+    model: AgentsViewModel;
+    run: Run;
+    compact?: boolean;
+}) {
     const [raw, setRaw] = useState(false);
     const report = parseRunReport(run.report ?? "");
     if (report == null) {
@@ -116,4 +126,4 @@ export function RunReportView({ model, run, compact }: { model: AgentsViewModel;
             )}
         </div>
     );
-}
+});

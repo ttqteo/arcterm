@@ -1,7 +1,41 @@
 import { describe, expect, it } from "vitest";
-import { clip2to1, nextMinor, shotSlug } from "./whatsnewshot.mjs";
+import { clip2to1, nextMinor, pngSize, shotSlug, toShotPixels } from "./whatsnewshot.mjs";
 
 const VIEW = { width: 1600, height: 950 };
+
+// the first 24 bytes of a PNG: the signature, the IHDR chunk's length and name, then width and height
+function pngHead(width, height) {
+    const head = Buffer.alloc(24);
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]).copy(head, 0);
+    head.writeUInt32BE(13, 8);
+    head.write("IHDR", 12, "ascii");
+    head.writeUInt32BE(width, 16);
+    head.writeUInt32BE(height, 20);
+    return head;
+}
+
+describe("pngSize", () => {
+    it("reads the pixel size from a PNG's header, given as base64 the way CDP returns it", () => {
+        const data = Buffer.concat([pngHead(1400, 730), Buffer.from("the rest of the image")]).toString("base64");
+        expect(pngSize(data)).toEqual({ width: 1400, height: 730 });
+    });
+
+    it("refuses what is not a PNG", () => {
+        expect(() => pngSize(Buffer.from("RIFF....WEBPVP8 ").toString("base64"))).toThrow(/not a PNG/);
+    });
+});
+
+describe("toShotPixels", () => {
+    it("scales a box measured in CSS px to the screenshot's pixels", () => {
+        expect(toShotPixels({ x: 100, y: 40, width: 1000, height: 500 }, 1.25)).toEqual({ x: 125, y: 50, width: 1250, height: 625 });
+    });
+
+    it("leaves a box alone at a ratio of 1, and no box as none", () => {
+        const box = { x: 1, y: 2, width: 3, height: 4 };
+        expect(toShotPixels(box, 1)).toEqual(box);
+        expect(toShotPixels(null, 1.1)).toBeNull();
+    });
+});
 
 describe("clip2to1", () => {
     it("takes the widest 2:1 area of the window when there is no element", () => {

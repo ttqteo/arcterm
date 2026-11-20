@@ -180,7 +180,7 @@ export function FileTab({
     const openCode = () => fireAndForget(() => openRefInCode(model, ref));
     const openWholeDiff = (rel?: string) => {
         globalStore.set(model.focusIdAtom, agentId);
-        openDiff(model, agentDiffScope(agentId, agent.name), rel);
+        openDiff(model, agentDiffScope(agentId, agent.name, agent.agent), rel);
     };
     // Live output draws in its program's colours, not in Monaco (liveoutput.tsx)
     const liveText = !!ref.live && !preview && !diffable && state.kind === "text";

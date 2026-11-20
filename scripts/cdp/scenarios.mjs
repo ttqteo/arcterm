@@ -93,6 +93,7 @@ import codeImageZoomScenarios from "./scenarios-code-imagezoom.mjs";
 import codeOutlineScenarios from "./scenarios-code-outline.mjs";
 import codeReviewScenarios from "./scenarios-code-review.mjs";
 import codePeekScenarios from "./scenarios-codepeek.mjs";
+import diffAgentEditsScenarios, { chooseSessionRange, ownEditLines } from "./scenarios-diff-agent-edits.mjs";
 import diffCommentsScenarios from "./scenarios-diff-comments.mjs";
 import diffFileKeysScenarios from "./scenarios-diff-file-keys.mjs";
 import diffScopeScenarios from "./scenarios-diff-scope.mjs";
@@ -6611,14 +6612,18 @@ const diffLogTab = {
             const transcripts = join(base, "transcripts");
             mkdirSync(transcripts);
             const transcriptPath = join(transcripts, "dlt-agent.jsonl");
+            // The rail lists only the agent's own edits, rebuilt from its Edit calls, so the transcript makes the two edits
+            // the newest commit holds, from the text the session started on (a and b as the commit before it left them)
             writeFileSync(
                 transcriptPath,
-                JSON.stringify({
-                    type: "user",
-                    cwd: ctx.repo,
-                    timestamp: ago(1),
-                    message: { role: "user", content: "change a and b" },
-                }) + "\n"
+                ownEditLines(
+                    ctx.repo,
+                    [
+                        { file: "a.txt", before: "a one\na two\n", after: "a one\na two\na three\n" },
+                        { file: "b.txt", before: "b one\n", after: "b one\nb two\n" },
+                    ],
+                    { prompt: "change a and b", startMs: Date.parse(ago(1)) }
+                ).join("\n") + "\n"
             );
             mkdirSync(new URL(".", TREE_RAIL_FIXTURE), { recursive: true });
             writeFileSync(
@@ -6648,16 +6653,12 @@ const diffLogTab = {
             await h.ev(`localStorage.setItem(${JSON.stringify(RAIL_VISIBLE_KEY)}, "true")`);
             await h.ev(`localStorage.setItem(${JSON.stringify(RAIL_RANGE_KEY)}, ${JSON.stringify('"session"')})`);
             await h.ev(`localStorage.removeItem(${JSON.stringify(PANEL_FOLD_KEY)})`);
-            try {
-                await h.ev("location.reload()");
-            } catch {
-                /* the evaluate is cut off by the navigation it just started */
-            }
-            await h.ev(`(async () => {
-                for (let i = 0; i < 60 && !document.querySelector("nav button"); i++) {
-                    await new Promise((r) => setTimeout(r, 500));
-                }
-            })()`);
+            // h.reload resolves once the new page has booted: reloading with location.reload() and polling for the nav can
+            // read the old page, and the choice set below runs against a context the reload then destroys
+            await h.reload();
+            // step 2 expects the Diff the rail's View diff opens to be on the session range, which is not where a Claude
+            // agent's Diff opens by default (Agent's edits)
+            await chooseSessionRange(h, DLT_AGENT.id);
         } catch (e) {
             ctx.arrangeError = String(e?.message ?? e);
         }
@@ -6775,6 +6776,13 @@ const diffLogTab = {
 
         // 3. a commit whose files are still being read says so, and never reads 0 files
         const picked3 = await pickProject();
+        // the project's own load ends with its top commit selected and its files shown (step 1 waits for the same). Acting
+        // before that, as this step did, failed this step and the next in most runs of a loaded machine: the screenshot
+        // showed no row selected, "Select a commit" and the agent scope's a.txt still open
+        const ready3 = await wait(
+            `${historyBtn(0)}?.className.includes("bg-surface-selected") && document.querySelectorAll("[data-changed-file-row]").length === 2`,
+            10000
+        );
         await ev(`window.__commitChangesFault = "hang"`);
         await ev(`${historyBtn(1)}?.click()`);
         await nap(600);
@@ -6783,8 +6791,8 @@ const diffLogTab = {
         await h.shot("cdp-shots/diff-log-loading.png");
         rec(
             "3. while a commit's files load, data-files-count reads Reading this commit's files… and the page has no 0 files",
-            picked3 && loading3 === "Reading this commit's files…" && !zero3,
-            JSON.stringify({ picked3, loading3, zero3 })
+            picked3 && ready3 && loading3 === "Reading this commit's files…" && !zero3,
+            JSON.stringify({ picked3, ready3, loading3, zero3 })
         );
 
         // 4. a read that fails says so and offers Retry, which loads the list
@@ -6867,26 +6875,70 @@ const diffLogTab = {
 
         // 7. the ⋯ menu holds the view options
         await ev(`${historyBtn(0)}?.click()`);
-        await wait(`document.querySelectorAll("[data-changed-file-row]").length === 2 && (document.querySelector("[data-diff-header]")?.textContent || "").includes("a.txt")`, 10000);
-        await ev(`document.querySelector("[data-diff-options]")?.click()`);
+        // The click re-reads the commit: its pair redraws, then the file list and the ⋯ button vanish for about a second and
+        // come back as new nodes. The rows and the header read the same before and after, so a wait on them is met by the
+        // old pane, and a menu opened meanwhile has Wrap disabled (the pane has no repository yet) and is closed by the
+        // rebuild. Open it on a pane that has stayed put: Monaco drawn, both rows, and the same ⋯ button for 1.5 s.
+        let settled7 = false;
+        for (let waited = 0; waited < 15000 && !settled7; waited += 250) {
+            settled7 = await ev(`(() => {
+                const t = document.querySelector("[data-diff-options]");
+                const drawn = t && document.querySelector("[data-diff-pane] .monaco-diff-editor") &&
+                    document.querySelectorAll("[data-changed-file-row]").length === 2 &&
+                    (document.querySelector("[data-diff-header]")?.textContent || "").includes("a.txt");
+                if (!drawn) { window.__dlt7 = null; return false; }
+                if (window.__dlt7?.node !== t) window.__dlt7 = { node: t, at: performance.now() };
+                return performance.now() - window.__dlt7.at >= 1500;
+            })()`);
+            if (!settled7) await nap(250);
+        }
+        await ev(`(window.__dlt7 = undefined, true)`);
+        // a mouse click focuses the button it lands on and a script's click() does not; while the menu is open that focus
+        // is what makes it own its keys (data-owns-keys), so Escape closes it instead of leaving the surface
+        await ev(`(() => { const t = document.querySelector("[data-diff-options]"); t?.focus(); t?.click(); })()`);
         const menu7 = await wait(`document.querySelector('[role="menu"]')`, 3000);
         const items7 = await ev(`[...document.querySelectorAll("[data-diff-options-item]")].map((e) => e.dataset.diffOptionsItem)`);
         await h.shot("cdp-shots/diff-options.png");
+        // every file wraps until the reader toggles it (7303bdfc8), so the switch opens on, a click turns it off and
+        // another turns it on again. Each reading also needs the item enabled: a disabled one ignores the click.
         const wrap = `document.querySelector('[data-diff-options-item="wrap"]')`;
+        const wrapReads = (checked) =>
+            wait(`${wrap}?.getAttribute("aria-checked") === "${checked}" && !${wrap}.disabled`, 3000);
+        const on7 = await wrapReads("true");
         await ev(`${wrap}?.click()`);
-        const on7 = await wait(`${wrap}?.getAttribute("aria-checked") === "true"`, 3000);
+        const off7 = await wrapReads("false");
         await ev(`${wrap}?.click()`);
-        const off7 = await wait(`${wrap}?.getAttribute("aria-checked") === "false"`, 3000);
+        const back7 = await wrapReads("true");
         await press("Escape", "Escape", 27);
         const closed7 = await wait(`!document.querySelector('[role="menu"]')`, 3000);
+        // Escape closes the menu and stays on the Diff surface, whose panel step 8 drags
+        const stayed7 = await wait(`document.querySelector('[data-diff-panel="open"]')`, 3000);
         rec(
-            "7. data-diff-options lists split, whitespace, wrap, Open in editor and Open in Code; wrap reads on, then off; Escape closes the menu",
-            menu7 && items7.join() === "split,whitespace,wrap,editor,code" && on7 && off7 && closed7,
-            JSON.stringify({ menu7, items7, on7, off7, closed7 })
+            "7. data-diff-options lists split, whitespace, wrap, Open in editor and Open in Code; wrap reads on, then off, then on again; Escape closes the menu and stays on Diff",
+            settled7 && menu7 && items7.join() === "split,whitespace,wrap,editor,code" && on7 && off7 && back7 && closed7 && stayed7,
+            JSON.stringify({ settled7, menu7, items7, on7, off7, back7, closed7, stayed7 })
         );
 
         // 8. the panel and the Log split drag
         await blur();
+        const label8 =
+            "8. dragging data-panel-resize 100px right widens the panel by about 100px; dragging data-log-split 80px down grows the history; both persist";
+        // step 8 drags the open panel, whatever step 7 did: with no panel it fails here and says what is on screen
+        // instead of throwing on a null rect, so a step 7 that left the Diff surface does not hide the rest of the run
+        if (!(await wait(`document.querySelector('[data-diff-panel="open"]')`, 3000))) {
+            rec(
+                label8,
+                false,
+                JSON.stringify({
+                    panel8: null,
+                    panels: await ev(`[...document.querySelectorAll("[data-diff-panel]")].map((e) => e.dataset.diffPanel)`),
+                    diffPane: await ev(`!!document.querySelector("[data-diff-pane]")`),
+                    menuOpen: await ev(`!!document.querySelector('[role="menu"]')`),
+                    header: await header(),
+                })
+            );
+            return;
+        }
         const panelW = () => ev(`Math.round(document.querySelector('[data-diff-panel="open"]').getBoundingClientRect().width)`);
         const w0 = await panelW();
         await drag("[data-panel-resize]", 100, 0);
@@ -6898,7 +6950,7 @@ const diffLogTab = {
         const h1 = await histH();
         const storedS = await ev(`localStorage.getItem(${JSON.stringify(LOG_SPLIT_KEY)})`);
         rec(
-            "8. dragging data-panel-resize 100px right widens the panel by about 100px; dragging data-log-split 80px down grows the history; both persist",
+            label8,
             Math.abs(w1 - w0 - 100) <= 4 && storedW != null && storedW !== ctx.prev.width && h1 > h0 && storedS != null && storedS !== ctx.prev.split,
             JSON.stringify({ w0, w1, storedW, h0, h1, storedS })
         );
@@ -7920,6 +7972,10 @@ const diffWorktrees = {
                     await new Promise((r) => setTimeout(r, 500));
                 }
             })()`);
+            // steps 1 to 5 run on the agent's default range, Agent's edits: its transcript has no Edit call, so the list is
+            // empty, which is the read that once overwrote the open checkout's changed count (step 2) and opened the
+            // feature checkout on Log (step 5). Step 6 chooses Since session start for itself.
+            ctx.transcriptPath = transcriptPath;
         } catch (e) {
             ctx.arrangeError = String(e?.message ?? e);
         }
@@ -8029,14 +8085,20 @@ const diffWorktrees = {
             JSON.stringify(rows1.map((r) => `${r.which ?? r.option}:${r.text}`))
         );
 
-        // 2. the feature row reads its changed count and how far it is ahead
+        // 2. the feature row reads its changed count and how far it is ahead. wt-agent runs in feature, so the open
+        // scope is its Agent's edits range, which has no edits here: the count is read once that read has landed (the
+        // pane draws the backend's reason as its caption only from an edits read), since an empty edits list once
+        // overwrote the open checkout's count with 0
+        const edits2 = await h.rpc("gitagentedits", { cwd: ctx.feature, transcriptpath: ctx.transcriptPath });
+        const wantCaption2 = edits2?.reason || "no edits to show";
+        const settled2 = await wait(`document.body.textContent.includes(${JSON.stringify(wantCaption2)})`, 10000);
         const counted2 = await wait(`${rowFor("feature")}?.querySelector("[data-worktree-changed]")?.textContent.trim() === "2"`);
         const feature2 = (await ours()).find((r) => r.which === "feature");
         await shot("02-counts");
         rec(
             "2. the feature row's data-worktree-changed reads 2 and its data-worktree-divergence holds ↑1",
-            counted2 && feature2?.changed === "2" && (feature2?.divergence ?? "").includes("↑1"),
-            JSON.stringify(feature2)
+            settled2 && counted2 && feature2?.changed === "2" && (feature2?.divergence ?? "").includes("↑1"),
+            JSON.stringify({ settled2, wantCaption2, ...feature2 })
         );
 
         // 3. the broken checkout carries the error glyph
@@ -8064,24 +8126,36 @@ const diffWorktrees = {
         );
 
         // 5. clicking the feature row scopes the surface to that checkout. It has uncommitted changes, so the panel
-        // opens on its Commit tab, which lists both files.
+        // opens on its Commit tab: feature.txt under Changes, and notes.txt (untracked) in the Unversioned files group,
+        // which is folded until opened (diff-commit-tab step 1). The tab's rows are data-commit-row; data-changed-file-row
+        // is the Log tab's working-tree list
         await h.ev(`${rowFor("feature")}.click()`);
         const scoped5 = await wait(
             `(document.querySelector("[data-source-picker-trigger]")?.textContent || "").includes("feature") &&
-             document.querySelector('[data-changed-file-row="feature.txt"]') && document.querySelector('[data-changed-file-row="notes.txt"]')`,
+             document.querySelector('[data-panel-body="commit"] [data-commit-row="feature.txt"]')`,
             10000
         );
         const trigger5 = await trigger();
         const tab5 = await h.ev(`document.querySelector('[data-panel-tab][aria-selected="true"]')?.dataset.panelTab ?? null`);
-        const files5 = await h.ev(`[...document.querySelectorAll("[data-changed-file-row]")].map((e) => e.dataset.changedFileRow)`);
+        const unv = `document.querySelector("[data-commit-unversioned]")`;
+        if (await h.ev(`${unv}?.getAttribute("aria-expanded") === "false"`)) {
+            await h.ev(`${unv}.click()`);
+        }
+        const listed5 = await wait(`document.querySelector('[data-panel-body="commit"] [data-commit-row="notes.txt"]')`, 5000);
+        const files5 = await h.ev(`[...document.querySelectorAll("[data-commit-row]")].map((e) => e.dataset.commitRow)`);
         await shot("05-feature");
+        // folded again, as it opens
+        await h.ev(`(() => { const g = ${unv}; if (g?.getAttribute("aria-expanded") === "true") g.click(); })()`);
         rec(
             "5. clicking the feature row names feature on the source button and lists both uncommitted files on the Commit tab",
-            scoped5 && tab5 === "commit",
-            JSON.stringify({ trigger5, tab5, files5 })
+            scoped5 && tab5 === "commit" && listed5 && files5.includes("feature.txt") && files5.includes("notes.txt"),
+            JSON.stringify({ scoped5, trigger5, tab5, files5 })
         );
 
-        // 6. clicking wt-agent scopes to the agent and focuses it; its Log tab's top row reads the session range
+        // 6. clicking wt-agent scopes to the agent and focuses it; its Log tab's top row reads the session range. The
+        // fixture agent's files are writes to disk, not Edit calls in its transcript, so its pick opens on an empty
+        // Agent's edits unless its choice is Since session start first
+        await chooseSessionRange(h, DWT_AGENT.id);
         await openPicker();
         await h.ev(`document.querySelector('[data-files-source-option=${JSON.stringify(DWT_AGENT.name)}]')?.click()`);
         const scoped6 = await wait(
@@ -21356,7 +21430,20 @@ async function arrangeLineReview(h) {
 const lineReview = {
     name: LR,
     surface: "files",
-    arrange: arrangeLineReview,
+    async arrange(h) {
+        // arrangeLineReview is shared with overlays-frost-chat, which scopes to the project. Here the Diff is scoped to
+        // the fixture agent, whose files are writes to disk, not Edit calls in its transcript: it opens on the session
+        // range (the working tree and both commits), not on an empty Agent's edits
+        const ctx = await arrangeLineReview(h);
+        if (ctx.arrangeError == null) {
+            try {
+                await chooseSessionRange(h, LR_AGENT.id);
+            } catch (e) {
+                ctx.arrangeError = String(e?.message ?? e);
+            }
+        }
+        return ctx;
+    },
     async assert(h, ctx) {
         const steps = [];
         const rec = (step, ok, detail) => steps.push({ step, ok, detail });
@@ -23485,12 +23572,11 @@ function writeRailLinkRepo(cwd) {
     git("add", "-A");
     git("commit", "-q", "-m", "base");
     for (const f of RAIL_LINK_FILES) writeFileSync(join(cwd, f), `${f} one\n${f} two\n`);
-    // outside the repo's file list: the transcript only names the working directory
+    // outside the repo's file list. The rail lists only the agent's own edits, rebuilt from its Edit calls, so the
+    // transcript makes one Edit per file, each turning the committed text into the one written above
     const transcript = join(cwd, ".git", "rail-link.jsonl");
-    writeFileSync(
-        transcript,
-        JSON.stringify({ type: "user", cwd, message: { role: "user", content: "verify the rail file link" } }) + "\n"
-    );
+    const edits = RAIL_LINK_FILES.map((f) => ({ file: f, before: `${f} one\n`, after: `${f} one\n${f} two\n` }));
+    writeFileSync(transcript, ownEditLines(cwd, edits, { prompt: "verify the rail file link" }).join("\n") + "\n");
     return transcript;
 }
 
@@ -23527,12 +23613,9 @@ const agentRailFileLink = {
             ctx.wroteFixture = true;
             // the rail is off by default and persisted, and the fixture roster is read once at boot
             await h.ev(`localStorage.setItem(${JSON.stringify(RAIL_VISIBLE_KEY)}, "true")`);
-            await h.ev("location.reload()");
-            await h.ev(`(async () => {
-                for (let i = 0; i < 60 && !document.querySelector("nav button"); i++) {
-                    await new Promise((r) => setTimeout(r, 500));
-                }
-            })()`);
+            // h.reload resolves once the new page has booted: polling for the nav alone can read the old page before the
+            // reload commits, and the choice set below would be lost with it
+            await h.reload();
             await h.goto("agent");
             ctx.railFiles = await h.ev(`(async () => {
                 ${RAIL_LINK_LIB}
@@ -23570,7 +23653,10 @@ const agentRailFileLink = {
             ${RAIL_LINK_LIB}
             const link = railFile(${JSON.stringify(third)});
             link?.click();
-            const ok = !!link && (await until(() => selectedRows().length > 0));
+            // a changed file opens on the File tab beside the terminal; its Open in Diff is the way to the Diff surface
+            const open = !!link && (await until(() => ${RAIL_LINK_RAIL}?.querySelector("[data-file-open-diff]")));
+            ${RAIL_LINK_RAIL}?.querySelector("[data-file-open-diff]")?.click();
+            const ok = open && (await until(() => selectedRows().length > 0));
             // the surface settles on the first file before a late claim could move it, so read after a beat
             await new Promise((r) => setTimeout(r, 1500));
             return { ok, clicked: !!link, selected: selectedRows(), rows: document.querySelectorAll("[data-changed-file-row]").length };
@@ -74630,6 +74716,7 @@ export const SCENARIOS = [
     ...codeFixesSessionScenarios(KAEL_KITS),
     ...diffCommentsScenarios(KAEL_KITS),
     ...diffScopeScenarios(KAEL_KITS),
+    ...diffAgentEditsScenarios(KAEL_KITS),
     ...diffStatesScenarios(KAEL_KITS),
     ...usageLensScenarios(KAEL_KITS),
     ...usageWorkScenarios(KAEL_KITS),

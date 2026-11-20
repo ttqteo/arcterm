@@ -7,12 +7,14 @@
 // graph gives way to the branch's own commits under a compare bar. Commit is the tick list, message box and Commit button
 // (committab.tsx). The panel is a view over the stores; the surface owns what to load.
 
+import { Segmented } from "@/app/element/segmented";
 import { globalStore } from "@/app/store/jotaiStore";
 import { formatChordString } from "@/util/keysym";
 import { cn, fireAndForget } from "@/util/util";
 import { useAtomValue } from "jotai";
 import { X } from "lucide-react";
 import { useRef, useState } from "react";
+import { editsApply } from "./agentedits";
 import type { AgentsViewModel } from "./agents";
 import type { AgentVM } from "./agentsviewmodel";
 import { AggregatePane } from "./aggregatepane";
@@ -49,7 +51,8 @@ import {
     panelWidthAtom,
     type PanelTab,
 } from "./difflayout";
-import type { DiffScope } from "./diffscope";
+import { setRangeChoice } from "./diffrangechoice";
+import { defaultRangeFor, type DiffScope, type RangeChoice } from "./diffscope";
 import { diffScopeAtom } from "./diffscopeatom";
 import type { FilesProject, FilesState } from "./filesstore";
 import {
@@ -73,7 +76,7 @@ import {
 import { GitFailureColumn } from "./gitstatepanels";
 import { HistoryPane } from "./historypane";
 import { countLabel } from "./historyquery";
-import { commitCount, worktreeCaption } from "./historyrows";
+import { commitCount, paneCaption, worktreeHeading } from "./historyrows";
 import { RefPicker } from "./refpicker";
 import { SourcePicker } from "./sourcepicker";
 import { SyncBar, SyncFailure } from "./syncbar";
@@ -101,6 +104,48 @@ function PanelTabButton({ id, count, active }: { id: PanelTab; count?: number | 
                 <span className="text-[10.5px] font-medium tabular-nums text-muted">{count}</span>
             ) : null}
         </button>
+    );
+}
+
+// A Claude agent's two ranges, as a switch under the panel's header row. Here and not in the scope's own row: that row
+// draws only while it is the selected one, so a commit selected under Since session start would hide the way back. The
+// choice is kept per agent (diffrangechoice.ts) so a return from another surface opens on it, and the scope is set
+// from it at once; filessurface's load effects follow the new range key.
+function RangeSwitch({ model, scope }: { model: AgentsViewModel; scope: DiffScope }) {
+    const origin = scope.repo.origin;
+    if (origin.kind !== "agent" || !editsApply(origin.runtime)) {
+        return null;
+    }
+    if (scope.range.kind !== "edits" && scope.range.kind !== "session") {
+        return null;
+    }
+    const choose = (choice: RangeChoice) => {
+        setRangeChoice(origin.id, choice);
+        globalStore.set(model.diffScopeAtom, { ...scope, range: defaultRangeFor(origin, choice) });
+    };
+    return (
+        <div data-range-switch className="flex flex-none items-center border-b border-border px-[8px] py-[6px]">
+            <Segmented<RangeChoice>
+                role="group"
+                ariaLabel="What to show"
+                value={scope.range.kind}
+                onChange={choose}
+                options={[
+                    {
+                        key: "edits",
+                        label: "Agent's edits",
+                        title: "Only the files this agent changed, rebuilt from its transcript",
+                        dataAttrs: { "data-range-choice": "edits" },
+                    },
+                    {
+                        key: "session",
+                        label: "Since session start",
+                        title: "Everything that changed in the working tree since this session started",
+                        dataAttrs: { "data-range-choice": "session" },
+                    },
+                ]}
+            />
+        </div>
     );
 }
 
@@ -300,7 +345,8 @@ export function DiffPanel({
             row={selectedRow}
             listStatus={activeChangesStatus}
             onRetry={retrySelectedCommit}
-            caption={scope && state ? worktreeCaption(scope.range, state.branch, state.head, state.ref) : undefined}
+            caption={scope && state ? paneCaption(scope.range, state) : undefined}
+            heading={scope ? worktreeHeading(scope.range) : undefined}
             changes={activeChanges}
             selectedFile={selectedFile}
             onSelectFile={(path) => {
@@ -332,6 +378,7 @@ export function DiffPanel({
                 />
                 <SyncBar agents={agents} state={state} />
             </div>
+            {scope && !compareOn ? <RangeSwitch model={model} scope={scope} /> : null}
             <SyncFailure model={model} agents={agents} scope={scope} state={state} />
             <div className="flex h-[34px] flex-none items-stretch gap-[2px] border-b border-border px-[8px]">
                 <div role="tablist" className="flex items-stretch gap-[2px]">

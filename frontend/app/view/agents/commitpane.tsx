@@ -18,15 +18,25 @@ import { type GitChanges } from "./gitstatus";
 import { WORKING_TREE, refChipClass, type HistoryRow } from "./historyrows";
 import type { ReviewSubject } from "./reviewmarks";
 
-function WorkingTreeHeader({ row, caption }: { row: HistoryRow; caption?: string }) {
+function WorkingTreeHeader({ row, heading, caption }: { row: HistoryRow; heading: string; caption?: string }) {
     return (
         <>
             <div className={cn(REGION_LABEL, "mb-[6px] flex items-center gap-[7px] text-warning")}>
                 <span className="h-[9px] w-[9px] rounded-full border border-dashed border-warning" />
-                Working tree
+                {heading}
             </div>
-            <div className="text-[12.5px] font-semibold leading-[1.4] text-ink-hi">{row.subject}</div>
-            {caption ? <div className="mt-[4px] text-[11px] leading-[1.45] text-muted">{caption}</div> : null}
+            {/* the Agent's edits row is named by its heading already; saying it twice is noise */}
+            {row.subject !== heading ? (
+                <div className="text-[12.5px] font-semibold leading-[1.4] text-ink-hi">{row.subject}</div>
+            ) : null}
+            {caption ? (
+                <div
+                    data-files-range-summary
+                    className={cn("text-[11px] leading-[1.45] text-muted", row.subject !== heading && "mt-[4px]")}
+                >
+                    {caption}
+                </div>
+            ) : null}
         </>
     );
 }
@@ -77,6 +87,7 @@ export function CommitPane({
     selectedFile,
     onSelectFile,
     caption,
+    heading = "Working tree",
     review,
 }: {
     row: HistoryRow | null;
@@ -88,8 +99,10 @@ export function CommitPane({
     selectedFile: string | null;
     onSelectFile: (path: string) => void;
     review: ReviewSubject | null;
-    // the working-tree row's "measured from what" line; worktreeCaption builds it
+    // the working-tree row's "measured from what" line; paneCaption builds it
     caption?: string;
+    // the working-tree row's region label; worktreeHeading says what the range's row lists
+    heading?: string;
 }) {
     // the working tree's list stands when git could not count its lines; its +N −N are then left out, never zeros
     const filesState = useAtomValue(filesStateAtom);
@@ -104,9 +117,13 @@ export function CommitPane({
     const label = filesListLabel(listStatus, changes);
     const lineCounts = lineCountsKnown(filesState, isWorkingTree);
     return (
-        <div className="flex min-h-0 flex-1 flex-col">
+        <div data-commit-pane className="flex min-h-0 flex-1 flex-col">
             <div className="flex-none border-b border-edge-faint px-[12px] pb-[9px] pt-[8px]">
-                {isWorkingTree ? <WorkingTreeHeader row={row} caption={caption} /> : <CommitHeader row={row} />}
+                {isWorkingTree ? (
+                    <WorkingTreeHeader row={row} heading={heading} caption={caption} />
+                ) : (
+                    <CommitHeader row={row} />
+                )}
             </div>
             <div className="flex-none px-[12px] pb-[6px] pt-[8px]">
                 <div className="flex items-center gap-[8px]">
@@ -154,6 +171,8 @@ export function CommitPane({
                             onSelectFile={onSelectFile}
                             review={review}
                             lineCounts={lineCounts}
+                            // the marks belong to the scope's own row: that is the list the edits read produced
+                            flags={isWorkingTree ? filesState?.edits?.flags : undefined}
                         />
                 )}
             </div>

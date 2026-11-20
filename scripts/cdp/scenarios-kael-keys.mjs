@@ -20,6 +20,7 @@ import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { SURFACE_LABEL } from "./attach.mjs";
+import { chooseSessionRange } from "./scenarios-diff-agent-edits.mjs";
 
 const PROJECT = "verify-kael-keys";
 const AGENT = { id: "fx-kk-agent", name: "key-writer", blockId: "fx-blk-kk-agent" };
@@ -287,6 +288,9 @@ export default function (kits) {
                 writeRoster(ctx);
                 ctx.wroteFixture = true;
                 await reloadApp(h);
+                // the fixture agent's files are writes to disk, not Edit calls in its transcript: step 8's Diff opens on
+                // the session range, not on an empty Agent's edits
+                await chooseSessionRange(h, AGENT.id);
             } catch (e) {
                 ctx.arrangeError = String(e?.message ?? e);
             }

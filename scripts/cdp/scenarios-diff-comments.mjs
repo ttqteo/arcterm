@@ -16,6 +16,7 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
+import { chooseSessionRange } from "./scenarios-diff-agent-edits.mjs";
 
 const PROJECT = "verify-diff-comments";
 const AGENT = { id: "fx-dc-agent", name: "retry-writer", blockId: "fx-blk-dc-agent" };
@@ -120,6 +121,9 @@ export default function (kits) {
                 writeRoster(ctx, null);
                 ctx.wroteFixture = true;
                 await reloadApp(h);
+                // the fixture agent's files are writes to disk, not Edit calls in its transcript: it opens on the session
+                // range, not on an empty Agent's edits
+                await chooseSessionRange(h, AGENT.id);
             } catch (e) {
                 ctx.arrangeError = String(e?.message ?? e);
             }

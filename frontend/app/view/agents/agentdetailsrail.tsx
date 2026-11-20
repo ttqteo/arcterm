@@ -452,6 +452,7 @@ function FileRow({
     return (
         <button
             type="button"
+            data-rail-file-row={path}
             onClick={onClick}
             className={cn(cls, "cursor-pointer hover:bg-surface-hover hover:text-primary")}
         >
@@ -794,13 +795,12 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
     );
 
     useEffect(() => {
-        fireAndForget(() => loadRailForAgent(agent.id, agent.transcriptPath, agent.blockId));
+        fireAndForget(() => loadRailForAgent(agent));
     }, [agent.id, agent.transcriptPath, agent.blockId]);
 
     // and again, keeping the list on screen meanwhile: when a turn ends (what the agent just did to the worktree), when
     // Changes is opened, and when the window comes back (a commit made outside arcterm)
-    const reread = () =>
-        fireAndForget(() => loadRailForAgent(agent.id, agent.transcriptPath, agent.blockId, { silent: true }));
+    const reread = () => fireAndForget(() => loadRailForAgent(agent, { silent: true }));
     const lastState = useRef({ id: agent.id, state: agent.state });
     useEffect(() => {
         const prev = lastState.current;
@@ -882,7 +882,7 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
     // A path is only worth linking when the rail resolved a working directory to resolve it against.
     const openFileDiff = (path?: string) => {
         globalStore.set(model.focusIdAtom, agent.id);
-        const scope = agentDiffScope(agent.id, agent.name);
+        const scope = agentDiffScope(agent.id, agent.name, agent.agent);
         if (onBranch && railState?.cwd) {
             openBranchDiff(model, scope, railState.cwd, branchDiff.base, railState.branch || "HEAD");
             return;
@@ -910,7 +910,7 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
             return;
         }
         globalStore.set(model.focusIdAtom, agent.id);
-        const scope = agentDiffScope(agent.id, agent.name);
+        const scope = agentDiffScope(agent.id, agent.name, agent.agent);
         if (branchDiff) {
             openBranchDiff(model, scope, cwd, branchDiff.base, railState.branch || "HEAD", hash);
             return;
@@ -1072,6 +1072,11 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
                 {["w-[80%]", "w-[60%]", "w-[70%]"].map((w, i) => (
                     <SkeletonLine key={i} className={cn("h-[10px]", w)} />
                 ))}
+            </div>
+        ) : railState.failure != null ? (
+            // a read that threw says so, with its message, rather than calling the folder not a repository
+            <div className="text-[11.5px] text-muted" title={railState.failure}>
+                {"Couldn't read this agent's edits"}
             </div>
         ) : !railState.isRepo ? (
             <div className="text-[11.5px] text-muted">Not a git repository</div>
@@ -1512,11 +1517,7 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
                                 onMore={() => openRailCommit()}
                                 onDone={() => {
                                     setRailCommitMode(agent.id, false);
-                                    fireAndForget(() =>
-                                        loadRailForAgent(agent.id, agent.transcriptPath, agent.blockId, {
-                                            silent: true,
-                                        })
-                                    );
+                                    fireAndForget(() => loadRailForAgent(agent, { silent: true }));
                                 }}
                             />
                         ) : null}

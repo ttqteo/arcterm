@@ -329,6 +329,7 @@ export function DiffPane({
     repoCwd,
     model,
     nothingToCompare = null,
+    edits = null,
     review = null,
     against,
     folded,
@@ -351,6 +352,8 @@ export function DiffPane({
     onStepFile: (path: string) => void;
     // compare's aggregate is selected and the two refs list no files
     nothingToCompare?: { base: string; head: string } | null;
+    // the list shown is the Agent's edits range's own: an empty one reads as no edits by the agent (its read's reason)
+    edits?: { reason: string } | null;
     // what Review would show: the Uncommitted row or one commit, never compare; null hides the File | Review control
     review?: ReviewTarget | null;
 }) {
@@ -441,6 +444,7 @@ export function DiffPane({
         listStatus,
         fileCount: shownChanges?.files.length ?? null,
         failure,
+        edits,
     });
 
     const body = () => {

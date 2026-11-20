@@ -11,10 +11,22 @@ import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { atom, type PrimitiveAtom } from "jotai";
 import { resolveCwd } from "./agentcwdresolve";
+import type { EditFlag } from "./agentedits";
 import { ensureSessionStart } from "./agentsessionstore";
 import { originCwd, scopeKey, type DiffOrigin, type DiffRange, type DiffScope } from "./diffscope";
 import { firstShownPath } from "./filestep";
 import { parseGitChanges, type GitChanges } from "./gitstatus";
+import { HISTORY_RPC_TIMEOUT_MS } from "./historyquery";
+
+// The Agent's edits range's reply, kept beside the list it produced (on that range only).
+export interface EditsFacts {
+    // by cwd-relative path, the form the change list uses; an unflagged file is absent
+    flags: Record<string, EditFlag>;
+    // Bash calls that may have changed files the rebuild cannot show
+    bashcalls: number;
+    // why there is nothing to show; "" when there is a base
+    reason: string;
+}
 
 export interface FilesState {
     cwd: string | null;
@@ -37,6 +49,8 @@ export interface FilesState {
     end?: string;
     // git's error when the files listed but `diff --numstat` failed: the list is valid, its line counts are not
     numstatError?: string;
+    // the Agent's edits range's flags, Bash count and reason; absent on every other range
+    edits?: EditsFacts;
 }
 
 // Whether the shown list's +N −N can be drawn. The working tree's numstat can fail while its file list stands; its counts
@@ -67,8 +81,13 @@ export function agentCwdOf(id: string): string | undefined {
 }
 
 // guards against a stale load overwriting a newer one; the token is scopeKey(scope), so switching
-// either the repository or the range cancels the in-flight load.
-const current = { token: "" };
+// either the repository or the range cancels the in-flight load. The range and the transcript path of the loaded scope
+// ride along so the poll can re-ask for the edits range, whose anchors are not in the state it reads.
+const current: { token: string; range: DiffRange | null; transcriptPath: string } = {
+    token: "",
+    range: null,
+    transcriptPath: "",
+};
 
 const EMPTY: FilesState = {
     cwd: null,
@@ -91,6 +110,29 @@ interface LoadOpts {
     sessionStartTs?: number;
     // with ref, list only ref..end (a landed run's own commits)
     end?: string;
+    // the edits range: ask the backend for B and H first, then read B..H. Set (to the transcript path, "" when
+    // unknown) only for that range; it needs the cwd, which is why it is resolved inside the load.
+    editsOf?: string;
+}
+
+const NO_FILES: GitChanges = { files: [], adds: 0, dels: 0 };
+
+// The edits range's anchors. An empty base has nothing to show: the read that follows is the plain one, kept only for
+// the folder's branch and repository facts, and its list is dropped (loadChangesForCwd).
+async function resolveEdits(cwd: string, transcriptPath: string): Promise<{ opts: LoadOpts; edits: EditsFacts }> {
+    const r = await RpcApi.GitAgentEditsCommand(
+        TabRpcClient,
+        { cwd, transcriptpath: transcriptPath },
+        { timeout: HISTORY_RPC_TIMEOUT_MS }
+    );
+    const flags: Record<string, EditFlag> = {};
+    for (const f of r.files ?? []) {
+        if (f.flag === "approximate" || f.flag === "outside") {
+            flags[f.path] = f.flag;
+        }
+    }
+    const edits: EditsFacts = { flags, bashcalls: r.bashcalls ?? 0, reason: r.base ? "" : (r.reason ?? "") };
+    return { opts: r.base ? { ref: r.base, end: r.end } : {}, edits };
 }
 
 // Core: fetch branch + changes for a resolved cwd. The caller owns the guard token (set before any
@@ -105,6 +147,15 @@ async function loadChangesForCwd(token: string, cwd: string | null, opts: LoadOp
         return;
     }
     try {
+        let edits: EditsFacts | undefined;
+        if (opts.editsOf != null) {
+            const resolved = await resolveEdits(cwd, opts.editsOf);
+            if (current.token !== token) {
+                return;
+            }
+            opts = resolved.opts;
+            edits = resolved.edits;
+        }
         const ch = await RpcApi.GitChangesCommand(TabRpcClient, {
             cwd,
             ...(opts.ref ? { ref: opts.ref } : {}),
@@ -117,7 +168,9 @@ async function loadChangesForCwd(token: string, cwd: string | null, opts: LoadOp
         // sessionStartTs mode: the backend resolved + echoed the concrete base — thread it into per-file
         // diffs so they match the list. Otherwise use the ref we sent ("" = live).
         const ref = opts.sessionStartTs ? (ch.ref ?? "") : (opts.ref ?? "");
-        const changes = ch.isrepo ? parseGitChanges(ch.statusz, ch.numstat) : null;
+        const listed = ch.isrepo ? parseGitChanges(ch.statusz, ch.numstat) : null;
+        // an edits range with no base lists nothing, never the working tree the plain read returned
+        const changes = edits != null && !opts.ref && listed != null ? NO_FILES : listed;
         globalStore.set(filesStateAtom, {
             cwd,
             branch: ch.branch,
@@ -130,6 +183,7 @@ async function loadChangesForCwd(token: string, cwd: string | null, opts: LoadOp
             upstreamBehind: ch.upstreambehind ?? 0,
             ...(opts.end ? { end: opts.end } : {}),
             ...(ch.numstaterror ? { numstatError: ch.numstaterror } : {}),
+            ...(edits ? { edits } : {}),
         });
         globalStore.set(filesErrorAtom, false);
         globalStore.set(filesRefreshFailedAtom, false);
@@ -164,6 +218,12 @@ async function loadChangesForCwd(token: string, cwd: string | null, opts: LoadOp
 // aren't short-circuited (used after a Review apply mutates the tree). No-op if nothing is loaded.
 export async function reloadChanges(cwd: string | null): Promise<void> {
     if (!current.token) return;
+    // the edits range re-asks for B and H every tick: the backend's cache makes an unchanged transcript free, and a
+    // grown one moves both anchors, so the base the state holds is not one to reuse
+    if (current.range?.kind === "edits") {
+        await loadChangesForCwd(current.token, cwd, { editsOf: current.transcriptPath }, false);
+        return;
+    }
     // reuse the already-resolved concrete base (a sha for worktree/run modes, "" for live) so the
     // reload stays anchored to the same point the initial load picked.
     const state = globalStore.get(filesStateAtom);
@@ -200,6 +260,8 @@ export interface ScopeAgent {
 export async function loadFilesForScope(scope: DiffScope, agent?: ScopeAgent): Promise<void> {
     const token = scopeKey(scope);
     beginLoad(token);
+    current.range = scope.range;
+    current.transcriptPath = agent?.transcriptPath ?? "";
     const cwd = await resolveScopeCwd(scope.repo.origin, agent);
     if (current.token !== token) {
         return;
@@ -232,6 +294,9 @@ async function resolveRangeOpts(range: DiffRange, transcriptPath?: string): Prom
             // anchor on the session-start commit so committed work stays visible (a plain vs-HEAD
             // diff would collapse to nothing after the agent commits). Null degrades to the live diff.
             return { sessionStartTs: (await ensureSessionStart(transcriptPath)) ?? undefined };
+        // B and H come from the backend, which needs the cwd this function does not have: loadChangesForCwd asks
+        case "edits":
+            return { editsOf: transcriptPath ?? "" };
         // Neither anchors. Comparison drives panes 1 and 2 from comparestore; this load only supplies
         // cwd, branch and whether the directory is a repository at all.
         case "working":

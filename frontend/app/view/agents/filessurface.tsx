@@ -158,7 +158,7 @@ export function FilesSurface({ model }: { model: AgentsViewModel }) {
 
     const pickAgent = (id: string) => {
         const a = agents.find((x) => x.id === id);
-        globalStore.set(model.diffScopeAtom, agentDiffScope(id, a?.name ?? id));
+        globalStore.set(model.diffScopeAtom, agentDiffScope(id, a?.name ?? id, a?.agent));
         globalStore.set(model.focusIdAtom, id);
     };
     const pickProject = (p: FilesProject) => {
@@ -177,7 +177,7 @@ export function FilesSurface({ model }: { model: AgentsViewModel }) {
     useEffect(() => {
         const a = focusFollowAgent(scope, focusId, agents);
         if (a != null) {
-            globalStore.set(model.diffScopeAtom, agentDiffScope(a.id, a.name));
+            globalStore.set(model.diffScopeAtom, agentDiffScope(a.id, a.name, a.agent));
         }
     }, [focusId, scope, agents]);
 
@@ -642,6 +642,17 @@ export function FilesSurface({ model }: { model: AgentsViewModel }) {
                                 compareChanges != null &&
                                 compareChanges.files.length === 0
                                     ? { base: compareRefs?.base ?? "", head: compareRefs?.head ?? "" }
+                                    : null
+                            }
+                            // the scope's own row of the Agent's edits range is the list shown; a commit row of it, the
+                            // Commit tab and a comparison keep the commit words. `state.edits` is set only by that range's
+                            // own load, so a frame still holding another range's read does not count
+                            edits={
+                                !commitMode &&
+                                !compareOn &&
+                                selectedCommit === WORKING_TREE &&
+                                scope?.range.kind === "edits"
+                                    ? (state?.edits ?? null)
                                     : null
                             }
                             model={model}

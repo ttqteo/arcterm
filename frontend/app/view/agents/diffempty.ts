@@ -46,6 +46,9 @@ export interface EmptyDiffInput {
     fileCount: number | null;
     // why the open file's pair could not be read (diffcontentstore.diffPairFailureAtom)
     failure?: string | null;
+    // set when the list is the Agent's edits range's own: `reason` is the edits read's, "" when it gave none. An empty
+    // list there says the agent has made no edits, not that a commit changed nothing.
+    edits?: { reason: string } | null;
 }
 
 export function emptyDiffState(i: EmptyDiffInput): EmptyDiff | null {
@@ -65,6 +68,13 @@ export function emptyDiffState(i: EmptyDiffInput): EmptyDiff | null {
             };
         }
         if (i.fileCount === 0) {
+            if (i.edits != null) {
+                return {
+                    kind: "nofiles",
+                    title: "No edits by this agent yet",
+                    body: i.edits.reason || "The files it edits will be listed here.",
+                };
+            }
             return {
                 kind: "nofiles",
                 title: "This commit changes no files",

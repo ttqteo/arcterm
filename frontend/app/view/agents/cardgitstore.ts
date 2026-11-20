@@ -9,9 +9,8 @@
 // Files surface / rail.
 
 import { globalStore } from "@/app/store/jotaiStore";
-import { RpcApi } from "@/app/store/wshclientapi";
-import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { atom, type PrimitiveAtom } from "jotai";
+import { readAgentChanges } from "./agentchanges";
 import type { DiffStats } from "./agentsviewmodel";
 import { resolveCwd } from "./agentcwdresolve";
 import { ensureSessionStart } from "./agentsessionstore";
@@ -46,8 +45,14 @@ function setStats(id: string, stats: DiffStats | null): void {
 
 /** Resolve the agent's cwd and load git changes for it, updating diffStatsByIdAtom. A clean repo,
  *  non-repo, or unresolvable cwd drops the id from the map (the card's diff button hides). Guarded
- *  so a superseding load (or a drop) discards a slower older result. */
-export async function refreshCardGit(id: string, transcriptPath: string | undefined, blockId?: string): Promise<void> {
+ *  so a superseding load (or a drop) discards a slower older result. `runtime` is the AgentVM's `agent`:
+ *  a Claude agent (absent counts as one) is counted on its own edits, any other on its checkout. */
+export async function refreshCardGit(
+    id: string,
+    transcriptPath: string | undefined,
+    blockId?: string,
+    runtime?: string
+): Promise<void> {
     const seq = (loadSeq.get(id) ?? 0) + 1;
     loadSeq.set(id, seq);
     const [cwd, startTs] = await Promise.all([resolveCwd(transcriptPath, blockId), ensureSessionStart(transcriptPath)]);
@@ -59,10 +64,10 @@ export async function refreshCardGit(id: string, transcriptPath: string | undefi
         return;
     }
     try {
-        // sessionstartts: anchor on the commit that was HEAD when this agent's session began, so the
-        // pill counts only this session's work (commits since start + uncommitted). Null ts (no
-        // transcript yet) degrades to the live working-tree-vs-HEAD diff.
-        const ch = await RpcApi.GitChangesCommand(TabRpcClient, { cwd, sessionstartts: startTs ?? undefined });
+        // a Claude agent's pill counts only its own edits; any other anchors on the commit that was HEAD when its
+        // session began (commits since start + uncommitted), and a null ts (no transcript yet) degrades to the live
+        // working-tree-vs-HEAD diff
+        const { ch } = await readAgentChanges(cwd, { transcriptPath, runtime }, startTs);
         if (loadSeq.get(id) !== seq) {
             return;
         }
@@ -86,7 +91,12 @@ export async function refreshCardGit(id: string, transcriptPath: string | undefi
 }
 
 /** Debounced refresh, coalescing a burst of transcript activity into one git load. */
-export function scheduleCardGit(id: string, transcriptPath: string | undefined, blockId?: string): void {
+export function scheduleCardGit(
+    id: string,
+    transcriptPath: string | undefined,
+    blockId?: string,
+    runtime?: string
+): void {
     const existing = timers.get(id);
     if (existing) {
         clearTimeout(existing);
@@ -95,7 +105,7 @@ export function scheduleCardGit(id: string, transcriptPath: string | undefined, 
         id,
         setTimeout(() => {
             timers.delete(id);
-            void refreshCardGit(id, transcriptPath, blockId);
+            void refreshCardGit(id, transcriptPath, blockId, runtime);
         }, DEBOUNCE_MS)
     );
 }

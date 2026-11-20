@@ -50,6 +50,20 @@ func TestHumanPromptsClaudeKeepsOnlyTypedPrompts(t *testing.T) {
 	}
 }
 
+// a `!` command is a shell run, so neither its input nor its output is a prompt
+func TestHumanPromptsClaudeSkipsShellRuns(t *testing.T) {
+	path := writeTranscript(t, []string{
+		`{"type":"user","timestamp":"2026-09-17T06:02:05.000Z","message":{"role":"user","content":"<bash-input>ls</bash-input>"}}`,
+		`{"type":"user","timestamp":"2026-09-17T06:02:06.000Z","message":{"role":"user","content":"<bash-stdout>a.go</bash-stdout><bash-stderr></bash-stderr>"}}`,
+		`{"type":"user","timestamp":"2026-09-17T06:02:07.000Z","message":{"role":"user","content":"fix the build"}}`,
+	})
+	got := HumanPrompts(path, "claude")
+	want := []HumanPrompt{{Ts: 1789624927000, Text: "fix the build"}}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("HumanPrompts = %+v\nwant %+v", got, want)
+	}
+}
+
 // claude code wraps a long typed or pasted message in a pasted_content tag before the transcript records it, so
 // the lead's own `dag tell` would not match the text it sent (run 6c7652be recorded it as the human's)
 func TestHumanPromptsClaudeUnwrapsPastedContent(t *testing.T) {

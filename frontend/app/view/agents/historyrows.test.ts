@@ -10,10 +10,12 @@ import {
     commitCount,
     defaultSelection,
     keepSelection,
+    paneCaption,
     refChipClass,
     rowTitle,
     toRow,
     worktreeCaption,
+    worktreeHeading,
     type RefKind,
 } from "./historyrows";
 
@@ -295,6 +297,97 @@ describe("worktreeCaption", () => {
                 ""
             )
         ).toBe("On main, measured from run base b41d000 to its landed tip c0ffee1");
+    });
+});
+
+// The Agent's edits range has two synthetic commits and no history: the scope's own row is the whole list, and it is
+// there even when the agent has edited nothing (without it the pane would read "Select a commit" and carry no caption).
+describe("buildRows with no commits", () => {
+    const opts = { head: "tip1", dirtyFileCount: 3, rowLabel: "Agent's edits", now: NOW, noCommits: true };
+
+    it("ignores commits it was handed and keeps only the scope's own row", () => {
+        const rows = buildRows([commit("aaa1111"), commit("bbb2222")], opts);
+        expect(rows).toHaveLength(1);
+        expect(rows[0]).toMatchObject({ workingTree: true, subject: "Agent's edits", fileCount: 3 });
+    });
+
+    it("keeps the row at 0 files, where a commit-less list would otherwise be empty", () => {
+        const rows = buildRows([], { ...opts, dirtyFileCount: 0 });
+        expect(rows).toHaveLength(1);
+        expect(rows[0]).toMatchObject({ workingTree: true, subject: "Agent's edits", fileCount: 0 });
+        expect(defaultSelection(rows)).toBe(WORKING_TREE);
+    });
+
+    it("still drops the row at 0 files for a list with commits", () => {
+        expect(
+            buildRows([commit("aaa1111")], { ...opts, dirtyFileCount: 0, noCommits: false }).map((r) => r.hash)
+        ).toEqual(["aaa1111"]);
+    });
+});
+
+describe("paneCaption", () => {
+    const state = (over: Partial<Parameters<typeof paneCaption>[1]> = {}) => ({
+        branch: "feat",
+        head: "3eaffac1234",
+        ref: "b0b0b0b",
+        changes: { files: [{}, {}, {}], adds: 0, dels: 0 } as any,
+        edits: { flags: {}, bashcalls: 0, reason: "" },
+        ...over,
+    });
+    const edits = { kind: "edits", agentId: "a" } as const;
+
+    it("gives the edits range its own caption: the files and the Bash calls it cannot see into", () => {
+        expect(paneCaption(edits, state())).toBe("3 files by this agent");
+        expect(paneCaption(edits, state({ edits: { flags: {}, bashcalls: 2, reason: "" } }))).toBe(
+            "3 files by this agent · 2 Bash calls may have changed files not shown"
+        );
+    });
+
+    it("says why there is nothing to show when the edits range has no base", () => {
+        expect(
+            paneCaption(
+                edits,
+                state({
+                    ref: "",
+                    changes: { files: [], adds: 0, dels: 0 },
+                    edits: { flags: {}, bashcalls: 0, reason: "this agent has made no edits yet" },
+                })
+            )
+        ).toBe("this agent has made no edits yet");
+        expect(
+            paneCaption(
+                edits,
+                state({
+                    ref: "",
+                    changes: { files: [], adds: 0, dels: 0 },
+                    edits: { flags: {}, bashcalls: 0, reason: "" },
+                })
+            )
+        ).toBe("no edits to show");
+    });
+
+    // the frame between a flip to the edits range and its load: the state on screen is the session's read
+    it("says nothing about a state that carries no edits facts", () => {
+        expect(paneCaption(edits, state({ edits: undefined }))).toBe("");
+    });
+
+    it("leaves every other range to worktreeCaption", () => {
+        const session = { kind: "session", agentId: "a" } as const;
+        expect(paneCaption(session, state({ ref: "9f2c1de0000" }))).toBe(
+            worktreeCaption(session, "feat", "3eaffac1234", "9f2c1de0000")
+        );
+        expect(paneCaption({ kind: "working" }, state({ ref: "" }))).toBe(
+            worktreeCaption({ kind: "working" }, "feat", "3eaffac1234", "")
+        );
+    });
+});
+
+describe("worktreeHeading", () => {
+    it("names the edits range's row for what it lists, and every other range's a working tree", () => {
+        expect(worktreeHeading({ kind: "edits", agentId: "a" })).toBe("Agent's edits");
+        expect(worktreeHeading({ kind: "session", agentId: "a" })).toBe("Working tree");
+        expect(worktreeHeading({ kind: "working" })).toBe("Working tree");
+        expect(worktreeHeading({ kind: "run", runId: "r", baseCommit: "b" })).toBe("Working tree");
     });
 });
 

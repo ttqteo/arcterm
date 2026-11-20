@@ -84,6 +84,9 @@ export const historyRowsAtom = atom<HistoryRow[] | null>((get) => {
         rowLabel: opts.rowLabel,
         anchor: opts.anchor,
         anchorLabel: opts.anchorLabel,
+        // set when the scope has no commits to list: buildRows then ignores any loaded for the range before it, which
+        // a flip between ranges leaves in the store until the next load lands
+        noCommits: opts.noCommits,
         now: get(historyNowAtom),
     });
 });
@@ -159,9 +162,11 @@ export function resetHistory(): void {
 }
 
 // Deliberately excludes the anchor: git answers by cwd, filters and the ref it walks from, so two loads that differ
-// only in their divider label are the same read and must not blank the list between them.
-function loadToken(cwd: string, filters: HistoryFilters, ref?: string): string {
-    return historyKey(cwd, filters, ref ?? "");
+// only in their divider label are the same read and must not blank the list between them. A list with no commits is a
+// different list from any git read, so leaving it starts the next one afresh.
+function loadToken(cwd: string, filters: HistoryFilters, opts: LoadHistoryOpts): string {
+    const key = historyKey(cwd, filters, opts.ref ?? "");
+    return opts.noCommits ? `${key}|nocommits` : key;
 }
 
 // The ref the scope walks from (a landed run's tip), as GitHistoryCommand's own field; absent walks every ref.
@@ -193,7 +198,7 @@ export async function loadHistory(
         return;
     }
     const filters = globalStore.get(historyFiltersAtom);
-    const token = loadToken(cwd, filters, opts.ref);
+    const token = loadToken(cwd, filters, opts);
     // Blanking the list to signal "loading" unmounts every row, which collapses the scroll container:
     // the browser then clamps the restored offset to zero, and the pane's one-shot restore is already
     // spent by the time the rows come back. A remount re-runs this load with an identical token, so
@@ -212,6 +217,17 @@ export async function loadHistory(
     }
     globalStore.set(historyFailureAtom, null);
     globalStore.set(historyAppendAtom, "idle");
+    if (opts.noCommits) {
+        // nothing to read: the scope's own row is derived from the change list (historyRowsAtom)
+        globalStore.set(historyLoadStartedAtom, null);
+        globalStore.set(historyNowAtom, Date.now());
+        globalStore.set(historyHeadAtom, globalStore.get(filesStateAtom)?.head ?? "");
+        globalStore.set(historyCommitsAtom, []);
+        globalStore.set(historyHasMoreAtom, false);
+        settleSelection(cwd, scope);
+        announceRestore();
+        return;
+    }
     try {
         const h = await RpcApi.GitHistoryCommand(
             TabRpcClient,

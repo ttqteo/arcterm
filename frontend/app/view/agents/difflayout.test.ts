@@ -171,6 +171,15 @@ describe("panelDirtyCount", () => {
         expect(panelDirtyCount("session", read("9f2c1de", 4))).toBe(0);
         expect(panelDirtyCount("run", read("", 4))).toBe(0);
     });
+
+    // an Agent's edits range with no base reads with ref "" and lists nothing (filesstore keeps the plain read for the
+    // folder's facts only): right after a worktree row is picked in the agent's folder it is still the store's read, and
+    // counting its empty list opened Commit's dirty folder on Log
+    it("does not count an Agent's edits read with no base as the working tree", () => {
+        const editsRead = { ...read("", 0), edits: { flags: {}, bashcalls: 0, reason: "no edits" } };
+        expect(panelDirtyCount("working", editsRead)).toBeNull();
+        expect(panelDirtyCount("session", editsRead)).toBe(0);
+    });
 });
 
 describe("sourceTitle", () => {
@@ -225,6 +234,10 @@ describe("commitTabCount", () => {
     it("has no count before a list has loaded", () => {
         expect(commitTabCount(null)).toBeNull();
         expect(commitTabCount({ ref: "", changes: null })).toBeNull();
+    });
+
+    it("has no count for an Agent's edits read with no base, whose empty list is not the working tree's", () => {
+        expect(commitTabCount({ ref: "", changes: changes(0), edits: { reason: "no edits" } })).toBeNull();
     });
 });
 
