@@ -30,6 +30,13 @@ in the dev app: `node scripts/whatsnew-shot.mjs <topic> [--selector <css>]` writ
 `whatsnew.test.ts` fails a big line with neither (in Unreleased and from 1.9.0 on), a missing file, one over 120 KB,
 and a picture given to a line that is not big.
 
+## Unreleased
+
+### Changed
+
+- A board open beside Chat gets most of the width: Chat narrows to a 360px column and the agent list folds to a thin
+  strip, which opens it again until the board closes.
+
 ## 1.12.0 — 2026-11-20
 
 ### Added

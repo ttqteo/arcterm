@@ -19,13 +19,16 @@ export interface BoardSplit {
     expanded: boolean; // the board takes the whole cell; Chat stays mounted under it
 }
 
+// Beside a board the Chat is a column 360px wide (half the cell when the cell is narrower than 720px) and the board takes
+// the rest: chatpane.tsx's right edge and boardsplit.tsx's left edge spell the same width as Tailwind classes.
+
 // null = no board beside this agent's Chat
 export const boardSplitAtom = atomFamily(
     (_agentId: string) => atom<BoardSplit | null>(null) as PrimitiveAtom<BoardSplit | null>
 );
 
-// A board opens half the cell wide when the cell is the whole grid. In a grid of more than one cell half a cell is too
-// narrow to draw in, so it opens expanded.
+// A board opens beside the Chat column when the cell is the whole grid. In a grid of more than one cell what is left of
+// a cell is too narrow to draw in, so it opens expanded.
 export function splitOpens(cellsInGrid: number): { expanded: boolean } {
     return { expanded: cellsInGrid > 1 };
 }
@@ -53,10 +56,20 @@ export function openBoard(model: BoardOpenModel, agentId: string, project: strin
     // read once the agent is in focus: the grid on screen is then the split it is a cell of, or the agent alone
     const { expanded } = splitOpens(currentGrid(model).ids.length);
     globalStore.set(boardSplitAtom(agentId), { project, boardId, expanded });
+    globalStore.set(treePeekAtom, false);
 }
 
 export function closeBoard(agentId: string): void {
     globalStore.set(boardSplitAtom(agentId), null);
+    globalStore.set(treePeekAtom, false);
+}
+
+// The Agent tree folds to a strip while the focused agent's cell shows Chat with a board beside it, so the board has the
+// room. The strip opens the tree again (a peek) until that board closes or another opens.
+export const treePeekAtom = atom(false) as PrimitiveAtom<boolean>;
+
+export function treeFolds(split: BoardSplit | null, chatShown: boolean, peek: boolean): boolean {
+    return split != null && chatShown && !peek;
 }
 
 export function setBoardExpanded(agentId: string, expanded: boolean): void {

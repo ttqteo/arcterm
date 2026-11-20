@@ -26,6 +26,8 @@ import {
     splitExpanded,
     splitOpens,
     switchBoard,
+    treeFolds,
+    treePeekAtom,
     type BoardOpenModel,
 } from "./boardsplitstore";
 
@@ -121,5 +123,25 @@ describe("closeBoard, setBoardExpanded, switchBoard", () => {
         setBoardExpanded("a1", true);
         switchBoard("a1", "b2");
         expect(globalStore.get(boardSplitAtom("a1"))).toEqual({ project: "arcterm", boardId: "b2", expanded: true });
+    });
+});
+
+describe("treeFolds", () => {
+    const open = { project: "p", boardId: "b", expanded: false };
+    it("folds the tree while Chat shows with a board beside it", () => {
+        expect(treeFolds(open, true, false)).toBe(true);
+    });
+    it("keeps the tree with no board, with the cell off Chat, or while peeked", () => {
+        expect(treeFolds(null, true, false)).toBe(false);
+        expect(treeFolds(open, false, false)).toBe(false);
+        expect(treeFolds(open, true, true)).toBe(false);
+    });
+    it("drops the peek when a board opens or closes", () => {
+        globalStore.set(treePeekAtom, true);
+        closeBoard("a1");
+        expect(globalStore.get(treePeekAtom)).toBe(false);
+        globalStore.set(treePeekAtom, true);
+        openBoard(model, "a1", "p", "b");
+        expect(globalStore.get(treePeekAtom)).toBe(false);
     });
 });

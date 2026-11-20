@@ -605,7 +605,7 @@ function ChatEmpty({ agent, error }: { agent: AgentVM; error: string | null }) {
 // stacking context, which would otherwise drop it to z-auto).
 export function ChatLayer({ model, agent, barred }: { model: AgentsViewModel; agent: AgentVM; barred: boolean }) {
     const shown = useChatShown(agent);
-    // A board split beside the Chat (boards/boardsplit.tsx) takes the right half of the cell. The pane keeps its place
+    // A board split beside the Chat (boards/boardsplit.tsx) takes the cell right of a 360px Chat column. The pane keeps its place
     // and its mount, only its right edge moves in, so the xterm under both never refits; an expanded board covers
     // the pane, which then takes no focus (a grid of several cells always shows its board expanded).
     const split = useAtomValue(boardSplitAtom(agent.id));
@@ -745,7 +745,7 @@ function FocusReadToggle({ agentId, scrollRef }: { agentId: string; scrollRef: R
 // What an `agent:`, `run:` or `council:` reference resolves against (chatrefbadge.tsx) wraps the whole pane, so the
 // conversation, the pending bubbles and the box's pills all draw their badges from it. The project is the registered
 // project's path, which is what runs and councils are kept under: never the agent's cwd, a worktree for a run's worker.
-// `besideBoard`: a board is split beside the Chat, so the pane's right edge is the cell's middle, not its edge.
+// `besideBoard`: a board is split beside the Chat, so the pane is a 360px column (half a narrower cell), not the cell's width.
 export function ChatPane({
     model,
     agent,
@@ -1212,7 +1212,8 @@ function ChatPaneBody({
             inert={!present}
             className={cn(
                 "absolute bottom-0 left-0 z-20 flex flex-col bg-background",
-                besideBoard ? "right-1/2" : "right-0",
+                // beside a board: 360px wide, half the cell in one narrower than 720px (boardsplitstore.ts)
+                besideBoard ? "right-[max(100%_-_360px,50%)]" : "right-0",
                 barred ? "top-[26px]" : "top-0"
             )}
         >

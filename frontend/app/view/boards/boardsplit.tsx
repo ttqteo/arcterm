@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // The board beside an agent's Chat: a layer inside the agent's cell, drawn after ChatLayer (agentsurface.tsx), never
-// wrapping it. It takes the cell's right half (all of it expanded) over the xterm and the pane, which keep their size, so
+// wrapping it. It takes the cell right of a 360px Chat column (all of it expanded) over the xterm and the pane, which keep their size, so
 // nothing refits and no pane changes parent. Only while the cell shows Chat: the live xterm is never inside the split.
 //
 // The canvas is mounted only while the Agent surface is on screen. The surface keeps its cells mounted when another
@@ -127,7 +127,7 @@ function OpenSplit({
             className={cn(
                 "@container absolute bottom-0 right-0 z-20 flex flex-col bg-background",
                 barred ? "top-[26px]" : "top-0",
-                expanded ? "left-0" : "left-1/2 border-l border-edge-mid"
+                expanded ? "left-0" : "left-[min(360px,50%)] border-l border-edge-mid"
             )}
         >
             <BoardHeader

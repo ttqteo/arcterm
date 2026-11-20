@@ -1,5 +1,5 @@
 // Scenario `boards-split`: the board split beside the agent's Chat (docs/superpowers/specs/2026-11-19-kael-boards-design.md,
-// plan 2026-11-19-kael-boards.md Task 7). A board opens in the right half of the agent's cell with Chat on the left; its
+// plan 2026-11-19-kael-boards.md Task 7). A board opens right of a 360px Chat column in the agent's cell, the agent tree folded to a strip; its
 // header, turns and ask box are the steps below, each a screenshot plus a DOM assert.
 //
 // Two fixture claude agents over real tabs (no controller, so nothing runs) and a mock roster for them; the first has a
@@ -307,6 +307,10 @@ export default function (kit) {
                 return termBox();
             })();
             const heapBefore = await heap();
+            // the terminal's box while the board is open: the tree folds to a strip, so the cell (and the pane) widen once
+            let termOpen = null;
+            const TREE = "[data-agent-tree]";
+            const STRIP = (state) => `[data-agent-tree-strip="${state}"]`;
             await run("1. Open puts Chat on the left and the board on the right, its name and facts in the header", async (name) => {
                 const chatBefore = await box(`[data-agent-chat="${A}"]`);
                 await openBoardOn(B1);
@@ -328,7 +332,10 @@ export default function (kit) {
                 const facts = await text(`${SPLIT(B1)} [data-board-facts]`);
                 const st = await state();
                 await shot("1-open");
-                const mid = cell == null ? null : cell.l + cell.w / 2;
+                // Chat is a 360px column (half a cell narrower than 720px), the board the rest
+                const mid = cell == null ? null : cell.l + Math.min(360, cell.w / 2);
+                const treeGone = (await count(TREE)) === 0 && (await count(STRIP("folded"))) === 1;
+                termOpen = term;
                 rec(
                     name,
                     shown &&
@@ -343,12 +350,28 @@ export default function (kit) {
                         near(board?.r, cell?.r) &&
                         near(chat?.l, cell?.l) &&
                         near(chat?.r, mid) &&
-                        // the pane under both keeps its box: nothing refits when the board opens
-                        JSON.stringify(term) === JSON.stringify(termBefore) &&
+                        // the tree folds to a strip: the pane under both widens once, its top and height kept
+                        treeGone &&
+                        term != null &&
+                        term.w > termBefore.w &&
+                        term.t === termBefore.t &&
+                        term.h === termBefore.h &&
                         title === B1_NAME &&
                         /^3 shapes · drawn (\d\d:\d\d|\d+ [A-Z][a-z]{2})$/.test(facts ?? ""),
-                    { cell, chat: { before: chatBefore, after: chat }, board, term: { before: termBefore, after: term }, title, facts, fits, split: st.split }
+                    { cell, chat: { before: chatBefore, after: chat }, board, term: { before: termBefore, after: term }, treeGone, title, facts, fits, split: st.split }
                 );
+            });
+
+            // --- 1b. the strip opens the tree beside the board, and folds it again ---
+            await run("1b. the strip beside the board opens the agent tree and folds it back", async (name) => {
+                const opened = (await click(STRIP("folded"))) && (await until(async () => (await count(TREE)) === 1 && (await count(STRIP("open"))) === 1));
+                await polishNap(300);
+                await shot("1b-tree-peek");
+                const stillSplit = (await box(SPLIT(B1))) != null;
+                const folded = (await click(STRIP("open"))) && (await until(async () => (await count(TREE)) === 0 && (await count(STRIP("folded"))) === 1));
+                await polishNap(300);
+                const term = await termBox();
+                rec(name, opened && stillSplit && folded && JSON.stringify(term) === JSON.stringify(termOpen), { opened, stillSplit, folded, term, termOpen });
             });
 
             // --- 2. the recent turns: a drawn turn whose Show outlines its shapes, and a forwarded turn ---
@@ -561,9 +584,9 @@ export default function (kit) {
                         label === "Collapse" &&
                         near(board?.l, cell?.l) &&
                         near(board?.r, cell?.r) &&
-                        // the pane stays at its half under the board
-                        near(chat?.r, cell == null ? null : cell.l + cell.w / 2) &&
-                        JSON.stringify(term) === JSON.stringify(termBefore) &&
+                        // the pane stays a 360px column under the board
+                        near(chat?.r, cell == null ? null : cell.l + Math.min(360, cell.w / 2)) &&
+                        JSON.stringify(term) === JSON.stringify(termOpen) &&
                         inert &&
                         kept &&
                         draft === "a draft I have not sent" &&
@@ -639,6 +662,9 @@ export default function (kit) {
                         closed &&
                         near(chat?.l, cell?.l) &&
                         near(chat?.r, cell?.r) &&
+                        // the tree is back, so the pane is back to its box from before the board opened
+                        (await count(TREE)) === 1 &&
+                        (await count(STRIP("folded"))) === 0 &&
                         JSON.stringify(term) === JSON.stringify(termBefore) &&
                         // the same pane, never rebuilt
                         kept &&
