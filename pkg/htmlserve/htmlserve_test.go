@@ -271,6 +271,16 @@ func TestBridgeMeasuresTheContentNotTheViewport(t *testing.T) {
 	}
 }
 
+// A page with no color-scheme in the dark app is drawn on an opaque white canvas: Chat's frame hands the app's scheme
+// over in its address (#arc-scheme=dark), and the bridge sets it on the root before the page's first paint.
+func TestBridgeTakesTheSchemeFromTheHash(t *testing.T) {
+	for _, want := range []string{"arc-scheme=(dark|light)", "location.hash", "style.colorScheme"} {
+		if !strings.Contains(bridgeScript, want) {
+			t.Errorf("the bridge never mentions %s", want)
+		}
+	}
+}
+
 func TestWithSuffixReadsTheFileThenTheSuffix(t *testing.T) {
 	s := withSuffix{f: strings.NewReader("abcdef"), size: 6, suffix: []byte("XYZ")}
 	for _, tc := range []struct {

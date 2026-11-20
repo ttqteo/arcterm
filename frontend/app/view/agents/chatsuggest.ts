@@ -505,6 +505,89 @@ export function quickChip(chips: readonly ChatChip[], boxText: string): ChatChip
     return chips.length > 0 && boxText.trim() === "" ? chips[0] : null;
 }
 
+// ---- the chips as the person types: the ones the typed text matches light, the rest fade, and the first one it starts
+// shows its rest as ghost text in the box (chatcomposer.tsx), which → or Tab takes ----
+
+const WORD_CHAR = /[\p{L}\p{N}]/u;
+
+/** A letter as the typed text is matched against a chip: no tone or other mark, đ as d, lower case ("Đóng" reads
+ *  "dong"), so a person typing without marks still finds the chip. */
+function foldChar(c: string): string {
+    return c.normalize("NFD").replace(/\p{M}/gu, "").replace(/đ/gi, "d").toLowerCase();
+}
+
+/** The folded text, and for each of its letters the index in `s` it came from (a mark folds to nothing). */
+function folded(s: string): { text: string; from: number[] } {
+    let text = "";
+    const from: number[] = [];
+    let i = 0;
+    for (const c of s) {
+        const f = foldChar(c);
+        text += f;
+        for (let k = 0; k < f.length; k++) {
+            from.push(i);
+        }
+        i += c.length;
+    }
+    return { text, from };
+}
+
+/** Where the typed text matches a chip: the chip's text from `start` to `end` (indices in it), and whether it is the
+ *  chip's start (`prefix`) rather than the start of one of its later words. */
+export interface ChipMatch {
+    start: number;
+    end: number;
+    prefix: boolean;
+}
+
+/** Pure: where the typed text matches the chip's text: at its start, else at the start of one of its words, marks and
+ *  case aside (foldChar). Leading spaces in the box are not part of it; an empty box, or text of more than one line,
+ *  matches nothing. */
+export function chipMatch(chipText: string, typed: string): ChipMatch | null {
+    const t = typed.replace(/^\s+/, "");
+    if (t.trim() === "" || t.includes("\n")) {
+        return null;
+    }
+    const want = folded(t).text;
+    const chip = folded(chipText);
+    const end = (at: number) => (at + want.length >= chip.from.length ? chipText.length : chip.from[at + want.length]);
+    if (chip.text.startsWith(want)) {
+        return { start: 0, end: end(0), prefix: true };
+    }
+    for (let at = 1; at < chip.text.length; at++) {
+        if (!WORD_CHAR.test(chip.text[at - 1]) && WORD_CHAR.test(chip.text[at]) && chip.text.startsWith(want, at)) {
+            return { start: chip.from[at], end: end(at), prefix: false };
+        }
+    }
+    return null;
+}
+
+/** Pure: the chips Tab walks: with text typed, the ones it matches (chipMatch); with none matched, or nothing typed,
+ *  every chip, as before. */
+export function tabWalk(chips: readonly ChatChip[], typed: string): ChatChip[] {
+    const hit = chips.filter((c) => chipMatch(c.text, typed) != null);
+    return hit.length > 0 ? hit : [...chips];
+}
+
+/** Pure: the ghost text the box shows after what is typed: the rest of the first chip in the row the typed text starts
+ *  (chipMatch's prefix) whose text can go in the box (chipEditable: a close or done chip does more than send its words).
+ *  `take` is what → or Tab puts in the box: the chip's whole text, so "dong" becomes "đóng agent", marks and all. Null
+ *  when no chip is started or the typed text is the whole chip already. */
+export function chipGhost(
+    chips: readonly ChatChip[],
+    typed: string,
+    canGoOn: boolean
+): { chip: ChatChip; rest: string; take: string } | null {
+    for (const c of chips) {
+        const m = chipMatch(c.text, typed);
+        if (m == null || !m.prefix || !chipEditable(c, canGoOn) || m.end >= c.text.length) {
+            continue;
+        }
+        return { chip: c, rest: c.text.slice(m.end), take: c.text };
+    }
+    return null;
+}
+
 /** Pure: the picked chip, or null when the text is no longer one of the row's (the row changed under it). */
 export function pickedChip(chips: readonly ChatChip[], picked: string | null): ChatChip | null {
     return picked == null ? null : (chips.find((c) => c.text === picked) ?? null);

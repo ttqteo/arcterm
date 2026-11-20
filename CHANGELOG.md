@@ -48,9 +48,14 @@ and a picture given to a line that is not big.
 - An agent's reply in Chat draws the agents, runs and councils it names by id (`4e6ea128`, or `agent:4e6ea128`) as
   badges with their names, as your own messages do: click one to open it. A commit hash or an id that names nothing
   open stays as written.
+- Chat's suggested replies follow what you type: the chips your text matches light up (marks aside, so `dong` finds
+  "đóng gói"), the rest fade, and the one your text starts shows its rest in grey in the box, which → or Tab fills in.
+  Tab then walks only the matching chips.
 
 ### Fixed
 
+- A visual an agent draws in Chat sits on the chat's dark background instead of a white box, even when its page sets
+  no colours of its own.
 - A conversation you resume no longer shows as working while it loads: it reads "resuming…", with no Stop and no
   working dot, until it is at its prompt, and is no longer counted as an unread turn once it gets there.
 - Chat's Working line no longer blinks out and back when the agent takes a message you queued while it worked, which

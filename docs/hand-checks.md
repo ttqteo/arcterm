@@ -78,6 +78,12 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
   step's cards were checked by CDP (`council-discussion` "seat role"); the Map's were not. Open a paper council (Reviewer
   A, Reviewer B, Humanizer) on the Map: each card reads its focus (`novelty`, `baselines`) and its brief under the name,
   Humanizer its brief alone, two lines at most, and the hover shows the whole brief.
+- [ ] (arcterm) **chat-redesign 14c and agent-chat 1a2 failed beside the chip typeahead** (2026-11-20, branch
+  `feat/chat-chip-typeahead`: 113/115). 1a2: the opened tool fold held 4 rows (Read, Edited, Checked the working tree,
+  Created) where it wants 2. 14c: a click on a brainstorm card's option left its row reading "You replied", not "You
+  picked". Neither card uses the suggest `Chip` or the box's ghost text, and the run on the base commit to compare was
+  stopped for low memory. Run `chat-redesign agent-chat` on main at a quiet time: both failing there means they predate
+  the typeahead; passing there means look at it.
 - [ ] (arcterm) **Chat's `@` picker, top level only** (`refmention.ts` `runRefs`/`topLevelAgentIds`,
   `refmentionstore.ts`). In a chat of a project with an orchestrator run that had a plan review (arcterm's "Kael sync
   11-19"), type `@`: the run is one row (`run:733ad992 · … · orchestrator`) and none of its "You are the plan reviewer
