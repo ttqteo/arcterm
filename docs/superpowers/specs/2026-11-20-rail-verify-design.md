@@ -174,7 +174,7 @@ A new `pkg/verifyruns`:
 it runs in. `register.ts` adds a `tool.check` on Bash that calls `wsh verify gate` for a merge and answers `ask` with
 its reason, with `.catch(passOn)`. It sits beside the existing commit reminder (`withUiCheck`, which tells the model
 after a commit that changed UI no one tried in the app) and does not replace it: that one nudges at commit time, this
-one asks the person at merge time. The default branch is `gitinfo.DefaultBranch`'s.
+one asks the person at merge time. The default branch and merge base are `gitinfo.BranchBase`'s (it prefers the local default branch).
 
 ## Motion
 
