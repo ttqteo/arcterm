@@ -1,8 +1,8 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// The council the Agent panel's council button opens (railcouncil.ts), read from the list of every council that
-// councilstore.ts keeps current on `council:changed`. The button and its key `c` (bindings.ts) read it here, so the two
+// The council whose chat the Agent panel's Council tab shows (railcouncil.ts), read from the list of every council that
+// councilstore.ts keeps current on `council:changed`. The tab and its key `c` (bindings.ts) read it here, so the two
 // always agree on which council that is.
 
 import { globalStore } from "@/app/store/jotaiStore";

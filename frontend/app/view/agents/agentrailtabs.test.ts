@@ -404,3 +404,33 @@ describe("the strip's keys", () => {
         expect(nextTab(keys, "transcript", "ArrowRight")).toBe(fileKey(p.files[0].id));
     });
 });
+
+describe("the Council tab", () => {
+    it("shows after Transcript only while the agent has a council", () => {
+        const p = panelFor({}, "x", "overview");
+        expect(visibleTabs(p, true, true, true)).toEqual(["overview", "tree", "changes", "transcript", "council"]);
+        expect(visibleTabs(p, false, false, true)).toEqual(["overview", "changes", "council"]);
+        expect(visibleTabs(p, true, true)).not.toContain("council");
+    });
+
+    it("is never a default", () => {
+        expect(panelFor({}, "x", "council").tab).toBe("overview");
+    });
+
+    it("is selected only when there is a council, and falls back to Overview while there is none", () => {
+        const p = panelFor({}, "x", "overview");
+        expect(selectTab(p, "council", true, true)).toBe(p);
+        const on = selectTab(p, "council", false, false, true);
+        expect(on).toMatchObject({ tab: "council", prevTab: "overview" });
+        expect(shownTab(on, false, false, true)).toBe("council");
+        expect(shownTab(on, false, false, false)).toBe("overview");
+        expect(shownKey(on, false, false, true)).toBe("council");
+    });
+
+    it("sits in the strip's keys before an open file", () => {
+        const p = openFile(panelFor({}, "x", "overview"), { abs: "D:/a.ts", root: "D:/" });
+        const keys = stripKeys(p, false, true, true);
+        expect(keys).toEqual(["overview", "changes", "transcript", "council", ...p.files.map((f) => fileKey(f.id))]);
+        expect(selectKey(p, "council", false, true, true).tab).toBe("council");
+    });
+});

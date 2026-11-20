@@ -131,7 +131,7 @@ const sameChats = (a: readonly SeatableAgent[], b: readonly SeatableAgent[]) =>
 // The live claude and pi chats a message in the council can add with `@` (the cockpit's roster, which Setup's Add agent
 // reads too, by the one seat rule). The roster changes on every agent's state tick, so the list is picked out of it
 // and the view re-renders only when a chat, its name, project or context changes.
-function useLiveChats(model: AgentsViewModel, project: string): readonly SeatableAgent[] {
+export function useLiveChats(model: AgentsViewModel, project: string): readonly SeatableAgent[] {
     const chatsAtom = useMemo(
         () =>
             selectAtom(

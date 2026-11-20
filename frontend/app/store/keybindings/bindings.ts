@@ -13,7 +13,7 @@ import { activeNavOrder } from "@/app/view/agents/activenav";
 import { closeAgentChord, confirmCloseSession } from "@/app/view/agents/agentactions";
 import { centerModeAtom, leaveCenter } from "@/app/view/agents/agentcenter";
 import { getProcExitAtom } from "@/app/view/agents/agentcontrollerstore";
-import { openRailTranscript } from "@/app/view/agents/agentrailstore";
+import { openRailCouncil, openRailTranscript } from "@/app/view/agents/agentrailstore";
 import { AgentsViewModel, RAIL_ORDER, SURFACE_ORDER, type SurfaceKey } from "@/app/view/agents/agents";
 import { AGENT_DIGITS } from "@/app/view/agents/agentsidebarmodel";
 import { answerDigitTarget, canSubmitAsk, moveCursor, type AgentVM } from "@/app/view/agents/agentsviewmodel";
@@ -208,7 +208,6 @@ import {
     libraryConvViewAtom,
     libraryCouncilSelAtom,
     libraryTabAtom,
-    openCouncil,
     showLibrary,
     type LibraryTab,
 } from "@/app/view/library/librarystore";
@@ -1595,7 +1594,7 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
         return clickThrough("[data-doc-review-send]");
     };
     const focusId = () => globalStore.get(model.focusIdAtom);
-    // the council the focused agent started, or null: what the Agent panel's council button and its key c open
+    // the council the focused agent started, or null: whose chat the Agent panel's Council tab shows, which c selects
     const focusedCouncil = () => {
         const id = focusId();
         if (!id) {
@@ -2335,20 +2334,20 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
             when: inCanvas,
             run: () => setAgentView(focusId(), "terminal", Date.now()),
         },
-        // c's third meaning, for an agent with no canvas: the council it started, which the panel's button after its tabs
-        // names (railcouncilstore.ts reads the one council for both). Exclusive with the two above: they need a canvas
+        // c's third meaning, for an agent with no canvas: the chat of the council it started, on the panel's Council tab
+        // (railcouncilstore.ts reads the one council for both). Exclusive with the two above: they need a canvas
         {
             id: "agent:council-chat",
             keys: "c",
             group: "Agent",
-            label: "Open the council this agent started",
+            label: "Show the chat of the council this agent started",
             when: (ctx) => nav(ctx) && canvas() == null && docReview()?.mode !== "review" && focusedCouncil() != null,
             run: () => {
-                const c = focusedCouncil();
-                if (c == null) {
+                const id = focusId();
+                if (!id || focusedCouncil() == null) {
                     return false;
                 }
-                openCouncil(model, c.id, "discussion");
+                openRailCouncil(id);
             },
         },
         // b changes meaning with the brainstorm's state, so it is two bindings with exclusive when()s and every footer

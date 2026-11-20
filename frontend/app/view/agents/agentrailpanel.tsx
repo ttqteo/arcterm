@@ -47,7 +47,7 @@ import {
     type ResizableTab,
 } from "./agentrailtabs";
 import { navRailCollapsed } from "./navrailwidth";
-import { railCouncilButton } from "./railcouncil";
+import { railCouncilTab } from "./railcouncil";
 import { agentTreeWidth } from "./rowfields";
 import { rowFieldsAtom } from "./rowfieldsstore";
 
@@ -71,15 +71,18 @@ export function RailTabStrip({
     panel,
     hasTree,
     hasTranscript,
+    council,
 }: {
     agentId: string;
     panel: PanelState;
     hasTree: boolean;
     hasTranscript: boolean;
+    council: Council | null; // the council the agent started: the Council tab's, none without one
 }) {
-    const keys = stripKeys(panel, hasTree, hasTranscript);
-    const shown = shownTab(panel, hasTree, hasTranscript);
-    const current = shownKey(panel, hasTree, hasTranscript);
+    const hasCouncil = council != null;
+    const keys = stripKeys(panel, hasTree, hasTranscript, hasCouncil);
+    const shown = shownTab(panel, hasTree, hasTranscript, hasCouncil);
+    const current = shownKey(panel, hasTree, hasTranscript, hasCouncil);
     const ref = useRef<HTMLDivElement>(null);
     // The file on show stays in sight when more tabs are open than the strip has room for. Only the strip scrolls:
     // scrollIntoView would also scroll the panel's clipping boxes while it slides open.
@@ -104,7 +107,7 @@ export function RailTabStrip({
         e.preventDefault();
         e.stopPropagation();
         const next = nextTab(keys, current, e.key);
-        selectRailKey(agentId, next, hasTree, hasTranscript);
+        selectRailKey(agentId, next, hasTree, hasTranscript, hasCouncil);
         requestAnimationFrame(() =>
             ref.current?.querySelector<HTMLElement>(`[data-rail-key="${next}"]`)?.focus({ preventScroll: true })
         );
@@ -115,7 +118,7 @@ export function RailTabStrip({
         tabIndex: current === key ? 0 : -1,
         "data-rail-tab": tab,
         "data-rail-key": key,
-        onClick: () => selectRailKey(agentId, key, hasTree, hasTranscript),
+        onClick: () => selectRailKey(agentId, key, hasTree, hasTranscript, hasCouncil),
     });
     const active = activeFile(panel);
     // on File every open file is a tab; elsewhere they fold into the one on show, with how many are open
@@ -174,6 +177,14 @@ export function RailTabStrip({
                     <ScrollText size={16} strokeWidth={1.8} aria-hidden />
                 </button>
             ) : null}
+            {council != null ? (
+                <RailCouncilTab
+                    key={council.id}
+                    council={council}
+                    on={current === "council"}
+                    tabProps={tabProps("council")}
+                />
+            ) : null}
             {fileTabs.map((f) =>
                 f.current == null ? null : (
                     <RailFileTab
@@ -193,40 +204,34 @@ export function RailTabStrip({
 
 const COUNCIL_DOT = { working: "bg-working", asking: "bg-asking", error: "bg-error" } as const;
 
-// Quick access to the council the agent started (canvas rail-council-chat, board A): after the tabs, not one of them,
-// since it opens the council's Discussion in the centre rather than a view of the panel. Its dot is the tone of the
-// council's row in the tree, and `c` presses it (agent:council-chat). It fades in as the council appears.
-export function RailCouncilButton({ council, onOpen }: { council: Council; onOpen: () => void }) {
-    const { dot, title } = railCouncilButton(council);
+// The Council tab (canvas rail-council-chat, board B): there while the agent has started a council, its body the
+// council's chat. Its dot is the tone of the council's row in the tree, and `c` selects it (agent:council-chat). It fades
+// in as the council appears.
+function RailCouncilTab({ council, on, tabProps }: { council: Council; on: boolean; tabProps: TabProps }) {
+    const { dot, title } = railCouncilTab(council);
     return (
         <motion.button
             type="button"
-            data-rail-council={council.id}
-            aria-label={title}
+            {...tabProps}
+            aria-label={`Council: ${title}`}
             aria-keyshortcuts="c"
-            title={title}
-            onClick={onOpen}
+            title={`Council: ${title}`}
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ duration: MOTION.durMicro, ease: MOTION.easeFluid }}
-            className="relative ml-[4px] flex h-[28px] shrink-0 cursor-pointer items-center gap-[5px] self-center rounded-full border-0 bg-transparent pl-[7px] pr-[6px] text-secondary outline-none hover:bg-surface-hover hover:text-primary focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent"
+            className={cn(TAB, "relative", on ? TAB_ON : TAB_OFF)}
         >
             <MessagesSquare size={16} strokeWidth={1.8} aria-hidden />
             {dot != null ? (
                 <span
                     aria-hidden
                     className={cn(
-                        "absolute left-[18px] top-[4px] h-[7px] w-[7px] rounded-full ring-2 ring-surface",
+                        "absolute left-[19px] top-[4px] h-[7px] w-[7px] rounded-full ring-2",
+                        on ? "ring-surface-selected" : "ring-surface",
                         COUNCIL_DOT[dot]
                     )}
                 />
             ) : null}
-            <kbd
-                aria-hidden
-                className="rounded-[4px] border border-border px-[4px] font-mono text-[10px] leading-[14px] font-normal text-muted"
-            >
-                c
-            </kbd>
         </motion.button>
     );
 }

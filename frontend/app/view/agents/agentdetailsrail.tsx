@@ -6,7 +6,6 @@ import { easeFluidCss, MOTION, popoverReveal } from "@/app/element/motiontokens"
 import { railSectionOpenAtom } from "@/app/element/railsections";
 import { SkeletonLine } from "@/app/element/skeleton";
 import { globalStore } from "@/app/store/jotaiStore";
-import { openCouncil } from "@/app/view/library/librarystore";
 import { formatChordString } from "@/util/keysym";
 import { joinRepoPath } from "@/util/paths";
 import { isWindows } from "@/util/platformutil";
@@ -25,6 +24,7 @@ import {
     GitBranch,
     LayoutList,
     LayoutTemplate,
+    MessagesSquare,
     ScrollText,
 } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
@@ -43,7 +43,7 @@ import {
     shortIds,
     worktreeName,
 } from "./agentrailmodel";
-import { RailCouncilButton, RailResizeGrip, RailStats, RailTabStrip, useWideWidth } from "./agentrailpanel";
+import { RailResizeGrip, RailStats, RailTabStrip, useWideWidth } from "./agentrailpanel";
 import {
     bgSessionLive,
     bgTaskElapsed,
@@ -101,6 +101,7 @@ import {
     setRailCommitMode,
     setRailCommitsOpen,
 } from "./railcommitsstore";
+import { RailCouncilPane } from "./railcouncilpane";
 import { useAgentCouncil } from "./railcouncilstore";
 import { RAIL_ICON } from "./railicons";
 import { RAIL_ROW, RAIL_ROW_ACTION } from "./railrow";
@@ -773,7 +774,10 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
     // sleepingtranscript.tsx for another harness), and the tab comes back on wake. Nor does an agent showing Chat: the conversation is the cell's, and the tab comes back with Terminal
     const chatShown = useChatMode(agent) === "chat";
     const hasTranscript = !!agent.transcriptPath && !agent.sleeping && !chatShown;
-    const shown = shownTab(panel, hasTree, hasTranscript);
+    // the council this agent started, whose chat the Council tab shows; a subagent's interior shows its parent's
+    const council = useAgentCouncil(agent);
+    const hasCouncil = council != null;
+    const shown = shownTab(panel, hasTree, hasTranscript, hasCouncil);
     // File and Transcript keep a dragged width (one, shared); Overview, Files and Changes share one fixed width, so
     // moving between them never resizes the panel
     const wideTab: ResizableTab = shown === "transcript" ? "transcript" : "file";
@@ -782,8 +786,6 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
     const openTab = activeFile(panel);
     const fileRef = openTab?.current ?? null;
     const railVisible = useAtomValue(railVisibleAtom);
-    // the council this agent started, which the button after the tabs opens; a subagent's interior shows its parent's
-    const council = useAgentCouncil(agent);
     const showRail = () => globalStore.set(railVisibleAtom, true);
     // a subagent's interior and an ended session have no project of their own to read: nothing polls for them
     const polls = sub == null && ended == null;
@@ -1468,14 +1470,13 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
             widthKey={shown}
             tabs={
                 <>
-                    <RailTabStrip agentId={agent.id} panel={panel} hasTree={hasTree} hasTranscript={hasTranscript} />
-                    {council != null ? (
-                        <RailCouncilButton
-                            key={council.id}
-                            council={council}
-                            onOpen={() => openCouncil(model, council.id, "discussion")}
-                        />
-                    ) : null}
+                    <RailTabStrip
+                        agentId={agent.id}
+                        panel={panel}
+                        hasTree={hasTree}
+                        hasTranscript={hasTranscript}
+                        council={council}
+                    />
                     <RailStats
                         stats={planRailStats(railInput)}
                         canAttach={agent.blockId != null}
@@ -1524,6 +1525,8 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
                     </div>
                 ) : shown === "transcript" ? (
                     <RailTranscript agent={agent} surfaceAtom={model.surfaceAtom} />
+                ) : shown === "council" && council != null ? (
+                    <RailCouncilPane key={council.id} model={model} council={council} />
                 ) : undefined
             }
             edge={!fixedWidth ? <RailResizeGrip tab={wideTab} width={wide.width} max={wide.max} /> : undefined}
@@ -1569,6 +1572,19 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
                               ariaLabel: "Transcript",
                               onClick: () => {
                                   selectRailTab(agent.id, "transcript", hasTree, hasTranscript);
+                                  showRail();
+                              },
+                          },
+                      ]
+                    : []),
+                ...(council != null
+                    ? [
+                          {
+                              key: "council",
+                              icon: <MessagesSquare size={17} strokeWidth={1.8} aria-hidden />,
+                              ariaLabel: "Council",
+                              onClick: () => {
+                                  selectRailTab(agent.id, "council", hasTree, hasTranscript, true);
                                   showRail();
                               },
                           },
