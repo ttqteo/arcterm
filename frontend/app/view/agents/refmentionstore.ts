@@ -13,7 +13,7 @@ import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { atom, useAtomValue, type PrimitiveAtom } from "jotai";
 import { useEffect, useMemo } from "react";
 import { boardSplitAtom } from "../boards/boardsplitstore";
-import { boardListAtom, loadBoardList } from "../boards/boardstore";
+import { boardListAtom, loadBoardList, watchBoardUpdates } from "../boards/boardstore";
 import { buildAgentTree } from "./agenttreemodel";
 import { councilListAtom, loadCouncils } from "./councilstore";
 import { devRosterAtom } from "./devmock";
@@ -76,6 +76,8 @@ let boardsLoading = false;
 /** Reads every project's boards into boardListAtom(""), which board:update keeps current from then on; calls made while
  *  a read is on its way make no second request. */
 export function loadRefBoards(): void {
+    // a board drawn later reaches the list through board:update, which reloads a list once it has been read
+    watchBoardUpdates();
     if (boardsLoading) {
         return;
     }

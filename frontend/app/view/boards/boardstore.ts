@@ -111,8 +111,9 @@ export function onBoardUpdate(data: BoardUpdateData | undefined): void {
 
 let watching = false;
 
-// one subscription for the app's lifetime, started by the first hook that reads a list or a talk
-function watchBoardUpdates(): void {
+// one subscription for the app's lifetime, started by the first hook that reads a list or a talk, or by Chat's first read
+// of the boards a `board:` badge or the `@` picker names (refmentionstore.ts)
+export function watchBoardUpdates(): void {
     if (watching) {
         return;
     }

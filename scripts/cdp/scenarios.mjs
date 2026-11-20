@@ -83,6 +83,7 @@ import chatVerdictHandoffScenarios from "./scenarios-chat-verdict-handoff.mjs";
 import chatCouncilScenarios from "./scenarios-chat-council.mjs";
 import chatSuggestCardScenarios from "./scenarios-chat-suggest-card.mjs";
 import boardsChatScenarios from "./scenarios-boards-chat.mjs";
+import chatBoardRefScenarios from "./scenarios-chat-board-ref.mjs";
 import boardsLibraryScenarios from "./scenarios-boards-library.mjs";
 import boardsSplitScenarios from "./scenarios-boards-split.mjs";
 import codeBlameDraftScenarios from "./scenarios-code-blame-draft.mjs";
@@ -75003,6 +75004,7 @@ export const SCENARIOS = [
     ...chatSuggestCardScenarios(CR_KIT),
     ...boardsSplitScenarios(CR_KIT),
     ...boardsChatScenarios(CR_KIT),
+    ...chatBoardRefScenarios(CR_KIT),
     ...boardsLibraryScenarios(CR_KIT),
     ...overlaysFrostScenarios(OF_KIT),
     ...surfacesSpringScenarios(SS_KIT),
