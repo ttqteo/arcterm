@@ -46,11 +46,18 @@ async function freePort() {
 const close = (srv) => new Promise((r) => srv.close(r));
 
 // spawn the real CLI: the engine only sees the exit code and the last stdout line. It runs from an empty dir: the
-// script unlinks the build links of its cwd, which would otherwise be the checkout running these tests
-function run(env, timeout = 30_000) {
+// script unlinks the build links of its cwd, which would otherwise be the checkout running these tests. files are written
+// into that dir first. The CLI reports its run to the agent's rail when WAVETERM_BLOCKID is set, so one inherited from the
+// terminal these tests run in (an agent's) is dropped, as is a run id or command an outer Final passed down: only a test
+// that gives blockId reports, and it reports to the wsh stand-in of its own env
+function run(env, timeout = 30_000, { args = [], files = {}, blockId } = {}) {
     const cwd = mkdtempSync(join(tmpdir(), "final-cwd-"));
+    for (const [name, text] of Object.entries(files)) writeFileSync(join(cwd, name), text);
+    env = { ...env };
+    for (const key of ["WAVETERM_BLOCKID", "ARC_VERIFY_RUNID", "ARC_VERIFY_COMMAND"]) delete env[key];
+    if (blockId) env.WAVETERM_BLOCKID = blockId;
     return new Promise((resolve) => {
-        execFile(process.execPath, [SCRIPT], { env, cwd, timeout }, (err, stdout) => {
+        execFile(process.execPath, [SCRIPT, ...args], { env, cwd, timeout }, (err, stdout) => {
             rmSync(cwd, { recursive: true, force: true });
             const lines = stdout.trim().split(/\r?\n/);
             resolve({ code: err ? err.code : 0, killed: Boolean(err?.killed), last: lines[lines.length - 1] });
@@ -256,6 +263,78 @@ fs.writeFileSync(path.join(data, "waveapp.log"), "boot log");
         expect(r.code).toBe(EXIT_UNVERIFIED);
         expect(r.last).toMatch(/^dev app exited with code 1 before answering on :\d+: no Chrome found: install Google Chrome or set CHROME_PATH$/);
     });
+
+    // A wsh stand-in: node itself under wsh's name, in a bin dir. `wsh verify report` then makes node run the file `verify`
+    // of the working directory (the CLI's: run() writes it there), which appends the report it reads on stdin to a file
+    function fakeWsh(parent) {
+        const bin = join(parent, "bin");
+        mkdirSync(bin, { recursive: true });
+        copyFileSync(process.execPath, join(bin, process.platform === "win32" ? "wsh.exe" : "wsh"));
+        const reports = join(parent, "reports.jsonl");
+        const verify = `let s = "";
+process.stdin.on("data", (d) => (s += d));
+process.stdin.on("end", () => require("fs").appendFileSync(${JSON.stringify(reports)}, s.trim() + "\\n"));
+`;
+        return { bin, files: { verify }, read: () => readFileSync(reports, "utf8").trim().split("\n").map((l) => JSON.parse(l)) };
+    }
+
+    // a dev app that starts and never answers CDP, so the Final ends unverified after ARC_FINAL_BOOT_MS
+    async function neverAnswers(parent, extra) {
+        const fakeDev = join(parent, "fake-dev.cjs");
+        writeFileSync(fakeDev, "setInterval(() => {}, 1000);\n");
+        return {
+            ...process.env,
+            LOCALAPPDATA: join(parent, "localappdata"),
+            ARC_FINAL_OUT: join(parent, "out"),
+            ARC_FINAL_BOOT_MS: "3000",
+            ARC_FINAL_DEV_CMD: `node "${fakeDev}"`,
+            ARC_FINAL_VITE_PORT: String(await freePort()),
+            ...extra,
+        };
+    }
+
+    it("reports its run to the agent's rail: start before the app, then an end with the reason it was unverified", async () => {
+        dir = mkdtempSync(join(tmpdir(), "final-verify-"));
+        const wsh = fakeWsh(dir);
+        const r = await run(await neverAnswers(dir, { WAVETERM_WSHBINDIR: wsh.bin }), 30_000, {
+            args: ["surface-smoke"],
+            files: wsh.files,
+            blockId: "blk-1",
+        });
+        expect(r.code).toBe(EXIT_UNVERIFIED);
+        expect(r.last).toMatch(/^dev app did not answer on :\d+$/);
+
+        const docs = wsh.read();
+        expect(docs.map((d) => d.phase)).toEqual(["start", "end"]);
+        expect(docs[1].runid).toBe(docs[0].runid);
+        expect(docs[0].runid).toMatch(/^[0-9a-f-]{36}$/);
+        expect(docs[0].command).toBe("node scripts/cdp/final-verify.mjs surface-smoke");
+        expect(docs[0].scenarios).toEqual([{ name: "surface-smoke", files: [], steps: [], done: false }]);
+        // the reason is the line the engine reads, and no scenario got a step: the Verify tile reads it as no result
+        expect(docs[1].reason).toBe(r.last);
+        expect(docs[1].scenarios).toEqual([{ name: "surface-smoke", files: [], steps: [], done: false }]);
+    }, 30_000);
+
+    it("names every scenario when none is asked for, and reports nothing outside an agent's terminal", async () => {
+        dir = mkdtempSync(join(tmpdir(), "final-verify-"));
+        const wsh = fakeWsh(dir);
+        const env = await neverAnswers(dir, { WAVETERM_WSHBINDIR: wsh.bin });
+        expect((await run(env, 30_000, { files: wsh.files })).code).toBe(EXIT_UNVERIFIED);
+        expect(existsSync(join(dir, "reports.jsonl"))).toBe(false);
+
+        rmSync(join(dir, "out"), { recursive: true, force: true });
+        expect((await run(env, 30_000, { files: wsh.files, blockId: "blk-1" })).code).toBe(EXIT_UNVERIFIED);
+        const docs = wsh.read();
+        expect(docs[0].command).toBe("node scripts/cdp/final-verify.mjs");
+        expect(docs[0].scenarios.map((s) => s.name)).toEqual(SCENARIOS.map((s) => s.name));
+    }, 60_000);
+
+    it("still ends with the reason as its last line, and exit 3, when wsh cannot be reached", async () => {
+        dir = mkdtempSync(join(tmpdir(), "final-verify-"));
+        const r = await run(await neverAnswers(dir, { WAVETERM_WSHBINDIR: join(dir, "no-such-bin") }), 30_000, { blockId: "blk-1" });
+        expect(r.code).toBe(EXIT_UNVERIFIED);
+        expect(r.last).toMatch(/^dev app did not answer on :\d+$/);
+    }, 30_000);
 });
 
 describe("finalMode", () => {
@@ -282,8 +361,20 @@ describe("hostOnlyScenarios", () => {
 
 describe("verifyEnv", () => {
     it("gives verify.mjs the dev app's port and its own store, over a process-wide ARC_DEV_DATA_DIR", () => {
-        const env = verifyEnv(9301, "C:/short/store", { PATH: "p", ARC_DEV_DATA_DIR: "C:/the/persons/own/dev/app" });
+        const env = verifyEnv(9301, "C:/short/store", "run-1", "node scripts/cdp/final-verify.mjs a", {
+            PATH: "p",
+            ARC_DEV_DATA_DIR: "C:/the/persons/own/dev/app",
+        });
         expect(env).toMatchObject({ PATH: "p", CDP_PORT: "9301", ARC_DEV_DATA_DIR: "C:/short/store" });
+    });
+
+    it("hands verify.mjs this Final's run id and command, over any the environment already holds", () => {
+        const env = verifyEnv(9301, "C:/short/store", "run-1", "node scripts/cdp/final-verify.mjs a", {
+            ARC_VERIFY_RUNID: "an-outer-run",
+            ARC_VERIFY_COMMAND: "an outer command",
+        });
+        expect(env.ARC_VERIFY_RUNID).toBe("run-1");
+        expect(env.ARC_VERIFY_COMMAND).toBe("node scripts/cdp/final-verify.mjs a");
     });
 });
 

@@ -1,6 +1,8 @@
 // One-command verification runner. Attaches to the running dev app over CDP, runs each scenario
 // (arrange -> goto -> shot -> assert -> teardown), prints a PASS/FAIL table, writes a contact sheet,
 // and exits nonzero on any failure. Usage: node scripts/cdp/verify.mjs [name...]
+// Inside an agent's terminal it reports the run to wavesrv as it goes (`wsh verify report`, report.mjs's makeRunReporter),
+// for the agent's Verify tile.
 import { mkdirSync, writeFileSync } from "node:fs";
 import { attach } from "./attach.mjs";
 import {
@@ -8,6 +10,7 @@ import {
     contactSheetHtml,
     exitCode,
     formatResults,
+    makeRunReporter,
     renderWait,
     shotsManifest,
     shotsUnder,
@@ -93,10 +96,18 @@ const SHOTS_DIR = "cdp-shots";
 const results = [];
 // a scenario owns the shots taken from its start to the next one's: the goto shot, then any from assert or teardown
 const shotsByScenario = {};
+// the agent's rail shows this run (inside an agent's terminal only; Final passes its own run id and command down, so
+// both report one run). The command is what the person would type to run it again
+const reporter = makeRunReporter();
+reporter.start(
+    chosen.map((s) => s.name),
+    only.length ? `task verify:ui -- ${only.join(" ")}` : "task verify:ui"
+);
 for (const scenario of chosen) {
     if (inBrowser && scenario.host) {
         results.push({ name: scenario.name, steps: [{ step: "needs the Tauri host, which the browser app has not: run it on Windows", ok: false, skip: true }] });
         shotsByScenario[scenario.name] = [];
+        reporter.scenarioDone(results.at(-1), []);
         continue;
     }
     const firstShot = h.shots.length;
@@ -128,6 +139,7 @@ for (const scenario of chosen) {
         shotsByScenario[scenario.name] = shotsUnder(h.shots.slice(firstShot), SHOTS_DIR);
         // a slow scenario, or one that ran out every wait after a failed step, shows here
         console.log(`${scenario.name}: ${((Date.now() - scenarioStart) / 1000).toFixed(1)}s`);
+        reporter.scenarioDone(results.at(-1), shotsByScenario[scenario.name]);
     }
 }
 await h.cdp("Emulation.clearDeviceMetricsOverride").catch(() => {});
@@ -137,5 +149,6 @@ console.log(formatResults(results));
 mkdirSync(SHOTS_DIR, { recursive: true });
 writeFileSync(`${SHOTS_DIR}/index.html`, contactSheetHtml(h.shots, SHOTS_DIR));
 writeFileSync(`${SHOTS_DIR}/shots.json`, JSON.stringify(shotsManifest(results, shotsByScenario), null, 2));
+reporter.end(results, shotsByScenario, SHOTS_DIR);
 console.log(`\ncontact sheet: ${SHOTS_DIR}/index.html`);
 process.exit(exitCode(results));

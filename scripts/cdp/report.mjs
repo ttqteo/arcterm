@@ -5,7 +5,12 @@
 // no pi session focused. It is a third state on purpose: scoring it a pass counts an assertion that never
 // ran toward the tally, and scoring it a failure leaves a row that is red on every run, which teaches the
 // reader to skim past the table the suite exists to make readable.
-import { isAbsolute, relative, resolve, sep } from "node:path";
+//
+// makeRunReporter, at the end, is the one part that touches the outside: it hands each run to wavesrv through `wsh verify
+// report`, so the agent's rail can show the result. Everything else here stays pure.
+import { spawnSync } from "node:child_process";
+import { randomUUID } from "node:crypto";
+import { isAbsolute, join, relative, resolve, sep } from "node:path";
 
 // The exit code verify.mjs gives when the page never finished loading, so no scenario could run. It is the Final
 // contract's "could not verify" (pkg/jarvis/plan.go PlanFormat), not a failure: nothing of the app was tried.
@@ -87,6 +92,93 @@ export function shotsManifest(results, shotsByScenario) {
         if (s.error) steps.push({ step: "the scenario threw", state: "fail", detail: s.error });
         return { name: s.name, files: shotsByScenario[s.name] ?? [], steps };
     });
+}
+
+// a stuck wsh (wavesrv hung) must not hold a verification run: past this the report is given up on and logged
+const REPORT_TIMEOUT_MS = 10_000;
+
+// why a finished `wsh verify report` counts as failed, or "" when it went through. A result with neither a status nor an
+// error (a stand-in's) is taken as having gone through
+function reportFailure(r) {
+    if (!r) return "";
+    if (r.error) return r.error.message ?? String(r.error);
+    if (r.status === 0 || r.status === undefined) return "";
+    const said = String(r.stderr ?? "").trim().split(/\r?\n/)[0];
+    return `wsh exited ${r.status ?? r.signal}${said ? `: ${said}` : ""}`;
+}
+
+// Reports one run to wavesrv through `wsh verify report`, so the agent's rail can draw its Verify tile. It reports only
+// inside an agent's terminal (WAVETERM_BLOCKID set; anywhere else every method does nothing), finds wsh in
+// WAVETERM_WSHBINDIR or on PATH, and never fails the run: a report that does not go through is logged once, and the next
+// ones are still sent. Reports carry no timestamp: wavesrv stamps them on arrival.
+//
+// Returns { start(names, command), scenarioDone(result, files), end(results, shotsByScenario, shotsDir), unverified(reason) }.
+// A run id and a command Final passes down (ARC_VERIFY_RUNID, ARC_VERIFY_COMMAND) win over this reporter's own, so Final
+// and the verify.mjs it runs report one run. The command is what the person would type to run it again.
+export function makeRunReporter({ env = process.env, spawn = spawnSync, log = console.log, platform = process.platform } = {}) {
+    const active = Boolean(env.WAVETERM_BLOCKID);
+    const runid = env.ARC_VERIFY_RUNID || randomUUID();
+    const wsh = env.WAVETERM_WSHBINDIR ? join(env.WAVETERM_WSHBINDIR, platform === "win32" ? "wsh.exe" : "wsh") : "wsh";
+    let command = env.ARC_VERIFY_COMMAND || "";
+    let names = [];
+    // the scenarios this process has seen finish, as the manifest writes them
+    const finished = new Map();
+    let warned = false;
+
+    const warn = (why) => {
+        if (warned) return;
+        warned = true;
+        log(`verify report: ${why}`);
+    };
+    // build runs inside the try: a document that cannot be made (a bad argument) is a report that failed, not a crash
+    const report = (build) => {
+        if (!active) return;
+        try {
+            const doc = build();
+            const r = spawn(wsh, ["verify", "report"], {
+                input: JSON.stringify({ runid, phase: doc.phase, pid: process.pid, cwd: process.cwd(), command, ...doc }),
+                encoding: "utf8",
+                timeout: REPORT_TIMEOUT_MS,
+                windowsHide: true,
+            });
+            const why = reportFailure(r);
+            if (why) warn(why);
+        } catch (e) {
+            warn(e?.message ?? String(e));
+        }
+    };
+    // every scenario named at start: those finished here with their steps and files, the rest waiting
+    const scenarios = () => names.map((name) => finished.get(name) ?? { name, files: [], steps: [], done: false });
+
+    return {
+        start(list, cmd) {
+            report(() => {
+                names = [...list];
+                command = env.ARC_VERIFY_COMMAND || cmd || command;
+                return { phase: "start", scenarios: scenarios() };
+            });
+        },
+        scenarioDone(result, files = []) {
+            report(() => {
+                const [entry] = shotsManifest([result], { [result.name]: files });
+                finished.set(result.name, { ...entry, done: true });
+                if (!names.includes(result.name)) names.push(result.name);
+                return { phase: "progress", scenarios: scenarios() };
+            });
+        },
+        end(results, shotsByScenario, shotsDir) {
+            report(() => ({
+                phase: "end",
+                shotsdir: resolve(shotsDir),
+                scenarios: shotsManifest(results, shotsByScenario).map((s) => ({ ...s, done: true })),
+            }));
+        },
+        // the run ended with no result: the dev app never started, or nothing could be run. A scenario this process did
+        // finish keeps its steps; every other one is sent with none, which wavesrv reads as no result
+        unverified(reason) {
+            report(() => ({ phase: "end", scenarios: scenarios(), reason }));
+        },
+    };
 }
 
 export function contactSheetHtml(shots, root) {
