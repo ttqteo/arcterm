@@ -9,6 +9,8 @@ import (
 	"errors"
 	"sort"
 	"strings"
+
+	"github.com/wavetermdev/waveterm/pkg/agentobserve"
 )
 
 // maxAncestorHops bounds the walk up a process's parents.
@@ -61,7 +63,7 @@ func Select(root string, agentPid int32, procs map[int32]Proc, listeners []Liste
 	out := []Server{}
 	for pid, ports := range portsByPid {
 		proc, ok := procs[pid]
-		if !ok || pid == agentPid || isClaudeProc(proc.Name) {
+		if !ok || pid == agentPid || isAgent(pid, proc, holders) {
 			continue
 		}
 		byAgent, launcher := descendsFrom(agentPid, pid, procs)
@@ -140,11 +142,14 @@ func normalizePath(p string) string {
 	return strings.ToLower(strings.TrimRight(strings.ReplaceAll(p, "\\", "/"), "/"))
 }
 
-// isClaudeProc reports whether name is the Claude Code binary, which may listen for IDE integration and is never a
-// dev server.
-func isClaudeProc(name string) bool {
-	name = strings.ToLower(name)
-	return name == "claude" || name == "claude.exe"
+// isAgent reports whether the listener is an agent itself, which is never a dev server (Claude Code listens on a
+// localhost port of its own): an arcterm agent block's own process, whatever its harness, known by its pid; or, for
+// a claude arcterm did not start (another app's terminal, the Claude daemon), the Claude Code binary.
+func isAgent(pid int32, proc Proc, holders map[int32]ServerOwner) bool {
+	if o, ok := holders[pid]; ok && o.Kind == OwnerAgent {
+		return true
+	}
+	return agentobserve.IsClaude(proc.Name, proc.Cmdline)
 }
 
 func sortedUnique(ports []int) []int {

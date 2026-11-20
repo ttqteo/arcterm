@@ -632,21 +632,43 @@ export function CommandChip({ name, args, isSkill }: { name: string; args?: stri
 }
 
 // Chat's mark where the agent compacted: one thin line with what it cut. The summary it kept is not drawn here; it
-// opens from the rail's session block (railcompactionline.tsx), so a long summary never sits in the conversation.
+// opens in the rail's Summary tab (railcompactionline.tsx), so a long summary never sits in the conversation. With
+// `onToggle` (Chat, for the last compaction) the pill is a button that opens and closes that tab; `open` says it is on.
 export function CompactionDivider({
     trigger,
     preTokens,
     postTokens,
+    onToggle,
+    open,
 }: {
     trigger?: string;
     preTokens?: number;
     postTokens?: number;
+    onToggle?: () => void;
+    open?: boolean;
 }) {
     const stat = preTokens != null && postTokens != null ? `${formatTokens(preTokens)} → ${formatTokens(postTokens)} tokens` : null;
+    const Pill = onToggle != null ? "button" : "span";
     return (
         <div className="mt-3.5 flex w-full items-center gap-2.5" data-compaction-divider>
             <span className="h-px flex-1 bg-edge-mid" />
-            <span className="inline-flex items-center gap-2 whitespace-nowrap rounded-full border border-accent/30 bg-accent/[0.07] px-2.5 py-0.5 text-[10.5px] tabular-nums leading-[1.6]">
+            <Pill
+                {...(onToggle != null
+                    ? {
+                          type: "button" as const,
+                          onClick: onToggle,
+                          "aria-pressed": !!open,
+                          "data-compaction-toggle": "",
+                          title: open ? "Hide the summary it kept" : "Show the summary it kept in the panel",
+                      }
+                    : {})}
+                className={cn(
+                    "inline-flex items-center gap-2 whitespace-nowrap rounded-full border px-2.5 py-0.5 text-[10.5px] tabular-nums leading-[1.6]",
+                    open ? "border-accent/60 bg-accent/[0.16]" : "border-accent/30 bg-accent/[0.07]",
+                    onToggle != null &&
+                        "cursor-pointer outline-none hover:border-accent/50 hover:bg-accent/[0.12] focus-visible:ring-2 focus-visible:ring-accent"
+                )}
+            >
                 <span className="font-semibold uppercase tracking-[0.1em] text-accent-soft">Compacted</span>
                 {stat ? (
                     <>
@@ -660,7 +682,7 @@ export function CompactionDivider({
                         <span className="text-muted">{trigger}</span>
                     </>
                 ) : null}
-            </span>
+            </Pill>
             <span className="h-px flex-1 bg-edge-mid" />
         </div>
     );

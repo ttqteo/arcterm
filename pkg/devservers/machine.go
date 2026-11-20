@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/wavetermdev/waveterm/pkg/agentobserve"
 	"github.com/wavetermdev/waveterm/pkg/memusage"
 )
 
@@ -80,7 +81,7 @@ func OwnerOf(pid int32, procs map[int32]Proc, alive func(int32) bool, holders ma
 			if sessionRoots[strings.ToLower(p.Name)] {
 				return app()
 			}
-			if isClaudeProc(p.Name) && underClaude == "" {
+			if agentobserve.IsClaude(p.Name, p.Cmdline) && underClaude == "" {
 				underClaude = below.Cmdline
 			}
 		}
@@ -182,8 +183,8 @@ func (m *machineLister) list(ctx context.Context, holders map[int32]ServerOwner)
 	out := []Server{}
 	for pid, ports := range snap.ports {
 		p, ok := snap.procs[pid]
-		// a command line that can't be read is another user's or the system's; claude's IDE port is no server
-		if !ok || p.Cmdline == "" || isClaudeProc(p.Name) {
+		// a command line that can't be read is another user's or the system's; an agent's own port is no server
+		if !ok || p.Cmdline == "" || isAgent(pid, p, holders) {
 			continue
 		}
 		owner, launcher := OwnerOf(pid, snap.procs, alive, holders)

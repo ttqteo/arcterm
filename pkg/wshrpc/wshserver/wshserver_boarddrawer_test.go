@@ -183,6 +183,78 @@ func TestBoardAgentDrawKeepsAnotherAgentsTie(t *testing.T) {
 	}
 }
 
+// a board whose agent's tab is gone (ended, closed, deleted) goes to the next agent of its project that draws on it: its
+// turns and drawer session stay, and the drawer reads the new agent's session from its start
+func TestBoardAgentDrawTakesOverABoardWhoseAgentIsGone(t *testing.T) {
+	w := newBoardWorld(t)
+	res := w.draw(w.block, "Auth flow", "how login works", "draw the login")
+	w.land("")
+	first := w.drawDone(res).rtn
+	drawerSession := w.talk(first.BoardId).SessionId
+
+	otherTab, otherBlock := w.addAgent("reviewer")
+	w.facts.Tabs = w.facts.Tabs[1:] // the lead's tab is gone
+	res = w.draw(otherBlock, "auth flow", "", "mark the token store red")
+	w.land("")
+	r := w.drawDone(res)
+	if r.err != nil || r.rtn.BoardId != first.BoardId || r.rtn.Created || r.rtn.State != "answered" {
+		t.Fatalf("the request on the ended agent's board: %+v %v", r.rtn, r.err)
+	}
+	talk := w.talk(first.BoardId)
+	if talk.Agent == nil || talk.Agent.TabId != otherTab || talk.Agent.Title != "reviewer" || len(talk.Turns) != 2 || talk.SessionId != drawerSession {
+		t.Errorf("after the takeover: agent %+v, %d turns, drawer session %q (was %q)", talk.Agent, len(talk.Turns), talk.SessionId, drawerSession)
+	}
+	if boards := w.boards(); len(boards) != 1 || boards[0].AgentTabId != otherTab {
+		t.Errorf("boards: %+v", boards)
+	}
+}
+
+// Library's Open beside Chat: a live Claude agent of the board's project takes over a board whose agent is gone; a board
+// whose agent is live, an agent of another project or harness, and one not running are refused, the tie left as it was
+func TestBoardTakeOver(t *testing.T) {
+	w := newBoardWorld(t)
+	res := w.draw(w.block, "Auth flow", "how login works", "draw the login")
+	w.land("")
+	b := w.drawDone(res).rtn
+	take := func(tab string) (*wshrpc.BoardInfo, error) {
+		return w.ws.BoardTakeOverCommand(w.ctx, wshrpc.CommandBoardTakeOverData{Project: w.project, BoardId: b.BoardId, TabId: tab})
+	}
+
+	otherTab, _ := w.addAgent("reviewer")
+	if _, err := take(otherTab); err == nil || !strings.Contains(err.Error(), "still running") {
+		t.Errorf("taking a live agent's board: %v", err)
+	}
+	if info, err := take(w.tab); err != nil || info.AgentTabId != w.tab {
+		t.Errorf("the board's own agent: %+v %v", info, err)
+	}
+
+	stranger := agentFacts(uuid.NewString(), "elsewhere", uuid.NewString(), "claude", baseds.AgentState_Idle)
+	stranger.ProjectPath, stranger.Status.Cwd = t.TempDir(), ""
+	piTab := uuid.NewString()
+	pi := agentFacts(piTab, "pi", uuid.NewString(), "pi", baseds.AgentState_Idle)
+	pi.ProjectPath, pi.Status.Cwd = w.path, w.path
+	w.facts.Tabs = append(w.facts.Tabs[1:], stranger, pi) // the lead's tab is gone
+	for name, tab := range map[string]string{"another project": stranger.Tab.OID, "a pi agent": piTab, "not running": uuid.NewString()} {
+		if _, err := take(tab); err == nil {
+			t.Errorf("%s took the board", name)
+		}
+	}
+	if talk := w.talk(b.BoardId); talk.Agent.TabId != w.tab {
+		t.Fatalf("a refused takeover moved the tie: %+v", talk.Agent)
+	}
+
+	info, err := take(otherTab)
+	if err != nil || info.AgentTabId != otherTab || info.AgentTitle != "reviewer" {
+		t.Fatalf("the takeover: %+v %v", info, err)
+	}
+	if talk := w.talk(b.BoardId); talk.Agent.TabId != otherTab || len(talk.Turns) != 1 {
+		t.Errorf("after the takeover: agent %+v, %d turns", talk.Agent, len(talk.Turns))
+	}
+	if boards := w.boards(); len(boards) != 1 || boards[0].AgentTabId != otherTab {
+		t.Errorf("boards: %+v", boards)
+	}
+}
+
 // the command returns what happened once the frontend acked, and "answering" when its wait ran out
 func TestBoardAgentDrawReturnsCountsOnceAckedAndAnsweringPastTheWait(t *testing.T) {
 	w := newBoardWorld(t)

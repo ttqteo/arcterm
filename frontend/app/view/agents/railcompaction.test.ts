@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it } from "vitest";
-import { compactionFacts, extractCompactions } from "./railcompaction";
+import { compactionFacts, extractCompactions, opensRailSummary } from "./railcompaction";
 
 const boundary = (meta: object, ts = "2026-11-19T10:00:00.000Z") =>
     JSON.stringify({ type: "system", subtype: "compact_boundary", compactMetadata: meta, timestamp: ts });
@@ -87,5 +87,28 @@ describe("compactionFacts", () => {
         expect(
             compactionFacts([{ trigger: "auto" }, { trigger: "manual", preTokens: 90000, postTokens: 9000 }], now)
         ).toBe("×2 · 90k → 9k · manual");
+    });
+});
+
+describe("opensRailSummary", () => {
+    const older = { preTokens: 200_000, postTokens: 12_000, summary: "old" };
+    const last = { preTokens: 122_000, postTokens: 10_000, summary: "kept" };
+    it("opens from the last compaction's divider when it kept a summary", () => {
+        expect(opensRailSummary([older, last], 122_000, 10_000)).toBe(true);
+    });
+    it("not from an older one's divider, whose summary the rail does not draw", () => {
+        expect(opensRailSummary([older, last], 200_000, 12_000)).toBe(false);
+    });
+    it("not when the last kept no summary, or there is none", () => {
+        expect(opensRailSummary([{ preTokens: 1, postTokens: 2 }], 1, 2)).toBe(false);
+        expect(opensRailSummary(undefined, 1, 2)).toBe(false);
+        expect(opensRailSummary([], undefined, undefined)).toBe(false);
+    });
+    it("a divider with no token counts matches only a tail of one compaction", () => {
+        expect(opensRailSummary([{ summary: "s" }], undefined, undefined)).toBe(true);
+        expect(opensRailSummary([older, last], undefined, undefined)).toBe(false);
+    });
+    it("pi's compaction (tokens before only)", () => {
+        expect(opensRailSummary([{ preTokens: 5000, summary: "s" }], 5000, undefined)).toBe(true);
     });
 });

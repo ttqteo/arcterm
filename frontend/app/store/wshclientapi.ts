@@ -318,6 +318,12 @@ export class RpcApiType {
         return client.wshRpcCall("boardsave", data, opts);
     }
 
+    // command "boardtakeover" [call]
+    BoardTakeOverCommand(client: WshClient, data: CommandBoardTakeOverData, opts?: RpcOpts): Promise<BoardInfo> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "boardtakeover", data, opts);
+        return client.wshRpcCall("boardtakeover", data, opts);
+    }
+
     // command "boardtalk" [call]
     BoardTalkCommand(client: WshClient, data: CommandBoardRefData, opts?: RpcOpts): Promise<BoardTalk> {
         if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "boardtalk", data, opts);

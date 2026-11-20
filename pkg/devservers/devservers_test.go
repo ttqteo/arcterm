@@ -121,6 +121,38 @@ func TestSelectDropsClaudeAndTheAgent(t *testing.T) {
 	}
 }
 
+// the 2026-11-19 :60375 chip: the native install on a Mac names the claude process after its versioned file, and an
+// agent in another block of the same project listens too
+func TestSelectDropsEveryAgentWhateverItsName(t *testing.T) {
+	procs := procMap(
+		Proc{Pid: 20, Ppid: 1, Name: "2.1.328", Cmdline: "claude --resume 7204", Cwd: "/Users/u/thesis"},
+		Proc{Pid: 21, Ppid: 1, Name: "node", Cmdline: "node /opt/pi/cli.js", Cwd: "/Users/u/thesis"},
+		Proc{Pid: 22, Ppid: 1, Name: "node", Cmdline: "node server.js", Cwd: "/Users/u/thesis"},
+	)
+	holders := map[int32]ServerOwner{21: {Kind: OwnerAgent, BlockId: "b2", Harness: "pi"}}
+	listeners := []Listener{{Pid: 20, Port: 60375}, {Pid: 21, Port: 7000}, {Pid: 22, Port: 3000}}
+	got := Select("/Users/u/thesis", 0, procs, listeners, holders)
+	if len(got) != 1 || got[0].Pid != 22 {
+		t.Fatalf("got %+v, want only the node server", got)
+	}
+	// the block's own process is the agent even when the OS names it neither claude nor anything known
+	procs[20] = Proc{Pid: 20, Ppid: 1, Name: "2.1.328", Cwd: "/Users/u/thesis"}
+	got = Select("/Users/u/thesis", 20, procs, listeners[:1], nil)
+	if len(got) != 0 {
+		t.Fatalf("got %+v, want none", got)
+	}
+}
+
+func TestListAllDropsAgentBlocks(t *testing.T) {
+	procs := procMap(Proc{Pid: 21, Ppid: 1, Name: "node", Cmdline: "node /opt/pi/cli.js"})
+	if !isAgent(21, procs[21], map[int32]ServerOwner{21: {Kind: OwnerAgent}}) {
+		t.Fatal("an agent block's process should be an agent")
+	}
+	if isAgent(21, procs[21], map[int32]ServerOwner{21: {Kind: OwnerTerminal}}) {
+		t.Fatal("a terminal block's process can be a server")
+	}
+}
+
 func TestSelectSkipsUnreadAndZeroPids(t *testing.T) {
 	procs := procMap(Proc{Pid: 80, Ppid: 1, Name: "node.exe", Cwd: `D:\w\site`})
 	got := Select(`D:\w\site`, 0, procs, []Listener{{Pid: 0, Port: 1}, {Pid: 99, Port: 2}, {Pid: 80, Port: 3}}, nil)

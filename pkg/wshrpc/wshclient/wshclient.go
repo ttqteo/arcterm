@@ -315,6 +315,12 @@ func BoardSaveCommand(w *wshutil.WshRpc, data wshrpc.CommandBoardSaveData, opts 
 	return resp, err
 }
 
+// command "boardtakeover", wshserver.BoardTakeOverCommand
+func BoardTakeOverCommand(w *wshutil.WshRpc, data wshrpc.CommandBoardTakeOverData, opts *wshrpc.RpcOpts) (*wshrpc.BoardInfo, error) {
+	resp, err := sendRpcRequestCallHelper[*wshrpc.BoardInfo](w, "boardtakeover", data, opts)
+	return resp, err
+}
+
 // command "boardtalk", wshserver.BoardTalkCommand
 func BoardTalkCommand(w *wshutil.WshRpc, data wshrpc.CommandBoardRefData, opts *wshrpc.RpcOpts) (*wshrpc.BoardTalk, error) {
 	resp, err := sendRpcRequestCallHelper[*wshrpc.BoardTalk](w, "boardtalk", data, opts)

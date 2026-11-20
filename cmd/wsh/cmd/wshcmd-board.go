@@ -35,6 +35,8 @@ what you pass short.
                   argument to a native command.
   --ask           the one line the drawer answers on the board ("add the retry path"). Alone, once the board exists.
 
+A board whose agent ended (its tab is gone) goes to the agent that draws on it next, drawing and turns kept.
+
 Pass --context, --ask or both. The command waits for the drawing (up to 9 minutes) and prints one line:
 
   Drawn on board "<name>": +A shapes, C changed, R removed.

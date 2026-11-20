@@ -108,7 +108,12 @@ func (ws *WshServer) ListDevServersCommand(ctx context.Context, data wshrpc.Comm
 	holders, err := machineHolders(ctx)
 	// without the roster the rail still lists every server, none of them named by its terminal
 	logHoldersErr(ctx, err)
-	servers, err := devservers.List(ctx, data.Cwd, data.BlockId, holders)
+	// the process wavesrv started for the block is the agent itself, whatever the OS names it
+	var agentPid int32
+	if data.BlockId != "" {
+		agentPid = int32(max(consumerBlockPid(data.BlockId), 0))
+	}
+	servers, err := devservers.List(ctx, data.Cwd, data.BlockId, agentPid, holders)
 	if err != nil {
 		return nil, err
 	}

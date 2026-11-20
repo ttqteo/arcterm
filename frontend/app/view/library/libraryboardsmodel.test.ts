@@ -2,7 +2,15 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it } from "vitest";
-import { boardRows, boardsEmptyText, boardsScope, boardsSelectionIn } from "./libraryboardsmodel";
+import type { AgentVM } from "../agents/agentsviewmodel";
+import {
+    boardRows,
+    boardsEmptyText,
+    boardsScope,
+    boardsSelectionIn,
+    noTakeoverText,
+    takeoverAgents,
+} from "./libraryboardsmodel";
 
 const NOW = new Date(2026, 10, 19, 16, 0).getTime();
 const at = (h: number, m: number) => new Date(2026, 10, 19, h, m).getTime();
@@ -155,5 +163,42 @@ describe("boardsEmptyText", () => {
 
     it("says a search found none", () => {
         expect(boardsEmptyText("arcterm", " nothing ")).toBe('No board named "nothing".');
+    });
+});
+
+describe("takeoverAgents", () => {
+    const agent = (over: Partial<AgentVM> & Pick<AgentVM, "id" | "name">) =>
+        ({ state: "idle", agent: "claude", project: "mit-thesis", ...over }) as AgentVM;
+
+    it("lists the live Claude agents of the board's project, in the roster's order", () => {
+        const roster = [
+            agent({ id: "t1", name: "thesis" }),
+            agent({ id: "t2", name: "web", project: "arcterm" }),
+            agent({ id: "t3", name: "scout", agent: "pi" }),
+            agent({ id: "t4", name: "notes" }),
+        ];
+        expect(takeoverAgents(roster, "mit-thesis")).toEqual([
+            { id: "t1", name: "thesis" },
+            { id: "t4", name: "notes" },
+        ]);
+    });
+
+    it("reads an agent's project from its transcript when it names none", () => {
+        const roster = [
+            agent({
+                id: "t1",
+                name: "thesis",
+                project: undefined,
+                transcriptPath: "/Users/me/.claude/projects/-Users-me-thesis/abc.jsonl",
+            }),
+        ];
+        expect(takeoverAgents(roster, "thesis")).toEqual([{ id: "t1", name: "thesis" }]);
+    });
+
+    it("is empty when none runs, and says so", () => {
+        expect(takeoverAgents([], "mit-thesis")).toEqual([]);
+        expect(noTakeoverText("mit-thesis")).toBe(
+            "No Claude agent of mit-thesis is running: start one to open this board beside its Chat."
+        );
     });
 });

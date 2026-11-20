@@ -552,6 +552,66 @@ export default function (kit) {
                 );
             });
 
+            // --- 9b. an ended agent's board goes to a live agent of its project and opens beside its Chat ---
+            await run("9b. Open beside Chat… on an ended board lists the project's live agent; picking it takes the board over and opens it beside that agent's Chat, ask box on", async (name) => {
+                await boardPage(h, `(await mod("app/view/boards/boardsplitstore.ts")).closeBoard(${q(A)}); return true;`);
+                await h.goto("library");
+                await h.ev(`document.querySelector('[data-library-tab="boards"]')?.click()`);
+                await until(async () => (await count(`[data-library-board="${B_OLD}"]`)) === 1);
+                const picked = await click(`[data-library-board="${B_OLD}"]`);
+                const shown = await until(async () => (await count(`${OPEN(B_OLD)} [data-library-board-takeover]`)) === 1);
+                const opened = await click(`${OPEN(B_OLD)} [data-library-board-takeover]`);
+                const listed = await until(async () => (await count(`${OPEN(B_OLD)} [data-library-board-takeover-agent]`)) === 1);
+                const items = await h.ev(`[...document.querySelectorAll(${q(`${OPEN(B_OLD)} [data-library-board-takeover-agent]`)})].map((b) => ({
+                    id: b.getAttribute("data-library-board-takeover-agent"), name: b.textContent.trim(),
+                }))`);
+                await polishNap(300);
+                await shot("9b-takeover-menu");
+                const chose = await click(`${OPEN(B_OLD)} [data-library-board-takeover-agent="${A}"]`);
+                const SPLIT = `[data-agent-terminal="${A}"] [data-board-split="${B_OLD}"]`;
+                const split = await until(async () => (await count(SPLIT)) === 1);
+                const calls = await boardCalls(h, "BoardTakeOverCommand");
+                const st = await boardPage(
+                    h,
+                    `const S = await mod("app/view/boards/boardsplitstore.ts");
+                    return { split: globalStore.get(S.boardSplitAtom(${q(A)})), surface: globalStore.get(agentsModel().surfaceAtom) };`
+                );
+                // the ask box sends again: with a question typed, Send is on (an ended agent's board keeps it off)
+                const ask = await until(() =>
+                    h.ev(`(() => {
+                        const el = document.querySelector(${q(`${SPLIT} [data-board-ask-input]`)});
+                        if (el == null) return false;
+                        if (el.value === "") {
+                            Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(el, "add the result");
+                            el.dispatchEvent(new Event("input", { bubbles: true }));
+                        }
+                        return document.querySelector(${q(`${SPLIT} [data-board-ask-send]`)})?.disabled === false;
+                    })()`)
+                );
+                await polishNap(400);
+                await shot("9b-beside-chat");
+                rec(
+                    name,
+                    picked &&
+                        shown &&
+                        opened &&
+                        listed &&
+                        items.length === 1 &&
+                        items[0].id === A &&
+                        items[0].name === "claude · jobqueue" &&
+                        chose &&
+                        split &&
+                        calls.length === 1 &&
+                        calls[0].project === PROJECT &&
+                        calls[0].boardid === B_OLD &&
+                        calls[0].tabid === A &&
+                        st.surface === "agent" &&
+                        st.split?.boardId === B_OLD &&
+                        ask,
+                    { items, calls, st, ask }
+                );
+            });
+
             // --- 10. a project with no boards says so ---
             await run("10. a project with no boards reads No boards in <project> yet, and says where boards come from", async (name) => {
                 await boardPage(

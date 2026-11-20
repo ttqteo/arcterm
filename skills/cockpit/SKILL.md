@@ -45,6 +45,9 @@ and never answers in words. Don't draw a one-line answer.
   its pipe to one drops every non-ASCII letter, so from PowerShell write the file with the Write tool and pass its path;
   never flatten the briefing to one line or strip its accents to get it through.
 - Later: one line, `wsh board draw --board <name> --ask "<what to change or add>"`.
+- A board an ended agent drew is taken over by the next agent of its project that draws on it: `--ask` on its name
+  ties it to you, drawing and turns kept, and it shows beside your Chat. The person can also hand one to you from
+  Library → Boards (Open beside Chat…). A board whose agent is still live stays that agent's.
 - Keep the briefing short. The drawer reads what you said in the conversation since its last read, so don't restate
   it, and never paste shapes or coordinates. Say what to draw and the angle (the boxes that matter, the direction of
   the flow), not the explanation itself.

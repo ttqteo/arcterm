@@ -37,6 +37,24 @@ and a picture given to a line that is not big.
 - Brainstorm and initiative moved out of the band above Chat into two tabs of the agent's right panel: the brainstorm
   as one timeline with each board under its decision, the initiative with its chunks, plan to review and notes. The ◇
   chip and i open it. <!-- big --> <!-- try: go:agent --> <!-- shot: 1.12.0-rail-tabs.webp -->
+### Added
+
+- Clicking Chat's Compacted line opens the summary the agent kept in the side panel, and a second click closes it.
+
+- A board whose agent has ended opens beside the Chat of a running Claude agent of its project: Open beside Chat… in
+  Library → Boards lists them, and the one you pick takes the board over, so you can ask on it again.
+
+### Changed
+
+- A board whose agent has ended is no longer stuck: the next agent of its project that draws on it by name takes it over,
+  drawing and turns kept, and it opens beside that agent's Chat.
+
+### Fixed
+
+- An agent that is compacting its conversation says "compacting…" on its sidebar row, not only in Chat.
+
+- An agent's row no longer shows a server port that is the agent itself: on a Mac, Claude Code's own localhost port
+  read as a server, and an agent in another tab of the same project showed in the Servers list.
 
 ## 1.11.0 — 2026-11-20
 

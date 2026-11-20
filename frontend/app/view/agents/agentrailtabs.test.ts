@@ -26,6 +26,7 @@ import {
     RAIL_WIDE_DEFAULT_PX,
     RAIL_WIDE_MIN_PX,
     RAIL_WIDTHS,
+    railSummaryShown,
     selectFile,
     selectKey,
     selectTab,
@@ -567,5 +568,18 @@ describe("brainstorm and initiative tabs", () => {
         expect(backFromInitiative({ ...p, tab: "initiative", prevTab: "initiative" })).toMatchObject({
             tab: "overview",
         });
+    });
+});
+
+describe("railSummaryShown", () => {
+    const base = panelFor({}, "a", "overview");
+    it("is on only when the rail is visible and the Summary tab is the one shown", () => {
+        const open = openSummary(base);
+        expect(railSummaryShown(open, true)).toBe(true);
+        expect(railSummaryShown(open, false)).toBe(false);
+        expect(railSummaryShown(base, true)).toBe(false);
+        expect(railSummaryShown({ ...open, tab: "overview" }, true)).toBe(false);
+        expect(railSummaryShown(closeSummary(open), true)).toBe(false);
+        expect(railSummaryShown(undefined, true)).toBe(false);
     });
 });
