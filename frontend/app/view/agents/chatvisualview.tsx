@@ -16,6 +16,7 @@ import {
     FRAME_MAX,
     VISUAL_LANG,
     frameHeight,
+    frameSrc,
     promptAction,
     themeVars,
     themeVarsChanged,
@@ -142,7 +143,9 @@ function ChatVisual({ path, agentId }: { path: string; agentId: string }) {
         setSrc(null);
         setMissing(false);
         servedPath(path).then(
-            (p) => live && setSrc(getWebServerEndpoint() + p),
+            (p) =>
+                live &&
+                setSrc(frameSrc(getWebServerEndpoint() + p, getComputedStyle(document.documentElement).colorScheme)),
             () => live && setMissing(true)
         );
         return () => {

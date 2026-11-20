@@ -6,7 +6,9 @@ import type { AgentEntry } from "./agentsviewmodel";
 import {
     chatChips,
     chipEditable,
+    chipGhost,
     chipIcon,
+    chipMatch,
     chipPickLogLine,
     closeChip,
     drawnChips,
@@ -28,6 +30,7 @@ import {
     stepPick,
     suggestKey,
     suggestTake,
+    tabWalk,
     TERMINAL_AFTER_MS,
     wantsModelSuggest,
     withChipText,
@@ -673,5 +676,64 @@ describe("fitChips", () => {
         const all = [c("a"), c("new")];
         expect(fitChips(all, widths, 50, 0)).toEqual(all);
         expect(fitChips(all, widths, 0, 0)).toEqual(all);
+    });
+});
+
+describe("chips matched as the person types", () => {
+    const reply = (text: string): ChatChip => ({ text, kind: "reply", source: "model" });
+    const row: ChatChip[] = [
+        { text: "push đi", kind: "push", source: "rule" },
+        reply("build đi"),
+        { text: "đóng agent", kind: "close", source: "rule" },
+    ];
+
+    it("matches the start of a chip, marks and case aside", () => {
+        expect(chipMatch("push đi", "pu")).toEqual({ start: 0, end: 2, prefix: true });
+        expect(chipMatch("đóng agent", "dong")).toEqual({ start: 0, end: 4, prefix: true });
+        expect(chipMatch("đóng agent", "ĐÓ")).toEqual({ start: 0, end: 2, prefix: true });
+        expect(chipMatch("push đi", "push d")).toEqual({ start: 0, end: 6, prefix: true });
+    });
+
+    it("matches the start of a later word, not the middle of one", () => {
+        expect(chipMatch("đóng agent", "age")).toEqual({ start: 5, end: 8, prefix: false });
+        expect(chipMatch("đóng agent", "gent")).toBeNull();
+        expect(chipMatch("build rồi push luôn", "push l")).toEqual({ start: 10, end: 16, prefix: false });
+    });
+
+    it("maps the match back over text written with combining marks", () => {
+        const decomposed = "đóng agent".normalize("NFD");
+        const m = chipMatch(decomposed, "dong");
+        expect(m?.prefix).toBe(true);
+        expect(decomposed.slice(m!.end)).toBe(" agent");
+    });
+
+    it("matches nothing over an empty box, spaces only, or several lines", () => {
+        expect(chipMatch("push đi", "")).toBeNull();
+        expect(chipMatch("push đi", "   ")).toBeNull();
+        expect(chipMatch("push đi", "pu\nsh")).toBeNull();
+        expect(chipMatch("push đi", "xyz")).toBeNull();
+    });
+
+    it("lets Tab walk the matched chips, or all of them when none matches", () => {
+        expect(tabWalk(row, "").map((c) => c.text)).toEqual(["push đi", "build đi", "đóng agent"]);
+        expect(tabWalk(row, "đi").map((c) => c.text)).toEqual(["push đi", "build đi"]);
+        expect(tabWalk(row, "hello").map((c) => c.text)).toEqual(["push đi", "build đi", "đóng agent"]);
+    });
+
+    it("ghosts the rest of the first chip the text starts, and takes its whole text", () => {
+        expect(chipGhost(row, "pu", false)).toEqual({ chip: row[0], rest: "sh đi", take: "push đi" });
+        expect(chipGhost(row, "  bu", false)?.rest).toBe("ild đi");
+        expect(chipGhost([reply("đóng gói rồi gửi")], "dong", false)).toEqual({
+            chip: reply("đóng gói rồi gửi"),
+            rest: " gói rồi gửi",
+            take: "đóng gói rồi gửi",
+        });
+    });
+
+    it("ghosts no chip that does more than send its words, none matched mid-text, and none already whole", () => {
+        expect(chipGhost(row, "dong", false)).toBeNull();
+        expect(chipGhost(row, "agent", false)).toBeNull();
+        expect(chipGhost(row, "push đi", false)).toBeNull();
+        expect(chipGhost(row, "", false)).toBeNull();
     });
 });

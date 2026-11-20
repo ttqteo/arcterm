@@ -39,9 +39,14 @@ and a picture given to a line that is not big.
   compaction now shows in the rail too.
 - A council's expert cards (the first step and the Map) now say what each expert is there for, under its name: its
   focus (`novelty`, `baselines`) and the start of its brief. Hover a card to read the whole brief.
+- Chat's suggested replies follow what you type: the chips your text matches light up (marks aside, so `dong` finds
+  "đóng gói"), the rest fade, and the one your text starts shows its rest in grey in the box, which → or Tab fills in.
+  Tab then walks only the matching chips.
 
 ### Fixed
 
+- A visual an agent draws in Chat sits on the chat's dark background instead of a white box, even when its page sets
+  no colours of its own.
 - A conversation you resume no longer shows as working while it loads: it reads "resuming…", with no Stop and no
   working dot, until it is at its prompt, and is no longer counted as an unread turn once it gets there.
 - Chat's Working line no longer blinks out and back when the agent takes a message you queued while it worked, which

@@ -44328,7 +44328,7 @@ function acWriteFixtures(dir) {
 // The pages steps 40-44 draw as inline visuals, in a folder of the scenario's own that window.__chatVisualsDir points the chat
 // at (the person's real ~/.arc/visuals is not touched). Every page has no margin, so its height is its div's. chart.html has two
 // buttons at known places (#ask at 16,16 and #theme at 16,64, each 120x36); auto.html asks by itself 300 ms after it loads;
-// tall.html is taller than the frame's cap. The pages call arc.sendPrompt from handlers and a timer, never at top level: the
+// tall.html is taller than the frame's cap. #theme adds " scheme:<it>" when the page's root is not color-scheme dark. The pages call arc.sendPrompt from handlers and a timer, never at top level: the
 // bridge script that defines `arc` is appended after the page, so it does not exist yet while the page's own script first runs.
 function acWriteVisuals(dir) {
     const folder = join(dir, "visuals");
@@ -44342,7 +44342,7 @@ function acWriteVisuals(dir) {
         page(
             `<div style="height:300px"></div>${button("ask", 16, "Ask")}${button("theme", 64, "Theme")}`,
             `document.getElementById("ask").addEventListener("click", function () { arc.sendPrompt("Explain the retry policy"); });
-document.getElementById("theme").addEventListener("click", function () { arc.sendPrompt("theme:" + getComputedStyle(document.documentElement).getPropertyValue("--arc-background").trim()); });`
+document.getElementById("theme").addEventListener("click", function () { var cs = getComputedStyle(document.documentElement).colorScheme; arc.sendPrompt("theme:" + getComputedStyle(document.documentElement).getPropertyValue("--arc-background").trim() + (cs === "dark" ? "" : " scheme:" + cs)); });`
         )
     );
     writeFileSync(
@@ -46826,7 +46826,7 @@ const agentChat = {
             const appBg = await h.ev(`getComputedStyle(document.documentElement).getPropertyValue("--color-background").trim()`);
             await h.shot("cdp-shots/agent-chat-41-visual-theme.png");
             rec(
-                "41. a click on the visual's #theme button sends theme:<value> into the main agent's block with Enter, and <value> is the app's --color-background: the page took the app's colours",
+                "41. a click on the visual's #theme button sends theme:<value> into the main agent's block with Enter, and <value> is the app's --color-background: the page took the app's colours; nothing follows it, so the page's root is color-scheme dark (the frame's #arc-scheme=dark), not drawn on a white canvas",
                 click41 != null && appBg !== "" && theme41 === `theme:${appBg}\r`,
                 { click41, appBg, theme41, inputsBefore40, chat: await typedSince(blockA, inputsBefore40) }
             );

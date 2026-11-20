@@ -118,7 +118,9 @@ import { asleepCommand, runBlocks, runsAsleep, type SleepRun } from "./chatsleep
 import { putBackSleepRuns, runWhileAsleep, takeSleepRuns } from "./chatsleepbashstore";
 import {
     chipEditable,
+    chipGhost,
     chipIcon,
+    chipMatch,
     chipPickLogLine,
     drawnChips,
     fitChips,
@@ -130,6 +132,7 @@ import {
     runningActions,
     stepPick,
     suggestTake,
+    tabWalk,
     withChipText,
     type ChatChip,
     type ChipIcon,
@@ -896,6 +899,16 @@ function ComposerBox({
     const tabChips = chipFit == null ? rowChips : fitChips(rowChips, chipFit.widths, chipFit.avail);
     const [pickedText, setPicked] = useState<string | null>(null);
     const picked = pickedChip(tabChips, pickedText);
+    // As the person types, the chips the text matches light up and Tab walks only those (chatsuggest.ts tabWalk), and the
+    // first chip the text starts shows its rest as ghost text after the caret at the end, which → or Tab takes, putting
+    // the chip's whole text in the box (chipGhost: "dong" takes "đóng agent"). Bash mode's own ghost comes first; a
+    // picked chip owns Enter, so it shows none.
+    const walkChips = tabWalk(tabChips, text);
+    const chipGhostNow =
+        !bash && !waking && picked == null && caretNow === text.length
+            ? chipGhost(tabChips, text, onGoOn != null)
+            : null;
+    const shownGhost = ghost !== "" ? ghost : (chipGhostNow?.rest ?? "");
     // the chip that asks before its text replaces the typed one (sendSuggested): it is always the picked chip, so
     // whatever lets go of the pick (typing, Esc, Tab, a send) lets go of it too
     const [armedText, setArmed] = useState<string | null>(null);
@@ -1051,6 +1064,7 @@ function ComposerBox({
                             }}
                             canGoOn={onGoOn != null}
                             quick={quickChip(tabChips, text)?.text ?? null}
+                            typed={text}
                         />
                     ) : null}
                 </AnimatePresence>
@@ -1150,7 +1164,7 @@ function ComposerBox({
                                     maxHeight={ChatMaxH}
                                     placeholder={typeof hint === "string" ? hint : <HintLine parts={hint} />}
                                     bash={bash}
-                                    ghost={ghost}
+                                    ghost={shownGhost}
                                     // a shell command line is mono (DESIGN.md)
                                     className={cn("text-primary", bash ? "font-mono text-[13px]" : "text-[14px]")}
                                     // also called when only the caret moved (a click, an arrow), with the same text: that is no edit, so it
@@ -1179,9 +1193,10 @@ function ComposerBox({
                                     onPasteFiles={promptBox.onPasteFiles}
                                     onKeyDown={(e) => {
                                         // → or Tab at the end of a bash command with the ghost text showing takes it, as Claude Code's does;
-                                        // the ghost is never shown while the Tab list is open, so this Tab is not a completion's
+                                        // the ghost is never shown while the Tab list is open, so this Tab is not a completion's. A
+                                        // suggested reply's ghost is taken the same way, as the chip's whole text.
                                         if (
-                                            ghost !== "" &&
+                                            shownGhost !== "" &&
                                             (e.key === "ArrowRight" || e.key === "Tab") &&
                                             !e.shiftKey &&
                                             !e.altKey &&
@@ -1197,6 +1212,11 @@ function ComposerBox({
                                             ) {
                                                 e.preventDefault();
                                                 recalled.current = { at: null, shown: "" };
+                                                if (ghost === "" && chipGhostNow != null) {
+                                                    logPick(chipGhostNow.chip, "edit");
+                                                    setTextAt(chipGhostNow.take, chipGhostNow.take.length);
+                                                    return;
+                                                }
                                                 setTextAt(text + ghost, text.length + ghost.length);
                                                 return;
                                             }
@@ -1239,7 +1259,7 @@ function ComposerBox({
                                         ) {
                                             if (e.key === "Tab") {
                                                 e.preventDefault();
-                                                setPicked(stepPick(tabChips, pickedText, e.shiftKey));
+                                                setPicked(stepPick(walkChips, pickedText, e.shiftKey));
                                                 return;
                                             }
                                             if (picked != null && e.key === "Enter" && !e.shiftKey) {
@@ -1611,6 +1631,7 @@ function SuggestChips({
     onActivate,
     canGoOn,
     quick,
+    typed,
 }: {
     /** the chips drawn: those of `all` that fit on the line */
     chips: ChatChip[];
@@ -1625,8 +1646,12 @@ function SuggestChips({
     canGoOn: boolean;
     /** the text of the chip Cmd+Enter takes now (quickChip), which shows the key; null when the box holds text */
     quick: string | null;
+    /** the box's text: the chips it matches (chipMatch) show the matched letters lit, and while any does the rest fade */
+    typed: string;
 }) {
     const part = usePartMotion(microFade);
+    const matches = new Map(chips.map((c) => [c.text, chipMatch(c.text, typed)]));
+    const anyMatch = [...matches.values()].some((m) => m != null);
     const rowRef = useRef<HTMLDivElement>(null);
     const measureRef = useRef<HTMLDivElement>(null);
     const last = useRef<ChipFit | null>(null);
@@ -1707,6 +1732,8 @@ function SuggestChips({
                                         (c.text === quick && c.text !== armed ? ` · ${quickKeyLabel()}` : "")
                                     }
                                     quickKey={c.text === quick ? quickKeyLabel() : undefined}
+                                    match={matches.get(c.text) ?? undefined}
+                                    faded={anyMatch && matches.get(c.text) == null && c.text !== picked}
                                     onClick={() => onActivate(c)}
                                     data={{ "data-chat-suggest-chip": c.source, "data-chat-suggest-kind": c.kind }}
                                 />
@@ -1732,12 +1759,18 @@ export function Chip({
     picked = false,
     armed = false,
     quickKey,
+    match,
+    faded = false,
     onClick,
     data,
 }: {
     icon?: LucideIcon;
     label: string;
     title?: string;
+    /** the part of the label the box's text matches (chatsuggest.ts chipMatch), drawn in the accent */
+    match?: { start: number; end: number };
+    /** the box's text matches other chips but not this one: drawn faint, still there and still taken by a click */
+    faded?: boolean;
     /** Tab picked it: lit, with the Enter key that takes it */
     picked?: boolean;
     /** taking it would replace the typed text: it says so in warning colours, and taking it again sends */
@@ -1753,23 +1786,42 @@ export function Chip({
             {...data}
             data-chat-suggest-picked={picked ? "" : undefined}
             data-chat-suggest-armed={armed ? "" : undefined}
+            data-chat-suggest-match={match != null ? "" : undefined}
+            data-chat-suggest-faded={faded ? "" : undefined}
             title={title}
             onClick={onClick}
             className={cn(
-                "flex h-[28px] min-w-0 max-w-[min(340px,100%)] cursor-pointer items-center gap-1.5 rounded-full border pl-[11px] text-[12.5px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent motion-reduce:transition-none",
+                "flex h-[28px] min-w-0 max-w-[min(340px,100%)] cursor-pointer items-center gap-1.5 rounded-full border pl-[11px] text-[12.5px] transition-[color,background-color,border-color,opacity] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent motion-reduce:transition-none",
+                faded && "opacity-40 hover:opacity-100",
                 armed
                     ? "border-warning bg-warning/10 pr-[5px] text-primary ring-2 ring-warning/30"
                     : picked
                       ? "border-accent bg-accentbg pr-[5px] text-primary ring-2 ring-accent/35"
                       : cn(
-                            "border-edge-mid bg-surface text-secondary hover:border-edge-strong hover:text-primary",
+                            match != null
+                                ? "border-accent/70 bg-surface text-primary hover:border-accent"
+                                : "border-edge-mid bg-surface text-secondary hover:border-edge-strong hover:text-primary",
                             quickKey != null ? "pr-[5px]" : "pr-[11px]"
                         )
             )}
         >
             {Icon != null && !armed ? <Icon size={13} strokeWidth={1.8} aria-hidden className="flex-none" /> : null}
             {armed ? <span className="flex-none text-warning">Replace &amp; send</span> : null}
-            <span className="min-w-0 truncate">{armed ? `“${label}”` : label}</span>
+            <span className="min-w-0 truncate">
+                {armed ? (
+                    `“${label}”`
+                ) : match != null && match.end > match.start ? (
+                    <>
+                        {label.slice(0, match.start)}
+                        <span data-chat-suggest-hit="" className="font-semibold text-accent">
+                            {label.slice(match.start, match.end)}
+                        </span>
+                        {label.slice(match.end)}
+                    </>
+                ) : (
+                    label
+                )}
+            </span>
             {picked || armed ? (
                 <kbd
                     aria-label="Enter"

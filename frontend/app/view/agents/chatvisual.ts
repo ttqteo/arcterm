@@ -92,6 +92,14 @@ export function frameHeight(reported: number | undefined, expanded: boolean): nu
     return Math.min(Math.max(reported, FRAME_MIN), expanded ? FRAME_EXPANDED_MAX : FRAME_MAX);
 }
 
+// the frame's address: the served page, with the app's color-scheme in its hash for the bridge (htmlserve.go) to set on
+// the page's root before its first paint. A page with none in the dark app is otherwise drawn on an opaque white canvas.
+// A scheme other than dark or light (none read) leaves the address as it is.
+export function frameSrc(served: string, scheme: string): string {
+    const s = scheme.trim().split(/\s+/)[0];
+    return s === "dark" || s === "light" ? `${served}#arc-scheme=${s}` : served;
+}
+
 // the app colours a visual gets, as the bridge's --arc-<key>: key → the app's CSS custom property
 export const THEME_VARS: Record<string, string> = {
     background: "--color-background",

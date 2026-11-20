@@ -212,7 +212,9 @@ const scrollScript = `<script>(function () {
 // it talks to the frame's parent by message: it reports its height when it loads and each time it changes size
 // (arc-html-height, as canvasserve's height script does for a board), defines window.arc.sendPrompt(text) (posts
 // arc-visual-prompt), takes the parent's colours (arc-visual-theme sets --arc-<name> custom properties on the page's
-// root) and says arc-html-ready once it is listening. Every page gets it, but only Chat's visual frame listens: a page
+// root) and says arc-html-ready once it is listening. A frame whose address ends in #arc-scheme=dark (or light) gets that
+// color-scheme on its root at once, before its first paint: a page with none in a dark app is otherwise drawn on an
+// opaque white canvas (a frame whose scheme differs from its parent's is never see-through), white behind dark text. Every page gets it, but only Chat's visual frame listens: a page
 // opened in the File tab that calls sendPrompt is not heard. The theme keys are held to a short name and the values to
 // a short string, so a message cannot set anything but a custom property of this prefix. A page whose own
 // Content-Security-Policy refuses inline scripts has no bridge, and Chat keeps the height it last knew.
@@ -225,6 +227,8 @@ const scrollScript = `<script>(function () {
 const bridgeScript = `<script>(function () {
   var p = window.parent;
   if (p === window) return;
+  var scheme = /(?:^#|&)arc-scheme=(dark|light)(?:&|$)/.exec(location.hash);
+  if (scheme) document.documentElement.style.colorScheme = scheme[1];
   var last = 0, raf = 0;
   function report() {
     raf = 0;

@@ -11,6 +11,7 @@ import {
     THEME_VARS,
     VISUAL_LANG,
     frameHeight,
+    frameSrc,
     promptAction,
     themeVars,
     themeVarsChanged,
@@ -293,5 +294,20 @@ describe("themeVarsChanged", () => {
     it("is a change when nothing was posted yet", () => {
         expect(themeVarsChanged(null, last)).toBe(true);
         expect(themeVarsChanged(null, {})).toBe(true);
+    });
+});
+
+describe("frameSrc", () => {
+    it("hands the app's color-scheme to the page in the hash", () => {
+        expect(frameSrc("http://127.0.0.1:1/v/a/page.html", "dark")).toBe(
+            "http://127.0.0.1:1/v/a/page.html#arc-scheme=dark"
+        );
+        expect(frameSrc("http://x/p.html", " light ")).toBe("http://x/p.html#arc-scheme=light");
+        expect(frameSrc("http://x/p.html", "dark only")).toBe("http://x/p.html#arc-scheme=dark");
+    });
+
+    it("leaves the address alone when no scheme is read", () => {
+        expect(frameSrc("http://x/p.html", "")).toBe("http://x/p.html");
+        expect(frameSrc("http://x/p.html", "normal")).toBe("http://x/p.html");
     });
 });

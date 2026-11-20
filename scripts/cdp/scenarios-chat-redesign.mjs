@@ -1201,6 +1201,59 @@ export default function (kit) {
                 );
             });
 
+            // 18c1. typing over the chips: "dong" starts "đóng gói lại đi" (marks aside), which lights its matched letters, fades the
+            // chip it does not match and shows the rest as grey ghost text in the box; Tab puts the chip's whole text in, marks
+            // and all, and sends nothing. "push" starts a later word of the other chip: it lights, with no ghost text
+            await run("18c1. typed text lights its chip and ghosts the rest", async (name) => {
+                const PACK = "đóng gói lại đi";
+                const SHIP = "build rồi push luôn";
+                await h.ev(`(() => { window.__chatSuggestFake = () => ${JSON.stringify([SHIP, PACK])}; return true; })()`);
+                append(
+                    ctx,
+                    AC.userText("xong chưa", ts(ctx, -1000)),
+                    AC.assistantText("Xong phần sửa. Giờ build rồi push, hay đóng gói lại trước?", ts(ctx, 0))
+                );
+                await setRoster({ idleSince: Date.now() + 4000 });
+                const chipsOf = `[...(${layerOf(A)}?.querySelectorAll("[data-chat-suggest-chip]") ?? [])]`;
+                const chipUp = await polishWaitFor(h, `${chipsOf}.some((b) => b.title.includes(${JSON.stringify(PACK)})) && ${chipsOf}.some((b) => b.title.includes(${JSON.stringify(SHIP)}))`, WAIT_MS);
+                const read = `(() => {
+                    const chip = (t) => ${chipsOf}.find((b) => b.title.includes(t));
+                    const st = (b) => b ? { hit: b.querySelector("[data-chat-suggest-hit]")?.textContent ?? null, match: b.hasAttribute("data-chat-suggest-match"), faded: b.hasAttribute("data-chat-suggest-faded") } : null;
+                    return {
+                        pack: st(chip(${JSON.stringify(PACK)})),
+                        ship: st(chip(${JSON.stringify(SHIP)})),
+                        ghost: ${layerOf(A)}?.querySelector("[data-chat-ghost]")?.textContent ?? "",
+                        text: ((${inputOf(A)})?.innerText ?? "").replace(/\\n$/, ""),
+                    };
+                })()`;
+                await clearBox(h, A);
+                const sentBefore = await h.ev(`${layerOf(A)}?.querySelectorAll("[data-chat-you], [data-chat-pending]").length ?? 0`);
+                await typeInBox(h, A, "dong");
+                const lit = await polishWaitFor(h, `${read}.ghost === " gói lại đi"`, 3000);
+                const typed = await h.ev(read);
+                await shot(h, "18c1-typeahead-ghost");
+                await key(h, KEYS.tab);
+                const took = await polishWaitFor(h, `${read}.text === ${JSON.stringify(PACK)}`, 3000);
+                const taken = await h.ev(read);
+                await clearBox(h, A);
+                await typeInBox(h, A, "push");
+                await polishWaitFor(h, `${read}.ship?.match === true`, 3000);
+                const mid = await h.ev(read);
+                await shot(h, "18c1-typeahead-word");
+                const sent = await h.ev(`${layerOf(A)}?.querySelectorAll("[data-chat-you], [data-chat-pending]").length ?? 0`);
+                await clearBox(h, A);
+                await h.ev(`(() => { delete window.__chatSuggestFake; return true; })()`);
+                rec(
+                    `${name}: "dong" lights "đóng" on ${PACK}, fades ${SHIP} and ghosts " gói lại đi"; Tab makes the box read ${PACK}; "push" lights "push" on ${SHIP} with no ghost and fades ${PACK}; nothing is sent`,
+                    chipUp && lit &&
+                        typed.pack?.hit === "đóng" && typed.pack.match && !typed.pack.faded && typed.ship?.faded === true &&
+                        took && taken.text === PACK &&
+                        mid.ship?.hit === "push" && mid.ghost === "" && mid.pack?.faded === true &&
+                        sent === sentBefore,
+                    { chipUp, lit, typed, took, taken, mid, sent, sentBefore }
+                );
+            });
+
             // 18c2. a yes-or-no question gets ok and không at once, before the model answers; the model's answers that say
             // more than yes or no join after them, and a bare "ok làm đi" does not
             await run("18c2. a yes-or-no question offers ok and không at once", async (name) => {
