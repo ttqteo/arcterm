@@ -30,7 +30,7 @@ in the dev app: `node scripts/whatsnew-shot.mjs <topic> [--selector <css>]` writ
 `whatsnew.test.ts` fails a big line with neither (in Unreleased and from 1.9.0 on), a missing file, one over 120 KB,
 and a picture given to a line that is not big.
 
-## Unreleased
+## 1.9.0 — 2026-11-20
 
 ### Added
 
