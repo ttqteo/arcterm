@@ -16,6 +16,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -238,6 +239,64 @@ func TestGitAgentEditsCachesUntilATranscriptGrows(t *testing.T) {
 	}
 	if want := []string{"miss", "hit", "miss", "hit", "miss"}; !reflect.DeepEqual(caches, want) {
 		t.Errorf("cache per call = %v, want %v", caches, want)
+	}
+}
+
+// The card, the rail and the Cockpit ask for one transcript at page load: overlapping builds wrote the same loose
+// objects, and on Windows one of them failed with "unable to write file .git/objects/..: Permission denied".
+func TestGitAgentEditsConcurrentCallsBuildOnce(t *testing.T) {
+	buf := captureLog(t)
+	repo := editsRepo(t, map[string]string{"a.txt": "a\n"})
+	transcript := editsTranscript(t)
+	var calls []transcriptCall
+	for i := range 6 {
+		calls = append(calls, transcriptCall{"Write", map[string]any{"file_path": filepath.Join(repo, fmt.Sprintf("new%d.txt", i)), "content": fmt.Sprintf("new %d\n", i)}})
+	}
+	appendTranscript(t, transcript, transcriptLines(t, repo, calls))
+
+	const n = 8
+	type result struct {
+		rtn *wshrpc.CommandGitAgentEditsRtnData
+		err error
+	}
+	results := make([]result, n)
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	for i := range results {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			rtn, err := (&WshServer{}).GitAgentEditsCommand(context.Background(), wshrpc.CommandGitAgentEditsData{Cwd: repo, TranscriptPath: transcript})
+			results[i] = result{rtn, err}
+		}()
+	}
+	close(start)
+	wg.Wait()
+
+	first := results[0]
+	for i, r := range results {
+		if r.err != nil {
+			t.Fatalf("call %d: %v", i, r.err)
+		}
+		if r.rtn.Base == "" || r.rtn.Base != first.rtn.Base || r.rtn.End != first.rtn.End {
+			t.Errorf("call %d = %s..%s (reason %q), want the first's %s..%s", i, r.rtn.Base, r.rtn.End, r.rtn.Reason, first.rtn.Base, first.rtn.End)
+		}
+		if len(r.rtn.Files) != len(calls) {
+			t.Errorf("call %d lists %d files, want %d", i, len(r.rtn.Files), len(calls))
+		}
+	}
+	misses, hits := 0, 0
+	for _, ln := range editsLogLines(buf, transcript) {
+		switch {
+		case strings.Contains(ln, " cache=miss "):
+			misses++
+		case strings.Contains(ln, " cache=hit "):
+			hits++
+		}
+	}
+	if misses != 1 || hits != n-1 {
+		t.Errorf("builds = %d, cache hits = %d, want 1 build and %d hits", misses, hits, n-1)
 	}
 }
 

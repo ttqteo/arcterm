@@ -33,11 +33,28 @@ type agentEditsEntry struct {
 	rtn       wshrpc.CommandGitAgentEditsRtnData
 }
 
-// one entry per transcript path, so the Diff surface's poll rebuilds only when a transcript has grown
+// one entry per transcript path, so the Diff surface's poll rebuilds only when a transcript has grown;
+// building maps the cwd plus transcript path to a lock, so overlapping asks (the card, the rail and the Cockpit at
+// page load) wait for one build instead of each writing B and H's loose objects at once
 var agentEditsCache = struct {
 	sync.Mutex
-	m map[string]agentEditsEntry
-}{m: map[string]agentEditsEntry{}}
+	m        map[string]agentEditsEntry
+	building map[string]*sync.Mutex
+}{m: map[string]agentEditsEntry{}, building: map[string]*sync.Mutex{}}
+
+// lockAgentEdits takes the build lock of one cwd and transcript; the caller releases it with the returned func.
+func lockAgentEdits(cwd, transcript string) (unlock func()) {
+	k := cwd + "\x00" + transcript
+	agentEditsCache.Lock()
+	mu := agentEditsCache.building[k]
+	if mu == nil {
+		mu = &sync.Mutex{}
+		agentEditsCache.building[k] = mu
+	}
+	agentEditsCache.Unlock()
+	mu.Lock()
+	return mu.Unlock
+}
 
 func (ws *WshServer) GitAgentEditsCommand(ctx context.Context, data wshrpc.CommandGitAgentEditsData) (*wshrpc.CommandGitAgentEditsRtnData, error) {
 	start := time.Now()
@@ -68,6 +85,9 @@ func readAgentEdits(ctx context.Context, data wshrpc.CommandGitAgentEditsData) (
 	if data.TranscriptPath == "" {
 		return nothingToShow(reasonNoTranscript), 0, false, nil
 	}
+	// held through the cache check, the parse and the build: a caller that waited finds the cache filled, and reads
+	// the transcript's size and mtime after the build that ran ahead of it
+	defer lockAgentEdits(data.Cwd, data.TranscriptPath)()
 	co, err := agentedits.CheckoutOf(ctx, data.Cwd)
 	switch {
 	case errors.Is(err, agentedits.ErrNotRepo):
