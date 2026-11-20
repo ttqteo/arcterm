@@ -94,6 +94,16 @@ func TestBuildPromptKeepsTheEndAndTheLastMessages(t *testing.T) {
 	}
 }
 
+func TestSystemPromptGivesEveryOptionAReply(t *testing.T) {
+	// "Bạn chọn A hay B, và có muốn thêm hai chỗ trên không?" came back as four chips that all picked A, varying only the
+	// side question: every option named gets its own reply, and the main choice varies first
+	for _, rule := range []string{"Every option the question names gets a reply of its own", "change the main choice before the side questions"} {
+		if !strings.Contains(systemPrompt, rule) {
+			t.Fatalf("system prompt lost the rule %q", rule)
+		}
+	}
+}
+
 func TestBuildPromptOfAChipOnlyCall(t *testing.T) {
 	// the prompt a call sends, whole: its text is the cache key and the model's input
 	got := BuildPrompt(Request{Reply: "Done.", Recent: []string{"build đi"}})
