@@ -32,6 +32,11 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
   asked, the ask comes back as a refusal whose reason tells the agent to ask you first.
 ## 2026-11-20
 
+- [ ] (arcterm) **Library → Boards Reload** (`libraryboards.tsx`). Copy a board file into
+  `<data>/boards/<project>/` by hand while Library → Boards is open: the ↻ button right of the search spins once and
+  the board appears; switching to another surface and back to Boards also shows it. The search box still fills the
+  rest of the 360px column.
+
 - [ ] (arcterm) **Context alarm at 150k / 200k in Chat** (`ContextRing` in `chatfooter.tsx`, `ContextBody` in
   `chatlocalcards.tsx`, feat/context-alarm). On a Claude agent with a 1M window past 150k tokens, Chat's footer ring
   turns amber and reads `16% · 160k`; past 200k it turns red, as do the details rail's gauge and the header chip; a
