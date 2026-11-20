@@ -116,15 +116,20 @@ function rowLabel(r: SpendRow): string {
     return parts.join(" · ");
 }
 
-function SpendBars({ c, data, onSeat }: { c: Council; data: SpendData; onSeat: (id: string) => void }) {
-    const tip = useChartTip();
-    const max = Math.max(1, ...data.rows.map((r) => r.tokens));
-    const headline = [
+// the line over the bars, and the folded section's row: the tokens, the calls and the time the seats worked
+function spendHeadline(data: SpendData): string {
+    return [
         `${tokensLabel(data.total)} tokens in ${plural(data.calls, "call")}`,
         data.ms > 0 ? `${duration(data.ms)} of reading and writing` : "",
     ]
         .filter((p) => p !== "")
         .join(" · ");
+}
+
+function SpendBars({ c, data, onSeat }: { c: Council; data: SpendData; onSeat: (id: string) => void }) {
+    const tip = useChartTip();
+    const max = Math.max(1, ...data.rows.map((r) => r.tokens));
+    const headline = spendHeadline(data);
     return (
         <div className="flex flex-col gap-2">
             <p className="m-0 text-[12px] tabular-nums text-muted">{headline}</p>
@@ -644,4 +649,11 @@ export function SpendFigures({ c, onSeat }: { c: Council; onSeat: (id: string) =
             {lanes != null && <LanesFigure c={c} data={lanes} onSeat={onSeat} />}
         </div>
     );
+}
+
+/** The folded "What it spent" row's line, from figure C's numbers: `1.9M tokens in 9 calls · 19 min 10 s of reading and
+ *  writing`; "" when no seat has tokens (the lanes alone draw the section). */
+export function spendLine(c: Council): string {
+    const data = seatSpend(c);
+    return data == null ? "" : spendHeadline(data);
 }

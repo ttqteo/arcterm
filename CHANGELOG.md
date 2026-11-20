@@ -34,6 +34,9 @@ and a picture given to a line that is not big.
 
 ### Changed
 
+- A council's Report now opens with What it settled under the answer: the direction it chose, what it agreed, what is
+  still open and what it ruled out (with why). What it spent moves to the foot of the Report as one folded line of
+  tokens, calls and time; a click still opens the per-seat charts.
 - A board with Vietnamese text now reads in Shantell Sans, a hand-drawn face that has every Vietnamese letter, instead of
   the plain Nunito that sat oddly beside the sketched shapes.
 - The Compacted line in the Agent details rail opens the summary in a Summary tab of the rail, with an x to close it,

@@ -144,6 +144,27 @@ async function closeDirection(h, rank) {
 }
 
 // the header's jump link, the page gliding to its section
+// the council's result as its memory keeps it, which the Report draws as What it settled under the cover
+function withMemory(c) {
+    c.memory = {
+        chosen: { text: "Ship the rail apps behind a flag first", how: "pin", at: c.created },
+        entries: [
+            { id: "m1", kind: "agreed", text: "The rail keeps three apps at most", by: "auto", round: 2, at: c.created + 1 },
+            { id: "m2", kind: "open", text: "Does an app stop when it leaves the screen?", by: "auto", round: 2, at: c.created + 2 },
+            { id: "m3", kind: "ruledout", text: "A Services chip in the app bar", why: "the rail already shows them", by: "you", at: c.created + 3 },
+        ],
+    };
+}
+
+// opens What it spent, folded at the foot of the report, and brings it to the top of the page
+async function openSpend(h) {
+    if ((await h.ev(`document.querySelector("[data-council-spend-toggle]")?.getAttribute("aria-expanded")`)) !== "true") {
+        await click(h, "[data-council-spend-toggle]");
+    }
+    await h.ev(`document.querySelector('[data-council-section="spend"]')?.scrollIntoView({ block: "start" })`);
+    await sleep(600);
+}
+
 async function jumpTo(h, id) {
     await click(h, `${SUMMARY} [data-council-tabbar] [data-council-jump="${id}"]`);
     await sleep(1_100);
@@ -155,7 +176,7 @@ export const councilFigures = {
         try {
             // one clock for every write of the council, so a rewrite keeps the gaps and the times it had
             ctx.now = Date.now();
-            ctx.councilId = await seedCouncil(h, ctx, "figures", { now: ctx.now });
+            ctx.councilId = await seedCouncil(h, ctx, "figures", { now: ctx.now, edit: withMemory });
         } catch (e) {
             await teardownCouncilProject(h, ctx).catch(() => {});
             throw e;
@@ -168,22 +189,28 @@ export const councilFigures = {
         const step = stepper(steps);
         await openReport(h, ctx.councilId);
 
-        await step("At a glance sits between the cover and the directions, and What it spent after them, each with its takeaways computed from the council", async () => {
+        await step("What it settled sits under the cover, At a glance between it and the directions, and What it spent folded at the foot, each computed from the council", async () => {
             const facts = await h.ev(`(() => {
                 const t = (s) => document.querySelector(s)?.innerText?.replace(/\\s+/g, " ").trim() ?? null;
                 const after = (a, b) => !!a && !!b && !!(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
                 const cover = document.querySelector("[data-council-cover]");
                 const glance = document.querySelector('[data-council-section="glance"]');
                 const spend = document.querySelector('[data-council-section="spend"]');
+                const settled = document.querySelector('[data-council-section="settled"]');
                 const last = document.querySelector('[data-council-direction="3"]');
                 return {
-                    order: after(cover, glance) && after(glance, document.querySelector('[data-council-direction="1"]')) && after(last, spend),
+                    order: after(cover, settled) && after(settled, glance) && after(glance, document.querySelector('[data-council-direction="1"]')) && after(last, spend),
+                    // nothing after What it spent but the rating row and the Map link
+                    spendLast: !!spend && [...document.querySelectorAll("[data-council-section], [data-council-asks-next], [data-council-kept]")].pop() === spend,
+                    settledHeading: t('[data-council-section="settled"] > h2'),
+                    settledDirection: t("[data-council-settled-direction]"),
+                    settledGroups: [...document.querySelectorAll("[data-council-settled]")].map((g) => g.dataset.councilSettled).join(","),
+                    settledWhy: t('[data-council-settled="ruledout"]'),
                     glanceHeading: t('[data-council-section="glance"] > h2'),
-                    spendHeading: t('[data-council-section="spend"] > h2'),
+                    spendToggle: t("[data-council-spend-toggle]"),
+                    spendFolded: document.querySelector("[data-council-spend-toggle]")?.getAttribute("aria-expanded") === "false" && !document.querySelector('[data-council-figure="spend"]'),
                     glanceCaption: t('[data-council-figure="glance"] figcaption'),
                     gridCaption: t('[data-council-figure="stance-grid"] figcaption'),
-                    spendCaption: t('[data-council-figure="spend"] figcaption'),
-                    lanesCaption: t('[data-council-figure="lanes"] figcaption'),
                     jumps: [...document.querySelectorAll("[data-council-tabbar] [data-council-jump]")].map((j) => j.dataset.councilJump).join(","),
                     points: document.querySelectorAll("[data-glance-point]").length,
                     rows: document.querySelectorAll("tr[data-stance-row]").length,
@@ -235,13 +262,28 @@ export const councilFigures = {
             })()`);
             // the header's link brings At a glance to the top of the page: the board's picture and the What's new one
             // (a clip of the section, which only holds what is on screen) both show it whole
+            await jumpTo(h, "settled");
+            await h.shot("cdp-shots/council-figures-settled.png");
             await jumpTo(h, "glance");
             await h.shot("cdp-shots/council-figures.png");
             const pic = await h.whatsnewShot("council-figures", { selector: '[data-council-section="glance"]' });
+            await openSpend(h);
+            const opened = await h.ev(`(() => {
+                const t = (s) => document.querySelector(s)?.innerText?.replace(/\\s+/g, " ").trim() ?? null;
+                return { spendCaption: t('[data-council-figure="spend"] figcaption'), lanesCaption: t('[data-council-figure="lanes"] figcaption') };
+            })()`);
+            await h.shot("cdp-shots/council-figures-spend-open.png");
+            Object.assign(facts, opened);
             const ok =
                 facts.order &&
+                facts.spendLast &&
+                facts.settledHeading === "What it settled" &&
+                /Ship the rail apps behind a flag first/.test(facts.settledDirection ?? "") &&
+                facts.settledGroups === "agreed,open,ruledout" &&
+                /Why: the rail already shows them/.test(facts.settledWhy ?? "") &&
                 facts.glanceHeading === "At a glance" &&
-                facts.spendHeading === "What it spent" &&
+                facts.spendFolded &&
+                /^What it spent .*9\.0M tokens in \d+ calls/.test(facts.spendToggle ?? "") &&
                 facts.glanceCaption?.includes("D1 and D2 stand on checked evidence and the panel's backing") &&
                 facts.glanceCaption?.includes("D3 is a guess") &&
                 facts.gridCaption?.includes("The panel split on D3") &&
@@ -249,8 +291,8 @@ export const councilFigures = {
                 facts.spendCaption?.includes("1.5M a call") &&
                 // the Skeptic's lane holds 200 steps: the oldest are gone, so it is the last ones that were kept
                 !!facts.lanesCaption &&
-                // the fixture keeps two ideas aside, so Also raised is a link between the directions and What it spent
-                facts.jumps === "glance,directions,kept,spend" &&
+                // the fixture keeps two ideas aside, so Also raised is a link after the directions; What it spent has none
+                facts.jumps === "settled,glance,directions,kept" &&
                 facts.points === 3 &&
                 facts.rows === 3 &&
                 (facts.sideBySide || facts.stacked) &&
@@ -301,8 +343,8 @@ export const councilFigures = {
             };
         });
 
-        await step("What it spent, by its jump link: a lane for each seat that worked and the files more than one read, and a hover on the Đo RAM row says what it cost a call", async () => {
-            await jumpTo(h, "spend");
+        await step("What it spent, unfolded at the foot: a lane for each seat that worked and the files more than one read, and a hover on the Đo RAM row says what it cost a call", async () => {
+            await openSpend(h);
             const drew = await until(h, `document.querySelectorAll("[data-lane-seat]").length >= 4 && document.querySelectorAll("[data-shared-read]").length >= 2`);
             const lanes = await count(h, "[data-lane-seat]");
             const shared = await count(h, "[data-shared-read]");
@@ -340,7 +382,7 @@ export const councilFigures = {
         });
 
         await step("a council rewritten while its Report is open redraws: a seat that spent more has a wider bar once it settles", async () => {
-            await jumpTo(h, "spend");
+            await openSpend(h);
             const bar = () => h.ev(`document.querySelector('[data-spend-seat="ux"] [data-spend-bar]')?.getBoundingClientRect().width ?? 0`);
             const label = () => textOf(h, '[data-spend-seat="ux"]');
             const before = await bar();
@@ -350,6 +392,7 @@ export const councilFigures = {
             writeCouncil(ctx, "figures", {
                 now: ctx.now,
                 edit: (c) => {
+                    withMemory(c);
                     const more = Math.round(c.stats.ux.tokens / 2);
                     c.stats.ux.tokens += more;
                     c.tokens += more;

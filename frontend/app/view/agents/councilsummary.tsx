@@ -8,13 +8,15 @@
 // cover: the title, what was asked, the answer in one bold sentence with the coordinator's text under it, and a glance
 // box beside them: the state, three figures, the panel with each model and what each seat did (a click opens the
 // Discussion on that seat's messages alone), and where the council saved itself, docs/council/, a click or the `⋯` menu
-// opening that document. Under the cover the body: At a glance (the evidence × agreement quadrant of a Review and the
+// opening that document. Under the cover the body: What it settled (the council's memory: the chosen direction, then
+// Agreed, Still open and Ruled out; councilmemorymodel.ts settledOf), At a glance (the evidence × agreement quadrant of a Review and the
 // direction × seat stance grid, councilglancefigures.tsx; a click on a point or a row opens that direction's card and
 // glides to it), the directions as cards (one open at a
-// time, its detail under the grid: the coordinator's reasoning and each expert's position), What it spent after the kept
-// ideas (what each seat spent and when it worked, councilspendfigures.tsx; a click on a seat opens the Discussion on its
-// messages), and at the bottom one line that
-// opens the Map tab, where every idea stands against every expert. Both figure sections are jump links like the others,
+// time, its detail under the grid: the coordinator's reasoning and each expert's position), and at the foot What it spent,
+// folded to one line of tokens, calls and time (a click opens what each seat spent and when it worked,
+// councilspendfigures.tsx; a click on a seat opens the Discussion on its messages; it is the council's cost, not its
+// result, so it has no jump link), and at the bottom one line that
+// opens the Map tab, where every idea stands against every expert. The other sections are jump links,
 // and draw only what the council recorded (councilfiguresmodel.ts words every takeaway; no model call draws or words a
 // figure). A finished council opens on it; Summarize on the
 // Discussion opens it too, and the Discussion tab goes back. A Brainstorm's report heads its directions "Ideas worth trying, best first" (each with a first
@@ -71,6 +73,7 @@ import { CouncilHeaderRow } from "./councilheader";
 import { useCouncilHost } from "./councilhost";
 import { useKeptScroll } from "./councilkeptscroll";
 import { mapWords } from "./councilmapmodel";
+import { settledOf, type Settled, type SettledGroup } from "./councilmemorymodel";
 import {
     STANCE_WORD,
     askedParts,
@@ -89,7 +92,7 @@ import { retryHold } from "./councilretry";
 import { RetryWithButton } from "./councilretrymenu";
 import { revealCouncilMessage } from "./councilreveal";
 import { claimBadge, isWrongCite, wrongCiteOf } from "./councilsources";
-import { SpendFigures } from "./councilspendfigures";
+import { SpendFigures, spendLine } from "./councilspendfigures";
 import {
     councilChatDraftAtom,
     councilOpenProposalAtom,
@@ -137,6 +140,8 @@ const openDirectionAtom = atomFamily((_id: string) => atom<number | null>(null) 
 const savedDocAtom = atomFamily((_id: string) => atom<string | null>(null) as PrimitiveAtom<string | null>);
 // whether the ideas kept aside (Also raised) are unfolded: the header's jump link to them opens them too
 const keptOpenAtom = atomFamily((_id: string) => atom(false) as PrimitiveAtom<boolean>);
+// whether What it spent is unfolded at the foot of the report
+const spendOpenAtom = atomFamily((_id: string) => atom(false) as PrimitiveAtom<boolean>);
 interface MadeInitiative {
     oid: string;
     title: string;
@@ -431,6 +436,108 @@ function KeptCard({ row }: { row: KeptRow }) {
                 <span className="text-[13.5px] leading-[1.5] text-secondary">{d.reasoning}</span>
             ) : null}
         </div>
+    );
+}
+
+// the dot before each settled line, in its kind's colour (the Memory tab's badges)
+const SETTLED_DOT: Record<SettledGroup["kind"], string> = {
+    agreed: "bg-success-soft",
+    open: "bg-warning-soft",
+    ruledout: "bg-ink-faint",
+};
+
+// "What it settled", under the cover: the council's result as its memory keeps it (settledOf): the chosen direction,
+// then a column each for Agreed, Still open and Ruled out (a Ruled out line with its why under it). Still open sits
+// on a raised panel: it is what is left for the person to decide.
+function SettledSection({ settled }: { settled: Settled }) {
+    return (
+        <motion.section
+            variants={viewFade}
+            initial="initial"
+            animate="animate"
+            data-council-section="settled"
+            aria-label="What it settled"
+            className="flex flex-col gap-4"
+        >
+            <h2 className="m-0 text-[19px] font-semibold tracking-[-0.01em] text-primary">What it settled</h2>
+            {settled.direction != null ? (
+                <p data-council-settled-direction className="m-0 text-[15px] leading-[1.55] text-ink-hi">
+                    <span className="mr-2 text-[12px] font-semibold uppercase tracking-[0.04em] text-muted">
+                        Direction
+                    </span>
+                    {settled.direction}
+                </p>
+            ) : null}
+            <div className="grid grid-cols-[repeat(auto-fit,minmax(300px,1fr))] items-start gap-[14px]">
+                {settled.groups.map((g) => (
+                    <div
+                        key={g.kind}
+                        data-council-settled={g.kind}
+                        className={cn(
+                            "flex flex-col gap-3 rounded-lg px-[18px] py-4",
+                            g.kind === "open" ? "bg-surface-raised ring-1 ring-edge-mid" : "bg-surface"
+                        )}
+                    >
+                        <div className="flex items-baseline gap-2">
+                            <span className="text-[13px] font-semibold text-primary">{g.label}</span>
+                            <span className="text-[12.5px] tabular-nums text-muted">{g.items.length}</span>
+                        </div>
+                        <ul className="m-0 flex list-none flex-col gap-[10px] p-0">
+                            {g.items.map((item) => (
+                                <li key={item.id} data-council-settled-item={item.id} className="flex gap-[10px]">
+                                    <span
+                                        aria-hidden
+                                        className={cn(
+                                            "mt-[8px] size-[6px] flex-none rounded-full",
+                                            SETTLED_DOT[g.kind]
+                                        )}
+                                    />
+                                    <span className="flex min-w-0 flex-col gap-[2px]">
+                                        <span className="text-[13.5px] leading-[1.5] text-secondary">{item.text}</span>
+                                        {item.why !== "" ? (
+                                            <span className="text-[12.5px] leading-[1.45] text-muted">
+                                                Why: {item.why}
+                                            </span>
+                                        ) : null}
+                                    </span>
+                                </li>
+                            ))}
+                        </ul>
+                    </div>
+                ))}
+            </div>
+        </motion.section>
+    );
+}
+
+// "What it spent" at the foot of the report, folded: one quiet row with the tokens, the calls and the time, and a click
+// opens the figures (what each seat spent, when each worked). It is what the council cost, not what it found, so it
+// stays out of the way and out of the jump links.
+function SpendFold({ c, onSeat }: { c: Council; onSeat: (id: string) => void }) {
+    const [open, setOpen] = useAtom(spendOpenAtom(c.id));
+    const line = useMemo(() => spendLine(c), [c]);
+    const Chevron = open ? ChevronUp : ChevronDown;
+    return (
+        <section data-council-section="spend" aria-label="What it spent" className="flex flex-col gap-4">
+            <button
+                type="button"
+                data-council-spend-toggle
+                aria-expanded={open}
+                onClick={() => setOpen(!open)}
+                className={cn(
+                    "group flex w-fit cursor-pointer items-baseline gap-[10px] rounded-[4px] border-0 bg-transparent p-0 text-left",
+                    FOCUS
+                )}
+            >
+                <span className="text-[13.5px] font-semibold text-secondary group-hover:text-primary">
+                    What it spent
+                </span>
+                {/* open, the bars' own line says it */}
+                {line !== "" && !open ? <span className="text-[12.5px] tabular-nums text-muted">{line}</span> : null}
+                <Chevron size={13} aria-hidden className="self-center text-muted group-hover:text-primary" />
+            </button>
+            {open ? <SpendFigures c={c} onSeat={onSeat} /> : null}
+        </section>
     );
 }
 
@@ -1192,6 +1299,7 @@ function SummaryView({ model, c }: { model: AgentsViewModel; c: Council }) {
     const { answer, rest } = answerParts(c);
     const heading = directionsHeading(c);
     const kept = useMemo(() => keptRows(c), [c]);
+    const settled = useMemo(() => settledOf(c), [c]);
     const dropped = droppedLine(c);
     const doc = docAction(c);
     // the report's own rows of the header's `⋯` menu, ahead of Resume and Pin (CouncilActions)
@@ -1404,6 +1512,7 @@ function SummaryView({ model, c }: { model: AgentsViewModel; c: Council }) {
                 </div>
                 {summary != null ? (
                     <div className="mx-auto flex max-w-[1180px] flex-col gap-11 px-10 pb-[72px] pt-9">
+                        {settled != null ? <SettledSection settled={settled} /> : null}
                         {hasGlanceFigures(c) ? (
                             <FiguresSection id="glance" title="At a glance">
                                 <GlanceFigures c={c} onOpenDirection={openDirection} />
@@ -1447,11 +1556,6 @@ function SummaryView({ model, c }: { model: AgentsViewModel; c: Council }) {
                             </section>
                         ) : null}
                         {kept.length > 0 ? <KeptSection key={c.id} c={c} rows={kept} /> : null}
-                        {hasSpendFigures(c) ? (
-                            <FiguresSection id="spend" title="What it spent">
-                                <SpendFigures c={c} onSeat={openSeat} />
-                            </FiguresSection>
-                        ) : null}
                         {finalSection}
                         {asks.length > 0 ? (
                             <section data-council-asks-next className="flex flex-col gap-4">
@@ -1483,6 +1587,7 @@ function SummaryView({ model, c }: { model: AgentsViewModel; c: Council }) {
                                 {dropped}
                             </span>
                         ) : null}
+                        {hasSpendFigures(c) ? <SpendFold c={c} onSeat={openSeat} /> : null}
                         <RatingRow key={c.id} c={c} />
                         <MapLink c={c} />
                     </div>
