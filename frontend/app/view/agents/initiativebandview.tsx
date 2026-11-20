@@ -30,6 +30,7 @@ import { useAtomValue } from "jotai";
 import { selectAtom } from "jotai/utils";
 import { ChevronDown, Diamond } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent, type ReactNode } from "react";
+import { openRailInitiative } from "./agentrailstore";
 import type { AgentsViewModel } from "./agents";
 import { formatAgo, type AgentVM } from "./agentsviewmodel";
 import { markChunkDone } from "./chatsuggeststore";
@@ -55,7 +56,6 @@ import {
 } from "./initiativepopovermodel";
 import { planEditChunks } from "./planreviewmodel";
 import { useInitiativeReread, usePlanReview } from "./planreviewstore";
-import { openRailSection } from "./railsection";
 
 type List = "window" | "all";
 
@@ -347,7 +347,7 @@ export function useInitiativePart({
         }
         focusRoot();
     };
-    const reviewOnRail = () => openRailSection(agent.id, "plan");
+    const reviewOnRail = () => openRailInitiative(agent.id, "plan");
     const openInJarvis = (target: { kind: "effort"; effortId: string }, e?: MouseEvent) => {
         fireAndForget(() => (e != null ? openOrPeek(model, target, e) : openTarget(model, target)));
     };

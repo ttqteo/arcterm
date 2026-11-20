@@ -61,6 +61,7 @@ import { motion } from "motion/react";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { closeAgentChord, confirmCloseSession, interruptAgent } from "./agentactions";
 import { contextLevel, contextTokens } from "./agentrailmodel";
+import { openRailInitiative } from "./agentrailstore";
 import type { AgentsViewModel } from "./agents";
 import { askingLabel, askSentKey, formatTokens, projectOf, type AgentVM } from "./agentsviewmodel";
 import { setAgentView, type AgentView } from "./agentview";
@@ -109,7 +110,6 @@ import { liveTokensAtom } from "./livetokensstore";
 import { machineServersReadingAtom } from "./machineserversstore";
 import { planEditChunks } from "./planreviewmodel";
 import { useInitiativeReread, usePlanReview } from "./planreviewstore";
-import { openRailSection } from "./railsection";
 import { railVisibleAtom, terminalFullscreenAtom } from "./railstore";
 import { VerifyChip } from "./railverify";
 import { remoteStatusAtom, toggleHandToPhone } from "./remotestore";
@@ -344,8 +344,9 @@ function LinkToInitiative({ agent, project, width }: { agent: AgentVM; project: 
     );
 }
 
-// "N TO REVIEW": the initiative holds chunks that wait for a decision, and this opens the details rail on them. It is
-// its own flex item, after the truncating text, so a long project or initiative name never clips it away.
+// "N TO REVIEW": the initiative holds chunks that wait for a decision, and this opens the rail's Initiative tab on them
+// (Plan to review, unfolded and in view). It is its own flex item, after the truncating text, so a long project or
+// initiative name never clips it away.
 function PlanReviewChip({ agent }: { agent: AgentVM }) {
     // the header is what is on screen when the agent stops with a plan, so it reads the initiative again too (the
     // rail's own read is the same one in flight, see planreviewstore.ts)
@@ -358,8 +359,8 @@ function PlanReviewChip({ agent }: { agent: AgentVM }) {
         <button
             type="button"
             data-plan-review-chip
-            onClick={() => openRailSection(agent.id, "plan")}
-            title="Review the proposed plan on the details rail"
+            onClick={() => openRailInitiative(agent.id, "plan")}
+            title="Review the proposed plan on the Initiative tab"
             className="inline-flex h-[18px] flex-none cursor-pointer items-center self-center rounded-[5px] border border-asking/30 bg-askingbg px-[7px] text-[10px] font-bold uppercase tracking-[.04em] text-asking hover:border-asking/60"
         >
             {proposed} to review

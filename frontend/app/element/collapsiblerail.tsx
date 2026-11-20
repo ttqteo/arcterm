@@ -35,9 +35,12 @@ export interface RailSection {
     // drawn at the end of the header row, outside the button that opens and closes it (a count of what is new, a
     // "Mark read"); only with `header`
     headerExtra?: ReactNode;
+    // classes for the count beside the label, where a section's count carries a tone (Plan to review's, asking); only with `header`
+    countClassName?: string;
 }
 
-function HeadedSection({ section, header }: { section: RailSection; header: RailSectionHeader }) {
+// the rail's folding section header; the agent panel's Initiative tab draws its own sections through it
+export function HeadedSection({ section, header }: { section: RailSection; header: RailSectionHeader }) {
     const [stored, setStored] = useAtom(railSectionOpenAtom);
     const expandable = sectionExpandable(header);
     const open = sectionOpen(stored, section.id, header);
@@ -60,7 +63,13 @@ function HeadedSection({ section, header }: { section: RailSection; header: Rail
                 </span>
                 {section.label}
                 {header.count != null ? (
-                    <span className={cn("text-[11px] tabular-nums", expandable ? "text-muted" : "text-ink-faint")}>
+                    <span
+                        className={cn(
+                            "text-[11px] tabular-nums",
+                            expandable ? "text-muted" : "text-ink-faint",
+                            section.countClassName
+                        )}
+                    >
                         {header.count}
                     </span>
                 ) : null}

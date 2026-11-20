@@ -34,6 +34,7 @@ import {
 } from "@floating-ui/react";
 import { atom, useAtomValue, type PrimitiveAtom } from "jotai";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import { openRailInitiative } from "./agentrailstore";
 import type { AgentsViewModel } from "./agents";
 import { formatAgo, type AgentVM } from "./agentsviewmodel";
 import { markChunkDone } from "./chatsuggeststore";
@@ -49,7 +50,6 @@ import {
 } from "./initiativepopovermodel";
 import { planEditChunks } from "./planreviewmodel";
 import { useInitiativeReread, usePlanReview } from "./planreviewstore";
-import { openRailSection } from "./railsection";
 import { SectionLabel } from "./sectionlabel";
 
 // The agent whose initiative popover is open (its header's), else null. It is read by the key bindings: while it is set
@@ -215,7 +215,7 @@ function PopoverBody({
         }
     };
     const reviewOnRail = () => {
-        openRailSection(agent.id, "plan");
+        openRailInitiative(agent.id, "plan");
         close();
     };
     const openInJarvis = (target: { kind: "effort"; effortId: string }, e?: React.MouseEvent) => {
