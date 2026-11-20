@@ -182,15 +182,72 @@ func TestMergeEffort(t *testing.T) {
 			},
 		},
 		{
-			name: "scalars from the newer side",
+			name: "scalars merge per field: changed on one side takes it, changed on both takes the newer",
 			base: &waveobj.Effort{OID: "e1", Title: "base", Status: "active"},
 			ours: &waveobj.Effort{OID: "e1", Title: "ours", Status: "active", Project: "p1", UpdatedTs: 5},
 			theirs: &waveobj.Effort{OID: "e1", Title: "theirs", Status: "done", Ticket: "T-1", ParentOID: "p",
 				Meta: waveobj.MetaMapType{"k": "v"}, UpdatedTs: 9},
 			check: func(t *testing.T, got *waveobj.Effort) {
-				if got.Title != "theirs" || got.Status != "done" || got.Project != "" || got.Ticket != "T-1" ||
+				if got.Title != "theirs" || got.Status != "done" || got.Project != "p1" || got.Ticket != "T-1" ||
 					got.ParentOID != "p" || got.Meta["k"] != "v" {
-					t.Fatalf("scalars = %+v, want theirs", got)
+					t.Fatalf("scalars = %+v, want title from theirs (newer), project from ours (only change), rest theirs", got)
+				}
+			},
+		},
+		{
+			name:   "an effort field only the older side changed is kept",
+			base:   &waveobj.Effort{OID: "e1", Title: "t", Status: "active", Meta: waveobj.MetaMapType{"k": "base"}},
+			ours:   &waveobj.Effort{OID: "e1", Title: "t", Status: "done", Meta: waveobj.MetaMapType{"k": "ours"}, UpdatedTs: 5},
+			theirs: &waveobj.Effort{OID: "e1", Title: "renamed", Status: "active", Meta: waveobj.MetaMapType{"k": "base"}, UpdatedTs: 9},
+			check: func(t *testing.T, got *waveobj.Effort) {
+				if got.Status != "done" || got.Meta["k"] != "ours" || got.Title != "renamed" {
+					t.Fatalf("got status=%q meta=%v title=%q, want ours' status and meta, theirs' title", got.Status, got.Meta, got.Title)
+				}
+			},
+		},
+		{
+			name: "a chunk field only the older side changed is kept",
+			base: effort(10, chunk("a", 10)),
+			ours: func() *waveobj.Effort {
+				c := chunk("a", 20)
+				c.Status = "done"
+				return effort(20, c)
+			}(),
+			theirs: func() *waveobj.Effort {
+				c := chunk("a", 30)
+				c.Owner, c.Stage = "x", "s1"
+				return effort(30, c)
+			}(),
+			check: func(t *testing.T, got *waveobj.Effort) {
+				c := findChunk(got, "a")
+				if c.Status != "done" || c.Owner != "x" || c.Stage != "s1" || c.UpdatedTs != 30 {
+					t.Fatalf("chunk = %+v, want ours' status, theirs' owner and stage, updatedts 30", c)
+				}
+			},
+		},
+		{
+			name:   "nil base: every scalar from the newer side, even an empty one",
+			base:   nil,
+			ours:   &waveobj.Effort{OID: "e1", Title: "t", Project: "p1", Meta: waveobj.MetaMapType{"k": "v"}, UpdatedTs: 5},
+			theirs: &waveobj.Effort{OID: "e1", Title: "t2", UpdatedTs: 9},
+			check: func(t *testing.T, got *waveobj.Effort) {
+				if got.Title != "t2" || got.Project != "" || got.Meta != nil {
+					t.Fatalf("got title=%q project=%q meta=%v, want theirs' (newer) values", got.Title, got.Project, got.Meta)
+				}
+			},
+		},
+		{
+			name: "a chunk new on both sides takes the newer chunk whole",
+			base: effort(1),
+			ours: func() *waveobj.Effort {
+				c := chunk("a", 5)
+				c.Owner = "o"
+				return effort(5, c)
+			}(),
+			theirs: effort(9, chunk("a", 9)),
+			check: func(t *testing.T, got *waveobj.Effort) {
+				if c := findChunk(got, "a"); c.Owner != "" {
+					t.Fatalf("owner = %q, want theirs' empty owner (newer chunk)", c.Owner)
 				}
 			},
 		},
