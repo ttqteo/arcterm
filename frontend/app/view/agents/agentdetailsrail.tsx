@@ -17,6 +17,7 @@ import {
     ChevronDown,
     ChevronLeft,
     ChevronRight,
+    Diamond,
     FileDiff,
     FileText,
     Folder,
@@ -25,6 +26,7 @@ import {
     GitBranch,
     LayoutList,
     LayoutTemplate,
+    Lightbulb,
     MessagesSquare,
     Monitor,
     ScrollText,
@@ -66,6 +68,7 @@ import {
     RAIL_OVERVIEW_PX,
     shownTab,
     wideTabOf,
+    type RailHas,
     type ResizableTab,
 } from "./agentrailtabs";
 import type { AgentsViewModel } from "./agents";
@@ -73,6 +76,7 @@ import { displayAgeMs, formatAgeShort, type AgentVM } from "./agentsviewmodel";
 import { setAgentView } from "./agentview";
 import { BackgroundTaskTail } from "./backgroundtaskpeek";
 import { backgroundActivity, shownState } from "./bgactivity";
+import { brainstormAtom, brainstormBandAtom } from "./brainstormstore";
 import { agentCacheStatusAtom, formatCacheCountdown, loadCacheStatusForAgent } from "./cachestatusstore";
 import { canvasStateAtom, selectCanvasTab } from "./canvasstore";
 import { useChatMode } from "./chatmodestore";
@@ -92,6 +96,7 @@ import { prettyModel } from "./modellabel";
 import { PlanReviewSection } from "./planreviewsection";
 import { useInitiativeReread, usePlanReview } from "./planreviewstore";
 import { artifactsView } from "./railartifacts";
+import { RailBrainstormPane } from "./railbrainstormpane";
 import { RailCommitBox, RailCommitFiles } from "./railcommitbox";
 import {
     commitRange,
@@ -115,6 +120,7 @@ import { RailCompactionLine, RailCompactionPane } from "./railcompactionline";
 import { RailCouncilPane } from "./railcouncilpane";
 import { useAgentCouncil } from "./railcouncilstore";
 import { RAIL_ICON } from "./railicons";
+import { RailInitiativePane } from "./railinitiativepane";
 import { RAIL_ROW, RAIL_ROW_ACTION } from "./railrow";
 import { clearRailSectionRequest, railSectionRequestAtom } from "./railsection";
 import { ServersSection, ServerStopButton } from "./railservers";
@@ -788,10 +794,20 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
     const hasTranscript = !!agent.transcriptPath && !agent.sleeping && !chatShown;
     // the council this agent started, whose chat the Council tab shows; a subagent's interior shows its parent's
     const council = useAgentCouncil(agent);
-    const hasCouncil = council != null;
-    const shown = shownTab(panel, hasTree, hasTranscript, hasCouncil);
-    // File, Transcript, Council and Summary keep a dragged width (one, shared); Overview, Files and Changes share one
-    // fixed width, so moving between them never resizes the panel
+    // what the agent has, which sets the tabs the strip draws: Brainstorm while a brainstorm is attached, Initiative
+    // while the agent is linked to one. Both are the agent's own, so they stay while a subagent's interior is open
+    const hasBrainstorm = useAtomValue(brainstormAtom(agent.id)) != null;
+    const brainstormNew = (useAtomValue(brainstormBandAtom(agent.id))?.newCount ?? 0) > 0;
+    const has: RailHas = {
+        tree: hasTree,
+        transcript: hasTranscript,
+        council: council != null,
+        brainstorm: hasBrainstorm,
+        initiative: agent.effortId != null,
+    };
+    const shown = shownTab(panel, has);
+    // File, Transcript, Council and Summary keep a dragged width (one, shared); Overview, Files, Changes, Brainstorm and
+    // Initiative share one fixed width, so moving between them never resizes the panel
     const wideTab: ResizableTab = wideTabOf(shown) ?? "file";
     const fixedWidth = wideTabOf(shown) == null;
     const wide = useWideWidth(wideTab);
@@ -1021,7 +1037,7 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
 
     // opens the rail on Overview with a section open, then brings it into view once it has rendered
     const revealSection = (id: AgentRailSectionId) => {
-        selectRailTab(agent.id, "overview", hasTree, hasTranscript);
+        selectRailTab(agent.id, "overview", has);
         showRail();
         // the Verify tile keeps its own open state (a folded tile opens; one open stays as it is)
         if (id === "verify" && agent.blockId != null && verify.folded) {
@@ -1497,14 +1513,18 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
             sections={isFinalStageId(agent.id) ? finalSection : sections}
             width={fixedWidth ? RAIL_OVERVIEW_PX : wide.width}
             widthKey={shown}
+            // the counts drop to a row under the tabs when both cannot sit whole on one (up to seven tabs and the Verify
+            // count at 300px); on File the strip scrolls instead and the counts hold their width
+            tabsWrap={shown !== "file"}
             tabs={
                 <>
                     <RailTabStrip
                         agentId={agent.id}
                         panel={panel}
-                        hasTree={hasTree}
-                        hasTranscript={hasTranscript}
+                        has={has}
                         council={council}
+                        brainstormNew={brainstormNew}
+                        initiativeAsking={planReview.proposed > 0}
                     />
                     <RailStats
                         stats={planRailStats(railInput)}
@@ -1559,6 +1579,10 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
                     <RailTranscript agent={agent} surfaceAtom={model.surfaceAtom} />
                 ) : shown === "council" && council != null ? (
                     <RailCouncilPane key={council.id} model={model} council={council} />
+                ) : shown === "brainstorm" ? (
+                    <RailBrainstormPane model={model} agent={agent} />
+                ) : shown === "initiative" ? (
+                    <RailInitiativePane model={model} agent={agent} />
                 ) : shown === "summary" ? (
                     <RailCompactionPane agentId={agent.id} now={now} />
                 ) : undefined
@@ -1572,7 +1596,7 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
                     icon: <LayoutList size={17} strokeWidth={1.8} aria-hidden />,
                     ariaLabel: "Overview",
                     onClick: () => {
-                        selectRailTab(agent.id, "overview", hasTree, hasTranscript);
+                        selectRailTab(agent.id, "overview", has);
                         showRail();
                     },
                 },
@@ -1583,7 +1607,7 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
                               icon: <FolderTree size={17} strokeWidth={1.8} aria-hidden />,
                               ariaLabel: "Files",
                               onClick: () => {
-                                  selectRailTab(agent.id, "tree", hasTree, hasTranscript);
+                                  selectRailTab(agent.id, "tree", has);
                                   showRail();
                               },
                           },
@@ -1594,7 +1618,7 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
                     icon: <FileDiff size={17} strokeWidth={1.8} aria-hidden />,
                     ariaLabel: "Changes",
                     onClick: () => {
-                        selectRailTab(agent.id, "changes", hasTree, hasTranscript);
+                        selectRailTab(agent.id, "changes", has);
                         showRail();
                     },
                 },
@@ -1605,7 +1629,7 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
                               icon: <ScrollText size={17} strokeWidth={1.8} aria-hidden />,
                               ariaLabel: "Transcript",
                               onClick: () => {
-                                  selectRailTab(agent.id, "transcript", hasTree, hasTranscript);
+                                  selectRailTab(agent.id, "transcript", has);
                                   showRail();
                               },
                           },
@@ -1618,7 +1642,33 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
                               icon: <MessagesSquare size={17} strokeWidth={1.8} aria-hidden />,
                               ariaLabel: "Council",
                               onClick: () => {
-                                  selectRailTab(agent.id, "council", hasTree, hasTranscript, true);
+                                  selectRailTab(agent.id, "council", has);
+                                  showRail();
+                              },
+                          },
+                      ]
+                    : []),
+                ...(has.brainstorm
+                    ? [
+                          {
+                              key: "brainstorm",
+                              icon: <Lightbulb size={17} strokeWidth={1.8} aria-hidden />,
+                              ariaLabel: "Brainstorm",
+                              onClick: () => {
+                                  selectRailTab(agent.id, "brainstorm", has);
+                                  showRail();
+                              },
+                          },
+                      ]
+                    : []),
+                ...(has.initiative
+                    ? [
+                          {
+                              key: "initiative",
+                              icon: <Diamond size={17} strokeWidth={1.8} aria-hidden />,
+                              ariaLabel: "Initiative (i)",
+                              onClick: () => {
+                                  selectRailTab(agent.id, "initiative", has);
                                   showRail();
                               },
                           },
@@ -1631,7 +1681,7 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
                               icon: <FoldVertical size={17} strokeWidth={1.8} aria-hidden />,
                               ariaLabel: "Compaction summary",
                               onClick: () => {
-                                  selectRailTab(agent.id, "summary", hasTree, hasTranscript, hasCouncil);
+                                  selectRailTab(agent.id, "summary", has);
                                   showRail();
                               },
                           },
@@ -1644,7 +1694,7 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
                               icon: <FileText size={17} strokeWidth={1.8} aria-hidden />,
                               ariaLabel: `File ${fileTabLabel(fileRef)}`,
                               onClick: () => {
-                                  selectRailTab(agent.id, "file", hasTree, hasTranscript);
+                                  selectRailTab(agent.id, "file", has);
                                   showRail();
                               },
                           },

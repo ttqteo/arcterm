@@ -149,6 +149,7 @@ export function CollapsibleRail({
     width,
     widthKey,
     tabs,
+    tabsWrap,
     body,
     stripTabs,
     edge,
@@ -180,6 +181,9 @@ export function CollapsibleRail({
     // a tab strip in place of the bare collapse row: the 44px band and rule of a titled header, the collapse chevron
     // at its end
     tabs?: ReactNode;
+    // the tabs' pieces wrap onto a second row when they cannot sit whole on one (the agent rail's counts under its
+    // tabs), where without it they stay on the one row and give way by shrinking or scrolling
+    tabsWrap?: boolean;
     // replaces the sections' scroll column, for a tab that owns the whole panel body
     body?: ReactNode;
     stripTabs?: RailStripTab[];
@@ -236,10 +240,18 @@ export function CollapsibleRail({
                             className="flex min-h-0 flex-1 flex-col"
                         >
                             {tabs != null ? (
-                                <div className="flex h-11 shrink-0 items-stretch border-b border-border bg-surface pl-2 pr-1.5">
-                                    {tabs}
-                                    <div className="flex-1" />
-                                    <div className="flex items-center gap-0.5">
+                                // the 44px band and rule of a titled header; with tabsWrap the band grows by a row when the
+                                // tabs' pieces cannot sit whole on one, and the collapse control stays on its first row
+                                <div className="flex min-h-11 shrink-0 items-start border-b border-border bg-surface pl-2 pr-1.5">
+                                    <div
+                                        className={cn(
+                                            "flex min-w-0 flex-1 items-center",
+                                            tabsWrap ? "flex-wrap content-start" : "flex-nowrap"
+                                        )}
+                                    >
+                                        {tabs}
+                                    </div>
+                                    <div className="flex h-11 flex-none items-center gap-0.5">
                                         {extraIcons?.map((ei) => (
                                             <ExtraIcon key={ei.key} ei={ei} />
                                         ))}
