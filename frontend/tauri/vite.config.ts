@@ -14,14 +14,32 @@ const outDir = resolve(__dirname, "dist");
 const EXCALIDRAW_FONTS_URL = "/excalidraw/fonts/";
 const excalidrawFontsDir = resolve(fe, "../node_modules/@excalidraw/excalidraw/dist/prod/fonts");
 
+// The board's Vietnamese face. Excalifont has no ơ ư đ ạ ế…, so a board with Vietnamese turns its text to Nunito
+// (boardmodel.ts withReadableFont), the one face Excalidraw ships with a Vietnamese subset, but Nunito is a plain sans
+// beside hand-drawn shapes. Excalidraw has no way to add a font, so Nunito's files are served as Shantell Sans (OFL, a
+// hand-drawn marker face with Vietnamese), subset for subset: Excalidraw registers each file under the same unicode
+// range Google Fonts gives both. Its metrics (1020/-320 per 1000) are close to Nunito's (1011/-353) that Excalidraw
+// lays text out with. The picker's "Nunito" draws Shantell Sans too; excalidraw.com draws the saved file in Nunito.
+const shantellDir = resolve(__dirname, "excalidraw-fonts/ShantellSans");
+const NUNITO_FILE = "Nunito/Nunito-Regular-XRXI3I6Li01BKofiOc5wtlZ2di8HDIkhd";
+const fontOverrides: Record<string, string> = {
+    [`${NUNITO_FILE}TQ3j6zbXWjgeg.woff2`]: "latin",
+    [`${NUNITO_FILE}To3j6zbXWjgevT5.woff2`]: "latin-ext",
+    [`${NUNITO_FILE}Ts3j6zbXWjgevT5.woff2`]: "vietnamese",
+    [`${NUNITO_FILE}TA3j6zbXWjgevT5.woff2`]: "cyrillic",
+    [`${NUNITO_FILE}Tk3j6zbXWjgevT5.woff2`]: "cyrillic-ext",
+};
+const overrideFile = (subset: string) => resolve(shantellDir, `shantell-sans-${subset}-400-normal.woff2`);
+
 function excalidrawFonts(): Plugin {
     return {
         name: "arc-excalidraw-fonts",
         configureServer(server) {
             server.middlewares.use(EXCALIDRAW_FONTS_URL, (req, res, next) => {
-                const rel = decodeURIComponent((req.url ?? "").split("?")[0]);
-                const file = resolve(excalidrawFontsDir, "." + rel);
-                if (!file.startsWith(excalidrawFontsDir + sep) || !existsSync(file)) {
+                const rel = decodeURIComponent((req.url ?? "").split("?")[0]).replace(/^\/+/, "");
+                const subset = fontOverrides[rel];
+                const file = subset ? overrideFile(subset) : resolve(excalidrawFontsDir, rel);
+                if ((!subset && !file.startsWith(excalidrawFontsDir + sep)) || !existsSync(file)) {
                     return next();
                 }
                 res.setHeader("Content-Type", "font/woff2");
@@ -29,9 +47,11 @@ function excalidrawFonts(): Plugin {
             });
         },
         writeBundle() {
-            cpSync(excalidrawFontsDir, resolve(outDir, ...EXCALIDRAW_FONTS_URL.split("/").filter(Boolean)), {
-                recursive: true,
-            });
+            const dest = resolve(outDir, ...EXCALIDRAW_FONTS_URL.split("/").filter(Boolean));
+            cpSync(excalidrawFontsDir, dest, { recursive: true });
+            for (const [rel, subset] of Object.entries(fontOverrides)) {
+                cpSync(overrideFile(subset), resolve(dest, rel));
+            }
         },
     };
 }

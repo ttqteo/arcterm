@@ -108,6 +108,11 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
   box reaches the council. At the pause the amber row offers Review in full; with held drafts, Send to the others sends
   them; once done, Read the report opens the Report. On an agent with both a canvas and a council, `c` still opens the
   canvas.
+- [ ] (arcterm) **A Vietnamese board reads in Shantell Sans** (`frontend/tauri/vite.config.ts` `fontOverrides`: Nunito's
+  five files served as Shantell Sans). Open the `huong-luan-van` board (Library → Boards) in the dev app and in an
+  installed build (the bundle copies the files at build time): every label is in the hand-drawn Shantell Sans, ơ ư đ ạ ế
+  drawn in the same face, no line cut off and no label sitting high or low in its box. Checked only that the dev server
+  serves the Shantell files at Nunito's paths; not seen on a board.
 - [ ] (arcterm) **A board drawn from PowerShell gets its Chat card, and Vietnamese reads in Nunito**
   (`transcriptprojection.ts` `isShell`, `boardmodel.ts` `withReadableFont`, `boardconvert.ts` `refitNunitoText`). In a
   Claude agent on Windows, have it run `wsh board draw` through the PowerShell tool: its turn ends with the board card,
