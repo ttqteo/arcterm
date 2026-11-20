@@ -48,6 +48,10 @@ and never answers in words. Don't draw a one-line answer.
 - Keep the briefing short. The drawer reads what you said in the conversation since its last read, so don't restate
   it, and never paste shapes or coordinates. Say what to draw and the angle (the boxes that matter, the direction of
   the flow), not the explanation itself.
+- A board draws bar and line charts to scale, beside the boxes. For one, give the drawer the numbers themselves, with
+  their labels and units, in the briefing or the `--ask` line ("add a bar chart of pass rate: baseline 0.42, LLM
+  0.61, agent 0.70"); it never invents numbers. A chart of numbers on its own, with no drawing around it, reads better
+  in Chat as a mermaid `xychart-beta` block.
 - Run it with a Bash timeout of 600000 ms: it waits for the drawing, up to 9 minutes. It prints one line:
   - `Drawn on board "<name>": +A shapes, C changed, R removed.` — done (exit 0).
   - `Still drawing on board "<name>"; its card in Chat shows when it lands.` — the wait ran out; carry on (exit 0).

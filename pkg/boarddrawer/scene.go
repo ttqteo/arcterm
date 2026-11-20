@@ -40,6 +40,7 @@ type sceneElement struct {
 	StrokeColor     string   `json:"strokeColor"`
 	BackgroundColor string   `json:"backgroundColor"`
 	IsDeleted       bool     `json:"isDeleted"`
+	GroupIds        []string `json:"groupIds"`
 }
 
 type binding struct {
@@ -60,6 +61,7 @@ type sceneLine struct {
 	End      string `json:"end,omitempty"`
 	Stroke   string `json:"stroke,omitempty"`
 	Fill     string `json:"fill,omitempty"`
+	Group    string `json:"group,omitempty"` // the outermost group: a chart's shapes, or shapes grouped by hand
 	Selected bool   `json:"selected,omitempty"`
 }
 
@@ -96,6 +98,9 @@ func SceneSummary(boardFile []byte, selected []string) (Scene, error) {
 		}
 		if e.Type == typeText {
 			line.Text = elementText(e)
+		}
+		if len(e.GroupIds) > 0 {
+			line.Group = e.GroupIds[len(e.GroupIds)-1]
 		}
 		if e.BackgroundColor != fillTransparent {
 			line.Fill = e.BackgroundColor

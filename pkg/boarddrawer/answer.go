@@ -21,9 +21,10 @@ const (
 	plainFence   = "```"
 )
 
-// skeletonTypes is the vocabulary the prompt names; anything else would not convert.
+// skeletonTypes is the vocabulary the prompt names; anything else would not convert. A chart is no skeleton: ParseAnswer
+// expands it into skeletons (chart.go).
 var skeletonTypes = map[string]bool{
-	"rectangle": true, "ellipse": true, "diamond": true, typeText: true, "line": true, typeArrow: true,
+	"rectangle": true, "ellipse": true, "diamond": true, typeText: true, "line": true, typeArrow: true, typeChart: true,
 }
 
 // labelTypes are the elements whose label is bound text: containers and arrows.
@@ -97,6 +98,10 @@ func ParseAnswer(reply string, scene Scene) (Answer, error) {
 	if err := checkAdd(raw.Add); err != nil {
 		return Answer{}, err
 	}
+	// a chart counts as one entry above, and lands as the shapes it lays out
+	if raw.Add, err = expandCharts(raw.Add); err != nil {
+		return Answer{}, err
+	}
 	if err := checkUpdate(raw.Update, scene); err != nil {
 		return Answer{}, err
 	}
@@ -143,7 +148,7 @@ func checkAdd(add []json.RawMessage) error {
 		}
 		e := entries[i]
 		if !skeletonTypes[e.Type] {
-			return unusable("add entry %d has type %q, not one of rectangle, ellipse, diamond, text, line, arrow", i+1, e.Type)
+			return unusable("add entry %d has type %q, not one of rectangle, ellipse, diamond, text, line, arrow, chart", i+1, e.Type)
 		}
 		if e.Id == nil || strings.TrimSpace(*e.Id) == "" {
 			return unusable("add entry %d has no id", i+1)
