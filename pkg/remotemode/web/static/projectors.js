@@ -227,6 +227,7 @@ var VERB_BY_TOOL = {
   Edit: "edited",
   Write: "wrote",
   Bash: "ran",
+  PowerShell: "ran",
   Grep: "grep",
   Glob: "glob",
   Task: "spawned",
@@ -569,7 +570,7 @@ function projectTranscript(lines) {
             action.startedAt = action._useTs;
           }
           action._tool = block.name;
-          if (block.name === "Bash" && typeof block.input?.command === "string") {
+          if (SHELL_TOOLS.has(block.name) && typeof block.input?.command === "string") {
             action._command = block.input.command;
             if (action.target.trim() !== "" && action.target.trim() !== block.input.command.trim()) {
               action.command = block.input.command;
@@ -657,7 +658,8 @@ function projectTranscript(lines) {
         }
         const body = toolResultText(block.content);
         const tool = action._tool;
-        const blocked = tool === "Bash" && block.is_error === true && bashNeverRan(body);
+        const shell = tool != null && SHELL_TOOLS.has(tool);
+        const blocked = shell && block.is_error === true && bashNeverRan(body);
         if (blocked) {
           action.verb = "blocked";
         }
@@ -669,7 +671,10 @@ function projectTranscript(lines) {
           const { snippet, truncated } = sliceRead(body, READ_MODAL_MAX_LINES);
           action.detail = { kind: "read", snippet, truncated };
           action.summary = `${body.split("\n").length} lines`;
-        } else if (tool === "Bash" && body) {
+        } else if (shell && body) {
+          if (typeof rec.toolUseResult?.backgroundTaskId === "string") {
+            action._bgId = block.tool_use_id;
+          }
           action.detail = {
             kind: "bash",
             command: action._command,
@@ -686,7 +691,7 @@ function projectTranscript(lines) {
           action.durationMs = resTs - useTs;
         }
         action.outcome = blocked ? "blocked" : block.is_error === true ? "fail" : "ok";
-        const error = action.outcome === "fail" && tool !== "Bash" ? errorLine(body) : "";
+        const error = action.outcome === "fail" && !shell ? errorLine(body) : "";
         if (error !== "") {
           action.note = error;
         }
@@ -743,6 +748,7 @@ function projectTranscript(lines) {
   }
   return entries;
 }
+var SHELL_TOOLS = /* @__PURE__ */ new Set(["Bash", "PowerShell"]);
 
 // frontend/app/view/agents/pitranscriptprojection.ts
 var READ_MODAL_MAX_LINES2 = 400;
