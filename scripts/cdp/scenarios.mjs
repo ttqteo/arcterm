@@ -50109,12 +50109,13 @@ const chatFocusRead = {
             );
 
             // 1b. the step buttons show under the toggle with their keys on their faces, and the toggle is this agent's
-            // own: the stored list names it alone, and another agent reads off
+            // own: the stored list names it alone, and another agent reads off. "Under" allows half a pixel: on a
+            // fractional top the steps' top and the toggle's bottom differ by float noise
             const btn1 = await h.ev(`(() => {
                 const col = ${pane}?.querySelector("[data-chat-focus-read-steps]");
                 const t = ${pane}?.querySelector("[data-chat-focus-read-toggle]")?.getBoundingClientRect();
                 const r = col?.getBoundingClientRect();
-                return col ? { keys: [...col.querySelectorAll("kbd")].map((k) => k.innerText), below: !!t && r.top >= t.bottom, visible: col.checkVisibility() } : null;
+                return col ? { keys: [...col.querySelectorAll("kbd")].map((k) => k.innerText), below: !!t && r.top >= t.bottom - 0.5, visible: col.checkVisibility() } : null;
             })()`);
             const stored1 = await h.ev(`localStorage.getItem("chat.focusRead")`);
             const other1 = await AC.agentPage(h, `const S = await mod("app/view/agents/chatfocusreadstore.ts"); return S.focusReadOn("some-other-agent");`);
@@ -50266,6 +50267,60 @@ const chatFocusRead = {
                 { out6d: out6d?.focusIn, in6d, s6d: s6d?.lit, s6dk: s6dk?.lit }
             );
 
+            // 6e. the corner by the pane's own width (bug 20261120-163948): the window narrowed until the chat pane is about
+            // 730px (an agent beside a file Preview), Skim and the open Focus read pill stack in one column on the right
+            // edge, the pill's steps growing down under Skim, and neither the reply nor the pinned prompt runs under them;
+            // at about 1000px they sit side by side again, the pill left of Skim at its height
+            ctx.viewport ??= await h.ev("({ width: window.innerWidth, height: window.innerHeight })");
+            const paneW = () => h.ev(`Math.round(${scroller}?.parentElement?.getBoundingClientRect().width ?? 0)`);
+            const sizePane = async (want) => {
+                let width = ctx.viewport.width;
+                let w = await paneW();
+                for (let pass = 0; pass < 6 && Math.abs(w - want) > 20; pass++) {
+                    width += want - w;
+                    await h.cdp("Emulation.setDeviceMetricsOverride", { width, height: ctx.viewport.height, deviceScaleFactor: 1, mobile: false });
+                    await polishNap(800);
+                    w = await paneW();
+                }
+                return w;
+            };
+            const corner = () =>
+                h.ev(`(() => {
+                    const p = ${pane};
+                    const box = (el) => { if (!el) return null; const r = el.getBoundingClientRect(); return { l: Math.round(r.left), r: Math.round(r.right), t: Math.round(r.top), b: Math.round(r.bottom) }; };
+                    const prose = [...(${scroller}?.querySelectorAll("[data-chat-prose] p") ?? [])].map((el) => el.getBoundingClientRect().right);
+                    return {
+                        skim: box(p?.querySelector("[data-chat-skim-toggle]")),
+                        pill: box(p?.querySelector("[data-chat-focus-read-group]")),
+                        steps: box(p?.querySelector("[data-chat-focus-read-steps]")),
+                        proseRight: prose.length ? Math.round(Math.max(...prose)) : null,
+                        pinnedRight: box(p?.querySelector("[data-pinned-prompt]"))?.r ?? null,
+                    };
+                })()`);
+            const w6n = await sizePane(730);
+            const c6n = await corner();
+            await h.shot("cdp-shots/chat-focus-read-6e-narrow.png");
+            rec(
+                "6e. on a chat pane of about 730px the open Focus read pill stacks under Skim on the same right edge, its steps below, and the reply and the pinned prompt stay left of the column",
+                Math.abs(w6n - 730) <= 20 && c6n.skim != null && c6n.pill != null && c6n.steps != null &&
+                    Math.abs(c6n.pill.r - c6n.skim.r) <= 1 && c6n.pill.t >= c6n.skim.b && c6n.pill.t - c6n.skim.b <= 8 && c6n.steps.t > c6n.skim.b &&
+                    c6n.proseRight != null && c6n.proseRight <= c6n.pill.l - 4 && (c6n.pinnedRight == null || c6n.pinnedRight <= c6n.pill.l - 4),
+                { w6n, c6n }
+            );
+            const w6w = await sizePane(1000);
+            const c6w = await corner();
+            await h.shot("cdp-shots/chat-focus-read-6e-wide.png");
+            rec(
+                "6e. on a chat pane of about 1000px the pill sits beside Skim again: at Skim's height, left of it, and the reply stays left of the pill",
+                Math.abs(w6w - 1000) <= 20 && c6w.skim != null && c6w.pill != null &&
+                    Math.abs(c6w.pill.t - c6w.skim.t) <= 1 && c6w.pill.r <= c6w.skim.l - 4 &&
+                    c6w.proseRight != null && c6w.proseRight <= c6w.pill.l - 4 && (c6w.pinnedRight == null || c6w.pinnedRight <= c6w.pill.l - 4),
+                { w6w, c6w }
+            );
+            await h.cdp("Emulation.setDeviceMetricsOverride", { ...ctx.viewport, deviceScaleFactor: 1, mobile: false });
+            ctx.viewport = null;
+            await polishNap(500);
+
             // 7. Alt+R turns it off: nothing dimmed, no tick, the toggle up
             await press("r", "KeyR", 82, 1);
             const off7 = await polishWaitFor(h, `!${scroller}?.hasAttribute("data-focus-read") && !${pane}?.querySelector("[data-fr-block]")`, 3000);
@@ -50290,6 +50345,9 @@ const chatFocusRead = {
                 console.error(`chat-focus-read teardown: ${what} failed: ${e?.message ?? e}`);
             }
         };
+        if (ctx.viewport != null) {
+            await step("restore the window", () => h.cdp("Emulation.setDeviceMetricsOverride", { ...ctx.viewport, deviceScaleFactor: 1, mobile: false }));
+        }
         await step("clear the draft", () =>
             AC.agentPage(
                 h,

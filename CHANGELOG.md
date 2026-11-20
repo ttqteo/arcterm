@@ -55,6 +55,9 @@ and a picture given to a line that is not big.
   the card says, instead of waiting as "Queued · sends once you answer" behind a question nothing else could answer.
 - A fork started from a project's History (a session row's menu, Quick look, or the session pane) shows the
   conversation it forks in Chat at once, as a fork from Chat does, instead of an empty New conversation.
+- On a narrow Chat (an agent beside a file Preview, say), the Skim and Focus read buttons in its top-right corner stack
+  in one column, Focus read under Skim, so the conversation keeps more of its width; a wide Chat keeps them side by
+  side.
 - A session opened from Usage's By session table shows its transcript in Library, however old it is, instead of "This
   session is not in the archive yet" for one past the most recent 100.
 - Escape on the Agent surface turns Chat's focus read off first, even after a click on the agent tree, the header or the
