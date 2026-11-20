@@ -32,11 +32,16 @@ function isNarration(rec: any, block: any): block is { thinking: string } {
     );
 }
 
+// the shell tools: a command, a description and run_in_background (PowerShell is Claude Code's Windows shell tool)
+const SHELL_TOOLS = new Set(["Bash", "PowerShell"]);
+const isShell = (tool: string | undefined): boolean => tool != null && SHELL_TOOLS.has(tool);
+
 const VERB_BY_TOOL: Record<string, string> = {
     Read: "read",
     Edit: "edited",
     Write: "wrote",
     Bash: "ran",
+    PowerShell: "ran",
     Grep: "grep",
     Glob: "glob",
     Task: "spawned",
@@ -528,7 +533,7 @@ export function projectTranscript(lines: string[]): AgentEntry[] {
                         action.startedAt = (action as any)._useTs;
                     }
                     (action as any)._tool = block.name;
-                    if (block.name === "Bash" && typeof block.input?.command === "string") {
+                    if (isShell(block.name) && typeof block.input?.command === "string") {
                         (action as any)._command = block.input.command;
                         if (action.target.trim() !== "" && action.target.trim() !== block.input.command.trim()) {
                             action.command = block.input.command;
@@ -632,7 +637,7 @@ export function projectTranscript(lines: string[]): AgentEntry[] {
                 const body = toolResultText(block.content);
                 const tool = (action as any)._tool as string | undefined;
                 // a refused command reads as blocked, not ran: it never started, and it is no failure of the work
-                const blocked = tool === "Bash" && block.is_error === true && bashNeverRan(body);
+                const blocked = isShell(tool) && block.is_error === true && bashNeverRan(body);
                 if (blocked) {
                     action.verb = "blocked";
                 }
@@ -644,7 +649,7 @@ export function projectTranscript(lines: string[]): AgentEntry[] {
                     const { snippet, truncated } = sliceRead(body, READ_MODAL_MAX_LINES);
                     action.detail = { kind: "read", snippet, truncated };
                     action.summary = `${body.split("\n").length} lines`;
-                } else if (tool === "Bash" && body) {
+                } else if (isShell(tool) && body) {
                     action.detail = {
                         kind: "bash",
                         command: (action as any)._command,
@@ -665,7 +670,7 @@ export function projectTranscript(lines: string[]): AgentEntry[] {
                 action.outcome = blocked ? "blocked" : block.is_error === true ? "fail" : "ok";
                 // a failed call's error, as Chat's row says it after the verb ("Edit failed · String to replace not
                 // found"); a command's output already says what went wrong
-                const error = action.outcome === "fail" && tool !== "Bash" ? errorLine(body) : "";
+                const error = action.outcome === "fail" && !isShell(tool) ? errorLine(body) : "";
                 if (error !== "") {
                     action.note = error;
                 }
@@ -967,9 +972,6 @@ export function monitorExpiresAt(
 export function runningBackgroundTasks(tasks: BackgroundTask[] | undefined): BackgroundTask[] {
     return (tasks ?? []).filter((t) => t.status === "running");
 }
-
-// the shell tools that take run_in_background (PowerShell is Claude Code's Windows shell tool)
-const SHELL_TOOLS = new Set(["Bash", "PowerShell"]);
 
 // a start result opens with it; a foreground command whose output only quotes one (a grep of a transcript) is no task
 const BG_ID_TEXT = /^\s*Command running in background with ID: ([A-Za-z0-9_-]+)/;

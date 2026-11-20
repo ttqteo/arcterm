@@ -13,7 +13,7 @@ import type { ExcalidrawElement } from "@excalidraw/excalidraw/element/types";
 import type { AppState, BinaryFiles, ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import "./boardcanvas.css";
-import { parseBoardFile, selectionLabel, serializeBoard, type BoardScene } from "./boardmodel";
+import { parseBoardFile, selectionLabel, serializeBoard, withReadableFont, type BoardScene } from "./boardmodel";
 import { boardViewportAtom, loadBoardConvert, pointExcalidrawAtLocalFonts, registerLiveBoard } from "./boardstore";
 
 const AUTOSAVE_MS = 500;
@@ -106,6 +106,8 @@ function OpenBoard({ project, boardId, highlightIds, onSelection }: BoardCanvasP
     const readyRef = useRef<Deferred | null>(null);
     // a board opened for the first time is fitted to the canvas; one with a remembered view keeps it
     const fitOnOpenRef = useRef(globalStore.get(boardViewportAtom(boardId)) == null);
+    // the file was opened in another face than it was saved in (withReadableFont), and is saved once refitted
+    const turnedOnOpenRef = useRef(false);
 
     const ref = { project, boardid: boardId };
 
@@ -142,6 +144,25 @@ function OpenBoard({ project, boardId, highlightIds, onSelection }: BoardCanvasP
         });
         savingRef.current = run.catch(() => {});
         return run;
+    }
+
+    // the Nunito text measured again once its face has loaded (refitNunitoText), not as a step of its own to undo; the
+    // version bump makes onChange save it. turnedOnOpen: the file was opened in another face, so save it either way.
+    async function refitText(turnedOnOpen: boolean): Promise<void> {
+        const api = apiRef.current;
+        if (api == null || excalidraw == null) {
+            return;
+        }
+        const { refitNunitoText } = await loadBoardConvert();
+        const next = await refitNunitoText(api.getSceneElementsIncludingDeleted(), Date.now());
+        if (apiRef.current !== api) {
+            return;
+        }
+        if (next != null) {
+            api.updateScene({ elements: next, captureUpdate: excalidraw.CaptureUpdateAction.NEVER });
+        } else if (turnedOnOpen) {
+            await save();
+        }
     }
 
     function show(ids: readonly string[]): void {
@@ -184,6 +205,7 @@ function OpenBoard({ project, boardId, highlightIds, onSelection }: BoardCanvasP
                 captureUpdate: excalidraw.CaptureUpdateAction.IMMEDIATELY,
             });
             await save();
+            refitText(false).catch((e) => console.warn("boards: refitting the text failed", boardId, e));
             return shapeIds;
         });
         (async () => {
@@ -192,7 +214,11 @@ function OpenBoard({ project, boardId, highlightIds, onSelection }: BoardCanvasP
                 if (read?.info?.loaderror) {
                     throw new Error(read.info.loaderror);
                 }
-                const scene = parseBoardFile(read.data);
+                const parsed = parseBoardFile(read.data);
+                // a board drawn before its text had a face that shows it (Vietnamese in Excalifont) turns on opening
+                const fonted = withReadableFont(parsed.elements, Date.now());
+                const scene = { ...parsed, elements: fonted.elements };
+                turnedOnOpenRef.current = fonted.changed.length > 0;
                 if (cancelled) {
                     return;
                 }
@@ -246,6 +272,9 @@ function OpenBoard({ project, boardId, highlightIds, onSelection }: BoardCanvasP
             fitOnOpenRef.current = false;
             readyRef.current?.resolve();
             setReady(true);
+            refitText(turnedOnOpenRef.current).catch((e) =>
+                console.warn("boards: refitting the text failed", boardId, e)
+            );
         });
     }
 

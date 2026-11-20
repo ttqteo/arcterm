@@ -866,6 +866,19 @@ describe("projectTranscript detail", () => {
         expect((out[1] as any).command).toBeUndefined();
     });
 
+    it("reads a PowerShell call (Claude Code's Windows shell tool) as a Bash one: ran, its command, a bash detail", () => {
+        const cmd = "wsh board draw --board huong-luan-van --context-file brief.md";
+        const out = projectTranscript([
+            L({ type: "assistant", message: { content: [{ type: "tool_use", id: "p1", name: "PowerShell", input: { command: cmd, description: "Draw the thesis board" } }] } }),
+            L({ type: "assistant", message: { content: [{ type: "tool_use", id: "p2", name: "PowerShell", input: { command: "git push", description: "push" } }] } }),
+            L({ type: "user", message: { content: [{ type: "tool_result", tool_use_id: "p1", is_error: false, content: "drawn" }] } }),
+            L({ type: "user", message: { content: [{ type: "tool_result", tool_use_id: "p2", is_error: true, content: "Refused by arcterm: no push" }] } }),
+        ]);
+        expect(out[0]).toMatchObject({ kind: "action", verb: "ran", target: "Draw the thesis board", command: cmd });
+        expect((out[0] as any).detail).toEqual({ kind: "bash", command: cmd, output: "drawn", exit: 0 });
+        expect(out[1]).toMatchObject({ verb: "blocked", outcome: "blocked", detail: { kind: "bash", exit: null } });
+    });
+
     it("renders a Skill call as a labeled line (verb + skill name) with an args detail", () => {
         const out = projectTranscript([
             L({ type: "assistant", message: { content: [{ type: "tool_use", id: "s1", name: "Skill", input: { skill: "brainstorming", args: "design the cache" } }] } }),

@@ -50,6 +50,11 @@ and a picture given to a line that is not big.
   of command or ws"), instead of stopping at "InputValidationError: [".
 - An agent can brief a board from a file (`wsh board draw --context-file`), so a briefing of several lines, or with
   Vietnamese accents, reaches the drawer intact from PowerShell instead of failing or being flattened to one line.
+- A board an agent drew from PowerShell (Claude agents on Windows) now gets its card with Open in Chat, as one drawn
+  from Bash always did.
+- Vietnamese on a board reads in one font and whole: a board whose text has Vietnamese letters the hand-drawn font lacks
+  (ơ, ư, đ, ạ…) is drawn in Nunito instead of a mix of fonts with the ends of its lines cut off, and a board drawn before
+  this turns when you open it.
 
 ### Fixed
 

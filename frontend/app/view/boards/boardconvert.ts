@@ -9,7 +9,7 @@ import { convertToExcalidrawElements, exportToSvg, restoreElements } from "@exca
 import type { ExcalidrawElementSkeleton } from "@excalidraw/excalidraw/data/transform";
 import type { ExcalidrawElement } from "@excalidraw/excalidraw/element/types";
 import type { AppState, BinaryFiles } from "@excalidraw/excalidraw/types";
-import { applyAnswer, type AnswerResult, type BoardScene } from "./boardmodel";
+import { applyAnswer, nunitoTextIds, withReadableFont, type AnswerResult, type BoardScene } from "./boardmodel";
 
 // new ids on every conversion, so a redraw never collides with the group it replaces
 export function convertSkeleton(skeleton: string): ExcalidrawElement[] {
@@ -70,9 +70,56 @@ export async function sceneThumbnail(scene: BoardScene): Promise<string> {
     return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(new XMLSerializer().serializeToString(svg))}`;
 }
 
-// the answer on the scene, converted and measured: a malformed answer throws, and the applier fails its turn
+// the answer on the scene, converted, in a face that can show its text (withReadableFont) and measured: a malformed answer
+// throws, and the applier fails its turn
 export function landAnswer(scene: BoardScene, answer: BoardAnswer, now: number): AnswerResult {
     const added = answer.add ? convertSkeleton(answer.add) : [];
     const result = applyAnswer(scene, answer, added, now);
-    return { ...result, scene: { ...result.scene, elements: measure(result.scene.elements, result.textIds) } };
+    const fonted = withReadableFont(result.scene.elements, now);
+    const textIds = [...new Set([...result.textIds, ...fonted.changed])];
+    return { ...result, textIds, scene: { ...result.scene, elements: measure(fonted.elements, textIds) } };
+}
+
+const MAX_FONT_SAMPLE = 4000;
+
+// The board's Nunito text measured again once the face has loaded: Excalidraw loads a face only when a canvas shows text in
+// it, so a box measured before then (an answer that turned the board to Nunito, a board turned on opening) has the
+// fallback font's width and clips the words. The new elements with each moved text's version bumped, or null when nothing
+// moved. Call it on an open canvas, whose Excalidraw has registered its faces.
+export async function refitNunitoText(
+    elements: readonly ExcalidrawElement[],
+    now: number
+): Promise<ExcalidrawElement[] | null> {
+    const ids = nunitoTextIds(elements);
+    if (ids.length === 0) {
+        return null;
+    }
+    const wanted = new Set(ids);
+    const sample = elements
+        .filter((el) => wanted.has(el.id))
+        .map((el) => (el as { text?: string }).text ?? "")
+        .join(" ")
+        .slice(0, MAX_FONT_SAMPLE);
+    try {
+        await document.fonts.load("20px Nunito", sample);
+    } catch (e) {
+        console.warn("boards: the Nunito face did not load", e);
+        return null;
+    }
+    const measured = measure(elements, ids);
+    let moved = false;
+    const out = measured.map((el, i) => {
+        const was = elements[i];
+        if (el === was || (el.x === was.x && el.y === was.y && el.width === was.width && el.height === was.height)) {
+            return was;
+        }
+        moved = true;
+        return {
+            ...el,
+            version: was.version + 1,
+            versionNonce: Math.floor(Math.random() * 2 ** 31),
+            updated: now,
+        } as ExcalidrawElement;
+    });
+    return moved ? out : null;
 }
