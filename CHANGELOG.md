@@ -32,6 +32,22 @@ and a picture given to a line that is not big.
 
 ## Unreleased
 
+### Changed
+
+- The context gauge turns red at 200k tokens instead of 300k, and Chat's context ring and its /context card now go
+  amber at 150k and red at 200k like the details rail, showing the tokens beside the percent: on a 1M window a calm
+  20% already means every turn re-reads 200k.
+
+### Added
+
+- When a Claude agent's context passes 200k tokens, Chat asks once over the box, while the agent is idle, whether to
+  Compact or Clear it (or Later). It asks again only after the context has dropped under 150k and climbs back.
+- The rail's Changes tab shows every changed file's diff in one scroll, grouped by folder: open a file or a whole
+  folder to read its hunks, or Expand all. `Shift`+`N` / `Shift`+`P` step through the changes, `Shift`+`W` hides
+  whitespace, and the tab widens with the File tab's grip.
+
+## 1.12.0 — 2026-11-20
+
 ### Added
 
 - Chat's `@` lists the project's boards (`@board`, `@draw` or part of a board's name), the one open beside Chat first:

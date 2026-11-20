@@ -30,6 +30,7 @@ type GitCommands interface {
 	GitPushCommand(ctx context.Context, data CommandGitSyncData) (*CommandGitSyncRtnData, error)
 	GitBlameCommand(ctx context.Context, data CommandGitBlameData) (*CommandGitBlameRtnData, error)
 	GitAgentEditsCommand(ctx context.Context, data CommandGitAgentEditsData) (*CommandGitAgentEditsRtnData, error)
+	GitPatchCommand(ctx context.Context, data CommandGitPatchData) (*CommandGitPatchRtnData, error)
 }
 
 type CommandGitHistoryData struct {
@@ -312,6 +313,24 @@ type CommandGitBlameRtnData struct {
 	Runs      map[string]GitBlameRun `json:"runs,omitempty"` // sha -> crediting run
 	IsRepo    bool                   `json:"isrepo"`
 	Untracked bool                   `json:"untracked,omitempty"`
+}
+
+// Ref "" diffs against HEAD. IgnoreWs is git's -w, the Diff surface's Hide whitespace. Path (cwd-relative,
+// forward slashes) narrows the patch to that one path, matched literally; "" is the whole change set.
+type CommandGitPatchData struct {
+	Cwd string `json:"cwd"`
+	Ref string `json:"ref,omitempty"`
+	// End, with Ref, bounds the patch to Ref..End (an agent's edits range); untracked files are then left out
+	End      string `json:"end,omitempty"`
+	Path     string `json:"path,omitempty"`
+	IgnoreWs bool   `json:"ignorews,omitempty"`
+}
+
+// Mirrors gitinfo.Patch: raw unified diff for the frontend's parseUnifiedDiff, untracked files included.
+type CommandGitPatchRtnData struct {
+	Patch     string `json:"patch"`
+	IsRepo    bool   `json:"isrepo"`
+	Truncated bool   `json:"truncated,omitempty"`
 }
 
 type CommandGitAgentEditsData struct {

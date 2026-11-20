@@ -357,7 +357,7 @@ export function wideWidthMax(windowWidth: number, navWidth: number, treeWidth = 
 }
 
 // the panel tabs that take a dragged width: File (a page of text) and Transcript (the conversation), which share one
-// remembered width, as do Council and Summary (wideTabOf). Overview, Files and Changes are fixed at Overview's
+// remembered width, as do Council, Summary and Changes (wideTabOf). Overview and Files are fixed at Overview's
 export type ResizableTab = "file" | "transcript";
 
 export const RAIL_WIDTHS: Record<ResizableTab, { min: number; def: number }> = {
@@ -366,7 +366,8 @@ export const RAIL_WIDTHS: Record<ResizableTab, { min: number; def: number }> = {
 };
 
 // the dragged width a shown tab takes, or null for one fixed at Overview's width (Brainstorm and Initiative included).
-// Council (a chat) and Summary (a long page) read long, so they widen with File's grip and width
+// Council (a chat), Summary (a long page) and Changes (every file's diff) read long, so they widen with File's grip and
+// width
 export function wideTabOf(tab: RailTab): ResizableTab | null {
     switch (tab) {
         case "transcript":
@@ -374,6 +375,7 @@ export function wideTabOf(tab: RailTab): ResizableTab | null {
         case "file":
         case "council":
         case "summary":
+        case "changes":
             return "file";
         default:
             return null;

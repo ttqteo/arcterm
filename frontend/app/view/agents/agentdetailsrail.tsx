@@ -96,6 +96,7 @@ import { prettyModel } from "./modellabel";
 import { useInitiativeReread, usePlanReview } from "./planreviewstore";
 import { artifactsView } from "./railartifacts";
 import { RailBrainstormPane } from "./railbrainstormpane";
+import { RailChangesHunks } from "./railchangespane";
 import { RailCommitBox, RailCommitFiles } from "./railcommitbox";
 import {
     commitRange,
@@ -846,6 +847,10 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
         }
     }, [agent.id, agent.state]);
     const onChanges = shown === "changes";
+    // the Changes tab's scroll box, which its hunks scroll a step's target into; and whether the Agent surface is on
+    // screen, since it stays mounted under the others and an off-screen tab reads no patch
+    const changesScrollRef = useRef<HTMLDivElement>(null);
+    const surface = useAtomValue(model.surfaceAtom);
     const wasOnChanges = useRef(onChanges);
     useEffect(() => {
         // only on opening it: a rail mounted on Changes has the focus read
@@ -1164,7 +1169,8 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
                     <RailCommitFiles cwd={railState.cwd} />
                 ) : (
                     <>
-                        {full ? (
+                        {/* the hunks' own bar counts the files: the header is the empty list's */}
+                        {full && (listed.length === 0 || !railState.cwd) ? (
                             <div
                                 data-rail-files-header
                                 className="flex items-center gap-[8px] py-[5px] text-[12px] font-medium text-secondary"
@@ -1174,7 +1180,28 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
                                 <span className="text-[11px] tabular-nums text-muted">{listed.length}</span>
                             </div>
                         ) : null}
-                        {listed.length === 0 ? (
+                        {full && listed.length > 0 && railState.cwd ? (
+                            // the Changes tab draws every file's hunks; Overview keeps its short list
+                            <RailChangesHunks
+                                model={model}
+                                agentId={agent.id}
+                                files={listed}
+                                source={
+                                    onBranch
+                                        ? { cwd: railState.cwd, ref: branchDiff.ref, end: "" }
+                                        : { cwd: railState.cwd, ref: railState.ref ?? "", end: railState.end ?? "" }
+                                }
+                                reading={surface === "agent"}
+                                scroller={changesScrollRef}
+                                reloadKey={railState}
+                                onViewDiff={() => openFileDiff()}
+                                commit={
+                                    uncommitted > 0 ? (
+                                        <RailCommitOpenButton onClick={() => setRailCommitMode(agent.id, true)} />
+                                    ) : undefined
+                                }
+                            />
+                        ) : listed.length === 0 ? (
                             <>
                                 <div className="text-[11.5px] text-muted">
                                     {onBranch ? `No changes against ${branchDiff.base}` : "No changes"}
@@ -1553,10 +1580,12 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
                 ) : shown === "changes" ? (
                     <div className="flex min-h-0 flex-1 flex-col">
                         <div
+                            ref={changesScrollRef}
                             data-rail-changes
-                            className="flex min-h-0 flex-1 flex-col overflow-y-auto pb-[40px] pl-[18px] pr-[8px] pt-[12px] [scrollbar-gutter:stable]"
+                            // no top padding on the scroll box itself: the hunks' bar sticks to its very top
+                            className="flex min-h-0 flex-1 flex-col overflow-y-auto pb-[40px] pl-[18px] pr-[8px] [scrollbar-gutter:stable]"
                         >
-                            {filesContent(changes, true)}
+                            <div className="flex flex-col pt-[12px]">{filesContent(changes, true)}</div>
                         </div>
                         {committing && railState?.cwd ? (
                             <RailCommitBox

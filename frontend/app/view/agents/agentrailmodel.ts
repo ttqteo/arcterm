@@ -17,9 +17,10 @@ function tokensLabel(n: number): string {
 type Level = ReturnType<typeof usageLevel>;
 
 // every turn re-reads the whole context from cache, so its size is the per-turn cost however much window is left:
-// a 1M window at 18% is as costly as a 200k window at 91%
+// a 1M window at 18% is as costly as a 200k window at 91%. 150k and 200k are from 30 days of transcripts (2026-11-20):
+// every session that reached 60M tokens in all kept an average context above 150k.
 const CONTEXT_WARN_TOKENS = 150_000;
-const CONTEXT_HOT_TOKENS = 300_000;
+const CONTEXT_HOT_TOKENS = 200_000;
 const LEVEL_RANK: Record<Level, number> = { ok: 0, warn: 1, hot: 2 };
 
 function tokenLevel(tokens: number): Level {
@@ -109,10 +110,17 @@ export function railStatusLine(o: { state: ShownState; age: string; ended: boole
     return o.cache === "—" ? base : `${base} · cache ${o.cache}`;
 }
 
+export function fileTotals(files: { adds: number; dels: number }[]): { count: string; adds: number; dels: number } {
+    return {
+        count: `${files.length} ${files.length === 1 ? "file" : "files"}`,
+        adds: files.reduce((n, f) => n + f.adds, 0),
+        dels: files.reduce((n, f) => n + f.dels, 0),
+    };
+}
+
 export function filesSummary(files: { adds: number; dels: number }[]): string {
-    const adds = files.reduce((n, f) => n + f.adds, 0);
-    const dels = files.reduce((n, f) => n + f.dels, 0);
-    return `${files.length} ${files.length === 1 ? "file" : "files"} · +${adds} −${dels}`;
+    const { count, adds, dels } = fileTotals(files);
+    return `${count} · +${adds} −${dels}`;
 }
 
 const slashed = (p: string) => p.replace(/\\/g, "/").replace(/\/+$/, "");

@@ -123,6 +123,7 @@ import {
 } from "@/app/view/agents/memorystore";
 import { openNewCouncil } from "@/app/view/agents/newcouncil";
 import { canRequest } from "@/app/view/agents/proseanchor";
+import { changesShownAtom, stepChangesHunk } from "@/app/view/agents/railchangesstore";
 import { agentCouncilNow } from "@/app/view/agents/railcouncilstore";
 import {
     dockedTerminalAtom,
@@ -1519,6 +1520,19 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
     // canvas, review and brainstorm mode hide the rail and the terminal, so their keys stand down there
     const noCanvas = () => !terminalSwapped(model);
     const nav = (ctx: KeyContext) => agentNav(ctx) && noCanvas();
+    // the focused agent's rail shows its Changes tab's hunks (railchangespane.tsx sets the atom while it draws them)
+    const railChangesShown = (): string | null => {
+        const id = globalStore.get(model.focusIdAtom);
+        const shown = globalStore.get(changesShownAtom);
+        return id != null && shown?.agentId === id ? id : null;
+    };
+    const onRailChanges = (ctx: KeyContext) => agentNavStrict(ctx) && noCanvas() && railChangesShown() != null;
+    const stepRailChanges = (dir: "next" | "previous") => (): boolean | void => {
+        const id = railChangesShown();
+        if (id == null || !stepChangesHunk(id, dir)) {
+            return false;
+        }
+    };
     // an agent with a brainstorm never shows its canvas, so the canvas keys stand down for it
     const canvas = () => (brainstorm() == null ? focusedCanvas(model) : null);
     const inCanvas = (ctx: KeyContext) => agentNav(ctx) && canvas()?.mode === "canvas";
@@ -2059,6 +2073,33 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
             label: "Toggle terminal fullscreen",
             when: nav,
             run: () => globalStore.set(terminalFullscreenAtom, !globalStore.get(terminalFullscreenAtom)),
+        },
+        {
+            // Shift+N/P/W match the Diff surface's keys for the same actions; the rail's Changes tab walks every file's
+            // hunks. Strict: a bare Shift+letter typed in a field is text, and the terminal is editable
+            id: "agent:changes-next",
+            keys: "Shift:n",
+            group: "Agent",
+            label: "Next change (Changes tab)",
+            when: onRailChanges,
+            // no hunk to walk — decline the key
+            run: stepRailChanges("next"),
+        },
+        {
+            id: "agent:changes-prev",
+            keys: "Shift:p",
+            group: "Agent",
+            label: "Previous change (Changes tab)",
+            when: onRailChanges,
+            run: stepRailChanges("previous"),
+        },
+        {
+            id: "agent:changes-whitespace",
+            keys: "Shift:w",
+            group: "Agent",
+            label: "Ignore whitespace (Changes tab)",
+            when: onRailChanges,
+            run: () => globalStore.set(ignoreWsAtom, !globalStore.get(ignoreWsAtom)),
         },
         {
             id: "agent:float",
