@@ -41,6 +41,9 @@ and a picture given to a line that is not big.
   focus (`novelty`, `baselines`) and the start of its brief. Hover a card to read the whole brief.
 - A project's History can fork a Claude conversation: Fork is in a session row's right-click menu and beside Resume
   in Quick look, as it already was in the full session pane.
+- An agent's reply in Chat draws the agents, runs and councils it names by id (`4e6ea128`, or `agent:4e6ea128`) as
+  badges with their names, as your own messages do: click one to open it. A commit hash or an id that names nothing
+  open stays as written.
 
 ### Fixed
 

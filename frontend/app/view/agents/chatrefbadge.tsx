@@ -14,11 +14,12 @@ import { useAtomValue } from "jotai";
 import { Flag, History } from "lucide-react";
 import { createContext, useContext, useEffect, useMemo, type ReactNode } from "react";
 import type { AgentsViewModel } from "./agents";
+import type { AgentVM } from "./agentsviewmodel";
 import { councilListAtom, loadCouncils } from "./councilstore";
 import { devRosterAtom } from "./devmock";
 import { selectingInto } from "./pathlinkcontext";
 import { loadProjectRuns, projectRunsAtom } from "./projecthistorystore";
-import { badgeLook, refTitle, resolveRef, type ResolvedRef } from "./refbadge";
+import { badgeLook, refTitle, resolveBareRef, resolveRef, type RefSources, type ResolvedRef } from "./refbadge";
 import type { RefKind } from "./refmention";
 import { loadRefEfforts, loadRefSessions, refEffortsAtom } from "./refmentionstore";
 import { RuntimeMark } from "./runtimemark";
@@ -63,6 +64,49 @@ function loadCouncilsOnce(project: string): void {
     void loadCouncils(project).finally(() => loadingCouncils.delete(project));
 }
 
+// plain terminals are not agents: the picker leaves them out, so a token naming one is no agent either
+function useRefAgents(roster: readonly AgentVM[], hasLinks: boolean): RefSources["agents"] {
+    return useMemo(
+        () =>
+            hasLinks
+                ? roster
+                      .filter((a) => a.kind == null || a.kind === "agent" || a.kind === "background")
+                      .map((a) => ({ id: a.id, name: a.name, state: a.state, agent: a.agent }))
+                : [],
+        [roster, hasLinks]
+    );
+}
+
+/** What a bare id in an agent's code span names right now (resolveBareRef): an open agent from the roster, else a run or
+ *  a council of the chat's project, read once when the id names no agent. With no ChatRefLinks around, nothing. */
+export function useResolvedBareRef(id: string, enabled = true): ResolvedRef {
+    const links = useContext(RefLinks);
+    const project = links?.project ?? "";
+    const roster = useAtomValue(devRosterAtom);
+    const runs = useAtomValue(projectRunsAtom(project)).runs;
+    const councils = useAtomValue(councilListAtom(project));
+    const agents = useRefAgents(roster, links != null);
+    const resolved = useMemo(
+        () => resolveBareRef(id, { agents, runs: runs ?? [], councils: councils ?? [], project }),
+        [id, agents, runs, councils, project]
+    );
+    const unresolved = resolved.status === "unresolved";
+    const runsUnread = runs == null;
+    const councilsUnread = councils == null;
+    useEffect(() => {
+        if (!enabled || links == null || project === "" || !unresolved) {
+            return;
+        }
+        if (runsUnread) {
+            loadRunsOnce(project);
+        }
+        if (councilsUnread) {
+            loadCouncilsOnce(project);
+        }
+    }, [enabled, links, project, unresolved, runsUnread, councilsUnread]);
+    return resolved;
+}
+
 /** What `kind:id` names right now: the roster live; the chat project's runs and councils, and the conversations and
  *  initiatives of any project (each read once, when a token of its kind first needs them and nothing has read them yet).
  *  With no ChatRefLinks around, nothing is known. */
@@ -97,17 +141,7 @@ export function useResolvedRef(kind: RefKind, id: string): ResolvedRef {
             loadCouncilsOnce(project);
         }
     }, [kind, project, runsUnread, councilsUnread, sessionsUnread, effortsUnread]);
-    const hasLinks = links != null;
-    // plain terminals are not agents: the picker leaves them out, so a token naming one is no agent either
-    const agents = useMemo(
-        () =>
-            hasLinks
-                ? roster
-                      .filter((a) => a.kind == null || a.kind === "agent" || a.kind === "background")
-                      .map((a) => ({ id: a.id, name: a.name, state: a.state, agent: a.agent }))
-                : [],
-        [roster, hasLinks]
-    );
+    const agents = useRefAgents(roster, links != null);
     return useMemo(
         () =>
             resolveRef(kind, id, {
@@ -228,7 +262,44 @@ export function RefBadge({
     if (resolved.status === "unresolved") {
         return <RefBadgeFace resolved={resolved} raw={raw} />;
     }
-    const open = (e: OpenGesture) => fireAndForget(() => openOrPeek(links.model, targetOf(resolved), e));
+    return <OpenableBadge model={links.model} resolved={resolved} raw={raw} />;
+}
+
+/** A code span in an agent's reply that is an id (`4e6ea128`, `agent:4e6e…`; refbadge.ts codeRef): the badge of what it
+ *  names, a button that opens it, when it names something; else `children`, the code as written (an id nothing open has,
+ *  a commit's, is no reference, so it is never drawn dashed). With no ChatRefLinks around, `children`. */
+export function CodeRefBadge({
+    kind,
+    id,
+    raw,
+    children,
+}: {
+    kind?: RefKind;
+    id: string;
+    raw: string;
+    children?: ReactNode;
+}) {
+    const links = useContext(RefLinks);
+    // a hook per path, both always called: a span's text never changes its kind between renders, but hooks need the order
+    const named = useResolvedRef(kind ?? "agent", id);
+    const bare = useResolvedBareRef(id, kind == null);
+    const resolved = kind != null ? named : bare;
+    if (links == null || resolved.status === "unresolved") {
+        return <>{children}</>;
+    }
+    return <OpenableBadge model={links.model} resolved={resolved} raw={raw} />;
+}
+
+function OpenableBadge({
+    model,
+    resolved,
+    raw,
+}: {
+    model: AgentsViewModel;
+    resolved: Extract<ResolvedRef, { status: "resolved" }>;
+    raw: string;
+}) {
+    const open = (e: OpenGesture) => fireAndForget(() => openOrPeek(model, targetOf(resolved), e));
     return (
         <span
             role="button"
