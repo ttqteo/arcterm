@@ -62,14 +62,15 @@ func (ws *WshServer) BoardAgentDrawCommand(ctx context.Context, data wshrpc.Comm
 	if err != nil {
 		return nil, err
 	}
-	info, created, err := findOrCreateBoard(row, name, brief)
+	info, created, took, err := findOrCreateBoard(row, rows, name, brief)
 	if err != nil {
 		return nil, err
 	}
 	if info.LoadError != "" {
 		return nil, fmt.Errorf("board %q won't open: %s", info.Name, info.LoadError)
 	}
-	if created {
+	if created || took {
+		// a new board, or one taken over: the list shows it beside this agent's Chat
 		publishBoardList(row.Project, info.ID)
 	}
 	b := boarddrawer.Board{Project: row.Project, BoardId: info.ID, Name: info.Name, ProjectPath: row.ProjectPath}
@@ -139,22 +140,37 @@ func boardAgentTitle(row *agentRow) string {
 }
 
 // findOrCreateBoard is the board named name in the agent's project, and whether this call made it: a new board needs
-// the briefing, and is tied to this agent. A board that exists keeps its tie, whoever asks. Its first read of the agent
-// starts at the beginning of the session (the read is capped), so "draw what we just discussed" has the discussion.
-func findOrCreateBoard(row *agentRow, name, brief string) (info wshrpc.BoardInfo, created bool, err error) {
+// the briefing, and is tied to this agent. A board that exists keeps its tie while its agent's tab is in the roster,
+// whoever asks; once that tab is gone (the agent ended, its tab closed or deleted) the asking agent takes the board
+// over (took), so a board outlives the agent that drew it. Its first read of the agent starts at the beginning of the session
+// (the read is capped), so "draw what we just discussed" has the discussion.
+func findOrCreateBoard(row *agentRow, rows []agentRow, name, brief string) (info wshrpc.BoardInfo, created, took bool, err error) {
 	boardCreate.Lock()
 	defer boardCreate.Unlock()
 	dir := boardstore.ProjectDir(row.Project)
 	info, found, err := boardstore.FindByName(dir, row.Project, name)
-	if err != nil || found {
-		return info, false, err
-	}
-	if brief == "" {
-		return wshrpc.BoardInfo{}, false, fmt.Errorf("there is no board %q in %s: pass the briefing with --context to make it", name, row.Project)
+	if err != nil {
+		return info, false, false, err
 	}
 	agent := wshrpc.BoardAgent{TabId: row.TabId, Title: boardAgentTitle(row), SessionId: row.status.SessionID}
+	if found {
+		if info.LoadError != "" || info.AgentTabId == row.TabId || agentRowByTab(rows, info.AgentTabId) != nil {
+			return info, false, false, nil
+		}
+		if _, err := boardstore.UpdateTalk(dir, info.ID, func(talk *wshrpc.BoardTalk) error {
+			talk.Agent = &agent
+			return nil
+		}); err != nil {
+			return info, false, false, fmt.Errorf("taking over board %q: %w", info.Name, err)
+		}
+		info.AgentTabId, info.AgentTitle = agent.TabId, agent.Title
+		return info, false, true, nil
+	}
+	if brief == "" {
+		return wshrpc.BoardInfo{}, false, false, fmt.Errorf("there is no board %q in %s: pass the briefing with --context to make it", name, row.Project)
+	}
 	info, err = boardstore.Create(dir, row.Project, name, agent, time.Now().UnixMilli())
-	return info, err == nil, err
+	return info, err == nil, false, err
 }
 
 // readBoardAgent is the drawer's ReadAgent: what the board's agent said since sinceTs, read from the claude transcript

@@ -36,6 +36,11 @@ and a picture given to a line that is not big.
 
 - Clicking Chat's Compacted line opens the summary the agent kept in the side panel, and a second click closes it.
 
+### Changed
+
+- A board whose agent has ended is no longer stuck: the next agent of its project that draws on it by name takes it over,
+  drawing and turns kept, and it opens beside that agent's Chat.
+
 ### Fixed
 
 - An agent that is compacting its conversation says "compacting…" on its sidebar row, not only in Chat.

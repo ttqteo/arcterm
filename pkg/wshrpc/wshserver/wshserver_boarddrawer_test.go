@@ -183,6 +183,32 @@ func TestBoardAgentDrawKeepsAnotherAgentsTie(t *testing.T) {
 	}
 }
 
+// a board whose agent's tab is gone (ended, closed, deleted) goes to the next agent of its project that draws on it: its
+// turns and drawer session stay, and the drawer reads the new agent's session from its start
+func TestBoardAgentDrawTakesOverABoardWhoseAgentIsGone(t *testing.T) {
+	w := newBoardWorld(t)
+	res := w.draw(w.block, "Auth flow", "how login works", "draw the login")
+	w.land("")
+	first := w.drawDone(res).rtn
+	drawerSession := w.talk(first.BoardId).SessionId
+
+	otherTab, otherBlock := w.addAgent("reviewer")
+	w.facts.Tabs = w.facts.Tabs[1:] // the lead's tab is gone
+	res = w.draw(otherBlock, "auth flow", "", "mark the token store red")
+	w.land("")
+	r := w.drawDone(res)
+	if r.err != nil || r.rtn.BoardId != first.BoardId || r.rtn.Created || r.rtn.State != "answered" {
+		t.Fatalf("the request on the ended agent's board: %+v %v", r.rtn, r.err)
+	}
+	talk := w.talk(first.BoardId)
+	if talk.Agent == nil || talk.Agent.TabId != otherTab || talk.Agent.Title != "reviewer" || len(talk.Turns) != 2 || talk.SessionId != drawerSession {
+		t.Errorf("after the takeover: agent %+v, %d turns, drawer session %q (was %q)", talk.Agent, len(talk.Turns), talk.SessionId, drawerSession)
+	}
+	if boards := w.boards(); len(boards) != 1 || boards[0].AgentTabId != otherTab {
+		t.Errorf("boards: %+v", boards)
+	}
+}
+
 // the command returns what happened once the frontend acked, and "answering" when its wait ran out
 func TestBoardAgentDrawReturnsCountsOnceAckedAndAnsweringPastTheWait(t *testing.T) {
 	w := newBoardWorld(t)
