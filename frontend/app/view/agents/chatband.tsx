@@ -14,13 +14,10 @@
 // part), m / n / w / arrows / Enter belong to the initiative part, and `b` opens the Brainstorm tab, since the global `b`
 // stands down in here and the part's `Open in Brainstorm (b)` hint would otherwise be dead exactly when it shows.
 //
-// A board of the brainstorm part opens in the board dialog over the Chat pane (BoardPreview). The dialog is a child of this
-// root, positioned against the pane (nothing between them is positioned), so focus in it is focus in the band: while it is
-// open Esc closes it, ← / → open the previous / next board, `b` opens the Brainstorm tab, and no other key of the band
-// acts behind it.
+// A board of the brainstorm part opens in the board dialog over the agent's cell (ChatBoardDialog, brainstormbandview.tsx),
+// which is not a child of this root: it owns its keys (Esc, ← / → and `b`) while it is open.
 
 import { springReveal } from "@/app/element/motiontokens";
-import { globalStore } from "@/app/store/jotaiStore";
 import { cn } from "@/util/util";
 import { useAtomValue } from "jotai";
 import { AnimatePresence, motion } from "motion/react";
@@ -28,16 +25,8 @@ import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from
 import type { AgentsViewModel } from "./agents";
 import type { AgentVM } from "./agentsviewmodel";
 import { setAgentView } from "./agentview";
-import {
-    BoardPreview,
-    BrainstormBody,
-    BrainstormLine,
-    openBrainstorm,
-    openChatBoard,
-    startBoardPreview,
-} from "./brainstormbandview";
-import { BoardDialog } from "./brainstormrail";
-import { brainstormAtom, brainstormBandAtom, chatBoardPreviewAtom } from "./brainstormstore";
+import { BrainstormBody, BrainstormLine, openChatBoard } from "./brainstormbandview";
+import { brainstormAtom, brainstormBandAtom } from "./brainstormstore";
 import { usePartMotion } from "./chatfooter";
 import { focusChatBox } from "./chatinsert";
 import { NARROW_BAND_PX } from "./initiativeband";
@@ -98,34 +87,9 @@ function ChatBandRoot({ model, agent }: { model: AgentsViewModel; agent: AgentVM
     };
     const ini = useInitiativePart({ model, agent, part, narrow, focused, brainstormBeside: bs != null, focusRoot });
 
-    // the board open over Chat, in a per-agent atom so the question card's option rows open it too (openChatBoard). The
-    // dialog keeps the last one drawn while it fades out; a board that leaves the brainstorm (or the brainstorm itself)
-    // closes it, and so does the band leaving the screen
-    const previewAtom = chatBoardPreviewAtom(agent.id);
-    const preview = useAtomValue(previewAtom);
-    const setPreview = (name: string | null) => globalStore.set(previewAtom, name);
-    useEffect(() => () => globalStore.set(previewAtom, null), [previewAtom]);
-    const lastPreview = useRef<string | null>(null);
-    if (preview != null) {
-        lastPreview.current = preview;
-    }
-    const previewBoard = bs?.boards.find((b) => b.name === lastPreview.current) ?? null;
-    useEffect(() => {
-        if (preview != null && !bs?.boards.some((b) => b.name === preview)) {
-            setPreview(null);
-        }
-    }, [preview, bs]);
-    // a board opened from outside the band (an option row) takes the focus too, so Esc and ← / → answer at once
-    useEffect(() => {
-        if (preview != null) {
-            focusRoot();
-        }
-    }, [preview]);
+    // a board opens in the dialog of the agent's cell (ChatBoardDialog, brainstormbandview.tsx), which owns Esc, ← / → and
+    // `b` while it is open
     const openBoard = (name: string) => openChatBoard(agent.id, name);
-    const boardToBrainstorm = () => {
-        setPreview(null);
-        openBrainstorm(agent.id);
-    };
 
     // Opening a part takes the focus (a click, `i`, Pick a chunk…), so the keys answer at once; closing the band hands it
     // back to the message box when the band held it. Switching from one part to the other leaves it where it is. A band
@@ -163,27 +127,6 @@ function ChatBandRoot({ model, agent }: { model: AgentsViewModel; agent: AgentVM
             e.preventDefault();
             e.stopPropagation();
         };
-        if (preview != null) {
-            if (e.key === "Escape") {
-                handled();
-                setPreview(null);
-            } else if (e.key === "b") {
-                handled();
-                boardToBrainstorm();
-            } else if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
-                // the previous or next board, in the part's order; it stops at the first and the last (the Brainstorm
-                // tab's cursor does not wrap either)
-                handled();
-                const boards = bs?.boards ?? [];
-                const at = boards.findIndex((b) => b.name === preview);
-                const next = boards[at + (e.key === "ArrowLeft" ? -1 : 1)];
-                if (at >= 0 && next != null && startBoardPreview(agent.id, next.name)) {
-                    setPreview(next.name);
-                }
-            }
-            // Tab still moves between the dialog's buttons; no other key of the band acts behind the dialog
-            return;
-        }
         if (ini.menuOpen) {
             ini.menuKey(e, handled);
             return;
@@ -275,17 +218,6 @@ function ChatBandRoot({ model, agent }: { model: AgentsViewModel; agent: AgentVM
                     </motion.div>
                 ) : null}
             </AnimatePresence>
-            <BoardDialog open={preview != null} onClose={() => setPreview(null)}>
-                {lastPreview.current != null ? (
-                    <BoardPreview
-                        agent={agent}
-                        name={lastPreview.current}
-                        part={previewBoard?.part ?? null}
-                        onClose={() => setPreview(null)}
-                        onOpenBrainstorm={boardToBrainstorm}
-                    />
-                ) : null}
-            </BoardDialog>
         </div>
     );
 }

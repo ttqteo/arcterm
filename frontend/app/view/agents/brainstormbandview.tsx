@@ -6,9 +6,10 @@
 // since the Brainstorm tab was last looked at) and how many decisions are yours, and opens in place to the decisions and
 // the boards. What it reads is brainstormband.ts (through `brainstormBandAtom`); this file draws it. It loads no board page
 // until one is asked for (no thumbnail), so it costs no RAM in any number of Chat cells. A click on a board opens that board
-// large in a dialog over the Chat pane (BoardPreview), whose page loads only while it is open, and takes that one board as
-// seen; the link opens the Brainstorm tab, which takes them all as seen; expanding the part never does. The root
-// (chatband.tsx) owns the keys and which board is open.
+// large in a dialog over the agent's cell (ChatBoardDialog, BoardPreview), whose page loads only while it is open, and takes
+// that one board as seen; the link opens the Brainstorm tab, which takes them all as seen; expanding the part never does.
+// The band's root (chatband.tsx) owns its own keys; the dialog is the cell's (agentsurface.tsx), so it opens over Chat and
+// over the terminal alike, from the Brainstorm tab of the rail or the question card, and owns its keys.
 
 import { useDimensionsWithCallbackRef } from "@/app/hook/useDimensions";
 import { globalStore } from "@/app/store/jotaiStore";
@@ -16,11 +17,26 @@ import { formatChordString } from "@/util/keysym";
 import { cn } from "@/util/util";
 import { useAtomValue } from "jotai";
 import { ChevronDown, Lightbulb, PanelsTopLeft, X } from "lucide-react";
-import { useLayoutEffect, useRef, useState, type MouseEvent, type RefObject } from "react";
+import {
+    useEffect,
+    useLayoutEffect,
+    useRef,
+    useState,
+    type KeyboardEvent,
+    type MouseEvent,
+    type RefObject,
+} from "react";
 import type { AgentVM } from "./agentsviewmodel";
 import { setAgentView } from "./agentview";
 import type { BrainstormBandModel } from "./brainstormband";
-import { brainstormAtom, chatBoardPreviewAtom, getBrainstorm, markBoardSeen } from "./brainstormstore";
+import { BoardDialog } from "./brainstormrail";
+import {
+    brainstormAtom,
+    brainstormBandAtom,
+    chatBoardPreviewAtom,
+    getBrainstorm,
+    markBoardSeen,
+} from "./brainstormstore";
 import {
     boardUrl,
     canvasLayout,
@@ -30,7 +46,9 @@ import {
     type CanvasBoard,
 } from "./canvasmodel";
 import { BoardFrameView, CANVAS_TOP_PAD, useContentHeights, useSteadyFitWidth } from "./canvaspane";
+import { focusChatBox } from "./chatinsert";
 import { toggleBandPart } from "./initiativebandstore";
+import { railBrainstormRows } from "./railbrainstorm";
 import { SWAP_BTN } from "./swapbar";
 
 // a mouse press must not take focus off whatever has it: the band's keys live on its root
@@ -264,10 +282,10 @@ export function BrainstormBody({
     );
 }
 
-/** One board of the brainstorm, large, in the board dialog over the Chat pane: a head (the board's name and the part it
+/** One board of the brainstorm, large, in the board dialog over the agent's cell: a head (the board's name and the part it
  *  illustrates, Open in Brainstorm, Close) over the board at the dialog's width. Its page loads when the dialog opens and
  *  goes when it closes. A click on the board, Esc or the scrim closes it, and ← / → step to the previous / next board
- *  (chatband.tsx owns the keys); it has no marking (the Brainstorm tab's open board has). The board's size is canvas.json's, which the poller reads with the file. */
+ *  (ChatBoardDialog owns the keys); it has no marking (the Brainstorm tab's open board has). The board's size is canvas.json's, which the poller reads with the file. */
 export function BoardPreview({
     agent,
     name,
@@ -353,6 +371,120 @@ export function BoardPreview({
                     </BoardFrameView>
                 </div>
             </div>
+        </div>
+    );
+}
+
+/** The board dialog of one agent's cell (agentsurface.tsx draws it beside the Chat layer): the board named by
+ *  `chatBoardPreviewAtom` large over the whole cell, whether the agent shows Chat or its terminal. A chip of the rail's
+ *  Brainstorm tab, a row of the question card or a board of the band opens it (`openChatBoard`).
+ *
+ *  Its root is `data-owns-keys`, so the dispatcher counts focus in it as editable and every single-key binding stands down;
+ *  its handler answers instead: Esc closes it (and the keyboard goes back to where it was), `b` closes it and opens the
+ *  Brainstorm tab, ← / → open the previous / next board in the order the Brainstorm tab draws them and stop at the first
+ *  and the last. Opening takes the focus, so those keys answer at once. A board that leaves the brainstorm (or the
+ *  brainstorm itself) closes it, and so does the cell leaving the screen. The layer takes no pointer events but the
+ *  dialog's own, so a closed one never covers the terminal under it. */
+export function ChatBoardDialog({ agent, barred }: { agent: AgentVM; barred: boolean }) {
+    const bs = useAtomValue(brainstormBandAtom(agent.id));
+    const previewAtom = chatBoardPreviewAtom(agent.id);
+    const preview = useAtomValue(previewAtom);
+    const setPreview = (name: string | null) => globalStore.set(previewAtom, name);
+    const rootRef = useRef<HTMLDivElement>(null);
+    // what had the focus when the dialog opened, to give it back on close
+    const returnTo = useRef<HTMLElement | null>(null);
+    const wasOpen = useRef(false);
+    // the dialog keeps the last board drawn while it fades out
+    const lastPreview = useRef<string | null>(null);
+    if (preview != null) {
+        lastPreview.current = preview;
+    }
+    const previewBoard = bs?.boards.find((b) => b.name === lastPreview.current) ?? null;
+
+    useEffect(() => () => globalStore.set(previewAtom, null), [previewAtom]);
+    useEffect(() => {
+        if (preview != null && !bs?.boards.some((b) => b.name === preview)) {
+            setPreview(null);
+        }
+    }, [preview, bs]);
+    useEffect(() => {
+        const open = preview != null;
+        const root = rootRef.current;
+        if (open && !wasOpen.current) {
+            const active = document.activeElement;
+            returnTo.current = active instanceof HTMLElement && !root?.contains(active) ? active : null;
+            root?.focus({ preventScroll: true });
+        } else if (!open && wasOpen.current) {
+            const back = returnTo.current;
+            returnTo.current = null;
+            // only while the focus is still the dialog's (or lost with it): a click elsewhere meanwhile keeps it there
+            const held =
+                root != null && (root.contains(document.activeElement) || document.activeElement === document.body);
+            if (held) {
+                if (back?.isConnected) {
+                    back.focus({ preventScroll: true });
+                } else if (!focusChatBox(agent.id)) {
+                    (document.activeElement as HTMLElement | null)?.blur();
+                }
+            }
+        }
+        wasOpen.current = open;
+    }, [preview]);
+
+    const toBrainstorm = () => {
+        setPreview(null);
+        openBrainstorm(agent.id);
+    };
+    const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
+        if (preview == null || e.nativeEvent.isComposing || e.ctrlKey || e.metaKey || e.altKey) {
+            return;
+        }
+        const handled = () => {
+            e.preventDefault();
+            e.stopPropagation();
+        };
+        if (e.key === "Escape") {
+            handled();
+            setPreview(null);
+        } else if (e.key === "b") {
+            handled();
+            toBrainstorm();
+        } else if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+            handled();
+            const order = bs != null ? railBrainstormRows(bs).boardOrder : [];
+            const at = order.indexOf(preview);
+            const next = order[at + (e.key === "ArrowLeft" ? -1 : 1)];
+            if (at >= 0 && next != null && startBoardPreview(agent.id, next)) {
+                setPreview(next);
+            }
+        }
+        // Tab still moves between the dialog's buttons; no other key acts behind the dialog
+    };
+
+    return (
+        <div
+            ref={rootRef}
+            data-chat-board-dialog={agent.id}
+            data-owns-keys
+            tabIndex={-1}
+            onKeyDown={onKeyDown}
+            // against the cell, under its grid bar when it has one (the board split's layer sits the same way)
+            className={cn(
+                "pointer-events-none absolute bottom-0 left-0 right-0 z-30 outline-none [&>*]:pointer-events-auto",
+                barred ? "top-[26px]" : "top-0"
+            )}
+        >
+            <BoardDialog open={preview != null} onClose={() => setPreview(null)}>
+                {lastPreview.current != null ? (
+                    <BoardPreview
+                        agent={agent}
+                        name={lastPreview.current}
+                        part={previewBoard?.part ?? null}
+                        onClose={() => setPreview(null)}
+                        onOpenBrainstorm={toBrainstorm}
+                    />
+                ) : null}
+            </BoardDialog>
         </div>
     );
 }

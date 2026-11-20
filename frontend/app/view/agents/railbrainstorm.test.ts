@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { BrainstormBandModel } from "./brainstormband";
-import { railBrainstormRows } from "./railbrainstorm";
+import { brainstormPaneState, railBrainstormRows } from "./railbrainstorm";
 
 const model = (o: Partial<BrainstormBandModel> = {}): BrainstormBandModel => ({
     title: "Lịch 3 ngày tới trên Overview",
@@ -55,5 +55,43 @@ describe("railBrainstormRows", () => {
             })
         );
         expect(r.boardOrder).toEqual(["a.dc.html", "open.dc.html"]);
+    });
+    it("steps a board once when two decisions share its part's title", () => {
+        const r = railBrainstormRows(
+            model({
+                decided: [
+                    { id: "p1", title: "A", gist: "" },
+                    { id: "p2", title: "A", gist: "" },
+                ],
+                boards: [
+                    { name: "a.dc.html", part: "A", isNew: false },
+                    { name: "b.dc.html", part: "A", isNew: false },
+                ],
+            })
+        );
+        expect(r.boardOrder).toEqual(["a.dc.html", "b.dc.html"]);
+    });
+});
+
+describe("brainstormPaneState", () => {
+    const decided = [{ id: "p1", title: "A", gist: "" }];
+    it("reads the file while a brainstorm is attached and its file has not been read", () => {
+        expect(brainstormPaneState(true, null, null)).toBe("reading");
+    });
+    it("shows the store's error over everything else, a stale timeline included", () => {
+        expect(brainstormPaneState(true, null, "brainstorm.json is not valid JSON")).toBe("error");
+        expect(brainstormPaneState(true, model({ decided }), "brainstorm.json is not valid JSON")).toBe("error");
+    });
+    it("says nothing is decided while the file has no decision of the user's, boards or not", () => {
+        expect(brainstormPaneState(true, model(), null)).toBe("empty");
+        expect(
+            brainstormPaneState(true, model({ boards: [{ name: "Q.dc.html", part: "Z", isNew: true }] }), null)
+        ).toBe("empty");
+    });
+    it("draws the timeline once a decision is the user's", () => {
+        expect(brainstormPaneState(true, model({ decided }), null)).toBe("timeline");
+    });
+    it("has nothing to read with no brainstorm attached", () => {
+        expect(brainstormPaneState(false, null, null)).toBe("empty");
     });
 });
