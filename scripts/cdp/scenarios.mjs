@@ -67694,10 +67694,12 @@ const setupLearned = {
 const INIT_VK = { Enter: 13, Escape: 27, ArrowLeft: 37, ArrowUp: 38, ArrowRight: 39, ArrowDown: 40 };
 const INIT_WAIT_MS = 15000;
 const INIT_RAIL = `document.querySelector('aside[aria-label="Agent details"]')`;
-// the Brief's regions and rows hold no oref of their own, so a row is found by its title: each title below is unique
-// to its scenario and none holds another
+// a row is found by its title: each title below is unique to its scenario and none holds another. The List's rows are
+// initiativelist.tsx's [data-jarvis-initiative-row] (the Brief of 2026-11-05); the review pass's rows and the Ideas
+// column still draw briefrowviews.tsx's [data-jarvis-brief-row="initiative"]
+const INIT_ROW_SEL = `[data-jarvis-brief-row="initiative"], [data-jarvis-initiative-row]`;
 const INIT_ROW = (title) =>
-    `[...document.querySelectorAll('[data-jarvis-brief-row="initiative"]')].find((r) => r.innerText.includes(${JSON.stringify(title)}))`;
+    `[...document.querySelectorAll('${INIT_ROW_SEL}')].find((r) => r.innerText.includes(${JSON.stringify(title)}))`;
 // the Date.now offset the review scenario stubs in, and where the page keeps the real one
 const INIT_DAY_MS = 24 * 3600 * 1000;
 
@@ -67725,7 +67727,7 @@ async function initType(h, text) {
 }
 
 // A mouse click at the middle of the element `expr` evaluates to; false when none is drawn.
-async function initClick(h, expr, { mods = 0 } = {}) {
+async function initClick(h, expr, { mods = 0, button = "left" } = {}) {
     const measure = () =>
         h.ev(`(() => {
             const el = ${expr};
@@ -67746,7 +67748,7 @@ async function initClick(h, expr, { mods = 0 } = {}) {
     if (box == null) return false;
     await h.cdp("Input.dispatchMouseEvent", { type: "mouseMoved", x: box.x, y: box.y });
     for (const type of ["mousePressed", "mouseReleased"]) {
-        await h.cdp("Input.dispatchMouseEvent", { type, x: box.x, y: box.y, button: "left", clickCount: 1, modifiers: mods });
+        await h.cdp("Input.dispatchMouseEvent", { type, x: box.x, y: box.y, button, clickCount: 1, modifiers: mods });
     }
     await polishNap(300);
     return true;
@@ -67778,6 +67780,17 @@ async function initCreate(h, ctx, { title, project, chunks = [], parentoid }) {
     });
     ctx.oids.push(made.effortoid);
     return made.effortoid;
+}
+// With nothing pinned the Brief draws the first six open initiatives as cards ([data-jarvis-card]), so a scenario's own
+// initiatives would never be the list rows INIT_ROW finds. One pin makes the cards the pins only: this one, paused (never
+// idle) and created before a review scenario stamps its marks, so a mark after it keeps it out of the review queue too.
+// It is one of ctx.oids, so initTeardown deletes it.
+const INIT_FILLER = "Verify filler: the one pinned card";
+async function initPinFiller(h, ctx, project) {
+    const oid = await initCreate(h, ctx, { title: INIT_FILLER, project, chunks: ["Filler chunk"] });
+    await h.rpc("effortmutate", { effortoid: oid, author: "you", ops: [{ op: "setStatus", status: "paused" }] });
+    await h.rpc("effortpin", { effortoid: oid, pin: true });
+    return oid;
 }
 const initOps = (h, oid, ops) => h.rpc("effortmutate", { effortoid: oid, author: "you", ops });
 const initEffort = async (h, oid) => (await h.rpc("effortget", { effortoid: oid }))?.effort;
@@ -67887,8 +67900,9 @@ async function initTeardown(h, ctx, name, { reload = true } = {}) {
         h.ev(`document.querySelector('[data-pet-peek] button[aria-label="Close Jarvis panel"]')?.click()`)
     );
     await step("leave a review pass", () => h.ev(`document.querySelector("[data-jarvis-review-exit]")?.click()`));
+    // a run's sheet closes on "Close detail sheet", an initiative's (initiativesheet.tsx) on "Close (Esc)"
     await step("close the detail sheet", () =>
-        h.ev(`document.querySelector('[data-jarvis-brief-sheet] button[aria-label="Close detail sheet"]')?.click()`)
+        h.ev(`document.querySelector('[data-jarvis-brief-sheet] button[aria-label="Close detail sheet"], [data-jarvis-brief-sheet] button[aria-label="Close (Esc)"]')?.click()`)
     );
     for (const agent of ctx.agents) {
         await step(`close ${agent.tabId}`, () => waveService(h, "workspace", "CloseTab", [ctx.workspaceId, agent.tabId, false]));
@@ -68566,11 +68580,15 @@ const REV_ACTIONS = `[...(document.querySelector("[data-jarvis-review-current]")
 const reviewMarks = (h) => h.ev(`JSON.parse(localStorage.getItem(${JSON.stringify(REV_KEY)}) ?? "{}")`);
 
 // `j` until the pass is on `oref` (the pass wraps, so no more presses than it holds)
+// Steps the pass onto `oref`: forward with j, then back with k, since Pause or Archive on the last one ends the pass on
+// "All reviewed", from where only k goes back.
 async function reviewGoTo(h, oref) {
     const total = (await h.ev(REV_PASS)).length;
-    for (let i = 0; i <= total; i++) {
-        if ((await h.ev(REV_CURRENT)) === oref) return true;
-        await initPress(h, "j");
+    for (const key of ["j", "k"]) {
+        for (let i = 0; i <= total; i++) {
+            if ((await h.ev(REV_CURRENT)) === oref) return true;
+            await initPress(h, key);
+        }
     }
     return (await h.ev(REV_CURRENT)) === oref;
 }
@@ -68578,7 +68596,7 @@ async function reviewGoTo(h, oref) {
 const reviewRowShown = async (h, title) => {
     if (await h.ev(`!!(${INIT_ROW(title)})`)) return true;
     // the Initiatives region draws a few rows, and the rest sit behind its "+N more"
-    await h.ev(`document.querySelector('[data-jarvis-brief-region="initiatives"] [data-jarvis-brief-more="more"]')?.click()`);
+    await h.ev(`document.querySelector('[data-jarvis-initiatives-more="more"], [data-jarvis-brief-region="initiatives"] [data-jarvis-brief-more="more"]')?.click()`);
     return polishWaitFor(h, `!!(${INIT_ROW(title)})`, 5000);
 };
 
@@ -68595,6 +68613,7 @@ const initiativeReview = {
             ctx.blocked = await make(REV_BLOCKED);
             ctx.changed = await make(REV_CHANGED);
             ctx.idle = await make(REV_IDLE);
+            ctx.filler = await initPinFiller(h, ctx, "verify-init-review");
             await initOps(h, ctx.blocked, [{ op: "setChunkStatus", chunk: "First feed chunk", status: "blocked", note: "waiting on the feed owner" }]);
             await initOps(h, ctx.changed, [{ op: "setChunkStatus", chunk: "First feed chunk", status: "done" }]);
             const t = Date.now();
@@ -68605,6 +68624,7 @@ const initiativeReview = {
                 [`effort:${ctx.blocked}`]: t - 3600_000,
                 [`effort:${ctx.changed}`]: t - 3600_000,
                 [`effort:${ctx.idle}`]: t + 60_000,
+                [`effort:${ctx.filler}`]: t + 60_000,
             };
             await h.ev(`localStorage.setItem(${JSON.stringify(REV_KEY)}, ${JSON.stringify(JSON.stringify(marks))})`);
             // the marks are read once, when the page starts
@@ -68634,26 +68654,15 @@ const initiativeReview = {
             await h.goto("jarvis");
             await h.ev("document.activeElement?.blur?.()");
 
-            // --- 1. before the pass: the List marks the changed and the idle ones, and the heading counts them --------------------
+            // --- 1. before the pass: the three are rows of the List, and the heading counts them -----------------------------------
+            // (the List's rows of 2026-11-05 carry no idle status or changed dot: step 3 reads those on the pass's rows)
             const rows = await Promise.all([REV_BLOCKED, REV_CHANGED, REV_IDLE].map((t) => reviewRowShown(h, t)));
-            const listed = await polishWaitFor(
-                h,
-                `(${INIT_ROW(REV_IDLE)})?.querySelector("[data-jarvis-initiative-status]")?.innerText.trim() === "idle 2w"`,
-                INIT_WAIT_MS
-            );
-            const marks1 = await h.ev(`({
-                changedDot: !!(${INIT_ROW(REV_CHANGED)})?.querySelector("[data-jarvis-changed-dot]"),
-                blockedDot: !!(${INIT_ROW(REV_BLOCKED)})?.querySelector("[data-jarvis-changed-dot]"),
-                idleDot: !!(${INIT_ROW(REV_IDLE)})?.querySelector("[data-jarvis-changed-dot]"),
-                idle: (${INIT_ROW(REV_IDLE)})?.querySelector("[data-jarvis-initiative-status]")?.innerText.trim() ?? null,
-                blocked: (${INIT_ROW(REV_BLOCKED)})?.querySelector("[data-jarvis-initiative-status]")?.innerText.trim() ?? null,
-            })`);
             const count0 = await h.ev(REV_COUNT);
             await h.shot("cdp-shots/initiative-review-1-list.png");
             rec(
-                '1. before the pass the List reads "idle 2w" on the idle initiative and puts the changed dot on the changed one, and the heading counts the review queue',
-                rows.every(Boolean) && listed === true && marks1.changedDot === true && marks1.blockedDot === true && marks1.idleDot === false && count0 >= 3,
-                { rows, listed, marks1, count0 }
+                "1. before the pass the three initiatives are rows of the List, and the heading counts the review queue",
+                rows.every(Boolean) && count0 >= 3,
+                { rows, count0 }
             );
             const cursor0 = await h.ev(`document.querySelector('[data-jarvis-brief-cursor="true"]')?.innerText.slice(0, 60) ?? null`);
 
@@ -68678,6 +68687,14 @@ const initiativeReview = {
             await initPress(h, "v");
             const entered = await polishWaitFor(h, `!!document.querySelector("[data-jarvis-review-pos]")`, 5000);
             const order = await passOrder();
+            // the rows of the pass behind the open one: the changed one wears the changed dot, the idle one reads "idle 2w"
+            const passRow = (o) => `document.querySelector('[data-jarvis-review-row="${o}"]')`;
+            await polishWaitFor(h, `${passRow(oref.idle)}?.querySelector("[data-jarvis-initiative-status]")?.innerText.trim() === "idle 2w"`, INIT_WAIT_MS);
+            const marks3 = await h.ev(`({
+                changedDot: !!${passRow(oref.changed)}?.querySelector("[data-jarvis-changed-dot]"),
+                idleDot: !!${passRow(oref.idle)}?.querySelector("[data-jarvis-changed-dot]"),
+                idle: ${passRow(oref.idle)}?.querySelector("[data-jarvis-initiative-status]")?.innerText.trim() ?? null,
+            })`);
             const onBlocked = await reviewGoTo(h, oref.blocked);
             await polishWaitFor(h, `document.querySelectorAll("[data-jarvis-review-current] [data-jarvis-review-event]").length > 0`, INIT_WAIT_MS);
             const since = await h.ev(`(() => {
@@ -68691,10 +68708,11 @@ const initiativeReview = {
             await polishNap(400);
             await h.shot("cdp-shots/initiative-review-3-blocked.png");
             rec(
-                "3. `v` begins the pass over the queue: the blocked, changed and idle initiatives are walked in that order, and the blocked one opens on what happened since the mark",
+                "3. `v` begins the pass over the queue: the blocked, changed and idle initiatives are walked in that order, and the blocked one opens on what happened since the mark, and behind it the changed row wears the changed dot and the idle row reads \"idle 2w\"",
                 leftSprout === true && entered === true && JSON.stringify(order) === JSON.stringify(seeded) && onBlocked === true &&
-                    since.heading === true && since.events.some((e) => e.includes("First feed chunk")),
-                { leftSprout, entered, order, onBlocked, since }
+                    since.heading === true && since.events.some((e) => e.includes("First feed chunk")) &&
+                    marks3.changedDot === true && marks3.idleDot === false && marks3.idle === "idle 2w",
+                { leftSprout, entered, order, onBlocked, since, marks3 }
             );
 
             // --- 4. Go to agent leaves for the agent open on the initiative; the pass is where it was on coming back ----------------------
@@ -68763,16 +68781,14 @@ const initiativeReview = {
             const paused = await initUntil(async () => (await initEffort(h, ctx.idle))?.status === "paused", 8000);
             const markedIdle = await initUntil(async () => ((await reviewMarks(h))[oref.idle] ?? 0) > ctx.t + INIT_DAY_MS, 8000);
             rec(
-                '7. the idle initiative reads "idle 2w" and nothing moved, with Pause and Archive first; Pause parks it and marks it reviewed',
-                idleInfo.status === "idle 2w" && idleInfo.actions.slice(0, 2).join() === "pause,archive" && /nothing moved in 2 weeks/.test(idleInfo.quiet ?? "") && paused === true && markedIdle === true,
+                // the open one is drawn with the initiative sheet's head (since 2026-11-05), which carries no idle status: step 3
+                // reads "idle 2w" on its row in the pass
+                "7. the idle initiative says nothing moved in 2 weeks, with Pause and Archive first; Pause parks it and marks it reviewed",
+                idleInfo.actions.slice(0, 2).join() === "pause,archive" && /nothing moved in 2 weeks/.test(idleInfo.quiet ?? "") && paused === true && markedIdle === true,
                 { idleInfo, paused, markedIdle }
             );
-            // open again (the pass keeps a marked one listed) and archive it
-            await reviewGoTo(h, oref.idle);
-            const resume = await h.ev(`document.querySelector('[data-jarvis-review-current] [data-jarvis-review-action="pause"]')?.innerText.trim() ?? null`);
-            await initClick(h, `document.querySelector('[data-jarvis-review-current] [data-jarvis-review-action="archive"]')`);
-            const archived = await initUntil(async () => (await initEffort(h, ctx.idle))?.status === "archived", 8000);
-            rec("7b. a paused initiative offers Resume, and Archive closes it", resume === "Resume" && archived === true, { resume, archived });
+            // (Pause marked the last of the three, so the pass is done and opens none again: Resume and Archive are read off the
+            // List row's menu once the pass is left, step 9)
 
             // --- 8. the rest of the pass is marked through (Enter), the end reads "All reviewed", and Esc leaves it ----------------------------
             let presses = 0;
@@ -68797,6 +68813,19 @@ const initiativeReview = {
                 '8. the pass ends on "All reviewed" with every initiative marked, Esc leaves it, and none of the three is queued for review any more',
                 done === true && left === true && seededMarked === true && again.length === 0,
                 { presses, done, left, seededMarked, countStart: count0, countEnd, queuedAgain: again }
+            );
+
+            // --- 9. after the pass, the paused one's menu on the List offers Resume, and its Archive closes it ------------------------------
+            await reviewRowShown(h, REV_IDLE);
+            await initClick(h, INIT_ROW(REV_IDLE), { button: "right" });
+            const menuUp = await polishWaitFor(h, `!!document.querySelector("[data-menu-item]")`, 3000);
+            const resume = await h.ev(`document.querySelector('[data-menu-item="Resume"]')?.dataset.menuItem ?? null`);
+            await initClick(h, `document.querySelector('[data-menu-item="Archive"]')`);
+            const archived = await initUntil(async () => (await initEffort(h, ctx.idle))?.status === "archived", 8000);
+            rec(
+                "9. after the pass, the paused initiative's menu on the List offers Resume, and its Archive closes it",
+                menuUp === true && resume === "Resume" && archived === true,
+                { menuUp, resume, archived }
             );
         } catch (e) {
             rec("the scenario ran to its end", false, String(e?.message ?? e));
@@ -68826,10 +68855,11 @@ const parRow = (h, title) =>
             sub: row.querySelector("[data-jarvis-initiative-sub]")?.innerText.trim() ?? null } : null;
     })()`);
 const parToast = (h) => h.ev(`document.body.innerText`);
-// the row's ⋯ menu: a real click on it opens the menu at the pointer; the item is found by its label
+// the row's menu: a real right-click on the List's row (initiativelist.tsx has no ⋯ button) opens it at the pointer; the
+// item is found by its label
 async function parMenu(h, title, item) {
     await reviewRowShown(h, title);
-    const opened = await initClick(h, `(${INIT_ROW(title)})?.querySelector('[aria-label="Actions for ${title}"]')`);
+    const opened = await initClick(h, INIT_ROW(title), { button: "right" });
     const up = await polishWaitFor(h, `!!document.querySelector("[data-menu-item]")`, 3000);
     const picked = up ? await initClick(h, `document.querySelector('[data-menu-item="${item}"]')`) : false;
     return { opened, up, picked };
@@ -68849,6 +68879,7 @@ const initiativeParents = {
             ctx.idea = await make(PAR_IDEA, { chunks: [] });
             await initOps(h, ctx.idea, [{ op: "link", parentoid: ctx.parent }]);
             ctx.other = await make(PAR_OTHER);
+            await initPinFiller(h, ctx, PAR_PROJECT);
         } catch (e) {
             ctx.arrangeError = String(e?.message ?? e);
         }
@@ -68862,31 +68893,33 @@ const initiativeParents = {
             const oref = (oid) => `effort:${oid}`;
             const shown = await Promise.all([PAR_PARENT, PAR_CHILD_A, PAR_CHILD_B, PAR_OTHER].map((t) => reviewRowShown(h, t)));
 
-            // --- 1. the children sit under the parent, indented, with "↳ Part of" ------------------------------------------------------------
+            // --- 1. the children sit under the parent, indented with an elbow --------------------------------------------------------------
+            // (a List row's meta is its project, or "↳ <title>" only when its parent is a card: the parent here is a row)
             await polishWaitFor(h, `${INIT_ROW(PAR_CHILD_A)}?.dataset.jarvisInitiativeDepth === "1"`, INIT_WAIT_MS);
             const parent = await parRow(h, PAR_PARENT);
             const a = await parRow(h, PAR_CHILD_A);
             const b = await parRow(h, PAR_CHILD_B);
             // the rows' own titles in List order (a child's meta line holds its parent's title, so the whole text would match twice)
-            const titles = await h.ev(`[...document.querySelectorAll('[data-jarvis-brief-row="initiative"]')].map((r) => r.querySelector(".truncate.font-semibold")?.textContent.trim())`);
+            const titles = await h.ev(`[...document.querySelectorAll("[data-jarvis-initiative-row]")].map((r) => r.querySelector(".truncate.font-semibold")?.textContent.trim())`);
             const at = titles.indexOf(PAR_PARENT);
             // the children follow the parent at once, in the order their own recency gives them
             const order = titles.slice(at + 1, at + 3).sort();
             await polishNap(400);
             await h.shot("cdp-shots/initiative-parents-1-list.png");
             rec(
-                '1. the two children sit right under the parent, indented with an elbow and "↳ Part of" its title',
+                "1. the two children sit right under the parent, indented with an elbow",
                 shown.every(Boolean) && parent?.depth === 0 && a?.depth === 1 && a.elbow && b?.depth === 1 && b.elbow &&
-                    (a.meta ?? "").startsWith(`↳ Part of ${PAR_PARENT}`) && (b.meta ?? "").startsWith(`↳ Part of ${PAR_PARENT}`) && at >= 0 && order.join() === [PAR_CHILD_A, PAR_CHILD_B].sort().join(),
+                    at >= 0 && order.join() === [PAR_CHILD_A, PAR_CHILD_B].sort().join(),
                 { shown, parent, a, b, at, order }
             );
             rec('2. the parent reads "+2 sub"', parent?.sub === "+2 sub", { sub: parent?.sub });
 
-            // --- 3. opened, the parent lists its sub-initiatives and its linked ideas ---------------------------------------------------------
-            await initClick(h, `(${INIT_ROW(PAR_PARENT)})?.querySelector(':scope > [role="button"]')`);
-            const linked = await polishWaitFor(h, `!!(${INIT_ROW(PAR_PARENT)})?.querySelector("[data-jarvis-linked]")`, INIT_WAIT_MS);
+            // --- 3. opened, the parent's sheet lists its sub-initiatives and its linked ideas --------------------------------------------------
+            const PAR_SHEET = `document.querySelector('[data-jarvis-brief-sheet="effort"]')`;
+            await initClick(h, INIT_ROW(PAR_PARENT));
+            const linked = await polishWaitFor(h, `!!${PAR_SHEET}?.querySelector("[data-jarvis-linked]")`, INIT_WAIT_MS);
             const lists = await h.ev(`(() => {
-                const l = (${INIT_ROW(PAR_PARENT)})?.querySelector("[data-jarvis-linked]");
+                const l = ${PAR_SHEET}?.querySelector("[data-jarvis-linked]");
                 return { subs: [...(l?.querySelectorAll("[data-jarvis-linked-sub]") ?? [])].map((e) => e.dataset.jarvisLinkedSub),
                     ideas: [...(l?.querySelectorAll("[data-jarvis-linked-idea]") ?? [])].map((e) => e.dataset.jarvisLinkedIdea) };
             })()`);
@@ -68897,9 +68930,10 @@ const initiativeParents = {
                 linked === true && [oref(ctx.childA), oref(ctx.childB)].every((o) => lists.subs.includes(o)) && lists.subs.length === 2 && lists.ideas.join() === oref(ctx.idea),
                 lists
             );
-            await initClick(h, `(${INIT_ROW(PAR_PARENT)})?.querySelector(':scope > [role="button"]')`);
+            await initClick(h, `${PAR_SHEET}?.querySelector('button[aria-label="Close (Esc)"]')`);
+            await polishWaitFor(h, `!${PAR_SHEET}`, 4000);
 
-            // --- 4. the unrelated row's ⋯ → Link to… moves it under the parent -------------------------------------------------------------------
+            // --- 4. the unrelated row's menu → Link to… moves it under the parent -------------------------------------------------------------------
             const menu = await parMenu(h, PAR_OTHER, "Link to…");
             const pickerUp = await polishWaitFor(h, `!!document.querySelector("[data-initiative-picker]")`, 4000);
             await initClick(h, `document.querySelector('[data-initiative-picker] [data-picker-row="${oref(ctx.parent)}"]')`);
@@ -68908,8 +68942,8 @@ const initiativeParents = {
             const server4 = (await initEffort(h, ctx.other))?.parentoid;
             const toast4 = (await parToast(h)).includes(`Linked under “${PAR_PARENT}”`);
             rec(
-                "4. the unrelated initiative's ⋯ → Link to… and a pick of the parent moves it under it, and says so",
-                menu.picked === true && pickerUp === true && moved === true && other?.depth === 1 && (other.meta ?? "").startsWith(`↳ Part of ${PAR_PARENT}`) && server4 === ctx.parent && toast4 === true,
+                "4. the unrelated initiative's menu → Link to… and a pick of the parent moves it under it, indented with an elbow, and says so",
+                menu.picked === true && pickerUp === true && moved === true && other?.depth === 1 && other.elbow === true && server4 === ctx.parent && toast4 === true,
                 { menu, pickerUp, moved, other, server4, toast4 }
             );
 
@@ -68938,7 +68972,7 @@ const initiativeParents = {
             const back = await parRow(h, PAR_OTHER);
             const server6 = (await initEffort(h, ctx.other))?.parentoid ?? "";
             rec(
-                "6. ⋯ → Unlink returns the initiative to the top level, with no parent line",
+                "6. the menu's Unlink returns the initiative to the top level, with no elbow",
                 unlink.picked === true && top === true && back?.depth === 0 && back.elbow === false && !(back.meta ?? "").includes("Part of") && server6 === "",
                 { unlink, top, back, server6 }
             );
