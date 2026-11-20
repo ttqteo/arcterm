@@ -179,6 +179,24 @@ export function handSession(s: SessionActivity): void {
     );
 }
 
+/** Read one session by its transcript stem and hand it to the session pane, for an opener that holds only the id (Usage's
+ *  By session table, whose 7 days reach past the archive's first page). It goes through handSession, not lookupSessions,
+ *  which would replace Jarvis's For later lookup. A failed read hands nothing: the pane then says the session is not in
+ *  the archive, as before. */
+export async function fetchAndHandSession(id: string): Promise<void> {
+    if (id === "") {
+        return;
+    }
+    try {
+        const rtn = await RpcApi.GetSessionsActivityCommand(TabRpcClient, { ids: [id] });
+        for (const s of rtn.sessions ?? []) {
+            handSession(s);
+        }
+    } catch (e) {
+        console.warn("session read by id failed", e);
+    }
+}
+
 /** Take a session's row out now: a delete reloads only the first page, which would leave a row from an older page. */
 export function dropFromArchive(transcriptPath: string): void {
     if (transcriptPath === "") {

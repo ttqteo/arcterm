@@ -42,6 +42,7 @@ import {
     savedRateLimitsAtom,
     type DonutWindow,
 } from "./ratelimitstore";
+import { fetchAndHandSession } from "./sessionsarchivestore";
 import { sessionKey } from "./sessionsruns";
 import { SubagentCostCard } from "./subagentcostcard";
 import { SurfaceError, SurfaceHeader } from "./surfacescaffold";
@@ -707,14 +708,17 @@ export function UsageSurface({ model }: { model: AgentsViewModel }) {
     analyzeRef.current = analyze;
 
     // A row opens the way every other route to a session does: a live tab through the router, an ended one as its
-    // transcript in Library, whose Back returns here.
+    // transcript in Library, whose Back returns here. The table's 7 days reach past the archive's first page, so the
+    // session is read by id and handed to the pane first, or an older one opens as "not in the archive yet".
     const openSession = useCallback(
         (row: SessionRow) => {
             setSessionCursor(row.id);
             if (row.liveTabId != null) {
                 void openTarget(model, { kind: "agent", tabId: row.liveTabId });
             } else {
-                showLibrarySession(model, sessionKey({ runtime: "claude", id: row.id }));
+                void fetchAndHandSession(row.id).then(() =>
+                    showLibrarySession(model, sessionKey({ runtime: "claude", id: row.id }))
+                );
             }
         },
         [model, setSessionCursor]
