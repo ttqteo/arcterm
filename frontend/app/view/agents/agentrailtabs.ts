@@ -13,8 +13,10 @@ import { AGENT_TREE_WIDE_PX } from "./rowfields";
 // "tree" because "files" already names the Files changed count. "changes" is the Changes tab: the Files changed list on
 // a tab of its own, every file of it rather than Overview's first few. "transcript" is the agent's conversation, drawn
 // beside its terminal (docs/superpowers/specs/2026-10-29-rail-transcript-tab-design.md). "council" is the chat of the
-// council the agent started (railcouncil.ts), there only while it has one (canvas rail-council-chat, board B)
-export type RailTab = "overview" | "tree" | "changes" | "transcript" | "council" | "file";
+// council the agent started (railcouncil.ts), there only while it has one (canvas rail-council-chat, board B).
+// "summary" is the summary the agent's last compaction kept, opened from Overview's Compacted line and there until its x
+// closes it (railcompactionline.tsx)
+export type RailTab = "overview" | "tree" | "changes" | "transcript" | "council" | "file" | "summary";
 
 // a file opened into the panel: its absolute path, the directory it was resolved against, and the line to show
 export interface FileRef {
@@ -76,6 +78,7 @@ export interface PanelState {
     // the oldest
     files: FileTab[];
     active: number;
+    summary?: boolean; // the Summary tab is open
 }
 
 export const FILE_TABS_MAX = 5;
@@ -94,7 +97,8 @@ export function panelFor(panels: Record<string, PanelState>, agentId: string, de
                 defaultTab === "file" ||
                 defaultTab === "tree" ||
                 defaultTab === "transcript" ||
-                defaultTab === "council"
+                defaultTab === "council" ||
+                defaultTab === "summary"
                     ? "overview"
                     : defaultTab,
             prevTab: "overview",
@@ -123,6 +127,9 @@ export function visibleTabs(p: PanelState, hasTree: boolean, hasTranscript: bool
     if (hasCouncil) {
         tabs.push("council");
     }
+    if (p.summary) {
+        tabs.push("summary");
+    }
     if (p.files.length > 0) {
         tabs.push("file");
     }
@@ -135,9 +142,29 @@ export function visibleTabs(p: PanelState, hasTree: boolean, hasTranscript: bool
 export function shownTab(p: PanelState, hasTree: boolean, hasTranscript: boolean, hasCouncil = false): RailTab {
     return (p.tab === "tree" && !hasTree) ||
         (p.tab === "transcript" && !hasTranscript) ||
-        (p.tab === "council" && !hasCouncil)
+        (p.tab === "council" && !hasCouncil) ||
+        (p.tab === "summary" && !p.summary)
         ? "overview"
         : p.tab;
+}
+
+// Opens the Summary tab and shows it; again on an open one only shows it
+export function openSummary(p: PanelState): PanelState {
+    return { ...p, summary: true, tab: "summary", prevTab: p.tab === "summary" ? p.prevTab : p.tab };
+}
+
+// Closes the Summary tab; on show, the panel returns to the tab it was opened from
+export function closeSummary(p: PanelState): PanelState {
+    if (!p.summary) {
+        return p;
+    }
+    const back = p.prevTab === "summary" ? "overview" : p.prevTab;
+    return {
+        ...p,
+        summary: false,
+        tab: p.tab === "summary" ? back : p.tab,
+        prevTab: p.prevTab === "summary" ? "overview" : p.prevTab,
+    };
 }
 
 export function selectTab(
@@ -158,7 +185,7 @@ function samePath(x: string, y: string): boolean {
 }
 
 function showFile(p: PanelState, files: FileTab[], active: number): PanelState {
-    return { tab: "file", prevTab: p.tab === "file" ? p.prevTab : p.tab, files, active };
+    return { ...p, tab: "file", prevTab: p.tab === "file" ? p.prevTab : p.tab, files, active };
 }
 
 function withActive(p: PanelState, tab: FileTab): FileTab[] {
@@ -245,7 +272,7 @@ export function closeFile(p: PanelState, id: number | undefined = activeFile(p)?
     }
     const files = p.files.filter((_, j) => j !== i);
     if (files.length === 0) {
-        return { tab: p.tab === "file" ? p.prevTab : p.tab, prevTab: "overview", files, active: 0 };
+        return { ...p, tab: p.tab === "file" ? p.prevTab : p.tab, prevTab: "overview", files, active: 0 };
     }
     const active = i < p.active ? p.active - 1 : i === p.active ? Math.min(i, files.length - 1) : p.active;
     return { ...p, files, active };
@@ -293,13 +320,28 @@ export function wideWidthMax(windowWidth: number, navWidth: number, treeWidth = 
 }
 
 // the panel tabs that take a dragged width: File (a page of text) and Transcript (the conversation), which share one
-// remembered width. Overview, Files, Changes and Council are fixed at Overview's
+// remembered width, as do Council and Summary (wideTabOf). Overview, Files and Changes are fixed at Overview's
 export type ResizableTab = "file" | "transcript";
 
 export const RAIL_WIDTHS: Record<ResizableTab, { min: number; def: number }> = {
     file: { min: RAIL_WIDE_MIN_PX, def: RAIL_WIDE_DEFAULT_PX },
     transcript: { min: RAIL_WIDE_MIN_PX, def: RAIL_WIDE_DEFAULT_PX },
 };
+
+// the dragged width a shown tab takes, or null for one fixed at Overview's width. Council (a chat) and Summary (a long
+// page) read long, so they widen with File's grip and width
+export function wideTabOf(tab: RailTab): ResizableTab | null {
+    switch (tab) {
+        case "transcript":
+            return "transcript";
+        case "file":
+        case "council":
+        case "summary":
+            return "file";
+        default:
+            return null;
+    }
+}
 
 export function clampWideWidth(value: number, max: number, tab: ResizableTab = "file"): number {
     const { min, def } = RAIL_WIDTHS[tab];

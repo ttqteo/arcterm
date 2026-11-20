@@ -121,7 +121,8 @@ export default function (kit) {
                     JSON.stringify({ tabs1, label1, dot1 })
                 );
 
-                // 2. the tab's body is the council's chat, at Overview's width, read to its newest message
+                // 2. the tab's body is the council's chat, read to its newest message, in a panel wider than Overview's 300px with the
+                // grip that drags its width (the wide tabs' one width)
                 await h.ev(`${TAB}?.click()`);
                 const pane2 = await polishWaitFor(h, `!!${PANE}`, 10000);
                 await polishNap(600);
@@ -131,15 +132,16 @@ export default function (kit) {
                 const end2 = await h.ev(AT_END);
                 const box2 = await h.ev(`!!${PANE}?.querySelector("[data-council-composer-input]")`);
                 const w2 = await h.ev(ASIDE_WIDTH);
+                const grip2 = await h.ev(`!!${ASIDE}?.querySelector('[role="separator"][aria-label="Resize panel"]')`);
                 // the reveal's toast would cover the panel in the pictures
                 await h.ev(`(() => { for (const b of document.querySelectorAll("[data-notification-close]")) b.click(); return true; })()`);
                 await polishNap(500);
                 await h.shot("cdp-shots/rail-council-tab-running.png");
                 await h.whatsnewShot("rail-council", { selector: 'aside[aria-label="Agent details"]' });
                 rec(
-                    "2. clicking it shows the council's chat in the 300px panel: its head, the ideas and the round 2 replies in the list, read to the end, the message box under it",
-                    pane2 && head2 === "Rail apps" && posts2 >= 20 && round2 && end2 && box2 && Math.abs(w2 - 300) <= 2,
-                    JSON.stringify({ pane2, head2, posts2, round2, end2, box2, w2 })
+                    "2. clicking it shows the council's chat in a panel wider than 300px with a resize grip: its head, the ideas and the round 2 replies in the list, read to the end, the message box under it",
+                    pane2 && head2 === "Rail apps" && posts2 >= 20 && round2 && end2 && box2 && w2 >= 350 && grip2,
+                    JSON.stringify({ pane2, head2, posts2, round2, end2, box2, w2, grip2 })
                 );
 
                 // 3. a long message opens with Show more

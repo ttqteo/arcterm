@@ -47870,8 +47870,9 @@ const agentChat = {
 
             // 80. A compaction at the end of the conversation, its summary long. Chat marks it with one thin Compacted line that
             // opens nothing (narrationtimeline.tsx CompactionDivider): the summary is not in the conversation. The rail's session
-            // block reads the same compaction (railcompactionline.tsx), and a click on its line opens the summary in a sheet
-            // pinned to the window's right edge, wider than the rail; Esc closes it
+            // block reads the same compaction (railcompactionline.tsx), and a click on its line opens the summary in the panel's
+            // Summary tab, selected after the others, at the wide tabs' dragged width with its grip; the summary scrolls on its own,
+            // and the tab's x closes it back to Overview
             await showAgent(A);
             await polishWaitFor(h, `!!${acBox(A)}`, AC_WAIT_MS);
             const at80 = { cwd: ctx.dir, ts: new Date().toISOString() };
@@ -47894,17 +47895,21 @@ const agentChat = {
             const line80 = `${RAIL_ASIDE}?.querySelector("[data-rail-compaction] button")`;
             const railLine80 = await polishWaitFor(h, `(${line80}?.textContent ?? "").includes("144k")`, 15000);
             await h.ev(`${line80}?.click()`);
-            const sheet80 = `document.querySelector("[data-rail-compaction-summary]")`;
-            const opened80 = await polishWaitFor(h, `(${sheet80}?.textContent ?? "").includes("Kept point 60")`, 5000);
-            await polishNap(500);
-            const widths80 = await h.ev(`({ sheet: Math.round(${sheet80}?.getBoundingClientRect().width ?? 0), rail: Math.round(${RAIL_ASIDE}?.getBoundingClientRect().width ?? 0) })`);
-            await h.shot("cdp-shots/agent-chat-80-compaction-sheet.png");
-            await h.ev(`${sheet80}?.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", code: "Escape", bubbles: true }))`);
-            const closed80 = await polishWaitFor(h, `!${sheet80}`, 3000);
+            const pane80 = `${RAIL_ASIDE}?.querySelector("[data-rail-compaction-summary]")`;
+            const opened80 = await polishWaitFor(h, `(${pane80}?.textContent ?? "").includes("Kept point 60")`, 5000);
+            await polishNap(600);
+            const tab80 = await h.ev(`${RAIL_ASIDE}?.querySelector('[role="tab"][aria-selected="true"]')?.dataset.railTab ?? null`);
+            const width80 = await h.ev(`Math.round(${RAIL_ASIDE}?.getBoundingClientRect().width ?? 0)`);
+            const grip80 = await h.ev(`!!${RAIL_ASIDE}?.querySelector('[role="separator"][aria-label="Resize panel"]')`);
+            const scroll80 = await h.ev(`(() => { const p = ${pane80}; const sc = p?.querySelector(".overflow-y-auto"); if (!sc) return null; const before = sc.scrollTop; sc.scrollTop = 400; const moved = sc.scrollTop > before; sc.scrollTop = 0; return { moved, over: sc.scrollHeight > sc.clientHeight + 100 }; })()`);
+            await h.shot("cdp-shots/agent-chat-80-compaction-summary-tab.png");
+            await h.ev(`${RAIL_ASIDE}?.querySelector("[data-rail-summary-close]")?.click()`);
+            const closed80 = await polishWaitFor(h, `!${pane80} && !${RAIL_ASIDE}?.querySelector('[data-rail-tab="summary"]')`, 3000);
+            const back80 = await h.ev(`${RAIL_ASIDE}?.querySelector('[role="tab"][aria-selected="true"]')?.dataset.railTab ?? null`);
             rec(
-                "80. a compaction shows in Chat as one thin Compacted line with no summary and nothing to open; the rail's Compacted line opens the long summary in a sheet wider than the rail, and Esc closes it",
-                shown80 && thin80 && railLine80 && opened80 && widths80.sheet > widths80.rail + 100 && closed80,
-                { shown80, thin80, railLine80, opened80, widths80, closed80 }
+                "80. a compaction shows in Chat as one thin Compacted line with no summary and nothing to open; the rail's Compacted line opens the long summary in a selected Summary tab, wider than 300px with a resize grip, that scrolls on its own; its x closes it back to Overview",
+                shown80 && thin80 && railLine80 && opened80 && tab80 === "summary" && width80 >= 350 && grip80 && scroll80?.moved && scroll80?.over && closed80 && back80 === "overview",
+                { shown80, thin80, railLine80, opened80, tab80, width80, grip80, scroll80, closed80, back80 }
             );
 
             // 81. Tab in bash mode puts a file whose name holds a space or a shell metacharacter in the box with a backslash before each of
