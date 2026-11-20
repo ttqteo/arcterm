@@ -30,7 +30,8 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
 
 - [ ] (arcterm) **A council card wraps a long path** (`councilsummary.tsx`, `councilsheet.tsx`). Open a council whose
   First step names a long path with no spaces (`obsidian_harness/20261113_paper_v1_be…`): it breaks inside the card
-  in the report's direction cards and in Jarvis's council sheet, nothing runs past the edge. Not tried in the app.
+  in the report's direction cards and in Jarvis's council sheet, nothing runs past the edge. The Report's cards are
+  checked in the dev app by `council-summary`'s long-path step; Jarvis's council sheet is not tried.
 
 - [ ] (arcterm) **Typing below a one-question ask answers it** (`permissionHolds`, fix/box-answers-ask). In a Claude
   agent's Chat, have it ask one AskUserQuestion (a plan Handoff is one): the box shows no "Answer the permission prompt

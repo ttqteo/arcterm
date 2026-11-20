@@ -1584,6 +1584,43 @@ export const councilSummary = {
             }
         });
 
+        // A first step or a title naming a long path with no space to break at (2026-11-20, a council's First step ran
+        // `obsidian_harness/20261113_paper_v1_be…` past its card's edge): both wrap inside the card.
+        await step("a long path in a direction's title or First step wraps inside its card instead of running past its edge", async () => {
+            const PATH = "obsidian_harness/20261113_paper_v1_baseline_harness_comparison_draft_final_v2.md:388";
+            const id = await seedCouncil(h, ctx, "done", {
+                id: "fx-council-summary-longpath",
+                edit: (c) => {
+                    c.summary.directions.forEach((d, i) => {
+                        d.firststep = i === 0 ? `Edit ${PATH} and :388. State plainly what was not run.` : "Try it on one screen";
+                    });
+                    c.summary.directions[1].title = `Rename ${PATH.replace(":388", "")}`;
+                },
+            });
+            try {
+                await openSummary(h, ctx, id);
+                const facts = await h.ev(`(() => {
+                    const root = document.querySelector(${q(SUMMARY)});
+                    const cards = [...root.querySelectorAll("[data-council-direction]")];
+                    const spill = (card, el) => (el ? el.scrollWidth - el.clientWidth > 1 || el.getBoundingClientRect().right > card.getBoundingClientRect().right + 1 : false);
+                    const step = cards[0]?.querySelector("[data-council-first-step]");
+                    step?.scrollIntoView({ block: "center" });
+                    return {
+                        cards: cards.length,
+                        stepHasPath: (step?.innerText ?? "").includes("20261113_paper_v1"),
+                        stepSpills: [step, ...(step ? step.querySelectorAll("span") : [])].some((el) => spill(cards[0], el)),
+                        titleSpills: spill(cards[1], cards[1]?.querySelector("[data-council-title]")),
+                    };
+                })()`);
+                await sleep(300);
+                await h.shot("cdp-shots/council-summary-longpath.png");
+                const ok = facts.cards === 4 && facts.stepHasPath && !facts.stepSpills && !facts.titleSpills;
+                return { ok, detail: JSON.stringify(facts) };
+            } finally {
+                await openSummary(h, ctx);
+            }
+        });
+
         return steps;
     },
 
