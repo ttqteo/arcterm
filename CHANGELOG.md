@@ -36,6 +36,10 @@ and a picture given to a line that is not big.
 
 - A board with Vietnamese text now reads in Shantell Sans, a hand-drawn face that has every Vietnamese letter, instead of
   the plain Nunito that sat oddly beside the sketched shapes.
+### Fixed
+
+- A fork started from a project's History (a session row's menu, Quick look, or the session pane) shows the
+  conversation it forks in Chat at once, as a fork from Chat does, instead of an empty New conversation.
 
 ## 1.10.0 — 2026-11-20
 

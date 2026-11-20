@@ -434,9 +434,10 @@ export function resumeLaunchOpts(s: SessionActivity): LaunchAgentOpts {
 
 // forkLaunchOpts starts a new Claude session from a session's conversation (claude --resume <id> --fork-session): the
 // fork gets an id of its own and the session it came from stays as it was, live or ended. Its tab is new, never the one
-// that holds the original (no resumeOf), and is named as a fork of it. Null for a session that cannot resume, or of a
-// harness with no fork flag.
-export function forkLaunchOpts(s: SessionActivity): LaunchAgentOpts | null {
+// that holds the original (no resumeOf), and is named as a fork of it. It carries the transcript it forks (forkOf) and
+// `now` (forkedAt), as a Chat fork does (chatfork.ts): until the fork writes a transcript of its own, its Chat shows
+// that conversation rather than an empty one. Null for a session that cannot resume, or of a harness with no fork flag.
+export function forkLaunchOpts(s: SessionActivity, now = Date.now()): LaunchAgentOpts | null {
     if (s.runtime !== "claude" || !s.resumecommand?.includes("--resume")) {
         return null;
     }
@@ -445,6 +446,7 @@ export function forkLaunchOpts(s: SessionActivity): LaunchAgentOpts | null {
         ...resumeLaunchOpts(s),
         startupCommand: `${s.resumecommand} --fork-session`,
         label: title ? `${title} (fork)` : "Fork",
+        ...(s.transcriptpath ? { forkOf: s.transcriptpath, forkedAt: now } : {}),
     };
 }
 

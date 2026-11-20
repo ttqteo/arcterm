@@ -674,6 +674,12 @@ describe("forkLaunchOpts", () => {
         expect(opts?.resumeOf).toBeUndefined();
     });
 
+    it("carries the transcript it forks and when, so the fork's Chat shows that history until it writes its own", () => {
+        const opts = forkLaunchOpts(mk({ resumecommand: "claude --resume x", transcriptpath: "/t.jsonl" }), 1234);
+        expect(opts).toMatchObject({ forkOf: "/t.jsonl", forkedAt: 1234 });
+        expect(forkLaunchOpts(mk({ resumecommand: "claude --resume x", transcriptpath: "" }))?.forkOf).toBeUndefined();
+    });
+
     it("keeps the arguments the resume carries, a home session's ask-only settings included", () => {
         const opts = forkLaunchOpts(mk({ resumecommand: "claude --resume x --settings .arc/claude-ask.json" }));
         expect(opts?.startupCommand).toBe("claude --resume x --settings .arc/claude-ask.json --fork-session");
