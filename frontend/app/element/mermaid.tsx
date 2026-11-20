@@ -4,10 +4,12 @@
 // A ```mermaid block drawn as its diagram. mermaid (~3 MB) is imported the first time a diagram shows, never before.
 // The diagram keeps its height from the first paint (mermaidcache.ts): a drawing made this session goes in at once, and
 // the first one of a session holds the room it took last time while mermaid works, so the lines around it never move
-// when it lands (a council's chat lost the reader's place to that).
+// when it lands (a council's chat lost the reader's place to that). A drawn diagram opens full size, to zoom and pan,
+// and copies as a picture (mermaidviewer.tsx).
 
-import { useLayoutEffect, useRef } from "react";
+import { useCallback, useLayoutEffect, useRef, useState } from "react";
 import { keepDrawing, keepSize, keptDrawing, keptSize, normalizeChart, reservedHeight } from "./mermaidcache";
+import { DiagramToolbar, MermaidViewer } from "./mermaidviewer";
 
 let mermaidInitialized = false;
 let mermaidInstance: any = null;
@@ -24,6 +26,20 @@ const initializeMermaid = async () => {
 export const Mermaid = ({ chart }: { chart: string }) => {
     const ref = useRef<HTMLDivElement>(null);
     const source = normalizeChart(chart);
+    // the toolbar and the full-size viewer exist only once a diagram is drawn: a loading line or an error has neither
+    const [drawn, setDrawn] = useState(false);
+    const [viewing, setViewing] = useState<string | null>(null);
+    const [open, setOpen] = useState(false);
+    const getSvg = useCallback(() => ref.current?.querySelector("svg") ?? null, []);
+    const expand = useCallback(() => {
+        const svg = getSvg();
+        if (svg == null) {
+            return;
+        }
+        setViewing(svg.outerHTML);
+        setOpen(true);
+    }, [getSvg]);
+    const close = useCallback(() => setOpen(false), []);
 
     // before the first paint: the kept drawing, or the room the diagram took last time with its loading line in it
     useLayoutEffect(() => {
@@ -32,11 +48,13 @@ export const Mermaid = ({ chart }: { chart: string }) => {
             return;
         }
         el.className = "mermaid";
+        setDrawn(false);
         const kept = keptDrawing(source);
         if (kept != null) {
             el.style.minHeight = "";
             el.innerHTML = kept;
             el.setAttribute("data-processed", "true");
+            setDrawn(true);
             return;
         }
         const size = keptSize(source);
@@ -65,6 +83,7 @@ export const Mermaid = ({ chart }: { chart: string }) => {
                     if (box.width > 0 && box.height > 0) {
                         keepSize(source, { w: natural, r: box.height / box.width });
                     }
+                    setDrawn(true);
                 }
                 el.style.minHeight = "";
             } catch (err) {
@@ -82,5 +101,18 @@ export const Mermaid = ({ chart }: { chart: string }) => {
         };
     }, [source]);
 
-    return <div className="mermaid" ref={ref} />;
+    // a click on the diagram opens it full size too; the click that ends a text selection does not
+    return (
+        <div className="group/diagram relative">
+            <div
+                className="mermaid"
+                ref={ref}
+                data-mermaid-drawn={drawn ? "" : undefined}
+                onClick={drawn ? () => window.getSelection()?.isCollapsed !== false && expand() : undefined}
+                style={drawn ? { cursor: "zoom-in" } : undefined}
+            />
+            {drawn ? <DiagramToolbar onExpand={expand} getSvg={getSvg} /> : null}
+            {viewing != null ? <MermaidViewer html={viewing} open={open} onClose={close} /> : null}
+        </div>
+    );
 };

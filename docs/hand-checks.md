@@ -23,6 +23,11 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
 
 ## 2026-11-20
 
+- [ ] (arcterm) Diagram zoom and Copy image in the installed app (WebView2): ask a Claude agent to explain a flow and
+  check it answers with a mermaid diagram, not ASCII; hover the diagram, Copy image, paste into Paint or a chat: the
+  whole diagram, sharp, on a dark ground. Click it: the viewer opens fitted, the wheel zooms toward the cursor, a drag
+  pans, Escape closes it without leaving the surface. Tried only in headless Chrome. (`feat/chat-diagrams`)
+
 - [ ] (arcterm) **Escape turns focus read off wherever the focus is** (`focusReadEscapeTarget`, agent:focus-read-off).
   On the Agent surface, turn Chat's focus read on for an agent (asleep, and awake), then click its row in the tree, the
   header, or the Wake box, and press Escape: focus read turns off and the surface stays; a second Escape leaves to the

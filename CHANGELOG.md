@@ -32,6 +32,13 @@ and a picture given to a line that is not big.
 
 ## Unreleased
 
+### Added
+
+- A diagram in Chat opens full size: click it, or Expand in the toolbar that shows over it on hover, then zoom with the
+  wheel or + and -, drag to pan, and 0 or a double click to fit. Copy image puts the whole diagram on the clipboard as
+  a sharp PNG on the app's background, ready to paste into a doc or a message. Agents now draw a flow or pipeline as a
+  diagram instead of ASCII arrows in a code block. <!-- big --> <!-- shot: 1.11.0-diagram-zoom.webp -->
+
 ### Changed
 
 - A council's Report now opens with What it settled under the answer: the direction it chose, what it agreed, what is
