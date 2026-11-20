@@ -23,6 +23,10 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
 
 ## 2026-11-20
 
+- [ ] (arcterm) **Escape turns focus read off wherever the focus is** (`focusReadEscapeTarget`, agent:focus-read-off).
+  On the Agent surface, turn Chat's focus read on for an agent (asleep, and awake), then click its row in the tree, the
+  header, or the Wake box, and press Escape: focus read turns off and the surface stays; a second Escape leaves to the
+  Cockpit (or stops a working turn). In the chat box Escape stays the box's own. Not tried in the app.
 - [ ] (arcterm) **Usage opens an old session's transcript** (`fetchAndHandSession`, fix/usage-open-old-session). In
   Usage → By session, click an ended row from a few days back (one past the newest 100 sessions, such as
   `Paper_v1_benchmark_bilingual` in thesis): Library shows its transcript with Resume, not "This session is not in

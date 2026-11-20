@@ -57,6 +57,8 @@ and a picture given to a line that is not big.
   conversation it forks in Chat at once, as a fork from Chat does, instead of an empty New conversation.
 - A session opened from Usage's By session table shows its transcript in Library, however old it is, instead of "This
   session is not in the archive yet" for one past the most recent 100.
+- Escape on the Agent surface turns Chat's focus read off first, even after a click on the agent tree, the header or the
+  Wake box, instead of leaving for the Cockpit with focus read still on.
 
 ## 1.10.0 — 2026-11-20
 

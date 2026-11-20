@@ -24,6 +24,7 @@ import {
     setMarking,
     updateCanvas,
 } from "@/app/view/agents/canvasstore";
+import { setFocusReadOn } from "@/app/view/agents/chatfocusreadstore";
 import { councilChatNavAtom } from "@/app/view/agents/councilchatnav";
 import { diffScopeAtom } from "@/app/view/agents/diffscopeatom";
 import { docReviewStateAtom, setGeneralNote, syncDocReview } from "@/app/view/agents/docreviewstore";
@@ -39,7 +40,7 @@ import { activeSubjectAtom } from "@/app/view/jarvis/jarvissubjectstore";
 import { petPeekOpenAtom } from "@/app/view/jarvis/petstore";
 import { libraryConvViewAtom, libraryCouncilSelAtom, libraryTabAtom } from "@/app/view/library/librarystore";
 import { atom, type PrimitiveAtom } from "jotai";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
     buildAgentBindings,
     buildChannelsAskBindings,
@@ -213,6 +214,35 @@ describe("keybinding conflict invariant", () => {
             expect(() => assertNoConflicts(all)).not.toThrow();
         } finally {
             detachCanvas("a1");
+        }
+    });
+
+    // Focus read on for the agent in focus, its Chat on screen and the DOM focus outside the conversation (a click on the
+    // tree, the header or the Wake box): the first Escape turns focus read off, and agent:back stands down for it
+    it("Escape turns focus read off wherever the focus is while the agent in focus shows its Chat", () => {
+        const model = stubModel("a1");
+        const all = [...buildGlobalBindings(model), ...buildListNavBindings(model), ...buildAgentBindings(model)];
+        const visible = { checkVisibility: () => true, focus: () => {} };
+        vi.stubGlobal("CSS", { escape: (v: string) => v });
+        vi.stubGlobal("document", {
+            activeElement: null,
+            querySelector: (sel: string) => (sel.includes("data-agent-chat") ? visible : null),
+        });
+        const escapes = (ctx: KeyContext) =>
+            all.filter((b) => b.keys === "Escape" && (b.when ? b.when(ctx) : true)).map((b) => b.id);
+        const at: KeyContext = { surface: "agent", editable: false, modalOpen: false, leader: null };
+        try {
+            expect(escapes(at)).not.toContain("agent:focus-read-off");
+            setFocusReadOn("a1", true);
+            expect(escapes(at)).toEqual(["agent:focus-read-off"]);
+            // an input, the chat box or the terminal keeps its own Escape
+            expect(escapes({ ...at, editable: true })).not.toContain("agent:focus-read-off");
+            expect(() => assertNoConflicts(all)).not.toThrow();
+            all.find((b) => b.id === "agent:focus-read-off")!.run(at);
+            expect(escapes(at)).toEqual(["agent:back"]);
+        } finally {
+            setFocusReadOn("a1", false);
+            vi.unstubAllGlobals();
         }
     });
 

@@ -55,6 +55,7 @@ import {
 import { paneState } from "@/app/view/agents/canvasmodel";
 import { focusedCanvas, focusedCanvasMode, setMarking, stepCanvasBoard } from "@/app/view/agents/canvasstore";
 import { activeChannelRunsAtom } from "@/app/view/agents/channelsstore";
+import { focusReadEscapeTarget } from "@/app/view/agents/chatfocusread";
 import {
     chatFocusReadIdsAtom,
     conversationShown,
@@ -1631,6 +1632,17 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
         const agent = chatAgent();
         return agent != null && agent.state === "working" && slotView() === "terminal" && getChatMode(agent) === "chat";
     };
+    // Whose focus read the first Escape turns off (agent:focus-read-off), and what agent:back and agent:chat-interrupt
+    // stand down for: the reader that holds the focus, else the agent in focus with focus read on and its Chat on screen
+    // wherever the focus is, since a click on the tree, the header or the Wake box leaves it outside the conversation. Not
+    // under a subagent (subagent:back's Escape) or a canvas, review or brainstorm in the terminal's place (their own).
+    const focusReadEscapeAgent = (): string | null =>
+        focusReadEscapeTarget(
+            focusReadAgent(),
+            focusId(),
+            globalStore.get(chatFocusReadIdsAtom),
+            (id) => globalStore.get(focusSubagentAtom) == null && noCanvas() && conversationShown(id)
+        );
     const redrawFocused = () => {
         const id = focusId();
         const items = [...globalStore.get(model.agentsAtom), ...globalStore.get(model.terminalsAtom)];
@@ -1677,7 +1689,7 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
                 globalStore.get(focusSubagentAtom) == null &&
                 noCanvas() &&
                 !chatWorking() &&
-                focusReadAgent() == null,
+                focusReadEscapeAgent() == null,
             run: () => {
                 if (globalStore.get(terminalFullscreenAtom)) {
                     globalStore.set(terminalFullscreenAtom, false);
@@ -1699,7 +1711,7 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
                 globalStore.get(focusSubagentAtom) == null &&
                 noCanvas() &&
                 chatWorking() &&
-                focusReadAgent() == null,
+                focusReadEscapeAgent() == null,
             run: () => {
                 const agent = chatAgent();
                 return agent != null && interruptChat(agent.id) ? undefined : false;
@@ -2250,15 +2262,18 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
             })
         ),
         {
-            // Escape leaves focus read, as it leaves the other reading modes; the focus stays in the conversation, so a
-            // second Escape goes back or stops a working turn as it would have (agent:back, agent:chat-interrupt)
+            // Escape leaves focus read, as it leaves the other reading modes; the focus stays where it is, so a second
+            // Escape goes back or stops a working turn as it would have (agent:back, agent:chat-interrupt). Unlike J/K/Q
+            // it acts wherever the focus is while the agent in focus shows its Chat read with focus read (an input, the
+            // chat box and the terminal keep their own Escape: strict), so Escape never leaves focus read on behind
+            // the Cockpit.
             id: "agent:focus-read-off",
             keys: "Escape",
             group: "Agent",
             label: "Focus read: turn it off",
-            when: focusReadKeys,
+            when: (ctx) => focusReadKeys(ctx) || (agentNavStrict(ctx) && focusReadEscapeAgent() != null),
             run: () => {
-                const id = focusReadAgent();
+                const id = focusReadEscapeAgent();
                 if (id == null) {
                     return false;
                 }
