@@ -33,6 +33,9 @@ export interface RailGitState {
     // list is its own edits, so this is the base of its edits (the synthetic commit whose parent is the session start's,
     // so `ref..HEAD` still lists the session's commits); any other agent's is the session start's
     ref?: string;
+    // a Claude agent's edits end at this synthetic commit, so its patch is ref..end alone; "" or unset, the list runs
+    // from ref to the working tree
+    end?: string;
     // the whole branch's changes, from where it left the default branch; unset on the default branch itself, or when
     // no default branch resolves
     branchDiff?: BranchDiff;
@@ -186,7 +189,7 @@ export async function loadRailForAgent(
         // session-start commit (a null ts degrades to the live working-tree-vs-HEAD diff)
         // the worktree list only names the worktree, so a failure there leaves the line out rather than the rail
         // the branch view is extra: a failure there leaves the session's list standing
-        const [{ ch }, wts, br] = await Promise.all([
+        const [{ ch, end }, wts, br] = await Promise.all([
             readAgentChanges(cwd, { transcriptPath, runtime: agent.agent }, startTs),
             RpcApi.GitListWorktreesCommand(TabRpcClient, { cwd }).catch(() => null),
             RpcApi.GitChangesCommand(TabRpcClient, { cwd, branchbase: true }).catch(() => null),
@@ -203,6 +206,7 @@ export async function loadRailForAgent(
             changes,
             worktree,
             ref: ch.ref ?? "",
+            end,
             branchDiff: ch.isrepo ? branchDiffOf(br) : undefined,
         });
     } catch (e) {

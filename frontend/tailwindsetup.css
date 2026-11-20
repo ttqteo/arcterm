@@ -454,6 +454,23 @@
     --modal-bg-color: var(--color-surface-raised);
     --modal-border-color: var(--color-edge-mid);
     --modal-box-shadow: 0 8px 24px rgba(0, 0, 0, 0.8); /* legacy search-modal shadow; theme.scss value was malformed */
+
+    /* The diff rows the rail's Changes tab draws (diffrow.tsx): a changed line is its side's token at a tenth with a
+       3px edge of it. Derived here rather than in @theme so a runtime theme's token, written on this element,
+       carries through. */
+    --diff-added-tint: color-mix(in oklab, var(--color-diff-added) 10%, transparent);
+    --diff-removed-tint: color-mix(in oklab, var(--color-diff-removed) 10%, transparent);
+    --diff-added-edge: inset 3px 0 0 var(--color-diff-added);
+    --diff-removed-edge: inset 3px 0 0 var(--color-diff-removed);
+}
+
+.diff-line-added {
+    background-color: var(--diff-added-tint);
+    box-shadow: var(--diff-added-edge);
+}
+.diff-line-removed {
+    background-color: var(--diff-removed-tint);
+    box-shadow: var(--diff-removed-edge);
 }
 
 /* Tailwind v4 preflight dropped `button { cursor: pointer }`; restore it app-wide so bespoke

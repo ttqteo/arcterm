@@ -30,6 +30,14 @@ in the dev app: `node scripts/whatsnew-shot.mjs <topic> [--selector <css>]` writ
 `whatsnew.test.ts` fails a big line with neither (in Unreleased and from 1.9.0 on), a missing file, one over 120 KB,
 and a picture given to a line that is not big.
 
+## Unreleased
+
+### Changed
+
+- The rail's Changes tab shows every changed file's diff in one scroll, grouped by folder: open a file or a whole
+  folder to read its hunks, or Expand all. `Shift`+`N` / `Shift`+`P` step through the changes, `Shift`+`W` hides
+  whitespace, and the tab widens with the File tab's grip.
+
 ## 1.12.0 — 2026-11-20
 
 ### Added

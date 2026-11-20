@@ -2316,6 +2316,22 @@ declare global {
         worktrees: GitWorktree[];
     };
 
+    // wshrpc.CommandGitPatchData
+    type CommandGitPatchData = {
+        cwd: string;
+        ref?: string;
+        end?: string;
+        path?: string;
+        ignorews?: boolean;
+    };
+
+    // wshrpc.CommandGitPatchRtnData
+    type CommandGitPatchRtnData = {
+        patch: string;
+        isrepo: boolean;
+        truncated?: boolean;
+    };
+
     // wshrpc.CommandGitReviewPatchData
     type CommandGitReviewPatchData = {
         cwd: string;

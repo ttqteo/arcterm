@@ -329,14 +329,14 @@ describe("widths", () => {
         expect(RAIL_WIDTHS.transcript).toEqual(RAIL_WIDTHS.file);
     });
 
-    it("widens File, Transcript, Council and Summary with a dragged width, and keeps the rest at Overview's", () => {
+    it("widens File, Transcript, Council, Summary and Changes with a dragged width, and keeps the rest at Overview's", () => {
         expect(wideTabOf("file")).toBe("file");
         expect(wideTabOf("transcript")).toBe("transcript");
         expect(wideTabOf("council")).toBe("file");
         expect(wideTabOf("summary")).toBe("file");
         expect(wideTabOf("overview")).toBeNull();
         expect(wideTabOf("tree")).toBeNull();
-        expect(wideTabOf("changes")).toBeNull();
+        expect(wideTabOf("changes")).toBe("file");
     });
 });
 

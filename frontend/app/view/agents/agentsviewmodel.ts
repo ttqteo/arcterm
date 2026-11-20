@@ -17,6 +17,11 @@ export interface GrepMatch {
 export interface DiffLine {
     sign: "+" | "-" | "";
     text: string;
+    // a git diff's @@ line, drawn as a separator rather than code
+    hunk?: true;
+    // the line's number on each side, known from an @@ header; absent, the diff has no gutter
+    oldNo?: number;
+    newNo?: number;
 }
 export interface EditFile {
     path: string;
@@ -24,6 +29,8 @@ export interface EditFile {
     adds: number;
     dels: number;
     lines: DiffLine[];
+    // the patch said "Binary files ... differ": there are no lines to draw
+    binary?: true;
 }
 
 export type ActionDetail =
