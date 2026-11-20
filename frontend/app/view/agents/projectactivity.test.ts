@@ -216,6 +216,8 @@ describe("last7Line", () => {
         expect(last7Line(6_900_000, 13)).toBe("13 sessions · 6.9M tokens");
         expect(last7Line(6_900_000, 1)).toBe("1 session · 6.9M tokens");
         expect(last7Line(0, null)).toBe("0 tokens");
+        expect(last7Line(6_900_000, 30, true)).toBe("30+ sessions · 6.9M tokens");
+        expect(last7Line(6_900_000, 1, true)).toBe("1+ sessions · 6.9M tokens");
     });
 });
 

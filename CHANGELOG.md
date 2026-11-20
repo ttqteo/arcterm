@@ -65,6 +65,14 @@ and a picture given to a line that is not big.
   home folder with a "trust this folder?" prompt; with no such folder here, Fork says so and starts nothing.
 - A fork's Chat shows the conversation it was forked from as soon as it opens, instead of "New conversation" until
   you send it a message, and its Working line no longer counts the hours since the last message it copied.
+- A project's Overview opens faster: its History reads only that project's sessions, a page at a time as you scroll,
+  instead of reading back through up to 1,000 sessions of every project first. While older pages are unread the
+  session count reads "30+".
+
+### Fixed
+
+- Older: Conversation History in a project's Overview, and Conversation History on the empty Agent page, open the
+  list of conversations again, not the last session you had open full width in Library.
 
 ## 1.9.0 — 2026-11-20
 

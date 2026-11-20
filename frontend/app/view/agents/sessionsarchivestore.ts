@@ -49,7 +49,8 @@ export function mergeFreshPage(
     return { sessions: [...fresh, ...older], cursor: keptCursor };
 }
 
-function appendPage(have: SessionActivity[], page: SessionActivity[]): SessionActivity[] {
+/** Pure: an older page behind the sessions loaded, less the ones already listed (identity is runtime + id). */
+export function appendPage(have: SessionActivity[], page: SessionActivity[]): SessionActivity[] {
     const listed = new Set(have.map(sessionId));
     return [...have, ...page.filter((s) => !listed.has(sessionId(s)))];
 }
@@ -164,6 +165,18 @@ export async function lookupSessions(ids: string[]): Promise<void> {
  *  session by its key. */
 export function withLookedUp(archive: SessionActivity[], lookedUp: SessionActivity[]): SessionActivity[] {
     return lookedUp.length === 0 ? archive : appendPage(archive, lookedUp);
+}
+
+// Sessions an opener already holds, handed to the session pane with the open: the Overview's History reads its project's
+// own pages, which the archive's pages need not reach. The newest handed first, a few kept.
+export const handedSessionsAtom = atom<SessionActivity[]>([]) as PrimitiveAtom<SessionActivity[]>;
+const HANDED_KEEP = 20;
+
+/** Keep `s` where the session pane resolves it from, before opening it there (showLibrarySession). */
+export function handSession(s: SessionActivity): void {
+    globalStore.set(handedSessionsAtom, (prev) =>
+        [s, ...prev.filter((x) => sessionId(x) !== sessionId(s))].slice(0, HANDED_KEEP)
+    );
 }
 
 /** Take a session's row out now: a delete reloads only the first page, which would leave a row from an older page. */

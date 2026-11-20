@@ -397,6 +397,9 @@ type CommandGetSessionsActivityData struct {
 	Limit      int      `json:"limit,omitempty"`
 	Cursor     string   `json:"cursor,omitempty"`
 	Ids        []string `json:"ids,omitempty"` // only these sessions, by transcript stem, whatever their age (Jarvis's For later)
+	// only the sessions of this project folder (a project's Overview), walked from its own transcript folder where it
+	// has one; "" lists every project
+	ProjectPath string `json:"projectpath,omitempty"`
 }
 
 type CommandGetSessionsActivityRtnData struct {

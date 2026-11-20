@@ -10,6 +10,8 @@ import {
     dropFromArchive,
     filterByStatus,
     groupByRecency,
+    handedSessionsAtom,
+    handSession,
     loadMoreSessionsArchive,
     loadSessionsArchive,
     lookupSessions,
@@ -469,5 +471,23 @@ describe("withLookedUp", () => {
     it("hands the archive back untouched with nothing looked up", () => {
         const archive = [mk()];
         expect(withLookedUp(archive, [])).toBe(archive);
+    });
+});
+
+describe("handSession", () => {
+    it("keeps the session handed over first, once, and at most 20", () => {
+        globalStore.set(handedSessionsAtom, []);
+        handSession(mk({ id: "a" }));
+        handSession(mk({ id: "b" }));
+        handSession(mk({ id: "a", task: "again" }));
+        expect(globalStore.get(handedSessionsAtom).map((s) => [s.id, s.task])).toEqual([
+            ["a", "again"],
+            ["b", "do the thing"],
+        ]);
+        for (let i = 0; i < 30; i++) {
+            handSession(mk({ id: `s${i}` }));
+        }
+        expect(globalStore.get(handedSessionsAtom)).toHaveLength(20);
+        expect(globalStore.get(handedSessionsAtom)[0].id).toBe("s29");
     });
 });

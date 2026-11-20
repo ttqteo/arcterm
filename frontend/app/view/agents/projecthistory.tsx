@@ -10,7 +10,7 @@ import { Skeleton, SkeletonLine } from "@/app/element/skeleton";
 import { ContextMenuModel } from "@/app/store/contextmenu";
 import { getApi } from "@/app/store/global";
 import { openTarget } from "@/app/view/jarvis/openref";
-import { showLibrary, showLibrarySession } from "@/app/view/library/librarystore";
+import { showConversationHistory, showLibrarySession } from "@/app/view/library/librarystore";
 import { cn, fireAndForget } from "@/util/util";
 import { useAtom, useAtomValue } from "jotai";
 import {
@@ -36,7 +36,7 @@ import { setCouncilPinned } from "./councilstore";
 import { claudeDesktopLink, OPEN_IN_DESKTOP_LABEL } from "./desktoplink";
 import { laterSince, laterTitle } from "./latermodel";
 import { laterMarksAtom, setLater } from "./laterstore";
-import { historyQueryAtom, type ProjectHistory } from "./projecthistorystore";
+import { historyQueryAtom, loadMoreProjectSessions, type ProjectHistory } from "./projecthistorystore";
 import {
     firstRows,
     HISTORY_PAGE,
@@ -44,12 +44,13 @@ import {
     historySessionLine,
     isLastChild,
     projectSessions,
+    rowsUntil,
     type CouncilPeek,
     type HistoryItem,
 } from "./projectoverviewmodel";
 import { canDeleteSession, confirmDeleteSession, DELETE_SESSION_LABEL } from "./sessiondelete";
 import { SessionPeek } from "./sessionpeek";
-import type { LiveSession } from "./sessionsarchivestore";
+import { handSession, type LiveSession } from "./sessionsarchivestore";
 import { offersOpenAsleep, openSessionAsleep, runSessionPrimary } from "./sessionsdetail";
 
 const PANEL = "overflow-hidden rounded-[8px] border border-edge-mid bg-surface-raised";
@@ -146,7 +147,14 @@ function sessionMenu(
 ) {
     const items: ContextMenuItem[] = [
         { label: "Quick look", icon: <Eye size={15} />, click: quickLook },
-        { label: "Open transcript", icon: <FileText size={15} />, click: () => showLibrarySession(model, key) },
+        {
+            label: "Open transcript",
+            icon: <FileText size={15} />,
+            click: () => {
+                handSession(s);
+                showLibrarySession(model, key);
+            },
+        },
     ];
     if (s.resumecommand || (s.live && s.liveId)) {
         items.push({
@@ -359,12 +367,23 @@ export function HistoryColumn({
     // the session read in the Quick look dialog, over the page; Open there takes it to the full pane
     const [peek, setPeek] = useState<{ key: string; session: LiveSession } | null>(null);
     const rows = useMemo(
-        () => historyRows(h.sessions, h.councils, h.runs.runs, path, now, q),
-        [h.sessions, h.councils, h.runs.runs, path, now, q]
+        () => rowsUntil(historyRows(h.sessions, h.councils, h.runs.runs, path, now, q), h.frontier),
+        [h.sessions, h.councils, h.runs.runs, path, now, q, h.frontier]
     );
     const lazy = useLazyLimit(`${path}|${q}`);
     const shown = useMemo(() => firstRows(rows, lazy.limit), [rows, lazy.limit]);
-    // the heading's number is the ended sessions in the window, whatever the search keeps
+    // every row read is drawn and the foot asked for more: read the next older page of sessions. Its rows land under the
+    // limit the scroll already raised, so the screen fills without another scroll; a failed page waits for the next one
+    const drawnAll = shown.length === rows.length;
+    const more = h.more;
+    const limit = lazy.limit;
+    const rowCount = rows.length;
+    useEffect(() => {
+        if (more && drawnAll) {
+            fireAndForget(() => loadMoreProjectSessions(path));
+        }
+    }, [more, drawnAll, rowCount, limit, path]);
+    // the heading's number is the ended sessions read in the window, whatever the search keeps; "+" while older are unread
     const sessionCount = useMemo(() => projectSessions(h.sessions, path, now, "").length, [h.sessions, path, now]);
 
     const runsError = h.runs.error;
@@ -402,7 +421,7 @@ export function HistoryColumn({
         <button
             type="button"
             data-history-older
-            onClick={() => showLibrary(model, "conversations")}
+            onClick={() => showConversationHistory(model)}
             className={`${ROW} text-[12px] text-muted`}
         >
             Older: Conversation History
@@ -553,8 +572,8 @@ export function HistoryColumn({
                     </Fragment>
                 );
             })}
-            {rows.length === 0 && !h.sessionsError && runsError == null ? noRows : null}
-            {shown.length < rows.length ? (
+            {rows.length === 0 && !h.more && !h.sessionsError && runsError == null ? noRows : null}
+            {shown.length < rows.length || h.more ? (
                 <div
                     ref={lazy.foot}
                     data-history-more
@@ -575,7 +594,8 @@ export function HistoryColumn({
                 <h2 className="text-[11px] font-semibold text-muted">History</h2>
                 {!busy ? (
                     <span data-history-count className="text-[11px] tabular-nums text-muted">
-                        {sessionCount} {sessionCount === 1 ? "session" : "sessions"}
+                        {sessionCount}
+                        {h.more ? "+" : ""} {sessionCount === 1 && !h.more ? "session" : "sessions"}
                     </span>
                 ) : null}
                 <span className="flex-1" />
@@ -596,10 +616,11 @@ export function HistoryColumn({
                 session={peek?.session ?? null}
                 onClose={() => setPeek(null)}
                 onOpen={() => {
-                    const key = peek?.key;
+                    const held = peek;
                     setPeek(null);
-                    if (key != null) {
-                        showLibrarySession(model, key);
+                    if (held != null) {
+                        handSession(held.session);
+                        showLibrarySession(model, held.key);
                     }
                 }}
             />

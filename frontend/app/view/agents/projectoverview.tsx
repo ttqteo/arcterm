@@ -131,7 +131,7 @@ export function ProjectOverview({ model }: { model: AgentsViewModel }) {
                     </div>
                 </header>
 
-                {path ? <ActivityCard path={path} sessions={sessionCount} /> : null}
+                {path ? <ActivityCard path={path} sessions={sessionCount} more={history.more} /> : null}
 
                 <div className="flex flex-col gap-6 @min-[1000px]:min-h-[320px] @min-[1000px]:flex-1 @min-[1000px]:flex-row">
                     <div

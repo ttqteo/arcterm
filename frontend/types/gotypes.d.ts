@@ -2004,6 +2004,7 @@ declare global {
         limit?: number;
         cursor?: string;
         ids?: string[];
+        projectpath?: string;
     };
 
     // wshrpc.CommandGetSessionsActivityRtnData

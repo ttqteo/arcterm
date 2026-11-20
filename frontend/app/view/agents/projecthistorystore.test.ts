@@ -1,7 +1,7 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/app/store/wshclientapi", () => ({
     RpcApi: {
@@ -29,14 +29,16 @@ import { globalStore } from "@/app/store/jotaiStore";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { channelsAtom } from "./channelsstore";
-import { loadProjectRuns, loadSessionsWindow, MAX_PAGES, projectRunsAtom } from "./projecthistorystore";
-import { HISTORY_WINDOW_MS } from "./projectoverviewmodel";
 import {
-    loadSessionsArchive,
-    sessionsArchiveAtom,
-    sessionsCursorAtom,
-    sessionsErrorAtom,
-} from "./sessionsarchivestore";
+    dropFromProjectSessions,
+    loadMoreProjectSessions,
+    loadProjectRuns,
+    loadProjectSessions,
+    PROJECT_SESSIONS_PAGE,
+    projectRunsAtom,
+    projectSessionList,
+    projectSessionsAtom,
+} from "./projecthistorystore";
 
 const runsCmd = vi.mocked(RpcApi.GetChannelRunsCommand);
 const sessionsCmd = vi.mocked(RpcApi.GetSessionsActivityCommand);
@@ -46,8 +48,14 @@ const DAY = 86_400_000;
 
 const channel = (oid: string, projectpath: string) => ({ oid, projectpath }) as Channel;
 const run = (id: string) => ({ id }) as Run;
-const session = (id: string, ago: number) => ({ id, runtime: "claude", lastactivets: NOW - ago }) as SessionActivity;
-const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
+const session = (id: string, ago: number, projectpath = "D:/p") =>
+    ({
+        id,
+        runtime: "claude",
+        lastactivets: NOW - ago,
+        projectpath,
+        transcriptpath: `C:\\t\\${id}.jsonl`,
+    }) as SessionActivity;
 
 // serves a page per cursor ("" is the first); a page is copied, as the wire gives a fresh array on every read
 const servePages = (pages: Record<string, { sessions: SessionActivity[]; nextcursor?: string }>) =>
@@ -56,16 +64,18 @@ const servePages = (pages: Record<string, { sessions: SessionActivity[]; nextcur
         return { ...page, sessions: [...page.sessions] };
     });
 
-// the cursors the walk asked for, in order, with "" for the first page
+// the cursors asked for, in order, with "" for the first page
 const asked = () => sessionsCmd.mock.calls.map(([, data]) => data.cursor ?? "");
+
+let pathSeq = 0;
+// each test reads its own project, so the atom family's state of another test does not leak in
+let P = "";
 
 beforeEach(() => {
     runsCmd.mockReset();
     sessionsCmd.mockReset();
     globalStore.set(channelsAtom, null);
-    globalStore.set(sessionsArchiveAtom, null);
-    globalStore.set(sessionsCursorAtom, "");
-    globalStore.set(sessionsErrorAtom, false);
+    P = `D:/p${++pathSeq}`;
 });
 
 describe("loadProjectRuns", () => {
@@ -120,167 +130,148 @@ describe("loadProjectRuns", () => {
     });
 });
 
-describe("loadSessionsWindow", () => {
-    it("asks the next page while the oldest session is inside the window and a cursor is left", async () => {
-        servePages({
-            "": { sessions: [session("a", DAY), session("b", 2 * DAY)], nextcursor: "c1" },
-            c1: { sessions: [session("c", 3 * DAY), session("d", 4 * DAY)], nextcursor: "c2" },
-            c2: { sessions: [session("e", 5 * DAY)], nextcursor: "" },
+describe("loadProjectSessions", () => {
+    it("asks for one page of the project's own sessions in the window, never the whole archive", async () => {
+        servePages({ "": { sessions: [session("a", DAY)], nextcursor: "c1" } });
+
+        await loadProjectSessions(P);
+
+        expect(sessionsCmd).toHaveBeenCalledTimes(1);
+        expect(sessionsCmd.mock.calls[0][1]).toEqual({ projectpath: P, windowdays: 7, limit: PROJECT_SESSIONS_PAGE });
+        expect(globalStore.get(projectSessionsAtom(P))).toMatchObject({
+            sessions: [session("a", DAY)],
+            cursor: "c1",
+            error: false,
         });
-
-        await loadSessionsWindow(NOW);
-
-        expect(asked()).toEqual(["", "c1", "c2"]);
-        expect(globalStore.get(sessionsArchiveAtom)?.map((s) => s.id)).toEqual(["a", "b", "c", "d", "e"]);
-        expect(globalStore.get(sessionsCursorAtom)).toBe("");
     });
 
-    it("stops when a page's oldest session is older than the window", async () => {
+    it("notes when the page that landed was asked for", async () => {
+        servePages({ "": { sessions: [session("a", DAY)], nextcursor: "" } });
+        const before = Date.now();
+        await loadProjectSessions(P);
+        const readAt = globalStore.get(projectSessionsAtom(P)).readAt;
+        expect(readAt).toBeGreaterThanOrEqual(before);
+        expect(readAt).toBeLessThanOrEqual(Date.now());
+    });
+
+    it("keeps the older pages read before when it reads the first again", async () => {
         servePages({
             "": { sessions: [session("a", DAY)], nextcursor: "c1" },
-            c1: { sessions: [session("b", 2 * DAY), session("c", HISTORY_WINDOW_MS + 1)], nextcursor: "c2" },
-            c2: { sessions: [session("d", 9 * DAY)], nextcursor: "c3" },
+            c1: { sessions: [session("b", 2 * DAY)], nextcursor: "c2" },
         });
+        await loadProjectSessions(P);
+        await loadMoreProjectSessions(P);
 
-        await loadSessionsWindow(NOW);
+        servePages({ "": { sessions: [session("new", 0), session("a", DAY)], nextcursor: "c1" } });
+        await loadProjectSessions(P);
 
-        expect(asked()).toEqual(["", "c1"]);
-        expect(globalStore.get(sessionsCursorAtom)).toBe("c2");
+        const st = globalStore.get(projectSessionsAtom(P));
+        expect(st.sessions?.map((s) => s.id)).toEqual(["new", "a", "b"]);
+        expect(st.cursor).toBe("c2");
     });
 
-    it("asks no more when the first page already reaches past the window", async () => {
-        servePages({ "": { sessions: [session("a", DAY), session("b", 10 * DAY)], nextcursor: "c1" } });
-        await loadSessionsWindow(NOW);
-        expect(asked()).toEqual([""]);
-    });
+    it("reads a failed first load as loaded with an error, keeping what was read", async () => {
+        sessionsCmd.mockRejectedValueOnce(new Error("scan failed"));
+        await loadProjectSessions(P);
+        expect(globalStore.get(projectSessionsAtom(P))).toEqual({ sessions: [], cursor: "", error: true, readAt: 0 });
 
-    it("stops when the cursor comes back empty", async () => {
         servePages({ "": { sessions: [session("a", DAY)], nextcursor: "" } });
-        await loadSessionsWindow(NOW);
-        expect(asked()).toEqual([""]);
+        await loadProjectSessions(P);
+        expect(globalStore.get(projectSessionsAtom(P)).error).toBe(false);
     });
+});
 
-    it("stops on an empty archive", async () => {
-        servePages({ "": { sessions: [], nextcursor: "c1" } });
-        await loadSessionsWindow(NOW);
-        expect(asked()).toEqual([""]);
-        expect(globalStore.get(sessionsArchiveAtom)).toEqual([]);
-    });
-
-    it("reads at most MAX_PAGES older pages, whatever the cursor says", async () => {
-        const pages: Record<string, { sessions: SessionActivity[]; nextcursor: string }> = {
-            "": { sessions: [session("s0", DAY)], nextcursor: "c1" },
-        };
-        for (let i = 1; i <= MAX_PAGES + 5; i++) {
-            pages[`c${i}`] = { sessions: [session(`s${i}`, DAY + i)], nextcursor: `c${i + 1}` };
-        }
-        servePages(pages);
-
-        await loadSessionsWindow(NOW);
-
-        expect(MAX_PAGES).toBe(10);
-        expect(sessionsCmd).toHaveBeenCalledTimes(1 + MAX_PAGES);
-        expect(globalStore.get(sessionsArchiveAtom)).toHaveLength(1 + MAX_PAGES);
-    });
-
-    it("stops when an older page fails, rather than asking for it again", async () => {
-        sessionsCmd.mockImplementation(async (_client, data) => {
-            if (data.cursor) {
-                throw new Error("scan failed");
-            }
-            return { sessions: [session("a", DAY)], nextcursor: "c1" };
+describe("loadMoreProjectSessions", () => {
+    it("reads the next older page of the project and moves the cursor", async () => {
+        servePages({
+            "": { sessions: [session("a", DAY)], nextcursor: "c1" },
+            c1: { sessions: [session("b", 2 * DAY)], nextcursor: "" },
         });
-
-        await loadSessionsWindow(NOW);
+        await loadProjectSessions(P);
+        await loadMoreProjectSessions(P);
 
         expect(asked()).toEqual(["", "c1"]);
-        expect(globalStore.get(sessionsCursorAtom)).toBe("c1");
+        expect(sessionsCmd.mock.calls[1][1]).toMatchObject({ projectpath: P, cursor: "c1" });
+        const st = globalStore.get(projectSessionsAtom(P));
+        expect(st.sessions?.map((s) => s.id)).toEqual(["a", "b"]);
+        expect(st.cursor).toBe("");
     });
 
-    describe("a scan already under way", () => {
-        afterEach(() => {
-            vi.useRealTimers();
+    it("asks nothing before the first page, or once nothing is left", async () => {
+        await loadMoreProjectSessions(P);
+        expect(sessionsCmd).not.toHaveBeenCalled();
+
+        servePages({ "": { sessions: [session("a", DAY)], nextcursor: "" } });
+        await loadProjectSessions(P);
+        await loadMoreProjectSessions(P);
+        expect(asked()).toEqual([""]);
+    });
+
+    it("asks once while a page is being read", async () => {
+        servePages({
+            "": { sessions: [session("a", DAY)], nextcursor: "c1" },
+            c1: { sessions: [session("b", 2 * DAY)], nextcursor: "c2" },
         });
+        await loadProjectSessions(P);
+        await Promise.all([loadMoreProjectSessions(P), loadMoreProjectSessions(P)]);
+        expect(asked()).toEqual(["", "c1"]);
+    });
 
-        // a scan another reader started: it holds the first read open until the test lets it land
-        const scanInFlight = (load: () => Promise<void>) => {
-            let land: () => void = () => {};
-            const gate = new Promise<void>((resolve) => (land = resolve));
-            const first = sessionsCmd.getMockImplementation()!;
-            sessionsCmd.mockImplementationOnce(async (client, data, opts) => {
-                await gate;
-                return first(client, data, opts);
-            });
-            return { scan: load(), land };
-        };
+    it("keeps the cursor when the page fails, so a later scroll asks again", async () => {
+        servePages({ "": { sessions: [session("a", DAY)], nextcursor: "c1" } });
+        await loadProjectSessions(P);
+        sessionsCmd.mockRejectedValueOnce(new Error("scan failed"));
+        await loadMoreProjectSessions(P);
+        expect(globalStore.get(projectSessionsAtom(P)).cursor).toBe("c1");
+    });
+});
 
-        it("waits for it to land, then pages from what it read", async () => {
-            servePages({
-                "": { sessions: [session("a", DAY)], nextcursor: "c1" },
-                c1: { sessions: [session("b", 2 * DAY), session("c", 9 * DAY)], nextcursor: "c2" },
-            });
-            const { scan, land } = scanInFlight(loadSessionsArchive);
+describe("dropFromProjectSessions", () => {
+    it("takes the deleted session out of the project's list, in any spelling of its path", async () => {
+        servePages({ "": { sessions: [session("a", DAY), session("b", 2 * DAY)], nextcursor: "" } });
+        await loadProjectSessions(P);
 
-            let done = false;
-            const walk = loadSessionsWindow(NOW).then(() => (done = true));
-            await settle();
-            // its own read was dropped: nothing is loaded, so it has nothing to page over yet
-            expect(done).toBe(false);
-            expect(globalStore.get(sessionsArchiveAtom)).toBeNull();
-            expect(sessionsCmd).toHaveBeenCalledTimes(1);
+        dropFromProjectSessions("c:/T/a.jsonl");
 
-            land();
-            await Promise.all([scan, walk]);
-            await settle();
+        expect(globalStore.get(projectSessionsAtom(P)).sessions?.map((s) => s.id)).toEqual(["b"]);
+    });
+});
 
-            expect(asked()).toContain("c1");
-            expect(globalStore.get(sessionsArchiveAtom)?.map((s) => s.id)).toEqual(["a", "b", "c"]);
+describe("projectSessionList", () => {
+    // read a day and a half ago
+    const READ_AT = NOW - 1.5 * DAY;
+    const state = (sessions: SessionActivity[] | null, cursor = "") => ({
+        sessions,
+        cursor,
+        error: false,
+        readAt: READ_AT,
+    });
+
+    it("is null while the first page loads", () => {
+        expect(projectSessionList(state(null), [session("a", 0)], "D:/p")).toEqual({ sessions: null, frontier: null });
+    });
+
+    it("adds the project's sessions the archive holds that were active since the read, the newer copy kept", () => {
+        const read = [session("a", 3 * DAY), session("b", 2 * DAY)];
+        const archive = [session("a", DAY), session("c", 0), session("x", 0, "D:/other"), session("b", 4 * DAY)];
+        const out = projectSessionList(state(read), archive, "d:\\P\\");
+        expect(out.frontier).toBeNull();
+        expect(Object.fromEntries(out.sessions!.map((s) => [s.id, s.lastactivets]))).toEqual({
+            a: NOW - DAY,
+            b: NOW - 2 * DAY,
+            c: NOW,
         });
+    });
 
-        it("waits for it over an archive that is already loaded, which the scan will replace", async () => {
-            // newer than anything the scan will list, so the merge drops it
-            servePages({ "": { sessions: [session("old", 0)], nextcursor: "" } });
-            await loadSessionsArchive();
-            sessionsCmd.mockClear();
+    it("leaves out an archive session older than the read, which the read no longer lists", () => {
+        const out = projectSessionList(state([session("a", DAY)]), [session("gone", 2 * DAY)], "D:/p");
+        expect(out.sessions!.map((s) => s.id)).toEqual(["a"]);
+    });
 
-            servePages({
-                "": { sessions: [session("new", DAY)], nextcursor: "c1" },
-                c1: { sessions: [session("older", 9 * DAY)], nextcursor: "" },
-            });
-            const { scan, land } = scanInFlight(loadSessionsArchive);
-
-            const walk = loadSessionsWindow(NOW);
-            await settle();
-            expect(asked()).toEqual([""]);
-
-            land();
-            await Promise.all([scan, walk]);
-            await settle();
-
-            expect(asked()).toContain("c1");
-            expect(globalStore.get(sessionsArchiveAtom)?.map((s) => s.id)).toEqual(["new", "older"]);
-        });
-
-        it("gives up waiting after a bound, and pages nothing over an archive that never loaded", async () => {
-            servePages({ "": { sessions: [session("a", DAY)], nextcursor: "c1" } });
-            vi.useFakeTimers();
-            const { scan, land } = scanInFlight(loadSessionsArchive);
-
-            let done = false;
-            const walk = loadSessionsWindow(NOW).then(() => (done = true));
-            await vi.advanceTimersByTimeAsync(5_000);
-            expect(done).toBe(false);
-            await vi.advanceTimersByTimeAsync(60_000);
-            await walk;
-            expect(done).toBe(true);
-            expect(sessionsCmd).toHaveBeenCalledTimes(1);
-            expect(globalStore.get(sessionsArchiveAtom)).toBeNull();
-
-            // let the held scan land so a later test finds the store idle
-            vi.useRealTimers();
-            land();
-            await scan;
-            await settle();
-        });
+    it("while older pages are unread, the frontier is the oldest session read", () => {
+        const read = [session("a", DAY), session("b", 2 * DAY)];
+        const out = projectSessionList(state(read, "c1"), [session("c", 3 * DAY), session("d", 0)], "D:/p");
+        expect(out.frontier).toBe(NOW - 2 * DAY);
+        expect(out.sessions!.map((s) => s.id).sort()).toEqual(["a", "b", "d"]);
     });
 });

@@ -96,7 +96,15 @@ function Loading() {
 }
 
 // memo: the page re-renders on the app's one-second clock, and the card's ~371 cells need not follow
-export const ActivityCard = memo(function ActivityCard({ path, sessions }: { path: string; sessions: number | null }) {
+export const ActivityCard = memo(function ActivityCard({
+    path,
+    sessions,
+    more = false,
+}: {
+    path: string;
+    sessions: number | null;
+    more?: boolean;
+}) {
     const act = useProjectActivity(path);
     const grid = useMemo(() => (act.rtn == null ? null : activityGrid(act.rtn, new Date())), [act.rtn]);
     const [hover, setHover] = useState<number | null>(null);
@@ -259,7 +267,7 @@ export const ActivityCard = memo(function ActivityCard({ path, sessions }: { pat
                 className="flex flex-wrap items-center gap-x-[14px] gap-y-2 pt-[2px] text-[12px] text-muted"
             >
                 <span>
-                    Last 7 days: <span className="text-secondary">{last7Line(grid.last7.tokens, sessions)}</span>
+                    Last 7 days: <span className="text-secondary">{last7Line(grid.last7.tokens, sessions, more)}</span>
                 </span>
                 <span className="flex items-center gap-[7px]">
                     <span aria-hidden className="mx-px size-[7px] rotate-45 bg-mark-run" />

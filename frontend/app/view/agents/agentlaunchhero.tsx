@@ -8,7 +8,7 @@
 // so the agent picks up its prior session in its original cwd.
 
 import { launchAgent } from "@/app/cockpit/cockpit-actions";
-import { showLibrary } from "@/app/view/library/librarystore";
+import { showConversationHistory } from "@/app/view/library/librarystore";
 import { cn, fireAndForget } from "@/util/util";
 import { useAtomValue } from "jotai";
 import { TriangleAlert } from "lucide-react";
@@ -85,7 +85,7 @@ export function AgentLaunchHero({ model }: { model: AgentsViewModel }) {
                 <button
                     type="button"
                     data-hero-history
-                    onClick={() => showLibrary(model, "conversations")}
+                    onClick={() => showConversationHistory(model)}
                     className="mt-3 cursor-pointer rounded-[6px] text-[12.5px] font-semibold text-accent-soft hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                 >
                     Conversation History

@@ -14,6 +14,7 @@ import { ArrowLeft } from "lucide-react";
 import { useEffect, useMemo } from "react";
 import type { AgentsViewModel } from "./agents";
 import {
+    handedSessionsAtom,
     loadSessionsArchive,
     overlayLive,
     resolveSelectedSession,
@@ -30,6 +31,8 @@ export function SessionPane({ model }: { model: AgentsViewModel }) {
     const archive = useAtomValue(sessionsArchiveAtom);
     // a session opened from Jarvis's For later may be older than every page the archive has loaded
     const lookedUp = useAtomValue(sessionLookupAtom).sessions;
+    // and one opened from a project's Overview may be past them too: History hands it over with the open
+    const handed = useAtomValue(handedSessionsAtom);
     const loadError = useAtomValue(sessionsErrorAtom);
     const roster = useAtomValue(model.agentsAtom);
     // the archive is scanned on entering the surface, but this pane can open before that scan has landed (or without
@@ -46,8 +49,11 @@ export function SessionPane({ model }: { model: AgentsViewModel }) {
         () =>
             archive == null
                 ? undefined
-                : resolveSelectedSession(overlayLive(withLookedUp(archive, lookedUp), roster, 0), sel),
-        [archive, lookedUp, roster, sel]
+                : resolveSelectedSession(
+                      overlayLive(withLookedUp(withLookedUp(archive, lookedUp), handed), roster, 0),
+                      sel
+                  ),
+        [archive, lookedUp, handed, roster, sel]
     );
     return (
         <div data-agent-session className="flex min-h-0 min-w-0 flex-1 flex-col px-8 pb-[22px] pt-[14px]">
