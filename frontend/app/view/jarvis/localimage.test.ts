@@ -4,7 +4,7 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
-import { imageStatus, localFileUrl, typedBlob } from "./localimage";
+import { doneReportPath, imageStatus, localFileUrl, typedBlob } from "./localimage";
 
 describe("localFileUrl", () => {
     it("encodes a Windows path with mixed separators, drive colon and spaces into the query", () => {
@@ -42,6 +42,34 @@ describe("imageStatus", () => {
         expect(imageStatus(404)).toBe("missing");
         expect(imageStatus(500)).toBe("error");
         expect(imageStatus(403)).toBe("error");
+    });
+});
+
+describe("doneReportPath", () => {
+    it("moves a report picture under done/, with / separators", () => {
+        expect(doneReportPath("C:/Users/a/AppData/Local/dev.arc.app/data/reports/20261120-163948/screen.png")).toBe(
+            "C:/Users/a/AppData/Local/dev.arc.app/data/reports/done/20261120-163948/screen.png"
+        );
+    });
+    it("moves a report picture under done/, with \\ separators", () => {
+        expect(doneReportPath("C:\\data\\reports\\20261120-163948\\screen.png")).toBe(
+            "C:\\data\\reports\\done\\20261120-163948\\screen.png"
+        );
+    });
+    it("keeps the -N suffix of a report id that shared its second", () => {
+        expect(doneReportPath("/home/a/data/reports/20261120-163948-2/screen.png")).toBe(
+            "/home/a/data/reports/done/20261120-163948-2/screen.png"
+        );
+    });
+    it("leaves a path already under done/ alone", () => {
+        expect(doneReportPath("C:/data/reports/done/20261120-163948/screen.png")).toBeNull();
+        expect(doneReportPath("C:\\data\\reports\\done\\20261120-163948\\screen.png")).toBeNull();
+    });
+    it("leaves a path that is not a report file alone", () => {
+        expect(doneReportPath("C:/x/final-shots/d1/1/cdp-shots/jarvis-peek.png")).toBeNull();
+        expect(doneReportPath("C:/x/myreports/20261120-163948/screen.png")).toBeNull();
+        expect(doneReportPath("C:/x/reports/latest/screen.png")).toBeNull();
+        expect(doneReportPath("C:/x/reports/20261120-163948")).toBeNull();
     });
 });
 
