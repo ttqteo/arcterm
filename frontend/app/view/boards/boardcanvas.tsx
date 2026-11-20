@@ -5,16 +5,25 @@
 // read, and takes the drawer's answers live (registerLiveBoard), so an answer landing while you edit goes through
 // updateScene instead of overwriting the file under you, and one Ctrl+Z takes the whole turn back. Excalidraw's
 // runtime is ~2 MB, so it loads (React.lazy) only when a canvas first shows. It fills its nearest positioned ancestor.
+// A sun/moon in its top-right corner turns every board light or dark (boardThemeAtom).
 
 import { globalStore } from "@/app/store/jotaiStore";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import type { ExcalidrawElement } from "@excalidraw/excalidraw/element/types";
 import type { AppState, BinaryFiles, ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
+import { useAtom } from "jotai";
+import { Moon, Sun } from "lucide-react";
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import "./boardcanvas.css";
 import { parseBoardFile, selectionLabel, serializeBoard, withReadableFont, type BoardScene } from "./boardmodel";
-import { boardViewportAtom, loadBoardConvert, pointExcalidrawAtLocalFonts, registerLiveBoard } from "./boardstore";
+import {
+    boardThemeAtom,
+    boardViewportAtom,
+    loadBoardConvert,
+    pointExcalidrawAtLocalFonts,
+    registerLiveBoard,
+} from "./boardstore";
 
 const AUTOSAVE_MS = 500;
 const SAVE_TRIES = 3;
@@ -89,6 +98,7 @@ function OpenBoard({ project, boardId, highlightIds, onSelection }: BoardCanvasP
     const [initial, setInitial] = useState<BoardScene | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [ready, setReady] = useState(false);
+    const [theme, setTheme] = useAtom(boardThemeAtom);
     // the shapes Show last selected, for the DOM (and a scenario) to read back
     const [shown, setShown] = useState<string[]>([]);
     const apiRef = useRef<ExcalidrawImperativeAPI | null>(null);
@@ -334,7 +344,7 @@ function OpenBoard({ project, boardId, highlightIds, onSelection }: BoardCanvasP
                 <LazyExcalidraw
                     excalidrawAPI={onApi}
                     onChange={onChange}
-                    theme="dark"
+                    theme={theme}
                     initialData={{
                         elements: initial.elements as ExcalidrawElement[],
                         files: initial.files as BinaryFiles,
@@ -365,6 +375,16 @@ function OpenBoard({ project, boardId, highlightIds, onSelection }: BoardCanvasP
                     }}
                 />
             </Suspense>
+            <button
+                type="button"
+                data-board-theme={theme}
+                aria-label={theme === "dark" ? "Light board" : "Dark board"}
+                title={theme === "dark" ? "Light board" : "Dark board"}
+                onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+                className="absolute right-3 top-3 z-10 flex h-8 w-8 cursor-pointer items-center justify-center rounded-[8px] border border-edge-mid bg-surface-raised text-muted shadow-popover-line hover:bg-surface-hover hover:text-primary"
+            >
+                {theme === "dark" ? <Sun size={14} strokeWidth={2} /> : <Moon size={14} strokeWidth={2} />}
+            </button>
         </div>
     );
 }

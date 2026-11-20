@@ -2,7 +2,7 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 
 /* Excalidraw's controls on arcterm's @theme tokens, so a runtime theme re-skins the board too. Scoped to the board's
-   wrapper and the dark theme, the only one the board uses. Excalidraw defines its own --color-primary,
+   wrapper and the dark theme; the light one is below. Excalidraw defines its own --color-primary,
    --color-muted and --color-surface-*, so they are overridden here from tokens it does not redefine. */
 .arc-board .excalidraw.theme--dark {
     --ui-font: var(--font-sans);
@@ -50,6 +50,16 @@
     --scrollbar-thumb-hover: var(--color-edge-mid);
     --shadow-island: var(--shadow-popover-line);
     background: var(--color-background);
+}
+
+/* The light theme (the canvas's sun) keeps Excalidraw's own light controls, only on arcterm's font and accent. The
+   canvas is transparent (viewBackgroundColor), so the wrapper gives it Excalidraw's own light ground. */
+.arc-board .excalidraw.theme--light {
+    --ui-font: var(--font-sans);
+    --focus-highlight-color: var(--color-accent);
+    --select-highlight-color: var(--color-accent);
+    --color-selection: var(--color-accent);
+    background: var(--default-bg-color);
 }
 
 /* the board keeps itself: no export, open or save menu, no library, no help overlay */

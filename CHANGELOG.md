@@ -47,11 +47,17 @@ and a picture given to a line that is not big.
 - The rail's Changes tab shows every changed file's diff in one scroll, grouped by folder: open a file or a whole
   folder to read its hunks, or Expand all. `Shift`+`N` / `Shift`+`P` step through the changes, `Shift`+`W` hides
   whitespace, and the tab widens with the File tab's grip.
+- A board can be light: the sun in its top-right corner turns every board white, the moon turns them dark again.
+- Beside a board, the agent list slides open and shut when you click its strip, and the strip's arrow turns with it.
 - Library → Boards reads the boards again each time you open it and has a Reload button beside the search, so a board
   file copied into the boards folder shows without reloading the window.
 - Chat's `@` lists the project's boards (`@board`, `@draw` or part of a board's name), the one open beside Chat first:
   a pick puts the board in your message as a badge, and the agent draws your request on that board instead of starting
   a new one.
+
+### Fixed
+
+- A file attached in Chat shows its type's icon (a PDF's, a spreadsheet's) instead of a plain page.
 
 ## 1.12.0 — 2026-11-20
 

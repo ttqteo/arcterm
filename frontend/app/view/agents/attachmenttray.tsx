@@ -1,12 +1,13 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// Presentational pieces for the composer's attachments: the chip tray (image thumbnails / file icons with
+// Presentational pieces for the composer's attachments: the chip tray (image thumbnails / a file's type icon, as the file tree draws it, with
 // per-chip remove + retry; an image's thumbnail and name open it full size) and the `+` that opens the native file
 // dialog. State + behavior live in useComposerAttachments (composerattachments.ts); these are props-in views.
 
+import { FileIcon } from "@/app/element/fileicon";
 import { ImageZoom, type ZoomImage } from "@/app/element/imagezoom";
-import { File as FileIcon, Loader2, Plus, RotateCw, X } from "lucide-react";
+import { Loader2, Plus, RotateCw, X } from "lucide-react";
 import { useState } from "react";
 import { isOversize, type Attachment } from "./composerattachments";
 
@@ -59,7 +60,7 @@ function Chip({
                 </button>
             ) : (
                 <>
-                    <FileIcon size={13} className="shrink-0 text-muted" />
+                    <FileIcon path={att.name} size={13} />
                     <span className="max-w-[120px] truncate">{att.name}</span>
                 </>
             )}

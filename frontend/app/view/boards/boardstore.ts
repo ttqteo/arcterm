@@ -10,7 +10,7 @@ import { waveEventSubscribeSingle } from "@/app/store/wps";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { atom, useAtomValue, type PrimitiveAtom } from "jotai";
-import { atomFamily } from "jotai/utils";
+import { atomFamily, atomWithStorage } from "jotai/utils";
 import { useEffect } from "react";
 
 export interface BoardViewport {
@@ -30,6 +30,11 @@ export const boardTalkAtom = atomFamily(
 export const boardViewportAtom = atomFamily(
     (_boardId: string) => atom<BoardViewport | null>(null) as PrimitiveAtom<BoardViewport | null>
 );
+
+// every board's canvas theme, the person's pick on the canvas's sun/moon: the app is dark, the board may be light (for
+// a drawing made to be pasted into a paper or slides). Excalidraw draws the dark theme by inverting the canvas.
+export type BoardTheme = "dark" | "light";
+export const boardThemeAtom = atomWithStorage<BoardTheme>("boards.theme", "dark");
 
 // an update event can start a read while an earlier one is in flight; only the latest may land
 const listSeq = new Map<string, number>();

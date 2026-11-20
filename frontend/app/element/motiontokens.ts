@@ -118,6 +118,26 @@ export const foldX: Variants = {
     exit: { opacity: 0, scale: 0.96, width: 0, transition: { duration: MOTION.durMicro, ease: MOTION.easeFluid } },
 };
 
+// Spring fold in width: a side panel of fixed width (the Agent tree beside a board) folding to nothing and back. The
+// width rides MOTION.spring and clips only while it moves; opacity stays on the Fluid ease. A terminal under the cell
+// it narrows refits once, at the end: its ResizeObserver is debounced 50ms (termwrap.ts).
+export const springFoldWidth: Variants = {
+    initial: { opacity: 0, width: 0, overflow: "hidden" },
+    animate: {
+        opacity: 1,
+        width: "auto",
+        overflow: "hidden",
+        transition: { width: MOTION.spring, opacity: { duration: MOTION.durMicro, ease: MOTION.easeFluid } },
+        transitionEnd: { overflow: "visible" },
+    },
+    exit: {
+        opacity: 0,
+        width: 0,
+        overflow: "hidden",
+        transition: { width: MOTION.spring, opacity: { duration: MOTION.durExit, ease: MOTION.easeFluid } },
+    },
+};
+
 // Sent rise: the message the person just sent rising into the chat from the composer below it, so the eye follows
 // it from the box to the log. y is safe here: a chat row has no Reorder.Item owning its transform. Scales from the
 // bubble's tail corner (set transform-origin per site); arrive only, the row never leaves this way.

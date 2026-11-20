@@ -32,6 +32,13 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
   asked, the ask comes back as a refusal whose reason tells the agent to ask you first.
 ## 2026-11-20
 
+- [ ] (arcterm) **Board light theme, tree fold animation, attachment icons** (`boardcanvas.tsx`, `agenttreeslot.tsx`,
+  `attachmenttray.tsx`). On any open board (beside Chat, or Library → Boards) the sun at the canvas's top-right turns
+  it white with Excalidraw's light controls and dark strokes readable; the moon turns it back; the pick holds after a
+  reload. Beside a board, clicking the agent strip slides the tree open over ~0.35 s and shut again, the chevron
+  turning; the agent's terminal under Chat is not redrawn mid-slide. A `.pdf` dropped in Chat's box shows the red PDF
+  icon in its chip, a `.xlsx` the spreadsheet one.
+
 - [ ] (arcterm) **Library → Boards Reload** (`libraryboards.tsx`). Copy a board file into
   `<data>/boards/<project>/` by hand while Library → Boards is open: the ↻ button right of the search spins once and
   the board appears; switching to another surface and back to Boards also shows it. The search box still fills the
