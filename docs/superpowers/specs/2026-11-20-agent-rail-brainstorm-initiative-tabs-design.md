@@ -21,7 +21,9 @@ appears only while the agent has the thing it shows (Council, `railcouncil.ts`).
    Neither new tab is ever a panel's default (`panelFor`); a stored Brainstorm or Initiative tab whose thing is gone falls
    back to Overview while the stored tab stays (`shownTab`), as Council does.
 4. **Plan to review moves to the Initiative tab.** Overview loses its `plan` section (`agentrailsections.ts`). The
-   popover's and the band's "Review on the rail" links open the Initiative tab with Plan to review unfolded.
+   header's `N to review` chip (`PlanReviewChip`) opens the Initiative tab with Plan to review unfolded, as the
+   popover's and the band's "Review on the rail" links did. The rail's section request (`railsection.ts`) stays: the
+   Verify chip still opens Overview's `verify` section through it.
 
 ## The Brainstorm tab (board `D-timeline`)
 
@@ -45,7 +47,7 @@ appears only while the agent has the thing it shows (Council, `railcouncil.ts`).
 - **Head:** the initiative's title, `Open in Jarvis ↗`, the `↳ Part of <parent>` link when it has one, project and
   status, the segment bar with `done/total`, `On N · <chunk>` and `Mark done` (`m`). With the agent on no chunk the
   last row reads `Pick a chunk…` instead (the band's behaviour).
-- **Sections, each folding on its header** (`RailSectionHeader`, as Overview's):
+- **Sections, each folding on its header** (the rail's `HeadedSection`, `collapsiblerail.tsx`, exported for it):
   - **Chunks:** the band's window (done by this agent, this agent's chunk, the next two, ones others hold), each row's
     status / rename menu, `Work on this` (`w`) on rows that offer it, and `All chunks (N)` unfolding the full list.
   - **Plan to review:** `planreviewsection.tsx` moved here unchanged; shown only while there are proposed rows, hidden
@@ -54,7 +56,8 @@ appears only while the agent has the thing it shows (Council, `railcouncil.ts`).
   - **Latest note on N:** the note and `Add note` (`n`); `No note on N yet` when there is none.
 - **States:** loading → `Loading the initiative…`; load error → the band's error line with Retry.
 - The tab's root is `data-owns-keys` and answers the band's keys: `m`, `n`, `w`, arrows and Enter on the rows, the
-  status menu's keys, Esc back to the message box.
+  status menu's keys, `i` back to the tab before it, Esc back to the message box. Opened by the chip, `i` or the
+  `N to review` chip, the tab takes focus, so its keys work at once.
 
 ## The header and the split (board `C-split-cells`)
 
@@ -70,7 +73,7 @@ appears only while the agent has the thing it shows (Council, `railcouncil.ts`).
 ## What is deleted
 
 `chatband.tsx`, the band parts of `brainstormbandview.tsx` (`BrainstormLine`, `BrainstormBody`; `BoardPreview` and
-`openChatBoard` stay, the dialog now hosted by the Chat pane), the line and body of `initiativebandview.tsx` (its rows,
+`openChatBoard` stay, the dialog now hosted by the agent's cell, over Chat or the terminal), the line and body of `initiativebandview.tsx` (its rows,
 menu and key logic move into the Initiative tab), `initiativebandstore.ts`'s band-part state, and Overview's `plan`
 section. Grep every import, `import type` included, before deleting a file.
 
@@ -78,8 +81,12 @@ section. Grep every import, `import type` included, before deleting a file.
 
 - Pure models with tests beside them: `agentrailtabs.ts` (`visibleTabs`, `shownTab`, `panelFor` with the two new tabs),
   `agentrailsections.ts` (no `plan`), and a new `railbrainstorm.ts` (timeline rows: numbering, boards under their
-  decision, `Open parts`, the newest and new flags).
-- The tab strip at the rail's 300px with every tab present must not clip its last icon (check in the dev app).
-- CDP: a scenario showing each tab on a fixture agent with a brainstorm and an initiative, and one showing a split of
-  four with the chip and the dot.
+  decision, `Open parts`, the new flag: a row's number is filled while a board under it is new; there is no separate
+  newest flag).
+- The tab strip at the rail's 300px with every tab present (Council, Brainstorm, Initiative and the Verify count) must
+  not clip its last icon: asserted in the split scenario.
+- CDP: a scenario per tab on a fixture agent with a brainstorm and an initiative (the tab's keys and actions, the chip,
+  `N to review`, the board dialog's keys and focus in Chat and Terminal), and one showing a split of four with the chip,
+  the dot and the strip at 300px. The scenarios that read the band, the popover or Overview's `plan` section follow
+  them onto the tabs or go.
 - `CHANGELOG.md`: one `Changed` line, `<!-- big -->` with its shot (the Brainstorm tab).

@@ -72,6 +72,16 @@ export function popoverProgress(effort: { chunks?: PopoverChunk[] }): {
     };
 }
 
+// The count after an initiative's title in the header's ◇ chip and in a split cell's bar: `done/total` over popoverProgress's
+// plan. Null while the initiative is not read yet, or when it has no chunk to count.
+export function chipCount(effort: { chunks?: PopoverChunk[] } | undefined): string | null {
+    if (effort == null) {
+        return null;
+    }
+    const { done, total } = popoverProgress(effort);
+    return total > 0 ? `${done}/${total}` : null;
+}
+
 export type PopoverStatusTone = "success" | "working" | "asking" | "muted" | "faint";
 
 // The word at the right of the kicker. Blocked first: it is the one state that waits on someone.

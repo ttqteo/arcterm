@@ -13,7 +13,7 @@ import { activeNavOrder } from "@/app/view/agents/activenav";
 import { closeAgentChord, confirmCloseSession } from "@/app/view/agents/agentactions";
 import { centerModeAtom, leaveCenter } from "@/app/view/agents/agentcenter";
 import { getProcExitAtom } from "@/app/view/agents/agentcontrollerstore";
-import { openRailCouncil, openRailTranscript } from "@/app/view/agents/agentrailstore";
+import { openRailCouncil, openRailTranscript, toggleRailInitiative } from "@/app/view/agents/agentrailstore";
 import { AgentsViewModel, RAIL_ORDER, SURFACE_ORDER, type SurfaceKey } from "@/app/view/agents/agents";
 import { AGENT_DIGITS } from "@/app/view/agents/agentsidebarmodel";
 import { answerDigitTarget, canSubmitAsk, moveCursor, type AgentVM } from "@/app/view/agents/agentsviewmodel";
@@ -107,8 +107,7 @@ import {
 } from "@/app/view/agents/githistorystore";
 import { canHandToPhone } from "@/app/view/agents/handtophone";
 import { anyFilterActive } from "@/app/view/agents/historyquery";
-import { toggleBandPart } from "@/app/view/agents/initiativebandstore";
-import { initiativePopoverAtom, openInitiativeLinkPicker } from "@/app/view/agents/initiativepopover";
+import { openInitiativeLinkPicker } from "@/app/view/agents/initiativepopover";
 import { openLauncher, type LauncherModel } from "@/app/view/agents/launcherstore";
 import { activeReviewKeyAtom, canSendKey, lineReviewsAtom } from "@/app/view/agents/linecommentstore";
 import { canApply, cardKeyAction, isPending, memoryCard, stepChange, stepQueue } from "@/app/view/agents/memorymodel";
@@ -1346,11 +1345,7 @@ export function buildUsageBindings(handlers: {
 // arrows, d, f, r, c) stand down there. Conversation History, the Canvas gallery and the sessions are on Library, a surface
 // of its own: its keys never meet the agent's.
 const centerAtRest = () => globalStore.get(centerModeAtom) === "terminal";
-// The initiative popover on the agent header owns its keys (m, n, the arrows, Enter, Escape) while it is open, so every
-// single-key Agent binding stands down: this dispatcher runs on window capture, ahead of the popover's own handler.
-const initiativePopoverClosed = () => globalStore.get(initiativePopoverAtom) == null;
-const agentNav = (ctx: KeyContext) =>
-    navigate(ctx) && ctx.surface === "agent" && centerAtRest() && initiativePopoverClosed();
+const agentNav = (ctx: KeyContext) => navigate(ctx) && ctx.surface === "agent" && centerAtRest();
 // The arrows step agents only with focus in the Agent tree: elsewhere on the surface (Chat's conversation, a card in
 // it) they are the page's own, to scroll or to move in what holds focus, and stepping agents there switched away
 // from the conversation being read. j, k and Ctrl+Tab still step agents anywhere off a text field.
@@ -1398,7 +1393,7 @@ const focusReadChatAgent = (): string | null => {
 };
 const focusReadAgent = (): string | null => focusReadChatAgent() ?? focusedDocReader();
 const focusReadKeys = (ctx: KeyContext) => {
-    if (!navigateStrict(ctx) || !initiativePopoverClosed()) {
+    if (!navigateStrict(ctx)) {
         return false;
     }
     if (focusedDocReader() != null) {
@@ -1406,21 +1401,16 @@ const focusReadKeys = (ctx: KeyContext) => {
     }
     return ctx.surface === "agent" && centerAtRest() && focusReadChatAgent() != null;
 };
-const agentNavStrict = (ctx: KeyContext) =>
-    navigateStrict(ctx) && ctx.surface === "agent" && centerAtRest() && initiativePopoverClosed();
+const agentNavStrict = (ctx: KeyContext) => navigateStrict(ctx) && ctx.surface === "agent" && centerAtRest();
 // Library's Canvases tab shows the Canvas gallery, with keys of its own: the arrows, Enter and `/` on its grid, the arrows,
 // `[` `]` and Escape on an open canvas, the arrows, Space and Escape in clean up. Each takes its view from
 // canvasGalleryAtom, so they never share a key. The bindings are built with the Agent surface's (buildAgentBindings, which
-// stays mounted) and live only on Library, so no agent key meets them. The initiative popover on the agent header is not
-// on Library: it never holds these keys.
+// stays mounted) and live only on Library, so no agent key meets them.
 const onGallery = (ctx: KeyContext) => ctx.surface === "library" && globalStore.get(libraryTabAtom) === "canvases";
 // A project's Overview covers the terminal too; its one key is `/`, into the History column's search box. Escape inside
 // the box is the box's own: the Escape that leaves the centre is strict, so it stands down while the box holds focus.
 const onOverview = (ctx: KeyContext) =>
-    navigate(ctx) &&
-    ctx.surface === "agent" &&
-    globalStore.get(centerModeAtom) === "project" &&
-    initiativePopoverClosed();
+    navigate(ctx) && ctx.surface === "agent" && globalStore.get(centerModeAtom) === "project";
 const galleryNav = (ctx: KeyContext) => navigate(ctx) && onGallery(ctx);
 const galleryView = () => globalStore.get(canvasGalleryAtom).view;
 const inGalleryGrid = (ctx: KeyContext) => galleryNav(ctx) && galleryView() === "grid";
@@ -2040,15 +2030,14 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
             keys: "i",
             group: "Agent",
             label: "The agent's initiative",
-            // The focused agent's initiative, where the view shows it. In Chat that is the band's initiative part under
-            // the header, which `i` expands or collapses, over the brainstorm part when that one was open
-            // (`[data-initiative-band]` is on screen only for a linked agent's Chat, whatever the band holds beside it);
-            // a linked agent in Terminal gets the popover instead; an agent with none gets the Link to initiative
-            // picker, when the header carries its chip (Chat's lean header and Terminal's both do). The focused agent
-            // is in the model's atoms, which a when() cannot read (whenstate.ts), so run() looks it up and lets the
-            // key pass when there is nothing to open. Open, the band's and the popover's own keys take over: the band
-            // is data-owns-keys, so the dispatcher reads focus inside it as typing and this binding stands down (and
-            // the band's own handler closes it on `i`); the popover is yielded to in agentNav.
+            // The focused agent's initiative, in Chat and Terminal alike: a linked agent's Initiative tab on the rail,
+            // which `i` selects (showing the rail), or, when it is already the shown tab, steps back from to the tab
+            // before it (toggleRailInitiative); an agent with none gets the Link to initiative picker, when the header
+            // carries its chip (Chat's lean header and Terminal's both do). The focused agent is in the model's atoms,
+            // which a when() cannot read (whenstate.ts), so run() looks it up and lets the key pass when there is
+            // nothing to open. With focus inside the tab the pane owns its keys (it is data-owns-keys, so the
+            // dispatcher reads focus there as typing and this binding stands down), and its own handler answers `i`
+            // the same way.
             when: nav,
             run: () => {
                 const agent = globalStore.get(model.agentsAtom).find((a) => a.id === focusId());
@@ -2060,12 +2049,7 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
                     // this one (an ended session or a run's worker has none)
                     return openInitiativeLinkPicker(agent.id) ? undefined : false;
                 }
-                const bandSelector = `[data-initiative-band="${agent.id.replace(/["\\]/g, "\\$&")}"]`;
-                if (document.querySelector(bandSelector) != null) {
-                    toggleBandPart(agent.id, "initiative");
-                    return;
-                }
-                globalStore.set(initiativePopoverAtom, agent.id);
+                toggleRailInitiative(agent.id);
             },
         },
         {
@@ -2756,12 +2740,11 @@ export function buildCouncilBindings(): Binding[] {
 // A council's view keys: r the Report, c the Discussion (its chat), m the Map. Each clicks its tab in the strip the view
 // draws (counciltabs.tsx), so a key on the view already shown does what that click does (the Report glides to its
 // body). Live wherever a council's view is on screen and focus is not in an input; the agent keys that share r, c and m
-// want the terminal at rest, so they never overlap. In Agent's centre column and in Library's Councils tab alike (onCouncil);
-// only the Agent header's initiative popover holds them, and it is not on Library. Registered by the tab strip itself.
+// want the terminal at rest, so they never overlap. In Agent's centre column and in Library's Councils tab alike (onCouncil).
+// Registered by the tab strip itself.
 export const COUNCIL_TAB_KEYS = { summary: "r", discussion: "c", map: "m" } as const;
 export function buildCouncilTabBindings(): Binding[] {
-    const on = (ctx: KeyContext) =>
-        navigateStrict(ctx) && onCouncil(ctx) && (ctx.surface !== "agent" || initiativePopoverClosed());
+    const on = (ctx: KeyContext) => navigateStrict(ctx) && onCouncil(ctx);
     const tab = (id: keyof typeof COUNCIL_TAB_KEYS, label: string): Binding => ({
         id: `council:tab-${id}`,
         keys: COUNCIL_TAB_KEYS[id],

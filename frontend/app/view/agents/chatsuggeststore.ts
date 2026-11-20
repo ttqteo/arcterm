@@ -4,7 +4,7 @@
 // The model half of Chat's suggested replies (chatsuggest.ts has the rules and the merge): one ChatSuggestCommand per
 // turn, its answer kept by turn (suggestKey) so the pane unmounting, a surface switch or a second look at the same turn
 // asks nothing again. wavesrv keeps the answers too and joins a second ask for a call still running (pkg/chatsuggest).
-// Also the initiative chip's Mark done, shared with the header popover's.
+// Also the initiative chip's Mark done, shared with the Initiative tab's.
 
 import { globalStore } from "@/app/store/jotaiStore";
 import { RpcApi } from "@/app/store/wshclientapi";
@@ -55,11 +55,11 @@ export function useModelSuggest(key: string | null): ModelSuggest | undefined {
     return useAtomValue(one);
 }
 
-/** Ticks `label` done on the initiative `oref` for the agent in tab `tabId`, as the header popover's Mark done does: from
+/** Ticks `label` done on the initiative `oref` for the agent in tab `tabId`, as the Initiative tab's Mark done does: from
  *  the first active chunk it is `advance` (done, and the next one active); from any other it marks that chunk done and
  *  moves on only when nothing is active, since `advance` finishes the first active chunk, which may be another agent's
  *  (doneIsAdvance). Then the agent goes with it: the chunk that woke in that write gets the agent attached, unless
- *  someone already holds it (carryForward), so the band and the chips read the agent on the next chunk and not on
+ *  someone already holds it (carryForward), so the tab and the chips read the agent on the next chunk and not on
  *  nothing. The initiative must be loaded (effortDetailAtom). */
 export async function markChunkDone(oref: string, label: string, tabId: string): Promise<void> {
     const before = globalStore.get(effortDetailAtom).get(oref);

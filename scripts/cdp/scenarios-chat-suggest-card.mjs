@@ -8,7 +8,7 @@
 //   agent:claudeaccount and restarts the agent; Snooze hides the strip. The identity, the saved windows and the active
 //   account come from the DEV-only window.__chatLimitFake (a dev store holds no second account).
 //
-// A fixture Claude agent over real tabs and the page's dev mock roster, as scenarios-chat-initiative-band.mjs
+// A fixture Claude agent over real tabs and the page's dev mock roster, as scenarios-rail-brainstorm-initiative.mjs
 // makes them; no real agent is launched. A small RPC mock stands in for wavesrv where a step would otherwise write real
 // state (the chip's text typed into the block; the account switch's setconfig, setmeta, controllerdestroy and
 // controllerresync), and records what it was given. Keys and clicks are real CDP input events.

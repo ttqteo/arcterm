@@ -1,9 +1,8 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// The pieces the initiative popover (the Terminal header's) and the initiative band (Chat's) share: the popover's styling
-// constants and a chunk's status menu, the `role="menu"` list of chunkMenuItems with the rename row. The rename and note
-// inputs stay in each component.
+// The pieces of the Initiative tab's rows (railinitiativepane.tsx): the styling constants and a chunk's status menu, the
+// `role="menu"` list of chunkMenuItems with the rename row. The rename and note inputs stay in the pane.
 
 import { cn } from "@/util/util";
 import { Check, Pencil } from "lucide-react";
@@ -28,7 +27,7 @@ const keepFocus = (e: MouseEvent) => e.preventDefault();
 
 /** A chunk's status menu: the statuses it can be set to (its own ticked), then Rename. `at` is the menu's own cursor,
  *  `onHover` moves it, `onChoose` gets the chosen item's id (a status, or CHUNK_RENAME). `dataAttr` is the data attribute
- *  that marks the menu for a scenario to find (`data-popover-menu`, `data-band-menu`); the items carry `data-menu-item`. */
+ *  that marks the menu for a scenario to find (`data-rail-initiative-menu`); the items carry `data-menu-item`. */
 export function ChunkStatusMenu({
     status,
     at,

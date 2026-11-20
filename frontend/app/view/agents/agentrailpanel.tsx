@@ -11,6 +11,7 @@ import { pathMenuItems } from "@/app/view/code/pathmenu";
 import { cn } from "@/util/util";
 import { useAtomValue } from "jotai";
 import {
+    Diamond,
     FileDiff,
     FileText,
     FolderTree,
@@ -18,6 +19,7 @@ import {
     GitBranch,
     LayoutList,
     LayoutTemplate,
+    Lightbulb,
     MessagesSquare,
     Monitor,
     Paperclip,
@@ -45,6 +47,7 @@ import {
     wideWidthMax,
     type FileRef,
     type PanelState,
+    type RailHas,
     type RailTab,
     type ResizableTab,
 } from "./agentrailtabs";
@@ -72,20 +75,21 @@ interface TabProps {
 export function RailTabStrip({
     agentId,
     panel,
-    hasTree,
-    hasTranscript,
+    has,
     council,
+    brainstormNew,
+    initiativeAsking,
 }: {
     agentId: string;
     panel: PanelState;
-    hasTree: boolean;
-    hasTranscript: boolean;
+    has: RailHas;
     council: Council | null; // the council the agent started: the Council tab's, none without one
+    brainstormNew: boolean; // the attached brainstorm has a board the person has not seen: the Brainstorm tab's dot
+    initiativeAsking: boolean; // the initiative holds a proposed plan waiting for a decision: the Initiative tab's dot
 }) {
-    const hasCouncil = council != null;
-    const keys = stripKeys(panel, hasTree, hasTranscript, hasCouncil);
-    const shown = shownTab(panel, hasTree, hasTranscript, hasCouncil);
-    const current = shownKey(panel, hasTree, hasTranscript, hasCouncil);
+    const keys = stripKeys(panel, has);
+    const shown = shownTab(panel, has);
+    const current = shownKey(panel, has);
     const ref = useRef<HTMLDivElement>(null);
     // The file on show stays in sight when more tabs are open than the strip has room for. Only the strip scrolls:
     // scrollIntoView would also scroll the panel's clipping boxes while it slides open.
@@ -110,7 +114,7 @@ export function RailTabStrip({
         e.preventDefault();
         e.stopPropagation();
         const next = nextTab(keys, current, e.key);
-        selectRailKey(agentId, next, hasTree, hasTranscript, hasCouncil);
+        selectRailKey(agentId, next, has);
         requestAnimationFrame(() =>
             ref.current?.querySelector<HTMLElement>(`[data-rail-key="${next}"]`)?.focus({ preventScroll: true })
         );
@@ -121,7 +125,7 @@ export function RailTabStrip({
         tabIndex: current === key ? 0 : -1,
         "data-rail-tab": tab,
         "data-rail-key": key,
-        onClick: () => selectRailKey(agentId, key, hasTree, hasTranscript, hasCouncil),
+        onClick: () => selectRailKey(agentId, key, has),
     });
     const active = activeFile(panel);
     // on File every open file is a tab; elsewhere they fold into the one on show, with how many are open
@@ -136,7 +140,8 @@ export function RailTabStrip({
             // on File the file tabs are as wide as their names, and the strip gives way only when the panel runs out of
             // room (RailStats holds its width there), cutting the names rather than the counts, then scrolling
             className={cn(
-                "flex items-center gap-[2px]",
+                // 44px, the tabs' own row: the counts may wrap onto a row under it (CollapsibleRail's tabsWrap)
+                "flex h-11 items-center gap-[2px]",
                 shown === "file" && "min-w-0 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
             )}
         >
@@ -149,7 +154,7 @@ export function RailTabStrip({
             >
                 <LayoutList size={16} strokeWidth={1.8} aria-hidden />
             </button>
-            {hasTree ? (
+            {has.tree ? (
                 <button
                     type="button"
                     {...tabProps("tree")}
@@ -169,7 +174,7 @@ export function RailTabStrip({
             >
                 <FileDiff size={16} strokeWidth={1.8} aria-hidden />
             </button>
-            {hasTranscript ? (
+            {has.transcript ? (
                 <button
                     type="button"
                     {...tabProps("transcript")}
@@ -186,6 +191,25 @@ export function RailTabStrip({
                     council={council}
                     on={current === "council"}
                     tabProps={tabProps("council")}
+                />
+            ) : null}
+            {has.brainstorm ? (
+                <RailDotTab
+                    icon={Lightbulb}
+                    label="Brainstorm"
+                    dot={brainstormNew ? "bg-accent" : null}
+                    on={current === "brainstorm"}
+                    tabProps={tabProps("brainstorm")}
+                />
+            ) : null}
+            {has.initiative ? (
+                <RailDotTab
+                    icon={Diamond}
+                    label="Initiative (i)"
+                    keyshortcut="i"
+                    dot={initiativeAsking ? "bg-asking" : null}
+                    on={current === "initiative"}
+                    tabProps={tabProps("initiative")}
                 />
             ) : null}
             {panel.summary ? (
@@ -205,6 +229,51 @@ export function RailTabStrip({
                 )
             )}
         </div>
+    );
+}
+
+// the dot on a tab's icon, at its top right (ring-2 cuts it out of the pill behind it)
+function railTabDotClass(on: boolean, color: string): string {
+    return cn(
+        "absolute left-[19px] top-[4px] h-[7px] w-[7px] rounded-full ring-2",
+        on ? "ring-surface-selected" : "ring-surface",
+        color
+    );
+}
+
+// The Brainstorm and Initiative tabs: an icon, there only while the agent has the thing, and a dot while it holds
+// something the person has not seen (Brainstorm: a new board, accent) or must decide (Initiative: a proposed plan,
+// asking). They fade in as the Council tab does.
+function RailDotTab({
+    icon: Icon,
+    label,
+    keyshortcut,
+    dot,
+    on,
+    tabProps,
+}: {
+    icon: LucideIcon;
+    label: string;
+    keyshortcut?: string;
+    dot: string | null;
+    on: boolean;
+    tabProps: TabProps;
+}) {
+    return (
+        <motion.button
+            type="button"
+            {...tabProps}
+            aria-label={label}
+            aria-keyshortcuts={keyshortcut}
+            title={label}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ duration: MOTION.durMicro, ease: MOTION.easeFluid }}
+            className={cn(TAB, "relative", on ? TAB_ON : TAB_OFF)}
+        >
+            <Icon size={16} strokeWidth={1.8} aria-hidden />
+            {dot != null ? <span aria-hidden data-rail-tab-dot className={railTabDotClass(on, dot)} /> : null}
+        </motion.button>
     );
 }
 
@@ -228,16 +297,7 @@ function RailCouncilTab({ council, on, tabProps }: { council: Council; on: boole
             className={cn(TAB, "relative", on ? TAB_ON : TAB_OFF)}
         >
             <MessagesSquare size={16} strokeWidth={1.8} aria-hidden />
-            {dot != null ? (
-                <span
-                    aria-hidden
-                    className={cn(
-                        "absolute left-[19px] top-[4px] h-[7px] w-[7px] rounded-full ring-2",
-                        on ? "ring-surface-selected" : "ring-surface",
-                        COUNCIL_DOT[dot]
-                    )}
-                />
-            ) : null}
+            {dot != null ? <span aria-hidden className={railTabDotClass(on, COUNCIL_DOT[dot])} /> : null}
         </motion.button>
     );
 }
@@ -414,15 +474,22 @@ export function RailStats({
     // when the panel is too narrow for every count, the group scrolls sideways: the mouse wheel moves it (the scrollbar
     // is hidden), and a fade on the edge that hides some says there is more
     const [fade, setFade] = useState<{ left: boolean; right: boolean }>({ left: false, right: false });
+    // the counts sit on a row under the tabs (CollapsibleRail's tabsWrap) when both cannot sit whole on one: then the
+    // divider that parts them from the tabs has nothing to part, so it is hidden (not removed: the group's width must
+    // not change with where it sits, or the wrap would flip back)
+    const [wrapped, setWrapped] = useState(false);
     useEffect(() => {
         const el = ref.current;
         if (el == null) {
             return;
         }
+        const tabsBefore = el.previousElementSibling as HTMLElement | null;
         const measure = () => {
             const left = el.scrollLeft > 0;
             const right = el.scrollLeft + el.clientWidth < el.scrollWidth - 1;
             setFade((f) => (f.left === left && f.right === right ? f : { left, right }));
+            const under = tabsBefore != null && el.offsetTop >= tabsBefore.offsetTop + tabsBefore.offsetHeight;
+            setWrapped(under);
         };
         const onWheel = (e: WheelEvent) => {
             if (el.scrollWidth <= el.clientWidth || e.deltaX !== 0) {
@@ -434,6 +501,13 @@ export function RailStats({
         measure();
         const ro = new ResizeObserver(measure);
         ro.observe(el);
+        // a tab coming or going resizes the strip, and the panel's width changes the row: either can move the counts
+        if (tabsBefore != null) {
+            ro.observe(tabsBefore);
+        }
+        if (el.parentElement != null) {
+            ro.observe(el.parentElement);
+        }
         el.addEventListener("scroll", measure, { passive: true });
         el.addEventListener("wheel", onWheel, { passive: false });
         return () => {
@@ -455,13 +529,18 @@ export function RailStats({
             role="group"
             aria-label="Agent counts"
             data-owns-keys
+            data-rail-counts-wrapped={wrapped ? "true" : "false"}
             style={mask ? { maskImage: mask, WebkitMaskImage: mask } : undefined}
             className={cn(
                 "ml-[8px] flex min-w-0 items-center overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
+                wrapped && "mb-[6px]",
                 hold && "shrink-0"
             )}
         >
-            <span aria-hidden className="mr-[4px] h-[18px] w-px shrink-0 bg-edge-strong" />
+            <span
+                aria-hidden
+                className={cn("mr-[4px] h-[18px] w-px shrink-0 bg-edge-strong", wrapped && "invisible")}
+            />
             {stats.map((s) => {
                 const action = railStatAction(s);
                 const live = action === "open" || (action === "attach" && canAttach);

@@ -24,7 +24,6 @@ const base: AgentRailInput = {
     servers: 0,
     bgTasks: 1,
     hasRun: false,
-    proposed: 0,
 };
 const ids = (i: AgentRailInput) => planAgentRail(i).map((s) => s.id);
 const header = (i: AgentRailInput, id: AgentRailSectionId) => planAgentRail(i).find((s) => s.id === id)?.header;
@@ -60,15 +59,13 @@ describe("planAgentRail", () => {
         expect(header({ ...base, files: null }, "files")).toEqual({});
         expect(ids({ ...base, files: 0 })).not.toContain("files");
     });
-    it("a plan to review comes first, before the session block, uncounted", () => {
-        expect(ids({ ...base, proposed: 4 })).toEqual(["plan", "status", "files", "bgtasks"]);
-        expect(planAgentRail({ ...base, proposed: 4 })[0].header).toBeUndefined();
-        // and ahead of needs-you too
-        expect(ids({ ...base, proposed: 1, needsYou: 2 }).slice(0, 3)).toEqual(["plan", "status", "needs"]);
-    });
-    it("has no plan to review when nothing is proposed, nor inside a subagent", () => {
-        expect(ids({ ...base, proposed: 0 })).not.toContain("plan");
-        expect(ids({ ...base, proposed: 4, inSubagent: true })).toEqual(["subagent", "status"]);
+    it("has no plan to review section: it lives on the Initiative tab", () => {
+        // the session block is the first section, ahead of needs-you, whatever the initiative holds
+        expect(ids(base)[0]).toBe("status");
+        expect(ids({ ...base, needsYou: 2 }).slice(0, 2)).toEqual(["status", "needs"]);
+        for (const i of [base, { ...base, needsYou: 1, hasRun: true }, { ...base, inSubagent: true }]) {
+            expect(ids(i) as string[]).not.toContain("plan");
+        }
     });
     it("a subagent interior shows its head and the session block only", () => {
         expect(ids({ ...base, inSubagent: true, needsYou: 1, hasRun: true, artifacts: 2, uploads: 1 })).toEqual([
@@ -148,15 +145,8 @@ describe("Verify", () => {
         expect(ids({ ...base, verify: red, needsYou: 2 })).toEqual(["status", "needs", "verify", "files", "bgtasks"]);
         expect(header({ ...base, verify: red }, "verify")).toBeUndefined();
     });
-    it("a plan to review still comes first, and the run section still comes last", () => {
-        expect(ids({ ...base, verify: red, proposed: 3, hasRun: true })).toEqual([
-            "plan",
-            "status",
-            "verify",
-            "files",
-            "bgtasks",
-            "run",
-        ]);
+    it("the run section still comes last", () => {
+        expect(ids({ ...base, verify: red, hasRun: true })).toEqual(["status", "verify", "files", "bgtasks", "run"]);
     });
     it("a subagent interior shows neither the tile nor the count: Verify is its parent's", () => {
         expect(ids({ ...base, verify: red, inSubagent: true })).toEqual(["subagent", "status"]);

@@ -117,6 +117,8 @@ const readHeader = `(() => {
         unlinked: hd.querySelector("[data-initiative-link]") ? flat(hd.querySelector("[data-initiative-link]")) : null,
         initiative: ini ? flat(ini) : null,
         initiativeIcon: !!ini?.querySelector("svg"),
+        // the chip opens the rail's Initiative tab: it is no popover's trigger any more
+        initiativePopup: !!ini && (ini.hasAttribute("aria-haspopup") || ini.hasAttribute("aria-expanded")),
         run: run ? { kind: run.getAttribute("data-run-link"), text: flat(run), inLocation: !!run.closest("[data-header-location]") } : null,
         model: hd.querySelector("[data-header-model]") ? flat(hd.querySelector("[data-header-model]")) : null,
         dots: [...hd.querySelectorAll("[data-header-clusters] *")].some((el) => el.childNodes.length === 1 && el.textContent.trim() === "·"),
@@ -242,12 +244,14 @@ export default function (kit) {
                 const chat = await h.ev(readHeader);
                 await shot(h, "2-chat");
                 rec(
-                    `2. Chat: the runtime mark, "working", "sonnet 4.5" and its context, and "mit-thesis / ◇ ${INITIATIVE}"; no Alt+C keycap`,
+                    `2. Chat: the runtime mark, "working", "sonnet 4.5" and its context, and "mit-thesis / ◇ ${INITIATIVE} · 0/1" (the initiative's chip, its tab on the rail, no popover); no Alt+C keycap`,
                     chat?.runtime === true &&
                         chat.state === "working" &&
                         /^sonnet 4\.5\s*\d+(\.\d+)?k$/.test(chat.model ?? "") &&
-                        chat.initiative === INITIATIVE &&
+                        // the title and the count are two spans a flex gap apart: no space between them in the text
+                        chat.initiative?.replace(/\s*·\s*/, " · ") === `${INITIATIVE} · 0/1` &&
                         chat.initiativeIcon &&
+                        chat.initiativePopup === false &&
                         chat.location.startsWith("mit-thesis") &&
                         !chat.altC,
                     chat
@@ -403,8 +407,8 @@ export default function (kit) {
                 await shot(h, "7-very-narrow");
                 await narrowTo(h, null);
                 rec(
-                    "7. very narrow (460px): the initiative is its ◇ alone, its title in the tooltip; the model and context still show",
-                    tiny?.width === "tiny" && tiny.initiative === "" && tiny.initiativeIcon && iniTitle.includes(INITIATIVE) && /^sonnet\s*\d+(\.\d+)?k$/.test(tiny.model ?? ""),
+                    "7. very narrow (460px): the initiative is its ◇ alone (title and count both out of the chip), its title and count in the tooltip; the model and context still show",
+                    tiny?.width === "tiny" && tiny.initiative === "" && tiny.initiativeIcon && iniTitle.includes(`${INITIATIVE} · 0/1`) && /^sonnet\s*\d+(\.\d+)?k$/.test(tiny.model ?? ""),
                     { tiny, iniTitle }
                 );
                 return steps;
