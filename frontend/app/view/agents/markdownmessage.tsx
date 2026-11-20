@@ -26,7 +26,7 @@ import { FilePill } from "./chatfilepill";
 import { INITIATIVE_LANG } from "./chatinitiative";
 import { InitiativeBlockView } from "./chatinitiativecard";
 import { copyableHref } from "./chatlink";
-import { RefBadge } from "./chatrefbadge";
+import { CodeRefBadge, RefBadge } from "./chatrefbadge";
 import { STEPS_LANG } from "./chatsteplist";
 import { StepsBlock } from "./chatsteplistview";
 import { VISUAL_LANG } from "./chatvisual";
@@ -37,6 +37,7 @@ import { guardDollars } from "./mathdollars";
 import { PathLink } from "./pathlinkcontext";
 import { inlinePathOf } from "./pathlinks";
 import { MathToken } from "./prosetokens";
+import { codeRef } from "./refbadge";
 import type { RefKind } from "./refmention";
 import remarkFileMention from "./remarkfilemention";
 import remarkRefMention from "./remarkrefmention";
@@ -157,24 +158,26 @@ const MD_COMPONENTS: Components = {
             </Fenced>
         );
     },
-    code: ({ className, children }) => {
-        const text = typeof children === "string" ? children : null;
-        // remark-math's `$…$`: a formula in the line
-        if (text != null && className?.includes("math-inline")) {
-            return <MathToken tex={text} />;
-        }
-        const found = className == null && text != null ? inlinePathOf(text) : null;
-        if (found == null) {
-            return <code className={className}>{children}</code>;
-        }
-        // a link flows inline and wraps with the prose, so a long path shows whole instead of ending in an ellipsis
-        return (
-            <PathLink path={found.path} line={found.line} wrap>
-                <code>{children}</code>
-            </PathLink>
-        );
-    },
+    code: ({ className, children }) => <InlineCode className={className}>{children}</InlineCode>,
 };
+
+function InlineCode({ className, children }: { className?: string; children?: ReactNode }) {
+    const text = typeof children === "string" ? children : null;
+    // remark-math's `$…$`: a formula in the line
+    if (text != null && className?.includes("math-inline")) {
+        return <MathToken tex={text} />;
+    }
+    const found = className == null && text != null ? inlinePathOf(text) : null;
+    if (found == null) {
+        return <code className={className}>{children}</code>;
+    }
+    // a link flows inline and wraps with the prose, so a long path shows whole instead of ending in an ellipsis
+    return (
+        <PathLink path={found.path} line={found.line} wrap>
+            <code>{children}</code>
+        </PathLink>
+    );
+}
 
 // The extras a caller opts into: `marks` draws ==…== (remark-mark.ts) as a <mark> in the accent's tint the terminal draws a
 // skim highlight in, `diagrams` draws a ```mermaid block as its diagram instead of its code and an ```arc-visual block
@@ -184,11 +187,15 @@ const MD_COMPONENTS: Components = {
 // draws an `@path` (remarkfilemention.ts) as a file pill (chatfilepill.tsx) and an `agent:`, `run:` or `council:`
 // reference (remarkrefmention.ts) as a badge (chatrefbadge.tsx; plain text where Chat provides nothing to resolve it
 // against). They combine: each adds its plugin and its component to the same map. A council's messages take marks and
-// diagrams, your bubble in Chat takes mentions; an agent's transcript takes none, so it never loads mermaid.
+// diagrams, your bubble in Chat takes mentions; an agent's transcript takes none, so it never loads mermaid. `refs` is the
+// references alone, for an agent's reply in Chat (no `@path` pills: an agent's `@` is not a pick): an `agent:`… token as
+// a badge, and a code span that is an id (`4e6ea128`, refbadge.ts codeRef) as the badge of what it names, the code as
+// written when it names nothing. `mentions` includes `refs`.
 export interface MarkdownExtras {
     marks?: boolean;
     diagrams?: boolean;
     mentions?: boolean;
+    refs?: boolean;
 }
 
 const MARK_COMPONENT: Components = {
@@ -228,6 +235,9 @@ function diagramOf(lang: string | undefined, raw: string): ReactNode {
 const MENTION_COMPONENT = {
     filemention: ({ path, children }: { path?: string; children?: ReactNode }) =>
         path != null && path !== "" ? <FilePill path={path} /> : <>{children}</>,
+} as unknown as Components;
+
+const REF_COMPONENT = {
     refmention: ({ kind, id, raw, children }: { kind?: RefKind; id?: string; raw?: string; children?: ReactNode }) =>
         kind != null && id != null && raw != null ? (
             <RefBadge kind={kind} id={id} raw={raw}>
@@ -236,6 +246,17 @@ const MENTION_COMPONENT = {
         ) : (
             <>{children}</>
         ),
+    code: ({ className, children }: { className?: string; children?: ReactNode }) => {
+        const ref = className == null && typeof children === "string" ? codeRef(children) : null;
+        const code = <InlineCode className={className}>{children}</InlineCode>;
+        return ref == null ? (
+            code
+        ) : (
+            <CodeRefBadge kind={ref.kind} id={ref.id} raw={children as string}>
+                {code}
+            </CodeRefBadge>
+        );
+    },
 } as unknown as Components;
 
 // one plugin list and one components map per set of extras, built once, so react-markdown never sees a new one on a
@@ -244,8 +265,10 @@ const PLUGINS_BY_EXTRAS = new Map<string, PluggableList>();
 const COMPONENTS_BY_EXTRAS = new Map<string, Components>();
 
 function extrasKey(extras: MarkdownExtras): string {
-    return `${extras.marks ? "m" : ""}${extras.diagrams ? "d" : ""}${extras.mentions ? "f" : ""}`;
+    return `${extras.marks ? "m" : ""}${extras.diagrams ? "d" : ""}${extras.mentions ? "f" : ""}${refsOn(extras) ? "r" : ""}`;
 }
+
+const refsOn = (extras: MarkdownExtras) => extras.refs === true || extras.mentions === true;
 
 function pluginsFor(extras: MarkdownExtras): PluggableList {
     const key = extrasKey(extras);
@@ -257,7 +280,8 @@ function pluginsFor(extras: MarkdownExtras): PluggableList {
             remarkMath,
             ...(extras.marks ? [remarkMark] : []),
             // after the marks, so a mention inside a ==mark== is found too
-            ...(extras.mentions ? [remarkFileMention, remarkRefMention] : []),
+            ...(extras.mentions ? [remarkFileMention] : []),
+            ...(refsOn(extras) ? [remarkRefMention] : []),
         ];
         PLUGINS_BY_EXTRAS.set(key, out);
     }
@@ -273,6 +297,7 @@ function componentsFor(extras: MarkdownExtras): Components {
             ...(extras.marks ? MARK_COMPONENT : {}),
             ...(extras.diagrams ? DIAGRAM_COMPONENT : {}),
             ...(extras.mentions ? MENTION_COMPONENT : {}),
+            ...(refsOn(extras) ? REF_COMPONENT : {}),
         };
         COMPONENTS_BY_EXTRAS.set(key, out);
     }
@@ -305,6 +330,7 @@ export const MarkdownMessage = memo(function MarkdownMessage({
     marks,
     diagrams,
     mentions,
+    refs,
 }: { text: string; className?: string } & MarkdownExtras) {
     const segments = splitInsightBlocks(text);
     // the selection is drawn over the text by selectionpaint.ts, not by the engine (WebKit fills the margins)
@@ -326,9 +352,9 @@ export const MarkdownMessage = memo(function MarkdownMessage({
             />
             {segments.map((seg, i) =>
                 seg.kind === "insight" ? (
-                    <InsightCallout key={i} text={seg.text} extras={{ marks, diagrams, mentions }} />
+                    <InsightCallout key={i} text={seg.text} extras={{ marks, diagrams, mentions, refs }} />
                 ) : (
-                    <Fragment key={i}>{renderMd(seg.text, { marks, diagrams, mentions })}</Fragment>
+                    <Fragment key={i}>{renderMd(seg.text, { marks, diagrams, mentions, refs })}</Fragment>
                 )
             )}
         </div>

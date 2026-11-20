@@ -351,12 +351,13 @@ export function CouncilAvatar({
 /** What a seat wrote, as a message: Markdown, so the table, list or ```mermaid diagram the prompts ask for when one
  *  reads better than prose (visualRule in pkg/council/prompts.go) draws as one, its must-read sentence (==…==)
  *  highlighted. A line break stays a line break, as the plain text it replaces kept it. `className` sets its size. */
-export function CouncilText({ text, className }: { text: string; className?: string }) {
+export function CouncilText({ text, className, refs }: { text: string; className?: string; refs?: boolean }) {
     return (
         <MarkdownMessage
             text={text}
             marks
             diagrams
+            refs={refs}
             className={cn(
                 "min-w-0 break-words text-ink-hi [&_p]:whitespace-pre-wrap [&_.mermaid]:my-2 [&_.mermaid_svg]:max-w-full",
                 className

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { badgeLook, refSpans, refTitle, resolveRef, type RefSources } from "./refbadge";
+import { badgeLook, codeRef, refSpans, refTitle, resolveBareRef, resolveRef, type RefSources } from "./refbadge";
 
 const src: RefSources = {
     agents: [
@@ -229,5 +229,38 @@ describe("session: and effort:", () => {
         expect(refTitle(resolveRef("effort", "e9b20f17", src2), { opens: false })).toBe(
             "Chat polish · initiative e9b20f17 · 4 of 9 chunks done"
         );
+    });
+});
+
+describe("codeRef", () => {
+    it("reads a code span that is a whole reference token, or a bare 8-hex id or uuid", () => {
+        expect(codeRef("agent:7cd99627")).toEqual({ kind: "agent", id: "7cd99627" });
+        expect(codeRef("run:071a8e3b")).toEqual({ kind: "run", id: "071a8e3b" });
+        expect(codeRef("4E6EA128")).toEqual({ id: "4e6ea128" });
+        expect(codeRef("071a8e3b-4444-4a4a-8b8b-000000000004")).toEqual({ id: "071a8e3b-4444-4a4a-8b8b-000000000004" });
+    });
+    it("leaves other code alone: commit hashes of 7 or 9 characters, words, a token with more text", () => {
+        expect(codeRef("4cd6c17")).toBeNull();
+        expect(codeRef("ac030f667")).toBeNull();
+        expect(codeRef("deadbeefcafe")).toBeNull();
+        expect(codeRef("task check:ts")).toBeNull();
+        expect(codeRef("wsh read agent:7cd99627")).toBeNull();
+        expect(codeRef("@agent:7cd99627")).toBeNull();
+        expect(codeRef("decoded1")).toBeNull();
+    });
+});
+
+describe("resolveBareRef", () => {
+    it("names an open agent first, then a run, then a council", () => {
+        const agent = resolveBareRef("7cd99627", src);
+        expect(agent).toMatchObject({ status: "resolved", kind: "agent", name: "chat-commit-card" });
+        expect(resolveBareRef("071a8e3b", src)).toMatchObject({ status: "resolved", kind: "run" });
+        const council = resolveBareRef("c41d9e02", src);
+        expect(council).toMatchObject({ status: "resolved", kind: "council", name: "Chat compact work" });
+    });
+    it("never names a past conversation or an initiative, and an unknown id stays unresolved", () => {
+        expect(resolveBareRef("9f31d0b4", src2).status).toBe("unresolved");
+        expect(resolveBareRef("e9b20f17", src2).status).toBe("unresolved");
+        expect(resolveBareRef("12345678", src).status).toBe("unresolved");
     });
 });

@@ -160,6 +160,34 @@ export function resolveRef(kind: RefKind, id: string, src: RefSources): Resolved
     return { status: "resolved", kind, id: hits[0].id, name: firstLine(hits[0].feature) || id };
 }
 
+// an id as an agent writes one in a code span: an agent's or a run's 8 hex characters (`4e6ea128`), or a whole uuid.
+// Exactly 8: a short commit hash is 7 or 9+, so `ac030f667` stays code
+const BARE_ID_RE = /^[0-9a-f]{8}(?:-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})?$/i;
+
+/** Pure: the reference a code span's text is, whole: `agent:4e6e…` (its kind), or a bare id (no kind: resolveBareRef
+ *  finds what it names). Null for any other code. */
+export function codeRef(text: string): { kind?: RefKind; id: string } | null {
+    const t = text.trim();
+    const spans = refSpans(t);
+    if (spans.length === 1 && spans[0].start === 0 && spans[0].end === t.length && !spans[0].raw.startsWith("@")) {
+        return { kind: spans[0].kind, id: spans[0].id };
+    }
+    return BARE_ID_RE.test(t) ? { id: t.toLowerCase() } : null;
+}
+
+/** Pure: what a bare id names: an open agent, else one of the chat project's runs, else one of its councils. A past
+ *  conversation or an initiative is never looked up by a bare id (it would read the whole history for each code span);
+ *  `session:`/`effort:` name those. */
+export function resolveBareRef(id: string, src: RefSources): ResolvedRef {
+    for (const kind of ["agent", "run", "council"] as const) {
+        const r = resolveRef(kind, id, src);
+        if (r.status === "resolved") {
+            return r;
+        }
+    }
+    return { status: "unresolved", reason: `Nothing open is ${id}` };
+}
+
 export interface BadgeLook {
     /** border and fill classes (the frame itself is chatrefbadge.tsx's) */
     frame: string;

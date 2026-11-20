@@ -51195,6 +51195,165 @@ const chatRefBadges = {
     },
 };
 
+// --- chat-reply-refs: an agent's reply in Chat draws the ids it names as badges (markdownmessage.tsx `refs`, refbadge.ts codeRef
+// and resolveBareRef). chat-ref-badges' fixtures: a project, two agent tabs (B asking, a codex agent), the project's run and
+// council seeded into the page's stores. A's transcript holds a reply naming B, the run and the council by bare 8-hex ids in code
+// spans, B again as a plain `agent:` token, a commit hash and an 8-hex id nothing has. Steps: the three code ids are resolved
+// badges with their names, the `agent:` token is one too, the commit and the unknown id stay plain code, and a click on B's badge
+// focuses B.
+const chatReplyRefs = {
+    name: "chat-reply-refs",
+    surface: "agent",
+    async arrange(h) {
+        const ctx = {
+            dir: mkdtempSync(join(tmpdir(), "verify-chat-reply-refs-")),
+            project: `verify-reply-refs-${Date.now().toString(36)}`,
+            prevGrid: await h.ev(`localStorage.getItem(${JSON.stringify(GRID_KEY)})`),
+            prevModes: await h.ev(`localStorage.getItem("agent.chatmode")`),
+        };
+        let at = "registering the project";
+        try {
+            await h.rpc("createproject", { name: ctx.project, path: ctx.dir });
+            ctx.projectMade = true;
+            await waitForProjectInConfig(h, ctx.project);
+            at = "resetting the grid";
+            await h.ev(`localStorage.setItem(${JSON.stringify(GRID_KEY)}, ${JSON.stringify(JSON.stringify(GRID_EMPTY))})`);
+            await h.ev(`localStorage.removeItem("agent.chatmode")`);
+            if (!(await ahReload(h))) throw new Error("the page did not come back after the reload");
+            await h.goto("agent");
+            at = "making the tabs";
+            ctx.tabs = {
+                main: await acMakeTab(h, ctx, { label: CRB_NAME_A }),
+                second: await acMakeTab(h, ctx, { label: CRB_NAME_B }),
+            };
+            at = "writing the transcript";
+            const B8 = ctx.tabs.second.tabId.slice(0, 8);
+            const base = Date.now() - 7_200_000;
+            const o = (sec) => ({ cwd: ctx.dir, ts: new Date(base + sec * 1000).toISOString() });
+            ctx.transcript = AC.writeTranscript(ctx.dir, "reply-refs", [
+                AC.userText("Các việc từ 11h đã ổn chưa?", { ...o(0), uuid: "u1" }),
+                AC.assistantText(
+                    `- \`${B8}\` đang chờ bạn chọn phương án.\n` +
+                        `- Run \`${CRB_RUN_ID.slice(0, 8)}\` đã land, council \`${CRB_COUNCIL_ID.slice(0, 8)}\` đã xong.\n` +
+                        `- Hỏi lại agent:${B8} sau khi merge commit \`ac030f667\`; \`12345678\` không phải agent nào.`,
+                    { ...o(2), uuid: "a1" }
+                ),
+            ]);
+            at = "setting the roster";
+            await AC.setRoster(h, crbRoster(ctx));
+            at = "seeding the project's run and council";
+            await crbSeed(h, ctx);
+        } catch (e) {
+            ctx.arrangeError = `${at}: ${String(e?.message ?? e)}`;
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok: ok === true, detail: typeof detail === "string" ? detail : JSON.stringify(detail) });
+        if (ctx.arrangeError != null) {
+            rec("0. the fixture project, agents and transcript", false, ctx.arrangeError);
+            return steps;
+        }
+        const A = ctx.tabs.main.tabId;
+        const B = ctx.tabs.second.tabId;
+        const B8 = B.slice(0, 8);
+        const conv = `[data-agent-chat="${A}"] [data-chat-conversation]`;
+        const badge = (raw) => `document.querySelector('${conv} [data-chat-ref="${raw}"]')`;
+        const tokens = { agent: B8, run: CRB_RUN_ID.slice(0, 8), council: CRB_COUNCIL_ID.slice(0, 8), plain: `agent:${B8}` };
+        try {
+            await AC.focusAgent(h, A);
+            await h.ev(`window.__arcChatMode.set(${JSON.stringify(A)}, "chat")`);
+            const shown = await polishWaitFor(h, `!!${acBox(A)} && ${acLayer(A)}?.hasAttribute("data-chat-leaving") === false`, 8000);
+            const drawn = await crbReseedUntil(
+                h,
+                ctx,
+                `${Object.values(tokens).map((t) => `${badge(t)}?.getAttribute("data-ref-state") === "resolved"`).join(" && ")}`,
+                15000
+            );
+            const agent = await crbReadBadge(h, badge(tokens.agent));
+            const run = await crbReadBadge(h, badge(tokens.run));
+            const council = await crbReadBadge(h, badge(tokens.council));
+            const plain = await crbReadBadge(h, badge(tokens.plain));
+            rec(
+                "1. the reply's code span with B's 8-hex id is a resolved badge: B's runtime mark, B's name, an asking ring, in a role=button",
+                shown && drawn && agent?.state === "resolved" && agent.mark === "runtime" && agent.name === CRB_NAME_B && agent.dots[0] === "asking" &&
+                    agent.parentRole === "button",
+                { shown, drawn, agent }
+            );
+            rec(
+                "2. the run's and the council's 8-hex ids in code are resolved badges with their marks and names",
+                run?.state === "resolved" && run.mark === "run" && run.name === CRB_RUN_NAME &&
+                    council?.state === "resolved" && council.mark === "council" && council.name === CRB_COUNCIL_FEATURE,
+                { run, council }
+            );
+            rec(
+                "3. the plain agent:<B> token in the reply is a resolved badge too",
+                plain?.state === "resolved" && plain.name === CRB_NAME_B && plain.parentRole === "button",
+                plain
+            );
+            const codes = await h.ev(`(() => {
+                const out = {};
+                for (const el of document.querySelectorAll('${conv} code')) {
+                    if (el.textContent === "ac030f667" || el.textContent === "12345678") out[el.textContent] = !!el.closest("[data-chat-ref]");
+                }
+                return out;
+            })()`);
+            rec(
+                "4. the commit hash ac030f667 and the unknown 12345678 stay plain code, no badge",
+                codes?.["ac030f667"] === false && codes?.["12345678"] === false,
+                codes
+            );
+            await h.ev(`${badge(tokens.agent)}?.scrollIntoView({ block: "center" })`);
+            await polishNap(300);
+            await h.shot("cdp-shots/chat-reply-refs.png");
+            const clicked = await h.ev(`(() => { const b = ${badge(tokens.agent)}?.closest('[role="button"]'); if (!b) return false; b.click(); return true; })()`);
+            let focusedB = false;
+            for (let waited = 0; clicked && waited < 8000 && !focusedB; waited += 250) {
+                focusedB = (await AC.agentPage(h, `return globalStore.get(agentsModel().focusIdAtom);`)) === B;
+                if (!focusedB) await polishNap(250);
+            }
+            rec("5. a click on B's badge in the reply focuses B", clicked && focusedB, { clicked, focusedB });
+        } catch (e) {
+            rec("x. the steps ran", false, String(e?.stack ?? e));
+        }
+        return steps;
+    },
+    async teardown(h, ctx) {
+        const step = async (what, fn) => {
+            try {
+                await fn();
+            } catch (e) {
+                console.error(`chat-reply-refs teardown: ${what} failed: ${e?.message ?? e}`);
+            }
+        };
+        await step("restore the roster", () => AC.restoreRoster(h));
+        await step("close the fixture tabs", () => acCloseTabs(h, ctx));
+        await step("restore the grid and the chat modes", () =>
+            h.ev(`(() => {
+                for (const [key, prev] of [[${JSON.stringify(GRID_KEY)}, ${JSON.stringify(ctx.prevGrid)}], ["agent.chatmode", ${JSON.stringify(ctx.prevModes)}]]) {
+                    if (prev == null) localStorage.removeItem(key);
+                    else localStorage.setItem(key, prev);
+                }
+                return true;
+            })()`)
+        );
+        if (ctx.projectMade) {
+            await step("remove the project", async () => {
+                await h.rpc("deleteproject", { name: ctx.project });
+                const norm = (s) => (s || "").replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
+                const channels = (await h.rpc("getchannels", null))?.channels ?? [];
+                for (const c of channels.filter((c) => norm(c.projectpath) === norm(ctx.dir))) {
+                    await h.rpc("deletechannel", { channelid: c.oid });
+                }
+            });
+        }
+        await step("remove the fixture transcript", () => rmSync(ctx.dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 500 }));
+        await step("reload onto the live roster", () => ahReload(h));
+        await step("go home", () => h.goto("cockpit"));
+    },
+};
+
 // --- chat-initiative: Add to an initiative from Chat (docs/superpowers/specs/2026-11-12-chat-add-to-initiative-design.md, plan
 // 2026-11-13-chat-add-to-initiative.md Task 6). A Claude agent's reply holds three ```arc-initiative blocks (a note on its own
 // initiative, a chunk, a new initiative under a topic) and a fourth that is broken JSON; Chat draws the three as cards and
@@ -74598,6 +74757,7 @@ export const SCENARIOS = [
     chatBubbleFold,
     chatMath,
     chatRefBadges,
+    chatReplyRefs,
     chatInitiative,
     chatCanvasPick,
     chatCanvasPeek,

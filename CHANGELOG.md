@@ -39,6 +39,9 @@ and a picture given to a line that is not big.
   compaction now shows in the rail too.
 - A council's expert cards (the first step and the Map) now say what each expert is there for, under its name: its
   focus (`novelty`, `baselines`) and the start of its brief. Hover a card to read the whole brief.
+- An agent's reply in Chat draws the agents, runs and councils it names by id (`4e6ea128`, or `agent:4e6ea128`) as
+  badges with their names, as your own messages do: click one to open it. A commit hash or an id that names nothing
+  open stays as written.
 
 ### Fixed
 

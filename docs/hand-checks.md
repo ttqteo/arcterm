@@ -16,6 +16,12 @@ list (its number is not reused).
 Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) ·
 [part 4](hand-checks-4.md) · [part 3](hand-checks-3.md) · [part 2](hand-checks-2.md) (oldest).
 
+- [ ] (arcterm) **Ids in an agent's reply are badges** (`markdownmessage.tsx` `refs`, `refbadge.ts` codeRef and
+  resolveBareRef; `feat/agent-reply-refs`). Ask an agent for the status of the other agents: in its Chat reply, an
+  agent's 8-hex id in backticks (`4e6ea128`) and a plain `agent:4e6ea128` show as that agent's badge with its name, and
+  a click opens the agent; a run's or a council's id the same; a commit hash (`ac030f667`) stays code. The
+  `chat-reply-refs` scenario has never run: the Final dev app could not start (shared `node_modules` mid-install, then
+  low memory).
 - [ ] (arcterm) Resume reads resuming, not working (`pendingToVM` in `frontend/app/view/agents/agentsviewmodel.ts`;
   `fix/resume-working-flicker`). Library → Conversations → resume a long Claude conversation with no message. While it
   loads, its tree row ends in a muted "resuming…" with no working dot, the header pill reads "resuming" in muted ink
