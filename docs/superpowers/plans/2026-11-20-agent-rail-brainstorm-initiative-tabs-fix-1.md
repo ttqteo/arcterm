@@ -23,9 +23,7 @@ new store; tokens only, no raw colours.
 
 ### Task 1: The ◇ chip and the Brainstorm marker in a split cell's bar
 **Depends on:** none
-**Files:** `frontend/app/view/agents/gridcellbar.tsx`, `frontend/app/view/agents/agentsurface.tsx`,
-`frontend/app/view/agents/agentheader.tsx`, `frontend/app/view/agents/initiativepopovermodel.ts`,
-`frontend/app/view/agents/initiativepopovermodel.test.ts`, `scripts/cdp/scenarios-rail-brainstorm-initiative.mjs`
+**Files:** `frontend/app/view/agents/gridcellbar.tsx`, `frontend/app/view/agents/agentsurface.tsx`, `frontend/app/view/agents/agentheader.tsx`, `frontend/app/view/agents/initiativepopovermodel.ts`, `frontend/app/view/agents/initiativepopovermodel.test.ts`, `scripts/cdp/scenarios-rail-brainstorm-initiative.mjs`
 
 Decisions:
 - **One source for the chip's count.** `InitiativeLink` (`agentheader.tsx:207`) computes
