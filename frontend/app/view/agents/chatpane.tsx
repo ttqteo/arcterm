@@ -721,8 +721,11 @@ function SkimToggle() {
     );
 }
 
-// Chat's focus read toggle, beside Skim: one block at a time, the rest dimmed (chatfocusreadview.ts). Each agent's own,
-// remembered (chatfocusreadstore.ts); the pill itself is focusreadpill.tsx, shared with the markdown Preview.
+// Chat's focus read toggle, under Skim on a narrow pane and beside it on a wide one: one block at a time, the rest dimmed
+// (chatfocusreadview.ts). Each agent's own, remembered (chatfocusreadstore.ts); the pill itself is focusreadpill.tsx,
+// shared with the markdown Preview. The pane's own width decides (the @container on the scroller's wrapper): from 912px
+// the centred 760px column leaves room for the two side by side; narrower, they stack in one 26px column on the right
+// edge, the pill's steps growing down from under Skim, and the scroller's right padding keeps only that column clear.
 function FocusReadToggle({ agentId, scrollRef }: { agentId: string; scrollRef: RefObject<HTMLDivElement | null> }) {
     const [on, setOn] = useAtom(chatFocusReadOnAtom(agentId));
     return (
@@ -734,7 +737,7 @@ function FocusReadToggle({ agentId, scrollRef }: { agentId: string; scrollRef: R
             onTitle={(keys) => `Focus read: on for this agent (${keys} or click to turn off)`}
             offTitle={(keys) => `Focus read: read this agent's Chat one block at a time (${keys})`}
             quote
-            className="right-[42px] top-2"
+            className="right-3 top-10 @min-[912px]:right-[42px] @min-[912px]:top-2"
         />
     );
 }
@@ -1219,7 +1222,8 @@ function ChatPaneBody({
                 (a reader stays on the message at the top of the view) and useStickToBottom re-pins a followed tail, so the
                 reading position holds. */}
             {agent.effortId != null || brainstormState != null ? <ChatBand model={model} agent={agent} /> : null}
-            <div className="relative min-h-0 flex-1">
+            {/* @container: the corner controls stack or sit side by side by this pane's width (FocusReadToggle) */}
+            <div className="@container relative min-h-0 flex-1">
                 <div
                     ref={scrollRef}
                     onScroll={onScroll}
@@ -1227,11 +1231,13 @@ function ChatPaneBody({
                     // read's J/K/Space/Q act (bindings.ts)
                     data-chat-scroller
                     tabIndex={-1}
-                    // the bottom padding is the dock's (useDockPadding). The right padding keeps the column clear of the
-                    // Skim and Focus read controls floating in the corner (68px of it, 76 with a gap): 22px while the
-                    // centred 760px column already leaves that much (a pane of 912px or more), growing to 76px as the pane
-                    // narrows (934px - 100%), so on a narrow pane the text never runs under the Focus read pill
-                    className="flex h-full flex-col overflow-y-auto pl-[22px] pr-[clamp(22px,calc(934px_-_100%),76px)] outline-none"
+                    // the bottom padding is the dock's (useDockPadding). The right padding keeps the column (and the pinned
+                    // prompt card, which spans it) clear of the Skim and Focus read controls floating in the corner. From a
+                    // 912px pane they sit side by side (68px of corner, 76 with a gap), which the centred 760px column already
+                    // leaves free, so 22px is enough; narrower they stack in one column (right-3 + 26px = 38px, 46 with a
+                    // gap), which the column leaves free down to an 874px pane, the padding growing to 46px as the pane
+                    // narrows (874px - 100%), so the text never runs under the stacked pill
+                    className="flex h-full flex-col overflow-y-auto pl-[22px] pr-[clamp(22px,calc(874px_-_100%),46px)] outline-none"
                 >
                     {opening ? (
                         // the first message stands for the conversation: no skeleton or empty state over it
