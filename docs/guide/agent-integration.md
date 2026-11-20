@@ -111,7 +111,7 @@ Chunk agent tự thêm (phạm vi nó tìm ra, một cách chia việc nó gợi
 wsh effort chunk add <initiative> "Cache the parsed feed" --stage "Cache layer" --proposed
 ```
 
-Chunk `proposed` **không tính** vào `done/total` (kể cả dòng đầu của `wsh effort show`), và `wsh effort advance` không bao giờ bắt đầu nó. Nó hiện trên rail của agent ở mục **Plan to review**, ở hàng initiative trong Jarvis (`N proposed`) và thành một mục **plan** trong **Waiting on you**; bạn chấp nhận (thành `pending`), đổi tên hoặc bỏ từng chunk ([Agent → Plan to review](agent.md#plan-to-review-trên-rail)). Skill `effort-tracking` dạy agent quy tắc này: đề xuất những gì không ai yêu cầu, rồi dừng và nói rằng đã đề xuất. **Accept all and continue** gõ `Plan accepted, start with <chunk đầu>` vào terminal của agent để nó tiếp tục.
+Chunk `proposed` **không tính** vào `done/total` (kể cả dòng đầu của `wsh effort show`), và `wsh effort advance` không bao giờ bắt đầu nó. Nó hiện trên rail của agent, ở mục **Plan to review** của tab **Initiative**, ở hàng initiative trong Jarvis (`N proposed`) và thành một mục **plan** trong **Waiting on you**; bạn chấp nhận (thành `pending`), đổi tên hoặc bỏ từng chunk ([Agent → Plan to review](agent.md#plan-to-review-trên-rail)). Skill `effort-tracking` dạy agent quy tắc này: đề xuất những gì không ai yêu cầu, rồi dừng và nói rằng đã đề xuất. **Accept all and continue** gõ `Plan accepted, start with <chunk đầu>` vào terminal của agent để nó tiếp tục.
 
 ## Skills đi kèm
 
