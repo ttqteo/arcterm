@@ -23,6 +23,10 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
 
 ## 2026-11-20
 
+- [ ] (arcterm) **A run under plan review reads "Plan review · 7 tasks"** (`dagProgressLabel`, `8ffa290f1`). Start an
+  orchestrator run from a plan file; while its reviewers work, the run's row in the Agent tree reads "Plan review ·
+  N tasks", and its lead's row, where the stage word gives way, still shows "N tasks", never "0/N". Once workers
+  start it turns to "Working · 0/N".
 - [ ] (arcterm) **A council started through PowerShell draws its card in Chat** (`transcriptprojection.ts` shell
   tools, `33c6f49d0`). After installing a build with it, open the mit-thesis agent `773ab9d0` in Chat: council
   `0f74c5be` ("Truc chi phi cross-model…") shows its council card where the report came back, and the reply that
