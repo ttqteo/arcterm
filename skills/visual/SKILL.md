@@ -1,6 +1,6 @@
 ---
 name: visual
-description: Use in a Claude Code agent inside arcterm when a chart, an illustration, an interactive widget, a quiz or a small UI sketch would explain better than text — write one HTML file under ~/.arc/visuals and name it in an arc-visual block, and arcterm's Chat draws it inline.
+description: Use in a Claude Code agent inside arcterm when a chart, an illustration, an interactive widget, a quiz or a small UI sketch would explain better than text, and always when your reply proposes a change to a view (a line added to a card, a new badge, a reworded row): sketch it before and after — write one HTML file under ~/.arc/visuals and name it in an arc-visual block, and arcterm's Chat draws it inline.
 ---
 
 # Drawing a visual in Chat
@@ -14,6 +14,14 @@ prompt back to you as if the person typed it.
 A flowchart, sequence, state, pie or xy chart is a ```` ```mermaid ```` block. Chat already draws it, so write that
 and stop. A visual is for what mermaid cannot do: a custom chart, an illustration, sliders with live numbers, a
 quiz, buttons.
+
+## A UI change you propose
+
+When your reply proposes a change to something on screen (a line under a card's name, a badge, a reworded row, a
+moved button), sketch it here, not only in words: the view as it is, then as it would be, with the new part marked.
+Draw it from the component's real fields and layout, and say in the line before the block which texts are made up.
+The person judges a UI change by seeing it; a paragraph describing it gets approved or refused on a guess. A new
+screen, a redesign, or options that differ in UI is an `arc:design` canvas instead.
 
 ## Where and how
 
