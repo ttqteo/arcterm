@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // Focus read's toggle and its buttons, one pill floating in a reading pane's corner: Chat's (chatpane.tsx, each agent's
-// own switch, beside Skim) and the File tab's markdown Preview (mddoc.tsx, one switch for every document). Turning it on
+// own switch, beside Skim or under it on a narrow pane) and the File tab's markdown Preview (mddoc.tsx, one switch for every document). Turning it on
 // puts the focus in the pane's scroller, so J/K step at once; while it is on, the toggle grows down into one pill with
 // the size, the step buttons and (in Chat) the quote, which say their keys on their face. The pane places it (`className`).
 
