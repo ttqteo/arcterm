@@ -20,6 +20,7 @@ import {
     openSummary,
     panelFor,
     RAIL_WIDE_DEFAULT_PX,
+    railSummaryShown,
     selectKey,
     selectTab,
     type FileRef,
@@ -121,6 +122,26 @@ export function openRailSummary(agentId: string): void {
 }
 
 export const closeRailSummary = (agentId: string) => update(agentId, closeSummary);
+
+// the agent whose Summary tab Chat's Compacted divider opened with the rail hidden: the divider's second click hides it
+// again, so the toggle leaves the rail as it found it
+let summaryOpenedRail: string | null = null;
+
+// Chat's Compacted divider: opens the rail on the Summary tab, and on one already shown closes that tab (and the rail,
+// when the divider opened it)
+export function toggleRailSummary(agentId: string): void {
+    const visible = globalStore.get(railVisibleAtom);
+    if (railSummaryShown(globalStore.get(railPanelsAtom)[agentId], visible)) {
+        closeRailSummary(agentId);
+        if (summaryOpenedRail === agentId) {
+            globalStore.set(railVisibleAtom, false);
+        }
+        summaryOpenedRail = null;
+        return;
+    }
+    summaryOpenedRail = visible ? null : agentId;
+    openRailSummary(agentId);
+}
 
 // Shows the agent on the Agent surface with its panel open on the file, in a tab of its own. `follow`: a link followed
 // from the file on show, which moves that tab to it, with Back to return.

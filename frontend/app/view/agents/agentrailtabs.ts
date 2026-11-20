@@ -153,6 +153,11 @@ export function openSummary(p: PanelState): PanelState {
     return { ...p, summary: true, tab: "summary", prevTab: p.tab === "summary" ? p.prevTab : p.tab };
 }
 
+/** Pure: whether the rail shows the agent's Summary tab now (Chat's Compacted divider reads as pressed). */
+export function railSummaryShown(panel: PanelState | undefined, railVisible: boolean): boolean {
+    return railVisible && panel?.summary === true && panel.tab === "summary";
+}
+
 // Closes the Summary tab; on show, the panel returns to the tab it was opened from
 export function closeSummary(p: PanelState): PanelState {
     if (!p.summary) {

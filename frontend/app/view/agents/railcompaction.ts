@@ -101,6 +101,24 @@ export function extractCompactions(lines: string[]): RailCompaction[] {
     return out;
 }
 
+/** Pure: whether Chat's Compacted divider with these tokens stands for the last compaction in the tail and that one
+ *  kept a summary: the rail's Summary tab draws only the last one's, so only its divider opens it. A divider with no
+ *  token counts matches only a tail that holds one compaction. */
+export function opensRailSummary(
+    list: RailCompaction[] | undefined,
+    preTokens: number | undefined,
+    postTokens: number | undefined
+): boolean {
+    const last = list?.[list.length - 1];
+    if (last?.summary == null) {
+        return false;
+    }
+    if (preTokens == null && postTokens == null) {
+        return list!.length === 1;
+    }
+    return last.preTokens === preTokens && last.postTokens === postTokens;
+}
+
 /** Pure: the words for the last compaction, "202k → 13k · manual · 12m ago", with how many the tail holds ("×2")
  *  ahead of them when more than one. Null when there is none. `trigger: false` leaves out manual or auto: the rail's
  *  one line keeps to what fits its width, and the summary sheet's head says it. */

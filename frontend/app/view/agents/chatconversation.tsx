@@ -61,7 +61,8 @@ import { memo, useCallback, useLayoutEffect, useMemo, useRef, useState, type Rea
 import { parseMarks } from "../../../../claude/skim-mod/hooks/highlight-core";
 import { getProcExitAtom } from "./agentcontrollerstore";
 import { agentDiffScope, openDiff } from "./agentdiffnav";
-import { openFileInPanel } from "./agentrailstore";
+import { openFileInPanel, railPanelsAtom, toggleRailSummary } from "./agentrailstore";
+import { railSummaryShown } from "./agentrailtabs";
 import type { AgentsViewModel } from "./agents";
 import {
     conversationText,
@@ -141,8 +142,11 @@ import { firstExistingFile } from "./filetabload";
 import { CompactionDivider, InterruptedDivider, PromptImages, TaskNotificationRow } from "./narrationtimeline";
 import { pinnedLabel } from "./pinnedlabel";
 import { PinnedPromptBar, scrollParent, usePinnedPrompt } from "./pinnedpromptbar";
+import { opensRailSummary } from "./railcompaction";
+import { railVisibleAtom } from "./railstore";
 import { useConversationRuns } from "./runoriginstore";
 import { runQueueAtom, runQueueStartedAtom, useRunQueueFeed } from "./runqueuestore";
+import { compactionsByIdAtom } from "./subagentsstore";
 import { firstItemBelow, keepTranscriptPlace, transcriptPlace } from "./transcriptplace";
 
 /** A sent card shows this many of its lines until it is opened. */
@@ -846,16 +850,33 @@ function SwitchNoteRow({ n }: { n: number }) {
     );
 }
 
-function Marker({ item }: { item: ChatMarker }) {
+// Chat's Compacted divider: the last compaction's opens and closes the rail's Summary tab, which draws its summary
+function ChatCompactionDivider({
+    item,
+    agentId,
+}: {
+    item: Extract<ChatMarker, { kind: "compaction" }>;
+    agentId?: string;
+}) {
+    const list = useAtomValue(compactionsByIdAtom)[agentId ?? ""];
+    const panel = useAtomValue(railPanelsAtom)[agentId ?? ""];
+    const railVisible = useAtomValue(railVisibleAtom);
+    const canToggle = agentId != null && opensRailSummary(list, item.preTokens, item.postTokens);
+    return (
+        <CompactionDivider
+            trigger={item.trigger}
+            preTokens={item.preTokens}
+            postTokens={item.postTokens}
+            onToggle={canToggle ? () => toggleRailSummary(agentId) : undefined}
+            open={canToggle && railSummaryShown(panel, railVisible)}
+        />
+    );
+}
+
+function Marker({ item, agentId }: { item: ChatMarker; agentId?: string }) {
     switch (item.kind) {
         case "compaction":
-            return (
-                <CompactionDivider
-                    trigger={item.trigger}
-                    preTokens={item.preTokens}
-                    postTokens={item.postTokens}
-                />
-            );
+            return <ChatCompactionDivider item={item} agentId={agentId} />;
         case "interrupted":
             return <InterruptedDivider />;
         case "notification":
@@ -1738,7 +1759,7 @@ export function ChatConversation({
                 );
             }
             case "marker":
-                return <Marker item={item.item} />;
+                return <Marker item={item.item} agentId={agent?.id} />;
         }
     };
 

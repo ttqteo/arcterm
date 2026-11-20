@@ -25,6 +25,7 @@ import {
     RAIL_WIDE_DEFAULT_PX,
     RAIL_WIDE_MIN_PX,
     RAIL_WIDTHS,
+    railSummaryShown,
     selectFile,
     selectKey,
     selectTab,
@@ -499,5 +500,18 @@ describe("the Council tab", () => {
         const keys = stripKeys(p, false, true, true);
         expect(keys).toEqual(["overview", "changes", "transcript", "council", ...p.files.map((f) => fileKey(f.id))]);
         expect(selectKey(p, "council", false, true, true).tab).toBe("council");
+    });
+});
+
+describe("railSummaryShown", () => {
+    const base = panelFor({}, "a", "overview");
+    it("is on only when the rail is visible and the Summary tab is the one shown", () => {
+        const open = openSummary(base);
+        expect(railSummaryShown(open, true)).toBe(true);
+        expect(railSummaryShown(open, false)).toBe(false);
+        expect(railSummaryShown(base, true)).toBe(false);
+        expect(railSummaryShown({ ...open, tab: "overview" }, true)).toBe(false);
+        expect(railSummaryShown(closeSummary(open), true)).toBe(false);
+        expect(railSummaryShown(undefined, true)).toBe(false);
     });
 });

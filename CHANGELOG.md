@@ -32,7 +32,13 @@ and a picture given to a line that is not big.
 
 ## Unreleased
 
+### Added
+
+- Clicking Chat's Compacted line opens the summary the agent kept in the side panel, and a second click closes it.
+
 ### Fixed
+
+- An agent that is compacting its conversation says "compacting…" on its sidebar row, not only in Chat.
 
 - An agent's row no longer shows a server port that is the agent itself: on a Mac, Claude Code's own localhost port
   read as a server, and an agent in another tab of the same project showed in the Servers list.

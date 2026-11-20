@@ -106,6 +106,7 @@ import { waitMap } from "./agentwaits";
 import { BackgroundTaskPeek } from "./backgroundtaskpeek";
 import { focusConversationSoon, focusReadOn } from "./chatfocusreadstore";
 import { backgroundActivity, launchedServers, shownState, type ShownState } from "./bgactivity";
+import { compactingNow } from "./chatmodel";
 import { treeLine, treeLineAsks, waitsOnUser, type BrainstormFile, type BuilderCheckRecord } from "./brainstormmodel";
 import { runStepView, runTreeText } from "./brainstormrunmodel";
 import { brainstormAtom, shownBrainstormFile } from "./brainstormstore";
@@ -1465,6 +1466,14 @@ function ParentRow({
                 {askingLabel(agent)}
             </span>
         ) : null;
+    // compacting its conversation (a /compact, or Claude Code's own): said in words at the head of its second line, as
+    // Chat's working line says Compacting…, since the working glyph alone reads as a turn under way
+    const compactNote =
+        !asking && compactingNow(agent.state, agent.activity) ? (
+            <span data-agent-compacting={agent.id} className="flex-none whitespace-nowrap font-medium text-accent-soft">
+                compacting…
+            </span>
+        ) : null;
     // its state, when it wants something, and the marks and buttons a turn leaves: they end the row's second line just
     // left of the columns, at full width; only the words to their left are cut (a lead's after its workers chip and
     // progress), so the name keeps the first line's full width. An agent whose controller refused to start says so
@@ -1602,7 +1611,7 @@ function ParentRow({
                         run={lead.run}
                         open={lead.open}
                         live={lead.live}
-                        note={askNote}
+                        note={askNote ?? compactNote}
                         trailing={
                             <>
                                 {originChip}
@@ -1617,6 +1626,7 @@ function ParentRow({
                     // truncates
                     <div className={cn(CONVERSATION_META, "@container mt-[3px]", dim && "text-ink-faint")}>
                         {askNote}
+                        {compactNote}
                         {waitsFor ? (
                             <span className="flex min-w-0 items-center gap-[3px]" title={`Waiting on ${waitsFor}`}>
                                 <Hourglass size={10} aria-hidden className="flex-none" />
