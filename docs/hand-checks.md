@@ -1400,3 +1400,7 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
 - [ ] (arcterm) A bug report's picture survives done: in the session that handled a bug report, after `wsh bugreport done`
   moves its folder to `reports/done/<id>/`, the screen.png thumb on the step row still shows and a click zooms it (not
   the crossed-out "no longer on disk" frame). Unit-tested only. Commit: 1b016b95d (`localimage.ts` `doneReportPath`).
+- [ ] (arcterm) Rail Brainstorm and Initiative tabs, what Final's scenarios did not reach: in a split, start a drag on a
+  cell bar's ◇ chip or Brainstorm marker → the bar does not drag; an agent whose brainstorm asks a question → the
+  marker's dot (and the rail tab's) is amber; narrow a split cell → the name gives up width before the ◇ chip and its
+  `· done/total` count. Run d2c39b10 (`gridcellbar.tsx`, `agentheader.tsx`).

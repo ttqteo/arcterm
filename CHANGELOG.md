@@ -32,11 +32,6 @@ and a picture given to a line that is not big.
 
 ## Unreleased
 
-### Changed
-
-- Brainstorm and initiative moved out of the band above Chat into two tabs of the agent's right panel: the brainstorm
-  as one timeline with each board under its decision, the initiative with its chunks, plan to review and notes. The ◇
-  chip and i open it. <!-- big --> <!-- try: go:agent --> <!-- shot: 1.12.0-rail-tabs.webp -->
 ### Added
 
 - Clicking Chat's Compacted line opens the summary the agent kept in the side panel, and a second click closes it.
@@ -45,6 +40,10 @@ and a picture given to a line that is not big.
   Library → Boards lists them, and the one you pick takes the board over, so you can ask on it again.
 
 ### Changed
+
+- Brainstorm and initiative moved out of the band above Chat into two tabs of the agent's right panel: the brainstorm
+  as one timeline with each board under its decision, the initiative with its chunks, plan to review and notes. The ◇
+  chip and i open it. <!-- big --> <!-- try: go:agent --> <!-- shot: 1.12.0-rail-tabs.webp -->
 
 - A board whose agent has ended is no longer stuck: the next agent of its project that draws on it by name takes it over,
   drawing and turns kept, and it opens beside that agent's Chat.
