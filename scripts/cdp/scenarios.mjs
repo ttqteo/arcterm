@@ -76,9 +76,7 @@ import runQueueRecheckScenarios from "./scenarios-run-queue-recheck.mjs";
 import bugReportBoxScenarios from "./scenarios-bug-report-box.mjs";
 import bugReportJarvisScenarios from "./scenarios-bug-report-jarvis.mjs";
 import briefActScenarios from "./scenarios-brief-act.mjs";
-import chatBrainstormBandScenarios from "./scenarios-chat-brainstorm-band.mjs";
 import chatBrainstormReviewScenarios from "./scenarios-chat-brainstorm-review.mjs";
-import chatInitiativeBandScenarios from "./scenarios-chat-initiative-band.mjs";
 import chatRedesignScenarios from "./scenarios-chat-redesign.mjs";
 import chatCodeBoxScenarios from "./scenarios-chat-code-box.mjs";
 import chatVerdictHandoffScenarios from "./scenarios-chat-verdict-handoff.mjs";
@@ -116,6 +114,7 @@ import monitorTasksScenarios from "./scenarios-monitor-tasks.mjs";
 import { frostProbe, frostVerdict } from "./overlays-frost/frostcheck.mjs";
 import overlaysFrostScenarios from "./scenarios-overlays-frost.mjs";
 import paletteBrainstormResumeScenarios from "./scenarios-palette-brainstorm-resume.mjs";
+import railBrainstormInitiativeScenarios from "./scenarios-rail-brainstorm-initiative.mjs";
 import railCouncilScenarios from "./scenarios-rail-council.mjs";
 import railTranscriptScenarios from "./scenarios-rail-transcript.mjs";
 import sessionSearchFindScenarios from "./scenarios-session-search-find.mjs";
@@ -67208,10 +67207,11 @@ const setupLearned = {
 };
 
 // --- initiatives on the Agent surface ----------------------------------------------------------------------------
-// docs/superpowers/specs/2026-10-14-initiatives-on-agent-design.md. Five scenarios share the helpers below: the plan an
-// agent proposes, reviewed on its details rail (initiative-plan-review); the initiative popover on its header
-// (initiative-popover); Link to initiative (initiative-link); a review pass over the Jarvis List (initiative-review); and
-// parent and child initiatives on it (initiative-parents).
+// docs/superpowers/specs/2026-10-14-initiatives-on-agent-design.md. Four scenarios share the helpers below: the plan an
+// agent proposes, reviewed in the Initiative tab of its details rail (initiative-plan-review); Link to initiative
+// (initiative-link); a review pass over the Jarvis List (initiative-review); and parent and child initiatives on it
+// (initiative-parents). The Initiative tab itself (its keys, rows, notes) is rail-initiative-tab's
+// (scenarios-rail-brainstorm-initiative.mjs).
 //
 // An agent here is a terminal tab that publishes a Claude agent:status, as agent-uploads makes one, with the tab's
 // session:effort naming its initiative. No scenario launches a real agent (AGENTS.md: a real agent costs tokens).
@@ -67406,9 +67406,9 @@ async function initTeardown(h, ctx, name, { reload = true } = {}) {
     };
     if (ctx.skip) return;
     await step("restore Date.now", () => h.ev(`(() => { if (window.__initRealNow) { Date.now = window.__initRealNow; delete window.__initRealNow; } })()`));
-    // a picker or popover a failed step left open
-    await step("close an open picker or popover", async () => {
-        if (await h.ev(`!!document.querySelector("[data-initiative-picker], [data-initiative-popover]")`)) await initPress(h, "Escape");
+    // a picker a failed step left open
+    await step("close an open picker", async () => {
+        if (await h.ev(`!!document.querySelector("[data-initiative-picker]")`)) await initPress(h, "Escape");
     });
     await step("close the Jarvis panel", () =>
         h.ev(`document.querySelector('[data-pet-peek] button[aria-label="Close Jarvis panel"]')?.click()`)
@@ -67497,6 +67497,27 @@ const prActWidth = (h, label, name) => h.ev(`Math.round((${prButton(label, name)
 const prFoot = (text) =>
     `[...(${INIT_RAIL}?.querySelectorAll('[data-rail-section="plan"] button') ?? [])].find((b) => b.innerText.trim() === ${JSON.stringify(text)})`;
 const prSection = `${INIT_RAIL}?.querySelector('[data-rail-section="plan"]')`;
+// Plan to review lives in the rail's Initiative tab (Overview has no `plan` section): the tab selected, its pane, the
+// section's own fold (the Initiative tab's wrapper, "true" or "false"; null with no section) and the header's "N to review" chip
+const prSelected = `(${INIT_RAIL}?.querySelector('[role="tab"][aria-selected="true"]')?.dataset.railTab ?? null)`;
+const prPane = `${INIT_RAIL}?.querySelector("[data-rail-initiative]")`;
+const prWrap = `${INIT_RAIL}?.querySelector('[data-rail-initiative-section="initiative-plan"]')`;
+const prFold = `(${prWrap}?.querySelector("section[data-rail-section]")?.getAttribute("data-open") ?? null)`;
+const prChip = `document.querySelector("[data-agent-header] [data-plan-review-chip]")`;
+// the section is in view in the tab's scroller
+const prInView = `(() => {
+    const plan = ${prWrap};
+    const view = ${INIT_RAIL}?.querySelector("[data-rail-initiative-scroll]")?.getBoundingClientRect();
+    if (!plan || !view) return false;
+    const r = plan.getBoundingClientRect();
+    return r.height > 0 && r.top >= view.top - 2 && r.top < view.bottom;
+})()`;
+// The header's "N to review" chip: the rail shows on the Initiative tab with Plan to review unfolded. True once it is.
+async function prOpenTab(h) {
+    await polishWaitFor(h, `!!${prChip}`, INIT_WAIT_MS);
+    await initClick(h, prChip);
+    return polishWaitFor(h, `${prFold} === "true"`, INIT_WAIT_MS);
+}
 
 const initiativePlanReview = {
     name: "initiative-plan-review",
@@ -67558,57 +67579,48 @@ const initiativePlanReview = {
                 polishWaitFor(h, `${INIT_RAIL}?.querySelectorAll('[data-plan-row="${state}"]').length === ${n}`, INIT_WAIT_MS);
             const stateOf = (label) => initChunk(h, ctx.main, label).then((c) => c?.status ?? "gone");
 
-            // --- 1. the rail opens on Plan to review, its four rows first ---------------------------------------------
+            // --- 1. Overview holds no Plan to review; the header chip opens the Initiative tab on it, its four rows first ---
+            const chipUp = await polishWaitFor(h, `!!${prChip}`, INIT_WAIT_MS);
+            const overview = await h.ev(`(() => ({ selected: ${prSelected}, plan: !!${INIT_RAIL}?.querySelector('[data-rail-section="plan"]'), pane: !!${prPane},
+                tabDot: !!${INIT_RAIL}?.querySelector('[data-rail-tab="initiative"] [data-rail-tab-dot]') }))()`);
+            const opened1 = await prOpenTab(h);
             const four = await waitRows(4);
             const rail1 = await h.ev(`(() => {
                 const rail = ${INIT_RAIL};
-                const sections = [...(rail?.querySelectorAll("[data-rail-section]") ?? [])];
+                const pane = rail?.querySelector("[data-rail-initiative]");
                 const plan = rail?.querySelector('[data-rail-section="plan"]');
-                return { first: sections[0]?.dataset.railSection ?? null, heading: plan?.textContent.includes("Plan to review") ?? false,
-                    rows: plan?.querySelectorAll('[data-plan-row="proposed"]').length ?? 0, count: plan?.innerText.includes("4 proposed") ?? false };
+                const head = (pane?.querySelector('[data-rail-initiative-section="initiative-plan"] h3')?.textContent ?? "").replace(/\\s+/g, " ").trim();
+                return { selected: ${prSelected}, sections: [...(pane?.querySelectorAll("[data-rail-initiative-section]") ?? [])].map((s) => s.dataset.railInitiativeSection),
+                    head, card: /plan to review/i.test(plan?.textContent ?? ""), rows: plan?.querySelectorAll('[data-plan-row="proposed"]').length ?? 0,
+                    count: /4 proposed/i.test(plan?.textContent ?? ""), inView: ${prInView} };
             })()`);
             await polishNap(500);
             await h.shot("cdp-shots/initiative-plan-review-1-rail.png");
             rec(
-                '1. the rail shows "Plan to review" first, with the four proposed rows',
-                four === true && rail1.first === "plan" && rail1.heading && rail1.rows === 4 && rail1.count,
-                rail1
+                '1. Overview has no "Plan to review"; the header chip opens the Initiative tab with it unfolded and in view, the four proposed rows in it',
+                chipUp === true && overview.selected === "overview" && overview.plan === false && overview.pane === false &&
+                    opened1 === true && four === true && rail1.selected === "initiative" && /^Plan to review\s*4/.test(rail1.head) &&
+                    rail1.sections.includes("initiative-plan") && rail1.card && rail1.rows === 4 && rail1.count && rail1.inView === true,
+                { overview, rail1 }
             );
 
-            // --- 2. the header chip, and the rail brought back to the plan -----------------------------------------------
-            const chip = await h.ev(`document.querySelector("[data-agent-header] [data-plan-review-chip]")?.textContent.trim() ?? null`);
-            // the rail on another section: its Files tab when the agent has a worktree, else scrolled away from the top
-            const moved = await h.ev(`(() => {
-                const tab = ${INIT_RAIL}?.querySelector('[data-rail-tab="tree"]');
-                if (tab) { tab.click(); return "files tab"; }
-                const scroller = ${INIT_RAIL}?.querySelector("[data-rail-scroll]");
-                if (scroller) { scroller.scrollTop = scroller.scrollHeight; return "scrolled"; }
-                return "nothing to move";
-            })()`);
-            await polishNap(400);
-            const planGone = await h.ev(`(() => {
-                const plan = ${prSection};
-                const view = ${INIT_RAIL}?.querySelector("[data-rail-scroll]")?.getBoundingClientRect();
-                if (!plan || !view) return true;
-                const r = plan.getBoundingClientRect();
-                return r.width === 0 || r.bottom <= view.top || r.top >= view.bottom;
-            })()`);
-            const clicked = await initClick(h, `document.querySelector("[data-agent-header] [data-plan-review-chip]")`);
-            const back = await polishWaitFor(
-                h,
-                `(() => {
-                    const plan = ${prSection};
-                    const view = ${INIT_RAIL}?.querySelector("[data-rail-scroll]")?.getBoundingClientRect();
-                    if (!plan || !view) return false;
-                    const r = plan.getBoundingClientRect();
-                    return r.width > 0 && r.top >= view.top - 2 && r.top < view.bottom;
-                })()`,
-                4000
-            );
+            // --- 2. the header chip, and the tab brought back to the plan ------------------------------------------------
+            const chip = await h.ev(`${prChip}?.textContent.trim() ?? null`);
+            // Plan to review folded, then the rail on another tab: the chip has to bring both back
+            await initClick(h, `${prWrap}?.querySelector("h3 button")`);
+            await polishWaitFor(h, `${prFold} === "false"`, 3000);
+            const planFolded = (await h.ev(prFold)) === "false";
+            await initClick(h, `${INIT_RAIL}?.querySelector('[data-rail-tab="overview"]')`);
+            const away = await polishWaitFor(h, `(${prSelected}) === "overview" && !${prPane}`, 3000);
+            const clicked = await initClick(h, prChip);
+            const back = await polishWaitFor(h, `(${prSelected}) === "initiative" && ${prFold} === "true"`, 4000);
+            await polishNap(500);
+            const view2 = await h.ev(prInView);
+            const focusIn = await h.ev(`!!${prPane}?.contains(document.activeElement)`);
             rec(
-                '2. the header chip reads "4 to review", and a click on it brings the rail back to Plan to review',
-                chip === "4 to review" && clicked && back === true,
-                { chip, moved, planGone, clicked, back }
+                '2. the header chip reads "4 to review"; with Plan to review folded and the rail on Overview, a click on it selects the Initiative tab with Plan to review unfolded and in view, the keyboard in the tab',
+                chip === "4 to review" && planFolded && away === true && clicked && back === true && view2 === true && focusIn === true,
+                { chip, planFolded, away, clicked, back, view2, focusIn }
             );
 
             // --- 3. Sprout's popup and the Brief's Waiting on you list it ------------------------------------------------
@@ -67621,17 +67633,22 @@ const initiativePlanReview = {
             await h.ev(`document.querySelector('[data-pet-peek] button[aria-label="Close Jarvis panel"]')?.click()`);
             await polishWaitFor(h, `!document.querySelector("[data-pet-peek]")`, 3000);
             await h.goto("jarvis");
+            // the Waiting on you strip shows its most urgent item on one line; Show all opens every item as a queue row under it
+            await polishWaitFor(h, `!!document.querySelector("[data-jarvis-strip-show-all]")`, INIT_WAIT_MS);
+            await h.ev(`document.querySelector('[data-jarvis-strip-show-all="shut"]')?.click()`);
             const brief = await polishWaitFor(
                 h,
-                `[...document.querySelectorAll('[data-jarvis-brief-row="queue"]')].some((r) => r.innerText.includes(${JSON.stringify(PR_MAIN)}) && /plan/i.test(r.innerText) && r.innerText.includes("proposed"))`,
+                `[...document.querySelectorAll('[data-jarvis-waiting-strip] [data-jarvis-brief-row="queue"]')].some((r) => r.innerText.includes(${JSON.stringify(PR_MAIN)}) && /plan/i.test(r.innerText) && r.innerText.includes("proposed"))`,
                 INIT_WAIT_MS
             );
             rec(
-                '3. Sprout\'s popup lists "Plan to review" for the initiative, and so does the Brief\'s Waiting on you',
+                '3. Sprout\'s popup lists "Plan to review" for the initiative, and so does the Brief\'s Waiting on you (its Show all rows)',
                 sprout === true && brief === true,
                 { sprout, brief }
             );
             await h.goto("agent");
+            // the Agent surface stays mounted, so the tab is still the one selected: the chip puts it back if it is not
+            if (!(await h.ev(`!!${prSection}`))) await prOpenTab(h);
 
             // --- 3b. a row's actions are folded until the pointer is over it ----------------------------------------------
             await polishWaitFor(h, `!!(${prRow(PR_P4)})`, INIT_WAIT_MS);
@@ -67722,39 +67739,53 @@ const initiativePlanReview = {
             rec("6c. dropping it again removes it", (await stateOf(PR_P2)) === "gone", { status: await stateOf(PR_P2) });
 
             // --- 7. the Jarvis List counts what waits ---------------------------------------------------------------------
+            // An initiative with an agent open is a card of the Initiatives grid (no count of its own: its plan waits in the strip
+            // above and in its sheet); an idea is a row of the Ideas column and says "2 proposed" itself.
             await h.goto("jarvis");
             const mainRow = `(${INIT_ROW(PR_MAIN)})`;
             const ideaRow = `(${INIT_ROW(PR_IDEA)})`;
+            const mainCard = `document.querySelector('[data-jarvis-card="effort:${ctx.main}"]')`;
+            // the main initiative's card, or its row when the List draws it as one
+            const mainTarget = `(${mainCard} ?? ${mainRow}?.querySelector(':scope > [role="button"]'))`;
+            const SHEET = `document.querySelector('[data-jarvis-brief-sheet="effort"]')`;
+            // the initiative sheet's own close button (a run's sheet calls it "Close detail sheet")
+            const closeSheet = async () => {
+                await h.ev(`${SHEET}?.querySelector('button[aria-label="Close (Esc)"]')?.click()`);
+                return polishWaitFor(h, `!${SHEET}`, 4000);
+            };
             const counts = await polishWaitFor(
                 h,
-                `${mainRow}?.querySelector("[data-jarvis-proposed-count]")?.innerText.trim() === "2 proposed" && ${ideaRow}?.querySelector("[data-jarvis-proposed-count]")?.innerText.trim() === "2 proposed"`,
+                `${ideaRow}?.querySelector("[data-jarvis-proposed-count]")?.innerText.trim() === "2 proposed" && !!${mainTarget}`,
                 INIT_WAIT_MS
             );
             await polishNap(400);
             await h.shot("cdp-shots/initiative-plan-review-7-list.png");
             rec(
-                '7. on the Jarvis List the initiative\'s row and the idea\'s row (in the Ideas column) each read "2 proposed"',
+                '7. on the Jarvis List the idea\'s row (in the Ideas column) reads "2 proposed", and the initiative with its agent open is there as a card of the Initiatives grid',
                 counts === true,
-                await h.ev(`({ main: ${mainRow}?.querySelector("[data-jarvis-proposed-count]")?.innerText ?? null, idea: ${ideaRow}?.querySelector("[data-jarvis-proposed-count]")?.innerText ?? null })`)
+                await h.ev(`({ card: !!${mainCard}, mainRow: !!${mainRow}, idea: ${ideaRow}?.querySelector("[data-jarvis-proposed-count]")?.innerText ?? null })`)
             );
 
-            // --- 8. opened, the initiative lists its proposed chunks; Accept there makes one pending ----------------------
-            await initClick(h, `${mainRow}?.querySelector(':scope > [role="button"]')`);
-            const group = await polishWaitFor(h, `${mainRow}?.parentElement?.querySelector("[data-jarvis-initiative-detail] [data-jarvis-proposed-group]") != null`, INIT_WAIT_MS);
-            const groupText = await h.ev(`${mainRow}?.parentElement?.querySelector("[data-jarvis-proposed-group]")?.innerText.replace(/\\s+/g, " ").trim() ?? null`);
-            await initClick(h, `${mainRow}?.parentElement?.querySelector('[data-jarvis-proposed-chunk="${PR_P3}"] [data-jarvis-proposed-action="accept"]')`);
+            // --- 8. opened (a click on its card), the initiative's sheet lists its proposed chunks; Accept there makes one pending --
+            await initClick(h, mainTarget);
+            const group = await polishWaitFor(h, `${SHEET}?.querySelector("[data-jarvis-initiative-detail] [data-jarvis-proposed-group]") != null`, INIT_WAIT_MS);
+            const groupText = await h.ev(`${SHEET}?.querySelector("[data-jarvis-proposed-group]")?.innerText.replace(/\\s+/g, " ").trim() ?? null`);
+            await initClick(h, `${SHEET}?.querySelector('[data-jarvis-proposed-chunk="${PR_P3}"] [data-jarvis-proposed-action="accept"]')`);
             const p3Pending = await initUntil(async () => (await stateOf(PR_P3)) === "pending", 5000);
+            const closed8 = await closeSheet();
             rec(
-                '8. opened, the initiative shows "Proposed · 2"; Accept on one there makes the chunk pending',
-                group === true && /^proposed · 2/i.test(groupText ?? "") && p3Pending === true,
-                { group, groupText, p3Pending }
+                '8. opened, the initiative\'s sheet shows "Proposed · 2"; Accept on one there makes the chunk pending; its Close button closes the sheet',
+                group === true && /^proposed · 2/i.test(groupText ?? "") && p3Pending === true && closed8 === true,
+                { group, groupText, p3Pending, closed8 }
             );
-            await initClick(h, `${mainRow}?.querySelector(':scope > [role="button"]')`);
 
             // --- 9. the idea: Drop all removes both chunks, and it is still an idea ----------------------------------------
-            await initClick(h, `${ideaRow}?.querySelector(':scope > [role="button"]')`);
-            const ideaOpen = await polishWaitFor(h, `${ideaRow}?.parentElement?.querySelector("[data-jarvis-idea-detail] [data-jarvis-proposed-group]") != null`, INIT_WAIT_MS);
-            await initClick(h, `${ideaRow}?.parentElement?.querySelector('[data-jarvis-idea-detail] [data-jarvis-proposed-action="drop-all"]')`);
+            const ideaClicked = await initClick(h, `${ideaRow}?.querySelector(':scope > [role="button"]')`);
+            const ideaOpen = await polishWaitFor(h, `${SHEET}?.querySelector("[data-jarvis-idea-detail] [data-jarvis-proposed-group]") != null`, INIT_WAIT_MS);
+            const sheet9 = await h.ev(`({ sheets: document.querySelectorAll("[data-jarvis-brief-sheet]").length, text: (${SHEET}?.innerText ?? "").replace(/\\s+/g, " ").slice(0, 240),
+                row: ${ideaRow}?.getAttribute("data-jarvis-idea-row") ?? null })`);
+            await h.shot("cdp-shots/initiative-plan-review-9-idea-sheet.png");
+            await initClick(h, `${SHEET}?.querySelector('[data-jarvis-idea-detail] [data-jarvis-proposed-action="drop-all"]')`);
             // a drop on the List is deferred by the undo window (briefundo.ts UNDO_WINDOW_MS), so the chunks are read after it
             await polishNap(5800);
             let ideaChunks = await initLabels(h, ctx.idea);
@@ -67764,13 +67795,15 @@ const initiativePlanReview = {
             }
             const stillIdea = await polishWaitFor(h, `!!(${INIT_ROW(PR_IDEA)})`, 5000);
             rec(
-                "9. on the opened idea, Drop all removes both chunks and it is still an idea",
+                "9. on the opened idea's sheet, Drop all removes both chunks and it is still an idea",
                 ideaOpen === true && ideaChunks.length === 0 && stillIdea === true,
-                { ideaOpen, ideaChunks, stillIdea }
+                { ideaClicked, ideaOpen, sheet9, ideaChunks, stillIdea }
             );
+            await closeSheet();
             await h.goto("agent");
 
             // --- 10. Accept all and continue ----------------------------------------------------------------------------
+            if (!(await h.ev(`!!${prSection}`))) await prOpenTab(h);
             const waiting = await waitRows(1);
             const label10 = (await prRows(h)).find((r) => r.state === "proposed")?.label ?? "";
             await uploadsShellUp(h, ctx.agent.blockId);
@@ -67782,7 +67815,9 @@ const initiativePlanReview = {
             // the agent starts on the chunk, so its state changes; the rail reads the initiative again and ends the decided
             // rows it held for Undo
             await initStatus(h, ctx.agent, "working");
-            const sectionGone = await polishWaitFor(h, `!${prSection}`, INIT_WAIT_MS);
+            // the section and its place in the Initiative tab both go: the tab itself stays, on the chunks
+            const sectionGone = await polishWaitFor(h, `!${prSection} && !${prWrap}`, INIT_WAIT_MS);
+            const tabStays = await h.ev(`!!${prPane}`);
             await h.goto("jarvis");
             const queueGone = await polishWaitFor(
                 h,
@@ -67790,14 +67825,16 @@ const initiativePlanReview = {
                 INIT_WAIT_MS
             );
             rec(
-                '10. Accept all and continue accepts the renamed chunk and sends "Plan accepted, start with <it>" to the agent; the chip, the section and the Waiting on you row go',
-                waiting === true && label10 === PR_P4_NEW && p4 === true && echoed === true && chipGone === true && sectionGone === true && queueGone === true,
-                { waiting, first: label10, p4, echoed, chipGone, sectionGone, queueGone }
+                '10. Accept all and continue accepts the renamed chunk and sends "Plan accepted, start with <it>" to the agent; the chip, the Plan to review section of the Initiative tab and the Waiting on you row go',
+                waiting === true && label10 === PR_P4_NEW && p4 === true && echoed === true && chipGone === true && sectionGone === true && tabStays === true && queueGone === true,
+                { waiting, first: label10, p4, echoed, chipGone, sectionGone, tabStays, queueGone }
             );
             await h.goto("agent");
 
             // --- 11. Accept all on another agent sends nothing; Drop all on a third empties its section --------------------
+            // each agent's rail has its own tab: the chip brings this one to the Initiative tab
             await initFocusAgent(h, ctx.agentAll);
+            const openAll = await prOpenTab(h);
             await polishWaitFor(h, `${INIT_RAIL}?.querySelectorAll('[data-plan-row="proposed"]').length === 2`, INIT_WAIT_MS);
             await uploadsShellUp(h, ctx.agentAll.blockId);
             await initClick(h, prFoot("Accept all"));
@@ -67809,21 +67846,22 @@ const initiativePlanReview = {
             // a terminal with nothing readable would pass a "nothing sent" check for nothing, so it must have a prompt
             const leaked = await uploadsTermHas(h, ctx.agentAll.blockId, "Plan accepted");
             rec(
-                "11. Accept all (without continue) makes both chunks pending and sends nothing to the agent's terminal",
-                allPending === true && leaked.readable === true && leaked.seen === false,
-                { allPending, leaked }
+                "11. Accept all (without continue), in the other agent's Initiative tab, makes both chunks pending and sends nothing to the agent's terminal",
+                openAll === true && allPending === true && leaked.readable === true && leaked.seen === false,
+                { openAll, allPending, leaked }
             );
 
             await initFocusAgent(h, ctx.agentDrop);
+            const openDrop = await prOpenTab(h);
             await polishWaitFor(h, `${INIT_RAIL}?.querySelectorAll('[data-plan-row="proposed"]').length === 2`, INIT_WAIT_MS);
             await initClick(h, prFoot("Drop all"));
             const bothDropped = await initUntil(async () => (await initLabels(h, ctx.drop)).join("|") === PR_DROP_DONE, 5000);
             await initStatus(h, ctx.agentDrop, "working");
-            const dropSectionGone = await polishWaitFor(h, `!${prSection}`, INIT_WAIT_MS);
+            const dropSectionGone = await polishWaitFor(h, `!${prSection} && !${prWrap}`, INIT_WAIT_MS);
             rec(
-                "12. Drop all removes both chunks, and the section leaves the rail",
-                bothDropped === true && dropSectionGone === true,
-                { bothDropped, dropSectionGone }
+                "12. Drop all removes both chunks, and the section leaves the Initiative tab",
+                openDrop === true && bothDropped === true && dropSectionGone === true,
+                { openDrop, bothDropped, dropSectionGone }
             );
         } catch (e) {
             rec("the scenario ran to its end", false, String(e?.message ?? e));
@@ -67832,244 +67870,6 @@ const initiativePlanReview = {
     },
     async teardown(h, ctx) {
         await initTeardown(h, ctx, "initiative-plan-review");
-    },
-};
-
-// --- initiative-popover: the initiative on the agent's header, opened in place -----------------------------------------
-const POP_PROJECT = "verify-init-popover";
-const POP_TITLE = "Popover: draft the initiative popover";
-const POP_C1 = "Shape the popover API";
-const POP_C2 = "Draft the popover rows";
-const POP_C3 = "Wire the popover keys";
-const POP_C3_NEW = "Wire the popover chords";
-const POP_C4 = "Write the popover docs";
-const POP_P1 = "Tune the popover spacing";
-const POP_NOTE_SEED = "Drafted the rows, the menu is next.";
-const POP_NOTE = "Chords wired, spacing is next.";
-const POP = `document.querySelector("[data-initiative-popover]")`;
-const popRows = (h, kind) =>
-    h.ev(`[...document.querySelectorAll('[data-initiative-popover] [data-popover-row="${kind}"]')].map((r) => r.dataset.chunkLabel)`);
-const popRow = (label) =>
-    `[...document.querySelectorAll("[data-initiative-popover] [data-popover-row]")].find((r) => r.dataset.chunkLabel === ${JSON.stringify(label)})`;
-// the popover's own keys need focus on its root (it holds it when it opens), and `i` focus on the surface
-const popOpen = async (h) => {
-    await h.ev(`document.querySelector("[data-cockpit-surface-wrap]")?.focus()`);
-    await initPress(h, "i");
-    const up = await polishWaitFor(h, `!!${POP}`, 4000);
-    await polishNap(500);
-    return up;
-};
-
-const initiativePopover = {
-    name: "initiative-popover",
-    surface: "agent",
-    async arrange(h) {
-        const ctx = initCtx();
-        ctx.skip = initFixtureSkip();
-        if (ctx.skip) return ctx;
-        try {
-            // `agent.chatmode` is read once at boot (chatmodestore.ts): cleared here, put back by teardown
-            await initPrepare(h, ctx, { "agent.chatmode": null });
-            ctx.oid = await initCreate(h, ctx, { title: POP_TITLE, project: POP_PROJECT, chunks: [POP_C1, POP_C2, POP_C3, POP_C4] });
-            ctx.agent = await initOpenAgent(h, ctx, { name: "verify-popover", project: POP_PROJECT, effort: `effort:${ctx.oid}` });
-            // the popover is the Terminal view's: in Chat the initiative is the band under the header (chat-initiative-band)
-            await h.ev(`window.__arcChatMode.set(${JSON.stringify(ctx.agent.tabId)}, "terminal")`);
-            await initOps(h, ctx.oid, [
-                { op: "setChunkStatus", chunk: POP_C1, status: "done" },
-                { op: "setChunkStatus", chunk: POP_C2, status: "active" },
-                { op: "attachWork", chunk: POP_C2, kind: "agent", oref: `agent:${ctx.agent.tabId}` },
-                // one chunk the agent proposed and nobody decided on
-                { op: "addChunk", label: POP_P1, status: "proposed" },
-                // last, so it is the chunk's newest note
-                { op: "appendNote", chunk: POP_C2, note: POP_NOTE_SEED },
-            ]);
-            ctx.focus = await initFocusAgent(h, ctx.agent);
-        } catch (e) {
-            ctx.arrangeError = String(e?.message ?? e);
-        }
-        return ctx;
-    },
-    async assert(h, ctx) {
-        if (ctx.skip) return [skipStep("initiative popover", ctx.skip)];
-        if (ctx.arrangeError != null) return [{ step: "0. the initiative and the agent were made", ok: false, detail: ctx.arrangeError }];
-        if (ctx.focus !== true) {
-            return [{ step: "0. the agent's pane is shown with its header and details rail", ok: false, detail: "it never reached the Agent surface" }];
-        }
-        const { steps, rec } = initRecorder();
-        try {
-            const status = async (label) => (await initChunk(h, ctx.oid, label))?.status ?? "gone";
-
-            // --- 1. `i` opens it on the chunk this agent is on, with that chunk's note ----------------------------------------
-            const linkUp = await polishWaitFor(h, `document.querySelector("[data-agent-header] [data-initiative-link-open]")?.innerText.includes(${JSON.stringify(POP_TITLE)}) === true`, INIT_WAIT_MS);
-            const up = await popOpen(h);
-            const first = await h.ev(`(() => {
-                const pop = ${POP};
-                const cur = pop?.querySelector('[data-popover-row="current"]');
-                return pop ? { heading: pop.textContent.includes("This agent is on"), current: cur?.dataset.chunkLabel ?? null,
-                    note: pop.textContent.includes(${JSON.stringify(POP_NOTE_SEED)}), title: pop.textContent.includes(${JSON.stringify(POP_TITLE)}),
-                    progress: pop.textContent.includes("1/4") } : null;
-            })()`);
-            await h.shot("cdp-shots/initiative-popover-1-open.png");
-            rec(
-                '1. `i` opens the popover on "This agent is on" with the active chunk and its latest note',
-                linkUp === true && up === true && first?.heading === true && first.current === POP_C2 && first.note === true && first.title === true && first.progress === true,
-                { linkUp, up, first }
-            );
-
-            // --- 2. Next lists the two pending chunks; the chunk menu renames one and defers it -----------------------------------
-            const next = await popRows(h, "next");
-            await initClick(h, popRow(POP_C3));
-            const menuUp = await polishWaitFor(h, `!!document.querySelector("[data-initiative-popover] [data-popover-menu]")`, 3000);
-            const items = await h.ev(`[...document.querySelectorAll("[data-initiative-popover] [data-menu-item]")].map((i) => i.dataset.menuItem)`);
-            await initClick(h, `document.querySelector('[data-initiative-popover] [data-menu-item="rename"]')`);
-            const renameInput = `document.querySelector('[data-initiative-popover] input[aria-label="Rename ${POP_C3}"]')`;
-            const inputUp = await polishWaitFor(h, `!!${renameInput}`, 3000);
-            await initFill(h, renameInput, POP_C3_NEW);
-            await initPress(h, "Enter");
-            const renamed = await initUntil(async () => (await initLabels(h, ctx.oid)).includes(POP_C3_NEW), 5000);
-            await polishWaitFor(h, `!!(${popRow(POP_C3_NEW)})`, 5000);
-            await initClick(h, popRow(POP_C3_NEW));
-            await polishWaitFor(h, `!!document.querySelector("[data-initiative-popover] [data-popover-menu]")`, 3000);
-            await initClick(h, `document.querySelector('[data-initiative-popover] [data-menu-item="deferred"]')`);
-            const deferred = await initUntil(async () => (await status(POP_C3_NEW)) === "deferred", 5000);
-            await polishWaitFor(h, `!(${popRow(POP_C3_NEW)})`, 3000);
-            const nextAfter = await popRows(h, "next");
-            rec(
-                "2. Next lists the two pending chunks; a click opens a chunk's menu: Rename renames it, and deferred sets its status",
-                JSON.stringify(next) === JSON.stringify([POP_C3, POP_C4]) && menuUp === true && items.join() === "pending,active,blocked,deferred,skipped,rename" &&
-                    inputUp === true && renamed === true && deferred === true && JSON.stringify(nextAfter) === JSON.stringify([POP_C4]),
-                { next, menuUp, items, inputUp, renamed, deferred, nextAfter }
-            );
-
-            // --- 3. `m` marks the agent's chunk done, and the next one (a deferred one too) becomes active --------------------
-            await initPress(h, "m");
-            const marked = await initUntil(async () => (await status(POP_C2)) === "done" && (await status(POP_C3_NEW)) === "active", 5000);
-            await polishWaitFor(h, `${POP}?.querySelector('[data-popover-row="current"]')?.dataset.chunkLabel === ${JSON.stringify(POP_C3_NEW)}`, 5000);
-            const cur3 = await h.ev(`${POP}?.querySelector('[data-popover-row="current"]')?.dataset.chunkLabel ?? null`);
-            rec(
-                "3. `m` marks the agent's chunk done; advance makes the following chunk (here a deferred one) active, and the popover follows it",
-                marked === true && cur3 === POP_C3_NEW,
-                { marked, current: cur3, statuses: [await status(POP_C2), await status(POP_C3_NEW), await status(POP_C4)] }
-            );
-
-            // --- 4. `n` adds a note -------------------------------------------------------------------------------------------
-            await initPress(h, "n");
-            const noteInput = `document.querySelector('[data-initiative-popover] input[aria-label^="Add a note to"]')`;
-            const noteUp = await polishWaitFor(h, `!!${noteInput}`, 3000);
-            await initType(h, POP_NOTE);
-            await initPress(h, "Enter");
-            const noted = await initUntil(async () => ((await initChunk(h, ctx.oid, POP_C3_NEW))?.notes ?? []).some((n) => n.text === POP_NOTE), 5000);
-            const shown = await polishWaitFor(h, `${POP}?.textContent.includes(${JSON.stringify(POP_NOTE)}) === true`, 5000);
-            rec("4. `n`, a typed note and Enter append it to the chunk, and the popover shows it", noteUp === true && noted === true && shown === true, { noteUp, noted, shown });
-
-            // --- 5. Esc closes it and focus goes back -------------------------------------------------------------------------
-            await initPress(h, "Escape");
-            const closed = await polishWaitFor(h, `!${POP}`, 3000);
-            await polishNap(300);
-            const focus5 = await h.ev(`(() => {
-                const a = document.activeElement;
-                return { tag: a?.tagName ?? null, wrap: a?.hasAttribute("data-cockpit-surface-wrap") ?? false, link: a?.hasAttribute("data-initiative-link-open") ?? false };
-            })()`);
-            rec("5. Esc closes the popover and focus returns to where it was", closed === true && (focus5.wrap || focus5.link), { closed, focus5 });
-
-            // --- 6. the peek gesture on the link opens no popover: it peeks the initiative -------------------------------------
-            await initClick(h, `document.querySelector("[data-agent-header] [data-initiative-link-open]")`, { mods: PEEK_BIT });
-            const peeked = await polishWaitFor(h, `!!document.querySelector('[data-pet-peek-item="effort"]')`, INIT_WAIT_MS);
-            const peekText = await h.ev(`document.querySelector('[data-pet-peek-item="effort"]')?.innerText.includes(${JSON.stringify(POP_TITLE)}) ?? false`);
-            const popoverUp = await h.ev(`!!${POP}`);
-            rec(
-                `6. ${PEEK_GLYPH.split(" · ")[1]} on the header's initiative link opens no popover: Sprout's popup peeks the initiative`,
-                peeked === true && peekText === true && popoverUp === false,
-                { peeked, peekText, popoverUp }
-            );
-            await h.ev(`document.querySelector('[data-pet-peek] button[aria-label="Close Jarvis panel"]')?.click()`);
-            await polishWaitFor(h, `!document.querySelector("[data-pet-peek]")`, 3000);
-
-            // --- 7. the proposed chunk: "1 proposed · Review on the rail" brings the rail to Plan to review ------------------------
-            await polishWaitFor(h, `!!document.querySelector("[data-agent-header] [data-plan-review-chip]")`, INIT_WAIT_MS);
-            // the rail on another section, so the click has somewhere to bring it back from
-            await h.ev(`${INIT_RAIL}?.querySelector('[data-rail-tab="tree"]')?.click()`);
-            await polishNap(300);
-            const up7 = await popOpen(h);
-            const review = await h.ev(`document.querySelector("[data-initiative-popover] [data-popover-review]")?.innerText.trim() ?? null`);
-            await initClick(h, `document.querySelector("[data-initiative-popover] [data-popover-review]")`);
-            const closed7 = await polishWaitFor(h, `!${POP}`, 3000);
-            const railPlan = await polishWaitFor(h, `(() => {
-                const plan = ${INIT_RAIL}?.querySelector('[data-rail-section="plan"]');
-                const view = ${INIT_RAIL}?.querySelector("[data-rail-scroll]")?.getBoundingClientRect();
-                if (!plan || !view) return false;
-                const r = plan.getBoundingClientRect();
-                return r.width > 0 && r.top >= view.top - 2 && r.top < view.bottom;
-            })()`, 5000);
-            await h.shot("cdp-shots/initiative-popover-7-review.png");
-            rec(
-                '7. a proposed chunk reads "1 proposed · Review on the rail"; clicking it closes the popover and brings the rail to Plan to review',
-                up7 === true && /1 proposed/.test(review ?? "") && closed7 === true && railPlan === true,
-                { up7, review, closed7, railPlan }
-            );
-
-            // --- 8. Open in Jarvis lands on Jarvis with the initiative selected ---------------------------------------------------
-            await h.goto("agent");
-            const up8 = await popOpen(h);
-            await initClick(h, `document.querySelector("[data-initiative-popover] [data-popover-open-jarvis]")`);
-            // the destination's selection is the Brief's detail sheet on the initiative
-            const onJarvis = await polishWaitFor(
-                h,
-                `document.querySelector('[data-jarvis-brief-sheet="effort"]')?.innerText.includes(${JSON.stringify(POP_TITLE)}) === true`,
-                INIT_WAIT_MS
-            );
-            const surface = await h.activeSurfaceLabel();
-            await polishNap(500);
-            await h.shot("cdp-shots/initiative-popover-8-jarvis.png");
-            rec(
-                "8. Open in Jarvis lands on the Jarvis surface with the initiative selected: its detail sheet is open",
-                up8 === true && onJarvis === true && surface === SURFACE_LABEL.jarvis,
-                { up8, onJarvis, surface }
-            );
-
-            // --- 9. an agent on no chunk: the popover says so, instead of naming the initiative's active chunk ---------------------
-            await h.goto("agent");
-            // step 3's Mark done carried the agent on: take it off every chunk it holds, and have the page read the initiative again
-            const held = (await initChunks(h, ctx.oid)).filter(
-                (c) => c.status !== "done" && c.status !== "skipped" && (c.workrefs ?? []).some((w) => w.oref === `agent:${ctx.agent.tabId}`)
-            );
-            await initOps(
-                h,
-                ctx.oid,
-                held.map((c) => ({ op: "detachWork", chunk: c.label, kind: "agent", oref: `agent:${ctx.agent.tabId}` }))
-            );
-            await AC.agentPage(
-                h,
-                `const S = await mod("app/view/jarvis/effortstore.ts");
-                await S.loadEffortDetail(${JSON.stringify("effort:" + ctx.oid)}, Number.MAX_SAFE_INTEGER);
-                return true;`
-            );
-            const detached = (await initChunks(h, ctx.oid)).every(
-                (c) => !(c.status !== "done" && c.status !== "skipped" && (c.workrefs ?? []).some((w) => w.oref === `agent:${ctx.agent.tabId}`))
-            );
-            const up9 = await popOpen(h);
-            const text9 = await h.ev(`(() => {
-                const pop = ${POP};
-                return pop ? { noChunk: pop.textContent.includes("No chunk for this agent"), current: !!pop.querySelector('[data-popover-row="current"]'),
-                    title: pop.textContent.includes(${JSON.stringify(POP_TITLE)}) } : null;
-            })()`);
-            await h.shot("cdp-shots/initiative-popover-9-no-chunk.png");
-            rec(
-                '9. with the agent on no chunk (detached over RPC) `i` opens the popover with "No chunk for this agent" and no current row, still headed by the initiative',
-                held.length > 0 && detached === true && up9 === true && text9?.noChunk === true && text9.current === false && text9.title === true,
-                { held: held.map((c) => c.label), detached, up9, text9 }
-            );
-        } catch (e) {
-            rec("the scenario ran to its end", false, String(e?.message ?? e));
-        }
-        return steps;
-    },
-    async teardown(h, ctx) {
-        // the Terminal view this scenario set is the agent's own mode: back to Chat, so the entry for a closed tab holds nothing
-        if (ctx.agent?.tabId != null) {
-            await h.ev(`window.__arcChatMode.set(${JSON.stringify(ctx.agent.tabId)}, "chat")`).catch((e) => console.error(`initiative-popover teardown: put the chat mode back failed: ${e?.message ?? e}`));
-        }
-        await initTeardown(h, ctx, "initiative-popover");
     },
 };
 
@@ -68084,6 +67884,10 @@ const tabEffort = async (h, tabId) =>
 // project, with no keycap (its title says i), and no ◇ link
 const LINK_BTN = `document.querySelector("[data-agent-header] [data-initiative-link]")`;
 const LINK_PICKER = `document.querySelector("[data-initiative-picker]")`;
+// once linked: the header's ◇ chip (and the title inside it) and the Initiative tab's pane of an agent
+const LINK_CHIP = `document.querySelector("[data-agent-header] [data-initiative-link-open]")`;
+const LINK_CHIP_TITLE = `document.querySelector("[data-agent-header] [data-initiative-link-open] [data-initiative-link-title]")`;
+const LINK_PANE = (id) => `document.querySelector('aside[aria-label="Agent details"] [data-rail-initiative="${id}"]')`;
 
 const initiativeLink = {
     name: "initiative-link",
@@ -68118,9 +67922,9 @@ const initiativeLink = {
                 return el ? { text: el.textContent.replace(/\\s+/g, " ").trim(), keycap: !!el.querySelector("kbd") || [...el.querySelectorAll("span")].some((s) => /^i$/i.test(s.textContent.trim())), title: el.title } : null;
             })()`);
             const noMenuRow = await h.ev(`!document.querySelector("[data-agent-header] [data-initiative-link-menu]")`);
-            const noLink = await h.ev(`!document.querySelector("[data-agent-header] [data-initiative-link-open]") && !document.querySelector("[data-initiative-band]")`);
+            const noLink = await h.ev(`!document.querySelector("[data-agent-header] [data-initiative-link-open]") && !document.querySelector("[data-rail-initiative]") && !document.querySelector('aside[aria-label="Agent details"] [data-rail-tab="initiative"]')`);
             rec(
-                '1. in Chat the header of an agent with no initiative shows "+ initiative" after its project (no keycap, its title naming i), no "…" menu row for it, no ◇ link and no band',
+                '1. in Chat the header of an agent with no initiative shows "+ initiative" after its project (no keycap, its title naming i), no "…" menu row for it, no ◇ link and no Initiative tab on the rail',
                 offered === true && chip?.text === "initiative" && chip.keycap === false && /\(i\)/.test(chip.title ?? "") && noMenuRow === true && noLink === true,
                 { offered, chip, noMenuRow, noLink }
             );
@@ -68144,24 +67948,76 @@ const initiativeLink = {
                 { pickerUp, listed, picker }
             );
 
-            // --- 3. picking it sets the tab's session:effort and Chat draws the band under the header ----------------------------------
+            // --- 3. picking it sets the tab's session:effort and the header's ◇ chip takes the link's place ------------------------------
             await initClick(h, row);
             const set = await initUntil(async () => (await tabEffort(h, ctx.agentA.tabId)) === `effort:${ctx.oid}`, 8000);
-            const linked = await polishWaitFor(
-                h,
-                `document.querySelector('[data-initiative-band="${ctx.agentA.tabId}"] [data-band-title]')?.textContent === ${JSON.stringify(LINK_TITLE)}`,
-                INIT_WAIT_MS
-            );
+            const linked = await polishWaitFor(h, `${LINK_CHIP_TITLE}?.textContent === ${JSON.stringify(LINK_TITLE)}`, INIT_WAIT_MS);
             const gone = await polishWaitFor(h, `!${LINK_PICKER} && !${LINK_BTN}`, 3000);
             // it also puts the agent on the initiative's first pending chunk, so that chunk reads as its work
             const attached = await initUntil(
                 async () => ((await initChunk(h, ctx.oid, LINK_C1))?.workrefs ?? []).some((w) => w.oref === `agent:${ctx.agentA.tabId}`),
                 5000
             );
+            // the chip reads "<title> · done/total", and the rail has the Initiative tab now (it is not the one on show)
+            const chip3 = await h.ev(`(() => {
+                const el = document.querySelector("[data-agent-header] [data-initiative-link-open]");
+                const tab = document.querySelector('aside[aria-label="Agent details"] [data-rail-tab="initiative"]');
+                return { chip: (el?.textContent ?? "").replace(/\\s+/g, " ").trim(), tab: !!tab, selected: tab?.getAttribute("aria-selected") ?? null };
+            })()`);
             rec(
-                "3. picking the initiative sets the tab's session:effort, Chat draws the initiative band (its title) in place of the link chip, and the agent is attached to its first pending chunk",
-                set === true && linked === true && gone === true && attached === true,
-                { set, linked, gone, attached }
+                "3. picking the initiative sets the tab's session:effort, the header's ◇ chip (its title and done/total) takes the link chip's place, the rail gets an Initiative tab, and the agent is attached to its first pending chunk",
+                // the title and the count are two spans a flex gap apart: no space between them in the text
+                set === true && linked === true && gone === true && attached === true && chip3.chip.replace(/\s*·\s*/, " · ") === `${LINK_TITLE} · 0/2` && chip3.tab === true && chip3.selected === "false",
+                { set, linked, gone, attached, chip3 }
+            );
+
+            // --- 3b. the peek gesture on the chip peeks the initiative and leaves the rail's tab alone -----------------------------------
+            await initClick(h, LINK_CHIP, { mods: PEEK_BIT });
+            const peeked = await polishWaitFor(h, `!!document.querySelector('[data-pet-peek-item="effort"]')`, INIT_WAIT_MS);
+            const peekText = await h.ev(`document.querySelector('[data-pet-peek-item="effort"]')?.innerText.includes(${JSON.stringify(LINK_TITLE)}) ?? false`);
+            const tabAfterPeek = await h.ev(`document.querySelector('aside[aria-label="Agent details"] [data-rail-tab="initiative"]')?.getAttribute("aria-selected") ?? null`);
+            rec(
+                `3b. ${PEEK_GLYPH.split(" · ")[1]} on the header's ◇ chip peeks the initiative in Sprout's popup and does not select the Initiative tab`,
+                peeked === true && peekText === true && tabAfterPeek === "false",
+                { peeked, peekText, tabAfterPeek }
+            );
+            await h.ev(`document.querySelector('[data-pet-peek] button[aria-label="Close Jarvis panel"]')?.click()`);
+            await polishWaitFor(h, `!document.querySelector("[data-pet-peek]")`, 3000);
+
+            // --- 3c. `i` opens the Initiative tab, with the initiative and the chunk the agent is on --------------------------------------
+            await h.ev(`document.querySelector("[data-cockpit-surface-wrap]")?.focus()`);
+            await initPress(h, "i");
+            const tabUp = await polishWaitFor(h, `!!${LINK_PANE(ctx.agentA.tabId)}`, 4000);
+            await polishNap(500);
+            const pane3 = await h.ev(`(() => {
+                const pane = ${LINK_PANE(ctx.agentA.tabId)};
+                const flat = (el) => (el?.textContent ?? "").replace(/\\s+/g, " ").trim();
+                return { selected: document.querySelector('aside[aria-label="Agent details"] [role="tab"][aria-selected="true"]')?.dataset.railTab ?? null,
+                    title: flat(pane?.querySelector("[data-rail-initiative-title]")), progress: flat(pane?.querySelector("[data-rail-initiative-progress]")),
+                    on: flat(pane?.querySelector("[data-rail-initiative-on]")), focusIn: !!pane?.contains(document.activeElement) };
+            })()`);
+            await h.shot("cdp-shots/initiative-link-3-tab.png");
+            rec(
+                `3c. \`i\` opens the Initiative tab of the rail: the initiative's title, 0/2, and the agent on "${LINK_C1}", the keyboard in the tab`,
+                tabUp === true && pane3.selected === "initiative" && pane3.title === LINK_TITLE && pane3.progress === "0/2" && pane3.on.includes(LINK_C1) && pane3.focusIn === true,
+                { tabUp, pane3 }
+            );
+
+            // --- 3d. Open in Jarvis, from the tab, lands on Jarvis with the initiative selected -----------------------------------------------
+            await initClick(h, `${LINK_PANE(ctx.agentA.tabId)}?.querySelector("[data-rail-initiative-open-jarvis]")`);
+            // the destination's selection is the Brief's detail sheet on the initiative
+            const onJarvis = await polishWaitFor(
+                h,
+                `document.querySelector('[data-jarvis-brief-sheet="effort"]')?.innerText.includes(${JSON.stringify(LINK_TITLE)}) === true`,
+                INIT_WAIT_MS
+            );
+            const surface = await h.activeSurfaceLabel();
+            await polishNap(400);
+            await h.shot("cdp-shots/initiative-link-3d-jarvis.png");
+            rec(
+                "3d. Open in Jarvis in the Initiative tab lands on the Jarvis surface with the initiative selected: its detail sheet is open",
+                onJarvis === true && surface === SURFACE_LABEL.jarvis,
+                { onJarvis, surface }
             );
 
             // --- 4. the second agent: `i` opens the picker, and a new initiative is made from the session -------------------------------
@@ -68183,16 +68039,22 @@ const initiativeLink = {
             // tracked now, so teardown deletes the idea it made
             if (newOref != null) ctx.oids.push(newOref.replace(/^effort:/, ""));
             const idea = newOref != null ? await initEffort(h, newOref.replace(/^effort:/, "")) : null;
-            // the band names the initiative by its title, which for an idea made from the session is the session's name
-            const linkedB = await polishWaitFor(
-                h,
-                `document.querySelector('[data-initiative-band="${ctx.agentB.tabId}"] [data-band-title]')?.textContent === ${JSON.stringify(nameB)}`,
-                INIT_WAIT_MS
-            );
+            // the chip reads "initiative" for an idea made from the session (its title is the session's own name, headermodel.ts's
+            // initiativeTitle); with no chunk it has no count
+            const linkedB = await polishWaitFor(h, `${LINK_CHIP_TITLE}?.textContent === "initiative"`, INIT_WAIT_MS);
+            const chipB = await h.ev(`(() => {
+                const el = ${LINK_CHIP};
+                return { chip: (el?.textContent ?? "").replace(/\\s+/g, " ").trim(), progress: !!el?.querySelector("[data-initiative-link-progress]") };
+            })()`);
+            // `i` on it opens the tab, which shows the idea with no chunk to pick
+            await h.ev(`document.querySelector("[data-cockpit-surface-wrap]")?.focus()`);
+            await initPress(h, "i");
+            const tabB = await polishWaitFor(h, `!!${LINK_PANE(ctx.agentB.tabId)}`, 4000);
             rec(
-                '4. on the second agent `i` opens the picker; "+ New initiative from this session" makes an idea titled with the agent\'s name, sets session:effort to it, and Chat draws its band',
-                offeredB === true && pickerB === true && nameB !== "" && idea?.title === nameB && (idea.chunks ?? []).length === 0 && linkedB === true,
-                { offeredB, pickerB, nameB, newOref, title: idea?.title, chunks: (idea?.chunks ?? []).length, linkedB }
+                '4. on the second agent `i` opens the picker; "+ New initiative from this session" makes an idea titled with the agent\'s name, sets session:effort to it, the header\'s ◇ chip reads "initiative" (no count: it has no chunk), and `i` then opens its Initiative tab',
+                offeredB === true && pickerB === true && nameB !== "" && idea?.title === nameB && (idea.chunks ?? []).length === 0 && linkedB === true &&
+                    chipB.chip === "initiative" && chipB.progress === false && tabB === true,
+                { offeredB, pickerB, nameB, newOref, title: idea?.title, chunks: (idea?.chunks ?? []).length, linkedB, chipB, tabB }
             );
         } catch (e) {
             rec("the scenario ran to its end", false, String(e?.message ?? e));
@@ -74942,8 +74804,7 @@ export const SCENARIOS = [
     chatCanvasPeek,
     ...chatRedesignScenarios(CR_KIT),
     ...chatCodeBoxScenarios(CR_KIT),
-    ...chatInitiativeBandScenarios(CR_KIT),
-    ...chatBrainstormBandScenarios(CR_KIT),
+    ...railBrainstormInitiativeScenarios(CR_KIT),
     ...chatBrainstormReviewScenarios(CBR_KIT),
     ...chatVerdictHandoffScenarios(CBR_KIT),
     ...chatCouncilScenarios(CR_KIT),
@@ -75008,7 +74869,6 @@ export const SCENARIOS = [
     setupSkillAdditions,
     setupLearned,
     initiativePlanReview,
-    initiativePopover,
     initiativeLink,
     initiativeReview,
     initiativeParents,

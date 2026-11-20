@@ -102,8 +102,8 @@ import {
     type HeaderLabels,
     type HeaderWidth,
 } from "./headermodel";
-import { toggleBandPart } from "./initiativebandstore";
-import { initiativeLinkPickerAtom, InitiativePopover, initiativePopoverAtom } from "./initiativepopover";
+import { initiativeLinkPickerAtom } from "./initiativepopover";
+import { popoverProgress } from "./initiativepopovermodel";
 import { openLauncher } from "./launcherstore";
 import { rosterSeededAtom } from "./liveagents";
 import { liveTokensAtom } from "./livetokensstore";
@@ -200,67 +200,57 @@ const PATH_SLASH = (
     </span>
 );
 
-// The initiative this session works on, after its project: ◇ and its title. In Terminal a click opens its popover in
-// place (initiativepopover.tsx); in Chat it opens or closes the band under the header, as `i` does there, so one panel
-// answers both and the popover and the band are never open together. The peek click keeps the way to it on the Brief.
-// Very narrow, the ◇ stands alone and the title is its tooltip.
-function InitiativeLink({
-    model,
-    agent,
-    inChat,
-    width,
-}: {
-    model: AgentsViewModel;
-    agent: AgentVM;
-    inChat: boolean;
-    width: HeaderWidth;
-}) {
+// The initiative this session works on, after its project: ◇, its title and how far it is (`done/total`, as the Brief's
+// row counts it). In Chat and Terminal alike a click focuses the agent's cell (a split's unfocused one takes the rail
+// along) and opens the rail's Initiative tab, as `i` does; the peek click keeps the way to it on the Brief. Very narrow,
+// the ◇ stands alone and the title and count are its tooltip.
+function InitiativeLink({ model, agent, width }: { model: AgentsViewModel; agent: AgentVM; width: HeaderWidth }) {
     const oref = "effort:" + agent.effortId;
     const effort = useAtomValue(effortDetailAtom).get(oref);
-    const open = useAtomValue(initiativePopoverAtom) === agent.id;
-    const [anchor, setAnchor] = useState<HTMLButtonElement | null>(null);
     useEffect(() => {
         // the title is decoration: a failed load leaves the plain link, which still opens the initiative
         loadEffortDetail(oref).catch(() => {});
     }, [oref]);
     // the words only: the Diamond icon below is the ◇, so initiativeLinkText's own would draw it twice
     const text = initiativeTitle(agent.name, effort);
-    const where = inChat ? "the band under this header" : "details here";
+    const progress = effort != null ? popoverProgress(effort) : null;
+    const count = progress != null && progress.total > 0 ? `${progress.done}/${progress.total}` : null;
     return (
         <>
             {PATH_SLASH}
             <button
-                ref={setAnchor}
                 type="button"
                 data-peek
                 data-initiative-link-open
-                aria-haspopup={inChat ? undefined : "dialog"}
-                aria-expanded={inChat ? undefined : open}
-                aria-label={text}
+                aria-label={count != null ? `${text}, ${count} chunks done` : text}
                 onClick={(e) => {
                     if (isPeekGesture(e)) {
                         fireAndForget(() => openOrPeek(model, { kind: "effort", effortId: agent.effortId! }, e));
                         return;
                     }
-                    if (inChat) {
-                        toggleBandPart(agent.id, "initiative");
-                        return;
+                    if (globalStore.get(model.focusIdAtom) !== agent.id) {
+                        globalStore.set(model.focusIdAtom, agent.id);
                     }
-                    globalStore.set(initiativePopoverAtom, open ? null : agent.id);
+                    openRailInitiative(agent.id);
                 }}
-                title={`${effort?.title ?? "This initiative"}: ${where} (i), ${peekClickLabel()} to peek at it in Sprout`}
-                className={cn(
-                    "inline-flex min-w-0 cursor-pointer items-center gap-[4px] rounded-[5px] text-accent-soft hover:underline",
-                    open && "bg-surface-selected"
-                )}
+                title={`${effort?.title ?? "This initiative"}${count != null ? ` · ${count}` : ""}: its tab on the rail (i), ${peekClickLabel()} to peek at it in Sprout`}
+                className="inline-flex min-w-0 cursor-pointer items-center gap-[4px] rounded-[5px] text-accent-soft hover:underline"
             >
                 <Diamond size={11} strokeWidth={2} aria-hidden className="flex-none" />
                 {initiativeTitleShown(width) ? (
                     // a floor, so a crowded header cuts it to a word or two, never to "C…"
-                    <span className="min-w-[56px] max-w-[240px] truncate">{text}</span>
+                    <>
+                        <span data-initiative-link-title className="min-w-[56px] max-w-[240px] truncate">
+                            {text}
+                        </span>
+                        {count != null ? (
+                            <span data-initiative-link-progress className="flex-none tabular-nums text-ink-mid">
+                                · {count}
+                            </span>
+                        ) : null}
+                    </>
                 ) : null}
             </button>
-            {inChat ? null : <InitiativePopover model={model} agent={agent} anchor={anchor} />}
         </>
     );
 }
@@ -566,9 +556,7 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
     const chatShown = chatCapable(agent);
     const chatAsleep = chatShown && agent.sleeping != null;
     const shownView: CellView = chatShown ? cellView(view, chatAsleep ? "chat" : chatMode) : view;
-    // In Chat the header's ◇ initiative link opens the band under the header, as `i` does there, instead of the popover.
     // No header shows an Alt+C keycap: the chord still switches the view (docs/keyboard-shortcuts.md)
-    const lean = chatShown && shownView === "chat";
     const viewControl = chatShown || hasCanvas || docReview != null || brainstorm != null;
     const viewOptions = cellViewOptions(chatShown, hasCanvas, docReview != null, brainstorm != null);
 
@@ -951,7 +939,7 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
                         {project || "—"}
                     </span>
                     {agent.effortId != null ? (
-                        <InitiativeLink model={model} agent={agent} inChat={lean} width={width} />
+                        <InitiativeLink model={model} agent={agent} width={width} />
                     ) : canLink ? (
                         <LinkToInitiative agent={agent} project={project} width={width} />
                     ) : null}

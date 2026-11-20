@@ -10,7 +10,12 @@ import { globalStore } from "@/app/store/jotaiStore";
 import { confirmCloseSession } from "@/app/view/agents/agentactions";
 import { centerModeAtom } from "@/app/view/agents/agentcenter";
 import { getProcExitAtom } from "@/app/view/agents/agentcontrollerstore";
-import { railPanelsAtom, railTranscriptFocusAtom } from "@/app/view/agents/agentrailstore";
+import {
+    railInitiativeFocusAtom,
+    railInitiativeSectionAtom,
+    railPanelsAtom,
+    railTranscriptFocusAtom,
+} from "@/app/view/agents/agentrailstore";
 import { RAIL_ORDER, SURFACE_ORDER, type SurfaceKey } from "@/app/view/agents/agents";
 import { setAgentView } from "@/app/view/agents/agentview";
 import type { BrainstormFile } from "@/app/view/agents/brainstormmodel";
@@ -57,10 +62,8 @@ import { treeModeAtom } from "@/app/view/agents/filetree";
 import { floatModeAtom, minimizeRequested } from "@/app/view/agents/floatstore";
 import { graphOnAtom, historyFiltersAtom, historyScrollAtom, refreshHistory } from "@/app/view/agents/githistorystore";
 import { NO_FILTERS } from "@/app/view/agents/historyquery";
-import { bandPartsAtom } from "@/app/view/agents/initiativebandstore";
 import {
     initiativeLinkPickerAtom,
-    initiativePopoverAtom,
     linkChipSelector,
     openInitiativeLinkPicker,
 } from "@/app/view/agents/initiativepopover";
@@ -3282,8 +3285,6 @@ describe("the open avatar popup keeps its keys on every surface", () => {
 
 describe("agent:initiative", () => {
     const nav: KeyContext = { surface: "agent", editable: false, modalOpen: false, leader: null };
-    const key = (k: string) =>
-        ({ key: k, code: "", control: false, shift: false, cmd: false, option: false, meta: false, alt: false }) as any;
     const agent = (id: string, effortId?: string) => ({ id, kind: "agent", state: "idle", effortId });
     const modelWith = (focus: string, agents: any[]) =>
         ({
@@ -3294,12 +3295,21 @@ describe("agent:initiative", () => {
     const bindings = (model: any) => [...buildGlobalBindings(model), ...buildAgentBindings(model)];
     const find = (model: any, id: string) => bindings(model).find((b) => b.id === id)!;
 
-    beforeEach(() => vi.stubGlobal("document", { activeElement: null, querySelector: () => null }));
+    const resetRail = () => {
+        globalStore.set(railVisibleAtom, false);
+        globalStore.set(railPanelsAtom, {});
+        globalStore.set(railInitiativeFocusAtom, null);
+        globalStore.set(railInitiativeSectionAtom, {});
+    };
+    beforeEach(() => {
+        vi.stubGlobal("document", { activeElement: null, querySelector: () => null });
+        resetRail();
+    });
     afterEach(() => {
         vi.unstubAllGlobals();
-        globalStore.set(initiativePopoverAtom, null);
-        globalStore.set(bandPartsAtom, []);
+        resetRail();
     });
+    const tabOf = (id: string) => globalStore.get(railPanelsAtom)[id]?.tab;
 
     it("is i on the Agent surface, in navigate posture", () => {
         const b = find(modelWith("a1", [agent("a1", "e1")]), "agent:initiative");
@@ -3310,65 +3320,53 @@ describe("agent:initiative", () => {
         expect(b.when!({ ...nav, surface: "cockpit" })).toBe(false);
     });
 
-    it("opens the popover for the focused agent that has an initiative", () => {
+    it("selects the Initiative tab and shows the rail for the focused agent that has an initiative", () => {
         const model = modelWith("a2", [agent("a1", "e1"), agent("a2", "e2")]);
+        expect(globalStore.get(railVisibleAtom)).toBe(false);
         expect(find(model, "agent:initiative").run(nav)).not.toBe(false);
-        expect(globalStore.get(initiativePopoverAtom)).toBe("a2");
+        expect(tabOf("a2")).toBe("initiative");
+        expect(globalStore.get(railVisibleAtom)).toBe(true);
+        // the pane takes focus when it shows from here, and only this agent's panel moved
+        expect(globalStore.get(railInitiativeFocusAtom)).toBe("a2");
+        expect(globalStore.get(railPanelsAtom).a1).toBeUndefined();
     });
 
-    it("toggles the band, not the popover, when the focused agent's band is on screen (Chat)", () => {
+    it("goes back to the tab before it when the Initiative tab is already shown", () => {
         const model = modelWith("a2", [agent("a1", "e1"), agent("a2", "e2")]);
+        globalStore.set(railPanelsAtom, { a2: { tab: "transcript", prevTab: "overview", files: [], active: 0 } });
+        const b = find(model, "agent:initiative");
+        expect(b.run(nav)).not.toBe(false);
+        expect(tabOf("a2")).toBe("initiative");
+        // i again: the tab it came from, not Overview
+        expect(b.run(nav)).not.toBe(false);
+        expect(tabOf("a2")).toBe("transcript");
+        // and once more it is the Initiative tab again
+        expect(b.run(nav)).not.toBe(false);
+        expect(tabOf("a2")).toBe("initiative");
+    });
+
+    it("shows the rail instead of leaving the tab when the Initiative tab is selected but the rail is hidden", () => {
+        const model = modelWith("a1", [agent("a1", "e1")]);
+        globalStore.set(railPanelsAtom, { a1: { tab: "initiative", prevTab: "overview", files: [], active: 0 } });
+        expect(find(model, "agent:initiative").run(nav)).not.toBe(false);
+        expect(tabOf("a1")).toBe("initiative");
+        expect(globalStore.get(railVisibleAtom)).toBe(true);
+    });
+
+    it("does the same with no band or popover anywhere on the page: Chat and Terminal alike", () => {
+        // the DOM is not asked: a page with no [data-initiative-band] still opens the tab
         const seen: string[] = [];
         vi.stubGlobal("document", {
             activeElement: null,
             querySelector: (sel: string) => {
                 seen.push(sel);
-                return sel === '[data-initiative-band="a2"]' ? {} : null;
+                return null;
             },
         });
-        const b = find(model, "agent:initiative");
-        expect(b.run(nav)).not.toBe(false);
-        expect(seen).toContain('[data-initiative-band="a2"]');
-        expect(globalStore.get(bandPartsAtom)).toEqual([{ id: "a2", part: "initiative" }]);
-        expect(globalStore.get(initiativePopoverAtom)).toBeNull();
-        // i again collapses it
-        expect(b.run(nav)).not.toBe(false);
-        expect(globalStore.get(bandPartsAtom)).toEqual([]);
-        expect(globalStore.get(initiativePopoverAtom)).toBeNull();
-    });
-
-    it("makes the initiative part the open one when the agent's brainstorm part is open", () => {
-        const model = modelWith("a2", [agent("a1", "e1"), agent("a2", "e2")]);
-        vi.stubGlobal("document", {
-            activeElement: null,
-            querySelector: (sel: string) => (sel === '[data-initiative-band="a2"]' ? {} : null),
-        });
-        globalStore.set(bandPartsAtom, [
-            { id: "a1", part: "initiative" },
-            { id: "a2", part: "brainstorm" },
-        ]);
-        const b = find(model, "agent:initiative");
-        expect(b.run(nav)).not.toBe(false);
-        // one part at a time, and only this agent's: i opened the initiative part over the brainstorm one
-        expect(globalStore.get(bandPartsAtom)).toEqual([
-            { id: "a1", part: "initiative" },
-            { id: "a2", part: "initiative" },
-        ]);
-        expect(globalStore.get(initiativePopoverAtom)).toBeNull();
-        // and i on it collapses to none, not back to the brainstorm part
-        expect(b.run(nav)).not.toBe(false);
-        expect(globalStore.get(bandPartsAtom)).toEqual([{ id: "a1", part: "initiative" }]);
-    });
-
-    it("opens the popover when only another agent's band is on screen (a linked agent in Terminal)", () => {
         const model = modelWith("a1", [agent("a1", "e1"), agent("a2", "e2")]);
-        vi.stubGlobal("document", {
-            activeElement: null,
-            querySelector: (sel: string) => (sel === '[data-initiative-band="a2"]' ? {} : null),
-        });
         expect(find(model, "agent:initiative").run(nav)).not.toBe(false);
-        expect(globalStore.get(bandPartsAtom)).toEqual([]);
-        expect(globalStore.get(initiativePopoverAtom)).toBe("a1");
+        expect(tabOf("a1")).toBe("initiative");
+        expect(seen).toEqual([]);
     });
 
     it("opens the Link to initiative picker for an agent with none, else lets the key pass", () => {
@@ -3388,8 +3386,8 @@ describe("agent:initiative", () => {
         // this agent's own chip: the chip's attribute carries its agent's id
         expect(seen).toEqual(['[data-initiative-link="a1"]']);
         expect(globalStore.get(initiativeLinkPickerAtom)).toBe("a1");
-        expect(globalStore.get(initiativePopoverAtom)).toBeNull();
-        expect(globalStore.get(bandPartsAtom)).toEqual([]);
+        // an unlinked agent has no Initiative tab to open
+        expect(globalStore.get(railPanelsAtom)).toEqual({});
         globalStore.set(initiativeLinkPickerAtom, null);
     });
 
@@ -3409,7 +3407,7 @@ describe("agent:initiative", () => {
         globalStore.set(initiativeLinkPickerAtom, null);
     });
 
-    it("asks for the chip by the agent's id, escaped, and opens the picker only when it is there (the Chat band's i)", () => {
+    it("asks for the chip by the agent's id, escaped, and opens the picker only when it is there", () => {
         const seen: string[] = [];
         vi.stubGlobal("document", {
             activeElement: null,
@@ -3429,10 +3427,11 @@ describe("agent:initiative", () => {
 
     it("lets the key pass when the focus is on no agent (a plain terminal)", () => {
         expect(find(modelWith("t1", [agent("a1", "e1")]), "agent:initiative").run(nav)).toBe(false);
-        expect(globalStore.get(initiativePopoverAtom)).toBeNull();
+        expect(globalStore.get(railPanelsAtom)).toEqual({});
+        expect(globalStore.get(railVisibleAtom)).toBe(false);
     });
 
-    it("yields while the popover is open, and so does every other single-key Agent binding", () => {
+    it("is not yielded to a popover any more: i and the single-key Agent bindings stay live", () => {
         focusInAgentTree();
         const model = modelWith("a1", [agent("a1", "e1")]);
         const ids = [
@@ -3446,25 +3445,8 @@ describe("agent:initiative", () => {
             "agent:back",
         ];
         for (const id of ids) {
-            expect(find(model, id).when!(nav), `${id} before`).toBe(true);
+            expect(find(model, id).when!(nav), id).toBe(true);
         }
-        globalStore.set(initiativePopoverAtom, "a1");
-        for (const id of ids) {
-            expect(find(model, id).when!(nav), `${id} while open`).toBe(false);
-        }
-    });
-
-    it("leaves the popover's keys unclaimed while it is open: m, n, i, the arrows, Enter, Escape", () => {
-        const model = modelWith("a1", [agent("a1", "e1")]);
-        globalStore.set(initiativePopoverAtom, "a1");
-        const claimed: string[] = [];
-        for (const k of ["m", "n", "i", "ArrowUp", "ArrowDown", "Enter", "Escape"]) {
-            const result = matchBinding(key(k), nav, bindings(model));
-            if (result.kind === "run") {
-                claimed.push(`${k}: ${result.binding.id}`);
-            }
-        }
-        expect(claimed).toEqual([]);
     });
 });
 

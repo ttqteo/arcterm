@@ -30,6 +30,14 @@ in the dev app: `node scripts/whatsnew-shot.mjs <topic> [--selector <css>]` writ
 `whatsnew.test.ts` fails a big line with neither (in Unreleased and from 1.9.0 on), a missing file, one over 120 KB,
 and a picture given to a line that is not big.
 
+## Unreleased
+
+### Changed
+
+- Brainstorm and initiative moved out of the band above Chat into two tabs of the agent's right panel: the brainstorm
+  as one timeline with each board under its decision, the initiative with its chunks, plan to review and notes. The ◇
+  chip and i open it. <!-- big --> <!-- try: go:agent --> <!-- shot: 1.12.0-rail-tabs.webp -->
+
 ## 1.11.0 — 2026-11-20
 
 ### Added

@@ -53,7 +53,6 @@ import { builderCheckView, procExited, type BuilderCheckView } from "./brainstor
 import { brainstormAtom, brainstormSeenAtom, shownBrainstormFile } from "./brainstormstore";
 import { canvasStateAtom } from "./canvasstore";
 import { AskRow } from "./channelsprimitives";
-import { ChatBand } from "./chatband";
 import { boxPlaceholder, type BoxState } from "./chatboxstate";
 import { answersTopic, brainstormCard, holdCard, type ChatCard } from "./chatbrainstorm";
 import { brainstormAnswersAtom, recordBrainstormAnswer } from "./chatbrainstormstore";
@@ -1217,11 +1216,6 @@ function ChatPaneBody({
                 barred ? "top-[26px]" : "top-0"
             )}
         >
-            {/* The band (the initiative and the brainstorm attached to the agent): above the scroller, not inside it, so
-                opening it pushes the conversation down and never covers it. The scroller keeps its scrollTop as it shrinks
-                (a reader stays on the message at the top of the view) and useStickToBottom re-pins a followed tail, so the
-                reading position holds. */}
-            {agent.effortId != null || brainstormState != null ? <ChatBand model={model} agent={agent} /> : null}
             {/* @container: the corner controls stack or sit side by side by this pane's width (FocusReadToggle) */}
             <div className="@container relative min-h-0 flex-1">
                 <div

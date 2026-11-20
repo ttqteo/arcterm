@@ -263,7 +263,7 @@ export function openBrainstormBoard(agentId: string, board: string | null): void
 export const railBoardsAtom = atomFamily((_agentId: string) => atom<string[]>([]) as PrimitiveAtom<string[]>);
 
 // The board open large in the dialog over the agent's cell (ChatBoardDialog, brainstormbandview.tsx), or null. The rail's
-// Brainstorm tab, the band's board rows and the question card's option rows all open it (brainstormbandview.tsx openChatBoard).
+// Brainstorm tab's board chips and the question card's option rows both open it (brainstormbandview.tsx openChatBoard).
 export const chatBoardPreviewAtom = atomFamily(
     (_agentId: string) => atom<string | null>(null) as PrimitiveAtom<string | null>
 );

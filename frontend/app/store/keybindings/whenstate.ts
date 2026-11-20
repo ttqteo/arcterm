@@ -37,7 +37,6 @@ import { compareOnAtom } from "@/app/view/agents/comparestore";
 import { councilChatNavAtom } from "@/app/view/agents/councilchatnav";
 import { docReviewStateAtom } from "@/app/view/agents/docreviewstore";
 import { historyFiltersAtom } from "@/app/view/agents/githistorystore";
-import { initiativePopoverAtom } from "@/app/view/agents/initiativepopover";
 import { activeReviewKeyAtom, lineReviewsAtom } from "@/app/view/agents/linecommentstore";
 import { dockedTerminalAtom } from "@/app/view/agents/railstore";
 import { renamingRowAtom } from "@/app/view/agents/rowrenameatom";
@@ -94,7 +93,6 @@ export const PREDICATE_ATOMS: Atom<unknown>[] = [
     libraryCouncilSelAtom, // libraryOpen: surface:back-home, library:back, the council keys (onCouncil)
     tabSwitcherAtom, // buildGlobalBindings: switcher:cancel, and switcher:next / prev under the open switcher
     dockedTerminalAtom, // buildAgentBindings: agent:terminal-panel
-    initiativePopoverAtom, // buildAgentBindings: agentNav / agentNavStrict (every single-key Agent binding yields to the popover)
     reviewModeAtom, // buildJarvisBindings: jarvis:review and the review keys; buildListNavBindings: active; surface:back-home
     runReviewOpenAtom, // buildJarvisBindings: the To review sheet's t, l, Delete and Escape
     councilChatNavAtom, // buildCouncilBindings: every council:* key; buildAgentBindings: agent:leave-center; library:back
