@@ -16,14 +16,14 @@ import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { cn } from "@/util/util";
 import { useAtomValue } from "jotai";
-import { ChevronDown, Search } from "lucide-react";
+import { ChevronDown, RefreshCw, Search } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { AgentsViewModel } from "../agents/agents";
 import { sessionKey } from "../agents/sessionsruns";
 import { rerouteBoardTurn, retryBoardTurn, stopBoardTurn } from "../boards/boardactions";
 import { BoardCanvas } from "../boards/boardcanvas";
 import { parseBoardFile } from "../boards/boardmodel";
-import { loadBoardConvert, useBoardList, useBoardTalk } from "../boards/boardstore";
+import { loadBoardConvert, loadBoardList, useBoardList, useBoardTalk } from "../boards/boardstore";
 import { BoardTurns } from "../boards/boardturns";
 import { openTarget } from "../jarvis/openref";
 import {
@@ -383,6 +383,19 @@ export function LibraryBoards({ model }: { model: AgentsViewModel }) {
     // the open board may be of a project the app bar is not on (opened from outside): its own project's list names it
     const openList = useBoardList(sel?.project ?? scope);
     const [query, setQuery] = useState("");
+    const [reloading, setReloading] = useState(false);
+
+    // the list is kept current by board:update, which only a write through wavesrv sends: a board file copied into the
+    // folder by hand (an import) shows when the tab opens, or on the Reload button
+    function reloadList(): void {
+        setReloading(true);
+        loadBoardList(scope)
+            .catch((e) => console.warn("boards: reloading the list failed", e))
+            .finally(() => setReloading(false));
+    }
+    useEffect(() => {
+        loadBoardList(scope).catch((e) => console.warn("boards: reading the list failed", e));
+    }, [scope]);
 
     const rows = useMemo(() => boardRows(list, { query, roster, now: Date.now() }), [list, query, roster]);
     const open = useMemo(
@@ -411,17 +424,34 @@ export function LibraryBoards({ model }: { model: AgentsViewModel }) {
     return (
         <div data-library-boards className="flex min-h-0 min-w-0 flex-1">
             <div className="flex w-[360px] flex-none flex-col overflow-hidden border-r border-edge-mid">
-                <label className="m-3 flex h-[32px] flex-none items-center gap-2 rounded-[8px] border border-edge-strong bg-surface-raised pl-[10px] pr-2 focus-within:border-ink-faint">
-                    <Search size={13} strokeWidth={1.8} className="flex-none text-muted" aria-hidden />
-                    <input
-                        data-library-boards-search
-                        aria-label="Search boards"
-                        placeholder="Search boards"
-                        value={query}
-                        onChange={(e) => setQuery(e.target.value)}
-                        className="min-w-0 flex-1 bg-transparent text-[13px] text-primary outline-none placeholder:text-muted"
-                    />
-                </label>
+                <div className="m-3 flex flex-none items-center gap-1.5">
+                    <label className="flex h-[32px] min-w-0 flex-1 items-center gap-2 rounded-[8px] border border-edge-strong bg-surface-raised pl-[10px] pr-2 focus-within:border-ink-faint">
+                        <Search size={13} strokeWidth={1.8} className="flex-none text-muted" aria-hidden />
+                        <input
+                            data-library-boards-search
+                            aria-label="Search boards"
+                            placeholder="Search boards"
+                            value={query}
+                            onChange={(e) => setQuery(e.target.value)}
+                            className="min-w-0 flex-1 bg-transparent text-[13px] text-primary outline-none placeholder:text-muted"
+                        />
+                    </label>
+                    <button
+                        type="button"
+                        data-library-boards-reload
+                        aria-label="Reload boards"
+                        title="Reload boards"
+                        onClick={reloadList}
+                        disabled={reloading}
+                        className="flex h-[32px] w-[32px] flex-none cursor-pointer items-center justify-center rounded-[8px] border-0 bg-transparent text-muted hover:bg-surface-hover hover:text-secondary disabled:cursor-default"
+                    >
+                        <RefreshCw
+                            size={13}
+                            aria-hidden
+                            className={reloading ? "animate-spin motion-reduce:animate-none" : undefined}
+                        />
+                    </button>
+                </div>
                 <div data-library-boards-list className="min-h-0 flex-1 overflow-y-auto pb-2">
                     {list == null ? (
                         <div className="px-4 py-3 text-[12px] text-muted">Reading boards…</div>
