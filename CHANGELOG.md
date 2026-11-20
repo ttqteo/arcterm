@@ -42,6 +42,8 @@ and a picture given to a line that is not big.
 - The Compacted line in the Agent details rail opens the summary in a Summary tab of the rail, with an x to close it,
   instead of a sheet over Chat; the summary scrolls on its own, and the tab widens with a drag like File.
 - The rail's Council tab widens with a drag like File and Transcript, so a council's long messages have room.
+- The "Báo lỗi arcterm" agent starts one run for all the small bugs it handles together instead of a run per bug, and
+  holds a small fix it finds later until that run has landed.
 
 ### Fixed
 
