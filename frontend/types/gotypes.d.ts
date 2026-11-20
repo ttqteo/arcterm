@@ -3019,6 +3019,39 @@ declare global {
         wait?: boolean;
     };
 
+    // wshrpc.CommandVerifyGateData
+    type CommandVerifyGateData = {
+        blockid: string;
+        cwd: string;
+        command: string;
+    };
+
+    // wshrpc.CommandVerifyReportData
+    type CommandVerifyReportData = {
+        blockid: string;
+        runid: string;
+        phase: string;
+        pid?: number;
+        cwd?: string;
+        command?: string;
+        shotsdir?: string;
+        scenarios?: VerifyScenarioData[];
+        reason?: string;
+    };
+
+    // wshrpc.CommandVerifySkipData
+    type CommandVerifySkipData = {
+        blockid: string;
+        scenario: string;
+        undo?: boolean;
+    };
+
+    // wshrpc.CommandVerifyStateData
+    type CommandVerifyStateData = {
+        blockid: string;
+        cwd: string;
+    };
+
     // wshrpc.CommandWorkflowScanData
     type CommandWorkflowScanData = {
         oref: string;
@@ -5912,6 +5945,60 @@ declare global {
         running?: boolean;
         conflicts?: string[];
         malformedefforts?: string[];
+    };
+
+    // wshrpc.VerifyChangedData
+    type VerifyChangedData = {
+        blockid: string;
+    };
+
+    // wshrpc.VerifyGateData
+    type VerifyGateData = {
+        ask: boolean;
+        reason?: string;
+    };
+
+    // wshrpc.VerifyRowData
+    type VerifyRowData = {
+        scenario: string;
+        state: string;
+        passed: number;
+        total: number;
+        failed?: string[];
+        done: number;
+        of: number;
+        command?: string;
+        shotsdir?: string;
+        reason?: string;
+        shots: number;
+        started: number;
+        ended: number;
+        changedfile?: string;
+    };
+
+    // wshrpc.VerifyScenarioData
+    type VerifyScenarioData = {
+        name: string;
+        files?: string[];
+        steps?: VerifyStepData[];
+        done?: boolean;
+    };
+
+    // wshrpc.VerifyStateData
+    type VerifyStateData = {
+        rows: VerifyRowData[];
+        verdict: string;
+        notrun: boolean;
+        notrunskipped: boolean;
+        changed?: string[];
+        rerun?: string;
+    };
+
+    // wshrpc.VerifyStepData
+    type VerifyStepData = {
+        step: string;
+        state: string;
+        detail?: string;
     };
 
     // baseds.VolunteerData

@@ -50,6 +50,9 @@ const (
 	// held services (pkg/services): the whole list, after every change to a service's state
 	Event_ServicesChanged = "services:changed" // type: wshrpc.ServicesData
 
+	// Verify (pkg/verifyruns): the block whose scenario results or skips changed
+	Event_VerifyChanged = "verify:changed" // type: wshrpc.VerifyChangedData
+
 	// DUM-E (pkg/dume): its status, after every tick that changes it
 	Event_DumeChanged = "dume:changed" // type: wshrpc.DumeStatusData
 
@@ -93,6 +96,7 @@ var AllEvents []string = []string{
 	Event_RunQueueChanged,
 	Event_MemHygieneUpdate,
 	Event_ServicesChanged,
+	Event_VerifyChanged,
 	Event_DumeChanged,
 	Event_XmasTreeChanged,
 	Event_RemoteStatus,

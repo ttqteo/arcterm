@@ -1184,6 +1184,12 @@ func GetUsageStatsCommand(w *wshutil.WshRpc, data wshrpc.CommandGetUsageStatsDat
 	return resp, err
 }
 
+// command "getverifystate", wshserver.GetVerifyStateCommand
+func GetVerifyStateCommand(w *wshutil.WshRpc, data wshrpc.CommandVerifyStateData, opts *wshrpc.RpcOpts) (*wshrpc.VerifyStateData, error) {
+	resp, err := sendRpcRequestCallHelper[*wshrpc.VerifyStateData](w, "getverifystate", data, opts)
+	return resp, err
+}
+
 // command "getwindowtokens", wshserver.GetWindowTokensCommand
 func GetWindowTokensCommand(w *wshutil.WshRpc, data wshrpc.CommandGetWindowTokensData, opts *wshrpc.RpcOpts) (*wshrpc.CommandGetWindowTokensRtnData, error) {
 	resp, err := sendRpcRequestCallHelper[*wshrpc.CommandGetWindowTokensRtnData](w, "getwindowtokens", data, opts)
@@ -2053,6 +2059,24 @@ func VaultStatusCommand(w *wshutil.WshRpc, opts *wshrpc.RpcOpts) (*wshrpc.VaultS
 // command "vaultsync", wshserver.VaultSyncCommand
 func VaultSyncCommand(w *wshutil.WshRpc, data wshrpc.CommandVaultSyncData, opts *wshrpc.RpcOpts) error {
 	_, err := sendRpcRequestCallHelper[any](w, "vaultsync", data, opts)
+	return err
+}
+
+// command "verifygate", wshserver.VerifyGateCommand
+func VerifyGateCommand(w *wshutil.WshRpc, data wshrpc.CommandVerifyGateData, opts *wshrpc.RpcOpts) (*wshrpc.VerifyGateData, error) {
+	resp, err := sendRpcRequestCallHelper[*wshrpc.VerifyGateData](w, "verifygate", data, opts)
+	return resp, err
+}
+
+// command "verifyreport", wshserver.VerifyReportCommand
+func VerifyReportCommand(w *wshutil.WshRpc, data wshrpc.CommandVerifyReportData, opts *wshrpc.RpcOpts) error {
+	_, err := sendRpcRequestCallHelper[any](w, "verifyreport", data, opts)
+	return err
+}
+
+// command "verifyskip", wshserver.VerifySkipCommand
+func VerifySkipCommand(w *wshutil.WshRpc, data wshrpc.CommandVerifySkipData, opts *wshrpc.RpcOpts) error {
+	_, err := sendRpcRequestCallHelper[any](w, "verifyskip", data, opts)
 	return err
 }
 
