@@ -42,6 +42,8 @@ and a picture given to a line that is not big.
 
 ### Fixed
 
+- Words typed in Chat's box while Claude asks one question (the plan Handoff card among them) go as your answer, as
+  the card says, instead of waiting as "Queued · sends once you answer" behind a question nothing else could answer.
 - A fork started from a project's History (a session row's menu, Quick look, or the session pane) shows the
   conversation it forks in Chat at once, as a fork from Chat does, instead of an empty New conversation.
 

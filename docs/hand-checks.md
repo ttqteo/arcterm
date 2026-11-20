@@ -23,6 +23,11 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
 
 ## 2026-11-20
 
+- [ ] (arcterm) **Typing below a one-question ask answers it** (`permissionHolds`, fix/box-answers-ask). In a Claude
+  agent's Chat, have it ask one AskUserQuestion (a plan Handoff is one): the box shows no "Answer the permission prompt
+  first" line, and words typed and sent go as the typed answer (the TUI's "Type something"), not "Queued · sends once
+  you answer". A Bash permission prompt still holds the box. Not tried in the app: only the pure rule is tested.
+
 - [ ] (arcterm) **The compaction summary opens in a rail tab** (`RailCompactionPane`, feat/rail-summary-tab). On an
   agent that compacted, click the Compacted line in the Agent details rail: a Summary tab (fold icon, x) opens
   selected, the panel widens to the File width, the summary scrolls, and the grip drags its width. x (or a middle click)

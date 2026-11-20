@@ -97,6 +97,7 @@ import {
     pendingKind,
     pendingStill,
     pendsAsBubble,
+    permissionHolds,
     recall,
     releasesHeld,
     sendHold,
@@ -522,7 +523,9 @@ function ComposerBox({
     // path the card's own field uses, which locks the ask) instead of waiting behind it. Files riding the message can't
     // go in an ask's answer, so with any attached it waits as before.
     const answersAsk = !asleep && boxAnswersAsk(agent.ask) && att.attachments.length === 0;
-    const hold = asleep ? null : sendHold(permission.length > 0, agent.ask != null && !agent.ask.hold && !answersAsk);
+    const hold = asleep
+        ? null
+        : sendHold(permissionHolds(permission, agent.ask != null), agent.ask != null && !agent.ask.hold && !answersAsk);
     const held = useHeldSend(agent.id);
     const ready = canSend && blocker == null;
     const sendable = ready && hold == null;
