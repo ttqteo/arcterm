@@ -25,7 +25,6 @@ import {
 } from "./chatvisual";
 import { CodeBlock } from "./codeblock";
 import { servedPath } from "./htmlframe";
-import { PathLink } from "./pathlinkcontext";
 import { homeDir } from "./pathlinkroute";
 
 interface VisualHost {
@@ -252,9 +251,6 @@ function ChatVisual({ path, agentId }: { path: string; agentId: string }) {
             <div className="flex h-8 items-center gap-2 border-b border-edge-faint px-3 text-[11.5px] text-muted">
                 <Shapes size={12} strokeWidth={1.8} aria-hidden />
                 <span>Visual</span>
-                <PathLink path={path} className="font-mono text-ink-mid truncate">
-                    {fileName}
-                </PathLink>
                 <span className="flex-1" />
                 {tall ? (
                     <button
