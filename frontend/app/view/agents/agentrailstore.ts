@@ -70,16 +70,28 @@ function update(agentId: string, fn: (p: PanelState) => PanelState): void {
     globalStore.set(railPanelsAtom, { ...panels, [agentId]: next });
 }
 
-export function selectRailTab(agentId: string, tab: RailTab, hasTree: boolean, hasTranscript: boolean): void {
-    update(agentId, (p) => selectTab(p, tab, hasTree, hasTranscript));
+export function selectRailTab(
+    agentId: string,
+    tab: RailTab,
+    hasTree: boolean,
+    hasTranscript: boolean,
+    hasCouncil = false
+): void {
+    update(agentId, (p) => selectTab(p, tab, hasTree, hasTranscript, hasCouncil));
     if (tab === "overview") {
         globalStore.set(railTabDefaultAtom, tab);
     }
 }
 
-// a strip key (agentrailtabs.ts stripKeys): Overview, Files, Changes, Transcript, or one open file's tab
-export function selectRailKey(agentId: string, key: string, hasTree: boolean, hasTranscript: boolean): void {
-    update(agentId, (p) => selectKey(p, key, hasTree, hasTranscript));
+// a strip key (agentrailtabs.ts stripKeys): Overview, Files, Changes, Transcript, Council, or one open file's tab
+export function selectRailKey(
+    agentId: string,
+    key: string,
+    hasTree: boolean,
+    hasTranscript: boolean,
+    hasCouncil = false
+): void {
+    update(agentId, (p) => selectKey(p, key, hasTree, hasTranscript, hasCouncil));
     if (key === "overview") {
         globalStore.set(railTabDefaultAtom, key);
     }
@@ -91,6 +103,13 @@ export function openRailTranscript(agentId: string): void {
     update(agentId, (p) => selectTab(p, "transcript", false, true));
     globalStore.set(railVisibleAtom, true);
     globalStore.set(railTranscriptFocusAtom, (n) => n + 1);
+}
+
+// Opens the rail on the agent's Council tab (the `c` key, agent:council-chat). The caller has checked that the agent
+// started a council; Council's place in the strip depends on nothing else, so `hasTree` and `hasTranscript` are false.
+export function openRailCouncil(agentId: string): void {
+    update(agentId, (p) => selectTab(p, "council", false, false, true));
+    globalStore.set(railVisibleAtom, true);
 }
 
 // Shows the agent on the Agent surface with its panel open on the file, in a tab of its own. `follow`: a link followed

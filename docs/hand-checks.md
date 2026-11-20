@@ -149,11 +149,15 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
   of the conversation. Try it once more after "Show earlier" loaded earlier messages. Only the key arithmetic is unit
   tested.
 
-- [ ] (arcterm) **The council chat button in the Agent panel** (`agentrailpanel.tsx` `RailCouncilButton`,
-  `railcouncilstore.ts`, binding `agent:council-chat`). The button, its three dots, the click and `c` were tried in
-  the dev app on a seeded council; still untried: have a live agent run `wsh council start …` and watch the button fade
-  in after the panel's tabs as the council appears; and on an agent with both a canvas and a council, `c` still opens the
-  canvas, not the council.
+- [ ] (arcterm) **The Agent panel's Council tab** (`agentrailpanel.tsx` `RailCouncilTab`, `railcouncilpane.tsx`,
+  `railcouncil.ts`, binding `agent:council-chat`). The CDP scenario `rail-council-tab` passes (tab, chat, Show more, Open,
+  `c`, Send to the others, Read the report, on fixture councils); still by hand, on a real council: have a live agent run `wsh council start …` (through Bash, and once
+  through PowerShell on Windows): the Council tab fades in after Transcript with a green dot, and Chat gets the council
+  card. On the tab: the messages come in as the seats write, the list follows them while you are at the end and stays put
+  when you scrolled up, a long message opens with Show more, Open shows the full Discussion, and a message sent from the
+  box reaches the council. At the pause the amber row offers Review in full; with held drafts, Send to the others sends
+  them; once done, Read the report opens the Report. On an agent with both a canvas and a council, `c` still opens the
+  canvas.
 - [ ] (arcterm) **A long path in a Chat reply wraps in full** (`markdownmessage.tsx` code → `PathLink wrap`,
   `tailwindsetup.css` `.agent-md code`). Ask an agent for a reply naming a long backticked Windows path mid-sentence:
   it continues on the same line as the words before it and wraps over several lines, with no "…", and the full stop

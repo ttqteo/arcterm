@@ -12,8 +12,9 @@ import { AGENT_TREE_WIDE_PX } from "./rowfields";
 // "tree" is the Files tab, the agent's worktree (docs/superpowers/specs/2026-10-08-rail-worktree-files-design.md); it is
 // "tree" because "files" already names the Files changed count. "changes" is the Changes tab: the Files changed list on
 // a tab of its own, every file of it rather than Overview's first few. "transcript" is the agent's conversation, drawn
-// beside its terminal (docs/superpowers/specs/2026-10-29-rail-transcript-tab-design.md)
-export type RailTab = "overview" | "tree" | "changes" | "transcript" | "file";
+// beside its terminal (docs/superpowers/specs/2026-10-29-rail-transcript-tab-design.md). "council" is the chat of the
+// council the agent started (railcouncil.ts), there only while it has one (canvas rail-council-chat, board B)
+export type RailTab = "overview" | "tree" | "changes" | "transcript" | "council" | "file";
 
 // a file opened into the panel: its absolute path, the directory it was resolved against, and the line to show
 export interface FileRef {
@@ -85,12 +86,17 @@ export const RAIL_WIDE_MIN_PX = 360;
 const CENTRE_MIN_PX = 640; // DESIGN.md's stage-min
 
 export function panelFor(panels: Record<string, PanelState>, agentId: string, defaultTab: RailTab): PanelState {
-    // File, Files and Transcript are never defaults: an unseen agent has no file open, Files needs a cwd it may not have,
-    // and Transcript needs a transcript it may not have
+    // File, Files, Transcript and Council are never defaults: an unseen agent has no file open, Files needs a cwd it may
+    // not have, Transcript a transcript and Council a council
     return (
         panels[agentId] ?? {
             tab:
-                defaultTab === "file" || defaultTab === "tree" || defaultTab === "transcript" ? "overview" : defaultTab,
+                defaultTab === "file" ||
+                defaultTab === "tree" ||
+                defaultTab === "transcript" ||
+                defaultTab === "council"
+                    ? "overview"
+                    : defaultTab,
             prevTab: "overview",
             files: [],
             active: 0,
@@ -104,8 +110,8 @@ export function activeFile(p: PanelState): FileTab | null {
 }
 
 // hasTree: the agent has a cwd to list and is not showing a subagent's interior. hasTranscript: the agent itself has a
-// transcript file (its own, so it stays true while a subagent's interior is open)
-export function visibleTabs(p: PanelState, hasTree: boolean, hasTranscript: boolean): RailTab[] {
+// transcript file (its own, so it stays true while a subagent's interior is open). hasCouncil: the agent started a council
+export function visibleTabs(p: PanelState, hasTree: boolean, hasTranscript: boolean, hasCouncil = false): RailTab[] {
     const tabs: RailTab[] = ["overview"];
     if (hasTree) {
         tabs.push("tree");
@@ -113,6 +119,9 @@ export function visibleTabs(p: PanelState, hasTree: boolean, hasTranscript: bool
     tabs.push("changes");
     if (hasTranscript) {
         tabs.push("transcript");
+    }
+    if (hasCouncil) {
+        tabs.push("council");
     }
     if (p.files.length > 0) {
         tabs.push("file");
@@ -122,13 +131,23 @@ export function visibleTabs(p: PanelState, hasTree: boolean, hasTranscript: bool
 
 // the tab a panel draws: Files with no worktree to list (the cwd is not resolved yet, or a subagent's interior is open)
 // falls back to Overview, while the stored tab stays Files for when the worktree is back; Transcript does the same
-// with no transcript
-export function shownTab(p: PanelState, hasTree: boolean, hasTranscript: boolean): RailTab {
-    return (p.tab === "tree" && !hasTree) || (p.tab === "transcript" && !hasTranscript) ? "overview" : p.tab;
+// with no transcript, and Council with no council
+export function shownTab(p: PanelState, hasTree: boolean, hasTranscript: boolean, hasCouncil = false): RailTab {
+    return (p.tab === "tree" && !hasTree) ||
+        (p.tab === "transcript" && !hasTranscript) ||
+        (p.tab === "council" && !hasCouncil)
+        ? "overview"
+        : p.tab;
 }
 
-export function selectTab(p: PanelState, tab: RailTab, hasTree: boolean, hasTranscript: boolean): PanelState {
-    if (p.tab === tab || !visibleTabs(p, hasTree, hasTranscript).includes(tab)) {
+export function selectTab(
+    p: PanelState,
+    tab: RailTab,
+    hasTree: boolean,
+    hasTranscript: boolean,
+    hasCouncil = false
+): PanelState {
+    if (p.tab === tab || !visibleTabs(p, hasTree, hasTranscript, hasCouncil).includes(tab)) {
         return p;
     }
     return { ...p, tab, prevTab: p.tab };
@@ -234,13 +253,13 @@ export function closeFile(p: PanelState, id: number | undefined = activeFile(p)?
 
 // The strip's tabs in order, as keys, for the arrow keys: on File each open file is a tab of its own; elsewhere the
 // files fold into one tab, the file on show, so Overview's 300px keeps room for the counts.
-export function stripKeys(p: PanelState, hasTree: boolean, hasTranscript: boolean): string[] {
-    const keys: string[] = visibleTabs(p, hasTree, hasTranscript).filter((t) => t !== "file");
+export function stripKeys(p: PanelState, hasTree: boolean, hasTranscript: boolean, hasCouncil = false): string[] {
+    const keys: string[] = visibleTabs(p, hasTree, hasTranscript, hasCouncil).filter((t) => t !== "file");
     const f = activeFile(p);
     if (f == null) {
         return keys;
     }
-    return shownTab(p, hasTree, hasTranscript) === "file"
+    return shownTab(p, hasTree, hasTranscript, hasCouncil) === "file"
         ? [...keys, ...p.files.map((x) => fileKey(x.id))]
         : [...keys, fileKey(f.id)];
 }
@@ -249,16 +268,22 @@ export function fileKey(id: number): string {
     return `file:${id}`;
 }
 
-export function shownKey(p: PanelState, hasTree: boolean, hasTranscript: boolean): string {
-    const tab = shownTab(p, hasTree, hasTranscript);
+export function shownKey(p: PanelState, hasTree: boolean, hasTranscript: boolean, hasCouncil = false): string {
+    const tab = shownTab(p, hasTree, hasTranscript, hasCouncil);
     const f = activeFile(p);
     return tab === "file" && f != null ? fileKey(f.id) : tab;
 }
 
-export function selectKey(p: PanelState, key: string, hasTree: boolean, hasTranscript: boolean): PanelState {
+export function selectKey(
+    p: PanelState,
+    key: string,
+    hasTree: boolean,
+    hasTranscript: boolean,
+    hasCouncil = false
+): PanelState {
     return key.startsWith("file:")
         ? selectFile(p, Number(key.slice(5)))
-        : selectTab(p, key as RailTab, hasTree, hasTranscript);
+        : selectTab(p, key as RailTab, hasTree, hasTranscript, hasCouncil);
 }
 
 // the widest a wide tab may be: what leaves the centre its minimum beside the nav rail and the tree, whose width follows
@@ -268,7 +293,7 @@ export function wideWidthMax(windowWidth: number, navWidth: number, treeWidth = 
 }
 
 // the panel tabs that take a dragged width: File (a page of text) and Transcript (the conversation), which share one
-// remembered width. Overview, Files and Changes are fixed at Overview's
+// remembered width. Overview, Files, Changes and Council are fixed at Overview's
 export type ResizableTab = "file" | "transcript";
 
 export const RAIL_WIDTHS: Record<ResizableTab, { min: number; def: number }> = {

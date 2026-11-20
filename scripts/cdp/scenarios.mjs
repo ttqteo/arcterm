@@ -115,6 +115,7 @@ import monitorTasksScenarios from "./scenarios-monitor-tasks.mjs";
 import { frostProbe, frostVerdict } from "./overlays-frost/frostcheck.mjs";
 import overlaysFrostScenarios from "./scenarios-overlays-frost.mjs";
 import paletteBrainstormResumeScenarios from "./scenarios-palette-brainstorm-resume.mjs";
+import railCouncilScenarios from "./scenarios-rail-council.mjs";
 import railTranscriptScenarios from "./scenarios-rail-transcript.mjs";
 import sessionSearchFindScenarios from "./scenarios-session-search-find.mjs";
 import sessionSearchHistoryScenarios from "./scenarios-session-search-history.mjs";
@@ -64782,6 +64783,20 @@ const RT_KIT = {
     MOD_BIT,
 };
 
+// what the Council tab's scenario (scenarios-rail-council.mjs) needs of this file: the council fixtures' own helpers
+// (council/fixtures.mjs `fx`), the waits, the fixture roster file and the reveal route
+const RC_KIT = {
+    waveService,
+    polishWaitFor,
+    polishNap,
+    openRailTerminal,
+    ahReload,
+    waitForProjectInConfig,
+    polishReload,
+    TREE_RAIL_FIXTURE,
+    UI_ROUTE,
+};
+
 // what the Chat redesign's scenario (scenarios-chat-redesign.mjs) needs of this file: the wavesrv service route and the
 // waits, the project registry wait and the reload, the reveal route, the saved-grid keys, and the brainstorm hint card's
 // seen mark
@@ -74788,6 +74803,7 @@ export const SCENARIOS = [
     agentUploads,
     agentRailTabs,
     ...railTranscriptScenarios(RT_KIT),
+    ...railCouncilScenarios(RC_KIT),
     ...xmasTreeScenarios(XMAS_TREE_KIT),
     ...monitorTasksScenarios(RT_KIT),
     ...kael1113DagScenarios({ ...KAEL_KITS, run: RUN_KIT }),

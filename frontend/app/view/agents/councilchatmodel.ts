@@ -916,8 +916,11 @@ function quoteOnce(items: ChannelItem[]): ChannelItem[] {
  *  With `only`, an expert's id, it is that seat's messages alone (the Summary's "show their messages"): the question,
  *  its ideas, and every reply it wrote, its replies on ideas too (each names its idea, `on`, the first of a run on one
  *  idea only), with its own lines; a round with nothing of its own leaves its divider out. An agreement with nothing to
- *  add is no message. */
-export function councilChannel(c: Council, only?: string): ChannelItem[] {
+ *  add is no message.
+ *
+ *  With `inline`, a reply on an idea stays in the channel too, naming its idea (`on`) on the first of a run on one idea:
+ *  the Agent panel's Council tab (railcouncil.ts), which has no thread panel to open. */
+export function councilChannel(c: Council, only?: string, inline = false): ChannelItem[] {
     const view = sentView(c);
     const entries: Entry[] = [];
     const push = (ts: number, rank: number, item: ChannelItem, turn?: Turn) =>
@@ -953,7 +956,7 @@ export function councilChannel(c: Council, only?: string): ChannelItem[] {
     }
     for (const r of readableReplies(c)) {
         // a reply on an idea lives in its thread, which the idea's reply chip opens; one seat's view keeps them all
-        if (only == null && r.proposalid !== "") {
+        if (only == null && !inline && r.proposalid !== "") {
             continue;
         }
         if (theirs(r.author)) {

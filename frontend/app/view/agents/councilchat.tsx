@@ -236,7 +236,7 @@ const TONE_BORDER: Record<AvatarTone, string> = {
     "conn-8": "border-conn-8",
 };
 
-const TONE_TEXT: Record<AvatarTone, string> = {
+export const TONE_TEXT: Record<AvatarTone, string> = {
     you: "text-accent",
     coordinator: "text-primary",
     muted: "text-muted",
@@ -261,7 +261,7 @@ const TONE_FILL: Record<AvatarTone, string> = {
     "conn-8": "bg-conn-8/20",
 };
 
-const TONE_BUBBLE: Record<AvatarTone, string> = {
+export const TONE_BUBBLE: Record<AvatarTone, string> = {
     you: "border-accent/30 bg-accent/10",
     coordinator: "border-primary/20 bg-primary/5",
     muted: "border-edge-mid bg-surface",
@@ -2042,7 +2042,7 @@ function TypingLine({ item, inThread }: { item: TypingRow; inThread?: boolean })
 }
 
 // each typing dot's step behind the first, in ms of pulse.ts's 1.2 s pulse-typing
-const TYPING_LAGS = [0, 160, 320];
+export const TYPING_LAGS = [0, 160, 320];
 
 // ---- the composer ----
 
@@ -2185,7 +2185,8 @@ function ReplyingLine({ c, to, onStop }: { c: Council; to: ReplyTarget; onStop: 
     );
 }
 
-function Composer({
+// the channel's box, and the Agent panel's Council tab's (railcouncilpane.tsx), which shares its draft
+export function Composer({
     c,
     scope,
     proposalId,
