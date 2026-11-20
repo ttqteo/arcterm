@@ -7,7 +7,7 @@
 //
 // Sites, in order (each group is one fixture that its sites share, torn down after them):
 //   plain       1 project switcher, 2 consumers, 3 servers            the app bar and footer chips; no fixture
-//   initiative  4 initiative popover                                  the initiative-popover scenario's arrange
+//   (site 4, the initiative popover, left with the popover: the Initiative tab of the rail is a panel, not an overlay)
 //   card        5 subagent peek, 6 task popover                       a working agent's Cockpit card (agentrow.tsx)
 //   tabs        7 tab switcher                                        two fixture agents, the switcher's atom set
 //   bg          8 background-task peek                                the chat-bg-tasks scenario's arrange
@@ -19,7 +19,7 @@
 // blur, so it is the panel's backdrop root: the panel frosts the dialog panel behind it, which is the frost there is to
 // have (the plan's header decisions). Those two steps accept that one root and no other.
 //
-// Sites the plan lists that stay solid (so have no step): initiativechunkmenu.tsx (an inline list in the popover's flow),
+// Sites the plan lists that stay solid (so have no step): initiativechunkmenu.tsx (an inline list in the Initiative tab's flow),
 // launchertoolfields.tsx (cards), toolpicker.tsx and sessionpeek.tsx (ModalShell dialogs: the spec leaves them), usageleversbody.tsx
 // (a card), cockpitoffice.tsx (a drag card and buttons), docreviewnotesview.tsx (an inline note editor anchored to a passage).
 //
@@ -118,34 +118,6 @@ export default (kit) => {
                     h.ev(`(() => { const c = ${q("[data-machine-servers-chip]")}; if (!c) return "no servers chip in the footer"; c.click(); return true; })()`),
                 panel: motionOf("[data-machine-servers-panel]"),
                 close: (h) => click(h, q("[data-machine-servers-backdrop]")),
-            },
-        ],
-    };
-
-    const initiative = {
-        surface: "agent",
-        async arrange(h, ctx) {
-            ctx.sc = scenario("initiative-popover");
-            ctx.fx = await ctx.sc.arrange(h);
-            if (ctx.fx.skip) throw new Error(ctx.fx.skip);
-            if (ctx.fx.arrangeError != null) throw new Error(ctx.fx.arrangeError);
-            if (ctx.fx.focus !== true) throw new Error("the fixture agent never reached the Agent surface");
-        },
-        async teardown(h, ctx) {
-            if (ctx.fx) await ctx.sc.teardown(h, ctx.fx);
-        },
-        sites: [
-            {
-                id: "initiative",
-                title: "the initiative popover",
-                async open(h) {
-                    await waitFor(h, `${q("[data-agent-header] [data-initiative-link-open]")}?.innerText.length > 0`, WAIT_MS);
-                    await h.ev(`${q("[data-cockpit-surface-wrap]")}?.focus()`);
-                    await pressKey(h, "i", "KeyI", 73, 0, "i");
-                    return true;
-                },
-                panel: motionOf("[data-initiative-popover]"),
-                close: (h) => pressEscape(h),
             },
         ],
     };
@@ -613,7 +585,7 @@ export default (kit) => {
         ],
     };
 
-    const GROUPS = [plain, initiative, card, tabs, bg, gitGroup, canvas, finalGroup];
+    const GROUPS = [plain, card, tabs, bg, gitGroup, canvas, finalGroup];
 
     // --- the check ---------------------------------------------------------------------------------------------------
 

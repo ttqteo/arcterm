@@ -11,6 +11,7 @@ import { openInCode } from "@/app/view/code/codestore";
 import { atom, type PrimitiveAtom } from "jotai";
 import { atomWithStorage } from "jotai/utils";
 import {
+    backFromInitiative,
     closeFile,
     closeSummary,
     followFile,
@@ -19,12 +20,14 @@ import {
     openFile,
     openSummary,
     panelFor,
+    RAIL_HAS_NONE,
     RAIL_WIDE_DEFAULT_PX,
     railSummaryShown,
     selectKey,
     selectTab,
     type FileRef,
     type PanelState,
+    type RailHas,
     type RailTab,
     type ResizableTab,
 } from "./agentrailtabs";
@@ -73,46 +76,75 @@ function update(agentId: string, fn: (p: PanelState) => PanelState): void {
     globalStore.set(railPanelsAtom, { ...panels, [agentId]: next });
 }
 
-export function selectRailTab(
-    agentId: string,
-    tab: RailTab,
-    hasTree: boolean,
-    hasTranscript: boolean,
-    hasCouncil = false
-): void {
-    update(agentId, (p) => selectTab(p, tab, hasTree, hasTranscript, hasCouncil));
+export function selectRailTab(agentId: string, tab: RailTab, has: RailHas): void {
+    update(agentId, (p) => selectTab(p, tab, has));
     if (tab === "overview") {
         globalStore.set(railTabDefaultAtom, tab);
     }
 }
 
-// a strip key (agentrailtabs.ts stripKeys): Overview, Files, Changes, Transcript, Council, or one open file's tab
-export function selectRailKey(
-    agentId: string,
-    key: string,
-    hasTree: boolean,
-    hasTranscript: boolean,
-    hasCouncil = false
-): void {
-    update(agentId, (p) => selectKey(p, key, hasTree, hasTranscript, hasCouncil));
+// a strip key (agentrailtabs.ts stripKeys): Overview, Files, Changes, Transcript, Council, Brainstorm, Initiative, or
+// one open file's tab
+export function selectRailKey(agentId: string, key: string, has: RailHas): void {
+    update(agentId, (p) => selectKey(p, key, has));
     if (key === "overview") {
         globalStore.set(railTabDefaultAtom, key);
     }
 }
 
 // Opens the rail on the agent's Transcript tab and asks its body for focus. The caller has checked that the agent has a
-// transcript; Transcript's place in the strip does not depend on a worktree, so `hasTree` is false here.
+// transcript; Transcript's place in the strip does not depend on a worktree, so `tree` is false here.
 export function openRailTranscript(agentId: string): void {
-    update(agentId, (p) => selectTab(p, "transcript", false, true));
+    update(agentId, (p) => selectTab(p, "transcript", { ...RAIL_HAS_NONE, transcript: true }));
     globalStore.set(railVisibleAtom, true);
     globalStore.set(railTranscriptFocusAtom, (n) => n + 1);
 }
 
 // Opens the rail on the agent's Council tab (the `c` key, agent:council-chat). The caller has checked that the agent
-// started a council; Council's place in the strip depends on nothing else, so `hasTree` and `hasTranscript` are false.
+// started a council; Council's place in the strip depends on nothing else, so everything else is false.
 export function openRailCouncil(agentId: string): void {
-    update(agentId, (p) => selectTab(p, "council", false, false, true));
+    update(agentId, (p) => selectTab(p, "council", { ...RAIL_HAS_NONE, council: true }));
     globalStore.set(railVisibleAtom, true);
+}
+
+// Opens the rail on the agent's Brainstorm tab. The caller has checked that a brainstorm is attached.
+export function openRailBrainstorm(agentId: string): void {
+    update(agentId, (p) => selectTab(p, "brainstorm", { ...RAIL_HAS_NONE, brainstorm: true }));
+    globalStore.set(railVisibleAtom, true);
+}
+
+// the Initiative tab section a caller asked to show, per agent; the pane clears it once it has unfolded it
+export const railInitiativeSectionAtom = atom<Record<string, "plan">>({}) as PrimitiveAtom<Record<string, "plan">>;
+
+// the agent whose Initiative pane should take focus when it next shows; the pane clears it
+export const railInitiativeFocusAtom = atom<string | null>(null) as PrimitiveAtom<string | null>;
+
+// Opens the rail on the agent's Initiative tab (the ◇ chip, `i`, the header's "N to review" chip, "Review on the rail").
+// The caller has checked that the agent is linked to an initiative. `section` unfolds that section and scrolls it into
+// view (railInitiativeSectionAtom). The pane takes focus when it shows from here (railInitiativeFocusAtom), so its keys
+// work at once.
+export function openRailInitiative(agentId: string, section?: "plan"): void {
+    update(agentId, (p) => selectTab(p, "initiative", { ...RAIL_HAS_NONE, initiative: true }));
+    globalStore.set(railVisibleAtom, true);
+    globalStore.set(railInitiativeFocusAtom, agentId);
+    if (section != null) {
+        globalStore.set(railInitiativeSectionAtom, {
+            ...globalStore.get(railInitiativeSectionAtom),
+            [agentId]: section,
+        });
+    }
+}
+
+// `i`: the Initiative tab when it is not on show (or the rail is hidden), else back to the tab before it. Reads the
+// panel's stored tab, not shownTab: the caller has checked that the agent is linked, so a stored Initiative tab is the
+// shown one.
+export function toggleRailInitiative(agentId: string): void {
+    const panel = panelFor(globalStore.get(railPanelsAtom), agentId, globalStore.get(railTabDefaultAtom));
+    if (panel.tab === "initiative" && globalStore.get(railVisibleAtom)) {
+        update(agentId, backFromInitiative);
+        return;
+    }
+    openRailInitiative(agentId);
 }
 
 // Opens the Summary tab, the summary the agent's last compaction kept (Overview's Compacted line), and its x closes it

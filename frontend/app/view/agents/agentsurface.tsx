@@ -56,6 +56,7 @@ import { appShows } from "./appmodel";
 import { AppPane } from "./apppane";
 import { appStatesAtom } from "./appstore";
 import { asksInTerminal, projectOf, type AgentVM } from "./agentsviewmodel";
+import { ChatBoardDialog } from "./brainstormbandview";
 import { compactedSummary } from "./brainstormmodel";
 import { BrainstormPane } from "./brainstormpane";
 import { brainstormRailSlotAtom } from "./brainstormrail";
@@ -853,6 +854,7 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
                                                 />
                                             ) : cell != null && multi ? (
                                                 <GridCellBar
+                                                    model={model}
                                                     agent={a}
                                                     focused={cell.focused}
                                                     onRemove={() => onRemoveCell(a.id)}
@@ -893,6 +895,10 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
                                                     <BoardSplitLayer model={model} agent={a} barred={multi} />
                                                 </>
                                             ) : null}
+                                            {/* the board dialog of the agent's brainstorm: over the whole cell, so a board
+                                                opened from the rail's Brainstorm tab or the question card shows the same
+                                                over Chat and over the terminal. A layer after the panes, never around them */}
+                                            {cell != null ? <ChatBoardDialog agent={a} barred={multi} /> : null}
                                             {/* a terminal whose folder is gone: the card over its dimmed last screen, the
                                                 pane staying mounted under it; the bar above it (a grid cell's or the
                                                 panel's) stays. Not on the panel's folded strip. */}

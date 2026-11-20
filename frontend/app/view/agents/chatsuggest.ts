@@ -8,8 +8,8 @@
 //
 // - rules over what Chat already knows, shown at once: the turn left its edits uncommitted ("commit đi") or its commits
 //   unpushed ("push đi"), from the header's one git read (shipmodel.ts, shipstore.ts); and the initiative the agent
-//   works on: a turn that committed while it holds a chunk offers to tick that chunk done (an action, as the header
-//   popover's Mark done, not a message), and once its chunks are settled the next one is offered ("làm tiếp: …");
+//   works on: a turn that committed while it holds a chunk offers to tick that chunk done (an action, as the Initiative
+//   tab's Mark done, not a message), and once its chunks are settled the next one is offered ("làm tiếp: …");
 // - one haiku call (pkg/chatsuggest), a few seconds later, that reads the end of the reply: the answers to the question
 //   it ends on, or the one next step only the reply shows ("vẽ tôi xem" after a layout told in words).
 //
@@ -231,7 +231,7 @@ export function ruleChips(
 }
 
 /** Pure: the initiative rule's chip for a turn that does not end in a question, on the initiative the agent works on.
- *  The chunk it is on is the one the band and the header popover read, by the one definition (initiativepopovermodel.ts
+ *  The chunk it is on is the one the Initiative tab and the header chip read, by the one definition (initiativepopovermodel.ts
  *  agentChunk): the live chunk its tab holds, and nothing else (no active chunk stands in for an agent that holds none).
  *  A turn that ended on a commit offers to tick that chunk done: the work landed, and whether it is the whole chunk stays
  *  the person's call. The chip belongs to the turn: given `turnEnded` (when the agent went idle, ms), a chunk the agent
