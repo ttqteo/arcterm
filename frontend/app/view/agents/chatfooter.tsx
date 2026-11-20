@@ -25,11 +25,11 @@ import { cn, fireAndForget, stringToBase64 } from "@/util/util";
 import { Check, ChevronRight } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useCallback, useEffect, useRef, useState, type FocusEvent, type KeyboardEvent, type ReactNode } from "react";
+import { contextLevel, contextNote, contextTokens } from "./agentrailmodel";
 import { submitToAgent } from "./agentsubmit";
 import type { AgentVM } from "./agentsviewmodel";
 import {
     chipEffort,
-    contextWarn,
     currentModelId,
     EFFORT_CHOICES,
     effortChoice,
@@ -599,17 +599,39 @@ function ModeChip({ mode, onPick }: { mode: ClaudeMode; onPick: (target: ClaudeM
 
 // The context as a ring with its percent. Asleep (`dim`) the value is drawn in the muted tone, turning over on the
 // macro duration as the board's context colour does.
-function ContextRing({ pct, dim }: { pct: number; dim: boolean }) {
+// the ring's color by context level, as the details rail's gauge: the worse of how full the window is and how many
+// tokens every turn re-reads (agentrailmodel.ts contextLevel)
+const RING_STROKE: Record<"ok" | "warn" | "hot", string> = {
+    ok: "stroke-secondary",
+    warn: "stroke-warning",
+    hot: "stroke-error",
+};
+const RING_TEXT: Record<"ok" | "warn" | "hot", string> = {
+    ok: "text-muted",
+    warn: "text-warning",
+    hot: "text-error",
+};
+
+function ContextRing({ pct, max, dim }: { pct: number; max?: number; dim: boolean }) {
     const dash = ringDash(pct, RING_CIRC);
     if (dash == null) {
         return null;
     }
     const rounded = Math.round(pct);
+    const level = contextLevel(pct, max);
+    const tokens = contextTokens(pct, max);
+    const note = contextNote(pct, max);
+    // past the warn line the tokens show beside the percent: on a 1M window 25% reads calm while each turn re-reads 250k
+    const showTokens = !dim && level !== "ok" && tokens != null;
     return (
         <div
             data-chat-context={rounded}
-            title={`Context ${rounded}%`}
-            className="flex flex-none items-center gap-[5px] text-[12.5px] tabular-nums text-muted"
+            data-chat-context-level={level}
+            title={`Context ${rounded}%${tokens ? ` (${tokens} tokens)` : ""}${note ? ` · ${note}` : ""}`}
+            className={cn(
+                "flex flex-none items-center gap-[5px] text-[12.5px] tabular-nums transition-colors motion-reduce:transition-none",
+                dim ? "text-muted" : RING_TEXT[level]
+            )}
         >
             <svg width="14" height="14" viewBox="0 0 36 36" aria-hidden>
                 <circle cx="18" cy="18" r="14" fill="none" strokeWidth="5" className="stroke-edge-strong" />
@@ -624,11 +646,11 @@ function ContextRing({ pct, dim }: { pct: number; dim: boolean }) {
                     style={{ transitionDuration: `${MOTION.durMacro}s`, transitionTimingFunction: easeFluidCss }}
                     className={cn(
                         "transition-[stroke] motion-reduce:transition-none",
-                        dim ? "stroke-muted" : contextWarn(pct) ? "stroke-warning" : "stroke-secondary"
+                        dim ? "stroke-muted" : RING_STROKE[level]
                     )}
                 />
             </svg>
-            <span>{rounded}%</span>
+            <span>{showTokens ? `${rounded}% · ${tokens}` : `${rounded}%`}</span>
         </div>
     );
 }
@@ -752,7 +774,7 @@ export function ChatFooter({ agent }: { agent: AgentVM }) {
                     </Fold>
                 ) : null}
             </AnimatePresence>
-            {pct != null ? <ContextRing pct={pct} dim={asleep} /> : null}
+            {pct != null ? <ContextRing pct={pct} max={agent.usage?.contextmax} dim={asleep} /> : null}
         </div>
     );
 }

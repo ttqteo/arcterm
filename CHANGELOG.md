@@ -30,6 +30,14 @@ in the dev app: `node scripts/whatsnew-shot.mjs <topic> [--selector <css>]` writ
 `whatsnew.test.ts` fails a big line with neither (in Unreleased and from 1.9.0 on), a missing file, one over 120 KB,
 and a picture given to a line that is not big.
 
+## Unreleased
+
+### Changed
+
+- The context gauge turns red at 200k tokens instead of 300k, and Chat's context ring and its /context card now go
+  amber at 150k and red at 200k like the details rail, showing the tokens beside the percent: on a 1M window a calm
+  20% already means every turn re-reads 200k.
+
 ## 1.12.0 — 2026-11-20
 
 ### Added

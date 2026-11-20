@@ -32,6 +32,11 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
   asked, the ask comes back as a refusal whose reason tells the agent to ask you first.
 ## 2026-11-20
 
+- [ ] (arcterm) **Context alarm at 150k / 200k in Chat** (`ContextRing` in `chatfooter.tsx`, `ContextBody` in
+  `chatlocalcards.tsx`, feat/context-alarm). On a Claude agent with a 1M window past 150k tokens, Chat's footer ring
+  turns amber and reads `16% · 160k`; past 200k it turns red, as do the details rail's gauge and the header chip; a
+  bare `/context` in Chat shows the card in the same color with "Every turn re-reads …". Under 150k it stays grey with
+  the percent only.
 - [ ] (arcterm) Diagram zoom and Copy image in the installed app (WebView2): ask a Claude agent to explain a flow and
   check it answers with a mermaid diagram, not ASCII; hover the diagram, Copy image, paste into Paint or a chat: the
   whole diagram, sharp, on a dark ground. Click it: the viewer opens fitted, the wheel zooms toward the cursor, a drag
