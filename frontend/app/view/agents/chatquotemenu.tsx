@@ -17,7 +17,7 @@ import { Copy, Reply } from "lucide-react";
 import { useEffect, useMemo, useState, type RefObject } from "react";
 import { createPortal } from "react-dom";
 import { chatBoxText, hasChatBox, replaceChatBox } from "./chatinsert";
-import { withQuote } from "./chatquote";
+import { withLeadQuote, withQuote } from "./chatquote";
 
 const BTN = 22;
 // how far the button sits off the selection's corner, across and up
@@ -46,6 +46,8 @@ export function ChatQuoteMenu({ agentId, rootRef }: { agentId: string; rootRef: 
             ready: () => hasChatBox(agentId),
             read: () => chatBoxText(agentId),
             write: (text) => replaceChatBox(agentId, text),
+            // Chat's box draws the quotes that open the message as chips (chatquote.ts splitQuotes)
+            lead: true,
         }),
         [agentId]
     );
@@ -59,6 +61,8 @@ export interface QuoteTarget {
     ready: (range: Range) => boolean;
     read: (range: Range) => string;
     write: (text: string, range: Range) => boolean;
+    /** the quote goes before what is typed, after the quotes already there (withLeadQuote), not at the end */
+    lead?: boolean;
 }
 
 type Picked = { range: Range; text: string };
@@ -94,7 +98,7 @@ function pickedAt(root: HTMLElement, target: QuoteTarget, x: number, y: number):
 }
 
 function reply(target: QuoteTarget, p: Picked) {
-    const next = withQuote(target.read(p.range), p.text);
+    const next = (target.lead ? withLeadQuote : withQuote)(target.read(p.range), p.text);
     if (target.write(next, p.range)) {
         window.getSelection()?.removeAllRanges();
     }

@@ -55,6 +55,7 @@ import {
     GitCommitHorizontal,
     Hammer,
     Moon,
+    Quote,
     Terminal,
     X,
     type LucideIcon,
@@ -115,6 +116,7 @@ import {
     useHeldSend,
 } from "./chatpendingstore";
 import { ChatPlusMenu } from "./chatplusmenu";
+import { joinQuotes, quoteWords, splitQuotes } from "./chatquote";
 import { asleepCommand, runBlocks, runsAsleep, type SleepRun } from "./chatsleepbash";
 import { putBackSleepRuns, runWhileAsleep, takeSleepRuns } from "./chatsleepbashstore";
 import {
@@ -289,41 +291,56 @@ function ComposerBox({
     // Waking… under it until the transcript holds it. A wake that failed drops the bubble and puts the text
     // (useAgentSend) and the chips back. `wake` is the wake send in flight: its bubble and the paths of what rode along.
     const wake = useRef<{ pendingId: string | null; paths: string[]; runs: SleepRun[] } | null>(null);
-    const { text, setText, message, canSend, waking, fallingAsleep, send } = useAgentSend(
-        agent.blockId,
-        agent,
-        att.attachments,
-        {
-            onWoken: () => {
-                const w = wake.current;
-                wake.current = null;
-                if (w?.pendingId != null) {
-                    deliveredPending(agent.id, w.pendingId);
-                }
-            },
-            wakeClears: true,
-            onWakeFailed: () => {
-                const w = wake.current;
-                wake.current = null;
-                if (w == null) {
-                    return;
-                }
-                if (w.pendingId != null) {
-                    dropPendingIds(agent.id, [w.pendingId]);
-                }
-                if (w.paths.length > 0) {
-                    att.addPaths(w.paths);
-                }
-                putBackSleepRuns(agent.id, w.runs);
-            },
-            keepDraft: true,
-            // a /btw no mod took was typed into the terminal, where Claude Code answers it on its own screen: show that
-            onBtwTyped: (sent) => {
-                dropPending(agent.id, sent);
-                showTerminal();
-            },
-        }
-    );
+    const {
+        text: fullText,
+        setText: setFullText,
+        message,
+        canSend,
+        waking,
+        fallingAsleep,
+        send,
+    } = useAgentSend(agent.blockId, agent, att.attachments, {
+        onWoken: () => {
+            const w = wake.current;
+            wake.current = null;
+            if (w?.pendingId != null) {
+                deliveredPending(agent.id, w.pendingId);
+            }
+        },
+        wakeClears: true,
+        onWakeFailed: () => {
+            const w = wake.current;
+            wake.current = null;
+            if (w == null) {
+                return;
+            }
+            if (w.pendingId != null) {
+                dropPendingIds(agent.id, [w.pendingId]);
+            }
+            if (w.paths.length > 0) {
+                att.addPaths(w.paths);
+            }
+            putBackSleepRuns(agent.id, w.runs);
+        },
+        keepDraft: true,
+        // a /btw no mod took was typed into the terminal, where Claude Code answers it on its own screen: show that
+        onBtwTyped: (sent) => {
+            dropPending(agent.id, sent);
+            showTerminal();
+        },
+    });
+    // The quotes that open the message (a Reply's) are chips over the editor, not lines in it (chatquote.ts
+    // splitQuotes): `text` is what the editor shows and edits, the rest of the box works on it, and `message` (what
+    // goes) is still the whole draft. The outside box API (registerChatBox) reads and writes the whole draft.
+    const { quotes, body: text } = splitQuotes(fullText);
+    const setText = (t: string) => setFullText(joinQuotes(quotes, t));
+    const dropQuote = (i: number) =>
+        setFullText(
+            joinQuotes(
+                quotes.filter((_, k) => k !== i),
+                text
+            )
+        );
     // a Sleep under way (fallasleepstore): the box is shut until the agent sleeps, and says what is happening
     const dozing = fallingAsleep != null;
     // asleep with nothing to send, Send is Wake: it relaunches the agent with no message (the card over the terminal
@@ -411,8 +428,8 @@ function ComposerBox({
     const ghost = bash && !waking && !bashList.shown ? bashGhost(bashHistory, text, caretNow) : "";
     // An Alt-drop's @mention lands here (chatinsert.ts): at the caret, through the text state, which the editor draws
     // from; the caret is put after it once the new text is drawn.
-    const latest = useRef({ text, setText: setTextAt });
-    latest.current = { text, setText: setTextAt };
+    const latest = useRef({ text, setText: setTextAt, full: fullText, setFull: setFullText });
+    latest.current = { text, setText: setTextAt, full: fullText, setFull: setFullText };
     const caretAfter = useRef<number | null>(null);
     useEffect(
         () =>
@@ -450,13 +467,13 @@ function ComposerBox({
     useEffect(
         () =>
             registerChatBox(agent.id, {
-                text: () => latest.current.text,
+                text: () => latest.current.full,
                 submit: (sent) => {
                     const box = editorRef.current;
                     if (box == null || box.readOnly) {
                         return false;
                     }
-                    if (sent === latest.current.text) {
+                    if (sent === latest.current.full) {
                         submitRef.current();
                         // the send was tried: a `go on with:` click's hold on the waiting line ends (a line the send did
                         // not take is the one that waits for the next message)
@@ -464,7 +481,7 @@ function ComposerBox({
                         return true;
                     }
                     submitNext.current = true;
-                    latest.current.setText(sent);
+                    latest.current.setFull(sent);
                     return true;
                 },
                 append: (added) => {
@@ -472,7 +489,7 @@ function ComposerBox({
                     if (box == null || box.readOnly) {
                         return false;
                     }
-                    // the end of the box, never the caret: the person may be typing elsewhere in it
+                    // the end of the box, never the caret: the person may be typing elsewhere in it; the quote chips stay
                     const cur = latest.current.text;
                     latest.current.setText(cur.trim() ? cur.replace(/\s+$/, "") + "\n" + added : added);
                     return true;
@@ -491,8 +508,8 @@ function ComposerBox({
                         return false;
                     }
                     recalled.current = { at: null, shown: "" };
-                    caretAfter.current = t.length;
-                    latest.current.setText(t, t.length);
+                    caretAfter.current = splitQuotes(t).body.length;
+                    latest.current.setFull(t);
                     box.focus({ preventScroll: true });
                     return true;
                 },
@@ -504,7 +521,7 @@ function ComposerBox({
                         return false;
                     }
                     recalled.current = { at: null, shown: "" };
-                    latest.current.setText(t);
+                    latest.current.setFull(t);
                     return true;
                 },
                 interrupt: () => interruptRef.current(),
@@ -565,7 +582,8 @@ function ComposerBox({
             return;
         }
         if (answersAsk && ready) {
-            const words = text.trim();
+            // the quote chips are part of the answer
+            const words = fullText.trim();
             // nothing typed, or the ask was already answered (a row clicked meanwhile): nothing goes
             if (words === "" || !answerAgentAsk(model, agent.id, {}, { 0: words })) {
                 return;
@@ -573,7 +591,7 @@ function ComposerBox({
             onSent?.(words);
             recalled.current = { at: null, shown: "" };
             noteSent(agent.id, words);
-            setTextAt("");
+            setFullText("");
             return;
         }
         if (wakeOnly && att.attachments.length === 0) {
@@ -674,16 +692,16 @@ function ComposerBox({
             submit();
             holdSwitchLine(agent.id, false);
         }
-    }, [text]);
+    }, [fullText]);
     // the queued message goes as soon as its prompt is answered; a box emptied meanwhile has nothing left to queue
     useEffect(() => {
         if (releasesHeld(held, hold, sendable)) {
             setHeldSend(agent.id, false);
             submit();
-        } else if (held && !waking && text.trim() === "" && att.attachments.length === 0) {
+        } else if (held && !waking && fullText.trim() === "" && att.attachments.length === 0) {
             setHeldSend(agent.id, false);
         }
-    }, [held, hold, sendable, text, att.attachments.length]);
+    }, [held, hold, sendable, fullText, att.attachments.length]);
     // The + menu's MCP servers and Plugins rows: a one-line command typed into the terminal, as the send path types it
     // (useAgentSend), without touching the box's own text or its attachments. It waits behind a permission prompt or a
     // question as Send does.
@@ -1132,6 +1150,7 @@ function ComposerBox({
                 the person to act */}
                         <ChatBgLine model={model} agent={agent} />
                         <AttachmentTray items={att.attachments} onRemove={att.remove} onRetry={att.retry} />
+                        <QuoteChips quotes={quotes} onRemove={dropQuote} />
                         {/* `+`, the text and Send/Stop. One row; grown, the well takes a line of its own first (order-first,
                 basis-full) and `+` and Send/Stop wrap under it. The well and its editor stay this element's child either
                 way, so the editor is never remounted, and its parts fold in place through a sleep and a wake. */}
@@ -1847,5 +1866,41 @@ export function Chip({
                 </kbd>
             ) : null}
         </button>
+    );
+}
+
+// The quotes that open the message (chatquote.ts splitQuotes), one chip each over the editor: its words on one line,
+// all of them in the tooltip, and an × that takes the quote out of the message. They go with the message as the `>`
+// lines they are.
+function QuoteChips({ quotes, onRemove }: { quotes: string[]; onRemove: (i: number) => void }) {
+    if (quotes.length === 0) {
+        return null;
+    }
+    return (
+        <div data-chat-quotes="" className="flex min-w-0 flex-col gap-1">
+            {quotes.map((q, i) => {
+                const words = quoteWords(q);
+                return (
+                    <span
+                        key={i}
+                        data-chat-quote-chip=""
+                        title={words}
+                        className="flex min-w-0 items-center gap-1.5 rounded-[6px] border border-edge-mid bg-background py-1 pl-2 pr-1.5 text-[11.5px] text-secondary"
+                    >
+                        <Quote size={11} className="flex-none text-muted" aria-hidden />
+                        <span className="min-w-0 flex-1 truncate italic">{words}</span>
+                        <button
+                            type="button"
+                            title="Remove quote"
+                            aria-label="Remove quote"
+                            onClick={() => onRemove(i)}
+                            className="flex-none cursor-pointer text-muted hover:text-error focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                        >
+                            <X size={12} />
+                        </button>
+                    </span>
+                );
+            })}
+        </div>
     );
 }

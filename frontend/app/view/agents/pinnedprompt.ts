@@ -21,6 +21,15 @@ export function pinnedPromptIndex(anchors: PromptAnchor[], viewTop: number): num
     return at >= 0 && anchors[at].bottom <= viewTop ? at : -1;
 }
 
+/** How close to the end of the transcript (px) counts as at its end, where Chat hides the pinned prompt: the reader is
+ *  following the newest reply, and the band would only cover its first lines. */
+export const PINNED_END_SLACK = 8;
+
+/** Pure: whether the scroller shows the end of its content, within PINNED_END_SLACK. */
+export function atScrollEnd(scrollTop: number, scrollHeight: number, clientHeight: number): boolean {
+    return scrollHeight - scrollTop - clientHeight <= PINNED_END_SLACK;
+}
+
 /** Pure: how far the pinned band moves up (0 or less, px) as the next prompt comes up under it: not at all while that
  *  prompt is more than the band's height below the top, then pixel for pixel with it, so the next prompt shoves the band
  *  out instead of the band vanishing over it. nextTop is the next prompt's top below the scroller's top edge, null with

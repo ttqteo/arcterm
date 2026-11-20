@@ -3,6 +3,8 @@
 
 import { describe, expect, it } from "vitest";
 import {
+    atScrollEnd,
+    PINNED_END_SLACK,
     pinnedPromptIndex,
     pinnedPromptPush,
     PROMPT_MENU_MAX_W,
@@ -96,5 +98,16 @@ describe("stepPromptMenu", () => {
         expect(stepPromptMenu(3, "Enter", 12)).toBeNull();
         expect(stepPromptMenu(3, "a", 12)).toBeNull();
         expect(stepPromptMenu(0, "ArrowDown", 0)).toBeNull();
+    });
+});
+
+describe("atScrollEnd", () => {
+    it("is true at the bottom and within the slack", () => {
+        expect(atScrollEnd(600, 1000, 400)).toBe(true);
+        expect(atScrollEnd(600 - PINNED_END_SLACK, 1000, 400)).toBe(true);
+    });
+
+    it("is false once scrolled up past the slack", () => {
+        expect(atScrollEnd(600 - PINNED_END_SLACK - 1, 1000, 400)).toBe(false);
     });
 });

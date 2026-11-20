@@ -1208,7 +1208,8 @@ export function ChatConversation({
     // document order (only YouBubble's prompt branch carries it, not the command bubble, nor the ✓ row a message that
     // answered a brainstorm question draws in its place, nor a run-ended message, which draws nothing, nor a message of only
     // pictures or files, which carries it only when it says something: pinnedLabel), which the bar shows for the pinned index
-    const pinned = usePinnedPrompt(rootRef);
+    // at the end of the conversation the band hides: the newest reply gets the room, and its prompt is just above it
+    const pinned = usePinnedPrompt(rootRef, true);
     const prompts = visible.flatMap((item) => {
         if (item.kind !== "you" || "command" in item || answers.has(item.key) || endedMessages.has(item.key)) {
             return [];

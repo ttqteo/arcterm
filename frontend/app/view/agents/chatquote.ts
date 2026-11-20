@@ -43,3 +43,51 @@ export function withQuote(box: string, selected: string): string | null {
     const kept = box.replace(/\s+$/, "");
     return (kept === "" ? "" : kept + "\n\n") + quote + "\n\n";
 }
+
+// Chat's box draws the quotes that open the message as chips over the text, not as lines in it, so a quote does not
+// take the box's rows. The message stays one string (the draft, the send, recall and take-back all keep it whole): a
+// quote is a run of `>` lines at the start, or right after the quote before it, followed by a blank line and then
+// something (`> a\n\n`, the box's text right after a Reply). A `>` line the person is still typing (`> a` or `> a\n`)
+// stays text. The body keeps every character after the quotes' blank line, so joinQuotes(splitQuotes(t)) is t again
+// and an edit in the body never moves into or out of a quote.
+export function splitQuotes(text: string): { quotes: string[]; body: string } {
+    const lines = text.split("\n");
+    const quotes: string[] = [];
+    let i = 0;
+    for (;;) {
+        let j = i;
+        while (j < lines.length && lines[j].startsWith(">")) {
+            j++;
+        }
+        if (j === i || j + 1 >= lines.length || lines[j] !== "") {
+            break;
+        }
+        quotes.push(lines.slice(i, j).join("\n"));
+        i = j + 1;
+    }
+    return { quotes, body: lines.slice(i).join("\n") };
+}
+
+export function joinQuotes(quotes: string[], body: string): string {
+    return quotes.map((q) => q + "\n\n").join("") + body;
+}
+
+// withQuote for Chat's box: the new quote goes after the quotes already there and before what is typed, so it shows as
+// one more chip; null when the selection holds no text
+export function withLeadQuote(box: string, selected: string): string | null {
+    const quote = quoteLines(selected);
+    if (quote === "") {
+        return null;
+    }
+    const { quotes, body } = splitQuotes(box);
+    return joinQuotes([...quotes, quote], body);
+}
+
+// a quote's words without its `> ` marks, its lines run together: the chip's label (truncated by CSS) and its tooltip
+export function quoteWords(quote: string): string {
+    return quote
+        .split("\n")
+        .map((l) => l.replace(/^>\s?/, "").trim())
+        .filter((l) => l !== "")
+        .join(" ");
+}

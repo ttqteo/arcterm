@@ -39,6 +39,7 @@ import {
     type RefObject,
 } from "react";
 import {
+    atScrollEnd,
     pinnedPromptIndex,
     pinnedPromptPush,
     PROMPT_JUMP_EVENT,
@@ -95,8 +96,10 @@ export function scrollParent(el: HTMLElement | null): HTMLElement | null {
 }
 
 /** The index (among root's data-user-prompt elements, in order) of the prompt to pin, or -1. Follows the scroller root
- *  sits in, and root's own size, which changes as the transcript grows or a fold opens. */
-export function usePinnedPrompt(rootRef: RefObject<HTMLElement>): number {
+ *  sits in, and root's own size, which changes as the transcript grows or a fold opens. hideAtEnd: -1 while the scroller
+ *  shows the end of the transcript (atScrollEnd), so the band gives the reading room back to the newest reply; it comes
+ *  back once the reader scrolls up. The scroller's own size is followed too then (a chat box that grows shrinks it). */
+export function usePinnedPrompt(rootRef: RefObject<HTMLElement>, hideAtEnd = false): number {
     const [index, setIndex] = useState(-1);
     useEffect(() => {
         const root = rootRef.current;
@@ -112,7 +115,8 @@ export function usePinnedPrompt(rootRef: RefObject<HTMLElement>): number {
                 const r = el.getBoundingClientRect();
                 return { top: r.top - base, bottom: r.bottom - base };
             });
-            setIndex(pinnedPromptIndex(anchors, scroller.scrollTop));
+            const end = hideAtEnd && atScrollEnd(scroller.scrollTop, scroller.scrollHeight, scroller.clientHeight);
+            setIndex(end ? -1 : pinnedPromptIndex(anchors, scroller.scrollTop));
         };
         const schedule = () => {
             if (frame === 0) {
@@ -123,6 +127,9 @@ export function usePinnedPrompt(rootRef: RefObject<HTMLElement>): number {
         scroller.addEventListener("scroll", schedule, { passive: true });
         const ro = new ResizeObserver(schedule);
         ro.observe(root);
+        if (hideAtEnd) {
+            ro.observe(scroller);
+        }
         return () => {
             scroller.removeEventListener("scroll", schedule);
             ro.disconnect();
@@ -130,7 +137,7 @@ export function usePinnedPrompt(rootRef: RefObject<HTMLElement>): number {
                 cancelAnimationFrame(frame);
             }
         };
-    }, [rootRef]);
+    }, [rootRef, hideAtEnd]);
     return index;
 }
 
