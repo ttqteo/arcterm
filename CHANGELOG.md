@@ -38,6 +38,11 @@ and a picture given to a line that is not big.
   Compacted line in the Agent details rail opens the summary in a wide sheet at the window's right edge. A pi agent's
   compaction now shows in the rail too.
 
+### Fixed
+
+- A council an agent starts through PowerShell on Windows gets its card in Chat again, and a PowerShell command
+  shows its command and output in Chat as a Bash command does.
+
 ## 1.9.0 — 2026-11-20
 
 ### Added

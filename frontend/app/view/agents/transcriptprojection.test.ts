@@ -839,6 +839,16 @@ describe("projectTranscript detail", () => {
         expect((out[0] as any).detail).toEqual({ kind: "bash", command: "npm test", output: "24 passing", exit: 0 });
     });
 
+    it("reads a PowerShell call as a command like Bash's, so its output (a wsh council start) reaches Chat's cards", () => {
+        const started = "council 0f74c5be72277053 started: Cost axis · review · paper-review · 3 experts · ≈ 14 calls · ~4.2M tokens";
+        const out = projectTranscript([
+            L({ type: "assistant", message: { content: [{ type: "tool_use", id: "p1", name: "PowerShell", input: { command: "wsh council start --feature x", description: "Start the council" } }] } }),
+            L({ type: "user", message: { content: [{ type: "tool_result", tool_use_id: "p1", is_error: false, content: started }] } }),
+        ]);
+        expect(out[0]).toMatchObject({ kind: "action", verb: "ran", target: "Start the council", command: "wsh council start --feature x" });
+        expect((out[0] as any).detail).toEqual({ kind: "bash", command: "wsh council start --feature x", output: started, exit: 0 });
+    });
+
     it("keeps a described Bash call's command on the action before its result, and none when the target is the command", () => {
         const out = projectTranscript([
             L({ type: "assistant", message: { content: [{ type: "tool_use", id: "b1", name: "Bash", input: { command: "npm test", description: "run tests" } }] } }),
