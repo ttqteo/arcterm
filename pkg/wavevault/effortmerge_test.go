@@ -226,6 +226,80 @@ func TestMergeEffort(t *testing.T) {
 			},
 		},
 		{
+			name: "a chunk's due only the older side changed is kept",
+			base: func() *waveobj.Effort {
+				c := chunk("a", 10)
+				c.Due = "2026-11-01"
+				return effort(10, c)
+			}(),
+			ours: func() *waveobj.Effort {
+				c := chunk("a", 20)
+				c.Due = "2026-12-01"
+				return effort(20, c)
+			}(),
+			theirs: func() *waveobj.Effort {
+				c := chunk("a", 30)
+				c.Due = "2026-11-01"
+				c.Owner = "x"
+				return effort(30, c)
+			}(),
+			check: func(t *testing.T, got *waveobj.Effort) {
+				c := findChunk(got, "a")
+				if c.Due != "2026-12-01" || c.Owner != "x" || c.UpdatedTs != 30 {
+					t.Fatalf("chunk = %+v, want ours' due 2026-12-01, theirs' owner, updatedts 30", c)
+				}
+			},
+		},
+		{
+			name: "a chunk's basecommit only the older side changed is kept",
+			base: func() *waveobj.Effort {
+				c := chunk("a", 10)
+				c.BaseCommit = "aaa111"
+				return effort(10, c)
+			}(),
+			ours: func() *waveobj.Effort {
+				c := chunk("a", 20)
+				c.BaseCommit = "bbb222"
+				return effort(20, c)
+			}(),
+			theirs: func() *waveobj.Effort {
+				c := chunk("a", 30)
+				c.BaseCommit = "aaa111"
+				c.Status = "done"
+				return effort(30, c)
+			}(),
+			check: func(t *testing.T, got *waveobj.Effort) {
+				c := findChunk(got, "a")
+				if c.BaseCommit != "bbb222" || c.Status != "done" || c.UpdatedTs != 30 {
+					t.Fatalf("chunk = %+v, want ours' basecommit bbb222, theirs' status, updatedts 30", c)
+				}
+			},
+		},
+		{
+			name: "a chunk's due and basecommit both sides changed take the newer side",
+			base: func() *waveobj.Effort {
+				c := chunk("a", 10)
+				c.Due, c.BaseCommit = "2026-11-01", "aaa111"
+				return effort(10, c)
+			}(),
+			ours: func() *waveobj.Effort {
+				c := chunk("a", 20)
+				c.Due, c.BaseCommit = "2026-12-01", "bbb222"
+				return effort(20, c)
+			}(),
+			theirs: func() *waveobj.Effort {
+				c := chunk("a", 30)
+				c.Due, c.BaseCommit = "2026-12-15", "ccc333"
+				return effort(30, c)
+			}(),
+			check: func(t *testing.T, got *waveobj.Effort) {
+				c := findChunk(got, "a")
+				if c.Due != "2026-12-15" || c.BaseCommit != "ccc333" {
+					t.Fatalf("chunk = %+v, want theirs' (newer) due 2026-12-15 and basecommit ccc333", c)
+				}
+			},
+		},
+		{
 			name:   "nil base: every scalar from the newer side, even an empty one",
 			base:   nil,
 			ours:   &waveobj.Effort{OID: "e1", Title: "t", Project: "p1", Meta: waveobj.MetaMapType{"k": "v"}, UpdatedTs: 5},
