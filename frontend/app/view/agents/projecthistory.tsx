@@ -21,6 +21,7 @@ import {
     ExternalLink,
     Eye,
     FileText,
+    GitFork,
     Moon,
     Pin,
     PinOff,
@@ -50,7 +51,8 @@ import {
 import { canDeleteSession, confirmDeleteSession, DELETE_SESSION_LABEL } from "./sessiondelete";
 import { SessionPeek } from "./sessionpeek";
 import type { LiveSession } from "./sessionsarchivestore";
-import { offersOpenAsleep, openSessionAsleep, runSessionPrimary } from "./sessionsdetail";
+import { forkSession, offersOpenAsleep, openSessionAsleep, runSessionPrimary } from "./sessionsdetail";
+import { forkLaunchOpts } from "./sessionsruns";
 
 const PANEL = "overflow-hidden rounded-[8px] border border-edge-mid bg-surface-raised";
 const ROW =
@@ -133,7 +135,8 @@ function copyTitleItem(title: string): ContextMenuItem {
     };
 }
 
-// A session row's menu: open its transcript, resume it (or open it asleep, for a harness that can sleep), mark it for
+// A session row's menu: open its transcript, resume it (or open it asleep, for a harness that can sleep), fork it (a
+// Claude session: a new one from its conversation, sessionsdetail.tsx forkSession), mark it for
 // later (the same mark the Agent tree's rows carry, laterstore.ts), copy its title, and delete it when it can be (an
 // ended Claude session; sessiondelete.ts).
 function sessionMenu(
@@ -157,6 +160,9 @@ function sessionMenu(
     }
     if (offersOpenAsleep(s)) {
         items.push({ label: "Open asleep", icon: <Moon size={15} />, click: () => openSessionAsleep(model, s) });
+    }
+    if (forkLaunchOpts(s) != null) {
+        items.push({ label: "Fork", icon: <GitFork size={15} />, click: () => forkSession(model, s) });
     }
     items.push(
         later
