@@ -31,7 +31,9 @@ copy, states and colours.
 
 **Depends on:** none
 
-**Files:**
+**Files:** `pkg/verifyruns/verifyruns.go`, `pkg/verifyruns/state.go`, `pkg/verifyruns/glob.go`, `pkg/verifyruns/gitchanges.go`, `pkg/verifyruns/gate.go`, `pkg/verifyruns/state_test.go`, `pkg/verifyruns/glob_test.go`, `pkg/verifyruns/gate_test.go`, `pkg/verifyruns/verifyruns_test.go`, `.arc/verify.json`
+
+Where each goes:
 - Create: `pkg/verifyruns/verifyruns.go`, `pkg/verifyruns/state.go`, `pkg/verifyruns/glob.go`,
   `pkg/verifyruns/gitchanges.go`, `pkg/verifyruns/gate.go`
 - Test: `pkg/verifyruns/state_test.go`, `pkg/verifyruns/glob_test.go`, `pkg/verifyruns/gate_test.go`,
@@ -133,7 +135,9 @@ scenario ran`). Step numbers are the leading `N.` of each failed step text. Test
 
 **Depends on:** Task 1
 
-**Files:**
+**Files:** `pkg/wshrpc/wshrpctypes_verify.go`, `pkg/wshrpc/wshserver/wshserver_verify.go`, `cmd/wsh/cmd/wshcmd-verify.go`, `cmd/wsh/cmd/wshcmd-verify_test.go`, `pkg/wshrpc/wshrpctypes.go`, `pkg/wps/wpstypes.go`, `pkg/tsgen/tsgenevent.go`, `cmd/server/`, `frontend/types/gotypes.d.ts`, `wshclientapi.ts`, `wshclient.go`
+
+Where each goes:
 - Create: `pkg/wshrpc/wshrpctypes_verify.go`, `pkg/wshrpc/wshserver/wshserver_verify.go`,
   `cmd/wsh/cmd/wshcmd-verify.go`, `cmd/wsh/cmd/wshcmd-verify_test.go`
 - Modify: `pkg/wshrpc/wshrpctypes.go` (embed `VerifyCommands` beside `ServicesCommands`, line ~44),
@@ -180,7 +184,9 @@ generated files by path.
 
 **Depends on:** none
 
-**Files:**
+**Files:** `scripts/cdp/report.mjs`, `scripts/cdp/report.test.mjs`, `scripts/cdp/verify.mjs`, `scripts/cdp/final-verify.mjs`
+
+Where each goes:
 - Modify: `scripts/cdp/report.mjs` (add `makeRunReporter`), `scripts/cdp/report.test.mjs`,
   `scripts/cdp/verify.mjs` (around the scenario loop, lines ~92–140), `scripts/cdp/final-verify.mjs`
 - Do not run prettier on `scripts/*.mjs` (AGENTS.md).
@@ -222,7 +228,9 @@ use) passes. Commit by path.
 
 **Depends on:** Task 2
 
-**Files:**
+**Files:** `frontend/app/view/agents/verifymodel.ts`, `frontend/app/view/agents/verifymodel.test.ts`, `frontend/app/view/agents/verifystore.ts`
+
+Where each goes:
 - Create: `frontend/app/view/agents/verifymodel.ts`, `frontend/app/view/agents/verifymodel.test.ts`,
   `frontend/app/view/agents/verifystore.ts`
 
@@ -265,7 +273,9 @@ scenario, undo)` calls `VerifySkipCommand` then reloads. Errors keep the last st
 
 **Depends on:** Task 4
 
-**Files:**
+**Files:** `frontend/app/view/agents/railverify.tsx`, `frontend/app/view/agents/agentdetailsrail.tsx`, `frontend/app/view/agents/agentrailsections.ts`, `frontend/app/view/agents/agentheader.tsx`
+
+Where each goes:
 - Create: `frontend/app/view/agents/railverify.tsx`
 - Modify: `frontend/app/view/agents/agentdetailsrail.tsx` (Overview body: after the session block and Needs you,
   before the counted sections; the count strip), `frontend/app/view/agents/agentrailsections.ts` (add `"verify"` to
@@ -301,7 +311,9 @@ call that (keep `sendCardLine` using it). A failed send shows its message under 
 
 **Depends on:** Task 2
 
-**Files:**
+**Files:** `claude/arc-mod/hooks/verifygate-core.ts`, `claude/arc-mod/hooks/verifygate-core.test.ts`, `claude/arc-mod/hooks/register.ts`
+
+Where each goes:
 - Create: `claude/arc-mod/hooks/verifygate-core.ts`, `claude/arc-mod/hooks/verifygate-core.test.ts`
 - Modify: `claude/arc-mod/hooks/register.ts`
 
@@ -323,7 +335,9 @@ reason }`; otherwise the verdict. `.catch(passOn)` with a debug log, as the comm
 
 **Depends on:** Task 5
 
-**Files:**
+**Files:** `scripts/cdp/scenarios.mjs`, `CHANGELOG.md`, `docs/agents/`, `docs/hand-checks.md`
+
+Where each goes:
 - Modify: `scripts/cdp/scenarios.mjs` (new scenario `rail-verify`, exported and listed like the others),
   `CHANGELOG.md`, `docs/agents/` (a short note on `wsh verify` and `.arc/verify.json` where agent commands are listed),
   `docs/hand-checks.md` (the merge ask needs a live Claude session: add `- [ ] (arcterm) …`)
