@@ -169,6 +169,7 @@ export async function launchAgent(model: AgentsViewModel, opts: LaunchAgentOpts)
     if (agentPanel && !opts.asleep) {
         // a resume's conversation is on disk already: its booting row reads it, so Chat shows it while the harness loads
         const resumedTranscript = opts.resumeOf || opts.resumePath;
+        const first = opts.task.trim();
         const pending: PendingLaunch = {
             tabId,
             blockId,
@@ -177,11 +178,12 @@ export async function launchAgent(model: AgentsViewModel, opts: LaunchAgentOpts)
             ts: Date.now(),
             runtime: opts.runtime,
             ...(resumedTranscript ? { transcriptPath: resumedTranscript } : {}),
+            // a resume with no message only loads and waits at its prompt: it reads resuming until it reports idle
+            ...(resumedTranscript && !first ? { resuming: true } : {}),
         };
         globalStore.set(model.pendingLaunchesAtom, [...globalStore.get(model.pendingLaunchesAtom), pending]);
         // the task it starts on is its first message: Chat shows it as yours while the harness starts, until the
         // transcript holds it (a /command is a command row there, never a bubble)
-        const first = opts.task.trim();
         if (first && pendsAsBubble(first)) {
             // nothing runs yet for it to queue behind: it reads Starting…, then Sending…
             addPending(tabId, first, [], false);

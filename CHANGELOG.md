@@ -38,6 +38,13 @@ and a picture given to a line that is not big.
   Compacted line in the Agent details rail opens the summary in a wide sheet at the window's right edge. A pi agent's
   compaction now shows in the rail too.
 
+### Fixed
+
+- A conversation you resume no longer shows as working while it loads: it reads "resuming…", with no Stop and no
+  working dot, until it is at its prompt, and is no longer counted as an unread turn once it gets there.
+- Chat's Working line no longer blinks out and back when the agent takes a message you queued while it worked, which
+  made that message jump down.
+
 ## 1.9.0 — 2026-11-20
 
 ### Added

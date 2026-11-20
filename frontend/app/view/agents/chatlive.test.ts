@@ -2,12 +2,14 @@ import { describe, expect, it } from "vitest";
 import {
     LIVE_LINGER_MS,
     LIVE_STALE_MS,
+    WORKING_HOLD_MS,
     awaitsOwnMessage,
     liveExpiresAt,
     liveFresh,
     liveTexts,
     liveTurn,
     narratesThinking,
+    nextWorkingHold,
     parseLiveReply,
     streamsLiveReply,
     tidyLiveText,
@@ -247,5 +249,28 @@ describe("withLiveReply", () => {
     it("returns the items as they were with nothing to add", () => {
         const items = [you];
         expect(withLiveReply(items, [], 1)).toBe(items);
+    });
+});
+
+describe("nextWorkingHold", () => {
+    it("holds the line when working goes while a queued message is up or just taken", () => {
+        expect(nextWorkingHold("Working", null, true, null, 1000)).toEqual({
+            line: "Working",
+            until: 1000 + WORKING_HOLD_MS,
+        });
+    });
+    it("lets the line go when nothing was queued", () => {
+        expect(nextWorkingHold("Working", null, false, null, 1000)).toBeNull();
+    });
+    it("keeps a hold until its time, then drops it", () => {
+        const hold = { line: "Working", until: 5000 };
+        expect(nextWorkingHold(null, null, false, hold, 4999)).toBe(hold);
+        expect(nextWorkingHold(null, null, true, hold, 5000)).toBeNull();
+    });
+    it("ends the hold once the agent works again", () => {
+        expect(nextWorkingHold(null, "Working", true, { line: "Working", until: 5000 }, 2000)).toBeNull();
+    });
+    it("never starts a hold without a line going out", () => {
+        expect(nextWorkingHold(null, null, true, null, 1000)).toBeNull();
     });
 });

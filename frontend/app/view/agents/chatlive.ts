@@ -123,6 +123,39 @@ export function liveTurn(state: AgentState, pending: readonly PendingMessage[]):
     return { active: state !== "idle" && !before, working: state === "working" && !before };
 }
 
+/** How long the working line outlasts the agent's working while it hands over to a queued message (nextWorkingHold). */
+export const WORKING_HOLD_MS = 4000;
+
+/** How long after a Queued bubble was last up its message still counts as just taken, for nextWorkingHold. */
+export const QUEUED_TAKEN_MS = 2000;
+
+/** The working line kept on screen after the agent stopped reading working, and until when. */
+export interface WorkingHold {
+    line: string;
+    until: number;
+}
+
+/** Pure: the hold on the working line for this draw. A message queued while the agent worked is taken only after the
+ *  turn ends: its Stop reports idle, then the queued message's prompt reports working a second or two later. Drawn as
+ *  it came, the working line went out, the message's bubble dropped into the space it left, and the line came back.
+ *  So when the working line goes (`prev` was up, `line` is null) while a Queued bubble is up or was just taken
+ *  (`queued`), the old line stays up to WORKING_HOLD_MS; working again ends the hold, and so does its time. */
+export function nextWorkingHold(
+    prev: string | null,
+    line: string | null,
+    queued: boolean,
+    hold: WorkingHold | null,
+    now: number
+): WorkingHold | null {
+    if (line != null) {
+        return null;
+    }
+    if (hold != null) {
+        return now < hold.until ? hold : null;
+    }
+    return prev != null && queued ? { line: prev, until: now + WORKING_HOLD_MS } : null;
+}
+
 const FENCE = /^\s*(`{3,}|~{3,})\s*([^\s`]*)/;
 const VISUAL_INFO = new RegExp(`^${VISUAL_LANG}$`);
 

@@ -162,6 +162,7 @@ export interface AgentVM {
     brainstormJudge?: BuilderCheckRecord; // brainstorm:judge* on the tab: Arc's record of the brainstorm's judge
     atPrompt?: boolean; // the raw status was waiting or idle, whatever state it folds to: a lead between wakes
     startError?: string; // its controller refused to start: it reads idle, not booting, with this reason
+    resuming?: boolean; // a resume with no message, still loading: it reads idle (nothing works yet), worded "resuming"
     step?: string; // idle or asking: the "n/m" part its last message or question stopped on ("1/3"), until you reply
     committed?: boolean; // idle: its last turn ended on a git commit, so the cockpit offers to close it (donesuggest.ts)
     edited?: boolean; // idle: its last turn changed files no later commit took, so the cockpit offers to ship it (shipmodel.ts)
@@ -1252,6 +1253,10 @@ export interface PendingLaunch {
     // a resume's transcript, which is on disk before the agent reports in: Chat reads the conversation from it while
     // the harness loads (a resume can take a minute to report), instead of "No messages yet"
     transcriptPath?: string;
+    // a resume sent no message: it waits at its prompt once loaded, so the booting row reads resuming, not working (a
+    // resume reports idle from its SessionStart, which can take a minute; read as working it showed Stop and a working dot
+    // on a session nothing was asked of, then counted as a finished turn)
+    resuming?: boolean;
 }
 
 /** Pure: the name a session launched on `task` goes by until Claude Code's ai-title reaches it: the task's first line,
@@ -1270,14 +1275,16 @@ export function launchTitle(task: string | undefined): string {
     return chars.length <= 72 ? line : chars.slice(0, 72).join("");
 }
 
-/** Pure: a pending launch -> a "booting" working AgentVM. A fresh launch has no transcriptPath (none exists yet); a
- *  resume carries the one it resumes. The Agent surface shows its live terminal until the real row arrives. */
+/** Pure: a pending launch -> a "booting" AgentVM: working, or idle and resuming for a resume that sent no message. A
+ *  fresh launch has no transcriptPath (none exists yet); a resume carries the one it resumes. The Agent surface shows
+ *  its live terminal until the real row arrives. */
 export function pendingToVM(p: PendingLaunch, now: number): AgentVM {
     return {
         id: p.tabId,
         name: p.name,
         task: "",
-        state: "working",
+        state: p.resuming ? "idle" : "working",
+        ...(p.resuming ? { resuming: true } : {}),
         agent: p.runtime,
         project: p.project,
         blockId: p.blockId,

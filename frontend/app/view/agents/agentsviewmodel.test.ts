@@ -1163,6 +1163,20 @@ describe("pendingToVM", () => {
         });
     });
 
+    it("reads a resume that sent no message as idle and resuming, not working", () => {
+        const p: PendingLaunch = {
+            tabId: "t1",
+            blockId: "b1",
+            name: "x",
+            project: "x",
+            ts: 1000,
+            transcriptPath: "/t/s1.jsonl",
+            resuming: true,
+        };
+        expect(pendingToVM(p, 5000)).toMatchObject({ state: "idle", resuming: true, transcriptPath: "/t/s1.jsonl" });
+        expect(pendingToVM({ ...p, resuming: undefined }, 5000)).not.toHaveProperty("resuming");
+    });
+
     it("carries the runtime, so the booting header names it", () => {
         const p: PendingLaunch = { tabId: "t1", blockId: "b1", name: "n", project: "p", ts: 0, runtime: "pi" };
         expect(pendingToVM(p, 0).agent).toBe("pi");
