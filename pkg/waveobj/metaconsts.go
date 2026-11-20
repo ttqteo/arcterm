@@ -78,6 +78,8 @@ const (
 	MetaKey_SessionProject                   = "session:project"
 	MetaKey_SessionEffort                    = "session:effort"
 	MetaKey_SessionBrainstorm                = "session:brainstorm"
+	MetaKey_SessionForkOf                    = "session:forkof"
+	MetaKey_SessionForkedAt                  = "session:forkedat"
 	MetaKey_SessionCollapsedGroups           = "session:collapsedgroups"
 	MetaKey_SessionLater                     = "session:later"
 	MetaKey_SessionHelper                    = "session:helper"

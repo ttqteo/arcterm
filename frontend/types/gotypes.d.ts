@@ -1750,6 +1750,7 @@ declare global {
     type CommandForkAgentSessionRtnData = {
         command: string;
         projectpath: string;
+        resumedpath: string;
     };
 
     // wshrpc.CommandGetAgentTranscriptData
@@ -4552,6 +4553,8 @@ declare global {
         "session:project"?: string;
         "session:effort"?: string;
         "session:brainstorm"?: string;
+        "session:forkof"?: string;
+        "session:forkedat"?: number;
         "session:collapsedgroups"?: string[];
         "session:later"?: {[key: string]: number};
         "session:helper"?: boolean;

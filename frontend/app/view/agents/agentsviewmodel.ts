@@ -158,6 +158,8 @@ export interface AgentVM {
     runId?: string; // the run this agent works for, when a run spawned it: a lead's own run, a worker's child run
     effortId?: string; // the initiative this agent works on: launched from it, or last read or wrote through `wsh effort`
     brainstormFile?: string; // session:brainstorm on the tab: the attached brainstorm.json's absolute path
+    forkOf?: string; // session:forkof on the tab: the transcript a Chat fork resumes (chatfork.ts forkShowsSource)
+    forkedAt?: number; // session:forkedat on the tab: when that fork was made (UnixMilli; chatfork.ts turnInFork)
     builderCheck?: BuilderCheckRecord; // brainstorm:check* on the tab: Arc's record of the brainstorm's builder check
     brainstormJudge?: BuilderCheckRecord; // brainstorm:judge* on the tab: Arc's record of the brainstorm's judge
     atPrompt?: boolean; // the raw status was waiting or idle, whatever state it folds to: a lead between wakes
@@ -610,6 +612,8 @@ export interface LiveAgentInput {
     runORef?: string; // jarvis:runoref on the tab: "run:<id>"
     effortORef?: string; // session:effort on the tab: "effort:<oid>"
     brainstormFile?: string; // session:brainstorm on the tab
+    forkOf?: string; // session:forkof on the tab
+    forkedAt?: number; // session:forkedat on the tab
     builderCheck?: BuilderCheckRecord; // brainstorm:check* on the tab
     brainstormJudge?: BuilderCheckRecord; // brainstorm:judge* on the tab
     step?: string; // the status event's step: the "n/m" part an idle turn or a pending AskUserQuestion stopped on
@@ -662,6 +666,12 @@ export function agentVMFromInput(input: LiveAgentInput, now: number): AgentVM {
     }
     if (input.brainstormFile) {
         vm.brainstormFile = input.brainstormFile;
+    }
+    if (input.forkOf) {
+        vm.forkOf = input.forkOf;
+    }
+    if (input.forkedAt) {
+        vm.forkedAt = input.forkedAt;
     }
     if (input.builderCheck) {
         vm.builderCheck = input.builderCheck;

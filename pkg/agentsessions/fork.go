@@ -17,10 +17,11 @@ import (
 // forkCopyTTL is how long a cut copy stays: claude reads it once, when the fork starts.
 const forkCopyTTL = 24 * time.Hour
 
-// ForkResult is the command line that starts a fork and the folder to start it in.
+// ForkResult is the command line that starts a fork, the folder to start it in and the transcript it resumes.
 type ForkResult struct {
 	Command     string
 	ProjectPath string
+	ResumedPath string
 }
 
 // forkRecord is the part of a transcript line a fork reads.
@@ -65,15 +66,48 @@ func CutTranscript(lines []string, uuid, keep string) ([]string, error) {
 	return nil, fmt.Errorf("nothing before this message to fork from")
 }
 
-// forkCwd is the folder the session ran in: the last record that names one.
-func forkCwd(lines []string) string {
+// isDir reports whether p is a folder on this machine.
+func isDir(p string) bool {
+	info, err := os.Stat(p)
+	return err == nil && info.IsDir()
+}
+
+// lastCwd is the last folder a record of lines names that `ok` accepts, and the last one named at all.
+func lastCwd(lines []string, ok func(string) bool) (found, named string) {
 	for i := len(lines) - 1; i >= 0; i-- {
+		if !strings.Contains(lines[i], `"cwd"`) {
+			continue
+		}
 		var rec forkRecord
-		if json.Unmarshal([]byte(lines[i]), &rec) == nil && rec.Cwd != "" {
-			return rec.Cwd
+		if json.Unmarshal([]byte(lines[i]), &rec) != nil || rec.Cwd == "" {
+			continue
+		}
+		if named == "" {
+			named = rec.Cwd
+		}
+		if ok(rec.Cwd) {
+			return rec.Cwd, named
 		}
 	}
-	return ""
+	return "", named
+}
+
+// forkCwd is the folder a fork starts in: the last folder the kept part ran in that is on this machine, else the last
+// such folder in the whole session. A session synced from another machine names that machine's folders
+// (/Users/…/thesis on a Mac) for the turns it ran there; a fork cut among them would otherwise start where the tab
+// falls back to, the home folder, and claude asks to trust it. It fails when no folder the session names is here.
+func forkCwd(kept, all []string, ok func(string) bool) (string, error) {
+	if cwd, _ := lastCwd(kept, ok); cwd != "" {
+		return cwd, nil
+	}
+	cwd, named := lastCwd(all, ok)
+	if cwd != "" {
+		return cwd, nil
+	}
+	if named == "" {
+		return "", fmt.Errorf("the transcript names no folder to start the fork in")
+	}
+	return "", fmt.Errorf("the folder this session ran in is not on this machine: %s", named)
 }
 
 // quotedPath is a path as one shell word in any shell a tab starts: forward slashes, double quotes.
@@ -103,14 +137,19 @@ func ForkCommand(path, uuid, keep, home string) (ForkResult, error) {
 	if err != nil {
 		return ForkResult{}, fmt.Errorf("reading the transcript: %w", err)
 	}
-	lines := strings.Split(strings.TrimRight(string(data), "\r\n"), "\n")
-	from := path
+	all := strings.Split(strings.TrimRight(string(data), "\r\n"), "\n")
+	kept := all
 	if uuid != "" {
-		kept, err := CutTranscript(lines, uuid, keep)
-		if err != nil {
+		if kept, err = CutTranscript(all, uuid, keep); err != nil {
 			return ForkResult{}, err
 		}
-		lines = kept
+	}
+	project, err := forkCwd(kept, all, isDir)
+	if err != nil {
+		return ForkResult{}, err
+	}
+	from := path
+	if uuid != "" {
 		root := filepath.Join(home, ".arc", "forks")
 		pruneForkCopies(root, time.Now())
 		var b [8]byte
@@ -126,9 +165,9 @@ func ForkCommand(path, uuid, keep, home string) (ForkResult, error) {
 			return ForkResult{}, fmt.Errorf("writing the fork's copy: %w", err)
 		}
 	}
-	project := forkCwd(lines)
 	return ForkResult{
 		Command:     claudeResumeCommand(quotedPath(from), project, home) + " --fork-session",
 		ProjectPath: project,
+		ResumedPath: from,
 	}, nil
 }

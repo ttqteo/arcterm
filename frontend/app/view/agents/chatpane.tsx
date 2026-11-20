@@ -69,6 +69,7 @@ import { ChatFileCards } from "./chatfilecards";
 import { splitAttachments } from "./chatfiles";
 import { chatFocusReadOnAtom, chatFocusReadSizeAtom } from "./chatfocusreadstore";
 import { useFocusRead } from "./chatfocusreadview";
+import { forkShowsSource, turnInFork } from "./chatfork";
 import { ChatGoalStrip } from "./chatgoal";
 import { isHandoffAsk } from "./chathandoff";
 import { ChatHandoffCard } from "./chathandoffcard";
@@ -156,6 +157,16 @@ const sendNowChord = () => formatChordString("Mod:Enter");
 const NO_ENTRIES: AgentEntry[] = [];
 
 // when the agent last went idle (ms), null while it works; an agent idle at mount counts from the mount
+// Whether the transcript at `path` has held a message while this pane showed it: once it has, a re-read that is still
+// loading does not send a fork's Chat back to the transcript it resumed.
+function useHadMessages(path: string, has: boolean): boolean {
+    const seen = useRef<string | null>(null);
+    if (has) {
+        seen.current = path;
+    }
+    return has || seen.current === path;
+}
+
 function useIdleSince(idle: boolean): number | null {
     const [since, setSince] = useState<number | null>(() => (idle ? Date.now() : null));
     useEffect(() => {
@@ -765,9 +776,28 @@ function ChatPaneBody({
     barred: boolean;
     besideBoard: boolean;
 }) {
-    const path = agent.transcriptPath ?? "";
+    const ownPath = agent.transcriptPath ?? "";
     const surface = useAtomValue(model.surfaceAtom);
-    const { view, catchingUp, error, loadEarlier, requestAppend } = useTranscriptWindow(path, agent.agent);
+    const own = useTranscriptWindow(ownPath, agent.agent);
+    // a fork shows the transcript it resumes until its own holds a message (chatfork.ts forkShowsSource): Claude Code
+    // writes the history it copies only at the fork's first message. The live stream stays on its own file, which
+    // says when that happens.
+    const ownHasMessages = useHadMessages(ownPath, (own.view?.entries.length ?? 0) > 0);
+    const forkPath = forkShowsSource(agent.forkOf, ownHasMessages) ? agent.forkOf! : "";
+    const fork = useTranscriptWindow(forkPath, agent.agent);
+    const readsFork = forkPath !== "";
+    const path = readsFork ? forkPath : ownPath;
+    const { view, catchingUp, error, loadEarlier } = readsFork ? fork : own;
+    const requestAppend = own.requestAppend;
+    // once its own holds the history the fork is an agent like any other: a later /clear starts a session of its own,
+    // never the one it was forked from
+    useEffect(() => {
+        if (agent.forkOf && ownHasMessages) {
+            fireAndForget(() =>
+                RpcApi.SetMetaCommand(TabRpcClient, { oref: `tab:${agent.id}`, meta: { "session:forkof": null } })
+            );
+        }
+    }, [agent.forkOf, ownHasMessages, agent.id]);
     // less a message Esc took back after Claude Code wrote it (chattakeback.ts withoutTakenBack): its rewind keeps the
     // record until the next prompt branches off before it
     const taken = useTakenBack(agent.id);
@@ -883,7 +913,7 @@ function ChatPaneBody({
     // false while ChatLayer's exit plays: the pane is still drawn (fading) but already gone as far as input goes
     const present = useIsPresent();
     const streaming = surface === "agent";
-    const streamId = path ? `chat:${agent.id}:${path}` : "";
+    const streamId = ownPath ? `chat:${agent.id}:${ownPath}` : "";
     useEffect(() => {
         if (!streaming || !streamId) {
             return;
@@ -892,7 +922,7 @@ function ChatPaneBody({
             requestAppend();
             return;
         }
-        startTranscriptStream(streamId, path, agent.agent);
+        startTranscriptStream(streamId, ownPath, agent.agent);
         requestAppend();
         return () => stopTranscriptStream(streamId);
     }, [streaming, streamId, asleep]);
@@ -909,7 +939,7 @@ function ChatPaneBody({
         if (!liveStreams) {
             return;
         }
-        startLiveReplyStream(streamId, path);
+        startLiveReplyStream(streamId, ownPath);
         return () => stopLiveReplyStream(streamId);
     }, [liveStreams, streamId]);
 
@@ -924,7 +954,11 @@ function ChatPaneBody({
     // while it compacts, which is no turn of its own
     const lines = view?.win.lines;
     const isWorking = working != null && !compactingNow(agent.state, agent.activity);
-    const turn = useMemo(() => (isWorking && lines != null ? turnStats(lines) : null), [isWorking, lines]);
+    // a fork's copied history ends on a prompt of the source session: no turn of the fork's own (turnInFork)
+    const turn = useMemo(
+        () => (isWorking && lines != null ? turnInFork(turnStats(lines), agent.forkedAt) : null),
+        [isWorking, lines, agent.forkedAt]
+    );
     // the session's /goal, read from the same lines (goal-core.ts, shared with the arc mod's band in the TUI)
     const goal = useMemo(() => (lines != null ? goalFromLines(lines) : null), [lines]);
     // where the agent works, which the card of a turn's files names folders against: its own, else the transcript's

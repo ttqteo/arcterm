@@ -84,7 +84,11 @@ func (ws *WshServer) ForkAgentSessionCommand(ctx context.Context, data wshrpc.Co
 	if err != nil {
 		return nil, err
 	}
-	return &wshrpc.CommandForkAgentSessionRtnData{Command: res.Command, ProjectPath: res.ProjectPath}, nil
+	return &wshrpc.CommandForkAgentSessionRtnData{
+		Command:     res.Command,
+		ProjectPath: res.ProjectPath,
+		ResumedPath: res.ResumedPath,
+	}, nil
 }
 
 func (ws *WshServer) GetSubagentsCommand(ctx context.Context, data wshrpc.CommandGetSubagentsData) (*wshrpc.CommandGetSubagentsRtnData, error) {

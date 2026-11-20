@@ -52,6 +52,10 @@ export interface LaunchAgentOpts {
     // the transcript of the session this launch resumes: when a tab already holds it, awake or asleep, the launch goes
     // to that tab instead of opening a second one (goToHolder)
     resumeOf?: string;
+    // a Chat fork: the transcript it resumes (session:forkof), which Chat shows until the fork's own file is written,
+    // and when it was made (session:forkedat)
+    forkOf?: string;
+    forkedAt?: number;
     label?: string; // the session's name in the roster (session:label), e.g. the initiative it works on
     effortORef?: string; // the initiative it works on (session:effort), "effort:<oid>"
     // the brainstorm.json it carries on (session:brainstorm): attached up front, since the agent's hook reveals the pane
@@ -164,11 +168,17 @@ export async function launchAgent(model: AgentsViewModel, opts: LaunchAgentOpts)
     if (opts.brainstormFile) {
         tabMeta[SESSION_BRAINSTORM] = opts.brainstormFile;
     }
+    if (opts.forkOf) {
+        tabMeta["session:forkof"] = opts.forkOf;
+    }
+    if (opts.forkedAt) {
+        tabMeta["session:forkedat"] = opts.forkedAt;
+    }
     await RpcApi.SetMetaCommand(TabRpcClient, { oref: WOS.makeORef("tab", tabId), meta: tabMeta });
     // an agent opened asleep is on the roster at once (sleepingStatus): it never reports in, so no pending row waits on it
     if (agentPanel && !opts.asleep) {
         // a resume's conversation is on disk already: its booting row reads it, so Chat shows it while the harness loads
-        const resumedTranscript = opts.resumeOf || opts.resumePath;
+        const resumedTranscript = opts.resumeOf || opts.resumePath || opts.forkOf;
         const first = opts.task.trim();
         const pending: PendingLaunch = {
             tabId,
