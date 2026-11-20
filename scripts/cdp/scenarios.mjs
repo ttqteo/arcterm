@@ -50509,6 +50509,197 @@ const chatMath = {
     },
 };
 
+// --- chat-diagram: a mermaid diagram in Chat (mermaid.tsx, mermaidviewer.tsx, mermaidzoom.ts). A Claude reply holds a
+// flowchart with Vietnamese labels; every label's text stays inside its node's shape (a label was clipped to the width
+// mermaid measured, cutting its last letter). A click opens the viewer fitted; one wheel notch eases to its zoom over a
+// few frames instead of landing in one, the stage holds will-change only while it moves, and a pinch (ctrl wheel) zooms.
+
+const CD_NAME = "diagram source";
+const CD_QUESTION = "draw the repair loop";
+const CD_REPLY = [
+    "The loop:",
+    "",
+    "```mermaid",
+    "flowchart TD",
+    "    A[LLM đọc advisory + mã nguồn package] --> B[LLM in 1 lệnh JSON]",
+    "    B --> C{action là gì?}",
+    "    B -. hết ngân sách lượt .-> S[dừng, không đậu]",
+    "    C -- tool --> T[chạy tool tất định] --> N[nhét kết quả tool vào hội thoại] --> B",
+    "    C -- submit --> O[oracle chấm script] --> P{đậu chưa?}",
+    "    P -- đậu --> D[xong, PoV thật]",
+    "    P -- chưa --> V[nhét verdict vào hội thoại làm tín hiệu sửa] --> B",
+    "```",
+].join("\n");
+
+function cdRoster(ctx) {
+    const now = Date.now();
+    return [
+        {
+            project: "arcterm",
+            state: "idle",
+            idleSince: now - 3_600_000,
+            task: "Repair loop",
+            agent: "claude",
+            model: "opus",
+            id: ctx.tabs.main.tabId,
+            name: CD_NAME,
+            blockId: ctx.tabs.main.blockId,
+            transcriptPath: ctx.transcript,
+            sleeping: { since: now - 3_600_000, freedBytes: 0 },
+        },
+    ];
+}
+
+// the stage's scale and will-change on every frame for `ms` after the call, read back by cdReadFrames
+const CD_RECORD_FRAMES = (ms) => `(() => {
+    const stage = document.querySelector("[data-mermaid-viewer] > div");
+    window.__cdFrames = [];
+    const end = performance.now() + ${ms};
+    const tick = () => {
+        const m = /scale\\(([0-9.]+)\\)/.exec(stage?.style.transform ?? "");
+        window.__cdFrames.push({ scale: m ? Number(m[1]) : null, wc: stage?.style.willChange ?? "" });
+        if (performance.now() < end) requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+    return !!stage;
+})()`;
+
+const chatDiagram = {
+    name: "chat-diagram",
+    surface: "agent",
+    async arrange(h) {
+        const ctx = {
+            dir: mkdtempSync(join(tmpdir(), "verify-chat-diagram-")),
+            prevGrid: await h.ev(`localStorage.getItem(${JSON.stringify(GRID_KEY)})`),
+            prevModes: await h.ev(`localStorage.getItem("agent.chatmode")`),
+        };
+        let at = "writing the transcript";
+        try {
+            const base = Date.now() - 7_200_000;
+            const o = (sec) => ({ cwd: ctx.dir, ts: new Date(base + sec * 1000).toISOString() });
+            ctx.transcript = AC.writeTranscript(ctx.dir, "diagram-source", [
+                AC.userText(CD_QUESTION, { ...o(0), uuid: "u1" }),
+                AC.assistantText(CD_REPLY, { ...o(2), uuid: "a1" }),
+            ]);
+            at = "resetting the grid";
+            await h.ev(`localStorage.setItem(${JSON.stringify(GRID_KEY)}, ${JSON.stringify(JSON.stringify(GRID_EMPTY))})`);
+            await h.ev(`localStorage.removeItem("agent.chatmode")`);
+            if (!(await ahReload(h))) throw new Error("the page did not come back after the reload");
+            await h.goto("agent");
+            at = "making the tab";
+            ctx.tabs = { main: await acMakeTab(h, ctx, { label: CD_NAME }) };
+            at = "setting the roster";
+            await AC.setRoster(h, cdRoster(ctx));
+        } catch (e) {
+            ctx.arrangeError = `${at}: ${String(e?.message ?? e)}`;
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok: ok === true, detail: typeof detail === "string" ? detail : JSON.stringify(detail) });
+        if (ctx.arrangeError != null) {
+            rec("0. the fixture agent and its transcript", false, ctx.arrangeError);
+            return steps;
+        }
+        const A = ctx.tabs.main.tabId;
+        const diagram = `document.querySelector('[data-agent-chat="${A}"] [data-mermaid-drawn]')`;
+        // every label's text inside its node's shape, and no label clipped by its foreignObject
+        const labelsFit = (root) => `(() => {
+            const root = ${root};
+            if (!root) return null;
+            const bad = [];
+            const nodes = [...root.querySelectorAll("g.node")];
+            for (const n of nodes) {
+                const shape = n.querySelector("rect, polygon, circle, path");
+                const text = n.querySelector(".nodeLabel");
+                const fo = n.querySelector("foreignObject");
+                if (!shape || !text) continue;
+                const s = shape.getBoundingClientRect();
+                const range = document.createRange();
+                range.selectNodeContents(text);
+                const t = range.getBoundingClientRect();
+                const clipped = fo != null && getComputedStyle(fo).overflow !== "visible" && t.width > fo.getBoundingClientRect().width + 0.5;
+                if (clipped || t.left < s.left - 0.5 || t.right > s.right + 0.5) {
+                    bad.push({ label: text.textContent, text: [Math.round(t.left), Math.round(t.right)], shape: [Math.round(s.left), Math.round(s.right)], clipped });
+                }
+            }
+            return { nodes: nodes.length, bad };
+        })()`;
+        try {
+            await AC.focusAgent(h, A);
+            const drawn = await polishWaitFor(h, `!!${diagram}?.querySelector("svg g.node")`, 20000);
+            const inChat = await h.ev(labelsFit(diagram));
+            await polishNap(300);
+            await h.shot("cdp-shots/chat-diagram.png");
+            rec("1. Chat draws the reply's diagram, every label's text inside its node", drawn && inChat?.nodes >= 10 && inChat?.bad.length === 0, { drawn, inChat });
+
+            await h.ev(`${diagram}.click()`);
+            const opened = await polishWaitFor(h, `!!document.querySelector("[data-mermaid-viewer] svg g.node")`, 5000);
+            await polishNap(400);
+            const box = await h.ev(`(() => {
+                const r = document.querySelector("[data-mermaid-viewer]").getBoundingClientRect();
+                return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) };
+            })()`);
+            const inViewer = await h.ev(labelsFit(`document.querySelector("[data-mermaid-viewer]")`));
+            await h.shot("cdp-shots/chat-diagram-viewer.png");
+            rec("2. a click opens the viewer, the labels still inside their nodes", opened && inViewer?.bad.length === 0, { opened, inViewer });
+
+            await h.ev(CD_RECORD_FRAMES(700));
+            await h.cdp("Input.dispatchMouseEvent", { type: "mouseWheel", x: box.x, y: box.y, deltaX: 0, deltaY: -100 });
+            await polishNap(800);
+            const frames = (await h.ev(`window.__cdFrames`)) ?? [];
+            const scales = frames.map((f) => f.scale).filter((s) => s != null);
+            const first = scales[0];
+            const last = scales[scales.length - 1];
+            const between = scales.filter((s) => s > first + 0.001 && s < last - 0.001).length;
+            const movingLayer = frames.some((f) => f.wc === "transform");
+            const restLayer = await h.ev(`document.querySelector("[data-mermaid-viewer] > div")?.style.willChange ?? ""`);
+            rec(
+                "3. one wheel notch zooms in by about 16%, easing over several frames, on a GPU layer only while it moves",
+                first > 0 && Math.abs(last / first - Math.exp(0.15)) < 0.01 && between >= 3 && movingLayer && restLayer === "",
+                { first, last, between, frames: frames.length, movingLayer, restLayer }
+            );
+
+            const before = await h.ev(`Number(/scale\\(([0-9.]+)\\)/.exec(document.querySelector("[data-mermaid-viewer] > div").style.transform)[1])`);
+            for (let i = 0; i < 5; i++) {
+                await h.cdp("Input.dispatchMouseEvent", { type: "mouseWheel", x: box.x, y: box.y, deltaX: 0, deltaY: -6, modifiers: 2 });
+            }
+            await polishNap(500);
+            const after = await h.ev(`Number(/scale\\(([0-9.]+)\\)/.exec(document.querySelector("[data-mermaid-viewer] > div").style.transform)[1])`);
+            await h.shot("cdp-shots/chat-diagram-zoomed.png");
+            rec("4. a pinch (ctrl wheel, small deltas) zooms in by about a third", after / before > 1.25 && after / before < 1.45, { before, after });
+        } catch (e) {
+            rec("the scenario threw", false, String(e?.stack ?? e));
+        }
+        return steps;
+    },
+    async teardown(h, ctx) {
+        const step = async (what, fn) => {
+            try {
+                await fn();
+            } catch (e) {
+                console.error(`chat-diagram teardown: ${what} failed: ${e?.message ?? e}`);
+            }
+        };
+        await step("close the viewer", () => briefPress(h, "Escape"));
+        await step("restore the roster", () => AC.restoreRoster(h));
+        await step("close the fixture tab", () => acCloseTabs(h, ctx));
+        await step("restore the grid and the chat modes", () =>
+            h.ev(`(() => {
+                for (const [key, prev] of [[${JSON.stringify(GRID_KEY)}, ${JSON.stringify(ctx.prevGrid)}], ["agent.chatmode", ${JSON.stringify(ctx.prevModes)}]]) {
+                    if (prev == null) localStorage.removeItem(key);
+                    else localStorage.setItem(key, prev);
+                }
+                return true;
+            })()`)
+        );
+        await step("remove the fixture transcript", () => rmSync(ctx.dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 500 }));
+        await step("reload onto the live roster", () => ahReload(h));
+        await step("go home", () => h.goto("cockpit"));
+    },
+};
+
 // --- chat-ref-badges: `agent:`, `run:`, `council:`, `session:` and `effort:` references drawn as badges (refbadge.ts,
 // chatrefbadge.tsx, remarkrefmention.ts, chateditorrefpill.tsx; spec 2026-11-17-chat-ref-badges-design.md). The chat's agent A is
 // in a registered project whose run and council are put in the app's own stores; a second agent B is asking, on codex. A's bubble
@@ -74935,6 +75126,7 @@ export const SCENARIOS = [
     chatFocusRead,
     chatBubbleFold,
     chatMath,
+    chatDiagram,
     chatRefBadges,
     chatReplyRefs,
     chatInitiative,

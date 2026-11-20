@@ -18,7 +18,15 @@ const initializeMermaid = async () => {
     if (!mermaidInitialized) {
         const mermaid = await import("mermaid");
         mermaidInstance = mermaid.default;
-        mermaidInstance.initialize({ startOnLoad: false, theme: "dark", securityLevel: "strict" });
+        // a label is clipped to the width mermaid measured once; WebKit draws text a few px wider at another scale (the
+        // chat's shrink, the viewer's zoom), which cut a label's last letter. The node's shape keeps its padding, so the
+        // label may run into it. themeCSS travels in the svg's own <style>: the viewer and Copy image keep it.
+        mermaidInstance.initialize({
+            startOnLoad: false,
+            theme: "dark",
+            securityLevel: "strict",
+            themeCSS: "foreignObject { overflow: visible; }",
+        });
         mermaidInitialized = true;
     }
 };

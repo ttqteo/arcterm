@@ -54,6 +54,9 @@ and a picture given to a line that is not big.
 - An agent's row no longer shows a server port that is the agent itself: on a Mac, Claude Code's own localhost port
   read as a server, and an agent in another tab of the same project showed in the Servers list.
 
+- A diagram opened full size zooms smoothly: a wheel notch glides to its zoom instead of jumping, and a trackpad pinch
+  zooms in the Mac app too. A label in a diagram's box no longer loses its last letter.
+
 ## 1.11.0 — 2026-11-20
 
 ### Added

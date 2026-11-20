@@ -2,7 +2,17 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it } from "vitest";
-import { copyPixelScale, fitView, MAX_SCALE, MIN_SCALE, panBy, wheelFactor, zoomAt } from "./mermaidzoom";
+import {
+    copyPixelScale,
+    easeToward,
+    fitView,
+    MAX_SCALE,
+    MIN_SCALE,
+    panBy,
+    wheelFactor,
+    wheelZoomFactor,
+    zoomAt,
+} from "./mermaidzoom";
 
 describe("fitView", () => {
     it("shrinks a wide diagram to the box and centres it", () => {
@@ -51,6 +61,46 @@ describe("panBy and wheelFactor", () => {
         expect(wheelFactor(-100)).toBeGreaterThan(1);
         expect(wheelFactor(100)).toBeLessThan(1);
         expect(wheelFactor(100) * wheelFactor(-100)).toBeCloseTo(1);
+    });
+});
+
+describe("wheelZoomFactor", () => {
+    const base = { deltaY: 0, deltaMode: 0, ctrlKey: false };
+
+    it("zooms a plain wheel as before", () => {
+        expect(wheelZoomFactor({ ...base, deltaY: 100 })).toBeCloseTo(wheelFactor(100));
+    });
+
+    it("zooms a pinch (ctrl wheel, a few px) faster per px, capped per event", () => {
+        expect(wheelZoomFactor({ ...base, deltaY: -4, ctrlKey: true })).toBeGreaterThan(wheelFactor(-4));
+        expect(wheelZoomFactor({ ...base, deltaY: -100, ctrlKey: true })).toBeLessThan(1.3);
+        expect(wheelZoomFactor({ ...base, deltaY: 4, ctrlKey: true })).toBeLessThan(1);
+    });
+
+    it("reads a wheel that counts lines as px", () => {
+        expect(wheelZoomFactor({ ...base, deltaY: 3, deltaMode: 1 })).toBeCloseTo(wheelFactor(99));
+    });
+});
+
+describe("easeToward", () => {
+    it("moves part of the way each frame, keeping the zoom point still", () => {
+        const cur = { scale: 1, x: 0, y: 0 };
+        const target = zoomAt(cur, 2, 100, 50);
+        const mid = easeToward(cur, target, 16);
+        expect(mid.scale).toBeGreaterThan(1);
+        expect(mid.scale).toBeLessThan(2);
+        // the point (100, 50) of the viewport shows the same diagram point mid-way
+        expect((100 - mid.x) / mid.scale).toBeCloseTo(100);
+        expect((50 - mid.y) / mid.scale).toBeCloseTo(50);
+    });
+
+    it("lands on the target once close", () => {
+        const target = { scale: 1.5, x: 10, y: 10 };
+        let v = { scale: 1, x: 0, y: 0 };
+        for (let i = 0; i < 60; i++) {
+            v = easeToward(v, target, 16);
+        }
+        expect(v).toBe(target);
     });
 });
 

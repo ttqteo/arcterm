@@ -46,6 +46,41 @@ export function wheelFactor(deltaY: number): number {
     return Math.exp(-deltaY * 0.0015);
 }
 
+// a pinch reaches Chromium as a wheel with ctrlKey and deltas of a few px, so it zooms faster per px than a notch;
+// one event is capped so a ctrl + mouse notch (±100) does not jump. A wheel counting lines (deltaMode 1) is a mouse
+// notch of about 33 px a line.
+const PINCH_RATE = 0.01;
+const PINCH_CAP = 25;
+const LINE_PX = 33;
+
+export type WheelInput = { deltaY: number; deltaMode: number; ctrlKey: boolean };
+
+export function wheelZoomFactor(e: WheelInput): number {
+    if (e.ctrlKey) {
+        return Math.exp(-Math.max(-PINCH_CAP, Math.min(PINCH_CAP, e.deltaY)) * PINCH_RATE);
+    }
+    return wheelFactor(e.deltaMode === 1 ? e.deltaY * LINE_PX : e.deltaY);
+}
+
+// the shown view eases toward the target one: a wheel notch's 16% jump or a fit glides over ~100 ms instead of
+// landing in one frame. Scale and offset move by the same fraction, which keeps the point zoomAt held still. `dt` is
+// the time since the last frame, in ms; it returns the target itself once the rest is below a pixel.
+const EASE_MS = 45;
+
+export function easeToward(cur: ZoomView, target: ZoomView, dt: number): ZoomView {
+    const t = 1 - Math.exp(-Math.max(0, dt) / EASE_MS);
+    const next = {
+        scale: cur.scale + (target.scale - cur.scale) * t,
+        x: cur.x + (target.x - cur.x) * t,
+        y: cur.y + (target.y - cur.y) * t,
+    };
+    const close =
+        Math.abs(next.x - target.x) < 0.5 &&
+        Math.abs(next.y - target.y) < 0.5 &&
+        Math.abs(next.scale - target.scale) < 0.001;
+    return close ? target : next;
+}
+
 // the copy is drawn at twice its CSS size for a sharp paste, smaller when that would pass the canvas's safe edge
 export const COPY_DENSITY = 2;
 export const MAX_COPY_EDGE = 8192;

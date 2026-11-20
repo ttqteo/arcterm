@@ -12,9 +12,11 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, typ
 import { createPortal } from "react-dom";
 import { COPY_HOLD_MS } from "./copyfeedback";
 import { copyDiagramImage } from "./mermaidimage";
-import { fitView, panBy, STEP, wheelFactor, zoomAt, type Size, type ZoomView } from "./mermaidzoom";
+import { easeToward, fitView, panBy, STEP, wheelZoomFactor, zoomAt, type Size, type ZoomView } from "./mermaidzoom";
 
 const FOCUS_RING = "outline-none focus-visible:ring-2 focus-visible:ring-accent";
+// how long the stage keeps its GPU layer after the last zoom or pan
+const SETTLE_MS = 180;
 
 type CopyState = "idle" | "busy" | "copied" | "failed";
 
@@ -145,8 +147,75 @@ function ViewerBody({ html, onClose }: { html: string; onClose: () => void }) {
     const boxRef = useRef<HTMLDivElement>(null);
     const stageRef = useRef<HTMLDivElement>(null);
     const { html: sized, size: natural } = useMemo(() => sizedSvg(html), [html]);
-    const [view, setView] = useState<ZoomView>({ scale: 1, x: 0, y: 0 });
+    // `view` is what is drawn; it eases toward `target`, which every zoom, pan and fit writes (setView). A drag sets
+    // both at once, so the diagram stays under the pointer.
+    const [view, setShown] = useState<ZoomView>({ scale: 1, x: 0, y: 0 });
+    const shown = useRef(view);
+    const target = useRef(view);
+    const frame = useRef<number | null>(null);
+    const lastT = useRef(0);
+    // the stage sits on its own GPU layer while it moves, so a zoom scales the layer instead of repainting the svg at
+    // every step; dropped once it rests, so the diagram is repainted sharp at its new scale
+    const [moving, setMoving] = useState(false);
+    const settle = useRef<ReturnType<typeof setTimeout> | null>(null);
     const drag = useRef<{ x: number; y: number } | null>(null);
+
+    const show = useCallback((v: ZoomView) => {
+        shown.current = v;
+        setShown(v);
+    }, []);
+    const markMoving = useCallback(() => {
+        setMoving(true);
+        if (settle.current != null) {
+            clearTimeout(settle.current);
+        }
+        settle.current = setTimeout(() => setMoving(false), SETTLE_MS);
+    }, []);
+    const tick = useCallback(
+        (t: number) => {
+            const dt = lastT.current === 0 ? 16 : t - lastT.current;
+            lastT.current = t;
+            const next = easeToward(shown.current, target.current, dt);
+            show(next);
+            if (next === target.current) {
+                frame.current = null;
+                lastT.current = 0;
+                return;
+            }
+            frame.current = requestAnimationFrame(tick);
+        },
+        [show]
+    );
+    const setView = useCallback(
+        (next: ZoomView | ((v: ZoomView) => ZoomView), instant = false) => {
+            target.current = typeof next === "function" ? next(target.current) : next;
+            markMoving();
+            if (instant) {
+                if (frame.current != null) {
+                    cancelAnimationFrame(frame.current);
+                    frame.current = null;
+                    lastT.current = 0;
+                }
+                show(target.current);
+                return;
+            }
+            if (frame.current == null) {
+                frame.current = requestAnimationFrame(tick);
+            }
+        },
+        [markMoving, show, tick]
+    );
+    useEffect(
+        () => () => {
+            if (frame.current != null) {
+                cancelAnimationFrame(frame.current);
+            }
+            if (settle.current != null) {
+                clearTimeout(settle.current);
+            }
+        },
+        []
+    );
 
     const svgEl = useCallback(() => stageRef.current?.querySelector("svg") ?? null, []);
     const boxSize = useCallback((): Size => {
@@ -154,34 +223,61 @@ function ViewerBody({ html, onClose }: { html: string; onClose: () => void }) {
         const el = boxRef.current;
         return el == null ? { w: 0, h: 0 } : { w: el.clientWidth, h: el.clientHeight };
     }, []);
-    const fit = useCallback(() => setView(fitView(natural, boxSize())), [natural, boxSize]);
+    const fit = useCallback(() => setView(fitView(natural, boxSize())), [natural, boxSize, setView]);
     const zoomCentre = useCallback(
         (factor: number) => {
             const b = boxSize();
             setView((v) => zoomAt(v, factor, b.w / 2, b.h / 2));
         },
-        [boxSize]
+        [boxSize, setView]
     );
 
     // fit once the box has its size; the stage's transform scales the svg, drawn at its natural size, so it stays sharp
     useLayoutEffect(() => {
-        setView(fitView(natural, boxSize()));
-    }, [natural, boxSize]);
+        setView(fitView(natural, boxSize()), true);
+    }, [natural, boxSize, setView]);
 
-    // the wheel has to be a non-passive listener to keep the chat behind from scrolling
+    // the wheel has to be a non-passive listener to keep the chat behind from scrolling. A trackpad pinch reaches
+    // Chromium as a ctrl wheel, and WebKit (the Mac app) as gesture events, whose scale counts from the pinch's start.
     useEffect(() => {
         const box = boxRef.current;
         if (box == null) {
             return;
         }
+        const at = (e: { clientX: number; clientY: number }) => {
+            const r = box.getBoundingClientRect();
+            return { x: e.clientX - r.left, y: e.clientY - r.top };
+        };
         const onWheel = (e: WheelEvent) => {
             e.preventDefault();
-            const r = box.getBoundingClientRect();
-            setView((v) => zoomAt(v, wheelFactor(e.deltaY), e.clientX - r.left, e.clientY - r.top));
+            const p = at(e);
+            setView((v) => zoomAt(v, wheelZoomFactor(e), p.x, p.y));
+        };
+        let pinch = 1;
+        const onGestureStart = (e: Event) => {
+            e.preventDefault();
+            pinch = 1;
+        };
+        const onGestureChange = (e: Event) => {
+            e.preventDefault();
+            const g = e as Event & { scale: number; clientX: number; clientY: number };
+            if (!(g.scale > 0)) {
+                return;
+            }
+            const p = at(g);
+            const factor = g.scale / pinch;
+            pinch = g.scale;
+            setView((v) => zoomAt(v, factor, p.x, p.y), true);
         };
         box.addEventListener("wheel", onWheel, { passive: false });
-        return () => box.removeEventListener("wheel", onWheel);
-    }, []);
+        box.addEventListener("gesturestart", onGestureStart);
+        box.addEventListener("gesturechange", onGestureChange);
+        return () => {
+            box.removeEventListener("wheel", onWheel);
+            box.removeEventListener("gesturestart", onGestureStart);
+            box.removeEventListener("gesturechange", onGestureChange);
+        };
+    }, [setView]);
 
     useEffect(() => {
         const onKey = (e: KeyboardEvent) => {
@@ -203,13 +299,13 @@ function ViewerBody({ html, onClose }: { html: string; onClose: () => void }) {
         return () => window.removeEventListener("keydown", onKey);
     }, [fit, zoomCentre]);
 
+    const zoomPct = Math.round(target.current.scale * 100);
+
     return (
         <>
             <div className="flex flex-none items-center gap-[6px] border-b border-edge-mid px-[14px] py-[8px]">
                 <span className="min-w-0 flex-1 truncate text-[12px] text-primary">Diagram</span>
-                <span className="w-[44px] flex-none text-right text-[11.5px] tabular-nums text-muted">
-                    {Math.round(view.scale * 100)}%
-                </span>
+                <span className="w-[44px] flex-none text-right text-[11.5px] tabular-nums text-muted">{zoomPct}%</span>
                 <ToolButton label="Zoom out (-)" onClick={() => zoomCentre(1 / STEP)}>
                     <Minus size={14} aria-hidden />
                 </ToolButton>
@@ -242,7 +338,7 @@ function ViewerBody({ html, onClose }: { html: string; onClose: () => void }) {
                         return;
                     }
                     drag.current = { x: e.clientX, y: e.clientY };
-                    setView((v) => panBy(v, e.clientX - d.x, e.clientY - d.y));
+                    setView((v) => panBy(v, e.clientX - d.x, e.clientY - d.y), true);
                 }}
                 onPointerUp={() => (drag.current = null)}
                 onPointerCancel={() => (drag.current = null)}
@@ -250,7 +346,10 @@ function ViewerBody({ html, onClose }: { html: string; onClose: () => void }) {
                 <div
                     ref={stageRef}
                     className="absolute left-0 top-0 origin-top-left select-none"
-                    style={{ transform: `translate(${view.x}px, ${view.y}px) scale(${view.scale})` }}
+                    style={{
+                        transform: `translate(${view.x}px, ${view.y}px) scale(${view.scale})`,
+                        willChange: moving ? "transform" : undefined,
+                    }}
                     dangerouslySetInnerHTML={{ __html: sized }}
                 />
             </div>
