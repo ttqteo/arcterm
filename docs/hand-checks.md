@@ -23,6 +23,11 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
 
 ## 2026-11-20
 
+- [ ] (arcterm) **The compaction summary opens in a rail tab** (`RailCompactionPane`, feat/rail-summary-tab). On an
+  agent that compacted, click the Compacted line in the Agent details rail: a Summary tab (fold icon, x) opens
+  selected, the panel widens to the File width, the summary scrolls, and the grip drags its width. x (or a middle click)
+  closes it back to the tab it came from. The Council tab widens with the same grip. Checked in the dev app by the
+  agent-chat step 80 and rail-council-tab step 2 scenarios.
 - [ ] (arcterm) **A fork from History shows its conversation in Chat** (`forkLaunchOpts` forkOf/forkedAt,
   fix/history-fork-chat). On a project's Overview, right-click an ended Claude session in History → Fork (or Fork in
   Quick look): the new "<title> (fork)" agent's Chat shows that conversation at once, not "New conversation"; send it a
@@ -400,8 +405,8 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
   run it.
 - [ ] (arcterm) **The rail says when the agent last compacted** (`railcompactionline.tsx`). In a Claude agent, run
   `/compact`; within a few seconds the Agent details rail's session block, under the tokens bar, reads
-  `Compacted · <before> → <after> · manual · just now`. Click it: the summary opens in a sheet pinned to the window's
-  right edge, wider than the rail; Esc or ✕ closes it. Chat shows only the thin Compacted line, which opens nothing. A
+  `Compacted · <before> → <after> · manual · just now`. Click it: the summary opens in the rail's Summary tab (since
+  2026-11-20; it was a sheet), whose x closes it. Chat shows only the thin Compacted line, which opens nothing. A
   pi agent's compaction shows the line too. Compact once more → the line leads with `×2`. An agent that never
   compacted shows no line, and a subagent's interior shows none.
 - [ ] (arcterm) **Suggested replies stay with an attachment** (`chatcomposer.tsx`). Once a Claude agent's turn ends with

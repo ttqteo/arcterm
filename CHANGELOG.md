@@ -36,6 +36,10 @@ and a picture given to a line that is not big.
 
 - A board with Vietnamese text now reads in Shantell Sans, a hand-drawn face that has every Vietnamese letter, instead of
   the plain Nunito that sat oddly beside the sketched shapes.
+- The Compacted line in the Agent details rail opens the summary in a Summary tab of the rail, with an x to close it,
+  instead of a sheet over Chat; the summary scrolls on its own, and the tab widens with a drag like File.
+- The rail's Council tab widens with a drag like File and Transcript, so a council's long messages have room.
+
 ### Fixed
 
 - A fork started from a project's History (a session row's menu, Quick look, or the session pane) shows the

@@ -12,10 +12,12 @@ import { atom, type PrimitiveAtom } from "jotai";
 import { atomWithStorage } from "jotai/utils";
 import {
     closeFile,
+    closeSummary,
     followFile,
     goBack,
     goForward,
     openFile,
+    openSummary,
     panelFor,
     RAIL_WIDE_DEFAULT_PX,
     selectKey,
@@ -111,6 +113,14 @@ export function openRailCouncil(agentId: string): void {
     update(agentId, (p) => selectTab(p, "council", false, false, true));
     globalStore.set(railVisibleAtom, true);
 }
+
+// Opens the Summary tab, the summary the agent's last compaction kept (Overview's Compacted line), and its x closes it
+export function openRailSummary(agentId: string): void {
+    update(agentId, openSummary);
+    globalStore.set(railVisibleAtom, true);
+}
+
+export const closeRailSummary = (agentId: string) => update(agentId, closeSummary);
 
 // Shows the agent on the Agent surface with its panel open on the file, in a tab of its own. `follow`: a link followed
 // from the file on show, which moves that tab to it, with Back to return.

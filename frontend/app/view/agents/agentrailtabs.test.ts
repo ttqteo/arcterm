@@ -6,6 +6,7 @@ import {
     activeFile,
     clampWideWidth,
     closeFile,
+    closeSummary,
     currentFileView,
     FILE_TABS_MAX,
     fileKey,
@@ -19,6 +20,7 @@ import {
     goForward,
     nextTab,
     openFile,
+    openSummary,
     panelFor,
     RAIL_WIDE_DEFAULT_PX,
     RAIL_WIDE_MIN_PX,
@@ -30,6 +32,7 @@ import {
     shownTab,
     stripKeys,
     visibleTabs,
+    wideTabOf,
     wideWidthMax,
     type RailTab,
 } from "./agentrailtabs";
@@ -310,6 +313,70 @@ describe("widths", () => {
         expect(clampWideWidth(Number.NaN, 300, "transcript")).toBe(RAIL_WIDE_MIN_PX);
         expect(clampWideWidth(700, 900, "transcript")).toBe(clampWideWidth(700, 900, "file"));
         expect(RAIL_WIDTHS.transcript).toEqual(RAIL_WIDTHS.file);
+    });
+
+    it("widens File, Transcript, Council and Summary with a dragged width, and keeps the rest at Overview's", () => {
+        expect(wideTabOf("file")).toBe("file");
+        expect(wideTabOf("transcript")).toBe("transcript");
+        expect(wideTabOf("council")).toBe("file");
+        expect(wideTabOf("summary")).toBe("file");
+        expect(wideTabOf("overview")).toBeNull();
+        expect(wideTabOf("tree")).toBeNull();
+        expect(wideTabOf("changes")).toBeNull();
+    });
+});
+
+describe("the Summary tab", () => {
+    it("opens on show after Council and before File, and remembers the tab it came from", () => {
+        const p = openSummary(openFile(panelFor({}, "x", "overview"), a));
+        expect(p.tab).toBe("summary");
+        expect(p.prevTab).toBe("file");
+        expect(visibleTabs(p, true, true, true)).toEqual([
+            "overview",
+            "tree",
+            "changes",
+            "transcript",
+            "council",
+            "summary",
+            "file",
+        ]);
+        expect(shownTab(p, true, true, true)).toBe("summary");
+    });
+
+    it("is never an unseen agent's first tab", () => {
+        expect(panelFor({}, "x", "summary").tab).toBe("overview");
+    });
+
+    it("opened again, only shows it and keeps where it came from", () => {
+        const p = openSummary(panelFor({}, "x", "overview"));
+        const away = selectTab(p, "changes", false, false);
+        const back = openSummary(away);
+        expect(back.tab).toBe("summary");
+        expect(openSummary(back).prevTab).toBe(back.prevTab);
+    });
+
+    it("closes back to the tab it was opened from, and off show leaves the tab on show", () => {
+        const p = openSummary(selectTab(panelFor({}, "x", "overview"), "changes", false, false));
+        const closed = closeSummary(p);
+        expect(closed.summary).toBe(false);
+        expect(closed.tab).toBe("changes");
+        expect(visibleTabs(closed, false, false)).toEqual(["overview", "changes"]);
+        const off = selectTab(p, "overview", false, false);
+        expect(closeSummary(off).tab).toBe("overview");
+        expect(closeSummary(closed)).toBe(closed);
+    });
+
+    it("stays open while a file opens and its last file closes back to it", () => {
+        const p = openFile(openSummary(panelFor({}, "x", "overview")), a);
+        expect(p.summary).toBe(true);
+        const closed = closeFile(p);
+        expect(closed.summary).toBe(true);
+        expect(closed.tab).toBe("summary");
+    });
+
+    it("draws Overview for a stored Summary tab that is closed", () => {
+        const p = { ...panelFor({}, "x", "overview"), tab: "summary" as RailTab };
+        expect(shownTab(p, false, false)).toBe("overview");
     });
 });
 

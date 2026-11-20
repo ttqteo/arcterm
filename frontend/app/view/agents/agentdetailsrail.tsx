@@ -21,6 +21,7 @@ import {
     FileText,
     Folder,
     FolderTree,
+    FoldVertical,
     GitBranch,
     LayoutList,
     LayoutTemplate,
@@ -57,7 +58,15 @@ import {
     type BgTaskLabel,
 } from "./agentrailsections";
 import { openFileInPanel, railPanelsAtom, railTabDefaultAtom, selectRailTab } from "./agentrailstore";
-import { activeFile, fileTabLabel, panelFor, RAIL_OVERVIEW_PX, shownTab, type ResizableTab } from "./agentrailtabs";
+import {
+    activeFile,
+    fileTabLabel,
+    panelFor,
+    RAIL_OVERVIEW_PX,
+    shownTab,
+    wideTabOf,
+    type ResizableTab,
+} from "./agentrailtabs";
 import type { AgentsViewModel } from "./agents";
 import { displayAgeMs, formatAgeShort, type AgentVM } from "./agentsviewmodel";
 import { setAgentView } from "./agentview";
@@ -101,6 +110,7 @@ import {
     setRailCommitMode,
     setRailCommitsOpen,
 } from "./railcommitsstore";
+import { RailCompactionLine, RailCompactionPane } from "./railcompactionline";
 import { RailCouncilPane } from "./railcouncilpane";
 import { useAgentCouncil } from "./railcouncilstore";
 import { RAIL_ICON } from "./railicons";
@@ -123,7 +133,6 @@ import { agentProject, roleRunId } from "./runlineage";
 import { NeedsYouSection, RunSection, TaskSection, useRunAsks } from "./runrailsections";
 import { SubLabel } from "./sectionlabel";
 import type { SubagentState } from "./session-models/sessionviewmodel";
-import { RailCompactionLine } from "./railcompactionline";
 import { SessionSection } from "./sessionsection";
 import { spendHeadline } from "./sessionusage";
 import { StatusDot } from "./statusdot";
@@ -778,10 +787,10 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
     const council = useAgentCouncil(agent);
     const hasCouncil = council != null;
     const shown = shownTab(panel, hasTree, hasTranscript, hasCouncil);
-    // File and Transcript keep a dragged width (one, shared); Overview, Files and Changes share one fixed width, so
-    // moving between them never resizes the panel
-    const wideTab: ResizableTab = shown === "transcript" ? "transcript" : "file";
-    const fixedWidth = shown !== "file" && shown !== "transcript";
+    // File, Transcript, Council and Summary keep a dragged width (one, shared); Overview, Files and Changes share one
+    // fixed width, so moving between them never resizes the panel
+    const wideTab: ResizableTab = wideTabOf(shown) ?? "file";
+    const fixedWidth = wideTabOf(shown) == null;
     const wide = useWideWidth(wideTab);
     const openTab = activeFile(panel);
     const fileRef = openTab?.current ?? null;
@@ -1527,6 +1536,8 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
                     <RailTranscript agent={agent} surfaceAtom={model.surfaceAtom} />
                 ) : shown === "council" && council != null ? (
                     <RailCouncilPane key={council.id} model={model} council={council} />
+                ) : shown === "summary" ? (
+                    <RailCompactionPane agentId={agent.id} now={now} />
                 ) : undefined
             }
             edge={!fixedWidth ? <RailResizeGrip tab={wideTab} width={wide.width} max={wide.max} /> : undefined}
@@ -1585,6 +1596,19 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
                               ariaLabel: "Council",
                               onClick: () => {
                                   selectRailTab(agent.id, "council", hasTree, hasTranscript, true);
+                                  showRail();
+                              },
+                          },
+                      ]
+                    : []),
+                ...(panel.summary
+                    ? [
+                          {
+                              key: "summary",
+                              icon: <FoldVertical size={17} strokeWidth={1.8} aria-hidden />,
+                              ariaLabel: "Compaction summary",
+                              onClick: () => {
+                                  selectRailTab(agent.id, "summary", hasTree, hasTranscript, hasCouncil);
                                   showRail();
                               },
                           },

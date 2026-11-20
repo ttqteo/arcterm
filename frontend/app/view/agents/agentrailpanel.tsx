@@ -14,6 +14,7 @@ import {
     FileDiff,
     FileText,
     FolderTree,
+    FoldVertical,
     GitBranch,
     LayoutList,
     LayoutTemplate,
@@ -28,7 +29,7 @@ import {
 import { motion } from "motion/react";
 import { useEffect, useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
 import { railStatAction, type AgentRailStat, type AgentRailStatId } from "./agentrailsections";
-import { closeRailFile, railWideDragAtom, railWidthAtoms, selectRailKey } from "./agentrailstore";
+import { closeRailFile, closeRailSummary, railWideDragAtom, railWidthAtoms, selectRailKey } from "./agentrailstore";
 import {
     activeFile,
     clampWideWidth,
@@ -185,6 +186,9 @@ export function RailTabStrip({
                     tabProps={tabProps("council")}
                 />
             ) : null}
+            {panel.summary ? (
+                <RailSummaryTab agentId={agentId} on={current === "summary"} tabProps={tabProps("summary")} />
+            ) : null}
             {fileTabs.map((f) =>
                 f.current == null ? null : (
                     <RailFileTab
@@ -233,6 +237,42 @@ function RailCouncilTab({ council, on, tabProps }: { council: Council; on: boole
                 />
             ) : null}
         </motion.button>
+    );
+}
+
+// The Summary tab: the summary the agent's last compaction kept, opened from Overview's Compacted line. Its x, or a
+// middle click, closes it.
+function RailSummaryTab({ agentId, on, tabProps }: { agentId: string; on: boolean; tabProps: TabProps }) {
+    return (
+        <div
+            onMouseDown={(e) => e.button === 1 && e.preventDefault()}
+            onAuxClick={(e) => {
+                if (e.button === 1) {
+                    e.preventDefault();
+                    closeRailSummary(agentId);
+                }
+            }}
+            className={cn("flex h-[28px] shrink-0 items-center rounded-full", on ? TAB_ON : TAB_OFF)}
+        >
+            <button
+                type="button"
+                {...tabProps}
+                aria-label="Compaction summary"
+                title="Compaction summary: what the last compaction kept"
+                className="flex cursor-pointer items-center border-0 bg-transparent py-0 pl-2 pr-1 text-inherit outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent"
+            >
+                <FoldVertical size={16} strokeWidth={1.8} aria-hidden />
+            </button>
+            <button
+                type="button"
+                aria-label="Close compaction summary"
+                data-rail-summary-close
+                onClick={() => closeRailSummary(agentId)}
+                className="mr-1 flex h-5 w-5 shrink-0 cursor-pointer items-center justify-center rounded-full border-0 bg-transparent text-muted hover:bg-pill hover:text-primary"
+            >
+                <X size={12} strokeWidth={2} aria-hidden />
+            </button>
+        </div>
     );
 }
 
