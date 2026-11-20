@@ -11,11 +11,16 @@ import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { atom, useAtomValue, type PrimitiveAtom } from "jotai";
 import { useEffect, useMemo } from "react";
+import { buildAgentTree } from "./agenttreemodel";
 import { councilListAtom, loadCouncils } from "./councilstore";
 import { devRosterAtom } from "./devmock";
 import { loadProjectRuns, projectRunsAtom } from "./projecthistorystore";
-import { agentRefs, councilRefs, effortRefs, runRefs, sessionRefs, type RefItem } from "./refmention";
+import { agentRefs, councilRefs, effortRefs, runRefs, sessionRefs, topLevelAgentIds, type RefItem } from "./refmention";
+import { lineageAtomFor } from "./runlineagestore";
 import { loadSessionsArchive, sessionsArchiveAtom } from "./sessionsarchivestore";
+
+// which of the roster's agents work a run's task or judge for it, so the picker lists only the Agent tree's top-level rows
+const refLineageAtom = lineageAtomFor(devRosterAtom);
 
 /** The initiatives an `effort:` reference can name, from any project and archived ones too (a token can name a finished
  *  one). null until the first list lands; a failed read leaves the last good list. */
@@ -68,6 +73,7 @@ export function useRefItems(
 ): RefItem[] {
     // the roster the cockpit shows: a dev fixture's when one is loaded, else the live one
     const agents = useAtomValue(devRosterAtom);
+    const lineage = useAtomValue(refLineageAtom);
     const runs = useAtomValue(projectRunsAtom(project)).runs;
     const councils = useAtomValue(councilListAtom(project));
     const sessions = useAtomValue(sessionsArchiveAtom);
@@ -95,13 +101,16 @@ export function useRefItems(
     }, [want, sessionsUnread]);
     return useMemo(() => {
         const runItems = project === "" ? [] : runRefs(runs);
+        // the Agent tree's top level only: a run's workers and stage sessions, and a brainstorm's checks, sit under
+        // the row that started them there and are read through it
+        const topLevel = topLevelAgentIds(buildAgentTree(agents, [], lineage));
         return [
             // a run's lead is left to its run's row
-            ...agentRefs(agents, selfId, new Set(runItems.map((r) => r.id))),
+            ...agentRefs(agents, selfId, new Set(runItems.map((r) => r.id)), topLevel),
             ...runItems,
             ...(project === "" ? [] : councilRefs(councils)),
             ...sessionRefs(sessions, projectPath, Date.now()),
             ...effortRefs(efforts, projectName),
         ];
-    }, [agents, selfId, project, runs, councils, sessions, projectPath, efforts, projectName]);
+    }, [agents, lineage, selfId, project, runs, councils, sessions, projectPath, efforts, projectName]);
 }
