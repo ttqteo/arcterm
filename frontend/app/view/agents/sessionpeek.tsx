@@ -3,7 +3,7 @@
 //
 // Quick look: one ended session's transcript in a dialog over the project Overview, so a session can be read without
 // leaving the page. It is SessionBody (sessionsdetail.tsx), the read the session pane gives, with the Activity /
-// Transcript toggle, Resume, and Open, which opens the full session pane (its Back returns to the Overview). Esc, the
+// Transcript toggle, Resume, Fork (a Claude session), and Open, which opens the full session pane (its Back returns to the Overview). Esc, the
 // close button or a press outside closes it. Which session is HistoryColumn's (projecthistory.tsx).
 
 import { ModalShell } from "@/app/modals/modalshell";
@@ -15,7 +15,7 @@ import type { AgentsViewModel } from "./agents";
 import { historySessionLine } from "./projectoverviewmodel";
 import { runtimeMeta } from "./runtimemeta";
 import type { LiveSession } from "./sessionsarchivestore";
-import { PrimaryButton, SessionBody, ViewToggle } from "./sessionsdetail";
+import { ForkButton, PrimaryButton, SessionBody, ViewToggle } from "./sessionsdetail";
 
 const ICON_BTN =
     "flex h-7 flex-none cursor-pointer items-center gap-1.5 rounded-[7px] border border-edge-strong bg-surface-raised px-[10px] text-[12px] font-semibold text-secondary hover:border-accent hover:text-accent-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent";
@@ -64,6 +64,7 @@ export function SessionPeek({
                         {/* Resume (or Jump) leaves the Overview for the agent's terminal: the dialog closes with it */}
                         <span className="contents" onClickCapture={onClose}>
                             <PrimaryButton model={model} session={s} />
+                            <ForkButton model={model} session={s} />
                         </span>
                         <button
                             type="button"

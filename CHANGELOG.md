@@ -39,6 +39,8 @@ and a picture given to a line that is not big.
   compaction now shows in the rail too.
 - A council's expert cards (the first step and the Map) now say what each expert is there for, under its name: its
   focus (`novelty`, `baselines`) and the start of its brief. Hover a card to read the whole brief.
+- A project's History can fork a Claude conversation: Fork is in a session row's right-click menu and beside Resume
+  in Quick look, as it already was in the full session pane.
 
 ### Fixed
 

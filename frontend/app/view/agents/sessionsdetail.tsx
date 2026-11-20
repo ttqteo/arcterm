@@ -133,8 +133,8 @@ export function forkSession(model: AgentsViewModel, session: LiveSession) {
     }
 }
 
-// the header's Fork, beside Resume or Jump: a session that cannot fork draws none
-function ForkButton({ model, session }: { model: AgentsViewModel; session: LiveSession }) {
+// the header's Fork, beside Resume or Jump (and Quick look's, sessionpeek.tsx): a session that cannot fork draws none
+export function ForkButton({ model, session }: { model: AgentsViewModel; session: LiveSession }) {
     if (forkLaunchOpts(session) == null) {
         return null;
     }
