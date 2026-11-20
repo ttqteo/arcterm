@@ -55,6 +55,11 @@ wsh council start --mode <review|brainstorm> --mode-why "<one line: why this mod
 - `--question` is the person's question in their own words, not your reading of it, and not your preferred answer: a
   council anchored on your view adds nothing. When they stated constraints (the budget, the stack, what is out of
   scope, what is already decided), add them after "Keep to:"; leave "Keep to:" out when they stated none.
+- Write `--feature`, `--question` and `--mode-why` in the person's language with its full marks: Vietnamese with its
+  diacritics ("Trục chi phí"), never stripped to ASCII ("Truc chi phi") to play safe with the shell, even when the
+  person types without them. The feature is the council's title everywhere, and the council takes its language from the
+  question (`LangOf`, `pkg/council/lang.go`): a Vietnamese question with no marks reads as English, so the seats, the
+  replies and the report all come back in English.
 - `--files` are the files the experts read (the spec or plan, the source it touches), comma-separated, relative to the
   working directory or absolute. Their size is part of the cost, so name what matters, not the whole tree.
 - `--screenshot <png>` (repeatable) for a UI the experts should see. The role experts only read (Read, Grep, Glob): they
