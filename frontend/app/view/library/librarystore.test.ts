@@ -30,6 +30,7 @@ import {
     libraryTabAtom,
     openCouncil,
     setLibraryCouncil,
+    showConversationHistory,
     showLibrary,
     showLibraryBoard,
     showLibraryCouncil,
@@ -99,6 +100,20 @@ describe("showLibrary", () => {
         const model = stub();
         showLibrary(model, "canvases");
         expect(globalStore.get(libraryTabAtom)).toBe("canvases");
+        expect(globalStore.get(model.surfaceAtom)).toBe("library");
+    });
+});
+
+describe("showConversationHistory", () => {
+    it("opens Conversations on its list, though a session was left open full width there, and keeps the selection", () => {
+        const model = stub();
+        showLibrarySession(model, "claude:abc");
+        globalStore.set(model.surfaceAtom, "agent");
+        globalStore.set(libraryTabAtom, "councils");
+        showConversationHistory(model);
+        expect(globalStore.get(libraryTabAtom)).toBe("conversations");
+        expect(globalStore.get(libraryConvViewAtom)).toBe("list");
+        expect(globalStore.get(model.sessionsSelAtom)).toBe("claude:abc");
         expect(globalStore.get(model.surfaceAtom)).toBe("library");
     });
 });

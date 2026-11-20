@@ -10,7 +10,7 @@ import { Skeleton, SkeletonLine } from "@/app/element/skeleton";
 import { ContextMenuModel } from "@/app/store/contextmenu";
 import { getApi } from "@/app/store/global";
 import { openTarget } from "@/app/view/jarvis/openref";
-import { showLibrary, showLibrarySession } from "@/app/view/library/librarystore";
+import { showConversationHistory, showLibrarySession } from "@/app/view/library/librarystore";
 import { cn, fireAndForget } from "@/util/util";
 import { useAtom, useAtomValue } from "jotai";
 import {
@@ -421,7 +421,7 @@ export function HistoryColumn({
         <button
             type="button"
             data-history-older
-            onClick={() => showLibrary(model, "conversations")}
+            onClick={() => showConversationHistory(model)}
             className={`${ROW} text-[12px] text-muted`}
         >
             Older: Conversation History

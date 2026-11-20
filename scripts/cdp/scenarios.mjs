@@ -73439,7 +73439,9 @@ const projectOverviewHistory = {
             // 8. a failed runs read: the error line with Retry first in the list, the sessions and their councils still listed (no
             // run rows: they were not read); Retry reads the runs
             await h.ev(`window.${OVH_MOCK_KEY}.mode.runsFail = "boom"`);
-            const reopen8 = await ovhOpen(h, OVH_A);
+            // step 7 left A's Overview mounted on the Agent surface: reopened in place it would not read the runs again
+            await h.goto("agent");
+            const reopen8 = await ovhReopen(h, ctx, OVH_A);
             const error8 = await polishWaitFor(h, ovHas("[data-history-error]"), 5000);
             const page8 = await h.ev(`(() => {
                 const err = document.querySelector("[data-history-error]");

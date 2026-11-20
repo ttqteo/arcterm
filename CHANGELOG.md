@@ -41,6 +41,11 @@ and a picture given to a line that is not big.
   instead of reading back through up to 1,000 sessions of every project first. While older pages are unread the
   session count reads "30+".
 
+### Fixed
+
+- Older: Conversation History in a project's Overview, and Conversation History on the empty Agent page, open the
+  list of conversations again, not the last session you had open full width in Library.
+
 ## 1.9.0 — 2026-11-20
 
 ### Added

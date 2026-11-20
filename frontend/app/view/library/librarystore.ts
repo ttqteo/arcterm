@@ -72,6 +72,13 @@ export function showLibrary(model: Pick<AgentsViewModel, "surfaceAtom">, tab?: L
     landOn(model.surfaceAtom, "library");
 }
 
+/** Open Conversation History: Library's Conversations tab on its list, even when a session or run was left open full width
+ *  there (showLibrary would show that one again). The list's selection is kept. */
+export function showConversationHistory(model: Pick<AgentsViewModel, "surfaceAtom">): void {
+    globalStore.set(libraryConvViewAtom, "list");
+    showLibrary(model, "conversations");
+}
+
 /** Open one session in Library's Conversations tab, full width: its own transcript, or its run's detail. `member` is the run
  *  member in view, as sessionSelection (sessionsruns.ts) names it for a run's session; without one the member in view is left
  *  alone. A run ("run:<id>") has its own pane, the merged feed ("all") is the list; any other value is one session. */
