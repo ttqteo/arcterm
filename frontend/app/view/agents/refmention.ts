@@ -9,6 +9,7 @@
 
 import { normPath } from "./agentsidebarmodel";
 import { formatAgo, type AgentVM } from "./agentsviewmodel";
+import type { AgentTreeRow } from "./agenttreemodel";
 
 export type RefKind = "agent" | "run" | "council" | "session" | "effort";
 
@@ -42,21 +43,38 @@ const KIND_WORDS: Record<RefKind, readonly string[]> = {
 const clip = (s: string, n: number) => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
 const oneLine = (s: string | undefined) => (s ?? "").replace(/\s+/g, " ").trim();
 
-/** The live agents a chat can refer to: every agent but the chat's own, plain terminals and the lead of a run the picker
+/** The agents the Agent tree gives a row of their own at its top level (buildAgentTree's `parent` and `lead` rows): not a
+ *  run's workers, its stage sessions (plan reviewer, verifier, land resolver) or a brainstorm's check and judge
+ *  sessions, which sit under the row that started them. An agent waiting on another keeps its place: it nests, but it is
+ *  an agent of its own. */
+export function topLevelAgentIds(tree: readonly AgentTreeRow[]): Set<string> {
+    const ids = new Set<string>();
+    for (const r of tree) {
+        if (r.kind === "parent" || r.kind === "lead") {
+            ids.add(r.agent.id);
+        }
+    }
+    return ids;
+}
+
+/** The live agents a chat can refer to: every agent but the chat's own, plain terminals, the lead of a run the picker
  *  lists (`listedRuns`, run ids: the run's row stands for it, with the same title, and `wsh read run:` reads its lead
- *  too), the ones in the chat's own project first (the likeliest to name, and the ones the row cap would otherwise push
- *  out), each group in roster order. */
+ *  too) and, given `topLevel` (topLevelAgentIds), the agents the Agent tree nests under another row; the ones in the
+ *  chat's own project first (the likeliest to name, and the ones the row cap would otherwise push out), each group in
+ *  roster order. */
 export function agentRefs(
     agents: readonly AgentVM[],
     selfId: string,
-    listedRuns: ReadonlySet<string> = new Set()
+    listedRuns: ReadonlySet<string> = new Set(),
+    topLevel?: ReadonlySet<string>
 ): RefItem[] {
     const project = agents.find((a) => a.id === selfId)?.project ?? "";
     const others = agents.filter(
         (a) =>
             a.id !== selfId &&
             (a.kind == null || a.kind === "agent" || a.kind === "background") &&
-            !(a.runId != null && listedRuns.has(a.runId))
+            !(a.runId != null && listedRuns.has(a.runId)) &&
+            (topLevel == null || topLevel.has(a.id))
     );
     const ordered =
         project === ""
@@ -72,10 +90,12 @@ export function agentRefs(
     }));
 }
 
-/** A project's runs a chat can refer to: the top-level ones (a task's run is read through its parent), newest first. */
+/** A project's runs a chat can refer to: the top-level ones the Agent tree gives a row, newest first. A task's run, a
+ *  stage session's (plan reviewer, verifier, land resolver, builder check, judge) and a reviewer's are read through the
+ *  run that started them; the rule is the backend's top-level run (pkg/runqueue/rules.go). */
 export function runRefs(runs: readonly Run[] | null | undefined): RefItem[] {
     return (runs ?? [])
-        .filter((r) => !r.parentleadoref && !r.taskid)
+        .filter((r) => !r.parentleadoref && !r.taskid && !r.stagerole && !r.review)
         .map((r) => ({
             kind: "run" as const,
             id: r.oid,

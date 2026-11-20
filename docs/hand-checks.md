@@ -40,6 +40,12 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
   registrations is missing after a few seconds. Windows is where the rename can leave the file refusing its next open
   ("used by another process", a virus scanner or indexer holding it); the Go half is unit-tested with a fake refusing
   read only, never against a real held file.
+- [ ] (arcterm) **Chat's `@` picker, top level only** (`refmention.ts` `runRefs`/`topLevelAgentIds`,
+  `refmentionstore.ts`). In a chat of a project with an orchestrator run that had a plan review (arcterm's "Kael sync
+  11-19"), type `@`: the run is one row (`run:733ad992 · … · orchestrator`) and none of its "You are the plan reviewer
+  for run …" quick runs shows; while a run is live, its workers and reviewers are not agent rows either, only its lead
+  (or the run) and the plain agents the Agent tree lists at its top level. Commit: fix/ref-picker-top-level.
+
 - [ ] (arcterm) **Boards, a real drawer turn** (`pkg/boarddrawer`, `wsh board draw`; the CDP scenarios stub every
   board RPC, so no drawer has run in them). From a live claude agent in a registered project, ask it to draw how
   something works, or run `wsh board draw --board demo --context "<a short briefing>"` yourself: the command prints

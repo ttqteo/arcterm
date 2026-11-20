@@ -3,6 +3,7 @@
 
 import { describe, expect, it } from "vitest";
 import type { AgentVM } from "./agentsviewmodel";
+import type { AgentTreeRow } from "./agenttreemodel";
 import {
     agentRefs,
     councilRefs,
@@ -15,6 +16,7 @@ import {
     refToken,
     runRefs,
     sessionRefs,
+    topLevelAgentIds,
     type RefItem,
 } from "./refmention";
 
@@ -110,6 +112,37 @@ describe("agentRefs and the runs listed", () => {
         );
         expect(refs.map((r) => r.id)).toEqual(["worker-1", "lead-2"]);
     });
+
+    it("keeps only the Agent tree's top-level agents when given them", () => {
+        const refs = agentRefs(
+            [
+                agent("lead-1", "Build Library", { runId: "run-a" }),
+                agent("worker-1", "Task 3", { runId: "run-a-t-3" }),
+                agent("reviewer-1", "You are the plan reviewer for run run-a", { runId: "run-a-pr" }),
+                agent("plain-1", "Docs v5"),
+            ],
+            "",
+            new Set(),
+            new Set(["lead-1", "plain-1"])
+        );
+        expect(refs.map((r) => r.id)).toEqual(["lead-1", "plain-1"]);
+    });
+});
+
+describe("topLevelAgentIds", () => {
+    it("takes the plain and lead rows, nested waiters included, and leaves workers, stages and checks", () => {
+        const a = (id: string) => agent(id, id);
+        const rows = [
+            { kind: "group", project: "arcterm", count: 5, attn: 0, running: 0 },
+            { kind: "lead", agent: a("lead-1"), project: "arcterm", run: {}, open: true, live: 1 },
+            { kind: "worker", agent: a("worker-1"), project: "arcterm" },
+            { kind: "stage", agent: a("reviewer-1"), project: "arcterm" },
+            { kind: "parent", agent: a("plain-1"), project: "arcterm" },
+            { kind: "parent", agent: a("waiter-1"), project: "arcterm", nested: true },
+            { kind: "check", agent: a("check-1"), project: "arcterm", stageRole: "builder-check", state: "running" },
+        ] as unknown as AgentTreeRow[];
+        expect([...topLevelAgentIds(rows)]).toEqual(["lead-1", "plain-1", "waiter-1"]);
+    });
 });
 
 describe("runRefs", () => {
@@ -121,6 +154,19 @@ describe("runRefs", () => {
         ]);
         expect(refs.map((r) => r.id)).toEqual(["r-new", "r-old"]);
         expect(refs[0].detail).toBe("done · orchestrator");
+    });
+
+    it("leaves out the sessions a run started: plan reviewers, verifiers, reviewers", () => {
+        const refs = runRefs([
+            run("r-lead", "Kael sync 11-19", { createdts: 1 }),
+            run("r-pr", "You are the plan reviewer for run r-lead.", {
+                createdts: 2,
+                mode: "quick",
+                stagerole: "plan-reviewer",
+            }),
+            run("r-rev", "review task 2", { createdts: 3, review: true }),
+        ]);
+        expect(refs.map((r) => r.id)).toEqual(["r-lead"]);
     });
 
     it("is empty before the runs load", () => {

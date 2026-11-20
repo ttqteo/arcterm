@@ -70,6 +70,8 @@ and a picture given to a line that is not big.
 
 ### Fixed
 
+- Chat's `@` picker lists only what the Agent tree shows at its top level: a run's plan reviewers, verifiers, workers
+  and check sessions no longer fill it, so name the run or the agent that started them.
 - A conversation forked from Chat's Fork is named after the agent it came from ("… (fork)"), not just "Fork".
 - A council's price on the Token burn card and in Setup now comes from what your last councils actually cost, instead of
   a fixed guess that read 3 to 5 times low.
