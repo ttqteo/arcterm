@@ -72,7 +72,9 @@ writes the outcome into `report.json` (the run, the initiative, or the question 
   `initiativeworkaction.ts` starts one), in that project, named "Báo lỗi arcterm", with a seeded prompt that lists the
   report folders to read. It shows in the Agent tree under that project like any agent; the person reads its outcome
   in its Chat. Its "question back" is the agent's ordinary turn ending on a question in that Chat (no `wsh ask`).
-- **Runs it starts.** Each small fix is an ordinary engine run started with `wsh runs start` in that project, with the
+- **Runs it starts.** Every small fix of one pass goes into one ordinary engine run started with `wsh runs start` in
+  that project, its goal listing each fix with its report id, never a run per bug (the person's call, 2026-11-20: a run
+  per report was too many runs); a small fix that turns up while that run works waits for it to land. The run has the
   engine's default landing: it lands on `wave/<runId>` and merges back into the base when it completes, held with a
   reason when it cannot, exactly as a run the person starts. A large one becomes an initiative with chunks, no run.
 
