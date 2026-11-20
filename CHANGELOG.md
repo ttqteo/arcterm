@@ -32,6 +32,12 @@ and a picture given to a line that is not big.
 
 ## Unreleased
 
+### Added
+
+- Chat's `@` lists the project's boards (`@board`, `@draw` or part of a board's name), the one open beside Chat first:
+  a pick puts the board in your message as a badge, and the agent draws your request on that board instead of starting
+  a new one.
+
 ### Changed
 
 - A board open beside Chat gets most of the width: Chat narrows to a 360px column and the agent list folds to a thin

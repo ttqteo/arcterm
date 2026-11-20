@@ -415,6 +415,29 @@ func TestFindByName(t *testing.T) {
 	}
 }
 
+func TestFindByNameTakesABoardRef(t *testing.T) {
+	// Chat's @ picker writes board:<id>; it names that board, whatever the board is called
+	dir := t.TempDir()
+	first := mustCreate(t, dir, "Auth flow", 1000)
+	mustCreate(t, dir, "Deploy", 2000)
+	for _, name := range []string{"board:" + first.ID, " BOARD:" + strings.ToUpper(first.ID) + " "} {
+		if got, ok, err := FindByName(dir, testProject, name); err != nil || !ok || got.ID != first.ID {
+			t.Errorf("FindByName(%q) = %+v %v %v, want %s", name, got, ok, err, first.ID)
+		}
+	}
+	for _, name := range []string{"board:00000000", "board:", "board:xyz"} {
+		if got, ok, err := FindByName(dir, testProject, name); err != nil || ok {
+			t.Errorf("FindByName(%q) = %+v %v %v, want none", name, got, ok, err)
+		}
+	}
+	if _, ok := RefID("board:xyz"); ok {
+		t.Error(`RefID("board:xyz") is no board id`)
+	}
+	if id, ok := RefID("Board:" + first.ID); !ok || id != first.ID {
+		t.Errorf("RefID = %q %v", id, ok)
+	}
+}
+
 func TestFindByNameFindsADamagedBoardForItsCaller(t *testing.T) {
 	// a board whose file broke keeps its name, so a request for it names the problem rather than starting a twin
 	dir := t.TempDir()

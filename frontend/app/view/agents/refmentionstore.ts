@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // What the chat box's `@` picker lists beside its files (refmention.ts): the live agents, the project's runs and
-// councils, the conversations of the archive's loaded pages, and the initiatives. Runs, councils and initiatives are read
+// councils, the conversations of the archive's loaded pages, the initiatives and the project's boards (read from the
+// every-project list, which a `board:` badge resolves against too, and kept current by board:update). Runs, councils and initiatives are read
 // again each time an `@` comes into the text, since one started meanwhile is the likeliest one to name; the archive is
 // read when nothing has loaded it yet. The initiatives are also what an `effort:` badge resolves against (refEffortsAtom).
 
@@ -11,11 +12,22 @@ import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { atom, useAtomValue, type PrimitiveAtom } from "jotai";
 import { useEffect, useMemo } from "react";
+import { boardSplitAtom } from "../boards/boardsplitstore";
+import { boardListAtom, loadBoardList } from "../boards/boardstore";
 import { buildAgentTree } from "./agenttreemodel";
 import { councilListAtom, loadCouncils } from "./councilstore";
 import { devRosterAtom } from "./devmock";
 import { loadProjectRuns, projectRunsAtom } from "./projecthistorystore";
-import { agentRefs, councilRefs, effortRefs, runRefs, sessionRefs, topLevelAgentIds, type RefItem } from "./refmention";
+import {
+    agentRefs,
+    boardRefs,
+    councilRefs,
+    effortRefs,
+    runRefs,
+    sessionRefs,
+    topLevelAgentIds,
+    type RefItem,
+} from "./refmention";
 import { lineageAtomFor } from "./runlineagestore";
 import { loadSessionsArchive, sessionsArchiveAtom } from "./sessionsarchivestore";
 
@@ -59,6 +71,22 @@ export function loadRefSessions(): void {
     });
 }
 
+let boardsLoading = false;
+
+/** Reads every project's boards into boardListAtom(""), which board:update keeps current from then on; calls made while
+ *  a read is on its way make no second request. */
+export function loadRefBoards(): void {
+    if (boardsLoading) {
+        return;
+    }
+    boardsLoading = true;
+    loadBoardList("")
+        .catch((e) => console.warn("chat refs: boards read failed", e))
+        .finally(() => {
+            boardsLoading = false;
+        });
+}
+
 /** The items the picker can list for a chat: `selfId` is the chat's own tab, left out; `project` the project folder
  *  ("" for a chat outside a project, which lists agents, conversations and initiatives only); `projectName` the
  *  project's registered name, which an initiative's `project` holds, and `projectPath` its registered path, which a
@@ -78,6 +106,9 @@ export function useRefItems(
     const councils = useAtomValue(councilListAtom(project));
     const sessions = useAtomValue(sessionsArchiveAtom);
     const efforts = useAtomValue(refEffortsAtom);
+    const boards = useAtomValue(boardListAtom(""));
+    // the board open beside this Chat, which the picker lists first
+    const openBoardId = useAtomValue(boardSplitAtom(selfId))?.boardId;
     const sessionsUnread = sessions == null;
     useEffect(() => {
         if (!want || project === "") {
@@ -93,6 +124,12 @@ export function useRefItems(
             void loadRefEfforts();
         }
     }, [want]);
+    // the boards too: one drawn meanwhile is the likeliest to name
+    useEffect(() => {
+        if (want && projectName !== "") {
+            loadRefBoards();
+        }
+    }, [want, projectName]);
     // the archive keeps its own list fresh elsewhere (the Agent tree, History); the picker reads it only when nothing has
     useEffect(() => {
         if (want && sessionsUnread) {
@@ -111,6 +148,20 @@ export function useRefItems(
             ...(project === "" ? [] : councilRefs(councils)),
             ...sessionRefs(sessions, projectPath, Date.now()),
             ...effortRefs(efforts, projectName),
+            ...boardRefs(boards, projectName, openBoardId),
         ];
-    }, [agents, lineage, selfId, project, runs, councils, sessions, projectPath, efforts, projectName]);
+    }, [
+        agents,
+        lineage,
+        selfId,
+        project,
+        runs,
+        councils,
+        sessions,
+        projectPath,
+        efforts,
+        projectName,
+        boards,
+        openBoardId,
+    ]);
 }

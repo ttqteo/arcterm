@@ -1,7 +1,8 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// A reference to an agent, a run, a council, a past conversation (`session:`) or an initiative (`effort:`) in Chat
+// A reference to an agent, a run, a council, a past conversation (`session:`), an initiative (`effort:`) or a board
+// (`board:`) in Chat
 // (`agent:7cd99627`, as the `@` picker writes it, refmention.ts refToken), drawn as a badge: which words are references,
 // what each names, and how its badge looks. Pure: the box's pills (chateditorrefpill.tsx) and your sent bubble's
 // (remarkrefmention.ts, chatrefbadge.tsx) share it, so the two agree. The text is never changed: a badge stands for its
@@ -24,7 +25,7 @@ export interface RefSpan {
 // a token stands as its own word: at the start, or after whitespace or an opening bracket; it ends at whitespace,
 // punctuation or the end. 4+ hex characters, dashes inside (a whole uuid pastes too).
 const REF_RE =
-    /(^|[\s([{])(@?(agent|tab|run|council|session|effort):([0-9a-f]{4,}(?:-[0-9a-f]+)*))(?=$|[\s.,;:!?)\]}'"])/gi;
+    /(^|[\s([{])(@?(agent|tab|run|council|session|effort|board):([0-9a-f]{4,}(?:-[0-9a-f]+)*))(?=$|[\s.,;:!?)\]}'"])/gi;
 
 /** Pure: the references in `text`, in order. With `caret`, one the caret is in or at the end of (still being typed) is
  *  left out, as `mentionTokens` does for a file. */
@@ -53,6 +54,8 @@ export interface RefSources {
     sessions?: readonly Pick<SessionActivity, "id" | "runtime" | "task" | "projectname" | "lastactivets">[];
     /** the initiatives an `effort:` can name, from any project; missing reads as none */
     efforts?: readonly Pick<EffortSummary, "oref" | "title" | "done" | "total">[];
+    /** the boards a `board:` can name, from any project (a board's id is unique across them); missing reads as none */
+    boards?: readonly Pick<BoardInfo, "id" | "name" | "project">[];
     /** the clock a conversation's age is read against; missing reads as Date.now() */
     now?: number;
 }
@@ -66,7 +69,7 @@ export type ResolvedRef =
           name: string;
           runtime?: string;
           state?: "asking" | "working" | "idle";
-          /** a conversation's project name */
+          /** a conversation's or a board's project name */
           project?: string;
           /** the short fact beside the name: a conversation's age ("3d"), an initiative's chunks ("4/9") */
           meta?: string;
@@ -93,6 +96,7 @@ const PLURALS: Record<RefKind, string> = {
     council: "councils",
     session: "conversations",
     effort: "initiatives",
+    board: "boards",
 };
 
 const effortOid = (oref: string) => oref.replace(/^effort:/, "");
@@ -145,6 +149,19 @@ export function resolveRef(kind: RefKind, id: string, src: RefSources): Resolved
             total: e.total,
         };
     }
+    if (kind === "board") {
+        const hits = pick(src.boards ?? [], (b) => b.id, id);
+        if (hits.length === 0) return { status: "unresolved", reason: `No board ${id}` };
+        if (hits.length > 1) return many(hits.length);
+        const b = hits[0];
+        return {
+            status: "resolved",
+            kind,
+            id: b.id,
+            name: firstLine(b.name) || id,
+            project: b.project,
+        };
+    }
     if (src.project === "") {
         return { status: "unresolved", reason: `This chat has no project to find ${kind} ${id} in` };
     }
@@ -191,7 +208,7 @@ export function resolveBareRef(id: string, src: RefSources): ResolvedRef {
 export interface BadgeLook {
     /** border and fill classes (the frame itself is chatrefbadge.tsx's) */
     frame: string;
-    mark: "runtime" | "run" | "council" | "session" | "effort" | null;
+    mark: "runtime" | "run" | "council" | "session" | "effort" | "board" | null;
     dot: "working" | "asking" | null;
 }
 
@@ -199,13 +216,14 @@ const UNRESOLVED_FRAME = "border-dashed border-edge-strong bg-transparent text-m
 const NEUTRAL_FRAME = "border-edge-mid bg-surface";
 
 /** Pure: how a badge looks (option C): an agent in its runtime's tint with its state's dot, a run and a council in
- *  their marks' tints, a conversation and an initiative neutral and told apart by their marks, an unresolved token
+ *  their marks' tints, a conversation, an initiative and a board neutral and told apart by their marks, an unresolved token
  *  dashed. */
 export function badgeLook(r: ResolvedRef): BadgeLook {
     if (r.status === "unresolved") {
         return { frame: UNRESOLVED_FRAME, mark: null, dot: null };
     }
-    if (r.kind === "session" || r.kind === "effort") return { frame: NEUTRAL_FRAME, mark: r.kind, dot: null };
+    if (r.kind === "session" || r.kind === "effort" || r.kind === "board")
+        return { frame: NEUTRAL_FRAME, mark: r.kind, dot: null };
     if (r.kind === "run") return { frame: "border-mark-run-line bg-mark-run-soft", mark: "run", dot: null };
     if (r.kind === "council")
         return { frame: "border-mark-council-line bg-mark-council-soft", mark: "council", dot: null };
@@ -227,6 +245,9 @@ export function refTitle(r: ResolvedRef, { opens = true }: { opens?: boolean } =
         parts.push(`conversation ${id8}`);
         for (const p of [r.runtime, r.project]) if (p) parts.push(p);
         parts.push(formatAgo(r.ageMs));
+    } else if (r.kind === "board") {
+        parts.push(`board ${id8}`);
+        if (r.project) parts.push(r.project);
     } else if (r.kind === "effort") {
         parts.push(`initiative ${id8}`);
         if (r.total != null) parts.push(`${r.done} of ${r.total} chunks done`);

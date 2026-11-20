@@ -299,9 +299,22 @@ func List(dir, project string, state func(boardId string) string) ([]wshrpc.Boar
 	return boards, nil
 }
 
+// RefPrefix starts a reference to a board by its id, as Chat's @ picker writes it: `board:3f2a1b9c`.
+const RefPrefix = "board:"
+
+// RefID is the board id a name written as a reference holds (`board:3f2a1b9c`, any case), and whether it is one.
+func RefID(name string) (string, bool) {
+	name = strings.TrimSpace(name)
+	if len(name) <= len(RefPrefix) || !strings.EqualFold(name[:len(RefPrefix)], RefPrefix) {
+		return "", false
+	}
+	id := strings.ToLower(name[len(RefPrefix):])
+	return id, ValidID(id)
+}
+
 // FindByName is the board of a project named name: trimmed, in any case, the most recently active when several share
-// it. A board whose file is damaged is found too, with its LoadError, so a request for it names the problem rather
-// than starting a twin. A blank name finds nothing.
+// it; a name written as a reference (RefID) is the board with that id. A board whose file is damaged is found too,
+// with its LoadError, so a request for it names the problem rather than starting a twin. A blank name finds nothing.
 func FindByName(dir, project, name string) (wshrpc.BoardInfo, bool, error) {
 	name = strings.TrimSpace(name)
 	if name == "" {
@@ -311,8 +324,9 @@ func FindByName(dir, project, name string) (wshrpc.BoardInfo, bool, error) {
 	if err != nil {
 		return wshrpc.BoardInfo{}, false, err
 	}
+	id, byID := RefID(name)
 	for _, b := range boards { // most recently active first
-		if strings.EqualFold(strings.TrimSpace(b.Name), name) {
+		if byID && b.ID == id || !byID && strings.EqualFold(strings.TrimSpace(b.Name), name) {
 			return b, true, nil
 		}
 	}

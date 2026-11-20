@@ -57,4 +57,19 @@ describe("refsContext", () => {
         expect(line).toContain("wsh read <id>");
         expect(line).toContain("Reading sends nothing");
     });
+
+    it("sends a board to wsh board draw by its id, never to wsh read", () => {
+        const line = refsContext("board:3f2a1b9c tách khung 4 thành 3 ô") ?? "";
+        expect(line).toContain("`board:3f2a1b9c`");
+        expect(line).toContain("wsh board draw --board board:<id>");
+        expect(line).not.toContain("wsh read");
+    });
+
+    it("gives a board and another id a line each", () => {
+        const lines = (refsContext("vẽ board:3f2a1b9c theo agent:700db496") ?? "").split("\n");
+        expect(lines).toHaveLength(2);
+        expect(lines[0]).toContain("`agent:700db496`");
+        expect(lines[0]).not.toContain("board:3f2a1b9c");
+        expect(lines[1]).toContain("`board:3f2a1b9c`");
+    });
 });

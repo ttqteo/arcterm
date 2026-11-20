@@ -6,6 +6,7 @@ import type { AgentVM } from "./agentsviewmodel";
 import type { AgentTreeRow } from "./agenttreemodel";
 import {
     agentRefs,
+    boardRefs,
     councilRefs,
     effortRefs,
     insertRef,
@@ -428,5 +429,41 @@ describe("refHitMask", () => {
         expect(marked("agent:5065", "agent 5065")).toBe("__________");
         expect(marked("zzz", "Build")).toBe("_____");
         expect(marked("", "Build")).toBe("_____");
+    });
+});
+
+describe("boardRefs", () => {
+    const board = (id: string, name: string, project: string, activets: number, extra: Partial<BoardInfo> = {}) =>
+        ({ id, name, project, path: "", createdts: 0, activets, ...extra }) as BoardInfo;
+    const boards = [
+        board("aaaa0001", "Auth flow", "thesis", 100, { shapes: 4 }),
+        board("aaaa0002", "huong-luan-van", "thesis", 300, { shapes: 19, agenttitle: "Đồng bộ history" }),
+        board("aaaa0003", "Deploy", "arcterm", 900),
+        board("aaaa0004", "Broken", "thesis", 999, { loaderror: "bad json" }),
+    ];
+
+    it("lists the chat project's boards newest first, the one open beside Chat at the top", () => {
+        expect(boardRefs(boards, "thesis").map((r) => r.id)).toEqual(["aaaa0002", "aaaa0001"]);
+        const open = boardRefs(boards, "thesis", "aaaa0001");
+        expect(open.map((r) => r.id)).toEqual(["aaaa0001", "aaaa0002"]);
+        expect(open[0].detail).toBe("open · 4 shapes");
+        expect(open[1]).toMatchObject({
+            kind: "board",
+            label: "huong-luan-van",
+            detail: "19 shapes · Đồng bộ history",
+        });
+    });
+
+    it("lists none for a chat outside a project", () => {
+        expect(boardRefs(boards, "")).toEqual([]);
+    });
+
+    it("is what @board, @draw and board:<id> find, and a pick writes board:<id>", () => {
+        const items = boardRefs(boards, "thesis");
+        expect(queryKind("draw")).toBe("board");
+        expect(refMatches("board", items)).toHaveLength(2);
+        expect(refMatches("board:aaaa0001", items).map((r) => r.id)).toEqual(["aaaa0001"]);
+        expect(refMatches("huong", items).map((r) => r.id)).toEqual(["aaaa0002"]);
+        expect(refToken(items[0])).toBe("board:aaaa0002");
     });
 });

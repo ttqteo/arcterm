@@ -159,6 +159,10 @@ func findOrCreateBoard(row *agentRow, rows []agentRow, name, brief string) (info
 		info, err = takeOverBoard(dir, info, row)
 		return info, false, err == nil, err
 	}
+	if _, ok := boardstore.RefID(name); ok {
+		// a reference names a board that exists; it never makes one called "board:…"
+		return wshrpc.BoardInfo{}, false, false, fmt.Errorf("there is no board %s in %s", strings.TrimSpace(name), row.Project)
+	}
 	agent := boardAgentOf(row)
 	if brief == "" {
 		return wshrpc.BoardInfo{}, false, false, fmt.Errorf("there is no board %q in %s: pass the briefing with --context to make it", name, row.Project)

@@ -264,3 +264,27 @@ describe("resolveBareRef", () => {
         expect(resolveBareRef("12345678", src).status).toBe("unresolved");
     });
 });
+
+describe("board:", () => {
+    const withBoards: RefSources = {
+        ...src,
+        project: "",
+        boards: [
+            { id: "3f2a1b9c", name: "huong-luan-van", project: "thesis" },
+            { id: "3f2a7777", name: "Deploy", project: "arcterm" },
+        ],
+    };
+
+    it("is a reference in text, as the picker writes it", () => {
+        expect(refSpans("vẽ lại board:3f2a1b9c nhé")).toMatchObject([{ kind: "board", id: "3f2a1b9c", raw: "board:3f2a1b9c" }]);
+    });
+
+    it("resolves from any project's boards, a chat outside a project's too", () => {
+        const r = resolveRef("board", "3f2a1b9c", withBoards);
+        expect(r).toMatchObject({ status: "resolved", kind: "board", id: "3f2a1b9c", name: "huong-luan-van", project: "thesis" });
+        expect(badgeLook(r)).toMatchObject({ mark: "board", dot: null });
+        expect(refTitle(r)).toBe("huong-luan-van · board 3f2a1b9c · thesis (click to open)");
+        expect(resolveRef("board", "3f2a", withBoards)).toMatchObject({ status: "unresolved", reason: "board:3f2a names 2 boards" });
+        expect(resolveRef("board", "00000000", withBoards)).toMatchObject({ status: "unresolved", reason: "No board 00000000" });
+    });
+});

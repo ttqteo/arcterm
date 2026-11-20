@@ -1,7 +1,8 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// The badge an `agent:<id>`, `run:<id>`, `council:<id>`, `session:<id>` or `effort:<id>` reference is drawn as in Chat
+// The badge an `agent:<id>`, `run:<id>`, `council:<id>`, `session:<id>`, `effort:<id>` or `board:<id>` reference is
+// drawn as in Chat
 // (refbadge.ts finds and resolves them): in your sent bubble (RefBadge, through remarkrefmention.ts) and in the message
 // box (chateditorrefpill.tsx, through useResolvedRef and RefBadgeFace). Chat provides what a badge resolves against
 // (ChatRefLinks); with none around a badge is its token as plain text. The text itself is never changed: a badge only
@@ -11,8 +12,9 @@ import type { OpenTarget } from "@/app/view/jarvis/address";
 import { openOrPeek, type OpenGesture } from "@/app/view/jarvis/openref";
 import { cn, fireAndForget } from "@/util/util";
 import { useAtomValue } from "jotai";
-import { Flag, History } from "lucide-react";
+import { Flag, History, Shapes } from "lucide-react";
 import { createContext, useContext, useEffect, useMemo, type ReactNode } from "react";
+import { boardListAtom } from "../boards/boardstore";
 import type { AgentsViewModel } from "./agents";
 import type { AgentVM } from "./agentsviewmodel";
 import { councilListAtom, loadCouncils } from "./councilstore";
@@ -21,7 +23,7 @@ import { selectingInto } from "./pathlinkcontext";
 import { loadProjectRuns, projectRunsAtom } from "./projecthistorystore";
 import { badgeLook, refTitle, resolveBareRef, resolveRef, type RefSources, type ResolvedRef } from "./refbadge";
 import type { RefKind } from "./refmention";
-import { loadRefEfforts, loadRefSessions, refEffortsAtom } from "./refmentionstore";
+import { loadRefBoards, loadRefEfforts, loadRefSessions, refEffortsAtom } from "./refmentionstore";
 import { RuntimeMark } from "./runtimemark";
 import { sessionsArchiveAtom } from "./sessionsarchivestore";
 
@@ -107,8 +109,8 @@ export function useResolvedBareRef(id: string, enabled = true): ResolvedRef {
     return resolved;
 }
 
-/** What `kind:id` names right now: the roster live; the chat project's runs and councils, and the conversations and
- *  initiatives of any project (each read once, when a token of its kind first needs them and nothing has read them yet).
+/** What `kind:id` names right now: the roster live; the chat project's runs and councils, and the conversations,
+ *  initiatives and boards of any project (each read once, when a token of its kind first needs them and nothing has read them yet).
  *  With no ChatRefLinks around, nothing is known. */
 export function useResolvedRef(kind: RefKind, id: string): ResolvedRef {
     const links = useContext(RefLinks);
@@ -119,11 +121,16 @@ export function useResolvedRef(kind: RefKind, id: string): ResolvedRef {
     const councils = useAtomValue(councilListAtom(project));
     const sessions = useAtomValue(sessionsArchiveAtom);
     const efforts = useAtomValue(refEffortsAtom);
+    const boards = useAtomValue(boardListAtom(""));
     const runsUnread = runs == null;
     const councilsUnread = councils == null;
     const sessionsUnread = sessions == null;
     const effortsUnread = efforts == null;
+    const boardsUnread = boards == null;
     useEffect(() => {
+        if (kind === "board" && boardsUnread) {
+            loadRefBoards();
+        }
         // a conversation and an initiative belong to no project: they load for a chat outside one too
         if (kind === "session" && sessionsUnread) {
             loadRefSessions();
@@ -140,7 +147,7 @@ export function useResolvedRef(kind: RefKind, id: string): ResolvedRef {
         if (kind === "council" && councilsUnread) {
             loadCouncilsOnce(project);
         }
-    }, [kind, project, runsUnread, councilsUnread, sessionsUnread, effortsUnread]);
+    }, [kind, project, runsUnread, councilsUnread, sessionsUnread, effortsUnread, boardsUnread]);
     const agents = useRefAgents(roster, links != null);
     return useMemo(
         () =>
@@ -151,9 +158,10 @@ export function useResolvedRef(kind: RefKind, id: string): ResolvedRef {
                 project,
                 sessions: sessions ?? [],
                 efforts: efforts ?? [],
+                boards: boards ?? [],
                 now: Date.now(),
             }),
-        [kind, id, agents, runs, councils, project, sessions, efforts]
+        [kind, id, agents, runs, councils, project, sessions, efforts, boards]
     );
 }
 
@@ -201,6 +209,7 @@ export function RefBadgeFace({
             ) : null}
             {look.mark === "session" ? <History size={12} className="shrink-0 text-muted" /> : null}
             {look.mark === "effort" ? <Flag size={12} className="shrink-0 text-muted" /> : null}
+            {look.mark === "board" ? <Shapes size={12} className="shrink-0 text-muted" /> : null}
             <span data-ref-name className={cn("min-w-0 truncate", !known && "font-mono text-[11.5px]")}>
                 {known ? resolved.name : raw}
             </span>
@@ -237,6 +246,9 @@ function targetOf(resolved: Extract<ResolvedRef, { status: "resolved" }>): OpenT
     }
     if (resolved.kind === "effort") {
         return { kind: "effort", effortId: resolved.id };
+    }
+    if (resolved.kind === "board") {
+        return { kind: "board", project: resolved.project ?? "", boardId: resolved.id };
     }
     return { kind: "council", councilId: resolved.id };
 }

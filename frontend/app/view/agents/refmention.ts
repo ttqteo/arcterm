@@ -1,9 +1,10 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// The chat box's `@` picker lists the live agents, the project's runs and its councils, the past conversations and the
-// initiatives beside its files: a pick puts `agent:<id>`, `run:<id>`, `council:<id>`, `session:<id>` or `effort:<id>` in
-// the text, a reference for the agent to read with `wsh read` (the arc mod's prompt hook tells it so,
+// The chat box's `@` picker lists the live agents, the project's runs and its councils, the past conversations, the
+// initiatives and the project's boards beside its files: a pick puts `agent:<id>`, `run:<id>`, `council:<id>`,
+// `session:<id>`, `effort:<id>` or `board:<id>` in the text, a reference for the agent to read with `wsh read`, or for a
+// board to draw on with `wsh board draw --board board:<id>` (the arc mod's prompt hook tells it so,
 // claude/arc-mod/hooks/refs-core.ts), never an `@` mention, which a prompt starting with `@<tab id>` would send to that
 // agent instead. Pure: the rows, the matching and the insert; filemention.tsx draws them.
 
@@ -11,7 +12,7 @@ import { normPath } from "./agentsidebarmodel";
 import { formatAgo, type AgentVM } from "./agentsviewmodel";
 import type { AgentTreeRow } from "./agenttreemodel";
 
-export type RefKind = "agent" | "run" | "council" | "session" | "effort";
+export type RefKind = "agent" | "run" | "council" | "session" | "effort" | "board";
 
 export interface RefItem {
     kind: RefKind;
@@ -38,6 +39,7 @@ const KIND_WORDS: Record<RefKind, readonly string[]> = {
     council: ["council", "councils", "hội đồng"],
     session: ["session", "sessions", "conversation", "conversations", "hội thoại"],
     effort: ["effort", "efforts", "initiative", "initiatives"],
+    board: ["board", "boards", "drawing", "bảng"],
 };
 
 const clip = (s: string, n: number) => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
@@ -167,6 +169,32 @@ export function effortRefs(efforts: readonly EffortSummary[] | null | undefined,
     }));
 }
 
+/** The boards of the chat's project (`projectName`, the registered name a board's `project` holds) a chat can draw on:
+ *  the one open beside this Chat first (`openBoardId`), then the rest by last activity, newest first. A chat outside a
+ *  project lists none: a board belongs to one. */
+export function boardRefs(
+    boards: readonly BoardInfo[] | null | undefined,
+    projectName: string,
+    openBoardId?: string
+): RefItem[] {
+    if (projectName === "") {
+        return [];
+    }
+    const mine = (boards ?? []).filter((b) => b.project === projectName && !b.loaderror);
+    const ordered = [...mine].sort(
+        (a, b) => Number(b.id === openBoardId) - Number(a.id === openBoardId) || b.activets - a.activets
+    );
+    return ordered.slice(0, PER_KIND).map((b, i) => ({
+        kind: "board" as const,
+        id: b.id,
+        label: clip(oneLine(b.name) || b.id, 80),
+        detail: [b.id === openBoardId ? "open" : "", b.shapes != null ? `${b.shapes} shapes` : "", b.agenttitle ?? ""]
+            .filter(Boolean)
+            .join(" · "),
+        ts: -i,
+    }));
+}
+
 // The text as the picker compares it: lowercase, with no diacritics (đ read as d) and, with `dropSpaces`, no whitespace,
 // and where each kept character sits in the text. Vietnamese is typed with its tone on either vowel ("báo", "baó"), so a
 // query only matches what it spells when both lose their marks.
@@ -237,7 +265,7 @@ export function refHitMask(query: string, label: string): boolean[] {
     return mask;
 }
 
-const kindOrder: Record<RefKind, number> = { agent: 0, run: 1, council: 2, session: 3, effort: 4 };
+const kindOrder: Record<RefKind, number> = { agent: 0, run: 1, council: 2, session: 3, effort: 4, board: 5 };
 
 /** The kind a query asks for by name: "@run", "@coun", "@agent" (two letters at least), else null. */
 export function queryKind(query: string): RefKind | null {
@@ -253,9 +281,9 @@ export function queryKind(query: string): RefKind | null {
     return null;
 }
 
-// a query written as a reference: `agent:b9b1`, `tab:b9b1`, `run:`, `council:0c28`, `session:9f31`, `effort:e9b2` (an id
-// pasted after the `@`)
-const ADDRESS_QUERY = /^(agent|tab|run|council|session|effort):([0-9a-f-]*)$/;
+// a query written as a reference: `agent:b9b1`, `tab:b9b1`, `run:`, `council:0c28`, `session:9f31`, `effort:e9b2`,
+// `board:3f2a` (an id pasted after the `@`)
+const ADDRESS_QUERY = /^(agent|tab|run|council|session|effort|board):([0-9a-f-]*)$/;
 
 /**
  * The rows the `@` query lists, at most REF_MAX_ROWS: with no query none (a bare `@` lists files, as it always has); a
@@ -263,8 +291,8 @@ const ADDRESS_QUERY = /^(agent|tab|run|council|session|effort):([0-9a-f-]*)$/;
  * starts with it; any other lists the items whose id starts with it, whose label or detail holds every word of it, or
  * whose label holds it once the spaces of both are taken out (`buildl` finds "Build Library"), diacritics aside in
  * both (`baó` finds "báo", the tone typed on the other vowel).
- * A query that holds a `/` or a `.` is a path, and lists none. Agents first, then runs, councils, conversations and
- * initiatives, each newest first.
+ * A query that holds a `/` or a `.` is a path, and lists none. Agents first, then runs, councils, conversations,
+ * initiatives and boards, each newest first.
  */
 export function refMatches(query: string, items: readonly RefItem[]): RefItem[] {
     const q = query.trim().toLowerCase();

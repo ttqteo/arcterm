@@ -1,23 +1,24 @@
 // a prompt that names an arcterm id ("đọc agent 5065bd8c rồi…", "council:0c28170c", a pick of the chat box's @ picker)
-// gets one line of context telling claude to read it with `wsh read`, which finds what the id is. kept free of the
+// gets one line of context telling claude to read it with `wsh read`, which finds what the id is; a board
+// (`board:3f2a1b9c`, the picker's pick of one) gets its own line telling claude to draw on it with `wsh board draw`. kept free of the
 // engine so vitest can run it; register.ts holds the prompt.submit hook. A prompt that starts with @<tab id> is not
 // this: it goes to that agent (mention-core.ts).
 
-// an id the prompt names: its kind when the prompt says it (agent, run, council, session, effort), else null, which
+// an id the prompt names: its kind when the prompt says it (agent, run, council, session, effort, board), else null, which
 // `wsh read` looks up in every kind
 export type Ref = { kind: string | null; id: string };
 
-const KINDS = ["agent", "run", "council", "session", "effort"] as const;
+const KINDS = ["agent", "run", "council", "session", "effort", "board"] as const;
 
 // how many ids one line names at most: a prompt that pastes a log full of hashes is not asking to read them all
 export const MAX_REFS = 5;
 
 // kind:id, as the cockpit's addresses and the @ picker write it (tab: is agent:)
-const ADDRESS = /(?<![\w/.-])(agent|tab|run|council|session|effort):([0-9a-f][0-9a-f-]{3,}[0-9a-f])(?![\w/.-])/gi;
+const ADDRESS = /(?<![\w/.-])(agent|tab|run|council|session|effort|board):([0-9a-f][0-9a-f-]{3,}[0-9a-f])(?![\w/.-])/gi;
 // a hex id of 8 characters or more after a word that says what it is, "run/agent" included: "đọc agent 5065bd8c",
 // "council 0c28170c368b5ab0", "phiên 4b199176". A bare hash alone is left out: it is as likely a commit
 const CUED =
-    /(?<![\p{L}\p{N}_])(agent|tab|run|council|session|effort|phiên|chat|hội đồng|initiative)((?:\s*\/\s*[\p{L}]+)*)\s+([0-9a-f]{8}[0-9a-f-]*)(?![\w/.-])/giu;
+    /(?<![\p{L}\p{N}_])(agent|tab|run|council|session|effort|board|phiên|chat|hội đồng|initiative)((?:\s*\/\s*[\p{L}]+)*)\s+([0-9a-f]{8}[0-9a-f-]*)(?![\w/.-])/giu;
 // a whole uuid stands alone: no commit looks like one
 const UUID = /(?<![\w/.-])([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(?![\w/.-])/gi;
 
@@ -66,12 +67,36 @@ export function promptRefs(text: string): Ref[] {
 
 const refText = (r: Ref) => (r.kind == null ? r.id : `${r.kind}:${r.id}`);
 
-// the context line for a prompt that names ids, or null when it names none
+// the line for the boards a prompt names: `wsh read` does not know a board; `wsh board draw --board board:<id>` finds it
+// by its id and has its drawer draw or answer on it
+function boardsLine(boards: Ref[]): string {
+    const list = boards.map((r) => "`" + refText(r) + "`").join(", ");
+    const one = boards.length === 1;
+    return (
+        `arc: this prompt names ${one ? "an arcterm board" : "arcterm boards"}: ${list}. What the person asks about ` +
+        `${one ? "it" : "each"} (draw, change, add, explain on it) goes to that board: run ` +
+        '`wsh board draw --board board:<id> --ask "<the request in your words, with what it needs from this conversation>"`' +
+        ", and that board's drawer draws or answers on it. Pass the id as written, never a name of your own: a name no " +
+        "board has makes a new board."
+    );
+}
+
+// the context for a prompt that names ids, or null when it names none
 export function refsContext(text: string): string | null {
-    const refs = promptRefs(text);
-    if (refs.length === 0) {
-        return null;
+    const found = promptRefs(text);
+    const boards = found.filter((r) => r.kind === "board");
+    const refs = found.filter((r) => r.kind !== "board");
+    const lines: string[] = [];
+    if (refs.length > 0) {
+        lines.push(readLine(refs));
     }
+    if (boards.length > 0) {
+        lines.push(boardsLine(boards));
+    }
+    return lines.length === 0 ? null : lines.join("\n");
+}
+
+function readLine(refs: Ref[]): string {
     const list = refs.map((r) => "`" + refText(r) + "`").join(", ");
     return (
         `arc: this prompt names arcterm ${refs.length === 1 ? "an id" : "ids"}: ${list}. Read ${refs.length === 1 ? "it" : "each"} with ` +

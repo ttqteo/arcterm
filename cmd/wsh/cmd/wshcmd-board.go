@@ -87,7 +87,7 @@ var boardDrawCmd = &cobra.Command{
 }
 
 func init() {
-	boardDrawCmd.Flags().String("board", "", "the board's name (any case); a new board when none has it")
+	boardDrawCmd.Flags().String("board", "", "the board's name (any case), or board:<id> as Chat's @ picker writes it; a new board when no board has the name")
 	boardDrawCmd.Flags().String("context", "", "the briefing: what the person asked, the facts and the files involved; needed when the board is new")
 	boardDrawCmd.Flags().String("context-file", "", `the briefing read from this file ("-" for stdin), in place of --context`)
 	boardDrawCmd.Flags().String("ask", "", "the one line the drawer answers on the board; alone, once the board exists")
