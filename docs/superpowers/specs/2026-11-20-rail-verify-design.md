@@ -164,7 +164,9 @@ A new `pkg/verifyruns`:
 
 - `view/agents/verifymodel.ts` (pure): the tile's rows in order, the head verdict, the warning line, the chip, the
   strip count and the rerun line. `verifymodel.test.ts` beside it.
-- `view/agents/verifystore.ts`: an atom per agent, read on mount and on `verify:changed`.
+- `view/agents/verifystore.ts`: an atom per agent, read on mount, on `verify:changed`, and each time the agent's state
+  changes (a turn starting or ending). A file change publishes no event, and an agent edits during its turns, so the
+  turn's end is when an edit after a passed run shows as out of date; wavesrv still never polls.
 - `view/agents/railverify.tsx`: the tile; the strip count and the header chip go where the other counts and the state
   word are drawn.
 
