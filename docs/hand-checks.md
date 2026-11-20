@@ -59,6 +59,10 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
   registrations is missing after a few seconds. Windows is where the rename can leave the file refusing its next open
   ("used by another process", a virus scanner or indexer holding it); the Go half is unit-tested with a fake refusing
   read only, never against a real held file.
+- [ ] (arcterm) **Council seat role on the Map's cards** (`councilseatrole.tsx`, `councilmap.tsx` `Card`). The first
+  step's cards were checked by CDP (`council-discussion` "seat role"); the Map's were not. Open a paper council (Reviewer
+  A, Reviewer B, Humanizer) on the Map: each card reads its focus (`novelty`, `baselines`) and its brief under the name,
+  Humanizer its brief alone, two lines at most, and the hover shows the whole brief.
 - [ ] (arcterm) **Chat's `@` picker, top level only** (`refmention.ts` `runRefs`/`topLevelAgentIds`,
   `refmentionstore.ts`). In a chat of a project with an orchestrator run that had a plan review (arcterm's "Kael sync
   11-19"), type `@`: the run is one row (`run:733ad992 · … · orchestrator`) and none of its "You are the plan reviewer

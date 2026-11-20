@@ -37,7 +37,7 @@ import type { AgentsViewModel } from "./agents";
 import { ArgumentMap } from "./councilargumentmap";
 import { CouncilAvatar, MarkedText } from "./councilchat";
 import { CHECK_TONE, CheckIcon, WRONG_CITE_ICON, WRONG_CITE_TONE } from "./councilchecks";
-import { avatarTone, seatInitials } from "./councildiscussionmodel";
+import { avatarTone, seatInitials, seatRole } from "./councildiscussionmodel";
 import { CouncilHeaderRow } from "./councilheader";
 import { useCouncilHost } from "./councilhost";
 import { expertCards, mapWords, type ExpertCard, type MapWords } from "./councilmapmodel";
@@ -50,6 +50,7 @@ import {
     type MatrixRow,
     type StanceLabel,
 } from "./councilmodel";
+import { SeatRoleLine } from "./councilseatrole";
 import {
     councilMapOpenAtom,
     councilMapViewAtom,
@@ -251,12 +252,15 @@ function Evidence({ card }: { card: ExpertCard }) {
 function Card({ c, card, words }: { c: Council; card: ExpertCard; words: MapWords }) {
     const setTimeline = useSetAtom(councilTimelineAtom(c.id));
     const failed = c.failed?.[card.id] != null;
+    const seat = c.experts.find((e) => e.id === card.id);
+    const role = seat != null ? seatRole(c, seat) : { focus: "", gist: "", full: "" };
     return (
         <button
             type="button"
             data-council-map-card={card.id}
             data-council-timeline-trigger
             aria-label={words.openTimeline(card.name)}
+            title={role.full !== "" ? role.full : undefined}
             onClick={() => setTimeline(card.id)}
             className="flex min-w-0 cursor-pointer flex-col gap-[10px] rounded-lg border border-edge-mid bg-surface-raised p-3 text-left outline-none hover:border-edge-strong hover:bg-surface-hover focus-visible:ring-2 focus-visible:ring-accent"
         >
@@ -266,6 +270,7 @@ function Card({ c, card, words }: { c: Council; card: ExpertCard; words: MapWord
                     {card.name}
                 </span>
             </span>
+            <SeatRoleLine role={role} />
             <Doing card={card} failed={failed} words={words} />
             {card.counts != null && <Evidence card={card} />}
             <span className="flex flex-wrap gap-x-3 gap-y-1 border-t border-edge-mid pt-2 text-[11.5px] tabular-nums text-muted">

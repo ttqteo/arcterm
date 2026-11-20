@@ -2668,6 +2668,29 @@ async function seatTimeline(h, ctx, rec) {
     );
     rec("timeline: the Seats button is in the header in round 1 too, and no timeline is asked for", (await exists(h, SEATS)) && (await timelineOpen(h, id)) === null);
 
+    // each card says what its seat is there for under the name: the stock focus first where the seat has one, then its
+    // brief without the "You" opener, clamped to two lines; the whole brief is the card's hover
+    const roles = await h.ev(`Object.fromEntries([...document.querySelectorAll("[data-council-expert-card]")].map((c) => {
+        const line = c.querySelector("[data-council-seat-role]");
+        return [c.getAttribute("data-council-expert-card"), {
+            focus: (line?.querySelector("[data-council-seat-focus]")?.textContent ?? "").trim(),
+            text: (line?.textContent ?? "")${NORM},
+            clamp: line ? getComputedStyle(line).webkitLineClamp : null,
+            hover: c.querySelector("[data-council-expert-card-open]")?.getAttribute("title") ?? "",
+        }];
+    }))`);
+    await h.shot("cdp-shots/council-discussion-seat-role.png");
+    rec(
+        "seat role: RAM's card reads `memory · Review the feature for memory…` under its name, UX's (no focus) reads its brief alone, two lines at most, and the hover holds the whole brief",
+        roles.ram?.focus === "memory" &&
+            roles.ram.text.startsWith("memory · Review the feature for memory.") &&
+            roles.ux?.focus === "" &&
+            roles.ux.text.startsWith("Review the feature as the UX expert.") &&
+            roles.ram.clamp === "2" &&
+            roles.ram.hover.startsWith("You review the feature for memory."),
+        roles
+    );
+
     // a click on RAM's card opens the Seats popover on RAM's timeline
     await click(h, '[data-council-expert-card-open="ram"]');
     const open = await until(h, `!!document.querySelector('${TL}[data-council-timeline="ram"]')`);

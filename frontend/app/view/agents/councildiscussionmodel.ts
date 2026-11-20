@@ -13,6 +13,7 @@ import {
     callSegments,
     costLine,
     costParts,
+    councilLang,
     heldDrafts,
     isReaction,
     outdatedCount,
@@ -150,6 +151,26 @@ export function seatInitials(c: Council, id: string): string {
     }
     const letters = words.length >= 2 ? [[...words[0]][0], [...words[1]][0]] : [...words[0]].slice(0, 2);
     return letters.join("").toLocaleUpperCase();
+}
+
+// Go appends this sentence to every stock role's brief (`briefEvidenceRule`, pkg/council/roles.go) and the person's own
+// roles often copy it: it says how to cite, not who the seat is, so the card leaves it out.
+const EVIDENCE_RULE =
+    "Cite a path:line for every claim, or a region of an attached screenshot; a claim with neither is marked weak.";
+
+/** What a seat is there for, as its card shows it under the name: `focus` the stock role's short phrase in the council's
+ *  language (empty for the person's own roles, which have none), `gist` its brief with the evidence rule left out and the
+ *  "You are" / "You" opener dropped (`A reviewer at the venue's security bar…`), clamped to two lines by the view, and
+ *  `full` the same brief whole, for the hover. Empty strings where a seat has nothing (a live agent's seat). */
+export type SeatRole = { focus: string; gist: string; full: string };
+
+/** Pure: a seat's role line (see SeatRole). */
+export function seatRole(c: Pick<Council, "lang">, e: CouncilExpert): SeatRole {
+    const focus = ((councilLang(c) === "vi" ? e.focusvi || e.focus : e.focus) ?? "").trim();
+    const full = (e.brief ?? "").split(EVIDENCE_RULE).join(" ").replace(/\s+/g, " ").trim();
+    const bare = full.replace(/^you\s+are\s+|^you\s+/i, "");
+    const gist = bare === "" ? "" : bare.charAt(0).toLocaleUpperCase() + bare.slice(1);
+    return { focus, gist, full };
 }
 
 /** Pure: whether an expert is writing right now (the avatar's green dot). Nothing is while the council is not running. */

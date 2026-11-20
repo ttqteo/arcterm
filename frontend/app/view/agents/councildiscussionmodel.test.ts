@@ -24,6 +24,7 @@ import {
     reactions,
     retriedOut,
     seatInitials,
+    seatRole,
     segmentSummary,
     shortName,
     sinceStart,
@@ -209,6 +210,51 @@ describe("failedWhile", () => {
             "Failed while writing the summary",
             "Failed while answering",
         ]);
+    });
+});
+
+describe("seatRole", () => {
+    const rule =
+        "Cite a path:line for every claim, or a region of an attached screenshot; a claim with neither is marked weak.";
+    const reviewer: CouncilExpert = {
+        id: "reviewer-a",
+        name: "Reviewer A",
+        model: "opus",
+        focus: "novelty",
+        focusvi: "tính mới",
+        brief: `You are a reviewer at the venue's security bar (CCS, NDSS). Judge novelty against prior work. ${rule}`,
+    };
+
+    it("shows a stock role's focus in the council's language and its brief without the opener or the evidence rule", () => {
+        expect(seatRole({ lang: "en" }, reviewer)).toEqual({
+            focus: "novelty",
+            gist: "A reviewer at the venue's security bar (CCS, NDSS). Judge novelty against prior work.",
+            full: "You are a reviewer at the venue's security bar (CCS, NDSS). Judge novelty against prior work.",
+        });
+        expect(seatRole({ lang: "vi" }, reviewer).focus).toBe("tính mới");
+    });
+
+    it("falls back to the English focus in Vietnamese, and has none for a role of the person's own", () => {
+        expect(seatRole({ lang: "vi" }, { ...reviewer, focusvi: "" }).focus).toBe("novelty");
+        const own: CouncilExpert = {
+            id: "humanizer",
+            name: "Humanizer",
+            model: "sonnet",
+            brief: `You read the prose only, not the method.\n${rule}`,
+        };
+        expect(seatRole({}, own)).toEqual({
+            focus: "",
+            gist: "Read the prose only, not the method.",
+            full: "You read the prose only, not the method.",
+        });
+    });
+
+    it("is empty for a seat with no brief, such as a live agent's", () => {
+        expect(seatRole({}, { id: "a", name: "Agent", model: "", brief: "" })).toEqual({
+            focus: "",
+            gist: "",
+            full: "",
+        });
     });
 });
 
