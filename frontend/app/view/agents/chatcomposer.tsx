@@ -73,6 +73,7 @@ import { bashGhost } from "./chatbash";
 import { noteBashRun, useBashHistory } from "./chatbashstore";
 import { ChatBgLine } from "./chatbgline";
 import { boxLayout, boxState, boxTabPlaceholder, type BoxState, type HintPart } from "./chatboxstate";
+import { ContextNudgeLine } from "./chatcontextnudgeline";
 import { ChatEditor, type KeyLike } from "./chateditor";
 import { ChatFooter, Fold, usePartMotion } from "./chatfooter";
 import { boxAnswersAsk } from "./chathandoff";
@@ -171,6 +172,7 @@ export function ChatComposer(props: Parameters<typeof ComposerBox>[0]) {
     return (
         <>
             <SwitchLine agent={props.agent} />
+            <ContextNudgeLine agent={props.agent} />
             <ComposerBox {...props} />
         </>
     );

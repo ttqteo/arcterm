@@ -38,6 +38,11 @@ and a picture given to a line that is not big.
   amber at 150k and red at 200k like the details rail, showing the tokens beside the percent: on a 1M window a calm
   20% already means every turn re-reads 200k.
 
+### Added
+
+- When a Claude agent's context passes 200k tokens, Chat asks once over the box, while the agent is idle, whether to
+  Compact or Clear it (or Later). It asks again only after the context has dropped under 150k and climbs back.
+
 ## 1.12.0 — 2026-11-20
 
 ### Added
