@@ -77,6 +77,9 @@ and a picture given to a line that is not big.
 - A board can hold bar and line charts drawn to scale: give the agent, or the board's Ask, the numbers ("add a bar
   chart of pass rate: baseline 0.42, LLM 0.61") and the chart lands beside the drawing, with its values and labels, as
   plain shapes you can still move and edit.
+- The agent rail shows your agent's UI checks in a Verify tile: a failed step in red, a run that never finished or a UI
+  change nobody checked in amber, with Ask the agent to rerun and Skip; the agent asks you before it merges while Verify
+  is red or amber. <!-- big --> <!-- shot: 1.10.0-rail-verify.webp -->
 
 ### Changed
 
