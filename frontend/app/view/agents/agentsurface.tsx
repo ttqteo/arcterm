@@ -854,6 +854,7 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
                                                 />
                                             ) : cell != null && multi ? (
                                                 <GridCellBar
+                                                    model={model}
                                                     agent={a}
                                                     focused={cell.focused}
                                                     onRemove={() => onRemoveCell(a.id)}

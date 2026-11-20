@@ -4,6 +4,7 @@
 import { describe, expect, it } from "vitest";
 import {
     agentChunk,
+    chipCount,
     CHUNK_RENAME,
     chunkMenuItems,
     latestNote,
@@ -143,6 +144,21 @@ describe("popoverProgress", () => {
         expect(p.done).toBe(1);
         expect(p.total).toBe(5);
         expect(p.segments).toEqual(["done", "active", "pending", "pending", "pending"]);
+    });
+});
+
+describe("chipCount", () => {
+    it("is done/total over the plan the chip counts", () => {
+        expect(chipCount({ chunks: [chunk("A", "done"), chunk("B", "active"), chunk("C", "pending")] })).toBe("1/3");
+        // a proposed chunk is not work yet and a skipped one leaves the total, as popoverProgress counts
+        expect(chipCount({ chunks: [...effort.chunks, chunk("S", "skipped")] })).toBe("1/5");
+    });
+
+    it("is null with no initiative read yet, or with no chunk to count", () => {
+        expect(chipCount(undefined)).toBeNull();
+        expect(chipCount({ chunks: [] })).toBeNull();
+        expect(chipCount({})).toBeNull();
+        expect(chipCount({ chunks: [chunk("P", "proposed"), chunk("S", "skipped")] })).toBeNull();
     });
 });
 

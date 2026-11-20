@@ -103,7 +103,7 @@ import {
     type HeaderWidth,
 } from "./headermodel";
 import { initiativeLinkPickerAtom } from "./initiativepopover";
-import { popoverProgress } from "./initiativepopovermodel";
+import { chipCount } from "./initiativepopovermodel";
 import { openLauncher } from "./launcherstore";
 import { rosterSeededAtom } from "./liveagents";
 import { liveTokensAtom } from "./livetokensstore";
@@ -213,8 +213,7 @@ function InitiativeLink({ model, agent, width }: { model: AgentsViewModel; agent
     }, [oref]);
     // the words only: the Diamond icon below is the ◇, so initiativeLinkText's own would draw it twice
     const text = initiativeTitle(agent.name, effort);
-    const progress = effort != null ? popoverProgress(effort) : null;
-    const count = progress != null && progress.total > 0 ? `${progress.done}/${progress.total}` : null;
+    const count = chipCount(effort);
     return (
         <>
             {PATH_SLASH}

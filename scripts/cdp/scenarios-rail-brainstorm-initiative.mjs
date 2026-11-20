@@ -12,9 +12,10 @@
 //                         Retry, and the chunk chips the box offers (done: / go on with:). It carries over what the Chat band's
 //                         scenarios (chat-initiative-band, chat-brainstorm-band) and the popover's checked that has a home here.
 //   rail-tabs-split       a split of four with two linked agents: the ◇ chip and the Brainstorm switch's dot in the header of
-//                         each linked cell as it takes the focus (the surface has one AgentHeader, for the focused agent: a
-//                         split cell's own bar has neither), the strip at the rail's 300px with Council, Brainstorm, Initiative
-//                         and the Verify count (no clip), and the chip taking its cell and the rail's Initiative tab.
+//                         each linked cell as it takes the focus (the surface has one AgentHeader, for the focused agent), the
+//                         chip and the Brainstorm marker with its dot in each linked cell's own 26px bar, read on cells that do
+//                         not have the focus, the strip at the rail's 300px with Council, Brainstorm, Initiative and the Verify
+//                         count (no clip), and the bar's chip and marker taking their cell and the rail's tab.
 //
 // DOM contract (the panes' own markers): the rail is aside[aria-label="Agent details"]; its tabs [data-rail-tab="…"] with
 // [data-rail-tab-dot]; the panes [data-rail-brainstorm="<id>"] (rows [data-rail-brainstorm-row="<n>"][data-has-new], chips
@@ -23,7 +24,9 @@
 // [data-rail-initiative-section="initiative-chunks|initiative-plan|initiative-note"] over section[data-rail-section][data-open],
 // rows [data-rail-initiative-row="<label>"][data-rail-initiative-row-kind], [data-rail-initiative-work-on|-all|-all-list|-menu|
 // -note|-add-note|-retry]); the board dialog [data-chat-board-dialog="<id>"] holding [data-bsband-preview="<name>"]; the header's
-// [data-initiative-link-open] and [data-plan-review-chip]. The band and the popover are gone: no step may find
+// [data-initiative-link-open] and [data-plan-review-chip]; a split cell's bar [data-agent-cell-bar="<id>"] with its chip
+// [data-agent-cell-initiative="<id>"] ([data-agent-cell-initiative-title|-progress]) and marker [data-agent-cell-brainstorm="<id>"]
+// ([data-agent-cell-brainstorm-dot="new|asking"]). The band and the popover are gone: no step may find
 // [data-chat-band], [data-initiative-band] or [data-initiative-popover] in the page, which every step checks after it runs.
 //
 // kit is scenarios.mjs's CR_KIT.
@@ -1716,9 +1719,46 @@ export default function (kit) {
                 await page(h, `const V = await mod("app/view/agents/verifystore.ts"); await V.loadVerify(${JSON.stringify(ctx.tabs.b.blockId)}, ${JSON.stringify(ctx.cwd)}); return true;`);
             };
             ctx.verifyFile = join(ctx.dataDir, "verify", `${ctx.tabs.b.blockId}.json`);
-            // The surface has ONE AgentHeader, for the focused agent, above the grid (a split cell's own bar is the 26px
-            // GridCellBar: name, Chat | Terminal, ×), so a cell's ◇ chip and Brainstorm dot are read in the header while that
-            // cell has the focus.
+            // The surface has ONE AgentHeader, for the focused agent, above the grid, so the header's ◇ chip and Brainstorm dot
+            // are read while that cell has the focus. Every cell also has its own 26px GridCellBar (name, the chip and the
+            // Brainstorm marker when it has them, Chat | Terminal, ×): barOf reads what one says, whichever cell has the focus.
+            const barOf = (k) =>
+                h.ev(`(() => {
+                    const flat = ${FLAT};
+                    const bar = document.querySelector('[data-agent-cell-bar="${T[k]}"]');
+                    const chip = bar?.querySelector("[data-agent-cell-initiative]");
+                    const mark = bar?.querySelector("[data-agent-cell-brainstorm]");
+                    const dot = mark?.querySelector("[data-agent-cell-brainstorm-dot]");
+                    const rect = (el) => { const r = el?.getBoundingClientRect(); return r ? { l: r.left, t: r.top, r: r.right, b: r.bottom, w: r.width, h: r.height } : null; };
+                    const br = rect(bar);
+                    const cr = rect(chip);
+                    const mr = rect(mark);
+                    const dr = rect(dot);
+                    const inside = (a, b) => !!a && !!b && a.l >= b.l - 0.5 && a.r <= b.r + 0.5 && a.t >= b.t - 0.5 && a.b <= b.b + 0.5;
+                    const progress = chip?.querySelector("[data-agent-cell-initiative-progress]");
+                    return {
+                        bar: !!bar,
+                        barHeight: br ? Math.round(br.h) : 0,
+                        // nothing in the bar spills out of it or wraps onto a second line
+                        barFits: !!bar && bar.scrollWidth <= bar.clientWidth + 1 && bar.scrollHeight <= bar.clientHeight + 1,
+                        nameWidth: Math.round(bar?.querySelector("span.truncate")?.getBoundingClientRect().width ?? 0),
+                        chip: !!chip,
+                        chipOf: chip?.getAttribute("data-agent-cell-initiative") ?? null,
+                        chipTitle: chip ? flat(chip.querySelector("[data-agent-cell-initiative-title]")) : null,
+                        chipProgress: progress ? flat(progress) : null,
+                        chipLabel: chip?.getAttribute("aria-label") ?? null,
+                        chipInBar: inside(cr, br),
+                        chipOneLine: !!cr && cr.h <= 19,
+                        progressVisible: !!progress && progress.getBoundingClientRect().right <= (chip?.getBoundingClientRect().right ?? 0) + 0.5,
+                        mark: !!mark,
+                        markLabel: mark?.getAttribute("aria-label") ?? null,
+                        markInBar: inside(mr, br),
+                        dot: dot?.getAttribute("data-agent-cell-brainstorm-dot") ?? null,
+                        dotOnMark: inside(dr, mr),
+                        dotSize: dr ? Math.round(dr.w) : null,
+                        cellFocused: document.querySelector('[data-agent-terminal="${T[k]}"]')?.getAttribute("data-agent-focused") === "true",
+                    };
+                })()`);
             const hdr = (k) =>
                 h.ev(`(() => {
                     const flat = ${FLAT};
@@ -1798,6 +1838,76 @@ export default function (kit) {
                 );
             });
 
+            // 1b. what a cell's own bar says, read on cells that do NOT have the focus: the chip and the marker with its dot
+            await run("1b. the chip and the dot in an unfocused cell's bar", async (name) => {
+                // the first cell has the focus: read the second (linked, brainstorm seen) and the two plain cells
+                await AC.focusAgent(h, T.a);
+                await polishWaitFor(h, `${cellOf("a")}?.getAttribute("data-agent-focused") === "true"`, SHORT_MS);
+                await polishWaitFor(h, `!!document.querySelector('[data-agent-cell-initiative="${T.b}"] [data-agent-cell-initiative-progress]')`, WAIT_MS);
+                await polishNap(500);
+                const b = await barOf("b");
+                const c = await barOf("c");
+                const d = await barOf("d");
+                const aFocused = await barOf("a");
+                // the second has the focus: the first, a cell without it, holds the chip and the marker with a board new to it
+                await AC.focusAgent(h, T.b);
+                await polishWaitFor(h, `${cellOf("b")}?.getAttribute("data-agent-focused") === "true"`, SHORT_MS);
+                await polishWaitFor(h, `!!document.querySelector('[data-agent-cell-initiative="${T.a}"] [data-agent-cell-initiative-progress]')`, WAIT_MS);
+                await polishNap(500);
+                const a = await barOf("a");
+                await closeToasts(h);
+                await polishNap(300);
+                await shot("1b-cell-bars");
+                rec(
+                    `${name}: with another cell focused, the unfocused linked cell's bar (26px, nothing wrapped or spilling) holds [data-agent-cell-initiative] reading "${TITLE_SPB}" and "· 1/3" (and the first cell's reads "${TITLE_SPA}" and "· 1/3"); the first cell's bar holds [data-agent-cell-brainstorm] with the accent dot [data-agent-cell-brainstorm-dot="new"] on it, the second's marker has no dot (its boards are seen); a plain cell's bar has neither the chip nor the marker`,
+                    b.bar &&
+                        b.cellFocused === false &&
+                        b.barHeight === 26 &&
+                        b.barFits === true &&
+                        b.chip === true &&
+                        b.chipOf === T.b &&
+                        b.chipTitle === TITLE_SPB &&
+                        b.chipProgress === "· 1/3" &&
+                        b.chipLabel === `${TITLE_SPB}, 1/3 chunks done. Open the Initiative tab` &&
+                        b.chipInBar === true &&
+                        b.chipOneLine === true &&
+                        b.progressVisible === true &&
+                        b.nameWidth > 0 &&
+                        b.mark === true &&
+                        b.markInBar === true &&
+                        b.dot === null &&
+                        c.bar &&
+                        c.barHeight === 26 &&
+                        c.barFits === true &&
+                        c.chip === false &&
+                        c.mark === false &&
+                        d.bar &&
+                        d.chip === false &&
+                        d.mark === false &&
+                        // the focused cell's own bar says the same
+                        aFocused.cellFocused === true &&
+                        aFocused.chip === true &&
+                        aFocused.chipProgress === "· 1/3" &&
+                        aFocused.dot === "new" &&
+                        a.cellFocused === false &&
+                        a.barHeight === 26 &&
+                        a.barFits === true &&
+                        a.chip === true &&
+                        a.chipTitle === TITLE_SPA &&
+                        a.chipProgress === "· 1/3" &&
+                        a.chipInBar === true &&
+                        a.chipOneLine === true &&
+                        a.progressVisible === true &&
+                        a.mark === true &&
+                        a.markInBar === true &&
+                        a.dot === "new" &&
+                        a.dotOnMark === true &&
+                        a.dotSize === 5 &&
+                        /^Brainstorm: 1 new board\. Open the Brainstorm tab$/.test(a.markLabel ?? ""),
+                    { b, c: { chip: c.chip, mark: c.mark, h: c.barHeight }, d: { chip: d.chip, mark: d.mark }, aFocused: { chip: aFocused.chip, progress: aFocused.chipProgress, dot: aFocused.dot }, a }
+                );
+            });
+
             // 2. the strip at the rail's 300px with every tab and the Verify count
             await run("2. the strip at 300px", async (name) => {
                 await AC.focusAgent(h, T.b);
@@ -1846,8 +1956,75 @@ export default function (kit) {
                 );
             });
 
-            // 3. the chip of the cell that has the focus: its cell, the rail and its own Initiative tab
-            await run("3. the chip in a split", async (name) => {
+            // 3. the chip in the bar of a cell that does NOT have the focus: it takes the cell, shows the rail and opens its own Initiative tab
+            await run("3. the chip in an unfocused cell's bar", async (name) => {
+                await AC.focusAgent(h, T.b);
+                await polishNap(400);
+                await click(h, tabOf("overview"));
+                await setRail(h, false);
+                await polishNap(400);
+                // the first cell is not the one in focus, and its bar's chip is clicked
+                const before = { focused: await focusedAgent(h), rail: await railOpen(h), cellFocused: await h.ev(`${cellOf("a")}?.getAttribute("data-agent-focused") === "true"`) };
+                const clicked = await click(h, `document.querySelector('[data-agent-cell-initiative="${T.a}"]')`);
+                const up = await polishWaitFor(h, `(${SELECTED}) === "initiative" && !!${IN(T.a)}`, WAIT_MS);
+                await polishNap(500);
+                const after = await h.ev(`({ selected: ${SELECTED}, pane: !!${IN(T.a)}, other: !!${IN(T.b)}, focusIn: !!${IN(T.a)}?.contains(document.activeElement), cellFocused: ${cellOf("a")}?.getAttribute("data-agent-focused") === "true", headerChip: ${FLAT}(${LINK_CHIP}) })`);
+                const focused = await focusedAgent(h);
+                await shot("3-bar-chip-in-split");
+                rec(
+                    `${name}: with the rail hidden and the second cell focused, a click on the ◇ chip in the FIRST cell's bar (not focused) focuses that cell (focusIdAtom and data-agent-focused), shows the rail and selects the Initiative tab of that agent (its pane, none of another agent's), the keyboard in it`,
+                    before.focused === T.b &&
+                        before.rail === false &&
+                        before.cellFocused === false &&
+                        clicked &&
+                        up &&
+                        focused === T.a &&
+                        (await railOpen(h)) === true &&
+                        after.selected === "initiative" &&
+                        after.pane === true &&
+                        after.other === false &&
+                        after.focusIn === true &&
+                        after.cellFocused === true &&
+                        after.headerChip.includes(TITLE_SPA),
+                    { before, clicked, up, focused, after }
+                );
+            });
+
+            // 3b. the Brainstorm marker in the bar of a cell that does NOT have the focus: it takes the cell and opens its Brainstorm tab
+            await run("3b. the Brainstorm marker in an unfocused cell's bar", async (name) => {
+                // the second cell has the focus now; the first cell's marker (the dot is on it) is clicked
+                await AC.focusAgent(h, T.b);
+                await polishWaitFor(h, `${cellOf("b")}?.getAttribute("data-agent-focused") === "true"`, SHORT_MS);
+                await polishNap(400);
+                const before = { focused: await focusedAgent(h), cellFocused: await h.ev(`${cellOf("a")}?.getAttribute("data-agent-focused") === "true"`) };
+                const clicked = await click(h, `document.querySelector('[data-agent-cell-brainstorm="${T.a}"]')`);
+                const up = await polishWaitFor(h, `(${SELECTED}) === "brainstorm" && !!${BS(T.a)}`, WAIT_MS);
+                await polishNap(500);
+                const after = await h.ev(`({ selected: ${SELECTED}, pane: !!${BS(T.a)}, other: !!${BS(T.b)}, cellFocused: ${cellOf("a")}?.getAttribute("data-agent-focused") === "true" })`);
+                // the brainstorm's mode is "brainstorm" only while the cell shows the Brainstorm view
+                const mode = await page(h, `const S = await mod("app/view/agents/brainstormstore.ts"); return S.getBrainstorm(${JSON.stringify(T.a)})?.mode ?? null;`);
+                const focused = await focusedAgent(h);
+                const rail = await railOpen(h);
+                await shot("3b-bar-marker-in-split");
+                rec(
+                    `${name}: with the second cell focused, a click on the Brainstorm marker in the FIRST cell's bar (not focused) focuses that cell and selects the Brainstorm tab of that agent on the rail (its timeline, none of another agent's); the cell itself stays on Chat, it never shows the Brainstorm view`,
+                    before.focused === T.b &&
+                        before.cellFocused === false &&
+                        clicked &&
+                        up &&
+                        focused === T.a &&
+                        rail === true &&
+                        after.selected === "brainstorm" &&
+                        after.pane === true &&
+                        after.other === false &&
+                        after.cellFocused === true &&
+                        mode !== "brainstorm",
+                    { before, clicked, up, focused, rail, after, mode }
+                );
+            });
+
+            // 3c. the chip of the cell that has the focus, in the header: its cell, the rail and its own Initiative tab
+            await run("3c. the chip in a split", async (name) => {
                 await AC.focusAgent(h, T.b);
                 await polishNap(400);
                 await click(h, tabOf("overview"));
