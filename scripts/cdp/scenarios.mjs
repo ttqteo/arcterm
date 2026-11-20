@@ -6776,6 +6776,13 @@ const diffLogTab = {
 
         // 3. a commit whose files are still being read says so, and never reads 0 files
         const picked3 = await pickProject();
+        // the project's own load ends with its top commit selected and its files shown (step 1 waits for the same). Acting
+        // before that, as this step did, failed this step and the next in most runs of a loaded machine: the screenshot
+        // showed no row selected, "Select a commit" and the agent scope's a.txt still open
+        const ready3 = await wait(
+            `${historyBtn(0)}?.className.includes("bg-surface-selected") && document.querySelectorAll("[data-changed-file-row]").length === 2`,
+            10000
+        );
         await ev(`window.__commitChangesFault = "hang"`);
         await ev(`${historyBtn(1)}?.click()`);
         await nap(600);
@@ -6784,8 +6791,8 @@ const diffLogTab = {
         await h.shot("cdp-shots/diff-log-loading.png");
         rec(
             "3. while a commit's files load, data-files-count reads Reading this commit's files… and the page has no 0 files",
-            picked3 && loading3 === "Reading this commit's files…" && !zero3,
-            JSON.stringify({ picked3, loading3, zero3 })
+            picked3 && ready3 && loading3 === "Reading this commit's files…" && !zero3,
+            JSON.stringify({ picked3, ready3, loading3, zero3 })
         );
 
         // 4. a read that fails says so and offers Retry, which loads the list
@@ -6868,26 +6875,70 @@ const diffLogTab = {
 
         // 7. the ⋯ menu holds the view options
         await ev(`${historyBtn(0)}?.click()`);
-        await wait(`document.querySelectorAll("[data-changed-file-row]").length === 2 && (document.querySelector("[data-diff-header]")?.textContent || "").includes("a.txt")`, 10000);
-        await ev(`document.querySelector("[data-diff-options]")?.click()`);
+        // The click re-reads the commit: its pair redraws, then the file list and the ⋯ button vanish for about a second and
+        // come back as new nodes. The rows and the header read the same before and after, so a wait on them is met by the
+        // old pane, and a menu opened meanwhile has Wrap disabled (the pane has no repository yet) and is closed by the
+        // rebuild. Open it on a pane that has stayed put: Monaco drawn, both rows, and the same ⋯ button for 1.5 s.
+        let settled7 = false;
+        for (let waited = 0; waited < 15000 && !settled7; waited += 250) {
+            settled7 = await ev(`(() => {
+                const t = document.querySelector("[data-diff-options]");
+                const drawn = t && document.querySelector("[data-diff-pane] .monaco-diff-editor") &&
+                    document.querySelectorAll("[data-changed-file-row]").length === 2 &&
+                    (document.querySelector("[data-diff-header]")?.textContent || "").includes("a.txt");
+                if (!drawn) { window.__dlt7 = null; return false; }
+                if (window.__dlt7?.node !== t) window.__dlt7 = { node: t, at: performance.now() };
+                return performance.now() - window.__dlt7.at >= 1500;
+            })()`);
+            if (!settled7) await nap(250);
+        }
+        await ev(`(window.__dlt7 = undefined, true)`);
+        // a mouse click focuses the button it lands on and a script's click() does not; while the menu is open that focus
+        // is what makes it own its keys (data-owns-keys), so Escape closes it instead of leaving the surface
+        await ev(`(() => { const t = document.querySelector("[data-diff-options]"); t?.focus(); t?.click(); })()`);
         const menu7 = await wait(`document.querySelector('[role="menu"]')`, 3000);
         const items7 = await ev(`[...document.querySelectorAll("[data-diff-options-item]")].map((e) => e.dataset.diffOptionsItem)`);
         await h.shot("cdp-shots/diff-options.png");
+        // every file wraps until the reader toggles it (7303bdfc8), so the switch opens on, a click turns it off and
+        // another turns it on again. Each reading also needs the item enabled: a disabled one ignores the click.
         const wrap = `document.querySelector('[data-diff-options-item="wrap"]')`;
+        const wrapReads = (checked) =>
+            wait(`${wrap}?.getAttribute("aria-checked") === "${checked}" && !${wrap}.disabled`, 3000);
+        const on7 = await wrapReads("true");
         await ev(`${wrap}?.click()`);
-        const on7 = await wait(`${wrap}?.getAttribute("aria-checked") === "true"`, 3000);
+        const off7 = await wrapReads("false");
         await ev(`${wrap}?.click()`);
-        const off7 = await wait(`${wrap}?.getAttribute("aria-checked") === "false"`, 3000);
+        const back7 = await wrapReads("true");
         await press("Escape", "Escape", 27);
         const closed7 = await wait(`!document.querySelector('[role="menu"]')`, 3000);
+        // Escape closes the menu and stays on the Diff surface, whose panel step 8 drags
+        const stayed7 = await wait(`document.querySelector('[data-diff-panel="open"]')`, 3000);
         rec(
-            "7. data-diff-options lists split, whitespace, wrap, Open in editor and Open in Code; wrap reads on, then off; Escape closes the menu",
-            menu7 && items7.join() === "split,whitespace,wrap,editor,code" && on7 && off7 && closed7,
-            JSON.stringify({ menu7, items7, on7, off7, closed7 })
+            "7. data-diff-options lists split, whitespace, wrap, Open in editor and Open in Code; wrap reads on, then off, then on again; Escape closes the menu and stays on Diff",
+            settled7 && menu7 && items7.join() === "split,whitespace,wrap,editor,code" && on7 && off7 && back7 && closed7 && stayed7,
+            JSON.stringify({ settled7, menu7, items7, on7, off7, back7, closed7, stayed7 })
         );
 
         // 8. the panel and the Log split drag
         await blur();
+        const label8 =
+            "8. dragging data-panel-resize 100px right widens the panel by about 100px; dragging data-log-split 80px down grows the history; both persist";
+        // step 8 drags the open panel, whatever step 7 did: with no panel it fails here and says what is on screen
+        // instead of throwing on a null rect, so a step 7 that left the Diff surface does not hide the rest of the run
+        if (!(await wait(`document.querySelector('[data-diff-panel="open"]')`, 3000))) {
+            rec(
+                label8,
+                false,
+                JSON.stringify({
+                    panel8: null,
+                    panels: await ev(`[...document.querySelectorAll("[data-diff-panel]")].map((e) => e.dataset.diffPanel)`),
+                    diffPane: await ev(`!!document.querySelector("[data-diff-pane]")`),
+                    menuOpen: await ev(`!!document.querySelector('[role="menu"]')`),
+                    header: await header(),
+                })
+            );
+            return;
+        }
         const panelW = () => ev(`Math.round(document.querySelector('[data-diff-panel="open"]').getBoundingClientRect().width)`);
         const w0 = await panelW();
         await drag("[data-panel-resize]", 100, 0);
@@ -6899,7 +6950,7 @@ const diffLogTab = {
         const h1 = await histH();
         const storedS = await ev(`localStorage.getItem(${JSON.stringify(LOG_SPLIT_KEY)})`);
         rec(
-            "8. dragging data-panel-resize 100px right widens the panel by about 100px; dragging data-log-split 80px down grows the history; both persist",
+            label8,
             Math.abs(w1 - w0 - 100) <= 4 && storedW != null && storedW !== ctx.prev.width && h1 > h0 && storedS != null && storedS !== ctx.prev.split,
             JSON.stringify({ w0, w1, storedW, h0, h1, storedS })
         );
