@@ -42,6 +42,7 @@ import type { Group, SpawnVerdict } from "./tokengate-core";
 import { createSpawnGate, endsTurnSay, RUN_VERDICT, tokengateArgs, tokengateLine } from "./tokengate-core";
 import { isCommit, isLiveCheck, uiCheckReminder, uiFiles } from "./uicheck-core";
 import { usageArgs } from "./usage-core";
+import { gateVerdict, mergeTarget, parseGate, verifyGateArgs } from "./verifygate-core";
 
 const WSH = "__WSH_PATH__";
 
@@ -545,6 +546,44 @@ async function withUiCheck<R extends { deny?: string; isError?: true; context?: 
         return null;
     });
     return note === null ? result : { ...result, context: [...(result.context ?? []), note] };
+}
+
+// the ask a shell command earns from the agent's Verify tile: a `git merge` while a scenario's result is red or
+// amber (verifygate-core.ts). wavesrv holds the results and decides, so `wsh verify gate` answers for the
+// merge's directory and the command as written; null when the command merges nothing or the gate lets it go.
+// only inside arcterm, where the block's runs are. canAsk is whether a person can be asked (`e.approver`).
+// a gate that fails (wsh gone, wavesrv slow) says nothing against the merge: Verify is the person's signal, not a
+// guard, so the merge goes on, and the debug log keeps the trouble
+async function verifyGateAsk(
+    $: EngineInterface,
+    input: unknown,
+    canAsk: boolean
+): Promise<{ decision: "ask"; reason: string } | null> {
+    const raw = (input as { command?: unknown } | null)?.command;
+    if (!active || typeof raw !== "string") {
+        return null;
+    }
+    // a background command heldInBackground wrapped is judged as the model wrote it, as the permission check does
+    const command = heldOriginal(WSH, raw) ?? raw;
+    // a command without the word merges nothing, and most shell commands have none: they read no directory
+    if (!/\bmerge\b/.test(command)) {
+        return null;
+    }
+    try {
+        const target = mergeTarget(command, await $.session.cwd());
+        if (target === null) {
+            return null;
+        }
+        const ran = await $.process.run([WSH, ...verifyGateArgs(target, command)], { timeoutMs: 10_000 });
+        if (ran.exitCode !== 0) {
+            $.ui.log(`arc: wsh verify gate exited ${ran.exitCode}: ${ran.stderr.trim()}`, { to: "debug" });
+            return null;
+        }
+        return gateVerdict(parseGate(ran.stdout), canAsk);
+    } catch (err) {
+        $.ui.log(`arc: the verify gate failed: ${String(err)}`, { to: "debug" });
+        return null;
+    }
 }
 
 // a heavy command (a build, the typecheck, a whole test suite) waits for its turn in arcterm's job queue, and
@@ -1055,10 +1094,25 @@ export const register: Register = (on) => {
 
     // a background command heldInBackground wrapped is decided as the model wrote it: the rules and the mode judge
     // the command, not the wsh call in front of it
-    on("tool.check", { tool: "Bash" }, ($, e, next) => {
+    // and a merge while the agent's Verify is red or amber goes to the person, whatever the mode: the rail's tile is
+    // only a signal until a merge lands on it. where nobody can be asked the engine turns the ask into a deny, and
+    // the reason tells the model to ask the person. one tool.check per tool, so the gate is part of this one
+    on("tool.check", { tool: "Bash" }, async ($, e, next) => {
         const input = e.input as { command?: unknown } | null;
         const original = typeof input?.command === "string" ? heldOriginal(WSH, input.command) : null;
-        return original === null ? next(e) : next({ ...e, input: { ...input, command: original } });
+        const verdict = await (original === null ? next(e) : next({ ...e, input: { ...input, command: original } }));
+        if (verdict.decision === "deny") {
+            return verdict;
+        }
+        return (await verifyGateAsk($, e.input, e.approver !== undefined)) ?? verdict;
+    }).catch(passOn);
+
+    on("tool.check", { tool: "PowerShell" }, async ($, e, next) => {
+        const verdict = await next(e);
+        if (verdict.decision === "deny") {
+            return verdict;
+        }
+        return (await verifyGateAsk($, e.input, e.approver !== undefined)) ?? verdict;
     }).catch(passOn);
 
     on("tool.call", { tool: "PowerShell" }, async ($, e, next) => {
