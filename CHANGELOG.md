@@ -72,6 +72,8 @@ and a picture given to a line that is not big.
 - Vietnamese on a board reads in one font and whole: a board whose text has Vietnamese letters the hand-drawn font lacks
   (ơ, ư, đ, ạ…) is drawn in Nunito instead of a mix of fonts with the ends of its lines cut off, and a board drawn before
   this turns when you open it.
+- Chat's suggested replies to a question that offers options and asks something more ("A hay B, và có thêm X
+  không?") now include each option, instead of several replies that all pick the recommended one.
 
 ### Fixed
 
