@@ -199,6 +199,20 @@ describe("dagProgressLabel", () => {
     it("counts done tasks while the plan executes", () => {
         expect(dagProgressLabel(info("running"), false).text).toBe("Working · 2/3");
     });
+    it("says the plan's size under plan review, not 0 of it done", () => {
+        const pending = [{ state: "pending" }, { state: "pending" }] as TaskGroup["tasks"];
+        expect(dagProgressLabel(info("plan-review", pending), false)).toEqual({
+            text: "Plan review · 2 tasks",
+            title: "Plan review · 2 tasks",
+        });
+        expect(dagProgressLabel(info("plan-review", [{ state: "pending" }] as TaskGroup["tasks"]), false).text).toBe(
+            "Plan review · 1 task"
+        );
+        expect(splitProgressText("Plan review · 2 tasks")).toEqual({ head: "Plan review", tail: " · 2 tasks" });
+    });
+    it("keeps the count under plan review once a task is done", () => {
+        expect(dagProgressLabel(info("plan-review"), false).text).toBe("Plan review · 2/3");
+    });
     describe("a working run with tasks that are stuck", () => {
         const task = (id: string, state: string) => ({ id, state });
         const six = [

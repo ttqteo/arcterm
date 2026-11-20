@@ -40,6 +40,8 @@ and a picture given to a line that is not big.
 
 ### Changed
 
+- A run whose plan is under review says how big the plan is in the Agent tree, "Plan review · 7 tasks", instead of a
+  "0/7" that never moves before any worker starts.
 - The council an agent started now shows in the Agent panel itself: a Council tab after Transcript holds the
   council's chat beside the agent's terminal, the seats' messages as they come, whose move it is (send held drafts on,
   read the report) and a box to message the council. `c` opens it, and Open shows the full Discussion. It replaces the

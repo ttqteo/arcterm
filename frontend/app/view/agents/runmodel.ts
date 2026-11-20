@@ -86,7 +86,12 @@ export function dagProgressLabel(
     }
     // a working run with tasks that cannot go on says how many: the tooltip names each, in task order
     const stuck = s.key === "working" ? (run.dag?.tasks ?? []).filter((t) => FAILED_TEXT[t.state] != null) : [];
-    const base = `${s.label} · ${done}/${total}`;
+    // under plan review no worker has started, so "0/7" says nothing: the plan's size does ("Plan review · 7 tasks").
+    // It starts with a digit, so splitProgressText keeps it on a narrow row that drops the stage word
+    const base =
+        s.key === "plan-review" && done === 0
+            ? `${s.label} · ${total} ${total === 1 ? "task" : "tasks"}`
+            : `${s.label} · ${done}/${total}`;
     const text = stuck.length > 0 ? `${base} · ${stuck.length} stuck` : base;
     const named = [text, ...stuck.map((t) => `${t.id} ${FAILED_TEXT[t.state]}`)].join(" · ");
     if (leadless) {
