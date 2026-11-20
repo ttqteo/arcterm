@@ -665,6 +665,73 @@ describe("the ref a read walks from", () => {
     });
 });
 
+// The Agent's edits range's two commits are synthetic: nothing to read, and the scope's own row is the whole list.
+describe("a list with no commits (the Agent's edits range)", () => {
+    const EDITS = scopeKey({
+        repo: { origin: { kind: "agent", id: "a1" }, label: "a1" },
+        range: { kind: "edits", agentId: "a1" },
+    });
+    const EDITS_OPTS = { noCommits: true, rowLabel: "Agent's edits" };
+
+    it("asks git for nothing and lists only the scope's own row, selected", async () => {
+        await loadHistory(CWD, EDITS_OPTS, EDITS);
+        await settle();
+
+        expect(gitHistory).not.toHaveBeenCalled();
+        expect(globalStore.get(historyFailureAtom)).toBeNull();
+        expect(globalStore.get(historyCommitsAtom)).toEqual([]);
+        const rows = globalStore.get(historyRowsAtom) ?? [];
+        expect(rows.map((r) => [r.hash, r.subject, r.fileCount])).toEqual([[WORKING_TREE, "Agent's edits", 3]]);
+        expect(globalStore.get(selectedCommitAtom)).toBe(WORKING_TREE);
+        expect(globalStore.get(selectedFileAtom)).toBe("docs/open-issues.md");
+    });
+
+    // with no commits either, a dropped row would leave the pane on "Select a commit" and no caption
+    it("keeps the scope's own row when the agent has edited nothing", async () => {
+        globalStore.set(filesStateAtom, { ...globalStore.get(filesStateAtom)!, changes: { files: [], adds: 0, dels: 0 } });
+
+        await loadHistory(CWD, EDITS_OPTS, EDITS);
+        await settle();
+
+        const rows = globalStore.get(historyRowsAtom) ?? [];
+        expect(rows.map((r) => [r.hash, r.fileCount])).toEqual([[WORKING_TREE, 0]]);
+        expect(globalStore.get(selectedCommitAtom)).toBe(WORKING_TREE);
+        expect(globalStore.get(selectedFileAtom)).toBeNull();
+    });
+
+    // Flipping Since session start -> Agent's edits only relabels (setHistoryOpts, no re-read), so the session's loaded
+    // commits are still in the store until the load for the new range lands: the rows must not show them.
+    it("shows only the scope's own row at once when the range flips from the session's", async () => {
+        await loadHistory(CWD, { anchor: "bbb2222", anchorLabel: "session start", rowLabel: "Since session start" });
+        expect((globalStore.get(historyRowsAtom) ?? []).map((r) => r.hash)).toEqual([WORKING_TREE, "aaa1111", "bbb2222"]);
+        gitHistory.mockClear();
+
+        setHistoryOpts(EDITS_OPTS);
+
+        expect(gitHistory).not.toHaveBeenCalled();
+        // the commits are still loaded; the rows ignore them
+        expect(globalStore.get(historyCommitsAtom)).toHaveLength(2);
+        expect((globalStore.get(historyRowsAtom) ?? []).map((r) => [r.hash, r.subject])).toEqual([
+            [WORKING_TREE, "Agent's edits"],
+        ]);
+    });
+
+    it("lists the session's commits again after the flip back, once its read lands", async () => {
+        await loadHistory(CWD, EDITS_OPTS, EDITS);
+        await settle();
+        const SESSION = scopeKey({
+            repo: { origin: { kind: "agent", id: "a1" }, label: "a1" },
+            range: { kind: "session", agentId: "a1" },
+        });
+
+        await loadHistory(CWD, { anchor: "bbb2222", anchorLabel: "session start", rowLabel: "Since session start" }, SESSION);
+        await settle();
+
+        expect(gitHistory).toHaveBeenCalledTimes(1);
+        expect((globalStore.get(historyRowsAtom) ?? []).map((r) => r.hash)).toEqual([WORKING_TREE, "aaa1111", "bbb2222"]);
+    });
+});
+
 // A run link opened over a project is a new subject: the project's remembered row gives way to the run's default.
 describe("selection across a change of scope", () => {
     const PROJECT = scopeKey({

@@ -385,6 +385,7 @@ export const AgentRow = memo(function AgentRow({
                 {diff ? (
                     <button
                         type="button"
+                        data-diff-files={diff.files}
                         onClick={(e) => {
                             e.stopPropagation();
                             onOpenDiff();

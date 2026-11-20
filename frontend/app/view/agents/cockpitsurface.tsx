@@ -198,7 +198,7 @@ export function CockpitSurface({ model }: { model: AgentsViewModel }) {
     useEffect(() => {
         for (const a of [...asking, ...working, ...recentlyIdle]) {
             if (a.transcriptPath) {
-                void refreshCardGit(a.id, a.transcriptPath, a.blockId);
+                void refreshCardGit(a.id, a.transcriptPath, a.blockId, a.agent);
             }
         }
     }, []);
@@ -524,7 +524,8 @@ export function CockpitSurface({ model }: { model: AgentsViewModel }) {
     // there outranks the focus the surface follows, so setting focus alone left that project on screen
     const openDiff = (id: string) => {
         globalStore.set(model.focusIdAtom, id);
-        openAgentDiffScope(model, agentDiffScope(id, agents.find((a) => a.id === id)?.name ?? id));
+        const a = agents.find((x) => x.id === id);
+        openAgentDiffScope(model, agentDiffScope(id, a?.name ?? id, a?.agent));
     };
 
     const cursorIdRef = useRef(cursorId);

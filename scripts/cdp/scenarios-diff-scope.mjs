@@ -19,6 +19,7 @@
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { chooseSessionRange } from "./scenarios-diff-agent-edits.mjs";
 
 const PROJECT = "verify-diff-scope";
 const AGENT = { id: "fx-diff-scope-agent", name: "scope-writer", blockId: "fx-blk-diff-scope" };
@@ -241,10 +242,32 @@ export default function (kits) {
                 }
                 // the project and the agent first: the landed run is seeded after them, so a failure there leaves the
                 // earlier steps their fixture
+                // No timestamp on any record: step 1 reads "no session start yet" off it. The card's Diff chip (step 4) counts
+                // only the agent's own edits, rebuilt from its Edit calls, so the one uncommitted edit made below is also an
+                // Edit here, from the text the seed commit holds
                 ctx.transcriptPath = join(base, "session.jsonl");
+                const line = (o) => JSON.stringify({ cwd: dir, ...o }) + "\n";
                 writeFileSync(
                     ctx.transcriptPath,
-                    JSON.stringify({ type: "user", cwd: dir, message: { role: "user", content: "settle the ledger" } }) + "\n"
+                    line({ type: "user", message: { role: "user", content: "settle the ledger" } }) +
+                        line({
+                            type: "assistant",
+                            message: {
+                                role: "assistant",
+                                content: [
+                                    {
+                                        type: "tool_use",
+                                        id: "tu-ledger",
+                                        name: "Edit",
+                                        input: { file_path: join(dir, EDITED), old_string: "ledger v1\n", new_string: "ledger v1\nledger v2, edited\n" },
+                                    },
+                                ],
+                            },
+                        }) +
+                        line({
+                            type: "user",
+                            message: { role: "user", content: [{ type: "tool_result", tool_use_id: "tu-ledger", content: "ok" }] },
+                        })
                 );
                 await h.rpc("createproject", { name: PROJECT, path: dir });
                 ctx.project = PROJECT;
@@ -260,6 +283,9 @@ export default function (kits) {
                 writeRoster(ctx, true);
                 ctx.wroteFixture = true;
                 await reloadApp(h);
+                // the fixture agent's files come from writes to disk, not Edit calls in its transcript, so its Diff
+                // would open on an empty Agent's edits: this scenario is about the session range
+                await chooseSessionRange(h, AGENT.id);
             } catch (e) {
                 ctx.arrangeError = String(e?.message ?? e);
             }

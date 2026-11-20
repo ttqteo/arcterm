@@ -13,10 +13,11 @@ import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { atom, type Atom, type PrimitiveAtom } from "jotai";
 import { atomWithStorage } from "jotai/utils";
 import { showTerminal } from "./agentcenter";
+import { readAgentChanges } from "./agentchanges";
 import { resolveCwd } from "./agentcwdresolve";
 import { linkedWorktree } from "./agentrailmodel";
 import { ensureSessionStart } from "./agentsessionstore";
-import type { AgentState } from "./agentsviewmodel";
+import type { AgentState, AgentVM } from "./agentsviewmodel";
 import { parseGitChanges, type GitChanges } from "./gitstatus";
 import { recentTabsAtom } from "./tabswitcherstore";
 import { DOCK_DEFAULT_PX, dockHostId } from "./terminaldock";
@@ -28,7 +29,9 @@ export interface RailGitState {
     changes: GitChanges | null;
     // the linked worktree the agent works in, as linkedWorktree names it; unset in the main checkout
     worktree?: string;
-    // the commit changes is measured from (the session start's); "" is HEAD
+    // the commit changes is measured from; "" is HEAD, or, for a Claude agent, no edit of its own yet. A Claude agent's
+    // list is its own edits, so this is the base of its edits (the synthetic commit whose parent is the session start's,
+    // so `ref..HEAD` still lists the session's commits); any other agent's is the session start's
     ref?: string;
     // the whole branch's changes, from where it left the default branch; unset on the default branch itself, or when
     // no default branch resolves
@@ -154,13 +157,13 @@ export function rereadsOnState(prev: AgentState | undefined, next: AgentState): 
     return prev === "working" && next !== "working";
 }
 
-// silent: a re-read of the agent already shown keeps its list on screen until the new one lands, rather than a skeleton
+// silent: a re-read of the agent already shown keeps its list on screen until the new one lands, rather than a skeleton.
+// The agent's runtime (`agent`) picks the list: a Claude agent's own edits, any other's checkout since its session began.
 export async function loadRailForAgent(
-    id: string,
-    transcriptPath: string | undefined,
-    blockId?: string,
+    agent: Pick<AgentVM, "id" | "transcriptPath" | "blockId" | "agent">,
     opts?: { silent?: boolean }
 ): Promise<void> {
+    const { id, transcriptPath, blockId } = agent;
     current.id = id;
     if (!opts?.silent) {
         globalStore.set(railStateAtom, null);
@@ -176,12 +179,12 @@ export async function loadRailForAgent(
         return;
     }
     try {
-        // sessionstartts: match the card pill / Diff tab — the branch's changed-file list vs the
-        // session-start commit. Null ts degrades to the live working-tree-vs-HEAD diff.
+        // the same list as the card pill and the Diff tab: a Claude agent's own edits, any other's changed files vs the
+        // session-start commit (a null ts degrades to the live working-tree-vs-HEAD diff)
         // the worktree list only names the worktree, so a failure there leaves the line out rather than the rail
         // the branch view is extra: a failure there leaves the session's list standing
-        const [ch, wts, br] = await Promise.all([
-            RpcApi.GitChangesCommand(TabRpcClient, { cwd, sessionstartts: startTs ?? undefined }),
+        const [{ ch }, wts, br] = await Promise.all([
+            readAgentChanges(cwd, { transcriptPath, runtime: agent.agent }, startTs),
             RpcApi.GitListWorktreesCommand(TabRpcClient, { cwd }).catch(() => null),
             RpcApi.GitChangesCommand(TabRpcClient, { cwd, branchbase: true }).catch(() => null),
         ]);

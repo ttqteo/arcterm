@@ -7,7 +7,8 @@
 // here so the pane stays a renderer. Lane assignment is gitgraph.ts; coordinates are gitgraphgeom.ts.
 
 import { formatAge } from "./agentsviewmodel";
-import type { DiffRange } from "./diffscope";
+import { EDITS_LABEL, editsCaption, type DiffRange } from "./diffscope";
+import type { FilesState } from "./filesstore";
 import type { GraphCommit } from "./gitgraph";
 
 // Sentinel hash for the synthetic uncommitted row. Empty on purpose: gitgraphgeom skips falsy hashes
@@ -46,6 +47,10 @@ export interface BuildRowsOpts {
     // older than it are context and render dimmed.
     anchor?: string;
     anchorLabel?: string;
+    // The Agent's edits range: its commits are synthetic, so whatever commits were loaded for another range are not
+    // its rows, and the scope's own row stands even at 0 files (with no commits either, the pane would have no row
+    // to select and no caption to show).
+    noCommits?: boolean;
     now: number;
 }
 
@@ -123,14 +128,15 @@ export function toRow(c: HistoryCommit, now: number): HistoryRow {
     };
 }
 
-export function buildRows(commits: HistoryCommit[], opts: BuildRowsOpts): HistoryRow[] {
+export function buildRows(loaded: HistoryCommit[], opts: BuildRowsOpts): HistoryRow[] {
+    const commits = opts.noCommits ? [] : loaded;
     const anchorIdx = opts.anchor ? commits.findIndex((c) => c.hash === opts.anchor) : -1;
     const rows: HistoryRow[] = commits.map((c, i) => ({
         ...toRow(c, opts.now),
         divider: anchorIdx >= 0 && i === anchorIdx ? opts.anchorLabel : undefined,
         before: anchorIdx >= 0 && i > anchorIdx,
     }));
-    if (opts.dirtyFileCount <= 0) {
+    if (opts.dirtyFileCount <= 0 && !opts.noCommits) {
         return rows;
     }
     rows.unshift({
@@ -208,6 +214,34 @@ export function worktreeCaption(range: DiffRange, branch: string, head: string, 
         default:
             return `${on}, measured from ${head.slice(0, 7)}`;
     }
+}
+
+// The caption under the scope's own row. The edits range has its own words (B is synthetic, so no sha would name
+// anything the reader can find); worktreeCaption's `default:` would swallow it as a plain working tree, which is why
+// the choice is made here and not there. A state with no edits facts is another range's read, still on screen for the
+// frame before the edits load replaces it: it says nothing rather than something about the wrong files.
+export function paneCaption(
+    range: DiffRange,
+    state: Pick<FilesState, "branch" | "head" | "ref" | "changes" | "edits">
+): string {
+    if (range.kind === "edits") {
+        if (state.edits == null) {
+            return "";
+        }
+        return editsCaption({
+            files: state.changes?.files.length ?? 0,
+            bashcalls: state.edits.bashcalls,
+            reason: state.edits.reason,
+            hasBase: state.ref !== "",
+        });
+    }
+    return worktreeCaption(range, state.branch, state.head, state.ref);
+}
+
+// The commit pane's region label over the scope's own row. The edits range's two commits are rebuilt from the
+// transcript, not read from the working tree, so "Working tree" would misname what the row lists.
+export function worktreeHeading(range: DiffRange): string {
+    return range.kind === "edits" ? EDITS_LABEL : "Working tree";
 }
 
 // What the surface selects when history first arrives: uncommitted work if there is any, else the tip.

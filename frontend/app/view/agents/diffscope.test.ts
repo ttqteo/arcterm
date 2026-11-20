@@ -4,6 +4,7 @@
 import { describe, expect, it } from "vitest";
 import {
     defaultRangeFor,
+    editsCaption,
     historyKey,
     historyOptsFor,
     measuredAgainst,
@@ -137,8 +138,8 @@ describe("originCwd", () => {
 });
 
 describe("defaultRangeFor", () => {
-    it("opens an agent on its session, a project on its working tree, and a run on the run", () => {
-        expect(defaultRangeFor({ kind: "agent", id: "a1" })).toEqual({ kind: "session", agentId: "a1" });
+    it("opens a pi agent on its session, a project on its working tree, and a run on the run", () => {
+        expect(defaultRangeFor({ kind: "agent", id: "a1", runtime: "pi" })).toEqual({ kind: "session", agentId: "a1" });
         expect(defaultRangeFor({ kind: "project", name: "w", path: "/r" })).toEqual({ kind: "working" });
         expect(defaultRangeFor({ kind: "run", runId: "r1", cwd: "/r", baseCommit: "9f2c1de" })).toEqual({
             kind: "run",
@@ -302,6 +303,98 @@ describe("a landed run's tip", () => {
         expect(historyOptsFor({ kind: "run", runId: "r1", baseCommit: "9f2c1de" }, "")).not.toHaveProperty("ref");
         expect(historyOptsFor({ kind: "session", agentId: "a1" }, "base9")).not.toHaveProperty("ref");
         expect(historyOptsFor({ kind: "working" }, "")).toStrictEqual({});
+    });
+});
+
+// The agent's own edits: a range of its own, offered by default to a Claude agent only (the file-history backups it is
+// rebuilt from are Claude Code's), with the session range as the other choice.
+describe("the Agent's edits range", () => {
+    const edits: DiffRange = { kind: "edits", agentId: "a1" };
+
+    it("has its own range key, apart from the session's", () => {
+        expect(rangeKey(edits)).toBe("edits:a1");
+        expect(rangeKey(edits)).not.toBe(rangeKey({ kind: "session", agentId: "a1" }));
+    });
+
+    it("gives a scope its own scope key, so a switch drops the stale read", () => {
+        const onEdits: DiffScope = { ...agentScope, range: edits };
+        expect(scopeKey(onEdits)).not.toBe(scopeKey(agentScope));
+    });
+
+    // a runtime never changes who an agent is
+    it("keeps an agent's origin key whatever its runtime", () => {
+        expect(originKey({ kind: "agent", id: "a1", runtime: "pi" })).toBe(originKey({ kind: "agent", id: "a1" }));
+    });
+
+    it("opens a Claude agent on its edits, absent runtime meaning claude", () => {
+        expect(defaultRangeFor({ kind: "agent", id: "a1" })).toEqual(edits);
+        expect(defaultRangeFor({ kind: "agent", id: "a1", runtime: "claude" })).toEqual(edits);
+    });
+
+    it("opens a Claude agent on its session once the choice says so", () => {
+        expect(defaultRangeFor({ kind: "agent", id: "a1" }, "session")).toEqual({ kind: "session", agentId: "a1" });
+        expect(defaultRangeFor({ kind: "agent", id: "a1" }, "edits")).toEqual(edits);
+    });
+
+    it("opens any other runtime on its session, whatever the choice", () => {
+        for (const runtime of ["pi", "codex", "opencode"]) {
+            expect(defaultRangeFor({ kind: "agent", id: "a1", runtime })).toEqual({ kind: "session", agentId: "a1" });
+            expect(defaultRangeFor({ kind: "agent", id: "a1", runtime }, "edits")).toEqual({
+                kind: "session",
+                agentId: "a1",
+            });
+        }
+    });
+
+    it("leaves project, worktree and run as they were, choice or not", () => {
+        expect(defaultRangeFor({ kind: "project", name: "w", path: "/r" }, "edits")).toEqual({ kind: "working" });
+        expect(defaultRangeFor({ kind: "worktree", path: "/r/wt", project: "w" }, "session")).toEqual({
+            kind: "working",
+        });
+        expect(defaultRangeFor({ kind: "run", runId: "r1", cwd: "/r", baseCommit: "9f2c1de" }, "edits")).toEqual({
+            kind: "run",
+            runId: "r1",
+            baseCommit: "9f2c1de",
+        });
+    });
+
+    // B and H are synthetic commits: there is no history to read, and the scope's own row is the only row
+    it("reads no commit history and labels the scope's own row", () => {
+        expect(historyOptsFor(edits, "b0b0b0b")).toEqual({ noCommits: true, rowLabel: "Agent's edits" });
+        expect(historyOptsFor(edits, "")).toEqual({ noCommits: true, rowLabel: "Agent's edits" });
+    });
+
+    it("says its files are measured by this agent", () => {
+        expect(measuredAgainst({ range: edits, commit: null })).toBe("by this agent");
+        expect(measuredAgainst({ range: edits, commit: "310d518abcdef" })).toBe("in 310d518");
+    });
+});
+
+describe("editsCaption", () => {
+    const base = { files: 3, bashcalls: 0, reason: "", hasBase: true };
+
+    it("counts the agent's files", () => {
+        expect(editsCaption(base)).toBe("3 files by this agent");
+        expect(editsCaption({ ...base, files: 1 })).toBe("1 file by this agent");
+    });
+
+    it("adds the Bash calls that may have changed files it cannot show", () => {
+        expect(editsCaption({ ...base, bashcalls: 1 })).toBe(
+            "3 files by this agent · 1 Bash call may have changed files not shown"
+        );
+        expect(editsCaption({ ...base, bashcalls: 4 })).toBe(
+            "3 files by this agent · 4 Bash calls may have changed files not shown"
+        );
+    });
+
+    it("gives the reason when there is no base to read", () => {
+        expect(editsCaption({ files: 0, bashcalls: 2, reason: "this agent has made no edits yet", hasBase: false })).toBe(
+            "this agent has made no edits yet"
+        );
+    });
+
+    it("says there is nothing to show when there is no base and no reason", () => {
+        expect(editsCaption({ files: 0, bashcalls: 0, reason: "", hasBase: false })).toBe("no edits to show");
     });
 });
 

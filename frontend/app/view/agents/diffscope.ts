@@ -8,17 +8,19 @@
 // stores ask about scope is answered by a function in this file.
 
 import { normalizeRepoPath, sameRepoPath } from "@/util/paths";
+import { editsApply } from "./agentedits";
 import type { CompareForm } from "./diffcontent";
 import type { HistoryFilters } from "./historyquery";
 
 // A project's path comes from the config registry and a run's directory and base commit were captured
 // when the run started, so both answer synchronously. An agent's directory is read from its live
-// transcript and can fail, so an agent origin carries only its id and the loader resolves the rest.
+// transcript and can fail, so an agent origin carries only its id (and its runtime, which decides whether it has an
+// edits range) and the loader resolves the rest.
 // A worktree is one checkout of a registered project, picked from the Diff sidebar; `project` names
 // that project, since a linked worktree's own path is not registered. A run's headCommit is its landed
 // tip; absent, the run is live and reads up to HEAD.
 export type DiffOrigin =
-    | { kind: "agent"; id: string }
+    | { kind: "agent"; id: string; runtime?: string }
     | { kind: "project"; name: string; path: string }
     | { kind: "worktree"; path: string; project: string }
     | { kind: "run"; runId: string; cwd: string; baseCommit: string; headCommit?: string };
@@ -31,6 +33,8 @@ export interface DiffRepo {
 export type DiffRange =
     | { kind: "working" }
     | { kind: "session"; agentId: string }
+    // the agent's own Edit/Write calls, rebuilt by the backend into two synthetic commits (agentedits.ts)
+    | { kind: "edits"; agentId: string }
     | { kind: "run"; runId: string; baseCommit: string; headCommit?: string }
     // `from` is the range comparison interrupted. Escape restores it instead of guessing, which is
     // also what lets the old compareAnchorAtom and its invalidation effect go away. `form` is which
@@ -52,7 +56,14 @@ export interface LoadHistoryOpts {
     anchorLabel?: string;
     rowLabel?: string;
     ref?: string;
+    // no commit list at all, only the scope's own row: the edits range's two commits are synthetic
+    noCommits?: boolean;
 }
+
+// Which of an agent's two ranges its scope opens on. The person's choice, kept per agent (diffrangechoice.ts).
+export type RangeChoice = "edits" | "session";
+
+export const EDITS_LABEL = "Agent's edits";
 
 export function originKey(o: DiffOrigin): string {
     switch (o.kind) {
@@ -73,6 +84,8 @@ export function rangeKey(r: DiffRange): string {
             return "working";
         case "session":
             return `session:${r.agentId}`;
+        case "edits":
+            return `edits:${r.agentId}`;
         case "run":
             // the tip is appended only when bounded, so an unbounded run keeps the key its review marks
             // were saved under
@@ -110,10 +123,14 @@ export function originCwd(o: DiffOrigin): string | null {
     }
 }
 
-export function defaultRangeFor(o: DiffOrigin): DiffRange {
+// A Claude agent opens on its own edits unless the person chose its session range; any other runtime has no edits
+// range to open on.
+export function defaultRangeFor(o: DiffOrigin, choice?: RangeChoice): DiffRange {
     switch (o.kind) {
         case "agent":
-            return { kind: "session", agentId: o.id };
+            return editsApply(o.runtime) && choice !== "session"
+                ? { kind: "edits", agentId: o.id }
+                : { kind: "session", agentId: o.id };
         case "project":
         case "worktree":
             return { kind: "working" };
@@ -130,6 +147,9 @@ export function historyOptsFor(range: DiffRange, resolvedRef: string): LoadHisto
             return resolvedRef
                 ? { anchor: resolvedRef, anchorLabel: "session start", rowLabel: "Since session start" }
                 : {};
+        // B and H are synthetic commits: no history to read, and the scope's own row is the only row
+        case "edits":
+            return { noCommits: true, rowLabel: EDITS_LABEL };
         case "run": {
             // a landed run walks from its own tip: --all would list the commits that landed after it above its base
             const walk = range.headCommit ? { ref: range.headCommit } : {};
@@ -156,9 +176,23 @@ export function measuredAgainst(i: { range: DiffRange; commit: string | null }):
             return i.range.baseCommit ? `since run base ${shortSha(i.range.baseCommit)}` : "vs HEAD";
         case "session":
             return "since session start";
+        case "edits":
+            return "by this agent";
         case "working":
             return "vs HEAD";
     }
+}
+
+// The Agent's edits caption under the scope's own row: how many files, and the Bash calls the rebuild cannot see into.
+// With no base there is nothing to count, and the backend's own reason says why.
+export function editsCaption(i: { files: number; bashcalls: number; reason: string; hasBase: boolean }): string {
+    if (!i.hasBase) {
+        return i.reason || "no edits to show";
+    }
+    const files = `${i.files} ${i.files === 1 ? "file" : "files"} by this agent`;
+    return i.bashcalls > 0
+        ? `${files} · ${i.bashcalls} Bash ${i.bashcalls === 1 ? "call" : "calls"} may have changed files not shown`
+        : files;
 }
 
 // The registered project a scope belongs to, for finding the agents that work on it. A run's (or a

@@ -186,13 +186,93 @@ describe("loadRailForAgent", () => {
 
     it("empties the rail while it reads a newly focused agent", async () => {
         const { globalStore, rail } = await withPendingCwd();
-        void rail.loadRailForAgent("a1", "/t.jsonl");
+        void rail.loadRailForAgent({ id: "a1", transcriptPath: "/t.jsonl" });
         expect(globalStore.get(rail.railStateAtom)).toBeNull();
     });
 
     it("keeps what is on screen while a silent read of the same agent is in flight", async () => {
         const { globalStore, rail } = await withPendingCwd();
-        void rail.loadRailForAgent("a1", "/t.jsonl", undefined, { silent: true });
+        void rail.loadRailForAgent({ id: "a1", transcriptPath: "/t.jsonl" }, { silent: true });
         expect(globalStore.get(rail.railStateAtom)).toBe(shown);
+    });
+});
+
+describe("loadRailForAgent: whose changes the rail lists", () => {
+    // the checkout holds a file the agent never touched: only a claude agent's own edits keep it out
+    const checkout: CommandGitChangesRtnData = {
+        branch: "main",
+        statusz: " M own.ts\0 M other.ts\0",
+        numstat: "2\t1\town.ts\n5\t0\tother.ts\n",
+        isrepo: true,
+        ref: "session-start",
+    };
+    const edits: CommandGitChangesRtnData = {
+        branch: "main",
+        statusz: " M own.ts\0",
+        numstat: "2\t1\town.ts\n",
+        isrepo: true,
+        ref: "bbb",
+    };
+
+    // one fresh copy of the modules, the cwd and the session start resolved, git answering as the RPC mocks say
+    async function read(agent: { id: string; agent?: string }, reply: { edits?: any; changes: (d: any) => any }) {
+        vi.resetModules();
+        const { resolveCwd } = await import("./agentcwdresolve");
+        vi.mocked(resolveCwd).mockResolvedValue("/repo");
+        const { ensureSessionStart } = await import("./agentsessionstore");
+        vi.mocked(ensureSessionStart).mockResolvedValue(555);
+        const { RpcApi } = await import("@/app/store/wshclientapi");
+        const changes = vi.fn(async (_c: unknown, d: any) =>
+            d.branchbase ? { branch: "main", statusz: "", numstat: "", isrepo: true } : reply.changes(d)
+        );
+        const agentEdits = vi.fn(async () => reply.edits);
+        Object.assign(RpcApi, {
+            GitChangesCommand: changes,
+            GitAgentEditsCommand: agentEdits,
+            GitListWorktreesCommand: async () => ({ worktrees: [] }),
+        });
+        const { globalStore } = await import("@/app/store/jotaiStore");
+        const rail = await import("./railstore");
+        await rail.loadRailForAgent({ ...agent, transcriptPath: "/t.jsonl" });
+        return { state: globalStore.get(rail.railStateAtom), changes, agentEdits };
+    }
+
+    it("lists a claude agent's own edits and measures them from the edits' base", async () => {
+        const { state, changes, agentEdits } = await read(
+            { id: "a1", agent: "claude" },
+            { edits: { base: "bbb", end: "hhh", files: [{ path: "own.ts" }], bashcalls: 0 }, changes: () => edits }
+        );
+        expect(agentEdits).toHaveBeenCalledTimes(1);
+        const sessionReads = changes.mock.calls.filter(([, d]) => !d.branchbase).map(([, d]) => d);
+        expect(sessionReads).toEqual([{ cwd: "/repo", ref: "bbb", end: "hhh" }]);
+        expect(state?.changes?.files.map((f) => f.path)).toEqual(["own.ts"]);
+        // a click on a file diffs against this, so it is the same base the list was counted from
+        expect(state?.ref).toBe("bbb");
+    });
+
+    it("lists nothing for a claude agent that has made no edit yet, in a dirty checkout, and still starts its commits at the session start", async () => {
+        const { state, changes } = await read(
+            { id: "a2" },
+            {
+                edits: { base: "", end: "", files: [], bashcalls: 0, reason: "no edits to show" },
+                changes: () => checkout,
+            }
+        );
+        const sessionReads = changes.mock.calls.filter(([, d]) => !d.branchbase).map(([, d]) => d);
+        expect(sessionReads).toEqual([{ cwd: "/repo", sessionstartts: 555 }]);
+        expect(state?.isRepo).toBe(true);
+        expect(state?.branch).toBe("main");
+        expect(state?.changes?.files).toEqual([]);
+        // the Commits section lists `ref..HEAD`: with no edit yet that is still the session's commits
+        expect(state?.ref).toBe("session-start");
+    });
+
+    it("lists any other agent's checkout since its session started", async () => {
+        const { state, changes, agentEdits } = await read({ id: "a3", agent: "pi" }, { changes: () => checkout });
+        expect(agentEdits).not.toHaveBeenCalled();
+        const sessionReads = changes.mock.calls.filter(([, d]) => !d.branchbase).map(([, d]) => d);
+        expect(sessionReads).toEqual([{ cwd: "/repo", sessionstartts: 555 }]);
+        expect(state?.changes?.files.map((f) => f.path)).toEqual(["own.ts", "other.ts"]);
+        expect(state?.ref).toBe("session-start");
     });
 });

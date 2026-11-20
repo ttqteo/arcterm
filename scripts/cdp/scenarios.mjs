@@ -93,6 +93,7 @@ import codeImageZoomScenarios from "./scenarios-code-imagezoom.mjs";
 import codeOutlineScenarios from "./scenarios-code-outline.mjs";
 import codeReviewScenarios from "./scenarios-code-review.mjs";
 import codePeekScenarios from "./scenarios-codepeek.mjs";
+import diffAgentEditsScenarios, { chooseSessionRange, ownEditLines } from "./scenarios-diff-agent-edits.mjs";
 import diffCommentsScenarios from "./scenarios-diff-comments.mjs";
 import diffFileKeysScenarios from "./scenarios-diff-file-keys.mjs";
 import diffScopeScenarios from "./scenarios-diff-scope.mjs";
@@ -6611,14 +6612,18 @@ const diffLogTab = {
             const transcripts = join(base, "transcripts");
             mkdirSync(transcripts);
             const transcriptPath = join(transcripts, "dlt-agent.jsonl");
+            // The rail lists only the agent's own edits, rebuilt from its Edit calls, so the transcript makes the two edits
+            // the newest commit holds, from the text the session started on (a and b as the commit before it left them)
             writeFileSync(
                 transcriptPath,
-                JSON.stringify({
-                    type: "user",
-                    cwd: ctx.repo,
-                    timestamp: ago(1),
-                    message: { role: "user", content: "change a and b" },
-                }) + "\n"
+                ownEditLines(
+                    ctx.repo,
+                    [
+                        { file: "a.txt", before: "a one\na two\n", after: "a one\na two\na three\n" },
+                        { file: "b.txt", before: "b one\n", after: "b one\nb two\n" },
+                    ],
+                    { prompt: "change a and b", startMs: Date.parse(ago(1)) }
+                ).join("\n") + "\n"
             );
             mkdirSync(new URL(".", TREE_RAIL_FIXTURE), { recursive: true });
             writeFileSync(
@@ -6648,16 +6653,12 @@ const diffLogTab = {
             await h.ev(`localStorage.setItem(${JSON.stringify(RAIL_VISIBLE_KEY)}, "true")`);
             await h.ev(`localStorage.setItem(${JSON.stringify(RAIL_RANGE_KEY)}, ${JSON.stringify('"session"')})`);
             await h.ev(`localStorage.removeItem(${JSON.stringify(PANEL_FOLD_KEY)})`);
-            try {
-                await h.ev("location.reload()");
-            } catch {
-                /* the evaluate is cut off by the navigation it just started */
-            }
-            await h.ev(`(async () => {
-                for (let i = 0; i < 60 && !document.querySelector("nav button"); i++) {
-                    await new Promise((r) => setTimeout(r, 500));
-                }
-            })()`);
+            // h.reload resolves once the new page has booted: reloading with location.reload() and polling for the nav can
+            // read the old page, and the choice set below runs against a context the reload then destroys
+            await h.reload();
+            // step 2 expects the Diff the rail's View diff opens to be on the session range, which is not where a Claude
+            // agent's Diff opens by default (Agent's edits)
+            await chooseSessionRange(h, DLT_AGENT.id);
         } catch (e) {
             ctx.arrangeError = String(e?.message ?? e);
         }
@@ -7920,6 +7921,9 @@ const diffWorktrees = {
                     await new Promise((r) => setTimeout(r, 500));
                 }
             })()`);
+            // step 6 reads the agent's Since session start row: the fixture agent's files are writes to disk, not Edit
+            // calls in its transcript, so its Diff would open on an empty Agent's edits
+            await chooseSessionRange(h, DWT_AGENT.id);
         } catch (e) {
             ctx.arrangeError = String(e?.message ?? e);
         }
@@ -21356,7 +21360,20 @@ async function arrangeLineReview(h) {
 const lineReview = {
     name: LR,
     surface: "files",
-    arrange: arrangeLineReview,
+    async arrange(h) {
+        // arrangeLineReview is shared with overlays-frost-chat, which scopes to the project. Here the Diff is scoped to
+        // the fixture agent, whose files are writes to disk, not Edit calls in its transcript: it opens on the session
+        // range (the working tree and both commits), not on an empty Agent's edits
+        const ctx = await arrangeLineReview(h);
+        if (ctx.arrangeError == null) {
+            try {
+                await chooseSessionRange(h, LR_AGENT.id);
+            } catch (e) {
+                ctx.arrangeError = String(e?.message ?? e);
+            }
+        }
+        return ctx;
+    },
     async assert(h, ctx) {
         const steps = [];
         const rec = (step, ok, detail) => steps.push({ step, ok, detail });
@@ -23485,12 +23502,11 @@ function writeRailLinkRepo(cwd) {
     git("add", "-A");
     git("commit", "-q", "-m", "base");
     for (const f of RAIL_LINK_FILES) writeFileSync(join(cwd, f), `${f} one\n${f} two\n`);
-    // outside the repo's file list: the transcript only names the working directory
+    // outside the repo's file list. The rail lists only the agent's own edits, rebuilt from its Edit calls, so the
+    // transcript makes one Edit per file, each turning the committed text into the one written above
     const transcript = join(cwd, ".git", "rail-link.jsonl");
-    writeFileSync(
-        transcript,
-        JSON.stringify({ type: "user", cwd, message: { role: "user", content: "verify the rail file link" } }) + "\n"
-    );
+    const edits = RAIL_LINK_FILES.map((f) => ({ file: f, before: `${f} one\n`, after: `${f} one\n${f} two\n` }));
+    writeFileSync(transcript, ownEditLines(cwd, edits, { prompt: "verify the rail file link" }).join("\n") + "\n");
     return transcript;
 }
 
@@ -23527,12 +23543,9 @@ const agentRailFileLink = {
             ctx.wroteFixture = true;
             // the rail is off by default and persisted, and the fixture roster is read once at boot
             await h.ev(`localStorage.setItem(${JSON.stringify(RAIL_VISIBLE_KEY)}, "true")`);
-            await h.ev("location.reload()");
-            await h.ev(`(async () => {
-                for (let i = 0; i < 60 && !document.querySelector("nav button"); i++) {
-                    await new Promise((r) => setTimeout(r, 500));
-                }
-            })()`);
+            // h.reload resolves once the new page has booted: polling for the nav alone can read the old page before the
+            // reload commits, and the choice set below would be lost with it
+            await h.reload();
             await h.goto("agent");
             ctx.railFiles = await h.ev(`(async () => {
                 ${RAIL_LINK_LIB}
@@ -23570,7 +23583,10 @@ const agentRailFileLink = {
             ${RAIL_LINK_LIB}
             const link = railFile(${JSON.stringify(third)});
             link?.click();
-            const ok = !!link && (await until(() => selectedRows().length > 0));
+            // a changed file opens on the File tab beside the terminal; its Open in Diff is the way to the Diff surface
+            const open = !!link && (await until(() => ${RAIL_LINK_RAIL}?.querySelector("[data-file-open-diff]")));
+            ${RAIL_LINK_RAIL}?.querySelector("[data-file-open-diff]")?.click();
+            const ok = open && (await until(() => selectedRows().length > 0));
             // the surface settles on the first file before a late claim could move it, so read after a beat
             await new Promise((r) => setTimeout(r, 1500));
             return { ok, clicked: !!link, selected: selectedRows(), rows: document.querySelectorAll("[data-changed-file-row]").length };
@@ -74630,6 +74646,7 @@ export const SCENARIOS = [
     ...codeFixesSessionScenarios(KAEL_KITS),
     ...diffCommentsScenarios(KAEL_KITS),
     ...diffScopeScenarios(KAEL_KITS),
+    ...diffAgentEditsScenarios(KAEL_KITS),
     ...diffStatesScenarios(KAEL_KITS),
     ...usageLensScenarios(KAEL_KITS),
     ...usageWorkScenarios(KAEL_KITS),

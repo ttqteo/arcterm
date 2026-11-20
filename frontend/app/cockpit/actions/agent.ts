@@ -66,7 +66,7 @@ const actions: ThingAction<AgentThing>[] = [
         applies: (t) => t.hasDiff,
         run: ({ agent }, { model }) => {
             globalStore.set(model.focusIdAtom, agent.id);
-            openDiff(model, agentDiffScope(agent.id, agent.name));
+            openDiff(model, agentDiffScope(agent.id, agent.name, agent.agent));
         },
     },
     {

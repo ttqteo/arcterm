@@ -41,7 +41,7 @@ export function diffStreamSet(
 export function useCardStreams(wanted: WantedCard[], opts?: { trackGit?: boolean }): void {
     const trackGit = !!opts?.trackGit;
     const streamedRef = useRef<Map<string, string>>(new Map());
-    const gitTrackedRef = useRef<Map<string, { path?: string; blockId?: string }>>(new Map());
+    const gitTrackedRef = useRef<Map<string, { path?: string; blockId?: string; agent?: string }>>(new Map());
     const gitSeenActivityRef = useRef<Map<string, number>>(new Map());
     const lastActivityById = useAtomValue(lastActivityByIdAtom);
 
@@ -67,8 +67,8 @@ export function useCardStreams(wanted: WantedCard[], opts?: { trackGit?: boolean
             startTranscriptStream(id, w.path, w.agent);
             streamedRef.current.set(id, w.path);
             if (trackGit) {
-                gitTrackedRef.current.set(id, { path: w.path, blockId: w.blockId });
-                void refreshCardGit(id, w.path, w.blockId);
+                gitTrackedRef.current.set(id, { path: w.path, blockId: w.blockId, agent: w.agent });
+                void refreshCardGit(id, w.path, w.blockId, w.agent);
             }
         }
     }, [wantedKey, trackGit]);
@@ -91,7 +91,7 @@ export function useCardStreams(wanted: WantedCard[], opts?: { trackGit?: boolean
             }
             if (ts > seen) {
                 gitSeenActivityRef.current.set(id, ts);
-                scheduleCardGit(id, meta.path, meta.blockId);
+                scheduleCardGit(id, meta.path, meta.blockId, meta.agent);
             }
         }
     }, [lastActivityById, trackGit]);

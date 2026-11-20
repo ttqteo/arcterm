@@ -3,7 +3,7 @@
 
 import { globalStore } from "@/app/store/jotaiStore";
 import { atom } from "jotai";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 const requestFileLink = vi.fn();
 vi.mock("./filesstore", () => ({ requestFileLink: (...a: any[]) => requestFileLink(...a) }));
@@ -18,6 +18,7 @@ vi.mock("@/app/store/wshclientapi", () => ({
 vi.mock("@/app/store/wshrpcutil", () => ({ TabRpcClient: {} }));
 
 import { agentDiffScope, diffScopeOfRun, landedRunTip, openDiff, openRunDiff, runDiffScope } from "./agentdiffnav";
+import { rangeChoiceAtom, setRangeChoice } from "./diffrangechoice";
 import { scopeKey } from "./diffscope";
 import { diffScopeAtom } from "./diffscopeatom";
 
@@ -47,13 +48,12 @@ describe("openDiff", () => {
         expect(requestFileLink).not.toHaveBeenCalled();
     });
 
-    it("opens a run on the run range and an agent on its session range", () => {
+    it("opens a run on the run range", () => {
         expect(runDiffScope("r1", "/repo", "9f2c1de").range).toEqual({
             kind: "run",
             runId: "r1",
             baseCommit: "9f2c1de",
         });
-        expect(agentDiffScope("a1", "n").range).toEqual({ kind: "session", agentId: "a1" });
     });
 
     it("carries the run's directory and base commit, which exist nowhere else to be re-resolved", () => {
@@ -95,6 +95,36 @@ describe("openDiff", () => {
         expect(bounded.range).toEqual({ kind: "run", runId: "r5", baseCommit: "9f2c1de", headCommit: "c0ffee1" });
         expect(runDiffScope("r5", "/repo", "9f2c1de", "").repo.origin).not.toHaveProperty("headCommit");
         expect(runDiffScope("r5", "/repo", "9f2c1de", "").range).not.toHaveProperty("headCommit");
+    });
+});
+
+// A Claude agent's Diff opens on what the agent itself edited; the person's choice of the session range outlives the
+// surface (diffrangechoice.ts), and any other runtime has only the session range.
+describe("agentDiffScope", () => {
+    afterEach(() => globalStore.set(rangeChoiceAtom, {}));
+
+    it("opens a Claude agent on its edits, absent runtime meaning claude", () => {
+        expect(agentDiffScope("a1", "n").range).toEqual({ kind: "edits", agentId: "a1" });
+        expect(agentDiffScope("a1", "n", "claude").range).toEqual({ kind: "edits", agentId: "a1" });
+    });
+
+    it("carries the runtime on the agent's origin", () => {
+        expect(agentDiffScope("a1", "n", "pi").repo.origin).toEqual({ kind: "agent", id: "a1", runtime: "pi" });
+    });
+
+    it("opens a Claude agent on its session range once the person chose it", () => {
+        setRangeChoice("a1", "session");
+        expect(agentDiffScope("a1", "n", "claude").range).toEqual({ kind: "session", agentId: "a1" });
+        // the choice is per agent
+        expect(agentDiffScope("a2", "n", "claude").range).toEqual({ kind: "edits", agentId: "a2" });
+        setRangeChoice("a1", "edits");
+        expect(agentDiffScope("a1", "n", "claude").range).toEqual({ kind: "edits", agentId: "a1" });
+    });
+
+    it("opens a pi agent on its session range, choice or not", () => {
+        expect(agentDiffScope("a1", "n", "pi").range).toEqual({ kind: "session", agentId: "a1" });
+        setRangeChoice("a1", "edits");
+        expect(agentDiffScope("a1", "n", "pi").range).toEqual({ kind: "session", agentId: "a1" });
     });
 });
 

@@ -2,10 +2,12 @@ import { globalStore } from "@/app/store/jotaiStore";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const gitChanges = vi.fn();
+const gitAgentEdits = vi.fn();
 const resolveCwd = vi.fn();
 vi.mock("@/app/store/wshclientapi", () => ({
     RpcApi: {
         GitChangesCommand: (...a: any[]) => gitChanges(...a),
+        GitAgentEditsCommand: (...a: any[]) => gitAgentEdits(...a),
     },
 }));
 vi.mock("@/app/store/wshrpcutil", () => ({ TabRpcClient: {} }));
@@ -29,6 +31,7 @@ import {
     startChangesPoll,
 } from "./filesstore";
 import { lineCountsKnown } from "./filesstore";
+import { HISTORY_RPC_TIMEOUT_MS } from "./historyquery";
 
 const runScopeVal = (id: string, cwd = "/repo", base = "abc123"): DiffScope => ({
     repo: { origin: { kind: "run", runId: id, cwd, baseCommit: base }, label: `run ${base}` },
@@ -45,6 +48,7 @@ const projectScopeVal = (name: string, path = "/repo"): DiffScope => ({
 
 afterEach(() => {
     gitChanges.mockReset();
+    gitAgentEdits.mockReset();
     resolveCwd.mockReset();
     ensureSessionStart.mockReset();
     globalStore.set(filesStateAtom, null);
@@ -425,5 +429,138 @@ describe("a working tree whose line counts git could not read", () => {
         gitChanges.mockResolvedValue(listed);
         await reloadChanges("/repo");
         expect(lineCountsKnown(globalStore.get(filesStateAtom), true)).toBe(true);
+    });
+});
+
+// The agent's own edits: the backend rebuilds two synthetic commits B and H from its transcript, and the list is the
+// bounded read between them, the same one a landed run uses.
+describe("the Agent's edits range", () => {
+    const editsScope: DiffScope = {
+        repo: { origin: { kind: "agent", id: "a1" }, label: "a1" },
+        range: { kind: "edits", agentId: "a1" },
+    };
+    const reply = {
+        base: "b0b0b0b",
+        end: "e0e0e0e",
+        files: [
+            { path: "new.ts" },
+            { path: "src/old.ts", flag: "approximate" },
+            { path: "src/raced.ts", flag: "outside" },
+        ],
+        bashcalls: 1,
+    };
+    const listed = {
+        isrepo: true,
+        branch: "feat",
+        statusz: "A  new.ts\0M  src/old.ts\0M  src/raced.ts\0",
+        numstat: "3\t0\tnew.ts\n1\t1\tsrc/old.ts\n2\t0\tsrc/raced.ts\n",
+        head: "h1",
+    };
+
+    beforeEach(() => resolveCwd.mockResolvedValue("/wt"));
+
+    it("asks the backend for B and H, then reads the list between them", async () => {
+        gitAgentEdits.mockResolvedValue(reply);
+        gitChanges.mockResolvedValue(listed);
+
+        await loadFilesForScope(editsScope, { transcriptPath: "/t.jsonl" });
+        await new Promise((r) => setTimeout(r, 0));
+
+        expect(gitAgentEdits).toHaveBeenCalledWith(
+            {},
+            { cwd: "/wt", transcriptpath: "/t.jsonl" },
+            { timeout: HISTORY_RPC_TIMEOUT_MS }
+        );
+        expect(gitChanges).toHaveBeenCalledWith({}, { cwd: "/wt", ref: "b0b0b0b", end: "e0e0e0e" });
+        expect(ensureSessionStart).not.toHaveBeenCalled();
+        const st = globalStore.get(filesStateAtom);
+        // the pane diffs the same two commits the list did
+        expect(st?.ref).toBe("b0b0b0b");
+        expect(st?.end).toBe("e0e0e0e");
+        expect(st?.changes?.files.map((f) => f.path)).toEqual(["new.ts", "src/old.ts", "src/raced.ts"]);
+        // an unflagged file is absent from the flags
+        expect(st?.edits).toEqual({
+            flags: { "src/old.ts": "approximate", "src/raced.ts": "outside" },
+            bashcalls: 1,
+            reason: "",
+        });
+    });
+
+    it("lists no files, but keeps the folder's branch and repository, when there is no base", async () => {
+        gitAgentEdits.mockResolvedValue({ base: "", end: "", files: [], bashcalls: 0, reason: "no edits yet" });
+        // the plain read the empty base degrades to would return the whole working tree
+        gitChanges.mockResolvedValue(listed);
+
+        await loadFilesForScope(editsScope, { transcriptPath: "/t.jsonl" });
+        await new Promise((r) => setTimeout(r, 0));
+
+        const st = globalStore.get(filesStateAtom);
+        expect(st?.changes?.files).toEqual([]);
+        expect(st).toMatchObject({ cwd: "/wt", branch: "feat", isRepo: true, ref: "" });
+        expect(st?.end).toBeUndefined();
+        expect(st?.edits).toEqual({ flags: {}, bashcalls: 0, reason: "no edits yet" });
+        expect(globalStore.get(filesSelectedPathAtom)).toBeNull();
+    });
+
+    it("keeps a folder that is not a repository as one", async () => {
+        gitAgentEdits.mockResolvedValue({ base: "", end: "", files: [], bashcalls: 0, reason: "not a git repository" });
+        gitChanges.mockResolvedValue({ isrepo: false, branch: "" });
+
+        await loadFilesForScope(editsScope, { transcriptPath: "/t.jsonl" });
+
+        expect(globalStore.get(filesStateAtom)).toMatchObject({ isRepo: false, changes: null });
+    });
+
+    it("re-asks the backend on a poll tick, so a grown transcript reaches the list", async () => {
+        gitAgentEdits.mockResolvedValue(reply);
+        gitChanges.mockResolvedValue(listed);
+        await loadFilesForScope(editsScope, { transcriptPath: "/t.jsonl" });
+        gitAgentEdits.mockClear();
+        gitChanges.mockClear();
+        gitAgentEdits.mockResolvedValue({ ...reply, base: "b1", end: "e1", bashcalls: 2 });
+
+        await reloadChanges("/wt");
+
+        expect(gitAgentEdits).toHaveBeenCalledWith(
+            {},
+            { cwd: "/wt", transcriptpath: "/t.jsonl" },
+            { timeout: HISTORY_RPC_TIMEOUT_MS }
+        );
+        expect(gitChanges).toHaveBeenCalledWith({}, { cwd: "/wt", ref: "b1", end: "e1" });
+        expect(globalStore.get(filesStateAtom)?.edits?.bashcalls).toBe(2);
+        expect(globalStore.get(filesStateAtom)?.ref).toBe("b1");
+    });
+
+    it("keeps the last good read when a poll tick cannot rebuild the edits", async () => {
+        gitAgentEdits.mockResolvedValue(reply);
+        gitChanges.mockResolvedValue(listed);
+        await loadFilesForScope(editsScope, { transcriptPath: "/t.jsonl" });
+        const good = globalStore.get(filesStateAtom);
+
+        gitAgentEdits.mockRejectedValue(new Error("EC-TIME"));
+        await reloadChanges("/wt");
+
+        expect(globalStore.get(filesStateAtom)).toBe(good);
+        expect(globalStore.get(filesRefreshFailedAtom)).toBe(true);
+        expect(globalStore.get(filesErrorAtom)).toBe(false);
+    });
+
+    it("flags the first load as failed when the backend cannot rebuild the edits", async () => {
+        gitAgentEdits.mockRejectedValue(new Error("EC-TIME"));
+
+        await loadFilesForScope(editsScope, { transcriptPath: "/t.jsonl" });
+
+        expect(gitChanges).not.toHaveBeenCalled();
+        expect(globalStore.get(filesErrorAtom)).toBe(true);
+    });
+
+    it("carries no edits facts, and asks nothing of the backend, on any other range", async () => {
+        gitChanges.mockResolvedValue(listed);
+        await loadFilesForScope(projectScopeVal("p"));
+        expect(globalStore.get(filesStateAtom)?.edits).toBeUndefined();
+
+        // a later poll of a non-edits scope must not re-ask either, whatever scope was loaded before
+        await reloadChanges("/repo");
+        expect(gitAgentEdits).not.toHaveBeenCalled();
     });
 });

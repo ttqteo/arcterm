@@ -158,7 +158,7 @@ export function FilesSurface({ model }: { model: AgentsViewModel }) {
 
     const pickAgent = (id: string) => {
         const a = agents.find((x) => x.id === id);
-        globalStore.set(model.diffScopeAtom, agentDiffScope(id, a?.name ?? id));
+        globalStore.set(model.diffScopeAtom, agentDiffScope(id, a?.name ?? id, a?.agent));
         globalStore.set(model.focusIdAtom, id);
     };
     const pickProject = (p: FilesProject) => {
@@ -177,7 +177,7 @@ export function FilesSurface({ model }: { model: AgentsViewModel }) {
     useEffect(() => {
         const a = focusFollowAgent(scope, focusId, agents);
         if (a != null) {
-            globalStore.set(model.diffScopeAtom, agentDiffScope(a.id, a.name));
+            globalStore.set(model.diffScopeAtom, agentDiffScope(a.id, a.name, a.agent));
         }
     }, [focusId, scope, agents]);
 

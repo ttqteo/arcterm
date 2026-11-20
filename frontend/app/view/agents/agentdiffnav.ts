@@ -14,14 +14,17 @@ import { fireAndForget } from "@/util/util";
 import type { AgentsViewModel } from "./agents";
 import { selectCompareRow, setCompareRefs } from "./comparestore";
 import { panelAppliedKeyAtom } from "./difflayout";
+import { rangeChoiceFor } from "./diffrangechoice";
 import { defaultRangeFor, scopeKey, type DiffOrigin, type DiffScope } from "./diffscope";
 import { requestFileLink } from "./filesstore";
 import { HISTORY_RPC_TIMEOUT_MS } from "./historyquery";
 import { runTree } from "./runmodel";
 
-export function agentDiffScope(agentId: string, label: string): DiffScope {
-    const origin: DiffOrigin = { kind: "agent", id: agentId };
-    return { repo: { origin, label }, range: defaultRangeFor(origin) };
+// runtime is the AgentVM's `agent` field: a Claude agent (absent = claude) opens on its own edits, or on the session
+// range once the person chose it; any other runtime has only the session range.
+export function agentDiffScope(agentId: string, label: string, runtime?: string): DiffScope {
+    const origin: DiffOrigin = { kind: "agent", id: agentId, runtime };
+    return { repo: { origin, label }, range: defaultRangeFor(origin, rangeChoiceFor(agentId)) };
 }
 
 // baseCommit is optional because a run may have none: it degrades to "" — the live HEAD diff — which

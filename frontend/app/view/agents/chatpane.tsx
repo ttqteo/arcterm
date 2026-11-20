@@ -1377,7 +1377,7 @@ function ChatPaneBody({
                             entries={entries}
                             onSent={onBoxSent}
                             onBoxState={setBoxNow}
-                            onShowDiff={() => openDiff(model, agentDiffScope(agent.id, agent.name))}
+                            onShowDiff={() => openDiff(model, agentDiffScope(agent.id, agent.name, agent.agent))}
                             chips={chips}
                             onMarkDone={markDone}
                             onClose={() => confirmCloseSession(agent, model, "chat chip")}
@@ -1386,7 +1386,7 @@ function ChatPaneBody({
                             questionWaits={questionWaits}
                             onLocal={(route) => {
                                 if ("open" in route) {
-                                    openDiff(model, agentDiffScope(agent.id, agent.name));
+                                    openDiff(model, agentDiffScope(agent.id, agent.name, agent.agent));
                                 } else {
                                     showLocalCard(agent.id, route.panel, route.command);
                                 }

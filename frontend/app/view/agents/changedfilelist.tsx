@@ -13,8 +13,9 @@ import { SkeletonLine, SkeletonRows } from "@/app/element/skeleton";
 import { globalStore } from "@/app/store/jotaiStore";
 import { cn } from "@/util/util";
 import { useAtomValue } from "jotai";
-import { Check, ChevronDown, ChevronRight, MessageSquare } from "lucide-react";
+import { Check, ChevronDown, ChevronRight, CircleDashed, MessageSquare, TriangleAlert } from "lucide-react";
 import { useEffect, useMemo, useRef, type KeyboardEvent } from "react";
+import type { EditFlag } from "./agentedits";
 import { activeCommentSourceAtom, commentStoreAtom, countsByPath } from "./diffcomments";
 import { shownPaths, stepFile } from "./filestep";
 import { buildFileTree, collapsedDirsAtom, treeModeAtom, type FileTreeRow } from "./filetree";
@@ -32,6 +33,13 @@ import {
 
 const INDENT_PX = 14;
 const ROW_PAD_PX = 8;
+
+// What an Agent's edits row's flag means, said where the marker is: the file is listed, but its pre-image is not the
+// agent's own.
+const EDIT_FLAG_TITLE: Record<EditFlag, string> = {
+    approximate: "No backup: compared with the session start",
+    outside: "Changed outside this agent between its edits",
+};
 
 function FileListSkeleton() {
     return (
@@ -138,6 +146,7 @@ function FileRow({
     review,
     comments = 0,
     lineCounts = true,
+    flag,
     onSelect,
     onToggle,
 }: {
@@ -145,6 +154,8 @@ function FileRow({
     label: string;
     depth: number;
     selected: boolean;
+    // the Agent's edits range's mark on this file (agentedits.ts); absent on every other list and on an unflagged file
+    flag?: EditFlag;
     // false when git listed the files but could not count their lines: +0 −0 would claim no edits
     lineCounts?: boolean;
     // pending diff comments on this path, lost ones included
@@ -165,6 +176,7 @@ function FileRow({
             <button
                 data-changed-file-row={change.path}
                 data-review-state={review ?? "none"}
+                data-edit-flag={flag}
                 aria-current={selected ? "true" : undefined}
                 onClick={onSelect}
                 style={{ paddingLeft: ROW_PAD_PX + depth * INDENT_PX }}
@@ -187,6 +199,16 @@ function FileRow({
                 >
                     {label}
                 </span>
+                {flag ? (
+                    <span
+                        data-edit-flag-mark={flag}
+                        title={EDIT_FLAG_TITLE[flag]}
+                        aria-label={EDIT_FLAG_TITLE[flag]}
+                        className={cn("flex-none", flag === "outside" ? "text-warning" : "text-muted")}
+                    >
+                        {flag === "outside" ? <TriangleAlert size={11} /> : <CircleDashed size={11} />}
+                    </span>
+                ) : null}
                 <CommentCountBadge count={comments} />
                 {change.note ? (
                     <span title={CHANGE_NOTE_TITLE[change.note]} className="flex-none text-[10.5px] text-muted">
@@ -350,6 +372,7 @@ export function ChangedFileList({
     onSelectFile,
     review = null,
     lineCounts = true,
+    flags,
 }: {
     changes: GitChanges | null;
     selectedFile: string | null;
@@ -358,6 +381,8 @@ export function ChangedFileList({
     review?: ReviewSubject | null;
     // false when git listed the files but could not count their lines: the rows then draw no +N −N
     lineCounts?: boolean;
+    // the Agent's edits list's marks, by the list's own (cwd-relative) path; left out on every other list
+    flags?: Record<string, EditFlag>;
 }) {
     const tree = useAtomValue(treeModeAtom);
     const collapsed = useAtomValue(collapsedDirsAtom);
@@ -414,6 +439,7 @@ export function ChangedFileList({
             review={review != null ? markState(subjectMarks, change) : null}
             comments={commentCounts[change.path] ?? 0}
             lineCounts={lineCounts}
+            flag={flags?.[change.path]}
             onSelect={() => onSelectFile(change.path)}
             onToggle={() => review != null && toggleReviewed(review, change)}
         />
