@@ -6,6 +6,7 @@
 // agent-is-alive rule are the split's (boards/boardtalkmodel.ts), so the list and the split read a board the same way.
 
 import { ALL_PROJECTS } from "../agents/agentsidebarmodel";
+import { projectOf, type AgentVM } from "../agents/agentsviewmodel";
 import { agentAlive, boardFacts, plural } from "../boards/boardtalkmodel";
 import type { LibraryBoardSel } from "./librarystore";
 
@@ -64,6 +65,24 @@ export function boardsSelectionIn(rows: readonly BoardRow[], sel: LibraryBoardSe
         return null;
     }
     return rows.find((r) => r.project === sel.project && r.id === sel.boardId) ?? null;
+}
+
+// An ended agent's board opens beside the Chat of a live agent that takes it over: a Claude agent of the board's project
+// (wavesrv refuses any other), in the roster's order. Empty when none runs.
+export interface BoardTakeoverAgent {
+    id: string;
+    name: string;
+}
+
+export function takeoverAgents(roster: readonly AgentVM[], project: string): BoardTakeoverAgent[] {
+    return roster
+        .filter((a) => a.agent === "claude" && projectOf(a) === project)
+        .map((a) => ({ id: a.id, name: a.name }));
+}
+
+// what Open beside Chat says when no agent can take the board: start one in its project first
+export function noTakeoverText(project: string): string {
+    return `No Claude agent of ${project} is running: start one to open this board beside its Chat.`;
 }
 
 const HOW_BOARDS_START = "Boards appear when an agent runs wsh board draw.";

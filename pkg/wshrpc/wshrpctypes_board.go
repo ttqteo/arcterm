@@ -20,6 +20,7 @@ type BoardCommands interface {
 	BoardAnswerInboxCommand(ctx context.Context, data CommandBoardRefData) ([]BoardAnswer, error)
 	BoardAnswerAckCommand(ctx context.Context, data CommandBoardAnswerAckData) error
 	BoardAgentDrawCommand(ctx context.Context, data CommandBoardAgentDrawData) (*BoardAgentDrawRtnData, error)
+	BoardTakeOverCommand(ctx context.Context, data CommandBoardTakeOverData) (*BoardInfo, error)
 }
 
 type CommandBoardListData struct {
@@ -90,6 +91,14 @@ type CommandBoardAnswerAckData struct {
 	TurnId   string   `json:"turnid"`
 	ShapeIds []string `json:"shapeids,omitempty"`
 	Error    string   `json:"error,omitempty"` // the landing failed: the turn fails and nothing changed
+}
+
+// CommandBoardTakeOverData is Library's Open beside Chat on a board whose agent has ended: TabId, a live Claude agent of
+// the board's project, takes the board over.
+type CommandBoardTakeOverData struct {
+	Project string `json:"project"`
+	BoardId string `json:"boardid"`
+	TabId   string `json:"tabid"`
 }
 
 // CommandBoardAgentDrawData is `wsh board draw`: the agent's block, the board's name, its one-line request and, when the

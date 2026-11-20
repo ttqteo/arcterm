@@ -6,7 +6,9 @@
 //   a live agent's board   its row opens the board beside that agent's Chat on the Agent surface, through the router
 //                          (openref.ts); Library stays as it was
 //   an ended agent's board its canvas (hand edits still save) and the whole talk, replies copied under what was forwarded.
-//                          The agent is gone, so there is no ask box, and Open conversation reads the agent's session
+//                          The agent is gone, so there is no ask box, and Open conversation reads the agent's session.
+//                          Open beside Chat… hands it to a live Claude agent of its project, which takes it over
+//                          (BoardTakeOverCommand), and opens it beside that agent's Chat
 // Only one canvas per board: the split beside Chat drops its own while another surface shows, so this one never doubles up
 // with it. The model is libraryboardsmodel.ts; the board's own parts are boards/.
 
@@ -14,7 +16,7 @@ import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { cn } from "@/util/util";
 import { useAtomValue } from "jotai";
-import { Search } from "lucide-react";
+import { ChevronDown, Search } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { AgentsViewModel } from "../agents/agents";
 import { sessionKey } from "../agents/sessionsruns";
@@ -24,7 +26,15 @@ import { parseBoardFile } from "../boards/boardmodel";
 import { loadBoardConvert, useBoardList, useBoardTalk } from "../boards/boardstore";
 import { BoardTurns } from "../boards/boardturns";
 import { openTarget } from "../jarvis/openref";
-import { boardRows, boardsEmptyText, boardsScope, boardsSelectionIn, type BoardRow } from "./libraryboardsmodel";
+import {
+    boardRows,
+    boardsEmptyText,
+    boardsScope,
+    boardsSelectionIn,
+    noTakeoverText,
+    takeoverAgents,
+    type BoardRow,
+} from "./libraryboardsmodel";
 import { libraryBoardSelAtom, showLibraryBoard, showLibrarySession } from "./librarystore";
 
 const ENDED_LINE = "The agent ended, so you can't ask here";
@@ -246,12 +256,118 @@ function BoardDetail({ model, row }: { model: AgentsViewModel; row: BoardRow }) 
                             </button>
                         </div>
                     ) : (
-                        <div data-library-board-ended className="flex-none px-3.5 pb-3 text-[12px] text-ink-faint">
-                            {ENDED_LINE}
+                        <div className="flex flex-none flex-col gap-1.5 px-3.5 pb-3 text-[12px]">
+                            <span data-library-board-ended className="text-ink-faint">
+                                {ENDED_LINE}
+                            </span>
+                            <OpenBesideChat
+                                model={model}
+                                row={row}
+                                onPick={(tabId) =>
+                                    void act(async () => {
+                                        await RpcApi.BoardTakeOverCommand(TabRpcClient, {
+                                            project: row.project,
+                                            boardid: row.id,
+                                            tabid: tabId,
+                                        });
+                                        await openTarget(model, {
+                                            kind: "board",
+                                            project: row.project,
+                                            boardId: row.id,
+                                        });
+                                    })
+                                }
+                            />
                         </div>
                     )}
                 </div>
             </div>
+        </div>
+    );
+}
+
+// An ended agent's board, handed to a live Claude agent of its project: the menu lists them, and with none it says to
+// start one. The menu opens upward, as the button sits at the foot of the turns column.
+function OpenBesideChat({
+    model,
+    row,
+    onPick,
+}: {
+    model: AgentsViewModel;
+    row: BoardRow;
+    onPick: (tabId: string) => void;
+}) {
+    const roster = useAtomValue(model.agentsAtom);
+    const agents = useMemo(() => takeoverAgents(roster, row.project), [roster, row.project]);
+    const [open, setOpen] = useState(false);
+    const root = useRef<HTMLDivElement>(null);
+    useEffect(() => {
+        if (!open) {
+            return;
+        }
+        const onDown = (e: PointerEvent) => {
+            if (!root.current?.contains(e.target as Node)) {
+                setOpen(false);
+            }
+        };
+        document.addEventListener("pointerdown", onDown, true);
+        return () => document.removeEventListener("pointerdown", onDown, true);
+    }, [open]);
+
+    if (agents.length === 0) {
+        return (
+            <span data-library-board-no-takeover className="text-muted">
+                {noTakeoverText(row.project)}
+            </span>
+        );
+    }
+    return (
+        <div
+            ref={root}
+            className="relative self-start"
+            onKeyDown={(e) => {
+                if (open && e.key === "Escape") {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setOpen(false);
+                }
+            }}
+        >
+            <button
+                type="button"
+                data-library-board-takeover
+                aria-haspopup="menu"
+                aria-expanded={open}
+                onClick={() => setOpen(!open)}
+                className="flex cursor-pointer items-center gap-1 text-accent hover:text-accenthover"
+            >
+                Open beside Chat…
+                <ChevronDown size={12} strokeWidth={2} aria-hidden />
+            </button>
+            {open ? (
+                <div
+                    role="menu"
+                    aria-label={`Agents of ${row.project}`}
+                    className="absolute bottom-full left-0 z-30 mb-1 flex min-w-[200px] flex-col rounded-[8px] border border-edge-mid bg-surface-raised py-1 shadow-popover-sm"
+                >
+                    <span className="px-3 pb-1 pt-0.5 text-[11.5px] text-muted">The agent you pick takes it over</span>
+                    {agents.map((a) => (
+                        <button
+                            key={a.id}
+                            type="button"
+                            role="menuitem"
+                            data-library-board-takeover-agent={a.id}
+                            onClick={() => {
+                                setOpen(false);
+                                onPick(a.id);
+                            }}
+                            className="flex cursor-pointer items-center px-3 py-1.5 text-left text-[12px] text-secondary hover:bg-surface-hover hover:text-primary"
+                        >
+                            <span className="min-w-0 flex-1 truncate">{a.name}</span>
+                        </button>
+                    ))}
+                </div>
+            ) : null}
         </div>
     );
 }

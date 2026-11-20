@@ -32,6 +32,7 @@ export const BOARD_COMMANDS = [
     "BoardRerouteCommand",
     "BoardAnswerInboxCommand",
     "BoardAnswerAckCommand",
+    "BoardTakeOverCommand",
 ];
 
 const q = JSON.stringify;
@@ -148,6 +149,16 @@ export const installBoardStubs = (h) =>
         };
         RpcApi.BoardRerouteCommand = async (_c, d) => {
             record("BoardRerouteCommand", d);
+        };
+        // the board is tied to the picked tab, named as the roster names it
+        RpcApi.BoardTakeOverCommand = async (_c, d) => {
+            record("BoardTakeOverCommand", d);
+            const b = fx.boards[d.boardid];
+            if (b == null) throw new Error("no such board " + d.boardid);
+            const title = globalStore.get(agentsModel().agentsAtom).find((a) => a.id === d.tabid)?.name ?? d.tabid;
+            (fx.talks[d.boardid] ??= talkOf(b)).agent = { tabid: d.tabid, title };
+            await talkChanged(d.boardid);
+            return structuredClone(infoOf(b));
         };
         return true;`
     );

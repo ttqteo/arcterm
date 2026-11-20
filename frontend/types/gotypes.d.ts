@@ -978,6 +978,13 @@ declare global {
         baserev: string;
     };
 
+    // wshrpc.CommandBoardTakeOverData
+    type CommandBoardTakeOverData = {
+        project: string;
+        boardid: string;
+        tabid: string;
+    };
+
     // wshrpc.CommandBoardTurnData
     type CommandBoardTurnData = {
         project: string;

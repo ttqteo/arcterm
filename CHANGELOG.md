@@ -36,6 +36,9 @@ and a picture given to a line that is not big.
 
 - Clicking Chat's Compacted line opens the summary the agent kept in the side panel, and a second click closes it.
 
+- A board whose agent has ended opens beside the Chat of a running Claude agent of its project: Open beside Chat… in
+  Library → Boards lists them, and the one you pick takes the board over, so you can ask on it again.
+
 ### Changed
 
 - A board whose agent has ended is no longer stuck: the next agent of its project that draws on it by name takes it over,

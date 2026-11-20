@@ -152,25 +152,86 @@ func findOrCreateBoard(row *agentRow, rows []agentRow, name, brief string) (info
 	if err != nil {
 		return info, false, false, err
 	}
-	agent := wshrpc.BoardAgent{TabId: row.TabId, Title: boardAgentTitle(row), SessionId: row.status.SessionID}
 	if found {
 		if info.LoadError != "" || info.AgentTabId == row.TabId || agentRowByTab(rows, info.AgentTabId) != nil {
 			return info, false, false, nil
 		}
-		if _, err := boardstore.UpdateTalk(dir, info.ID, func(talk *wshrpc.BoardTalk) error {
-			talk.Agent = &agent
-			return nil
-		}); err != nil {
-			return info, false, false, fmt.Errorf("taking over board %q: %w", info.Name, err)
-		}
-		info.AgentTabId, info.AgentTitle = agent.TabId, agent.Title
-		return info, false, true, nil
+		info, err = takeOverBoard(dir, info, row)
+		return info, false, err == nil, err
 	}
+	agent := boardAgentOf(row)
 	if brief == "" {
 		return wshrpc.BoardInfo{}, false, false, fmt.Errorf("there is no board %q in %s: pass the briefing with --context to make it", name, row.Project)
 	}
 	info, err = boardstore.Create(dir, row.Project, name, agent, time.Now().UnixMilli())
 	return info, err == nil, false, err
+}
+
+// boardAgentOf is the tie a board keeps to row's agent: its first read starts at the beginning of the session.
+func boardAgentOf(row *agentRow) wshrpc.BoardAgent {
+	return wshrpc.BoardAgent{TabId: row.TabId, Title: boardAgentTitle(row), SessionId: row.status.SessionID}
+}
+
+// takeOverBoard ties info's board to row's agent, keeping its drawing, turns and drawer session. The caller holds
+// boardCreate and has checked that the board's own agent is gone.
+func takeOverBoard(dir string, info wshrpc.BoardInfo, row *agentRow) (wshrpc.BoardInfo, error) {
+	agent := boardAgentOf(row)
+	if _, err := boardstore.UpdateTalk(dir, info.ID, func(talk *wshrpc.BoardTalk) error {
+		talk.Agent = &agent
+		return nil
+	}); err != nil {
+		return info, fmt.Errorf("taking over board %q: %w", info.Name, err)
+	}
+	info.AgentTabId, info.AgentTitle = agent.TabId, agent.Title
+	return info, nil
+}
+
+// BoardTakeOverCommand is Library's Open beside Chat on an ended agent's board: the chosen agent, a live Claude agent of
+// the board's project, takes it over, and the board's list moves it beside that agent's Chat. A board whose agent is
+// still live is refused; one already tied to the chosen agent is left as it is.
+func (ws *WshServer) BoardTakeOverCommand(ctx context.Context, data wshrpc.CommandBoardTakeOverData) (*wshrpc.BoardInfo, error) {
+	_, rows, err := boardRoster(ctx)
+	if err != nil {
+		return nil, err
+	}
+	row := agentRowByTab(rows, data.TabId)
+	switch {
+	case row == nil:
+		return nil, errors.New("that agent is not running")
+	case row.Harness != "claude":
+		return nil, errors.New(errClaudeOnly)
+	case row.Project != data.Project:
+		return nil, fmt.Errorf("%s works in %s, not in %s", boardAgentTitle(row), row.Project, data.Project)
+	}
+	boardCreate.Lock()
+	defer boardCreate.Unlock()
+	_, info, err := boardOf(data.Project, data.BoardId)
+	if err != nil {
+		return nil, err
+	}
+	if info.LoadError != "" {
+		return nil, fmt.Errorf("board %q won't open: %s", info.Name, info.LoadError)
+	}
+	dir := boardstore.ProjectDir(data.Project)
+	talk, err := boardstore.ReadTalk(dir, info.ID) // Read's row carries no talk facts: the tie is the talk's
+	if err != nil {
+		return nil, err
+	}
+	if talk.Agent != nil {
+		info.AgentTabId, info.AgentTitle = talk.Agent.TabId, talk.Agent.Title
+	}
+	if info.AgentTabId == row.TabId {
+		return &info, nil
+	}
+	if live := agentRowByTab(rows, info.AgentTabId); live != nil {
+		return nil, fmt.Errorf("board %q belongs to %s, which is still running", info.Name, boardAgentTitle(live))
+	}
+	info, err = takeOverBoard(dir, info, row)
+	if err != nil {
+		return nil, err
+	}
+	publishBoardList(data.Project, info.ID)
+	return &info, nil
 }
 
 // readBoardAgent is the drawer's ReadAgent: what the board's agent said since sinceTs, read from the claude transcript
