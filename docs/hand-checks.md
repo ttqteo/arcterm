@@ -1342,3 +1342,8 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
   and Open splits the board beside Chat. Open the `huong-luan-van` board (Library → Boards): every label is in Nunito,
   with no mixed glyphs and no line cut off ("tới nơi", "đang cượ…" whole), and the file saved that way. Unit-tested and
   typechecked only, not seen in the app.
+- [ ] (arcterm) **A board draws bar and line charts** (`pkg/boarddrawer/chart.go`, the `chart` entry in
+  `drawer-prompt.md`). On a board, Ask "add a bar chart: baseline 0.42, LLM 0.61, agent 0.70", then "and a line chart
+  of the same": each lands as one group (frame, bars or a line with dots, zero line, values, labels), the bars to scale,
+  and drags as one. Check that Excalidraw's skeleton conversion keeps the group, the fill and the text size. Go-tested
+  only, not seen in the app.

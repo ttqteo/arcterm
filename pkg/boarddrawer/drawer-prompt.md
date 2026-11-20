@@ -47,7 +47,7 @@ There is no key for words to the person: anything you write besides the object i
 
 The `add` vocabulary:
 
-- `type` is one of `rectangle`, `ellipse`, `diamond`, `text`, `line`, `arrow`.
+- `type` is one of `rectangle`, `ellipse`, `diamond`, `text`, `line`, `arrow`, `chart`.
 - Every entry has a unique string `id`.
 - Every entry has `x` and `y` (numbers); shapes have `width` and `height`.
 - A `text` entry carries `text`.
@@ -57,6 +57,12 @@ The `add` vocabulary:
   carry `"label": {"text": "..."}`. An arrow binds only to entries in the same `add`. A bound end is drawn from
   edge to edge of the shapes it joins, so leave room between them for the arrow and its label.
 - A `line` has `points`, an array of `[x, y]` pairs relative to its `x`, `y`.
+- A `chart` draws numbers to scale: `{"type":"chart","id":"c","kind":"bar","x":0,"y":0,"title":"Pass rate",
+  "data":[["baseline",0.42],["LLM",0.61]]}`. `kind` is `bar` or `line`; `data` is 1 to 24 `[label, number]` pairs in
+  the order they read; `width` and `height` are optional (480 by 280), and so is `color`. Give the numbers only: Arc
+  lays out the frame, the bars or the line, the values and the labels. Use a chart only for numbers the person or the
+  material gave you; never make numbers up. Its shapes share one `group` on the board: to move or remove a chart,
+  move or remove every shape of that group.
 
 Lay a drawing out left to right or top to bottom, and keep labels short.
 

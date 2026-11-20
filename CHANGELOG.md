@@ -32,6 +32,12 @@ and a picture given to a line that is not big.
 
 ## Unreleased
 
+### Added
+
+- A board can hold bar and line charts drawn to scale: give the agent, or the board's Ask, the numbers ("add a bar
+  chart of pass rate: baseline 0.42, LLM 0.61") and the chart lands beside the drawing, with its values and labels, as
+  plain shapes you can still move and edit.
+
 ### Changed
 
 - The council an agent started now shows in the Agent panel itself: a Council tab after Transcript holds the
