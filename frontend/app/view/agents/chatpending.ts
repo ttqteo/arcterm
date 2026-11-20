@@ -313,6 +313,14 @@ export function sendHold(permissionPending: boolean, asking: boolean): string | 
     return null;
 }
 
+/** Pure: whether a permission request holds the box. Claude Code's question dialog is also a permission prompt, so the
+ *  queue (pkg/agentperm) holds an AskUserQuestion request for as long as the question is up; while the agent's ask is
+ *  live, its own rule (sendHold's `asking`, boxAnswersAsk) decides for it, so that request is left out here. Without
+ *  this a question of one, which the box answers, still held every message as "Queued · sends once you answer". */
+export function permissionHolds(requests: readonly { toolname?: string }[], askLive: boolean): boolean {
+    return requests.some((r) => !(askLive && r.toolname === "AskUserQuestion"));
+}
+
 /** The line over the box while a send waits (sendHold): what to answer first, and that Send keeps the message until then;
  *  once Send was pressed, that the message goes by itself when the prompt is answered. Null when nothing holds. */
 export function holdLine(hold: string | null, held: boolean): string | null {

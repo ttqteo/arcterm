@@ -23,6 +23,7 @@ import {
     pendingMessage,
     pendingStill,
     pendsAsBubble,
+    permissionHolds,
     processGone,
     pushSent,
     queuedBubbleUp,
@@ -400,6 +401,26 @@ describe("sendHold", () => {
         expect(sendHold(false, true)).toBe("Answer Claude's question first");
         expect(sendHold(true, true)).toBe("Answer the permission prompt first");
         expect(sendHold(false, false)).toBeNull();
+    });
+});
+
+describe("permissionHolds", () => {
+    const ask = { toolname: "AskUserQuestion" };
+    const bash = { toolname: "Bash" };
+
+    it("leaves the question dialog's own request to the ask while the ask is live", () => {
+        expect(permissionHolds([ask], true)).toBe(false);
+        expect(permissionHolds([], true)).toBe(false);
+    });
+
+    it("holds for a question request the ask has not arrived for yet", () => {
+        expect(permissionHolds([ask], false)).toBe(true);
+    });
+
+    it("holds for any other permission prompt", () => {
+        expect(permissionHolds([bash], false)).toBe(true);
+        expect(permissionHolds([bash], true)).toBe(true);
+        expect(permissionHolds([ask, bash], true)).toBe(true);
     });
 });
 
