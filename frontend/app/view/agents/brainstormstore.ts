@@ -262,6 +262,12 @@ export function openBrainstormBoard(agentId: string, board: string | null): void
 // the part on screen; the rail's list is what [ ] and ← → step.
 export const railBoardsAtom = atomFamily((_agentId: string) => atom<string[]>([]) as PrimitiveAtom<string[]>);
 
+// The board open large in the dialog over the agent's Chat (chatband.tsx draws it), or null. The band's board rows and the
+// question card's option rows both open it (brainstormbandview.tsx openChatBoard).
+export const chatBoardPreviewAtom = atomFamily(
+    (_agentId: string) => atom<string | null>(null) as PrimitiveAtom<string | null>
+);
+
 export function stepBrainstormBoard(agentId: string, delta: number): void {
     const open = getBrainstorm(agentId)?.board;
     const next = stepTab(globalStore.get(railBoardsAtom(agentId)), open ?? null, delta);

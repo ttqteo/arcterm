@@ -10,6 +10,8 @@
 //   [data-bsband-decided], [data-bsband-body], [data-bsband-decision="<part id>"], [data-bsband-board="<file name>"][data-new],
 //   [data-bsband-open-brainstorm], [data-band-mark-done], [data-band-on], and the header's [data-brainstorm-tab-new]; a board
 //   opened over Chat is [data-bsband-preview="<file name>"] (with [data-bsband-preview-open]) in [data-brainstorm-board-dialog].
+//   The question card's boards are [data-chat-bscard-board="<file name>"] chips, on the option rows or in
+//   [data-chat-bscard-boardstrip].
 //
 // Two fixture Claude agents over real tabs and a fixture roster (the page's dev mock roster): the first is linked to a fixture
 // initiative and has a brainstorm.json attached that names a canvas, 3 boards over 2 parts and 4 decisions that are the user's,
@@ -766,6 +768,70 @@ export default function (kit) {
                         got.onClear === true &&
                         Math.abs(geo.columnLeft - geo.contentLeft) <= 2,
                     { width: got?.width, narrow: got?.narrow, open: got?.open, on: got?.on, onClear: got?.onClear, ...geo, off: geo != null ? Math.round((geo.columnLeft - geo.contentLeft) * 10) / 10 : null, wasOff: geo != null ? Math.round((geo.old - geo.contentLeft) * 10) / 10 : null }
+                );
+            });
+
+            // 9. the question card's boards: a Board chip on each option row when the asked part has a board per option, which
+            // opens that option's board over Chat; a row of chips over the options when the counts differ
+            await run("9. question-board-chips", async (name) => {
+                await AC.focusAgent(h, A);
+                await setBandPart(h, A, null);
+                await chatShown(A);
+                const CARD = `${layerOf(A)}?.querySelector('[data-chat-bscard-kind="question"]')`;
+                const ask = (options) => ({
+                    ...fileA(),
+                    working: null,
+                    question: {
+                        n: 2,
+                        text: "Which retry policy should the client use?",
+                        part: "policy",
+                        why: "Each way is drawn on its own board.",
+                        options: options.map((label, i) => ({ label, detail: `The ${label.toLowerCase()} way.`, pick: i === 0 })),
+                    },
+                    parts: fileA().parts.map((p) => (p.id === "policy" ? { ...p, state: "asked" } : p)),
+                });
+                const readCard = () =>
+                    h.ev(`(() => {
+                        const c = ${CARD};
+                        if (!c) return null;
+                        return {
+                            rows: [...c.querySelectorAll("[data-chat-bscard-option]")].map((o) => o.parentElement?.querySelector("[data-chat-bscard-board]")?.getAttribute("data-chat-bscard-board") ?? null),
+                            strip: [...(c.querySelector("[data-chat-bscard-boardstrip]")?.querySelectorAll("[data-chat-bscard-board]") ?? [])].map((b) => b.getAttribute("data-chat-bscard-board")),
+                        };
+                    })()`);
+
+                await write(ask(["Exponential", "Fixed"]), ctx.fileA, ctx.tabA);
+                const up = await polishWaitFor(h, `(${CARD}?.querySelectorAll("[data-chat-bscard-option] ~ * [data-chat-bscard-board]").length ?? 0) === 2`, WAIT_MS);
+                await h.ev(`${CARD}?.scrollIntoView({ block: "center" })`);
+                await polishNap(500);
+                const linked = await readCard();
+                await shot(h, "9-option-boards");
+                const clicked = await click(h, `${CARD}?.querySelectorAll("[data-chat-bscard-board]")[1]`);
+                const dialog = await polishWaitFor(h, `${PREVIEW}?.getAttribute("data-bsband-preview") === ${JSON.stringify(BOARDS[1])}`, SHORT_MS);
+                const mode = await modeOf(h, A);
+                await polishNap(600);
+                await shot(h, "9-option-board-open");
+                await press(h, "Escape", 600);
+                const closed = await polishWaitFor(h, `!${PREVIEW}`, SHORT_MS);
+
+                await write(ask(["Exponential", "Fixed", "None"]), ctx.fileA, ctx.tabA);
+                const stripUp = await polishWaitFor(h, `(${CARD}?.querySelectorAll("[data-chat-bscard-option]").length ?? 0) === 3 && !!${CARD}?.querySelector("[data-chat-bscard-boardstrip]")`, WAIT_MS);
+                await polishNap(400);
+                const unlinked = await readCard();
+                await shot(h, "9-board-strip");
+                rec(
+                    `${name}: a question on a part with 2 boards and 2 options draws a [data-chat-bscard-board] on each option row (board i on row i) and no strip; a click on row B's chip opens [data-bsband-preview="${BOARDS[1]}"] over Chat (the agent stays in Chat) and Esc closes it; with 3 options the rows have no chip and [data-chat-bscard-boardstrip] holds both boards`,
+                    up &&
+                        linked?.rows.join() === [BOARDS[0], BOARDS[1]].join() &&
+                        linked.strip.length === 0 &&
+                        clicked &&
+                        dialog &&
+                        mode !== "brainstorm" &&
+                        closed &&
+                        stripUp &&
+                        unlinked?.rows.every((r) => r === null) &&
+                        unlinked.strip.join() === [BOARDS[0], BOARDS[1]].join(),
+                    { up, linked, clicked, dialog, mode, closed, stripUp, unlinked }
                 );
             });
 

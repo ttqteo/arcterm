@@ -44,6 +44,9 @@ and a picture given to a line that is not big.
 - An agent's reply in Chat draws the agents, runs and councils it names by id (`4e6ea128`, or `agent:4e6ea128`) as
   badges with their names, as your own messages do: click one to open it. A commit hash or an id that names nothing
   open stays as written.
+- A brainstorm question in Chat shows its boards up front instead of only a small link at the bottom: when each option
+  has its own board, the option's row carries a Board button that opens it large over Chat; otherwise the boards are a
+  row of buttons above the options.
 
 ### Fixed
 

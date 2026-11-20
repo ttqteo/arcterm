@@ -11,6 +11,7 @@
 // (chatband.tsx) owns the keys and which board is open.
 
 import { useDimensionsWithCallbackRef } from "@/app/hook/useDimensions";
+import { globalStore } from "@/app/store/jotaiStore";
 import { formatChordString } from "@/util/keysym";
 import { cn } from "@/util/util";
 import { useAtomValue } from "jotai";
@@ -19,7 +20,7 @@ import { useLayoutEffect, useRef, useState, type MouseEvent, type RefObject } fr
 import type { AgentVM } from "./agentsviewmodel";
 import { setAgentView } from "./agentview";
 import type { BrainstormBandModel } from "./brainstormband";
-import { brainstormAtom, getBrainstorm, markBoardSeen } from "./brainstormstore";
+import { brainstormAtom, chatBoardPreviewAtom, getBrainstorm, markBoardSeen } from "./brainstormstore";
 import {
     boardUrl,
     canvasLayout,
@@ -52,6 +53,15 @@ export function startBoardPreview(agentId: string, name: string): boolean {
     }
     markBoardSeen(s.path, name, Date.now());
     return true;
+}
+
+/** Opens `name` large in the dialog over the agent's Chat, or the Brainstorm tab when the board cannot open there yet. */
+export function openChatBoard(agentId: string, name: string): void {
+    if (!startBoardPreview(agentId, name)) {
+        openBrainstorm(agentId);
+        return;
+    }
+    globalStore.set(chatBoardPreviewAtom(agentId), name);
 }
 
 /** The part's line: a lightbulb, `Brainstorm`, the board icon and `N boards` (not drawn with none), an accent dot and
