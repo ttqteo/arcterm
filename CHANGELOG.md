@@ -42,9 +42,13 @@ and a picture given to a line that is not big.
 - The Compacted line in the Agent details rail opens the summary in a Summary tab of the rail, with an x to close it,
   instead of a sheet over Chat; the summary scrolls on its own, and the tab widens with a drag like File.
 - The rail's Council tab widens with a drag like File and Transcript, so a council's long messages have room.
+- The "Báo lỗi arcterm" agent starts one run for all the small bugs it handles together instead of a run per bug, and
+  holds a small fix it finds later until that run has landed.
 
 ### Fixed
 
+- A picture an agent read from a bug report (its screen.png) keeps showing in Chat after the report is marked done,
+  instead of reading as no longer on disk once the report's folder moved to done/.
 - A council report's direction card wraps a long file path in its title and First step instead of running past the
   card's edge.
 - Words typed in Chat's box while Claude asks one question (the plan Handoff card among them) go as your answer, as
@@ -54,6 +58,8 @@ and a picture given to a line that is not big.
 - On a narrow Chat (an agent beside a file Preview, say), the Skim and Focus read buttons in its top-right corner stack
   in one column, Focus read under Skim, so the conversation keeps more of its width; a wide Chat keeps them side by
   side.
+- A session opened from Usage's By session table shows its transcript in Library, however old it is, instead of "This
+  session is not in the archive yet" for one past the most recent 100.
 
 ## 1.10.0 — 2026-11-20
 
