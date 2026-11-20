@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { canForkInChat, chatForkLaunchOpts, forkPointOfProse, forkPointOfYou, runChatFork } from "./chatfork";
+import {
+    canForkInChat,
+    chatForkLaunchOpts,
+    forkPointOfProse,
+    forkPointOfYou,
+    forkShowsSource,
+    runChatFork,
+    turnInFork,
+} from "./chatfork";
 
 describe("canForkInChat", () => {
     it("is a Claude agent with a .jsonl transcript", () => {
@@ -63,6 +71,15 @@ describe("chatForkLaunchOpts", () => {
                 .label
         ).toBe("Tạo initiatives sau khi run (fork)");
     });
+    it("carries the transcript it resumes and when it was made, for Chat", () => {
+        expect(
+            chatForkLaunchOpts(
+                { task: "Fix sync" },
+                { command: "c", projectpath: "D:/a", resumedpath: "C:/u/.arc/forks/f1/s.jsonl" },
+                1000
+            )
+        ).toMatchObject({ forkOf: "C:/u/.arc/forks/f1/s.jsonl", forkedAt: 1000 });
+    });
     it("names a fork of a fork once", () => {
         expect(
             chatForkLaunchOpts({ task: "", name: "Fix sync (fork)" }, { command: "c", projectpath: "D:/a" }).label
@@ -118,5 +135,34 @@ describe("runChatFork", () => {
         expect(f.calls.toast).toMatchObject([
             { title: "Couldn't fork a", message: "that message is no longer in the transcript", level: "error" },
         ]);
+    });
+});
+
+describe("forkShowsSource", () => {
+    it("shows the transcript a fork resumes until its own holds a message", () => {
+        expect(forkShowsSource("C:/f/s.jsonl", false)).toBe(true);
+        expect(forkShowsSource("C:/f/s.jsonl", true)).toBe(false);
+    });
+    it("never for an agent that is no fork", () => {
+        expect(forkShowsSource(undefined, false)).toBe(false);
+        expect(forkShowsSource("", false)).toBe(false);
+    });
+});
+
+describe("turnInFork", () => {
+    const forkedAt = Date.parse("2026-11-20T04:27:00Z");
+    it("drops a turn read back to a prompt of the copied history", () => {
+        expect(turnInFork({ startedAt: Date.parse("2026-11-19T13:00:47Z"), outputTokens: 2800 }, forkedAt)).toBeNull();
+    });
+    it("keeps the fork's own turn", () => {
+        const own = { startedAt: Date.parse("2026-11-20T04:29:07Z"), outputTokens: 10 };
+        expect(turnInFork(own, forkedAt)).toBe(own);
+    });
+    it("keeps any turn of an agent that is no fork, and a turn with no time", () => {
+        const old = { startedAt: 1, outputTokens: 0 };
+        expect(turnInFork(old, undefined)).toBe(old);
+        const untimed = { startedAt: NaN, outputTokens: 0 };
+        expect(turnInFork(untimed, forkedAt)).toBe(untimed);
+        expect(turnInFork(null, forkedAt)).toBeNull();
     });
 });

@@ -105,6 +105,8 @@ export interface SessionInput {
     runORef?: string; // jarvis:runoref, stamped on a run's lead and worker tabs at spawn
     effortORef?: string; // session:effort, the initiative the session was launched from or picked, else the first it touched
     brainstormFile?: string; // session:brainstorm, the attached brainstorm.json's absolute path
+    forkOf?: string; // session:forkof, the transcript a Chat fork resumes
+    forkedAt?: number; // session:forkedat, when that fork was made (UnixMilli)
     builderCheck?: BuilderCheckRecord; // brainstorm:check*, Arc's record of the brainstorm's builder check
     brainstormJudge?: BuilderCheckRecord; // brainstorm:judge*, Arc's record of the brainstorm's judge
     pinned: boolean;
@@ -129,6 +131,8 @@ export interface SessionRowVM {
     runORef?: string; // the run this session works for: a lead's own run, a worker's child run
     effortORef?: string; // the initiative this session works on
     brainstormFile?: string; // the brainstorm.json attached to this session
+    forkOf?: string; // the transcript this session, a Chat fork, resumes
+    forkedAt?: number; // when that fork was made (UnixMilli)
     builderCheck?: BuilderCheckRecord; // Arc's record of that brainstorm's builder check
     brainstormJudge?: BuilderCheckRecord; // Arc's record of that brainstorm's judge
     agent?: string; // session:agent runtime (claude/codex/…); undefined for plain terminals
@@ -231,6 +235,8 @@ function toRow(s: SessionInput, includeService: boolean): SessionRowVM {
         runORef: s.runORef,
         effortORef: s.effortORef,
         brainstormFile: s.brainstormFile,
+        forkOf: s.forkOf,
+        forkedAt: s.forkedAt,
         builderCheck: s.builderCheck,
         brainstormJudge: s.brainstormJudge,
         agent: s.agent,

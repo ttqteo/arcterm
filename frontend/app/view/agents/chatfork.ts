@@ -34,11 +34,16 @@ function folderName(p: string): string {
     return p.split(/[\\/]/).filter(Boolean).pop() ?? "";
 }
 
+/** What ForkAgentSessionCommand answers: the command, where it starts, and the transcript it resumes. */
+export type ForkRtn = { command: string; projectpath: string; resumedpath?: string };
+
 /** The launch that starts a fork: a new tab of its own (no resumeOf), named as a fork of the agent. A live agent's task
- *  is empty (liveToVM), so its name, the title its row shows, names it then; a fork of a fork is not "(fork) (fork)". */
+ *  is empty (liveToVM), so its name, the title its row shows, names it then; a fork of a fork is not "(fork) (fork)".
+ *  It carries the transcript it resumes (forkOf), which Chat shows until the fork writes its own. */
 export function chatForkLaunchOpts(
     agent: Pick<AgentVM, "task" | "project"> & Partial<Pick<AgentVM, "name">>,
-    rtn: { command: string; projectpath: string }
+    rtn: ForkRtn,
+    now: number = Date.now()
 ): LaunchAgentOpts {
     const title = (agent.task?.trim() || agent.name?.trim() || "").replace(/\s*\(fork\)$/i, "");
     return {
@@ -48,12 +53,29 @@ export function chatForkLaunchOpts(
         projectPath: rtn.projectpath,
         projectName: agent.project || folderName(rtn.projectpath) || "agent",
         label: title ? `${title} (fork)` : "Fork",
+        ...(rtn.resumedpath ? { forkOf: rtn.resumedpath, forkedAt: now } : {}),
     };
+}
+
+/** Whether Chat shows the transcript a fork resumes (session:forkof) rather than its own: until its own holds a message.
+ *  Claude Code writes a --fork-session's file at launch with its hook lines only, and the history it copies at the
+ *  fork's first message, so before that its own reads as a new conversation. */
+export function forkShowsSource(forkOf: string | undefined, ownHasMessages: boolean): boolean {
+    return !!forkOf && !ownHasMessages;
+}
+
+/** The turn under way, or null when the prompt it was read back to is older than the fork (session:forkedat): that is
+ *  a prompt of the history the fork copied, its own not written yet, and its time would read as hours of work. */
+export function turnInFork<T extends { startedAt: number }>(stats: T | null, forkedAt: number | undefined): T | null {
+    if (stats == null || forkedAt == null || !Number.isFinite(stats.startedAt)) {
+        return stats;
+    }
+    return stats.startedAt < forkedAt ? null : stats;
 }
 
 /** What a fork reaches outside Chat; chatforkaction.ts binds the real ones, the test fakes. */
 export type ChatForkDeps = {
-    fork: (data: CommandForkAgentSessionData) => Promise<{ command: string; projectpath: string }>;
+    fork: (data: CommandForkAgentSessionData) => Promise<ForkRtn>;
     launch: (opts: LaunchAgentOpts) => Promise<string>;
     setDraft: (agentId: string, text: string) => void;
     toast: (t: { title: string; message: string; level: "error" }) => void;

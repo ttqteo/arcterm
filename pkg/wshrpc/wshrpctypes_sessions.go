@@ -29,4 +29,7 @@ type CommandForkAgentSessionData struct {
 type CommandForkAgentSessionRtnData struct {
 	Command     string `json:"command"`
 	ProjectPath string `json:"projectpath"`
+	// the transcript the fork resumes (the cut copy, or the source for a whole-session fork): Chat shows it until the
+	// fork's own file is written, which Claude Code does only at the fork's first message
+	ResumedPath string `json:"resumedpath"`
 }

@@ -129,6 +129,8 @@ export const sessionSidebarViewModelAtom = atom<SidebarViewModel>((get) => {
             runORef: sessionRunORef(meta, termBlock?.meta),
             effortORef: meta["session:effort"],
             brainstormFile: meta["session:brainstorm"],
+            forkOf: meta["session:forkof"],
+            forkedAt: meta["session:forkedat"],
             builderCheck: builderCheckOf(meta),
             brainstormJudge: brainstormJudgeOf(meta),
             title,

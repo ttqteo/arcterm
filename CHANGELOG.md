@@ -38,6 +38,13 @@ and a picture given to a line that is not big.
   Compacted line in the Agent details rail opens the summary in a wide sheet at the window's right edge. A pi agent's
   compaction now shows in the rail too.
 
+### Fixed
+
+- A fork of a conversation synced from another machine starts in the project's folder on this one, instead of your
+  home folder with a "trust this folder?" prompt; with no such folder here, Fork says so and starts nothing.
+- A fork's Chat shows the conversation it was forked from as soon as it opens, instead of "New conversation" until
+  you send it a message, and its Working line no longer counts the hours since the last message it copied.
+
 ## 1.9.0 — 2026-11-20
 
 ### Added

@@ -16,6 +16,16 @@ list (its number is not reused).
 Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) ·
 [part 4](hand-checks-4.md) · [part 3](hand-checks-3.md) · [part 2](hand-checks-2.md) (oldest).
 
+- [ ] (arcterm) Fork in Chat, three parts (`pkg/agentsessions/fork.go` forkCwd; `chatfork.ts` forkShowsSource,
+  turnInFork; `chatpane.tsx`), fix/fork-chat. (1) In a conversation synced from the Mac (mit-thesis "Đồng bộ history
+  với Windows", whose early turns name `/Users/ttqteo/...`), Fork from here on a reply among the Mac turns → the fork
+  starts in `d:\work\mit\mit-thesis` with no folder trust prompt, and its transcript lands under
+  `~/.claude/projects/d--work-mit-mit-thesis`, not `C--Users-me`. (2) The fork's Chat shows that history at
+  once (no "New conversation"); send it a message → the history stays put and the message lands under it, and after
+  that a `/clear` in the fork shows an empty conversation, not the old history. (3) While its first turn works, the
+  Working line reads seconds, not hours. Separately, not fixed (could not reproduce): on 11-20 the safeguards'
+  "Session paused" menu in that fork showed in its Terminal but no card in Chat, although `tuiDialog` reads a screen
+  built from the screenshot; next time it happens, note the agent's state and whether a permission or ask card was up.
 - [ ] (arcterm) Kael sync 11-19: two Claude agents on one checkout, each Diff lists only its own files
   (`pkg/agentedits`, `GitAgentEditsCommand`; `frontend/app/view/agents/agentchanges.ts`). The CDP scenario
   `diff-agent-edits` fakes the transcript, so no real Claude session has been replayed. Open two live Claude agents on
