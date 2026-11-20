@@ -50,7 +50,7 @@ and a picture given to a line that is not big.
   of everything that changed in the checkout since its session started. A switch under the panel's header takes you
   back to Since session start. A file the rebuild could not match exactly is marked (no backup, or changed outside the
   agent between its edits), and a caption counts the Bash calls that may have changed files it cannot show.
-  <!-- big --> <!-- shot: none -->
+  <!-- big --> <!-- shot: 1.9.0-agent-edits.webp -->
 
 ### Changed
 
