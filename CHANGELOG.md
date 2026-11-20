@@ -50,6 +50,9 @@ and a picture given to a line that is not big.
   of command or ws"), instead of stopping at "InputValidationError: [".
 - An agent can brief a board from a file (`wsh board draw --context-file`), so a briefing of several lines, or with
   Vietnamese accents, reaches the drawer intact from PowerShell instead of failing or being flattened to one line.
+- On Windows, a council an agent starts through PowerShell now gets its card in Chat, and the agent's summary of its
+  report draws in the council panel. Commands run through PowerShell also show their output in Chat the way Bash
+  commands do. The summary also lands in the panel when the agent's wait for the report ran past its timeout.
 
 ### Fixed
 

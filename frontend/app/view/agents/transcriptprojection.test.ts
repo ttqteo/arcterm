@@ -475,6 +475,40 @@ describe("projectTranscript task-notification, stdout, and interrupts", () => {
         expect(entries.some((e) => "_bgId" in e)).toBe(false);
     });
 
+    it("keeps the tool-use id of a foreground shell call moved to the background at its timeout", () => {
+        // what Claude Code writes when a foreground `wsh council wait` passes its timeout (a PowerShell call, 2026-11-20)
+        const entries = projectTranscript([
+            L({
+                type: "assistant",
+                message: {
+                    content: [
+                        {
+                            type: "tool_use",
+                            id: "toolu_moved",
+                            name: "PowerShell",
+                            input: { command: "wsh council wait c1", timeout: 600000 },
+                        },
+                    ],
+                },
+            }),
+            L({
+                type: "user",
+                message: {
+                    content: [
+                        {
+                            type: "tool_result",
+                            tool_use_id: "toolu_moved",
+                            content: "Command did not complete within its 600s timeout and was moved to the background (ID: b1).",
+                        },
+                    ],
+                },
+                toolUseResult: { stdout: "", stderr: "", backgroundTaskId: "b1", timedOutAfterMs: 600000 },
+            }),
+        ]);
+        const details = entries.flatMap((e) => (e.kind === "action" && e.detail?.kind === "bash" ? [e.detail] : []));
+        expect(details.map((d) => d.bgToolUseId)).toEqual(["toolu_moved"]);
+    });
+
     it("omits result when the task-notification has none", () => {
         const content = "<task-notification>\n<status>completed</status>\n<summary>done</summary>\n</task-notification>";
         expect(projectTranscript([L({ type: "user", message: { content } })])).toEqual([
@@ -854,6 +888,16 @@ describe("projectTranscript detail", () => {
         // the line shows the human description; the raw command lives in the detail, and on the action from the call on
         expect(out[0]).toMatchObject({ kind: "action", verb: "ran", target: "run tests", command: "npm test" });
         expect((out[0] as any).detail).toEqual({ kind: "bash", command: "npm test", output: "24 passing", exit: 0 });
+    });
+
+    it("reads a PowerShell call as a shell command, with the same bash detail", () => {
+        // Claude Code's Windows shell tool: a `wsh council start` run through it must draw its council card too
+        const out = projectTranscript([
+            L({ type: "assistant", message: { content: [{ type: "tool_use", id: "p1", name: "PowerShell", input: { command: "wsh council start --feature x", description: "Start council" } }] } }),
+            L({ type: "user", message: { content: [{ type: "tool_result", tool_use_id: "p1", is_error: false, content: "council c1 started: x" }] } }),
+        ]);
+        expect(out[0]).toMatchObject({ kind: "action", verb: "ran", target: "Start council", command: "wsh council start --feature x" });
+        expect((out[0] as any).detail).toEqual({ kind: "bash", command: "wsh council start --feature x", output: "council c1 started: x", exit: 0 });
     });
 
     it("keeps a described Bash call's command on the action before its result, and none when the target is the command", () => {
