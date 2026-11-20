@@ -3,7 +3,7 @@
 //
 // The Agent details rail's sections: which show, in what order, with which counts. A plan waiting for review first,
 // then the session block (its context and spend, opening on its token usage and facts), then attention (needs you),
-// then the lists the agent holds (subagents, changed files, artifacts, uploads, servers, background tasks), and its
+// then the Verify tile when the agent ran a scenario or changed a watched UI file, then the lists the agent holds (subagents, changed files, artifacts, uploads, servers, background tasks), and its
 // run. The tab strip counts, in one fixed order (planRailStats), only the lists a click can
 // act on: an empty one would crowd the strip past the rail's 300px and clip its last icons. The body lists the ones
 // with something in them. Plain terminals are not an agent's: the Agent tree lists them in a section of its own.
@@ -12,11 +12,16 @@
 import type { RailSectionHeader } from "@/app/element/railsections";
 import { stepElapsed } from "./chatsteps";
 import type { BackgroundTaskStatus } from "./transcriptprojection";
+import type { VerifyTileVM } from "./verifymodel";
 
-// the lists the tab strip counts, in its order
-export type AgentRailStatId = "subagents" | "files" | "artifacts" | "uploads" | "servers" | "bgtasks";
+// the counts the tab strip draws, in its order. Verify is the odd one: not a list but the agent's scenario results (the tile
+// after Needs you, railverify.tsx), so its stat carries the tile's own strip figures in place of a count
+export type AgentRailStatId = "subagents" | "files" | "artifacts" | "uploads" | "servers" | "bgtasks" | "verify";
 
 export type AgentRailSectionId = "plan" | "subagent" | "status" | "needs" | AgentRailStatId | "run";
+
+// what the strip draws for Verify: the tile's own strip (verifymodel.ts), never null once there is a tile
+export type RailVerifyStrip = NonNullable<VerifyTileVM["strip"]>;
 
 export interface AgentRailInput {
     inSubagent: boolean; // a subagent's interior is open in place of the parent
@@ -33,6 +38,8 @@ export interface AgentRailInput {
     servers: number; // listening processes in the agent's project
     bgTasks: number;
     hasRun: boolean; // the agent leads or works a run
+    // the Verify tile's strip (verifyTile(...).strip); null or absent: the agent has no tile, so neither the tile nor its count
+    verify?: VerifyTileVM["strip"];
 }
 
 export interface AgentRailSectionPlan {
@@ -42,8 +49,9 @@ export interface AgentRailSectionPlan {
 
 export interface AgentRailStat {
     id: AgentRailStatId;
-    count: number | null; // null: not known (files loading, or not a git repo)
+    count: number | null; // null: not known (files loading, or not a git repo); always null for Verify
     switchable?: boolean; // an empty list that has another view to switch to still opens (Files changed's branch)
+    verify?: RailVerifyStrip; // Verify only: the icon's tone and the label ("2", "!") in place of a count
 }
 
 export function planRailStats(i: AgentRailInput): AgentRailStat[] {
@@ -58,6 +66,10 @@ export function planRailStats(i: AgentRailInput): AgentRailStat[] {
         { id: "servers", count: i.servers },
         { id: "bgtasks", count: i.bgTasks },
     ];
+    // Verify's count comes last, after Background tasks; with no tile there is nothing to count
+    if (i.verify != null) {
+        all.push({ id: "verify", count: null, verify: i.verify });
+    }
     return all.filter((s) => railStatAction(s) != null);
 }
 
@@ -94,8 +106,13 @@ export function planAgentRail(i: AgentRailInput): AgentRailSectionPlan[] {
     if (!i.inSubagent && i.needsYou > 0) {
         out.push({ id: "needs" });
     }
+    // the Verify tile is drawn like the session block, not as a folded section: it cannot scroll out of sight under the
+    // lists, and it draws its own heading. Its strip count is the last of the stats, so it is left out of the loop below
+    if (!i.inSubagent && i.verify != null) {
+        out.push({ id: "verify" });
+    }
     for (const s of planRailStats(i)) {
-        if (railStatAction(s) === "open") {
+        if (s.id !== "verify" && railStatAction(s) === "open") {
             const header: RailSectionHeader = s.count == null ? {} : { count: s.count };
             out.push({ id: s.id, header });
         }

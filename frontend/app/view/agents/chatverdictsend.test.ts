@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AgentEntry, AgentVM } from "./agentsviewmodel";
 import { brainstormAnswers, brainstormSentAtom, SENT_STORAGE_KEY } from "./chatbrainstormstore";
 import { fixLine, skipLine, VERDICT_TOPIC, type Verdict } from "./chatverdict";
-import { sendVerdict } from "./chatverdictsend";
+import { sendAgentLine, sendVerdict } from "./chatverdictsend";
 
 // the loaded transcript comes from the Chat window's cache (railtranscript.tsx); a test passes its own entries through
 // the io, so the pane's module graph is not loaded for it
@@ -150,5 +150,43 @@ describe("sendVerdict", () => {
         );
         expect(io.sent).toEqual([]);
         expect(brainstormAnswers(AGENT.id)).toEqual([]);
+    });
+});
+
+// Verify's Ask the agent to rerun: the line goes the way a card's does, but pairs with no Chat card, so Chat draws the
+// message it causes like any other the person sent
+describe("sendAgentLine", () => {
+    const LINE = "Run `task verify:ui -- chat-council-card` again and fix the steps that fail: 7, 8, 9.";
+
+    it("sends the line to the agent's block as a prompt and keeps no record", async () => {
+        const store = mockLocalStorage();
+        const io = fakeIO();
+        await sendAgentLine(AGENT, LINE, io);
+        expect(io.sent).toEqual([["blk-1", LINE]]);
+        expect(brainstormAnswers(AGENT.id)).toEqual([]);
+        expect(store[SENT_STORAGE_KEY]).toBeUndefined();
+    });
+
+    it("wakes a sleeping agent with the line instead of typing into its stopped terminal", async () => {
+        const io = fakeIO();
+        const asleep = { ...AGENT, sleeping: { since: 1, freedBytes: 0 } };
+        await sendAgentLine(asleep, LINE, io);
+        expect(io.sent).toEqual([]);
+        expect(io.woken).toEqual([["a1", LINE]]);
+    });
+
+    it("a prompt or a wake that fails throws with the agent's name", async () => {
+        await expect(sendAgentLine(AGENT, LINE, fakeIO(true))).rejects.toThrow("Couldn't send to lag-alerts: boom");
+        const asleep = { ...AGENT, sleeping: { since: 1, freedBytes: 0 } };
+        await expect(sendAgentLine(asleep, LINE, fakeIO(true))).rejects.toThrow(
+            "Couldn't wake lag-alerts: the session file is gone"
+        );
+    });
+
+    it("an agent with no terminal throws", async () => {
+        const io = fakeIO();
+        const noBlock = { ...AGENT, blockId: undefined } as unknown as AgentVM;
+        await expect(sendAgentLine(noBlock, LINE, io)).rejects.toThrow("This agent has no terminal to send to");
+        expect(io.sent).toEqual([]);
     });
 });
