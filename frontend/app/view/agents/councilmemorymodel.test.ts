@@ -20,6 +20,7 @@ import {
     memoryTabLabel,
     newEntryIds,
     replacedRows,
+    settledOf,
     shownCard,
 } from "./councilmemorymodel";
 
@@ -568,5 +569,42 @@ describe("latestEntryAt", () => {
         // seen written at the newest arrival leaves the dot off, as the open tab does
         expect(memoryDotOn(after, latestEntryAt(after))).toBe(false);
         expect(memoryDotOn(after, latestEntryAt(before))).toBe(true);
+    });
+});
+
+describe("settledOf", () => {
+    it("groups the entries as Agreed, Still open and Ruled out, each newest first, under the chosen direction", () => {
+        const c = council({
+            memory: {
+                chosen: direction({ text: "  Ship B first " }),
+                entries: [
+                    entry("m1", "agreed", { at: clock(10, 0) }),
+                    entry("m2", "ruledout", { at: clock(10, 10), why: " too slow " }),
+                    entry("m3", "agreed", { at: clock(10, 20) }),
+                    entry("m4", "open", { at: clock(10, 30) }),
+                    entry("m5", "weird", { at: clock(10, 40) }),
+                ],
+            },
+        });
+        const s = settledOf(c)!;
+        expect(s.direction).toBe("Ship B first");
+        expect(s.groups.map((g) => [g.kind, g.label, g.items.map((i) => i.id)])).toEqual([
+            ["agreed", "Agreed", ["m3", "m1"]],
+            ["open", "Still open", ["m4"]],
+            ["ruledout", "Ruled out", ["m2"]],
+        ]);
+        expect(s.groups[2].items[0].why).toBe("too slow");
+        expect(s.groups[0].items[0].why).toBe("");
+    });
+
+    it("leaves an empty group out, and holds the entries alone when no direction is chosen", () => {
+        const s = settledOf(council({ memory: { entries: [entry("m1", "open", { at: 1 })] } }))!;
+        expect(s.direction).toBeNull();
+        expect(s.groups.map((g) => g.kind)).toEqual(["open"]);
+    });
+
+    it("is null when the memory holds nothing settled", () => {
+        expect(settledOf(council())).toBeNull();
+        expect(settledOf(council({ memory: { entries: [entry("m1", "weird", { at: 1 })] } }))).toBeNull();
     });
 });

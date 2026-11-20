@@ -942,10 +942,29 @@ describe("outlineOf", () => {
         expect(outlineOf(council({ summary: none })).map((e) => e.id)).toEqual(["answer"]);
     });
 
-    it("lists What it spent after the kept ideas, once a seat has tokens or a timed step", () => {
+    it("lists What it settled right after the answer when the memory holds a direction or an entry", () => {
+        const chosen = { text: "Ship B", how: "pin", at: 1 };
+        expect(outlineOf(council({ memory: { chosen } })).map((e) => e.id)).toEqual([
+            "answer",
+            "settled",
+            "glance",
+            "directions",
+            "direction:1",
+            "direction:2",
+        ]);
+        const odd = { entries: [{ id: "m1", kind: "weird", text: "x", by: "auto", at: 1 }] };
+        expect(outlineOf(council({ memory: odd })).map((e) => e.id)).not.toContain("settled");
+    });
+
+    it("lists What it spent last, after the kept ideas and the Final proposal, once a seat has tokens or a timed step", () => {
         const base = council();
         const kept = { ...base.summary!, kept: [direction(3, ["P6"])] };
         const stats = { ram: { ms: 900, tokens: 1200, calls: 1 } };
+        expect(
+            outlineOf(council({ summary: kept, stats, finalpick: "P2" }))
+                .map((e) => e.id)
+                .slice(-2)
+        ).toEqual(["final", "spend"]);
         const spent = outlineOf(council({ summary: kept, stats }));
         expect(spent.map((e) => e.id)).toEqual([
             "answer",
@@ -1029,7 +1048,7 @@ describe("jumpLinks", () => {
         expect(jumpLinks(council()).map((e) => e.id)).toEqual(["glance", "directions"]);
     });
 
-    it("lists What it spent after the kept ideas and before the Final proposal", () => {
+    it("has no link to What it spent: the cost is folded at the foot, not a result", () => {
         const base = council();
         const kept = { ...base.summary!, kept: [direction(3, ["P6"])] };
         const stats = { ram: { ms: 900, tokens: 1200, calls: 1 } };
@@ -1037,9 +1056,13 @@ describe("jumpLinks", () => {
             "glance",
             "directions",
             "kept",
-            "spend",
             "final",
         ]);
+    });
+
+    it("leads with What it settled when the memory holds a result", () => {
+        const memory = { entries: [{ id: "m1", kind: "open", text: "which first?", by: "auto", at: 1 }] };
+        expect(jumpLinks(council({ memory })).map((e) => e.id)).toEqual(["settled", "glance", "directions"]);
     });
 
     it("is empty before a summary while nothing is pinned", () => {

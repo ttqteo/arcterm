@@ -586,10 +586,10 @@ export interface OutlineEntry {
     rank: number | null;
 }
 
-/** Pure: the report's outline, in page order: the answer, At a glance (the figures of how the panel stands, while the
- *  summary has a direction), the directions (each one under them), the kept or also-raised ideas, What it spent (the
- *  figures of the tokens and the time, while the council recorded any), and last the Final proposal while a message is
- *  pinned (finalProposal). Who agrees with which idea is the Map tab's, not a section here. Empty before a summary
+/** Pure: the report's outline, in page order: the answer, What it settled (while the memory holds a result), At a glance
+ *  (the figures of how the panel stands, while the summary has a direction), the directions (each one under them), the
+ *  kept or also-raised ideas, the Final proposal while a message is pinned (finalProposal), and last What it spent (the
+ *  figures of the tokens and the time, folded at the foot, while the council recorded any). Who agrees with which idea is the Map tab's, not a section here. Empty before a summary
  *  unless a message is pinned: then the Final proposal alone, which the report shows without one. */
 export function outlineOf(c: Council): OutlineEntry[] {
     const final: OutlineEntry[] =
@@ -599,6 +599,9 @@ export function outlineOf(c: Council): OutlineEntry[] {
         return final;
     }
     const entries: OutlineEntry[] = [{ id: "answer", label: "The answer", count: null, depth: 0, rank: null }];
+    if (hasSettled(c)) {
+        entries.push({ id: "settled", label: "What it settled", count: null, depth: 0, rank: null });
+    }
     if (hasGlanceFigures(c)) {
         entries.push({ id: "glance", label: "At a glance", count: null, depth: 0, rank: null });
     }
@@ -620,17 +623,27 @@ export function outlineOf(c: Council): OutlineEntry[] {
     if (kept.length > 0) {
         entries.push({ id: "kept", label: keptHeading(c), count: kept.length, depth: 0, rank: null });
     }
-    if (hasSpendFigures(c)) {
-        entries.push({ id: "spend", label: "What it spent", count: null, depth: 0, rank: null });
-    }
-    return [...entries, ...final];
+    const spend: OutlineEntry[] = hasSpendFigures(c)
+        ? [{ id: "spend", label: "What it spent", count: null, depth: 0, rank: null }]
+        : [];
+    return [...entries, ...final, ...spend];
 }
 
 /** Pure: the tab bar's jump links: the outline's sections after the answer (the answer is the cover), in page order:
- *  At a glance, the directions and the kept ideas when there are any, What it spent, then the Final proposal while a
- *  message is pinned. Empty before a summary unless a message is pinned: then the Final proposal alone. */
+ *  What it settled, At a glance, the directions and the kept ideas when there are any, then the Final proposal while a
+ *  message is pinned. What it spent is no link: it is the cost of the council, not its result, folded at the foot of the
+ *  page. Empty before a summary unless a message is pinned: then the Final proposal alone. */
 export function jumpLinks(c: Council): OutlineEntry[] {
-    return outlineOf(c).filter((e) => e.depth === 0 && e.id !== "answer");
+    return outlineOf(c).filter((e) => e.depth === 0 && e.id !== "answer" && e.id !== "spend");
+}
+
+const SETTLED_KINDS = new Set(["agreed", "ruledout", "open"]);
+
+/** Pure: the Report's "What it settled" section draws: the council's memory has a chosen direction or an Agreed, Ruled
+ *  out or Open entry. What it holds is councilmemorymodel.ts's `settledOf`; this file only reads the condition, as
+ *  councilmemorymodel.ts imports this one. */
+export function hasSettled(c: Council): boolean {
+    return c.memory?.chosen != null || (c.memory?.entries ?? []).some((e) => SETTLED_KINDS.has(e.kind));
 }
 
 // ---- the figures' sections ----

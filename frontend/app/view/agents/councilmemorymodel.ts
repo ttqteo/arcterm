@@ -256,3 +256,41 @@ export function chotText(item: CouncilProposal | CouncilReply): string {
 export function chotLine(text: string): string {
     return chotText({ text } as CouncilReply);
 }
+
+/** One group of the Report's "What it settled": the entries of one kind. */
+export interface SettledGroup {
+    kind: "agreed" | "open" | "ruledout";
+    label: string; // `Agreed`, `Still open`, `Ruled out`
+    items: { id: string; text: string; why: string }[]; // `why` is "" for an entry with none
+}
+
+/** What the Report's "What it settled" section draws. */
+export interface Settled {
+    direction: string | null; // the chosen direction's text, null with none
+    groups: SettledGroup[];
+}
+
+const SETTLED_ORDER: { kind: SettledGroup["kind"]; label: string }[] = [
+    { kind: "agreed", label: "Agreed" },
+    { kind: "open", label: "Still open" },
+    { kind: "ruledout", label: "Ruled out" },
+];
+
+/** Pure: the council's result as its memory holds it, for the Report: the chosen direction, then its Agreed, Still open
+ *  and Ruled out entries, each group newest first (as the Memory tab lists them) and left out when empty. Null when the
+ *  memory holds none of them (the Report then has no such section; summarymodel's `hasSettled` is the same test). */
+export function settledOf(c: Council): Settled | null {
+    const entries = memoryEntries(c);
+    const direction = c.memory?.chosen?.text?.trim() || null;
+    const groups = SETTLED_ORDER.map(({ kind, label }) => ({
+        kind,
+        label,
+        items: entries
+            .filter((e) => e.kind === kind)
+            .map((e) => ({ id: e.id, text: e.text, why: e.why?.trim() ?? "" })),
+    })).filter((g) => g.items.length > 0);
+    if (direction == null && groups.length === 0) {
+        return null;
+    }
+    return { direction, groups };
+}
