@@ -39,16 +39,14 @@ clip at 300px (Task 6's hand-check line).
 ### Task 1: The rail's tab model learns Brainstorm and Initiative
 
 **Depends on:** none
+**Files:** `frontend/app/view/agents/agentrailtabs.ts`, `frontend/app/view/agents/agentrailtabs.test.ts`, `frontend/app/view/agents/agentrailstore.ts`, `frontend/app/view/agents/agentrailpanel.tsx`, `frontend/app/view/agents/agentdetailsrail.tsx`
 
 The model passes `hasTree, hasTranscript, hasCouncil` as positional booleans through `visibleTabs`, `shownTab`,
 `selectTab`, `stripKeys`, `shownKey`, `selectKey` (`agentrailtabs.ts`) and `selectRailTab`, `selectRailKey`
 (`agentrailstore.ts`). Two more booleans would make five; replace them with one object.
 
-**Files:**
-- Modify: `frontend/app/view/agents/agentrailtabs.ts`
-- Modify: `frontend/app/view/agents/agentrailstore.ts`
-- Modify: `frontend/app/view/agents/agentrailpanel.tsx`, `frontend/app/view/agents/agentdetailsrail.tsx` (callers only)
-- Test: `frontend/app/view/agents/agentrailtabs.test.ts`
+Modify `agentrailtabs.ts` and `agentrailstore.ts`; in `agentrailpanel.tsx` and `agentdetailsrail.tsx` the callers only;
+test in `agentrailtabs.test.ts`.
 
 **Step 1: Write the failing tests** (add to `agentrailtabs.test.ts`; adapt the existing calls to the new signature in the
 same edit)
@@ -142,10 +140,9 @@ useAtomValue(brainstormAtom(agent.id)) != null, initiative: agent.effortId != nu
 ### Task 2: The brainstorm timeline model
 
 **Depends on:** none
+**Files:** `frontend/app/view/agents/railbrainstorm.ts`, `frontend/app/view/agents/railbrainstorm.test.ts`
 
-**Files:**
-- Create: `frontend/app/view/agents/railbrainstorm.ts`
-- Test: `frontend/app/view/agents/railbrainstorm.test.ts`
+Create both files.
 
 **Step 1: Write the failing test**
 
@@ -255,13 +252,12 @@ export function railBrainstormRows(m: BrainstormBandModel): RailBrainstormView {
 
 ### Task 3: The Brainstorm tab
 
-**Depends on:** Task 1, Task 2
+**Depends on:** Task 1, Task 2 (railBrainstormRows draws the timeline and orders the boards for ← / →)
+**Files:** `frontend/app/view/agents/railbrainstormpane.tsx`, `frontend/app/view/agents/agentdetailsrail.tsx`, `frontend/app/view/agents/agentrailpanel.tsx`, `frontend/app/view/agents/brainstormbandview.tsx`, `frontend/app/view/agents/chatband.tsx`, `frontend/app/view/agents/agentsurface.tsx`
 
-**Files:**
-- Create: `frontend/app/view/agents/railbrainstormpane.tsx`
-- Modify: `frontend/app/view/agents/agentdetailsrail.tsx` (strip entry + body), `frontend/app/view/agents/agentrailpanel.tsx`
-  (the tab's dot, like `RailCouncilTab`)
-- Modify: the host of the board dialog (see step 3)
+Create `railbrainstormpane.tsx`. In `agentdetailsrail.tsx` the strip entry and body; in `agentrailpanel.tsx` the tab's
+dot, like `RailCouncilTab`. The board dialog moves from `chatband.tsx` into `brainstormbandview.tsx` and renders from
+`agentsurface.tsx`, beside `<ChatLayer>` in the cell (step 3).
 
 **Step 1: The pane.** `RailBrainstormPane({ model, agent })` reads `brainstormBandAtom(agent.id)` and
 `brainstormAtom(agent.id)` (`brainstormstore.ts`) and draws board D:
@@ -286,8 +282,8 @@ draw the icon with an accent dot (as `RailCouncilTab` draws its dot) while `newC
 **Step 3: The board dialog leaves the band.** Today `BoardDialog` + `BoardPreview` are children of `ChatBandRoot`
 (`chatband.tsx:278-288`) and its key handler owns Esc, ← / →, `b` (`chatband.tsx:166-186`). Move them into a
 `ChatBoardDialog({ agent })` component in `brainstormbandview.tsx` that renders over the agent's cell in both views:
-find where `ChatPane` and the terminal are siblings (`CockpitFocusPane` / the cell body; grep `<ChatPane`) and render it
-there, positioned against that element. It reads `chatBoardPreviewAtom(agent.id)`; its root is `data-owns-keys`,
+render it in the cell beside `<ChatLayer>` (`agentsurface.tsx`, ~line 890), where the chat layer and the terminal are
+siblings, positioned against the cell. It reads `chatBoardPreviewAtom(agent.id)`; its root is `data-owns-keys`,
 takes focus when a board opens, and handles Esc (close), `b` (close + `openBrainstorm`), ← / → (the neighbour in
 `railBrainstormRows(...).boardOrder`, through `startBoardPreview`). Keep `chatband.tsx` compiling for now (it may
 import the moved pieces); Task 5 deletes it.
@@ -300,13 +296,12 @@ board, a chip opens the dialog over the cell, ← / → step, Esc closes. Run `t
 
 ### Task 4: The Initiative tab, with Plan to review moved into it
 
-**Depends on:** Task 1
+**Depends on:** Task 1, Task 3
+**Files:** `frontend/app/view/agents/railinitiativepane.tsx`, `frontend/app/view/agents/agentdetailsrail.tsx`, `frontend/app/view/agents/agentrailpanel.tsx`, `frontend/app/view/agents/agentrailsections.ts`, `frontend/app/view/agents/agentrailsections.test.ts`, `frontend/app/view/agents/railsection.ts`, `frontend/app/view/agents/railsection.test.ts`, `frontend/app/view/agents/initiativepopover.tsx`, `frontend/app/view/agents/initiativebandview.tsx`
 
-**Files:**
-- Create: `frontend/app/view/agents/railinitiativepane.tsx`
-- Modify: `frontend/app/view/agents/agentdetailsrail.tsx`, `frontend/app/view/agents/agentrailpanel.tsx`
-- Modify: `frontend/app/view/agents/agentrailsections.ts` (+ its test), `frontend/app/view/agents/railsection.ts` (+ test)
-- Modify: `frontend/app/view/agents/initiativepopover.tsx:217` (`reviewOnRail`)
+Create `railinitiativepane.tsx`. It waits for Task 3 only because both add a strip entry and a body to
+`agentdetailsrail.tsx` and `agentrailpanel.tsx`. `initiativepopover.tsx:217` is `reviewOnRail`; `initiativebandview.tsx`
+gives up `useInitiativePart` (step 2).
 
 **Step 1: Overview loses Plan to review (test first).** In `agentrailsections.test.ts` change the cases that expect a
 `plan` section to expect none; run, see them fail; remove the `plan` id and its push (`agentrailsections.ts:19, 87-88`),
@@ -343,17 +338,16 @@ shows how to link one): Mark done, Work on this, Add note, the status menu, Plan
 ### Task 5: Delete the band and the ◇ popover; the chip and `i` open the tab
 
 **Depends on:** Task 3, Task 4
+**Files:** `frontend/app/view/agents/chatpane.tsx`, `frontend/app/view/agents/chatband.tsx`, `frontend/app/view/agents/brainstormbandview.tsx`, `frontend/app/view/agents/initiativebandview.tsx`, `frontend/app/view/agents/initiativebandstore.ts`, `frontend/app/view/agents/initiativebandstore.test.ts`, `frontend/app/view/agents/agentheader.tsx`, `frontend/app/view/agents/initiativepopover.tsx`, `frontend/app/store/keybindings/bindings.ts`, `frontend/app/store/keybindings/bindings.test.ts`, `frontend/app/store/keybindings/whenstate.ts`, `frontend/app/store/keybindings/whenstate.test.ts`, `docs/keyboard-shortcuts.md`
 
-**Files:**
-- Modify: `frontend/app/view/agents/chatpane.tsx:56,1224` (drop `ChatBand`)
-- Delete: `frontend/app/view/agents/chatband.tsx`
-- Modify/trim: `brainstormbandview.tsx` (drop `BrainstormLine`, `BrainstormBody`), `initiativebandview.tsx` (drop the
+- `chatpane.tsx:56,1224`: drop `ChatBand`
+- Delete `chatband.tsx`
+- Trim: `brainstormbandview.tsx` (drop `BrainstormLine`, `BrainstormBody`), `initiativebandview.tsx` (drop the
   line/body code the pane did not take; delete the file if nothing is left), `initiativebandstore.ts` (drop the band
   part state `bandPartsAtom`, `useBandPart`, `setBandPart`, `toggleBandPart`, `BAND_STORAGE_KEY`, the hint; keep
   `switchAgentChunk`, `switchAndTell`) and its test
-- Modify: `frontend/app/view/agents/agentheader.tsx:105,203,262`, `frontend/app/view/agents/initiativepopover.tsx`
-- Modify: `frontend/app/store/keybindings/bindings.ts` (`agent:initiative`, ~2039), `whenstate.ts`, `bindings.test.ts`
-- Modify: `docs/keyboard-shortcuts.md`
+- `agentheader.tsx` (the ◇ chip and `<InitiativePopover>`), `initiativepopover.tsx`
+- `bindings.ts` (`agent:initiative`, ~2039), `whenstate.ts` (+ its test), `bindings.test.ts`, `docs/keyboard-shortcuts.md`
 
 **Step 1:** Grep every import of each symbol and file you remove, `import type` and re-exports included
 (`chatband`, `ChatBand`, `BrainstormLine`, `BrainstormBody`, `useInitiativePart`, `bandPartsAtom`, `useBandPart`,
@@ -378,14 +372,13 @@ Terminal, a split of four shows the chip in each linked cell.
 
 ### Task 6: CDP scenarios, What's new, docs
 
-**Depends on:** Task 5
+**Depends on:** Task 5 (the scenarios assert the band is gone and the chip and i open the Initiative tab)
+**Files:** `scripts/cdp/scenarios-rail-brainstorm-initiative.mjs`, `scripts/cdp/scenarios.mjs`, `scripts/cdp/scenarios-chat-brainstorm-band.mjs`, `scripts/cdp/scenarios-chat-initiative-band.mjs`, `scripts/cdp/scenarios-chat-suggest-card.mjs`, `CHANGELOG.md`, `docs/hand-checks.md`, `public/whatsnew/`
 
-**Files:**
-- Create: `scripts/cdp/scenarios-rail-brainstorm-initiative.mjs`; register it in `scripts/cdp/scenarios.mjs`
-- Delete: `scripts/cdp/scenarios-chat-brainstorm-band.mjs`, `scripts/cdp/scenarios-chat-initiative-band.mjs` (unregister
-  them; reuse their arrange and teardown helpers in the new file)
-- Modify: `scripts/cdp/scenarios-chat-suggest-card.mjs` if it reads the band
-- Modify: `CHANGELOG.md`, `docs/hand-checks.md`
+Create `scenarios-rail-brainstorm-initiative.mjs` and register it in `scenarios.mjs`. Delete
+`scenarios-chat-brainstorm-band.mjs` and `scenarios-chat-initiative-band.mjs` (unregister them; reuse their arrange and
+teardown helpers in the new file). Edit `scenarios-chat-suggest-card.mjs` only if it reads the band. The What's new
+picture lands in `public/whatsnew/`.
 
 **Step 1: Scenarios**, each arrange → goto → shot → assert → teardown:
 - `rail-brainstorm-tab`: a fixture agent with a brainstorm of several decisions and two boards, one new and one on an
