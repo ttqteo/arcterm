@@ -698,6 +698,8 @@ func main() {
 	agentask.AnswerHook = wshserver.RecordAskAnswered // one ask lifecycle row per delivered answer, whichever surface delivered it
 	blocklogger.InitBlockLogger()
 	blockcontroller.InitBlockController()
+	// each agent's CDP scenario results (the rail's Verify tile): sweeps old files, publishes verify:changed, forgets a closed block's
+	wshserver.StartVerify()
 	blockcontroller.RestoreLiveAgents(context.Background()) // an update or a crash kills every agent, and nothing else restarts one; a snapshot store's relaunch is refused by ResyncController outside its scratch dir
 	if !snapshotSkips("services.Init") {
 		go services.Init(context.Background()) // pinned apps' servers: Boot sweeps leftovers and staggers the starts, so it must not hold up WAVESRV-ESTART
