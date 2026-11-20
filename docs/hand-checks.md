@@ -23,6 +23,10 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
 
 ## 2026-11-20
 
+- [ ] (arcterm) **A fork from History shows its conversation in Chat** (`forkLaunchOpts` forkOf/forkedAt,
+  fix/history-fork-chat). On a project's Overview, right-click an ended Claude session in History → Fork (or Fork in
+  Quick look): the new "<title> (fork)" agent's Chat shows that conversation at once, not "New conversation"; send it a
+  message and the history stays with the message under it. Unit-tested only, not tried in the app.
 - [ ] (arcterm) **A run under plan review reads "Plan review · 7 tasks"** (`dagProgressLabel`, `8ffa290f1`). Start an
   orchestrator run from a plan file; while its reviewers work, the run's row in the Agent tree reads "Plan review ·
   N tasks", and its lead's row, where the stage word gives way, still shows "N tasks", never "0/N". Once workers

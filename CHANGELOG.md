@@ -30,6 +30,13 @@ in the dev app: `node scripts/whatsnew-shot.mjs <topic> [--selector <css>]` writ
 `whatsnew.test.ts` fails a big line with neither (in Unreleased and from 1.9.0 on), a missing file, one over 120 KB,
 and a picture given to a line that is not big.
 
+## Unreleased
+
+### Fixed
+
+- A fork started from a project's History (a session row's menu, Quick look, or the session pane) shows the
+  conversation it forks in Chat at once, as a fork from Chat does, instead of an empty New conversation.
+
 ## 1.10.0 — 2026-11-20
 
 ### Added
