@@ -20,6 +20,8 @@
       "id": "ram",
       "name": "RAM",
       "model": "sonnet",
+      "focus": "memory",
+      "focusvi": "bộ nhớ",
       "brief": "You review the feature for memory. Ask what stays in memory, for how long, and whether it is logged in RAM watch."
     },
     {

@@ -37,6 +37,8 @@ and a picture given to a line that is not big.
 - A compaction's summary no longer opens in the middle of Chat: Chat keeps only the thin Compacted line, and the
   Compacted line in the Agent details rail opens the summary in a wide sheet at the window's right edge. A pi agent's
   compaction now shows in the rail too.
+- A council's expert cards (the first step and the Map) now say what each expert is there for, under its name: its
+  focus (`novelty`, `baselines`) and the start of its brief. Hover a card to read the whole brief.
 
 ## 1.9.0 — 2026-11-20
 

@@ -43,6 +43,7 @@ import {
     keptProposals,
     retriedOut,
     seatInitials,
+    seatRole,
     summarizeAction,
     toggleCut,
     type CardDot,
@@ -65,6 +66,7 @@ import {
 } from "./councilmodel";
 import { retryHold } from "./councilretry";
 import { RetryWithButton } from "./councilretrymenu";
+import { SeatRoleLine } from "./councilseatrole";
 import { seatableAgents } from "./councilsetupmodel";
 import { claimOf } from "./councilsources";
 import { EvidenceChips } from "./councilsourcespanel";
@@ -492,6 +494,7 @@ function ExpertCard({ c, e, acts }: { c: Council; e: CouncilExpert; acts: Action
     const state = expertCard(c, e);
     const failure = c.failed?.[e.id];
     const stat = expertStat(c, e.id);
+    const role = seatRole(c, e);
     const setTimeline = useSetAtom(councilTimelineAtom(c.id));
     return (
         <div
@@ -503,6 +506,7 @@ function ExpertCard({ c, e, acts }: { c: Council; e: CouncilExpert; acts: Action
                 data-council-expert-card-open={e.id}
                 data-council-timeline-trigger
                 aria-label={mapWords(c).openTimeline(e.name)}
+                title={role.full !== "" ? role.full : undefined}
                 onClick={() => setTimeline(e.id)}
                 className="absolute inset-0 cursor-pointer rounded-[10px] border-0 bg-transparent p-0 outline-none focus-visible:ring-2 focus-visible:ring-accent"
             />
@@ -511,6 +515,7 @@ function ExpertCard({ c, e, acts }: { c: Council; e: CouncilExpert; acts: Action
                 <span className="truncate text-[13.5px] font-semibold">{e.name}</span>
                 <span className="text-[12px] text-muted">{e.model}</span>
             </div>
+            <SeatRoleLine role={role} />
             <div
                 data-dot={state.dot}
                 className={cn(
