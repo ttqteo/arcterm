@@ -72966,7 +72966,7 @@ async function ovhForgetSessionsInPage(storeUrl, paths) {
     if (!m) throw new Error(`${from} does not import /projecthistorystore.ts`);
     const { projectSessionsAtom } = await import(new URL(m[1], from).href);
     const { globalStore } = await import(storeUrl);
-    for (const p of paths) globalStore.set(projectSessionsAtom(p), { sessions: null, cursor: "", error: false });
+    for (const p of paths) globalStore.set(projectSessionsAtom(p), { sessions: null, cursor: "", error: false, readAt: 0 });
     return "ok";
 }
 

@@ -138,11 +138,20 @@ describe("loadProjectSessions", () => {
 
         expect(sessionsCmd).toHaveBeenCalledTimes(1);
         expect(sessionsCmd.mock.calls[0][1]).toEqual({ projectpath: P, windowdays: 7, limit: PROJECT_SESSIONS_PAGE });
-        expect(globalStore.get(projectSessionsAtom(P))).toEqual({
+        expect(globalStore.get(projectSessionsAtom(P))).toMatchObject({
             sessions: [session("a", DAY)],
             cursor: "c1",
             error: false,
         });
+    });
+
+    it("notes when the page that landed was asked for", async () => {
+        servePages({ "": { sessions: [session("a", DAY)], nextcursor: "" } });
+        const before = Date.now();
+        await loadProjectSessions(P);
+        const readAt = globalStore.get(projectSessionsAtom(P)).readAt;
+        expect(readAt).toBeGreaterThanOrEqual(before);
+        expect(readAt).toBeLessThanOrEqual(Date.now());
     });
 
     it("keeps the older pages read before when it reads the first again", async () => {
@@ -164,7 +173,7 @@ describe("loadProjectSessions", () => {
     it("reads a failed first load as loaded with an error, keeping what was read", async () => {
         sessionsCmd.mockRejectedValueOnce(new Error("scan failed"));
         await loadProjectSessions(P);
-        expect(globalStore.get(projectSessionsAtom(P))).toEqual({ sessions: [], cursor: "", error: true });
+        expect(globalStore.get(projectSessionsAtom(P))).toEqual({ sessions: [], cursor: "", error: true, readAt: 0 });
 
         servePages({ "": { sessions: [session("a", DAY)], nextcursor: "" } });
         await loadProjectSessions(P);
@@ -229,13 +238,20 @@ describe("dropFromProjectSessions", () => {
 });
 
 describe("projectSessionList", () => {
-    const state = (sessions: SessionActivity[] | null, cursor = "") => ({ sessions, cursor, error: false });
+    // read a day and a half ago
+    const READ_AT = NOW - 1.5 * DAY;
+    const state = (sessions: SessionActivity[] | null, cursor = "") => ({
+        sessions,
+        cursor,
+        error: false,
+        readAt: READ_AT,
+    });
 
     it("is null while the first page loads", () => {
         expect(projectSessionList(state(null), [session("a", 0)], "D:/p")).toEqual({ sessions: null, frontier: null });
     });
 
-    it("adds the project's sessions the shared archive holds, the newer copy of each kept", () => {
+    it("adds the project's sessions the archive holds that were active since the read, the newer copy kept", () => {
         const read = [session("a", 3 * DAY), session("b", 2 * DAY)];
         const archive = [session("a", DAY), session("c", 0), session("x", 0, "D:/other"), session("b", 4 * DAY)];
         const out = projectSessionList(state(read), archive, "d:\\P\\");
@@ -247,10 +263,14 @@ describe("projectSessionList", () => {
         });
     });
 
-    it("while older pages are unread, holds back archive sessions older than the oldest read", () => {
+    it("leaves out an archive session older than the read, which the read no longer lists", () => {
+        const out = projectSessionList(state([session("a", DAY)]), [session("gone", 2 * DAY)], "D:/p");
+        expect(out.sessions!.map((s) => s.id)).toEqual(["a"]);
+    });
+
+    it("while older pages are unread, the frontier is the oldest session read", () => {
         const read = [session("a", DAY), session("b", 2 * DAY)];
-        const archive = [session("c", 3 * DAY), session("d", 0)];
-        const out = projectSessionList(state(read, "c1"), archive, "D:/p");
+        const out = projectSessionList(state(read, "c1"), [session("c", 3 * DAY), session("d", 0)], "D:/p");
         expect(out.frontier).toBe(NOW - 2 * DAY);
         expect(out.sessions!.map((s) => s.id).sort()).toEqual(["a", "b", "d"]);
     });

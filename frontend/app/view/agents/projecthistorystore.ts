@@ -28,12 +28,23 @@ export const projectRunsAtom = atomFamily(
 );
 
 // A project's sessions as History has read them: newest first, a page at a time. `cursor` is where the next older page
-// starts ("" = none of the window is left unread); `error` is the last first-page read failing.
-export type ProjectSessionsState = { sessions: SessionActivity[] | null; cursor: string; error: boolean };
+// starts ("" = none of the window is left unread); `error` is the last first-page read failing; `readAt` is when the
+// last first page that landed was asked for (ms, 0 = never), so a session active since is one that read could not see.
+export type ProjectSessionsState = {
+    sessions: SessionActivity[] | null;
+    cursor: string;
+    error: boolean;
+    readAt: number;
+};
 
 export const projectSessionsAtom = atomFamily(
     (_path: string) =>
-        atom<ProjectSessionsState>({ sessions: null, cursor: "", error: false }) as PrimitiveAtom<ProjectSessionsState>
+        atom<ProjectSessionsState>({
+            sessions: null,
+            cursor: "",
+            error: false,
+            readAt: 0,
+        }) as PrimitiveAtom<ProjectSessionsState>
 );
 
 // sessions per page: History draws 15 top-level rows at first, so one page fills its first screen and the next
@@ -78,6 +89,7 @@ export async function loadProjectSessions(path: string): Promise<void> {
     loadingFirst.add(path);
     readPaths.add(path);
     const at = projectSessionsAtom(path);
+    const asked = Date.now();
     try {
         const rtn = await RpcApi.GetSessionsActivityCommand(TabRpcClient, {
             projectpath: path,
@@ -86,7 +98,7 @@ export async function loadProjectSessions(path: string): Promise<void> {
         });
         const held = globalStore.get(at);
         const merged = mergeFreshPage(rtn.sessions ?? [], rtn.nextcursor ?? "", held.sessions ?? [], held.cursor);
-        globalStore.set(at, { sessions: merged.sessions, cursor: merged.cursor, error: false });
+        globalStore.set(at, { sessions: merged.sessions, cursor: merged.cursor, error: false, readAt: asked });
     } catch (e) {
         console.warn("project sessions: read failed", e);
         globalStore.set(at, (prev) => ({ ...prev, sessions: prev.sessions ?? [], error: true }));
@@ -145,9 +157,10 @@ export function dropFromProjectSessions(transcriptPath: string): void {
 }
 
 /** Pure: the project's sessions as History lists them: the pages read, joined by the project's sessions the shared
- *  archive holds (it is refreshed when an agent exits, so a session that just ended shows without a reread), the newer
- *  copy of a session kept. While older pages are unread, a session the archive holds that is older than the oldest read
- *  waits for its page, so rows never land out of order. `frontier` is that oldest time, null once nothing is unread. */
+ *  archive holds that were active after the first page was asked for (the archive is refreshed when an agent exits, so
+ *  a session that just ended shows without a reread), the newer copy of a session kept. An older one the archive holds
+ *  is not added: the project's own read is the newer word on it, and leaving it out may mean it is gone. `frontier` is
+ *  the time of the oldest session read while older pages are unread, null once nothing is unread. */
 export function projectSessionList(
     state: ProjectSessionsState,
     archive: readonly SessionActivity[] | null,
@@ -165,7 +178,7 @@ export function projectSessionList(
         byId.set(sessionId(s), s);
     }
     for (const s of archive ?? []) {
-        if (!samePath(s.projectpath, path) || (frontier != null && s.lastactivets < frontier)) {
+        if (!samePath(s.projectpath, path) || s.lastactivets <= state.readAt) {
             continue;
         }
         const held = byId.get(sessionId(s));

@@ -50,7 +50,7 @@ import {
 } from "./projectoverviewmodel";
 import { canDeleteSession, confirmDeleteSession, DELETE_SESSION_LABEL } from "./sessiondelete";
 import { SessionPeek } from "./sessionpeek";
-import type { LiveSession } from "./sessionsarchivestore";
+import { handSession, type LiveSession } from "./sessionsarchivestore";
 import { offersOpenAsleep, openSessionAsleep, runSessionPrimary } from "./sessionsdetail";
 
 const PANEL = "overflow-hidden rounded-[8px] border border-edge-mid bg-surface-raised";
@@ -147,7 +147,14 @@ function sessionMenu(
 ) {
     const items: ContextMenuItem[] = [
         { label: "Quick look", icon: <Eye size={15} />, click: quickLook },
-        { label: "Open transcript", icon: <FileText size={15} />, click: () => showLibrarySession(model, key) },
+        {
+            label: "Open transcript",
+            icon: <FileText size={15} />,
+            click: () => {
+                handSession(s);
+                showLibrarySession(model, key);
+            },
+        },
     ];
     if (s.resumecommand || (s.live && s.liveId)) {
         items.push({
@@ -609,10 +616,11 @@ export function HistoryColumn({
                 session={peek?.session ?? null}
                 onClose={() => setPeek(null)}
                 onOpen={() => {
-                    const key = peek?.key;
+                    const held = peek;
                     setPeek(null);
-                    if (key != null) {
-                        showLibrarySession(model, key);
+                    if (held != null) {
+                        handSession(held.session);
+                        showLibrarySession(model, held.key);
                     }
                 }}
             />
