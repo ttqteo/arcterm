@@ -195,6 +195,16 @@ describe("withLiveCount", () => {
         expect(withLiveCount(wts, state({ isRepo: false }))).toEqual(wts);
         expect(withLiveCount(wts, null)).toEqual(wts);
     });
+
+    // an Agent's edits range with no base reads with ref "" and lists nothing: opened in the agent's own folder it would
+    // zero that checkout's badge (diff-worktrees step 2 lost its 2 when the edits read had landed)
+    it("leaves the counts alone for an Agent's edits read with no base", () => {
+        const none = state({
+            changes: { files: [], adds: 0, dels: 0 },
+            edits: { flags: {}, bashcalls: 0, reason: "no edits" },
+        });
+        expect(withLiveCount(wts, none)).toEqual(wts);
+    });
 });
 
 describe("panelFoldedAtom", () => {

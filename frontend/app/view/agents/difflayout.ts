@@ -115,10 +115,19 @@ export function sourceTitle(scope: DiffScope | null, branch: string): { name: st
     return { name, branch: branch === "HEAD" ? "detached" : branch };
 }
 
-// The Commit tab's badge: how many files the working tree has changed. Only a live read (ref "") lists the working
-// tree alone; a read anchored at a session start or a run base lists committed work too, so it has no count to show.
-export function commitTabCount(state: { ref: string; changes: { files: unknown[] } | null } | null): number | null {
-    if (state == null || state.ref !== "" || state.changes == null) {
+// Whether the loaded state is a read of the working tree alone, whose file list counts what `git status` counts. ref ""
+// is a live read, but so is an Agent's edits range with no base (filesstore keeps the plain read for the folder's
+// facts and drops its list for an empty one), which `edits` tells apart: its empty list says nothing about the tree.
+export function isLiveRead(state: { ref: string; edits?: unknown }): boolean {
+    return state.ref === "" && state.edits == null;
+}
+
+// The Commit tab's badge: how many files the working tree has changed. Only a live read lists the working tree alone;
+// a read anchored at a session start or a run base lists committed work too, so it has no count to show.
+export function commitTabCount(
+    state: { ref: string; edits?: unknown; changes: { files: unknown[] } | null } | null
+): number | null {
+    if (state == null || !isLiveRead(state) || state.changes == null) {
         return null;
     }
     return state.changes.files.length;
@@ -144,13 +153,13 @@ export function diffBody(
 }
 
 // The dirty count panelTabToApply may judge by, or null while the read in hand cannot say. A working scope is judged by
-// a working-tree read (ref ""): just after a pick the store still holds the previous subject's read, and an agent's
-// session-anchored one lists committed work too, so counting it opens Commit on a clean project. A repository git could
-// not read (changes null) is a working-tree read with nothing in it. Any other range opens Log whatever the count, so
-// any read will do for it.
+// a working-tree read (isLiveRead): just after a pick the store still holds the previous subject's read, and an agent's
+// session-anchored one lists committed work too, so counting it opens Commit on a clean project; an Agent's edits read
+// with no base lists nothing, so counting it opens Log on a dirty one. A repository git could not read (changes null) is
+// a working-tree read with nothing in it. Any other range opens Log whatever the count, so any read will do for it.
 export function panelDirtyCount(
     rangeKind: DiffRange["kind"],
-    state: { ref: string; changes: { files: unknown[] } | null } | null
+    state: { ref: string; edits?: unknown; changes: { files: unknown[] } | null } | null
 ): number | null {
     if (state == null) {
         return null;
@@ -158,5 +167,5 @@ export function panelDirtyCount(
     if (rangeKind !== "working") {
         return 0;
     }
-    return state.ref === "" ? (commitTabCount(state) ?? 0) : null;
+    return isLiveRead(state) ? (commitTabCount(state) ?? 0) : null;
 }

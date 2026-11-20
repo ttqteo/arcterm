@@ -7972,9 +7972,10 @@ const diffWorktrees = {
                     await new Promise((r) => setTimeout(r, 500));
                 }
             })()`);
-            // step 6 reads the agent's Since session start row: the fixture agent's files are writes to disk, not Edit
-            // calls in its transcript, so its Diff would open on an empty Agent's edits
-            await chooseSessionRange(h, DWT_AGENT.id);
+            // steps 1 to 5 run on the agent's default range, Agent's edits: its transcript has no Edit call, so the list is
+            // empty, which is the read that once overwrote the open checkout's changed count (step 2) and opened the
+            // feature checkout on Log (step 5). Step 6 chooses Since session start for itself.
+            ctx.transcriptPath = transcriptPath;
         } catch (e) {
             ctx.arrangeError = String(e?.message ?? e);
         }
@@ -8084,14 +8085,20 @@ const diffWorktrees = {
             JSON.stringify(rows1.map((r) => `${r.which ?? r.option}:${r.text}`))
         );
 
-        // 2. the feature row reads its changed count and how far it is ahead
+        // 2. the feature row reads its changed count and how far it is ahead. wt-agent runs in feature, so the open
+        // scope is its Agent's edits range, which has no edits here: the count is read once that read has landed (the
+        // pane draws the backend's reason as its caption only from an edits read), since an empty edits list once
+        // overwrote the open checkout's count with 0
+        const edits2 = await h.rpc("gitagentedits", { cwd: ctx.feature, transcriptpath: ctx.transcriptPath });
+        const wantCaption2 = edits2?.reason || "no edits to show";
+        const settled2 = await wait(`document.body.textContent.includes(${JSON.stringify(wantCaption2)})`, 10000);
         const counted2 = await wait(`${rowFor("feature")}?.querySelector("[data-worktree-changed]")?.textContent.trim() === "2"`);
         const feature2 = (await ours()).find((r) => r.which === "feature");
         await shot("02-counts");
         rec(
             "2. the feature row's data-worktree-changed reads 2 and its data-worktree-divergence holds ↑1",
-            counted2 && feature2?.changed === "2" && (feature2?.divergence ?? "").includes("↑1"),
-            JSON.stringify(feature2)
+            settled2 && counted2 && feature2?.changed === "2" && (feature2?.divergence ?? "").includes("↑1"),
+            JSON.stringify({ settled2, wantCaption2, ...feature2 })
         );
 
         // 3. the broken checkout carries the error glyph
@@ -8119,24 +8126,36 @@ const diffWorktrees = {
         );
 
         // 5. clicking the feature row scopes the surface to that checkout. It has uncommitted changes, so the panel
-        // opens on its Commit tab, which lists both files.
+        // opens on its Commit tab: feature.txt under Changes, and notes.txt (untracked) in the Unversioned files group,
+        // which is folded until opened (diff-commit-tab step 1). The tab's rows are data-commit-row; data-changed-file-row
+        // is the Log tab's working-tree list
         await h.ev(`${rowFor("feature")}.click()`);
         const scoped5 = await wait(
             `(document.querySelector("[data-source-picker-trigger]")?.textContent || "").includes("feature") &&
-             document.querySelector('[data-changed-file-row="feature.txt"]') && document.querySelector('[data-changed-file-row="notes.txt"]')`,
+             document.querySelector('[data-panel-body="commit"] [data-commit-row="feature.txt"]')`,
             10000
         );
         const trigger5 = await trigger();
         const tab5 = await h.ev(`document.querySelector('[data-panel-tab][aria-selected="true"]')?.dataset.panelTab ?? null`);
-        const files5 = await h.ev(`[...document.querySelectorAll("[data-changed-file-row]")].map((e) => e.dataset.changedFileRow)`);
+        const unv = `document.querySelector("[data-commit-unversioned]")`;
+        if (await h.ev(`${unv}?.getAttribute("aria-expanded") === "false"`)) {
+            await h.ev(`${unv}.click()`);
+        }
+        const listed5 = await wait(`document.querySelector('[data-panel-body="commit"] [data-commit-row="notes.txt"]')`, 5000);
+        const files5 = await h.ev(`[...document.querySelectorAll("[data-commit-row]")].map((e) => e.dataset.commitRow)`);
         await shot("05-feature");
+        // folded again, as it opens
+        await h.ev(`(() => { const g = ${unv}; if (g?.getAttribute("aria-expanded") === "true") g.click(); })()`);
         rec(
             "5. clicking the feature row names feature on the source button and lists both uncommitted files on the Commit tab",
-            scoped5 && tab5 === "commit",
-            JSON.stringify({ trigger5, tab5, files5 })
+            scoped5 && tab5 === "commit" && listed5 && files5.includes("feature.txt") && files5.includes("notes.txt"),
+            JSON.stringify({ scoped5, trigger5, tab5, files5 })
         );
 
-        // 6. clicking wt-agent scopes to the agent and focuses it; its Log tab's top row reads the session range
+        // 6. clicking wt-agent scopes to the agent and focuses it; its Log tab's top row reads the session range. The
+        // fixture agent's files are writes to disk, not Edit calls in its transcript, so its pick opens on an empty
+        // Agent's edits unless its choice is Since session start first
+        await chooseSessionRange(h, DWT_AGENT.id);
         await openPicker();
         await h.ev(`document.querySelector('[data-files-source-option=${JSON.stringify(DWT_AGENT.name)}]')?.click()`);
         const scoped6 = await wait(

@@ -11,7 +11,7 @@ import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { sameRepoPath } from "@/util/paths";
 import { atom, type PrimitiveAtom } from "jotai";
 import { resolveCwd } from "./agentcwdresolve";
-import { panelFoldedAtom, resolvePanelFolded } from "./difflayout";
+import { isLiveRead, panelFoldedAtom, resolvePanelFolded } from "./difflayout";
 import type { FilesProject, FilesState } from "./filesstore";
 import { projectListAtom } from "./projectsstore";
 
@@ -120,11 +120,11 @@ export async function resolveAgentCwds(agents: SidebarAgent[]): Promise<void> {
 }
 
 // Pure: the open checkout's row takes its changed count from the loaded file list, so the badge and the list never
-// disagree. Only a live working-tree read (ref "") counts the same thing as `git status`; a session or run range lists
-// committed work too, so it leaves the counts alone.
+// disagree. Only a live working-tree read (isLiveRead) counts the same thing as `git status`; a session or run range
+// lists committed work too, and an Agent's edits range with no base lists nothing, so they leave the counts alone.
 export function withLiveCount(worktrees: GitWorktree[], filesState: FilesState | null): GitWorktree[] {
     const cwd = filesState?.cwd;
-    if (!cwd || !filesState.isRepo || filesState.ref !== "" || filesState.changes == null) {
+    if (!cwd || !filesState.isRepo || !isLiveRead(filesState) || filesState.changes == null) {
         return worktrees;
     }
     const changed = filesState.changes.files.length;
