@@ -76,9 +76,12 @@ one-line message elsewhere or when wavesrv cannot be reached.
 - **Not run** is true only with no row at all (a watched file changed and the agent ran nothing). With rows, a change
   after a passed run is an out-of-date row, so the verdict and the gate never count not-run beside rows.
 - `verify:changed` (the block id) is published after every stored report and every skip or undo that changed a file. It is
-  not published for a file that changed on its own: the cockpit reads the state when a view mounts, when the agent's
-  cwd changes and on that event, so such a change shows at the next of those (switching the rail's tab or the agent,
-  the next report), while the merge gate always reads fresh.
+  not published for a file that changed on its own, and an agent edits during its turns: the cockpit reads the state when
+  a view mounts, when the agent's cwd changes, on that event, and each time the agent's state changes (a turn starting
+  or ending, `verifystore.ts` `useVerify`), so an edit after a passed run shows as out of date when that turn ends. An
+  edit made by someone else (the person in their editor) shows at the next of those reads (switching the rail's tab
+  or the agent, the next report, the agent's next turn). There is no timer on either side, and the merge gate always
+  reads fresh.
 
 ## What the cockpit draws
 

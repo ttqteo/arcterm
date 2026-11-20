@@ -8,26 +8,30 @@
 // date" by the file's mtime against the run's last report. Between states the block's file under `<data dir>/verify/` is
 // removed and the page reads the state again (verifystore.ts loadVerify), which is what a remount of the tile does: wavesrv
 // publishes `verify:changed` for a report or a skip, never for a file that changed, so a change on its own shows at the next read.
+// Step 8 does not call that read: it edits the file during the agent's turn and ends the turn the way the cockpit sees it, the
+// roster row's state going working then idle, which is the read the store makes by itself (useVerify's agent state). The page's
+// reads (`getverifystate`) are counted in window.__rvReads, so the edit can wait for the turn start's read to land first.
 // A line Ask the agent to rerun sends is recorded in the page and never forwarded, so no terminal receives it; the one
 // forwarded, for the failed send, is sent to a block that does not exist and fails at the server as it should.
 // kit is scenarios.mjs's RT_KIT (waveService, polishWaitFor, polishNap, ahReload).
 //
 // Steps (each with a shot):
-//   1. failed + no result + out of date: the head, the open failed row, the warning line, the header chip and the red strip count
+//   1. failed + no result + out of date: the head (each verdict part whole on one line, the count at the right), the open failed
+//      row, the warning line, the header chip and the red strip count
 //   2. a row opens and closes on a click; the out-of-date row's note
 //   3. the chip and the strip count open the rail on Overview with the tile in view (from another tab; from a closed rail)
 //   4. Ask the agent to rerun sends the failed row's line; a send that fails shows its error under the row's buttons
 //   5. Skip sets the no-result row aside (Skipped, Undo, the head drops it); Undo brings it back
 //   6. running: `1 of 2`, a pulsing dot, no chip
 //   7. a run whose process is gone with no end: No result, chip and strip amber
-//   8. out of date alone: chip `Verify: out of date`, strip `!`
+//   8. out of date alone: chip `Verify: out of date`, strip `!`, shown when the agent's turn ends with no read by hand
 //   9. everything passed: the tile folds to `Verify · 2 passed`; a click opens it
 //  10. not run: only the warning line, chip `Verify: not run`; Skip clears the chip, Undo brings it back
 //  11. nothing changed or run: no tile, no chip, no strip count; and a repo without `.arc/verify.json`: the same
 
 import { execFileSync, spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import * as AC from "./agent-page-fixtures.mjs";
@@ -90,11 +94,34 @@ const READ = `(() => {
     const warn = tile?.querySelector("[data-verify-warning]") ?? null;
     const chip = ${HEADER}?.querySelector("[data-verify-chip]") ?? null;
     const strip = ${STRIP} ?? null;
+    // the lines a text is drawn on: the distinct tops of its line boxes
+    const lines = (el) => {
+        const r = document.createRange();
+        r.selectNodeContents(el);
+        return new Set([...r.getClientRects()].filter((q) => q.width > 0).map((q) => Math.round(q.top))).size;
+    };
+    const verdictEls = [...(head?.querySelectorAll("[data-verify-verdict]") ?? [])];
+    const countEl = head?.querySelector("[data-verify-count]") ?? null;
+    const hr = head?.getBoundingClientRect() ?? null;
+    const cr = countEl?.getBoundingClientRect() ?? null;
+    const verdictRight = Math.max(0, ...verdictEls.map((el) => el.getBoundingClientRect().right));
     return {
         tile: !!tile,
         head: flat(head),
         folded: head?.hasAttribute("data-verify-folded") ?? false,
-        verdicts: [...(head?.querySelectorAll("[data-verify-verdict]") ?? [])].map(flat),
+        verdicts: verdictEls.map(flat),
+        verdictLines: verdictEls.map(lines),
+        // the count ("3 scenarios") is drawn on one line, inside the head, and to the right of every verdict part
+        count: countEl
+            ? {
+                  text: flat(countEl),
+                  lines: lines(countEl),
+                  inside: !!hr && cr.width > 0 && cr.left >= hr.left - 0.5 && cr.right <= hr.right + 0.5,
+                  rightOfVerdicts: cr.left >= verdictRight - 0.5,
+              }
+            : null,
+        // nothing of the head runs past its box
+        headFits: head ? head.scrollWidth <= head.clientWidth + 1 : null,
         warning: warn
             ? {
                   kind: warn.getAttribute("data-verify-kind"),
@@ -175,7 +202,14 @@ export default function (kit) {
                 at = "making the repo";
                 mkdirSync(join(ctx.repo, "frontend"), { recursive: true });
                 mkdirSync(join(ctx.repo, ".arc"), { recursive: true });
-                ctx.git = (...args) => execFileSync("git", ["-C", ctx.repo, "-c", "user.email=v@v", "-c", "user.name=v", ...args], { stdio: "pipe" });
+                // a failed git names its own reason (an index.lock held by wavesrv's read, say), which execFileSync's message omits
+                ctx.git = (...args) => {
+                    try {
+                        return execFileSync("git", ["-C", ctx.repo, "-c", "user.email=v@v", "-c", "user.name=v", ...args], { stdio: "pipe" });
+                    } catch (e) {
+                        throw new Error(`git ${args.join(" ")}: ${String(e?.stderr ?? "").trim() || e?.message}`);
+                    }
+                };
                 ctx.git("init", "-q", "--initial-branch=main");
                 writeFileSync(join(ctx.repo, "README.md"), "# verify fixture\n");
                 writeFileSync(join(ctx.repo, ".arc", "verify.json"), JSON.stringify(CONFIG));
@@ -208,13 +242,24 @@ export default function (kit) {
                 await AC.setRoster(h, rosterRows(ctx));
 
                 at = "recording the prompts";
-                // a prompt to the agent is recorded and resolved here; once __rvForward is set it goes to a block that is gone
+                // a prompt to the agent is recorded and resolved here; once __rvForward is set it goes to a block that is gone.
+                // The page's reads of the Verify state are counted (begun, and landed) and go through: step 8 waits on them
                 await h.ev(`(() => {
                     const c = window.TabRpcClient;
                     if (!c.__rvOrig) {
                         c.__rvOrig = c.wshRpcCall;
                         const call = c.wshRpcCall.bind(c);
                         c.wshRpcCall = (command, data, opts) => {
+                            if (command === "getverifystate") {
+                                const reads = window.__rvReads;
+                                const p = call(command, data, opts);
+                                if (reads) {
+                                    reads.started += 1;
+                                    const landed = () => { reads.done += 1; };
+                                    Promise.resolve(p).then(landed, landed);
+                                }
+                                return p;
+                            }
                             if (command !== "agentprompt") return call(command, data, opts);
                             window.__rvPrompts.push(data);
                             return window.__rvForward ? call(command, { ...data, blockid: ${JSON.stringify(GONE_BLOCK)} }, opts) : Promise.resolve(null);
@@ -222,6 +267,7 @@ export default function (kit) {
                     }
                     window.__rvPrompts = [];
                     window.__rvForward = false;
+                    window.__rvReads = { started: 0, done: 0 };
                     return true;
                 })()`);
 
@@ -347,10 +393,17 @@ export default function (kit) {
                     picture = `the What's new picture failed: ${e?.message ?? e}`;
                 }
                 rec(
-                    `${name}: the head reads "1 failed · 1 no result · 1 out of date" over 3 scenarios; the failed row is open with steps 7, 8 and 9, "+ 6 passed" and "Open the 9 screenshots"; the warning line names x.tsx and ${OLD}; the header chip reads "Verify: 1 failed" (red) and the strip count is red`,
+                    `${name}: the head reads "1 failed · 1 no result · 1 out of date" over 3 scenarios, each verdict part whole on one line (a part that does not fit in the rail moves to the next line) and "3 scenarios" in view at the right; the failed row is open with steps 7, 8 and 9, "+ 6 passed" and "Open the 9 screenshots"; the warning line names x.tsx and ${OLD}; the header chip reads "Verify: 1 failed" (red) and the strip count is red`,
                     ok &&
                         t.verdicts.join(" · ") === "1 failed · 1 no result · 1 out of date" &&
                         t.head.includes("3 scenarios") &&
+                        t.verdictLines.length === 3 &&
+                        t.verdictLines.every((n) => n === 1) &&
+                        t.count?.text === "3 scenarios" &&
+                        t.count.lines === 1 &&
+                        t.count.inside === true &&
+                        t.count.rightOfVerdicts === true &&
+                        t.headFits === true &&
                         t.rows.map((r) => `${r.key}:${r.state}`).join() === `${FAILED}:failed,${NORES}:noresult,${OLD}:outofdate` &&
                         failed?.expanded === true &&
                         failed.result === "6/9" &&
@@ -579,16 +632,43 @@ export default function (kit) {
             await run("8. out of date alone", async (name) => {
                 await reset();
                 await passedRun(OLD, 12);
-                await polishNap(120);
+                const settled = await untilTile((t) => t.tile && t.folded && t.verdicts.join(" · ") === "1 passed");
+                // what wavesrv answers, what the page holds and what the block's file says, for a step that does not settle
+                const diag = async () => ({
+                    server: await h.rpc("getverifystate", { blockid: blockId, cwd: ctx.repo }, RPC).catch((e) => `rpc failed: ${e?.message ?? e}`),
+                    page: await page(`const V = await mod("app/view/agents/verifystore.ts"); return globalStore.get(V.verifyStateAtom(${JSON.stringify(blockId)}));`).catch((e) => `page failed: ${e?.message ?? e}`),
+                    file: existsSync(ctx.blockFile) ? readFileSync(ctx.blockFile, "utf8").slice(0, 700) : null,
+                    tile: await readTile(),
+                });
+                const unsettled = settled.ok ? null : await diag();
+                // the agent's turn, as the cockpit sees it: the roster row goes working, the agent edits a watched file
+                // (wavesrv publishes nothing for that, and nothing here reads by hand), and the row goes idle. The edit waits
+                // for the turn start's own read to land, or that read could be the one that sees it
+                const roster = (state) => AC.setRoster(h, rosterRows(ctx).map((r) => ({ ...r, state })));
+                const reads = () => h.ev(`({ ...(window.__rvReads ?? { started: 0, done: 0 }) })`);
+                const landed = (n) => polishWaitFor(h, `(window.__rvReads?.started ?? 0) >= ${n} && window.__rvReads.done === window.__rvReads.started`, WAIT_MS);
+                const r0 = await reads();
+                await roster("working");
+                const startRead = await landed(r0.started + 1);
+                const r1 = await reads();
                 dirty(0);
-                await refresh();
+                await polishNap(900);
+                const midTurn = await readTile();
+                const r2 = await reads();
+                await roster("idle");
+                const endRead = await landed(r1.started + 1);
                 const { ok } = await untilTile((t) => row(t, OLD)?.state === "outofdate" && t.chip != null);
                 await polishNap(500);
                 const t = await readTile();
                 await shot("8-outofdate");
                 rec(
-                    `${name}: a run that passed before x.tsx changed reads 12/12 as out of date; the chip reads "Verify: out of date" (amber), the strip count "!" (amber) and the warning line names x.tsx`,
-                    ok &&
+                    `${name}: a run that passed before x.tsx changed reads 12/12 as out of date once the agent's turn ends (still "1 passed" while it works, nothing reading in between, and no read by hand); the chip reads "Verify: out of date" (amber), the strip count "!" (amber) and the warning line names x.tsx`,
+                    settled.ok &&
+                        startRead &&
+                        midTurn.verdicts.join(" · ") === "1 passed" &&
+                        midTurn.chip == null &&
+                        endRead &&
+                        ok &&
                         row(t, OLD).result === "12/12" &&
                         t.verdicts.join(" · ") === "1 out of date" &&
                         t.warning?.kind === "outofdate" &&
@@ -597,7 +677,7 @@ export default function (kit) {
                         t.chip.tone === "amber" &&
                         t.strip?.count === "!" &&
                         t.strip.tone === "amber",
-                    { ok, verdicts: t.verdicts, warning: t.warning, chip: t.chip, strip: t.strip }
+                    { settled: settled.ok, unsettled, reads: { before: r0, turnStart: r1, midTurn: r2, startRead, endRead }, midTurn: { verdicts: midTurn.verdicts, chip: midTurn.chip }, ok, verdicts: t.verdicts, warning: t.warning, chip: t.chip, strip: t.strip }
                 );
             });
 
@@ -712,6 +792,7 @@ export default function (kit) {
                     if (c?.__rvOrig) { c.wshRpcCall = c.__rvOrig; delete c.__rvOrig; }
                     delete window.__rvPrompts;
                     delete window.__rvForward;
+                    delete window.__rvReads;
                     return true;
                 })()`)
             );
@@ -722,8 +803,16 @@ export default function (kit) {
             }
             await step("restore the roster", () => AC.restoreRoster(h));
             await step("close the fixture tab", () => closeTabs(h, ctx));
-            // the block's closing makes wavesrv drop its file; it goes here too, so a missed event leaves nothing
-            if (ctx.blockFile) await step("remove the block's Verify file", () => rmSync(ctx.blockFile, { force: true, maxRetries: 10, retryDelay: 100 }));
+            // the block's closing makes wavesrv drop its file; it goes here too, so a missed event leaves nothing. The file is in
+            // the dev app's own store, which goes with the app: wavesrv's own removal can hold it for a moment on Windows (EPERM
+            // on a file with a delete pending), and that is not a failure of what this scenario checks
+            if (ctx.blockFile) {
+                try {
+                    rmSync(ctx.blockFile, { force: true, maxRetries: 10, retryDelay: 100 });
+                } catch (e) {
+                    console.error(`${NAME}: the block's Verify file stays for the store to drop: ${e?.code ?? e?.message ?? e}`);
+                }
+            }
             await step("restore the keys", () =>
                 h.ev(`(() => {
                     for (const [k, v] of Object.entries(${JSON.stringify(ctx.prev ?? {})})) {

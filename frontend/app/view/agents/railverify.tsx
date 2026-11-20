@@ -10,7 +10,8 @@
 // (`Verify · 3 passed`) that opens it. What the person opened lives in a per-agent atom, because the Overview tab unmounts
 // when another tab shows, and a tile that forgot its open rows on every tab switch would be a tile to fight.
 //
-// Test hooks: [data-verify-tile] (the section; data-verify-folded on its head while it is folded), [data-verify-head],
+// Test hooks: [data-verify-tile] (the section; data-verify-folded on its head while it is folded), [data-verify-head] with
+// one [data-verify-verdict] per verdict part and the [data-verify-count] ("3 scenarios"),
 // [data-verify-warning] (data-verify-kind outofdate|notrun), [data-verify-row=<scenario>][data-verify-state=<state>] with
 // [data-verify-open] (aria-expanded), [data-verify-note], [data-verify-shots], and the buttons [data-verify-rerun],
 // [data-verify-skip], [data-verify-undo], valued with the scenario (`notrun` on the warning line), [data-verify-error],
@@ -35,7 +36,7 @@ import {
     type LucideIcon,
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
-import { Fragment, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { RailVerifyStrip } from "./agentrailsections";
 import { openFileInPanel } from "./agentrailstore";
 import type { AgentsViewModel } from "./agents";
@@ -75,10 +76,11 @@ const TEXT_BTN = cn(
 // ---- the agent's state, read for the tile, the strip and the chip -------------------------------------------------------
 
 /** The agent's Verify state against its checkout. The rail's own cwd for the agent, or its roster cwd while the rail has not
- *  resolved one: the tile, the chip and the strip all read through this, so they share one block's atom and one read. */
+ *  resolved one: the tile, the chip and the strip all read through this, so they share one block's atom and one read. The
+ *  agent's state goes with it: a turn starting or ending is when a file the agent edited shows as out of date. */
 export function useAgentVerify(agent: AgentVM, enabled: boolean): { st: VerifyStateData | null; cwd: string } {
     const cwd = useAtomValue(railCwdsAtom)[agent.id] ?? agent.cwd ?? "";
-    const st = useVerify(enabled ? agent.blockId : undefined, cwd === "" ? undefined : cwd);
+    const st = useVerify(enabled ? agent.blockId : undefined, cwd === "" ? undefined : cwd, agent.state);
     return { st, cwd };
 }
 
@@ -217,16 +219,23 @@ export function VerifyTile({
             </span>
             <span className="font-medium text-primary">Verify</span>
             {!expanded ? <span className="text-muted">·</span> : null}
-            {tile.head.parts.map((p, i) => (
-                <Fragment key={i}>
-                    {i > 0 ? <span className="text-muted">·</span> : null}
-                    <span data-verify-verdict className={TONE_TEXT[p.tone]}>
-                        {p.text}
+            {/* the verdict parts wrap whole: a part that does not fit in the rail's width moves to the next line with its
+                  trailing dot, and never breaks inside (`1 / failed · 1 no / result`); the count stays at the right */}
+            <span className="flex min-w-0 flex-wrap items-baseline gap-x-[7px]">
+                {tile.head.parts.map((p, i) => (
+                    <span key={i} className="flex flex-none items-baseline gap-x-[7px] whitespace-nowrap">
+                        <span data-verify-verdict className={TONE_TEXT[p.tone]}>
+                            {p.text}
+                        </span>
+                        {i < tile.head.parts.length - 1 ? <span className="flex-none text-muted">·</span> : null}
                     </span>
-                </Fragment>
-            ))}
+                ))}
+            </span>
             {expanded && tile.head.count !== "" ? (
-                <span className="ml-auto flex-none pl-[6px] text-[11px] tabular-nums text-muted">
+                <span
+                    data-verify-count
+                    className="ml-auto flex-none whitespace-nowrap pl-[6px] text-[11px] tabular-nums text-muted"
+                >
                     {tile.head.count}
                 </span>
             ) : null}
@@ -446,7 +455,8 @@ export function VerifyTile({
                                                                     + {row.passedMore} passed
                                                                 </div>
                                                             ) : null}
-                                                            <div className="break-all font-mono text-[10.5px] text-muted">
+                                                            {/* breaks between words and at hyphens; inside a word only when it is wider than the tile */}
+                                                            <div className="break-words font-mono text-[10.5px] text-muted">
                                                                 <span className="text-ink-faint">$ </span>
                                                                 {row.command}
                                                             </div>
