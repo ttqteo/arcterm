@@ -240,7 +240,9 @@ func (ws *WshServer) GetRecentSessionsCommand(ctx context.Context, data wshrpc.C
 }
 
 func (ws *WshServer) GetSessionsActivityCommand(ctx context.Context, data wshrpc.CommandGetSessionsActivityData) (*wshrpc.CommandGetSessionsActivityRtnData, error) {
-	page, err := agentsessions.ScanPage(agentsessions.PageOpts{WindowDays: data.WindowDays, Limit: data.Limit, Cursor: data.Cursor, Ids: data.Ids})
+	page, err := agentsessions.ScanPage(agentsessions.PageOpts{
+		WindowDays: data.WindowDays, Limit: data.Limit, Cursor: data.Cursor, Ids: data.Ids, ProjectPath: data.ProjectPath,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("scanning sessions: %w", err)
 	}

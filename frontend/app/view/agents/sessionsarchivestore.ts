@@ -49,7 +49,8 @@ export function mergeFreshPage(
     return { sessions: [...fresh, ...older], cursor: keptCursor };
 }
 
-function appendPage(have: SessionActivity[], page: SessionActivity[]): SessionActivity[] {
+/** Pure: an older page behind the sessions loaded, less the ones already listed (identity is runtime + id). */
+export function appendPage(have: SessionActivity[], page: SessionActivity[]): SessionActivity[] {
     const listed = new Set(have.map(sessionId));
     return [...have, ...page.filter((s) => !listed.has(sessionId(s)))];
 }

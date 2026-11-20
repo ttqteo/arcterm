@@ -11,6 +11,7 @@ import { modalsModel } from "@/app/store/modalmodel";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { fireAndForget } from "@/util/util";
+import { dropFromProjectSessions } from "./projecthistorystore";
 import { dropFromArchive, loadSessionsArchive, type LiveSession } from "./sessionsarchivestore";
 
 export const DELETE_SESSION_LABEL = "Delete session";
@@ -57,6 +58,7 @@ export async function deleteSession(session: DeletableSession, onDeleted?: () =>
     }
     onDeleted?.();
     dropFromArchive(session.transcriptpath);
+    dropFromProjectSessions(session.transcriptpath);
     await loadSessionsArchive();
 }
 

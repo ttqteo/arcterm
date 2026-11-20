@@ -2,9 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // What a project's Overview History column reads (projecthistory.tsx): the project's runs, read from each channel bound
-// to its path, with their loading and error state; the sessions archive, read back far enough to cover the window; and
-// the column's search, per project, since the centre mode unmounts. Councils are councilstore.ts's; the rows
-// they all make are projectoverviewmodel.ts's.
+// to its path, with their loading and error state; the project's own sessions of the window, read a page at a time as
+// History scrolls (never the whole archive of every project); and the column's search, per project, since the centre
+// mode unmounts. Councils are councilstore.ts's; the rows they all make are projectoverviewmodel.ts's.
 
 import { globalStore } from "@/app/store/jotaiStore";
 import { RpcApi } from "@/app/store/wshclientapi";
@@ -18,15 +18,7 @@ import { normProjectPath } from "./channelderive";
 import { channelsAtom, loadChannels } from "./channelsstore";
 import { useCouncils } from "./councilstore";
 import { HISTORY_WINDOW_MS } from "./projectoverviewmodel";
-import {
-    loadMoreSessionsArchive,
-    loadSessionsArchive,
-    overlayLive,
-    sessionsArchiveAtom,
-    sessionsCursorAtom,
-    sessionsErrorAtom,
-    type LiveSession,
-} from "./sessionsarchivestore";
+import { appendPage, mergeFreshPage, overlayLive, sessionsArchiveAtom, type LiveSession } from "./sessionsarchivestore";
 
 export type RunsState = { runs: Run[] | null; error: string | null };
 
@@ -35,13 +27,23 @@ export const projectRunsAtom = atomFamily(
     (_path: string) => atom<RunsState>({ runs: null, error: null }) as PrimitiveAtom<RunsState>
 );
 
-// the archive's older pages read past the first to cover the window, at most: 1,000 sessions across every project
-export const MAX_PAGES = 10;
+// A project's sessions as History has read them: newest first, a page at a time. `cursor` is where the next older page
+// starts ("" = none of the window is left unread); `error` is the last first-page read failing.
+export type ProjectSessionsState = { sessions: SessionActivity[] | null; cursor: string; error: boolean };
 
-// how long the walk waits for a scan another reader started, when it has nothing of its own to page over
-const SCAN_WAIT_MS = 15_000;
+export const projectSessionsAtom = atomFamily(
+    (_path: string) =>
+        atom<ProjectSessionsState>({ sessions: null, cursor: "", error: false }) as PrimitiveAtom<ProjectSessionsState>
+);
+
+// sessions per page: History draws 15 top-level rows at first, so one page fills its first screen and the next
+export const PROJECT_SESSIONS_PAGE = 30;
+
+// the backend's window in whole days; it walks transcripts touched a day past it, and projectSessions cuts to the ms
+const WINDOW_DAYS = Math.ceil(HISTORY_WINDOW_MS / 86_400_000);
 
 const samePath = (a: string, b: string) => normProjectPath(a).toLowerCase() === normProjectPath(b).toLowerCase();
+const sessionId = (s: Pick<SessionActivity, "runtime" | "id">) => `${s.runtime}:${s.id}`;
 
 /** Reads the runs of every channel bound to the project's path. A failure keeps the runs read before, with the error. */
 export async function loadProjectRuns(path: string): Promise<void> {
@@ -62,56 +64,127 @@ export async function loadProjectRuns(path: string): Promise<void> {
     }
 }
 
-// resolves on the archive's next change, or after the bound
-function nextArchiveChange(boundMs: number): Promise<void> {
-    return new Promise((resolve) => {
-        const done = () => {
-            clearTimeout(timer);
-            unsub();
-            resolve();
-        };
-        const timer = setTimeout(done, boundMs);
-        const unsub = globalStore.sub(sessionsArchiveAtom, done);
-    });
-}
+// the paths whose sessions were read, so a delete can take its row out of each; and the reads under way, per path
+const readPaths = new Set<string>();
+const loadingFirst = new Set<string>();
+const loadingMore = new Set<string>();
 
-// loadSessionsArchive returns at once, having read nothing, when a scan is already running (another reader's, which
-// only queues a rerun). A scan that lands always sets the archive to a new list, so a list still the one held before
-// the call means the call was dropped: the archive is null, or the stale list the running scan is about to replace,
-// and paging from it would stop early. Wait for that scan's answer, for a bounded time.
-async function reloadArchive(): Promise<void> {
-    const held = globalStore.get(sessionsArchiveAtom);
-    await loadSessionsArchive();
-    if (globalStore.get(sessionsArchiveAtom) === held) {
-        await nextArchiveChange(SCAN_WAIT_MS);
+/** Reads the newest page of the project's sessions in the window, over what is already read: the older pages read
+ *  before stay (mergeFreshPage). A failure keeps them, and marks the error. One read per path at a time. */
+export async function loadProjectSessions(path: string): Promise<void> {
+    if (loadingFirst.has(path)) {
+        return;
+    }
+    loadingFirst.add(path);
+    readPaths.add(path);
+    const at = projectSessionsAtom(path);
+    try {
+        const rtn = await RpcApi.GetSessionsActivityCommand(TabRpcClient, {
+            projectpath: path,
+            windowdays: WINDOW_DAYS,
+            limit: PROJECT_SESSIONS_PAGE,
+        });
+        const held = globalStore.get(at);
+        const merged = mergeFreshPage(rtn.sessions ?? [], rtn.nextcursor ?? "", held.sessions ?? [], held.cursor);
+        globalStore.set(at, { sessions: merged.sessions, cursor: merged.cursor, error: false });
+    } catch (e) {
+        console.warn("project sessions: read failed", e);
+        globalStore.set(at, (prev) => ({ ...prev, sessions: prev.sessions ?? [], error: true }));
+    } finally {
+        loadingFirst.delete(path);
     }
 }
 
-/** Reloads the sessions archive, then reads older pages until its oldest session is older than the window, none are
- *  left, or MAX_PAGES were read. */
-export async function loadSessionsWindow(now: number): Promise<void> {
-    await reloadArchive();
-    for (let i = 0; i < MAX_PAGES; i++) {
-        const list = globalStore.get(sessionsArchiveAtom);
-        const cursor = globalStore.get(sessionsCursorAtom);
-        if (list == null || cursor === "" || list.length === 0) {
-            return;
+/** Reads the project's next older page, when one is left and none is being read. A failed page keeps the cursor, so a
+ *  later scroll asks again. */
+export async function loadMoreProjectSessions(path: string): Promise<void> {
+    const at = projectSessionsAtom(path);
+    const cursor = globalStore.get(at).cursor;
+    if (cursor === "" || loadingMore.has(path) || globalStore.get(at).sessions == null) {
+        return;
+    }
+    loadingMore.add(path);
+    try {
+        const rtn = await RpcApi.GetSessionsActivityCommand(TabRpcClient, {
+            projectpath: path,
+            windowdays: WINDOW_DAYS,
+            limit: PROJECT_SESSIONS_PAGE,
+            cursor,
+        });
+        globalStore.set(at, (prev) => ({
+            ...prev,
+            sessions: appendPage(prev.sessions ?? [], rtn.sessions ?? []),
+            // a first page that landed meanwhile and found nothing older left has the last word
+            cursor: prev.cursor === cursor ? (rtn.nextcursor ?? "") : prev.cursor,
+        }));
+    } catch (e) {
+        console.warn("project sessions: older page failed", e);
+    } finally {
+        loadingMore.delete(path);
+    }
+}
+
+/** Take a deleted session's row out of every project's list read so far. */
+export function dropFromProjectSessions(transcriptPath: string): void {
+    if (transcriptPath === "") {
+        return;
+    }
+    const gone = transcriptPath.replace(/\\/g, "/").toLowerCase();
+    for (const path of readPaths) {
+        globalStore.set(projectSessionsAtom(path), (prev) =>
+            prev.sessions == null
+                ? prev
+                : {
+                      ...prev,
+                      sessions: prev.sessions.filter(
+                          (s) => (s.transcriptpath ?? "").replace(/\\/g, "/").toLowerCase() !== gone
+                      ),
+                  }
+        );
+    }
+}
+
+/** Pure: the project's sessions as History lists them: the pages read, joined by the project's sessions the shared
+ *  archive holds (it is refreshed when an agent exits, so a session that just ended shows without a reread), the newer
+ *  copy of a session kept. While older pages are unread, a session the archive holds that is older than the oldest read
+ *  waits for its page, so rows never land out of order. `frontier` is that oldest time, null once nothing is unread. */
+export function projectSessionList(
+    state: ProjectSessionsState,
+    archive: readonly SessionActivity[] | null,
+    path: string
+): { sessions: SessionActivity[] | null; frontier: number | null } {
+    if (state.sessions == null) {
+        return { sessions: null, frontier: null };
+    }
+    const frontier =
+        state.cursor !== "" && state.sessions.length > 0
+            ? Math.min(...state.sessions.map((s) => s.lastactivets))
+            : null;
+    const byId = new Map<string, SessionActivity>();
+    for (const s of state.sessions) {
+        byId.set(sessionId(s), s);
+    }
+    for (const s of archive ?? []) {
+        if (!samePath(s.projectpath, path) || (frontier != null && s.lastactivets < frontier)) {
+            continue;
         }
-        if (Math.min(...list.map((s) => s.lastactivets)) < now - HISTORY_WINDOW_MS) {
-            return;
-        }
-        await loadMoreSessionsArchive();
-        if (globalStore.get(sessionsCursorAtom) === cursor) {
-            return; // a failed page keeps the cursor: stop rather than ask again
+        const held = byId.get(sessionId(s));
+        if (held == null || s.lastactivets > held.lastactivets) {
+            byId.set(sessionId(s), s);
         }
     }
+    return { sessions: [...byId.values()], frontier };
 }
 
 export interface ProjectHistory {
-    sessions: LiveSession[] | null; // null while the archive loads
+    sessions: LiveSession[] | null; // null while the first page loads
     sessionsError: boolean;
     councils: Council[] | null;
     runs: RunsState;
+    /** older sessions of the window are still unread: History asks for them as it scrolls (loadMoreProjectSessions) */
+    more: boolean;
+    /** while `more`, the time of the oldest session read: rows older than it wait for the next page */
+    frontier: number | null;
     retrySessions: () => void;
     retryRuns: () => void;
 }
@@ -119,8 +192,8 @@ export interface ProjectHistory {
 /** A project's history, read each time the Overview shows it and when its path changes; not polled. The page calls it
  *  once and hands it to the History column and the header's counts. */
 export function useProjectHistory(model: AgentsViewModel, path: string): ProjectHistory {
+    const state = useAtomValue(projectSessionsAtom(path));
     const archive = useAtomValue(sessionsArchiveAtom);
-    const sessionsError = useAtomValue(sessionsErrorAtom);
     const roster = useAtomValue(model.agentsAtom);
     const councils = useCouncils(path || null);
     const runs = useAtomValue(projectRunsAtom(path));
@@ -128,16 +201,22 @@ export function useProjectHistory(model: AgentsViewModel, path: string): Project
         if (!path) {
             return;
         }
-        fireAndForget(() => loadSessionsWindow(Date.now()));
+        fireAndForget(() => loadProjectSessions(path));
         fireAndForget(() => loadProjectRuns(path));
     }, [path]);
-    const sessions = useMemo(() => (archive == null ? null : overlayLive(archive, roster, 0)), [archive, roster]);
+    const list = useMemo(() => projectSessionList(state, archive, path), [state, archive, path]);
+    const sessions = useMemo(
+        () => (list.sessions == null ? null : overlayLive(list.sessions, roster, 0)),
+        [list.sessions, roster]
+    );
     return {
         sessions,
-        sessionsError,
+        sessionsError: state.error,
         councils,
         runs,
-        retrySessions: () => fireAndForget(() => loadSessionsWindow(Date.now())),
+        more: list.frontier != null,
+        frontier: list.frontier,
+        retrySessions: () => fireAndForget(() => loadProjectSessions(path)),
         retryRuns: () => fireAndForget(() => loadProjectRuns(path)),
     };
 }

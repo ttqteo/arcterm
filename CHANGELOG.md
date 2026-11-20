@@ -37,6 +37,9 @@ and a picture given to a line that is not big.
 - A compaction's summary no longer opens in the middle of Chat: Chat keeps only the thin Compacted line, and the
   Compacted line in the Agent details rail opens the summary in a wide sheet at the window's right edge. A pi agent's
   compaction now shows in the rail too.
+- A project's Overview opens faster: its History reads only that project's sessions, a page at a time as you scroll,
+  instead of reading back through up to 1,000 sessions of every project first. While older pages are unread the
+  session count reads "30+".
 
 ## 1.9.0 — 2026-11-20
 

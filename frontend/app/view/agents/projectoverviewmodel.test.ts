@@ -17,6 +17,7 @@ import {
     isQuiet,
     overviewRows,
     projectSessions,
+    rowsUntil,
     runningCount,
     type HistoryRow,
 } from "./projectoverviewmodel";
@@ -570,6 +571,22 @@ describe("firstRows", () => {
 
     it("returns every row when the limit is past the end", () => {
         expect(firstRows(ROWS, 50)).toHaveLength(6);
+    });
+});
+
+describe("rowsUntil", () => {
+    const top = (key: string, ts: number) => ({ key, ts, nested: false }) as HistoryRow;
+    const child = (key: string, ts: number) => ({ key, ts, nested: true }) as HistoryRow;
+    // newest first; a nested row may be older than the frontier and still ride with its session
+    const ROWS = [top("a", 50), child("a1", 10), top("b", 30), top("c", 20), child("c1", 25), top("d", 5)];
+
+    it("keeps every row once nothing is unread", () => {
+        expect(rowsUntil(ROWS, null)).toHaveLength(6);
+    });
+
+    it("stops at the first top-level row older than the frontier, keeping its session's nested rows", () => {
+        expect(rowsUntil(ROWS, 30).map((r) => r.key)).toEqual(["a", "a1", "b"]);
+        expect(rowsUntil(ROWS, 20).map((r) => r.key)).toEqual(["a", "a1", "b", "c", "c1"]);
     });
 });
 

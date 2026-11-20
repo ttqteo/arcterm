@@ -189,8 +189,12 @@ export function moveCell(index: number, key: string, cellCount: number): number 
     return Math.min(Math.max(to, 0), cellCount - 1);
 }
 
-/** The footer's "13 sessions · 6.9M tokens": the session count leaves out while History's sessions load (null). */
-export function last7Line(tokens: number, sessions: number | null): string {
+/** The footer's "13 sessions · 6.9M tokens": the session count leaves out while History's sessions load (null), and
+ *  reads "30+ sessions" while History has older pages of the window still unread (`more`). */
+export function last7Line(tokens: number, sessions: number | null, more = false): string {
     const t = `${formatTokens(tokens)} tokens`;
-    return sessions == null ? t : `${plural(sessions, "session")} · ${t}`;
+    if (sessions == null) {
+        return t;
+    }
+    return `${more ? `${sessions}+ sessions` : plural(sessions, "session")} · ${t}`;
 }

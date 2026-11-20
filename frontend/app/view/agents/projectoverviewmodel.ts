@@ -392,6 +392,16 @@ export function historyRows(
 // History draws this many top-level rows at first, and as many more each time its foot scrolls into view
 export const HISTORY_PAGE = 15;
 
+// the rows down to `frontier`, the oldest session read while older pages are unread (null: all are read): a run or
+// council older than it waits for the sessions of its time, which may own it. A top-level row takes its nested ones along
+export function rowsUntil(rows: readonly HistoryRow[], frontier: number | null): HistoryRow[] {
+    if (frontier == null) {
+        return rows as HistoryRow[];
+    }
+    const end = rows.findIndex((r) => !r.nested && r.ts < frontier);
+    return end < 0 ? (rows as HistoryRow[]) : rows.slice(0, end);
+}
+
 // the first `limit` top-level rows, each with the rows nested under it, so a page never ends between a session and its
 // runs and councils
 export function firstRows(rows: readonly HistoryRow[], limit: number): HistoryRow[] {

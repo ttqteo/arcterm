@@ -72862,7 +72862,9 @@ function ovhPagedSessions(ctx, now) {
 // Runs IN THE PAGE (ovhInstallMock sends its source). Answers getsessionsactivity (a page with a cursor holds nothing, the
 // first page the sessions), councillist (A's one council; B's empty, or held until mode.release()) and getchannelruns (A's
 // channel: its two runs, or a rejection with mode.runsFail); every other command goes to what was there. `mode` is the steps'
-// (mode.extraSessions: more sessions after the fixture's, for step 15's paging).
+// (mode.extraSessions: more sessions after the fixture's, for step 15's paging; mode.pageBy: pages of that many sessions,
+// newest first, of the project the call names, behind a cursor that is the offset, each call kept in mode.asked, for
+// step 16's).
 async function ovhInstallInPage(cfg) {
     const mod = await import(cfg.apiUrl);
     const api = mod.RpcApi;
@@ -72871,7 +72873,7 @@ async function ovhInstallInPage(cfg) {
     const prev = api.mockClient ?? null;
     const norm = (p) => String(p ?? "").replace(/[\\/]+/g, "/").replace(/\/$/, "").toLowerCase();
     const held = [];
-    const mode = { holdCouncils: false, runsFail: null, noSessionsB: false, extraSessions: [], release: null };
+    const mode = { holdCouncils: false, runsFail: null, noSessionsB: false, extraSessions: [], release: null, pageBy: 0, asked: [] };
     mode.release = () => {
         mode.holdCouncils = false;
         for (const resolve of held.splice(0)) resolve([]);
@@ -72879,12 +72881,20 @@ async function ovhInstallInPage(cfg) {
     const mock = {
         mockWshRpcCall(client, command, data, opts) {
             if (command === "getsessionsactivity") {
+                const all = [...cfg.sessions, ...mode.extraSessions].filter(
+                    (s) => !(mode.noSessionsB && norm(s.projectpath) === norm(cfg.dirB))
+                );
+                if (mode.pageBy > 0) {
+                    mode.asked.push({ cursor: data?.cursor ?? "", projectpath: data?.projectpath ?? "" });
+                    const mine = all
+                        .filter((s) => !data?.projectpath || norm(s.projectpath) === norm(data.projectpath))
+                        .sort((a, b) => b.lastactivets - a.lastactivets);
+                    const from = Number(data?.cursor || 0);
+                    const to = from + mode.pageBy;
+                    return Promise.resolve({ sessions: mine.slice(from, to), nextcursor: to < mine.length ? String(to) : "" });
+                }
                 if (data?.cursor) return Promise.resolve({ sessions: [] });
-                return Promise.resolve({
-                    sessions: [...cfg.sessions, ...mode.extraSessions].filter(
-                        (s) => !(mode.noSessionsB && norm(s.projectpath) === norm(cfg.dirB))
-                    ),
-                });
+                return Promise.resolve({ sessions: all });
             }
             if (command === "councillist") {
                 const project = norm(data?.project);
@@ -72944,6 +72954,20 @@ async function ovhSetUnreadInPage(storeUrl, ids) {
     const { globalStore } = await import(storeUrl);
     globalStore.set(unreadAgentsAtom, new Map(ids.map((id) => [id, 1])));
     return globalStore.get(unreadAgentsAtom).size;
+}
+
+// Runs IN THE PAGE: forgets what the Overview's History has read of the sessions of `paths` (projecthistorystore.ts's
+// projectSessionsAtom, in the app's own module instance), so the next open reads them from the first page again
+async function ovhForgetSessionsInPage(storeUrl, paths) {
+    const from = new URL("../view/agents/projecthistory.tsx", storeUrl).href;
+    const res = await fetch(from);
+    if (!res.ok) throw new Error(`${from} answered ${res.status}`);
+    const m = (await res.text()).match(/["']([^"'\s]*\/projecthistorystore\.ts(?:\?[^"'\s]*)?)["']/);
+    if (!m) throw new Error(`${from} does not import /projecthistorystore.ts`);
+    const { projectSessionsAtom } = await import(new URL(m[1], from).href);
+    const { globalStore } = await import(storeUrl);
+    for (const p of paths) globalStore.set(projectSessionsAtom(p), { sessions: null, cursor: "", error: false });
+    return "ok";
 }
 
 // the run `ovh-run` and its dag, as a pushed waveobj:update puts them into the page's object store: the lead is a roster
@@ -73778,6 +73802,59 @@ const projectOverviewHistory = {
                     third15.older &&
                     third15.olderLast,
                 JSON.stringify({ opened15, page15a, first15, page15b, second15, page15c, third15 })
+            );
+
+            // 16. History reads A's sessions a page at a time, never the archive of every project: the backend (mocked) pages
+            // 20 at a time. The first open asks one page naming A's path; the count reads "N+" and the foot shows while
+            // older pages are unread; scrolled down, it asks the next page by its cursor until all are read, then the count
+            // loses its "+", the foot goes and the Older link ends the list
+            await h.ev(`window.${OVH_MOCK_KEY}.mode.extraSessions = ${JSON.stringify(ovhPagedSessions(ctx, Date.now()))}`);
+            await h.ev(`(() => { const m = window.${OVH_MOCK_KEY}.mode; m.pageBy = 20; m.asked = []; return true; })()`);
+            const forgot16 = await h.ev(
+                `(${ovhForgetSessionsInPage.toString()})(${JSON.stringify(ctx.modules.urls.store)}, ${JSON.stringify([ctx.dirA, ctx.dirB])})`
+            );
+            await h.cdp("Emulation.setDeviceMetricsOverride", { width: 1600, height: 600, deviceScaleFactor: 1, mobile: false });
+            const opened16 = await ovhReopen(h, ctx, OVH_A);
+            const page16a = await polishWaitFor(h, `${ovhCount(OVH_TOP_ROWS)} >= 15`, 10000);
+            await polishNap(600);
+            const state16 = () =>
+                h.ev(`(() => ({
+                    top: document.querySelectorAll(${JSON.stringify(OVH_TOP_ROWS)}).length,
+                    more: document.querySelector("[data-history-more]") != null,
+                    older: document.querySelector("[data-history-older]") != null,
+                    count: ${ovhText("[data-history-count]")},
+                    asked: window.${OVH_MOCK_KEY}.mode.asked.slice(),
+                }))()`);
+            const first16 = await state16();
+            // scroll until every page is read, a few times at most: each scroll draws 15 more rows or reads a page
+            let page16b = false;
+            for (let i = 0; i < 6 && !page16b; i++) {
+                await scrollDown();
+                page16b = await polishWaitFor(h, `${ovhCount(OVH_TOP_ROWS)} === ${OVH_PAGED + 3} && !${ovHas("[data-history-more]")}`, 2500);
+            }
+            const last16 = await state16();
+            await shot("16");
+            await h.ev(`(() => { const m = window.${OVH_MOCK_KEY}.mode; m.pageBy = 0; m.extraSessions = []; return true; })()`);
+            await h.cdp("Emulation.setDeviceMetricsOverride", { width: 1600, height: 950, deviceScaleFactor: 1, mobile: false });
+            const normDir = (p) => String(p ?? "").replace(/[\\/]+/g, "/").replace(/\/$/, "").toLowerCase();
+            const askedA = (s) => s.asked.filter((a) => normDir(a.projectpath) === normDir(ctx.dirA));
+            rec(
+                `16. History reads A's sessions by project, a page at a time: the first open asks one page naming A's path, the count reads "N+" with the foot shown; scrolled down it asks by cursor until all ${OVH_PAGED + 3} rows show, the count without "+" and the Older link last`,
+                forgot16 === "ok" &&
+                    opened16 &&
+                    page16a &&
+                    askedA(first16).length >= 1 &&
+                    askedA(first16).every((a) => a.cursor === "") &&
+                    first16.more &&
+                    /\+ sessions/.test(first16.count ?? "") &&
+                    first16.top < OVH_PAGED + 3 &&
+                    page16b &&
+                    askedA(last16).some((a) => a.cursor !== "") &&
+                    last16.top === OVH_PAGED + 3 &&
+                    !last16.more &&
+                    last16.older &&
+                    !/\+/.test(last16.count ?? ""),
+                JSON.stringify({ forgot16, opened16, page16a, first16, page16b, last16 })
             );
         } catch (e) {
             rec("a call failed before the steps finished", false, String(e?.message ?? e));
