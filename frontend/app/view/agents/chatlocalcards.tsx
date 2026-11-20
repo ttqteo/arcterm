@@ -12,6 +12,7 @@ import { cn, fireAndForget } from "@/util/util";
 import { atom, useAtomValue, type Atom } from "jotai";
 import { Eye, SquareTerminal, X } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
+import { contextLevel, contextTokens } from "./agentrailmodel";
 import type { AgentsViewModel } from "./agents";
 import { submitToAgent } from "./agentsubmit";
 import { formatAgeShort, formatAgo, formatReset, formatTokens, usageLevel, type AgentVM } from "./agentsviewmodel";
@@ -191,13 +192,20 @@ function ContextBody({ agent }: { agent: AgentVM }) {
             </span>
         );
     }
-    const warn = contextWarn(f.pct);
+    // nearly full is Claude's own limit; past 150k tokens every turn re-reads that much however big the window is
+    const full = contextWarn(f.pct);
+    const level = contextLevel(f.pct, agent.usage?.contextmax);
+    const hue = level === "hot" ? "error" : level === "warn" ? "warning" : null;
+    const tokens = contextTokens(f.pct, agent.usage?.contextmax);
     return (
         <>
             <div className="flex flex-col gap-1.5">
                 <div className="flex items-baseline gap-2">
                     <span
-                        className={cn("text-[20px] font-semibold tabular-nums", warn ? "text-warning" : "text-primary")}
+                        className={cn(
+                            "text-[20px] font-semibold tabular-nums",
+                            hue === "error" ? "text-error" : hue === "warning" ? "text-warning" : "text-primary"
+                        )}
                     >
                         {Math.round(f.pct)}%
                     </span>
@@ -205,13 +213,22 @@ function ContextBody({ agent }: { agent: AgentVM }) {
                         {f.used != null ? `${f.used} of ${f.max} tokens` : "of the context window"}
                     </span>
                 </div>
-                <Meter pct={f.pct} fill={warn ? "bg-warning" : "bg-muted"} height={8} radius={4} />
+                <Meter
+                    pct={f.pct}
+                    fill={hue === "error" ? "bg-error" : hue === "warning" ? "bg-warning" : "bg-muted"}
+                    height={8}
+                    radius={4}
+                />
             </div>
             {f.left != null ? <Fact label="Left">{f.left} tokens</Fact> : null}
             {agent.model ? <Fact label="Model">{agent.model}</Fact> : null}
-            {warn ? (
+            {full ? (
                 <span className="text-[12px] text-warning">
                     Nearly full: compact soon, or Claude compacts on its own and loses detail.
+                </span>
+            ) : hue != null && tokens != null ? (
+                <span className={cn("text-[12px]", hue === "error" ? "text-error" : "text-warning")}>
+                    Every turn re-reads {tokens}: /compact or /clear when this task is done makes each turn cheaper.
                 </span>
             ) : null}
             <span className="text-[11px] text-muted">

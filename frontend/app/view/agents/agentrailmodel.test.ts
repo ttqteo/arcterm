@@ -21,7 +21,8 @@ describe("contextLevel", () => {
     it("colors a big window by the tokens every turn re-reads, not by how full it is", () => {
         expect(contextLevel(10, 1_000_000)).toBe("ok");
         expect(contextLevel(15, 1_000_000)).toBe("warn");
-        expect(contextLevel(30, 1_000_000)).toBe("hot");
+        expect(contextLevel(19.9, 1_000_000)).toBe("warn");
+        expect(contextLevel(20, 1_000_000)).toBe("hot");
     });
 
     it("keeps the fullness warning for a small window", () => {
