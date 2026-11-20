@@ -110,10 +110,17 @@ export function railStatusLine(o: { state: ShownState; age: string; ended: boole
     return o.cache === "—" ? base : `${base} · cache ${o.cache}`;
 }
 
+export function fileTotals(files: { adds: number; dels: number }[]): { count: string; adds: number; dels: number } {
+    return {
+        count: `${files.length} ${files.length === 1 ? "file" : "files"}`,
+        adds: files.reduce((n, f) => n + f.adds, 0),
+        dels: files.reduce((n, f) => n + f.dels, 0),
+    };
+}
+
 export function filesSummary(files: { adds: number; dels: number }[]): string {
-    const adds = files.reduce((n, f) => n + f.adds, 0);
-    const dels = files.reduce((n, f) => n + f.dels, 0);
-    return `${files.length} ${files.length === 1 ? "file" : "files"} · +${adds} −${dels}`;
+    const { count, adds, dels } = fileTotals(files);
+    return `${count} · +${adds} −${dels}`;
 }
 
 const slashed = (p: string) => p.replace(/\\/g, "/").replace(/\/+$/, "");

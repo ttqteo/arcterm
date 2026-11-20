@@ -42,6 +42,11 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
   clear before the next task?" with Compact, Clear, Later. It hides during a turn and comes back when idle; Later hides
   it for good until the context drops under 150k; Compact types `/compact` into the terminal and the context ring
   falls. A second agent past 200k shows its own line.
+- [ ] (arcterm) **The rail's Changes tab hunks for a Claude agent and the branch view** (`railchangespane.tsx`, ported
+  from the kael fork). The `rail-changes-hunks` scenario covers a pi agent's session list (closed start, Expand all,
+  the sticky bar, `Shift`+`N`, `Shift`+`W`, the wide width). Still by hand: a Claude agent with its own edits, rail →
+  Changes: the hunks are only its edits (B..H), not others' uncommitted work; on a branch off main, Branch shows the
+  whole branch's hunks and Session its own again; Commit… opens commit mode and Done comes back to the hunks.
 - [ ] (arcterm) Diagram zoom and Copy image in the installed app (WebView2): ask a Claude agent to explain a flow and
   check it answers with a mermaid diagram, not ASCII; hover the diagram, Copy image, paste into Paint or a chat: the
   whole diagram, sharp, on a dark ground. Click it: the viewer opens fitted, the wheel zooms toward the cursor, a drag

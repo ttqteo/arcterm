@@ -1298,6 +1298,12 @@ func GitListWorktreesCommand(w *wshutil.WshRpc, data wshrpc.CommandGitListWorktr
 	return resp, err
 }
 
+// command "gitpatch", wshserver.GitPatchCommand
+func GitPatchCommand(w *wshutil.WshRpc, data wshrpc.CommandGitPatchData, opts *wshrpc.RpcOpts) (*wshrpc.CommandGitPatchRtnData, error) {
+	resp, err := sendRpcRequestCallHelper[*wshrpc.CommandGitPatchRtnData](w, "gitpatch", data, opts)
+	return resp, err
+}
+
 // command "gitpull", wshserver.GitPullCommand
 func GitPullCommand(w *wshutil.WshRpc, data wshrpc.CommandGitSyncData, opts *wshrpc.RpcOpts) (*wshrpc.CommandGitSyncRtnData, error) {
 	resp, err := sendRpcRequestCallHelper[*wshrpc.CommandGitSyncRtnData](w, "gitpull", data, opts)

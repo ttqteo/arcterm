@@ -42,6 +42,9 @@ and a picture given to a line that is not big.
 
 - When a Claude agent's context passes 200k tokens, Chat asks once over the box, while the agent is idle, whether to
   Compact or Clear it (or Later). It asks again only after the context has dropped under 150k and climbs back.
+- The rail's Changes tab shows every changed file's diff in one scroll, grouped by folder: open a file or a whole
+  folder to read its hunks, or Expand all. `Shift`+`N` / `Shift`+`P` step through the changes, `Shift`+`W` hides
+  whitespace, and the tab widens with the File tab's grip.
 
 ## 1.12.0 — 2026-11-20
 
