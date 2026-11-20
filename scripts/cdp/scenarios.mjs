@@ -41903,6 +41903,205 @@ const RCC_GEOMETRY = `(() => {
     };
 })()`;
 
+// The Changes tab's hunks (railchangespane.tsx, ported from the kael fork): one pi fixture agent whose session starts
+// after the seed commit, with uncommitted edits in the root, src/ (one file with two hunks far apart) and lib/ (a new
+// file). A pi agent's list is its checkout since the session's start, so no transcript edits are needed.
+const RCH_AGENT = "fx-rch";
+const RCH_BLOCK = "fx-blk-rch";
+const RCH_KEYS = [RAIL_VISIBLE_KEY, RAIL_RANGE_KEY, "agent.rail.tab", GRID_KEY];
+const rchSnap = `(() => {
+    const body = ${RWF_ASIDE}?.querySelector("[data-rail-changes]");
+    const bar = body?.querySelector("[data-rail-changes-bar]");
+    return {
+        hunks: !!body?.querySelector("[data-rail-changes-hunks]"),
+        line: body?.querySelector("[data-rail-changes-line]")?.textContent ?? null,
+        counter: body?.querySelector("[data-changes-counter]")?.textContent ?? null,
+        folders: [...(body?.querySelectorAll("[data-changes-folder]") ?? [])].map((b) => b.textContent),
+        open: [...(body?.querySelectorAll("[data-changes-open]") ?? [])].map((e) => e.getAttribute("data-changes-file")),
+        rows: body?.querySelectorAll("[data-diff-line]").length ?? 0,
+        barTop: bar && body ? Math.round(bar.getBoundingClientRect().top - body.getBoundingClientRect().top) : null,
+        width: Math.round(${RWF_ASIDE}?.getBoundingClientRect().width ?? 0),
+        failed: body?.querySelector("[data-rail-changes-patch-failed]")?.textContent ?? null,
+    };
+})()`;
+
+function rchFixture(base) {
+    const repo = join(base, "repo");
+    const logs = join(base, "transcripts");
+    for (const dir of [repo, logs, join(repo, "src"), join(repo, "lib")]) mkdirSync(dir, { recursive: true });
+    const t0 = Math.floor(Date.now() / 1000) - 3600;
+    const git = (...args) =>
+        execFileSync("git", ["-C", repo, "-c", "user.email=v@v", "-c", "user.name=v", ...args], {
+            stdio: "pipe",
+            env: { ...process.env, GIT_AUTHOR_DATE: `@${t0} +0000`, GIT_COMMITTER_DATE: `@${t0} +0000` },
+        });
+    const lines = (n, tag) => Array.from({ length: n }, (_, i) => `const ${tag}${i} = ${i};`).join("\n") + "\n";
+    writeFileSync(join(repo, "README.md"), "# demo\n\nA small repo.\n");
+    writeFileSync(join(repo, "src", "app.ts"), lines(60, "a"));
+    writeFileSync(join(repo, "src", "util.ts"), "export function add(a: number, b: number) {\n    return a + b;\n}\n");
+    git("init", "-q", "--initial-branch=main");
+    git("add", ".");
+    git("commit", "-q", "-m", "seed");
+    // the agent's work, uncommitted: two hunks far apart in app.ts, one in util.ts, the README, a new lib file
+    const app = lines(60, "a").split("\n");
+    app[2] = "const a2 = 200; // changed";
+    app[50] = "const a50 = 5000; // changed";
+    app.splice(51, 0, "const extra = true;");
+    writeFileSync(join(repo, "src", "app.ts"), app.join("\n"));
+    writeFileSync(
+        join(repo, "src", "util.ts"),
+        "export function add(a: number, b: number) {\n    return a + b;\n}\n\nexport function sub(a: number, b: number) {\n    return a - b;\n}\n"
+    );
+    writeFileSync(join(repo, "README.md"), "# demo\n\nA small repo, now with a lib.\n");
+    writeFileSync(join(repo, "lib", "fresh.ts"), "export const fresh = 'new file';\nexport const more = 1;\n");
+    const transcript = join(logs, "rch.jsonl");
+    writeFileSync(
+        transcript,
+        JSON.stringify({
+            type: "user",
+            cwd: repo,
+            timestamp: new Date((t0 + 600) * 1000).toISOString(),
+            message: { role: "user", content: [{ type: "text", text: "edit the demo" }] },
+        }) + "\n"
+    );
+    return { repo, transcript };
+}
+
+const agentRailChangesHunks = {
+    name: "rail-changes-hunks",
+    surface: "agent",
+    async arrange(h) {
+        const base = mkdtempSync(join(tmpdir(), "vrch-"));
+        const ctx = {
+            base,
+            prevFixture: existsSync(TREE_RAIL_FIXTURE) ? readFileSync(TREE_RAIL_FIXTURE, "utf8") : null,
+            prevKeys: {},
+        };
+        try {
+            for (const k of RCH_KEYS) {
+                ctx.prevKeys[k] = await h.ev(`localStorage.getItem(${JSON.stringify(k)})`);
+            }
+            Object.assign(ctx, rchFixture(base));
+            mkdirSync(new URL(".", TREE_RAIL_FIXTURE), { recursive: true });
+            const roster = [
+                {
+                    id: RCH_AGENT,
+                    name: "hunks agent",
+                    blockId: RCH_BLOCK,
+                    transcriptPath: ctx.transcript,
+                    project: "verify-rail-hunks",
+                    task: "edit the demo",
+                    state: "idle",
+                    agent: "pi",
+                    model: "sonnet",
+                    idleSince: Date.now() - 60_000,
+                },
+            ];
+            writeFileSync(TREE_RAIL_FIXTURE, JSON.stringify(roster, null, 2));
+            ctx.wroteFixture = true;
+            await h.ev(`(() => {
+                localStorage.setItem(${JSON.stringify(RAIL_VISIBLE_KEY)}, "true");
+                localStorage.setItem(${JSON.stringify(RAIL_RANGE_KEY)}, ${JSON.stringify('"session"')});
+                localStorage.removeItem("agent.rail.tab");
+                localStorage.setItem(${JSON.stringify(GRID_KEY)}, ${JSON.stringify(JSON.stringify(GRID_EMPTY))});
+            })()`);
+            if (!(await ahReload(h))) throw new Error("the page did not come back after the reload");
+            await h.goto("agent");
+            ctx.inRoster = await polishWaitFor(h, `!!document.querySelector('[data-agent-terminal="${RCH_AGENT}"]')`, 15000);
+            if (!ctx.inRoster) return ctx;
+            ctx.shown = await rwfShow(h, RCH_AGENT);
+            ctx.changes = ctx.shown && (await rccOpenChanges(h, "[data-rail-changes-hunks]"));
+        } catch (e) {
+            ctx.arrangeError = String(e?.message ?? e);
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        const steps = [];
+        const rec = (step, ok, detail) =>
+            steps.push({ step, ok: ok === true, detail: typeof detail === "string" ? detail : JSON.stringify(detail) });
+        const ready = ctx.arrangeError == null && ctx.inRoster === true && ctx.changes === true;
+        rec(
+            "0. the fixture agent's Changes tab draws its hunks list",
+            ready,
+            ctx.arrangeError ?? JSON.stringify({ inRoster: ctx.inRoster, shown: ctx.shown, changes: ctx.changes })
+        );
+        if (!ready) return steps;
+        const shot = (name) => h.shot(`cdp-shots/rail-changes-hunks-${name}.png`);
+        const click = (sel) => h.ev(`(() => { const el = ${rccSel(sel)}; el?.click(); return el != null; })()`);
+        const press = async (key, code, vk) => {
+            await h.ev("document.activeElement instanceof HTMLElement && document.activeElement.blur()");
+            for (const type of ["rawKeyDown", "keyUp"]) {
+                await h.cdp("Input.dispatchKeyEvent", { type, key, code, windowsVirtualKeyCode: vk, modifiers: 8 });
+            }
+            await polishNap(400);
+        };
+        try {
+            // 1. closed: the bar counts the files, folders src/ and lib/ label their groups, nothing open
+            await polishWaitFor(h, `(${rchSnap}).counter != null`, 15000);
+            const s1 = await h.ev(rchSnap);
+            await shot("1-closed");
+            rec(
+                "1. the tab opens closed: 4 files counted, src/ and lib/ folders, no file open, a change counter",
+                s1.line?.startsWith("4 files") && s1.folders.length === 2 && s1.open.length === 0 && s1.counter === "0/5",
+                s1
+            );
+            // 2. Expand all opens every file; the rows are numbered diff rows; the tab took the wide width
+            await click("[data-changes-toggle-all]");
+            await polishWaitFor(h, `(${rchSnap}).open.length === 4`, 5000);
+            const s2 = await h.ev(rchSnap);
+            await shot("2-expanded");
+            rec("2. Expand all opens all four files and draws their diff rows", s2.open.length === 4 && s2.rows > 10, s2);
+            rec("2b. the Changes tab takes the wide width, not Overview's 300px", s2.width > 400, { width: s2.width });
+            // 3. scrolled: the bar stays at the top of the tab, a folder label and a file header stick under it
+            await h.ev(`(() => { const b = ${rccSel("[data-rail-changes]")}; if (b) b.scrollTop = 420; })()`);
+            await polishNap(400);
+            const s3 = await h.ev(rchSnap);
+            await shot("3-scrolled");
+            rec("3. scrolled, the bar sticks to the tab's top", s3.barTop === 0, { barTop: s3.barTop });
+            // 4. Collapse all, then Shift+N: steps open the file holding the hunk, and the counter moves
+            await click("[data-changes-toggle-all]");
+            await polishWaitFor(h, `(${rchSnap}).open.length === 0`, 5000);
+            await press("N", "KeyN", 78);
+            await press("N", "KeyN", 78);
+            const s4 = await h.ev(rchSnap);
+            await shot("4-step");
+            rec("4. Shift+N twice: counter at 2/5 with the stepped file open", s4.counter === "2/5" && s4.open.length === 1, s4);
+            // 5. Hide whitespace toggles the shared switch
+            await press("W", "KeyW", 87);
+            const ws = await h.ev(`${rccSel("[data-changes-ignore-ws]")}?.getAttribute("aria-pressed")`);
+            await shot("5-whitespace");
+            await press("W", "KeyW", 87);
+            rec("5. Shift+W turns Hide whitespace on", ws === "true", { ariaPressed: ws });
+            rec("6. no patch read failed", (await h.ev(rchSnap)).failed == null, null);
+        } catch (e) {
+            rec("a call threw before the scenario finished", false, String(e?.message ?? e));
+        }
+        return steps;
+    },
+    async teardown(h, ctx) {
+        const step = async (what, fn) => {
+            try {
+                await fn();
+            } catch (e) {
+                console.error(`rail-changes-hunks teardown: ${what} failed: ${e?.message ?? e}`);
+            }
+        };
+        await step("restore the keys", async () => {
+            for (const [k, v] of Object.entries(ctx.prevKeys ?? {})) {
+                await h.ev(restoreStorageKey(k, v));
+            }
+        });
+        if (ctx.wroteFixture) {
+            await step("restore the fixture roster", () =>
+                ctx.prevFixture != null ? writeFileSync(TREE_RAIL_FIXTURE, ctx.prevFixture) : rmSync(TREE_RAIL_FIXTURE, { force: true })
+            );
+            await step("reload onto the restored roster", () => ahReload(h));
+        }
+        await step("remove the temp dir", () => rmSync(ctx.base, { recursive: true, force: true, maxRetries: 5, retryDelay: 500 }));
+    },
+};
+
 const agentRailChangesCommits = {
     name: "rail-changes-commits",
     surface: "agent",
@@ -74781,6 +74980,7 @@ export const SCENARIOS = [
     ...libraryScenarios(LIBRARY_KIT),
     agentRailWorktreeFiles,
     agentRailChangesCommits,
+    agentRailChangesHunks,
     agentRailCommitMode,
     mdComments,
     mdOutlineRail,
