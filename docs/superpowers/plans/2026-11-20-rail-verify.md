@@ -177,7 +177,7 @@ joining, and that a non-default branch never asks.
 
 ### Task 3: wavesrv serves Verify, and `wsh verify`
 
-**Depends on:** Task 1, Task 2 (implements Task 1's VerifyCommands over Task 2's Store, State and Gate)
+**Depends on:** Task 1 (implements the VerifyCommands it declares), Task 2 (serves its Store, State and Gate)
 
 **Files:** `pkg/wshrpc/wshserver/wshserver_verify.go`, `pkg/wshrpc/wshserver/wshserver_verify_test.go`, `cmd/wsh/cmd/wshcmd-verify.go`, `cmd/wsh/cmd/wshcmd-verify_test.go`, `cmd/server/main-server.go`
 
@@ -388,7 +388,7 @@ hook. It sits beside `withUiCheck` (~525), the commit-time reminder; leave that 
 
 ### Task 8: the CDP scenario, CHANGELOG and docs
 
-**Depends on:** Task 3, Task 6 (seeds runs through Task 3's VerifyReportCommand and checks the tile, chip, strip count and buttons Task 6 draws)
+**Depends on:** Task 3 (seeds runs through the VerifyReportCommand it serves), Task 6 (checks the tile, chip, strip count and buttons it draws)
 
 **Files:** `scripts/cdp/scenarios-rail-verify.mjs`, `scripts/cdp/scenarios.mjs`, `CHANGELOG.md`, `public/whatsnew/<next minor>-rail-verify.webp`, `docs/agents/verify.md`, `docs/README.md`, `docs/hand-checks.md`
 
