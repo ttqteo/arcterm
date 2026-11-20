@@ -28,7 +28,8 @@ export function shotSlug(topic) {
 }
 
 // The 2:1 area to capture: the element's box (or the whole viewport when there is none) widened or heightened to 2:1
-// around its centre, kept inside the viewport, and as large as the viewport allows when the box is too big for it.
+// around its centre, kept inside the viewport, and as large as the viewport allows when the box is too big for it. The
+// box and the viewport are in the same unit (captureWhatsnewShot gives both in screenshot pixels).
 export function clip2to1(box, viewport) {
     const vw = viewport.width;
     const vh = viewport.height;
@@ -50,13 +51,33 @@ export function clip2to1(box, viewport) {
     return { x: Math.round(x), y: Math.round(y), width: Math.round(w), height: Math.round(h) };
 }
 
+// The pixel size of a PNG, from the first bytes of its base64 text (the signature, the IHDR chunk's length and name, then
+// width and height, 24 bytes in all), which is as much of a screenshot as it takes to read.
+export function pngSize(base64) {
+    const head = Buffer.from(base64.slice(0, 44), "base64");
+    if (head.length < 24 || head.toString("hex", 0, 8) !== "89504e470d0a1a0a") throw new Error("not a PNG");
+    return { width: head.readUInt32BE(16), height: head.readUInt32BE(20) };
+}
+
+// A box measured in CSS px, in the screenshot's pixels: `ratio` screenshot pixels to a CSS px. null stays null.
+export function toShotPixels(box, ratio) {
+    if (box == null) return null;
+    return { x: box.x * ratio, y: box.y * ratio, width: box.width * ratio, height: box.height * ratio };
+}
+
 // Captures the picture through h (an attach.mjs handle) and writes it under root's public/whatsnew. opts: selector (the
 // element to centre on, padded by pad CSS px; none for the whole window), version (default: the next minor after root's
 // package.json). Returns the file name and the comment to end the CHANGELOG line with.
 export async function captureWhatsnewShot(h, topic, { selector, pad = 24, version, root = process.cwd() } = {}) {
     const ver = version ?? nextMinor(JSON.parse(readFileSync(join(root, "package.json"), "utf8")).version);
     const file = `${ver}-${shotSlug(topic)}.webp`;
-    const viewport = await h.ev(`({ width: window.innerWidth, height: window.innerHeight })`);
+    const cssViewport = await h.ev(`({ width: window.innerWidth, height: window.innerHeight })`);
+    // The page measures itself in CSS px but Page.captureScreenshot's clip is in the screenshot's pixels, and the two
+    // differ when the window is zoomed (a WebView2 window at 110% is 1400 px wide and 1280 CSS px): a box from
+    // getBoundingClientRect then names a region up and left of the element. A probe of the whole window gives the ratio.
+    const probe = await h.cdp("Page.captureScreenshot", { format: "png" });
+    const viewport = pngSize(probe.data);
+    const ratio = viewport.width / cssViewport.width;
     let box = null;
     if (selector) {
         box = await h.ev(`(() => {
@@ -67,7 +88,7 @@ export async function captureWhatsnewShot(h, topic, { selector, pad = 24, versio
         })()`);
         if (box == null) throw new Error(`no element matches ${selector}`);
     }
-    const clip = clip2to1(box, viewport);
+    const clip = clip2to1(toShotPixels(box, ratio), viewport);
     const scale = Math.min(1, SHOT_WIDTH / clip.width);
     let bytes = null;
     for (const quality of QUALITIES) {

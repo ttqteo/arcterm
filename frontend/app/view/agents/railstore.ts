@@ -36,6 +36,9 @@ export interface RailGitState {
     // the whole branch's changes, from where it left the default branch; unset on the default branch itself, or when
     // no default branch resolves
     branchDiff?: BranchDiff;
+    // why the git read failed (its message): set only on the state a throw leaves, whose isRepo is false without the
+    // folder being known not to be a repository
+    failure?: string;
 }
 
 export interface BranchDiff {
@@ -202,9 +205,9 @@ export async function loadRailForAgent(
             ref: ch.ref ?? "",
             branchDiff: ch.isrepo ? branchDiffOf(br) : undefined,
         });
-    } catch {
+    } catch (e) {
         if (current.id === id) {
-            globalStore.set(railStateAtom, { ...EMPTY, cwd });
+            globalStore.set(railStateAtom, { ...EMPTY, cwd, failure: e instanceof Error ? e.message : String(e) });
         }
     }
 }

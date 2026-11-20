@@ -267,6 +267,39 @@ describe("loadRailForAgent: whose changes the rail lists", () => {
         expect(state?.ref).toBe("session-start");
     });
 
+    it("keeps why the read failed, so the rail does not call the folder not a repository", async () => {
+        vi.resetModules();
+        const { resolveCwd } = await import("./agentcwdresolve");
+        vi.mocked(resolveCwd).mockResolvedValue("/repo");
+        const { ensureSessionStart } = await import("./agentsessionstore");
+        vi.mocked(ensureSessionStart).mockResolvedValue(555);
+        const { RpcApi } = await import("@/app/store/wshclientapi");
+        Object.assign(RpcApi, {
+            GitChangesCommand: async () => ({ branch: "main", statusz: "", numstat: "", isrepo: true }),
+            GitAgentEditsCommand: async () => {
+                throw new Error("git timed out");
+            },
+            GitListWorktreesCommand: async () => ({ worktrees: [] }),
+        });
+        const { globalStore } = await import("@/app/store/jotaiStore");
+        const rail = await import("./railstore");
+        await rail.loadRailForAgent({ id: "a4", agent: "claude", transcriptPath: "/t.jsonl" });
+        const state = globalStore.get(rail.railStateAtom);
+        expect(state).toMatchObject({ cwd: "/repo", isRepo: false, changes: null, failure: "git timed out" });
+    });
+
+    it("has no failure on a read that worked, or on a folder that is not a repository", async () => {
+        const { state } = await read(
+            { id: "a5", agent: "claude" },
+            {
+                edits: { base: "", end: "", files: [], bashcalls: 0, reason: "Not a git repository" },
+                changes: () => ({ ...checkout, isrepo: false }),
+            }
+        );
+        expect(state?.isRepo).toBe(false);
+        expect(state?.failure).toBeUndefined();
+    });
+
     it("lists any other agent's checkout since its session started", async () => {
         const { state, changes, agentEdits } = await read({ id: "a3", agent: "pi" }, { changes: () => checkout });
         expect(agentEdits).not.toHaveBeenCalled();

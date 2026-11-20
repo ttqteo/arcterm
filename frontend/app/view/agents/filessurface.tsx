@@ -644,6 +644,17 @@ export function FilesSurface({ model }: { model: AgentsViewModel }) {
                                     ? { base: compareRefs?.base ?? "", head: compareRefs?.head ?? "" }
                                     : null
                             }
+                            // the scope's own row of the Agent's edits range is the list shown; a commit row of it, the
+                            // Commit tab and a comparison keep the commit words. `state.edits` is set only by that range's
+                            // own load, so a frame still holding another range's read does not count
+                            edits={
+                                !commitMode &&
+                                !compareOn &&
+                                selectedCommit === WORKING_TREE &&
+                                scope?.range.kind === "edits"
+                                    ? (state?.edits ?? null)
+                                    : null
+                            }
                             model={model}
                             against={
                                 commitMode

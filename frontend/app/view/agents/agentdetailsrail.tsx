@@ -1073,6 +1073,11 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
                     <SkeletonLine key={i} className={cn("h-[10px]", w)} />
                 ))}
             </div>
+        ) : railState.failure != null ? (
+            // a read that threw says so, with its message, rather than calling the folder not a repository
+            <div className="text-[11.5px] text-muted" title={railState.failure}>
+                {"Couldn't read this agent's edits"}
+            </div>
         ) : !railState.isRepo ? (
             <div className="text-[11.5px] text-muted">Not a git repository</div>
         ) : (

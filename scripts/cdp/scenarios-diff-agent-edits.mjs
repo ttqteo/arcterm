@@ -35,7 +35,13 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const q = (sel) => `document.querySelector(${JSON.stringify(sel)})`;
 const SUMMARY = "[data-files-range-summary]";
 const PANE = "[data-commit-pane]";
-const pressed = (choice) => `${q(`[data-range-choice=${JSON.stringify(choice)}]`)}?.getAttribute("aria-pressed") === "true"`;
+const DIFF_PANE = "[data-diff-pane]";
+// the diff pane's empty state for a list with no files
+const DIFF_EMPTY = `${DIFF_PANE} [data-diff-empty="nofiles"]`;
+// the open file's diff has drawn: the editor holds text, not the pane's skeleton bars or an empty editor
+const DIFF_DRAWN = `[...document.querySelectorAll(${JSON.stringify(`${DIFF_PANE} .monaco-diff-editor .view-line`)})].some((l) => l.textContent.trim() !== "")`;
+// the Diff surface: the panel (switch, caption, rows) and the pane beside it, whose root is the panel's parent
+const SURFACE = 'div:has(> [data-diff-panel="open"])';const pressed = (choice) => `${q(`[data-range-choice=${JSON.stringify(choice)}]`)}?.getAttribute("aria-pressed") === "true"`;
 const FILE_ROWS = `[...document.querySelectorAll("[data-changed-file-row]")].map((r) => r.getAttribute("data-changed-file-row")).sort()`;
 const flagOf = (path) =>
     `document.querySelector(${JSON.stringify(`[data-changed-file-row=${JSON.stringify(path)}]`)})?.getAttribute("data-edit-flag") ?? null`;
@@ -103,9 +109,71 @@ export default function (kits) {
         return false;
     };
     const click = (h, sel) => h.ev(`(() => { const el = ${q(sel)}; if (!el) return false; el.click(); return true; })()`);
-    const pin = (h, width = 1600) =>
-        h.cdp("Emulation.setDeviceMetricsOverride", { width, height: 950, deviceScaleFactor: 1, mobile: false });
+    const pin = (h, width = 1600, height = 950) =>
+        h.cdp("Emulation.setDeviceMetricsOverride", { width, height, deviceScaleFactor: 1, mobile: false });
     const text = (h, sel) => h.ev(`(${q(sel)}?.innerText ?? "").trim()`);
+
+    // The What's new picture: the whole Diff surface, so the Agent's edits / Since session start switch, the caption, the
+    // flagged rows and the diff beside them are all in it. The window is sized so the surface is exactly 2:1 (as the
+    // picture is) and waits for the diff to draw again after the resize; the 1600x950 window comes back for the steps after.
+    // The panel folds when the surface is under 1000 px (difflayout.PANEL_FOLD_PX), the page's own width comes out narrower
+    // than the one pinned, and the commit pane under the history needs about 235 px for its caption and three rows, which
+    // the log's 55% share leaves only in a tall enough surface. So widths are tried from the tightest picture up, the height
+    // corrected from what is measured, until the panel is open and every part of the picture sits inside the frame.
+    async function agentEditsPicture(h) {
+        const WIDTHS = [1160, 1300, 1400, 1500, 1600];
+        const SETTLE_MS = 600; // over MonacoDiffViewer's 100ms layout debounce plus a ResizeObserver frame
+        const surfaceBox = () =>
+            h.ev(`(() => { const r = ${q(SURFACE)}?.getBoundingClientRect(); return r ? { w: r.width, h: r.height, bottom: r.bottom } : null; })()`);
+        const seenNow = () =>
+            h.ev(
+                `({ panels: [...document.querySelectorAll("[data-diff-panel]")].map((e) => e.getAttribute("data-diff-panel")), width: window.innerWidth, height: window.innerHeight })`
+            );
+        // which of the switch, the caption and the three rows end inside the frame
+        const insideFrame = (bottom) =>
+            h.ev(
+                `[${q("[data-range-switch]")}, ${q(SUMMARY)}, ...document.querySelectorAll("[data-changed-file-row]")].map((el) => !!el && el.getBoundingClientRect().height > 0 && el.getBoundingClientRect().bottom <= ${bottom})`
+            );
+        try {
+            const tried = [];
+            for (const width of WIDTHS) {
+                await pin(h, width);
+                await sleep(SETTLE_MS);
+                let box = await surfaceBox();
+                if (box == null) {
+                    tried.push({ width, folded: await seenNow() });
+                    continue;
+                }
+                // the surface is exactly 2:1 once its height is half its width; the height tracks the window's, so measure
+                // and correct until it is
+                let height = 950;
+                for (let i = 0; i < 4 && box != null && Math.abs(box.w / 2 - box.h) > 2; i++) {
+                    height += Math.round(box.w / 2 - box.h);
+                    await pin(h, width, height);
+                    await sleep(SETTLE_MS);
+                    box = await surfaceBox();
+                }
+                if (box == null) {
+                    tried.push({ width, height, gone: await seenNow() });
+                    continue;
+                }
+                const inside = await insideFrame(box.bottom);
+                if (inside.length < 2 + AGENT_FILES.length || !inside.every(Boolean)) {
+                    tried.push({ width, height, surface: box, inside });
+                    continue;
+                }
+                if (!(await until(h, DIFF_DRAWN, LOAD_MS))) throw new Error(`the diff did not draw at ${width}x${height}`);
+                // the window as it stands, to read the picture against
+                await h.shot("cdp-shots/diff-agent-edits-picture-window.png");
+                const shot = await h.whatsnewShot("agent-edits", { selector: SURFACE, pad: 0 });
+                return { ...shot, pinned: { width, height }, surface: box, tried };
+            }
+            throw new Error(`no window size holds the switch, the caption and the rows in a 2:1 surface: ${JSON.stringify(tried)}`);
+        } finally {
+            await pin(h).catch((e) => console.error(`${NAME}: put the window back failed: ${e?.message ?? e}`));
+            await sleep(SETTLE_MS);
+        }
+    }
 
     // the Log tab is where the scope's own row and its commit pane are; an agent's Diff opens on it
     async function onLogTab(h) {
@@ -242,6 +310,8 @@ export default function (kits) {
                     (await until(h, `${pressed("edits")} && ${FILE_ROWS}.length === ${AGENT_FILES.length}`, LOAD_MS));
                 const logOn = listed && (await onLogTab(h));
                 const paneUp = logOn && (await until(h, `!!${q(PANE)} && !!${q(SUMMARY)}`, LOAD_MS));
+                // the open file's diff has drawn, so neither the shot nor the picture catches the pane's skeleton
+                const diffDrawn = paneUp && (await until(h, DIFF_DRAWN, LOAD_MS));
                 const rows = await h.ev(FILE_ROWS);
                 const flags = { [CREATED]: await h.ev(flagOf(CREATED)), [APPROX]: await h.ev(flagOf(APPROX)), [OUTSIDE]: await h.ev(flagOf(OUTSIDE)) };
                 const summary = await text(h, SUMMARY);
@@ -252,15 +322,17 @@ export default function (kits) {
                 await h.shot("cdp-shots/diff-agent-edits-open.png");
                 let picture = null;
                 try {
-                    // the What's new picture of the commit pane with the agent's flagged files
-                    picture = await h.whatsnewShot("agent-edits", { selector: PANE, pad: 200 });
+                    // the What's new picture: the panel with the agent's flagged files, and the diff beside it
+                    picture = diffDrawn ? await agentEditsPicture(h) : { error: "the diff never drew" };
                 } catch (e) {
                     picture = { error: String(e?.message ?? e) };
                 }
                 rec(
-                    "1. an agent's Diff opens on Agent's edits: the edits button is pressed, the list is exactly its three files (not the unrelated one), the approximate and the outside rows are flagged, the caption says 3 files and 1 Bash call, and the commit pane's label reads Agent's edits",
+                    "1. an agent's Diff opens on Agent's edits: the edits button is pressed, the list is exactly its three files (not the unrelated one), the approximate and the outside rows are flagged, the caption says 3 files and 1 Bash call, the commit pane's label reads Agent's edits, the open file's diff has drawn, and the What's new picture was taken of it",
                     listed &&
                         paneUp &&
+                        diffDrawn &&
+                        picture?.error == null &&
                         switchState.find((b) => b.choice === "edits")?.pressed === "true" &&
                         switchState.find((b) => b.choice === "session")?.pressed === "false" &&
                         JSON.stringify(rows) === JSON.stringify([...AGENT_FILES].sort()) &&
@@ -272,7 +344,7 @@ export default function (kits) {
                         // innerText of the label is drawn uppercase by its CSS
                         /agent's edits/i.test(pane) &&
                         !/working tree/i.test(pane),
-                    { picked, listed, logOn, paneUp, switchState, rows, flags, summary, pane: pane.slice(0, 200), picture }
+                    { picked, listed, logOn, paneUp, diffDrawn, switchState, rows, flags, summary, pane: pane.slice(0, 200), picture }
                 );
 
                 // 2. Since session start lists what the working tree changed, the unrelated edit too
@@ -319,16 +391,26 @@ export default function (kits) {
                 const quiet =
                     quietPicked &&
                     (await until(h, `${pressed("edits")} && (${q(SUMMARY)}?.textContent ?? "").trim() === ${JSON.stringify(wantCaption)}`, LOAD_MS));
+                // the diff pane says the agent has made no edits, with the read's reason under it, not the commit's words
+                const emptyPane = quiet && (await until(h, `/No edits by this agent yet/.test(${q(DIFF_EMPTY)}?.innerText ?? "")`, LOAD_MS));
                 // the list stays empty past a poll's worth of settling, never falling back to the working tree
                 await sleep(1000);
                 const quietRows = await h.ev(FILE_ROWS);
                 const quietCaption = await text(h, SUMMARY);
                 const quietSwitch = await h.ev(`!!${q("[data-range-switch]")}`);
+                const emptyText = await text(h, DIFF_PANE);
                 await h.shot("cdp-shots/diff-agent-edits-nothing.png");
                 rec(
-                    "4. a second agent with no Edit or Write call opens on Agent's edits with the switch shown, an empty file list and the no-edits caption",
-                    quiet && quietSwitch && quietRows.length === 0 && !reply?.base,
-                    { quietPicked, reply, quietCaption, wantCaption, quietRows, quietSwitch }
+                    "4. a second agent with no Edit or Write call opens on Agent's edits with the switch shown, an empty file list, the no-edits caption, and a diff pane that reads \"No edits by this agent yet\" with the read's reason (never \"This commit changes no files\")",
+                    quiet &&
+                        emptyPane &&
+                        quietSwitch &&
+                        quietRows.length === 0 &&
+                        !reply?.base &&
+                        emptyText.includes("No edits by this agent yet") &&
+                        (!reply?.reason || emptyText.includes(reply.reason)) &&
+                        !/This commit changes no files/.test(emptyText),
+                    { quietPicked, reply, quietCaption, wantCaption, quietRows, quietSwitch, emptyPane, emptyText: emptyText.slice(0, 200) }
                 );
 
                 // 5. a pi agent has no file-history backups: no switch, and its range is Since session start
