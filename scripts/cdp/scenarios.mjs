@@ -73556,10 +73556,29 @@ const projectOverviewHistory = {
             );
 
             // 7. a row opens its view: a session, a council, a run (its sheet, on the Jarvis surface), and Older opens Conversation History
+            // a Claude session row's right-click menu offers Fork, after Resume and Open asleep (projecthistory.tsx sessionMenu)
+            const menuLabels7 = `[...(document.querySelector('[class*="z-[1000]"][tabindex="-1"]')?.querySelectorAll("span.flex-1") ?? [])].map((s) => s.textContent.trim())`;
+            await h.ev(`(() => {
+                const el = document.querySelector('[data-history-kind="session"]');
+                const r = el.getBoundingClientRect();
+                el.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: r.left + 24, clientY: r.top + r.height / 2, button: 2 }));
+            })()`);
+            const menuUp7 = await polishWaitFor(h, `${menuLabels7}.includes("Fork")`, 3000);
+            const labels7 = await h.ev(menuLabels7);
+            await shot("7-menu-fork");
+            await ovKey(h, "Escape", "Escape", 27);
+            await polishWaitFor(h, `${menuLabels7}.length === 0`, 3000);
+            rec(
+                "7a. a Claude session row's menu has Fork, right after Resume and Open asleep",
+                menuUp7 && labels7.indexOf("Resume") >= 0 && labels7.indexOf("Fork") === labels7.indexOf("Open asleep") + 1,
+                JSON.stringify({ menuUp7, labels7 })
+            );
             // a session row opens Quick look over the Overview; its Open takes it to the full session view
             await h.ev(`document.querySelector('[data-history-kind="session"]')?.click()`);
             const quick7 = await polishWaitFor(h, `${ovHas("[data-session-peek]")} && ${ovHas("[data-project-overview]")}`, 5000);
             await shot("7-quicklook");
+            const peekFork7 = await h.ev(`!!document.querySelector("[data-session-peek] [data-session-fork]")`);
+            rec("7b. Quick look of a Claude session has Fork beside Resume", quick7 && peekFork7 === true, JSON.stringify({ quick7, peekFork7 }));
             await h.ev(`document.querySelector("[data-session-peek-open]")?.click()`);
             // the session view is Library's: its full-width pane, on the Library surface, with the Overview still behind it on the
             // Agent surface (which Back returns to)

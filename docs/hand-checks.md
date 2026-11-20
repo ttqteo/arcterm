@@ -16,10 +16,6 @@ list (its number is not reused).
 Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) ·
 [part 4](hand-checks-4.md) · [part 3](hand-checks-3.md) · [part 2](hand-checks-2.md) (oldest).
 
-- [ ] (arcterm) **Fork from a project's History** (`projecthistory.tsx` sessionMenu, `sessionpeek.tsx`;
-  `feat/history-fork`). On a project's Overview, right-click a Claude session in History: the menu has Fork after
-  Resume, and it opens a new tab named "<title> (fork)" holding that conversation. Click the row for Quick look: Fork
-  sits beside Resume, and clicking it closes the dialog and opens the fork. A pi or codex session shows neither.
 - [ ] (arcterm) **A council started through PowerShell draws its card in Chat** (`transcriptprojection.ts` shell
   tools, `33c6f49d0`). After installing a build with it, open the mit-thesis agent `773ab9d0` in Chat: council
   `0f74c5be` ("Truc chi phi cross-model…") shows its council card where the report came back, and the reply that
