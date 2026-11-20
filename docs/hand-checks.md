@@ -6,8 +6,13 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
-**Parts.** This file is the open part: a new line always goes here, at the top. When an edit takes it past 400 lines,
-move its oldest lines (whole entries from the bottom, a date heading with its entries) to the top of the
+**Days.** Lines sit under a `## YYYY-MM-DD` heading, the day the change landed, newest day first, so "check what was
+built today" is one section. A new line goes at the top of today's section; when the top heading is an older day, open
+`## <today>` above it first. A day's heading goes once its last line is removed. The days before 2026-11-20 were sorted
+from `git blame`: the day each entry's first line was last written.
+
+**Parts.** This file is the open part: a new line always goes here, under today's heading. When an edit takes it past
+400 lines, move its oldest lines (whole entries from the bottom, a date heading with its entries) to the top of the
 highest-numbered `hand-checks-N.md` until this file is under 250 lines; when that part would pass 600 lines, start
 `hand-checks-<N+1>.md` with the same header instead, and add it to the list below. The higher the number, the newer
 its lines. Lines in an older part are ticked and removed where they are; a part left empty is deleted and taken off the
@@ -15,6 +20,8 @@ list (its number is not reused).
 
 Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) ·
 [part 4](hand-checks-4.md) · [part 3](hand-checks-3.md) · [part 2](hand-checks-2.md) (oldest).
+
+## 2026-11-20
 
 - [ ] (arcterm) **A council started through PowerShell draws its card in Chat** (`transcriptprojection.ts` shell
   tools, `33c6f49d0`). After installing a build with it, open the mit-thesis agent `773ab9d0` in Chat: council
@@ -32,7 +39,6 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
   message from Chat (it reads Queued). When the turn ends and Claude Code takes the message, the Working line stays up
   without blinking out, and the message lands in place without jumping down. Esc on a turn with a queued message: the
   Working line leaves within about 4 s.
-
 - [ ] (arcterm) **A refused tool call's Tool failed line says why** (`transcriptprojection.ts` `errorLine`). Have a
   Claude agent call `Monitor` with only a `description`: its Tool failed line in Chat reads "InputValidationError:
   exactly one of command or ws", not "InputValidationError: [". Same on the phone page (`projectors.js`).
@@ -89,6 +95,28 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
   11-19"), type `@`: the run is one row (`run:733ad992 · … · orchestrator`) and none of its "You are the plan reviewer
   for run …" quick runs shows; while a run is live, its workers and reviewers are not agent rows either, only its lead
   (or the run) and the plain agents the Agent tree lists at its top level. Commit e2b0c6b45.
+- [ ] (arcterm) **The Agent panel's Council tab** (`agentrailpanel.tsx` `RailCouncilTab`, `railcouncilpane.tsx`,
+  `railcouncil.ts`, binding `agent:council-chat`). The CDP scenario `rail-council-tab` passes (tab, chat, Show more, Open,
+  `c`, Send to the others, Read the report, on fixture councils); still by hand, on a real council: have a live agent run `wsh council start …` (through Bash, and once
+  through PowerShell on Windows): the Council tab fades in after Transcript with a green dot, and Chat gets the council
+  card. On the tab: the messages come in as the seats write, the list follows them while you are at the end and stays put
+  when you scrolled up, a long message opens with Show more, Open shows the full Discussion, and a message sent from the
+  box reaches the council. At the pause the amber row offers Review in full; with held drafts, Send to the others sends
+  them; once done, Read the report opens the Report. On an agent with both a canvas and a council, `c` still opens the
+  canvas.
+- [ ] (arcterm) **A board drawn from PowerShell gets its Chat card, and Vietnamese reads in Nunito**
+  (`transcriptprojection.ts` `isShell`, `boardmodel.ts` `withReadableFont`, `boardconvert.ts` `refitNunitoText`). In a
+  Claude agent on Windows, have it run `wsh board draw` through the PowerShell tool: its turn ends with the board card,
+  and Open splits the board beside Chat. Open the `huong-luan-van` board (Library → Boards): every label is in Nunito,
+  with no mixed glyphs and no line cut off ("tới nơi", "đang cượ…" whole), and the file saved that way. Unit-tested and
+  typechecked only, not seen in the app.
+- [ ] (arcterm) **A board draws bar and line charts** (`pkg/boarddrawer/chart.go`, the `chart` entry in
+  `drawer-prompt.md`). On a board, Ask "add a bar chart: baseline 0.42, LLM 0.61, agent 0.70", then "and a line chart
+  of the same": each lands as one group (frame, bars or a line with dots, zero line, values, labels), the bars to scale,
+  and drags as one. Check that Excalidraw's skeleton conversion keeps the group, the fill and the text size. Go-tested
+  only, not seen in the app.
+
+## 2026-11-19
 
 - [ ] (arcterm) **Boards, a real drawer turn** (`pkg/boarddrawer`, `wsh board draw`; the CDP scenarios stub every
   board RPC, so no drawer has run in them). From a live claude agent in a registered project, ask it to draw how
@@ -120,7 +148,6 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
   the run), and they leave To review. When the run ends (done or cancelled) the run is detached from each chunk, and
   a done run leaves its "Run finished" note on each. The CDP scenario `brief-run-review` covers the ticking, the
   launcher's goal and a deferred run's attach and release by RPC; nobody has started a real run from it.
-
 - [ ] (arcterm) **Charts in a council's saved report, and the bench rejudged** (`pkg/council/charts.go`,
   `pkg/council/bench/chart.go`, `pkg/council/bench/rejudge.go`). Open the next finished Review council's document from
   Library: "At a glance" draws D1…Dn in the quadrant ahead of the directions, and under Run facts the token bars, the
@@ -150,16 +177,6 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
   Terminal) for a while as it keeps writing, then back: Chat opens on the same message, not a later one and not the top
   of the conversation. Try it once more after "Show earlier" loaded earlier messages. Only the key arithmetic is unit
   tested.
-
-- [ ] (arcterm) **The Agent panel's Council tab** (`agentrailpanel.tsx` `RailCouncilTab`, `railcouncilpane.tsx`,
-  `railcouncil.ts`, binding `agent:council-chat`). The CDP scenario `rail-council-tab` passes (tab, chat, Show more, Open,
-  `c`, Send to the others, Read the report, on fixture councils); still by hand, on a real council: have a live agent run `wsh council start …` (through Bash, and once
-  through PowerShell on Windows): the Council tab fades in after Transcript with a green dot, and Chat gets the council
-  card. On the tab: the messages come in as the seats write, the list follows them while you are at the end and stays put
-  when you scrolled up, a long message opens with Show more, Open shows the full Discussion, and a message sent from the
-  box reaches the council. At the pause the amber row offers Review in full; with held drafts, Send to the others sends
-  them; once done, Read the report opens the Report. On an agent with both a canvas and a council, `c` still opens the
-  canvas.
 - [ ] (arcterm) **A long path in a Chat reply wraps in full** (`markdownmessage.tsx` code → `PathLink wrap`,
   `tailwindsetup.css` `.agent-md code`). Ask an agent for a reply naming a long backticked Windows path mid-sentence:
   it continues on the same line as the words before it and wraps over several lines, with no "…", and the full stop
@@ -248,7 +265,6 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
   end: no "Council done" toast and no unread dot on its row in the Agent tree. Remove a council (its menu → Remove) while
   Library shows it: Library goes back to the Councils list. `councilnotifysync.tsx`, `councilremove.ts`; `library-tabs`
   step 13 covers the toast and the dot with fixtures, not removal.
-
 - [ ] (arcterm) **Land anyway lands a run held by a failed final stage.** On a run whose card reads "Land held · The
   final stage failed at …", the button reads Land anyway (peek, Needs you, the Brief's Waiting list, the run sheet's
   dock); clicking it asks first, and confirming merges wave/<run> into the base and clears the card. A run held for
@@ -267,7 +283,6 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
   line red.
 - [ ] (arcterm) **A `.jsonl` file opens in colour.** Open one (a Claude transcript, an audit `.jsonl`): keys, strings,
   numbers and `true`/`false`/`null` in JSON's colours, and no red squiggle on line 2 onwards.
-
 - [ ] (arcterm) **Xử lý starts one real agent that handles the waiting bug reports.** With two reports saved and arcterm's
   repo known (Jarvis, Waiting on you: "2 báo lỗi arcterm chờ xử lý"), press Xử lý there (or in the Cockpit's Needs-you
   strip): a "Báo lỗi arcterm" Claude agent opens in arcterm's repo and starts on the prompt, the row turns "Đang xử lý 2
@@ -321,7 +336,6 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
   block (the top block leaves, the next one joins), and J stops once the group ends on the last block. At ×5 the lit group
   still reads well on a short window (the group can run taller than the view). The `chat-focus-read` scenario's step 6c
   covers ×5 but was not run (no dev app up). `chatfocusread.ts` FOCUS_READ_SIZES.
-
 - [ ] (arcterm) **A done agent's header has one Close.** On an agent whose last turn committed and was read, the header
   ends with More then the green ✓ Close · tokens, no × beside it; on a narrow split cell it is the ✓ alone, tokens in
   its title; an agent not done keeps the ×. Both were `confirmCloseSession`; tried only by the typecheck, not in the
@@ -351,6 +365,71 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
   run (or RAM critical) the frame is red and a red line at the top of Resources names why; pressing it goes back to the
   dashboard. The wall's Resources band has the same × on its other apps. Tried only by unit tests and the typecheck
   (bbbfd4007, 2026-11-19);
+- [ ] (arcterm) **Chat's usage-limit strip, with real accounts.** The CDP scenario `chat-limit-strip` fakes the
+  accounts and their windows (`__chatLimitFake`) and mocks the switch's writes, so none of this ran against the real
+  thing. With a second Claude account added in Settings, an agent
+  whose account is at 80% of the week (or 90% of the 5-hour window) has a strip above the box with the reset time, the
+  account's name and Switch to <other>: Switch makes the other account active, restarts this agent on it (the session
+  resumes) and lists the other agents on the old account in the restart dialog; Snooze for an hour hides the strip in
+  every agent of that account, and an agent in a project tied to its own account has no Switch (2026-11-18);
+- [ ] (arcterm) A question asked while background subagents work (`agentsviewmodel.ts` liveAsk): in a Claude agent,
+  start two background subagents, then have the agent ask an AskUserQuestion; Chat keeps the question with its choices
+  for as long as it waits (past 10 s, while the subagents run tools), never turning into the "Wants to use
+  AskUserQuestion" card with only Answer in Terminal, and a pick in Chat or in the terminal both answer it.
+- [ ] (arcterm) **The phone page reads Locked while the PC is locked (Windows).** With remote mode on, open the phone
+  page: Computer reads Unlocked. Press Win+L at the desk → within 10 s the phone reads Locked and its Lock button is
+  disabled; unlock at the desk → Unlocked again. Press Lock on the phone → the PC locks and the page reads Locked
+  within about 2 s. `TestPCWindowsReadLocked` only read the unlocked case.
+- [ ] (arcterm) **The installed phone page reloads itself after an update, on a real iPhone.** With this build's page
+  open once (one reload by hand after installing it), install the next build while the PWA stays open on the list:
+  within about 10 s of remote mode coming back the page reloads on its own. With a chat open or text typed into an
+  answer it waits, and reloads once you are back on the list. Only headless Chrome on `cmd/remotepreview -build` has
+  run it.
+- [ ] (arcterm) **The rail says when the agent last compacted** (`railcompactionline.tsx`). In a Claude agent, run
+  `/compact`; within a few seconds the Agent details rail's session block, under the tokens bar, reads
+  `Compacted · <before> → <after> · manual · just now`. Click it: the summary opens in a sheet pinned to the window's
+  right edge, wider than the rail; Esc or ✕ closes it. Chat shows only the thin Compacted line, which opens nothing. A
+  pi agent's compaction shows the line too. Compact once more → the line leads with `×2`. An agent that never
+  compacted shows no line, and a subagent's interior shows none.
+- [ ] (arcterm) **Suggested replies stay with an attachment** (`chatcomposer.tsx`). Once a Claude agent's turn ends with
+  chips above Chat's box, paste an image: the chips stay. Click one: the message sent carries the chip's text and the
+  image, and the box empties of both.
+- [ ] (arcterm) **A paste after a typed ``` closes the block** (`chatmarks.ts` afterOpenFence). In Chat's box type
+  ``` and paste two lines of anything: they land on the lines under the fence, a closing ``` follows, and a word typed
+  on the next line sits outside the code box. One undo leaves the raw paste beside the fence.
+- [ ] (arcterm) **A long run's lifecycle rail folds its repeated rows** (`timelinegroups.ts` fold rows,
+  `timelinerail.tsx`). Open a finished orchestrator run with many tasks (one with a dozen cleanups at its end): the
+  run's end shows one `Cleanup complete ×N · t-1 → t-N` row instead of N rows, and opening it lists each task. A row
+  whose range spans minutes reads `Nov 14 01:19–20`, its title no longer cut to `Veri…`. Pause and resume a run → the
+  rail reads it in words, with who paused it and the RAM it held, not `run-paused`. The `kael1113-timeline` CDP
+  scenario covers the fold; nobody has looked at it in the app.
+- [ ] (arcterm) **A `!` command's output in Chat is in colour** (`chatconversation.tsx` bubble, `commandtext.tsx`
+  CommandOutput, `taskecho.ts`). In a Claude agent's Chat run `! task install --dry` or any `! task <name>` whose
+  Taskfile command spans lines: the `task: [name]` prefix is muted and the command under it in the shell's colours up to
+  the blank line, the output after it plain; `&&` reads `&&`, never `&amp;&amp;`. Run `! git -c color.ui=always status`
+  → its colours show. Copy on the bubble pastes text with no escape codes. Unit-tested only, not tried in the app.
+- [ ] (arcterm) **A committed file's Diff shows its commit** (`filetabdiff.tsx`, `gitinfo.LastChange`). Have a Claude
+  agent edit a file and commit it, then click the file in the turn's Edited files card: the rail's Diff shows the
+  commit's +/− with `Committed in <hash> <subject>` above it, not "No change since the last commit". Edit the file
+  again without committing → Reread: the diff is against HEAD again and the line above it is gone. A file no commit
+  ever changed and that matches HEAD still says "No change since the last commit". Unit-tested on the Go side only.
+- [ ] (arcterm) **Open in Claude Desktop** (`desktoplink.ts`, `sessionsdetail.tsx` DesktopButton,
+  `projecthistory.tsx` menu, `commands.rs` `is_claude_desktop_resume`). Open an ended Claude conversation in Library →
+  Conversations: the external-link icon beside Fork opens Claude Desktop on that conversation in its Code tab (Desktop
+  imports it if it does not hold it yet). A live session and a pi session show no icon. A project's History row menu
+  has the same item. Unit-tested only, not tried in the app.
+- [ ] (arcterm) **Council re-asks an unreadable answer** (`runner.go` `reread`, `prompts.go` `RereadPrompt`). When a
+  seat answers in prose with no JSON block, waveapp.log shows `[council] <id>: <seat>'s reply could not be read …;
+  asking it again`, the seat's avatar reads "Reply unreadable: asking again", and its answer then lands in the thread;
+  one that fails twice shows `- Failed: …` in the report's Run facts. Unit-tested with a fake caller only, not seen
+  with a real model slip.
+- [ ] (arcterm) **Chat file pills show the file type's icon** (`chatfilepill.tsx`, `chateditorpill.tsx`). @-mention an
+  `.html`, a `.ts` and a folder in Chat's message box: each pill shows its Material icon (as in the Code tree), selected
+  or not, and the sent message's pills show the same; the 13 px icon sits centred on the 20 px pill. Typechecked only,
+  not seen in the app.
+
+## 2026-11-18
+
 - [ ] (arcterm) **Live output in full view is in colour.** Run a coloured background task (`task tauri:build`, or
   `npx vite build`) from a Claude agent, open its peek → Open full view: the File tab shows vite's cyan/green and no
   `␛[36m` codes; with Live on it keeps to the end as lines arrive, scrolling up stops it, clicking Live jumps back;
@@ -363,24 +442,15 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
   nothing. Settings now calls the shared `switchClaudeAccount` (`claudeaccountswitch.ts`, also the Chat usage strip's
   Switch) instead of its own copy; tried only by unit tests (`switchPlan`) and the typecheck, not in the app
   (2026-11-18);
-- [ ] (arcterm) **Chat's usage-limit strip, with real accounts.** The CDP scenario `chat-limit-strip` fakes the
-  accounts and their windows (`__chatLimitFake`) and mocks the switch's writes, so none of this ran against the real
-  thing. With a second Claude account added in Settings, an agent
-  whose account is at 80% of the week (or 90% of the 5-hour window) has a strip above the box with the reset time, the
-  account's name and Switch to <other>: Switch makes the other account active, restarts this agent on it (the session
-  resumes) and lists the other agents on the old account in the restart dialog; Snooze for an hour hides the strip in
-  every agent of that account, and an agent in a project tied to its own account has no Switch (2026-11-18);
 - [ ] (arcterm) **A turn's file card opens the file's diff.** In Chat, at the end of a turn that edited files, click a
   row of "Edited N files": the rail tab opens on Diff (changed lines marked, the rest folded), not the whole file. A
   file in a `.worktrees/<x>/` tree shows its change in that tree; a file new since the last commit shows all added; a
   change already committed says "No change since the last commit". `chatsteps.ts` turnFileDiff, `filetabdiff.tsx`.
   Not tried in the dev app when written.
-
 - [ ] (arcterm) **A builder check waiting on you makes the agent's row breathe.** In Agent, on a brainstorm whose
   builder check is back (a builder question open, or Review / Approve shown in Chat): its row in the tree breathes an
   amber wash and edge, as an asking agent's does, and Cockpit counts it; after Approve starts the run the row stops.
   `brainstormmodel.ts` checkWaits.
-
 - [ ] (arcterm) **A brainstorm's rail opens as wide as the details rail.** In Agent, on an agent brainstorming, switch
   between Chat and the brainstorm (the lightbulb): Decided so far's left edge sits where the details rail's did, with
   nothing moving. Drag it narrower, switch to Chat and back: it opens at the details rail's width again. Not tried in
@@ -394,7 +464,6 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
   `` gõ `lệnh` xong `` with Telex on: every syllable lands whole (none dropped or doubled), the quote line stays
   slanted with its bar, `` `lệnh` `` stays a chip, and the text after the closing backtick is plain again.
   `feat/chat-input-marks` (956770e3c).
-
 - [ ] (arcterm) **A self-detaching dev server reads as its own project's.** With SIEM-portal's `astro dev --port 4310`
   up (started in the foreground, so it detaches), open the footer's Servers: the :4310 row is not an arcterm agent's
   (no owner, or a SIEM-portal agent's); in Agent, the SIEM-portal folder row shows :4310 beside :8100's agent row.
@@ -421,19 +490,16 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
   whether `cc-plugin-sec-default` skips the arc mod's `turn.complete` (it skips its `prompt.compose` and
   `session.append` in some sessions). Unit tests only: `pkg/chatsuggest/hook.go`, `claude/arc-mod/hooks/suggest-core.ts`
   (2026-11-18);
-
 - [ ] (arcterm) **Switching agents no longer crashes the header.** In Agent, pick a Claude agent, then a plain
   terminal, a run's worker and back (from the tree and from Sidecar's wall), including one falling asleep: no
   `WINDOW ERROR … is not iterable` in `waveapp.log` and the header redraws each time. Not tried in the app:
   `agentheader.tsx` `remoteStatus` (7778f1559, 2026-11-18);
-
 - [ ] (arcterm) **Scrollbars show only under the pointer.** With the pointer away, the Agent tree, Chat, Jarvis and
   Setup lists show no scrollbar; point into one and a thin bar shows on that list alone (not on a list beside or
   inside it), thicker and brighter under the pointer and while dragged; nothing shifts sideways when it shows. Jarvis
   bands and the council composer still line up with the scrolling column above them (gutter 10px → 8px). Checked only
   in an Edge page with the same rules (`--scrollbar-thumb` in `tailwindsetup.css`, 2026-11-18), not in the app or on a
   Mac's WebKit.
-
 - [ ] (arcterm) **Background tasks open in place.** Have an agent run two commands with `run_in_background` (one that
   ends at once, one `npx vitest run <a test file>` that runs a while), then open its details rail → Background tasks:
   Running 1 holds the vitest one with its time counting up, Finished 1 the other with its time. A click opens a row:
@@ -455,7 +521,6 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
   same band shows on a selection in Chat's bash box (`!` mode), its coloured command still readable under it (b67964193).
   The blend was checked only in a headless-Edge page with the same layer (`mix-blend-mode: screen` on
   `[data-md-selection-layer]`, `tailwindsetup.css`, 2026-11-18), not in the app or on a Mac's WebKit;
-
 - [ ] (arcterm) **One arcterm at a time (Windows, packaged).** With arcterm closed to the tray, open it again from the
   Start menu or a desktop shortcut: its own window comes back to the front (no second window, no second Sidecar or tray
   icon, no BOOT ERROR), and `waveapp.log` has `[tauri] arcterm was opened again`. Also minimized, and folded into
@@ -465,7 +530,6 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
   guard in place the held-lock case needs a dev app pointed at a running app's data dir (`ARC_DEV_DATA_DIR`). The BOOT
   ERROR should show within a second as "backend unavailable: another arcterm is already running…" rather than after
   15 s. `main.rs` stderr reader, `init.rs` `startup_failure` (2026-11-18);
-
 - [ ] (arcterm) **Brainstorm rail in the details rail's place.** With the details rail open (`d`), switch an agent
   with a brainstorm between Terminal, Chat and Brainstorm: the Chat · Terminal · Brainstorm switch stays put, and in
   Brainstorm the right column shows Boards · Decided so far (no Overview / Files / Changes); a question with boards
@@ -510,7 +574,6 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
 - [ ] (arcterm) **Sidecar's band cards keep the agent's name.** In the wall's RAM band, a narrow heavy-agent card keeps
   the agent's name and command readable, its Stop and Sleep buttons wrapping under them; maximized or full screen, the
   alert frame is square (the rounded-corner case was seen holding on 2026-11-18). Commit 7cdcfa181.
-
 - [ ] (arcterm) **A markdown doc's Comment button floats above the selection, at its start.** Select a phrase mid-line
   in a markdown file open in the Agent's doc view: the Comment button sits just above the first selected line, its left
   edge at the selection's start, covering no selected text; select the doc's very first line and it drops under the
@@ -552,14 +615,6 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
 - [ ] (arcterm) **No white flash switching between HTML files.** Lint and the typecheck only. Open two dark HTML
   pages as tabs in the File pane (or Code), switch back and forth: the pane stays dark until the page draws, a page
   with no background still shows on white, and a kept scroll position still comes back.
-
-- [ ] (arcterm) **Session search on your real transcripts.** The three `session-search-*` scenarios answer the search
-  from a mock; nothing has run `SearchSessions` over real transcripts in the app. Agent → Conversation History → type a
-  word you remember from an old Claude conversation → "N results" (with "· indexing…" the first time, clearing on its
-  own within seconds), each card with the word marked in its snippet; click one → it opens with the find bar at the
-  hit, Enter / Shift+Enter step through the matches, Esc closes the bar. New agent → Claude → `/` or the Session
-  column's magnifier → the same word lists title and "Matched by content" rows. Note how long the first search takes.
-  `conversationhistory.tsx`, `launcherresumelist.tsx`, `sessionsdetail.tsx`; commits 4b9814411, c7fdf4883, 104a440a8.
 - [ ] (arcterm) **A refused Stop says why: on a dev server's rail row, and in a toast from an app's menu.** The
   `rail-servers` scenario fails at its first step on main too, so the row's new error line was never drawn. Run a
   server as admin (an elevated shell: `npx http-server -p 8099`), let an agent in a normal arcterm list it in its rail,
@@ -581,7 +636,40 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
 - [ ] (arcterm) **A remote terminal never reads as in a removed folder.** With an SSH connection, open a remote
   terminal in `/tmp/x` and a local Git Bash one in `/tmp/x` too, then delete the local folder → only the local
   terminal shows the folder-gone card. Commit: fix(servers) remote terminals never read as in a gone folder
+- [ ] (arcterm) Focus read's step buttons and per-agent toggle (`chatpane.tsx` FocusReadSteps, `chatfocusreadstore.ts`):
+  with focus read on, the K / J / Q column under the toggle sits clear of the pinned prompt card and reads well in a
+  light and a dark theme; holding ↓ steps block after block with no judder; turning it on for one agent in a 2x2 split
+  leaves the other cells undimmed, and it is still on for that agent after a restart.
+- [ ] (arcterm) Focus read skips what is not text (`chatfocusreadview.ts` `data-fr-skip`): on a real agent's turn with
+  tool steps and a command card between paragraphs, `J` / `K` and a stopped scroll pass over them to the next paragraph,
+  they stay at 32% and are never lit, and the paragraphs either side of the lit one sit at 50%. The `chat-focus-read`
+  fixture has no tool steps, so the scenario checks only the 50% neighbours; the one pill (toggle over K / J, a hairline,
+  Q) also reads well in a light theme.
+- [ ] (arcterm) A folded message of yours (`narrationtimeline.tsx` PromptText): in Chat, folded, a click anywhere on the
+  bubble (its padding too) opens it, and its hover Copy / Fork row under it still works; open, a click on its text does
+  nothing and the text selects, and only Show less folds it. A bubble with a pasted block card: the card still opens on
+  its own while the text above it is folded. Same in Conversation History's transcript and a pending bubble. No scenario
+  opens a folded bubble in History or a pending one (`chat-bubble-fold` covers Chat).
+- [ ] (arcterm) Sending to an idle agent in Chat (`chatlive.ts` liveTurn, `chatpane.tsx`): when the last turn ended
+  with an "Edited N files" card, the card stays where it is from the send until your message lands and the new turn
+  starts (it used to fold away at the send and spring open again up to 3 s later). A message queued while the agent
+  works leaves the working turn's card held back as before. Checked only by unit tests.
+- [ ] (arcterm) Chat around a send (`chatpending.ts` sending, `chatpane.tsx` WorkingLine, `chatconversation.tsx`
+  ownArrives): send to a Claude agent that is busy redrawing (just after a turn ends, or while it starts) and the
+  bubble stays until your message lands, never blinking out at 5 s; as the turn starts the working line opens under
+  the bubble and as it ends folds away, with the conversation gliding rather than jumping; a message typed straight in
+  the terminal opens into Chat on the spring. Measured in headless Chrome with a fixture agent (a scripted send,
+  live reply and transcript), not yet with a real Claude agent in the app.
 
+## 2026-11-17
+
+- [ ] (arcterm) **Session search on your real transcripts.** The three `session-search-*` scenarios answer the search
+  from a mock; nothing has run `SearchSessions` over real transcripts in the app. Agent → Conversation History → type a
+  word you remember from an old Claude conversation → "N results" (with "· indexing…" the first time, clearing on its
+  own within seconds), each card with the word marked in its snippet; click one → it opens with the find bar at the
+  hit, Enter / Shift+Enter step through the matches, Esc closes the bar. New agent → Claude → `/` or the Session
+  column's magnifier → the same word lists title and "Matched by content" rows. Note how long the first search takes.
+  `conversationhistory.tsx`, `launcherresumelist.tsx`, `sessionsdetail.tsx`; commits 4b9814411, c7fdf4883, 104a440a8.
 - [ ] (arcterm) **Closing Sidecar frees its two window icons; a reopen still draws the badge.** Windows only; the code is
   unit-tested but was never run in an app. Open Task Manager → Details, add the "GDI objects" and "USER objects"
   columns, then open and close Sidecar (Ctrl+P → Open Sidecar) ten times → arcterm's counts come back to the same
@@ -633,7 +721,6 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
   task does not stall in the first minute after the reopen. (3) Restart arcterm between the worker's complete and the
   fail (no context figure survives a restart) → the timeline shows `t-N: fresh worker: the worker reported no context
   size` and a new worker tab starts as before.
-
 - [ ] (arcterm) **Sidecar keeps asks, answers the ask you saw, and fills a high-scale screen.** Vitest and the
   typecheck only; no dev app ran (branch `fix/sidecar-council`). (1) Set the Cockpit's project filter to one project,
   or send an agent to Background, and have that agent ask a 2-option question: it shows on Sidecar's orbit (P) and in
@@ -652,7 +739,6 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
   `⏵⏵ auto mode on`. Press Shift+Tab in the terminal a few times: the mode chip under the chat box follows each mode.
   Have it run a Bash command that needs permission: the dialog card's text holds no `╌╌╌` lines
   (`tuiscreen.ts` `splitRules`, `tuiPromptUp`).
-
 - [ ] (arcterm) **Agents start without a PowerShell around them (Windows): a new agent and a run worker.** Resumed
   Claude agents are checked (build ee9ef3a4c: four `claude.exe` straight under wavesrv, hooks reporting, `wsh` found).
   Still untried: launch a new Claude agent and start a run worker; each works as before and has no `powershell.exe`
@@ -670,7 +756,6 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
   `brainstorm: …` bubbles. (2) Open another one, type "off brainstorm, bàn tiếp" to the agent. It runs
   `wsh brainstorm close <path>`, prints "Closed the brainstorm …", the same three things go, and a toast names it.
   (3) Resume it from the palette (Brainstorms ›) and the pane comes back on its open question.
-
 - [ ] (arcterm) **A council's Summary uses the Discussion's `canSummarize`.** Vitest and typecheck only. Open a council
   whose only idea is a held draft (Summary, no summary yet) → no Summarize button; one with a sent idea that is done,
   stopped or failed in round 1 → Summarize shows, and Summarize again is on once there is a summary. Commit: the
@@ -684,6 +769,101 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
   after `wsh install-agent-hooks` (or a launch), in a Claude session in arcterm run a Bash command, edit a file in the
   session's repo, send `@<tab id> hi` to another agent and start a subagent → each behaves as before, with no `arc:`
   hook failure line in the transcript. Commit: the `chore(arc-mod): .catch …` one.
+- [ ] (arcterm) **Claude Code's folder trust prompt shows in Chat as a card.** Unit tests on a screen written from a
+  screenshot only, no dev app ran (commit "fix(chat): Claude Code's folder trust prompt shows as a card"). Resume a Claude
+  agent in a folder Claude Code does not trust yet (another drive-letter case of a trusted one did it on 2026-11-17):
+  Chat shows a yellow card titled `Accessing workspace:` with its text and two buttons, `No, exit` and `Yes, I trust
+  this folder` (no numbers), the second one highlighted. Yes picks it (the terminal moves on past the prompt) and the
+  card goes. If no card shows, the prompt has no solid rule over it on the real screen: capture its PTY output for
+  `tuiscreen.fixtures.json`. With wavesrv from "fix(agents): an agent on Claude Code's folder trust prompt reads
+  asking" (Go tests, and the scanner on that agent's real stored output, only), the agent also reads asking in the
+  tree and counts in Needs you while the prompt waits, even unopened (`waveapp.log`: "shows Claude Code's folder trust
+  prompt; reading it asking"); after Yes it reads idle, or working on the restore's nudge, and after No, exit idle.
+- [ ] (arcterm) **Opening a run from an agent shows it in the Agent tree, not Jarvis.** Unit tests (`runTreeAgent`) and
+  typecheck only, no dev app ran (commit "fix(agents): a run opened from an agent shows in the Agent tree"). With a
+  brainstorm whose approved run is under way: click its run line in the tree (`working · …`, title Show the run in the
+  tree), its pane's Open run, and Open run on Chat's run card → each stays on Agent, selects the run's lead (or, with no
+  lead tab, the run's agent that asks or works) and unfolds the run's lanes under it. With the lead closed and no task
+  at work, each opens the run in Jarvis as before.
+- [ ] (arcterm) **A canvas board's screenshot button shows a camera.** Typecheck only, no dev app ran (commit
+  "fix(canvas): the board's screenshot button shows a camera"). Open an agent's Canvas: the board's top-right button
+  reads a camera icon then `Copy`; a click turns it into ✓ `Copied` and puts the board's picture on the clipboard.
+- [ ] (arcterm) **An unclosed tag in a Markdown Preview shows as text; a highlight around a bare link closes.** Unit
+  tests only, no dev app ran (commit "fix(markdown): an unclosed tag in a Preview shows as text; a mark closes on the
+  == a bare URL swallowed"). Open `harnesspov/harnesspov/agent/prompts/system.md` (mit-thesis) in Preview: line 4
+  reads `"script":"<a complete Node CommonJS script>"}` as written and nothing after it is blue. A `<details>` with
+  its `</details>` in a README still folds. In Chat, an answer with `==… http://localhost:4321/.==` draws the sentence
+  highlighted with no `==` showing, the link ending at `4321/`.
+- [ ] (arcterm) Agent header buttons: open an agent → the header has More (⋯), Float and Close, no Split or Fullscreen
+  button; ⋯ lists Split (its submenu) and Fullscreen terminal. Settings → Appearance → Agent header: turn Split and
+  Fullscreen on → both buttons come back and Split leaves ⋯; turn Float off → its button goes and ⋯ lists Float window.
+  The `agent-header-redesign` scenario's step 6c covers it (`headerbuttons.ts`).
+- [ ] (arcterm) Canvas quick pick with a comma: have an agent draw A-/B-/C- option boards and end its reply with
+  bullets like "**A, chip trầm** (…)" and a question → the quick pick card shows rows A, B, C instead of only the
+  "A đi" chips. Unit-tested only (`chatcanvaspick.ts` `namedLetters`), not tried in the app.
+- [ ] (arcterm) A brainstorm's cards after its run: Approve a brainstorm and let the run finish, then, without
+  restarting arcterm, keep talking until the agent sets `run` back to null and asks again (a question or a builder
+  check) → Chat shows that card. Before, Approve's in-memory start mark brought the finished run back and its folded
+  card hid every later one. Unit-tested only (`brainstormpoller.ts` `settleBrainstorm`), not tried in the app.
+- [ ] (arcterm) Heavy jobs popover from a tree tag: with a job queued, click an agent's `#1` (or a run's `×2`) in the
+  Agent tree → the popover opens with that agent's (or run's) job rows drawn selected and scrolled into view; the app
+  bar's Jobs chip opens it with none selected. Unit-tested only (`jobqueuestore.ts` `toggleJobQueue`), not tried in the app.
+- [ ] (arcterm) No keycaps beside the view switch and Mark done: open an agent with a canvas → no Alt+C keycap in the
+  header, Alt+C still walks the views; an agent on an initiative chunk → the band's and the ◇ popover's Mark done show
+  no `m`, and `m` still marks it done. Typecheck only, not tried in the app.
+- [ ] (arcterm) Chat's tool box in the real app: in a live Claude agent's Chat, open a finished stretch → one bordered
+  box, a plain row per tool with past-tense verbs and no icons; open a Bash row → `$ command`, its output, Open full
+  view; click an edited file's name → the File tab opens it; a stretch with a failed Edit → "Edit failed" in red on its
+  row, the folded line stays muted; no file chips under a stretch. Checked only in the headless-Chrome build
+  (`agent-chat` CDP), not in WebView2, and not in a light theme (`chatstepsview.tsx`).
+- [ ] (arcterm) Checks after a brainstorm's run starts: brainstorm with a builder check (and a judge), Approve, and let
+  the run start → the brainstorming agent's row loses its checks chip (`> ✓`) and the check rows under it; a check that
+  still asks, or the one selected, stays. Unit-tested only (`agenttreemodel.ts` `checksSuperseded`), not tried in the app.
+- [ ] (arcterm) A `wsh detach` server has an owner: in an agent, `wsh detach npm run dev` in a repo with a dev server →
+  the footer's Servers names `claude · <agent>` on its row instead of "no owner", and Log opens the `arc-detach` log;
+  the agent's tree row shows a green server mark with `:<port>`, and folding its project's folder shows the port on the
+  folder. From a plain terminal, the row reads `terminal · <name>` and Log opens the file, not the pane. Close the agent
+  → the row keeps its name. Unit-tested only (`pkg/devservers/detached.go`, `treeservers.ts`), not tried in the app.
+- [ ] (arcterm) The Agent sidebar is 280px with RAM and Tokens on and Age off (`agentTreeWidth`, `rowfields.ts`): in
+  Settings → Appearance → Agent sidebar turn Age off; the sidebar stays 280px and a lead's second line reads its words
+  (`Working · 0/7`), not `W… · 0/7`. Turn Tokens off too and it narrows to 248px.
+- [ ] (arcterm) The agent header drops its button words when short of room (`nextHeaderLabels`, `headermodel.ts`):
+  with an agent that has Ship and Close, narrow the window or open a split until the header crowds; Chat, Terminal,
+  Ship and Close become icons, the model and context (`opus 120k`) never draw under the Chat switch, and widening
+  brings the words back without flicker. Hovering Close names the session's tokens.
+- [ ] (arcterm) A relaunched lead stays on its run's row (`isCurrentLead`, `staleLead`, `runlineage.ts` /
+  `agenttreemodel.ts`): with an orchestrator run executing, restart arcterm (or let its lead die so the engine
+  relaunches it); the run's row in the Agent tree is the new lead's, working, and the old lead's sleeping tab has no
+  row of its own. An agent whose brainstorm run was cancelled and queued again reads `plan queued #N` alone, with no
+  `cancelled · run …` beside it.
+- [ ] (arcterm) The Heavy jobs popover keeps its place after Run now (`usePanelPlacement`, `consumerspanel.tsx`): open
+  it from a waiting agent's `≡#1` tag in the Agent tree and press Run now on that job; the tag goes, and the popover
+  stays hanging where it opened, not in the bottom right corner. The same from the app bar's jobs chip.
+- [ ] (arcterm) A server mark keeps two ports (`shortPortsLabel`, `devserversmodel.ts`): an agent or run row in the
+  Agent tree whose background servers listen on four ports reads `:5175 :9230 +2` beside the green server glyph, and
+  hovering it lists all four ports with their commands.
+- [ ] (arcterm) Chat's Working dot crackles (`workingglyph.tsx`, `pulse.ts` noise pulses): with a live agent working,
+  watch the dot for ten seconds: bolts strike at different angles and lengths, the core flickers, the dot and the
+  `Working…` words jolt now and then but stay readable, and it does not feel frantic. The CPU in Task Manager stays
+  where it was with the old dot (the driver is still 12fps).
+- [ ] (arcterm) Chat ref badges with real data: in a live agent's Chat, pick an agent, a run and a council from `@` →
+  each shows as a tinted badge with its name (the box keeps the text `agent:<8>`); send → the bubble's badges open the
+  agent's terminal, the run in Jarvis, the council's discussion; Ctrl-click peeks; a working agent's badge pulses green
+  and an asking one shows an amber ring. A token or an @path typed or pasted into the box becomes a badge or a file pill
+  once a space or punctuation follows it; deleting one leaves one space.
+  Checked only with seeded atoms in the `chat-ref-badges` CDP scenario, not against a real project's runs and councils.
+- [ ] (arcterm) Chat ref badges: a session: of a recent conversation shows its title and age and a click reopens it as an agent; an effort: whose chunks are all done shows its done/total in green
+- [ ] (arcterm) Chat box: a token finished through Telex (the IME's composition end) becomes a badge, and a real clipboard paste of `xem run:<id> agent:<id> ` gives two badges; the scenario types with key events only, so neither path ran in a live app
+- [ ] (arcterm) A calmer turn in Chat with a live agent (`chatsteps.ts`, `chatstepsummary.ts`, `chatturnfiles.tsx`): while
+  it works, a running stretch stays one folded line with its spinner and opens only on a click, and the Working line
+  reads `Working` and its stats with no `· <activity>` tail; a stretch of one described command reads as its
+  description; a finished stretch under 10 s shows no time. When a turn that edited files ends, a card lists them with
+  their +/− lines; a row opens the Diff on that file and See all opens the agent's whole Diff. Checked only in the
+  `agent-chat` CDP scenario with fixture turns.
+- [ ] (arcterm) Focus read in Chat (`chatfocusreadview.ts`): with a real wheel and a trackpad, a stopped scroll settles the nearest block onto the line in one short glide and never fights an ongoing fling; `Space` / `Shift+Space` step like `j` / `k`; with reduced motion the step jumps and the dimming has no fade; while a live agent writes a reply and you sit at the bottom nothing is dimmed, and scrolling up brings the dimming back; `j` / `q` typed with Telex on act as keys in the conversation. The `chat-focus-read` scenario drives keys and `scrollTop` only
+
+## 2026-11-16
+
 - [ ] (arcterm) **The Token burn gate gathers parallel spawns on `$.clock.sleep`.** Vitest and the mod typecheck only.
   The gate's gather wait used `setTimeout`, which a mod's declared environment does not have; whether it was missing at
   run time was never seen. After `wsh install-agent-hooks` (or a launch), have a Claude session in arcterm start 3
@@ -788,31 +968,6 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
   bubble leaves the conversation. A plain permission prompt still shows only the permission card. With an MCP form or
   another unnumbered screen up while the agent reads waiting, Chat shows "Waiting on you in the terminal" with the foot
   of the screen in mono; it never shows while Claude Code's prompt and mode line are up.
-- [ ] (arcterm) **Claude Code's folder trust prompt shows in Chat as a card.** Unit tests on a screen written from a
-  screenshot only, no dev app ran (commit "fix(chat): Claude Code's folder trust prompt shows as a card"). Resume a Claude
-  agent in a folder Claude Code does not trust yet (another drive-letter case of a trusted one did it on 2026-11-17):
-  Chat shows a yellow card titled `Accessing workspace:` with its text and two buttons, `No, exit` and `Yes, I trust
-  this folder` (no numbers), the second one highlighted. Yes picks it (the terminal moves on past the prompt) and the
-  card goes. If no card shows, the prompt has no solid rule over it on the real screen: capture its PTY output for
-  `tuiscreen.fixtures.json`. With wavesrv from "fix(agents): an agent on Claude Code's folder trust prompt reads
-  asking" (Go tests, and the scanner on that agent's real stored output, only), the agent also reads asking in the
-  tree and counts in Needs you while the prompt waits, even unopened (`waveapp.log`: "shows Claude Code's folder trust
-  prompt; reading it asking"); after Yes it reads idle, or working on the restore's nudge, and after No, exit idle.
-- [ ] (arcterm) **Opening a run from an agent shows it in the Agent tree, not Jarvis.** Unit tests (`runTreeAgent`) and
-  typecheck only, no dev app ran (commit "fix(agents): a run opened from an agent shows in the Agent tree"). With a
-  brainstorm whose approved run is under way: click its run line in the tree (`working · …`, title Show the run in the
-  tree), its pane's Open run, and Open run on Chat's run card → each stays on Agent, selects the run's lead (or, with no
-  lead tab, the run's agent that asks or works) and unfolds the run's lanes under it. With the lead closed and no task
-  at work, each opens the run in Jarvis as before.
-- [ ] (arcterm) **A canvas board's screenshot button shows a camera.** Typecheck only, no dev app ran (commit
-  "fix(canvas): the board's screenshot button shows a camera"). Open an agent's Canvas: the board's top-right button
-  reads a camera icon then `Copy`; a click turns it into ✓ `Copied` and puts the board's picture on the clipboard.
-- [ ] (arcterm) **An unclosed tag in a Markdown Preview shows as text; a highlight around a bare link closes.** Unit
-  tests only, no dev app ran (commit "fix(markdown): an unclosed tag in a Preview shows as text; a mark closes on the
-  == a bare URL swallowed"). Open `harnesspov/harnesspov/agent/prompts/system.md` (mit-thesis) in Preview: line 4
-  reads `"script":"<a complete Node CommonJS script>"}` as written and nothing after it is blue. A `<details>` with
-  its `</details>` in a README still folds. In Chat, an answer with `==… http://localhost:4321/.==` draws the sentence
-  highlighted with no `==` showing, the link ending at `4321/`.
 - [ ] (arcterm) **A council an agent ran ends as a card at the end of Chat, its summary in a council panel.** The CDP
   scenario `chat-council` covers fixture transcripts only (commit "feat(chat): an ended council stays a card at the end,
   its summary in a council panel", 2026-11-16). Ask a Claude agent for a council (/arc:council) and let it wait in the
@@ -926,7 +1081,6 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
   With a harness picked in the launcher, `task verify:ui -- jarvis-peek` → afterwards the launcher still shows that
   harness and model. On a Mac, the launcher's harness menu with many harnesses scrolls inside its panel and is not
   clipped. `scenarios.mjs` `jarvis-peek` teardown, `harnesspicker.tsx`.
-
 - [ ] (arcterm) **Jarvis's peek has no pin while Jarvis is the hologram.** Typechecked only. Settings → Jarvis & Office →
   Form: Hologram, open the peek → its header reads `Nothing waiting on you`, hide, Full view, × with no pin. Switch to
   Character (Sprout) → the pin is back; fold into Sprout → the folded peek keeps it. `petpeek.tsx` `hologramShown`.
@@ -937,14 +1091,12 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
   Enter pick; Escape closes only the list, not the dialog. Pick another, Save → the sheet shows the new parent. New
   initiative → the field reads None and the list works the same. Commit: fix(jarvis) pick an initiative's parent from
   a list
-
 - [ ] (arcterm) **Settings → Jarvis & Office → Form shows only the picked form's rows.** Unit test and typecheck only;
   no dev app was running. Shows as reads Hologram | Character, Hologram first. On Hologram the card holds Shows as and
   Hologram size, and no Character or Vietnam's colours; switch to Character → Hologram size goes, Character and
   Vietnam's colours appear under it. On Hologram, search "flag" → the card shows Vietnam's colours (not an empty card).
   Hover the fold button (app bar −, and the float bar's on a Mac) → "Fold into Jarvis" on Hologram, "Fold into Minion"
   on Character with Minion. Commit: fix(settings) Jarvis's form is Hologram or Character
-
 - [ ] (arcterm) **Full ↔ Float switch on a Mac and in a release build.** Measured only in the Windows dev app over CDP
   (540–710 ms per switch, was 1.1–1.3 s). On a Mac: `Shift+F` in and out a few times → no flicker of the shadow or the
   traffic lights mid-fade, the float lands in its place with its shadow, and the hologram powers on in the ledge slot
@@ -953,25 +1105,6 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
   while it changes frame, checked over Win32 with the production bundle in a debug host), the taskbar button stays,
   and typing goes to the terminal straight after the switch (the cloak must not take the focus).
   Windows release: the switch feels well under a second. Commit: fix(float) Full ↔ Float switches in half the time
-- [ ] (arcterm) **Sidecar's first open on one screen, or on a screen of another scale.** Two screens of one scale
-  held on 1.1.3 `38f41b95b` (2026-11-15): Open Sidecar came up maximized on the other screen as `arcterm Sidecar`, and
-  un-maximizing left 1280×800 centred there. Still unseen: with one screen it opens centred (1280×800, never past 90% of
-  the screen), not maximized; and on a screen of a different scale from the main window's the size is still right.
-  Commit: feat(sidecar) the Sidecar window from the Tauri host
-- [ ] (arcterm) **Sidecar closes when the main window is destroyed, and stays when it is only hidden.** Tray icon off
-  (Settings → `app:tray`): open Sidecar, close the main window → Sidecar closes with it and arcterm quits. Tray icon
-  on: close the main window → it hides to the icon and Sidecar stays open; Quit from the icon closes both. Commit: same.
-- [ ] (arcterm) **Sidecar reopens as last time.** Unit tests of the state and the restore decision only: no scenario can
-  relaunch the app. With two screens, open Sidecar, drag or resize it, press F11 (or its full-screen button), then quit
-  arcterm (tray icon → Quit, and once by closing the main window with the tray icon off) → the next launch reopens
-  Sidecar on the same screen, at the same frame, full screen, without taking the focus from the main window. Close
-  Sidecar with its own close button, quit, launch → it stays shut. Quit with Sidecar maximized, unplug that screen,
-  launch → Sidecar comes up maximized on the main window's screen. Commit: feat(sidecar) Sidecar reopens as last time
-- [ ] (arcterm) **Sidecar will not drag below 340×440.** The `sidecar-wall` scenario cannot check it: on Windows the
-  host's `min_inner_size` clamps a person dragging an edge, not a programmatic `set_size` (a live run set 200×200 and read
-  200×207 back), so step 2 only checks the page's own window calls. Open Sidecar, drag its bottom-right corner toward the
-  top-left → it stops at 340×440 and the wall still draws whole tiles (no tile under 300 px wide). Commit: test(sidecar)
-  the sidecar-wall CDP scenario
 - [ ] (arcterm) **Sidecar's RAM against the 100 MB budget, on a release build.** The run could not take it: it needs
   `task tauri:build` and a day on screen. Install the build, run 12 agents, open Sidecar and leave it a day with the
   strain band showing for part of it (a heavy build, or one `yes > /dev/null` per core), then read the private working set of
@@ -1000,12 +1133,39 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
   minutes → the band's rows are the CPU's, the agent that runs the build first, its busiest process named and `Stop`
   ending it; with the CPU calm the band clears and wavesrv's own CPU stays near 0 (the sampler runs only while a CPU
   band shows). Commit: feat(sidecar) CPU per agent: resmon on Windows, a new sampler on macOS
+- [ ] (arcterm) Tooltips show at once, long ones too: hover the RAM figure on a run row in the Agent tree (its title
+  runs past 60 characters) → the chip shows with no wait, and moving the pointer off drops it at once. Vitest + eslint
+  only, not tried in the app (`titletiphost.tsx`, `titletip.ts` `tipDelay` removed).
+- [ ] (arcterm) A run worker's header stays on one clean line: open a worker whose lead's name is a long goal → the
+  link back to the lead (↰ icon) is cut with an ellipsis at about 220px, the project name stays readable, and the model
+  and context figure stop short of the Chat | Terminal switch; hovering the link shows the whole name. Vitest + eslint
+  only, not tried in the app (`agentheader.tsx` `RunLinkItem`).
 
+## 2026-11-15
+
+- [ ] (arcterm) **Sidecar's first open on one screen, or on a screen of another scale.** Two screens of one scale
+  held on 1.1.3 `38f41b95b` (2026-11-15): Open Sidecar came up maximized on the other screen as `arcterm Sidecar`, and
+  un-maximizing left 1280×800 centred there. Still unseen: with one screen it opens centred (1280×800, never past 90% of
+  the screen), not maximized; and on a screen of a different scale from the main window's the size is still right.
+  Commit: feat(sidecar) the Sidecar window from the Tauri host
+- [ ] (arcterm) **Sidecar closes when the main window is destroyed, and stays when it is only hidden.** Tray icon off
+  (Settings → `app:tray`): open Sidecar, close the main window → Sidecar closes with it and arcterm quits. Tray icon
+  on: close the main window → it hides to the icon and Sidecar stays open; Quit from the icon closes both. Commit: same.
+- [ ] (arcterm) **Sidecar reopens as last time.** Unit tests of the state and the restore decision only: no scenario can
+  relaunch the app. With two screens, open Sidecar, drag or resize it, press F11 (or its full-screen button), then quit
+  arcterm (tray icon → Quit, and once by closing the main window with the tray icon off) → the next launch reopens
+  Sidecar on the same screen, at the same frame, full screen, without taking the focus from the main window. Close
+  Sidecar with its own close button, quit, launch → it stays shut. Quit with Sidecar maximized, unplug that screen,
+  launch → Sidecar comes up maximized on the main window's screen. Commit: feat(sidecar) Sidecar reopens as last time
+- [ ] (arcterm) **Sidecar will not drag below 340×440.** The `sidecar-wall` scenario cannot check it: on Windows the
+  host's `min_inner_size` clamps a person dragging an edge, not a programmatic `set_size` (a live run set 200×200 and read
+  200×207 back), so step 2 only checks the page's own window calls. Open Sidecar, drag its bottom-right corner toward the
+  top-left → it stops at 340×440 and the wall still draws whole tiles (no tile under 300 px wide). Commit: test(sidecar)
+  the sidecar-wall CDP scenario
 - [ ] (arcterm) **The version's tooltip, About and a dirty dev build name the commit.** The footer of installed 1.1.3
   read `v1.1.3 · 38f41b95b`, the installer's commit, on 2026-11-15. Still unseen: its tooltip adds "commit <sha>",
   Settings → About shows the same under Commit, and `task dev` with an uncommitted edit reads `· <sha>-dirty`.
   Commit: feat(cockpit) "the version names the commit the build was made from".
-
 - [ ] (arcterm) **An agent's run counts leave cancelled runs out.** Unit tests and the typecheck only; no dev app ran.
   From an agent, `wsh runs start` two runs, cancel one → that agent's row in the Agent sidebar shows the live run's
   chip (its progress such as `1/3`, or no words while it plans), not "2 runs", and its header reads "↳ <the live
@@ -1031,7 +1191,6 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
   `wsh effort show <effort>` prints "(written at <sha>, 1 commit ago)" beside it before, "the code has not moved
   since" after. Work on this chunk → the agent's prompt asks it to check the chunk still holds first. Chunks made
   before this change show no line. Commit: feat(initiatives) a chunk keeps the commit it was written at
-
 - [ ] (arcterm) **↑ in Chat's empty box falls through to history when the take-back finds nothing.** Only the typecheck
   covers it. While Claude works, send a message from Chat so it shows as Queued, wait until Claude takes it but its
   bubble still stands, then press ↑ in the empty box → after about 2 s the last message sent comes back into the box
@@ -1041,7 +1200,6 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
   enough to wrap past the box's max height so it scrolls, with a suggestion showing → the faint suggestion sits right
   after the last character, on the same wrapped lines as the text (the layer is now padded by the scrollbar's width).
   Same commit.
-
 - [ ] (arcterm) **Sixel images draw in a terminal of the installed app.** The dev app applies no CSP, so only a
   packaged build shows it. In a terminal run
   `printf 'Pq#0;2;0;0;0#1;2;100;100;0#2;2;0;100;0#1~~@@vv@@~~@@~~$#2??}}GG}}??}}??-#1!14@\'` → a small
@@ -1077,6 +1235,9 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
   dropped a real `db_radarreport` and no saved Startup surface read `radar`. Install the build over an arcterm that has
   Radar reports and Settings → General → Startup surface set to Radar → it boots on Cockpit, the rail has no Radar,
   `Ctrl+G` `r` does nothing, and `waveapp.log` shows no migration error. Commit: refactor: Retire Radar (run c2a6aebb)
+
+## 2026-11-14
+
 - [ ] (arcterm) **Frosted overlays on a Mac, and the folded Sprout window.** The Final's frost scenarios ran only in
   WebView2 (Windows). On a Mac build, open the command palette, a context menu with a submenu, a Chat footer menu and
   a toast over a working agent → each panel blurs what is behind it (the palette over its dimmed scrim, a submenu
@@ -1131,7 +1292,6 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
   was sent. (5) Copy a routed message's `Router failed` row → the pasted text reads `Router failed UX`, not
   `Router failedUX` (`council-routing`). Commit: fix(council) Needs you strip, palette learned rule, folded-rail dot,
   summary Retry hold
-
 - [ ] (arcterm) Council and Doc review cards in Chat, with a real agent: in a Claude agent's Chat have it start a
   council (`/arc:council`, or ask for one) → while it runs a Council card sits at the end of the conversation (the
   question, a chip per expert, the step, the time, the estimate, Stop; Open council opens the room); a second council
@@ -1156,6 +1316,9 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
   box and the bubble leaves the conversation at the same moment, with no Queued bubble after; send it again → it shows
   once and gets its answer. Tried on a Mac in the browser dev app with a real Claude (haiku), not in WebView2. Commit:
   fix(chat) a message Esc takes back leaves the conversation
+
+## 2026-11-13
+
 - [ ] (arcterm) A pasted jobslot wrapper queues once: after a build with the new `wsh` and an arcterm restart, have a
   Claude agent run `'<home>/.arc/bin/wsh' jobslot --hold-parent -- 'task check:ts'; [ $? -ne 75 ] || exit 75` then a
   newline and `task check:ts`, in the foreground → the Jobs popover shows one `task check:ts`, running, not a second
@@ -1183,167 +1346,3 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
   session `.jsonl` away) and Resume from the palette → it reports why, and the Agent tree gains no extra terminal for
   the run; put the file back and Resume again → one new tab opens and the worker continues. Unit-tested only. Commit:
   5019e90c8 (`interrupted.go` `resumeInNewTab`, `swapPhaseWorker`).
-- [ ] (arcterm) Tooltips show at once, long ones too: hover the RAM figure on a run row in the Agent tree (its title
-  runs past 60 characters) → the chip shows with no wait, and moving the pointer off drops it at once. Vitest + eslint
-  only, not tried in the app (`titletiphost.tsx`, `titletip.ts` `tipDelay` removed).
-- [ ] (arcterm) A run worker's header stays on one clean line: open a worker whose lead's name is a long goal → the
-  link back to the lead (↰ icon) is cut with an ellipsis at about 220px, the project name stays readable, and the model
-  and context figure stop short of the Chat | Terminal switch; hovering the link shows the whole name. Vitest + eslint
-  only, not tried in the app (`agentheader.tsx` `RunLinkItem`).
-- [ ] (arcterm) Agent header buttons: open an agent → the header has More (⋯), Float and Close, no Split or Fullscreen
-  button; ⋯ lists Split (its submenu) and Fullscreen terminal. Settings → Appearance → Agent header: turn Split and
-  Fullscreen on → both buttons come back and Split leaves ⋯; turn Float off → its button goes and ⋯ lists Float window.
-  The `agent-header-redesign` scenario's step 6c covers it (`headerbuttons.ts`).
-- [ ] (arcterm) Canvas quick pick with a comma: have an agent draw A-/B-/C- option boards and end its reply with
-  bullets like "**A, chip trầm** (…)" and a question → the quick pick card shows rows A, B, C instead of only the
-  "A đi" chips. Unit-tested only (`chatcanvaspick.ts` `namedLetters`), not tried in the app.
-- [ ] (arcterm) A brainstorm's cards after its run: Approve a brainstorm and let the run finish, then, without
-  restarting arcterm, keep talking until the agent sets `run` back to null and asks again (a question or a builder
-  check) → Chat shows that card. Before, Approve's in-memory start mark brought the finished run back and its folded
-  card hid every later one. Unit-tested only (`brainstormpoller.ts` `settleBrainstorm`), not tried in the app.
-- [ ] (arcterm) Heavy jobs popover from a tree tag: with a job queued, click an agent's `#1` (or a run's `×2`) in the
-  Agent tree → the popover opens with that agent's (or run's) job rows drawn selected and scrolled into view; the app
-  bar's Jobs chip opens it with none selected. Unit-tested only (`jobqueuestore.ts` `toggleJobQueue`), not tried in the app.
-- [ ] (arcterm) No keycaps beside the view switch and Mark done: open an agent with a canvas → no Alt+C keycap in the
-  header, Alt+C still walks the views; an agent on an initiative chunk → the band's and the ◇ popover's Mark done show
-  no `m`, and `m` still marks it done. Typecheck only, not tried in the app.
-- [ ] (arcterm) Chat's tool box in the real app: in a live Claude agent's Chat, open a finished stretch → one bordered
-  box, a plain row per tool with past-tense verbs and no icons; open a Bash row → `$ command`, its output, Open full
-  view; click an edited file's name → the File tab opens it; a stretch with a failed Edit → "Edit failed" in red on its
-  row, the folded line stays muted; no file chips under a stretch. Checked only in the headless-Chrome build
-  (`agent-chat` CDP), not in WebView2, and not in a light theme (`chatstepsview.tsx`).
-- [ ] (arcterm) Checks after a brainstorm's run starts: brainstorm with a builder check (and a judge), Approve, and let
-  the run start → the brainstorming agent's row loses its checks chip (`> ✓`) and the check rows under it; a check that
-  still asks, or the one selected, stays. Unit-tested only (`agenttreemodel.ts` `checksSuperseded`), not tried in the app.
-- [ ] (arcterm) A `wsh detach` server has an owner: in an agent, `wsh detach npm run dev` in a repo with a dev server →
-  the footer's Servers names `claude · <agent>` on its row instead of "no owner", and Log opens the `arc-detach` log;
-  the agent's tree row shows a green server mark with `:<port>`, and folding its project's folder shows the port on the
-  folder. From a plain terminal, the row reads `terminal · <name>` and Log opens the file, not the pane. Close the agent
-  → the row keeps its name. Unit-tested only (`pkg/devservers/detached.go`, `treeservers.ts`), not tried in the app.
-- [ ] (arcterm) The Agent sidebar is 280px with RAM and Tokens on and Age off (`agentTreeWidth`, `rowfields.ts`): in
-  Settings → Appearance → Agent sidebar turn Age off; the sidebar stays 280px and a lead's second line reads its words
-  (`Working · 0/7`), not `W… · 0/7`. Turn Tokens off too and it narrows to 248px.
-- [ ] (arcterm) The agent header drops its button words when short of room (`nextHeaderLabels`, `headermodel.ts`):
-  with an agent that has Ship and Close, narrow the window or open a split until the header crowds; Chat, Terminal,
-  Ship and Close become icons, the model and context (`opus 120k`) never draw under the Chat switch, and widening
-  brings the words back without flicker. Hovering Close names the session's tokens.
-- [ ] (arcterm) A relaunched lead stays on its run's row (`isCurrentLead`, `staleLead`, `runlineage.ts` /
-  `agenttreemodel.ts`): with an orchestrator run executing, restart arcterm (or let its lead die so the engine
-  relaunches it); the run's row in the Agent tree is the new lead's, working, and the old lead's sleeping tab has no
-  row of its own. An agent whose brainstorm run was cancelled and queued again reads `plan queued #N` alone, with no
-  `cancelled · run …` beside it.
-- [ ] (arcterm) The Heavy jobs popover keeps its place after Run now (`usePanelPlacement`, `consumerspanel.tsx`): open
-  it from a waiting agent's `≡#1` tag in the Agent tree and press Run now on that job; the tag goes, and the popover
-  stays hanging where it opened, not in the bottom right corner. The same from the app bar's jobs chip.
-- [ ] (arcterm) A server mark keeps two ports (`shortPortsLabel`, `devserversmodel.ts`): an agent or run row in the
-  Agent tree whose background servers listen on four ports reads `:5175 :9230 +2` beside the green server glyph, and
-  hovering it lists all four ports with their commands.
-- [ ] (arcterm) Chat's Working dot crackles (`workingglyph.tsx`, `pulse.ts` noise pulses): with a live agent working,
-  watch the dot for ten seconds: bolts strike at different angles and lengths, the core flickers, the dot and the
-  `Working…` words jolt now and then but stay readable, and it does not feel frantic. The CPU in Task Manager stays
-  where it was with the old dot (the driver is still 12fps).
-- [ ] (arcterm) Chat ref badges with real data: in a live agent's Chat, pick an agent, a run and a council from `@` →
-  each shows as a tinted badge with its name (the box keeps the text `agent:<8>`); send → the bubble's badges open the
-  agent's terminal, the run in Jarvis, the council's discussion; Ctrl-click peeks; a working agent's badge pulses green
-  and an asking one shows an amber ring. A token or an @path typed or pasted into the box becomes a badge or a file pill
-  once a space or punctuation follows it; deleting one leaves one space.
-  Checked only with seeded atoms in the `chat-ref-badges` CDP scenario, not against a real project's runs and councils.
-- [ ] (arcterm) Chat ref badges: a session: of a recent conversation shows its title and age and a click reopens it as an agent; an effort: whose chunks are all done shows its done/total in green
-- [ ] (arcterm) Chat box: a token finished through Telex (the IME's composition end) becomes a badge, and a real clipboard paste of `xem run:<id> agent:<id> ` gives two badges; the scenario types with key events only, so neither path ran in a live app
-- [ ] (arcterm) A calmer turn in Chat with a live agent (`chatsteps.ts`, `chatstepsummary.ts`, `chatturnfiles.tsx`): while
-  it works, a running stretch stays one folded line with its spinner and opens only on a click, and the Working line
-  reads `Working` and its stats with no `· <activity>` tail; a stretch of one described command reads as its
-  description; a finished stretch under 10 s shows no time. When a turn that edited files ends, a card lists them with
-  their +/− lines; a row opens the Diff on that file and See all opens the agent's whole Diff. Checked only in the
-  `agent-chat` CDP scenario with fixture turns.
-- [ ] (arcterm) Focus read in Chat (`chatfocusreadview.ts`): with a real wheel and a trackpad, a stopped scroll settles the nearest block onto the line in one short glide and never fights an ongoing fling; `Space` / `Shift+Space` step like `j` / `k`; with reduced motion the step jumps and the dimming has no fade; while a live agent writes a reply and you sit at the bottom nothing is dimmed, and scrolling up brings the dimming back; `j` / `q` typed with Telex on act as keys in the conversation. The `chat-focus-read` scenario drives keys and `scrollTop` only
-- [ ] (arcterm) Focus read's step buttons and per-agent toggle (`chatpane.tsx` FocusReadSteps, `chatfocusreadstore.ts`):
-  with focus read on, the K / J / Q column under the toggle sits clear of the pinned prompt card and reads well in a
-  light and a dark theme; holding ↓ steps block after block with no judder; turning it on for one agent in a 2x2 split
-  leaves the other cells undimmed, and it is still on for that agent after a restart.
-- [ ] (arcterm) Focus read skips what is not text (`chatfocusreadview.ts` `data-fr-skip`): on a real agent's turn with
-  tool steps and a command card between paragraphs, `J` / `K` and a stopped scroll pass over them to the next paragraph,
-  they stay at 32% and are never lit, and the paragraphs either side of the lit one sit at 50%. The `chat-focus-read`
-  fixture has no tool steps, so the scenario checks only the 50% neighbours; the one pill (toggle over K / J, a hairline,
-  Q) also reads well in a light theme.
-- [ ] (arcterm) A folded message of yours (`narrationtimeline.tsx` PromptText): in Chat, folded, a click anywhere on the
-  bubble (its padding too) opens it, and its hover Copy / Fork row under it still works; open, a click on its text does
-  nothing and the text selects, and only Show less folds it. A bubble with a pasted block card: the card still opens on
-  its own while the text above it is folded. Same in Conversation History's transcript and a pending bubble. No scenario
-  opens a folded bubble in History or a pending one (`chat-bubble-fold` covers Chat).
-- [ ] (arcterm) Sending to an idle agent in Chat (`chatlive.ts` liveTurn, `chatpane.tsx`): when the last turn ended
-  with an "Edited N files" card, the card stays where it is from the send until your message lands and the new turn
-  starts (it used to fold away at the send and spring open again up to 3 s later). A message queued while the agent
-  works leaves the working turn's card held back as before. Checked only by unit tests.
-- [ ] (arcterm) Chat around a send (`chatpending.ts` sending, `chatpane.tsx` WorkingLine, `chatconversation.tsx`
-  ownArrives): send to a Claude agent that is busy redrawing (just after a turn ends, or while it starts) and the
-  bubble stays until your message lands, never blinking out at 5 s; as the turn starts the working line opens under
-  the bubble and as it ends folds away, with the conversation gliding rather than jumping; a message typed straight in
-  the terminal opens into Chat on the spring. Measured in headless Chrome with a fixture agent (a scripted send,
-  live reply and transcript), not yet with a real Claude agent in the app.
-- [ ] (arcterm) A question asked while background subagents work (`agentsviewmodel.ts` liveAsk): in a Claude agent,
-  start two background subagents, then have the agent ask an AskUserQuestion; Chat keeps the question with its choices
-  for as long as it waits (past 10 s, while the subagents run tools), never turning into the "Wants to use
-  AskUserQuestion" card with only Answer in Terminal, and a pick in Chat or in the terminal both answer it.
-- [ ] (arcterm) **The phone page reads Locked while the PC is locked (Windows).** With remote mode on, open the phone
-  page: Computer reads Unlocked. Press Win+L at the desk → within 10 s the phone reads Locked and its Lock button is
-  disabled; unlock at the desk → Unlocked again. Press Lock on the phone → the PC locks and the page reads Locked
-  within about 2 s. `TestPCWindowsReadLocked` only read the unlocked case.
-- [ ] (arcterm) **The installed phone page reloads itself after an update, on a real iPhone.** With this build's page
-  open once (one reload by hand after installing it), install the next build while the PWA stays open on the list:
-  within about 10 s of remote mode coming back the page reloads on its own. With a chat open or text typed into an
-  answer it waits, and reloads once you are back on the list. Only headless Chrome on `cmd/remotepreview -build` has
-  run it.
-- [ ] (arcterm) **The rail says when the agent last compacted** (`railcompactionline.tsx`). In a Claude agent, run
-  `/compact`; within a few seconds the Agent details rail's session block, under the tokens bar, reads
-  `Compacted · <before> → <after> · manual · just now`. Click it: the summary opens in a sheet pinned to the window's
-  right edge, wider than the rail; Esc or ✕ closes it. Chat shows only the thin Compacted line, which opens nothing. A
-  pi agent's compaction shows the line too. Compact once more → the line leads with `×2`. An agent that never
-  compacted shows no line, and a subagent's interior shows none.
-- [ ] (arcterm) **Suggested replies stay with an attachment** (`chatcomposer.tsx`). Once a Claude agent's turn ends with
-  chips above Chat's box, paste an image: the chips stay. Click one: the message sent carries the chip's text and the
-  image, and the box empties of both.
-- [ ] (arcterm) **A paste after a typed ``` closes the block** (`chatmarks.ts` afterOpenFence). In Chat's box type
-  ``` and paste two lines of anything: they land on the lines under the fence, a closing ``` follows, and a word typed
-  on the next line sits outside the code box. One undo leaves the raw paste beside the fence.
-- [ ] (arcterm) **A long run's lifecycle rail folds its repeated rows** (`timelinegroups.ts` fold rows,
-  `timelinerail.tsx`). Open a finished orchestrator run with many tasks (one with a dozen cleanups at its end): the
-  run's end shows one `Cleanup complete ×N · t-1 → t-N` row instead of N rows, and opening it lists each task. A row
-  whose range spans minutes reads `Nov 14 01:19–20`, its title no longer cut to `Veri…`. Pause and resume a run → the
-  rail reads it in words, with who paused it and the RAM it held, not `run-paused`. The `kael1113-timeline` CDP
-  scenario covers the fold; nobody has looked at it in the app.
-- [ ] (arcterm) **A `!` command's output in Chat is in colour** (`chatconversation.tsx` bubble, `commandtext.tsx`
-  CommandOutput, `taskecho.ts`). In a Claude agent's Chat run `! task install --dry` or any `! task <name>` whose
-  Taskfile command spans lines: the `task: [name]` prefix is muted and the command under it in the shell's colours up to
-  the blank line, the output after it plain; `&&` reads `&&`, never `&amp;&amp;`. Run `! git -c color.ui=always status`
-  → its colours show. Copy on the bubble pastes text with no escape codes. Unit-tested only, not tried in the app.
-- [ ] (arcterm) **A committed file's Diff shows its commit** (`filetabdiff.tsx`, `gitinfo.LastChange`). Have a Claude
-  agent edit a file and commit it, then click the file in the turn's Edited files card: the rail's Diff shows the
-  commit's +/− with `Committed in <hash> <subject>` above it, not "No change since the last commit". Edit the file
-  again without committing → Reread: the diff is against HEAD again and the line above it is gone. A file no commit
-  ever changed and that matches HEAD still says "No change since the last commit". Unit-tested on the Go side only.
-- [ ] (arcterm) **Open in Claude Desktop** (`desktoplink.ts`, `sessionsdetail.tsx` DesktopButton,
-  `projecthistory.tsx` menu, `commands.rs` `is_claude_desktop_resume`). Open an ended Claude conversation in Library →
-  Conversations: the external-link icon beside Fork opens Claude Desktop on that conversation in its Code tab (Desktop
-  imports it if it does not hold it yet). A live session and a pi session show no icon. A project's History row menu
-  has the same item. Unit-tested only, not tried in the app.
-- [ ] (arcterm) **Council re-asks an unreadable answer** (`runner.go` `reread`, `prompts.go` `RereadPrompt`). When a
-  seat answers in prose with no JSON block, waveapp.log shows `[council] <id>: <seat>'s reply could not be read …;
-  asking it again`, the seat's avatar reads "Reply unreadable: asking again", and its answer then lands in the thread;
-  one that fails twice shows `- Failed: …` in the report's Run facts. Unit-tested with a fake caller only, not seen
-  with a real model slip.
-- [ ] (arcterm) **Chat file pills show the file type's icon** (`chatfilepill.tsx`, `chateditorpill.tsx`). @-mention an
-  `.html`, a `.ts` and a folder in Chat's message box: each pill shows its Material icon (as in the Code tree), selected
-  or not, and the sent message's pills show the same; the 13 px icon sits centred on the 20 px pill. Typechecked only,
-  not seen in the app.
-- [ ] (arcterm) **A board drawn from PowerShell gets its Chat card, and Vietnamese reads in Nunito**
-  (`transcriptprojection.ts` `isShell`, `boardmodel.ts` `withReadableFont`, `boardconvert.ts` `refitNunitoText`). In a
-  Claude agent on Windows, have it run `wsh board draw` through the PowerShell tool: its turn ends with the board card,
-  and Open splits the board beside Chat. Open the `huong-luan-van` board (Library → Boards): every label is in Nunito,
-  with no mixed glyphs and no line cut off ("tới nơi", "đang cượ…" whole), and the file saved that way. Unit-tested and
-  typechecked only, not seen in the app.
-- [ ] (arcterm) **A board draws bar and line charts** (`pkg/boarddrawer/chart.go`, the `chart` entry in
-  `drawer-prompt.md`). On a board, Ask "add a bar chart: baseline 0.42, LLM 0.61, agent 0.70", then "and a line chart
-  of the same": each lands as one group (frame, bars or a line with dots, zero line, values, labels), the bars to scale,
-  and drags as one. Check that Excalidraw's skeleton conversion keeps the group, the fill and the text size. Go-tested
-  only, not seen in the app.

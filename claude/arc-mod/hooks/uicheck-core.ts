@@ -42,6 +42,7 @@ export function uiCheckReminder(paths: readonly string[], checked: boolean): str
         `[arc ui check] This commit changed UI (${shown.join(", ")}) and this session has not tried a UI change in ` +
         "the running app since its last UI commit. Run its CDP scenario (`task verify:ui -- <name>`) or " +
         "`node scripts/cdp-shot.mjs` on the dev app now if one is running; otherwise add a `- [ ]` line to " +
-        `${HAND_CHECK_FILE} (Waiting on a hand check), and say in your report what was not verified.`
+        `${HAND_CHECK_FILE} (Waiting on a hand check) under today's \`## YYYY-MM-DD\` heading, and say in your ` +
+        "report what was not verified."
     );
 }
