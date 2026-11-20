@@ -57,6 +57,9 @@ and a picture given to a line that is not big.
 - Chat's suggested replies follow what you type: the chips your text matches light up (marks aside, so `dong` finds
   "đóng gói"), the rest fade, and the one your text starts shows its rest in grey in the box, which → or Tab fills in.
   Tab then walks only the matching chips.
+- A brainstorm question in Chat shows its boards up front instead of only a small link at the bottom: when each option
+  has its own board, the option's row carries a Board button that opens it large over Chat; otherwise the boards are a
+  row of buttons above the options.
 
 ### Fixed
 

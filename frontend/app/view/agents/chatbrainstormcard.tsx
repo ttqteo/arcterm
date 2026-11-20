@@ -7,18 +7,22 @@
 // chatbrainstormcheck.tsx and chatbrainstormrun.tsx), and the ✓ rows a finished question or step folds into. What each
 // draws is chatbrainstorm.ts's; the conversation decides where they go (chatconversation.tsx). What the cards share
 // (shell, folds, option rows, the ✓ row) is chatbrainstormparts.tsx. Brainstorm stays its own tab: the question card
-// shows the question, its why, the options, the read and the decisions made so far, and never the pros, cons or boards.
+// shows the question, its why, the options, the read and the decisions made so far, and never the pros and cons. Its
+// boards are chips that open one large over Chat: a Board chip on each option row when board i shows option i, else a
+// row of chips over the options (a link in the footer alone was missed).
 
 import { cn } from "@/util/util";
 import { Check, Lightbulb, PanelsTopLeft } from "lucide-react";
 import { useState } from "react";
 import type { AgentsViewModel } from "./agents";
 import type { AgentVM } from "./agentsviewmodel";
-import { pickedLine, sendPickedLabel, togglePick } from "./brainstormmodel";
+import { openChatBoard } from "./brainstormbandview";
+import { optionLetter, pickedLine, sendPickedLabel, togglePick } from "./brainstormmodel";
 import { sendBrainstorm } from "./brainstormsend";
 import { shownBrainstormFile, type BrainstormState } from "./brainstormstore";
 import { ERROR_LINE, useAction } from "./brainstormui";
 import {
+    boardChipLabel,
     builderAnswerText,
     builderDoneLine,
     builderQuestionHead,
@@ -80,6 +84,23 @@ function SendTicked({
     );
 }
 
+// a board of the asked part, as a chip that opens it large over Chat (the band's board dialog). It stays on once the
+// question is answered or the agent exited: looking at a board sends nothing
+function BoardChip({ agent, name, label, title }: { agent: AgentVM; name: string; label: string; title?: string }) {
+    return (
+        <button
+            type="button"
+            data-chat-bscard-board={name}
+            title={title ?? `Look at ${name}`}
+            onClick={() => openChatBoard(agent.id, name)}
+            className={cn(SMALL_BTN, FOCUS_RING, "text-accent-soft")}
+        >
+            <PanelsTopLeft size={13} strokeWidth={2} aria-hidden />
+            {label}
+        </button>
+    );
+}
+
 function QuestionBox({ agent, q, onPick }: { agent: AgentVM; q: QuestionCard; onPick?: (text: string) => void }) {
     const act = useAction();
     const [picked, setPicked] = useState<number[]>([]);
@@ -120,6 +141,14 @@ function QuestionBox({ agent, q, onPick }: { agent: AgentVM; q: QuestionCard; on
                     {weighingLine(q.weighing)}
                 </div>
             ) : null}
+            {q.boardNames.length > 0 && q.optionBoards == null ? (
+                // boards that do not map one to one onto the options: a row of chips over them
+                <div data-chat-bscard-boardstrip className="flex flex-wrap items-center gap-[6px]">
+                    {q.boardNames.map((name) => (
+                        <BoardChip key={name} agent={agent} name={name} label={boardChipLabel(name)} />
+                    ))}
+                </div>
+            ) : null}
             {q.options.length > 0 ? (
                 <OptionRows
                     options={q.options}
@@ -127,6 +156,20 @@ function QuestionBox({ agent, q, onPick }: { agent: AgentVM; q: QuestionCard; on
                     pickLabel={q.pickLabel}
                     disabled={off}
                     onSend={(t) => void send(t)}
+                    trail={
+                        q.optionBoards != null
+                            ? (i) => (
+                                  <span className="flex flex-none items-center pr-[10px]">
+                                      <BoardChip
+                                          agent={agent}
+                                          name={q.optionBoards![i]}
+                                          label="Board"
+                                          title={`Look at option ${optionLetter(i)}'s board`}
+                                      />
+                                  </span>
+                              )
+                            : undefined
+                    }
                     tick={
                         q.multi
                             ? (i) => (

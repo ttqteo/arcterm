@@ -18,6 +18,7 @@ import {
 import {
     addAnswer,
     answersTopic,
+    boardChipLabel,
     brainstormCard,
     builderAnswerText,
     builderDoneLine,
@@ -728,6 +729,26 @@ describe("brainstormCard: the question", () => {
         expect(stray).toMatchObject({ part: "ghost", boards: 0 });
         const none = pick(brainstormCard(inp({ file: file({ question: { ...QUESTION, part: "" } }) })), "question");
         expect(none.part).toBe("");
+    });
+
+    it("labels a board chip with its file name, the html ending cut", () => {
+        expect(boardChipLabel("calendar-beside.dc.html")).toBe("calendar-beside");
+        expect(boardChipLabel("b.html")).toBe("b");
+        expect(boardChipLabel("plain")).toBe("plain");
+    });
+
+    it("gives each option its board only when the part has as many boards as options", () => {
+        // the fixture's part has 2 boards for 3 options: which board shows which option is a guess
+        const two = pick(brainstormCard(inp()), "question");
+        expect(two.optionBoards).toBeNull();
+        expect(two.boardNames).toEqual(["a.dc.html", "b.dc.html"]);
+        const three = file({
+            parts: [{ id: "motion", title: "Motion", state: "asked", body: "", boards: ["a", "b", "c"] }],
+        });
+        expect(pick(brainstormCard(inp({ file: three })), "question").optionBoards).toEqual(["a", "b", "c"]);
+        // no canvas named yet: nothing to open
+        const unnamed = pick(brainstormCard(inp({ file: { ...three, canvas: undefined } })), "question");
+        expect(unnamed.optionBoards).toBeNull();
     });
 
     it("is static once the agent has exited, and still carries the question and its options", () => {

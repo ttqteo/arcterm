@@ -34,6 +34,8 @@ function card(over: Partial<QuestionCard> = {}): QuestionCard {
         openText: false,
         weighing: null,
         boards: 0,
+        boardNames: [],
+        optionBoards: null,
         reasons: false,
         decided: [],
         ...over,

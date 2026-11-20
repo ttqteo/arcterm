@@ -20,6 +20,7 @@
 // acts behind it.
 
 import { springReveal } from "@/app/element/motiontokens";
+import { globalStore } from "@/app/store/jotaiStore";
 import { cn } from "@/util/util";
 import { useAtomValue } from "jotai";
 import { AnimatePresence, motion } from "motion/react";
@@ -27,9 +28,16 @@ import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from
 import type { AgentsViewModel } from "./agents";
 import type { AgentVM } from "./agentsviewmodel";
 import { setAgentView } from "./agentview";
-import { BoardPreview, BrainstormBody, BrainstormLine, openBrainstorm, startBoardPreview } from "./brainstormbandview";
+import {
+    BoardPreview,
+    BrainstormBody,
+    BrainstormLine,
+    openBrainstorm,
+    openChatBoard,
+    startBoardPreview,
+} from "./brainstormbandview";
 import { BoardDialog } from "./brainstormrail";
-import { brainstormAtom, brainstormBandAtom } from "./brainstormstore";
+import { brainstormAtom, brainstormBandAtom, chatBoardPreviewAtom } from "./brainstormstore";
 import { usePartMotion } from "./chatfooter";
 import { focusChatBox } from "./chatinsert";
 import { NARROW_BAND_PX } from "./initiativeband";
@@ -90,9 +98,13 @@ function ChatBandRoot({ model, agent }: { model: AgentsViewModel; agent: AgentVM
     };
     const ini = useInitiativePart({ model, agent, part, narrow, focused, brainstormBeside: bs != null, focusRoot });
 
-    // the board open over Chat. The dialog keeps the last one drawn while it fades out; a board that leaves the brainstorm
-    // (or the brainstorm itself) closes it
-    const [preview, setPreview] = useState<string | null>(null);
+    // the board open over Chat, in a per-agent atom so the question card's option rows open it too (openChatBoard). The
+    // dialog keeps the last one drawn while it fades out; a board that leaves the brainstorm (or the brainstorm itself)
+    // closes it, and so does the band leaving the screen
+    const previewAtom = chatBoardPreviewAtom(agent.id);
+    const preview = useAtomValue(previewAtom);
+    const setPreview = (name: string | null) => globalStore.set(previewAtom, name);
+    useEffect(() => () => globalStore.set(previewAtom, null), [previewAtom]);
     const lastPreview = useRef<string | null>(null);
     if (preview != null) {
         lastPreview.current = preview;
@@ -103,14 +115,13 @@ function ChatBandRoot({ model, agent }: { model: AgentsViewModel; agent: AgentVM
             setPreview(null);
         }
     }, [preview, bs]);
-    const openBoard = (name: string) => {
-        if (!startBoardPreview(agent.id, name)) {
-            openBrainstorm(agent.id);
-            return;
+    // a board opened from outside the band (an option row) takes the focus too, so Esc and ← / → answer at once
+    useEffect(() => {
+        if (preview != null) {
+            focusRoot();
         }
-        focusRoot();
-        setPreview(name);
-    };
+    }, [preview]);
+    const openBoard = (name: string) => openChatBoard(agent.id, name);
     const boardToBrainstorm = () => {
         setPreview(null);
         openBrainstorm(agent.id);

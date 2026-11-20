@@ -326,8 +326,14 @@ export interface QuestionCard {
     openText: boolean;
     /** how many approaches the judge is weighing, while it weighs */
     weighing: number | null;
-    /** the asked part's boards, which stay in the Brainstorm tab */
+    /** how many boards the asked part has (the footer's Compare link) */
     boards: number;
+    /** the asked part's boards, by file name, once the brainstorm names its canvas: a row of chips over the options when
+     *  they do not map one to one (`optionBoards` null) */
+    boardNames: string[];
+    /** the asked part's boards when each one shows an option (as many boards as options, two or more: board i shows
+     *  option i, railBoardHeads' rule): each option row then opens its own board over Chat. null otherwise. */
+    optionBoards: string[] | null;
     /** some option carries pros and cons, which also stay there */
     reasons: boolean;
     /** the decisions that are yours so far, in the design's order: the card's `Decided N ›` fold */
@@ -465,6 +471,7 @@ export function questionCard(file: BrainstormFile, q: BrainstormQuestion, exited
     const pick = options.findIndex((o) => o.pick === true);
     const part = q.part !== "" ? partTitle(file, q.part) : "";
     const asked = file.parts.find((p) => p.id === q.part);
+    const boardNames = file.canvas != null ? (asked?.boards ?? []) : [];
     return {
         kind: "question",
         state: exited ? "static" : judging ? "weighing" : "waiting",
@@ -480,7 +487,9 @@ export function questionCard(file: BrainstormFile, q: BrainstormQuestion, exited
         multi: q.multi === true,
         openText: options.length === 0 && !judging,
         weighing,
-        boards: file.canvas != null ? (asked?.boards?.length ?? 0) : 0,
+        boards: boardNames.length,
+        boardNames,
+        optionBoards: boardNames.length >= 2 && boardNames.length === options.length ? boardNames : null,
         reasons: options.some((o) => o.pros != null || o.cons != null),
         decided: yoursGists(file),
     };
@@ -831,6 +840,11 @@ export function runDoneLine(v: RunCardView): string {
 /** The line the card shows while the judge weighs a question. */
 export function weighingLine(approaches: number): string {
     return `The judge is weighing ${plural(approaches, "approach", "approaches")}.`;
+}
+
+/** A board's chip label on the question card: its file name without the `.dc.html` / `.html` ending. */
+export function boardChipLabel(name: string): string {
+    return name.replace(/(\.dc)?\.html?$/i, "");
 }
 
 /** "Compare 2 boards in Brainstorm": the card's footer link, which opens the Brainstorm tab. */
