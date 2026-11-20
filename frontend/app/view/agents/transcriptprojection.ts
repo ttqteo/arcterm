@@ -55,15 +55,48 @@ export function bashNeverRan(body: string): boolean {
 
 const MAX_ERROR_LINE = 160;
 
+/** Pure: the issues of a call Claude Code refused on its input schema, `InputValidationError: [ {"path": [...],
+ *  "message": "..."} ]` (pretty-printed over several lines), as one line: "InputValidationError: exactly one of command or
+ *  ws", a field's issue named by its path ("file_path: Required"). null when the text is not one. */
+function inputValidationLine(text: string): string | null {
+    const m = text.match(/^\s*InputValidationError:\s*(\[[\s\S]*\])\s*$/);
+    if (m == null) {
+        return null;
+    }
+    let issues: unknown;
+    try {
+        issues = JSON.parse(m[1]);
+    } catch {
+        return null;
+    }
+    if (!Array.isArray(issues)) {
+        return null;
+    }
+    const parts = issues
+        .map((issue: any) => {
+            const msg = typeof issue?.message === "string" ? issue.message.trim() : "";
+            if (msg === "") {
+                return "";
+            }
+            const path = Array.isArray(issue.path) ? issue.path.join(".") : "";
+            return path === "" ? msg : `${path}: ${msg}`;
+        })
+        .filter((p) => p !== "");
+    return parts.length === 0 ? null : `InputValidationError: ${parts.join("; ")}`;
+}
+
 /** Pure: the first line of a failed tool's result, its `<tool_use_error>` tags dropped and cut at MAX_ERROR_LINE: "String
- *  to replace not found in file.". "" for an empty result. */
+ *  to replace not found in file.". An input-validation refusal, whose first line is only "InputValidationError: [", reads
+ *  as its issues instead. "" for an empty result. */
 export function errorLine(body: string): string {
+    const text = body.replace(/<\/?tool_use_error>/g, "");
     const line =
-        body
-            .replace(/<\/?tool_use_error>/g, "")
+        inputValidationLine(text) ??
+        text
             .split("\n")
             .map((l) => l.trim())
-            .find((l) => l !== "") ?? "";
+            .find((l) => l !== "") ??
+        "";
     return line.length > MAX_ERROR_LINE ? `${line.slice(0, MAX_ERROR_LINE - 1)}…` : line;
 }
 

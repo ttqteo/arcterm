@@ -238,8 +238,33 @@ function bashNeverRan(body) {
   return t !== "" && !/^Exit code \d+/.test(t) && !/^(Interrupted\b|\[Tool call interrupted)/.test(t);
 }
 var MAX_ERROR_LINE = 160;
+function inputValidationLine(text) {
+  const m = text.match(/^\s*InputValidationError:\s*(\[[\s\S]*\])\s*$/);
+  if (m == null) {
+    return null;
+  }
+  let issues;
+  try {
+    issues = JSON.parse(m[1]);
+  } catch {
+    return null;
+  }
+  if (!Array.isArray(issues)) {
+    return null;
+  }
+  const parts = issues.map((issue) => {
+    const msg = typeof issue?.message === "string" ? issue.message.trim() : "";
+    if (msg === "") {
+      return "";
+    }
+    const path = Array.isArray(issue.path) ? issue.path.join(".") : "";
+    return path === "" ? msg : `${path}: ${msg}`;
+  }).filter((p) => p !== "");
+  return parts.length === 0 ? null : `InputValidationError: ${parts.join("; ")}`;
+}
 function errorLine(body) {
-  const line = body.replace(/<\/?tool_use_error>/g, "").split("\n").map((l) => l.trim()).find((l) => l !== "") ?? "";
+  const text = body.replace(/<\/?tool_use_error>/g, "");
+  const line = inputValidationLine(text) ?? text.split("\n").map((l) => l.trim()).find((l) => l !== "") ?? "";
   return line.length > MAX_ERROR_LINE ? `${line.slice(0, MAX_ERROR_LINE - 1)}\u2026` : line;
 }
 function verbFor(name) {

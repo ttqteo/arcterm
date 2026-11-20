@@ -28,6 +28,13 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
   without blinking out, and the message lands in place without jumping down. Esc on a turn with a queued message: the
   Working line leaves within about 4 s.
 
+- [ ] (arcterm) **A refused tool call's Tool failed line says why** (`transcriptprojection.ts` `errorLine`). Have a
+  Claude agent call `Monitor` with only a `description`: its Tool failed line in Chat reads "InputValidationError:
+  exactly one of command or ws", not "InputValidationError: [". Same on the phone page (`projectors.js`).
+- [ ] (arcterm) **`wsh board draw --context-file`** (`wshcmd-board.go`). From a PowerShell agent, write a briefing of
+  several lines with Vietnamese accents and a double quote to a file with the Write tool, run
+  `wsh board draw --board t --context-file <path>`: the board is drawn, and its drawer's prompt keeps the lines and
+  accents. `--context x --context-file y` refuses with "not both".
 - [ ] (arcterm) Kael sync 11-19: two Claude agents on one checkout, each Diff lists only its own files
   (`pkg/agentedits`, `GitAgentEditsCommand`; `frontend/app/view/agents/agentchanges.ts`). The CDP scenario
   `diff-agent-edits` fakes the transcript, so no real Claude session has been replayed. Open two live Claude agents on
