@@ -22,8 +22,8 @@ appears only while the agent has the thing it shows (Council, `railcouncil.ts`).
    back to Overview while the stored tab stays (`shownTab`), as Council does.
 4. **Plan to review moves to the Initiative tab.** Overview loses its `plan` section (`agentrailsections.ts`). The
    header's `N to review` chip (`PlanReviewChip`) opens the Initiative tab with Plan to review unfolded, as the
-   popover's and the band's "Review on the rail" links did. Overview's section was the only one ever opened from
-   outside the rail, so the request behind it (`railsection.ts`) goes too.
+   popover's and the band's "Review on the rail" links did. The rail's section request (`railsection.ts`) stays: the
+   Verify chip still opens Overview's `verify` section through it.
 
 ## The Brainstorm tab (board `D-timeline`)
 
@@ -73,7 +73,7 @@ appears only while the agent has the thing it shows (Council, `railcouncil.ts`).
 ## What is deleted
 
 `chatband.tsx`, the band parts of `brainstormbandview.tsx` (`BrainstormLine`, `BrainstormBody`; `BoardPreview` and
-`openChatBoard` stay, the dialog now hosted by the Chat pane), the line and body of `initiativebandview.tsx` (its rows,
+`openChatBoard` stay, the dialog now hosted by the agent's cell, over Chat or the terminal), the line and body of `initiativebandview.tsx` (its rows,
 menu and key logic move into the Initiative tab), `initiativebandstore.ts`'s band-part state, and Overview's `plan`
 section. Grep every import, `import type` included, before deleting a file.
 

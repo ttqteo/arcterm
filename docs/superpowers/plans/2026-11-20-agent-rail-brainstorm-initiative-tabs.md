@@ -10,8 +10,8 @@ thing, like Council. Task 1 lands the model, both strip entries with their dots,
 so the two panes (`railbrainstormpane.tsx`, `railinitiativepane.tsx`) are filled in parallel by Tasks 3 and 4. The
 brainstorm timeline is a pure model (`railbrainstorm.ts`); the initiative pane reuses the band's model
 (`initiativeband.ts`) and its writes (`initiativebandstore.ts`'s `switchAgentChunk` / `switchAndTell`). Then the band, the
-◇ popover's linked view, Overview's Plan to review section and the `railsection.ts` request it was the last user of are
-deleted.
+◇ popover's linked view and Overview's Plan to review section are deleted (`railsection.ts` stays: the Verify chip
+uses it).
 
 **Tech Stack:** React 19, jotai, Tailwind 4 tokens, lucide-react, vitest, CDP scenarios.
 
@@ -344,10 +344,9 @@ and the `plan` entries of the `LABEL` / `ICON` maps keyed by `AgentRailSectionId
 
 The three `openRailSection(agentId, "plan")` callers call `openRailInitiative(agentId, "plan")` instead:
 `agentheader.tsx:361` (`PlanReviewChip`, the header's "N to review" chip), `initiativebandview.tsx:350` and
-`initiativepopover.tsx:218` (both deleted in Task 5). `plan` was the only section ever requested, so
-`railsection.ts`, `railsection.test.ts` and the request effect in `agentdetailsrail.tsx` (~1055-1062, with its
-`railSectionRequestAtom` read and imports) go: grep `railsection`, `openRailSection`, `railSectionRequestAtom`,
-`clearRailSectionRequest` first, `import type` included.
+`initiativepopover.tsx:218` (both deleted in Task 5). `railsection.ts`, its test and the request effect in
+`agentdetailsrail.tsx` (~1055-1062) stay: the Verify chip (`railverify.tsx:534`) opens Overview's `verify` section
+through them. Only the test's `"plan"` case moves to another section id.
 
 **Step 2: The folding section header.** The rail's folding section header is `HeadedSection`, unexported, in
 `frontend/app/element/collapsiblerail.tsx:40` (it takes a `RailSection` and a `RailSectionHeader` from
