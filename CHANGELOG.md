@@ -47,6 +47,8 @@ and a picture given to a line that is not big.
 
 ### Fixed
 
+- A picture an agent read from a bug report (its screen.png) keeps showing in Chat after the report is marked done,
+  instead of reading as no longer on disk once the report's folder moved to done/.
 - A council report's direction card wraps a long file path in its title and First step instead of running past the
   card's edge.
 - Words typed in Chat's box while Claude asks one question (the plan Handoff card among them) go as your answer, as

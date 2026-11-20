@@ -28,6 +28,20 @@ export function imageStatus(httpStatus: number): Exclude<LocalImageStatus, "load
     return httpStatus >= 200 && httpStatus < 300 ? "ok" : "error";
 }
 
+// A bug report's folder <data>/reports/<id>/ moves to <data>/reports/done/<id>/ once the report is handled
+// (pkg/bugreport, Done), so a picture an agent read from it is at this path afterwards. The id is the press time,
+// YYYYMMDD-HHMMSS, with -N when two presses share a second. null for any other path, and for one already under done/.
+const REPORT_PATH = /^(.*[\\/]reports)([\\/])(\d{8}-\d{6}(?:-\d+)?)([\\/].+)$/;
+
+export function doneReportPath(path: string): string | null {
+    const m = REPORT_PATH.exec(path);
+    if (m == null) {
+        return null;
+    }
+    const [, reports, sep, id, rest] = m;
+    return `${reports}${sep}done${sep}${id}${rest}`;
+}
+
 // The Tauri http plugin's response hands back a blob with no type, whatever Content-Type wavesrv sent. An <img> sniffs
 // a PNG or JPEG from its bytes but draws an SVG only from a blob typed image/svg+xml, so the type is put back.
 export function typedBlob(b: Blob, contentType: string | null): Blob {
@@ -79,7 +93,11 @@ export function useLocalImage(path: string): LocalImage {
         setImage({ url: null, status: "loading" });
         (async () => {
             try {
-                const resp = await fetch(localFileUrl(getWebServerEndpoint(), path));
+                let resp = await fetch(localFileUrl(getWebServerEndpoint(), path));
+                const moved = doneReportPath(path);
+                if (imageStatus(resp.status) === "missing" && moved != null) {
+                    resp = await fetch(localFileUrl(getWebServerEndpoint(), moved));
+                }
                 const status = imageStatus(resp.status);
                 if (status !== "ok") {
                     if (!cancelled) {
