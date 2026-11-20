@@ -52,9 +52,10 @@
     background: var(--color-background);
 }
 
-/* The light theme (the canvas's sun) keeps Excalidraw's own light controls, only on arcterm's font and accent. The
-   canvas is transparent (viewBackgroundColor), so the wrapper gives it Excalidraw's own light ground. */
-.arc-board .excalidraw.theme--light {
+/* The light theme (the canvas's sun). Excalidraw marks only the dark one (theme--dark), so light is its absence. It
+   keeps Excalidraw's own light controls, only on arcterm's font and accent; the canvas is transparent
+   (viewBackgroundColor), so the wrapper gives it Excalidraw's own light ground. */
+.arc-board .excalidraw:not(.theme--dark) {
     --ui-font: var(--font-sans);
     --focus-highlight-color: var(--color-accent);
     --select-highlight-color: var(--color-accent);
