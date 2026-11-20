@@ -16,6 +16,18 @@ list (its number is not reused).
 Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) ·
 [part 4](hand-checks-4.md) · [part 3](hand-checks-3.md) · [part 2](hand-checks-2.md) (oldest).
 
+- [ ] (arcterm) Resume reads resuming, not working (`pendingToVM` in `frontend/app/view/agents/agentsviewmodel.ts`;
+  `fix/resume-working-flicker`). Library → Conversations → resume a long Claude conversation with no message. While it
+  loads, its tree row ends in a muted "resuming…" with no working dot, the header pill reads "resuming" in muted ink
+  with no Stop, and Chat shows the old conversation with a muted "Resuming…" line under it. Once Claude Code is at its
+  prompt the row reads idle and the Agent badge does not count it as unread. A resume with a message (Wake with text)
+  still reads working.
+- [ ] (arcterm) Chat's Working line holds through a queued message (`nextWorkingHold` in
+  `frontend/app/view/agents/chatlive.ts`; `fix/resume-working-flicker`). While a Claude agent runs a long tool, send it a
+  message from Chat (it reads Queued). When the turn ends and Claude Code takes the message, the Working line stays up
+  without blinking out, and the message lands in place without jumping down. Esc on a turn with a queued message: the
+  Working line leaves within about 4 s.
+
 - [ ] (arcterm) Kael sync 11-19: two Claude agents on one checkout, each Diff lists only its own files
   (`pkg/agentedits`, `GitAgentEditsCommand`; `frontend/app/view/agents/agentchanges.ts`). The CDP scenario
   `diff-agent-edits` fakes the transcript, so no real Claude session has been replayed. Open two live Claude agents on

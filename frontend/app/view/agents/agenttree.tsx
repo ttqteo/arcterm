@@ -1422,6 +1422,11 @@ function ParentRow({
             >
                 failed to start
             </span>
+        ) : agent.resuming && shown === "idle" ? (
+            // a resume still loading reads idle with no dot: these words say why it is not at its prompt yet
+            <span data-agent-resuming={agent.id} className="flex-none whitespace-nowrap text-[10.5px] text-muted">
+                resuming…
+            </span>
         ) : null;
 
     // the RAM, tokens and age that end its second line (rowcols.ts): always in place, so they line up with every other

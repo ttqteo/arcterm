@@ -76,7 +76,15 @@ import { holdSwitchLine } from "./chatinitiativestore";
 import { cancelQueuedChat, submitIntoChatBox } from "./chatinsert";
 import { CHAT_JUMP_KEYS, registerChatJump } from "./chatjump";
 import { ChatLimitStrip } from "./chatlimitstripview";
-import { awaitsOwnMessage, liveTurn, narratesThinking, streamsLiveReply } from "./chatlive";
+import {
+    awaitsOwnMessage,
+    liveTurn,
+    narratesThinking,
+    nextWorkingHold,
+    QUEUED_TAKEN_MS,
+    streamsLiveReply,
+    type WorkingHold,
+} from "./chatlive";
 import { liveReplyAtom, startLiveReplyStream, stopLiveReplyStream } from "./chatlivestore";
 import { ChatLocalCard } from "./chatlocalcards";
 import { closeLocalCard, showLocalCard, useLocalCards } from "./chatlocalstore";
@@ -319,6 +327,40 @@ const LINE_GAP = 12;
 // pane already drawn (a turn starting), not on the pane's first render. The tail's gap that goes with it is taken back
 // by a margin as it closes, on the side something is drawn (above it, else under it), so nothing jumps as it mounts or
 // unmounts. Imperative, as Arriving is: the styles that close it are set before the first paint, and removed at rest.
+// The working line to draw: `line`, or the line just gone, held through a queued message's hand-over (chatlive.ts
+// nextWorkingHold). `queuedUp` is whether a Queued bubble shows now; one that went within QUEUED_TAKEN_MS still counts.
+function useHeldWorking(line: string | null, queuedUp: boolean): string | null {
+    const prev = useRef<string | null>(line);
+    const queuedAt = useRef(0);
+    const hold = useRef<WorkingHold | null>(null);
+    const [, redraw] = useState(0);
+    const now = Date.now();
+    const next = nextWorkingHold(
+        prev.current,
+        line,
+        queuedUp || now - queuedAt.current < QUEUED_TAKEN_MS,
+        hold.current,
+        now
+    );
+    useLayoutEffect(() => {
+        prev.current = line;
+        hold.current = next;
+        if (queuedUp) {
+            queuedAt.current = Date.now();
+        }
+    });
+    // the hold's end is a draw of its own: nothing else may change by then
+    const until = next?.until;
+    useEffect(() => {
+        if (until == null) {
+            return;
+        }
+        const t = setTimeout(() => redraw((n) => n + 1), Math.max(0, until - Date.now()) + 20);
+        return () => clearTimeout(t);
+    }, [until]);
+    return line ?? next?.line ?? null;
+}
+
 function WorkingLine({ arrive, children }: { arrive: boolean; children: ReactNode }) {
     const ref = useRef<HTMLDivElement>(null);
     const reduce = useReducedMotion() ?? false;
@@ -951,6 +993,8 @@ function ChatPaneBody({
     // a message bubble captioned Queued is up (sent while the agent worked, which it still does): Ctrl+Enter in the
     // empty box is its Send now
     const queuedShown = agent.state !== "idle" && queuedBubbleUp(pending);
+    // the working line drawn: kept through the idle between a turn and the queued message it takes next (nextWorkingHold)
+    const shownWorking = useHeldWorking(working, queuedBubbleUp(pending));
     useEffect(() => {
         if (!showsPending) {
             return;
@@ -1257,13 +1301,28 @@ function ChatPaneBody({
                         ) : null}
                         {/* the empty conversation, or the first message's label, already says the harness is starting */}
                         <AnimatePresence initial={false}>
-                            {working != null && !empty && !opening ? (
+                            {shownWorking != null && !empty && !opening ? (
                                 <WorkingLine key="working" arrive={paneDrawn.current}>
                                     <WorkingGlyph />
                                     <span className="volt-text flex min-w-0">
-                                        <span className="min-w-0 truncate shimmer-jarvis">{working}</span>
+                                        <span className="min-w-0 truncate shimmer-jarvis">{shownWorking}</span>
                                     </span>
                                     {turn != null ? <TurnStatsText stats={turn} /> : null}
+                                </WorkingLine>
+                            ) : agent.resuming && agent.state === "idle" && !empty && !opening ? (
+                                // a resume still loading: no turn runs, so muted words with the starting dot, not the
+                                // working glyph and shimmer
+                                <WorkingLine key="resuming" arrive={paneDrawn.current}>
+                                    <span
+                                        data-chat-resuming
+                                        className="flex items-center gap-1.5 text-[12px] text-muted"
+                                    >
+                                        <span
+                                            className="h-[6px] w-[6px] flex-none rounded-full bg-accent pulse-dot"
+                                            aria-hidden
+                                        />
+                                        Resuming…
+                                    </span>
                                 </WorkingLine>
                             ) : null}
                         </AnimatePresence>

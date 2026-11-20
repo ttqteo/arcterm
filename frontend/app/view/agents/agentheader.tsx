@@ -521,7 +521,16 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
     // the dev servers it left listening, which do not count as work: a green server glyph and their ports
     const servers = ended ? [] : launchedServers(bgTasks, machineServers);
     const liveText = agent.state === "asking" ? askingLabel(agent) : STATE_LABEL[shown];
-    const stateText = ended ? (landed ? "landed" : "done") : failed ? "failed to start" : liveText;
+    // a resume still loading reads idle, which says nothing of the load: it is worded resuming, in idle's muted ink
+    const stateText = ended
+        ? landed
+            ? "landed"
+            : "done"
+        : failed
+          ? "failed to start"
+          : agent.resuming && shown === "idle"
+            ? "resuming"
+            : liveText;
     const stateColor = ended ? "var(--color-success)" : failed ? "var(--color-error)" : STATE_COLOR[shown];
     // a working agent whose heavy command waits its turn in the job queue reads as its place there, not as working
     const queuedJob = queuedJobFor(useAtomValue(jobQueueAtom), blockId);
