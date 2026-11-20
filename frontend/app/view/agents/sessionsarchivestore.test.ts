@@ -8,6 +8,7 @@ import type { AgentVM } from "./agentsviewmodel";
 import {
     archiveRetryDelay,
     dropFromArchive,
+    fetchAndHandSession,
     filterByStatus,
     groupByRecency,
     handedSessionsAtom,
@@ -471,6 +472,37 @@ describe("withLookedUp", () => {
     it("hands the archive back untouched with nothing looked up", () => {
         const archive = [mk()];
         expect(withLookedUp(archive, [])).toBe(archive);
+    });
+});
+
+describe("fetchAndHandSession", () => {
+    const rpc = vi.mocked(RpcApi.GetSessionsActivityCommand);
+
+    it("reads the one id and hands what it found, leaving For later's lookup alone", async () => {
+        rpc.mockReset();
+        globalStore.set(handedSessionsAtom, []);
+        globalStore.set(sessionLookupAtom, { ids: ["later"], sessions: [mk({ id: "later" })] });
+        rpc.mockResolvedValueOnce({ sessions: [mk({ id: "old" })] });
+        await fetchAndHandSession("old");
+        expect(rpc.mock.calls[0][1]).toEqual({ ids: ["old"] });
+        expect(globalStore.get(handedSessionsAtom).map((s) => s.id)).toEqual(["old"]);
+        expect(globalStore.get(sessionLookupAtom).ids).toEqual(["later"]);
+    });
+
+    it("asks nothing for an empty id: an empty filter would read every session", async () => {
+        rpc.mockReset();
+        await fetchAndHandSession("");
+        expect(rpc).not.toHaveBeenCalled();
+    });
+
+    it("hands nothing when the read fails", async () => {
+        rpc.mockReset();
+        globalStore.set(handedSessionsAtom, []);
+        rpc.mockRejectedValueOnce(new Error("backend down"));
+        const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+        await fetchAndHandSession("old");
+        warn.mockRestore();
+        expect(globalStore.get(handedSessionsAtom)).toEqual([]);
     });
 });
 

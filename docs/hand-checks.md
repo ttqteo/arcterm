@@ -23,6 +23,11 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
 
 ## 2026-11-20
 
+- [ ] (arcterm) **Usage opens an old session's transcript** (`fetchAndHandSession`, fix/usage-open-old-session). In
+  Usage → By session, click an ended row from a few days back (one past the newest 100 sessions, such as
+  `Paper_v1_benchmark_bilingual` in thesis): Library shows its transcript with Resume, not "This session is not in
+  the archive yet". Not tried in the app.
+
 - [ ] (arcterm) **A council card wraps a long path** (`councilsummary.tsx`, `councilsheet.tsx`). Open a council whose
   First step names a long path with no spaces (`obsidian_harness/20261113_paper_v1_be…`): it breaks inside the card
   in the report's direction cards and in Jarvis's council sheet, nothing runs past the edge. Not tried in the app.
