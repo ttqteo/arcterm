@@ -4,9 +4,15 @@
 package cmd
 
 import (
+	"bytes"
+	"encoding/binary"
 	"errors"
 	"fmt"
+	"io"
+	"os"
 	"strings"
+	"unicode/utf16"
+	"unicode/utf8"
 
 	"github.com/spf13/cobra"
 	"github.com/wavetermdev/waveterm/pkg/wshrpc"
@@ -22,9 +28,12 @@ const boardDrawLong = `Ask the drawer of a board in your project to draw. A boar
 The drawer only draws: it never edits files, runs commands or answers for you. It reads this conversation itself, so keep
 what you pass short.
 
-  --context  the briefing: what the person asked, the facts and the files involved. It briefs the drawer, and it makes
-             the board when your project has none with that name, so a new board needs it.
-  --ask      the one line the drawer answers on the board ("add the retry path"). Alone, once the board exists.
+  --context       the briefing: what the person asked, the facts and the files involved. It briefs the drawer, and it
+                  makes the board when your project has none with that name, so a new board needs it.
+  --context-file  the briefing read from a file (UTF-8, or UTF-16 with a byte order mark), "-" for stdin, in place of
+                  --context. Use it for a briefing of several lines or with quotes from PowerShell, which splits such an
+                  argument to a native command.
+  --ask           the one line the drawer answers on the board ("add the retry path"). Alone, once the board exists.
 
 Pass --context, --ask or both. The command waits for the drawing (up to 9 minutes) and prints one line:
 
@@ -42,7 +51,7 @@ var boardCmd = &cobra.Command{
 }
 
 var boardDrawCmd = &cobra.Command{
-	Use:   "draw --board <name> [--context \"<briefing>\"] [--ask \"<question>\"]",
+	Use:   "draw --board <name> [--context \"<briefing>\" | --context-file <path>] [--ask \"<question>\"]",
 	Short: "ask the drawer of the named board in your project to draw; --context briefs it and makes the board when none has that name",
 	Long:  boardDrawLong,
 	Args:  cobra.NoArgs,
@@ -50,6 +59,20 @@ var boardDrawCmd = &cobra.Command{
 	PreRunE: func(cmd *cobra.Command, args []string) error {
 		if err := cmd.ValidateRequiredFlags(); err != nil {
 			return err
+		}
+		file, _ := cmd.Flags().GetString("context-file")
+		if file != "" {
+			if cmd.Flags().Changed("context") {
+				return errors.New("pass --context or --context-file, not both")
+			}
+			brief, err := readBoardContext(file, os.Stdin, os.ReadFile)
+			if err != nil {
+				return err
+			}
+			// RunE reads the briefing from --context, so the file's text takes that flag's place
+			if err := cmd.Flags().Set("context", brief); err != nil {
+				return err
+			}
 		}
 		brief, _ := cmd.Flags().GetString("context")
 		ask, _ := cmd.Flags().GetString("ask")
@@ -64,6 +87,7 @@ var boardDrawCmd = &cobra.Command{
 func init() {
 	boardDrawCmd.Flags().String("board", "", "the board's name (any case); a new board when none has it")
 	boardDrawCmd.Flags().String("context", "", "the briefing: what the person asked, the facts and the files involved; needed when the board is new")
+	boardDrawCmd.Flags().String("context-file", "", `the briefing read from this file ("-" for stdin), in place of --context`)
 	boardDrawCmd.Flags().String("ask", "", "the one line the drawer answers on the board; alone, once the board exists")
 	boardDrawCmd.MarkFlagRequired("board")
 	boardCmd.AddCommand(boardDrawCmd)
@@ -102,6 +126,54 @@ func boardDrawRun(cmd *cobra.Command, args []string) error {
 	}
 	fmt.Println(line)
 	return nil
+}
+
+// maxBoardContextBytes bounds a --context-file: a briefing is a few paragraphs, and the drawer reads the conversation
+// itself.
+const maxBoardContextBytes = 256 << 10
+
+// readBoardContext reads the briefing of --context-file: the file at path, or stdin for "-". A UTF-8 byte order mark is
+// dropped and UTF-16 with one is decoded, since Windows PowerShell writes those (Out-File, and its > in UTF-16).
+func readBoardContext(path string, stdin io.Reader, readFile func(string) ([]byte, error)) (string, error) {
+	var data []byte
+	var err error
+	if path == "-" {
+		data, err = io.ReadAll(io.LimitReader(stdin, maxBoardContextBytes+1))
+	} else {
+		data, err = readFile(path)
+	}
+	if err != nil {
+		return "", fmt.Errorf("reading --context-file: %w", err)
+	}
+	if len(data) > maxBoardContextBytes {
+		return "", fmt.Errorf("--context-file is over %d KB: keep the briefing short", maxBoardContextBytes>>10)
+	}
+	return decodeBoardContext(data)
+}
+
+func decodeBoardContext(data []byte) (string, error) {
+	switch {
+	case bytes.HasPrefix(data, []byte{0xEF, 0xBB, 0xBF}):
+		data = data[3:]
+	case bytes.HasPrefix(data, []byte{0xFF, 0xFE}), bytes.HasPrefix(data, []byte{0xFE, 0xFF}):
+		body := data[2:]
+		if len(body)%2 != 0 {
+			return "", errors.New("--context-file is UTF-16 with an odd byte count")
+		}
+		units := make([]uint16, len(body)/2)
+		for i := range units {
+			if data[0] == 0xFF {
+				units[i] = binary.LittleEndian.Uint16(body[2*i:])
+			} else {
+				units[i] = binary.BigEndian.Uint16(body[2*i:])
+			}
+		}
+		return string(utf16.Decode(units)), nil
+	}
+	if !utf8.Valid(data) {
+		return "", errors.New("--context-file is not UTF-8 (or UTF-16 with a byte order mark)")
+	}
+	return string(data), nil
 }
 
 // checkBoardDrawText refuses a draw with nothing to say. Whether --context is also needed depends on the board

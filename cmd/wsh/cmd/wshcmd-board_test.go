@@ -4,9 +4,12 @@
 package cmd
 
 import (
+	"encoding/binary"
 	"errors"
+	"os"
 	"strings"
 	"testing"
+	"unicode/utf16"
 
 	"github.com/wavetermdev/waveterm/pkg/wshrpc"
 )
@@ -118,6 +121,75 @@ func TestBoardDrawPrintsTheLine(t *testing.T) {
 		if line != c.wantLine || failed != c.wantFailed {
 			t.Errorf("%s: got (%q, failed=%v), want (%q, failed=%v)", c.name, line, failed, c.wantLine, c.wantFailed)
 		}
+	}
+}
+
+func TestBoardDrawContextFileDecodes(t *testing.T) {
+	const brief = "Vẽ luồng \"retry\"\nhai dòng"
+	utf16le := []byte{0xFF, 0xFE}
+	utf16be := []byte{0xFE, 0xFF}
+	for _, u := range utf16.Encode([]rune(brief)) {
+		utf16le = binary.LittleEndian.AppendUint16(utf16le, u)
+		utf16be = binary.BigEndian.AppendUint16(utf16be, u)
+	}
+	cases := []struct {
+		name string
+		data []byte
+	}{
+		{"utf-8", []byte(brief)},
+		{"utf-8 with a bom", append([]byte{0xEF, 0xBB, 0xBF}, brief...)},
+		{"utf-16 le", utf16le},
+		{"utf-16 be", utf16be},
+	}
+	for _, c := range cases {
+		readFile := func(p string) ([]byte, error) {
+			if p != "brief.txt" {
+				t.Fatalf("%s: read %q", c.name, p)
+			}
+			return c.data, nil
+		}
+		got, err := readBoardContext("brief.txt", nil, readFile)
+		if err != nil || got != brief {
+			t.Errorf("%s: got (%q, %v), want %q", c.name, got, err, brief)
+		}
+	}
+	got, err := readBoardContext("-", strings.NewReader(brief), nil)
+	if err != nil || got != brief {
+		t.Errorf("stdin: got (%q, %v), want %q", got, err, brief)
+	}
+}
+
+func TestBoardDrawContextFileRefuses(t *testing.T) {
+	missing := func(string) ([]byte, error) { return nil, os.ErrNotExist }
+	if _, err := readBoardContext("nope.txt", nil, missing); err == nil || !strings.Contains(err.Error(), "--context-file") {
+		t.Errorf("missing file: err = %v", err)
+	}
+	if _, err := readBoardContext("-", strings.NewReader(strings.Repeat("x", maxBoardContextBytes+1)), nil); err == nil {
+		t.Error("an oversized stdin: no error")
+	}
+	if _, err := decodeBoardContext([]byte{0xC3, 0x28}); err == nil {
+		t.Error("invalid utf-8: no error")
+	}
+	if _, err := decodeBoardContext([]byte{0xFF, 0xFE, 0x41}); err == nil {
+		t.Error("odd utf-16: no error")
+	}
+}
+
+func TestBoardDrawCmdContextAndContextFileRefused(t *testing.T) {
+	flags := boardDrawCmd.Flags()
+	t.Cleanup(func() {
+		for _, name := range []string{"board", "context", "context-file"} {
+			f := flags.Lookup(name)
+			f.Value.Set("")
+			f.Changed = false
+		}
+	})
+	flags.Set("board", "Auth flow")
+	flags.Set("context", "the briefing")
+	flags.Set("context-file", "brief.txt")
+	err := boardDrawCmd.PreRunE(boardDrawCmd, nil)
+	if err == nil || !strings.Contains(err.Error(), "not both") {
+		t.Errorf("err = %v, want the not-both error", err)
 	}
 }
 

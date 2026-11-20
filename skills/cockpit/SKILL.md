@@ -40,6 +40,10 @@ and never answers in words. Don't draw a one-line answer.
 
 - First time on a board: `wsh board draw --board <name> --context "<briefing>"`. `--context` briefs the drawer and
   creates the board, tied to you. Without it a board that doesn't exist yet is an error that names `--context`.
+- Run it with the Bash tool. A briefing of several lines, or with double quotes, goes in a file instead:
+  `--context-file <path>` (`-` reads stdin). Windows PowerShell 5.1 splits such an argument to a native command, and
+  its pipe to one drops every non-ASCII letter, so from PowerShell write the file with the Write tool and pass its path;
+  never flatten the briefing to one line or strip its accents to get it through.
 - Later: one line, `wsh board draw --board <name> --ask "<what to change or add>"`.
 - Keep the briefing short. The drawer reads what you said in the conversation since its last read, so don't restate
   it, and never paste shapes or coordinates. Say what to draw and the angle (the boxes that matter, the direction of

@@ -181,6 +181,23 @@ describe("projectTranscript", () => {
         expect(errorLine("")).toBe("");
     });
 
+    it("reads an input-validation refusal as its issues, not its first line", () => {
+        const issues = (list: object[]) => `InputValidationError: ${JSON.stringify(list, null, 2)}`;
+        expect(errorLine(issues([{ code: "custom", path: [], message: "exactly one of command or ws" }]))).toBe(
+            "InputValidationError: exactly one of command or ws"
+        );
+        expect(
+            errorLine(
+                `<tool_use_error>${issues([
+                    { code: "invalid_type", path: ["file_path"], message: "Required" },
+                    { code: "invalid_type", path: ["edits", 0, "old_string"], message: "Expected string" },
+                ])}</tool_use_error>`
+            )
+        ).toBe("InputValidationError: file_path: Required; edits.0.old_string: Expected string");
+        // not JSON after all: the first line, as before
+        expect(errorLine("InputValidationError: [oops\nmore")).toBe("InputValidationError: [oops");
+    });
+
     it("keeps the full path of a file tool beside its base name", () => {
         const out = projectTranscript([
             JSON.stringify({ type: "assistant", message: { content: [{ type: "tool_use", id: "r", name: "Read", input: { file_path: "D:\\repo\\src\\a.ts" } }] } }),

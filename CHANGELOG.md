@@ -38,6 +38,13 @@ and a picture given to a line that is not big.
   Compacted line in the Agent details rail opens the summary in a wide sheet at the window's right edge. A pi agent's
   compaction now shows in the rail too.
 
+### Fixed
+
+- A tool call Claude Code refuses for a malformed input now says why on its Tool failed line in Chat ("exactly one
+  of command or ws"), instead of stopping at "InputValidationError: [".
+- An agent can brief a board from a file (`wsh board draw --context-file`), so a briefing of several lines, or with
+  Vietnamese accents, reaches the drawer intact from PowerShell instead of failing or being flattened to one line.
+
 ## 1.9.0 — 2026-11-20
 
 ### Added
