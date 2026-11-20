@@ -133,7 +133,7 @@ scenario ran`). Step numbers are the leading `N.` of each failed step text. Test
 
 ### Task 2: wshrpc commands, the event, and `wsh verify`
 
-**Depends on:** Task 1
+**Depends on:** Task 1 (converts to and from the Store, Report and State that pkg/verifyruns adds)
 
 **Files:** `pkg/wshrpc/wshrpctypes_verify.go`, `pkg/wshrpc/wshserver/wshserver_verify.go`, `cmd/wsh/cmd/wshcmd-verify.go`, `cmd/wsh/cmd/wshcmd-verify_test.go`, `pkg/wshrpc/wshrpctypes.go`, `pkg/wps/wpstypes.go`, `pkg/tsgen/tsgenevent.go`, `cmd/server/`, `frontend/types/gotypes.d.ts`, `wshclientapi.ts`, `wshclient.go`
 
@@ -226,7 +226,7 @@ use) passes. Commit by path.
 
 ### Task 4: the cockpit's Verify model and store
 
-**Depends on:** Task 2
+**Depends on:** Task 2 (uses the generated Verify RPC types and the verify:changed event)
 
 **Files:** `frontend/app/view/agents/verifymodel.ts`, `frontend/app/view/agents/verifymodel.test.ts`, `frontend/app/view/agents/verifystore.ts`
 
@@ -271,7 +271,7 @@ scenario, undo)` calls `VerifySkipCommand` then reloads. Errors keep the last st
 
 ### Task 5: the tile, the strip count, the header chip, Rerun and Skip
 
-**Depends on:** Task 4
+**Depends on:** Task 4 (draws verifyTile and calls useVerify, skipVerify and rerunLine)
 
 **Files:** `frontend/app/view/agents/railverify.tsx`, `frontend/app/view/agents/agentdetailsrail.tsx`, `frontend/app/view/agents/agentrailsections.ts`, `frontend/app/view/agents/agentheader.tsx`
 
@@ -309,7 +309,7 @@ call that (keep `sendCardLine` using it). A failed send shows its message under 
 
 ### Task 6: the arc mod asks before a merge
 
-**Depends on:** Task 2
+**Depends on:** Task 2 (calls the wsh verify gate command it adds)
 
 **Files:** `claude/arc-mod/hooks/verifygate-core.ts`, `claude/arc-mod/hooks/verifygate-core.test.ts`, `claude/arc-mod/hooks/register.ts`
 
@@ -333,7 +333,7 @@ reason }`; otherwise the verdict. `.catch(passOn)` with a debug log, as the comm
 
 ### Task 7: the CDP scenario, CHANGELOG and docs
 
-**Depends on:** Task 5
+**Depends on:** Task 5 (checks the tile, chip, strip count and buttons it draws)
 
 **Files:** `scripts/cdp/scenarios.mjs`, `CHANGELOG.md`, `docs/agents/`, `docs/hand-checks.md`
 
