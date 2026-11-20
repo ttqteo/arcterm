@@ -43,7 +43,7 @@ and a picture given to a line that is not big.
 
 - A board whose agent has ended is no longer stuck: the next agent of its project that draws on it by name takes it over,
   drawing and turns kept, and it opens beside that agent's Chat.
-- A visual in Chat no longer shows its HTML file name in its header, only "Visual".
+- A visual in Chat no longer shows its HTML file name in its header, only its icon.
 
 ### Fixed
 

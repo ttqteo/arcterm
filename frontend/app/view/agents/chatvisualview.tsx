@@ -249,8 +249,7 @@ function ChatVisual({ path, agentId }: { path: string; agentId: string }) {
             className="my-2 overflow-hidden rounded-[10px] border border-edge-mid bg-surface"
         >
             <div className="flex h-8 items-center gap-2 border-b border-edge-faint px-3 text-[11.5px] text-muted">
-                <Shapes size={12} strokeWidth={1.8} aria-hidden />
-                <span>Visual</span>
+                <Shapes size={12} strokeWidth={1.8} aria-label="Visual" />
                 <span className="flex-1" />
                 {tall ? (
                     <button
