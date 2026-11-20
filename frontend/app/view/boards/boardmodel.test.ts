@@ -2,11 +2,15 @@ import type { ExcalidrawElement } from "@excalidraw/excalidraw/element/types";
 import { describe, expect, it } from "vitest";
 import {
     BoardFileError,
+    NUNITO,
     applyAnswer,
+    needsNunito,
+    nunitoTextIds,
     parseBoardFile,
     selectionLabel,
     serializeBoard,
     shapeCount,
+    withReadableFont,
     type BoardScene,
 } from "./boardmodel";
 
@@ -336,5 +340,45 @@ describe("shapeCount", () => {
         ];
         expect(shapeCount(els)).toBe(2);
         expect(shapeCount([])).toBe(0);
+    });
+});
+
+describe("the board's face", () => {
+    it("knows a Vietnamese letter the hand-drawn fonts lack, precomposed or decomposed", () => {
+        expect(needsNunito("Benchmark và oracle")).toBe(false); // à is Latin-1: Excalifont has it
+        expect(needsNunito("Bài toán")).toBe(false);
+        expect(needsNunito("Đánh giá")).toBe(true);
+        expect(needsNunito("hướng luận văn")).toBe(true);
+        expect(needsNunito("tới nơi")).toBe(true);
+        expect(needsNunito("ăn")).toBe(true);
+        expect(needsNunito("ạ")).toBe(true); // ạ written as a + combining dot below
+        expect(needsNunito("wavesrv → wsh")).toBe(false);
+    });
+
+    it("turns every hand-drawn text to Nunito once any text needs it, and names what it turned", () => {
+        const els = [
+            ...labelled("a", 0, 0, "Bài toán"),
+            text("t1", 0, 200, "PoV sớm từ ít thông tin"),
+            text("t2", 0, 300, "API"),
+            text("code", 0, 400, "npm test", { fontFamily: 3 }),
+            text("gone", 0, 500, "Đã xoá", { isDeleted: true }),
+        ];
+        const { elements, changed } = withReadableFont(els, NOW);
+        expect(changed).toEqual(["a-label", "t1", "t2"]);
+        const byId = new Map(elements.map((el) => [el.id, el as any]));
+        expect(byId.get("t2")).toMatchObject({ fontFamily: NUNITO, version: 2, updated: NOW });
+        expect(byId.get("a-label").fontFamily).toBe(NUNITO);
+        expect(byId.get("code").fontFamily).toBe(3); // a code font is not hand-drawn: it stays
+        expect(byId.get("gone").fontFamily).toBe(5); // a deleted text neither counts nor turns
+        expect(byId.get("a")).toBe(els[0]);
+        expect(nunitoTextIds(elements)).toEqual(["a-label", "t1", "t2"]);
+    });
+
+    it("leaves a board whose text the hand-drawn fonts can show as it is", () => {
+        const els = [...labelled("a", 0, 0, "Login box"), text("t", 0, 200, "Đã xoá", { isDeleted: true })];
+        const { elements, changed } = withReadableFont(els, NOW);
+        expect(changed).toEqual([]);
+        expect(elements).toEqual(els);
+        expect(nunitoTextIds(elements)).toEqual([]);
     });
 });

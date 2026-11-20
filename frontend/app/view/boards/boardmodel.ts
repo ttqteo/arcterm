@@ -170,6 +170,50 @@ const LABEL_FONT_SIZE = 20;
 const LABEL_FONT_FAMILY = 5;
 const LABEL_LINE_HEIGHT = 1.25;
 
+// --- the board's face. The hand-drawn fonts (Virgil 1, Excalifont 5) have no Vietnamese ơ ư đ ạ ế…: the browser borrows
+// another font for each such letter, the words come out in mixed faces, and the box Excalidraw measured in the hand-drawn
+// one clips their end. Nunito (6) is the one face Excalidraw ships with a Vietnamese subset.
+
+/** Excalidraw's font family number for Nunito. */
+export const NUNITO = 6;
+const HAND_DRAWN = new Set([1, 5]);
+// Vietnamese letters outside Latin-1 (ă đ ơ ư, the dotted and hooked vowels) and the marks of a decomposed one
+const LACKS_HAND_DRAWN = /[ĂăĐđĨĩŨũƠơƯưẠ-ỹ̀-̣]/;
+
+/** Pure: whether a text has a letter the hand-drawn fonts lack. */
+export function needsNunito(text: string): boolean {
+    return LACKS_HAND_DRAWN.test(text);
+}
+
+/** Pure: the board's text in one face that can show it: when any live text has a letter the hand-drawn fonts lack, every
+ *  live text in a hand-drawn font turns to Nunito (all of it, so a board does not read in two faces). `changed` is the
+ *  ids of the text it turned, whose boxes need measuring again. A board with no such letter is returned as it is. */
+export function withReadableFont(
+    elements: readonly ExcalidrawElement[],
+    now: number
+): { elements: ExcalidrawElement[]; changed: string[] } {
+    const live = elements.filter((el) => !el.isDeleted && el.type === "text");
+    if (!live.some((el) => needsNunito((el as { text?: string }).text ?? ""))) {
+        return { elements: [...elements], changed: [] };
+    }
+    const changed: string[] = [];
+    const out = elements.map((el) => {
+        if (el.isDeleted || el.type !== "text" || !HAND_DRAWN.has((el as { fontFamily?: number }).fontFamily ?? 0)) {
+            return el;
+        }
+        changed.push(el.id);
+        return bump(el, { fontFamily: NUNITO }, now);
+    });
+    return { elements: out, changed };
+}
+
+/** Pure: the ids of the live text in Nunito, which Excalidraw measured right only if the face had loaded. */
+export function nunitoTextIds(elements: readonly ExcalidrawElement[]): string[] {
+    return elements
+        .filter((el) => !el.isDeleted && el.type === "text" && (el as { fontFamily?: number }).fontFamily === NUNITO)
+        .map((el) => el.id);
+}
+
 function isBoundText(el: ExcalidrawElement): boolean {
     return el.type === "text" && el.containerId != null;
 }

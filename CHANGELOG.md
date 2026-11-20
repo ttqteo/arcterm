@@ -53,6 +53,11 @@ and a picture given to a line that is not big.
 - On Windows, a council an agent starts through PowerShell now gets its card in Chat, and the agent's summary of its
   report draws in the council panel. Commands run through PowerShell also show their output in Chat the way Bash
   commands do. The summary also lands in the panel when the agent's wait for the report ran past its timeout.
+- A board an agent drew from PowerShell (Claude agents on Windows) now gets its card with Open in Chat, as one drawn
+  from Bash always did.
+- Vietnamese on a board reads in one font and whole: a board whose text has Vietnamese letters the hand-drawn font lacks
+  (ơ, ư, đ, ạ…) is drawn in Nunito instead of a mix of fonts with the ends of its lines cut off, and a board drawn before
+  this turns when you open it.
 
 ### Fixed
 

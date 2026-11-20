@@ -1321,3 +1321,9 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
   `.html`, a `.ts` and a folder in Chat's message box: each pill shows its Material icon (as in the Code tree), selected
   or not, and the sent message's pills show the same; the 13 px icon sits centred on the 20 px pill. Typechecked only,
   not seen in the app.
+- [ ] (arcterm) **A board drawn from PowerShell gets its Chat card, and Vietnamese reads in Nunito**
+  (`transcriptprojection.ts` `isShell`, `boardmodel.ts` `withReadableFont`, `boardconvert.ts` `refitNunitoText`). In a
+  Claude agent on Windows, have it run `wsh board draw` through the PowerShell tool: its turn ends with the board card,
+  and Open splits the board beside Chat. Open the `huong-luan-van` board (Library → Boards): every label is in Nunito,
+  with no mixed glyphs and no line cut off ("tới nơi", "đang cượ…" whole), and the file saved that way. Unit-tested and
+  typechecked only, not seen in the app.
