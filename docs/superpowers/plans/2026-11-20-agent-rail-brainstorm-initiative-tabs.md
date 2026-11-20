@@ -21,13 +21,20 @@ view and Overview's Plan to review section are deleted.
 
 **Final:** `node scripts/cdp/final-verify.mjs rail-brainstorm-tab rail-initiative-tab rail-tabs-split`
 
-**Prototype:** D:/work/arcterm/.superpowers/design/agent-rail-brainstorm-initiative/project
+**Prototype:** <checkout>/.superpowers/design/agent-rail-brainstorm-initiative/project
 
 ---
 
 Read before starting: `AGENTS.md` (Frontend conventions, Visual verification), `DESIGN.md` (rail, tokens), and the
 canvas boards `D-timeline.dc.html` (Brainstorm tab), `B-initiative-tab.dc.html` (Initiative tab), `C-split-cells.dc.html`
 (split of four). Colors come from `@theme` tokens only. Single test files: `npx vitest run <file>`.
+
+Rail Verify (run de501e59, landed after this plan was written) changed the same rail files: `agentrailsections.ts` has a
+`verify` section and a `verify` stat (the last count in the strip, with its own tone and label), `agentdetailsrail.tsx`
+builds a `verify` tile and its `revealSection` calls `selectRailTab(agent.id, "overview", hasTree, hasTranscript)` (a
+Task 1 caller to update), and `RailStats` takes `verifyTitle`. Keep all of it: Task 4 removes only `plan`. The tab strip
+and the counts share one row, so with Council, Brainstorm, Initiative and the Verify count all present it must still not
+clip at 300px (Task 6's hand-check line).
 
 ### Task 1: The rail's tab model learns Brainstorm and Initiative
 
@@ -303,7 +310,7 @@ board, a chip opens the dialog over the cell, ← / → step, Esc closes. Run `t
 
 **Step 1: Overview loses Plan to review (test first).** In `agentrailsections.test.ts` change the cases that expect a
 `plan` section to expect none; run, see them fail; remove the `plan` id and its push (`agentrailsections.ts:19, 87-88`),
-`proposed` from `AgentRailInput` if nothing else reads it, and the `plan:` renderer (`agentdetailsrail.tsx:1177`).
+`proposed` from `AgentRailInput` if nothing else reads it, and the `plan:` renderer (`agentdetailsrail.tsx:1192`).
 `openRailSection(agentId, "plan")` callers (`initiativebandview.tsx:350`, `initiativepopover.tsx:217`) call
 `openRailInitiative(agentId, "plan")` instead; drop `"plan"` from `railsection.ts` and its test.
 
@@ -338,14 +345,14 @@ shows how to link one): Mark done, Work on this, Add note, the status menu, Plan
 **Depends on:** Task 3, Task 4
 
 **Files:**
-- Modify: `frontend/app/view/agents/chatpane.tsx:56,1221` (drop `ChatBand`)
+- Modify: `frontend/app/view/agents/chatpane.tsx:56,1224` (drop `ChatBand`)
 - Delete: `frontend/app/view/agents/chatband.tsx`
 - Modify/trim: `brainstormbandview.tsx` (drop `BrainstormLine`, `BrainstormBody`), `initiativebandview.tsx` (drop the
   line/body code the pane did not take; delete the file if nothing is left), `initiativebandstore.ts` (drop the band
   part state `bandPartsAtom`, `useBandPart`, `setBandPart`, `toggleBandPart`, `BAND_STORAGE_KEY`, the hint; keep
   `switchAgentChunk`, `switchAndTell`) and its test
 - Modify: `frontend/app/view/agents/agentheader.tsx:105,203,262`, `frontend/app/view/agents/initiativepopover.tsx`
-- Modify: `frontend/app/store/keybindings/bindings.ts` (`agent:initiative`, ~2027), `whenstate.ts`, `bindings.test.ts`
+- Modify: `frontend/app/store/keybindings/bindings.ts` (`agent:initiative`, ~2039), `whenstate.ts`, `bindings.test.ts`
 - Modify: `docs/keyboard-shortcuts.md`
 
 **Step 1:** Grep every import of each symbol and file you remove, `import type` and re-exports included
