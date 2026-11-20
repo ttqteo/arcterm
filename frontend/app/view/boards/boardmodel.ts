@@ -172,7 +172,8 @@ const LABEL_LINE_HEIGHT = 1.25;
 
 // --- the board's face. The hand-drawn fonts (Virgil 1, Excalifont 5) have no Vietnamese ơ ư đ ạ ế…: the browser borrows
 // another font for each such letter, the words come out in mixed faces, and the box Excalidraw measured in the hand-drawn
-// one clips their end. Nunito (6) is the one face Excalidraw ships with a Vietnamese subset.
+// one clips their end. Nunito (6) is the one face Excalidraw ships with a Vietnamese subset; the app serves its files
+// as Shantell Sans, a hand-drawn face (frontend/tauri/vite.config.ts), so the board still reads hand-drawn.
 
 /** Excalidraw's font family number for Nunito. */
 export const NUNITO = 6;
