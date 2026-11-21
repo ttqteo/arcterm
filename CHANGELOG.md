@@ -57,7 +57,8 @@ and a picture given to a line that is not big.
 
 ### Fixed
 
-- A file attached in Chat shows its type's icon (a PDF's, a spreadsheet's) instead of a plain page.
+- A file attached in Chat, and a file open in a tab of the Agent panel, shows its type's icon (a PDF's, a
+  spreadsheet's) instead of a plain page.
 
 ## 1.12.0 — 2026-11-20
 

@@ -4,6 +4,7 @@
 // The Agent panel's tab strip (icons, plus an editor-style tab per open file), the counts beside it, and the
 // grip that sizes the wide tabs. The panel itself is AgentDetailsRail, through CollapsibleRail's tabs/body/width props.
 
+import { FileIcon } from "@/app/element/fileicon";
 import { MOTION } from "@/app/element/motiontokens";
 import { ContextMenuModel } from "@/app/store/contextmenu";
 import { globalStore } from "@/app/store/jotaiStore";
@@ -391,7 +392,12 @@ function RailFileTab({
                     closable ? "pr-1" : "pr-2"
                 )}
             >
-                <FileText size={15} strokeWidth={1.8} aria-hidden className="shrink-0" />
+                {/* one file shows its type's icon, as the file tree draws it; the folded tab of several keeps a plain page */}
+                {folded != null && folded > 1 ? (
+                    <FileText size={15} strokeWidth={1.8} aria-hidden className="shrink-0" />
+                ) : (
+                    <FileIcon path={file.abs} size={15} />
+                )}
                 {/* on Overview's 300px the tab is its icon (and count), so the counts beside it keep their room */}
                 {folded == null ? (
                     <span className="min-w-0 truncate text-[11.5px]">{label}</span>
