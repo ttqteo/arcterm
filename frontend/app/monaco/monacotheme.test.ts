@@ -15,7 +15,7 @@ const TOKENS: SyntaxTokens = {
 
 const CHROME: MonacoChrome = {
     foreground: "#e2e8f0",
-    selection: "#1a222c",
+    selection: "#5e9cff",
     lineHighlight: "#171c22",
     added: "#3fb950",
     removed: "#f85149",
@@ -55,7 +55,8 @@ describe("monacoThemeFromTokens", () => {
 
     it("alpha-blends the selection and line-highlight chrome colors", () => {
         const t = monacoThemeFromTokens(TOKENS, CHROME, true);
-        expect(t.colors["editor.selectionBackground"]).toMatch(/^#1a222c[0-9a-f]{2}$/);
+        expect(t.colors["editor.selectionBackground"]).toMatch(/^#5e9cff[0-9a-f]{2}$/);
+        expect(t.colors["editor.inactiveSelectionBackground"]).toMatch(/^#5e9cff[0-9a-f]{2}$/);
         expect(t.colors["editor.lineHighlightBackground"]).toMatch(/^#171c22[0-9a-f]{2}$/);
     });
 

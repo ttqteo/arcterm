@@ -66,6 +66,8 @@ and a picture given to a line that is not big.
 
 - A file attached in Chat, and a file open in a tab of the Agent panel, shows its type's icon (a PDF's, a
   spreadsheet's) instead of a plain page.
+- Text you select in a file's Source view, and in the Code and Diff panes, stands out in the theme's accent instead of
+  a dark tint that all but hid it.
 
 ## 1.12.0 — 2026-11-20
 

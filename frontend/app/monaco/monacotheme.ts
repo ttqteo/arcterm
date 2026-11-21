@@ -31,7 +31,10 @@ export interface MonacoChrome {
     removed: string | null;
 }
 
-const SELECTION_ALPHA = 0.5;
+// the selection is the theme's accent, not surface-selected: that is a row tint one step above the panel, and at
+// half strength over the dark ground the selected text all but vanished (2026-11-21). Unfocused, it fades to half.
+const SELECTION_ALPHA = 0.32;
+const INACTIVE_SELECTION_ALPHA = 0.18;
 const LINE_HIGHLIGHT_ALPHA = 0.35;
 // the diff editor paints the whole changed line, then the changed words again on top — and a wholly added or
 // removed line gets the word colour across its full width too, so a new block is both washes stacked (~0.19 here;
@@ -80,6 +83,7 @@ export function monacoThemeFromTokens(
     }
     if (chrome.selection != null) {
         colors["editor.selectionBackground"] = colord(chrome.selection).alpha(SELECTION_ALPHA).toHex();
+        colors["editor.inactiveSelectionBackground"] = colord(chrome.selection).alpha(INACTIVE_SELECTION_ALPHA).toHex();
     }
     if (chrome.lineHighlight != null) {
         colors["editor.lineHighlightBackground"] = colord(chrome.lineHighlight).alpha(LINE_HIGHLIGHT_ALPHA).toHex();
@@ -118,7 +122,7 @@ export function readSyntaxTokens(root: HTMLElement): SyntaxTokens {
 export function readChromeRoles(root: HTMLElement): MonacoChrome {
     return {
         foreground: cssVar(root, "--color-foreground"),
-        selection: cssVar(root, "--color-surface-selected"),
+        selection: cssVar(root, "--color-accent"),
         lineHighlight: cssVar(root, "--color-surface-hover"),
         added: cssVar(root, "--color-diff-added"),
         removed: cssVar(root, "--color-diff-removed"),
@@ -139,7 +143,7 @@ export function useSyncMonacoTheme(): void {
         const root = document.documentElement;
         const chrome: MonacoChrome = {
             foreground: vars["--color-foreground"],
-            selection: vars["--color-surface-selected"],
+            selection: vars["--color-accent"],
             lineHighlight: vars["--color-surface-hover"],
             added: cssVar(root, "--color-diff-added"),
             removed: cssVar(root, "--color-diff-removed"),
