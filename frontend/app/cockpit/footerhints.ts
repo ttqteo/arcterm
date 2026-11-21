@@ -40,7 +40,7 @@ export const GLOBAL_HINTS: FooterHint[] = [
 export const SURFACE_HINTS: Partial<Record<SurfaceKey, FooterHint[]>> = {
     agent: [
         {
-            ids: ["agent:prev-up", "agent:next-down", "agent:prev-k", "agent:next-j", "agent:prev", "agent:next"],
+            ids: ["agent:prev-up", "agent:next-down", "agent:prev", "agent:next"],
             glyph: "↑↓",
             label: "move",
         },

@@ -1001,11 +1001,11 @@ describe("brainstorm pane Escape", () => {
         openBrainstormBoard("a1", "Split.dc.html");
         expect(live()).toEqual([true, true, true, true, true]);
         expect(claims("j")).toEqual(["agent:brainstorm-review-next"]);
-        // marking holds them: j and k go back to moving between agents, as on any canvas in marking mode
+        // marking holds them: no binding claims j or k then (they no longer step agents)
         setMarking("a1", true);
         expect(live()).toEqual([false, false, false, false, false]);
-        expect(claims("j")).toEqual(["agent:next-j"]);
-        expect(claims("k")).toEqual(["agent:prev-k"]);
+        expect(claims("j")).toEqual([]);
+        expect(claims("k")).toEqual([]);
         setMarking("a1", false);
         expect(live()).toEqual([true, true, true, true, true]);
     });
@@ -2098,8 +2098,6 @@ describe("agent canvas mode keys", () => {
             "agent:mark-start",
             "agent:prev-up",
             "agent:next-down",
-            "agent:prev-k",
-            "agent:next-j",
             "switcher:next",
             "switcher:prev",
         ]) {
@@ -2278,7 +2276,7 @@ describe("agent review mode keys", () => {
         expect(onKey("]")).toEqual(["agent:review-next"]);
         expect(onKey("c")).toEqual(["agent:review-comment"]);
         expect(onKey("Mod:Enter")).toEqual(["agent:review-approve"]);
-        for (const id of ["agent:prev", "agent:next", "agent:prev-k", "agent:next-j"]) {
+        for (const id of ["agent:prev", "agent:next"]) {
             expect(active(id), id).toBe(true);
         }
         for (const id of [
@@ -2496,7 +2494,7 @@ describe("Agent centre modes", () => {
     };
 
     it("keeps the agent keys live on the terminal and stands them down while a council, an Overview or a held agent covers it", () => {
-        const next = find("agent:next-j");
+        const next = find("agent:fullscreen");
         const rail = find("agent:toggle-rail");
         expect(next.when!(agentCtx)).toBe(true);
         expect(rail.when!(agentCtx)).toBe(true);
@@ -3438,8 +3436,6 @@ describe("agent:initiative", () => {
             "agent:initiative",
             "agent:prev-up",
             "agent:next-down",
-            "agent:prev-k",
-            "agent:next-j",
             "agent:toggle-rail",
             "agent:fullscreen",
             "agent:back",
@@ -3608,24 +3604,22 @@ describe("brainstorm check review keys", () => {
         vi.unstubAllGlobals();
     });
 
-    it("an exited agent's card is not the review: j/k stay on the agents and nothing claims y or u", () => {
+    it("an exited agent's card is not the review: nothing claims j, k, y or u", () => {
         globalStore.set(getProcExitAtom("b1"), { code: 0, at: 1 });
         for (const id of REVIEW_KEYS) {
             expect(active(id), id).toBe(false);
         }
-        expect(active("agent:next-j")).toBe(true);
+        expect(claiming("j")).toEqual([]);
         expect(claiming("y")).toEqual([]);
         updateBrainstorm("a1", (s) => ({ ...s, showDesign: true, designOpen: true }));
         expect(active("agent:brainstorm-review-next")).toBe(true);
     });
 
-    it("in the review, j k Enter y u are the review's and the agent j/k stand down; the arrows still move agents", () => {
+    it("in the review, j k Enter y u are the review's; the arrows still move agents", () => {
         focusInAgentTree();
         for (const id of REVIEW_KEYS) {
             expect(active(id), id).toBe(true);
         }
-        expect(active("agent:next-j")).toBe(false);
-        expect(active("agent:prev-k")).toBe(false);
         expect(active("agent:next")).toBe(true);
         expect(active("agent:prev")).toBe(true);
         for (const key of ["j", "k", "Enter", "y", "u"]) {
@@ -3639,19 +3633,19 @@ describe("brainstorm check review keys", () => {
         }
     });
 
-    it("the talk view and the terminal keep j/k on the agents, and nothing claims y or u", () => {
+    it("the talk view and the terminal leave j, k, y and u unclaimed", () => {
         withFile({ ...checked, check: null });
         for (const id of REVIEW_KEYS) {
             expect(active(id), id).toBe(false);
         }
-        expect(active("agent:next-j")).toBe(true);
-        expect(active("agent:prev-k")).toBe(true);
+        expect(claiming("j")).toEqual([]);
+        expect(claiming("k")).toEqual([]);
         expect(claiming("y")).toEqual([]);
         expect(claiming("u")).toEqual([]);
         withFile(checked);
         setAgentView("a1", "terminal", 2);
         expect(active("agent:brainstorm-review-next")).toBe(false);
-        expect(active("agent:next-j")).toBe(true);
+        expect(claiming("j")).toEqual([]);
     });
 
     it("a builder question in the main area is not the review; the review opened over it is", () => {
@@ -3660,16 +3654,16 @@ describe("brainstorm check review keys", () => {
             check: { ...checked.check!, yours: [...checked.check!.yours, { q: "A day with no row?" }] },
         });
         expect(active("agent:brainstorm-review-next")).toBe(false);
-        expect(active("agent:next-j")).toBe(true);
+        expect(claiming("j")).toEqual([]);
         openBrainstormDesign("a1", true);
         expect(active("agent:brainstorm-review-next")).toBe(true);
-        expect(active("agent:next-j")).toBe(false);
+        expect(claiming("j")).toHaveLength(1);
     });
 
-    it("another focused agent keeps its j/k", () => {
+    it("another focused agent does not get the review's j/k", () => {
         globalStore.set(model.focusIdAtom, "a2");
         expect(active("agent:brainstorm-review-next")).toBe(false);
-        expect(active("agent:next-j")).toBe(true);
+        expect(claiming("j")).toEqual([]);
     });
 
     it("j and k move the cursor over the changed rows then the new ones, stopping at both ends", () => {
@@ -4692,9 +4686,8 @@ describe("agent arrows", () => {
         for (const id of ARROWS) {
             expect(active(id), id).toBe(false);
         }
-        // j and k still step agents from anywhere off a text field
-        expect(active("agent:next-j")).toBe(true);
-        expect(active("agent:prev-k")).toBe(true);
+        // j and k step no agents at all: a letter typed off a field goes into the chat box (chattypeinto.ts)
+        expect(buildAgentBindings(model).some((b) => b.id === "agent:next-j" || b.id === "agent:prev-k")).toBe(false);
         focusInAgentTree();
         for (const id of ARROWS) {
             expect(active(id), id).toBe(true);

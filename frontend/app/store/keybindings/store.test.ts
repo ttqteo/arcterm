@@ -488,14 +488,14 @@ describe("keybinding conflict invariant", () => {
                     ...buildLibraryBindings(model),
                 ])
             ).not.toThrow();
-            // not vacuous: the list's j is live on Library and not on the Agent surface, whose own j is not live on Library
+            // not vacuous: the list's j is live on Library and not on the Agent surface, whose own d is not live on Library
             const lib = { surface: "library" as const, editable: false, modalOpen: false, leader: null };
             const agent = { ...lib, surface: "agent" as const };
             const listJ = buildListNavBindings(model).find((b) => b.id === "list:next-j")!;
-            const agentJ = buildAgentBindings(model).find((b) => b.id === "agent:next-j")!;
+            const agentD = buildAgentBindings(model).find((b) => b.id === "agent:toggle-rail")!;
             expect(listJ.when!(lib)).toBe(true);
             expect(listJ.when!(agent)).toBe(false);
-            expect(agentJ.when!(lib)).toBe(false);
+            expect(agentD.when!(lib)).toBe(false);
         } finally {
             globalStore.set(libraryTabAtom, "conversations");
             globalStore.set(listNavAtom, null);

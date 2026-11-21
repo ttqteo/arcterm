@@ -39,6 +39,9 @@ and a picture given to a line that is not big.
   20% already means every turn re-reads 200k.
 - A board open beside Chat gets most of the width: Chat narrows to a 360px column and the agent list folds to a thin
   strip, which opens it again until the board closes.
+- Click an agent in the list and start typing: the text goes into its chat box, no `Tab` first. `j` and `k` no longer
+  move between agents (the arrows in the list and `Ctrl`+`Tab` still do), and a letter that is a shortcut there (`d`,
+  `f`, `i`…) still runs it.
 
 ### Added
 

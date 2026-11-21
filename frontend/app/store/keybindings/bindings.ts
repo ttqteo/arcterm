@@ -1349,7 +1349,8 @@ const centerAtRest = () => globalStore.get(centerModeAtom) === "terminal";
 const agentNav = (ctx: KeyContext) => navigate(ctx) && ctx.surface === "agent" && centerAtRest();
 // The arrows step agents only with focus in the Agent tree: elsewhere on the surface (Chat's conversation, a card in
 // it) they are the page's own, to scroll or to move in what holds focus, and stepping agents there switched away
-// from the conversation being read. j, k and Ctrl+Tab still step agents anywhere off a text field.
+// from the conversation being read. Ctrl+Tab still steps agents anywhere; j and k do not (a letter typed off a field
+// goes into the chat box).
 const inAgentTree = () =>
     typeof document !== "undefined" && document.activeElement?.closest?.("[data-agent-tree]") != null;
 // Focus read's toggle, for the agent in focus: each agent has its own. On the Agent surface it turns focus read on or off
@@ -1929,7 +1930,7 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
             keys: "ArrowLeft",
             group: "Agent",
             label: "Previous agent",
-            // on a canvas left and right are the board's (onCanvas); up, down, j and k still move between agents
+            // on a canvas left and right are the board's (onCanvas); up and down still move between agents
             when: (ctx) => agentNav(ctx) && !onCanvas(ctx) && inAgentTree(),
             run: () => step(-1),
         },
@@ -1958,24 +1959,9 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
             when: (ctx) => agentNav(ctx) && inAgentTree(),
             run: () => step(1),
         },
-        // in the brainstorm check's review j and k move between its decisions; the arrows and Ctrl+Tab still move agents
-        {
-            id: "agent:prev-k",
-            keys: "k",
-            group: "Agent",
-            label: "Previous agent",
-            // in a Chat conversation read with focus read, j and k step its blocks instead (agent:focus-read-*)
-            when: (ctx) => agentNav(ctx) && !inBrainstormReview(ctx) && focusReadAgent() == null,
-            run: () => step(-1),
-        },
-        {
-            id: "agent:next-j",
-            keys: "j",
-            group: "Agent",
-            label: "Next agent",
-            when: (ctx) => agentNav(ctx) && !inBrainstormReview(ctx) && focusReadAgent() == null,
-            run: () => step(1),
-        },
+        // j and k no longer step agents (the arrows in the tree and Ctrl+Tab do): a letter no shortcut takes goes into the
+        // focused agent's chat box (agentsurface.tsx, chattypeinto.ts). In the brainstorm check's review they move between
+        // its decisions
         {
             id: "agent:brainstorm-review-next",
             keys: "j",
@@ -2271,7 +2257,7 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
         ).map(
             ([id, key, label, dir]): Binding => ({
                 // With focus read on and the focus in a Chat conversation (a click in it, or turning focus read on):
-                // never in the box, the Agent tree (where j/k step agents) or the terminal
+                // never in the box, the Agent tree or the terminal
                 id,
                 keys: key,
                 group: "Agent",

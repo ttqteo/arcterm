@@ -102,7 +102,7 @@ export const PREDICATE_ATOMS: Atom<unknown>[] = [
     usageLensAtom, // usage:back, and surface:back-home stands down to it
     usageWorkScopeAtom, // usage:back, surface:back-home
     usageWorkItemAtom, // usage:back, surface:back-home
-    chatFocusReadIdsAtom, // buildAgentBindings: agent:focus-read-* and agent:next-j / agent:prev-k
+    chatFocusReadIdsAtom, // buildAgentBindings: agent:focus-read-*
     docFocusReadOnAtom, // the same, in a markdown Preview
 ];
 

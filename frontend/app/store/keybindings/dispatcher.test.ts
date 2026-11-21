@@ -341,8 +341,6 @@ describe("the Uploads lightbox over the Agent surface", () => {
         ArrowRight: "agent:next",
         ArrowUp: "agent:prev-up",
         ArrowDown: "agent:next-down",
-        k: "agent:prev-k",
-        j: "agent:next-j",
         d: "agent:toggle-rail",
         f: "agent:fullscreen",
         r: "agent:review",

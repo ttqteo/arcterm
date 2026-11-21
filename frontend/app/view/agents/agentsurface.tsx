@@ -24,7 +24,7 @@ import { restoringModalFocus, setModalFocusFallback } from "@/app/modals/modalfo
 import { atoms } from "@/app/store/global-atoms";
 import { globalStore } from "@/app/store/jotaiStore";
 import { buildAgentBindings } from "@/app/store/keybindings/bindings";
-import { focusClaimed, isEditableTarget } from "@/app/store/keybindings/dispatcher";
+import { deriveKeyContext, focusClaimed, isEditableTarget, ownsKeys } from "@/app/store/keybindings/dispatcher";
 import { useKeybindings } from "@/app/store/keybindings/store";
 import * as WOS from "@/app/store/wos";
 import { RpcApi } from "@/app/store/wshclientapi";
@@ -65,11 +65,13 @@ import { brainstormAtom } from "./brainstormstore";
 import { CanvasPane } from "./canvaspane";
 import { useCanvasPoller } from "./canvaspoller";
 import { canvasStateAtom } from "./canvasstore";
-import { cellInputOf } from "./cellinput";
+import { cellInputOf, chatInputOf } from "./cellinput";
 import { nextCellOrder } from "./cellorder";
+import { insertIntoChatBox } from "./chatinsert";
 import { chatCapable, shownChatMode } from "./chatmode";
 import { chatModeAtom } from "./chatmodestore";
 import { ChatLayer } from "./chatpane";
+import { typedIntoChat } from "./chattypeinto";
 import { closedNeighbour, keepFocused, resolveShownAgent, rosterLoadPhase } from "./cockpitsurfacemodel";
 import { CouncilPane } from "./councilpane";
 import { autoOpenedAskIdsAtom, shouldAutoOpen } from "./docreview";
@@ -440,7 +442,7 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
     }, [agent?.id, swapped]);
 
     // A council, an Overview and a held agent cover the terminal as canvas mode does, and a hidden xterm can still hold focus
-    // and eat the surface's keys (Esc, j/k): leaving the terminal pulls focus to the wrapper, and returning to it hands
+    // and eat the surface's keys (Esc, d, f): leaving the terminal pulls focus to the wrapper, and returning to it hands
     // focus back to the focused agent's xterm, or to the wrapper when that xterm is not showing (canvas, subagent
     // interior, ended worker, no block), so it never drops to <body>
     const lastCenter = useRef<CenterMode>(centerMode);
@@ -555,7 +557,7 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
     // inside a different cell's xterm, typing would still go to the old agent while the header names the new one, so
     // hand focus to the new agent's xterm; in a multi-cell grid an outside write does redirect typing to the newly
     // selected agent, which is accepted. Only from inside a terminal: from the tree, the wrapper or a note field there
-    // is nothing to hand over, and focusing an xterm there would turn the next j/k/arrow into typing.
+    // is nothing to hand over, and focusing an xterm there would turn the next arrow into typing.
     // Gated to several cells showing: the old xterm is then still visible and keeps receiving keystrokes. With one cell
     // the old pane is hidden, so nothing is misrouted, and an outside write (wsh ui, a notification) must not move the
     // user's typing into a different agent mid-keystroke.
@@ -588,7 +590,7 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
     }, [typingFollows, agent?.id]);
 
     // An asking agent's picker takes ↑/↓, Enter and digits, the same keys the tree moves with, and the agent comes first:
-    // choosing one by any route (a click, the arrows, j/k, Ctrl+Tab), or the chosen agent starting to ask, hands the
+    // choosing one by any route (a click, the arrows, Ctrl+Tab), or the chosen agent starting to ask, hands the
     // keyboard to its terminal. Not out of a field, another terminal or a dialog (focusClaimed), and not while something
     // shows in the terminal's place; Shift+Esc goes back to the tree, and this does not pull focus again until another
     // agent is chosen or this one asks again.
@@ -602,6 +604,33 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
         }
         focusTerminalOf(agent.id);
     }, [agent?.id, asking]);
+
+    // Picking a chat (its row in the tree) and typing puts the text in its chat box, no Tab first: a character no
+    // shortcut took (the dispatcher's capture listener stops the ones it runs, so this bubble listener never sees them),
+    // typed with the focus inside this surface and off every field, goes into the focused agent's box when its cell
+    // shows Chat (chattypeinto.ts). Not under a dialog, and not into a terminal, which is a field.
+    useEffect(() => {
+        const onKeyDown = (e: KeyboardEvent) => {
+            const ch = typedIntoChat(e);
+            const wrap = wrapRef.current;
+            const id = globalStore.get(model.focusIdAtom);
+            if (ch == null || wrap == null || id == null || globalStore.get(model.surfaceAtom) !== "agent") {
+                return;
+            }
+            const active = document.activeElement;
+            if (active != null && active !== document.body && !wrap.contains(active)) {
+                return;
+            }
+            if (isEditableTarget(active) || ownsKeys(active) || deriveKeyContext().modalOpen) {
+                return;
+            }
+            if (chatInputOf(wrap, id) != null && insertIntoChatBox(id, ch)) {
+                e.preventDefault();
+            }
+        };
+        window.addEventListener("keydown", onKeyDown);
+        return () => window.removeEventListener("keydown", onKeyDown);
+    }, []);
 
     // the surface stays mounted, so the effects above never run on a switch back to it, and arriving left
     // focus on <body>: typing reached the agent only after a click. Arriving hands focus to the review when it

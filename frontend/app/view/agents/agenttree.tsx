@@ -299,8 +299,8 @@ const SUB_COLOR: Record<SubagentState, string> = {
 export const rowSelectionAtom = atom<RowSelection>(NO_ROW_SELECTION) as PrimitiveAtom<RowSelection>;
 
 // choosing an agent's row brings its terminal back from a council, an Overview or one of its subagents; one whose Chat reads
-// with focus read takes the keyboard in its conversation, so J/K step its blocks without a click there first (j/k in
-// the tree do not come through here, so they still move from agent to agent), unless the pick is to type into it
+// with focus read takes the keyboard in its conversation, so J/K step its blocks without a click there first (the
+// arrows in the tree do not come through here, so they still move from agent to agent), unless the pick is to type into it
 export function selectAgentRow(model: AgentsViewModel, id: string): void {
     globalStore.set(rowSelectionAtom, selectOnly(id));
     globalStore.set(model.focusIdAtom, id);
@@ -2943,7 +2943,7 @@ export const COUNCIL_TONE: Record<CouncilTone, { text: string }> = {
 
 // A project's councils (projectTree's council rows) are peers of its agents, with no label: the pinned ones at the
 // folder's top, the others after the agents.
-// None of them is a focus target: a click opens the council centre mode (agentcenter.ts) and j/k, Ctrl+Tab and Alt+digit
+// None of them is a focus target: a click opens the council centre mode (agentcenter.ts) and the arrows, Ctrl+Tab and Alt+digit
 // keep moving between agents and terminals. They read as selected while that mode shows them, which the agent rows
 // cannot (useSelectedRowId shows none while the centre is not a terminal).
 

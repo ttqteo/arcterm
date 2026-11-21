@@ -84,7 +84,6 @@ describe("agent canvas mode chips", () => {
 
     it("terminal mode with a canvas offers c canvas between full and back", () => {
         expect(chips()).toEqual([
-            "↑↓ move",
             "d rail",
             "f full",
             "Mod:Shift:Enter full",
@@ -99,7 +98,6 @@ describe("agent canvas mode chips", () => {
     it("canvas mode shows the agent switches, then terminal, board and mark before the globals", () => {
         setCanvasMode("a1", "canvas", 1);
         expect(chips()).toEqual([
-            "↑↓ move",
             "Alt:c switch view",
             "Ctrl:Tab switch",
             "c terminal",
@@ -113,7 +111,6 @@ describe("agent canvas mode chips", () => {
         setCanvasMode("a1", "canvas", 1);
         setMarking("a1", true);
         expect(chips()).toEqual([
-            "↑↓ move",
             "Alt:c switch view",
             "Ctrl:Tab switch",
             "m stop marking",
@@ -127,7 +124,6 @@ describe("agent canvas mode chips", () => {
         setMarking("a1", true);
         updateCanvas("a1", (s) => ({ ...s, marks: [{ x: 0, y: 0, w: 20, h: 20, note: "" }] }));
         expect(chips()).toEqual([
-            "↑↓ move",
             "Alt:c switch view",
             "Ctrl:Tab switch",
             "Mod:Enter send",
@@ -192,7 +188,6 @@ describe("agent brainstorm mode chips", () => {
     it("brainstorm mode lists the pane's keys: the way back to the terminal, then the globals", () => {
         setAgentView("a1", "brainstorm", 1);
         expect(chips()).toEqual([
-            "↑↓ move",
             "Alt:c switch view",
             "Ctrl:Shift:b brainstorm",
             "Ctrl:Tab switch",
@@ -217,7 +212,6 @@ describe("agent brainstorm mode chips", () => {
             expect(chips()).not.toContain("[ ] board");
             openBrainstormBoard("a1", "Split.dc.html");
             expect(chips()).toEqual([
-                "↑↓ move",
                 "Alt:c switch view",
                 "Ctrl:Shift:b brainstorm",
                 "Escape back",
