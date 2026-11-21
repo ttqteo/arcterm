@@ -127,6 +127,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { atom, type PrimitiveAtom } from "jotai";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+    ALT_TWINS,
     buildAgentBindings,
     buildChannelsAskBindings,
     buildCockpitBindings,
@@ -4701,5 +4702,64 @@ describe("agent:hand-to-phone", () => {
         const hand = agentBindings.find((b) => b.id === "agent:hand-to-phone");
         expect(hand?.keys).toBe("p");
         expect(agentBindings.filter((b) => b.keys === "p").map((b) => b.id)).toEqual(["agent:hand-to-phone"]);
+    });
+});
+
+describe("Chat takes the letters", () => {
+    const nav: KeyContext = { surface: "agent", editable: false, modalOpen: false, leader: null };
+    const model = { ...stubModel("a1"), surfaceAtom: atom<SurfaceKey>("agent") } as any;
+    const find = (id: string) => buildAgentBindings(model).find((b) => b.id === id)!;
+    // the Agent surface's wrapper, holding the focused agent's chat box when `chat`, with the focus on `active`
+    const stubSurface = (active: { tag?: string; inComposer?: boolean; inTree?: boolean }, chat = true) => {
+        const el = {
+            tagName: active.tag ?? "DIV",
+            isContentEditable: false,
+            closest: (sel: string) =>
+                (sel === "[data-agent-chat-composer]" && active.inComposer) || (sel === "[data-agent-tree]" && active.inTree)
+                    ? {}
+                    : null,
+        };
+        const box = { checkVisibility: () => true, closest: () => ({}) };
+        const wrap = { contains: () => true, querySelector: () => (chat ? box : null) };
+        vi.stubGlobal("document", {
+            activeElement: el,
+            body: {},
+            querySelector: (sel: string) => (sel === "[data-cockpit-surface-wrap]" ? wrap : null),
+        });
+    };
+
+    it("stands the bare-letter agent keys down while a typed letter would go into the chat box", () => {
+        stubSurface({ inTree: true });
+        for (const id of ["agent:toggle-rail", "agent:fullscreen", "agent:initiative", "agent:float", "agent:review"]) {
+            expect(find(id).when!(nav), id).toBe(false);
+        }
+        // the arrows in the tree are not letters
+        expect(find("agent:next-down").when!(nav)).toBe(true);
+    });
+
+    it("keeps them with the agent in Terminal (no chat box on screen)", () => {
+        stubSurface({ inTree: true }, false);
+        expect(find("agent:toggle-rail").when!(nav)).toBe(true);
+        expect(find("agent:fullscreen").when!(nav)).toBe(true);
+    });
+
+    it("gives each an ⌥ twin, live off a field and in the chat box, never in the terminal", () => {
+        for (const t of ALT_TWINS) {
+            expect(find(t.id).keys, t.id).toBe(t.keys);
+        }
+        const rail = find("agent:toggle-rail-alt");
+        stubSurface({ inTree: true });
+        expect(rail.when!(nav)).toBe(true);
+        stubSurface({ tag: "DIV", inComposer: true });
+        expect(rail.when!({ ...nav, editable: true })).toBe(true);
+        stubSurface({ tag: "TEXTAREA" });
+        expect(rail.when!({ ...nav, editable: true })).toBe(false);
+    });
+
+    it("an ⌥ twin always takes its key, so ⌥+letter never types its symbol into the box", () => {
+        stubSurface({ inTree: true });
+        // no review to open: the bare r passes, its twin still takes the key
+        expect(find("agent:review").run(nav)).toBe(false);
+        expect(find("agent:review-alt").run(nav)).toBeUndefined();
     });
 });

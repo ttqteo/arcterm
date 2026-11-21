@@ -91,6 +91,7 @@ import { FileTab } from "./filetab";
 import { finalRowFocusId, isFinalStageId } from "./finalstage";
 import { FinalStageRail } from "./finalstagerail";
 import { capFiles, statusColor } from "./gitstatus";
+import { KeyTip } from "./keytip";
 import { machineServersReadingAtom } from "./machineserversstore";
 import { prettyModel } from "./modellabel";
 import { useInitiativeReread, usePlanReview } from "./planreviewstore";
@@ -1728,7 +1729,10 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
             ]}
             strip={{
                 content: (
-                    <RailStrip needs={yours.length} ctxPct={sub ? undefined : ctxPct} ctxMax={usage?.contextmax} />
+                    <>
+                        <RailStrip needs={yours.length} ctxPct={sub ? undefined : ctxPct} ctxMax={usage?.contextmax} />
+                        <KeyTip id="agent:toggle-rail-alt" className="-right-[2px] -top-[2px]" />
+                    </>
                 ),
                 title: `${stripTitle} (${formatChordString("d")})`,
             }}

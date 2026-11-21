@@ -104,6 +104,7 @@ import {
 } from "./headermodel";
 import { initiativeLinkPickerAtom } from "./initiativepopover";
 import { chipCount } from "./initiativepopovermodel";
+import { KeyTip } from "./keytip";
 import { openLauncher } from "./launcherstore";
 import { rosterSeededAtom } from "./liveagents";
 import { liveTokensAtom } from "./livetokensstore";
@@ -233,7 +234,7 @@ function InitiativeLink({ model, agent, width }: { model: AgentsViewModel; agent
                     openRailInitiative(agent.id);
                 }}
                 title={`${effort?.title ?? "This initiative"}${count != null ? ` · ${count}` : ""}: its tab on the rail (i), ${peekClickLabel()} to peek at it in Sprout`}
-                className="inline-flex min-w-0 cursor-pointer items-center gap-[4px] rounded-[5px] text-accent-soft hover:underline"
+                className="relative inline-flex min-w-0 cursor-pointer items-center gap-[4px] rounded-[5px] text-accent-soft hover:underline"
             >
                 <Diamond size={11} strokeWidth={2} aria-hidden className="flex-none" />
                 {initiativeTitleShown(width) ? (
@@ -249,6 +250,7 @@ function InitiativeLink({ model, agent, width }: { model: AgentsViewModel; agent
                         ) : null}
                     </>
                 ) : null}
+                <KeyTip id="agent:initiative-alt" />
             </button>
         </>
     );
@@ -312,12 +314,13 @@ function LinkToInitiative({ agent, project, width }: { agent: AgentVM; project: 
                 onClick={() => setOpen(!open)}
                 title="Link this agent to an initiative (i)"
                 className={cn(
-                    "inline-flex flex-none cursor-pointer items-center gap-[3px] rounded-[5px] text-ink-faint hover:text-primary",
+                    "relative inline-flex flex-none cursor-pointer items-center gap-[3px] rounded-[5px] text-ink-faint hover:text-primary",
                     open && "bg-surface-selected text-primary"
                 )}
             >
                 <Plus size={11} strokeWidth={2} aria-hidden />
                 {word || null}
+                <KeyTip id="agent:initiative-alt" />
             </button>
             <InitiativePicker
                 open={open}
@@ -980,132 +983,136 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
                         type="button"
                         onClick={() => openReview(model, agent.id)}
                         title={`Show the review (${formatChordString("r")})`}
-                        className="flex cursor-pointer items-center gap-[7px] rounded-[7px] border border-warning/45 bg-askingbg px-[11px] py-[6px] text-[11px] font-semibold text-warning hover:border-warning"
+                        className="relative flex cursor-pointer items-center gap-[7px] rounded-[7px] border border-warning/45 bg-askingbg px-[11px] py-[6px] text-[11px] font-semibold text-warning hover:border-warning"
                     >
                         <span className="h-[6px] w-[6px] rounded-full bg-warning" aria-hidden />
                         {DOC_REVIEW_HEADERS[review.kind]}
                         <ChevronLeft size={12} strokeWidth={2} aria-hidden />
+                        <KeyTip id="agent:review-alt" />
                     </button>
                 ) : null}
                 {viewControl ? (
                     // one control for whatever can stand in the terminal's place: a canvas or a brainstorm (never both), a
                     // Doc review, or both; and for a Claude agent, Chat or its terminal in the terminal's own slot
-                    <Segmented<CellView>
-                        role="group"
-                        ariaLabel={`Show ${listViews(viewOptions, "or", false)}`}
-                        value={shownView}
-                        // the selected option's fill slides to the one picked, as the grid bar's switch does
-                        slide
-                        options={[
-                            ...(chatShown
-                                ? [
-                                      {
-                                          key: "chat" as const,
-                                          label: (
-                                              <>
-                                                  <MessageSquare size={VIEW_ICON} strokeWidth={1.9} aria-hidden />
-                                                  {words ? "Chat" : null}
-                                              </>
-                                          ),
-                                          title: chatAsleep
-                                              ? "Chat: the conversation so far"
-                                              : `Chat (${formatChordString("Mod:Shift:k")})`,
-                                      },
-                                  ]
-                                : []),
-                            {
-                                key: "terminal",
-                                label: (
-                                    <>
-                                        <SquareTerminal size={VIEW_ICON} strokeWidth={1.9} aria-hidden />
-                                        {words ? "Terminal" : null}
-                                    </>
-                                ),
-                                title: chatAsleep
-                                    ? ASLEEP_VIEW_TITLE
-                                    : chatShown
-                                      ? `Terminal (${formatChordString("Mod:Shift:k")})`
-                                      : `Terminal (${formatChordString(swapKey)}, ${formatChordString("Alt:c")} from the terminal)`,
-                                disabled: chatAsleep,
-                                dataAttrs: chatAsleep ? { "data-chat-view-asleep": "" } : undefined,
-                            },
-                            ...(brainstorm != null
-                                ? [
-                                      {
-                                          key: "brainstorm" as const,
-                                          label: (
-                                              <>
-                                                  <Lightbulb size={VIEW_ICON} strokeWidth={1.9} aria-hidden />
-                                                  {words ? "Brainstorm" : null}
-                                                  {brainstormDot === "asking" ? (
-                                                      <span
-                                                          aria-label="asking you"
-                                                          className="h-[6px] w-[6px] rounded-full bg-warning"
-                                                      />
-                                                  ) : brainstormDot === "new" ? (
-                                                      <span
-                                                          data-brainstorm-tab-new
-                                                          aria-label="new boards"
-                                                          className="h-[6px] w-[6px] rounded-full bg-accent"
-                                                      />
-                                                  ) : null}
-                                              </>
-                                          ),
-                                          title: `Brainstorm (${formatChordString("b")}, ${formatChordString("Ctrl:Shift:b")} from the terminal)`,
-                                      },
-                                  ]
-                                : []),
-                            ...(hasCanvas
-                                ? [
-                                      {
-                                          key: "canvas" as const,
-                                          label: (
-                                              <>
-                                                  <LayoutGrid size={VIEW_ICON} strokeWidth={1.9} aria-hidden />
-                                                  {words ? "Canvas" : null}
-                                                  {isUnseen(canvas) ? (
-                                                      <span
-                                                          aria-label="updated since you last looked"
-                                                          className="h-[6px] w-[6px] rounded-full bg-accent"
-                                                      />
-                                                  ) : null}
-                                              </>
-                                          ),
-                                          title: `Canvas (${formatChordString("c")}, ${formatChordString("Alt:c")} from the terminal)`,
-                                      },
-                                  ]
-                                : []),
-                            ...(docReview != null
-                                ? [
-                                      {
-                                          key: "review" as const,
-                                          label: (
-                                              <>
-                                                  <FileCheck size={VIEW_ICON} strokeWidth={1.9} aria-hidden />
-                                                  {words ? "Review" : null}
-                                                  {view !== "review" && !sent ? (
-                                                      <span
-                                                          aria-label="waiting on you"
-                                                          className="h-[6px] w-[6px] rounded-full bg-warning"
-                                                      />
-                                                  ) : null}
-                                              </>
-                                          ),
-                                          title: `Review (${formatChordString("r")}, ${formatChordString("Alt:c")} from the terminal)`,
-                                      },
-                                  ]
-                                : []),
-                        ]}
-                        // an agent with no Chat option (not a Claude agent) keeps its stored chat mode
-                        onChange={(v) =>
-                            chatAsleep && v === "chat"
-                                ? // asleep, the slot shows Chat whatever the stored mode: keep the mode, so it wakes as it was
-                                  setAgentView(agent.id, "terminal", Date.now())
-                                : chatShown || v === "chat"
-                                  ? selectCellView(agent.id, v, Date.now())
-                                  : setAgentView(agent.id, v, Date.now())
-                        }
-                    />
+                    <span className="relative flex flex-none">
+                        <Segmented<CellView>
+                            role="group"
+                            ariaLabel={`Show ${listViews(viewOptions, "or", false)}`}
+                            value={shownView}
+                            // the selected option's fill slides to the one picked, as the grid bar's switch does
+                            slide
+                            options={[
+                                ...(chatShown
+                                    ? [
+                                          {
+                                              key: "chat" as const,
+                                              label: (
+                                                  <>
+                                                      <MessageSquare size={VIEW_ICON} strokeWidth={1.9} aria-hidden />
+                                                      {words ? "Chat" : null}
+                                                  </>
+                                              ),
+                                              title: chatAsleep
+                                                  ? "Chat: the conversation so far"
+                                                  : `Chat (${formatChordString("Mod:Shift:k")})`,
+                                          },
+                                      ]
+                                    : []),
+                                {
+                                    key: "terminal",
+                                    label: (
+                                        <>
+                                            <SquareTerminal size={VIEW_ICON} strokeWidth={1.9} aria-hidden />
+                                            {words ? "Terminal" : null}
+                                        </>
+                                    ),
+                                    title: chatAsleep
+                                        ? ASLEEP_VIEW_TITLE
+                                        : chatShown
+                                          ? `Terminal (${formatChordString("Mod:Shift:k")})`
+                                          : `Terminal (${formatChordString(swapKey)}, ${formatChordString("Alt:c")} from the terminal)`,
+                                    disabled: chatAsleep,
+                                    dataAttrs: chatAsleep ? { "data-chat-view-asleep": "" } : undefined,
+                                },
+                                ...(brainstorm != null
+                                    ? [
+                                          {
+                                              key: "brainstorm" as const,
+                                              label: (
+                                                  <>
+                                                      <Lightbulb size={VIEW_ICON} strokeWidth={1.9} aria-hidden />
+                                                      {words ? "Brainstorm" : null}
+                                                      {brainstormDot === "asking" ? (
+                                                          <span
+                                                              aria-label="asking you"
+                                                              className="h-[6px] w-[6px] rounded-full bg-warning"
+                                                          />
+                                                      ) : brainstormDot === "new" ? (
+                                                          <span
+                                                              data-brainstorm-tab-new
+                                                              aria-label="new boards"
+                                                              className="h-[6px] w-[6px] rounded-full bg-accent"
+                                                          />
+                                                      ) : null}
+                                                  </>
+                                              ),
+                                              title: `Brainstorm (${formatChordString("b")}, ${formatChordString("Ctrl:Shift:b")} from the terminal)`,
+                                          },
+                                      ]
+                                    : []),
+                                ...(hasCanvas
+                                    ? [
+                                          {
+                                              key: "canvas" as const,
+                                              label: (
+                                                  <>
+                                                      <LayoutGrid size={VIEW_ICON} strokeWidth={1.9} aria-hidden />
+                                                      {words ? "Canvas" : null}
+                                                      {isUnseen(canvas) ? (
+                                                          <span
+                                                              aria-label="updated since you last looked"
+                                                              className="h-[6px] w-[6px] rounded-full bg-accent"
+                                                          />
+                                                      ) : null}
+                                                  </>
+                                              ),
+                                              title: `Canvas (${formatChordString("c")}, ${formatChordString("Alt:c")} from the terminal)`,
+                                          },
+                                      ]
+                                    : []),
+                                ...(docReview != null
+                                    ? [
+                                          {
+                                              key: "review" as const,
+                                              label: (
+                                                  <>
+                                                      <FileCheck size={VIEW_ICON} strokeWidth={1.9} aria-hidden />
+                                                      {words ? "Review" : null}
+                                                      {view !== "review" && !sent ? (
+                                                          <span
+                                                              aria-label="waiting on you"
+                                                              className="h-[6px] w-[6px] rounded-full bg-warning"
+                                                          />
+                                                      ) : null}
+                                                  </>
+                                              ),
+                                              title: `Review (${formatChordString("r")}, ${formatChordString("Alt:c")} from the terminal)`,
+                                          },
+                                      ]
+                                    : []),
+                            ]}
+                            // an agent with no Chat option (not a Claude agent) keeps its stored chat mode
+                            onChange={(v) =>
+                                chatAsleep && v === "chat"
+                                    ? // asleep, the slot shows Chat whatever the stored mode: keep the mode, so it wakes as it was
+                                      setAgentView(agent.id, "terminal", Date.now())
+                                    : chatShown || v === "chat"
+                                      ? selectCellView(agent.id, v, Date.now())
+                                      : setAgentView(agent.id, v, Date.now())
+                            }
+                        />
+                        <KeyTip id="agent:chat-toggle-alt" show={chatShown} />
+                    </span>
                 ) : null}
                 {canSplit && splitInHeader ? (
                     <button
@@ -1131,8 +1138,9 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
                                 disabled={held}
                                 title={`${ship.title} (${formatChordString("Alt:s")})`}
                                 aria-label={ship.kind === "ship" ? "Ship" : "Commit"}
-                                className="flex cursor-pointer items-center gap-[6px] whitespace-nowrap rounded-[7px] border border-accent/45 px-[9px] py-[5px] text-[12px] font-semibold text-accent hover:border-accent disabled:cursor-default disabled:opacity-40 disabled:hover:border-accent/45"
+                                className="relative flex cursor-pointer items-center gap-[6px] whitespace-nowrap rounded-[7px] border border-accent/45 px-[9px] py-[5px] text-[12px] font-semibold text-accent hover:border-accent disabled:cursor-default disabled:opacity-40 disabled:hover:border-accent/45"
                             >
+                                <KeyTip id="agent:ship" />
                                 {ship.kind === "ship" ? (
                                     <ArrowUpFromLine size={14} strokeWidth={2.2} aria-hidden />
                                 ) : (
@@ -1149,8 +1157,9 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
                                 title={`On the phone: take it back (${formatChordString("p")})`}
                                 aria-label="Take back from the phone"
                                 aria-pressed
-                                className="flex cursor-pointer items-center gap-[6px] whitespace-nowrap rounded-[7px] border border-accent bg-accentbg px-[9px] py-[5px] text-[12px] font-semibold text-accent"
+                                className="relative flex cursor-pointer items-center gap-[6px] whitespace-nowrap rounded-[7px] border border-accent bg-accentbg px-[9px] py-[5px] text-[12px] font-semibold text-accent"
                             >
+                                <KeyTip id="agent:hand-to-phone-alt" />
                                 <Smartphone size={14} strokeWidth={1.9} aria-hidden />
                                 {words ? "On phone · Take back" : null}
                             </button>
@@ -1163,9 +1172,10 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
                                 onClick={() => fireAndForget(() => toggleFloat(model))}
                                 aria-pressed={floating}
                                 title={`${floating ? "Leave float" : "Float window"} (${formatChordString("Shift:f")})`}
-                                className={cn(ICON_BTN, floating && ICON_BTN_ON)}
+                                className={cn(ICON_BTN, "relative", floating && ICON_BTN_ON)}
                             >
                                 <PictureInPicture2 size={15} strokeWidth={1.8} aria-hidden />
+                                <KeyTip id="agent:float-alt" />
                             </button>
                         ) : null}
                         {fullscreenInHeader ? (
@@ -1180,8 +1190,9 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
                                 aria-pressed={fullscreen}
                                 whileHover={{ scale: 1.06 }}
                                 whileTap={{ scale: 0.85 }}
-                                className={cn(ICON_BTN, fullscreen && ICON_BTN_ON, "active:scale-none")}
+                                className={cn(ICON_BTN, "relative", fullscreen && ICON_BTN_ON, "active:scale-none")}
                             >
+                                <KeyTip id="agent:fullscreen-alt" />
                                 {/* re-keyed so each toggle replays the rotate-in, reinforcing the state flip */}
                                 <motion.span
                                     key={fullscreen ? "min" : "max"}
@@ -1222,8 +1233,9 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
                                 // with the words gone the session's tokens move into the title
                                 title={`${!agent.committed && startedRunLanded(agent.id, lineageRuns) ? ORIGIN_DONE_TITLE : DONE_TITLE} (${formatChordString("Alt:w")})${!words && sessionTokens ? ` · ${formatTokens(sessionTokens)} tokens` : ""}`}
                                 aria-label="Close"
-                                className="flex cursor-pointer items-center gap-[6px] whitespace-nowrap rounded-[7px] border border-success/45 px-[9px] py-[5px] text-[12px] font-semibold text-success hover:border-success disabled:cursor-default disabled:opacity-40 disabled:hover:border-success/45"
+                                className="relative flex cursor-pointer items-center gap-[6px] whitespace-nowrap rounded-[7px] border border-success/45 px-[9px] py-[5px] text-[12px] font-semibold text-success hover:border-success disabled:cursor-default disabled:opacity-40 disabled:hover:border-success/45"
                             >
+                                <KeyTip id="agent:done-close" />
                                 <Check size={14} strokeWidth={2.2} aria-hidden />
                                 {words ? "Close" : null}
                                 {words && sessionTokens ? (

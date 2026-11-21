@@ -39,12 +39,16 @@ and a picture given to a line that is not big.
   20% already means every turn re-reads 200k.
 - A board open beside Chat gets most of the width: Chat narrows to a 360px column and the agent list folds to a thin
   strip, which opens it again until the board closes.
-- Click an agent in the list and start typing: the text goes into its chat box, no `Tab` first. `j` and `k` no longer
-  move between agents (the arrows in the list and `Ctrl`+`Tab` still do), and a letter that is a shortcut there (`d`,
-  `f`, `i`…) still runs it.
+- Click an agent in the list and start typing: the text goes into its chat box, no `Tab` first. In Chat every letter is
+  text: `j` and `k` no longer move between agents (the arrows in the list and `Ctrl`+`Tab` still do), and the letter
+  keys `d`, `f`, `i`, `r`, `p` work in Terminal only; in Chat they are `Option`+`D`, `F`, `I`, `V` (review), `P`, and
+  `Option`+`K` switches Chat and Terminal.
 
 ### Added
 
+- Hold `Option` (`Alt` on Windows) a moment on the Agent surface and each header button shows its key: `K` for Chat
+  and Terminal, `D` the rail, `I` the initiative, `F` fullscreen, `S` Ship, `W` Close. Press `Option` and the letter to
+  use it.
 - When a Claude agent's context passes 200k tokens, Chat asks once over the box, while the agent is idle, whether to
   Compact or Clear it (or Later). It asks again only after the context has dropped under 150k and climbs back.
 - The rail's Changes tab shows every changed file's diff in one scroll, grouped by folder: open a file or a whole

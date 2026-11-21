@@ -24,7 +24,7 @@ import { restoringModalFocus, setModalFocusFallback } from "@/app/modals/modalfo
 import { atoms } from "@/app/store/global-atoms";
 import { globalStore } from "@/app/store/jotaiStore";
 import { buildAgentBindings } from "@/app/store/keybindings/bindings";
-import { deriveKeyContext, focusClaimed, isEditableTarget, ownsKeys } from "@/app/store/keybindings/dispatcher";
+import { deriveKeyContext, focusClaimed, isEditableTarget } from "@/app/store/keybindings/dispatcher";
 import { useKeybindings } from "@/app/store/keybindings/store";
 import * as WOS from "@/app/store/wos";
 import { RpcApi } from "@/app/store/wshclientapi";
@@ -65,13 +65,14 @@ import { brainstormAtom } from "./brainstormstore";
 import { CanvasPane } from "./canvaspane";
 import { useCanvasPoller } from "./canvaspoller";
 import { canvasStateAtom } from "./canvasstore";
-import { cellInputOf, chatInputOf } from "./cellinput";
+import { cellInputOf } from "./cellinput";
 import { nextCellOrder } from "./cellorder";
 import { insertIntoChatBox } from "./chatinsert";
 import { chatCapable, shownChatMode } from "./chatmode";
 import { chatModeAtom } from "./chatmodestore";
 import { ChatLayer } from "./chatpane";
 import { typedIntoChat } from "./chattypeinto";
+import { chatTypingAgent } from "./chattypingtarget";
 import { closedNeighbour, keepFocused, resolveShownAgent, rosterLoadPhase } from "./cockpitsurfacemodel";
 import { CouncilPane } from "./councilpane";
 import { autoOpenedAskIdsAtom, shouldAutoOpen } from "./docreview";
@@ -608,23 +609,16 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
     // Picking a chat (its row in the tree) and typing puts the text in its chat box, no Tab first: a character no
     // shortcut took (the dispatcher's capture listener stops the ones it runs, so this bubble listener never sees them),
     // typed with the focus inside this surface and off every field, goes into the focused agent's box when its cell
-    // shows Chat (chattypeinto.ts). Not under a dialog, and not into a terminal, which is a field.
+    // shows Chat (chattypeinto.ts, chattypingtarget.ts). Not under a dialog, and not into a terminal, which is a field.
+    // The bare-letter agent keys stand down there for it (buildAgentBindings' chatTakesLetters).
     useEffect(() => {
         const onKeyDown = (e: KeyboardEvent) => {
             const ch = typedIntoChat(e);
-            const wrap = wrapRef.current;
-            const id = globalStore.get(model.focusIdAtom);
-            if (ch == null || wrap == null || id == null || globalStore.get(model.surfaceAtom) !== "agent") {
+            if (ch == null || globalStore.get(model.surfaceAtom) !== "agent" || deriveKeyContext().modalOpen) {
                 return;
             }
-            const active = document.activeElement;
-            if (active != null && active !== document.body && !wrap.contains(active)) {
-                return;
-            }
-            if (isEditableTarget(active) || ownsKeys(active) || deriveKeyContext().modalOpen) {
-                return;
-            }
-            if (chatInputOf(wrap, id) != null && insertIntoChatBox(id, ch)) {
+            const id = chatTypingAgent(globalStore.get(model.focusIdAtom));
+            if (id != null && insertIntoChatBox(id, ch)) {
                 e.preventDefault();
             }
         };

@@ -345,7 +345,7 @@ export function CollapsibleRail({
                                     onClick={() => setOpen(true)}
                                     aria-label={ariaLabel ?? "Expand panel"}
                                     title={strip.title}
-                                    className="flex w-[34px] cursor-pointer flex-col items-center gap-[8px] rounded-[8px] pb-[8px] pt-[7px] text-muted hover:bg-surface-hover hover:text-secondary"
+                                    className="relative flex w-[34px] cursor-pointer flex-col items-center gap-[8px] rounded-[8px] pb-[8px] pt-[7px] text-muted hover:bg-surface-hover hover:text-secondary"
                                 >
                                     {strip.content}
                                 </button>

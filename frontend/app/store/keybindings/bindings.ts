@@ -217,6 +217,8 @@ import { focusedTerminalBlockId, redrawTerminal } from "@/app/view/term/termwrap
 import { isMacOS } from "@/util/platformutil";
 import { fireAndForget } from "@/util/util";
 import type { MutableRefObject } from "react";
+import { altChordFocusOk, chatTypingAgent } from "@/app/view/agents/chattypingtarget";
+import { isTextKey } from "@/app/view/agents/keytipmodel";
 import { ownsKeys } from "./dispatcher";
 import { listNavAtom } from "./listnav";
 import type { Binding, KeyContext } from "./types";
@@ -1659,7 +1661,7 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
             redrawTerminal(blockId);
         }
     };
-    return [
+    const bindings: Binding[] = [
         {
             id: "subagent:back",
             keys: "Escape",
@@ -2653,6 +2655,58 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
             run: sendReview,
         },
     ];
+    return chatTakesLetters(bindings, focusId);
+}
+
+// In Chat the letters are text. With the focused agent's Chat on screen and the focus where a typed character goes into
+// its box (chattypingtarget.ts: a row of the tree, the conversation), every bare-letter agent key stands down and the
+// letter is typed instead (agentsurface.tsx); focus read's keys stay, live only with the focus in a conversation read
+// with focus read on. The bare letters still act with the agent in Terminal, or a canvas or review in its place. Each
+// button's letter has an ⌥ twin (ALT_TWINS) that acts from Chat, its box included, and that a held Option shows on
+// the button (keytip.tsx). On a Mac ⌥+letter types a symbol; keyutil matches the physical key, and a twin always takes
+// its key so the symbol never lands in the box.
+const CHAT_KEEPS = new Set([
+    "agent:focus-read-next",
+    "agent:focus-read-prev",
+    "agent:focus-read-quote",
+    "agent:focus-read-next-space",
+    "agent:focus-read-prev-space",
+]);
+export const ALT_TWINS: readonly { of: string; id: string; keys: string }[] = [
+    { of: "agent:chat-toggle", id: "agent:chat-toggle-alt", keys: "Alt:k" },
+    { of: "agent:toggle-rail", id: "agent:toggle-rail-alt", keys: "Alt:d" },
+    { of: "agent:initiative", id: "agent:initiative-alt", keys: "Alt:i" },
+    { of: "agent:fullscreen", id: "agent:fullscreen-alt", keys: "Alt:f" },
+    { of: "agent:float", id: "agent:float-alt", keys: "Alt:Shift:f" },
+    { of: "agent:review", id: "agent:review-alt", keys: "Alt:v" },
+    { of: "agent:hand-to-phone", id: "agent:hand-to-phone-alt", keys: "Alt:p" },
+];
+function chatTakesLetters(bindings: Binding[], focusId: () => string | null | undefined): Binding[] {
+    const typing = () => chatTypingAgent(focusId()) != null;
+    const out = bindings.map((b): Binding => {
+        if (!isTextKey(b.keys) || CHAT_KEEPS.has(b.id)) {
+            return b;
+        }
+        const when = b.when;
+        return { ...b, when: (ctx) => (when == null || when(ctx)) && !typing() };
+    });
+    for (const t of ALT_TWINS) {
+        const of = bindings.find((b) => b.id === t.of);
+        if (of == null) {
+            continue;
+        }
+        out.push({
+            ...of,
+            id: t.id,
+            keys: t.keys,
+            // the bare key's own conditions, read as if off a field: the chat box is a field, and the twin works there
+            when: (ctx) => altChordFocusOk() && (of.when == null || of.when({ ...ctx, editable: false })),
+            run: (ctx) => {
+                of.run(ctx);
+            },
+        });
+    }
+    return out;
 }
 
 // The council chat's keys (councilchat.tsx publishes its cursor in councilChatNavAtom): j and k move over the ideas of
