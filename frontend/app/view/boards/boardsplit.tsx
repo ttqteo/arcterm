@@ -226,6 +226,9 @@ function OpenCell({
                                 {...(beside ? widthFold : heightFold)}
                                 className={cn(
                                     "flex flex-none flex-col",
+                                    // the axis it does not fold on is never sized inline: a slide cut short by the
+                                    // cell changing layout (Collapse pressed mid-slide) would leave it stuck
+                                    beside ? "!h-auto" : "!w-auto",
                                     expanded &&
                                         "max-h-[55%] min-h-0 border-t border-edge-mid @[640px]:max-h-none @[640px]:border-l @[640px]:border-t-0"
                                 )}
