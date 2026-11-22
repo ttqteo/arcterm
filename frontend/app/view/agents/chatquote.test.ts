@@ -87,7 +87,7 @@ describe("withLeadQuote", () => {
 });
 
 describe("quoteWords", () => {
-    it("drops the marks and joins the lines", () => {
-        expect(quoteWords("> a\n>\n> b")).toBe("a b");
+    it("drops the marks and blank lines, keeping one line per line", () => {
+        expect(quoteWords("> a\n>\n> b\n> c")).toBe("a\nb\nc");
     });
 });

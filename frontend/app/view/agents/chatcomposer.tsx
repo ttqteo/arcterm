@@ -1924,7 +1924,7 @@ function QuoteChips({
                         className="group/quote relative flex min-w-0 gap-2.5 pr-6"
                     >
                         <span className="w-[3px] flex-none rounded-full bg-edge-strong" aria-hidden />
-                        <span className="line-clamp-3 min-w-0 flex-1 text-[13px] leading-[1.5] text-secondary">
+                        <span className="line-clamp-3 min-w-0 flex-1 whitespace-pre-line text-[13px] leading-[1.5] text-secondary">
                             {words}
                         </span>
                         <button

@@ -83,11 +83,13 @@ export function withLeadQuote(box: string, selected: string): string | null {
     return joinQuotes([...quotes, quote], body);
 }
 
-// a quote's words without its `> ` marks, its lines run together: the chip's label (truncated by CSS) and its tooltip
+// a quote's words without its `> ` marks, one line per line of the quote (blank lines dropped, so a list keeps its
+// items apart without spending the chip's rows on gaps): the chip's label (drawn pre-line, clamped by CSS) and its
+// tooltip
 export function quoteWords(quote: string): string {
     return quote
         .split("\n")
         .map((l) => l.replace(/^>\s?/, "").trim())
         .filter((l) => l !== "")
-        .join(" ");
+        .join("\n");
 }

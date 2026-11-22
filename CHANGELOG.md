@@ -45,6 +45,8 @@ and a picture given to a line that is not big.
 
 ### Fixed
 
+- A quote in Chat's box keeps its line breaks: replying to a list shows one item per line instead of running them
+  together.
 - A new Claude session no longer opens with a reminder that some memories are over 30 days old: the start-of-session
   memory check names only broken memories (a missing file, a dead link or path), and old ones wait in Setup's memory
   review, where Still true quiets them.
