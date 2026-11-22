@@ -11,6 +11,8 @@
 import { globalStore } from "@/app/store/jotaiStore";
 import { atom, type Atom, type PrimitiveAtom } from "jotai";
 import { atomWithStorage } from "jotai/utils";
+import { boardCellAgent, boardCellId, boardCellIds, openBoardCellIn } from "../boards/boardcell";
+import { openBoardIdsAtom } from "../boards/boardentries";
 import { showTerminal } from "./agentcenter";
 import {
     addCell,
@@ -21,6 +23,7 @@ import {
     parseProjectGrids,
     reconcileProjectGrids,
     removeCell,
+    settleCompanions,
     shownGrid,
     withShownGrid,
     type DropZone,
@@ -69,6 +72,22 @@ export function gridProjects(roster: ReadonlyArray<GridTab>): Map<string, string
     return new Map(roster.map((a) => [a.id, projectOf(a as AgentVM) || HOME_PROJECT]));
 }
 
+// The tabs that can be cells, with the board cells that ride beside them: a board cell is eligible while its agent is
+// (live, has a terminal) and has a board open, and belongs to its agent's project. `companionOf` names the agent a
+// board cell depends on, which reconcile uses to keep the cell only in the grid that holds that agent.
+export function gridEligibility(
+    tabs: ReadonlyArray<GridTab>,
+    openBoards: ReadonlySet<string>
+): { eligible: Set<string>; projectOf: Map<string, string>; companionOf: (id: string) => string | undefined } {
+    const eligible = eligibleIds(tabs);
+    const projectOf = gridProjects(tabs);
+    for (const board of boardCellIds(eligible, openBoards)) {
+        eligible.add(board);
+        projectOf.set(board, projectOf.get(boardCellAgent(board) as string) as string);
+    }
+    return { eligible, projectOf, companionOf: boardCellAgent };
+}
+
 function roster(model: GridModel): GridTab[] {
     return [...globalStore.get(model.agentsAtom), ...globalStore.get(model.terminalsAtom)];
 }
@@ -79,11 +98,12 @@ function roster(model: GridModel): GridTab[] {
 // are user actions on rows and cells that are already on screen. Before the roster is seeded they would prune the
 // cells whose agents have not arrived yet (the surface itself passes the real flag and waits).
 function currentGrids(model: GridModel): ProjectGrids {
-    const tabs = roster(model);
+    const { eligible, projectOf, companionOf } = gridEligibility(roster(model), globalStore.get(openBoardIdsAtom));
     return reconcileProjectGrids(globalStore.get(projectGridsAtom), {
         focusId: globalStore.get(model.focusIdAtom),
-        eligible: eligibleIds(tabs),
-        projectOf: gridProjects(tabs),
+        eligible,
+        projectOf,
+        companionOf,
         seeded: true,
     });
 }
@@ -91,8 +111,8 @@ function currentGrids(model: GridModel): ProjectGrids {
 // The grid on screen: the shown project's grid as currentGrids has it, or the focused tab alone when it is no cell of
 // that project's split (onScreenGrid). A drop or Open in split from there starts a new grid, which replaces the split.
 export function currentGrid(model: GridModel): GridState {
-    const tabs = roster(model);
-    return onScreenGrid(shownGrid(currentGrids(model)), globalStore.get(model.focusIdAtom), eligibleIds(tabs));
+    const { eligible } = gridEligibility(roster(model), globalStore.get(openBoardIdsAtom));
+    return onScreenGrid(shownGrid(currentGrids(model)), globalStore.get(model.focusIdAtom), eligible);
 }
 
 // The grids the sidebar draws its split rows from, as the surface reconciles them: the docked terminal is no cell.
@@ -105,13 +125,19 @@ export function treeSplits(
         terminals: ReadonlyArray<GridTab>;
         dockedId: string | null | undefined;
         seeded: boolean;
+        openBoards?: ReadonlySet<string>; // the agents with a board open; read from openBoardIdsAtom when left out
     }
 ): ProjectGrids {
-    const tabs = [...input.agents, ...input.terminals];
+    // a docked terminal is no cell, so it is left out of the roster (its project is only read for a cell)
+    const { eligible, projectOf, companionOf } = gridEligibility(
+        [...input.agents, ...input.terminals.filter((t) => t.id !== input.dockedId)],
+        input.openBoards ?? globalStore.get(openBoardIdsAtom)
+    );
     return reconcileProjectGrids(grids, {
         focusId: input.focusId,
-        eligible: eligibleIds([...input.agents, ...input.terminals.filter((t) => t.id !== input.dockedId)]),
-        projectOf: gridProjects(tabs),
+        eligible,
+        projectOf,
+        companionOf,
         seeded: input.seeded,
     });
 }
@@ -124,8 +150,9 @@ function splitProject(grids: ProjectGrids, id: string): string | undefined {
 // `next` as `project`'s grid when that project is not the one shown: focus and the centre stay as they are.
 function commitHidden(grids: ProjectGrids, project: string, next: GridState): void {
     const all = { ...grids.grids };
-    if (next.ids.length > 0) {
-        all[project] = next;
+    const settled = settleCompanions(next, boardCellAgent);
+    if (settled.ids.length > 0) {
+        all[project] = settled;
     } else {
         delete all[project];
     }
@@ -135,12 +162,12 @@ function commitHidden(grids: ProjectGrids, project: string, next: GridState): vo
 // Whether `id` can be a cell of the grid on screen: it is live and of the shown project. Another project's tab is
 // chosen instead, which shows its own project's grid.
 function fitsShownGrid(model: GridModel, id: string): boolean {
-    const tabs = roster(model);
-    if (!eligibleIds(tabs).has(id)) {
+    const { eligible, projectOf } = gridEligibility(roster(model), globalStore.get(openBoardIdsAtom));
+    if (!eligible.has(id)) {
         return false;
     }
     const project = currentGrids(model).project;
-    return project == null || gridProjects(tabs).get(id) === project;
+    return project == null || projectOf.get(id) === project;
 }
 
 // Focus first, then the grid: a reader that sees the grid change while focusIdAtom still names the old focused
@@ -148,8 +175,11 @@ function fitsShownGrid(model: GridModel, id: string): boolean {
 // synchronous store subscriber could observe the gap, so this order costs nothing and is simply the safe one.
 // Choosing an agent also puts the terminal back over History or a transcript (showTerminal), as every route that
 // writes focusIdAtom does. `next` is the shown project's grid; the other projects' stay as they are.
-function commit(model: GridModel, next: GridState): void {
+// A board cell never holds focus and never outlives its agent's cell (settleCompanions): a removal that left one as the
+// nearest survivor, or took its agent's cell, is settled here before anything is written.
+function commit(model: GridModel, grid: GridState): void {
     const grids = currentGrids(model);
+    const next = settleCompanions(grid, boardCellAgent);
     if (next.focused != null) {
         globalStore.set(model.focusIdAtom, next.focused);
         showTerminal();
@@ -242,4 +272,16 @@ export function openInSplit(model: GridModel, id: string): boolean {
     const at = s.focused == null ? 0 : s.ids.indexOf(s.focused);
     commit(model, addCell(s, id, at, "right"));
     return true;
+}
+
+// A board opened for `agentId` (boardsplitstore.ts's openBoard, once its entry is set and the agent is in focus): its
+// board cell joins the grid on screen right of the agent's cell (openBoardCellIn).
+export function openBoardCell(model: GridModel, agentId: string): void {
+    commit(model, openBoardCellIn(currentGrid(model), agentId));
+}
+
+// A board closed: its cell leaves the grid and the agent's stays. Written even when the cell is already gone from the
+// grid on screen (a closed board's entry no longer makes it eligible), so the stored grid sheds it as well.
+export function removeBoardCell(model: GridModel, agentId: string): void {
+    commit(model, removeCell(currentGrid(model), boardCellId(agentId)));
 }

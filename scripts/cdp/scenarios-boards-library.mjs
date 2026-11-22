@@ -59,7 +59,7 @@ const ELEMENTS_OTHER = filled(boxElements("retro", 40, 40, "retro"), "#c3fae8");
 export default function (kit) {
     const { waveService, polishNap, ahReload, GRID_KEY, GRID_EMPTY } = kit;
     const { makeTab, closeTabs } = AC.tabFixtures({ waveService });
-    const LS_KEYS = [GRID_KEY, "agent.chatmode"];
+    const LS_KEYS = [GRID_KEY, "agent.chatmode", "agent.boards"];
 
     const scenario = {
         name: NAME,
@@ -520,8 +520,10 @@ export default function (kit) {
                 await h.ev(`document.querySelector('[data-library-tab="boards"]')?.click()`);
                 await until(async () => (await count(`[data-library-board="${B_LIVE}"]`)) === 1);
                 const clicked = await click(`[data-library-board="${B_LIVE}"]`);
-                const SPLIT = `[data-agent-terminal="${A}"] [data-board-split="${B_LIVE}"]`;
+                // the board is a cell of its own beside the agent's: a sibling of its [data-agent-terminal], never inside it
+                const SPLIT = `[data-board-cell="${B_LIVE}"]`;
                 const split = await until(async () => (await count(SPLIT)) === 1);
+                const beside = await until(async () => (await h.ev(`document.querySelector("[data-agent-grid]")?.dataset.agentGridCount`)) === "2" && (await count(`[data-agent-terminal="${A}"]`)) === 1);
                 const st = await boardPage(
                     h,
                     `const S = await mod("app/view/boards/boardsplitstore.ts");
@@ -540,6 +542,7 @@ export default function (kit) {
                     name,
                     clicked &&
                         split &&
+                        beside &&
                         ready &&
                         st.surface === "agent" &&
                         st.focus === A &&
@@ -548,7 +551,7 @@ export default function (kit) {
                         st.chat === "chat" &&
                         // Library did not take the board: no canvas of it there
                         libraryOpen === 0,
-                    { st, libraryOpen }
+                    { st, libraryOpen, beside }
                 );
             });
 
@@ -568,8 +571,9 @@ export default function (kit) {
                 await polishNap(300);
                 await shot("9b-takeover-menu");
                 const chose = await click(`${OPEN(B_OLD)} [data-library-board-takeover-agent="${A}"]`);
-                const SPLIT = `[data-agent-terminal="${A}"] [data-board-split="${B_OLD}"]`;
+                const SPLIT = `[data-board-cell="${B_OLD}"]`;
                 const split = await until(async () => (await count(SPLIT)) === 1);
+                const beside = await until(async () => (await h.ev(`document.querySelector("[data-agent-grid]")?.dataset.agentGridCount`)) === "2" && (await count(`[data-agent-terminal="${A}"]`)) === 1);
                 const calls = await boardCalls(h, "BoardTakeOverCommand");
                 const st = await boardPage(
                     h,
@@ -601,6 +605,7 @@ export default function (kit) {
                         items[0].name === "claude · jobqueue" &&
                         chose &&
                         split &&
+                        beside &&
                         calls.length === 1 &&
                         calls[0].project === PROJECT &&
                         calls[0].boardid === B_OLD &&
@@ -608,7 +613,7 @@ export default function (kit) {
                         st.surface === "agent" &&
                         st.split?.boardId === B_OLD &&
                         ask,
-                    { items, calls, st, ask }
+                    { items, calls, st, ask, beside }
                 );
             });
 

@@ -1,87 +1,82 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-// The board split beside an agent's Chat: which board each agent's cell shows, and whether it takes the whole cell.
-// Module-level, like the chat mode, because the Agent surface keeps its cells mounted but any opener (the board card,
-// the toast, Library, `wsh ui`) sets it without holding a cell. The split itself is a layer inside the cell
-// (boardsplit.tsx); this file only decides what is open.
+// Which board each agent's board cell shows (boardentries.ts holds the persisted entries; boardcell.ts the cell's rules
+// and gridstore.ts the grid). Module-level, like the chat mode, because any opener (the board card, the toast, Library,
+// `wsh ui`, the tree's board row) sets it without holding a cell.
 
 import { globalStore } from "@/app/store/jotaiStore";
-import { atom, type Atom, type PrimitiveAtom } from "jotai";
+import { atom, type PrimitiveAtom, type SetStateAction, type WritableAtom } from "jotai";
 import { atomFamily, atomWithStorage } from "jotai/utils";
 import { setAgentView } from "../agents/agentview";
 import { setChatMode } from "../agents/chatmodestore";
-import { currentGrid, type GridTab } from "../agents/gridstore";
+import { openBoardCell, type GridModel } from "../agents/gridstore";
+import { boardEntriesAtom, boardEntryMapAtom, parseBoardEntries, type BoardSplit } from "./boardentries";
 
-export interface BoardSplit {
-    project: string;
-    boardId: string;
-    expanded: boolean; // the board takes the whole cell; Chat stays mounted under it
-}
+export type { BoardSplit } from "./boardentries";
 
-// Beside a board the Chat is a column 360px wide (half the cell when the cell is narrower than 720px) and the board takes
-// the rest: chatpane.tsx's right edge and boardsplit.tsx's left edge spell the same width as Tailwind classes.
-
-// null = no board beside this agent's Chat
+// null = no board open for this agent (no board cell beside it). Read and written as one entry of the persisted map.
 export const boardSplitAtom = atomFamily(
-    (_agentId: string) => atom<BoardSplit | null>(null) as PrimitiveAtom<BoardSplit | null>
+    (agentId: string): WritableAtom<BoardSplit | null, [SetStateAction<BoardSplit | null>], void> =>
+        atom(
+            (get) => get(boardEntryMapAtom)[agentId] ?? null,
+            (get, set, next) => {
+                const entries = { ...get(boardEntryMapAtom) };
+                const value = typeof next === "function" ? next(entries[agentId] ?? null) : next;
+                if (value == null) {
+                    delete entries[agentId];
+                } else {
+                    entries[agentId] = { project: value.project, boardId: value.boardId };
+                }
+                set(boardEntriesAtom, entries);
+            }
+        )
 );
 
-// A board opens beside the Chat column when the cell is the whole grid. In a grid of more than one cell what is left of
-// a cell is too narrow to draw in, so it opens expanded.
-export function splitOpens(cellsInGrid: number): { expanded: boolean } {
-    return { expanded: cellsInGrid > 1 };
+// Expand: the board cell fills the whole grid, the others hidden under it. Per agent and not persisted, so a launch opens
+// a split as it was saved, not covered.
+export const boardMaxAtom = atomFamily((_agentId: string) => atom(false) as PrimitiveAtom<boolean>);
+
+export function setBoardMax(agentId: string, on: boolean): void {
+    globalStore.set(boardMaxAtom(agentId), on);
 }
 
-// What the cell draws: the board takes the whole cell when it was opened expanded, and always in a grid of several cells
-// (the grid may have grown since it opened). The Chat layer and the split both ask here.
-export function splitExpanded(split: BoardSplit, multiCell: boolean): boolean {
-    return split.expanded || multiCell;
+// Drops the entries of agents that are not in `live`, so a board whose agent ended while arcterm was closed leaves no
+// orphan in localStorage. The surface calls it once the roster is seeded.
+export function pruneBoardEntries(live: ReadonlySet<string>): void {
+    const entries = parseBoardEntries(globalStore.get(boardEntriesAtom));
+    const kept = Object.fromEntries(Object.entries(entries).filter(([id]) => live.has(id)));
+    if (Object.keys(kept).length !== Object.keys(entries).length) {
+        globalStore.set(boardEntriesAtom, kept);
+    }
 }
 
 // what openBoard needs of AgentsViewModel; spelled out so it can be tested without one
-export interface BoardOpenModel {
-    focusIdAtom: PrimitiveAtom<string | undefined>;
-    agentsAtom: Atom<ReadonlyArray<GridTab>>;
-    terminalsAtom: Atom<ReadonlyArray<GridTab>>;
+export interface BoardOpenModel extends GridModel {
     openTerminal(agentId: string): void;
 }
 
-// Beside Chat means the cell shows Chat: focus the agent on the Agent surface, put its terminal slot back (closing a
-// Review, Brainstorm or Canvas pane) and its chat mode on Chat, then split. The live xterm is never inside the split.
+// Focus the agent on the Agent surface, put its terminal slot back (closing a Review, Brainstorm or Canvas pane) and its
+// chat mode on Chat, then set the board and give it a cell right of the agent's. With the cell already on screen it only
+// switches board.
 export function openBoard(model: BoardOpenModel, agentId: string, project: string, boardId: string): void {
     model.openTerminal(agentId);
     setAgentView(agentId, "terminal", Date.now());
     setChatMode(agentId, "chat");
-    // read once the agent is in focus: the grid on screen is then the split it is a cell of, or the agent alone
-    const { expanded } = splitOpens(currentGrid(model).ids.length);
-    globalStore.set(boardSplitAtom(agentId), { project, boardId, expanded });
-    globalStore.set(treePeekAtom, false);
+    globalStore.set(boardSplitAtom(agentId), { project, boardId });
+    openBoardCell(model, agentId);
 }
 
+// The entry goes and Expand with it; the cell leaves the grid at the next reconcile (it is eligible only with an entry).
 export function closeBoard(agentId: string): void {
     globalStore.set(boardSplitAtom(agentId), null);
-    globalStore.set(treePeekAtom, false);
+    globalStore.set(boardMaxAtom(agentId), false);
 }
 
-// The Agent tree folds to a strip while the focused agent's cell shows Chat with a board beside it, so the board has the
-// room. The strip opens the tree again (a peek) until that board closes or another opens. With no board beside the Chat
-// the same strip folds and opens the tree by hand, and that choice is kept across launches (treeFoldedAtom).
-export const treePeekAtom = atom(false) as PrimitiveAtom<boolean>;
-export const treeFoldedAtom = atomWithStorage<boolean>("agent.tree.folded", false);
-
-export function treeFolds(split: BoardSplit | null, chatShown: boolean, peek: boolean, folded: boolean): boolean {
-    if (split != null && chatShown) {
-        return !peek;
-    }
-    return folded;
-}
-
-export function setBoardExpanded(agentId: string, expanded: boolean): void {
-    globalStore.set(boardSplitAtom(agentId), (split) => (split == null ? split : { ...split, expanded }));
-}
-
-// the header's switcher: another of the agent's boards in the same split
+// the header's switcher: another of the agent's boards in the same cell
 export function switchBoard(agentId: string, boardId: string): void {
     globalStore.set(boardSplitAtom(agentId), (split) => (split == null ? split : { ...split, boardId }));
 }
+
+// The Agent tree's own fold, chosen by hand and kept across launches.
+export const treeFoldedAtom = atomWithStorage<boolean>("agent.tree.folded", false);

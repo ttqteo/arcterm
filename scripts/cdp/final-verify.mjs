@@ -306,8 +306,11 @@ export function unlinkBuildJunctions(root) {
 // for the same path takes ~10 s. Only the link is ever removed, never what it points at.
 export function linkTree(link, root) {
     try {
-        if (isLink(link)) rmdirSync(link);
-        else if (existsSync(link)) return null;
+        if (isLink(link)) {
+            // a windows junction is removed as a directory, a posix symlink as a file
+            if (process.platform === "win32") rmdirSync(link);
+            else unlinkSync(link);
+        } else if (existsSync(link)) return null;
         symlinkSync(root, link, "junction");
         return link;
     } catch (e) {

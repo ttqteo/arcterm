@@ -52,6 +52,8 @@ between the agent's boards.
 
 ### Where a board shows: split beside Chat
 
+Superseded by `2026-11-22-board-cells-design.md`: the board is a grid cell of its own, opened from a row in the Agent tree.
+
 Board `A-ben-canh-chat.dc.html`. The agent's cell splits: Chat on the left, the board on the right.
 
 - Header: the board's name (the switcher), its facts (`9 shapes · drawn 15:20`), Expand (the board takes the whole

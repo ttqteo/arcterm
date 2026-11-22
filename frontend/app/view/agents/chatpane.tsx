@@ -39,7 +39,6 @@ import {
 } from "motion/react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
 import { goalFromLines } from "../../../../claude/arc-mod/hooks/goal-core";
-import { boardSplitAtom, splitExpanded } from "../boards/boardsplitstore";
 import { confirmCloseSession } from "./agentactions";
 import { canStop } from "./agentcomposer";
 import { getProcExitAtom } from "./agentcontrollerstore";
@@ -605,11 +604,6 @@ function ChatEmpty({ agent, error }: { agent: AgentVM; error: string | null }) {
 // stacking context, which would otherwise drop it to z-auto).
 export function ChatLayer({ model, agent, barred }: { model: AgentsViewModel; agent: AgentVM; barred: boolean }) {
     const shown = useChatShown(agent);
-    // A board split beside the Chat (boards/boardsplit.tsx) takes the cell right of a 360px Chat column. The pane keeps its place
-    // and its mount, only its right edge moves in, so the xterm under both never refits; an expanded board covers
-    // the pane, which then takes no focus (a grid of several cells always shows its board expanded).
-    const split = useAtomValue(boardSplitAtom(agent.id));
-    const covered = split != null && splitExpanded(split, barred);
     return (
         <MotionConfig reducedMotion="user">
             <AnimatePresence initial={false}>
@@ -621,9 +615,8 @@ export function ChatLayer({ model, agent, barred }: { model: AgentsViewModel; ag
                         initial="initial"
                         animate="animate"
                         exit="exit"
-                        inert={covered}
                     >
-                        <ChatPane model={model} agent={agent} barred={barred} besideBoard={split != null} />
+                        <ChatPane model={model} agent={agent} barred={barred} />
                     </motion.div>
                 ) : null}
             </AnimatePresence>
@@ -745,39 +738,18 @@ function FocusReadToggle({ agentId, scrollRef }: { agentId: string; scrollRef: R
 // What an `agent:`, `run:` or `council:` reference resolves against (chatrefbadge.tsx) wraps the whole pane, so the
 // conversation, the pending bubbles and the box's pills all draw their badges from it. The project is the registered
 // project's path, which is what runs and councils are kept under: never the agent's cwd, a worktree for a run's worker.
-// `besideBoard`: a board is split beside the Chat, so the pane is a 360px column (half a narrower cell), not the cell's width.
-export function ChatPane({
-    model,
-    agent,
-    barred,
-    besideBoard = false,
-}: {
-    model: AgentsViewModel;
-    agent: AgentVM;
-    barred: boolean;
-    besideBoard?: boolean;
-}) {
+export function ChatPane({ model, agent, barred }: { model: AgentsViewModel; agent: AgentVM; barred: boolean }) {
     const projects = useAtomValue(projectsAtom);
     const project = projects[agent.project ?? ""]?.path ?? "";
     const refLinks = useMemo(() => ({ model, project, selfId: agent.id }), [model, project, agent.id]);
     return (
         <ChatRefLinks value={refLinks}>
-            <ChatPaneBody model={model} agent={agent} barred={barred} besideBoard={besideBoard} />
+            <ChatPaneBody model={model} agent={agent} barred={barred} />
         </ChatRefLinks>
     );
 }
 
-function ChatPaneBody({
-    model,
-    agent,
-    barred,
-    besideBoard,
-}: {
-    model: AgentsViewModel;
-    agent: AgentVM;
-    barred: boolean;
-    besideBoard: boolean;
-}) {
+function ChatPaneBody({ model, agent, barred }: { model: AgentsViewModel; agent: AgentVM; barred: boolean }) {
     const ownPath = agent.transcriptPath ?? "";
     const surface = useAtomValue(model.surfaceAtom);
     const own = useTranscriptWindow(ownPath, agent.agent);
@@ -1211,9 +1183,7 @@ function ChatPaneBody({
             data-chat-leaving={present ? undefined : ""}
             inert={!present}
             className={cn(
-                "absolute bottom-0 left-0 z-20 flex flex-col bg-background",
-                // beside a board: 360px wide, half the cell in one narrower than 720px (boardsplitstore.ts)
-                besideBoard ? "right-[max(100%_-_360px,50%)]" : "right-0",
+                "absolute bottom-0 left-0 right-0 z-20 flex flex-col bg-background",
                 barred ? "top-[26px]" : "top-0"
             )}
         >

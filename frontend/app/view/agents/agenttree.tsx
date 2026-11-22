@@ -206,7 +206,19 @@ import { askingCount, askingLabel, displayAgeMs, formatAgeShort, type AgentVM } 
 import { parseDocReview } from "./docreview";
 import { openReview } from "./docreviewstore";
 import { placementStyle } from "./agentgrid";
-import { canOpenInSplit, isInSplit, openInSplit, projectGridsAtom, removeFromSplit, treeSplits } from "./gridstore";
+import { boardCellId } from "../boards/boardcell";
+import { openBoardIdsAtom } from "../boards/boardentries";
+import { useBoardList } from "../boards/boardstore";
+import { boardSplitAtom, closeBoard, openBoard } from "../boards/boardsplitstore";
+import {
+    canOpenInSplit,
+    isInSplit,
+    openInSplit,
+    projectGridsAtom,
+    removeBoardCell,
+    removeFromSplit,
+    treeSplits,
+} from "./gridstore";
 import { finalRowFocusId, type FinalTone } from "./finalstage";
 import { useFinalStageView } from "./finalstageviews";
 import { LEAD_MARK_CLASS, leadMark } from "./leadcardmodel";
@@ -3271,6 +3283,74 @@ function QueuedEntryRow({ model, row }: { model: AgentsViewModel; row: QueuedRow
     );
 }
 
+// An agent's latest board, one row under the agent's own (agentsidebarmodel.ts's "board" row): the board's name, and +N
+// when the agent has more (the cell's header switches between them). A click opens it as the agent's board cell beside
+// its Chat; it reads as open while that cell is on screen showing this board. No focus target: j/k and Ctrl+Tab step over
+// it, and it is not dragged.
+function BoardRow({
+    model,
+    row,
+    cellShown,
+}: {
+    model: AgentsViewModel;
+    row: Extract<ProjectTreeRow, { kind: "board" }>;
+    cellShown: boolean; // the board cell of this agent is a cell of the grid on screen
+}) {
+    const entry = useAtomValue(boardSplitAtom(row.agentId));
+    const open = cellShown && entry?.boardId === row.boardId;
+    const show = () => openBoard(model, row.agentId, row.boardProject, row.boardId);
+    const onContextMenu = (e: React.MouseEvent) => {
+        const items: ContextMenuItem[] = [
+            { label: "Open", icon: <PenTool size={15} />, click: show },
+            ...(open
+                ? [
+                      { type: "separator" } as ContextMenuItem,
+                      {
+                          label: "Close board",
+                          icon: <X size={15} />,
+                          click: () => {
+                              closeBoard(row.agentId);
+                              removeBoardCell(model, row.agentId);
+                          },
+                      } as ContextMenuItem,
+                  ]
+                : []),
+        ];
+        ContextMenuModel.getInstance().showContextMenu(items, e);
+    };
+    return (
+        <div
+            data-tree-board={row.boardId}
+            data-tree-board-open={open ? "" : undefined}
+            role="button"
+            tabIndex={-1}
+            title={row.name}
+            onClick={show}
+            onContextMenu={onContextMenu}
+            className={cn(
+                "relative flex cursor-pointer items-center gap-[9px] rounded-[6px] py-[5px] pl-[28px] pr-[10px] transition-colors duration-[140ms]",
+                open ? "bg-surface-selected" : "hover:bg-surface-hover"
+            )}
+        >
+            <Guides depth={1} />
+            <Slot>
+                <PenTool size={12} aria-hidden className={open ? "text-secondary" : "text-muted"} />
+            </Slot>
+            <span
+                data-tree-board-name
+                className={cn("min-w-0 flex-1 truncate text-[12px]", open ? "text-ink-hi" : "text-secondary")}
+            >
+                {row.name}
+            </span>
+            {row.more > 0 ? (
+                <span data-tree-board-more className="flex-none text-[10.5px] tabular-nums text-muted">
+                    +{row.more}
+                </span>
+            ) : null}
+        </div>
+    );
+}
+
 // An agent arcterm held while the machine was busy (parkedstore.ts): a dashed outline and a pause mark set it apart
 // from the agents above it (board A-row-outline of the pending-agent canvas). It has no tab yet, so it is no focus
 // target; a click shows it in the centre (heldpane.tsx), where it is started or added to an initiative. Hover offers
@@ -3489,7 +3569,21 @@ export const AgentTree = memo(function AgentTree({ model }: { model: AgentsViewM
     const terminals = useAtomValue(model.terminalsAtom);
     const dockedId = useAtomValue(dockedTerminalAtom);
     // every project's split as the surface reconciles it: each is one row in its folder (projectTree)
-    const splits = treeSplits(projectGrids, { focusId, agents, terminals, dockedId, seeded });
+    // the agents with a board open, read here so the tree redraws when one opens or closes (its cell is a cell of a split)
+    const openBoards = useAtomValue(openBoardIdsAtom);
+    const splits = treeSplits(projectGrids, { focusId, agents, terminals, dockedId, seeded, openBoards });
+    // every agent's boards, most recently active first (boardsOfAgent's order): the first is its row under the agent
+    const boardList = useBoardList("");
+    const boards = useMemo(() => {
+        const out = new Map<string, BoardInfo[]>();
+        for (const b of boardList ?? []) {
+            if (b.agenttabid) {
+                out.set(b.agenttabid, [...(out.get(b.agenttabid) ?? []), b]);
+            }
+        }
+        return out;
+    }, [boardList]);
+    const shownCells = new Set(splits.project != null ? (splits.grids[splits.project]?.ids ?? []) : []);
     // project name -> root path, as activenav.ts builds it: the folders a terminal's branch chip is read against
     const registered = useAtomValue(projectsAtom);
     const roots = useMemo(() => {
@@ -3564,6 +3658,7 @@ export const AgentTree = memo(function AgentTree({ model }: { model: AgentsViewM
         services,
         serviceTabs,
         splits,
+        boards,
         roster: [...agents, ...terminals],
         councils,
     });
@@ -3774,6 +3869,15 @@ export const AgentTree = memo(function AgentTree({ model }: { model: AgentsViewM
                                             shows={terminalShows(r.terminal.id, dockedId)}
                                             state={terminalRowState(r.terminal.id, installing, failed, gone)}
                                             navDigit={digits.get(r.terminal.id)}
+                                        />
+                                    );
+                                case "board":
+                                    return plain(
+                                        `board-${r.agentId}`,
+                                        <BoardRow
+                                            model={model}
+                                            row={r}
+                                            cellShown={shownCells.has(boardCellId(r.agentId))}
                                         />
                                     );
                                 case "split":

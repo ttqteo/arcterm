@@ -34,6 +34,8 @@ and a picture given to a line that is not big.
 
 ### Changed
 
+- A board now opens as its own pane beside the agent's Chat, and each agent's latest board is a row under it in the Agent tree.
+  <!-- big --> <!-- shot: 1.14.0-board-cells.webp -->
 - Focus read's reading line moves: drag the accent tick in the gutter up or down, in Chat or a Markdown Preview, and
   the line stays where you let go, for every agent and document, instead of always sitting a third of the way down.
 - A Markdown document's Outline card opens over its rail of dashes, as Notion's does: whole headings, wrapped instead

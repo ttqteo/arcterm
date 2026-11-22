@@ -367,6 +367,18 @@ export type ProjectTreeRow =
     // a project's split (2+ cells) as one row, where the topmost of its cells' rows was: each cell its tab and its place
     // in the 2x2 the surface draws. `shown` is the split on screen; another project's saved split is drawn too.
     | { kind: "split"; project: string; shown: boolean; cells: SplitRowCell[] }
+    // an agent's latest board, right after the agent's row: `name` is the most recently active one, `more` how many
+    // others the agent has. It opens the board as the agent's board cell (openBoard); `boardProject` is the project the
+    // board lives in. Not a tab and no focus target: rowTabId and treeNavIds give it nothing.
+    | {
+          kind: "board";
+          project: string;
+          agentId: string;
+          boardProject: string;
+          boardId: string;
+          name: string;
+          more: number;
+      }
     | AgentBodyRow;
 
 // One cell of a split row. `menu` is the row menu its right-click opens, the one its own row in the tree has: an
@@ -505,6 +517,9 @@ export function projectTree(input: {
     // terminal row. Left out, the tabs of `services`.
     serviceTabs?: ReadonlySet<string>;
     splits?: ProjectGrids; // the grids as the surface reconciles them (gridstore treeSplits)
+    // each live agent's boards by its tab id, most recently active first (boardsOfAgent): the first is the agent's board
+    // row, right after the agent's own row
+    boards?: ReadonlyMap<string, readonly BoardInfo[]>;
     roster?: readonly AgentVM[];
     councils?: ReadonlyMap<string, CouncilRowVM[]>; // by project name
 }): ProjectTreeRow[] {
@@ -580,6 +595,34 @@ export function projectTree(input: {
         }
     }
     const byId = new Map((input.roster ?? []).map((a) => [a.id, a]));
+    // `rows` with each agent's board row put right after the agent's row (its first row, when a stage repeats it)
+    const withBoards = <T extends ProjectTreeRow>(project: string, rows: T[]): (T | ProjectTreeRow)[] => {
+        if (input.boards == null || input.boards.size === 0) {
+            return rows;
+        }
+        const seen = new Set<string>();
+        return rows.flatMap((r): (T | ProjectTreeRow)[] => {
+            const id = rowTabId(r);
+            const list = id != null && !seen.has(id) ? input.boards?.get(id) : undefined;
+            if (id == null || list == null || list.length === 0) {
+                return [r];
+            }
+            seen.add(id);
+            const b = list[0];
+            return [
+                r,
+                {
+                    kind: "board",
+                    project,
+                    agentId: id,
+                    boardProject: b.project,
+                    boardId: b.id,
+                    name: b.name,
+                    more: list.length - 1,
+                },
+            ];
+        });
+    };
     const fold = (project: string, body: ProjectTreeRow[]) => {
         const split = splits.get(project);
         return split == null ? body : foldSplit(body, project, split.grid, split.shown, byId);
@@ -587,14 +630,16 @@ export function projectTree(input: {
 
     if (filter !== ALL_PROJECTS) {
         const out: ProjectTreeRow[] = pinnedRowsOf(filter);
+        const agentRows: AgentBodyRow[] = [];
         let inProject = false;
         for (const r of tree) {
             if (r.kind === "group") {
                 inProject = r.project === filter;
             } else if (inProject) {
-                out.push(r);
+                agentRows.push(r);
             }
         }
+        out.push(...withBoards(filter, agentRows));
         out.push(...parkedRowsOf(filter), ...queuedRowsOf(filter), ...councilRowsOf(filter));
         // a shell attributed to no project shows under every one
         const mine = terminals.filter((t) => projectOf(t) === "" || projectOf(t) === filter);
@@ -684,7 +729,7 @@ export function projectTree(input: {
         const held = serviceRowsOf(project);
         const body: ProjectTreeRow[] = [
             ...pinnedRowsOf(project),
-            ...agentRows,
+            ...withBoards(project, agentRows),
             ...parkedRowsOf(project),
             ...waiting,
             ...councilRowsOf(project),

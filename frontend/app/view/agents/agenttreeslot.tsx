@@ -1,40 +1,32 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-// The Agent tree's place on the Agent surface, beside a thin strip that folds and opens it (treeFolds,
-// boardsplitstore.ts). While the shown agent's cell shows Chat with a board beside it, the tree folds on its own so the
-// board has the room, and the strip opens it again until the board closes. Otherwise the strip folds it by hand, a choice
-// kept across launches. The tree slides open and shut on the spring (springFoldWidth), and the strip's chevron turns
-// with it.
+// The Agent tree's place on the Agent surface, beside a thin strip that folds and opens it by hand (treeFoldedAtom,
+// boardsplitstore.ts), a choice kept across launches. The tree stays open beside a board: it holds the board's row. It
+// slides open and shut on the spring (springFoldWidth), and the strip's chevron turns with it.
 
 import { MOTION, springFoldWidth } from "@/app/element/motiontokens";
 import { usePartMotion } from "@/app/element/springbatch";
 import { Tooltip } from "@/app/element/tooltip";
-import { useAtom, useAtomValue } from "jotai";
+import { useAtom } from "jotai";
 import { ChevronLeft } from "lucide-react";
 import { AnimatePresence, motion, MotionConfig } from "motion/react";
-import { boardSplitAtom, treeFoldedAtom, treeFolds, treePeekAtom } from "../boards/boardsplitstore";
+import { treeFoldedAtom } from "../boards/boardsplitstore";
 import type { AgentsViewModel } from "./agents";
 import type { AgentVM } from "./agentsviewmodel";
 import { AgentTree } from "./agenttree";
-import { useChatShown } from "./chatmodestore";
 
 export function AgentTreeSlot({ model, agent }: { model: AgentsViewModel; agent: AgentVM | undefined }) {
     if (agent == null) {
         return <AgentTree model={model} />;
     }
-    return <BoardAwareTree model={model} agent={agent} />;
+    return <FoldableTree model={model} />;
 }
 
-function BoardAwareTree({ model, agent }: { model: AgentsViewModel; agent: AgentVM }) {
-    const split = useAtomValue(boardSplitAtom(agent.id));
-    const chatShown = useChatShown(agent);
-    const [peek, setPeek] = useAtom(treePeekAtom);
-    const [handFolded, setHandFolded] = useAtom(treeFoldedAtom);
+function FoldableTree({ model }: { model: AgentsViewModel }) {
+    const [folded, setFolded] = useAtom(treeFoldedAtom);
     const fold = usePartMotion(springFoldWidth);
-    const besideBoard = split != null && chatShown;
-    const folded = treeFolds(split, chatShown, peek, handFolded);
-    const toggle = () => (besideBoard ? setPeek(folded) : setHandFolded(!folded));
+    const toggle = () => setFolded(!folded);
     return (
         <MotionConfig reducedMotion="user">
             <AnimatePresence initial={false}>
@@ -45,7 +37,7 @@ function BoardAwareTree({ model, agent }: { model: AgentsViewModel; agent: Agent
                 )}
             </AnimatePresence>
             <Tooltip
-                content={folded ? "Show agents" : besideBoard ? "Fold agents beside the board" : "Fold agents"}
+                content={folded ? "Show agents" : "Fold agents"}
                 placement="right"
                 divClassName="flex h-full shrink-0"
                 hideOnClick

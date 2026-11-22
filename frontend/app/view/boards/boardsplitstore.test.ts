@@ -1,7 +1,6 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const calls = vi.hoisted(() => [] as string[]);
-const grid = vi.hoisted(() => ({ ids: ["a1"] as string[] }));
 
 vi.mock("../agents/agentview", () => ({
     setAgentView: (id: string, view: string) => calls.push(`view:${id}:${view}`),
@@ -9,145 +8,164 @@ vi.mock("../agents/agentview", () => ({
 vi.mock("../agents/chatmodestore", () => ({
     setChatMode: (id: string, mode: string) => calls.push(`chat:${id}:${mode}`),
 }));
-vi.mock("../agents/gridstore", () => ({
-    currentGrid: () => {
-        calls.push("grid");
-        return { ids: grid.ids };
-    },
-}));
 
 import { globalStore } from "@/app/store/jotaiStore";
 import { atom, type PrimitiveAtom } from "jotai";
+import { centerModeAtom } from "../agents/agentcenter";
+import { EMPTY_PROJECT_GRIDS } from "../agents/agentgrid";
+import { agentGridAtom, currentGrid, projectGridsAtom, removeBoardCell } from "../agents/gridstore";
+import { boardEntriesAtom, openBoardIdsAtom } from "./boardentries";
 import {
+    boardMaxAtom,
     boardSplitAtom,
     closeBoard,
     openBoard,
-    setBoardExpanded,
-    splitExpanded,
-    splitOpens,
+    pruneBoardEntries,
+    setBoardMax,
     switchBoard,
-    treeFolds,
-    treePeekAtom,
     type BoardOpenModel,
 } from "./boardsplitstore";
 
-const model: BoardOpenModel = {
-    focusIdAtom: atom<string | undefined>(undefined) as PrimitiveAtom<string | undefined>,
-    agentsAtom: atom([]),
-    terminalsAtom: atom([]),
-    openTerminal: (id) => calls.push(`focus:${id}`),
-};
+// a roster of live agents in one project, each with a terminal; focusing an agent is what openTerminal does
+function model(ids: string[]): BoardOpenModel {
+    const focusIdAtom = atom<string | undefined>(undefined) as PrimitiveAtom<string | undefined>;
+    return {
+        focusIdAtom,
+        agentsAtom: atom(ids.map((id) => ({ id, blockId: `blk-${id}`, project: "arcterm" }))),
+        terminalsAtom: atom([]),
+        openTerminal: (id) => {
+            calls.push(`focus:${id}`);
+            globalStore.set(focusIdAtom, id);
+        },
+    };
+}
+
+// The node environment has no localStorage, so a Map-backed one stands in as window.localStorage (jotai reads it per call).
+const stored = new Map<string, string>();
 
 beforeEach(() => {
+    stored.clear();
+    vi.stubGlobal("window", {
+        localStorage: {
+            getItem: (k: string) => stored.get(k) ?? null,
+            setItem: (k: string, v: string) => void stored.set(k, v),
+            removeItem: (k: string) => void stored.delete(k),
+        },
+    });
     calls.length = 0;
-    grid.ids = ["a1"];
-    for (const id of ["a1", "a2"]) {
-        closeBoard(id);
-    }
+    globalStore.set(projectGridsAtom, EMPTY_PROJECT_GRIDS);
+    globalStore.set(boardEntriesAtom, {});
+    globalStore.set(centerModeAtom, "terminal");
 });
 
-describe("splitOpens", () => {
-    it("opens half the cell for a lone cell, and expanded in a grid of more than one", () => {
-        expect(splitOpens(0)).toEqual({ expanded: false });
-        expect(splitOpens(1)).toEqual({ expanded: false });
-        expect(splitOpens(2)).toEqual({ expanded: true });
-        expect(splitOpens(4)).toEqual({ expanded: true });
-    });
-});
-
-describe("splitExpanded", () => {
-    const split = (expanded: boolean) => ({ project: "arcterm", boardId: "b1", expanded });
-
-    it("is what the split says in a lone cell", () => {
-        expect(splitExpanded(split(false), false)).toBe(false);
-        expect(splitExpanded(split(true), false)).toBe(true);
-    });
-
-    it("is always expanded in a grid of several cells, even one that grew after the board opened", () => {
-        expect(splitExpanded(split(false), true)).toBe(true);
-        expect(splitExpanded(split(true), true)).toBe(true);
-    });
+afterEach(() => {
+    vi.unstubAllGlobals();
 });
 
 describe("openBoard", () => {
-    it("focuses the agent, puts its terminal slot and Chat back, then opens the split", () => {
-        openBoard(model, "a1", "arcterm", "b1");
-        expect(calls).toEqual(["focus:a1", "view:a1:terminal", "chat:a1:chat", "grid"]);
-        expect(globalStore.get(boardSplitAtom("a1"))).toEqual({ project: "arcterm", boardId: "b1", expanded: false });
+    it("focuses the agent, puts its terminal slot and Chat back, then opens the board", () => {
+        const m = model(["a1"]);
+        openBoard(m, "a1", "arcterm", "b1");
+        expect(calls).toEqual(["focus:a1", "view:a1:terminal", "chat:a1:chat"]);
+        expect(globalStore.get(boardSplitAtom("a1"))).toEqual({ project: "arcterm", boardId: "b1" });
     });
 
-    it("reads the grid after the agent is in focus, so a cell of a split opens expanded", () => {
-        grid.ids = ["a1", "a2"];
-        openBoard(model, "a1", "arcterm", "b1");
-        expect(calls.indexOf("focus:a1")).toBeLessThan(calls.indexOf("grid"));
-        expect(globalStore.get(boardSplitAtom("a1"))?.expanded).toBe(true);
+    it("gives a lone agent a board cell right of it", () => {
+        const m = model(["a1"]);
+        openBoard(m, "a1", "arcterm", "b1");
+        expect(globalStore.get(agentGridAtom)).toEqual({ ids: ["a1", "board:a1"], focused: "a1" });
+        expect(globalStore.get(m.focusIdAtom)).toBe("a1");
     });
 
-    it("keeps each agent's split apart", () => {
-        openBoard(model, "a1", "arcterm", "b1");
+    it("keeps one board cell when another board of the agent opens, and switches the board", () => {
+        const m = model(["a1"]);
+        openBoard(m, "a1", "arcterm", "b1");
+        openBoard(m, "a1", "arcterm", "b2");
+        expect(globalStore.get(agentGridAtom).ids).toEqual(["a1", "board:a1"]);
+        expect(globalStore.get(boardSplitAtom("a1"))?.boardId).toBe("b2");
+    });
+
+    it("keeps each agent's board apart", () => {
+        const m = model(["a1", "a2"]);
+        openBoard(m, "a1", "arcterm", "b1");
         expect(globalStore.get(boardSplitAtom("a2"))).toBeNull();
-        openBoard(model, "a2", "arcterm", "b2");
+        openBoard(m, "a2", "arcterm", "b2");
         expect(globalStore.get(boardSplitAtom("a1"))?.boardId).toBe("b1");
         expect(globalStore.get(boardSplitAtom("a2"))?.boardId).toBe("b2");
     });
 
-    it("opens a board again on top of the one beside Chat", () => {
-        openBoard(model, "a1", "arcterm", "b1");
-        setBoardExpanded("a1", true);
-        openBoard(model, "a1", "arcterm", "b2");
-        expect(globalStore.get(boardSplitAtom("a1"))).toEqual({ project: "arcterm", boardId: "b2", expanded: false });
+    it("persists the entry in localStorage under agent.boards, with no expanded field", () => {
+        openBoard(model(["a1"]), "a1", "arcterm", "b1");
+        expect(JSON.parse(stored.get("agent.boards") ?? "null")).toEqual({
+            a1: { project: "arcterm", boardId: "b1" },
+        });
     });
 });
 
-describe("closeBoard, setBoardExpanded, switchBoard", () => {
-    it("closes back to Chat alone", () => {
-        openBoard(model, "a1", "arcterm", "b1");
+describe("closeBoard", () => {
+    it("clears the entry, so the board cell no longer holds a place in the grid", () => {
+        const m = model(["a1"]);
+        openBoard(m, "a1", "arcterm", "b1");
         closeBoard("a1");
         expect(globalStore.get(boardSplitAtom("a1"))).toBeNull();
+        expect(currentGrid(m).ids).toEqual(["a1"]);
     });
 
-    it("expands and collapses an open split, and does nothing to a closed one", () => {
-        setBoardExpanded("a1", true);
-        expect(globalStore.get(boardSplitAtom("a1"))).toBeNull();
-        openBoard(model, "a1", "arcterm", "b1");
-        setBoardExpanded("a1", true);
-        expect(globalStore.get(boardSplitAtom("a1"))?.expanded).toBe(true);
-        setBoardExpanded("a1", false);
-        expect(globalStore.get(boardSplitAtom("a1"))?.expanded).toBe(false);
+    it("clears Expand with it", () => {
+        openBoard(model(["a1"]), "a1", "arcterm", "b1");
+        setBoardMax("a1", true);
+        closeBoard("a1");
+        expect(globalStore.get(boardMaxAtom("a1"))).toBe(false);
     });
 
-    it("switches the open split to another board, keeping its width", () => {
-        switchBoard("a1", "b2");
-        expect(globalStore.get(boardSplitAtom("a1"))).toBeNull();
-        openBoard(model, "a1", "arcterm", "b1");
-        setBoardExpanded("a1", true);
-        switchBoard("a1", "b2");
-        expect(globalStore.get(boardSplitAtom("a1"))).toEqual({ project: "arcterm", boardId: "b2", expanded: true });
+    it("then removeBoardCell sheds the cell from the stored grid and leaves the agent's", () => {
+        const m = model(["a1"]);
+        openBoard(m, "a1", "arcterm", "b1");
+        closeBoard("a1");
+        removeBoardCell(m, "a1");
+        expect(globalStore.get(agentGridAtom).ids).toEqual(["a1"]);
     });
 });
 
-describe("treeFolds", () => {
-    const open = { project: "p", boardId: "b", expanded: false };
-    it("folds the tree while Chat shows with a board beside it", () => {
-        expect(treeFolds(open, true, false, false)).toBe(true);
+describe("switchBoard", () => {
+    it("switches the open board to another, and does nothing to a closed one", () => {
+        switchBoard("a1", "b2");
+        expect(globalStore.get(boardSplitAtom("a1"))).toBeNull();
+        openBoard(model(["a1"]), "a1", "arcterm", "b1");
+        switchBoard("a1", "b2");
+        expect(globalStore.get(boardSplitAtom("a1"))).toEqual({ project: "arcterm", boardId: "b2" });
     });
-    it("keeps the tree with no board, with the cell off Chat, or while peeked", () => {
-        expect(treeFolds(null, true, false, false)).toBe(false);
-        expect(treeFolds(open, false, false, false)).toBe(false);
-        expect(treeFolds(open, true, true, false)).toBe(false);
+});
+
+describe("boardMaxAtom", () => {
+    it("is per agent and starts off", () => {
+        setBoardMax("a1", true);
+        expect(globalStore.get(boardMaxAtom("a1"))).toBe(true);
+        expect(globalStore.get(boardMaxAtom("a2"))).toBe(false);
+        setBoardMax("a1", false);
     });
-    it("with no board beside Chat follows the fold chosen by hand", () => {
-        expect(treeFolds(null, true, false, true)).toBe(true);
-        expect(treeFolds(open, false, false, true)).toBe(true);
-        // beside a board the board's own fold rules, whatever was chosen without one
-        expect(treeFolds(open, true, true, true)).toBe(false);
+});
+
+describe("pruneBoardEntries", () => {
+    it("drops the entries of agents that are not live", () => {
+        const m = model(["a1", "a2"]);
+        openBoard(m, "a1", "arcterm", "b1");
+        openBoard(m, "a2", "arcterm", "b2");
+        pruneBoardEntries(new Set(["a2"]));
+        expect([...globalStore.get(openBoardIdsAtom)]).toEqual(["a2"]);
+        pruneBoardEntries(new Set());
+        expect(globalStore.get(openBoardIdsAtom).size).toBe(0);
+        expect(JSON.parse(stored.get("agent.boards") ?? "null")).toEqual({});
     });
-    it("drops the peek when a board opens or closes", () => {
-        globalStore.set(treePeekAtom, true);
-        closeBoard("a1");
-        expect(globalStore.get(treePeekAtom)).toBe(false);
-        globalStore.set(treePeekAtom, true);
-        openBoard(model, "a1", "p", "b");
-        expect(globalStore.get(treePeekAtom)).toBe(false);
+});
+
+describe("a stored entry that is not one", () => {
+    it("is ignored rather than trusted", () => {
+        globalStore.set(boardEntriesAtom, {
+            a1: { project: 3 },
+            a2: null,
+            a3: { project: "p", boardId: "b" },
+        } as never);
+        expect([...globalStore.get(openBoardIdsAtom)]).toEqual(["a3"]);
     });
 });

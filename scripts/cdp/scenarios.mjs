@@ -40077,6 +40077,8 @@ const agentGrid = {
             tabIds: [],
             agents: [],
             prevGrid: await h.ev(`localStorage.getItem(${JSON.stringify(GRID_KEY)})`),
+            // the header's Fullscreen button is off by default (it sits in the More menu): step 9 turns it on
+            prevHeaderButtons: await h.ev(`localStorage.getItem("agent.header.buttons")`),
         };
         if (existsSync(TREE_RAIL_FIXTURE)) {
             ctx.skip =
@@ -40323,7 +40325,15 @@ const agentGrid = {
                 { drag: d8, clickedD, lay }
             );
 
-            // 9. fullscreen shows the focused cell alone and brings the grid back
+            // 9. fullscreen shows the focused cell alone and brings the grid back. Its header button is off by default (the
+            // More menu holds it): turn it on first; the key is put back at teardown
+            await agentPageFixtures.agentPage(
+                h,
+                `const H = await mod("app/view/agents/headerbuttonsstore.ts");
+                globalStore.set(H.headerButtonsAtom, "fullscreen", true);
+                return true;`
+            );
+            await polishWaitFor(h, `!!document.querySelector('[data-agent-header] button[title^="Fullscreen terminal"]')`, 5000);
             const fsOn = await click('[data-agent-header] button[title^="Fullscreen terminal"]');
             await settle();
             lay = await gridLayout(h);
@@ -40540,6 +40550,9 @@ const agentGrid = {
             )
         );
         await step("restore the saved grid", () => h.ev(restoreStorageKey(GRID_KEY, ctx.prevGrid)));
+        await step("restore the header buttons", () =>
+            h.ev(restoreStorageKey("agent.header.buttons", ctx.prevHeaderButtons))
+        );
         await step("reload onto the live roster", async () => {
             if (!(await ahReload(h))) console.error("agent-grid teardown: the page did not come back after the reload");
         });

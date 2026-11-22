@@ -1115,7 +1115,10 @@ export const register: Register = (on) => {
         return (await verifyGateAsk($, e.input, e.approver !== undefined)) ?? verdict;
     }).catch(passOn);
 
-    on("tool.call", { tool: "PowerShell" }, async ($, e, next) => {
+    // Windows' Claude Code has a PowerShell tool whose input is a Bash's (command, run_in_background); the types
+    // of other platforms do not name it, so it is typed as Bash here, which compiles against both
+    const powerShell = "PowerShell" as string as "Bash";
+    on("tool.call", { tool: powerShell }, async ($, e, next) => {
         const why = await refusal($, e.command, e.run_in_background);
         if (why !== null) {
             return { deny: why };
