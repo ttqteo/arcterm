@@ -2,11 +2,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // The split's header: the board's name (a switcher while the agent has more than one board), its facts, Expand or
-// Collapse, and Close. A board in a grid of several cells has no Expand: it opens expanded and stays so.
+// Collapse, and Close. A board in a grid of several cells has no Expand: it opens expanded and stays so. While a part of
+// the board is read (boardparts.ts), the facts give way to the part's name, a ‹ n/N › stepper and Whole board.
 
 import { cn } from "@/util/util";
-import { Check, ChevronDown, Maximize2, Minimize2, Shapes, X } from "lucide-react";
+import { Check, ChevronDown, ChevronLeft, ChevronRight, Maximize2, Minimize2, Shapes, X } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import { stepPart, type BoardPart } from "./boardparts";
 import { boardFacts } from "./boardtalkmodel";
 
 export interface BoardHeaderProps {
@@ -17,6 +19,9 @@ export interface BoardHeaderProps {
     onSwitch: (boardId: string) => void;
     onToggleExpanded: () => void;
     onClose: () => void;
+    parts?: readonly BoardPart[];
+    part?: number | null;
+    onPart?: (part: number | null) => void;
 }
 
 function HeaderButton({
@@ -139,8 +144,12 @@ export function BoardHeader({
     onSwitch,
     onToggleExpanded,
     onClose,
+    parts = [],
+    part = null,
+    onPart,
 }: BoardHeaderProps) {
     const expandLabel = expanded ? "Collapse" : "Expand";
+    const reading = part != null ? parts[part] : undefined;
     return (
         <div
             data-board-header
@@ -148,7 +157,42 @@ export function BoardHeader({
         >
             <Shapes size={14} strokeWidth={2} aria-hidden className="flex-none" />
             <BoardSwitcher board={board} boards={boards} onSwitch={onSwitch} />
-            {board != null ? (
+            {reading != null && onPart != null ? (
+                <>
+                    <span aria-hidden className="flex-none">
+                        ›
+                    </span>
+                    <span data-board-part-name className="min-w-0 truncate text-primary">
+                        {reading.label}
+                    </span>
+                    <HeaderButton
+                        label="Previous part (←)"
+                        attr="data-board-part-prev"
+                        onClick={() => onPart(stepPart(parts.length, part, -1))}
+                    >
+                        <ChevronLeft size={14} strokeWidth={2} />
+                    </HeaderButton>
+                    <span data-board-part-index className="flex-none tabular-nums">
+                        {part! + 1}/{parts.length}
+                    </span>
+                    <HeaderButton
+                        label="Next part (→)"
+                        attr="data-board-part-next"
+                        onClick={() => onPart(stepPart(parts.length, part, 1))}
+                    >
+                        <ChevronRight size={14} strokeWidth={2} />
+                    </HeaderButton>
+                    <button
+                        type="button"
+                        data-board-part-whole
+                        title="Whole board (Esc)"
+                        onClick={() => onPart(null)}
+                        className="flex-none cursor-pointer rounded-[6px] px-1.5 py-0.5 text-muted hover:bg-surface-hover hover:text-primary"
+                    >
+                        Whole board
+                    </button>
+                </>
+            ) : board != null ? (
                 <>
                     <span aria-hidden className="flex-none">
                         ·

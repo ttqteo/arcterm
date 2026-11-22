@@ -34,6 +34,8 @@ and a picture given to a line that is not big.
 
 ### Changed
 
+- Beside Chat a board shows only its latest turn, one line over the ask box, with "N earlier" to open them all, so the
+  drawing gets the height.
 - A passage you Reply to in Chat sits over the chat box as a quote block, like Notion's: a bar beside the words,
   upright and up to three lines, in line with what you type; a second quote is one more block under it, and the ×
   shows when you point at one.
@@ -50,6 +52,9 @@ and a picture given to a line that is not big.
 
 ### Added
 
+- A dense board reads one part at a time: while its text is too small to read, a label sits over each part of the
+  drawing; click one (or press `→` / `←`) and the board eases to that part at a size its text reads at, and `Esc` or
+  Whole board goes back. The header names the part and steps through them.
 - A long paste in Chat's box (10 lines or more, or 1,000 characters) folds into a "Pasted text" chip over the box,
   like an attachment, so your question stays in view. Click the chip to read it all or put it back in the text; it is
   sent after your message, fenced when it is code or a log.

@@ -230,6 +230,23 @@ export function boxElements(id, x, y, label, fontFamily = 5) {
     ];
 }
 
+// a free text, as a part's title (boardparts.ts names a part by its top-most text)
+export function textElement(id, x, y, text, fontFamily = 5) {
+    return {
+        ...rectElement(id, x, y, Math.max(40, text.length * 11), 25),
+        type: "text",
+        text,
+        originalText: text,
+        fontSize: 20,
+        fontFamily,
+        textAlign: "left",
+        verticalAlign: "top",
+        containerId: null,
+        autoResize: true,
+        lineHeight: 1.25,
+    };
+}
+
 // One fixture board. `agent` is the tab the board is tied to ({ tabid, title }), `turns` its talk, `elements` its drawing.
 export const putBoard = (h, { id, name, project, agent, turns = [], elements = [], createdts = Date.now() - 3_600_000 }) =>
     page(

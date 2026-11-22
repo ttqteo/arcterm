@@ -6,7 +6,13 @@
 // updateScene instead of overwriting the file under you, and one Ctrl+Z takes the whole turn back. Excalidraw's
 // runtime is ~2 MB, so it loads (React.lazy) only when a canvas first shows. It fills its nearest positioned ancestor.
 // A sun/moon in its top-right corner turns every board light or dark (boardThemeAtom).
+//
+// A dense board fitted to the canvas shows its text at 6 or 7px, so it reads one part at a time (boardparts.ts): while
+// the text is too small to read, a label sits over each part, and a click on it (or → and ←) eases the view to that
+// part at a size its text reads at; Esc goes back to the whole board. A zoom of your own leaves the part.
 
+import { MOTION } from "@/app/element/motiontokens";
+import { cubicBezier } from "@/app/element/pulse";
 import { globalStore } from "@/app/store/jotaiStore";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
@@ -14,9 +20,20 @@ import type { ExcalidrawElement } from "@excalidraw/excalidraw/element/types";
 import type { AppState, BinaryFiles, ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 import { useAtom } from "jotai";
 import { Moon, Sun } from "lucide-react";
-import { lazy, Suspense, useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState, useSyncExternalStore, type KeyboardEvent } from "react";
 import "./boardcanvas.css";
 import { parseBoardFile, selectionLabel, serializeBoard, withReadableFont, type BoardScene } from "./boardmodel";
+import {
+    boardParts,
+    lerpViewport,
+    partOnView,
+    partViewport,
+    READ_ZOOM,
+    stepPart,
+    type BoardPart,
+    type PartElement,
+    type Viewport,
+} from "./boardparts";
 import {
     boardThemeAtom,
     boardViewportAtom,
@@ -51,6 +68,42 @@ export interface BoardCanvasProps {
     // Show: selects exactly these shapes and scrolls to them. A new array re-applies, even with the same ids.
     highlightIds?: readonly string[] | null;
     onSelection?: (selection: BoardSelection) => void;
+    // the part being read (an index into the parts), null for the whole board; left out, the canvas keeps its own
+    part?: number | null;
+    onPart?: (part: number | null) => void;
+    // the board's parts, again each time they change
+    onParts?: (parts: BoardPart[]) => void;
+}
+
+const easeFluid = cubicBezier(...MOTION.easeFluid);
+
+function reducedMotion(): boolean {
+    return window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
+}
+
+// the view as Excalidraw last reported it, for the part labels: a store of its own, so a pinch re-renders the labels
+// and never the canvas
+class ViewStore {
+    vp: Viewport | null = null;
+    private listeners = new Set<() => void>();
+    set(vp: Viewport): void {
+        if (this.vp?.zoom === vp.zoom && this.vp.scrollX === vp.scrollX && this.vp.scrollY === vp.scrollY) {
+            return;
+        }
+        this.vp = vp;
+        this.listeners.forEach((fn) => fn());
+    }
+    subscribe = (fn: () => void): (() => void) => {
+        this.listeners.add(fn);
+        return () => this.listeners.delete(fn);
+    };
+    get = (): Viewport | null => this.vp;
+}
+
+function partsKey(parts: readonly BoardPart[]): string {
+    return parts
+        .map((p) => [p.id, p.label, Math.round(p.x), Math.round(p.y), Math.round(p.w), Math.round(p.h)].join(":"))
+        .join("|");
 }
 
 // changes when an element is added, removed or edited; Excalidraw bumps version on every edit
@@ -94,7 +147,7 @@ export function BoardCanvas(props: BoardCanvasProps) {
     return <OpenBoard key={`${props.project}/${props.boardId}`} {...props} />;
 }
 
-function OpenBoard({ project, boardId, highlightIds, onSelection }: BoardCanvasProps) {
+function OpenBoard({ project, boardId, highlightIds, onSelection, part: partProp, onPart, onParts }: BoardCanvasProps) {
     const [initial, setInitial] = useState<BoardScene | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [ready, setReady] = useState(false);
@@ -118,6 +171,23 @@ function OpenBoard({ project, boardId, highlightIds, onSelection }: BoardCanvasP
     const fitOnOpenRef = useRef(globalStore.get(boardViewportAtom(boardId)) == null);
     // the file was opened in another face than it was saved in (withReadableFont), and is saved once refitted
     const turnedOnOpenRef = useRef(false);
+    const [parts, setParts] = useState<BoardPart[]>([]);
+    const partsKeyRef = useRef("");
+    const onPartsRef = useRef(onParts);
+    onPartsRef.current = onParts;
+    // controlled by the split's header; Library's canvas keeps its own
+    const [ownPart, setOwnPart] = useState<number | null>(null);
+    const part = onPart != null ? (partProp ?? null) : ownPart;
+    const setPart = onPart ?? setOwnPart;
+    const partRef = useRef(part);
+    partRef.current = part;
+    const views = useRef(new ViewStore()).current;
+    // the zoom a part was opened at, and whether the view is easing there: a zoom of the person's own leaves the part
+    const partZoomRef = useRef<number | null>(null);
+    const easingRef = useRef<number | null>(null);
+    // the part was left by a zoom of the person's own: the view stays where they took it, no easing back to the whole
+    const leftByZoomRef = useRef(false);
+    const prevPartRef = useRef<number | null>(null);
 
     const ref = { project, boardid: boardId };
 
@@ -194,6 +264,118 @@ function OpenBoard({ project, boardId, highlightIds, onSelection }: BoardCanvasP
             api.scrollToContent(found, { animate: true });
         }
         setShown(found.map((el) => el.id));
+    }
+
+    function updateParts(): void {
+        const api = apiRef.current;
+        if (api == null) {
+            return;
+        }
+        const next = boardParts(api.getSceneElements() as unknown as readonly PartElement[]);
+        const key = partsKey(next);
+        if (key === partsKeyRef.current) {
+            return;
+        }
+        partsKeyRef.current = key;
+        setParts(next);
+        onPartsRef.current?.(next);
+    }
+
+    function applyView(vp: Viewport, easing: boolean): void {
+        const api = apiRef.current;
+        if (api == null || excalidraw == null) {
+            return;
+        }
+        api.updateScene({
+            appState: {
+                zoom: { value: vp.zoom } as AppState["zoom"],
+                scrollX: vp.scrollX,
+                scrollY: vp.scrollY,
+                // while easing, the shapes are scaled from their cache and drawn sharp once at the end
+                shouldCacheIgnoreZoom: easing,
+            },
+            captureUpdate: excalidraw.CaptureUpdateAction.NEVER,
+        });
+    }
+
+    function stopEasing(): void {
+        if (easingRef.current != null) {
+            cancelAnimationFrame(easingRef.current);
+            easingRef.current = null;
+        }
+    }
+
+    // eases the view to a part over durMacro on the Fluid curve; reduced motion jumps there
+    function easeTo(to: Viewport): void {
+        const api = apiRef.current;
+        if (api == null) {
+            return;
+        }
+        stopEasing();
+        const st = api.getAppState();
+        const from: Viewport = { zoom: st.zoom.value, scrollX: st.scrollX, scrollY: st.scrollY };
+        if (reducedMotion()) {
+            applyView(to, false);
+            return;
+        }
+        const start = performance.now();
+        const ms = MOTION.durMacro * 1000;
+        const step = (now: number) => {
+            const t = Math.min(1, (now - start) / ms);
+            if (t >= 1) {
+                easingRef.current = null;
+                applyView(to, false);
+                return;
+            }
+            applyView(lerpViewport(from, to, easeFluid(t), st.width, st.height), true);
+            easingRef.current = requestAnimationFrame(step);
+        };
+        easingRef.current = requestAnimationFrame(step);
+    }
+
+    function wholeBoard(): void {
+        const api = apiRef.current;
+        if (api == null) {
+            return;
+        }
+        stopEasing();
+        const shapes = api.getSceneElements();
+        if (shapes.length > 0) {
+            api.scrollToContent(shapes, { fitToViewport: true, viewportZoomFactor: 0.9, animate: !reducedMotion() });
+        }
+    }
+
+    // → and ← step through the parts, Esc goes back to the whole board: only while nothing is selected or being
+    // written, with the select or hand tool, so Excalidraw's own keys (nudging a selection, leaving a tool) stay its own
+    function onKeyDownCapture(e: KeyboardEvent<HTMLDivElement>): void {
+        const api = apiRef.current;
+        if (api == null || parts.length === 0 || e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) {
+            return;
+        }
+        const target = e.target as HTMLElement;
+        if (target.closest("input, textarea, [contenteditable='true']") != null) {
+            return;
+        }
+        const st = api.getAppState();
+        const idle =
+            !Object.values(st.selectedElementIds).some(Boolean) &&
+            st.editingTextElement == null &&
+            (st.activeTool.type === "selection" || st.activeTool.type === "hand");
+        if (!idle) {
+            return;
+        }
+        let next: number | null | undefined;
+        if (e.key === "ArrowRight" || e.key === "ArrowLeft") {
+            next = stepPart(parts.length, part, e.key === "ArrowRight" ? 1 : -1);
+        } else if (e.key === "Escape" && part != null) {
+            next = null;
+        }
+        if (next === undefined) {
+            return;
+        }
+        e.preventDefault();
+        e.stopPropagation();
+        setPart(next);
     }
 
     useEffect(() => {
@@ -285,6 +467,40 @@ function OpenBoard({ project, boardId, highlightIds, onSelection }: BoardCanvasP
         };
     }, [ready]);
 
+    // the part to read: eased to when another is chosen; the whole board again when it closes. An edit that reshapes
+    // the open part does not move the view under the pen.
+    const partId = part != null ? (parts[part]?.id ?? null) : null;
+    useEffect(() => {
+        if (!ready) {
+            return;
+        }
+        const prev = prevPartRef.current;
+        prevPartRef.current = part;
+        const api = apiRef.current;
+        if (api == null) {
+            return;
+        }
+        if (part == null) {
+            partZoomRef.current = null;
+            if (prev != null && !leftByZoomRef.current) {
+                wholeBoard();
+            }
+            leftByZoomRef.current = false;
+            return;
+        }
+        const at = parts[part];
+        if (at == null) {
+            setPart(null);
+            return;
+        }
+        const st = api.getAppState();
+        const to = partViewport(at, st.width, st.height);
+        partZoomRef.current = to.zoom;
+        easeTo(to);
+    }, [ready, part, partId]);
+
+    useEffect(() => stopEasing, []);
+
     // Show
     useEffect(() => {
         if (ready && highlightIds != null && highlightIds.length > 0) {
@@ -310,6 +526,12 @@ function OpenBoard({ project, boardId, highlightIds, onSelection }: BoardCanvasP
                 api.scrollToContent(shapes, { fitToViewport: true, viewportZoomFactor: 0.9 });
             }
             fitOnOpenRef.current = false;
+            views.set({
+                zoom: api.getAppState().zoom.value,
+                scrollX: api.getAppState().scrollX,
+                scrollY: api.getAppState().scrollY,
+            });
+            updateParts();
             readyRef.current?.resolve();
             setReady(true);
             refitText(turnedOnOpenRef.current).catch((e) =>
@@ -324,6 +546,19 @@ function OpenBoard({ project, boardId, highlightIds, onSelection }: BoardCanvasP
         if (selection !== selectionRef.current) {
             selectionRef.current = selection;
             onSelectionRef.current?.({ ids, label: selectionLabel(elements, ids) });
+        }
+        views.set({ zoom: appState.zoom.value, scrollX: appState.scrollX, scrollY: appState.scrollY });
+        // a zoom of the person's own (a pinch, the + and −) leaves the part; a scroll reads on through it
+        const partZoom = partZoomRef.current;
+        if (
+            partRef.current != null &&
+            easingRef.current == null &&
+            partZoom != null &&
+            Math.abs(appState.zoom.value - partZoom) > 0.01
+        ) {
+            partZoomRef.current = null;
+            leftByZoomRef.current = true;
+            setPart(null);
         }
         const vpAtom = boardViewportAtom(boardId);
         const vp = globalStore.get(vpAtom);
@@ -345,6 +580,7 @@ function OpenBoard({ project, boardId, highlightIds, onSelection }: BoardCanvasP
         }
         timerRef.current = setTimeout(() => {
             timerRef.current = null;
+            updateParts();
             save().catch((e) => console.warn("boards: autosave failed", boardId, e));
         }, AUTOSAVE_MS);
     }
@@ -365,10 +601,13 @@ function OpenBoard({ project, boardId, highlightIds, onSelection }: BoardCanvasP
     const viewport = globalStore.get(boardViewportAtom(boardId));
     return (
         <div
-            className="arc-board absolute inset-0"
+            className="arc-board absolute inset-0 overflow-hidden"
             data-board-canvas={boardId}
             data-board-ready={ready ? "true" : "false"}
             data-board-highlight={shown.join(",")}
+            data-board-parts={parts.length}
+            data-board-part={part ?? ""}
+            onKeyDownCapture={onKeyDownCapture}
         >
             <Suspense fallback={null}>
                 <LazyExcalidraw
@@ -415,6 +654,60 @@ function OpenBoard({ project, boardId, highlightIds, onSelection }: BoardCanvasP
             >
                 {theme === "dark" ? <Sun size={14} strokeWidth={2} /> : <Moon size={14} strokeWidth={2} />}
             </button>
+            {ready && part == null ? <PartLabels parts={parts} views={views} onPick={setPart} /> : null}
+        </div>
+    );
+}
+
+// A label over each part while the board is too small to read, and an outline of the part under the hovered label.
+// It follows every pan and pinch through the view store, without re-rendering the canvas.
+function PartLabels({
+    parts,
+    views,
+    onPick,
+}: {
+    parts: readonly BoardPart[];
+    views: ViewStore;
+    onPick: (part: number) => void;
+}) {
+    const vp = useSyncExternalStore(views.subscribe, views.get);
+    const [hover, setHover] = useState<number | null>(null);
+    if (vp == null || parts.length === 0 || vp.zoom >= READ_ZOOM * 0.95) {
+        return null;
+    }
+    const outline = hover != null && parts[hover] != null ? partOnView(parts[hover], vp) : null;
+    return (
+        <div data-board-part-labels className="pointer-events-none absolute inset-0 z-[5]">
+            {outline != null ? (
+                <div
+                    aria-hidden
+                    className="absolute rounded-[8px] border-2 border-dashed border-ink-mid"
+                    style={{
+                        left: outline.left - 8,
+                        top: outline.top - 8,
+                        width: outline.width + 16,
+                        height: outline.height + 16,
+                    }}
+                />
+            ) : null}
+            {parts.map((p, i) => {
+                const at = partOnView(p, vp);
+                return (
+                    <button
+                        key={p.id}
+                        type="button"
+                        data-board-part-label={i}
+                        title="Read this part (→ ← to step, Esc for the whole board)"
+                        onClick={() => onPick(i)}
+                        onPointerEnter={() => setHover(i)}
+                        onPointerLeave={() => setHover((h) => (h === i ? null : h))}
+                        className="pointer-events-auto absolute max-w-[220px] cursor-pointer truncate rounded-full border border-edge-mid bg-surface-raised px-2 py-0.5 text-[11.5px] text-secondary shadow-popover-line hover:bg-surface-hover hover:text-primary"
+                        style={{ left: Math.max(4, at.left), top: Math.max(4, at.top - 26) }}
+                    >
+                        {p.label}
+                    </button>
+                );
+            })}
         </div>
     );
 }

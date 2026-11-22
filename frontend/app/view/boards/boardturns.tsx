@@ -30,6 +30,8 @@ export interface BoardTurnsProps {
     onRetry: (turn: BoardTurn) => void;
     // recent mode's "N earlier" line: the split opens the whole board
     onEarlier?: () => void;
+    // how many of the latest turns recent mode shows (recentTurns' default when left out)
+    recent?: number;
     // Send to agent needs a live agent; a board whose agent ended can still be drawn on
     canForward?: boolean;
 }
@@ -174,7 +176,7 @@ function TurnRow({ turn, now, mode, canForward, agentTitle, ...on }: TurnRowProp
     );
 }
 
-export function BoardTurns({ talk, mode, canForward, onEarlier, ...on }: BoardTurnsProps) {
+export function BoardTurns({ talk, mode, canForward, onEarlier, recent, ...on }: BoardTurnsProps) {
     const all = talk?.turns ?? [];
     // answering turns tick: the seconds, and the 45 s that turns one slow
     const now = useNow(all.some((t) => t.state === "answering"));
@@ -207,7 +209,7 @@ export function BoardTurns({ talk, mode, canForward, onEarlier, ...on }: BoardTu
             </div>
         );
     }
-    const { turns, earlier } = recentTurns(talk);
+    const { turns, earlier } = recentTurns(talk, recent);
     return (
         <div
             data-board-turns="recent"

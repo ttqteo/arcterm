@@ -1,6 +1,7 @@
 // Scenario `boards-split`: the board split beside the agent's Chat (docs/superpowers/specs/2026-11-19-kael-boards-design.md,
 // plan 2026-11-19-kael-boards.md Task 7). A board opens right of a 360px Chat column in the agent's cell, the agent tree folded to a strip; its
-// header, turns and ask box are the steps below, each a screenshot plus a DOM assert.
+// header, turns and ask box are the steps below, each a screenshot plus a DOM assert. Beside Chat only the latest turn
+// shows, so a step that reads one turn's row puts that turn last; a dense board (B3) reads one part at a time (8b).
 //
 // Two fixture claude agents over real tabs (no controller, so nothing runs) and a mock roster for them; the first has a
 // short transcript so Chat has something to show beside the board. The board commands are stubbed in the page
@@ -11,7 +12,7 @@ import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import * as AC from "./agent-page-fixtures.mjs";
-import { boardCalls, boardPage, boxElements, installBoardStubs, putBoard, putTurns, removeBoardStubs } from "./boards-fixtures.mjs";
+import { boardCalls, boardPage, boxElements, installBoardStubs, putBoard, putTurns, removeBoardStubs, textElement } from "./boards-fixtures.mjs";
 
 const NAME = "boards-split";
 const PROJECT = "boards-split-fx";
@@ -35,6 +36,15 @@ const ELEMENTS_1 = [
     ...filled(boxElements("sqlite", 170, 200, "SQLite"), "#b2f2bb"),
 ];
 const ELEMENTS_2 = filled(boxElements("jobslot", 40, 40, "jobslot"), "#ffd8a8");
+// a dense board: three parts far apart, each a titled cluster, so fitted to the canvas its text is too small to read
+const B3 = "b0a5b003";
+const B3_NAME = "thesis-map";
+const partOf = (id, x, y, title) => [
+    textElement(`${id}-title`, x, y, title),
+    ...filled(boxElements(`${id}-a`, x, y + 40, `${title} A`), "#a5d8ff"),
+    ...filled(boxElements(`${id}-b`, x + 200, y + 40, `${title} B`), "#ffec99"),
+];
+const ELEMENTS_3 = [...partOf("harness", 0, 0, "Harness"), ...partOf("bench", 2400, 0, "Benchmark"), ...partOf("rq", 0, 1800, "Research questions")];
 
 // the talk: your drawn ask, a question forwarded to the agent and answered there, the agent's drawn request
 const TA = "t-ask-drawn";
@@ -78,6 +88,12 @@ const baseTurns = (now) => [
         answeredts: now - 290_000,
     },
 ];
+
+// the base turns with `id` moved last, so it is the one row beside Chat
+const lastTurn = (now, id) => {
+    const turns = baseTurns(now);
+    return [...turns.filter((t) => t.id !== id), turns.find((t) => t.id === id)];
+};
 
 const runningTurn = (now, over = {}) => ({
     id: TD,
@@ -155,6 +171,8 @@ export default function (kit) {
                 const agent = { tabid: ctx.agent.tabId, title: AGENT_TITLE };
                 await putBoard(h, { id: B1, name: B1_NAME, project: PROJECT, agent, turns: baseTurns(Date.now()), elements: ELEMENTS_1 });
                 await putBoard(h, { id: B2, name: B2_NAME, project: PROJECT, agent, turns: [], elements: ELEMENTS_2, createdts: Date.now() - 7_200_000 });
+                // tied to the other agent, so A's switcher lists only B1 and B2 until 8b opens it there
+                await putBoard(h, { id: B3, name: B3_NAME, project: PROJECT, agent: { tabid: ctx.other.tabId, title: `claude · ${PROJECT} 2` }, turns: [], elements: ELEMENTS_3, createdts: Date.now() - 9_000_000 });
             } catch (e) {
                 ctx.arrangeError = `${at}: ${String(e?.message ?? e)}`;
             }
@@ -374,13 +392,17 @@ export default function (kit) {
                 rec(name, opened && stillSplit && folded && JSON.stringify(term) === JSON.stringify(termOpen), { opened, stillSplit, folded, term, termOpen });
             });
 
-            // --- 2. the recent turns: a drawn turn whose Show outlines its shapes, and a forwarded turn ---
-            await run("2. the turns list a drawn turn with Show and a forwarded one reading forwarded · answered in Chat", async (name) => {
-                const rows = await turnRows();
-                const a = rowOf(rows, TA);
-                const b = rowOf(rows, TB);
-                const c = rowOf(rows, TC);
-                const earlier = await count(`${CELL} [data-board-turns-earlier]`);
+            // --- 2. beside Chat only the latest turn shows, one line, with "N earlier" for the rest ---
+            await run("2. one turn shows beside Chat: a drawn one with Show, a forwarded one reading forwarded · answered in Chat", async (name) => {
+                const now = Date.now();
+                // as fixed: the agent's drawn request is the latest
+                const base = await turnRows();
+                const baseEarlier = await text(`${CELL} [data-board-turns-earlier]`);
+                // your drawn ask last
+                await putTurns(h, B1, lastTurn(now, TA));
+                await until(async () => rowOf(await turnRows(), TA) != null);
+                const rowsA = await turnRows();
+                const a = rowOf(rowsA, TA);
                 const clicked = await click(`${SPLIT(B1)} [data-board-turn="${TA}"] [data-board-turn-show]`);
                 const shown = await until(() => h.ev(`document.querySelector(${q(`${SPLIT(B1)} ${CANVAS(B1)}`)})?.dataset.boardHighlight === "tauri-host,auth-key"`));
                 const highlight = await h.ev(`document.querySelector(${q(`${SPLIT(B1)} ${CANVAS(B1)}`)})?.dataset.boardHighlight ?? null`);
@@ -388,34 +410,47 @@ export default function (kit) {
                 // Show selected the shapes, so the ask box names them
                 const asking = await text(`${SPLIT(B1)} [data-board-ask-selected]`);
                 await shot("2-turns-show");
+                // the forwarded question last
+                await putTurns(h, B1, lastTurn(now, TB));
+                await until(async () => rowOf(await turnRows(), TB) != null);
+                const rowsB = await turnRows();
+                const b = rowOf(rowsB, TB);
                 rec(
                     name,
-                    rows.length === 3 &&
-                        earlier === 0 &&
+                    base.length === 1 &&
+                        base[0].id === TC &&
+                        base[0].state === "drawn" &&
+                        base[0].buttons.join() === "Show" &&
+                        baseEarlier === "2 earlier" &&
+                        rowsA.length === 1 &&
                         a?.state === "drawn" &&
                         a.label === "Drawn" &&
                         a.text.includes("+2 shapes") &&
                         a.buttons.includes("Show") &&
                         a.buttons.includes("Send to agent") &&
+                        rowsB.length === 1 &&
                         b?.state === "forwarded" &&
                         b.note === "forwarded · answered in Chat" &&
                         // the copied reply is for the expanded column, not the narrow one
                         b.reply === "" &&
                         b.buttons.join() === "Draw instead" &&
-                        c?.state === "drawn" &&
-                        c.buttons.join() === "Show" &&
                         clicked &&
                         shown &&
                         highlight === "tauri-host,auth-key" &&
                         picked.join() === "auth-key,tauri-host" &&
                         asking?.startsWith("Selected "),
-                    { rows, earlier, highlight, picked, asking }
+                    { base, baseEarlier, rowsA, rowsB, highlight, picked, asking }
                 );
             });
 
             // --- 3. send the other way: each button asks wavesrv to reroute its turn ---
             await run("3. Send to agent and Draw instead each call BoardRerouteCommand with the turn id", async (name) => {
+                const now = Date.now();
+                await putTurns(h, B1, lastTurn(now, TA));
+                await until(async () => rowOf(await turnRows(), TA) != null);
                 const sent = await click(`${SPLIT(B1)} [data-board-turn="${TA}"] [data-board-turn-other]`);
+                await putTurns(h, B1, lastTurn(now, TB));
+                await until(async () => rowOf(await turnRows(), TB) != null);
                 const drawn = await click(`${SPLIT(B1)} [data-board-turn="${TB}"] [data-board-turn-other]`);
                 await until(async () => (await boardCalls(h, "BoardRerouteCommand")).length === 2);
                 const calls = await boardCalls(h, "BoardRerouteCommand");
@@ -492,9 +527,9 @@ export default function (kit) {
                         seconds < 30 &&
                         d.buttons.length === 0 &&
                         disabled &&
-                        // four turns in a narrow column: the last three and a line for the first
-                        rows.length === 3 &&
-                        earlier === "1 earlier",
+                        // four turns beside Chat: the running one and a line for the other three
+                        rows.length === 1 &&
+                        earlier === "3 earlier",
                     { d, seconds, disabled, earlier, rows: rows.length }
                 );
             });
@@ -670,6 +705,69 @@ export default function (kit) {
                         kept &&
                         !inert,
                     { cell, chat, kept, inert }
+                );
+            });
+
+            // --- 8b. a dense board reads one part at a time ---
+            await run("8b. a dense board labels its parts; a label, → and Whole board move between them", async (name) => {
+                const CV = `${SPLIT(B3)} ${CANVAS(B3)}`;
+                const attr = (key) => h.ev(`document.querySelector(${q(CV)})?.dataset.${key} ?? null`);
+                const zoom = () => canvasPage(`return app()?.state.zoom.value ?? null;`);
+                await openBoardOn(B3);
+                const ready = await canvasReady(B3);
+                const labelled = await until(async () => (await count(`${CV} [data-board-part-label]`)) === 3);
+                const labels = await h.ev(`[...document.querySelectorAll(${q(`${CV} [data-board-part-label]`)})].map((b) => b.textContent.trim())`);
+                const fitZoom = await zoom();
+                await shot("8b-parts");
+                // a label opens its part at a reading size, the header naming it
+                const picked = await click(`${CV} [data-board-part-label="0"]`);
+                const inPart = await until(async () => (await attr("boardPart")) === "0");
+                await polishNap(600);
+                const partZoom = await zoom();
+                const partName = await text(`${SPLIT(B3)} [data-board-part-name]`);
+                const index = await text(`${SPLIT(B3)} [data-board-part-index]`);
+                const labelsGone = (await count(`${CV} [data-board-part-label]`)) === 0;
+                await shot("8b-part");
+                let picture;
+                try {
+                    picture = await h.whatsnewShot("board-parts", { selector: SPLIT(B3) });
+                } catch (e) {
+                    picture = { error: String(e?.message ?? e) };
+                }
+                // → from inside the canvas steps to the next part
+                await h.ev(`document.querySelector(${q(`${CV} .excalidraw`)})?.focus()`);
+                await h.cdp("Input.dispatchKeyEvent", { type: "rawKeyDown", key: "ArrowRight", code: "ArrowRight", windowsVirtualKeyCode: 39 });
+                await h.cdp("Input.dispatchKeyEvent", { type: "keyUp", key: "ArrowRight", code: "ArrowRight", windowsVirtualKeyCode: 39 });
+                const stepped = await until(async () => (await attr("boardPart")) === "1");
+                const nextName = await text(`${SPLIT(B3)} [data-board-part-name]`);
+                // Whole board goes back to the fitted view, labels and facts again
+                const whole = await click(`${SPLIT(B3)} [data-board-part-whole]`);
+                const back = await until(async () => (await attr("boardPart")) === "");
+                const relabelled = await until(async () => (await count(`${CV} [data-board-part-label]`)) === 3);
+                await shot("8b-whole");
+                await click(`${SPLIT(B3)} [data-board-close]`);
+                await until(async () => (await box(SPLIT(B3))) == null);
+                rec(
+                    name,
+                    ready &&
+                        labelled &&
+                        labels.join() === "Harness,Benchmark,Research questions" &&
+                        fitZoom != null &&
+                        fitZoom < 0.665 &&
+                        picked &&
+                        inPart &&
+                        partZoom != null &&
+                        partZoom >= 0.7 &&
+                        partName === "Harness" &&
+                        index === "1/3" &&
+                        labelsGone &&
+                        stepped &&
+                        nextName === "Benchmark" &&
+                        whole &&
+                        back &&
+                        relabelled &&
+                        picture?.error == null,
+                    { labels, fitZoom, partZoom, partName, index, nextName, picture }
                 );
             });
 

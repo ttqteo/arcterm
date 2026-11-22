@@ -66,6 +66,11 @@ The `add` vocabulary:
 
 Lay a drawing out left to right or top to bottom, and keep labels short.
 
+The person reads the board one part at a time: Arc splits it into parts by the space between shapes, and names each
+part by its top-most text. So when a drawing has several parts (a flow, a list, a comparison), give each a short title
+`text` at its top left, keep at least 120 between parts and under 40 between the shapes of one part, and keep a part
+under about 1000 wide.
+
 Example, for "draw how wavesrv talks to the frontend":
 
 {"title":"wavesrv and the frontend","add":[{"type":"rectangle","id":"a","x":0,"y":0,"width":180,"height":60,"label":{"text":"wavesrv"}},{"type":"rectangle","id":"b","x":280,"y":0,"width":180,"height":60,"label":{"text":"frontend"}},{"type":"arrow","id":"ab","x":180,"y":30,"start":{"id":"a"},"end":{"id":"b"},"label":{"text":"websocket"}}],"update":[],"remove":[]}

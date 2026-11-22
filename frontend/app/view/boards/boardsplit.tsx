@@ -19,6 +19,7 @@ import { askBoard, rerouteBoardTurn, retryBoardTurn, stopBoardTurn } from "./boa
 import { BoardAskBox } from "./boardaskbox";
 import { BoardCanvas, type BoardSelection } from "./boardcanvas";
 import { BoardHeader } from "./boardheader";
+import type { BoardPart } from "./boardparts";
 import {
     boardSplitAtom,
     closeBoard,
@@ -74,12 +75,16 @@ function OpenSplit({
     // Show: a new array each press, so the same shapes can be shown again
     const [highlight, setHighlight] = useState<string[] | null>(null);
     const [error, setError] = useState<string | null>(null);
+    // the part of the board being read, null for the whole board (boardparts.ts)
+    const [parts, setParts] = useState<BoardPart[]>([]);
+    const [part, setPart] = useState<number | null>(null);
 
     // the canvas is gone while another surface shows: what it had selected or shown goes with it
     useEffect(() => {
         if (!onAgentSurface) {
             setSelection(null);
             setHighlight(null);
+            setPart(null);
         }
     }, [onAgentSurface]);
 
@@ -108,6 +113,8 @@ function OpenSplit({
         <BoardTurns
             talk={talk}
             mode={expanded ? "full" : "recent"}
+            // beside Chat only the latest turn shows, one line; "N earlier" opens the board with all of them
+            recent={1}
             canForward={alive}
             onShow={(turn) => setHighlight([...(turn.shapeids ?? [])])}
             onOtherWay={(turn) => void act(() => rerouteBoardTurn(target, turn.id))}
@@ -138,6 +145,9 @@ function OpenSplit({
                 onSwitch={(id) => switchBoard(agent.id, id)}
                 onToggleExpanded={() => setBoardExpanded(agent.id, !split.expanded)}
                 onClose={() => closeBoard(agent.id)}
+                parts={parts}
+                part={part}
+                onPart={setPart}
             />
             {/* the same boxes either way, so expanding never remounts the canvas or drops a half-typed question. Wide
                 enough (640px), the expanded board has the canvas on the left and on its right the turns column with the
@@ -150,6 +160,9 @@ function OpenSplit({
                             boardId={boardId}
                             highlightIds={highlight}
                             onSelection={(s) => setSelection(s.ids.length > 0 ? s : null)}
+                            part={part}
+                            onPart={setPart}
+                            onParts={setParts}
                         />
                     ) : null}
                 </div>
