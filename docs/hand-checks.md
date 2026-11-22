@@ -30,6 +30,15 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
   merge from another checkout (`cd ../main && git merge x`) is judged in that checkout, where the agent branch's own
   commits cannot make a row out of date (a failed or no-result row still asks). In an engine worker, where nobody can be
   asked, the ask comes back as a refusal whose reason tells the agent to ask you first.
+## 2026-11-22
+
+- [ ] (arcterm) **A long paste folds into a Pasted text chip** (`chatpastes.ts`, `chatpastechips.tsx`, f38640543). In a
+  Claude agent's Chat, type a question, then paste 20+ lines of a log: the box keeps only the question and a "Pasted
+  text · N lines" chip sits over it. Click the chip: the paste opens over the box in the frosted panel (as wide as the
+  box, scrolls, Esc closes it and does not stop the agent). Edit in box puts it back fenced under the question; × drops
+  it. Send: the bubble and Claude Code get the question then the fenced log. Switch surfaces and back: the chip is
+  still there. A paste of 9 lines, a paste inside a ``` block, and a paste after `!` go in as text as before.
+
 ## 2026-11-20
 
 - [ ] (arcterm) **Board light theme, tree fold animation, attachment icons** (`boardcanvas.tsx`, `agenttreeslot.tsx`,
