@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // A board's parts: the regions you read one at a time. A dense board fitted to the canvas shows its text at 6 or 7px;
-// a part opens at a size its text reads at (partViewport). The parts are the board's frames when it has two or more
+// a part opens at a size its text reads at (partViewport), from the one the pointer is over (partAt) or the header's
+// stepper. The parts are the board's frames when it has two or more
 // (drawn by hand with Excalidraw's frame tool), else the clusters its shapes form on the board: shapes closer than a
 // gap join one part, and the gap widens until there are at most MAX_PARTS. Arrows and lines join nothing, since they
 // cross between parts. A part is named by its top-most text, the drawer's prompt asks for a title there.
@@ -198,6 +199,39 @@ export function partOnView(
         width: part.w * vp.zoom,
         height: part.h * vp.zoom,
     };
+}
+
+// Reading by part is for a board too big to read whole: one whose parts all fit the view at READ_ZOOM needs none, so
+// a small board shows no stepper and no Read label
+export function needsParts(parts: readonly BoardPart[], viewW: number, viewH: number): boolean {
+    if (parts.length < 2) {
+        return false;
+    }
+    const x = Math.min(...parts.map((p) => p.x));
+    const y = Math.min(...parts.map((p) => p.y));
+    const w = Math.max(...parts.map((p) => p.x + p.w)) - x;
+    const h = Math.max(...parts.map((p) => p.y + p.h)) - y;
+    return w * READ_ZOOM > viewW - 2 * PAD || h * READ_ZOOM > viewH - 2 * PAD;
+}
+
+// the part under a point of the board (scene coordinates): the smallest one holding it, since frames can nest; null
+// over empty board
+export function partAt(parts: readonly BoardPart[], x: number, y: number): number | null {
+    let best: number | null = null;
+    parts.forEach((p, i) => {
+        if (x < p.x || x > p.x + p.w || y < p.y || y > p.y + p.h) {
+            return;
+        }
+        if (best == null || p.w * p.h < parts[best].w * parts[best].h) {
+            best = i;
+        }
+    });
+    return best;
+}
+
+// a point of the view (px from the canvas's top-left) on the board
+export function viewToScene(vp: Viewport, left: number, top: number): { x: number; y: number } {
+    return { x: left / vp.zoom - vp.scrollX, y: top / vp.zoom - vp.scrollY };
 }
 
 // the next part from `index` (null: the whole board) by `step`, wrapping; the first or last from the whole board

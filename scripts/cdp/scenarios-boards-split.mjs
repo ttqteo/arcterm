@@ -1,7 +1,8 @@
 // Scenario `boards-split`: the board split beside the agent's Chat (docs/superpowers/specs/2026-11-19-kael-boards-design.md,
 // plan 2026-11-19-kael-boards.md Task 7). A board opens right of a 360px Chat column in the agent's cell, the agent tree folded to a strip; its
 // header, turns and ask box are the steps below, each a screenshot plus a DOM assert. Beside Chat only the latest turn
-// shows, so a step that reads one turn's row puts that turn last; a dense board (B3) reads one part at a time (8b).
+// shows, so a step that reads one turn's row puts that turn last; a dense board (B3) reads one part at a time (8b), a
+// small one (B1) reads whole.
 //
 // Two fixture claude agents over real tabs (no controller, so nothing runs) and a mock roster for them; the first has a
 // short transcript so Chat has something to show beside the board. The board commands are stubbed in the page
@@ -709,24 +710,30 @@ export default function (kit) {
             });
 
             // --- 8b. a dense board reads one part at a time ---
-            await run("8b. a dense board labels its parts; a label, → and Whole board move between them", async (name) => {
+            await run("8b. a dense board: the header counts its parts, hovering one offers Read, → and Whole board move between them", async (name) => {
                 const CV = `${SPLIT(B3)} ${CANVAS(B3)}`;
                 const attr = (key) => h.ev(`document.querySelector(${q(CV)})?.dataset.${key} ?? null`);
                 const zoom = () => canvasPage(`return app()?.state.zoom.value ?? null;`);
                 await openBoardOn(B3);
                 const ready = await canvasReady(B3);
-                const labelled = await until(async () => (await count(`${CV} [data-board-part-label]`)) === 3);
-                const labels = await h.ev(`[...document.querySelectorAll(${q(`${CV} [data-board-part-label]`)})].map((b) => b.textContent.trim())`);
+                const counted = await until(async () => (await text(`${SPLIT(B3)} [data-board-parts-count]`)) === "3 parts");
                 const fitZoom = await zoom();
-                await shot("8b-parts");
-                // a label opens its part at a reading size, the header naming it
-                const picked = await click(`${CV} [data-board-part-label="0"]`);
+                // nothing over the board until the pointer is on a part
+                const quiet = (await count(`${CV} [data-board-part-hover]`)) === 0;
+                const over = await canvasPage(`return centreOf("harness-a");`);
+                await h.cdp("Input.dispatchMouseEvent", { type: "mouseMoved", x: over.x, y: over.y });
+                const hovered = await until(async () => (await count(`${CV} [data-board-part-hover="0"]`)) === 1);
+                const hoverText = await text(`${CV} [data-board-part-hover]`);
+                const one = (await count(`${CV} [data-board-part-hover]`)) === 1;
+                await shot("8b-hover");
+                // Read opens its part at a reading size, the header naming it
+                const picked = await click(`${CV} [data-board-part-hover]`);
                 const inPart = await until(async () => (await attr("boardPart")) === "0");
                 await polishNap(600);
                 const partZoom = await zoom();
                 const partName = await text(`${SPLIT(B3)} [data-board-part-name]`);
                 const index = await text(`${SPLIT(B3)} [data-board-part-index]`);
-                const labelsGone = (await count(`${CV} [data-board-part-label]`)) === 0;
+                const stepperGone = (await count(`${SPLIT(B3)} [data-board-parts-count]`)) === 0;
                 await shot("8b-part");
                 let picture;
                 try {
@@ -740,34 +747,50 @@ export default function (kit) {
                 await h.cdp("Input.dispatchKeyEvent", { type: "keyUp", key: "ArrowRight", code: "ArrowRight", windowsVirtualKeyCode: 39 });
                 const stepped = await until(async () => (await attr("boardPart")) === "1");
                 const nextName = await text(`${SPLIT(B3)} [data-board-part-name]`);
-                // Whole board goes back to the fitted view, labels and facts again
+                // Whole board goes back to the fitted view and the parts count
                 const whole = await click(`${SPLIT(B3)} [data-board-part-whole]`);
                 const back = await until(async () => (await attr("boardPart")) === "");
-                const relabelled = await until(async () => (await count(`${CV} [data-board-part-label]`)) === 3);
+                const recounted = await until(async () => (await count(`${SPLIT(B3)} [data-board-parts-count]`)) === 1);
                 await shot("8b-whole");
+                // the header's › from the whole board starts at the first part
+                const started = (await click(`${SPLIT(B3)} [data-board-parts-next]`)) && (await until(async () => (await attr("boardPart")) === "0"));
                 await click(`${SPLIT(B3)} [data-board-close]`);
                 await until(async () => (await box(SPLIT(B3))) == null);
+                // a small board reads whole: no parts, no stepper
+                await openBoardOn(B1);
+                await canvasReady(B1);
+                const b1Parts = await h.ev(`document.querySelector(${q(`${SPLIT(B1)} ${CANVAS(B1)}`)})?.dataset.boardParts ?? null`);
+                const b1Stepper = await count(`${SPLIT(B1)} [data-board-parts-count]`);
+                await click(`${SPLIT(B1)} [data-board-close]`);
+                await until(async () => (await box(SPLIT(B1))) == null);
                 rec(
                     name,
                     ready &&
-                        labelled &&
-                        labels.join() === "Harness,Benchmark,Research questions" &&
+                        counted &&
                         fitZoom != null &&
                         fitZoom < 0.665 &&
+                        quiet &&
+                        hovered &&
+                        one &&
+                        hoverText === "Read Harness" &&
                         picked &&
                         inPart &&
                         partZoom != null &&
                         partZoom >= 0.7 &&
                         partName === "Harness" &&
                         index === "1/3" &&
-                        labelsGone &&
+                        stepperGone &&
                         stepped &&
                         nextName === "Benchmark" &&
                         whole &&
                         back &&
-                        relabelled &&
+                        recounted &&
+                        started &&
+                        // a small board reads whole: no parts, no stepper
+                        b1Parts === "0" &&
+                        b1Stepper === 0 &&
                         picture?.error == null,
-                    { labels, fitZoom, partZoom, partName, index, nextName, picture }
+                    { fitZoom, hoverText, partZoom, partName, index, nextName, b1Parts, b1Stepper, picture }
                 );
             });
 

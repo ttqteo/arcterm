@@ -8,8 +8,9 @@
 // A sun/moon in its top-right corner turns every board light or dark (boardThemeAtom).
 //
 // A dense board fitted to the canvas shows its text at 6 or 7px, so it reads one part at a time (boardparts.ts): while
-// the text is too small to read, a label sits over each part, and a click on it (or → and ←) eases the view to that
-// part at a size its text reads at; Esc goes back to the whole board. A zoom of your own leaves the part.
+// the text is too small to read, the part under the pointer shows a Read label, and a click on it (or → and ←, or the
+// header's stepper) eases the view to that part at a size its text reads at; Esc goes back to the whole board. A zoom of
+// your own leaves the part.
 
 import { MOTION } from "@/app/element/motiontokens";
 import { cubicBezier } from "@/app/element/pulse";
@@ -26,10 +27,13 @@ import { parseBoardFile, selectionLabel, serializeBoard, withReadableFont, type 
 import {
     boardParts,
     lerpViewport,
+    needsParts,
+    partAt,
     partOnView,
     partViewport,
     READ_ZOOM,
     stepPart,
+    viewToScene,
     type BoardPart,
     type PartElement,
     type Viewport,
@@ -271,7 +275,9 @@ function OpenBoard({ project, boardId, highlightIds, onSelection, part: partProp
         if (api == null) {
             return;
         }
-        const next = boardParts(api.getSceneElements() as unknown as readonly PartElement[]);
+        const found = boardParts(api.getSceneElements() as unknown as readonly PartElement[]);
+        const st = api.getAppState();
+        const next = needsParts(found, st.width, st.height) ? found : [];
         const key = partsKey(next);
         if (key === partsKeyRef.current) {
             return;
@@ -654,14 +660,16 @@ function OpenBoard({ project, boardId, highlightIds, onSelection, part: partProp
             >
                 {theme === "dark" ? <Sun size={14} strokeWidth={2} /> : <Moon size={14} strokeWidth={2} />}
             </button>
-            {ready && part == null ? <PartLabels parts={parts} views={views} onPick={setPart} /> : null}
+            {ready && part == null ? <PartHover parts={parts} views={views} onPick={setPart} /> : null}
         </div>
     );
 }
 
-// A label over each part while the board is too small to read, and an outline of the part under the hovered label.
-// It follows every pan and pinch through the view store, without re-rendering the canvas.
-function PartLabels({
+// While the board is too small to read, the part under the pointer gets a dashed outline and one label, Read <name>,
+// inside its top-left corner (below the toolbar when its top is off the view); a click on the label opens it. One label
+// at a time, so nothing piles up, and none while a button is held (drawing, dragging). It follows every pan and pinch
+// through the view store, without re-rendering the canvas.
+function PartHover({
     parts,
     views,
     onPick,
@@ -671,43 +679,61 @@ function PartLabels({
     onPick: (part: number) => void;
 }) {
     const vp = useSyncExternalStore(views.subscribe, views.get);
+    const root = useRef<HTMLDivElement>(null);
     const [hover, setHover] = useState<number | null>(null);
-    if (vp == null || parts.length === 0 || vp.zoom >= READ_ZOOM * 0.95) {
-        return null;
-    }
-    const outline = hover != null && parts[hover] != null ? partOnView(parts[hover], vp) : null;
+    const small = vp != null && parts.length > 0 && vp.zoom < READ_ZOOM * 0.95;
+    useEffect(() => {
+        const wrap = root.current?.parentElement;
+        if (wrap == null || !small) {
+            setHover(null);
+            return;
+        }
+        const onMove = (e: PointerEvent) => {
+            const at = views.get();
+            if (at == null || e.buttons !== 0) {
+                setHover(null);
+                return;
+            }
+            const r = wrap.getBoundingClientRect();
+            const p = viewToScene(at, e.clientX - r.left, e.clientY - r.top);
+            setHover(partAt(parts, p.x, p.y));
+        };
+        const onLeave = () => setHover(null);
+        wrap.addEventListener("pointermove", onMove, { passive: true });
+        wrap.addEventListener("pointerleave", onLeave);
+        return () => {
+            wrap.removeEventListener("pointermove", onMove);
+            wrap.removeEventListener("pointerleave", onLeave);
+        };
+    }, [parts, views, small]);
+    const p = hover != null ? parts[hover] : undefined;
+    const outline = small && p != null && vp != null ? partOnView(p, vp) : null;
     return (
-        <div data-board-part-labels className="pointer-events-none absolute inset-0 z-[5]">
-            {outline != null ? (
-                <div
-                    aria-hidden
-                    className="absolute rounded-[8px] border-2 border-dashed border-ink-mid"
-                    style={{
-                        left: outline.left - 8,
-                        top: outline.top - 8,
-                        width: outline.width + 16,
-                        height: outline.height + 16,
-                    }}
-                />
-            ) : null}
-            {parts.map((p, i) => {
-                const at = partOnView(p, vp);
-                return (
+        <div ref={root} data-board-part-hover-layer className="pointer-events-none absolute inset-0 z-[5]">
+            {outline != null && hover != null ? (
+                <>
+                    <div
+                        aria-hidden
+                        className="absolute rounded-[8px] border-2 border-dashed border-ink-mid"
+                        style={{
+                            left: outline.left - 8,
+                            top: outline.top - 8,
+                            width: outline.width + 16,
+                            height: outline.height + 16,
+                        }}
+                    />
                     <button
-                        key={p.id}
                         type="button"
-                        data-board-part-label={i}
-                        title="Read this part (→ ← to step, Esc for the whole board)"
-                        onClick={() => onPick(i)}
-                        onPointerEnter={() => setHover(i)}
-                        onPointerLeave={() => setHover((h) => (h === i ? null : h))}
-                        className="pointer-events-auto absolute max-w-[220px] cursor-pointer truncate rounded-full border border-edge-mid bg-surface-raised px-2 py-0.5 text-[11.5px] text-secondary shadow-popover-line hover:bg-surface-hover hover:text-primary"
-                        style={{ left: Math.max(4, at.left), top: Math.max(4, at.top - 26) }}
+                        data-board-part-hover={hover}
+                        title="Read this part (→ ← step through them, Esc for the whole board)"
+                        onClick={() => onPick(hover)}
+                        className="pointer-events-auto absolute max-w-[240px] cursor-pointer truncate rounded-full border border-edge-mid bg-surface-raised px-2 py-0.5 text-[11.5px] text-secondary shadow-popover-line hover:bg-surface-hover hover:text-primary"
+                        style={{ left: Math.max(8, outline.left), top: Math.max(64, outline.top + 4) }}
                     >
-                        {p.label}
+                        Read <span className="text-primary">{p!.label}</span>
                     </button>
-                );
-            })}
+                </>
+            ) : null}
         </div>
     );
 }

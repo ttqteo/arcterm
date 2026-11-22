@@ -6,10 +6,13 @@ import {
     boardParts,
     lerpViewport,
     MAX_PARTS,
+    needsParts,
+    partAt,
     partOnView,
     partViewport,
     READ_ZOOM,
     stepPart,
+    viewToScene,
     type BoardPart,
     type PartElement,
 } from "./boardparts";
@@ -155,5 +158,43 @@ describe("lerpViewport", () => {
         expect(end.scrollX).toBeCloseTo(-300);
         expect(end.scrollY).toBeCloseTo(-100);
         expect(lerpViewport(from, to, 0.5, 1000, 800).zoom).toBeCloseTo(0.5);
+    });
+});
+
+describe("partAt", () => {
+    const parts: BoardPart[] = [
+        { id: "big", label: "big", x: 0, y: 0, w: 1000, h: 1000 },
+        { id: "inner", label: "inner", x: 100, y: 100, w: 200, h: 200 },
+        { id: "far", label: "far", x: 3000, y: 0, w: 100, h: 100 },
+    ];
+    it("finds the smallest part holding the point, and none over empty board", () => {
+        expect(partAt(parts, 150, 150)).toBe(1);
+        expect(partAt(parts, 500, 500)).toBe(0);
+        expect(partAt(parts, 3050, 50)).toBe(2);
+        expect(partAt(parts, 2000, 50)).toBeNull();
+        expect(partAt([], 0, 0)).toBeNull();
+    });
+});
+
+describe("viewToScene", () => {
+    it("inverts partOnView", () => {
+        const vp = { zoom: 0.3, scrollX: 120, scrollY: -40 };
+        const part: BoardPart = { id: "p", label: "p", x: 500, y: 700, w: 10, h: 10 };
+        const at = partOnView(part, vp);
+        const back = viewToScene(vp, at.left, at.top);
+        expect(back.x).toBeCloseTo(500);
+        expect(back.y).toBeCloseTo(700);
+    });
+});
+
+describe("needsParts", () => {
+    const a: BoardPart = { id: "a", label: "a", x: 0, y: 0, w: 200, h: 100 };
+    it("is false for a board that reads whole, or one part", () => {
+        expect(needsParts([a, { ...a, id: "b", x: 400 }], 1000, 800)).toBe(false);
+        expect(needsParts([a], 1000, 800)).toBe(false);
+    });
+    it("is true once the parts span more than the view at the reading zoom", () => {
+        expect(needsParts([a, { ...a, id: "b", x: 3000 }], 1000, 800)).toBe(true);
+        expect(needsParts([a, { ...a, id: "b", y: 3000 }], 1000, 800)).toBe(true);
     });
 });

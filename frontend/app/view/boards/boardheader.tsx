@@ -3,7 +3,8 @@
 
 // The split's header: the board's name (a switcher while the agent has more than one board), its facts, Expand or
 // Collapse, and Close. A board in a grid of several cells has no Expand: it opens expanded and stays so. While a part of
-// the board is read (boardparts.ts), the facts give way to the part's name, a ‹ n/N › stepper and Whole board.
+// the board is read (boardparts.ts), the facts give way to the part's name, a ‹ n/N › stepper and Whole board; on the
+// whole board a ‹ N parts › stepper starts the reading.
 
 import { cn } from "@/util/util";
 import { Check, ChevronDown, ChevronLeft, ChevronRight, Maximize2, Minimize2, Shapes, X } from "lucide-react";
@@ -200,6 +201,33 @@ export function BoardHeader({
                     <span data-board-facts className="min-w-0 truncate">
                         {boardFacts(board, Date.now())}
                     </span>
+                    {parts.length >= 2 && onPart != null ? (
+                        <span data-board-parts-stepper className="flex flex-none items-center">
+                            <HeaderButton
+                                label="Last part (←)"
+                                attr="data-board-parts-prev"
+                                onClick={() => onPart(stepPart(parts.length, null, -1))}
+                            >
+                                <ChevronLeft size={14} strokeWidth={2} />
+                            </HeaderButton>
+                            <button
+                                type="button"
+                                data-board-parts-count
+                                title="Read the board part by part (→)"
+                                onClick={() => onPart(0)}
+                                className="flex-none cursor-pointer rounded-[6px] px-1 py-0.5 tabular-nums hover:bg-surface-hover hover:text-primary"
+                            >
+                                {parts.length} parts
+                            </button>
+                            <HeaderButton
+                                label="First part (→)"
+                                attr="data-board-parts-next"
+                                onClick={() => onPart(stepPart(parts.length, null, 1))}
+                            >
+                                <ChevronRight size={14} strokeWidth={2} />
+                            </HeaderButton>
+                        </span>
+                    ) : null}
                 </>
             ) : null}
             <div className="flex-1" />

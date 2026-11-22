@@ -34,6 +34,8 @@ and a picture given to a line that is not big.
 
 ### Changed
 
+- A dense board no longer puts a label over every part: the part under the pointer shows one Read label, and the header
+  counts the parts with `‹ N parts ›` to read them in order. A board small enough to read whole has neither.
 - A one-line command in a reply (`! task install`) is a box as wide as the command, with its Run and Copy beside it,
   instead of a bar across the whole Chat.
 
