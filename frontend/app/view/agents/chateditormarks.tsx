@@ -200,6 +200,15 @@ export function TypedMarks({ bash }: { bash: boolean }) {
             return;
         }
         const base = el.getBoundingClientRect().top;
+        const root = editor.getRootElement();
+        const size = root != null ? parseFloat(getComputedStyle(root).fontSize) || 0 : 0;
+        // a node's text box; a quote line that is only its `>` (just typed, nothing after it yet) has no text to measure
+        // but that `>`, drawn at no size, whose box WebKit gives no height (it sits on the baseline): the bar takes the
+        // box a line of text there would have, so the quote shows from its first key
+        const span = (node: HTMLElement): { top: number; bottom: number } => {
+            const r = node.getBoundingClientRect();
+            return r.height >= 1 || size === 0 ? r : { top: r.top - size, bottom: r.top + 0.2 * size };
+        };
         const place = (pairs: [string, string][]): Box[] => {
             const out: Box[] = [];
             for (const [a, b] of pairs) {
@@ -208,8 +217,8 @@ export function TypedMarks({ bash }: { bash: boolean }) {
                 if (first == null || last == null) {
                     continue;
                 }
-                const top = Math.round(first.getBoundingClientRect().top - base - BOX_PAD);
-                const bottom = Math.round(last.getBoundingClientRect().bottom - base + BOX_PAD);
+                const top = Math.round(span(first).top - base - BOX_PAD);
+                const bottom = Math.round(span(last).bottom - base + BOX_PAD);
                 out.push({ top, height: bottom - top });
             }
             return out;

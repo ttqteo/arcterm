@@ -357,6 +357,20 @@ export default function (kit) {
                 );
             });
 
+            // 5b. a lone `>`, nothing typed after it yet: its bar shows at a line's height (its `>` is drawn at no size, and
+            // WebKit gives that box no height, so a bar measured from it alone drew nothing)
+            await run("5b. a lone > shows its quote bar", async (name) => {
+                await clearBox(h, A);
+                await typeLines(h, A, [">"]);
+                await polishWaitFor(h, `(${inputOf(A)})?.parentElement?.querySelectorAll("[data-chat-quote-bar]").length === 1`, SHORT_MS);
+                const got = await h.ev(`(() => {
+                    const bar = (${inputOf(A)})?.parentElement?.querySelector("[data-chat-quote-bar]")?.getBoundingClientRect();
+                    return { height: bar ? Math.round(bar.height) : null };
+                })()`);
+                await shot(h, "5b-lone-quote");
+                rec(`${name}: one [data-chat-quote-bar] at least 10px tall`, got.height != null && got.height >= 10, got);
+            });
+
             // 7. Reply, type, Reply again, type: each quote lands in the text where the person is, drawn there as a quote
             // (a bar beside it), so the draft reads quote, text, quote, text; nothing is drawn over the editor
             await run("7. Reply quotes stay where they were put", async (name) => {

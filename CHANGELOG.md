@@ -49,6 +49,8 @@ and a picture given to a line that is not big.
 
 ### Fixed
 
+- Typing `>` in Chat's box shows the quote's bar at once, before anything follows it, instead of an empty line that
+  gave no sign the quote had started.
 - An agent with an unsent message in its box shows the word "draft" on its row's second line, in place of the blue pen
   at the row's edge that looked like a rename button.
 - A new Claude session no longer opens with a reminder that some memories are over 30 days old: the start-of-session
