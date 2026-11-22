@@ -8,7 +8,7 @@
 
 import { globalStore } from "@/app/store/jotaiStore";
 import { atom, type Atom, type PrimitiveAtom } from "jotai";
-import { atomFamily } from "jotai/utils";
+import { atomFamily, atomWithStorage } from "jotai/utils";
 import { setAgentView } from "../agents/agentview";
 import { setChatMode } from "../agents/chatmodestore";
 import { currentGrid, type GridTab } from "../agents/gridstore";
@@ -65,11 +65,16 @@ export function closeBoard(agentId: string): void {
 }
 
 // The Agent tree folds to a strip while the focused agent's cell shows Chat with a board beside it, so the board has the
-// room. The strip opens the tree again (a peek) until that board closes or another opens.
+// room. The strip opens the tree again (a peek) until that board closes or another opens. With no board beside the Chat
+// the same strip folds and opens the tree by hand, and that choice is kept across launches (treeFoldedAtom).
 export const treePeekAtom = atom(false) as PrimitiveAtom<boolean>;
+export const treeFoldedAtom = atomWithStorage<boolean>("agent.tree.folded", false);
 
-export function treeFolds(split: BoardSplit | null, chatShown: boolean, peek: boolean): boolean {
-    return split != null && chatShown && !peek;
+export function treeFolds(split: BoardSplit | null, chatShown: boolean, peek: boolean, folded: boolean): boolean {
+    if (split != null && chatShown) {
+        return !peek;
+    }
+    return folded;
 }
 
 export function setBoardExpanded(agentId: string, expanded: boolean): void {

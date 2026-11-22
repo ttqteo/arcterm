@@ -129,12 +129,18 @@ describe("closeBoard, setBoardExpanded, switchBoard", () => {
 describe("treeFolds", () => {
     const open = { project: "p", boardId: "b", expanded: false };
     it("folds the tree while Chat shows with a board beside it", () => {
-        expect(treeFolds(open, true, false)).toBe(true);
+        expect(treeFolds(open, true, false, false)).toBe(true);
     });
     it("keeps the tree with no board, with the cell off Chat, or while peeked", () => {
-        expect(treeFolds(null, true, false)).toBe(false);
-        expect(treeFolds(open, false, false)).toBe(false);
-        expect(treeFolds(open, true, true)).toBe(false);
+        expect(treeFolds(null, true, false, false)).toBe(false);
+        expect(treeFolds(open, false, false, false)).toBe(false);
+        expect(treeFolds(open, true, true, false)).toBe(false);
+    });
+    it("with no board beside Chat follows the fold chosen by hand", () => {
+        expect(treeFolds(null, true, false, true)).toBe(true);
+        expect(treeFolds(open, false, false, true)).toBe(true);
+        // beside a board the board's own fold rules, whatever was chosen without one
+        expect(treeFolds(open, true, true, true)).toBe(false);
     });
     it("drops the peek when a board opens or closes", () => {
         globalStore.set(treePeekAtom, true);

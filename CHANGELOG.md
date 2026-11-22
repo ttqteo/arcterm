@@ -56,6 +56,8 @@ and a picture given to a line that is not big.
   whitespace, and the tab widens with the File tab's grip.
 - A board can be light: the sun in its top-right corner turns every board white, the moon turns them dark again.
 - Beside a board, the agent list slides open and shut when you click its strip, and the strip's arrow turns with it.
+- The agent list folds to its thin strip without a board too: click the strip beside it to hide the list and give
+  Chat or the terminal the width, click again to bring it back. The choice is kept after a restart.
 - Library → Boards reads the boards again each time you open it and has a Reload button beside the search, so a board
   file copied into the boards folder shows without reloading the window.
 - Chat's `@` lists the project's boards (`@board`, `@draw` or part of a board's name), the one open beside Chat first:
