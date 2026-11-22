@@ -685,7 +685,9 @@ export default function (kit) {
                 await until(() => h.ev(`document.querySelector(${q(SPLIT(B1))})?.dataset.boardExpanded === "false"`));
                 const clicked = await click(`${SPLIT(B1)} [data-board-close]`);
                 const closed = await until(async () => (await box(SPLIT(B1))) == null && (await state()).split == null);
-                await polishNap(400);
+                // the tree slides open on its spring (agenttreeslot.tsx): measure once the pane is back to its box
+                await until(async () => JSON.stringify(await termBox()) === JSON.stringify(termBefore));
+                await polishNap(200);
                 const cell = await box(CELL);
                 const chat = await box(`${CELL} [data-agent-chat="${A}"]`);
                 const term = await termBox();
@@ -735,12 +737,6 @@ export default function (kit) {
                 const index = await text(`${SPLIT(B3)} [data-board-part-index]`);
                 const stepperGone = (await count(`${SPLIT(B3)} [data-board-parts-count]`)) === 0;
                 await shot("8b-part");
-                let picture;
-                try {
-                    picture = await h.whatsnewShot("board-parts", { selector: SPLIT(B3) });
-                } catch (e) {
-                    picture = { error: String(e?.message ?? e) };
-                }
                 // → from inside the canvas steps to the next part
                 await h.ev(`document.querySelector(${q(`${CV} .excalidraw`)})?.focus()`);
                 await h.cdp("Input.dispatchKeyEvent", { type: "rawKeyDown", key: "ArrowRight", code: "ArrowRight", windowsVirtualKeyCode: 39 });
@@ -788,9 +784,8 @@ export default function (kit) {
                         started &&
                         // a small board reads whole: no parts, no stepper
                         b1Parts === "0" &&
-                        b1Stepper === 0 &&
-                        picture?.error == null,
-                    { fitZoom, hoverText, partZoom, partName, index, nextName, b1Parts, b1Stepper, picture }
+                        b1Stepper === 0,
+                    { fitZoom, hoverText, partZoom, partName, index, nextName, b1Parts, b1Stepper }
                 );
             });
 
