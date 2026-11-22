@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { MIN_RELEASE_LINES, bumpTooSmall, describeCounts, suggestBump, unreleasedSection } from "./release-bump.mjs";
+import { MAX_BIG_LINES, MIN_RELEASE_LINES, bumpTooSmall, describeCounts, suggestBump, unreleasedSection } from "./release-bump.mjs";
 
 const HEADER = "# Changelog\n\nAdd one line under `### Added` in the top section.\n\n";
 
@@ -39,8 +39,19 @@ describe("suggestBump", () => {
         expect(suggestBump(short)).toMatchObject({ bump: "none", lines: MIN_RELEASE_LINES - 1 });
     });
 
-    it("is minor for one big line, below the threshold and even outside Added", () => {
-        expect(suggestBump(`## Unreleased\n\n### Changed\n\n- reworked <!-- big -->\n`).bump).toBe("minor");
+    it("waits on a big line below the threshold: it ships with the next minor", () => {
+        expect(suggestBump(`## Unreleased\n\n### Changed\n\n- reworked <!-- big -->\n`).bump).toBe("none");
+        const four = `## Unreleased\n\n### Added\n\n${items(MAX_BIG_LINES - 1, "big <!-- big -->")}\n`;
+        expect(suggestBump(four).bump).toBe("none");
+    });
+
+    it("is minor once the big lines fill What's new's cards, below the threshold and even outside Added", () => {
+        const full = `## Unreleased\n\n### Changed\n\n${items(MAX_BIG_LINES, "reworked <!-- big -->")}\n`;
+        expect(suggestBump(full)).toMatchObject({ bump: "minor", lines: MAX_BIG_LINES });
+    });
+
+    it("needs many more lines than a day of work makes", () => {
+        expect(MIN_RELEASE_LINES).toBe(60);
     });
 
     it("never picks patch, counting wrapped lines once", () => {

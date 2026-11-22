@@ -25,12 +25,21 @@ describe("nextMinors", () => {
 });
 
 describe("splitUnreleased", () => {
-    it("leaves a short section alone", () => {
+    it("leaves a section of fewer than twice the lines per release alone", () => {
         expect(splitUnreleased(changelog(40), at, "1.3.0", 40)).toBeNull();
+        expect(splitUnreleased(changelog(79), at, "1.3.0", 40)).toBeNull();
+    });
+
+    it("cuts twice the lines per release into two releases, each at least that long", () => {
+        const split = splitUnreleased(changelog(130), at, "1.3.0", 60);
+        expect(split.report.map((r) => [r.version, r.lines])).toEqual([
+            ["1.4.0", 65],
+            ["Unreleased", 65],
+        ]);
     });
 
     it("cuts the lines oldest first into even releases, the newest left Unreleased", () => {
-        const split = splitUnreleased(changelog(90), at, "1.3.0", 40);
+        const split = splitUnreleased(changelog(90), at, "1.3.0", 30);
         expect(split.version).toBe("1.5.0");
         expect(split.report.map((r) => [r.version, r.lines])).toEqual([
             ["1.4.0", 30],
@@ -50,7 +59,7 @@ describe("splitUnreleased", () => {
 
     it("keeps every line, and counts an uncommitted one as newest", () => {
         const md = changelog(90).replace("- item 0\n", "- item 0\n- not committed yet\n");
-        const split = splitUnreleased(md, at, "1.3.0", 40);
+        const split = splitUnreleased(md, at, "1.3.0", 30);
         const items = (text) => text.split("\n").filter((l) => l.startsWith("- ") || l.startsWith("  ")).sort();
         expect(items(split.text)).toEqual(items(md));
         const unreleased = split.text.slice(0, split.text.indexOf("## 1.5.0"));

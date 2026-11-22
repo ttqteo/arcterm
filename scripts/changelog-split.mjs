@@ -3,13 +3,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Splits a long `## Unreleased` section of CHANGELOG.md into even minor releases, by when each line landed, so one
-// build does not carry a hundred lines under a single version. Run it before `task tauri:build BUMP=auto` when the
-// section holds more than PER_RELEASE lines (AGENTS.md says when):
+// build does not carry a few hundred lines under a single version. Run it before `task tauri:build BUMP=auto` when the
+// section holds twice PER_RELEASE lines or more (AGENTS.md says when):
 //
-//   node scripts/changelog-split.mjs [--per 40] [--dry-run]
+//   node scripts/changelog-split.mjs [--per 60] [--dry-run]
 //
 // It cuts the lines, oldest first by the commit `git blame HEAD` names for each (a line HEAD does not hold counts as
-// newest), into ceil(n / per) parts of even size. Every part but the newest becomes a dated minor release, numbered on
+// newest), into floor(n / per) parts of even size, so each holds at least `per`. Every part but the newest becomes a dated minor release, numbered on
 // from package.json's version and dated with its newest line's day; the newest part stays Unreleased for the build's
 // own bump. package.json then takes the last version it wrote (package-lock.json, src-tauri/Cargo.toml,
 // src-tauri/tauri.conf.json and src-tauri/Cargo.lock with it), so BUMP=auto numbers the build after them. Commit
@@ -20,8 +20,8 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-// lines per release a split aims at; a section with more is split
-export const PER_RELEASE = 40;
+// the fewest lines a release a split makes holds (MIN_RELEASE_LINES); a section of twice as many or more is split
+export const PER_RELEASE = 60;
 
 const SECTIONS = ["Added", "Changed", "Fixed"];
 
@@ -72,11 +72,11 @@ function dayOf(ms) {
 // committed (newest). Answers the new text and each part's facts, oldest first, or null when there is nothing to split.
 export function splitUnreleased(text, when, version, per = PER_RELEASE) {
     const parsed = unreleasedItems(text);
-    if (parsed == null || parsed.items.length <= per) {
+    if (parsed == null || parsed.items.length < 2 * per) {
         return null;
     }
     const { lines, start, end, items } = parsed;
-    const parts = Math.ceil(items.length / per);
+    const parts = Math.floor(items.length / per);
     const timeOf = (it) => when(it.lines[0]) ?? Infinity;
     const byTime = [...items].sort((a, b) => timeOf(a) - timeOf(b) || a.order - b.order);
     const size = items.length / parts;
@@ -163,7 +163,7 @@ function main() {
     const times = blameTimes(root);
     const split = splitUnreleased(text, (line) => times.get(line), version, per);
     if (split == null) {
-        console.log(`Unreleased holds ${per} lines or fewer: nothing to split`);
+        console.log(`Unreleased holds fewer than ${2 * per} lines: nothing to split`);
         return;
     }
     for (const r of split.report) {

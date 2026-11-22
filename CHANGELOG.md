@@ -8,8 +8,8 @@ Add one line in the same commit as any change a user would notice, under `Added`
 `Unreleased` with the build date. If the top section already has a date, open a new
 `## Unreleased` above it, and give it a version number at the bump.
 
-The section decides the version: `task tauri:build BUMP=auto` makes a minor release when it holds a `<!-- big -->`
-line or 20 lines or more, of any section; with fewer and none big it builds without a bump and the lines wait in
+The section decides the version: `task tauri:build BUMP=auto` makes a minor release when it holds 60 lines or more,
+of any section, or 5 `<!-- big -->` lines; with fewer it builds without a bump and the lines, big ones too, wait in
 Unreleased for the next minor. It never picks a patch (AGENTS.md). A major bump is for a release that breaks something for
 the person (a feature removed, a config, `wsh` or hook contract changed without migrating it) and is passed by hand.
 Each bumped build tags its commit `v<version>`.

@@ -3,10 +3,11 @@
 
 // How big a release is, read from the top `## Unreleased` section of CHANGELOG.md (release-build.mjs, BUMP=auto):
 //
-//   minor  a line marked `<!-- big -->` (a feature worth opening the app for: What's new shows it at once), or
-//          MIN_RELEASE_LINES lines or more of any kind
-//   none   fewer lines and none big: they wait in Unreleased for the next minor, so a day of builds does not cut a
-//          release of one line and another of eight (the person's ask, 2026-11-19); also with no lines at all
+//   minor  MIN_RELEASE_LINES lines or more of any kind, or as many big lines (`<!-- big -->`) as What's new has
+//          cards (MAX_BIG_LINES): one more would break its cap, so those lines ship first
+//   none   fewer lines: they wait in Unreleased for the next minor, a big line among them too (the person's ask,
+//          2026-11-22: versions went 1.7.0 to 1.14.0 in four days when one big line or 20 lines made a minor); also
+//          with no lines at all
 //
 // patch is never picked: a build for the person makes no patch release, fix-only lines ship under the next minor.
 //
@@ -16,8 +17,12 @@
 
 const RANK = { none: 0, patch: 1, minor: 2, major: 3 };
 
-// The fewest Unreleased lines that make a release of their own when none is big.
-export const MIN_RELEASE_LINES = 20;
+// The fewest Unreleased lines that make a release of their own.
+export const MIN_RELEASE_LINES = 60;
+
+// What's new draws at most this many big lines of a release as cards (MAX_HIGHLIGHTS in
+// frontend/app/cockpit/whatsnew.ts): Unreleased holding as many makes a release, so the next big line starts another.
+export const MAX_BIG_LINES = 5;
 
 // The body of the top `## ` section when it is Unreleased, without its heading; null when the top section is dated
 // (a release already took its lines) or the file has no sections.
@@ -54,7 +59,7 @@ export function suggestBump(changelog) {
         }
     }
     const lines = counts.added + counts.changed + counts.fixed + counts.other;
-    const bump = counts.big > 0 || lines >= MIN_RELEASE_LINES ? "minor" : "none";
+    const bump = lines >= MIN_RELEASE_LINES || counts.big >= MAX_BIG_LINES ? "minor" : "none";
     return { bump, counts, lines };
 }
 
