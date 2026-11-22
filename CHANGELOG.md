@@ -44,6 +44,7 @@ and a picture given to a line that is not big.
 
 ### Changed
 
+- A council's Ease of use seat also reviews what a screenshot cannot show: whether each state change animates or snaps, what a second press mid-slide leaves behind, the empty, error and long-text states, and the clicks a task takes; it says which of these it read in code and did not see.
 - Opening a running agent's board from Library, a mention or `wsh ui` shows it alone over the Agent view, as a click on
   its tree row does, instead of putting it in a split beside the chat.
 

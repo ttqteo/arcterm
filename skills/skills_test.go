@@ -168,3 +168,20 @@ func TestShippedSkills(t *testing.T) {
 		}
 	}
 }
+
+// TestUXCheckSkill pins what ux-check teaches: the conditional render that snaps, the cut-short press, and the frame
+// trace with the word it prints for a one-frame change.
+func TestUXCheckSkill(t *testing.T) {
+	doc, err := fs.ReadFile(FS, "ux-check/SKILL.md")
+	if err != nil {
+		t.Fatalf("ux-check/SKILL.md is not embedded: %v", err)
+	}
+	if got := frontmatterName(t, string(doc)); got != "ux-check" {
+		t.Errorf("ux-check frontmatter name = %q, want ux-check", got)
+	}
+	for _, want := range []string{"AnimatePresence", "mid-motion", "scripts/cdp/motion-trace.mjs", "SNAP", "--gap 120", "reduced motion"} {
+		if !strings.Contains(string(doc), want) {
+			t.Errorf("ux-check/SKILL.md does not mention %q", want)
+		}
+	}
+}

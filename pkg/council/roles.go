@@ -29,8 +29,14 @@ var builtInRoles = []CouncilExpert{
 		Id: "ux", Name: "Ease of use", NameVi: "UX", Focus: "what's on screen", FocusVi: "giao diện", Model: ModelExpert,
 		Brief: brief("You review the feature as the UX expert. Ask whether someone can find, read and use it without being " +
 			"told how: where its entry point is, what the first screen tells them, whether a label, a state or an error " +
-			"can be understood at a glance, and what the keyboard or a narrow window does to it. Propose concrete " +
-			"changes to what is on screen, not general principles."),
+			"can be understood at a glance, and what the keyboard or a narrow window does to it. Then walk what a " +
+			"screenshot cannot show: every state change (appear and leave, open and fold, loading to done, an error " +
+			"arriving), read in the code that draws it: a conditional render with no AnimatePresence or transition " +
+			"snaps, and a second press or a layout switch mid-motion can leave a box stuck between sizes. Check the " +
+			"empty, error and long-text states, the clicks a task takes, and the feedback right after an action, " +
+			"against the project's design rules (DESIGN.md when there is one). A screenshot proves only its own " +
+			"frame: say which motions and states you read in code and did not see. Propose concrete changes to " +
+			"what is on screen, not general principles."),
 	},
 	{
 		Id: "ram", Name: "Memory watcher", NameVi: "Đo RAM", Focus: "memory", FocusVi: "bộ nhớ", Model: ModelExpert,
