@@ -13,7 +13,6 @@ import {
     withoutPaste,
     withPaste,
 } from "./chatpastes";
-import { joinQuotes } from "./chatquote";
 import { splitTagged, unwrapWholePaste } from "./chattagblocks";
 
 const lines = (n: number, word = "line") => Array.from({ length: n }, (_, i) => `${word} ${i + 1}`).join("\n");
@@ -104,7 +103,7 @@ describe("pasteBlock", () => {
 });
 
 describe("withPaste / withoutPaste / unfoldPaste", () => {
-    const quoted = joinQuotes(["> earlier"], "question");
+    const quoted = "> earlier\n\nquestion";
     it("adds a paste after the text and keeps the quotes", () => {
         const full = withPaste(quoted, "a\r\nb");
         expect(full.startsWith("> earlier\n\nquestion")).toBe(true);
@@ -120,7 +119,7 @@ describe("withPaste / withoutPaste / unfoldPaste", () => {
     });
     it("puts a paste back in the text, fenced as a paste into the box would be", () => {
         const full = withPaste(quoted, LOG);
-        expect(unfoldPaste(full, 0)).toBe(joinQuotes(["> earlier"], "question\n```\n" + LOG + "\n```"));
+        expect(unfoldPaste(full, 0)).toBe("> earlier\n\nquestion\n```\n" + LOG + "\n```");
     });
 });
 

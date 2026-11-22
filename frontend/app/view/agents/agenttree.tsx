@@ -53,7 +53,6 @@ import {
     MessagesSquare,
     Moon,
     Pencil,
-    PencilLine,
     PenTool,
     PinOff,
     Play,
@@ -1609,7 +1608,6 @@ function ParentRow({
                         </span>
                         <PaneTag model={model} id={agent.id} />
                         {laterAt != null ? <LaterMark title={laterTitle(laterAt, now, formatAgeShort)} /> : null}
-                        {drafted ? <DraftMark id={agent.id} /> : null}
                         {/* a lead's second line already holds its workers chip, progress and badges */}
                         {lead ? subsChip : null}
                         {lead ? tasksChip : null}
@@ -1623,7 +1621,12 @@ function ParentRow({
                         run={lead.run}
                         open={lead.open}
                         live={lead.live}
-                        note={askNote ?? compactNote}
+                        note={
+                            <>
+                                {drafted ? <DraftWord id={agent.id} /> : null}
+                                {askNote ?? compactNote}
+                            </>
+                        }
                         trailing={
                             <>
                                 {originChip}
@@ -1637,6 +1640,7 @@ function ParentRow({
                     // branch. @container: the subagents chip drops its word when this line is narrow, and the model
                     // truncates
                     <div className={cn(CONVERSATION_META, "@container mt-[3px]", dim && "text-ink-faint")}>
+                        {drafted ? <DraftWord id={agent.id} /> : null}
                         {askNote}
                         {compactNote}
                         {waitsFor ? (
@@ -2325,17 +2329,13 @@ function LaterMark({ title }: { title: string }) {
     );
 }
 
-// The mark after a row's name for an agent whose chat box holds a message you have not sent (draftmarks.ts).
-function DraftMark({ id }: { id: string }) {
+// The word "draft" for an agent whose chat box holds a message you have not sent (draftmarks.ts): first on the row's
+// meta line, or after the name on a split cell, which has none. A word reads as a state; the accent pen it replaced sat
+// at the row's right edge and read as a rename button.
+function DraftWord({ id }: { id: string }) {
     return (
-        <span
-            role="img"
-            aria-label={DRAFT_TITLE}
-            title={DRAFT_TITLE}
-            data-agent-draft={id}
-            className="flex flex-none text-accent"
-        >
-            <PencilLine size={11} aria-hidden />
+        <span title={DRAFT_TITLE} data-agent-draft={id} className="flex-none text-[10.5px] italic text-accent/85">
+            draft
         </span>
     );
 }
@@ -2796,7 +2796,7 @@ function SplitCell({
                     {name}
                 </span>
             )}
-            {drafted ? <DraftMark id={vm.id} /> : null}
+            {drafted ? <DraftWord id={vm.id} /> : null}
             {asking ? (
                 <span aria-label="asking" className="h-[6px] w-[6px] flex-none rounded-full bg-warning" />
             ) : unreadCount > 0 ? (

@@ -1,8 +1,8 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// Focus read in Chat, the pure half (docs/superpowers/specs/2026-11-17-chat-focus-read-design.md): a reading line a third
-// of the way down the conversation's scroller lights the block it crosses and dims the rest. This file holds the
+// Focus read in Chat, the pure half (docs/superpowers/specs/2026-11-17-chat-focus-read-design.md): a reading line (a third
+// of the way down the conversation's scroller to start; the reader drags its tick higher or lower) lights the block it crosses and dims the rest. This file holds the
 // geometry, which block is on the line, where J/K step to and where a stopped scroll settles, and the markdown Q quotes
 // a code block or a table as. The DOM side, which finds the blocks and marks them, is chatfocusreadview.ts; the toggle and
 // the per-agent registry are chatfocusreadstore.ts.
@@ -13,8 +13,37 @@ export interface Span {
     bottom: number;
 }
 
-/** Where the reading line sits, as a share of the scroller's visible height. */
+/** Where the reading line sits to start, as a share of the scroller's visible height. The reader drags the tick to move
+ *  it (one place for every agent and document, remembered: chatfocusreadstore.ts), between LINE_MIN and LINE_MAX. */
 export const LINE_AT = 1 / 3;
+/** The highest the line goes: under the pinned prompt bar that floats over the scroller's top. */
+export const LINE_MIN = 0.08;
+/** The lowest: above the chat box and the chips that sit over the scroller's bottom. */
+export const LINE_MAX = 0.7;
+
+/** A line share kept inside LINE_MIN..LINE_MAX; LINE_AT for anything that is not a number. */
+export function clampLineAt(at: number): number {
+    if (!Number.isFinite(at)) {
+        return LINE_AT;
+    }
+    return Math.min(Math.max(at, LINE_MIN), LINE_MAX);
+}
+
+/** The remembered line share, as localStorage holds it: LINE_AT when missing or unreadable. */
+export function parseLineAt(raw: string | null): number {
+    if (raw == null || raw.trim() === "") {
+        return LINE_AT;
+    }
+    return clampLineAt(Number(raw));
+}
+
+/** The line share a drag puts the tick at: the pointer's offset from the scroller's top over its visible height. */
+export function lineAtFromPointer(pointerY: number, scrollerTop: number, clientHeight: number): number {
+    if (clientHeight <= 0) {
+        return LINE_AT;
+    }
+    return clampLineAt((pointerY - scrollerTop) / clientHeight);
+}
 /** How far above the line a block's top lands when it is put on the line: the line then crosses its first line. A block
  *  shorter than twice this is centred on the line instead. */
 export const TOP_ABOVE = 12;
@@ -38,8 +67,8 @@ export function glideStep(pos: number, target: number, dt: number): number {
 }
 
 /** The line's offset from the scroller's visible top, in px. */
-export function lineOffset(clientHeight: number): number {
-    return Math.round(clientHeight * LINE_AT);
+export function lineOffset(clientHeight: number, at: number = LINE_AT): number {
+    return Math.round(clientHeight * at);
 }
 
 /** The scroller's furthest scrollTop. */
@@ -163,12 +192,13 @@ export function settleTo(
     spans: readonly Span[],
     scrollTop: number,
     clientHeight: number,
-    scrollHeight: number
+    scrollHeight: number,
+    at: number = LINE_AT
 ): { index: number; top: number } | null {
     if (spans.length === 0 || atEnd(scrollTop, scrollHeight, clientHeight)) {
         return null;
     }
-    const line = lineOffset(clientHeight);
+    const line = lineOffset(clientHeight, at);
     const index = nearestAt(spans, scrollTop + line);
     const top = scrollTopFor(spans[index], line, maxScroll(scrollHeight, clientHeight));
     const off = Math.abs(top - scrollTop);

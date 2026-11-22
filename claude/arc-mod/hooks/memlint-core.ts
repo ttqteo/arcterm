@@ -2,11 +2,11 @@
 // it; register.ts reads the files and does the reporting.
 //
 // it catches what goes stale mechanically: MEMORY.md lines pointing at missing files, memory files MEMORY.md
-// does not list, [[links]] no memory is named, backticked repo paths that are gone, `task X` commands the
-// Taskfile lost, and memories nobody touched for STALE_DAYS. a rule that moved into AGENTS.md and left its
-// memory behind is a judgment call this cannot make.
-
-export const STALE_DAYS = 30;
+// does not list, [[links]] no memory is named, backticked repo paths that are gone, and `task X` commands the
+// Taskfile lost. it never flags a memory for its age: a rule that stays true is never touched, so an age check
+// came back at every session start, forever. old memories are Setup's memory review (pkg/memhygiene/review.go),
+// which has Still true. a rule that moved into AGENTS.md and left its memory behind is a judgment call this
+// cannot make.
 
 // a lint with this many issues or fewer stays quiet: one or two stale notes are not worth a session's first reply
 export const QUIET_MAX = 3;
@@ -15,16 +15,14 @@ export function shouldReport(problems: string[]): boolean {
     return problems.length > QUIET_MAX;
 }
 
-export type MemoryFile = { name: string; text: string; mtimeMs: number };
+export type MemoryFile = { name: string; text: string };
 
-export type Memory = { file: string; name?: string; body: string; touchedMs: number };
+export type Memory = { file: string; name?: string; body: string };
 
 export function parseMemory(f: MemoryFile): Memory {
     const name = f.text.match(/^name:\s*(.+)$/m)?.[1]?.trim().replace(/^["']|["']$/g, "");
-    const modified = f.text.match(/^\s*modified:\s*["']?(\d{4}-\d{2}-\d{2})/m)?.[1];
     const body = f.text.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n/, "");
-    const touchedMs = modified ? Date.parse(modified) : f.mtimeMs;
-    return { file: f.name, name, body, touchedMs };
+    return { file: f.name, name, body };
 }
 
 // relative repo paths with an extension, backticked: `frontend/app/foo.ts`. placeholders and globs are skipped
@@ -69,7 +67,6 @@ export type LintInput = {
     missingPaths: Set<string>;
     // the Taskfile's names, null when the working directory has none
     tasks: Set<string> | null;
-    nowMs: number;
 };
 
 export function lintMemory(input: LintInput): string[] {
@@ -107,10 +104,6 @@ export function lintMemory(input: LintInput): string[] {
                     problems.push(`${m.file} names \`task ${t}\`, which Taskfile.yml no longer has`);
                 }
             }
-        }
-        const days = Math.floor((input.nowMs - m.touchedMs) / 86_400_000);
-        if (days >= STALE_DAYS) {
-            problems.push(`${m.file} untouched for ${days} days: still true? already in AGENTS.md?`);
         }
     }
     return [...new Set(problems)];

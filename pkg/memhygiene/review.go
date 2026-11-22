@@ -17,8 +17,8 @@ import (
 
 const (
 	reviewKind = "review"
-	// the arc mod's session-start memory lint flags a memory at the same age (STALE_DAYS in
-	// claude/arc-mod/hooks/memlint-core.ts), and Still true resets both
+	// the one place a memory is flagged for its age: the arc mod's session-start memory lint
+	// (claude/arc-mod/hooks/memlint-core.ts) no longer does, so an old but true rule is not named every session
 	reviewStaleDays = 30
 	reviewDateFmt   = "2006-01-02"
 )
@@ -27,7 +27,7 @@ const (
 var reviewModifiedRe = regexp.MustCompile(`^(\s*modified:\s*["']?)(\d{4}-\d{2}-\d{2})`)
 
 // reviewTouched is when a memory was last touched: its frontmatter `modified:` date, else the file's
-// mtime, the same reading as the session-start lint.
+// mtime.
 func reviewTouched(path string, fm map[string]string) (int64, error) {
 	if v := fm["modified"]; len(v) >= len(reviewDateFmt) {
 		if t, err := time.ParseInLocation(reviewDateFmt, v[:len(reviewDateFmt)], time.Local); err == nil {

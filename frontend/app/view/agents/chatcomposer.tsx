@@ -118,7 +118,6 @@ import {
     useHeldSend,
 } from "./chatpendingstore";
 import { ChatPlusMenu } from "./chatplusmenu";
-import { joinQuotes, quoteWords, splitQuotes } from "./chatquote";
 import { asleepCommand, runBlocks, runsAsleep, type SleepRun } from "./chatsleepbash";
 import { putBackSleepRuns, runWhileAsleep, takeSleepRuns } from "./chatsleepbashstore";
 import {
@@ -332,21 +331,12 @@ function ComposerBox({
             showTerminal();
         },
     });
-    // The quotes that open the message (a Reply's) are chips over the editor, not lines in it (chatquote.ts
-    // splitQuotes): `text` is what the editor shows and edits, the rest of the box works on it, and `message` (what
-    // goes) is still the whole draft. The outside box API (registerChatBox) reads and writes the whole draft.
-    // A long paste folds out of the text the same way, into a chip over it (chatpastes.ts): it stays in the draft after
-    // the typed text, and `message` writes it out.
-    const { quotes, body: rest } = splitQuotes(fullText);
-    const { body: text, pastes } = splitPastes(rest);
-    const setText = (t: string) => setFullText(joinQuotes(quotes, joinPastes(t, pastes)));
-    const dropQuote = (i: number) =>
-        setFullText(
-            joinQuotes(
-                quotes.filter((_, k) => k !== i),
-                rest
-            )
-        );
+    // A long paste folds out of the text into a chip over the editor (chatpastes.ts): it stays in the draft after the
+    // typed text, `text` is what the editor shows and edits, the rest of the box works on it, and `message` (what goes)
+    // writes the pastes out. The outside box API (registerChatBox) reads and writes the whole draft. A Reply's quote is
+    // `>` lines in the text where it was put (chatquote.ts withChatQuote), which the editor draws as a quote in place.
+    const { body: text, pastes } = splitPastes(fullText);
+    const setText = (t: string) => setFullText(joinPastes(t, pastes));
     // a Sleep under way (fallasleepstore): the box is shut until the agent sleeps, and says what is happening
     const dozing = fallingAsleep != null;
     // asleep with nothing to send, Send is Wake: it relaunches the agent with no message (the card over the terminal
@@ -495,7 +485,7 @@ function ComposerBox({
                     if (box == null || box.readOnly) {
                         return false;
                     }
-                    // the end of the box, never the caret: the person may be typing elsewhere in it; the quote chips stay
+                    // the end of the box, never the caret: the person may be typing elsewhere in it; the paste chips stay
                     const cur = latest.current.text;
                     latest.current.setText(cur.trim() ? cur.replace(/\s+$/, "") + "\n" + added : added);
                     return true;
@@ -514,7 +504,7 @@ function ComposerBox({
                         return false;
                     }
                     recalled.current = { at: null, shown: "" };
-                    caretAfter.current = splitPastes(splitQuotes(t).body).body.length;
+                    caretAfter.current = splitPastes(t).body.length;
                     latest.current.setFull(t);
                     box.focus({ preventScroll: true });
                     return true;
@@ -588,7 +578,7 @@ function ComposerBox({
             return;
         }
         if (answersAsk && ready) {
-            // the quote and paste chips are part of the answer
+            // the paste chips are part of the answer
             const words = expandPastes(fullText).trim();
             // nothing typed, or the ask was already answered (a row clicked meanwhile): nothing goes
             if (words === "" || !answerAgentAsk(model, agent.id, {}, { 0: words })) {
@@ -1164,11 +1154,6 @@ function ComposerBox({
                                 latest.current.setFull(unfoldPaste(latest.current.full, i));
                                 editorRef.current?.focus();
                             }}
-                        />
-                        <QuoteChips
-                            quotes={quotes}
-                            onRemove={dropQuote}
-                            indent={grown ? "well" : asleep ? "none" : "plus"}
                         />
                         {/* `+`, the text and Send/Stop. One row; grown, the well takes a line of its own first (order-first,
                 basis-full) and `+` and Send/Stop wrap under it. The well and its editor stay this element's child either
@@ -1886,59 +1871,5 @@ export function Chip({
                 </kbd>
             ) : null}
         </button>
-    );
-}
-
-// The quotes that open the message (chatquote.ts splitQuotes), drawn over the editor as quote blocks the way Notion
-// draws them: a bar and the words upright, in the text's own column (`indent`, the `+` and its gap when they sit
-// beside the text), no frame and no label, so a second quote is one more block under the first. A long one stops at
-// three lines, all of it in the tooltip; the × shows on hover or focus. They go with the message as the `>` lines
-// they are.
-function QuoteChips({
-    quotes,
-    onRemove,
-    indent,
-}: {
-    quotes: string[];
-    onRemove: (i: number) => void;
-    indent: "plus" | "well" | "none";
-}) {
-    if (quotes.length === 0) {
-        return null;
-    }
-    return (
-        <div
-            data-chat-quotes=""
-            className={cn(
-                "mb-1.5 mt-1.5 flex min-w-0 flex-col gap-1.5",
-                indent === "plus" ? "pl-[38px]" : indent === "well" ? "pl-1" : ""
-            )}
-        >
-            {quotes.map((q, i) => {
-                const words = quoteWords(q);
-                return (
-                    <div
-                        key={i}
-                        data-chat-quote-chip=""
-                        title={words}
-                        className="group/quote relative flex min-w-0 gap-2.5 pr-6"
-                    >
-                        <span className="w-[3px] flex-none rounded-full bg-edge-strong" aria-hidden />
-                        <span className="line-clamp-3 min-w-0 flex-1 text-[13px] leading-[1.5] text-secondary">
-                            {words}
-                        </span>
-                        <button
-                            type="button"
-                            title="Remove quote"
-                            aria-label="Remove quote"
-                            onClick={() => onRemove(i)}
-                            className="absolute right-0 top-[2px] flex-none cursor-pointer text-muted opacity-0 group-hover/quote:opacity-100 hover:text-error focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-                        >
-                            <X size={12} />
-                        </button>
-                    </div>
-                );
-            })}
-        </div>
     );
 }

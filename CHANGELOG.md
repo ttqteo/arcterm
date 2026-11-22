@@ -36,6 +36,8 @@ and a picture given to a line that is not big.
 
 - A board now opens as its own pane beside the agent's Chat, and each agent's latest board is a row under it in the Agent tree.
   <!-- big --> <!-- shot: 1.14.0-board-cells.webp -->
+- Focus read's reading line moves: drag the accent tick in the gutter up or down, in Chat or a Markdown Preview, and
+  the line stays where you let go, for every agent and document, instead of always sitting a third of the way down.
 - A Markdown document's Outline card opens over its rail of dashes, as Notion's does: whole headings, wrapped instead
   of cut, the one you are reading in blue, and the rail's lit dash is the text colour instead of blue.
 - A dense board no longer puts a label over every part: the part under the pointer shows one Read label, and the header
@@ -44,9 +46,18 @@ and a picture given to a line that is not big.
   instead of a bar across the whole Chat.
 - A long paste you folded into a chip shows in your sent message as a "Pasted · N lines" card you open, the way a
   paste in Claude Code's own box does, instead of plain text under the question you typed.
+- A Reply's quote goes into Chat's box where you are typing, drawn there as a quote, instead of a block over the box:
+  quote, your words, another quote, more words reads in the order you wrote it, and a long quote scrolls with the text.
 
 ### Fixed
 
+- Typing `>` in Chat's box shows the quote's bar at once, before anything follows it, instead of an empty line that
+  gave no sign the quote had started.
+- An agent with an unsent message in its box shows the word "draft" on its row's second line, in place of the blue pen
+  at the row's edge that looked like a rename button.
+- A new Claude session no longer opens with a reminder that some memories are over 30 days old: the start-of-session
+  memory check names only broken memories (a missing file, a dead link or path), and old ones wait in Setup's memory
+  review, where Still true quiets them.
 - Opening a folded paste in Chat's box wraps its long lines instead of cutting them at the panel's edge.
 
 ## 1.13.0 — 2026-11-22

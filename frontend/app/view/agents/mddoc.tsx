@@ -30,7 +30,7 @@ import type { FileRef } from "./agentrailtabs";
 import type { AgentsViewModel } from "./agents";
 import type { AgentVM } from "./agentsviewmodel";
 import { chatFocusReadSizeAtom, DOC_READER_PREFIX, docFocusReadOnAtom, setDocFocusReadOn } from "./chatfocusreadstore";
-import { useFocusRead } from "./chatfocusreadview";
+import { FOCUS_LINE_CLASS, FOCUS_LINE_TITLE, useFocusRead } from "./chatfocusreadview";
 import { OUTLINE_SELECTOR, OutlineRail } from "./docoutlineview";
 import { savedScroll, saveScroll } from "./filescroll";
 import { toggleTaskInFile } from "./filetabload";
@@ -584,8 +584,9 @@ export function MdDoc({
                     ref={focusTickRef}
                     data-chat-focus-line
                     aria-hidden
+                    title={FOCUS_LINE_TITLE}
                     style={{ display: "none" }}
-                    className="pointer-events-none absolute z-10 h-[20px] w-[3px] -translate-y-1/2 rounded-full bg-accent"
+                    className={FOCUS_LINE_CLASS}
                 />
             ) : null}
         </div>

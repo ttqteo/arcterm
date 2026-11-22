@@ -10,11 +10,8 @@ import {
     taskNames,
 } from "./memlint-core";
 
-const DAY = 86_400_000;
-const NOW = Date.parse("2026-10-14");
-
-function mem(file: string, name: string | undefined, body: string, touchedMs = NOW): Memory {
-    return { file, name, body, touchedMs };
+function mem(file: string, name: string | undefined, body: string): Memory {
+    return { file, name, body };
 }
 
 function lint(memories: Memory[], index: string, extra: { missing?: string[]; tasks?: string[] | null } = {}) {
@@ -23,23 +20,13 @@ function lint(memories: Memory[], index: string, extra: { missing?: string[]; ta
         memories,
         missingPaths: new Set(extra.missing ?? []),
         tasks: extra.tasks === undefined ? null : extra.tasks && new Set(extra.tasks),
-        nowMs: NOW,
     });
 }
 
 describe("parseMemory", () => {
-    it("reads name, the modified date and the body below the frontmatter", () => {
+    it("reads name and the body below the frontmatter", () => {
         const text = '---\nname: "a-b"\nmetadata:\n  type: feedback\n  modified: 2026-10-01T09:00:00Z\n---\nthe rule\n';
-        expect(parseMemory({ name: "f.md", text, mtimeMs: 0 })).toEqual({
-            file: "f.md",
-            name: "a-b",
-            body: "the rule\n",
-            touchedMs: Date.parse("2026-10-01"),
-        });
-    });
-
-    it("falls back to the file's mtime with no modified date", () => {
-        expect(parseMemory({ name: "f.md", text: "---\nname: x\n---\nbody", mtimeMs: 42 }).touchedMs).toBe(42);
+        expect(parseMemory({ name: "f.md", text })).toEqual({ file: "f.md", name: "a-b", body: "the rule\n" });
     });
 });
 
@@ -100,9 +87,9 @@ describe("lintMemory", () => {
         expect(lint([mem("a.md", "a", "`task nope`"), mem("b.md", "b", "")], index)).toEqual([]);
     });
 
-    it("flags a memory untouched for 30 days, not one touched 29 days ago", () => {
-        const memories = [mem("a.md", "a", "", NOW - 30 * DAY), mem("b.md", "b", "", NOW - 29 * DAY)];
-        expect(lint(memories, index)).toEqual(["a.md untouched for 30 days: still true? already in AGENTS.md?"]);
+    it("never flags a memory for its age: that is Setup's memory review", () => {
+        // a memory carries no age here at all, so a rule that stays true for months reads as clean
+        expect(lint([mem("a.md", "a", "an old rule"), mem("b.md", "b", "")], index)).toEqual([]);
     });
 });
 

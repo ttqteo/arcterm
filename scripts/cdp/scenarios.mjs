@@ -50197,6 +50197,7 @@ const chatFocusRead = {
             prevModes: await h.ev(`localStorage.getItem("agent.chatmode")`),
             prevFocusRead: await h.ev(`localStorage.getItem("chat.focusRead")`),
             prevFocusReadSize: await h.ev(`localStorage.getItem("chat.focusRead.size")`),
+            prevFocusReadLine: await h.ev(`localStorage.getItem("chat.focusRead.line")`),
         };
         let at = "writing the transcript";
         try {
@@ -50213,6 +50214,8 @@ const chatFocusRead = {
             await h.ev(`localStorage.setItem(${JSON.stringify(GRID_KEY)}, ${JSON.stringify(JSON.stringify(GRID_EMPTY))})`);
             await h.ev(`localStorage.removeItem("agent.chatmode")`);
             await h.ev(`localStorage.removeItem("chat.focusRead")`);
+            // the steps below measure against the line a third down, where it starts until the reader drags it
+            await h.ev(`localStorage.removeItem("chat.focusRead.line")`);
             // the steps below read one block at a time; ×1 is set, as a reader starts at ×3
             await h.ev(`localStorage.setItem("chat.focusRead.size", "1")`);
             if (!(await ahReload(h))) throw new Error("the page did not come back after the reload");
@@ -50534,6 +50537,72 @@ const chatFocusRead = {
             ctx.viewport = null;
             await polishNap(500);
 
+            // 6f. dragging the tick moves the reading line: it lets go at 15% of the scroller, the conversation does not
+            // scroll, the block that line crosses (or the next below it) is lit, the place is remembered, and J then
+            // puts the next block on the new line
+            const tickSel = `${pane}?.querySelector("[data-chat-focus-line]")`;
+            const g6f = await h.ev(`(() => {
+                const t = ${tickSel}?.getBoundingClientRect();
+                const sr = ${scroller}?.getBoundingClientRect();
+                const s = ${scroller};
+                return t && sr ? { x: t.left + t.width / 2, y: t.top + t.height / 2, top: sr.top, h: s.clientHeight, scrollTop: Math.round(s.scrollTop) } : null;
+            })()`);
+            let d6f = null;
+            if (g6f != null) {
+                const toY = Math.round(g6f.top + g6f.h * 0.15);
+                await h.cdp("Input.dispatchMouseEvent", { type: "mouseMoved", x: Math.round(g6f.x), y: Math.round(g6f.y) });
+                await h.cdp("Input.dispatchMouseEvent", { type: "mousePressed", x: Math.round(g6f.x), y: Math.round(g6f.y), button: "left", clickCount: 1 });
+                for (let i = 1; i <= 6; i++) {
+                    const y = Math.round(g6f.y + ((toY - g6f.y) * i) / 6);
+                    await h.cdp("Input.dispatchMouseEvent", { type: "mouseMoved", x: Math.round(g6f.x), y, button: "left", buttons: 1 });
+                    await polishNap(30);
+                }
+                const mid = await h.ev(`!!${tickSel}?.hasAttribute("data-dragging")`);
+                await h.cdp("Input.dispatchMouseEvent", { type: "mouseReleased", x: Math.round(g6f.x), y: toY, button: "left", clickCount: 1 });
+                await polishNap(300);
+                d6f = await h.ev(`(() => {
+                    const s = ${scroller};
+                    const sr = s.getBoundingClientRect();
+                    const line = sr.top + s.clientHeight * 0.15;
+                    const blocks = [...s.querySelectorAll("[data-fr-block]")];
+                    const lit = blocks.findIndex((b) => b.hasAttribute("data-fr-lit"));
+                    const r = lit >= 0 ? blocks[lit].getBoundingClientRect() : null;
+                    const prev = lit > 0 ? blocks[lit - 1].getBoundingClientRect() : null;
+                    return {
+                        stored: Number(localStorage.getItem("chat.focusRead.line")),
+                        scrollTop: Math.round(s.scrollTop),
+                        lit,
+                        // the line crosses the lit block, or sits in the gap above it
+                        crossed: r != null && r.bottom >= line - 1 && (r.top <= line + 1 || (prev != null && prev.bottom <= line + 1)),
+                        dragging: !!${tickSel}?.hasAttribute("data-dragging"),
+                    };
+                })()`);
+                d6f.mid = mid;
+            }
+            await h.shot("cdp-shots/chat-focus-read-6f-dragged.png");
+            rec(
+                "6f. dragging the gutter tick up to 15% of the scroller moves the reading line there: the conversation does not scroll, the block the line crosses is lit, and 0.15 is stored",
+                g6f != null && d6f != null && d6f.mid === true && d6f.dragging === false && Math.abs(d6f.stored - 0.15) <= 0.01 &&
+                    Math.abs(d6f.scrollTop - g6f.scrollTop) <= 1 && d6f.lit >= 0 && d6f.crossed,
+                { g6f, d6f }
+            );
+            await J();
+            const j6f = await h.ev(`(() => {
+                const s = ${scroller};
+                const sr = s.getBoundingClientRect();
+                const line = sr.top + s.clientHeight * 0.15;
+                const blocks = [...s.querySelectorAll("[data-fr-block]")];
+                const lit = blocks.findIndex((b) => b.hasAttribute("data-fr-lit"));
+                const r = lit >= 0 ? blocks[lit].getBoundingClientRect() : null;
+                return r ? { lit, top: Math.round(r.top - line), h: Math.round(r.height), max: Math.round(s.scrollHeight - s.clientHeight), scrollTop: Math.round(s.scrollTop) } : null;
+            })()`);
+            rec(
+                "6f. J after the drag puts the next block on the new line (its top 12px above it, half a short block), unless the scroller's end stops it short",
+                j6f != null && d6f != null && j6f.lit === d6f.lit + 1 &&
+                    (Math.abs(j6f.top + Math.min(j6f.h / 2, 12)) <= 3 || (j6f.scrollTop >= j6f.max - 1 && j6f.top > 0)),
+                { j6f }
+            );
+
             // 7. Alt+R turns it off: nothing dimmed, no tick, the toggle up
             await press("r", "KeyR", 82, 1);
             const off7 = await polishWaitFor(h, `!${scroller}?.hasAttribute("data-focus-read") && !${pane}?.querySelector("[data-fr-block]")`, 3000);
@@ -50573,7 +50642,7 @@ const chatFocusRead = {
         await step("close the fixture tab", () => acCloseTabs(h, ctx));
         await step("restore the grid, the chat modes and focus read", () =>
             h.ev(`(() => {
-                for (const [key, prev] of [[${JSON.stringify(GRID_KEY)}, ${JSON.stringify(ctx.prevGrid)}], ["agent.chatmode", ${JSON.stringify(ctx.prevModes)}], ["chat.focusRead", ${JSON.stringify(ctx.prevFocusRead)}], ["chat.focusRead.size", ${JSON.stringify(ctx.prevFocusReadSize)}]]) {
+                for (const [key, prev] of [[${JSON.stringify(GRID_KEY)}, ${JSON.stringify(ctx.prevGrid)}], ["agent.chatmode", ${JSON.stringify(ctx.prevModes)}], ["chat.focusRead", ${JSON.stringify(ctx.prevFocusRead)}], ["chat.focusRead.size", ${JSON.stringify(ctx.prevFocusReadSize)}], ["chat.focusRead.line", ${JSON.stringify(ctx.prevFocusReadLine)}]]) {
                     if (prev == null) localStorage.removeItem(key);
                     else localStorage.setItem(key, prev);
                 }

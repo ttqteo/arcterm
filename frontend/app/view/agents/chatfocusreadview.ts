@@ -19,11 +19,13 @@
 // The same machinery reads the File tab's markdown Preview (kind "doc", mddoc.tsx): its blocks are the document's
 // markdown blocks, minus the comment cards' slots and the overlay, and it has no Q.
 
+import { globalStore } from "@/app/store/jotaiStore";
 import { useEffect, useRef, type RefObject } from "react";
 import {
     fencedText,
     glideStep,
     latestReplyStart,
+    lineAtFromPointer,
     lineOffset,
     litAt,
     litGroup,
@@ -36,11 +38,18 @@ import {
     tickTop,
     type Span,
 } from "./chatfocusread";
-import { registerFocusReader } from "./chatfocusreadstore";
+import { chatFocusReadLineAtom, registerFocusReader, saveFocusReadLine } from "./chatfocusreadstore";
 import { chatBoxText, writeChatBox } from "./chatinsert";
-import { withLeadQuote } from "./chatquote";
+import { withChatQuote } from "./chatquote";
 
 type BlockKind = "text" | "you" | "code" | "table" | "card";
+
+// the reading line's tick, Chat's and a document Preview's alike: a short accent bar in the gutter that a drag moves up
+// or down (its hit area reaches a few px past the bar on every side)
+export const FOCUS_LINE_CLASS =
+    "absolute z-10 h-[20px] w-[3px] -translate-y-1/2 cursor-ns-resize touch-none rounded-full bg-accent " +
+    "before:absolute before:-inset-x-[6px] before:-inset-y-[4px] before:content-[''] hover:w-[4px] data-[dragging]:w-[4px]";
+export const FOCUS_LINE_TITLE = "Drag to move the reading line";
 
 export interface FocusBlock {
     el: HTMLElement;
@@ -277,7 +286,10 @@ export function useFocusRead(
             paint(true);
             placeTick();
         };
-        const line = () => lineOffset(scroller.clientHeight);
+        const lineAt = () => globalStore.get(chatFocusReadLineAtom);
+        const line = () => lineOffset(scroller.clientHeight, lineAt());
+        // while the tick is dragged it sits on the line under the pointer, not beside the lit block
+        let dragging = false;
         const pickFromLine = () => setLit(litAt(spans, scroller.scrollTop + line()));
 
         const placeTick = () => {
@@ -292,7 +304,10 @@ export function useFocusRead(
             }
             const base = scroller.getBoundingClientRect();
             tick.style.display = "block";
-            tick.style.top = `${tickTop(line(), spans[lit] ?? null, scroller.scrollTop, scroller.clientHeight)}px`;
+            const top = dragging
+                ? line()
+                : tickTop(line(), spans[lit] ?? null, scroller.scrollTop, scroller.clientHeight);
+            tick.style.top = `${top}px`;
             tick.style.left = `${Math.max(4, conv.getBoundingClientRect().left - base.left - 12)}px`;
         };
         // the blocks and where they are; the lit one stays lit while it is still drawn, else the line picks again
@@ -405,7 +420,7 @@ export function useFocusRead(
                 return;
             }
             pickFromLine();
-            const settle = settleTo(spans, scroller.scrollTop, scroller.clientHeight, scroller.scrollHeight);
+            const settle = settleTo(spans, scroller.scrollTop, scroller.clientHeight, scroller.scrollHeight, lineAt());
             if (settle != null) {
                 setLit(settle.index);
                 scrollTo(settle.top);
@@ -434,6 +449,48 @@ export function useFocusRead(
         scroller.addEventListener("wheel", onIntent, { passive: true });
         scroller.addEventListener("touchstart", onIntent, { passive: true });
         scroller.addEventListener("pointerdown", onIntent);
+
+        // drag the tick up or down to move the reading line: the line follows the pointer and lights the block it
+        // crosses, the conversation stays put; where it lets go is remembered for every agent and document
+        const tickEl = tickRef.current;
+        const dragTo = (e: PointerEvent) => {
+            const box = scroller.getBoundingClientRect();
+            globalStore.set(chatFocusReadLineAtom, lineAtFromPointer(e.clientY, box.top, scroller.clientHeight));
+            pickFromLine();
+        };
+        const onTickDown = (e: PointerEvent) => {
+            if (e.button !== 0 || tickEl == null) {
+                return;
+            }
+            e.preventDefault();
+            stopGlide();
+            programmatic = false;
+            dragging = true;
+            tickEl.setPointerCapture(e.pointerId);
+            tickEl.setAttribute("data-dragging", "");
+            dragTo(e);
+        };
+        const onTickMove = (e: PointerEvent) => {
+            if (dragging) {
+                dragTo(e);
+            }
+        };
+        const onTickUp = (e: PointerEvent) => {
+            if (!dragging || tickEl == null) {
+                return;
+            }
+            dragging = false;
+            if (tickEl.hasPointerCapture(e.pointerId)) {
+                tickEl.releasePointerCapture(e.pointerId);
+            }
+            tickEl.removeAttribute("data-dragging");
+            saveFocusReadLine();
+            placeTick();
+        };
+        tickEl?.addEventListener("pointerdown", onTickDown);
+        tickEl?.addEventListener("pointermove", onTickMove);
+        tickEl?.addEventListener("pointerup", onTickUp);
+        tickEl?.addEventListener("pointercancel", onTickUp);
         // a change inside the tail or a reply still being written moves no block: only what changes elsewhere collects
         const mo = new MutationObserver((records) => {
             // nor the document's overlay (the hover's +, the comment marks), redrawn as the pointer moves
@@ -488,7 +545,7 @@ export function useFocusRead(
             const texts = litGroup(lit, blocks.length, sizeRef.current)
                 .map((i) => quoteTextOf(blocks[i]))
                 .filter((t): t is string => t != null && t.trim() !== "");
-            const next = texts.length > 0 ? withLeadQuote(chatBoxText(agentId), texts.join("\n\n")) : null;
+            const next = texts.length > 0 ? withChatQuote(chatBoxText(agentId), texts.join("\n\n")) : null;
             if (next != null) {
                 writeChatBox(agentId, next);
             }
@@ -506,6 +563,10 @@ export function useFocusRead(
             scroller.removeEventListener("wheel", onIntent);
             scroller.removeEventListener("touchstart", onIntent);
             scroller.removeEventListener("pointerdown", onIntent);
+            tickEl?.removeEventListener("pointerdown", onTickDown);
+            tickEl?.removeEventListener("pointermove", onTickMove);
+            tickEl?.removeEventListener("pointerup", onTickUp);
+            tickEl?.removeEventListener("pointercancel", onTickUp);
             mo.disconnect();
             ro.disconnect();
             cancelAnimationFrame(frame);
