@@ -82,7 +82,10 @@ export function switchBoard(model: GridModel, from: BoardSplit, boardId: string)
     if (boardKey(to) === boardKey(from)) {
         return;
     }
+    // the cell stays as it was: an expanded cell stays expanded on the other board
+    const max = globalStore.get(boardMaxAtom(boardKey(from)));
     setOpen(to, true);
+    setBoardMax(to, max);
     replaceBoardCell(model, from, to);
     setOpen(from, false);
     setBoardMax(from, false);

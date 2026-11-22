@@ -160,6 +160,16 @@ describe("switchBoard", () => {
         expect(open()).toEqual(["arcterm/b2"]);
     });
 
+    it("keeps an expanded cell expanded on the other board", () => {
+        const m = model(["a1"]);
+        openBoard(m, "a1", "arcterm", "b1");
+        setBoardMax(B1, true);
+        switchBoard(m, B1, "b2");
+        expect(globalStore.get(boardMaxAtom("arcterm/b2"))).toBe(true);
+        expect(globalStore.get(boardMaxAtom("arcterm/b1"))).toBe(false);
+        setBoardMax(B2, false);
+    });
+
     it("does nothing for the board it shows", () => {
         const m = model(["a1"]);
         openBoard(m, "a1", "arcterm", "b1");

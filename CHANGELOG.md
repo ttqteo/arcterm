@@ -35,7 +35,7 @@ and a picture given to a line that is not big.
 ### Added
 
 - A board's header names the chat it reads, and its menu moves the board to another Claude chat of the project, even
-  while the first one is still running; the board then reads the new chat.
+  while the first one is still running; the board then reads the new chat. <!-- big --> <!-- shot: 1.15.0-board-chat.webp -->
 - Hide turns, in a board's header, folds its turns column and ask box to a thin strip so the canvas gets the room.
 
 ### Changed

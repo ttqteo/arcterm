@@ -1136,6 +1136,8 @@ export default function (kit) {
                 const opened = await click(`${SPLIT(B1)} [data-board-chat]`);
                 const listed = await until(async () => (await count(`${SPLIT(B1)} [data-board-chat-item]`)) >= 2);
                 await shot("13-chat-picker");
+                // the What's new picture: the board beside Chat, its chat picker open
+                const picture = await h.whatsnewShot("board-chat", { selector: GRID });
                 const picked = await click(`${SPLIT(B1)} [data-board-chat-item="${B}"]`);
                 const calls = await boardCalls(h, "BoardTakeOverCommand");
                 const moved = await until(async () => (await h.ev(`document.querySelector(${q(`${SPLIT(B1)} [data-board-chat]`)})?.getAttribute("data-board-chat")`)) === B);
@@ -1147,7 +1149,7 @@ export default function (kit) {
                 rec(
                     name,
                     opened && listed && picked && moved && last?.boardid === B1 && last?.tabid === B && cells === "2" && chatAfter !== chatBefore,
-                    { opened, listed, picked, moved, call: last, chatBefore, chatAfter, cells }
+                    { opened, listed, picked, moved, call: last, chatBefore, chatAfter, cells, picture }
                 );
                 // back to the first chat, so the steps after read it as before
                 await click(`${SPLIT(B1)} [data-board-chat]`);
