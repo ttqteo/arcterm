@@ -1210,7 +1210,7 @@ export default function (kit) {
                     const x = r.left + r.width / 2, y = r.top + r.height / 2;
                     fire(ov, "dragover", x, y);
                     await new Promise((r) => setTimeout(r, 80));
-                    const label = ov.textContent.replace(/\s+/g, " ").trim();
+                    const label = ov.textContent.replace(/\\s+/g, " ").trim();
                     fire(ov, "drop", x, y);
                     fire(src, "dragend");
                     return { ok: true, label };
