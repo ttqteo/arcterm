@@ -34,6 +34,8 @@ and a picture given to a line that is not big.
 
 ### Changed
 
+- A Markdown document's Outline card opens over its rail of dashes, as Notion's does: whole headings, wrapped instead
+  of cut, the one you are reading in blue, and the rail's lit dash is the text colour instead of blue.
 - A dense board no longer puts a label over every part: the part under the pointer shows one Read label, and the header
   counts the parts with `‹ N parts ›` to read them in order. A board small enough to read whole has neither.
 - A one-line command in a reply (`! task install`) is a box as wide as the command, with its Run and Copy beside it,

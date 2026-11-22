@@ -105,8 +105,10 @@ function useOutline(rootRef: RefObject<HTMLElement | null>, selector: string, te
     return { items, active, readActive, go };
 }
 
-// The Outline heading and its list of headings, the one you are reading marked; inside a PopoverReveal.
+// The Outline heading and its list of headings, the one you are reading marked; inside a PopoverReveal. bare is the
+// rail's card (Notion's): no heading, whole titles wrapped, the one you are reading in the accent colour.
 function OutlineList(p: {
+    bare?: boolean;
     listRef: RefObject<HTMLDivElement | null>;
     items: OutlineItem[];
     active: number;
@@ -131,9 +133,11 @@ function OutlineList(p: {
     };
     return (
         <>
-            <div className="flex-none px-3 pb-1 pt-2.5 text-[10.5px] font-bold uppercase tracking-[0.1em] text-muted">
-                Outline
-            </div>
+            {p.bare ? null : (
+                <div className="flex-none px-3 pb-1 pt-2.5 text-[10.5px] font-bold uppercase tracking-[0.1em] text-muted">
+                    Outline
+                </div>
+            )}
             {/* data-owns-keys: the list is portalled out of the File tab's own data-owns-keys region, so without it the
             dispatcher read focus here as nowhere in particular and agent:back (or, while the agent works in Chat,
             agent:chat-interrupt) took Escape before this list could close */}
@@ -142,7 +146,10 @@ function OutlineList(p: {
                 data-outline-list
                 data-owns-keys
                 onKeyDown={onListKey}
-                className="sc flex min-h-0 flex-col overflow-y-auto px-[5px] pb-[5px]"
+                className={cn(
+                    "sc flex min-h-0 flex-col overflow-y-auto",
+                    p.bare ? "gap-0.5 px-2 py-3" : "px-[5px] pb-[5px]"
+                )}
             >
                 {p.items.map((it, i) => (
                     <button
@@ -151,12 +158,21 @@ function OutlineList(p: {
                         data-outline-item={i}
                         data-active={i === p.active || undefined}
                         onClick={() => p.onGo(it)}
-                        title={it.text}
-                        style={{ paddingLeft: 10 + it.depth * 14 }}
+                        title={p.bare ? undefined : it.text}
+                        style={{ paddingLeft: (p.bare ? 12 : 10) + it.depth * 14 }}
                         className={cn(
-                            "w-full shrink-0 cursor-pointer truncate rounded-[6px] py-[5px] pr-2.5 text-left text-[12.5px] leading-[1.4] outline-none hover:bg-surface-hover focus-visible:bg-surface-hover",
-                            it.depth === 0 ? "font-semibold text-primary" : "text-secondary",
-                            i === p.active && "bg-accentbg text-primary shadow-[inset_2px_0_0_var(--color-accent)]"
+                            "w-full shrink-0 cursor-pointer rounded-[6px] text-left outline-none",
+                            p.bare
+                                ? cn(
+                                      "py-[5px] pr-3 text-[13px] leading-[1.4] transition-colors hover:text-primary focus-visible:bg-surface-hover",
+                                      i === p.active ? "text-accent hover:text-accent" : "text-muted"
+                                  )
+                                : cn(
+                                      "truncate py-[5px] pr-2.5 text-[12.5px] leading-[1.4] hover:bg-surface-hover focus-visible:bg-surface-hover",
+                                      it.depth === 0 ? "font-semibold text-primary" : "text-secondary",
+                                      i === p.active &&
+                                          "bg-accentbg text-primary shadow-[inset_2px_0_0_var(--color-accent)]"
+                                  )
                         )}
                     >
                         {it.text}
@@ -283,7 +299,7 @@ export function OutlineButton(p: {
 const DASH_WIDTH = [12, 8, 5];
 
 // The Outline as a rail of dashes on the right edge of a document, centred top to bottom (Notion's): one dash per
-// heading, the one you are reading lit and following the scroll. Hovering the rail opens the list beside it, and a
+// heading, the one you are reading lit and following the scroll. Hovering the rail opens the list over it, and a
 // click or Enter opens it with focus in it. The parent places it (positioned, over the document's right gutter)
 // and keeps the text clear of it; onShown says when the document has headings enough to show it.
 export function OutlineRail(p: {
@@ -335,7 +351,8 @@ export function OutlineRail(p: {
         placement: "left",
         strategy: "fixed",
         middleware: [
-            offset(6),
+            // over the rail, right edges flush, as Notion's card covers its dashes
+            offset(({ rects }) => -rects.reference.width),
             shift({ padding: 8 }),
             floatingSize({
                 padding: 8,
@@ -400,10 +417,11 @@ export function OutlineRail(p: {
                         key={it.index}
                         aria-hidden
                         data-outline-dash={i}
+                        data-active={i === active || undefined}
                         style={{ width: DASH_WIDTH[it.depth] ?? DASH_WIDTH[DASH_WIDTH.length - 1] }}
                         className={cn(
                             "h-[2px] flex-none rounded-full transition-colors",
-                            i === active ? "bg-accent" : open ? "bg-muted" : "bg-edge-strong group-hover:bg-muted"
+                            i === active ? "bg-primary" : "bg-edge-strong group-hover:bg-muted"
                         )}
                     />
                 ))}
@@ -413,9 +431,10 @@ export function OutlineRail(p: {
                     <PopoverReveal
                         open={open}
                         origin="center right"
-                        className="flex max-h-[var(--outline-max-height)] w-[280px] flex-col overflow-hidden rounded-[11px] border border-border frost shadow-popover-md"
+                        className="flex max-h-[var(--outline-max-height)] w-[260px] flex-col overflow-hidden rounded-[14px] border border-border frost shadow-popover-md"
                     >
                         <OutlineList
+                            bare
                             listRef={listRef}
                             items={items}
                             active={active}

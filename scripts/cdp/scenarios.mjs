@@ -39556,7 +39556,7 @@ async function dfType(h, text) {
 // has two headings, Guide at the top and Notes below the fold.
 const MOR_RAIL = `${MDC_ASIDE}?.querySelector("[data-outline-rail]")`;
 const MOR_LIST = `document.querySelector("[data-outline-list]")`;
-const morActive = `[...(${MOR_RAIL}?.querySelectorAll("[data-outline-dash]") ?? [])].findIndex((d) => d.className.includes("bg-accent"))`;
+const morActive = `[...(${MOR_RAIL}?.querySelectorAll("[data-outline-dash]") ?? [])].findIndex((d) => d.hasAttribute("data-active"))`;
 
 const mdOutlineRail = {
     name: "md-outline-rail",
@@ -39596,7 +39596,7 @@ const mdOutlineRail = {
         const followed = await polishWaitFor(h, `${morActive} === 1`, 3000);
         rec("2. scrolled to the end, the Notes dash is lit", followed, JSON.stringify({ active: await h.ev(morActive) }));
 
-        // 3. a hover opens the list beside the rail, leaving focus in the document
+        // 3. a hover opens the list over the rail (Notion's card), leaving focus in the document
         await h.ev(`${MDC_DOC}.focus()`);
         const rc = await mdcCenter(h, MOR_RAIL);
         await railTabsMouse(h, "mouseMoved", rc.x, rc.y, { button: "none" });
@@ -39604,10 +39604,10 @@ const mdOutlineRail = {
         await railTabsNap(300);
         const side = await h.ev(`(() => {
             const l = ${MOR_LIST}.getBoundingClientRect(), r = ${MOR_RAIL}.getBoundingClientRect();
-            return { leftOfRail: l.right <= r.left, focusInDoc: document.activeElement === ${MDC_DOC}, activeItem: ${MOR_LIST}.querySelector("[data-active]")?.textContent ?? null };
+            return { overRail: Math.abs(l.right - r.right) <= 2 && l.left < r.left, focusInDoc: document.activeElement === ${MDC_DOC}, activeItem: ${MOR_LIST}.querySelector("[data-active]")?.textContent ?? null };
         })()`);
         await h.shot("cdp-shots/md-outline-rail-open.png");
-        rec("3. hovering the rail opens the two headings left of it, Notes marked, focus still in the document", listed && side.leftOfRail && side.focusInDoc && side.activeItem === "Notes", JSON.stringify({ listed, side }));
+        rec("3. hovering the rail opens the two headings in a card over it, right edges flush, Notes marked, focus still in the document", listed && side.overRail && side.focusInDoc && side.activeItem === "Notes", JSON.stringify({ listed, side }));
 
         // 4. picking Guide closes the list and scrolls back to the top
         await h.ev(`${MOR_LIST}.querySelector('[data-outline-item="0"]').click()`);
