@@ -32,6 +32,16 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
   asked, the ask comes back as a refusal whose reason tells the agent to ask you first.
 ## 2026-11-22
 
+- [ ] (arcterm) **A board is a tree row and a cell beside Chat, in the real app** (`boards/boardcell.ts`,
+  `agentsurface.tsx`, `agenttree.tsx`, a413d3393). The run's `boards-split` passed in headless Chrome only, never in
+  WKWebView or WebView2. In an installed build, under a Claude agent that has drawn boards: the tree shows one row under
+  the agent with its latest board's name and `+N` for the rest. Click it: the grid becomes `[Chat | board]`, half each,
+  the tree stays open, and the header, ask bar and rail stay the agent's (`j`/`k` skip the board row). The header's
+  switcher swaps the board in the same cell; Expand fills the grid and back. The board cell's x leaves Chat alone;
+  the agent cell's x takes the board with it. From a 2x2, opening a board replaces the last cell that is neither the
+  agent nor the focused one. Restart arcterm: the split with its board comes back. Switch to another project: Activity
+  Monitor shows the renderer's memory drop as the canvas unmounts.
+
 - [ ] (arcterm) **A long paste folds into a Pasted text chip** (`chatpastes.ts`, `chatpastechips.tsx`, f38640543). In a
   Claude agent's Chat, type a question, then paste 20+ lines of a log: the box keeps only the question and a "Pasted
   text · N lines" chip sits over it. Click the chip: the paste opens over the box in the frosted panel (as wide as the
@@ -44,7 +54,7 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
 - [ ] (arcterm) **Board light theme, tree fold animation, attachment icons** (`boardcanvas.tsx`, `agenttreeslot.tsx`,
   `attachmenttray.tsx`). On any open board (beside Chat, or Library → Boards) the sun at the canvas's top-right turns
   it white with Excalidraw's light controls and dark strokes readable; the moon turns it back; the pick holds after a
-  reload. Beside a board, clicking the agent strip slides the tree open over ~0.35 s and shut again, the chevron
+  reload. Clicking the agent strip slides the tree shut over ~0.35 s and open again, the chevron
   turning; the agent's terminal under Chat is not redrawn mid-slide. A `.pdf` dropped in Chat's box shows the red PDF
   icon in its chip, a `.xlsx` the spreadsheet one.
 
