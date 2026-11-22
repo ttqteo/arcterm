@@ -780,7 +780,7 @@ async function lintMemoryDir($: EngineInterface, cwd: string): Promise<void> {
     const files = entries.filter((f) => f.kind === "file" && f.name.endsWith(".md") && f.name !== "MEMORY.md");
     const memories = await Promise.all(
         files.map(async (f) =>
-            parseMemory({ name: f.name, text: await $.fs.read(`${dir}/${f.name}`), mtimeMs: f.mtimeMs })
+            parseMemory({ name: f.name, text: await $.fs.read(`${dir}/${f.name}`) })
         )
     );
     const missingPaths = new Set<string>();
@@ -791,7 +791,7 @@ async function lintMemoryDir($: EngineInterface, cwd: string): Promise<void> {
     }
     const tasks = (await $.fs.exists("Taskfile.yml")) ? taskNames(await $.fs.read("Taskfile.yml")) : null;
     const index = await $.fs.read(`${dir}/MEMORY.md`);
-    const problems = lintMemory({ index, memories, missingPaths, tasks, nowMs: await $.clock.now() });
+    const problems = lintMemory({ index, memories, missingPaths, tasks });
     if (!shouldReport(problems)) {
         return;
     }

@@ -45,6 +45,9 @@ and a picture given to a line that is not big.
 
 ### Fixed
 
+- A new Claude session no longer opens with a reminder that some memories are over 30 days old: the start-of-session
+  memory check names only broken memories (a missing file, a dead link or path), and old ones wait in Setup's memory
+  review, where Still true quiets them.
 - Opening a folded paste in Chat's box wraps its long lines instead of cutting them at the panel's edge.
 
 ## 1.13.0 — 2026-11-22
