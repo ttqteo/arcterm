@@ -255,6 +255,36 @@ function OpenBoard({ project, boardId, highlightIds, onSelection }: BoardCanvasP
         };
     }, [project, boardId]);
 
+    // A trackpad pinch reaches WebKit (the Mac app) as gesture events, and Excalidraw's gesture path, unlike its wheel
+    // and touch paths, never sets shouldCacheIgnoreZoom: every frame of the pinch drew each shape again at the new zoom,
+    // so zooming stuttered. Held for the whole pinch, the cached shapes are scaled instead and drawn sharp once at its
+    // end. Capture on document runs before Excalidraw's own listener there.
+    useEffect(() => {
+        if (!ready) {
+            return;
+        }
+        let held = false;
+        const hold = (on: boolean) => {
+            const api = apiRef.current;
+            if (api == null || excalidraw == null || held === on) {
+                return;
+            }
+            held = on;
+            api.updateScene({
+                appState: { shouldCacheIgnoreZoom: on },
+                captureUpdate: excalidraw.CaptureUpdateAction.NEVER,
+            });
+        };
+        const start = () => hold(true);
+        const end = () => hold(false);
+        document.addEventListener("gesturestart", start, true);
+        document.addEventListener("gestureend", end, true);
+        return () => {
+            document.removeEventListener("gesturestart", start, true);
+            document.removeEventListener("gestureend", end, true);
+        };
+    }, [ready]);
+
     // Show
     useEffect(() => {
         if (ready && highlightIds != null && highlightIds.length > 0) {

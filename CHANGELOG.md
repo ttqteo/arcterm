@@ -70,6 +70,8 @@ and a picture given to a line that is not big.
 
 ### Fixed
 
+- Pinching to zoom a board on a Mac trackpad is smooth: the shapes no longer redraw on every frame of the pinch, only
+  once when it ends.
 - A visual drawn in Chat no longer flickers while the details rail folds or opens: it keeps its width during the
   slide and takes the new one once, when the column stops.
 - A file attached in Chat, and a file open in a tab of the Agent panel, shows its type's icon (a PDF's, a
