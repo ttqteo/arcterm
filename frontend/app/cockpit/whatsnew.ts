@@ -39,7 +39,7 @@ const NO_SHOT_RE = /\s*<!--\s*shot:\s*none\s*-->\s*/;
 const SECTION_ORDER: SectionKind[] = ["Added", "Changed", "Fixed"];
 
 // the first release whose big lines each carry a picture or `shot: none` (whatsnew.test.ts); Unreleased always does
-export const SHOTS_REQUIRED_FROM = "1.9.0";
+export const SHOTS_REQUIRED_FROM = "1.8.0";
 
 // a release's cards: past this many they read as a wall again (whatsnew.test.ts holds CHANGELOG.md to it)
 export const MAX_HIGHLIGHTS = 5;

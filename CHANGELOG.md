@@ -35,7 +35,7 @@ and a picture given to a line that is not big.
 ### Added
 
 - A board's header names the chat it reads, and its menu moves the board to another Claude chat of the project, even
-  while the first one is still running; the board then reads the new chat. <!-- big --> <!-- shot: 1.15.0-board-chat.webp -->
+  while the first one is still running; the board then reads the new chat. <!-- big --> <!-- shot: 1.10.0-board-chat.webp -->
 - Hide turns, in a board's header, folds its turns column and ask box to a thin strip so the canvas gets the room.
 
 ### Changed
@@ -43,57 +43,7 @@ and a picture given to a line that is not big.
 - A board is a pane of its own in the split, like an agent: drag it by its bar, open more than one at once, and it stays
   open when the agent it was opened beside leaves the split.
 
-## 1.14.0 — 2026-11-22
-
-### Changed
-
-- The panel that reads a file (and Transcript, Changes, Summary) drags much wider: Chat keeps a min-width of 420px
-  instead of 640px, and a folded agent tree no longer counts its full width against the panel.
-- A board now opens as its own pane beside the agent's Chat, and each agent's latest board is a row under it in the Agent tree.
-  <!-- big --> <!-- shot: 1.14.0-board-cells.webp -->
-- Focus read's reading line moves: drag the accent tick in the gutter up or down, in Chat or a Markdown Preview, and
-  the line stays where you let go, for every agent and document, instead of always sitting a third of the way down.
-- A Markdown document's Outline card opens over its rail of dashes, as Notion's does: whole headings, wrapped instead
-  of cut, the one you are reading in blue, and the rail's lit dash is the text colour instead of blue.
-- A dense board no longer puts a label over every part: the part under the pointer shows one Read label, and the header
-  counts the parts with `‹ N parts ›` to read them in order. A board small enough to read whole has neither.
-- A one-line command in a reply (`! task install`) is a box as wide as the command, with its Run and Copy beside it,
-  instead of a bar across the whole Chat.
-- A long paste you folded into a chip shows in your sent message as a "Pasted · N lines" card you open, the way a
-  paste in Claude Code's own box does, instead of plain text under the question you typed.
-- A Reply's quote goes into Chat's box where you are typing, drawn there as a quote, instead of a block over the box:
-  quote, your words, another quote, more words reads in the order you wrote it, and a long quote scrolls with the text.
-
-### Fixed
-
-- Typing `>` in Chat's box shows the quote's bar at once, before anything follows it, instead of an empty line that
-  gave no sign the quote had started.
-- An agent with an unsent message in its box shows the word "draft" on its row's second line, in place of the blue pen
-  at the row's edge that looked like a rename button.
-- A new Claude session no longer opens with a reminder that some memories are over 30 days old: the start-of-session
-  memory check names only broken memories (a missing file, a dead link or path), and old ones wait in Setup's memory
-  review, where Still true quiets them.
-- Opening a folded paste in Chat's box wraps its long lines instead of cutting them at the panel's edge.
-
-## 1.13.0 — 2026-11-22
-
-### Changed
-
-- Beside Chat a board shows only its latest turn, one line over the ask box, with "N earlier" to open them all, so the
-  drawing gets the height.
-- A passage you Reply to in Chat sits over the chat box as a quote block, like Notion's: a bar beside the words,
-  upright and up to three lines, in line with what you type; a second quote is one more block under it, and the ×
-  shows when you point at one.
-
-- The context gauge turns red at 200k tokens instead of 300k, and Chat's context ring and its /context card now go
-  amber at 150k and red at 200k like the details rail, showing the tokens beside the percent: on a 1M window a calm
-  20% already means every turn re-reads 200k.
-- A board open beside Chat gets most of the width: Chat narrows to a 360px column and the agent list folds to a thin
-  strip, which opens it again until the board closes.
-- Click an agent in the list and start typing: the text goes into its chat box, no `Tab` first. In Chat every letter is
-  text: `j` and `k` no longer move between agents (the arrows in the list and `Ctrl`+`Tab` still do), and the letter
-  keys `d`, `f`, `i`, `r`, `p` work in Terminal only; in Chat they are `Option`+`D`, `F`, `I`, `V` (review), `P`, and
-  `Option`+`K` switches Chat and Terminal.
+## 1.9.0 — 2026-11-22
 
 ### Added
 
@@ -120,65 +70,60 @@ and a picture given to a line that is not big.
 - Chat's `@` lists the project's boards (`@board`, `@draw` or part of a board's name), the one open beside Chat first:
   a pick puts the board in your message as a badge, and the agent draws your request on that board instead of starting
   a new one.
-
-### Fixed
-
-- An image an agent's reply names by its full path (a screenshot it took, `![shot](/path/shot.png)`) shows in Chat,
-  and a click shows it at full width, instead of a broken-image box; one named by a relative path shows its file name.
-- Pinching to zoom a board on a Mac trackpad is smooth: the shapes no longer redraw on every frame of the pinch, only
-  once when it ends.
-- A visual drawn in Chat no longer flickers while the details rail folds or opens: it keeps its width during the
-  slide and takes the new one once, when the column stops.
-- A file attached in Chat, and a file open in a tab of the Agent panel, shows its type's icon (a PDF's, a
-  spreadsheet's) instead of a plain page.
-- Text you select in a file's Source view, and in the Code and Diff panes, stands out in the theme's accent instead of
-  a dark tint that all but hid it.
-
-## 1.12.0 — 2026-11-20
-
-### Added
-
 - Clicking Chat's Compacted line opens the summary the agent kept in the side panel, and a second click closes it.
 
 - A board whose agent has ended opens beside the Chat of a running Claude agent of its project: Open beside Chat… in
   Library → Boards lists them, and the one you pick takes the board over, so you can ask on it again.
+- The agent rail shows your agent's UI checks in a Verify tile: a failed step in red, a run that never finished or a UI
+  change nobody checked in amber, with Ask the agent to rerun and Skip; the agent asks you before it merges while Verify
+  is red or amber. <!-- big --> <!-- shot: 1.9.0-rail-verify.webp -->
+- A diagram in Chat opens full size: click it, or Expand in the toolbar that shows over it on hover, then zoom with the
+  wheel or + and -, drag to pan, and 0 or a double click to fit. Copy image puts the whole diagram on the clipboard as
+  a sharp PNG on the app's background, ready to paste into a doc or a message. Agents now draw a flow or pipeline as a
+  diagram instead of ASCII arrows in a code block. <!-- big --> <!-- shot: 1.9.0-diagram-zoom.webp -->
 
 ### Changed
 
+- The panel that reads a file (and Transcript, Changes, Summary) drags much wider: Chat keeps a min-width of 420px
+  instead of 640px, and a folded agent tree no longer counts its full width against the panel.
+- A board now opens as its own pane beside the agent's Chat, and each agent's latest board is a row under it in the Agent tree.
+  <!-- big --> <!-- shot: 1.9.0-board-cells.webp -->
+- Focus read's reading line moves: drag the accent tick in the gutter up or down, in Chat or a Markdown Preview, and
+  the line stays where you let go, for every agent and document, instead of always sitting a third of the way down.
+- A Markdown document's Outline card opens over its rail of dashes, as Notion's does: whole headings, wrapped instead
+  of cut, the one you are reading in blue, and the rail's lit dash is the text colour instead of blue.
+- A dense board no longer puts a label over every part: the part under the pointer shows one Read label, and the header
+  counts the parts with `‹ N parts ›` to read them in order. A board small enough to read whole has neither.
+- A one-line command in a reply (`! task install`) is a box as wide as the command, with its Run and Copy beside it,
+  instead of a bar across the whole Chat.
+- A long paste you folded into a chip shows in your sent message as a "Pasted · N lines" card you open, the way a
+  paste in Claude Code's own box does, instead of plain text under the question you typed.
+- A Reply's quote goes into Chat's box where you are typing, drawn there as a quote, instead of a block over the box:
+  quote, your words, another quote, more words reads in the order you wrote it, and a long quote scrolls with the text.
+- Beside Chat a board shows only its latest turn, one line over the ask box, with "N earlier" to open them all, so the
+  drawing gets the height.
+- A passage you Reply to in Chat sits over the chat box as a quote block, like Notion's: a bar beside the words,
+  upright and up to three lines, in line with what you type; a second quote is one more block under it, and the ×
+  shows when you point at one.
+
+- The context gauge turns red at 200k tokens instead of 300k, and Chat's context ring and its /context card now go
+  amber at 150k and red at 200k like the details rail, showing the tokens beside the percent: on a 1M window a calm
+  20% already means every turn re-reads 200k.
+- A board open beside Chat gets most of the width: Chat narrows to a 360px column and the agent list folds to a thin
+  strip, which opens it again until the board closes.
+- Click an agent in the list and start typing: the text goes into its chat box, no `Tab` first. In Chat every letter is
+  text: `j` and `k` no longer move between agents (the arrows in the list and `Ctrl`+`Tab` still do), and the letter
+  keys `d`, `f`, `i`, `r`, `p` work in Terminal only; in Chat they are `Option`+`D`, `F`, `I`, `V` (review), `P`, and
+  `Option`+`K` switches Chat and Terminal.
 - Chat keeps more room for reading: a passage you Reply to sits as a small chip over the chat box instead of taking
   lines in it, and the prompt pinned to the top hides while you are at the end of the conversation.
 - Brainstorm and initiative moved out of the band above Chat into two tabs of the agent's right panel: the brainstorm
   as one timeline with each board under its decision, the initiative with its chunks, plan to review and notes. The ◇
-  chip and i open it. <!-- big --> <!-- try: go:agent --> <!-- shot: 1.12.0-rail-tabs.webp -->
+  chip and i open it. <!-- big --> <!-- try: go:agent --> <!-- shot: 1.9.0-rail-tabs.webp -->
 
 - A board whose agent has ended is no longer stuck: the next agent of its project that draws on it by name takes it over,
   drawing and turns kept, and it opens beside that agent's Chat.
 - A visual in Chat no longer shows its HTML file name in its header, only its icon.
-
-### Fixed
-
-- An agent that is compacting its conversation says "compacting…" on its sidebar row, not only in Chat.
-
-- An agent's row no longer shows a server port that is the agent itself: on a Mac, Claude Code's own localhost port
-  read as a server, and an agent in another tab of the same project showed in the Servers list.
-
-- A diagram opened full size zooms smoothly: a wheel notch glides to its zoom instead of jumping, and a trackpad pinch
-  zooms in the Mac app too. A label in a diagram's box no longer loses its last letter.
-
-## 1.11.0 — 2026-11-20
-
-### Added
-
-- The agent rail shows your agent's UI checks in a Verify tile: a failed step in red, a run that never finished or a UI
-  change nobody checked in amber, with Ask the agent to rerun and Skip; the agent asks you before it merges while Verify
-  is red or amber. <!-- big --> <!-- shot: 1.11.0-rail-verify.webp -->
-- A diagram in Chat opens full size: click it, or Expand in the toolbar that shows over it on hover, then zoom with the
-  wheel or + and -, drag to pan, and 0 or a double click to fit. Copy image puts the whole diagram on the clipboard as
-  a sharp PNG on the app's background, ready to paste into a doc or a message. Agents now draw a flow or pipeline as a
-  diagram instead of ASCII arrows in a code block. <!-- big --> <!-- shot: 1.11.0-diagram-zoom.webp -->
-
-### Changed
-
 - A council's Report now opens with What it settled under the answer: the direction it chose, what it agreed, what is
   still open and what it ruled out (with why). What it spent moves to the foot of the Report as one folded line of
   tokens, calls and time; a click still opens the per-seat charts.
@@ -192,6 +137,31 @@ and a picture given to a line that is not big.
 
 ### Fixed
 
+- Typing `>` in Chat's box shows the quote's bar at once, before anything follows it, instead of an empty line that
+  gave no sign the quote had started.
+- An agent with an unsent message in its box shows the word "draft" on its row's second line, in place of the blue pen
+  at the row's edge that looked like a rename button.
+- A new Claude session no longer opens with a reminder that some memories are over 30 days old: the start-of-session
+  memory check names only broken memories (a missing file, a dead link or path), and old ones wait in Setup's memory
+  review, where Still true quiets them.
+- Opening a folded paste in Chat's box wraps its long lines instead of cutting them at the panel's edge.
+- An image an agent's reply names by its full path (a screenshot it took, `![shot](/path/shot.png)`) shows in Chat,
+  and a click shows it at full width, instead of a broken-image box; one named by a relative path shows its file name.
+- Pinching to zoom a board on a Mac trackpad is smooth: the shapes no longer redraw on every frame of the pinch, only
+  once when it ends.
+- A visual drawn in Chat no longer flickers while the details rail folds or opens: it keeps its width during the
+  slide and takes the new one once, when the column stops.
+- A file attached in Chat, and a file open in a tab of the Agent panel, shows its type's icon (a PDF's, a
+  spreadsheet's) instead of a plain page.
+- Text you select in a file's Source view, and in the Code and Diff panes, stands out in the theme's accent instead of
+  a dark tint that all but hid it.
+- An agent that is compacting its conversation says "compacting…" on its sidebar row, not only in Chat.
+
+- An agent's row no longer shows a server port that is the agent itself: on a Mac, Claude Code's own localhost port
+  read as a server, and an agent in another tab of the same project showed in the Servers list.
+
+- A diagram opened full size zooms smoothly: a wheel notch glides to its zoom instead of jumping, and a trackpad pinch
+  zooms in the Mac app too. A label in a diagram's box no longer loses its last letter.
 - A picture an agent read from a bug report (its screen.png) keeps showing in Chat after the report is marked done,
   instead of reading as no longer on disk once the report's folder moved to done/.
 - A council report's direction card wraps a long file path in its title and First step instead of running past the
@@ -208,13 +178,37 @@ and a picture given to a line that is not big.
 - Escape on the Agent surface turns Chat's focus read off first, even after a click on the agent tree, the header or the
   Wake box, instead of leaving for the Cockpit with focus read still on.
 
-## 1.10.0 — 2026-11-20
+## 1.8.0 — 2026-11-20
 
 ### Added
 
 - A board can hold bar and line charts drawn to scale: give the agent, or the board's Ask, the numbers ("add a bar
   chart of pass rate: baseline 0.42, LLM 0.61") and the chart lands beside the drawing, with its values and labels, as
   plain shapes you can still move and edit.
+- Claude agents can draw an explanation on a board: they run `wsh board draw` and a cheap drawer sketches the flow, the
+  architecture or the choice in Excalidraw, while their turn in Chat gets a card with Open that splits the board beside
+  Chat. Select shapes on the board and Ask: a question the drawer can't answer by drawing goes to the agent as your own
+  message, and its reply is copied under it. Library's new Boards tab (key 4) brings every board of a project back.
+  <!-- big --> <!-- shot: 1.8.0-boards.webp -->
+- A council's Report draws what its panel found and spent: where each direction stands on evidence and agreement, who
+  backed or opposed it, what each seat spent and read twice, and, on the Map, who answered which idea. Library's
+  Councils tab charts the benchmark. <!-- big --> <!-- shot: none -->
+- What your runs leave behind now waits under To review on the Brief, grouped by run: tick the things you want done and
+  start one run with them, keep an item for later, or drop it. A run's lead files each open issue as a proposal, and a
+  proposal from a run no longer lands in Needs you; `wsh effort backfill-proposed` moves what runs left since
+  2026-11-13 into To review. <!-- big --> <!-- shot: 1.8.0-run-review.webp -->
+- Agent's edits: a Claude agent's Diff now lists only the files it changed itself, rebuilt from its own edits, instead
+  of everything that changed in the checkout since its session started. A switch under the panel's header takes you
+  back to Since session start. A file the rebuild could not match exactly is marked (no backup, or changed outside the
+  agent between its edits), and a caption counts the Bash calls that may have changed files it cannot show.
+  <!-- big --> <!-- shot: 1.8.0-agent-edits.webp -->
+- Open in Claude Desktop: an ended Claude conversation opens in Claude Desktop's Code tab to carry on there, from the
+  icon beside Fork above its transcript or from its row's menu in a project's History.
+- An agent that started a council has a chat button after its panel's tabs, with a dot while the council works or
+  waits on you: click it, or press `c`, to open that council's Discussion.
+- Focus read works in a markdown file's Preview too: the same pill at the top of its right edge (or Alt+R with the
+  document in focus) lights a few blocks at a time and dims the rest, and J and K step through them. One switch for
+  every markdown file, remembered.
 
 ### Changed
 
@@ -223,7 +217,7 @@ and a picture given to a line that is not big.
 - The council an agent started now shows in the Agent panel itself: a Council tab after Transcript holds the
   council's chat beside the agent's terminal, the seats' messages as they come, whose move it is (send held drafts on,
   read the report) and a box to message the council. `c` opens it, and Open shows the full Discussion. It replaces the
-  chat button after the panel's tabs. <!-- big --> <!-- shot: 1.10.0-rail-council.webp -->
+  chat button after the panel's tabs. <!-- big --> <!-- shot: 1.8.0-rail-council.webp -->
 - A compaction's summary no longer opens in the middle of Chat: Chat keeps only the thin Compacted line, and the
   Compacted line in the Agent details rail opens the summary in a wide sheet at the window's right edge. A pi agent's
   compaction now shows in the rail too.
@@ -240,6 +234,28 @@ and a picture given to a line that is not big.
 - A brainstorm question in Chat shows its boards up front instead of only a small link at the bottom: when each option
   has its own board, the option's row carries a Board button that opens it large over Chat; otherwise the boards are a
   row of buttons above the options.
+- The Council decisions block arcterm writes into a project's CLAUDE.md or AGENTS.md now lists only what was agreed or
+  ruled out, without commit hashes or open questions, and with `/` paths on every OS.
+- Claude agents now offer a council and wait for your yes, instead of starting one on their own; Setup's cost line says
+  how many past councils its price came from.
+- The council benchmark judges a Review report on its whole list, not its first 5 items, and `wsh council bench results`
+  shows recall@5 beside recall@all. `wsh council bench rejudge` scores the reports already saved the same way, one opus
+  call each, without running a council again.
+- A council's saved report now opens with a chart of its directions by checked evidence and the panel's backing, and
+  ends with charts of where the tokens went, how each seat looked things up (and how often it read a file another seat
+  had already read) and when each seat worked. `wsh council bench results --chart` draws each variant's key lines found
+  against its tokens per run.
+- A Claude agent's card, Agent details rail and Hub peek count only the files that agent changed itself, so a second
+  agent in the same checkout no longer shows the first one's uncommitted work as its own.
+- A council's first round and its pause now use the whole width of the pane: the experts' cards and the ideas fill it
+  instead of stopping at 900 px with an empty strip on the right, while an idea's argument keeps a readable line length.
+- On Windows, heavy jobs and runs are held back for memory only once less than a tenth of the RAM is free, not a
+  fifth: with 3 to 6 GB free on a 32 GB machine, builds and tests no longer wait one at a time and runs are no longer
+  paused while the machine still runs smoothly.
+- The tabs at the top of the Agent panel (Overview, Files, Changes, Transcript and the open files) are pills: the one
+  on show is filled, the others light up when you hover them, in place of an underline.
+- A file you @-mention in Chat shows its file type's icon (HTML, TypeScript, Markdown…) in the message box and in the
+  sent message, the same icons as the Code tree, instead of one plain page glyph for every file.
 
 ### Fixed
 
@@ -264,7 +280,6 @@ and a picture given to a line that is not big.
 - Chat's suggested replies to a question that offers options and asks something more ("A hay B, và có thêm X
   không?") now include each option, instead of several replies that all pick the recommended one.
 
-### Fixed
 
 - A fork of a conversation synced from another machine starts in the project's folder on this one, instead of your
   home folder with a "trust this folder?" prompt; with no such folder here, Fork says so and starts nothing.
@@ -274,51 +289,9 @@ and a picture given to a line that is not big.
   instead of reading back through up to 1,000 sessions of every project first. While older pages are unread the
   session count reads "30+".
 
-### Fixed
 
 - Older: Conversation History in a project's Overview, and Conversation History on the empty Agent page, open the
   list of conversations again, not the last session you had open full width in Library.
-
-## 1.9.0 — 2026-11-20
-
-### Added
-
-- Claude agents can draw an explanation on a board: they run `wsh board draw` and a cheap drawer sketches the flow, the
-  architecture or the choice in Excalidraw, while their turn in Chat gets a card with Open that splits the board beside
-  Chat. Select shapes on the board and Ask: a question the drawer can't answer by drawing goes to the agent as your own
-  message, and its reply is copied under it. Library's new Boards tab (key 4) brings every board of a project back.
-  <!-- big --> <!-- shot: 1.9.0-boards.webp -->
-- A council's Report draws what its panel found and spent: where each direction stands on evidence and agreement, who
-  backed or opposed it, what each seat spent and read twice, and, on the Map, who answered which idea. Library's
-  Councils tab charts the benchmark. <!-- big --> <!-- shot: none -->
-- What your runs leave behind now waits under To review on the Brief, grouped by run: tick the things you want done and
-  start one run with them, keep an item for later, or drop it. A run's lead files each open issue as a proposal, and a
-  proposal from a run no longer lands in Needs you; `wsh effort backfill-proposed` moves what runs left since
-  2026-11-13 into To review. <!-- big --> <!-- shot: 1.9.0-run-review.webp -->
-- Agent's edits: a Claude agent's Diff now lists only the files it changed itself, rebuilt from its own edits, instead
-  of everything that changed in the checkout since its session started. A switch under the panel's header takes you
-  back to Since session start. A file the rebuild could not match exactly is marked (no backup, or changed outside the
-  agent between its edits), and a caption counts the Bash calls that may have changed files it cannot show.
-  <!-- big --> <!-- shot: 1.9.0-agent-edits.webp -->
-
-### Changed
-
-- The Council decisions block arcterm writes into a project's CLAUDE.md or AGENTS.md now lists only what was agreed or
-  ruled out, without commit hashes or open questions, and with `/` paths on every OS.
-- Claude agents now offer a council and wait for your yes, instead of starting one on their own; Setup's cost line says
-  how many past councils its price came from.
-- The council benchmark judges a Review report on its whole list, not its first 5 items, and `wsh council bench results`
-  shows recall@5 beside recall@all. `wsh council bench rejudge` scores the reports already saved the same way, one opus
-  call each, without running a council again.
-- A council's saved report now opens with a chart of its directions by checked evidence and the panel's backing, and
-  ends with charts of where the tokens went, how each seat looked things up (and how often it read a file another seat
-  had already read) and when each seat worked. `wsh council bench results --chart` draws each variant's key lines found
-  against its tokens per run.
-- A Claude agent's card, Agent details rail and Hub peek count only the files that agent changed itself, so a second
-  agent in the same checkout no longer shows the first one's uncommitted work as its own.
-
-### Fixed
-
 - Chat's `@` picker lists only what the Agent tree shows at its top level: a run's plan reviewers, verifiers, workers
   and check sessions no longer fill it, so name the run or the agent that started them.
 - A conversation forked from Chat's Fork is named after the agent it came from ("… (fork)"), not just "Fork".
@@ -335,33 +308,6 @@ and a picture given to a line that is not big.
 - An interrupted vault merge no longer blocks every later sync; the edits made since are kept.
 - A config file replaced while arcterm runs (a project registered from a script, say) shows up without a restart, even
   when Windows still held the file for a moment.
-
-## 1.8.0 — 2026-11-19
-
-### Added
-
-- Open in Claude Desktop: an ended Claude conversation opens in Claude Desktop's Code tab to carry on there, from the
-  icon beside Fork above its transcript or from its row's menu in a project's History.
-- An agent that started a council has a chat button after its panel's tabs, with a dot while the council works or
-  waits on you: click it, or press `c`, to open that council's Discussion.
-- Focus read works in a markdown file's Preview too: the same pill at the top of its right edge (or Alt+R with the
-  document in focus) lights a few blocks at a time and dims the rest, and J and K step through them. One switch for
-  every markdown file, remembered.
-
-### Changed
-
-- A council's first round and its pause now use the whole width of the pane: the experts' cards and the ideas fill it
-  instead of stopping at 900 px with an empty strip on the right, while an idea's argument keeps a readable line length.
-- On Windows, heavy jobs and runs are held back for memory only once less than a tenth of the RAM is free, not a
-  fifth: with 3 to 6 GB free on a 32 GB machine, builds and tests no longer wait one at a time and runs are no longer
-  paused while the machine still runs smoothly.
-- The tabs at the top of the Agent panel (Overview, Files, Changes, Transcript and the open files) are pills: the one
-  on show is filled, the others light up when you hover them, in place of an underline.
-- A file you @-mention in Chat shows its file type's icon (HTML, TypeScript, Markdown…) in the message box and in the
-  sent message, the same icons as the Code tree, instead of one plain page glyph for every file.
-
-### Fixed
-
 - Chat's suggested replies to a yes-or-no question no longer repeat the yes in other words ("Đổi luôn đi" next to
   "ok"): an answer that only says the question's own action back is left out, and the ones left say something more.
 - A task worker or judge reopened after its tab was closed stays out of Claude Desktop's CLI import, as it did when it
