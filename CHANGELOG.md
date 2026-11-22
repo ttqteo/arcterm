@@ -34,6 +34,8 @@ and a picture given to a line that is not big.
 
 ### Changed
 
+- The panel that reads a file (and Transcript, Changes, Summary) drags much wider: Chat keeps a min-width of 420px
+  instead of 640px, and a folded agent tree no longer counts its full width against the panel.
 - A board now opens as its own pane beside the agent's Chat, and each agent's latest board is a row under it in the Agent tree.
   <!-- big --> <!-- shot: 1.14.0-board-cells.webp -->
 - Focus read's reading line moves: drag the accent tick in the gutter up or down, in Chat or a Markdown Preview, and

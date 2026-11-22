@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import {
     activeFile,
     backFromInitiative,
+    CHAT_MIN_PX,
     clampWideWidth,
     closeFile,
     closeSummary,
@@ -33,6 +34,7 @@ import {
     shownKey,
     shownTab,
     stripKeys,
+    TREE_STRIP_PX,
     visibleTabs,
     wideTabOf,
     wideWidthMax,
@@ -308,10 +310,15 @@ describe("filePinTarget", () => {
 });
 
 describe("widths", () => {
-    it("leaves the centre 640px beside the nav, the tree and the panel", () => {
-        expect(wideWidthMax(1920, 78)).toBe(1920 - 78 - 280 - 640);
-        expect(wideWidthMax(1920, 78, 248)).toBe(1920 - 78 - 248 - 640);
+    it("leaves Chat its 420px min-width beside the nav, the tree and the panel", () => {
+        expect(CHAT_MIN_PX).toBe(420);
+        expect(wideWidthMax(1920, 78)).toBe(1920 - 78 - 280 - 420);
+        expect(wideWidthMax(1920, 78, 248)).toBe(1920 - 78 - 248 - 420);
         expect(wideWidthMax(1000, 78)).toBe(RAIL_WIDE_MIN_PX);
+    });
+
+    it("counts a folded tree as its strip only", () => {
+        expect(wideWidthMax(1680, 78, TREE_STRIP_PX)).toBe(1680 - 78 - 14 - 420);
     });
 
     it("clamps a dragged width between the minimum and the maximum", () => {

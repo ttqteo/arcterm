@@ -32,6 +32,7 @@ import {
 } from "lucide-react";
 import { motion } from "motion/react";
 import { useEffect, useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
+import { treeFoldedAtom } from "../boards/boardsplitstore";
 import { railStatAction, type AgentRailStat, type AgentRailStatId } from "./agentrailsections";
 import { closeRailFile, closeRailSummary, railWideDragAtom, railWidthAtoms, selectRailKey } from "./agentrailstore";
 import {
@@ -45,6 +46,7 @@ import {
     shownKey,
     shownTab,
     stripKeys,
+    TREE_STRIP_PX,
     wideWidthMax,
     type FileRef,
     type PanelState,
@@ -618,7 +620,8 @@ export function useWideWidth(tab: ResizableTab): { width: number; max: number } 
     const stored = useAtomValue(railWidthAtoms[tab]);
     const drag = useAtomValue(railWideDragAtom);
     const win = useWindowWidth();
-    const treeWidth = agentTreeWidth(useAtomValue(rowFieldsAtom));
+    const fullTree = agentTreeWidth(useAtomValue(rowFieldsAtom));
+    const treeWidth = useAtomValue(treeFoldedAtom) ? TREE_STRIP_PX : fullTree;
     const max = wideWidthMax(win, navRailCollapsed(win) ? 56 : 78, treeWidth);
     return { width: clampWideWidth(drag ?? stored, max, tab), max };
 }

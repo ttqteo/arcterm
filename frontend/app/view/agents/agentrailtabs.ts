@@ -115,7 +115,11 @@ export const FILE_TABS_MAX = 5;
 export const RAIL_OVERVIEW_PX = 300;
 export const RAIL_WIDE_DEFAULT_PX = 520;
 export const RAIL_WIDE_MIN_PX = 360;
-const CENTRE_MIN_PX = 640; // DESIGN.md's stage-min
+// Chat's min-width beside a wide panel: narrower than DESIGN.md's stage-min (640), so a file can be read wide (the
+// person's ask, 2026-11-22); at 420px Chat still reads
+export const CHAT_MIN_PX = 420;
+// the folded tree's strip (agenttreeslot.tsx), which stays when the tree folds
+export const TREE_STRIP_PX = 14;
 
 export function panelFor(panels: Record<string, PanelState>, agentId: string, defaultTab: RailTab): PanelState {
     // File, Files, Transcript, Council, Brainstorm and Initiative are never defaults: an unseen agent has no file open,
@@ -350,10 +354,10 @@ export function selectKey(p: PanelState, key: string, has: RailHas): PanelState 
     return key.startsWith("file:") ? selectFile(p, Number(key.slice(5))) : selectTab(p, key as RailTab, has);
 }
 
-// the widest a wide tab may be: what leaves the centre its minimum beside the nav rail and the tree, whose width follows
-// the row fields (agentTreeWidth in rowfields.ts)
+// the widest a wide tab may be: what leaves Chat its min-width beside the nav rail and the tree, whose width follows
+// the row fields (agentTreeWidth in rowfields.ts), or only its strip while it is folded
 export function wideWidthMax(windowWidth: number, navWidth: number, treeWidth = AGENT_TREE_WIDE_PX): number {
-    return Math.max(RAIL_WIDE_MIN_PX, windowWidth - navWidth - treeWidth - CENTRE_MIN_PX);
+    return Math.max(RAIL_WIDE_MIN_PX, windowWidth - navWidth - treeWidth - CHAT_MIN_PX);
 }
 
 // the panel tabs that take a dragged width: File (a page of text) and Transcript (the conversation), which share one
