@@ -70,6 +70,8 @@ and a picture given to a line that is not big.
 
 ### Fixed
 
+- A visual drawn in Chat no longer flickers while the details rail folds or opens: it keeps its width during the
+  slide and takes the new one once, when the column stops.
 - A file attached in Chat, and a file open in a tab of the Agent panel, shows its type's icon (a PDF's, a
   spreadsheet's) instead of a plain page.
 - Text you select in a file's Source view, and in the Code and Diff panes, stands out in the theme's accent instead of

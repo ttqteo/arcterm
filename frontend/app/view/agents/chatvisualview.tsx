@@ -14,6 +14,7 @@ import { createContext, useContext, useEffect, useMemo, useRef, useState, type R
 import { appendToChatBox, chatBoxText, submitIntoChatBox } from "./chatinsert";
 import {
     FRAME_MAX,
+    FRAME_WIDTH_SETTLE_MS,
     VISUAL_LANG,
     frameHeight,
     frameSrc,
@@ -132,6 +133,9 @@ function ChatVisual({ path, agentId }: { path: string; agentId: string }) {
     const [near, setNear] = useState(false);
     const [reported, setReported] = useState<number | undefined>(() => reportedHeights.get(path));
     const [expanded, setExpanded] = useState(false);
+    // the frame's width in px: the figure's, taken at once the first time and then only once the figure has held a width
+    // for FRAME_WIDTH_SETTLE_MS (null: the full width, before the figure is measured)
+    const [frameWidth, setFrameWidth] = useState<number | null>(null);
     // when this frame's last prompt was taken (a send or a fill), for promptAction's gap
     const lastPromptAt = useRef<number | null>(null);
     // the colours last posted to this frame; null until the page has said arc-html-ready, so the theme observer waits for it
@@ -173,6 +177,27 @@ function ChatVisual({ path, agentId }: { path: string; agentId: string }) {
         observer.observe(figure);
         return () => observer.disconnect();
     }, [near]);
+
+    // The figure follows the column at once, every frame of a slide; the frame inside follows only once the column has
+    // stopped, and the figure clips it (or shows its ground beside it) meanwhile
+    useEffect(() => {
+        const figure = figureRef.current;
+        if (figure == null || typeof ResizeObserver === "undefined") {
+            return;
+        }
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        const observer = new ResizeObserver(() => {
+            const width = figure.clientWidth;
+            setFrameWidth((was) => was ?? width);
+            clearTimeout(timer);
+            timer = setTimeout(() => setFrameWidth(figure.clientWidth), FRAME_WIDTH_SETTLE_MS);
+        });
+        observer.observe(figure);
+        return () => {
+            observer.disconnect();
+            clearTimeout(timer);
+        };
+    }, []);
 
     useEffect(() => {
         const onMessage = (e: MessageEvent) => {
@@ -282,8 +307,8 @@ function ChatVisual({ path, agentId }: { path: string; agentId: string }) {
                     // the page runs its own scripts at wavesrv's origin, never the app's, and reaches nothing but its own
                     // folder (htmlserve's CSP), the same frame the File tab draws
                     sandbox="allow-scripts allow-same-origin"
-                    style={{ height }}
-                    className="block w-full border-0"
+                    style={{ height, width: frameWidth ?? "100%" }}
+                    className="block border-0"
                 />
             ) : (
                 <div style={{ height }} className="bg-surface-raised" />

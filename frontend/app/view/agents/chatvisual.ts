@@ -15,6 +15,10 @@ export const PROMPT_GAP_MS = 1500;
 export const FRAME_MIN = 120;
 export const FRAME_MAX = 640;
 export const FRAME_EXPANDED_MAX = 4000;
+// the column has held its width this long: the frame takes it. While the column slides (the details rail folding,
+// 360 ms) the frame keeps the width it had, so the page lays out and paints once at the end, not on every frame of the
+// slide, which WebKit drew as a flicker of the frame
+export const FRAME_WIDTH_SETTLE_MS = 150;
 // the frame's height before the page has reported one
 const FRAME_DEFAULT = 160;
 
