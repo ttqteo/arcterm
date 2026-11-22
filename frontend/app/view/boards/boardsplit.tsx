@@ -9,9 +9,13 @@
 // surface shows, and a canvas left running there would be a second copy of the board beside Library's, each saving over
 // the other; closed, it saves its edits and the next look reads the file again.
 
+import { springFoldHeight, springFoldWidth } from "@/app/element/motiontokens";
+import { usePartMotion } from "@/app/element/springbatch";
+import { useDimensionsWithCallbackRef } from "@/app/hook/useDimensions";
 import { cn } from "@/util/util";
 import { useAtom, useAtomValue } from "jotai";
 import { ChevronLeft } from "lucide-react";
+import { AnimatePresence, motion, MotionConfig } from "motion/react";
 import { useEffect, useMemo, useState } from "react";
 import type { AgentsViewModel } from "../agents/agents";
 import { takeoverAgents } from "../library/libraryboardsmodel";
@@ -100,6 +104,12 @@ function OpenCell({
     // Expand: the cell fills the whole grid (agentsurface.tsx hides the others under it)
     const expanded = useAtomValue(boardMaxAtom(key)) || alone;
     const closeCell = () => (onClose != null ? onClose() : closeBoard(model, split));
+    // the turns column folds on the axis it sits on: beside the canvas (expanded, and the cell as wide as the
+    // @[640px] container query below) its width, under it its height
+    const [cellRef, , cellRect] = useDimensionsWithCallbackRef<HTMLDivElement>();
+    const beside = expanded && (cellRect?.width ?? 0) >= 640;
+    const widthFold = usePartMotion(springFoldWidth);
+    const heightFold = usePartMotion(springFoldHeight);
 
     // the board was deleted (the list is read and no longer has it): its cell goes
     const gone = list != null && board == null;
@@ -139,6 +149,7 @@ function OpenCell({
 
     return (
         <div
+            ref={cellRef}
             data-board-cell={boardId}
             data-board-split={boardId}
             data-board-expanded={expanded ? "true" : "false"}
@@ -181,6 +192,9 @@ function OpenCell({
                         />
                     ) : null}
                 </div>
+                {/* the strip sits before the column, so a folding column shrinks toward the edge and the strip rides
+                    out to it; the column slides open and shut on the spring (springFoldWidth beside the canvas,
+                    springFoldHeight under it) */}
                 {turnsFolded ? (
                     // folded: a 14px strip where the column was (right of the canvas when expanded and wide, under it
                     // otherwise); a press opens it again
@@ -202,33 +216,43 @@ function OpenCell({
                             className={cn("rotate-90", expanded && "@[640px]:rotate-0")}
                         />
                     </button>
-                ) : (
-                    <div
-                        data-board-turns-column
-                        className={cn(
-                            "flex flex-none flex-col",
-                            expanded &&
-                                "max-h-[55%] min-h-0 border-t border-edge-mid @[640px]:max-h-none @[640px]:w-[300px] @[640px]:border-l @[640px]:border-t-0"
-                        )}
-                    >
-                        {turns}
-                        {error != null ? (
-                            <div
-                                role="alert"
-                                data-board-error
-                                className="mx-3 mb-1.5 flex-none text-[11.5px] leading-[1.4] text-error [overflow-wrap:anywhere]"
+                ) : null}
+                <MotionConfig reducedMotion="user">
+                    <AnimatePresence initial={false}>
+                        {turnsFolded ? null : (
+                            <motion.div
+                                key="turns"
+                                data-board-turns-column
+                                {...(beside ? widthFold : heightFold)}
+                                className={cn(
+                                    "flex flex-none flex-col",
+                                    expanded &&
+                                        "max-h-[55%] min-h-0 border-t border-edge-mid @[640px]:max-h-none @[640px]:border-l @[640px]:border-t-0"
+                                )}
                             >
-                                {error}
-                            </div>
-                        ) : null}
-                        <BoardAskBox
-                            selection={selection}
-                            allowed={askAllowed(talk, alive)}
-                            placeholder={alive ? undefined : "Its chat has ended: pick a chat above to ask"}
-                            onAsk={(question) => act(() => askBoard(target, question, selection))}
-                        />
-                    </div>
-                )}
+                                {/* a fixed width inside the folding one, so the turns never reflow while it slides */}
+                                <div className={cn("flex min-h-0 flex-1 flex-col", expanded && "@[640px]:w-[300px]")}>
+                                    {turns}
+                                    {error != null ? (
+                                        <div
+                                            role="alert"
+                                            data-board-error
+                                            className="mx-3 mb-1.5 flex-none text-[11.5px] leading-[1.4] text-error [overflow-wrap:anywhere]"
+                                        >
+                                            {error}
+                                        </div>
+                                    ) : null}
+                                    <BoardAskBox
+                                        selection={selection}
+                                        allowed={askAllowed(talk, alive)}
+                                        placeholder={alive ? undefined : "Its chat has ended: pick a chat above to ask"}
+                                        onAsk={(question) => act(() => askBoard(target, question, selection))}
+                                    />
+                                </div>
+                            </motion.div>
+                        )}
+                    </AnimatePresence>
+                </MotionConfig>
             </div>
         </div>
     );

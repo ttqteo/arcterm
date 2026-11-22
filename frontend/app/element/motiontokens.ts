@@ -138,6 +138,25 @@ export const springFoldWidth: Variants = {
     },
 };
 
+// Spring fold in height: springFoldWidth on the vertical axis, for a panel stacked under what it sits beside (a board's
+// turns column under its canvas). Clips only while it moves, so a focus ring past its edge shows once it has opened.
+export const springFoldHeight: Variants = {
+    initial: { opacity: 0, height: 0, overflow: "hidden" },
+    animate: {
+        opacity: 1,
+        height: "auto",
+        overflow: "hidden",
+        transition: { height: MOTION.spring, opacity: { duration: MOTION.durMicro, ease: MOTION.easeFluid } },
+        transitionEnd: { overflow: "visible" },
+    },
+    exit: {
+        opacity: 0,
+        height: 0,
+        overflow: "hidden",
+        transition: { height: MOTION.spring, opacity: { duration: MOTION.durExit, ease: MOTION.easeFluid } },
+    },
+};
+
 // Sent rise: the message the person just sent rising into the chat from the composer below it, so the eye follows
 // it from the box to the log. y is safe here: a chat row has no Reorder.Item owning its transform. Scales from the
 // bubble's tail corner (set transform-origin per site); arrive only, the row never leaves this way.

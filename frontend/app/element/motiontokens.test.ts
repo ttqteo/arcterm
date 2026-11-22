@@ -22,6 +22,7 @@ import {
     settleClass,
     sheetPanel,
     shouldFadeEntry,
+    springFoldHeight,
     springPop,
     springReveal,
     springSheet,
@@ -253,6 +254,20 @@ describe("springReveal", () => {
             expect(target).not.toHaveProperty("y");
             expect(target).not.toHaveProperty("scale");
         }
+    });
+});
+
+describe("springFoldHeight", () => {
+    it("opens height 0 -> auto on the spring, clipping only while it moves", () => {
+        expect(springFoldHeight.initial).toEqual({ opacity: 0, height: 0, overflow: "hidden" });
+        expect(springFoldHeight.animate).toMatchObject({
+            opacity: 1,
+            height: "auto",
+            transitionEnd: { overflow: "visible" },
+        });
+        expect((springFoldHeight.animate as any).transition.height).toEqual(MOTION.spring);
+        expect(springFoldHeight.exit).toMatchObject({ opacity: 0, height: 0 });
+        expect((springFoldHeight.exit as any).transition.height).toEqual(MOTION.spring);
     });
 });
 

@@ -42,6 +42,7 @@ and a picture given to a line that is not big.
 
 ### Changed
 
+- A board's turns column slides open and shut when you hide or show it, instead of jumping.
 - A board is a pane of its own in the split, like an agent: drag it by its bar, open more than one at once, and it stays
   open when the agent it was opened beside leaves the split. In the Agent tree it is a row of its own beside the
   agents, naming the chat it reads, and a cell of the split row while the split holds it; a click on its row shows it
