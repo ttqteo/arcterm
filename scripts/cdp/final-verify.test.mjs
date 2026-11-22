@@ -1,5 +1,17 @@
 import { execFile, spawn } from "node:child_process";
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import {
+    copyFileSync,
+    existsSync,
+    lstatSync,
+    mkdirSync,
+    mkdtempSync,
+    readFileSync,
+    readlinkSync,
+    realpathSync,
+    rmSync,
+    symlinkSync,
+    writeFileSync,
+} from "node:fs";
 import { createServer } from "node:net";
 import { homedir, tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
@@ -202,7 +214,19 @@ fs.writeFileSync(path.join(data, "waveapp.log"), "boot log");
 
         const env = JSON.parse(readFileSync(envFile, "utf8"));
         const base = join(dir, "localappdata", "arc-final");
-        expect(env.FAKE_DEV_CWD).toBe(join(base, "tree"));
+        // a junction lstats as a symlink in Node, so the link check holds on every platform
+        expect(lstatSync(join(base, "tree")).isSymbolicLink()).toBe(true);
+        if (process.platform === "win32") {
+            // process.cwd() is the junction's own path there
+            expect(env.FAKE_DEV_CWD).toBe(join(base, "tree"));
+        } else {
+            // a posix process.cwd() is the physical path (and macOS's tmpdir is itself a /var -> /private/var link), so
+            // the dev command's cwd reads as the tree's real path: compare real paths. The tree (run()'s temp dir) is
+            // gone by now, so the link dangles: read it, don't follow it.
+            const target = readlinkSync(join(base, "tree"));
+            expect(basename(target)).toBe(basename(env.FAKE_DEV_CWD));
+            expect(realpathSync(dirname(target))).toBe(realpathSync(dirname(env.FAKE_DEV_CWD)));
+        }
         expect(env.CARGO_TARGET_DIR).toBe(join(base, "target"));
         // wavesrv binds <store>/data/wave.sock, and windows caps a unix socket path at 108 bytes: measured on the
         // real base, since this test's base sits under a longer temp dir
