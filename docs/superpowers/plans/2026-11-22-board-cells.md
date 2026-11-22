@@ -12,7 +12,11 @@
 
 **Verify:** `node scripts/verify.mjs ./skills/...`
 **Check:** `task check:ts`
-**Final:** `node scripts/cdp/final-verify.mjs boards-split agent-grid surface-smoke`
+**Final:** `node scripts/cdp/final-verify.mjs boards-split boards-chat boards-library chat-board-ref agent-grid surface-smoke`
+
+This change touches no Go: `./skills/...` is only the smallest Go pattern `verify.mjs` needs to run (the repo's
+convention for a frontend-only plan). What the plan relies on is the final stage of `verify.mjs`, which adds the
+frontend typecheck and vitest, and Check's `task check:ts` at each merge.
 
 ## Global Constraints
 
@@ -21,7 +25,7 @@
 - A board cell exists only in the grid that also holds its agent; reconcile prunes it otherwise.
 - The terminal stack stays one always-rendered CSS grid; tracks `minmax(0, 1fr)`, cells `min-w-0 min-h-0`, no size animation; terminal panes are never re-parented or remounted (AGENTS.md "Load-bearing rules").
 - A board cell mounts only while shown and unmounts when hidden; its React key is its id.
-- `boardSplitAtom` is persisted in localStorage key `agent.boards`, keyed by agent id, with no `expanded` field; the Expand flag is separate per agent and not persisted.
+- `boardSplitAtom` is persisted in localStorage key `agent.boards`, keyed by agent id, with no `expanded` field once Task 2 lands (Task 1 leaves it optional and unwritten); the Expand flag is separate per agent and not persisted.
 - Colors only from `@theme` tokens; no raw hex. UI follows `DESIGN.md`.
 - `openBoard(model, agentId, project, boardId)` keeps its signature; every current caller keeps working unchanged.
 
@@ -38,7 +42,7 @@
 ### Task 1: Board cell rules, persisted board entries, openBoard adds the cell
 
 **Depends on:** none
-**Files:** `frontend/app/view/boards/boardcell.ts`, `frontend/app/view/boards/boardcell.test.ts`, `frontend/app/view/boards/boardsplitstore.ts`, `frontend/app/view/boards/boardsplitstore.test.ts`, `frontend/app/view/agents/agentgrid.ts`, `frontend/app/view/agents/agentgrid.test.ts`, `frontend/app/view/agents/gridstore.ts`, `frontend/app/view/agents/gridstore.test.ts`
+**Files:** `frontend/app/view/boards/boardcell.ts`, `frontend/app/view/boards/boardcell.test.ts`, `frontend/app/view/boards/boardentries.ts`, `frontend/app/view/boards/boardsplitstore.ts`, `frontend/app/view/boards/boardsplitstore.test.ts`, `frontend/app/view/agents/agentgrid.ts`, `frontend/app/view/agents/agentgrid.test.ts`, `frontend/app/view/agents/gridstore.ts`, `frontend/app/view/agents/gridstore.test.ts`
 
 **Interfaces:**
 - Produces (`boards/boardcell.ts`, pure, no atoms):
@@ -53,14 +57,16 @@
   - `gridEligibility(tabs: ReadonlyArray<GridTab>, openBoards: ReadonlySet<string>): { eligible: Set<string>; projectOf: Map<string, string>; companionOf: (id: string) => string | undefined }` — board ids share their agent's project; used by `currentGrids`, `currentGrid`, `treeSplits` and `fitsShownGrid` in place of the separate `eligibleIds` + `gridProjects` calls (keep both exported; the surface uses `gridEligibility` in Task 2).
   - `openBoardCell(model: GridModel, agentId: string): void` — commits `openBoardCellIn(currentGrid(model), agentId)`.
   - `removeBoardCell(model: GridModel, agentId: string): void`
-- Produces (`boards/boardsplitstore.ts`):
-  - `BoardSplit = { project: string; boardId: string }` (no `expanded`)
-  - `boardEntriesAtom`: `atomWithStorage<Record<string, BoardSplit>>("agent.boards", {}, undefined, { getOnInit: true })`; `boardSplitAtom(agentId)` derives from it (read/write one entry, `null` clears).
-  - `openBoardIdsAtom: Atom<ReadonlySet<string>>` — agent ids with an entry.
+- Produces (`boards/boardentries.ts`, a leaf: imports only jotai and `@/app/store/global`, never `gridstore` or `boardsplitstore`, so `gridstore` can read it while `boardsplitstore` keeps importing `currentGrid` from `gridstore` without a cycle):
+  - `BoardSplit = { project: string; boardId: string; expanded?: boolean }` — `expanded` is a deprecated optional field nothing writes, kept only so Task 2's files compile in Task 1's tree; Task 2 removes it.
+  - `boardEntriesAtom`: `atomWithStorage<Record<string, BoardSplit>>("agent.boards", {}, undefined, { getOnInit: true })`.
+  - `openBoardIdsAtom: Atom<ReadonlySet<string>>` — agent ids with an entry. `gridstore.ts` reads it (`currentGrid`, `currentGrids`, `treeSplits`, `fitsShownGrid`) to pass `openBoards` to `gridEligibility`.
+- Produces (`boards/boardsplitstore.ts`, re-exporting `BoardSplit`):
+  - `boardSplitAtom(agentId)` derives from `boardEntriesAtom` (read/write one entry, `null` clears).
   - `boardMaxAtom = atomFamily((agentId) => atom(false))`; `setBoardMax(agentId, on)`.
   - `pruneBoardEntries(live: ReadonlySet<string>): void` — drops entries of agents not in `live` (called by Task 2 once the roster is seeded).
   - `openBoard` (same signature): existing steps 1 (openTerminal, setAgentView, setChatMode) then set the entry, then `openBoardCell(model, agentId)`. `closeBoard(agentId)` clears the entry and `boardMaxAtom`; the cell then prunes. `switchBoard` kept.
-  - Removed: `splitOpens`, `splitExpanded`, `setBoardExpanded`, `treePeekAtom`, `treeFolds`' board branch (`treeFoldedAtom` stays; `treeFolds` becomes `(folded) => folded` or is removed with its caller fixed in Task 2 — keep the export compiling until Task 2 by leaving `treeFolds(split, chatShown, peek, folded)` returning `folded`).
+  - Kept as compiling stubs until Task 2 deletes them (Task 2's files `chatpane.tsx`, `boardsplit.tsx` and `agenttreeslot.tsx` still import them, and Task 3's tree, forked from Task 1 beside Task 2, must pass `task check:ts`): `splitOpens(...)` returns `false` (so the old layer never draws), `splitExpanded(...)` returns `false`, `setBoardExpanded(...)` does nothing, `treePeekAtom` stays an `atom(false)`, and `treeFolds(split, chatShown, peek, folded)` returns `folded`. Each stub carries a `// removed by Task 2 of the board-cells plan` comment. `treeFoldedAtom` stays for good.
 
 - [ ] **Step 1: Write failing tests in `boardcell.test.ts`**
 
@@ -68,7 +74,7 @@
 
 - [ ] **Step 2: Write failing tests in `agentgrid.test.ts`** — `prunes a board cell whose agent left`: reconcile `{ids:["a","board:a"]}` with `eligible` lacking `"a"` and `"board:a"` → empty; with `companionOf` and a grid `["b","board:a"]` → `["b"]`; `focusId: "board:a"` never becomes `focused`.
 
-- [ ] **Step 3: Write failing tests in `gridstore.test.ts` and `boardsplitstore.test.ts`** — `openBoard` on a lone agent leaves `agentGridAtom` `["a","board:a"]` and `boardSplitAtom("a")` `{project, boardId}`; `closeBoard("a")` then `currentGrid` → `["a"]`; `localStorage["agent.boards"]` holds the entry; `pruneBoardEntries(new Set())` empties it; a second `openBoard` of another board of the same agent keeps one board cell and switches `boardId`.
+- [ ] **Step 3: Write failing tests in `gridstore.test.ts` and `boardsplitstore.test.ts`** — `openBoard` on a lone agent leaves `agentGridAtom` `["a","board:a"]` and `boardSplitAtom("a")` `{project, boardId}`; `closeBoard("a")` then `currentGrid` → `["a"]`; `localStorage["agent.boards"]` holds the entry; `pruneBoardEntries(new Set())` empties it; a second `openBoard` of another board of the same agent keeps one board cell and switches `boardId`. `removeBoardCell`: from a grid `["a","board:a"]`, `removeBoardCell(model, "a")` leaves `["a"]`, and the board cell's x path (`closeBoard("a")` then reconcile) clears the `agent.boards` entry and `boardMaxAtom("a")`.
 
 - [ ] **Step 4: Run them and see them fail**
 
@@ -87,35 +93,37 @@ Expected: PASS.
 ### Task 2: Draw the board cell; drop the layer inside the agent's cell
 
 **Depends on:** Task 1 (uses gridEligibility, the board cell ids and the persisted board entries)
-**Files:** `frontend/app/view/agents/agentsurface.tsx`, `frontend/app/view/boards/boardsplit.tsx`, `frontend/app/view/agents/chatpane.tsx`, `frontend/app/view/agents/agenttreeslot.tsx`, `frontend/app/view/agents/gridcellbar.tsx`, `frontend/app/view/boards/boardheader.tsx`
+**Files:** `frontend/app/view/agents/agentsurface.tsx`, `frontend/app/view/boards/boardsplit.tsx`, `frontend/app/view/agents/chatpane.tsx`, `frontend/app/view/agents/agenttreeslot.tsx`, `frontend/app/view/agents/gridcellbar.tsx`, `frontend/app/view/boards/boardheader.tsx`, `frontend/app/view/boards/boardsplitstore.ts`, `frontend/app/view/boards/boardsplitstore.test.ts`, `frontend/app/view/boards/boardentries.ts`
+
+**Shown by:** Task 4's `boards-split` steps (b) the two cells, (d) Expand, (e) no focus steal, (f) the cell's x and (g) the agent's x take the board with it.
 
 **Interfaces:**
 - Consumes: Task 1's `gridEligibility`, `isBoardCell`, `boardCellAgent`, `boardCellId`, `boardSplitAtom`, `openBoardIdsAtom`, `boardMaxAtom`, `setBoardMax`, `closeBoard`, `pruneBoardEntries`, `removeBoardCell`.
-- Produces: `BoardCell({ model, agent, multi }: { model: AgentsViewModel; agent: AgentVM; multi: boolean })` exported from `boards/boardsplit.tsx` (the body of today's `OpenSplit`, without the absolute positioning and the left inset), root carries `data-board-cell={boardId}` and `data-board-max`. `BoardSplitLayer` is deleted.
+- Produces: `BoardCell({ model, agent, multi }: { model: AgentsViewModel; agent: AgentVM; multi: boolean })` exported from `boards/boardsplit.tsx` (the body of today's `OpenSplit`, without the absolute positioning and the left inset), root carries `data-board-cell={boardId}`, `data-board-split={boardId}` (kept so existing selectors that do not scope it under the agent's terminal still find it) and `data-board-max`; `[data-board-canvas]` and `[data-board-turn]` stay inside it. `BoardSplitLayer` is deleted.
 
 - [ ] **Step 1: In `agentsurface.tsx` compute eligibility with `gridEligibility(tabs, openBoardIds)`** and pass `companionOf` to `reconcileProjectGrids`. Call `pruneBoardEntries(new Set(agents.map(a => a.id)))` in an effect once `seeded`.
 
 - [ ] **Step 2: Render board cells inside the same grid parent**, after the tab cells: for each `cells` entry whose id `isBoardCell`, a wrapper `key={id}` with `placementStyle(cell.placement)`, the tiled border classes the tab cells use (never `border-accent`: never focused), a `GridCellBar` for a board (Task 2 extends `gridcellbar.tsx` to take a `title` and `onRemove` without an agent's menu; the title is the board's name), then `<BoardCell>`; plus `GridDropOverlay` as tab cells have. No `onMouseDownCapture`/`onFocus` focus handler on a board cell. A board cell not in `cells` renders nothing (unmounted).
 
-- [ ] **Step 3: Expand** — when `boardMaxAtom(agentId)` is on and its board cell is in `cells`, the board wrapper gets `gridRow: "1 / span 2"`, `gridColumn: "1 / span 2"` and the other cells get `hidden` (still mounted), as `dockMax` does. The header's Expand calls `setBoardMax`; "N earlier" in `BoardTurns` calls `setBoardMax(agentId, true)`. `BoardHeader` loses `canExpand` (always can).
+- [ ] **Step 3: Expand** — when `boardMaxAtom(agentId)` is on and its board cell is in `cells`, the board wrapper gets `gridRow: "1 / span 2"`, `gridColumn: "1 / span 2"` (the grid is always `grid-cols-2 grid-rows-2`, so this is every cell track) and the other cells get `hidden` (still mounted), as `dockMax` does. A docked terminal is not a cell: its row 3 stays below the expanded board, as it is. When `dockMax` is on, the dock wins: the board cell is hidden with the other cells (no `data-board-max` effect). The header's Expand calls `setBoardMax`; "N earlier" in `BoardTurns` calls `setBoardMax(agentId, true)`. `BoardHeader` loses `canExpand` (always can).
 
 - [ ] **Step 4: Board gone** — in `BoardCell`, when the project's list is loaded (`useBoardList` not null) and the board is absent, call `closeBoard(agentId)` in an effect.
 
-- [ ] **Step 5: Remove the old layer** — delete the `BoardSplitLayer` render and import in `agentsurface.tsx`; in `ChatLayer` (`chatpane.tsx`) remove `split`, `covered`, `inert` and Chat's right inset (search `min(360px,50%)` / `boardSplitAtom` in `chatpane.tsx`); in `agenttreeslot.tsx` drop the board-aware fold (`treePeekAtom`, `besideBoard`), keeping the hand fold and its strip. Fix `refmentionstore.ts` only if Task 1's atom shape broke it (it reads `.boardId`, which stays).
+- [ ] **Step 5: Remove the old layer** — delete the `BoardSplitLayer` render and import in `agentsurface.tsx`; in `ChatLayer` (`chatpane.tsx`) remove `split`, `covered`, `inert` and Chat's right inset (search `min(360px,50%)` / `boardSplitAtom` in `chatpane.tsx`); in `agenttreeslot.tsx` drop the board-aware fold (`treePeekAtom`, `besideBoard`), keeping the hand fold and its strip. Then delete Task 1's stubs from `boardsplitstore.ts` (`splitOpens`, `splitExpanded`, `setBoardExpanded`, `treePeekAtom`, `treeFolds`, with its caller in `agenttreeslot.tsx` reading `treeFoldedAtom` directly) and the optional `expanded` field from `BoardSplit` in `boardentries.ts`, and drop any test of them left in `boardsplitstore.test.ts`. Fix `refmentionstore.ts` only if Task 1's atom shape broke it (it reads `.boardId`, which stays).
 
 - [ ] **Step 6: Typecheck and run the suites**
 
 Run: `NODE_OPTIONS=--max-old-space-size=4096 task check:ts` then `npx vitest run frontend/app/view/boards frontend/app/view/agents`
 Expected: exit 0; PASS.
 
-- [ ] **Step 7: Live check** — start `task dev:browser` (wait for its `browser app ready:` line, with a timeout), open a board from the board card in an agent's Chat, run `node scripts/cdp-shot.mjs`, and confirm two cells with Chat filling its own. Stop the dev browser shell after. The full scenario is Task 4's.
-
-- [ ] **Step 8: Commit** — `feat(boards): the board draws as its own cell beside Chat; Chat keeps its whole cell and the tree stays open`
+- [ ] **Step 7: Commit** — `feat(boards): the board draws as its own cell beside Chat; Chat keeps its whole cell and the tree stays open`
 
 ### Task 3: The board row in the Agent tree
 
 **Depends on:** Task 1 (uses openBoard, closeBoard and boardCellId)
 **Files:** `frontend/app/view/agents/agentsidebarmodel.ts`, `frontend/app/view/agents/agentsidebarmodel.test.ts`, `frontend/app/view/agents/agenttree.tsx`, `frontend/app/view/agents/activenav.ts`
+
+**Shown by:** Task 4's `boards-split` step (a), the tree row with `+1`, and (b), clicking it.
 
 **Interfaces:**
 - Consumes: Task 1's `openBoard`, `closeBoard`, `boardSplitAtom`, `boardCellId`; `boardsOfAgent`, `useBoardList("")` from `boards/boardstore.ts`.
@@ -138,11 +146,13 @@ Expected: exit 0; PASS.
 ### Task 4: CDP scenario, What's new, docs
 
 **Depends on:** Task 2 (asserts the board cell it draws), Task 3 (asserts the tree row it adds)
-**Files:** `scripts/cdp/scenarios-boards-split.mjs`, `CHANGELOG.md`, `docs/superpowers/specs/2026-11-19-kael-boards-design.md`
+**Files:** `scripts/cdp/scenarios-boards-split.mjs`, `scripts/cdp/scenarios-boards-chat.mjs`, `scripts/cdp/scenarios-boards-library.mjs`, `scripts/cdp/scenarios-chat-board-ref.mjs`, `CHANGELOG.md`, `docs/superpowers/specs/2026-11-19-kael-boards-design.md`
 
-- [ ] **Step 1: Rewrite the `boards-split` scenario's steps for cells** (keep its arrange/teardown and stubbed board RPCs): (a) the tree shows `[data-tree-board="<B1>"]` with `+1` under the agent; (b) clicking it gives `[data-agent-grid-count="2"]`, one `[data-agent-terminal]` cell and one `[data-board-cell="<B1>"]`, and the Chat cell's width is about half the grid (±10%); (c) the header switcher swaps to B2 in the same cell (still 2 cells); (d) Expand: `[data-board-max="true"]` and the agent cell hidden, then back; (e) mouse-down in the canvas leaves `focusIdAtom` on the agent and the header title the agent's; (f) the board cell's x leaves one cell, Chat; (g) reopen, then the agent cell's x → no board cell; (h) a 2x2 of four agents with the board's agent focused, open from the Chat card → the last other cell is replaced; (i) focus another agent alone → no `.excalidraw` in the DOM; (j) the third board of another agent opened from this Chat card still opens in this agent's cell. Take `await h.whatsnewShot("board-cells", { selector: "[data-agent-grid]" })` after (b).
+- [ ] **Step 1: Rewrite the `boards-split` scenario's steps for cells** (keep its arrange/teardown and stubbed board RPCs): (a) the tree shows `[data-tree-board="<B1>"]` with `+1` under the agent; (b) clicking it gives `[data-agent-grid-count="2"]`, one `[data-agent-terminal]` cell and one `[data-board-cell="<B1>"]`, and the Chat cell's width is about half the grid (±10%); (c) the header switcher swaps to B2 in the same cell (still 2 cells); (d) Expand: `[data-board-max="true"]` and the agent cell hidden, then back; (e) mouse-down in the canvas leaves `focusIdAtom` on the agent and the header title the agent's; (f) the board cell's x leaves one cell, Chat; (g) reopen, then the agent cell's x → no board cell; (h) a 2x2 of four agents with the board's agent focused, open from the Chat card → the last other cell is replaced; (i) focus another agent alone → no `.excalidraw` in the DOM. Every selector that scoped the board under the agent's cell (`[data-agent-terminal] [data-board-canvas]`, `[data-board-turn]`, `[data-board-split]`) now scopes it under `[data-board-cell]`, which is a sibling cell, not inside `[data-agent-terminal]`. Take `await h.whatsnewShot("board-cells", { selector: "[data-agent-grid]" })` after (b).
 
-- [ ] **Step 2: Run it** — on a Mac: `task dev:browser` (wait for its `browser app ready:` line, with a timeout), then `node --experimental-websocket scripts/cdp/verify.mjs boards-split agent-grid`. Expected: PASS for both. Stop the dev browser shell after.
+- [ ] **Step 1b: Move the other board scenarios to the cell** — `scenarios-boards-chat.mjs` (:294 and :546 assert `split.expanded === false`: drop the `expanded` check, and assert the board cell `[data-board-cell="<id>"]` is on screen instead where the step is about the board opening), `scenarios-boards-library.mjs` (:523 and :571 select `[data-agent-terminal="A"] [data-board-split="…"]`: select `[data-board-cell="…"]`, and assert `[data-agent-grid-count="2"]` with the agent's `[data-agent-terminal="A"]` beside it), `scenarios-chat-board-ref.mjs` (:129 sets `{ …, expanded: false }`: set `{ project, boardId }` only, then call `openBoardCell` from `gridstore.ts` for the agent so the cell shows, or use `openBoard`). Keep each step's name and intent; change only how it finds the board.
+
+- [ ] **Step 2: Run them** — on a Mac: `task dev:browser` (wait for its `browser app ready:` line, with a timeout), then `node --experimental-websocket scripts/cdp/verify.mjs boards-split boards-chat boards-library chat-board-ref agent-grid`. Expected: PASS for all five. Stop the dev browser shell after.
 
 - [ ] **Step 3: CHANGELOG** — under `## Unreleased` → `Changed`: `A board now opens as its own pane beside the agent's Chat, and each agent's latest board is a row under it in the Agent tree. <!-- big --> <!-- shot: <the file the shot printed> -->`.
 
