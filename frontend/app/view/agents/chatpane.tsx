@@ -67,7 +67,7 @@ import { chatEmptyError, chatEmptyView } from "./chatempty";
 import { ChatFileCards } from "./chatfilecards";
 import { splitAttachments } from "./chatfiles";
 import { chatFocusReadOnAtom, chatFocusReadSizeAtom } from "./chatfocusreadstore";
-import { useFocusRead } from "./chatfocusreadview";
+import { FOCUS_LINE_CLASS, FOCUS_LINE_TITLE, useFocusRead } from "./chatfocusreadview";
 import { forkShowsSource, turnInFork } from "./chatfork";
 import { ChatGoalStrip } from "./chatgoal";
 import { isHandoffAsk } from "./chathandoff";
@@ -1388,8 +1388,9 @@ function ChatPaneBody({
                         ref={focusTickRef}
                         data-chat-focus-line
                         aria-hidden
+                        title={FOCUS_LINE_TITLE}
                         style={{ display: "none" }}
-                        className="pointer-events-none absolute z-10 h-[20px] w-[3px] -translate-y-1/2 rounded-full bg-accent"
+                        className={FOCUS_LINE_CLASS}
                     />
                 ) : null}
                 {/* the conversation runs out under the box: transparent at the top, the pane's background from DOCK_FADE down

@@ -9,15 +9,47 @@
 import { globalStore } from "@/app/store/jotaiStore";
 import { atom } from "jotai";
 import {
+    clampLineAt,
     FOCUS_READ_DEFAULT_SIZE,
+    LINE_AT,
     parseFocusReadIds,
     parseFocusReadSize,
+    parseLineAt,
     withFocusRead,
     type FocusReadSize,
 } from "./chatfocusread";
 
 const STORAGE_KEY = "chat.focusRead";
 const SIZE_KEY = "chat.focusRead.size";
+const LINE_KEY = "chat.focusRead.line";
+
+function readLine(): number {
+    try {
+        return parseLineAt(localStorage.getItem(LINE_KEY));
+    } catch {
+        return LINE_AT;
+    }
+}
+
+const lineBase = atom<number>(readLine());
+
+// where the reading line sits, as a share of the scroller's height (LINE_MIN..LINE_MAX, a third to start): the reader
+// drags the tick to move it, one place for every agent's Chat and every document Preview, remembered
+export const chatFocusReadLineAtom = atom(
+    (get) => get(lineBase),
+    (_get, set, next: number) => {
+        set(lineBase, clampLineAt(next));
+    }
+);
+
+// remember the line where a drag let go (a drag writes the atom on every move, storage only once)
+export function saveFocusReadLine(): void {
+    try {
+        localStorage.setItem(LINE_KEY, String(globalStore.get(lineBase)));
+    } catch {
+        // storage unavailable: the line holds for this session
+    }
+}
 
 function readSize(): FocusReadSize {
     try {

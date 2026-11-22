@@ -34,6 +34,8 @@ and a picture given to a line that is not big.
 
 ### Changed
 
+- Focus read's reading line moves: drag the accent tick in the gutter up or down, in Chat or a Markdown Preview, and
+  the line stays where you let go, for every agent and document, instead of always sitting a third of the way down.
 - A Markdown document's Outline card opens over its rail of dashes, as Notion's does: whole headings, wrapped instead
   of cut, the one you are reading in blue, and the rail's lit dash is the text colour instead of blue.
 - A dense board no longer puts a label over every part: the part under the pointer shows one Read label, and the header

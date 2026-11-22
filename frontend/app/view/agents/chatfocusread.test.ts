@@ -4,6 +4,7 @@
 import { describe, expect, it } from "vitest";
 import {
     atEnd,
+    clampLineAt,
     fencedText,
     FOCUS_READ_KEEP,
     focusReadEscapeTarget,
@@ -11,6 +12,10 @@ import {
     GLIDE_TAU_MS,
     glideStep,
     latestReplyStart,
+    LINE_AT,
+    LINE_MAX,
+    LINE_MIN,
+    lineAtFromPointer,
     lineOffset,
     litAt,
     litGroup,
@@ -19,6 +24,7 @@ import {
     nextFocusReadSize,
     parseFocusReadIds,
     parseFocusReadSize,
+    parseLineAt,
     scrollTopFor,
     SETTLE_MAX,
     settleTo,
@@ -270,6 +276,37 @@ describe("settleTo", () => {
     });
     it("does nothing with no blocks", () => {
         expect(settleTo([], 30, H, TOTAL)).toBeNull();
+    });
+    it("settles onto a line the reader moved", () => {
+        // the line at 0.1 of 600 is at 60: content 190 lies in the gap above block 1, nearer it than block 0
+        expect(settleTo(spans, 130, H, TOTAL, 0.1)).toEqual({ index: 1, top: 200 - 60 + TOP_ABOVE });
+    });
+});
+
+describe("the reading line's place", () => {
+    it("is a third down to start", () => {
+        expect(lineOffset(600)).toBe(200);
+        expect(lineOffset(600, 0.1)).toBe(60);
+    });
+    it("stays between LINE_MIN and LINE_MAX", () => {
+        expect(clampLineAt(0)).toBe(LINE_MIN);
+        expect(clampLineAt(1)).toBe(LINE_MAX);
+        expect(clampLineAt(0.25)).toBe(0.25);
+        expect(clampLineAt(Number.NaN)).toBe(LINE_AT);
+    });
+    it("reads back what was stored, or a third", () => {
+        expect(parseLineAt("0.2")).toBe(0.2);
+        expect(parseLineAt("5")).toBe(LINE_MAX);
+        expect(parseLineAt(null)).toBe(LINE_AT);
+        expect(parseLineAt("")).toBe(LINE_AT);
+        expect(parseLineAt("high")).toBe(LINE_AT);
+    });
+    it("follows the pointer down the scroller", () => {
+        // a 600px scroller whose top is at 100 on screen
+        expect(lineAtFromPointer(220, 100, 600)).toBeCloseTo(0.2);
+        expect(lineAtFromPointer(90, 100, 600)).toBe(LINE_MIN);
+        expect(lineAtFromPointer(900, 100, 600)).toBe(LINE_MAX);
+        expect(lineAtFromPointer(300, 100, 0)).toBe(LINE_AT);
     });
 });
 
