@@ -1,0 +1,45 @@
+// Copyright 2026, Command Line Inc.
+// SPDX-License-Identifier: Apache-2.0
+
+import { describe, expect, it } from "vitest";
+import { imageSrcKind, keepLocalImageUrl, localImagePath } from "./chatimagesrc";
+
+describe("imageSrcKind", () => {
+    it("reads web, data and blob srcs as web", () => {
+        expect(imageSrcKind("https://x.test/a.png")).toBe("web");
+        expect(imageSrcKind("http://localhost:5174/a.png")).toBe("web");
+        expect(imageSrcKind("data:image/png;base64,AAA")).toBe("web");
+        expect(imageSrcKind("blob:http://x/1")).toBe("web");
+    });
+    it("reads absolute paths, home paths, drive paths and file URLs as local", () => {
+        expect(imageSrcKind("/Users/me/repo/cdp-shots/a.png")).toBe("local");
+        expect(imageSrcKind("~/shots/a.png")).toBe("local");
+        expect(imageSrcKind("C:\\Users\\me\\a.png")).toBe("local");
+        expect(imageSrcKind("C:/Users/me/a.png")).toBe("local");
+        expect(imageSrcKind("file:///Users/me/a%20b.png")).toBe("local");
+    });
+    it("reads a relative path or nothing as other", () => {
+        expect(imageSrcKind("cdp-shots/a.png")).toBe("other");
+        expect(imageSrcKind("./a.png")).toBe("other");
+        expect(imageSrcKind("")).toBe("other");
+        expect(imageSrcKind(undefined)).toBe("other");
+    });
+});
+
+describe("localImagePath", () => {
+    it("keeps a path and undoes a file URL", () => {
+        expect(localImagePath("/Users/me/a.png")).toBe("/Users/me/a.png");
+        expect(localImagePath("file:///Users/me/a%20b.png")).toBe("/Users/me/a b.png");
+        expect(localImagePath("file://C:/x/a.png")).toBe("C:/x/a.png");
+    });
+});
+
+describe("keepLocalImageUrl", () => {
+    const strip = () => "";
+    it("keeps drive paths and file URLs, hands the rest to the default", () => {
+        expect(keepLocalImageUrl("C:\\x\\a.png", strip)).toBe("C:\\x\\a.png");
+        expect(keepLocalImageUrl("file:///a.png", strip)).toBe("file:///a.png");
+        expect(keepLocalImageUrl("javascript:alert(1)", strip)).toBe("");
+        expect(keepLocalImageUrl("/Users/a.png", (u) => u)).toBe("/Users/a.png");
+    });
+});

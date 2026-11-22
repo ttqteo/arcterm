@@ -4,7 +4,6 @@
 import { ContextMenuModel } from "@/app/store/contextmenu";
 import { modalsModel } from "@/app/store/modalmodel";
 import { FAINT_TEXT } from "@/app/view/jarvis/briefstyle";
-import { useLocalImage } from "@/app/view/jarvis/localimage";
 import { cn } from "@/util/util";
 import {
     ArrowUpRight,
@@ -13,7 +12,6 @@ import {
     ChevronDown,
     ChevronRight,
     Copy,
-    ImageOff,
     Layers,
     Loader2,
     X,
@@ -34,6 +32,7 @@ import {
     type EditFile,
 } from "./agentsviewmodel";
 import { splitFenceInfo } from "./chatfences";
+import { AttachedImage, PromptThumb } from "./chatlocalimage";
 import { endQuotes } from "./chatmarks";
 import { CommandOutput, ShellCommand } from "./commandtext";
 import { userNeedsClamp } from "./compacttimeline";
@@ -559,54 +558,6 @@ export function PromptImages({ images = [], paths = [] }: { images?: string[]; p
                 />
             ))}
         </div>
-    );
-}
-
-function PromptThumb({ src, alt, open, onToggle }: { src: string; alt: string; open: boolean; onToggle: () => void }) {
-    return (
-        <img
-            src={src}
-            alt={alt}
-            onClick={(e) => {
-                e.stopPropagation();
-                onToggle();
-            }}
-            className={cn(
-                "max-w-full rounded-[6px] border border-edge-mid object-contain",
-                open ? "cursor-zoom-out" : "max-h-[160px] cursor-zoom-in"
-            )}
-        />
-    );
-}
-
-// The webview's CSP (img-src 'self' data: blob:) blocks an <img> pointed at wavesrv, so the file is fetched and shown
-// as a blob URL (useLocalImage).
-function AttachedImage({ path, open, onToggle }: { path: string; open: boolean; onToggle: () => void }) {
-    const img = useLocalImage(path);
-    const name = path.split(/[\\/]/).pop() ?? path;
-    if (img.url != null) {
-        return <PromptThumb src={img.url} alt={name} open={open} onToggle={onToggle} />;
-    }
-    if (img.status === "loading") {
-        return (
-            <span
-                data-prompt-image-loading
-                title={path}
-                className="h-[60px] w-[80px] rounded-[6px] border border-edge-mid bg-surface"
-            />
-        );
-    }
-    return (
-        <span
-            data-prompt-image-gone
-            title={path}
-            className="inline-flex max-w-full items-center gap-1.5 rounded-[6px] border border-edge-mid px-2 py-1 text-[11.5px] text-muted"
-        >
-            <ImageOff size={13} aria-hidden className="flex-none" />
-            <span className="min-w-0 truncate">
-                {name} · {img.status === "missing" ? "no longer on disk" : "can't load"}
-            </span>
-        </span>
     );
 }
 

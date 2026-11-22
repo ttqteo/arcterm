@@ -70,6 +70,8 @@ and a picture given to a line that is not big.
 
 ### Fixed
 
+- An image an agent's reply names by its full path (a screenshot it took, `![shot](/path/shot.png)`) shows in Chat,
+  and a click shows it at full width, instead of a broken-image box; one named by a relative path shows its file name.
 - Pinching to zoom a board on a Mac trackpad is smooth: the shapes no longer redraw on every frame of the pinch, only
   once when it ends.
 - A visual drawn in Chat no longer flickers while the details rail folds or opens: it keeps its width during the

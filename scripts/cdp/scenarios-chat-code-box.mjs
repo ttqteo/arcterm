@@ -6,7 +6,7 @@
 // One fixture Claude agent over a real tab, a fixture roster row for it (the page's dev mock roster) and a fixture
 // transcript holding the sent prompt. kit holds scenarios.mjs's helpers.
 
-import { mkdtempSync, rmSync } from "node:fs";
+import { copyFileSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import * as AC from "./agent-page-fixtures.mjs";
@@ -94,11 +94,15 @@ export default function (kit) {
             let at = "reading the keys";
             try {
                 ctx.prev[GRID_KEY] = await h.ev(`localStorage.getItem(${JSON.stringify(GRID_KEY)})`);
+                at = "copying the image";
+                // a local image the reply names by its full path (step 8), and one by a relative path
+                ctx.image = join(ctx.dir, "shot.png");
+                copyFileSync(join(process.cwd(), "public", "logos", "arcterm.png"), ctx.image);
                 at = "writing the transcript";
                 const o = (sec) => ({ cwd: ctx.dir, ts: new Date(Date.now() - 600_000 + sec * 1000).toISOString() });
                 ctx.transcript = AC.writeTranscript(ctx.dir, "chat-code-box", [
                     AC.userText(SENT, o(0)),
-                    AC.assistantText(`Sent it to the endpoint; it answered 200.\n\n${LONG_PARA}\n\nTo install it, type:\n\n\`\`\`\n${COMPACT}\n\`\`\``, o(5)),
+                    AC.assistantText(`Sent it to the endpoint; it answered 200.\n\n${LONG_PARA}\n\n![the shot](${ctx.image})\n\n![relative](cdp-shots/none.png)\n\nTo install it, type:\n\n\`\`\`\n${COMPACT}\n\`\`\``, o(5)),
                 ]);
                 at = "resetting the grid";
                 await h.ev(`localStorage.setItem(${JSON.stringify(GRID_KEY)}, ${JSON.stringify(JSON.stringify(GRID_EMPTY))})`);
@@ -188,6 +192,23 @@ export default function (kit) {
                     `${name}: "${COMPACT}" in the reply is one [data-code-compact] row in mono, no head, a Run (into this agent, as \`! command\`) and a Copy button, under 48px tall`,
                     up && got.text === COMPACT && !got.head && got.run && got.runTitle === "Run in this agent (! in Chat)" && got.copy && got.mono && got.height != null && got.height < 48,
                     { up, ...got }
+                );
+            });
+
+            // 1c. a local image in the reply: read from disk and drawn (not the webview's broken image); a relative one is named
+            await run("1c. local image in a reply is drawn", async (name) => {
+                const drawn = await polishWaitFor(h, `!!${layerOf(A)}?.querySelector("[data-reply-image] img")?.complete`, WAIT_MS);
+                const got = await h.ev(`(() => {
+                    const img = ${layerOf(A)}?.querySelector("[data-reply-image] img");
+                    const named = [...(${layerOf(A)}?.querySelectorAll("[data-prompt-image-gone]") ?? [])].map((e) => e.textContent);
+                    return { src: img?.getAttribute("src")?.slice(0, 5) ?? null, natural: img?.naturalWidth ?? 0, alt: img?.alt ?? null, named };
+                })()`);
+                await h.ev(`${layerOf(A)}?.querySelector("[data-reply-image]")?.scrollIntoView({ block: "center" })`);
+                await shot(h, "1c-reply-image");
+                rec(
+                    `${name}: the reply's ![the shot](<full path>) is an <img> from a blob: URL with pixels; the relative one is named "none.png · not a full path"`,
+                    drawn && got.src === "blob:" && got.natural > 0 && got.named.some((t) => t.includes("none.png") && t.includes("not a full path")),
+                    { drawn, ...got }
                 );
             });
 

@@ -18,14 +18,16 @@ import {
     type ComponentProps,
     type ReactNode,
 } from "react";
-import ReactMarkdown, { type Components } from "react-markdown";
+import ReactMarkdown, { defaultUrlTransform, type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
 import type { PluggableList } from "unified";
 import { FilePill } from "./chatfilepill";
+import { imageSrcKind, keepLocalImageUrl, localImagePath } from "./chatimagesrc";
 import { INITIATIVE_LANG } from "./chatinitiative";
 import { InitiativeBlockView } from "./chatinitiativecard";
 import { copyableHref } from "./chatlink";
+import { ImageNamed, ReplyImage } from "./chatlocalimage";
 import { CodeRefBadge, RefBadge } from "./chatrefbadge";
 import { STEPS_LANG } from "./chatsteplist";
 import { StepsBlock } from "./chatsteplistview";
@@ -135,8 +137,25 @@ function MdListItem({ node: _node, children, ...props }: ComponentProps<"li"> & 
     );
 }
 
+// an image in the markdown (chatimagesrc.ts): a web one as it is, a file on this machine read from disk (a bare
+// <img src="/Users/…"> draws as a broken image in the webview), and a relative path, which has no folder to be read
+// against, named
+function MdImage({ src, alt }: { src?: string; alt?: string }) {
+    const kind = imageSrcKind(src);
+    if (kind === "web") {
+        return <img src={src} alt={alt ?? ""} className="max-w-full rounded-[6px]" />;
+    }
+    if (kind === "local") {
+        return <ReplyImage path={localImagePath(src)} alt={alt} />;
+    }
+    return <ImageNamed path={src || alt || "image"} why="not a full path" />;
+}
+
+const urlTransform = (url: string) => keepLocalImageUrl(url, defaultUrlTransform);
+
 const MD_COMPONENTS: Components = {
     a: ({ href, children }) => <MdLink href={href}>{children}</MdLink>,
+    img: ({ src, alt }) => <MdImage src={typeof src === "string" ? src : undefined} alt={alt} />,
     li: MdListItem,
     // the copy button sits outside the scroller, so it stays on the corner while a wide table scrolls; the box
     // shrinks to a short table instead of running the panel's width
@@ -306,7 +325,11 @@ function componentsFor(extras: MarkdownExtras): Components {
 
 function renderMd(text: string, extras: MarkdownExtras = {}) {
     return (
-        <ReactMarkdown remarkPlugins={pluginsFor(extras)} components={componentsFor(extras)}>
+        <ReactMarkdown
+            remarkPlugins={pluginsFor(extras)}
+            components={componentsFor(extras)}
+            urlTransform={urlTransform}
+        >
             {guardDollars(text)}
         </ReactMarkdown>
     );
