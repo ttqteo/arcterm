@@ -40,6 +40,12 @@ and a picture given to a line that is not big.
   counts the parts with `‹ N parts ›` to read them in order. A board small enough to read whole has neither.
 - A one-line command in a reply (`! task install`) is a box as wide as the command, with its Run and Copy beside it,
   instead of a bar across the whole Chat.
+- A long paste you folded into a chip shows in your sent message as a "Pasted · N lines" card you open, the way a
+  paste in Claude Code's own box does, instead of plain text under the question you typed.
+
+### Fixed
+
+- Opening a folded paste in Chat's box wraps its long lines instead of cutting them at the panel's edge.
 
 ## 1.13.0 — 2026-11-22
 

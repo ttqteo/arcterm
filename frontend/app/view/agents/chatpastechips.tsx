@@ -180,7 +180,7 @@ function PastePanel({
                             <X size={14} />
                         </button>
                     </div>
-                    <pre className="min-h-0 flex-1 overflow-auto px-3 py-2.5 font-mono text-[12px] leading-[1.55] text-secondary">
+                    <pre className="min-h-0 flex-1 overflow-auto whitespace-pre-wrap px-3 py-2.5 font-mono text-[12px] leading-[1.55] text-secondary [overflow-wrap:anywhere]">
                         {paste}
                     </pre>
                 </motion.div>

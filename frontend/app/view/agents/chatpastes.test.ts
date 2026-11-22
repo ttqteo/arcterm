@@ -14,6 +14,7 @@ import {
     withPaste,
 } from "./chatpastes";
 import { joinQuotes } from "./chatquote";
+import { splitTagged, unwrapWholePaste } from "./chattagblocks";
 
 const lines = (n: number, word = "line") => Array.from({ length: n }, (_, i) => `${word} ${i + 1}`).join("\n");
 const LOG = [
@@ -74,6 +75,24 @@ describe("expandPastes", () => {
     });
     it("leaves a draft with no paste as it is", () => {
         expect(expandPastes("just text\n")).toBe("just text\n");
+    });
+    it("tagged, puts each paste in a <pasted_content> block, unfenced, that the bubble folds as a card", () => {
+        const sent = expandPastes(joinPastes("why does this fail", [LOG, "\n\nsecond  \n"]), true);
+        expect(sent).toBe(
+            'why does this fail\n\n<pasted_content from="chat">\n' +
+                LOG +
+                '\n</pasted_content>\n\n<pasted_content from="chat">\nsecond\n</pasted_content>'
+        );
+        const parts = splitTagged(sent);
+        expect(parts.map((p) => p.kind)).toEqual(["text", "tag", "tag"]);
+        expect(parts[1]).toMatchObject({ tag: "pasted_content", body: LOG });
+    });
+    it("tagged, keeps a message that is only a paste a paste (not unwrapped as a whole message)", () => {
+        const sent = expandPastes(joinPastes("", [lines(12)]), true).trim();
+        expect(unwrapWholePaste(sent)).toBe(sent);
+        expect(splitTagged(sent)).toEqual([
+            { kind: "tag", tag: "pasted_content", attrs: { from: "chat" }, body: lines(12) },
+        ]);
     });
 });
 

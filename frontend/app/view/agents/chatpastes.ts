@@ -4,8 +4,9 @@
 // A long paste in Chat's box folds into a chip over the text, as an attachment does, so the box keeps the question
 // typed around it in view. The paste stays in the draft (the message is one string: the draft store, a failed send's
 // put-back and a wake's all keep it whole), after the typed text and marked off by two private-use characters that
-// never reach the agent: `expandPastes` turns each into the block it goes as (fenced when it reads as code, as a paste
-// into the box is). Pure: no React, no Wave runtime imports.
+// never reach the agent: `expandPastes` turns each into the block it goes as: a <pasted_content> block in a message,
+// which its bubble draws as a card; in an ask's answer, fenced when it reads as code, as a paste into the box is. Pure:
+// no React, no Wave runtime imports.
 
 import { fenceRanges } from "./chatfences";
 import { looksLikeCode } from "./chatmarks";
@@ -79,13 +80,24 @@ export function pasteBlock(paste: string): string {
     return `${fence}\n${body}\n${fence}`;
 }
 
-/** The draft as the agent gets it: each folded paste written out after the typed text. */
-export function expandPastes(text: string): string {
+/** The tag a sent paste goes in, which Chat's bubble draws as a folded "Pasted" card (chattagblocks.ts); `from="chat"`
+ *  keeps a message that is only a paste from being read as a whole message Claude Code wrapped (unwrapWholePaste). */
+export const PASTE_FROM = "chat";
+
+/** A paste as a sent message carries it: in a <pasted_content> block, blank lines and trailing space around it dropped. */
+export function taggedPasteBlock(paste: string): string {
+    const body = paste.replace(/^(?:[ \t]*\n)+/, "").replace(/\s+$/, "");
+    return `<pasted_content from="${PASTE_FROM}">\n${body}\n</pasted_content>`;
+}
+
+/** The draft as the agent gets it: each folded paste written out after the typed text, fenced when it reads as code
+ *  (`tagged`: in a <pasted_content> block instead, so the bubble of the message sent shows it as a card). */
+export function expandPastes(text: string, tagged = false): string {
     const { body, pastes } = splitPastes(text);
     if (pastes.length === 0) {
         return body;
     }
-    const blocks = pastes.map(pasteBlock).join(SEP);
+    const blocks = pastes.map(tagged ? taggedPasteBlock : pasteBlock).join(SEP);
     return body.trim() === "" ? body + blocks : body.replace(/\s+$/, "") + SEP + blocks;
 }
 

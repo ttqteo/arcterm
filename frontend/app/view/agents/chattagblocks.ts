@@ -93,7 +93,8 @@ function readBlock(lines: string[], at: number): { end: number; part: TagPart } 
 export function unwrapWholePaste(text: string): string {
     const parts = splitTagged(text.trim());
     const only = parts.length === 1 ? parts[0] : null;
-    return only?.kind === "tag" && only.tag === "pasted_content" ? only.body : text;
+    // a paste Chat folded out of the box (chatpastes.ts, from="chat") is a paste, even sent alone
+    return only?.kind === "tag" && only.tag === "pasted_content" && only.attrs.from !== "chat" ? only.body : text;
 }
 
 /** Pure: a message cut into its text and its tagged blocks, in order. A message with no block is one text part, as it
