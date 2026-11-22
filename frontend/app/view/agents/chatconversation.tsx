@@ -891,6 +891,7 @@ export function ChatConversation({
     liveNarrates,
     placeId,
     keyOffset = 0,
+    catchingUp,
     onLoadEarlier,
     active,
     working,
@@ -917,6 +918,9 @@ export function ChatConversation({
     // an entry index less it, so it still names the same message after the window loaded earlier lines or was cut to its
     // tail while the conversation was not shown
     keyOffset?: number;
+    // a kept window shown again while it reads what the agent wrote meanwhile (railtranscript.tsx catchingUp): the rows
+    // that read brings are drawn at once, as the first load's are, not opened one by one on the spring
+    catchingUp?: boolean;
     // every item is drawn and the reader asked for earlier ones: the caller may load earlier entries
     onLoadEarlier?: () => void;
     // the session is live: its last stretch of work is open while it is the last thing drawn
@@ -1190,8 +1194,15 @@ export function ChatConversation({
         exit: { marginTop: -ITEM_GAP, transition: rowSpring },
     };
     const lastDrawn = useRef<{ items: string[]; parts: Set<string> }>({ items: [], parts: new Set() });
+    // nothing opens while a kept window catches up, nor in the render where it stops: the caught-up rows and the end of
+    // catching up can land in one batched render
+    const wasCatchingUp = useRef(false);
+    const still = reduceMotion || !!catchingUp || wasCatchingUp.current;
+    useLayoutEffect(() => {
+        wasCatchingUp.current = !!catchingUp;
+    });
     const visibleKeys = visible.map((item) => item.key);
-    const arrived = reduceMotion ? NO_KEYS : tailArrivals(lastDrawn.current.items, visibleKeys);
+    const arrived = still ? NO_KEYS : tailArrivals(lastDrawn.current.items, visibleKeys);
     const drawnBefore = new Set(lastDrawn.current.items);
     useLayoutEffect(() => {
         lastDrawn.current = {
@@ -1703,8 +1714,7 @@ export function ChatConversation({
                                 return null;
                             }
                             const key = `${item.key}#${p}`;
-                            const arrive =
-                                !reduceMotion && drawnBefore.has(item.key) && !lastDrawn.current.parts.has(key);
+                            const arrive = !still && drawnBefore.has(item.key) && !lastDrawn.current.parts.has(key);
                             return (
                                 <Arriving key={key} gap={PART_GAP} arrive={arrive} className="min-w-0">
                                     {node}
@@ -1718,7 +1728,7 @@ export function ChatConversation({
                                   <Arriving
                                       key={`board:${board.trim().toLowerCase()}`}
                                       gap={PART_GAP}
-                                      arrive={!reduceMotion && drawnBefore.has(item.key)}
+                                      arrive={!still && drawnBefore.has(item.key)}
                                       // a board the list does not hold draws nothing, and its empty wrapper no gap
                                       className="min-w-0 empty:hidden"
                                   >
@@ -1736,7 +1746,7 @@ export function ChatConversation({
                             <Arriving
                                 key="canvas"
                                 gap={PART_GAP}
-                                arrive={!reduceMotion && drawnBefore.has(item.key)}
+                                arrive={!still && drawnBefore.has(item.key)}
                                 className="min-w-0"
                             >
                                 <ChatCanvasPeekCard agent={agent!} canvas={drew} />
@@ -1746,7 +1756,7 @@ export function ChatConversation({
                             <Arriving
                                 key="files"
                                 gap={PART_GAP}
-                                arrive={!reduceMotion && drawnBefore.has(item.key)}
+                                arrive={!still && drawnBefore.has(item.key)}
                                 className="min-w-0"
                             >
                                 <ChatTurnFiles

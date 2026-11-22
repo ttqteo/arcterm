@@ -940,11 +940,11 @@ function ChatPaneBody({ model, agent, barred }: { model: AgentsViewModel; agent:
     const cwd = useMemo(() => agent.cwd ?? (lines != null ? agentCwd(lines.slice(0, 50)) : null), [agent.cwd, lines]);
     // a held command's card (a Token burn card, an Antigravity question) is answered in its dialog, not here
     const asking = agent.ask != null && !agent.ask.hold;
-    // a read that has not landed yet shows a skeleton, and so does an agent switched back to while its kept window reads
-    // what was written since: drawn at once when it lands, not row by row on the spring as each caught-up row arrives;
-    // one that failed (a transcript file that is not written yet, most often) and no transcript at all show the empty
+    // a read that has not landed yet shows a skeleton; an agent switched back to shows its kept window at once while it
+    // reads what was written since (ChatConversation draws those rows at once, not one by one on the spring: catchingUp).
+    // One that failed (a transcript file that is not written yet, most often) and no transcript at all show the empty
     // conversation, so the box is never behind a skeleton that never ends
-    const loading = path !== "" && (view == null || catchingUp) && error == null;
+    const loading = path !== "" && view == null && error == null;
     const empty = !loading && entries.length === 0;
     const hasEarlier = view != null && view.win.start > 0;
 
@@ -1222,6 +1222,7 @@ function ChatPaneBody({ model, agent, barred }: { model: AgentsViewModel; agent:
                                     liveNarrates={narrates}
                                     placeId={placeId}
                                     keyOffset={view!.keyOffset}
+                                    catchingUp={catchingUp}
                                     active={lastTurn.active}
                                     working={lastTurn.working}
                                     ownArrives={ownArrives}

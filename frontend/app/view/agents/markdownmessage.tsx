@@ -23,11 +23,11 @@ import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
 import type { PluggableList } from "unified";
 import { FilePill } from "./chatfilepill";
-import { imageSrcKind, keepLocalImageUrl, localImagePath } from "./chatimagesrc";
+import { codePicturePath, imageSrcKind, keepLocalImageUrl, localImagePath } from "./chatimagesrc";
 import { INITIATIVE_LANG } from "./chatinitiative";
 import { InitiativeBlockView } from "./chatinitiativecard";
 import { copyableHref } from "./chatlink";
-import { ImageNamed, ReplyImage } from "./chatlocalimage";
+import { CodePicture, ImageNamed, ReplyImage } from "./chatlocalimage";
 import { CodeRefBadge, RefBadge } from "./chatrefbadge";
 import { STEPS_LANG } from "./chatsteplist";
 import { StepsBlock } from "./chatsteplistview";
@@ -190,11 +190,22 @@ function InlineCode({ className, children }: { className?: string; children?: Re
     if (found == null) {
         return <code className={className}>{children}</code>;
     }
-    // a link flows inline and wraps with the prose, so a long path shows whole instead of ending in an ellipsis
-    return (
+    // a link flows inline and wraps with the prose, so a long path shows whole instead of ending in an ellipsis; a full
+    // path to a picture also draws the picture under it (chatimagesrc.ts codePicturePath), as `![](path)` would
+    const link = (
         <PathLink path={found.path} line={found.line} wrap>
             <code>{children}</code>
         </PathLink>
+    );
+    const picture = found.line == null ? codePicturePath(found.path) : null;
+    if (picture == null) {
+        return link;
+    }
+    return (
+        <>
+            {link}
+            <CodePicture path={picture} />
+        </>
     );
 }
 

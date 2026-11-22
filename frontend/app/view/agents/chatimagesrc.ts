@@ -41,3 +41,13 @@ export function localImagePath(src: string): string {
 export function keepLocalImageUrl(url: string, fallback: (url: string) => string): string {
     return DRIVE.test(url) || url.startsWith("file://") ? url : fallback(url);
 }
+
+// the picture formats the webview draws from a blob, by extension
+const PICTURE_EXT = /\.(png|jpe?g|gif|webp)$/i;
+
+/** Pure: the file to draw under a path an agent wrote as code (`/tmp/shot.png`), or null when it names no picture on this
+ *  machine: a full path (not a relative one, which has no folder to read against) ending in a picture's extension. */
+export function codePicturePath(path: string): string | null {
+    const s = path.trim();
+    return imageSrcKind(s) === "local" && !s.startsWith("file://") && PICTURE_EXT.test(s) ? s : null;
+}

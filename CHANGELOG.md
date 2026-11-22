@@ -37,11 +37,15 @@ and a picture given to a line that is not big.
 - A board's header names the chat it reads, and its menu moves the board to another Claude chat of the project, even
   while the first one is still running; the board then reads the new chat. <!-- big --> <!-- shot: 1.10.0-board-chat.webp -->
 - Hide turns, in a board's header, folds its turns column and ask box to a thin strip so the canvas gets the room.
+- A reply that names a picture by its full path (`/tmp/shot.png`) shows the picture under the path in Chat, and Claude
+  agents are told to write a picture they want you to see as an image, so it shows in the reply.
 
 ### Changed
 
 - A board is a pane of its own in the split, like an agent: drag it by its bar, open more than one at once, and it stays
   open when the agent it was opened beside leaves the split.
+- Switching back to an agent in Chat shows its conversation at once instead of a skeleton; what it wrote meanwhile
+  appears when it has been read, all at once.
 
 ## 1.9.0 — 2026-11-22
 

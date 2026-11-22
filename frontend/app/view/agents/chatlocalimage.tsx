@@ -92,3 +92,20 @@ export function ReplyImage({ path, alt }: { path: string; alt?: string }) {
         </span>
     );
 }
+
+// the picture under a path a reply wrote as code (`/tmp/shot.png`, markdownmessage.tsx InlineCode), so it shows as an
+// image written in markdown would. Only once it has loaded: while it loads, and when the file is gone or can't be read,
+// the path's link beside it is all there is
+export function CodePicture({ path }: { path: string }) {
+    const img = useLocalImage(path);
+    const [open, setOpen] = useState(false);
+    if (img.url == null) {
+        return null;
+    }
+    const name = path.split(/[\\/]/).pop() ?? path;
+    return (
+        <span data-code-picture={path} className="my-1 block">
+            <PromptThumb src={img.url} alt={name} open={open} onToggle={() => setOpen((o) => !o)} />
+        </span>
+    );
+}

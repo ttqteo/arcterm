@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it } from "vitest";
-import { imageSrcKind, keepLocalImageUrl, localImagePath } from "./chatimagesrc";
+import { codePicturePath, imageSrcKind, keepLocalImageUrl, localImagePath } from "./chatimagesrc";
 
 describe("imageSrcKind", () => {
     it("reads web, data and blob srcs as web", () => {
@@ -41,5 +41,21 @@ describe("keepLocalImageUrl", () => {
         expect(keepLocalImageUrl("file:///a.png", strip)).toBe("file:///a.png");
         expect(keepLocalImageUrl("javascript:alert(1)", strip)).toBe("");
         expect(keepLocalImageUrl("/Users/a.png", (u) => u)).toBe("/Users/a.png");
+    });
+});
+
+describe("codePicturePath", () => {
+    it("takes a full path to a picture", () => {
+        expect(codePicturePath("/private/tmp/scratchpad/arxiv_annotated.png")).toBe(
+            "/private/tmp/scratchpad/arxiv_annotated.png"
+        );
+        expect(codePicturePath("~/shots/a.JPG")).toBe("~/shots/a.JPG");
+        expect(codePicturePath("C:\\Users\\me\\a.webp")).toBe("C:\\Users\\me\\a.webp");
+    });
+    it("leaves a relative path, another file and a URL alone", () => {
+        expect(codePicturePath("cdp-shots/a.png")).toBeNull();
+        expect(codePicturePath("/Users/me/notes.md")).toBeNull();
+        expect(codePicturePath("/Users/me/a.png.bak")).toBeNull();
+        expect(codePicturePath("https://x.dev/a.png")).toBeNull();
     });
 });
