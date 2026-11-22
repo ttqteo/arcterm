@@ -13,6 +13,7 @@ import {
     councilRowsByProject,
     folderCounts,
     HOME_PROJECT,
+    isBoardSplitCell,
     jarvisCountsByProject,
     liveBranches,
     newCouncilRoot,
@@ -26,6 +27,7 @@ import {
     terminalPlace,
     terminalRowState,
     terminalShows,
+    treeBoards,
     treeNavIds,
     UNTITLED_COUNCIL,
     type CouncilRowVM,
@@ -169,7 +171,7 @@ describe("projectTree", () => {
                 case "split":
                     return `split:${r.project}:${r.shown ? "shown" : "saved"}:${r.cells.map((c) => c.id).join(",")}`;
                 case "board":
-                    return `board:${r.agentId}:${r.boardId}:${r.more}`;
+                    return `board:${r.boardId}:${r.chat}`;
                 default:
                     return r.kind;
             }
@@ -844,75 +846,99 @@ describe("projectTree", () => {
             activets,
             agenttabid,
         });
-        const boardsOf = (...list: BoardInfo[]) => {
-            const m = new Map<string, BoardInfo[]>();
-            for (const b of list) {
-                m.set(b.agenttabid ?? "", [...(m.get(b.agenttabid ?? "") ?? []), b]);
-            }
-            return m;
-        };
+        const tb = (id: string, chatId = "a", chat = `name-${chatId}`, boardProject = "waveterm") => ({
+            boardProject,
+            boardId: id,
+            name: `name-${id}`,
+            chatId,
+            chat,
+        });
 
-        it("puts the agent's latest board right after its row, with how many more it has", () => {
-            // the map is most recently active first, as boardsOfAgent gives it
-            const rows = build([agent("a"), agent("b")], [], {
-                boards: boardsOf(board("b2", "a", 9), board("b1", "a")),
+        describe("treeBoards", () => {
+            const agents = [
+                { id: "a", name: "alpha" },
+                { id: "b", name: "beta" },
+            ];
+            it("lists each live chat's latest board, and every open one", () => {
+                const list = [board("b3", "a", 9), board("b2", "a", 5), board("b1", "b", 3), board("b0", "gone", 1)];
+                expect(treeBoards(list, new Set(), agents).map((b) => b.boardId)).toEqual(["b3", "b1"]);
+                const open = new Set(["waveterm/b2", "waveterm/b0"]);
+                expect(treeBoards(list, open, agents).map((b) => b.boardId)).toEqual(["b3", "b2", "b1", "b0"]);
             });
-            expect(shape(rows)).toEqual(["group:waveterm:2a:0t", "a:a", "board:a:b2:1", "a:b"]);
-            const row = rows.find((r) => r.kind === "board");
-            expect(row).toMatchObject({
+            it("names the chat from the roster, else the board's own title", () => {
+                const gone = { ...board("b0", "gone"), agenttitle: "claude · old" };
+                const [live, ended] = treeBoards([board("b3", "a"), gone], new Set(["waveterm/b0"]), agents);
+                expect(live).toMatchObject({ chatId: "a", chat: "alpha" });
+                expect(ended).toMatchObject({ chatId: "gone", chat: "claude · old" });
+            });
+        });
+
+        it("puts the boards after the folder's agents, as peers of them, not under one", () => {
+            const rows = build([agent("a"), agent("b")], [term("t1")], { boards: [tb("b2"), tb("b1", "b")] });
+            expect(shape(rows)).toEqual([
+                "group:waveterm:2a:1t",
+                "a:a",
+                "a:b",
+                "board:b2:name-a",
+                "board:b1:name-b",
+                "divider:waveterm",
+                "t:t1",
+            ]);
+            expect(rows.find((r) => r.kind === "board")).toMatchObject({
                 kind: "board",
                 project: "waveterm",
-                agentId: "a",
                 boardProject: "waveterm",
                 boardId: "b2",
-                name: "name-b2",
-                more: 1,
+                chatId: "a",
             });
         });
 
-        it("has no board row for an agent with none", () => {
-            const rows = build([agent("a")], [], { boards: boardsOf(board("x", "gone")) });
-            expect(shape(rows)).toEqual(["group:waveterm:1a:0t", "a:a"]);
+        it("lists a board in a filtered project too", () => {
+            const rows = build([agent("a")], [], { filter: "waveterm", boards: [tb("b1")] });
+            expect(shape(rows)).toEqual(["a:a", "board:b1:name-a"]);
         });
 
-        it("lists a board under a filtered project's agent too", () => {
-            const rows = build([agent("a")], [], { filter: "waveterm", boards: boardsOf(board("b1", "a")) });
-            expect(shape(rows)).toEqual(["a:a", "board:a:b1:0"]);
-        });
-
-        it("is no tab: a split row never pulls it in, and it keeps its place after the agent", () => {
-            const rows = withSplits([agent("a"), agent("b")], [], grids("waveterm", { waveterm: ["a", "board:a"] }), {
-                boards: boardsOf(board("b1", "a")),
-            });
-            expect(shape(rows)).toEqual(["group:waveterm:2a:0t", "a:a", "board:a:b1:0", "a:b"]);
-        });
-
-        it("keeps its row after the split row when its agent is a cell of a split", () => {
+        it("folds a board whose cell is in a split into the split row, beside the agents", () => {
             const rows = withSplits(
                 [agent("a"), agent("b")],
                 [],
-                grids("waveterm", { waveterm: ["a", "b", "board:a"] }),
-                { boards: boardsOf(board("b1", "a")) }
+                grids("waveterm", { waveterm: ["a", "b", "board:waveterm/b1"] }),
+                { boards: [tb("b1"), tb("b9")] }
             );
-            expect(shape(rows)).toEqual(["group:waveterm:2a:0t", "split:waveterm:shown:a,b", "board:a:b1:0"]);
+            expect(shape(rows)).toEqual([
+                "group:waveterm:2a:0t",
+                "split:waveterm:shown:a,b,board:waveterm/b1",
+                "board:b9:name-a",
+            ]);
+            const split = rows.find((r) => r.kind === "split");
+            const cell = split?.kind === "split" ? split.cells.find((c) => isBoardSplitCell(c)) : undefined;
+            expect(cell).toMatchObject({ id: "board:waveterm/b1", board: { boardId: "b1", chat: "name-a" } });
         });
 
-        it("goes under a run's lead and its worker like any agent's", () => {
-            const lead = agent("l");
-            const w = { ...agent("w"), runId: "r1" };
-            const run = { runId: "r1" };
-            const tree = [
-                { kind: "group", project: "waveterm", count: 2, attn: 0, running: 0 },
-                { kind: "lead", agent: lead, project: "waveterm", run, open: true, live: 1 },
-                { kind: "worker", agent: w, project: "waveterm", run, task: {} },
-            ] as unknown as AgentTreeRow[];
-            const rows = build([], [], { tree, boards: boardsOf(board("bl", "l"), board("bw", "w")) });
-            expect(shape(rows)).toEqual(["group:waveterm:2a:0t", "lead", "board:l:bl:0", "worker", "board:w:bw:0"]);
+        it("makes [agent | board] a split of its own", () => {
+            const rows = withSplits(
+                [agent("a"), agent("b")],
+                [],
+                grids("waveterm", { waveterm: ["a", "board:waveterm/b1"] }),
+                {
+                    boards: [tb("b1")],
+                }
+            );
+            expect(shape(rows)).toEqual(["group:waveterm:2a:0t", "split:waveterm:shown:a,board:waveterm/b1", "a:b"]);
         });
 
-        it("is no nav id: j/k and Ctrl+Tab step over it", () => {
-            const rows = build([agent("a"), agent("b")], [term("t1")], { boards: boardsOf(board("b1", "a")) });
+        it("is no nav id, in a split or not: j/k and Ctrl+Tab step over it", () => {
+            const rows = build([agent("a"), agent("b")], [term("t1")], { boards: [tb("b1")] });
             expect(treeNavIds(rows)).toEqual(["a", "b", "t1"]);
+            const split = withSplits(
+                [agent("a"), agent("b")],
+                [],
+                grids("waveterm", { waveterm: ["a", "board:waveterm/b1"] }),
+                {
+                    boards: [tb("b1")],
+                }
+            );
+            expect(treeNavIds(split)).toEqual(["a", "b"]);
         });
     });
 
@@ -1042,7 +1068,7 @@ describe("projectTree", () => {
             const menus = (rows: ProjectTreeRow[]) => {
                 const split = rows.find((r) => r.kind === "split");
                 return split?.kind === "split"
-                    ? split.cells.map((c) => `${c.id}:${c.menu}:${c.run?.runId ?? "-"}`)
+                    ? split.cells.map((c) => (isBoardSplitCell(c) ? c.id : `${c.id}:${c.menu}:${c.run?.runId ?? "-"}`))
                     : null;
             };
 
@@ -1080,10 +1106,11 @@ describe("projectTree", () => {
             );
             expect(shape(rows)).toEqual(["group:waveterm:3a:0t", "a:bs", "split:waveterm:shown:a,rv"]);
             const split = rows.find((r) => r.kind === "split");
-            expect(split?.kind === "split" ? split.cells.map((c) => `${c.id}:${c.menu}`) : null).toEqual([
-                "a:agent",
-                "rv:task",
-            ]);
+            expect(
+                split?.kind === "split"
+                    ? split.cells.map((c) => (isBoardSplitCell(c) ? c.id : `${c.id}:${c.menu}`))
+                    : null
+            ).toEqual(["a:agent", "rv:task"]);
         });
     });
 });

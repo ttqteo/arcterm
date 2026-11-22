@@ -10,6 +10,8 @@ import {
     mentionDropText,
     mentionTarget,
     resolveDrop,
+    tiedBoardZone,
+    tiesBoard,
     zoneBox,
     zoneFromPoint,
     zoneLabel,
@@ -156,6 +158,25 @@ describe("zoneLabel", () => {
         expect(zoneLabel("top", true)).toBe("Place above");
         expect(zoneLabel("right", false)).toBe("Place right");
         expect(zoneLabel("bottom", true)).toBe("Place below");
+    });
+    it("says a board dropped on a chat's centre reads that chat; an edge still places it", () => {
+        expect(zoneLabel("center", true, true)).toBe("Read this chat");
+        expect(zoneLabel("right", true, true)).toBe("Place right");
+    });
+});
+
+describe("a board dropped on a chat", () => {
+    it("ties to a Claude agent's chat only", () => {
+        expect(tiesBoard("board:p/x", { agent: "claude", kind: "agent" })).toBe(true);
+        expect(tiesBoard("board:p/x", { agent: "pi" })).toBe(false);
+        expect(tiesBoard("board:p/x", { agent: "claude", kind: "terminal" })).toBe(false);
+        expect(tiesBoard("a1", { agent: "claude" })).toBe(false);
+        expect(tiesBoard("board:p/x", null)).toBe(false);
+    });
+    it("takes a cell right of the chat when it had none, and keeps its own otherwise", () => {
+        expect(tiedBoardZone({ ids: ["a"], focused: "a" }, "a", "board:p/x")).toBe("right");
+        expect(tiedBoardZone({ ids: ["a", "board:p/x"], focused: "a" }, "a", "board:p/x")).toBeNull();
+        expect(tiedBoardZone({ ids: ["a", "b", "c", "d"], focused: "a" }, "a", "board:p/x")).toBeNull();
     });
 });
 

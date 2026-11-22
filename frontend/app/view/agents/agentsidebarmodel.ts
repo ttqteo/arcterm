@@ -367,23 +367,24 @@ export type ProjectTreeRow =
     // a project's split (2+ cells) as one row, where the topmost of its cells' rows was: each cell its tab and its place
     // in the 2x2 the surface draws. `shown` is the split on screen; another project's saved split is drawn too.
     | { kind: "split"; project: string; shown: boolean; cells: SplitRowCell[] }
-    // an agent's latest board, right after the agent's row: `name` is the most recently active one, `more` how many
-    // others the agent has. It opens the board as the agent's board cell (openBoard); `boardProject` is the project the
-    // board lives in. Not a tab and no focus target: rowTabId and treeNavIds give it nothing.
-    | {
-          kind: "board";
-          project: string;
-          agentId: string;
-          boardProject: string;
-          boardId: string;
-          name: string;
-          more: number;
-      }
+    // a board, a peer of the folder's agents after them (TreeBoard): `chat` names the chat it reads. A split that holds
+    // its cell folds it in like a tab (rowTabId gives its cell id); it is no focus target (treeNavIds skips it).
+    | ({ kind: "board"; project: string } & TreeBoard)
     | AgentBodyRow;
+
+// A board the tree lists: an open one (a cell, shown or not), or a live chat's latest. `chatId` is the chat it reads
+// ("" for none), `chat` that chat's name.
+export interface TreeBoard {
+    boardProject: string;
+    boardId: string;
+    name: string;
+    chatId: string;
+    chat: string;
+}
 
 // One cell of a split row. `menu` is the row menu its right-click opens, the one its own row in the tree has: an
 // agent's, a lead's (with its run's items, from `run`), a worker's or a stage's ("task", the short one), a terminal's.
-export interface SplitRowCell {
+export interface TabSplitCell {
     id: string;
     vm: AgentVM;
     place: CellPlacement;
@@ -391,10 +392,32 @@ export interface SplitRowCell {
     run?: RunInfo;
 }
 
-// the tab a row stands for, when it is one a split cell can hold (a brainstorm's check and judge rows are tabs too)
+// A board's cell of a split row: its id is the grid's `board:<project>/<boardId>`.
+export interface BoardSplitCell {
+    id: string;
+    place: CellPlacement;
+    board: TreeBoard;
+}
+
+export type SplitRowCell = TabSplitCell | BoardSplitCell;
+
+export function isBoardSplitCell(c: SplitRowCell): c is BoardSplitCell {
+    return "board" in c;
+}
+
+// a board's cell id in the grid (boards/boardcell.ts boardCellId, spelled here so the model imports no store)
+export function treeBoardCellId(b: Pick<TreeBoard, "boardProject" | "boardId">): string {
+    return `board:${b.boardProject}/${b.boardId}`;
+}
+
+// the tab a row stands for, when it is one a split cell can hold (a brainstorm's check and judge rows are tabs too),
+// and a board row's cell
 function rowTabId(r: ProjectTreeRow): string | undefined {
     if (r.kind === "terminal") {
         return r.terminal.id;
+    }
+    if (r.kind === "board") {
+        return treeBoardCellId(r);
     }
     if (r.kind === "parent" || r.kind === "lead" || r.kind === "stage" || r.kind === "check" || r.kind === "worker") {
         return r.agent?.id;
@@ -404,7 +427,7 @@ function rowTabId(r: ProjectTreeRow): string | undefined {
 
 // The menu a cell opens: its row's when it has one (a check or judge row has a stage's, the short one); with none
 // (a worker of a folded run), a run's tab takes the worker's and any other its kind's.
-function cellMenu(vm: AgentVM, row: ProjectTreeRow | undefined): Pick<SplitRowCell, "menu" | "run"> {
+function cellMenu(vm: AgentVM, row: ProjectTreeRow | undefined): Pick<TabSplitCell, "menu" | "run"> {
     if (row?.kind === "lead") {
         return { menu: "lead", run: row.run };
     }
@@ -435,9 +458,13 @@ function foldSplit(
             rowOf.set(id, r);
         }
     }
-    const cells: SplitRowCell[] = grid.ids.flatMap((id, i) => {
+    const cells: SplitRowCell[] = grid.ids.flatMap((id, i): SplitRowCell[] => {
         const vm = byId.get(id);
-        return vm != null ? [{ id, vm, place: places[i], ...cellMenu(vm, rowOf.get(id)) }] : [];
+        if (vm != null) {
+            return [{ id, vm, place: places[i], ...cellMenu(vm, rowOf.get(id)) }];
+        }
+        const row = rowOf.get(id);
+        return row?.kind === "board" ? [{ id, place: places[i], board: boardOfRow(row) }] : [];
     });
     if (cells.length < 2) {
         return body;
@@ -457,6 +484,42 @@ function foldSplit(
         kept.unshift({ kind: "split", project, shown, cells });
     }
     return kept.filter((r, i) => r.kind !== "divider" || (i > 0 && i < kept.length - 1));
+}
+
+/** Pure: the boards the tree lists, in `list`'s order (most recently active first): every open board (`open`, its
+ *  `<project>/<boardId>` keys), and each live chat's latest board, so a board just drawn shows without opening it. The
+ *  rest are Library's. `chat` names the chat it reads, from the roster or the board's own title. */
+export function treeBoards(
+    list: readonly BoardInfo[] | null | undefined,
+    open: ReadonlySet<string>,
+    agents: readonly Pick<AgentVM, "id" | "name">[]
+): TreeBoard[] {
+    const names = new Map(agents.map((a) => [a.id, a.name]));
+    const latest = new Set<string>();
+    const out: TreeBoard[] = [];
+    for (const b of list ?? []) {
+        const chatId = b.agenttabid ?? "";
+        const live = chatId !== "" && names.has(chatId);
+        const first = live && !latest.has(chatId);
+        if (first) {
+            latest.add(chatId);
+        }
+        if (!first && !open.has(`${b.project}/${b.id}`)) {
+            continue;
+        }
+        out.push({
+            boardProject: b.project,
+            boardId: b.id,
+            name: b.name,
+            chatId,
+            chat: (live ? names.get(chatId) : undefined) || b.agenttitle || "",
+        });
+    }
+    return out;
+}
+
+function boardOfRow(r: Extract<ProjectTreeRow, { kind: "board" }>): TreeBoard {
+    return { boardProject: r.boardProject, boardId: r.boardId, name: r.name, chatId: r.chatId, chat: r.chat };
 }
 
 /** Pure: the root a council opened with no project named (the palette's New council…, `wsh ui do new-council`) starts
@@ -517,9 +580,8 @@ export function projectTree(input: {
     // terminal row. Left out, the tabs of `services`.
     serviceTabs?: ReadonlySet<string>;
     splits?: ProjectGrids; // the grids as the surface reconciles them (gridstore treeSplits)
-    // each live agent's boards by its tab id, most recently active first (boardsOfAgent): the first is the agent's board
-    // row, right after the agent's own row
-    boards?: ReadonlyMap<string, readonly BoardInfo[]>;
+    // the boards to list (treeBoards), each in the folder of its project after the folder's agents
+    boards?: readonly TreeBoard[];
     roster?: readonly AgentVM[];
     councils?: ReadonlyMap<string, CouncilRowVM[]>; // by project name
 }): ProjectTreeRow[] {
@@ -595,34 +657,11 @@ export function projectTree(input: {
         }
     }
     const byId = new Map((input.roster ?? []).map((a) => [a.id, a]));
-    // `rows` with each agent's board row put right after the agent's row (its first row, when a stage repeats it)
-    const withBoards = <T extends ProjectTreeRow>(project: string, rows: T[]): (T | ProjectTreeRow)[] => {
-        if (input.boards == null || input.boards.size === 0) {
-            return rows;
-        }
-        const seen = new Set<string>();
-        return rows.flatMap((r): (T | ProjectTreeRow)[] => {
-            const id = rowTabId(r);
-            const list = id != null && !seen.has(id) ? input.boards?.get(id) : undefined;
-            if (id == null || list == null || list.length === 0) {
-                return [r];
-            }
-            seen.add(id);
-            const b = list[0];
-            return [
-                r,
-                {
-                    kind: "board",
-                    project,
-                    agentId: id,
-                    boardProject: b.project,
-                    boardId: b.id,
-                    name: b.name,
-                    more: list.length - 1,
-                },
-            ];
-        });
-    };
+    // a folder's boards, after its agents: peers of them, not rows under one
+    const boardRowsOf = (project: string): ProjectTreeRow[] =>
+        (input.boards ?? [])
+            .filter((b) => treeFolder(b.boardProject, roots) === project)
+            .map((b) => ({ kind: "board", project, ...b }));
     const fold = (project: string, body: ProjectTreeRow[]) => {
         const split = splits.get(project);
         return split == null ? body : foldSplit(body, project, split.grid, split.shown, byId);
@@ -639,7 +678,7 @@ export function projectTree(input: {
                 agentRows.push(r);
             }
         }
-        out.push(...withBoards(filter, agentRows));
+        out.push(...agentRows, ...boardRowsOf(filter));
         out.push(...parkedRowsOf(filter), ...queuedRowsOf(filter), ...councilRowsOf(filter));
         // a shell attributed to no project shows under every one
         const mine = terminals.filter((t) => projectOf(t) === "" || projectOf(t) === filter);
@@ -729,7 +768,8 @@ export function projectTree(input: {
         const held = serviceRowsOf(project);
         const body: ProjectTreeRow[] = [
             ...pinnedRowsOf(project),
-            ...withBoards(project, agentRows),
+            ...agentRows,
+            ...boardRowsOf(project),
             ...parkedRowsOf(project),
             ...waiting,
             ...councilRowsOf(project),
@@ -855,7 +895,8 @@ export function treeNavIds(rows: ProjectTreeRow[]): string[] {
                 ids.push(r.tabId);
             }
         } else if (r.kind === "split") {
-            ids.push(...r.cells.map((c) => c.id));
+            // a board cell is no focus target
+            ids.push(...r.cells.flatMap((c) => (isBoardSplitCell(c) ? [] : [c.id])));
         } else if (
             (r.kind === "parent" ||
                 r.kind === "lead" ||

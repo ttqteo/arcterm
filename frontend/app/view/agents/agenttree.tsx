@@ -171,15 +171,20 @@ import {
     liveBranches,
     notableBranch,
     projectLabel,
+    isBoardSplitCell,
     projectTree,
     terminalRowState,
     terminalShows,
+    treeBoardCellId,
+    treeBoards,
     treeNavIds,
+    type BoardSplitCell,
     type CouncilRowSeat,
     type CouncilRowVM,
     type ProjectTreeRow,
-    type SplitRowCell,
+    type TabSplitCell,
     type TerminalRowState,
+    type TreeBoard,
     type TerminalShows,
 } from "./agentsidebarmodel";
 import { CouncilAvatar } from "./councilchat";
@@ -206,10 +211,9 @@ import { askingCount, askingLabel, displayAgeMs, formatAgeShort, type AgentVM } 
 import { parseDocReview } from "./docreview";
 import { openReview } from "./docreviewstore";
 import { placementStyle } from "./agentgrid";
-import { boardCellId } from "../boards/boardcell";
 import { openBoardsAtom } from "../boards/boardentries";
 import { useBoardList } from "../boards/boardstore";
-import { closeBoard, openBoard } from "../boards/boardsplitstore";
+import { boardOpenAtom, closeBoard, openBoard } from "../boards/boardsplitstore";
 import {
     canOpenInSplit,
     isInSplit,
@@ -2717,7 +2721,11 @@ function SplitRow({
         >
             {row.cells.map((c) => (
                 <div key={c.id} style={placementStyle(c.place)} className="min-w-0 bg-surface">
-                    <SplitCell model={model} cell={c} navDigit={digits.get(c.id)} tools={tools} />
+                    {isBoardSplitCell(c) ? (
+                        <BoardSplitCellView model={model} cell={c} />
+                    ) : (
+                        <SplitCell model={model} cell={c} navDigit={digits.get(c.id)} tools={tools} />
+                    )}
                 </div>
             ))}
         </div>
@@ -2731,7 +2739,7 @@ function SplitCell({
     tools,
 }: {
     model: AgentsViewModel;
-    cell: SplitRowCell;
+    cell: TabSplitCell;
     navDigit?: number;
     tools: ToolStatus[];
 }) {
@@ -3282,10 +3290,44 @@ function QueuedEntryRow({ model, row }: { model: AgentsViewModel; row: QueuedRow
     );
 }
 
-// An agent's latest board, one row under the agent's own (agentsidebarmodel.ts's "board" row): the board's name, and +N
-// when the agent has more (the cell's header switches between them). A click opens it as the agent's board cell beside
-// its Chat; it reads as open while that cell is on screen showing this board. No focus target: j/k and Ctrl+Tab step over
-// it, and it is not dragged.
+// What a board's row and its split cell do: open it (a cell beside its chat when that is live, else beside the cell in
+// focus), and its menu: Open, Remove from split while a split holds it, Close board while it is open.
+function useBoardActions(model: AgentsViewModel, b: TreeBoard) {
+    const ref = { project: b.boardProject, boardId: b.boardId };
+    const key = `${b.boardProject}/${b.boardId}`;
+    const isOpen = useAtomValue(boardOpenAtom(key));
+    const cellId = treeBoardCellId(b);
+    const show = () => {
+        const roster = globalStore.get(model.agentsAtom);
+        const beside = roster.some((a) => a.id === b.chatId) ? b.chatId : globalStore.get(model.focusIdAtom);
+        if (beside != null) {
+            openBoard(model, beside, ref.project, ref.boardId);
+        }
+    };
+    const onContextMenu = (e: React.MouseEvent) => {
+        const items: ContextMenuItem[] = [{ label: "Open", icon: <PenTool size={15} />, click: show }];
+        if (isInSplit(model, cellId)) {
+            items.push(...splitCellMenuItems(model, cellId));
+        }
+        if (isOpen) {
+            items.push(
+                { type: "separator" },
+                { label: "Close board", icon: <X size={15} />, click: () => closeBoard(model, ref) }
+            );
+        }
+        ContextMenuModel.getInstance().showContextMenu(items, e);
+    };
+    // an open board drags onto the grid as an agent does: an edge splits, the centre of a Claude agent's cell ties it to
+    // that chat (griddropoverlay.tsx)
+    const drag: React.HTMLAttributes<HTMLDivElement> = isOpen
+        ? { draggable: true, onDragStart: (e) => beginAgentDrag(e, cellId), onDragEnd: endAgentDrag }
+        : {};
+    return { show, onContextMenu, drag };
+}
+
+// A board, a peer of the folder's agents (agentsidebarmodel.ts's "board" row): the board's name and the chat it reads.
+// A click opens it as a cell of the split; it reads as open while that cell is on screen. No focus target: j/k and
+// Ctrl+Tab step over it. An open board drags onto the grid.
 function BoardRow({
     model,
     row,
@@ -3296,52 +3338,67 @@ function BoardRow({
     cellShown: boolean; // the board's cell is a cell of the grid on screen
 }) {
     const open = cellShown;
-    const show = () => openBoard(model, row.agentId, row.boardProject, row.boardId);
-    const onContextMenu = (e: React.MouseEvent) => {
-        const items: ContextMenuItem[] = [
-            { label: "Open", icon: <PenTool size={15} />, click: show },
-            ...(open
-                ? [
-                      { type: "separator" } as ContextMenuItem,
-                      {
-                          label: "Close board",
-                          icon: <X size={15} />,
-                          click: () => closeBoard(model, { project: row.boardProject, boardId: row.boardId }),
-                      } as ContextMenuItem,
-                  ]
-                : []),
-        ];
-        ContextMenuModel.getInstance().showContextMenu(items, e);
-    };
+    const { show, onContextMenu, drag } = useBoardActions(model, row);
     return (
         <div
             data-tree-board={row.boardId}
             data-tree-board-open={open ? "" : undefined}
             role="button"
             tabIndex={-1}
-            title={row.name}
+            title={row.chat !== "" ? `${row.name} · reads ${row.chat}` : row.name}
             onClick={show}
             onContextMenu={onContextMenu}
+            {...drag}
             className={cn(
-                "relative flex cursor-pointer items-center gap-[9px] rounded-[6px] py-[5px] pl-[28px] pr-[10px] transition-colors duration-[140ms]",
+                "relative flex cursor-pointer items-center gap-[9px] rounded-[6px] px-[10px] py-[6px] transition-colors duration-[140ms]",
                 open ? "bg-surface-selected" : "hover:bg-surface-hover"
             )}
         >
-            <Guides depth={1} />
             <Slot>
                 <PenTool size={12} aria-hidden className={open ? "text-secondary" : "text-muted"} />
             </Slot>
             <span
                 data-tree-board-name
-                className={cn("min-w-0 flex-1 truncate text-[12px]", open ? "text-ink-hi" : "text-secondary")}
+                className={cn("min-w-0 flex-none truncate text-[12px]", open ? "text-ink-hi" : "text-secondary")}
             >
                 {row.name}
             </span>
-            {row.more > 0 ? (
-                <span data-tree-board-more className="flex-none text-[10.5px] tabular-nums text-muted">
-                    +{row.more}
-                </span>
-            ) : null}
+            <span data-tree-board-chat className="min-w-0 flex-1 truncate text-[11px] text-muted">
+                {row.chat !== "" ? `· ${row.chat}` : ""}
+            </span>
+        </div>
+    );
+}
+
+// A board's cell in a split row: the board mark and its name. A click opens nothing new (its cell is already in the
+// split); the x takes it out of the split, as an agent's does.
+function BoardSplitCellView({ model, cell }: { model: AgentsViewModel; cell: BoardSplitCell }) {
+    const { show, onContextMenu, drag } = useBoardActions(model, cell.board);
+    return (
+        <div
+            data-split-cell={cell.id}
+            data-split-board={cell.board.boardId}
+            title={cell.board.chat !== "" ? `${cell.board.name} · reads ${cell.board.chat}` : cell.board.name}
+            onClick={show}
+            onContextMenu={onContextMenu}
+            {...drag}
+            className="group/cell flex h-full min-w-0 cursor-pointer items-center gap-[6px] px-[8px] py-[6px] hover:bg-surface-hover"
+        >
+            <PenTool size={12} aria-hidden className="flex-none text-muted" />
+            <span className="min-w-0 flex-1 truncate text-[12px] text-secondary">{cell.board.name}</span>
+            <button
+                type="button"
+                data-split-cell-remove={cell.id}
+                title="Remove from split"
+                aria-label="Remove from split"
+                onClick={(e) => {
+                    e.stopPropagation();
+                    removeFromSplit(model, cell.id);
+                }}
+                className="hidden h-[16px] w-[16px] flex-none cursor-pointer items-center justify-center rounded-[4px] text-muted hover:bg-surface-hover hover:text-primary group-hover/cell:flex"
+            >
+                <X size={11} aria-hidden />
+            </button>
         </div>
     );
 }
@@ -3567,17 +3624,12 @@ export const AgentTree = memo(function AgentTree({ model }: { model: AgentsViewM
     // the open boards, read here so the tree redraws when one opens or closes (its cell is a cell of a split)
     const openBoards = useAtomValue(openBoardsAtom);
     const splits = treeSplits(projectGrids, { focusId, agents, terminals, dockedId, seeded, openBoards });
-    // every agent's boards, most recently active first (boardsOfAgent's order): the first is its row under the agent
+    // the boards the tree lists: the open ones, and each live chat's latest (treeBoards)
     const boardList = useBoardList("");
-    const boards = useMemo(() => {
-        const out = new Map<string, BoardInfo[]>();
-        for (const b of boardList ?? []) {
-            if (b.agenttabid) {
-                out.set(b.agenttabid, [...(out.get(b.agenttabid) ?? []), b]);
-            }
-        }
-        return out;
-    }, [boardList]);
+    const boards = useMemo(
+        () => treeBoards(boardList, new Set(openBoards.keys()), agents),
+        [boardList, openBoards, agents]
+    );
     const shownCells = new Set(splits.project != null ? (splits.grids[splits.project]?.ids ?? []) : []);
     // project name -> root path, as activenav.ts builds it: the folders a terminal's branch chip is read against
     const registered = useAtomValue(projectsAtom);
@@ -3868,11 +3920,11 @@ export const AgentTree = memo(function AgentTree({ model }: { model: AgentsViewM
                                     );
                                 case "board":
                                     return plain(
-                                        `board-${r.agentId}`,
+                                        `board-${r.boardProject}/${r.boardId}`,
                                         <BoardRow
                                             model={model}
                                             row={r}
-                                            cellShown={shownCells.has(boardCellId({ project: r.boardProject, boardId: r.boardId }))}
+                                            cellShown={shownCells.has(treeBoardCellId(r))}
                                         />
                                     );
                                 case "split":

@@ -105,12 +105,28 @@ const ZONE_LABEL: Record<Exclude<DropZone, "center">, string> = {
     bottom: "Place below",
 };
 
-// `moving`: the dragged agent already has a cell, so the centre swaps instead of replacing.
-export function zoneLabel(zone: DropZone, moving: boolean): string {
+// `moving`: the dragged agent already has a cell, so the centre swaps instead of replacing. `ties`: a board dropped on
+// the centre of a cell that can be its chat (tiesBoard), which reads that chat from then on.
+export function zoneLabel(zone: DropZone, moving: boolean, ties = false): string {
     if (zone === "center") {
-        return moving ? "Swap" : "Replace";
+        return ties ? "Read this chat" : moving ? "Swap" : "Replace";
     }
     return ZONE_LABEL[zone];
+}
+
+// Whether dropping `dragId` on the centre of a cell ties a board to that cell's chat: the dragged item is a board
+// (`board:<project>/<id>`) and the cell a Claude agent's (a board reads a Claude chat). An edge still only places it.
+export function tiesBoard(dragId: string, cell: { agent?: string; kind?: string } | null | undefined): boolean {
+    return dragId.startsWith("board:") && cell?.agent === "claude" && cell.kind !== "terminal";
+}
+
+// Where a board tied by a centre drop goes: right of the cell it was dropped on when it has no cell yet and the grid
+// has room there, else it keeps its place (null).
+export function tiedBoardZone(state: GridState, targetId: string, dragId: string): DropZone | null {
+    if (state.ids.includes(dragId)) {
+        return null;
+    }
+    return allowedZones(state, targetId, dragId).includes("right") ? "right" : null;
 }
 
 // A drop with Alt (Option on a Mac) held types the dragged agent's @mention at the cell's prompt instead of placing it,

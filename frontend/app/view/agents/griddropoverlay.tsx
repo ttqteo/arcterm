@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // The zones that appear over a grid cell while an agent is being dragged: centre swaps (or replaces), an edge
-// splits the cell along it (only the edges the cell can be split along are offered), and with Alt (Option) held the whole cell types the dragged agent's @mention at its prompt. One overlay per
+// splits the cell along it (only the edges the cell can be split along are offered), and with Alt (Option) held the whole cell types the dragged agent's @mention at its prompt. A board dropped on the centre of a Claude agent's cell
+// reads that agent's chat from then on (tiesBoard), and takes a cell right of it when it had none. One overlay per
 // cell, a child of the cell, so it is exactly the cell's size; it renders nothing at all unless an agent drag is
 // active, and never over the cell being dragged.
 
@@ -12,6 +13,8 @@ import { isMacOS } from "@/util/platformutil";
 import { cn } from "@/util/util";
 import { useAtomValue } from "jotai";
 import { useState } from "react";
+import { moveBoardToChat } from "../boards/boardactions";
+import { boardCellRef } from "../boards/boardcell";
 import { agentDragAtom, endAgentDrag } from "./agentdragstore";
 import type { DropZone, GridState } from "./agentgrid";
 import { mentionToken } from "./agentrowmodel";
@@ -23,6 +26,8 @@ import {
     isAgentDrag,
     mentionDropText,
     resolveDrop,
+    tiedBoardZone,
+    tiesBoard,
     zoneBox,
     zoneFromPoint,
     zoneLabel,
@@ -34,6 +39,7 @@ interface OverlayProps {
     id: string; // the cell's agent
     grid: GridState; // the grid the surface drew (what the overlay shows; a drop re-reads the grid)
     mentionTo: string | null; // the cell's terminal block when its prompt takes an @mention (griddrop.ts mentionTarget)
+    cell?: { agent?: string; kind?: string }; // the cell's tab, so a board dropped on its centre can tie to its chat
 }
 
 // read per render: at module load setPlatform has not run yet, so the platform still reads as macOS
@@ -55,11 +61,15 @@ export function GridDropOverlay(props: OverlayProps) {
     return <ActiveOverlay {...props} dragId={drag.id} />;
 }
 
-function ActiveOverlay({ model, id, grid, mentionTo, dragId }: OverlayProps & { dragId: string }) {
+function ActiveOverlay({ model, id, grid, mentionTo: tabMention, cell, dragId }: OverlayProps & { dragId: string }) {
     const [zone, setZone] = useState<DropZone | null>(null);
     const [mention, setMention] = useState(false);
     const zones = allowedZones(grid, id, dragId);
     const moving = grid.ids.includes(dragId);
+    // a board is no agent to @mention, and its centre drop on a Claude agent ties it to that chat
+    const board = boardCellRef(dragId);
+    const mentionTo = board != null ? null : tabMention;
+    const ties = tiesBoard(dragId, cell);
 
     const zoneAt = (e: React.DragEvent<HTMLDivElement>): DropZone => {
         const z = zoneFromPoint(e.currentTarget.getBoundingClientRect(), e.clientX, e.clientY);
@@ -106,6 +116,24 @@ function ActiveOverlay({ model, id, grid, mentionTo, dragId }: OverlayProps & { 
             focusTerm(mentionTo);
             return;
         }
+        if (board != null && ties && picked === "center") {
+            // the board reads this chat from now on, and sits right of it when it had no cell
+            const place = tiedBoardZone(currentGrid(model), id, dropped);
+            if (place != null) {
+                const at = resolveDrop(currentGrid(model), id, dropped, place);
+                if (at != null) {
+                    dropAgentOnGrid(model, dropped, at.index, at.zone);
+                }
+            }
+            moveBoardToChat(board, id).catch((err: unknown) =>
+                pushToast({
+                    title: "The board kept its chat",
+                    message: err instanceof Error ? err.message : String(err),
+                    level: "warn",
+                })
+            );
+            return;
+        }
         // dropAgentOnGrid's index is a position in the grid it reads now (currentGrid), which can have moved on since
         // this overlay rendered; a target that has left the grid takes no drop
         const target = resolveDrop(currentGrid(model), id, dropped, picked);
@@ -146,7 +174,7 @@ function ActiveOverlay({ model, id, grid, mentionTo, dragId }: OverlayProps & { 
                     }}
                 >
                     <span className="flex flex-col items-center gap-[2px] text-[12px] font-semibold text-accent-soft">
-                        {mention ? `Mention ${mentionToken(dragId)}` : zoneLabel(zone, moving)}
+                        {mention ? `Mention ${mentionToken(dragId)}` : zoneLabel(zone, moving, ties)}
                         {mentionTo != null && !mention ? (
                             <span className="text-[10.5px] font-medium text-muted">hold {mentionKey()} to mention</span>
                         ) : null}

@@ -989,6 +989,7 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
                                                     id={a.id}
                                                     grid={onScreen}
                                                     mentionTo={mentionTarget(a)}
+                                                    cell={a}
                                                 />
                                             ) : null}
                                         </div>

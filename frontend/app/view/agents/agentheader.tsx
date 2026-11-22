@@ -59,9 +59,7 @@ import {
 } from "lucide-react";
 import { motion } from "motion/react";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { boardCellRef, isBoardCell } from "../boards/boardcell";
 import { openBoardsAtom } from "../boards/boardentries";
-import { closeBoard } from "../boards/boardsplitstore";
 import { closeAgentChord, confirmCloseSession, interruptAgent } from "./agentactions";
 import { contextLevel, contextTokens } from "./agentrailmodel";
 import { openRailInitiative } from "./agentrailstore";
@@ -674,16 +672,9 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
                 label: "Close split",
                 icon: <Minimize2 size={15} />,
                 click: () => {
-                    // a board cell closes its board (Expand clears with it, so its tree row reads closed); the
-                    // boards first, so the reconcile that the tab removals run no longer holds them
+                    // every other cell leaves the split, a board's too: it stays open, a row of its own in the tree
                     for (const id of grid.ids) {
-                        const ref = boardCellRef(id);
-                        if (ref != null) {
-                            closeBoard(model, ref);
-                        }
-                    }
-                    for (const id of grid.ids) {
-                        if (id !== agent.id && !isBoardCell(id)) {
+                        if (id !== agent.id) {
                             removeFromGrid(model, id);
                         }
                     }

@@ -227,6 +227,8 @@ export default function (kit) {
             const SPLIT = (id) => `${BOARD} [data-board-cell="${id}"]`;
             const CANVAS = (id) => `[data-board-canvas="${id}"]`;
             const TREE_ROW = (id) => `[data-tree-board="${id}"]`;
+            // a board whose cell is in a split is a cell of the tree's split row, beside the agents
+            const TREE_SPLIT = (id) => `[data-split-row] [data-split-board="${id}"]`;
             // the cells drawn (a hidden one is mounted but has no box)
             const shownCells = (sel) =>
                 h.ev(`[...document.querySelectorAll(${q(sel)})].filter((el) => el.getBoundingClientRect().width > 0).length`);
@@ -362,18 +364,21 @@ export default function (kit) {
             const headerBefore = await headerOf();
 
             // --- 1. the tree lists the board under the agent; a click opens it as a cell right of Chat ---
-            await run("1a. the agent's tree row lists its latest board with +1 for the other, closed", async (name) => {
+            await run("1a. the tree lists the chat's latest board as a row of its own, a peer of the agents, naming its chat", async (name) => {
                 const there = await until(async () => (await count(TREE_ROW(B1))) === 1);
                 const label = await text(`${TREE_ROW(B1)} [data-tree-board-name]`);
-                const more = await text(`${TREE_ROW(B1)} [data-tree-board-more]`);
+                const chat = await text(`${TREE_ROW(B1)} [data-tree-board-chat]`);
                 const open = await h.ev(`document.querySelector(${q(TREE_ROW(B1))})?.hasAttribute("data-tree-board-open") ?? null`);
+                // a peer: not indented under the agent's row
+                const rowLeft = (await box(TREE_ROW(B1)))?.l;
+                const agentLeft = (await box(`[data-agent-tree] [data-agent-row="${A}"]`))?.l ?? null;
                 const cells = await gridCount();
                 const boards = await count("[data-board-cell]");
                 await shot("1a-tree-row");
                 rec(
                     name,
-                    there && label === B1_NAME && more === "+1" && open === false && cells === "1" && boards === 0 && termBefore != null,
-                    { there, label, more, open, cells, boards }
+                    there && label === B1_NAME && (chat ?? "").includes(AGENT_TITLE) && open === false && (agentLeft == null || near(rowLeft, agentLeft, 2)) && cells === "1" && boards === 0 && termBefore != null,
+                    { there, label, chat, open, rowLeft, agentLeft, cells, boards }
                 );
             });
 
@@ -404,7 +409,8 @@ export default function (kit) {
                 const boardCells = await shownCells("[data-board-cell]");
                 // the board is a sibling cell of the agent's, never a child of it
                 const sibling = await h.ev(`!document.querySelector(${q(CELL)})?.querySelector("[data-board-cell]") && !document.querySelector(${q(CELL)})?.contains(document.querySelector(${q(BOARD)}))`);
-                const open = await h.ev(`document.querySelector(${q(TREE_ROW(B1))})?.hasAttribute("data-tree-board-open") ?? null`);
+                // in the split it is a cell of the tree's split row, beside the agent
+                const open = await until(async () => (await count(TREE_SPLIT(B1))) === 1 && (await count(TREE_ROW(B1))) === 0);
                 const treeOpen = (await count(TREE)) === 1 && (await count(STRIP("folded"))) === 0;
                 const kept = await paneKept();
                 await shot("1b-open");
@@ -852,7 +858,7 @@ export default function (kit) {
             });
 
             // --- 8c. the header's Close split ends the split with the board in it ---
-            await run("8c. the header's Close split leaves one cell, no board cell, and the tree row closed", async (name) => {
+            await run("8c. the header's Close split leaves one cell; the board stays open as a row of its own, off screen", async (name) => {
                 // Split sits in the header's More menu by default: turn its header button on (the key is restored at teardown)
                 await AC.agentPage(
                     h,
@@ -864,7 +870,7 @@ export default function (kit) {
                 await openBoardOn(B1);
                 const opened = await until(async () => (await gridCount()) === "2" && (await shownCells("[data-board-cell]")) === 1);
                 await until(async () => (await count("[data-agent-split]")) === 1);
-                const rowOpenBefore = await until(() => h.ev(`document.querySelector(${q(TREE_ROW(B1))})?.hasAttribute("data-tree-board-open") === true`));
+                const rowOpenBefore = await until(async () => (await count(TREE_SPLIT(B1))) === 1);
                 const menu = await click("[data-agent-split]");
                 const listed = await until(async () => (await count(`[data-menu-item="Close split"]`)) === 1);
                 const closed = await click(`[data-menu-item="Close split"]`);
@@ -876,7 +882,8 @@ export default function (kit) {
                 await shot("8c-close-split");
                 rec(
                     name,
-                    opened && rowOpenBefore && menu && listed && closed && gone && st.split == null && !(st.stored ?? "").includes(A) && rowOpen === false && kept,
+                    // the board leaves the split as an agent would: still open, a row of its own again
+                    opened && rowOpenBefore && menu && listed && closed && gone && st.split?.boardId === B1 && (await count(TREE_SPLIT(B1))) === 0 && rowOpen === false && kept,
                     { opened, rowOpenBefore, menu, listed, closed, gone, split: st.split, stored: st.stored, rowOpen, kept }
                 );
             });
@@ -1182,6 +1189,53 @@ export default function (kit) {
                     column && folded && strip && near(stripBox?.w, 14, 1) && (canvasAfter?.w ?? 0) > (canvasBefore?.w ?? 0) + 200 && kept && reopened && back,
                     { column, folded, strip, stripW: stripBox?.w, canvasBefore: canvasBefore?.w, canvasAfter: canvasAfter?.w, kept, reopened, back }
                 );
+            });
+
+            // --- 15. drag the board onto another chat: it reads that chat ---
+            await run("15. dragging the board's bar onto the centre of another agent's cell ties it to that chat", async (name) => {
+                await openBoardOn(B1);
+                await AC.agentPage(h, `const G = await mod("app/view/agents/gridstore.ts"); return G.openInSplit(agentsModel(), ${q(B)});`);
+                await until(async () => (await gridCount()) === "3" && (await shownCells(SPLIT(B1))) === 1);
+                const before = await boardCalls(h, "BoardTakeOverCommand");
+                const drop = await h.ev(`(async () => {
+                    const until = async (fn, n) => { for (let i = 0; i < n; i++) { const v = fn(); if (v) return v; await new Promise((r) => setTimeout(r, 50)); } return null; };
+                    const src = document.querySelector(${q(`[data-board-cell-bar="${CELL_ID(B1)}"]`)});
+                    if (!src) return { ok: false, why: "no board bar" };
+                    const dt = new DataTransfer();
+                    const fire = (el, type, x, y) => el.dispatchEvent(new DragEvent(type, { bubbles: true, cancelable: true, dataTransfer: dt, clientX: x ?? 0, clientY: y ?? 0 }));
+                    fire(src, "dragstart");
+                    const ov = await until(() => document.querySelector(${q(`[data-agent-drop-overlay="${B}"]`)}), 60);
+                    if (!ov) { fire(src, "dragend"); return { ok: false, why: "no drop overlay over the other agent" }; }
+                    const r = ov.getBoundingClientRect();
+                    const x = r.left + r.width / 2, y = r.top + r.height / 2;
+                    fire(ov, "dragover", x, y);
+                    await new Promise((r) => setTimeout(r, 80));
+                    const label = ov.textContent.replace(/\s+/g, " ").trim();
+                    fire(ov, "drop", x, y);
+                    fire(src, "dragend");
+                    return { ok: true, label };
+                })()`);
+                const calls = await boardCalls(h, "BoardTakeOverCommand");
+                const last = calls.at(-1);
+                const moved = await until(async () => (await h.ev(`document.querySelector(${q(`${SPLIT(B1)} [data-board-chat]`)})?.getAttribute("data-board-chat")`)) === B);
+                const cells = await gridCount();
+                await shot("15-dragged-to-chat");
+                rec(
+                    name,
+                    drop?.ok && (drop.label ?? "").includes("Read this chat") && calls.length === before.length + 1 && last?.tabid === B && moved && cells === "3",
+                    { drop, call: last, moved, cells }
+                );
+                // back as the steps after expect: the board on the first chat, the other agent out of the grid
+                await AC.agentPage(
+                    h,
+                    `const A2 = await mod("app/view/boards/boardactions.ts");
+                    await A2.moveBoardToChat({ project: ${q(PROJECT)}, boardId: ${q(B1)} }, ${q(A)});
+                    const G = await mod("app/view/agents/gridstore.ts");
+                    G.removeFromGrid(agentsModel(), ${q(B)});
+                    return true;`
+                );
+                await AC.focusAgent(h, A);
+                await until(async () => (await gridCount()) === "2");
             });
 
             // --- 11. what an open board costs the page ---
