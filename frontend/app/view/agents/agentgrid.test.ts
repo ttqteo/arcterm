@@ -18,8 +18,10 @@ import {
     placementStyle,
     pruneMissing,
     reconcileGrid,
+    reconcileProjectGrids,
     removeCell,
     replaceFocused,
+    settleCompanions,
     splitGrids,
     splitZones,
     swapCells,
@@ -608,5 +610,83 @@ describe("splitGrids", () => {
             grids: { a: { ids: ["x", "y"], focused: "x" }, b: { ids: ["z"], focused: "z" } },
         };
         expect([...splitGrids(state).keys()]).toEqual(["a"]);
+    });
+});
+
+// a cell that rides with another: `board:<id>` depends on `<id>` being a cell of the same grid
+const boardOf = (id: string) => (id.startsWith("board:") ? id.slice("board:".length) : undefined);
+
+describe("settleCompanions", () => {
+    it("is the grid as it was with no companionOf", () => {
+        expect(settleCompanions(g(["board:a", "b"]), undefined)).toEqual(g(["board:a", "b"]));
+    });
+    it("drops a companion whose own cell is not in the grid", () => {
+        expect(settleCompanions(g(["b", "board:a"]), boardOf)).toEqual(g(["b"]));
+    });
+    it("keeps a companion beside its cell", () => {
+        expect(settleCompanions(g(["a", "board:a"]), boardOf)).toEqual(g(["a", "board:a"]));
+    });
+    it("never leaves a companion focused: focus goes to its own cell", () => {
+        expect(settleCompanions(g(["a", "board:a", "b"], "board:a"), boardOf).focused).toBe("a");
+    });
+    it("falls to the first tab when the companion's own cell is not there", () => {
+        expect(settleCompanions(g(["board:a", "b"], "board:a"), boardOf)).toEqual(g(["b"]));
+    });
+    it("empties a grid of companions alone", () => {
+        expect(settleCompanions(g(["board:a"]), boardOf)).toEqual(EMPTY_GRID);
+    });
+});
+
+describe("reconcileProjectGrids with companion cells", () => {
+    const live = (...ids: string[]) => new Set(ids);
+    const projects = (m: Record<string, string>) => new Map(Object.entries(m));
+    const pg = (grid: GridState) => ({ project: "p", grids: { p: grid } });
+
+    it("prunes a board cell whose agent left", () => {
+        const next = reconcileProjectGrids(pg(g(["a", "board:a"])), {
+            focusId: undefined,
+            eligible: live(),
+            projectOf: projects({}),
+            companionOf: boardOf,
+            seeded: true,
+        });
+        expect(next.grids).toEqual({});
+    });
+
+    it("prunes a board cell that is not in its agent's grid", () => {
+        const start = { project: "p", grids: { p: g(["b", "board:a"]), q: g(["a"]) } };
+        const next = reconcileProjectGrids(start, {
+            focusId: "b",
+            eligible: live("a", "b", "board:a"),
+            projectOf: projects({ a: "q", b: "p", "board:a": "q" }),
+            companionOf: boardOf,
+            seeded: true,
+        });
+        expect(next.grids.p).toEqual(g(["b"]));
+        expect(next.grids.q).toEqual(g(["a"]));
+    });
+
+    it("keeps the board cell beside its agent and never focuses it", () => {
+        const next = reconcileProjectGrids(pg(g(["board:a", "a"], "board:a")), {
+            focusId: "board:a",
+            eligible: live("a", "board:a"),
+            projectOf: projects({ a: "p", "board:a": "p" }),
+            companionOf: boardOf,
+            seeded: true,
+        });
+        expect(next.grids.p.ids).toEqual(["board:a", "a"]);
+        expect(next.grids.p.focused).toBe("a");
+    });
+
+    it("is idempotent", () => {
+        const input = {
+            focusId: "a",
+            eligible: live("a", "board:a"),
+            projectOf: projects({ a: "p", "board:a": "p" }),
+            companionOf: boardOf,
+            seeded: true,
+        };
+        const once = reconcileProjectGrids(pg(g(["a", "board:a"])), input);
+        expect(reconcileProjectGrids(once, input)).toEqual(once);
     });
 });

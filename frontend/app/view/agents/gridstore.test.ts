@@ -4,6 +4,7 @@
 import { globalStore } from "@/app/store/jotaiStore";
 import { atom } from "jotai";
 import { beforeEach, describe, expect, it } from "vitest";
+import { boardEntriesAtom } from "../boards/boardentries";
 import { centerModeAtom } from "./agentcenter";
 import { EMPTY_PROJECT_GRIDS, type GridState } from "./agentgrid";
 import {
@@ -14,9 +15,12 @@ import {
     eligibleIds,
     endSplit,
     endSplitOf,
+    gridEligibility,
     isInSplit,
+    openBoardCell,
     openInSplit,
     projectGridsAtom,
+    removeBoardCell,
     removeFromGrid,
     removeFromSplit,
     treeSplits,
@@ -36,6 +40,7 @@ function model(ids: string[], focus?: string, terminalIds: string[] = []): GridM
 
 beforeEach(() => {
     globalStore.set(projectGridsAtom, EMPTY_PROJECT_GRIDS);
+    globalStore.set(boardEntriesAtom, {});
     globalStore.set(centerModeAtom, "terminal");
 });
 
@@ -443,5 +448,100 @@ describe("treeSplits", () => {
             seeded: true,
         });
         expect(out.grids.p.ids).toEqual(["a"]);
+    });
+});
+
+const openBoards = (...ids: string[]) =>
+    globalStore.set(boardEntriesAtom, Object.fromEntries(ids.map((id) => [id, { project: "p", boardId: `b-${id}` }])));
+
+describe("gridEligibility", () => {
+    it("adds a board cell for each live agent with a board open, in its agent's project", () => {
+        const tabs = [
+            { id: "a", blockId: "blk-a", project: "p" },
+            { id: "b", blockId: "blk-b", project: "q" },
+            { id: "c" },
+        ];
+        const { eligible, projectOf, companionOf } = gridEligibility(tabs, new Set(["b", "c", "gone"]));
+        expect([...eligible]).toEqual(["a", "b", "board:b"]);
+        expect(projectOf.get("board:b")).toBe("q");
+        expect(companionOf("board:b")).toBe("b");
+        expect(companionOf("b")).toBeUndefined();
+    });
+});
+
+describe("board cells in the grid", () => {
+    it("openBoardCell adds the board cell right of the agent, the agent staying the focused cell", () => {
+        const m = model(["a"], "a");
+        openBoards("a");
+        openBoardCell(m, "a");
+        expect(globalStore.get(agentGridAtom)).toEqual(g(["a", "board:a"], "a"));
+        expect(globalStore.get(m.focusIdAtom)).toBe("a");
+    });
+
+    it("a board cell with no board open is not a cell: it is pruned", () => {
+        globalStore.set(agentGridAtom, g(["a", "board:a"], "a"));
+        expect(currentGrid(model(["a"], "a")).ids).toEqual(["a"]);
+    });
+
+    it("prunes a board cell whose agent left (an agent that ended while arcterm was closed)", () => {
+        openBoards("a");
+        globalStore.set(agentGridAtom, g(["b", "board:a"], "b"));
+        expect(currentGrid(model(["b"], "b")).ids).toEqual(["b"]);
+    });
+
+    it("removeBoardCell leaves the agent's cell alone", () => {
+        const m = model(["a"], "a");
+        openBoards("a");
+        globalStore.set(agentGridAtom, g(["a", "board:a"], "a"));
+        removeBoardCell(m, "a");
+        expect(globalStore.get(agentGridAtom)).toEqual(g(["a"], "a"));
+    });
+
+    it("removing the agent's cell takes its board cell along, and focus never lands on the board", () => {
+        const m = model(["a", "b"], "a");
+        openBoards("a");
+        globalStore.set(agentGridAtom, g(["a", "board:a", "b"], "a"));
+        removeFromGrid(m, "a");
+        const grid = globalStore.get(agentGridAtom);
+        expect(grid.ids).toEqual(["b"]);
+        expect(globalStore.get(m.focusIdAtom)).toBe("b");
+    });
+
+    it("removing the last agent cell beside a board cell does not focus the board", () => {
+        const m = model(["a", "b"], "b");
+        openBoards("a");
+        globalStore.set(agentGridAtom, g(["a", "board:a", "b"], "b"));
+        removeFromGrid(m, "b");
+        expect(globalStore.get(m.focusIdAtom)).toBe("a");
+        expect(globalStore.get(agentGridAtom)).toEqual(g(["a", "board:a"], "a"));
+    });
+
+    it("never lets the grid's focused be a board cell", () => {
+        const m = model(["a"], "a");
+        openBoards("a");
+        globalStore.set(agentGridAtom, { ids: ["board:a", "a"], focused: "board:a" });
+        expect(currentGrid(m).focused).toBe("a");
+    });
+
+    it("treeSplits reads the open boards when none are passed", () => {
+        openBoards("a");
+        const grids = { project: "p", grids: { p: g(["a", "board:a"], "a") } };
+        const input = {
+            focusId: "a",
+            agents: [{ id: "a", blockId: "blk-a", project: "p" }],
+            terminals: [],
+            dockedId: null,
+            seeded: true,
+        };
+        expect(treeSplits(grids, input).grids.p.ids).toEqual(["a", "board:a"]);
+        expect(treeSplits(grids, { ...input, openBoards: new Set() }).grids.p.ids).toEqual(["a"]);
+    });
+
+    it("a full grid gives a board cell the last other cell, and the focused tab keeps its cell", () => {
+        const m = model(["x", "a", "y", "z"], "a");
+        openBoards("a");
+        globalStore.set(agentGridAtom, g(["x", "a", "y", "z"], "a"));
+        openBoardCell(m, "a");
+        expect(globalStore.get(agentGridAtom).ids).toEqual(["x", "a", "y", "board:a"]);
     });
 });

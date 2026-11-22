@@ -577,6 +577,33 @@ export function projectGridsEquals(a: ProjectGrids, b: ProjectGrids): boolean {
 
 export interface ProjectReconcileInput extends ReconcileInput {
     projectOf: ReadonlyMap<string, string>; // each tab's project, as the sidebar's folders file it
+    // The id a cell depends on, for a cell that rides with another (a board cell with its agent); undefined for a tab.
+    companionOf?: (id: string) => string | undefined;
+}
+
+// A grid with every companion cell kept only while its companion is a cell of the same grid, and with a companion never
+// the focused cell: focus goes to the companion's own cell, else the first tab. A grid of companions alone is empty.
+// Pure and idempotent; with no `companionOf` the grid comes back as it was.
+export function settleCompanions(
+    state: GridState,
+    companionOf: ((id: string) => string | undefined) | undefined
+): GridState {
+    const s = normalizeGrid(state);
+    if (companionOf == null) {
+        return s;
+    }
+    const orphan = (id: string) => {
+        const c = companionOf(id);
+        return c != null && !s.ids.includes(c);
+    };
+    const kept = s.ids.some(orphan) ? removeIds(s, orphan) : s;
+    if (kept.focused == null || companionOf(kept.focused) == null) {
+        return kept;
+    }
+    const own = companionOf(kept.focused);
+    const focused =
+        own != null && kept.ids.includes(own) ? own : (kept.ids.find((id) => companionOf(id) == null) ?? null);
+    return focused == null ? { ids: [], focused: null } : { ...kept, focused };
 }
 
 // reconcileGrid for every project: the focused tab's project's grid is shown and follows the focus, each grid keeps
@@ -602,8 +629,9 @@ export function reconcileProjectGrids(state: ProjectGrids, input: ProjectReconci
             p === project
                 ? reconcileGrid(grid, { focusId: input.focusId, eligible: mine, seeded: true })
                 : pruneMissing(grid, mine);
-        if (next.ids.length > 0) {
-            grids[p] = next;
+        const settled = settleCompanions(next, input.companionOf);
+        if (settled.ids.length > 0) {
+            grids[p] = settled;
         }
     }
     return { project, grids };
