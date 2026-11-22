@@ -34,6 +34,10 @@ and a picture given to a line that is not big.
 
 ### Changed
 
+- A passage you Reply to in Chat sits over the chat box as a quote block, like Notion's: a bar beside the words,
+  upright and up to three lines, in line with what you type; a second quote is one more block under it, and the ×
+  shows when you point at one.
+
 - The context gauge turns red at 200k tokens instead of 300k, and Chat's context ring and its /context card now go
   amber at 150k and red at 200k like the details rail, showing the tokens beside the percent: on a 1M window a calm
   20% already means every turn re-reads 200k.

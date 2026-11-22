@@ -55,7 +55,6 @@ import {
     GitCommitHorizontal,
     Hammer,
     Moon,
-    Quote,
     Terminal,
     X,
     type LucideIcon,
@@ -1152,7 +1151,11 @@ function ComposerBox({
                 the person to act */}
                         <ChatBgLine model={model} agent={agent} />
                         <AttachmentTray items={att.attachments} onRemove={att.remove} onRetry={att.retry} />
-                        <QuoteChips quotes={quotes} onRemove={dropQuote} />
+                        <QuoteChips
+                            quotes={quotes}
+                            onRemove={dropQuote}
+                            indent={grown ? "well" : asleep ? "none" : "plus"}
+                        />
                         {/* `+`, the text and Send/Stop. One row; grown, the well takes a line of its own first (order-first,
                 basis-full) and `+` and Send/Stop wrap under it. The well and its editor stay this element's child either
                 way, so the editor is never remounted, and its parts fold in place through a sleep and a wake. */}
@@ -1871,36 +1874,54 @@ export function Chip({
     );
 }
 
-// The quotes that open the message (chatquote.ts splitQuotes), one chip each over the editor: its words on one line,
-// all of them in the tooltip, and an × that takes the quote out of the message. They go with the message as the `>`
-// lines they are.
-function QuoteChips({ quotes, onRemove }: { quotes: string[]; onRemove: (i: number) => void }) {
+// The quotes that open the message (chatquote.ts splitQuotes), drawn over the editor as quote blocks the way Notion
+// draws them: a bar and the words upright, in the text's own column (`indent`, the `+` and its gap when they sit
+// beside the text), no frame and no label, so a second quote is one more block under the first. A long one stops at
+// three lines, all of it in the tooltip; the × shows on hover or focus. They go with the message as the `>` lines
+// they are.
+function QuoteChips({
+    quotes,
+    onRemove,
+    indent,
+}: {
+    quotes: string[];
+    onRemove: (i: number) => void;
+    indent: "plus" | "well" | "none";
+}) {
     if (quotes.length === 0) {
         return null;
     }
     return (
-        <div data-chat-quotes="" className="flex min-w-0 flex-col gap-1">
+        <div
+            data-chat-quotes=""
+            className={cn(
+                "mb-1.5 flex min-w-0 flex-col gap-1.5",
+                indent === "plus" ? "pl-[38px]" : indent === "well" ? "pl-1" : ""
+            )}
+        >
             {quotes.map((q, i) => {
                 const words = quoteWords(q);
                 return (
-                    <span
+                    <div
                         key={i}
                         data-chat-quote-chip=""
                         title={words}
-                        className="flex min-w-0 items-center gap-1.5 rounded-[6px] border border-edge-mid bg-background py-1 pl-2 pr-1.5 text-[11.5px] text-secondary"
+                        className="group/quote relative flex min-w-0 gap-2.5 pr-6"
                     >
-                        <Quote size={11} className="flex-none text-muted" aria-hidden />
-                        <span className="min-w-0 flex-1 truncate italic">{words}</span>
+                        <span className="w-[3px] flex-none rounded-full bg-edge-strong" aria-hidden />
+                        <span className="line-clamp-3 min-w-0 flex-1 text-[13px] leading-[1.5] text-secondary">
+                            {words}
+                        </span>
                         <button
                             type="button"
                             title="Remove quote"
                             aria-label="Remove quote"
                             onClick={() => onRemove(i)}
-                            className="flex-none cursor-pointer text-muted hover:text-error focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                            className="absolute right-0 top-[2px] flex-none cursor-pointer text-muted opacity-0 group-hover/quote:opacity-100 hover:text-error focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                         >
                             <X size={12} />
                         </button>
-                    </span>
+                    </div>
                 );
             })}
         </div>
