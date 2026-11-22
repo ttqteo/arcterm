@@ -71,7 +71,7 @@ const requestTurn = (id, over = {}) => ({
 export default function (kit) {
     const { waveService, polishNap, ahReload, GRID_KEY, GRID_EMPTY } = kit;
     const { makeTab, closeTabs } = AC.tabFixtures({ waveService });
-    const LS_KEYS = [GRID_KEY, "agent.chatmode"];
+    const LS_KEYS = [GRID_KEY, "agent.chatmode", "agent.boards"];
 
     // a record's time: real time, strictly after the one before, so the transcript reads in the order it was written
     const stamp = (ctx) => {
@@ -224,6 +224,8 @@ export default function (kit) {
                         focus: globalStore.get(model.focusIdAtom),
                         surface: globalStore.get(model.surfaceAtom),
                         chat: window.__arcChatMode?.get(${JSON.stringify(A)}) ?? null,
+                        // the board's own cell of the Agent grid, beside the agent's: drawn (a box) while the entry is open
+                        cell: [...document.querySelectorAll('[data-board-cell-of=${JSON.stringify(A)}] [data-board-cell]')].filter((el) => el.getBoundingClientRect().width > 0).length,
                     };`
                 );
             const toastShows = async () => (await toasts()).some((t) => t.text.includes(`The drawer drew on ${BOARD_NAME}`));
@@ -231,8 +233,11 @@ export default function (kit) {
                 AC.agentPage(
                     h,
                     `const S = await mod("app/view/boards/boardsplitstore.ts");
+                    const G = await mod("app/view/agents/gridstore.ts");
                     S.closeBoard(${JSON.stringify(A)});
-                    return true;`
+                    G.removeBoardCell(agentsModel(), ${JSON.stringify(A)});
+                    // the cell goes a render later: wait, so no canvas of the board is left beside a smoke canvas's own
+                    return await until(() => document.querySelector("[data-board-cell]") == null, 5000);`
                 );
 
             // --- 1. the agent's request is drawn, and you are looking at another agent ---
@@ -278,7 +283,7 @@ export default function (kit) {
                     open.click();
                     return true;
                 })()`);
-                await until(async () => (await state()).split != null);
+                await until(async () => (await state()).split != null && (await state()).cell === 1);
                 const after = await state();
                 await shot("opened");
                 rec(
@@ -291,7 +296,8 @@ export default function (kit) {
                         after.chat === "chat" &&
                         after.split?.project === PROJECT &&
                         after.split?.boardId === BOARD_ID &&
-                        after.split?.expanded === false,
+                        // the board is on screen as its own cell beside the agent's Chat
+                        after.cell === 1,
                     { before, after }
                 );
             });
@@ -402,8 +408,10 @@ export default function (kit) {
 
                 // one Ctrl+Z takes the whole turn back
                 await canvas(`app().focusContainer?.(); document.querySelector('${CANVAS} .excalidraw')?.focus(); return true;`);
+                // Excalidraw's undo is Cmd+Z on a Mac and Ctrl+Z elsewhere (modifiers: 4 is Meta, 2 is Ctrl)
+                const mac = await h.ev(`/Mac/.test(navigator.platform)`);
                 for (const type of ["rawKeyDown", "keyUp"]) {
-                    await h.cdp("Input.dispatchKeyEvent", { type, modifiers: 2, key: "z", code: "KeyZ", windowsVirtualKeyCode: 90 });
+                    await h.cdp("Input.dispatchKeyEvent", { type, modifiers: mac ? 4 : 2, key: "z", code: "KeyZ", windowsVirtualKeyCode: 90 });
                 }
                 const undone = await until(async () => (await canvas(`return shapes().length;`)) === afterAnswer.shapes - 2);
                 const afterUndo = await canvas(`return { shapes: shapes().length };`);
@@ -531,7 +539,7 @@ export default function (kit) {
                     open.click();
                     return true;`
                 );
-                await until(async () => (await state()).split != null);
+                await until(async () => (await state()).split != null && (await state()).cell === 1);
                 const after = await state();
                 await shot("card-opened");
                 rec(
@@ -543,7 +551,8 @@ export default function (kit) {
                         after.chat === "chat" &&
                         after.split?.project === PROJECT &&
                         after.split?.boardId === BOARD_ID &&
-                        after.split?.expanded === false,
+                        // the board is on screen as its own cell beside the agent's Chat
+                        after.cell === 1,
                     { clicked, before, after }
                 );
             });

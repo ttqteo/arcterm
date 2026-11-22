@@ -69,7 +69,7 @@ const ENTER = { key: "Enter", code: "Enter", windowsVirtualKeyCode: 13 };
 export default function (kit) {
     const { waveService, polishWaitFor, polishNap, ahReload, GRID_KEY, GRID_EMPTY } = kit;
     const { makeTab, closeTabs } = AC.tabFixtures({ waveService });
-    const LS_KEYS = [GRID_KEY, "agent.chatmode"];
+    const LS_KEYS = [GRID_KEY, "agent.chatmode", "agent.boards"];
 
     const scenario = {
         name: NAME,
@@ -126,10 +126,17 @@ export default function (kit) {
                 await AC.agentPage(
                     h,
                     `const S = await mod("app/view/boards/boardsplitstore.ts");
-                    globalStore.set(S.boardSplitAtom(${JSON.stringify(ctx.agent.tabId)}), { project: ${JSON.stringify(PROJECT)}, boardId: ${JSON.stringify(OPEN_ID)}, expanded: false });
+                    globalStore.set(S.boardSplitAtom(${JSON.stringify(ctx.agent.tabId)}), { project: ${JSON.stringify(PROJECT)}, boardId: ${JSON.stringify(OPEN_ID)} });
                     return true;`
                 );
                 await AC.focusAgent(h, ctx.agent.tabId);
+                // the entry is the board "open beside Chat"; its cell joins the agent's grid so it shows as well
+                await AC.agentPage(
+                    h,
+                    `const G = await mod("app/view/agents/gridstore.ts");
+                    G.openBoardCell(agentsModel(), ${JSON.stringify(ctx.agent.tabId)});
+                    return true;`
+                );
             } catch (e) {
                 ctx.arrangeError = `${at}: ${String(e?.message ?? e)}`;
             }
@@ -213,9 +220,11 @@ export default function (kit) {
                     }
                     return s;
                 })();
+                // the click is openBoard: the board is a cell beside the agent's Chat
+                const cell = await polishWaitFor(h, `document.querySelectorAll('[data-board-cell="${OPEN_ID}"]').length === 1`, WAIT_MS);
                 await polishNap(600);
                 await h.shot(`cdp-shots/${NAME}-opened.png`);
-                rec(name, opened && split?.boardId === OPEN_ID && split?.project === PROJECT, { split });
+                rec(name, opened && cell && split?.boardId === OPEN_ID && split?.project === PROJECT, { split, cell });
             });
 
             return steps;

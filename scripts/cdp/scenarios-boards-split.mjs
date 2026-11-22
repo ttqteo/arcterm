@@ -1,8 +1,9 @@
-// Scenario `boards-split`: the board split beside the agent's Chat (docs/superpowers/specs/2026-11-19-kael-boards-design.md,
-// plan 2026-11-19-kael-boards.md Task 7). A board opens right of a 360px Chat column in the agent's cell, the agent tree folded to a strip; its
-// header, turns and ask box are the steps below, each a screenshot plus a DOM assert. Beside Chat only the latest turn
-// shows, so a step that reads one turn's row puts that turn last; a dense board (B3) reads one part at a time (8b), a
-// small one (B1) reads whole.
+// Scenario `boards-split`: a board as a cell of the Agent grid beside its agent's Chat (docs/superpowers/specs/
+// 2026-11-22-board-cells-design.md). The agent's tree lists the board as a row under it; clicking the row opens it as a
+// cell right of the agent's, `[data-board-cell]` inside a `[data-board-cell-of]` wrapper that is a sibling of the agent's
+// `[data-agent-terminal]` cell, never inside it. Its header, turns and ask box are the steps below, each a screenshot plus
+// a DOM assert. Beside Chat only the latest turn shows, so a step that reads one turn's row puts that turn last; a dense
+// board (B3) reads one part at a time (8b), a small one (B1) reads whole.
 //
 // Two fixture claude agents over real tabs (no controller, so nothing runs) and a mock roster for them; the first has a
 // short transcript so Chat has something to show beside the board. The board commands are stubbed in the page
@@ -109,10 +110,10 @@ const runningTurn = (now, over = {}) => ({
 export default function (kit) {
     const { waveService, polishNap, ahReload, GRID_KEY, GRID_EMPTY } = kit;
     const { makeTab, closeTabs } = AC.tabFixtures({ waveService });
-    const LS_KEYS = [GRID_KEY, "agent.chatmode"];
+    const LS_KEYS = [GRID_KEY, "agent.chatmode", "agent.boards", "agent.header.buttons"];
 
     const rosterRows = (ctx) =>
-        [ctx.agent, ctx.other].map((tab, i) => ({
+        [ctx.agent, ctx.other, ctx.third, ctx.fourth].filter(Boolean).map((tab, i) => ({
             project: PROJECT,
             task: "",
             agent: "claude",
@@ -121,7 +122,7 @@ export default function (kit) {
             idleSince: Date.now() - 60_000,
             usage: { contextpct: 12 },
             id: tab.tabId,
-            name: i === 0 ? AGENT_TITLE : `claude · ${PROJECT} 2`,
+            name: i === 0 ? AGENT_TITLE : `claude · ${PROJECT} ${i + 1}`,
             blockId: tab.blockId,
             ...(i === 0 ? { transcriptPath: ctx.transcript } : {}),
         }));
@@ -154,6 +155,7 @@ export default function (kit) {
                 at = "resetting the grid";
                 await h.ev(`localStorage.setItem(${q(GRID_KEY)}, ${q(JSON.stringify(GRID_EMPTY))})`);
                 await h.ev(`localStorage.removeItem("agent.chatmode")`);
+                await h.ev(`localStorage.removeItem("agent.boards")`);
                 if (!(await ahReload(h))) throw new Error("the page did not come back after the reload");
                 await h.goto("agent");
 
@@ -163,6 +165,9 @@ export default function (kit) {
                     blockMeta: { view: "term", "agent:transcriptpath": ctx.transcript },
                 });
                 ctx.other = await makeTab(h, ctx, { label: `${PROJECT}-2`, blockMeta: { view: "term" } });
+                // two more for the full 2x2 of step 9
+                ctx.third = await makeTab(h, ctx, { label: `${PROJECT}-3`, blockMeta: { view: "term" } });
+                ctx.fourth = await makeTab(h, ctx, { label: `${PROJECT}-4`, blockMeta: { view: "term" } });
 
                 at = "setting the roster";
                 await AC.setRoster(h, rosterRows(ctx));
@@ -213,9 +218,17 @@ export default function (kit) {
             };
             await h.cdp("Emulation.setFocusEmulationEnabled", { enabled: true });
 
+            const GRID = "[data-agent-grid]";
+            // the agent's own cell (Chat and its terminal), and the board's: a sibling cell of the grid, never inside it
             const CELL = `[data-agent-terminal="${A}"]`;
-            const SPLIT = (id) => `${CELL} [data-board-split="${id}"]`;
+            const BOARD = `[data-board-cell-of="${A}"]`;
+            const SPLIT = (id) => `${BOARD} [data-board-cell="${id}"]`;
             const CANVAS = (id) => `[data-board-canvas="${id}"]`;
+            const TREE_ROW = (id) => `[data-tree-board="${id}"]`;
+            // the cells drawn (a hidden one is mounted but has no box)
+            const shownCells = (sel) =>
+                h.ev(`[...document.querySelectorAll(${q(sel)})].filter((el) => el.getBoundingClientRect().width > 0).length`);
+            const gridCount = () => h.ev(`document.querySelector("[data-agent-grid]")?.dataset.agentGridCount ?? null`);
             // a box in client px: null when the element is not there
             const box = (sel) =>
                 h.ev(`(() => {
@@ -237,6 +250,8 @@ export default function (kit) {
                     const split = globalStore.get(S.boardSplitAtom(${q(A)}));
                     return {
                         split,
+                        max: globalStore.get(S.boardMaxAtom(${q(A)})),
+                        stored: window.localStorage.getItem("agent.boards"),
                         chat: window.__arcChatMode?.get(${q(A)}) ?? null,
                         review: globalStore.get(D.docReviewStateAtom(${q(A)}))?.mode ?? null,
                         focus: globalStore.get(agentsModel().focusIdAtom),
@@ -267,7 +282,7 @@ export default function (kit) {
             const mb = (bytes) => (bytes == null ? null : Math.round((bytes / 1048576) * 10) / 10);
             // what the open board's turns read as, in the order drawn
             const turnRows = () =>
-                h.ev(`[...document.querySelectorAll(${q(`${CELL} [data-board-turn]`)})].map((row) => ({
+                h.ev(`[...document.querySelectorAll(${q(`${BOARD} [data-board-turn]`)})].map((row) => ({
                     id: row.getAttribute("data-board-turn"),
                     state: row.getAttribute("data-board-turn-state"),
                     label: (row.querySelector("[data-board-turn-label]")?.textContent ?? "").trim(),
@@ -279,12 +294,14 @@ export default function (kit) {
                     text: row.textContent.replace(/\\s+/g, " ").trim(),
                 }))`);
             const rowOf = (rows, id) => rows.find((r) => r.id === id);
-            // the terminal pane's box: it must not move or resize when a board opens, expands or closes
+            // the terminal pane's box: Chat's cell halves when the board joins it, but the pane itself is never re-parented
+            // or remounted (kept: a flag on its node, read back after every change of the grid)
             const termBox = () => box(`${CELL} .cockpit-focus-pane`);
+            const paneKept = () => h.ev(`document.querySelector(${q(`${CELL} .cockpit-focus-pane`)})?.__keep === true`);
             // Excalidraw's App instance off the canvas's React fiber, and a shape's centre in client px
             const APP = `
                 const app = () => {
-                    const el = document.querySelector('${CELL} [data-board-canvas] .excalidraw');
+                    const el = document.querySelector('${BOARD} [data-board-canvas] .excalidraw');
                     const key = el && Object.keys(el).find((k) => k.startsWith("__reactFiber$"));
                     for (let f = key ? el[key] : null; f != null; f = f.return) {
                         if (typeof f.stateNode?.updateScene === "function" && f.stateNode?.scene != null) return f.stateNode;
@@ -326,71 +343,115 @@ export default function (kit) {
                 return termBox();
             })();
             const heapBefore = await heap();
-            // the terminal's box while the board is open: the tree folds to a strip, so the cell (and the pane) widen once
-            let termOpen = null;
+            // the pane's node is flagged now: it must be the same node after the board opens, expands, closes and reopens
+            await h.ev(`(() => { const p = document.querySelector(${q(`${CELL} .cockpit-focus-pane`)}); if (p) p.__keep = true; })()`);
             const TREE = "[data-agent-tree]";
             const STRIP = (state) => `[data-agent-tree-strip="${state}"]`;
-            await run("1. Open puts Chat on the left and the board on the right, its name and facts in the header", async (name) => {
+            // the grid's box and the agent's header title as they are before any board opens
+            const gridBefore = await box(GRID);
+            // the name only: the rest of the title (runtime, state) ticks on its own
+            const headerOf = () => text("[data-header-name] > span");
+            const headerBefore = await headerOf();
+
+            // --- 1. the tree lists the board under the agent; a click opens it as a cell right of Chat ---
+            await run("1a. the agent's tree row lists its latest board with +1 for the other, closed", async (name) => {
+                const there = await until(async () => (await count(TREE_ROW(B1))) === 1);
+                const label = await text(`${TREE_ROW(B1)} [data-tree-board-name]`);
+                const more = await text(`${TREE_ROW(B1)} [data-tree-board-more]`);
+                const open = await h.ev(`document.querySelector(${q(TREE_ROW(B1))})?.hasAttribute("data-tree-board-open") ?? null`);
+                const cells = await gridCount();
+                const boards = await count("[data-board-cell]");
+                await shot("1a-tree-row");
+                rec(
+                    name,
+                    there && label === B1_NAME && more === "+1" && open === false && cells === "1" && boards === 0 && termBefore != null,
+                    { there, label, more, open, cells, boards }
+                );
+            });
+
+            await run("1b. clicking the row opens the board as a cell beside Chat: Chat keeps half the grid, the tree stays open", async (name) => {
                 const chatBefore = await box(`[data-agent-chat="${A}"]`);
-                await openBoardOn(B1);
+                const clicked = await click(TREE_ROW(B1));
                 const shown = await until(async () => (await box(SPLIT(B1))) != null);
                 const ready = await canvasReady(B1);
                 await polishNap(500);
-                // the drawing is fitted to the half cell: every shape's centre is on the canvas
+                // the drawing is fitted to the half grid: every shape's centre is on the canvas
                 const fits = await canvasPage(`
-                    const r = document.querySelector('${CELL} [data-board-canvas]').getBoundingClientRect();
+                    const r = document.querySelector('${BOARD} [data-board-canvas]').getBoundingClientRect();
                     return ["tauri-host", "auth-key", "sqlite"].map((id) => {
                         const c = centreOf(id);
                         return c != null && c.x > r.left && c.x < r.right && c.y > r.top && c.y < r.bottom;
                     });`);
+                const grid = await box(GRID);
                 const cell = await box(CELL);
+                const wrap = await box(BOARD);
                 const chat = await box(`${CELL} [data-agent-chat="${A}"]`);
                 const board = await box(SPLIT(B1));
                 const term = await termBox();
                 const title = await text(`${SPLIT(B1)} [data-board-name]`);
                 const facts = await text(`${SPLIT(B1)} [data-board-facts]`);
                 const st = await state();
-                await shot("1-open");
-                // Chat is a 360px column (half a cell narrower than 720px), the board the rest
-                const mid = cell == null ? null : cell.l + Math.min(360, cell.w / 2);
-                const treeGone = (await count(TREE)) === 0 && (await count(STRIP("folded"))) === 1;
-                termOpen = term;
+                const cells = await gridCount();
+                const tabCells = await shownCells("[data-agent-terminal]");
+                const boardCells = await shownCells("[data-board-cell]");
+                // the board is a sibling cell of the agent's, never a child of it
+                const sibling = await h.ev(`!document.querySelector(${q(CELL)})?.querySelector("[data-board-cell]") && !document.querySelector(${q(CELL)})?.contains(document.querySelector(${q(BOARD)}))`);
+                const open = await h.ev(`document.querySelector(${q(TREE_ROW(B1))})?.hasAttribute("data-tree-board-open") ?? null`);
+                const treeOpen = (await count(TREE)) === 1 && (await count(STRIP("folded"))) === 0;
+                const kept = await paneKept();
+                await shot("1b-open");
+                // the picture of the feature: the grid with Chat on the left and the board on the right
+                let picture;
+                try {
+                    picture = await h.whatsnewShot("board-cells", { selector: GRID });
+                } catch (e) {
+                    picture = { error: String(e?.message ?? e) };
+                }
+                const ratio = grid == null || cell == null ? null : cell.w / grid.w;
                 rec(
                     name,
-                    shown &&
+                    clicked &&
+                        shown &&
                         ready &&
                         fits.length === 3 &&
                         fits.every(Boolean) &&
-                        termBefore != null &&
+                        cells === "2" &&
+                        tabCells === 1 &&
+                        boardCells === 1 &&
+                        sibling &&
+                        ratio != null &&
+                        ratio > 0.4 &&
+                        ratio < 0.6 &&
                         st.split?.boardId === B1 &&
-                        st.split?.expanded === false &&
+                        st.split?.project === PROJECT &&
                         st.chat === "chat" &&
-                        near(board?.l, mid) &&
-                        near(board?.r, cell?.r) &&
+                        st.focus === A &&
+                        // Chat on the left, the board on the right, side by side in the one row of the grid
                         near(chat?.l, cell?.l) &&
-                        near(chat?.r, mid) &&
-                        // the tree folds to a strip: the pane under both widens once, its top and height kept
-                        treeGone &&
+                        near(chat?.r, cell?.r, 4) &&
+                        wrap != null &&
+                        cell != null &&
+                        wrap.l >= cell.r - 2 &&
+                        near(wrap.t, cell?.t, 3) &&
+                        near(wrap.b, cell?.b, 3) &&
+                        // the tiled grid keeps a 6px gutter around its cells
+                        near(wrap.r, grid?.r, 10) &&
+                        board != null &&
+                        near(board.l, wrap.l, 3) &&
+                        // the tree no longer folds beside a board, and its row reads open
+                        treeOpen &&
+                        open === true &&
+                        // Chat's pane shrank with its cell: the same node (the tiled grid's gutter and the cell's bar move its top)
                         term != null &&
-                        term.w > termBefore.w &&
-                        term.t === termBefore.t &&
-                        term.h === termBefore.h &&
+                        termBefore != null &&
+                        term.w < termBefore.w &&
+                        kept &&
                         title === B1_NAME &&
-                        /^3 shapes · drawn (\d\d:\d\d|\d+ [A-Z][a-z]{2})$/.test(facts ?? ""),
-                    { cell, chat: { before: chatBefore, after: chat }, board, term: { before: termBefore, after: term }, treeGone, title, facts, fits, split: st.split }
+                        /^3 shapes · drawn (\d\d:\d\d|\d+ [A-Z][a-z]{2})$/.test(facts ?? "") &&
+                        picture?.error == null &&
+                        /-board-cells\.webp$/.test(picture?.file ?? ""),
+                    { ratio, grid, cell, wrap, chat: { before: chatBefore, after: chat }, board, term: { before: termBefore, after: term }, treeOpen, open, sibling, cells, tabCells, boardCells, title, facts, fits, kept, split: st.split, picture }
                 );
-            });
-
-            // --- 1b. the strip opens the tree beside the board, and folds it again ---
-            await run("1b. the strip beside the board opens the agent tree and folds it back", async (name) => {
-                const opened = (await click(STRIP("folded"))) && (await until(async () => (await count(TREE)) === 1 && (await count(STRIP("open"))) === 1));
-                await polishNap(300);
-                await shot("1b-tree-peek");
-                const stillSplit = (await box(SPLIT(B1))) != null;
-                const folded = (await click(STRIP("open"))) && (await until(async () => (await count(TREE)) === 0 && (await count(STRIP("folded"))) === 1));
-                await polishNap(300);
-                const term = await termBox();
-                rec(name, opened && stillSplit && folded && JSON.stringify(term) === JSON.stringify(termOpen), { opened, stillSplit, folded, term, termOpen });
             });
 
             // --- 2. beside Chat only the latest turn shows, one line, with "N earlier" for the rest ---
@@ -398,7 +459,7 @@ export default function (kit) {
                 const now = Date.now();
                 // as fixed: the agent's drawn request is the latest
                 const base = await turnRows();
-                const baseEarlier = await text(`${CELL} [data-board-turns-earlier]`);
+                const baseEarlier = await text(`${BOARD} [data-board-turns-earlier]`);
                 // your drawn ask last
                 await putTurns(h, B1, lastTurn(now, TA));
                 await until(async () => rowOf(await turnRows(), TA) != null);
@@ -455,7 +516,7 @@ export default function (kit) {
                 const drawn = await click(`${SPLIT(B1)} [data-board-turn="${TB}"] [data-board-turn-other]`);
                 await until(async () => (await boardCalls(h, "BoardRerouteCommand")).length === 2);
                 const calls = await boardCalls(h, "BoardRerouteCommand");
-                const errors = await count(`${CELL} [data-board-error]`);
+                const errors = await count(`${BOARD} [data-board-error]`);
                 await shot("3-reroute");
                 rec(
                     name,
@@ -482,7 +543,15 @@ export default function (kit) {
                 await clickAt(at);
                 const selectedText = await until(async () => (await text(`${SPLIT(B1)} [data-board-ask-selected]`)) === "Selected auth key");
                 const picked = await canvasPage(`return selected();`);
+                // a press inside the board cell is no focus change: the agent stays the selected one, the header stays its
+                // own, and the keyboard is not handed to an xterm
+                const afterPress = await state();
+                const headerAfterPress = await headerOf();
+                const inXterm = await h.ev(`!!document.activeElement?.closest?.(".xterm")`);
                 await typeInto(`${SPLIT(B1)} [data-board-ask-input]`, "why does it change?");
+                const afterTyping = await state();
+                const headerAfterTyping = await headerOf();
+                const asking = await h.ev(`!!document.activeElement?.closest?.(${q(`${BOARD} [data-board-ask-input]`)}) || document.activeElement?.matches?.(${q(`${BOARD} [data-board-ask-input]`)})`);
                 const enabled = await h.ev(`!document.querySelector(${q(`${SPLIT(B1)} [data-board-ask-send]`)})?.disabled`);
                 await shot("4-selected-ask");
                 const clicked = await click(`${SPLIT(B1)} [data-board-ask-send]`);
@@ -494,6 +563,13 @@ export default function (kit) {
                     none === "Select shapes to ask about them" &&
                         selectedText &&
                         picked.join() === "auth-key" &&
+                        afterPress.focus === A &&
+                        afterTyping.focus === A &&
+                        headerBefore != null &&
+                        headerAfterPress === headerBefore &&
+                        headerAfterTyping === headerBefore &&
+                        !inXterm &&
+                        asking &&
                         enabled &&
                         clicked &&
                         calls.length === 1 &&
@@ -503,7 +579,7 @@ export default function (kit) {
                         calls[0].on === "auth key" &&
                         calls[0].selectedids?.join() === "auth-key" &&
                         emptied,
-                    { none, at, picked, calls, emptied }
+                    { none, at, picked, focus: [afterPress.focus, afterTyping.focus], header: [headerBefore, headerAfterPress, headerAfterTyping], inXterm, asking, calls, emptied }
                 );
             });
 
@@ -517,7 +593,7 @@ export default function (kit) {
                 const d = rowOf(rows, TD);
                 const seconds = Number(/(\d+)s$/.exec(d?.label ?? "")?.[1] ?? "NaN");
                 const disabled = await h.ev(`document.querySelector(${q(`${SPLIT(B1)} [data-board-ask-send]`)})?.disabled === true`);
-                const earlier = await text(`${CELL} [data-board-turns-earlier]`);
+                const earlier = await text(`${BOARD} [data-board-turns-earlier]`);
                 await shot("5a-answering");
                 rec(
                     name,
@@ -588,45 +664,59 @@ export default function (kit) {
             });
 
             // --- 6. Expand: the turns column in full, with the copied reply; Chat stays mounted under the board ---
-            await run("6. Expand takes the whole cell: every turn in a column with the copied reply, Chat kept mounted under it", async (name) => {
+            await run("6. Expand takes the whole grid: every turn in a column with the copied reply, Chat's cell hidden but mounted", async (name) => {
                 // a draft in the Chat box, and the box's node, to prove expanding never remounts the pane
                 const COMPOSER = `${CELL} [data-agent-chat="${A}"] [data-chat-input]`;
                 await typeInto(COMPOSER, "a draft I have not sent");
                 await h.ev(`document.querySelector(${q(COMPOSER)}).__keep = true`);
+                const termHalf = await termBox();
                 const clicked = await click(`${SPLIT(B1)} [data-board-expand]`);
-                const expanded = await until(() => h.ev(`document.querySelector(${q(SPLIT(B1))})?.dataset.boardExpanded === "true"`));
-                const cell = await box(CELL);
+                const expanded = await until(() => h.ev(`document.querySelector(${q(SPLIT(B1))})?.dataset.boardMax === "true"`));
+                await polishNap(300);
+                const grid = await box(GRID);
                 const board = await box(SPLIT(B1));
-                const chat = await box(`${CELL} [data-agent-chat="${A}"]`);
-                const term = await termBox();
+                const cellShown = await shownCells(CELL);
+                const cellMounted = await count(CELL);
+                const st = await state();
                 const rows = await turnRows();
                 const column = await box(`${SPLIT(B1)} [data-board-turns="full"]`);
                 const canvasBox = await box(`${SPLIT(B1)} ${CANVAS(B1)}`);
                 const label = await h.ev(`document.querySelector(${q(`${SPLIT(B1)} [data-board-expand]`)})?.getAttribute("aria-label") ?? null`);
-                const inert = await h.ev(`!!document.querySelector(${q(`${CELL} [data-agent-chat="${A}"]`)})?.closest("[inert]")`);
                 const kept = await h.ev(`document.querySelector(${q(COMPOSER)})?.__keep === true`);
                 const draft = await text(COMPOSER);
+                const paneKeptMax = await paneKept();
                 await canvasReady(B1);
                 await shot("6-expanded");
                 // Collapse, then the "N earlier" line opens it again
-                const collapsed = (await click(`${SPLIT(B1)} [data-board-expand]`)) && (await until(() => h.ev(`document.querySelector(${q(SPLIT(B1))})?.dataset.boardExpanded === "false"`)));
+                const collapsed = (await click(`${SPLIT(B1)} [data-board-expand]`)) && (await until(() => h.ev(`document.querySelector(${q(SPLIT(B1))})?.dataset.boardMax !== "true"`)));
+                await polishNap(300);
                 const keptAfter = await h.ev(`document.querySelector(${q(COMPOSER)})?.__keep === true`);
-                const earlierClicked = await click(`${CELL} [data-board-turns-earlier]`);
-                const reopened = await until(() => h.ev(`document.querySelector(${q(SPLIT(B1))})?.dataset.boardExpanded === "true"`));
+                const termBack = await termBox();
+                const backShown = await shownCells(CELL);
+                const earlierClicked = await click(`${BOARD} [data-board-turns-earlier]`);
+                const reopened = await until(() => h.ev(`document.querySelector(${q(SPLIT(B1))})?.dataset.boardMax === "true"`));
                 rec(
                     name,
                     clicked &&
                         expanded &&
                         label === "Collapse" &&
-                        near(board?.l, cell?.l) &&
-                        near(board?.r, cell?.r) &&
-                        // the pane stays a 360px column under the board
-                        near(chat?.r, cell == null ? null : cell.l + Math.min(360, cell.w / 2)) &&
-                        JSON.stringify(term) === JSON.stringify(termOpen) &&
-                        inert &&
+                        st.max === true &&
+                        // the board fills the grid; Chat's cell is hidden under it, still in the DOM with its draft
+                        // (inside the tiled grid's 6px gutter, and under the cell's bar)
+                        near(board?.l, grid?.l, 10) &&
+                        near(board?.r, grid?.r, 10) &&
+                        near(board?.t, grid?.t, 40) &&
+                        near(board?.b, grid?.b, 10) &&
+                        cellShown === 0 &&
+                        cellMounted === 1 &&
                         kept &&
+                        paneKeptMax &&
                         draft === "a draft I have not sent" &&
                         keptAfter &&
+                        // Chat's cell is back at the box it had, so its pane is too
+                        collapsed &&
+                        backShown === 1 &&
+                        JSON.stringify(termBack) === JSON.stringify(termHalf) &&
                         rows.length === 4 &&
                         rowOf(rows, TB)?.reply === REPLY &&
                         column != null &&
@@ -634,10 +724,9 @@ export default function (kit) {
                         canvasBox != null &&
                         canvasBox.w >= 400 &&
                         canvasBox.r <= column.l + 2 &&
-                        collapsed &&
                         earlierClicked &&
                         reopened,
-                    { cell, board, chat, column, rows: rows.length, reply: rowOf(rows, TB)?.reply, label, inert, kept, draft, keptAfter, collapsed, reopened }
+                    { grid, board, cellShown, cellMounted, column, rows: rows.length, reply: rowOf(rows, TB)?.reply, label, kept, draft, keptAfter, termHalf, termBack, collapsed, reopened, max: st.max }
                 );
             });
 
@@ -652,7 +741,9 @@ export default function (kit) {
                 const ready2 = await canvasReady(B2);
                 const title2 = await text(`${SPLIT(B2)} [data-board-name]`);
                 const gone1 = (await count(CANVAS(B1))) === 0;
-                const still = (await state()).split;
+                // switching keeps the cell as it was: the same one, still expanded, the grid still two cells
+                const stillState = await state();
+                const still = { split: stillState.split, max: stillState.max, cells: await gridCount(), boardCells: await count("[data-board-cell]") };
                 await shot("7-switched");
                 const back = (await click(`${SPLIT(B2)} [data-board-switcher]`)) && (await click(`${SPLIT(B2)} [data-board-switch-item="${B1}"]`));
                 const switchedBack = await until(async () => (await state()).split?.boardId === B1);
@@ -669,45 +760,115 @@ export default function (kit) {
                         ready2 &&
                         title2 === B2_NAME &&
                         gone1 &&
-                        // switching keeps the split as it was
-                        still?.expanded === true &&
+                        still.max === true &&
+                        still.cells === "2" &&
+                        still.boardCells === 1 &&
                         back &&
                         switchedBack,
                     { items, title2, gone1, still }
                 );
             });
 
-            // --- 8. Close: Chat alone again, at the cell's full width ---
-            await run("8. Close brings back Chat alone at full width", async (name) => {
+            // --- 8. the board cell's x: Chat alone again, at the grid's full width ---
+            await run("8. the board cell's x brings back Chat alone: one cell, no board cell, the entry cleared", async (name) => {
                 const COMPOSER = `${CELL} [data-agent-chat="${A}"] [data-chat-input]`;
-                // collapsed first, so the half the pane gives back is what is measured
+                // collapsed first, so the cell Chat gets back is what is measured
                 await click(`${SPLIT(B1)} [data-board-expand]`);
-                await until(() => h.ev(`document.querySelector(${q(SPLIT(B1))})?.dataset.boardExpanded === "false"`));
-                const clicked = await click(`${SPLIT(B1)} [data-board-close]`);
-                const closed = await until(async () => (await box(SPLIT(B1))) == null && (await state()).split == null);
-                // the tree slides open on its spring (agenttreeslot.tsx): measure once the pane is back to its box
+                await until(() => h.ev(`document.querySelector(${q(SPLIT(B1))})?.dataset.boardMax !== "true"`));
+                const clicked = await click(`[data-board-cell-remove="${A}"]`);
+                const closed = await until(async () => (await count("[data-board-cell]")) === 0 && (await state()).split == null && (await gridCount()) === "1");
+                // measure once the pane is back to its box
                 await until(async () => JSON.stringify(await termBox()) === JSON.stringify(termBefore));
                 await polishNap(200);
+                const grid = await box(GRID);
                 const cell = await box(CELL);
                 const chat = await box(`${CELL} [data-agent-chat="${A}"]`);
                 const term = await termBox();
                 const kept = await h.ev(`document.querySelector(${q(COMPOSER)})?.__keep === true`);
-                const inert = await h.ev(`!!document.querySelector(${q(`${CELL} [data-agent-chat="${A}"]`)})?.closest("[inert]")`);
+                const st = await state();
+                const wraps = await count("[data-board-cell-of]");
+                const rowOpen = await h.ev(`document.querySelector(${q(TREE_ROW(B1))})?.hasAttribute("data-tree-board-open") ?? null`);
                 await shot("8-closed");
                 rec(
                     name,
                     clicked &&
                         closed &&
+                        wraps === 0 &&
                         near(chat?.l, cell?.l) &&
                         near(chat?.r, cell?.r) &&
-                        // the tree is back, so the pane is back to its box from before the board opened
+                        near(cell?.r, grid?.r, 3) &&
                         (await count(TREE)) === 1 &&
-                        (await count(STRIP("folded"))) === 0 &&
                         JSON.stringify(term) === JSON.stringify(termBefore) &&
-                        // the same pane, never rebuilt
+                        // the same pane and the same box, never rebuilt
                         kept &&
-                        !inert,
-                    { cell, chat, kept, inert }
+                        (await paneKept()) &&
+                        // the entry is gone from the store and from storage, and the tree row reads closed
+                        st.split == null &&
+                        st.max === false &&
+                        !(st.stored ?? "").includes(A) &&
+                        rowOpen === false,
+                    { grid, cell, chat, kept, wraps, stored: st.stored, rowOpen }
+                );
+            });
+
+            // --- 8a. the agent cell's x takes its board cell with it ---
+            await run("8a. reopening beside Chat, then the agent cell's x: no board cell is left", async (name) => {
+                // a second cell, so the agent's cell has an x to press: the other agent beside it
+                await AC.agentPage(
+                    h,
+                    `const G = await mod("app/view/agents/gridstore.ts");
+                    return G.openInSplit(agentsModel(), ${q(B)});`
+                );
+                await until(async () => (await gridCount()) === "2");
+                await AC.focusAgent(h, A);
+                await openBoardOn(B1);
+                const threeUp = await until(async () => (await gridCount()) === "3" && (await shownCells("[data-board-cell]")) === 1);
+                const cellsBefore = await h.ev(`[...document.querySelectorAll("[data-agent-cell]")].length`);
+                const clicked = await click(`[data-agent-cell-remove="${A}"]`);
+                const gone = await until(async () => (await count("[data-board-cell]")) === 0 && (await count(`[data-board-cell-of]`)) === 0);
+                await polishNap(300);
+                const cells = await gridCount();
+                const st = await state();
+                await shot("8a-agent-x");
+                rec(
+                    name,
+                    threeUp && clicked && gone && cells === "1" && cellsBefore === 3 && (await count(`[data-board-cell-of="${A}"]`)) === 0,
+                    { threeUp, cellsBefore, cells, split: st.split }
+                );
+                // the grid and the tree back as they were: the agent alone, no entry left
+                await closeBoardOn();
+                await AC.agentPage(h, `const G = await mod("app/view/agents/gridstore.ts"); G.endSplit(agentsModel()); return true;`);
+                await AC.focusAgent(h, A);
+                await until(async () => (await gridCount()) === "1");
+            });
+
+            // --- 8c. the header's Close split ends the split with the board in it ---
+            await run("8c. the header's Close split leaves one cell, no board cell, and the tree row closed", async (name) => {
+                // Split sits in the header's More menu by default: turn its header button on (the key is restored at teardown)
+                await AC.agentPage(
+                    h,
+                    `const H = await mod("app/view/agents/headerbuttonsstore.ts");
+                    globalStore.set(H.headerButtonsAtom, "split", true);
+                    return true;`
+                );
+                await AC.focusAgent(h, A);
+                await openBoardOn(B1);
+                const opened = await until(async () => (await gridCount()) === "2" && (await shownCells("[data-board-cell]")) === 1);
+                await until(async () => (await count("[data-agent-split]")) === 1);
+                const rowOpenBefore = await until(() => h.ev(`document.querySelector(${q(TREE_ROW(B1))})?.hasAttribute("data-tree-board-open") === true`));
+                const menu = await click("[data-agent-split]");
+                const listed = await until(async () => (await count(`[data-menu-item="Close split"]`)) === 1);
+                const closed = await click(`[data-menu-item="Close split"]`);
+                const gone = await until(async () => (await gridCount()) === "1" && (await count("[data-board-cell]")) === 0);
+                await polishNap(300);
+                const st = await state();
+                const rowOpen = await h.ev(`document.querySelector(${q(TREE_ROW(B1))})?.hasAttribute("data-tree-board-open") ?? null`);
+                const kept = await paneKept();
+                await shot("8c-close-split");
+                rec(
+                    name,
+                    opened && rowOpenBefore && menu && listed && closed && gone && st.split == null && !(st.stored ?? "").includes(A) && rowOpen === false && kept,
+                    { opened, rowOpenBefore, menu, listed, closed, gone, split: st.split, stored: st.stored, rowOpen, kept }
                 );
             });
 
@@ -789,56 +950,77 @@ export default function (kit) {
                 );
             });
 
-            // --- 9. the agent in a grid of two cells: Open opens the board expanded, with no Expand ---
-            await run("9. in a grid of two cells Open opens the board expanded, with no Expand", async (name) => {
-                const grown = await AC.agentPage(
+            let gave = null;
+            // --- 9. a full 2x2: the board takes the last other cell, the agent and the focused tab keep theirs ---
+            await run("9. in a full 2x2 Open gives the board the last other cell: the agent keeps its cell, that tab keeps running", async (name) => {
+                const CELL_OF = (id) => `[data-agent-terminal="${id}"]`;
+                const C = ctx.third.tabId;
+                const D = ctx.fourth.tabId;
+                for (const id of [B, C, D]) {
+                    await AC.agentPage(
+                        h,
+                        `const G = await mod("app/view/agents/gridstore.ts");
+                        return G.openInSplit(agentsModel(), ${q(id)});`
+                    );
+                }
+                await AC.focusAgent(h, A);
+                const full = await until(async () => (await gridCount()) === "4");
+                const before = await Promise.all([A, B, C, D].map((id) => shownCells(CELL_OF(id))));
+                // the grid's own order decides which cell gives way: the last one that is neither the agent nor the focused one
+                const order = await AC.agentPage(
                     h,
                     `const G = await mod("app/view/agents/gridstore.ts");
-                    return G.openInSplit(agentsModel(), ${q(B)});`
+                    return G.currentGrid(agentsModel()).ids;`
                 );
-                await until(async () => (await h.ev(`document.querySelector("[data-agent-grid]")?.dataset.agentGridCount`)) === "2");
-                await AC.focusAgent(h, A);
+                const give = [...order].reverse().find((id) => id !== A) ?? null;
+                gave = give;
                 await openBoardOn(B1);
-                const shown = await until(async () => (await box(SPLIT(B1))) != null);
+                const boardUp = await until(async () => (await shownCells("[data-board-cell]")) === 1);
                 await polishNap(400);
+                const cells = await gridCount();
+                const ids = [A, B, C, D];
+                const after = await Promise.all(ids.map((id) => shownCells(CELL_OF(id))));
                 const st = await state();
-                const cell = await box(CELL);
-                const board = await box(SPLIT(B1));
-                const expandButtons = await count(`${SPLIT(B1)} [data-board-expand]`);
-                const closeButtons = await count(`${SPLIT(B1)} [data-board-close]`);
-                const canvasBox = await box(`${SPLIT(B1)} ${CANVAS(B1)}`);
-                const turnsBox = await box(`${SPLIT(B1)} [data-board-turns="full"]`);
-                const cells = await h.ev(`document.querySelector("[data-agent-grid]")?.dataset.agentGridCount ?? null`);
-                const expandedAttr = await h.ev(`document.querySelector(${q(SPLIT(B1))})?.dataset.boardExpanded ?? null`);
+                // the roster still holds the tab whose cell gave way: it was not closed
+                const stillThere = await AC.agentPage(
+                    h,
+                    `const m = agentsModel();
+                    return [...globalStore.get(m.agentsAtom), ...globalStore.get(m.terminalsAtom)].some((a) => a.id === ${q(give)});`
+                );
                 await canvasReady(B1);
-                await shot("9-grid");
+                await shot("9-full-grid");
                 rec(
                     name,
-                    grown &&
-                        shown &&
-                        cells === "2" &&
-                        st.split?.expanded === true &&
-                        expandedAttr === "true" &&
-                        expandButtons === 0 &&
-                        closeButtons === 1 &&
-                        // the whole cell under the grid cell's bar
-                        near(board?.l, cell?.l) &&
-                        near(board?.r, cell?.r) &&
-                        near(board?.b, cell?.b) &&
-                        near(board?.t, cell == null ? null : cell.t + 26, 3) &&
-                        // a narrow board stacks its turns under the canvas, which keeps most of the cell
-                        canvasBox != null &&
-                        turnsBox != null &&
-                        canvasBox.w >= board.w - 4 &&
-                        canvasBox.h >= 250 &&
-                        turnsBox.t >= canvasBox.b - 2 &&
-                        turnsBox.b <= board.b + 1,
-                    { grown, cells, split: st.split, expandButtons, closeButtons, cell, board, canvasBox, turnsBox }
+                    full &&
+                        before.join() === "1,1,1,1" &&
+                        boardUp &&
+                        cells === "4" &&
+                        give != null &&
+                        order.length === 4 &&
+                        // exactly the given-up tab's cell is gone; the agent and the other two keep theirs
+                        after.join() === ids.map((id) => (id === give ? 0 : 1)).join() &&
+                        st.focus === A &&
+                        st.split?.boardId === B1 &&
+                        stillThere,
+                    { full, before, order, give, cells, after, focus: st.focus, split: st.split, stillThere }
                 );
+            });
+
+            // --- 9b. another agent alone: no canvas stays behind; the split comes back with its agent ---
+            await run("9b. focusing another agent alone leaves no board in the DOM; the agent's split returns with its board", async (name) => {
+                // the tab whose cell gave way in step 9: no cell of the split, so it shows alone
+                const D = gave ?? ctx.fourth.tabId;
+                await AC.focusAgent(h, D);
+                const gone = await until(async () => (await count(".excalidraw")) === 0 && (await count("[data-board-cell]")) === 0);
+                await shot("9b-other-alone");
+                await AC.focusAgent(h, A);
+                const back = await until(async () => (await shownCells("[data-board-cell]")) === 1);
+                const ready = await canvasReady(B1);
+                rec(name, gone && back && ready, { gone, back, ready });
                 await closeBoardOn();
                 await AC.agentPage(h, `const G = await mod("app/view/agents/gridstore.ts"); G.endSplit(agentsModel()); return true;`);
                 await AC.focusAgent(h, A);
-                await until(async () => (await h.ev(`document.querySelector("[data-agent-grid]")?.dataset.agentGridCount`)) === "1");
+                await until(async () => (await gridCount()) === "1");
             });
 
             // --- 10. a Review pane open on the agent: Open closes it and shows Chat with the board ---
@@ -860,6 +1042,7 @@ export default function (kit) {
                 const reviewGone = await until(async () => (await count("[data-doc-review-pane]")) === 0);
                 const chat = await box(`${CELL} [data-agent-chat="${A}"]`);
                 const st = await state();
+                const cells = await gridCount();
                 await canvasReady(B1);
                 await shot("10-review-open");
                 rec(
@@ -871,26 +1054,28 @@ export default function (kit) {
                         st.review === "terminal" &&
                         st.chat === "chat" &&
                         chat != null &&
+                        cells === "2" &&
                         st.split?.boardId === B1,
-                    { reviewUp, before: before.review, after: st.review, chat, split: st.split }
+                    { reviewUp, before: before.review, after: st.review, chat, cells, split: st.split }
                 );
                 await closeBoardOn();
+                await until(async () => (await gridCount()) === "1");
                 await AC.agentPage(h, `const D = await mod("app/view/agents/docreviewstore.ts"); globalStore.set(D.docReviewStateAtom(${q(A)}), null); return true;`);
             });
 
             // --- 10b. the agent in Terminal chat mode: Open switches it to Chat ---
-            await run("10b. in Terminal chat mode the board is not drawn; Open switches the agent to Chat and shows both", async (name) => {
+            await run("10b. in Terminal chat mode an entry alone draws no board cell; Open switches the agent to Chat and shows both", async (name) => {
                 await AC.agentPage(h, `window.__arcChatMode.set(${q(A)}, "terminal"); return true;`);
                 const chatGone = await until(async () => (await count(`${CELL} [data-agent-chat="${A}"]:not([data-chat-leaving])`)) === 0);
-                // a split set while the cell shows the terminal draws nothing: the live xterm is never inside the split
+                // an entry with no cell in the grid draws nothing: a board cell exists only once openBoard has given it one
                 await AC.agentPage(
                     h,
                     `const S = await mod("app/view/boards/boardsplitstore.ts");
-                    globalStore.set(S.boardSplitAtom(${q(A)}), { project: ${q(PROJECT)}, boardId: ${q(B1)}, expanded: false });
+                    globalStore.set(S.boardSplitAtom(${q(A)}), { project: ${q(PROJECT)}, boardId: ${q(B1)} });
                     return true;`
                 );
                 await polishNap(600);
-                const drawnInTerminal = await count(`${CELL} [data-board-split]`);
+                const drawnInTerminal = await count(`[data-board-cell]`);
                 await closeBoardOn();
                 const before = await state();
                 await shot("10b-terminal");
@@ -925,27 +1110,6 @@ export default function (kit) {
                 );
             });
 
-            // --- 12. the What's new picture: the split in a cell, a shape selected ---
-            await run("12. the What's new picture of the split beside Chat", async (name) => {
-                await putTurns(h, B1, baseTurns(Date.now()));
-                await AC.focusAgent(h, A);
-                await openBoardOn(B1);
-                await canvasReady(B1);
-                await polishNap(500);
-                const at = await canvasPage(`return centreOf("auth-key");`);
-                await clickAt(at);
-                await until(async () => (await text(`${SPLIT(B1)} [data-board-ask-selected]`)) === "Selected auth key");
-                await polishNap(600);
-                let picture;
-                try {
-                    picture = await h.whatsnewShot("boards", { selector: CELL });
-                } catch (e) {
-                    picture = { error: String(e?.message ?? e) };
-                }
-                await shot("12-picture");
-                rec(name, picture?.error == null && /-boards\.webp$/.test(picture?.file ?? ""), picture);
-            });
-
             return steps;
         },
 
@@ -962,7 +1126,7 @@ export default function (kit) {
                     h,
                     `const S = await mod("app/view/boards/boardsplitstore.ts");
                     const D = await mod("app/view/agents/docreviewstore.ts");
-                    for (const id of ${q([ctx.agent?.tabId, ctx.other?.tabId].filter(Boolean))}) {
+                    for (const id of ${q([ctx.agent?.tabId, ctx.other?.tabId, ctx.third?.tabId, ctx.fourth?.tabId].filter(Boolean))}) {
                         S.closeBoard(id);
                         globalStore.set(D.docReviewStateAtom(id), null);
                     }

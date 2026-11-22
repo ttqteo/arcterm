@@ -34,6 +34,8 @@ and a picture given to a line that is not big.
 
 ### Changed
 
+- A board now opens as its own pane beside the agent's Chat, and each agent's latest board is a row under it in the Agent tree.
+  <!-- big --> <!-- shot: 1.14.0-board-cells.webp -->
 - A Markdown document's Outline card opens over its rail of dashes, as Notion's does: whole headings, wrapped instead
   of cut, the one you are reading in blue, and the rail's lit dash is the text colour instead of blue.
 - A dense board no longer puts a label over every part: the part under the pointer shows one Read label, and the header
