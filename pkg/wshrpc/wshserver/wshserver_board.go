@@ -14,6 +14,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/wavetermdev/waveterm/pkg/boarddrawer"
 	"github.com/wavetermdev/waveterm/pkg/boardstore"
+	"github.com/wavetermdev/waveterm/pkg/sessiontrash"
 	"github.com/wavetermdev/waveterm/pkg/wps"
 	"github.com/wavetermdev/waveterm/pkg/wshrpc"
 )
@@ -240,6 +241,26 @@ func (ws *WshServer) BoardSaveCommand(ctx context.Context, data wshrpc.CommandBo
 		publishBoardList(data.Project, data.BoardId)
 	}
 	return &rtn, nil
+}
+
+// BoardDeleteCommand moves a board (file, talk, answers) into ~/.arc/trash, purged after 7 days. It is refused while
+// a turn is drawing on it: the drawer would land its answer in an inbox that is gone.
+func (ws *WshServer) BoardDeleteCommand(ctx context.Context, data wshrpc.CommandBoardRefData) error {
+	if !boardstore.ValidID(data.BoardId) {
+		return fmt.Errorf("invalid board id %q", data.BoardId)
+	}
+	dir, err := boardDir(data.Project)
+	if err != nil {
+		return err
+	}
+	if boardDrawer.Busy(boarddrawer.Board{Project: data.Project, BoardId: data.BoardId}) {
+		return errors.New("a turn is drawing on this board: stop it first")
+	}
+	if _, err := boardstore.Trash(dir, data.Project, data.BoardId, sessiontrash.TrashDir(), time.Now()); err != nil {
+		return err
+	}
+	publishBoardList(data.Project, data.BoardId)
+	return nil
 }
 
 func (ws *WshServer) BoardTalkCommand(ctx context.Context, data wshrpc.CommandBoardRefData) (*wshrpc.BoardTalk, error) {

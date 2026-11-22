@@ -33,6 +33,7 @@ export const BOARD_COMMANDS = [
     "BoardAnswerInboxCommand",
     "BoardAnswerAckCommand",
     "BoardTakeOverCommand",
+    "BoardDeleteCommand",
 ];
 
 const q = JSON.stringify;
@@ -159,6 +160,14 @@ export const installBoardStubs = (h) =>
             (fx.talks[d.boardid] ??= talkOf(b)).agent = { tabid: d.tabid, title };
             await talkChanged(d.boardid);
             return structuredClone(infoOf(b));
+        };
+        // the board leaves the fixture, as the trash takes it, and the lists hear of it
+        RpcApi.BoardDeleteCommand = async (_c, d) => {
+            record("BoardDeleteCommand", d);
+            if (fx.boards[d.boardid] == null) throw new Error("board " + d.boardid + " not found");
+            delete fx.boards[d.boardid];
+            delete fx.talks[d.boardid];
+            await feed({ project: d.project, boardid: d.boardid, what: "list" });
         };
         return true;`
     );

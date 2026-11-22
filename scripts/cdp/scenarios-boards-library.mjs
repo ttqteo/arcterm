@@ -516,43 +516,33 @@ export default function (kit) {
             });
 
             // --- 9. a live agent's board opens beside its Chat on the Agent surface ---
-            await run("9. selecting the live agent's board opens the Agent surface with the board split beside its Chat", async (name) => {
+            await run("9. selecting the live agent's board shows it alone over the Agent surface's centre, the split left as it was", async (name) => {
                 await h.ev(`document.querySelector('[data-library-tab="boards"]')?.click()`);
                 await until(async () => (await count(`[data-library-board="${B_LIVE}"]`)) === 1);
+                const gridBefore = await h.ev(`document.querySelector("[data-agent-grid]")?.dataset.agentGridCount ?? null`);
                 const clicked = await click(`[data-library-board="${B_LIVE}"]`);
-                // the board is a cell of its own beside the agent's: a sibling of its [data-agent-terminal], never inside it
-                const SPLIT = `[data-board-cell="${B_LIVE}"]`;
-                const split = await until(async () => (await count(SPLIT)) === 1);
-                const beside = await until(async () => (await h.ev(`document.querySelector("[data-agent-grid]")?.dataset.agentGridCount`)) === "2" && (await count(`[data-agent-terminal="${A}"]`)) === 1);
+                const ALONE = `[data-board-alone="${PROJECT}/${B_LIVE}"]`;
+                const alone = await until(async () => (await count(ALONE)) === 1);
                 const st = await boardPage(
                     h,
-                    `const S = await mod("app/view/boards/boardsplitstore.ts");
-                    return {
-                        split: ([...globalStore.get((await mod("app/view/boards/boardentries.ts")).openBoardsAtom).values()][0] ?? null),
-                        focus: globalStore.get(agentsModel().focusIdAtom),
+                    `return {
+                        open: [...globalStore.get((await mod("app/view/boards/boardentries.ts")).openBoardsAtom).keys()],
                         surface: globalStore.get(agentsModel().surfaceAtom),
-                        chat: window.__arcChatMode?.get(${q(A)}) ?? null,
                     };`
                 );
-                const ready = await until(() => h.ev(`document.querySelector(${q(`${SPLIT} [data-board-canvas="${B_LIVE}"]`)})?.dataset.boardReady === "true"`));
+                const ready = await until(() => h.ev(`document.querySelector(${q(`${ALONE} [data-board-canvas="${B_LIVE}"]`)})?.dataset.boardReady === "true"`));
+                // no cell of it in the split: a pick shows alone, only Open in split or a drop reshapes a split
+                const noCell = (await count(`[data-board-cell="${B_LIVE}"]`)) === 0;
                 const libraryOpen = await count(`[data-library-board-open]`);
                 await polishNap(400);
                 await shot("9-live-agent");
                 rec(
                     name,
-                    clicked &&
-                        split &&
-                        beside &&
-                        ready &&
-                        st.surface === "agent" &&
-                        st.focus === A &&
-                        st.split?.boardId === B_LIVE &&
-                        st.split?.project === PROJECT &&
-                        st.chat === "chat" &&
-                        // Library did not take the board: no canvas of it there
-                        libraryOpen === 0,
-                    { st, libraryOpen, beside }
+                    clicked && alone && ready && noCell && st.surface === "agent" && st.open.length === 0 && libraryOpen === 0,
+                    { st, gridBefore, noCell, libraryOpen }
                 );
+                // back to the agent, as Close on the alone board does
+                await boardPage(h, `(await mod("app/view/agents/agentcenter.ts")).leaveCenter(); return true;`);
             });
 
             // --- 9b. an ended agent's board goes to a live agent of its project and opens beside its Chat ---
@@ -614,6 +604,43 @@ export default function (kit) {
                         st.split?.boardId === B_OLD &&
                         ask,
                     { items, calls, st, ask, beside }
+                );
+            });
+
+            // --- 9c. Delete board: the header's trash, a confirm, and the board leaves the list ---
+            await run("9c. Delete board in the open board's header asks first, then the board leaves the list and the detail", async (name) => {
+                await h.goto("library");
+                await h.ev(`document.querySelector('[data-library-tab="boards"]')?.click()`);
+                await until(async () => (await count(`[data-library-board="${B_ENDED}"]`)) === 1);
+                await click(`[data-library-board="${B_ENDED}"]`);
+                await until(async () => (await count(`[data-library-board-open="${B_ENDED}"]`)) === 1);
+                const rowsBefore = await count(`[data-library-board]`);
+                const before = await boardCalls(h, "BoardDeleteCommand");
+                const clicked = await click(`[data-library-board-open] [data-library-board-delete="${B_ENDED}"]`);
+                const asked = await until(() => h.ev(`[...document.querySelectorAll("button")].some((b) => b.textContent.trim() === "Delete")`));
+                await shot("9c-delete-confirm");
+                const confirmed = await h.ev(`(() => {
+                    const b = [...document.querySelectorAll("button")].find((x) => x.textContent.trim() === "Delete");
+                    b?.click();
+                    return b != null;
+                })()`);
+                const gone = await until(async () => (await count(`[data-library-board="${B_ENDED}"]`)) === 0);
+                const calls = await boardCalls(h, "BoardDeleteCommand");
+                const detail = await count(`[data-library-board-open]`);
+                const rowsAfter = await count(`[data-library-board]`);
+                await shot("9c-deleted");
+                rec(
+                    name,
+                    clicked &&
+                        asked &&
+                        confirmed &&
+                        gone &&
+                        calls.length === before.length + 1 &&
+                        calls.at(-1)?.boardid === B_ENDED &&
+                        calls.at(-1)?.project === PROJECT &&
+                        detail === 0 &&
+                        rowsAfter === rowsBefore - 1,
+                    { calls: calls.length, detail, rowsBefore, rowsAfter }
                 );
             });
 

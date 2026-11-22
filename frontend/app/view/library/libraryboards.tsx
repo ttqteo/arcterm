@@ -3,12 +3,13 @@
 
 // Library → Boards: every board agents drew, reopened. A list of the app bar's project (every project when none is picked),
 // newest first, a thumbnail on each row, with the open board beside it.
-//   a live agent's board   its row opens the board beside that agent's Chat on the Agent surface, through the router
-//                          (openref.ts); Library stays as it was
+//   a live agent's board   its row shows the board alone over the Agent surface's centre, through the router
+//                          (openref.ts), as its tree row does; the split stays as it was, and Library too
 //   an ended agent's board its canvas (hand edits still save) and the whole talk, replies copied under what was forwarded.
 //                          The agent is gone, so there is no ask box, and Open conversation reads the agent's session.
 //                          Open beside Chat… hands it to a live Claude agent of its project, which takes it over
 //                          (BoardTakeOverCommand), and opens it beside that agent's Chat
+// Delete board, on a row's hover and in the open board's header, moves it to ~/.arc/trash (boarddelete.ts).
 // Only one canvas per board: the split beside Chat drops its own while another surface shows, so this one never doubles up
 // with it. The model is libraryboardsmodel.ts; the board's own parts are boards/.
 
@@ -16,16 +17,18 @@ import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { cn } from "@/util/util";
 import { useAtomValue } from "jotai";
-import { ChevronDown, RefreshCw, Search } from "lucide-react";
+import { ChevronDown, RefreshCw, Search, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { AgentsViewModel } from "../agents/agents";
 import { sessionKey } from "../agents/sessionsruns";
 import { rerouteBoardTurn, retryBoardTurn, stopBoardTurn } from "../boards/boardactions";
 import { BoardCanvas } from "../boards/boardcanvas";
 import { parseBoardFile } from "../boards/boardmodel";
+import { openBoard } from "../boards/boardsplitstore";
 import { loadBoardConvert, loadBoardList, useBoardList, useBoardTalk } from "../boards/boardstore";
 import { BoardTurns } from "../boards/boardturns";
 import { openTarget } from "../jarvis/openref";
+import { confirmDeleteBoard, DELETE_BOARD_LABEL } from "./boarddelete";
 import {
     boardRows,
     boardsEmptyText,
@@ -113,56 +116,84 @@ function Thumb({ row }: { row: BoardRow }) {
 
 // --- the list
 
+// Delete board: the confirm, then the trash. A row's copy shows on hover or focus; the open board's sits in its header.
+function DeleteBoardButton({ model, row, className }: { model: AgentsViewModel; row: BoardRow; className?: string }) {
+    return (
+        <button
+            type="button"
+            data-library-board-delete={row.id}
+            onClick={() => confirmDeleteBoard(model, { project: row.project, boardId: row.id }, row.name)}
+            title={DELETE_BOARD_LABEL}
+            aria-label={`${DELETE_BOARD_LABEL} ${row.name}`}
+            className={cn(
+                "flex h-7 w-7 flex-none cursor-pointer items-center justify-center rounded-[7px] border border-edge-strong bg-surface-raised text-muted hover:border-error hover:text-error focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
+                className
+            )}
+        >
+            <Trash2 size={13} aria-hidden />
+        </button>
+    );
+}
+
 function BoardListRow({
+    model,
     row,
     selected,
     showProject,
     onSelect,
 }: {
+    model: AgentsViewModel;
     row: BoardRow;
     selected: boolean;
     showProject: boolean;
     onSelect: () => void;
 }) {
     return (
-        <button
-            type="button"
-            data-library-board={row.id}
-            data-library-board-project={row.project}
-            data-library-board-agent={row.agentState}
-            aria-current={selected ? "true" : undefined}
-            onClick={onSelect}
-            className={cn(
-                "flex w-full cursor-pointer gap-2.5 border-0 px-3.5 py-2.5 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent",
-                selected ? "bg-surface-selected" : "bg-transparent hover:bg-surface-hover"
-            )}
-        >
-            <Thumb row={row} />
-            <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-                <span
-                    data-library-board-name
-                    className={cn("truncate text-[13px] text-primary", selected && "font-semibold")}
-                >
-                    {row.name}
-                </span>
-                {showProject ? (
-                    <span data-library-board-project-name className="truncate text-[11.5px] text-muted">
-                        {row.project}
+        <div className="group relative">
+            <button
+                type="button"
+                data-library-board={row.id}
+                data-library-board-project={row.project}
+                data-library-board-agent={row.agentState}
+                aria-current={selected ? "true" : undefined}
+                onClick={onSelect}
+                className={cn(
+                    "flex w-full cursor-pointer gap-2.5 border-0 px-3.5 py-2.5 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent",
+                    selected ? "bg-surface-selected" : "bg-transparent hover:bg-surface-hover"
+                )}
+            >
+                <Thumb row={row} />
+                <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                    <span
+                        data-library-board-name
+                        className={cn("truncate text-[13px] text-primary", selected && "font-semibold")}
+                    >
+                        {row.name}
                     </span>
-                ) : null}
-                <span className="flex min-w-0 items-center gap-1.5 text-[12px] text-muted">
-                    {row.alive ? (
-                        <span aria-hidden className="h-[6px] w-[6px] flex-none rounded-full bg-success" />
+                    {showProject ? (
+                        <span data-library-board-project-name className="truncate text-[11.5px] text-muted">
+                            {row.project}
+                        </span>
                     ) : null}
-                    <span data-library-board-agent-line className="truncate">
-                        {row.agent || "no agent"} · {row.agentState}
+                    <span className="flex min-w-0 items-center gap-1.5 text-[12px] text-muted">
+                        {row.alive ? (
+                            <span aria-hidden className="h-[6px] w-[6px] flex-none rounded-full bg-success" />
+                        ) : null}
+                        <span data-library-board-agent-line className="truncate">
+                            {row.agent || "no agent"} · {row.agentState}
+                        </span>
+                    </span>
+                    <span data-library-board-summary className="truncate text-[12px] text-muted">
+                        {row.summary}
                     </span>
                 </span>
-                <span data-library-board-summary className="truncate text-[12px] text-muted">
-                    {row.summary}
-                </span>
-            </span>
-        </button>
+            </button>
+            <DeleteBoardButton
+                model={model}
+                row={row}
+                className="absolute right-3 top-2.5 opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
+            />
+        </div>
     );
 }
 
@@ -214,6 +245,7 @@ function BoardDetail({ model, row }: { model: AgentsViewModel; row: BoardRow }) 
                         Open conversation
                     </button>
                 ) : null}
+                <DeleteBoardButton model={model} row={row} />
             </div>
             {/* wide enough (640px) the canvas has the turns beside it; narrower they stack, the turns scrolling in what is left */}
             <div className="flex min-h-0 flex-1 flex-col @[640px]:flex-row">
@@ -241,7 +273,7 @@ function BoardDetail({ model, row }: { model: AgentsViewModel; row: BoardRow }) 
                         </div>
                     ) : null}
                     {row.alive ? (
-                        // the roster filled in after the row was picked: the agent is running, so its board belongs beside its Chat
+                        // the roster filled in after the row was picked: the agent is running, so its board opens on the Agent surface
                         <div className="flex flex-none items-center gap-2 px-3.5 pb-3 text-[12px] text-muted">
                             <span data-library-board-running>The agent is running.</span>
                             <button
@@ -252,7 +284,7 @@ function BoardDetail({ model, row }: { model: AgentsViewModel; row: BoardRow }) 
                                 }
                                 className="cursor-pointer text-accent hover:text-accenthover"
                             >
-                                Open beside Chat
+                                Open on Agent
                             </button>
                         </div>
                     ) : (
@@ -270,11 +302,8 @@ function BoardDetail({ model, row }: { model: AgentsViewModel; row: BoardRow }) 
                                             boardid: row.id,
                                             tabid: tabId,
                                         });
-                                        await openTarget(model, {
-                                            kind: "board",
-                                            project: row.project,
-                                            boardId: row.id,
-                                        });
+                                        // beside the Chat of the agent just picked, as the button says
+                                        openBoard(model, tabId, row.project, row.id);
                                     })
                                 }
                             />
@@ -463,6 +492,7 @@ export function LibraryBoards({ model }: { model: AgentsViewModel }) {
                         rows.map((row) => (
                             <BoardListRow
                                 key={row.key}
+                                model={model}
                                 row={row}
                                 selected={open?.key === row.key}
                                 showProject={scope === ""}

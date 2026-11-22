@@ -39,8 +39,13 @@ and a picture given to a line that is not big.
 - Hide turns, in a board's header, folds its turns column and ask box to a thin strip so the canvas gets the room.
 - A reply that names a picture by its full path (`/tmp/shot.png`) shows the picture under the path in Chat, and Claude
   agents are told to write a picture they want you to see as an image, so it shows in the reply.
+- Library → Boards can delete a board: the trash button on a row (on hover) or in the open board's header asks first,
+  then moves the drawing and its turns to `~/.arc/trash`, where they stay 7 days.
 
 ### Changed
+
+- Opening a running agent's board from Library, a mention or `wsh ui` shows it alone over the Agent view, as a click on
+  its tree row does, instead of putting it in a split beside the chat.
 
 - A board's turns column slides open and shut when you hide or show it, instead of jumping.
 - A board is a pane of its own in the split, like an agent: drag it by its bar, open more than one at once, and it stays

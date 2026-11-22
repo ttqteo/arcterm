@@ -13,6 +13,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/wavetermdev/waveterm/pkg/wavebase"
@@ -861,5 +862,64 @@ func TestAnswersRefuseBadIDs(t *testing.T) {
 	}
 	if entries, _ := os.ReadDir(dir); len(entries) != 0 {
 		t.Fatalf("a refused call wrote into the dir: %v", entries)
+	}
+}
+
+func TestTrashMovesTheBoardItsTalkAndInboxIntoOneEntry(t *testing.T) {
+	dir := t.TempDir()
+	trash := filepath.Join(t.TempDir(), "trash")
+	info := mustCreate(t, dir, "Auth flow", 1000)
+	if err := PutAnswer(dir, newAnswer(info.ID, 1)); err != nil {
+		t.Fatal(err)
+	}
+	now := time.UnixMilli(5000)
+	entry, err := Trash(dir, testProject, info.ID, trash, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := filepath.Join(trash, "5000-board-"+info.ID); entry != want {
+		t.Fatalf("entry = %q, want %q", entry, want)
+	}
+	for _, p := range []string{boardPath(dir, info.ID), talkPath(dir, info.ID), answersDir(dir, info.ID)} {
+		if _, err := os.Lstat(p); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("%s still there (err %v)", p, err)
+		}
+	}
+	for _, name := range []string{"meta.json", info.ID + boardExt, info.ID + talkExt, info.ID + answersExt} {
+		if _, err := os.Lstat(filepath.Join(entry, name)); err != nil {
+			t.Fatalf("%s not in the trash entry: %v", name, err)
+		}
+	}
+	raw, err := os.ReadFile(filepath.Join(entry, "meta.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var m trashMeta
+	if err := json.Unmarshal(raw, &m); err != nil {
+		t.Fatal(err)
+	}
+	if m.OriginalDir != dir || m.BoardId != info.ID || m.Name != "Auth flow" || m.Project != testProject {
+		t.Fatalf("meta = %+v", m)
+	}
+	boards, err := List(dir, testProject, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(boards) != 0 {
+		t.Fatalf("list still holds %d boards", len(boards))
+	}
+}
+
+func TestTrashRefusesAMissingBoardAndLeavesNoEntry(t *testing.T) {
+	dir := t.TempDir()
+	trash := filepath.Join(t.TempDir(), "trash")
+	if _, err := Trash(dir, testProject, "0badc0de", trash, time.UnixMilli(1)); err == nil {
+		t.Fatal("a missing board was trashed")
+	}
+	if entries, _ := os.ReadDir(trash); len(entries) != 0 {
+		t.Fatalf("trash holds %d entries", len(entries))
+	}
+	if _, err := Trash(dir, testProject, "../x", trash, time.UnixMilli(1)); err == nil {
+		t.Fatal("a bad id was accepted")
 	}
 }

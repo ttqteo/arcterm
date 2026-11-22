@@ -17,8 +17,10 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/google/uuid"
+	"github.com/wavetermdev/waveterm/pkg/sessiontrash"
 	"github.com/wavetermdev/waveterm/pkg/util/fileutil"
 	"github.com/wavetermdev/waveterm/pkg/wavebase"
 	"github.com/wavetermdev/waveterm/pkg/wshrpc"
@@ -439,6 +441,71 @@ func Save(dir, id, data, baseRev string) (wshrpc.BoardSaveRtnData, error) {
 		return wshrpc.BoardSaveRtnData{}, err
 	}
 	return wshrpc.BoardSaveRtnData{Rev: revOf([]byte(data))}, nil
+}
+
+// trashMeta names where a trashed board came from, so it can be put back by hand.
+type trashMeta struct {
+	OriginalDir string `json:"originalDir"`
+	Project     string `json:"project"`
+	BoardId     string `json:"boardId"`
+	Name        string `json:"name,omitempty"`
+	DeletedAt   string `json:"deletedAt"`
+}
+
+// Trash moves a board (its file, its talk and its answers inbox) into <trashDir>/<unix-ms>-board-<id>/ beside a
+// meta.json that names where they came from, and returns that entry. The trash's purge removes it after its
+// retention (sessiontrash.Retention). The file goes first: once it has gone no list shows the board, and a sidecar
+// left behind by a later failure is one no list shows either.
+func Trash(dir, project, id, trashDir string, now time.Time) (string, error) {
+	if err := checkID(id); err != nil {
+		return "", err
+	}
+	l := dirLock(dir)
+	l.Lock()
+	defer l.Unlock()
+	file := boardPath(dir, id)
+	data, err := os.ReadFile(file)
+	if errors.Is(err, os.ErrNotExist) {
+		return "", fmt.Errorf("board %s not found", id)
+	}
+	if err != nil {
+		return "", err
+	}
+	entry := filepath.Join(trashDir, fmt.Sprintf("%d-board-%s", now.UnixMilli(), id))
+	if err := os.MkdirAll(trashDir, 0o700); err != nil {
+		return "", fmt.Errorf("creating the trash: %w", err)
+	}
+	if err := os.Mkdir(entry, 0o700); err != nil {
+		return "", fmt.Errorf("creating the trash entry: %w", err)
+	}
+	raw, _ := json.MarshalIndent(trashMeta{
+		OriginalDir: dir,
+		Project:     project,
+		BoardId:     id,
+		Name:        fallbackName(data, id),
+		DeletedAt:   now.UTC().Format(time.RFC3339),
+	}, "", "  ")
+	if err := os.WriteFile(filepath.Join(entry, "meta.json"), raw, 0o600); err != nil {
+		_ = os.RemoveAll(entry)
+		return "", fmt.Errorf("writing the trash entry: %w", err)
+	}
+	if err := sessiontrash.MoveEntry(file, filepath.Join(entry, filepath.Base(file))); err != nil {
+		_ = os.RemoveAll(entry)
+		return "", fmt.Errorf("moving the board to the trash: %w", err)
+	}
+	var errs []error
+	for _, p := range []string{talkPath(dir, id), answersDir(dir, id)} {
+		if _, err := os.Lstat(p); err != nil {
+			continue
+		}
+		if err := sessiontrash.MoveEntry(p, filepath.Join(entry, filepath.Base(p))); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	if len(errs) > 0 {
+		return entry, fmt.Errorf("the board is in %s, but part of its talk stayed behind: %w", entry, errors.Join(errs...))
+	}
+	return entry, nil
 }
 
 func readTalkFile(dir, boardId string) (wshrpc.BoardTalk, error) {

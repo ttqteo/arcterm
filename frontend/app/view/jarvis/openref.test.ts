@@ -35,7 +35,7 @@ vi.mock("@/app/store/wos", async () => {
 });
 vi.mock("../agents/agentcwdresolve", () => ({ resolveCwd: (...a: unknown[]) => resolveCwd(...a) }));
 vi.mock("@/app/cockpit/notificationstore", () => ({ pushToast: (...a: unknown[]) => pushToast(...a) }));
-// openBoard drives the cell (focus, chat mode, the grid), which the split's own tests cover: here only that the router calls it
+// openBoard drives the cell (focus, chat mode, the grid): the router never calls it, a board it opens shows alone
 vi.mock("../boards/boardsplitstore", async (importOriginal) => ({
     ...(await importOriginal<typeof import("../boards/boardsplitstore")>()),
     openBoard: (...a: unknown[]) => openBoardSpy(...a),
@@ -44,7 +44,7 @@ vi.mock("../boards/boardsplitstore", async (importOriginal) => ({
 import { globalStore } from "@/app/store/jotaiStore";
 import { setPlatform } from "@/util/platformutil";
 import { atom } from "jotai";
-import { centerModeAtom } from "../agents/agentcenter";
+import { boardAloneAtom, centerModeAtom } from "../agents/agentcenter";
 import type { AgentsViewModel, SurfaceKey } from "../agents/agents";
 import type { AgentVM } from "../agents/agentsviewmodel";
 import { attachBrainstorm, detachBrainstorm, getBrainstorm } from "../agents/brainstormstore";
@@ -606,13 +606,17 @@ describe("board landings", () => {
         globalStore.set(libraryTabAtom, "conversations");
     });
 
-    it("opens a board beside the Chat of its agent while the agent is in the roster", async () => {
+    it("shows a board alone over the Agent centre while its agent is in the roster, the split left as it was", async () => {
         const model = makeModel(["t1"]);
+        globalStore.set(centerModeAtom, "terminal");
+        globalStore.set(boardAloneAtom, null);
         rpc.BoardListCommand.mockResolvedValue({ boards: [board()] });
         expect(await openAddress(model, "board:arcterm/b1")).toEqual({ ok: true });
         expect(rpc.BoardListCommand).toHaveBeenCalledWith(expect.anything(), { project: "arcterm" });
-        expect(openBoardSpy).toHaveBeenCalledTimes(1);
-        expect(openBoardSpy).toHaveBeenCalledWith(model, "t1", "arcterm", "b1");
+        expect(openBoardSpy).not.toHaveBeenCalled();
+        expect(globalStore.get(centerModeAtom)).toBe("board");
+        expect(globalStore.get(boardAloneAtom)).toEqual({ project: "arcterm", boardId: "b1" });
+        expect(globalStore.get(model.surfaceAtom)).toBe("agent");
         // Library stays as it was
         expect(globalStore.get(libraryBoardSelAtom)).toBeNull();
         expect(globalStore.get(libraryTabAtom)).toBe("conversations");
@@ -629,8 +633,9 @@ describe("board landings", () => {
         } as AgentVM;
         const model = { ...makeModel(), agentsAtom: atom([asleep]) } as unknown as AgentsViewModel;
         rpc.BoardListCommand.mockResolvedValue({ boards: [board()] });
+        globalStore.set(boardAloneAtom, null);
         expect(await openTarget(model, { kind: "board", project: "arcterm", boardId: "b1" })).toEqual({ ok: true });
-        expect(openBoardSpy).toHaveBeenCalledWith(model, "t1", "arcterm", "b1");
+        expect(globalStore.get(boardAloneAtom)).toEqual({ project: "arcterm", boardId: "b1" });
     });
 
     it("opens a board whose agent ended in Library's Boards tab", async () => {

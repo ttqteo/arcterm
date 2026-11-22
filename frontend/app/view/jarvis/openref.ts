@@ -16,6 +16,7 @@ import { globalStore } from "@/app/store/global";
 import * as WOS from "@/app/store/wos";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
+import { showBoardAlone } from "../agents/agentcenter";
 import { resolveCwd } from "../agents/agentcwdresolve";
 import type { AgentsViewModel } from "../agents/agents";
 import { setAgentView } from "../agents/agentview";
@@ -30,7 +31,7 @@ import { currentSize, restoreFromSprout } from "../agents/floatstore";
 import { selectMemoryProject } from "../agents/memorystore";
 import { setupTabAtom } from "../agents/setupstore";
 import { afterOpen } from "../agents/windowsize";
-import { openBoard } from "../boards/boardsplitstore";
+import { unhide } from "../boards/boardsplitstore";
 import { loadBoardList } from "../boards/boardstore";
 import { agentAlive } from "../boards/boardtalkmodel";
 import { openCouncil, showLibraryBoard } from "../library/librarystore";
@@ -331,9 +332,11 @@ async function land(
     }
 }
 
-// A board opens where its agent is: beside that agent's Chat while the agent's tab is in the roster (asleep counts), else, with
-// the agent gone, in Library's Boards tab, which keeps it readable and its canvas editable. The project's list proves the board
-// exists and names its agent; it is read fresh, since a board drawn a moment ago may not be in a list read earlier.
+// A board opens where its agent is: alone over the Agent surface's centre while the agent's tab is in the roster (asleep
+// counts), as a click on its tree row shows it, the split kept aside as it was; else, with the agent gone, in Library's
+// Boards tab, which keeps it readable and its canvas editable. Only Open in split, a drop or the Chat card (openBoard) put
+// it in a split. The project's list proves the board exists and names its agent; it is read fresh, since a board drawn a
+// moment ago may not be in a list read earlier.
 type BoardLanding = { agentId: string } | null;
 
 async function loadBoard(
@@ -355,7 +358,9 @@ async function loadBoard(
 
 function selectBoard(model: AgentsViewModel, target: BoardTarget, landing: BoardLanding): OpenResult {
     if (landing != null) {
-        openBoard(model, landing.agentId, target.project, target.boardId);
+        const ref = { project: target.project, boardId: target.boardId };
+        unhide(ref);
+        showBoardAlone(ref, model);
     } else {
         showLibraryBoard(model, target.project, target.boardId);
     }

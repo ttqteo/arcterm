@@ -21,6 +21,7 @@ type BoardCommands interface {
 	BoardAnswerAckCommand(ctx context.Context, data CommandBoardAnswerAckData) error
 	BoardAgentDrawCommand(ctx context.Context, data CommandBoardAgentDrawData) (*BoardAgentDrawRtnData, error)
 	BoardTakeOverCommand(ctx context.Context, data CommandBoardTakeOverData) (*BoardInfo, error)
+	BoardDeleteCommand(ctx context.Context, data CommandBoardRefData) error
 }
 
 type CommandBoardListData struct {

@@ -291,6 +291,12 @@ func BoardAskStopCommand(w *wshutil.WshRpc, data wshrpc.CommandBoardRefData, opt
 	return err
 }
 
+// command "boarddelete", wshserver.BoardDeleteCommand
+func BoardDeleteCommand(w *wshutil.WshRpc, data wshrpc.CommandBoardRefData, opts *wshrpc.RpcOpts) error {
+	_, err := sendRpcRequestCallHelper[any](w, "boarddelete", data, opts)
+	return err
+}
+
 // command "boardlist", wshserver.BoardListCommand
 func BoardListCommand(w *wshutil.WshRpc, data wshrpc.CommandBoardListData, opts *wshrpc.RpcOpts) (*wshrpc.BoardListRtnData, error) {
 	resp, err := sendRpcRequestCallHelper[*wshrpc.BoardListRtnData](w, "boardlist", data, opts)

@@ -294,6 +294,12 @@ export class RpcApiType {
         return client.wshRpcCall("boardaskstop", data, opts);
     }
 
+    // command "boarddelete" [call]
+    BoardDeleteCommand(client: WshClient, data: CommandBoardRefData, opts?: RpcOpts): Promise<void> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "boarddelete", data, opts);
+        return client.wshRpcCall("boarddelete", data, opts);
+    }
+
     // command "boardlist" [call]
     BoardListCommand(client: WshClient, data: CommandBoardListData, opts?: RpcOpts): Promise<BoardListRtnData> {
         if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "boardlist", data, opts);
