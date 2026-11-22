@@ -59,6 +59,9 @@ import {
 } from "lucide-react";
 import { motion } from "motion/react";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { boardCellAgent, isBoardCell } from "../boards/boardcell";
+import { openBoardIdsAtom } from "../boards/boardentries";
+import { closeBoard } from "../boards/boardsplitstore";
 import { closeAgentChord, confirmCloseSession, interruptAgent } from "./agentactions";
 import { contextLevel, contextTokens } from "./agentrailmodel";
 import { openRailInitiative } from "./agentrailstore";
@@ -84,7 +87,15 @@ import { DONE_TITLE, doneSuggestion, ORIGIN_DONE_TITLE, startedRunLanded } from 
 import { fallAsleepLabel, useFallingAsleep } from "./fallasleepstore";
 import { isFinalStageId } from "./finalstage";
 import { floatModeAtom, toggleFloat } from "./floatstore";
-import { agentGridAtom, currentGrid, eligibleIds, gridProjects, openInSplit, removeFromGrid } from "./gridstore";
+import {
+    agentGridAtom,
+    currentGrid,
+    gridEligibility,
+    gridProjects,
+    openInSplit,
+    removeBoardCell,
+    removeFromGrid,
+} from "./gridstore";
 import { canHandToPhone, isHandedOver } from "./handtophone";
 import { inHeader } from "./headerbuttons";
 import { headerButtonsAtom } from "./headerbuttonsstore";
@@ -563,12 +574,14 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
     const viewOptions = cellViewOptions(chatShown, hasCanvas, docReview != null, brainstorm != null);
 
     // The grid's cells, to tell the Split button whether a split is showing. Only agents and terminals with a terminal
-    // can be cells (gridstore.eligibleIds).
+    // can be cells (gridstore.eligibleIds), and the board cells of the agents that have a board open: a board beside its
+    // agent is a second cell, so [agent, board] is a split.
     const gridState = useAtomValue(agentGridAtom);
     const rosterSeeded = useAtomValue(rosterSeededAtom);
     const rosterAgents = useAtomValue(model.agentsAtom);
     const rosterTerminals = useAtomValue(model.terminalsAtom);
-    const cellIds = eligibleIds([...rosterAgents, ...rosterTerminals]);
+    const openBoards = useAtomValue(openBoardIdsAtom);
+    const cellIds = gridEligibility([...rosterAgents, ...rosterTerminals], openBoards).eligible;
     // a split this agent is no cell of is kept aside while it shows alone (agentgrid.reconcileGrid)
     const cellCount = gridState.ids.includes(agent.id) ? gridState.ids.filter((id) => cellIds.has(id)).length : 1;
     const splitShown = cellCount > 1;
@@ -669,11 +682,20 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
                 label: "Close split",
                 icon: <Minimize2 size={15} />,
                 click: () => {
+                    // a board cell closes its board (the entry and Expand clear, so its tree row reads closed); the
+                    // boards first, so the reconcile that the tab removals run no longer holds them
                     for (const id of grid.ids) {
-                        if (id !== agent.id) {
+                        const owner = boardCellAgent(id);
+                        if (owner != null) {
+                            closeBoard(owner);
+                        }
+                    }
+                    for (const id of grid.ids) {
+                        if (id !== agent.id && !isBoardCell(id)) {
                             removeFromGrid(model, id);
                         }
                     }
+                    removeBoardCell(model, agent.id);
                 },
             });
         }

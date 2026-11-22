@@ -80,27 +80,3 @@ export function switchBoard(agentId: string, boardId: string): void {
 
 // The Agent tree's own fold, chosen by hand and kept across launches.
 export const treeFoldedAtom = atomWithStorage<boolean>("agent.tree.folded", false);
-
-// ---- removed by Task 2 of the board-cells plan -------------------------------------------------------------------------
-// Compiling stubs for chatpane.tsx, boardsplit.tsx and agenttreeslot.tsx, which Task 2 rewrites.
-
-// removed by Task 2 of the board-cells plan
-export const treePeekAtom = atom(false) as PrimitiveAtom<boolean>;
-
-// removed by Task 2 of the board-cells plan
-export function splitOpens(_cellsInGrid: number): boolean {
-    return false;
-}
-
-// removed by Task 2 of the board-cells plan
-export function splitExpanded(_split: BoardSplit, _multiCell: boolean): boolean {
-    return false;
-}
-
-// removed by Task 2 of the board-cells plan
-export function setBoardExpanded(_agentId: string, _expanded: boolean): void {}
-
-// removed by Task 2 of the board-cells plan
-export function treeFolds(_split: BoardSplit | null, _chatShown: boolean, _peek: boolean, folded: boolean): boolean {
-    return folded;
-}

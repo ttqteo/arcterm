@@ -1,9 +1,8 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-// The board beside an agent's Chat: a layer inside the agent's cell, drawn after ChatLayer (agentsurface.tsx), never
-// wrapping it. It takes the cell right of a 360px Chat column (all of it expanded) over the xterm and the pane, which keep their size, so
-// nothing refits and no pane changes parent. Only while the cell shows Chat: the live xterm is never inside the split.
+// A board as a cell of the Agent surface's grid, beside its agent's Chat (agentsurface.tsx draws the cell's wrapper and
+// bar; boardcell.ts holds the rules). It holds no xterm, so it mounts only while shown and goes when the cell does.
 //
 // The canvas is mounted only while the Agent surface is on screen. The surface keeps its cells mounted when another
 // surface shows, and a canvas left running there would be a second copy of the board beside Library's, each saving over
@@ -14,20 +13,13 @@ import { useAtomValue } from "jotai";
 import { useEffect, useState } from "react";
 import type { AgentsViewModel } from "../agents/agents";
 import type { AgentVM } from "../agents/agentsviewmodel";
-import { useChatShown } from "../agents/chatmodestore";
+import { removeBoardCell } from "../agents/gridstore";
 import { askBoard, rerouteBoardTurn, retryBoardTurn, stopBoardTurn } from "./boardactions";
 import { BoardAskBox } from "./boardaskbox";
 import { BoardCanvas, type BoardSelection } from "./boardcanvas";
 import { BoardHeader } from "./boardheader";
 import type { BoardPart } from "./boardparts";
-import {
-    boardSplitAtom,
-    closeBoard,
-    setBoardExpanded,
-    splitExpanded,
-    switchBoard,
-    type BoardSplit,
-} from "./boardsplitstore";
+import { boardMaxAtom, boardSplitAtom, closeBoard, setBoardMax, switchBoard, type BoardSplit } from "./boardsplitstore";
 import { boardsOfAgent, useBoardList, useBoardTalk } from "./boardstore";
 import { agentAlive, askAllowed } from "./boardtalkmodel";
 import { BoardTurns } from "./boardturns";
@@ -36,36 +28,17 @@ function errorText(e: unknown): string {
     return e instanceof Error ? e.message : String(e);
 }
 
-// the layer for one agent's cell; nothing when no board is open beside it, or the cell is not showing Chat
-export function BoardSplitLayer({ model, agent, barred }: { model: AgentsViewModel; agent: AgentVM; barred: boolean }) {
+// the cell of one agent's board; nothing when it has no board open. `multi`: the grid draws a bar over each cell.
+export function BoardCell({ model, agent }: { model: AgentsViewModel; agent: AgentVM; multi: boolean }) {
     const split = useAtomValue(boardSplitAtom(agent.id));
-    const chatShown = useChatShown(agent);
-    if (split == null || !chatShown) {
+    if (split == null) {
         return null;
     }
     // keyed by the board: a selection, a Show and an error belong to one board
-    return (
-        <OpenSplit
-            key={`${split.project}/${split.boardId}`}
-            model={model}
-            agent={agent}
-            barred={barred}
-            split={split}
-        />
-    );
+    return <OpenCell key={`${split.project}/${split.boardId}`} model={model} agent={agent} split={split} />;
 }
 
-function OpenSplit({
-    model,
-    agent,
-    barred,
-    split,
-}: {
-    model: AgentsViewModel;
-    agent: AgentVM;
-    barred: boolean;
-    split: BoardSplit;
-}) {
+function OpenCell({ model, agent, split }: { model: AgentsViewModel; agent: AgentVM; split: BoardSplit }) {
     const { project, boardId } = split;
     const onAgentSurface = useAtomValue(model.surfaceAtom) === "agent";
     const roster = useAtomValue(model.agentsAtom);
@@ -92,9 +65,21 @@ function OpenSplit({
     // the agent's boards, and the open one even when it is tied to another agent (a card in this Chat can open it)
     const ofAgent = boardsOfAgent(list, agent.id);
     const boards = board != null && !ofAgent.some((b) => b.id === board.id) ? [board, ...ofAgent] : ofAgent;
-    // a board in a grid of several cells is always expanded: half of a quarter is too narrow to draw in
-    const expanded = splitExpanded(split, barred);
+    // Expand: the cell fills the whole grid (agentsurface.tsx hides the others under it)
+    const expanded = useAtomValue(boardMaxAtom(agent.id));
     const alive = agentAlive(board?.agenttabid, roster);
+    const closeCell = () => {
+        closeBoard(agent.id);
+        removeBoardCell(model, agent.id);
+    };
+
+    // the board was deleted (the list is read and no longer has it): the entry and the cell go, Chat stays alone
+    const gone = list != null && board == null;
+    useEffect(() => {
+        if (gone) {
+            closeCell();
+        }
+    }, [gone]);
     const target = { project, boardId };
 
     // a rejection (the agent ended, the drawer is busy) shows above the ask box; the next action that goes clears it
@@ -120,31 +105,28 @@ function OpenSplit({
             onOtherWay={(turn) => void act(() => rerouteBoardTurn(target, turn.id))}
             onStop={() => void act(() => stopBoardTurn(target))}
             onRetry={(turn) => void act(() => retryBoardTurn(target, turn.id))}
-            onEarlier={() => setBoardExpanded(agent.id, true)}
+            onEarlier={() => setBoardMax(agent.id, true)}
         />
     );
 
     return (
         <div
+            data-board-cell={boardId}
             data-board-split={boardId}
             data-board-expanded={expanded ? "true" : "false"}
+            data-board-max={expanded ? "true" : undefined}
             // Excalidraw's tool keys and Escape are its own: the surface's bindings stand down inside (dispatcher.ts)
             data-owns-keys
             // @container: the expanded board puts its turns beside the canvas only where there is room for both
-            className={cn(
-                "@container absolute bottom-0 right-0 z-20 flex flex-col bg-background",
-                barred ? "top-[26px]" : "top-0",
-                expanded ? "left-0" : "left-[min(360px,50%)] border-l border-edge-mid"
-            )}
+            className="@container flex min-h-0 min-w-0 flex-1 flex-col bg-background"
         >
             <BoardHeader
                 board={board}
                 boards={boards}
                 expanded={expanded}
-                canExpand={!barred}
                 onSwitch={(id) => switchBoard(agent.id, id)}
-                onToggleExpanded={() => setBoardExpanded(agent.id, !split.expanded)}
-                onClose={() => closeBoard(agent.id)}
+                onToggleExpanded={() => setBoardMax(agent.id, !expanded)}
+                onClose={closeCell}
                 parts={parts}
                 part={part}
                 onPart={setPart}

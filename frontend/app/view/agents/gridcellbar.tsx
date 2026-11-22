@@ -14,7 +14,7 @@ import { globalStore } from "@/app/store/jotaiStore";
 import { effortDetailAtom, loadEffortDetail } from "@/app/view/jarvis/effortstore";
 import { cn } from "@/util/util";
 import { useAtomValue } from "jotai";
-import { Diamond, GripVertical, Lightbulb, PanelBottom, SquareTerminal, X } from "lucide-react";
+import { Diamond, GripVertical, Lightbulb, PanelBottom, Shapes, SquareTerminal, X } from "lucide-react";
 import { useEffect } from "react";
 import { beginAgentDrag, endAgentDrag } from "./agentdragstore";
 import { openRailBrainstorm, openRailInitiative } from "./agentrailstore";
@@ -178,6 +178,31 @@ export function GridCellBar({
                 data-agent-cell-remove={agent.id}
                 aria-label={`Remove ${agent.name} from the grid`}
                 title="Remove from the grid (the agent keeps running)"
+                onClick={onRemove}
+                className={BAR_BUTTON}
+            >
+                <X size={12} aria-hidden />
+            </button>
+        </div>
+    );
+}
+
+// The bar over a board cell: the shapes mark, the board's name and an x that closes the board (the agent's cell stays).
+// Not a drag handle: a board is no agent to rearrange, and it has no chat switch or initiative chip of its own.
+export function BoardCellBar({ agentId, title, onRemove }: { agentId: string; title: string; onRemove: () => void }) {
+    return (
+        <div
+            data-board-cell-bar={agentId}
+            title={title}
+            className="flex h-[26px] shrink-0 select-none items-center gap-[7px] border-b border-border bg-surface px-[8px] text-muted"
+        >
+            <Shapes size={12} aria-hidden className="shrink-0 text-ink-faint" />
+            <span className="min-w-0 flex-1 truncate text-[12px] font-medium">{title}</span>
+            <button
+                type="button"
+                data-board-cell-remove={agentId}
+                aria-label={`Close the board ${title}`}
+                title="Close the board (the agent keeps its cell)"
                 onClick={onRemove}
                 className={BAR_BUTTON}
             >

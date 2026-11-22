@@ -1,8 +1,8 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-// The split's header: the board's name (a switcher while the agent has more than one board), its facts, Expand or
-// Collapse, and Close. A board in a grid of several cells has no Expand: it opens expanded and stays so. While a part of
+// The board cell's header: the board's name (a switcher while the agent has more than one board), its facts, Expand or
+// Collapse (the cell over the whole grid), and Close. While a part of
 // the board is read (boardparts.ts), the facts give way to the part's name, a ‹ n/N › stepper and Whole board; on the
 // whole board a ‹ N parts › stepper starts the reading.
 
@@ -16,7 +16,6 @@ export interface BoardHeaderProps {
     board: BoardInfo | undefined; // null-ish until the list has been read
     boards: readonly BoardInfo[]; // every board of the agent: what the switcher lists
     expanded: boolean;
-    canExpand: boolean;
     onSwitch: (boardId: string) => void;
     onToggleExpanded: () => void;
     onClose: () => void;
@@ -141,7 +140,6 @@ export function BoardHeader({
     board,
     boards,
     expanded,
-    canExpand,
     onSwitch,
     onToggleExpanded,
     onClose,
@@ -231,11 +229,9 @@ export function BoardHeader({
                 </>
             ) : null}
             <div className="flex-1" />
-            {canExpand ? (
-                <HeaderButton label={expandLabel} attr="data-board-expand" onClick={onToggleExpanded}>
-                    {expanded ? <Minimize2 size={14} strokeWidth={2} /> : <Maximize2 size={14} strokeWidth={2} />}
-                </HeaderButton>
-            ) : null}
+            <HeaderButton label={expandLabel} attr="data-board-expand" onClick={onToggleExpanded}>
+                {expanded ? <Minimize2 size={14} strokeWidth={2} /> : <Maximize2 size={14} strokeWidth={2} />}
+            </HeaderButton>
             <HeaderButton label="Close" attr="data-board-close" onClick={onClose}>
                 <X size={14} strokeWidth={2} />
             </HeaderButton>

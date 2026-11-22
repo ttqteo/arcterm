@@ -12,7 +12,6 @@ import { atomWithStorage } from "jotai/utils";
 export interface BoardSplit {
     project: string;
     boardId: string;
-    expanded?: boolean; // deprecated: nothing writes it; removed by Task 2 of the board-cells plan
 }
 
 // The cast is the one the other getOnInit atoms carry (gridstore.ts): with `undefined` for the storage argument jotai
