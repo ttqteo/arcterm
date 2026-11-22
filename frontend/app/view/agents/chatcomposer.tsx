@@ -1895,7 +1895,7 @@ function QuoteChips({
         <div
             data-chat-quotes=""
             className={cn(
-                "mb-1.5 flex min-w-0 flex-col gap-1.5",
+                "mb-1.5 mt-1.5 flex min-w-0 flex-col gap-1.5",
                 indent === "plus" ? "pl-[38px]" : indent === "well" ? "pl-1" : ""
             )}
         >

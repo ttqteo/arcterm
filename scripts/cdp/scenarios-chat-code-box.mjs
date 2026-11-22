@@ -20,6 +20,11 @@ const SENT = '```curl https://api.example.test/v1/one \\\n  -H "Authorization: B
 const SENT_FIRST = "curl https://api.example.test/v1/one";
 // the reply's one-line command: a compact row with Run and Copy, as Claude Desktop draws it (codeblock.tsx)
 const COMPACT = "! task install";
+// a reply paragraph long enough that a quote of it stops at three lines in the box (step 7)
+const LONG_PARA =
+    "The endpoint took 180 ms on the first call and 40 ms on the next ones, so the cold start is the token check, not the model. " +
+    "Caching the key for a minute would cut the first call to about the same as the rest, and the logs show no retries in the last hour. " +
+    "If you want, I can add the cache behind a flag so we can compare both on the same traffic before keeping it.";
 
 const layerOf = (id) => `document.querySelector('[data-agent-chat="${id}"]')`;
 const inputOf = (id) => `${layerOf(id)}?.querySelector("[data-chat-input]")`;
@@ -93,7 +98,7 @@ export default function (kit) {
                 const o = (sec) => ({ cwd: ctx.dir, ts: new Date(Date.now() - 600_000 + sec * 1000).toISOString() });
                 ctx.transcript = AC.writeTranscript(ctx.dir, "chat-code-box", [
                     AC.userText(SENT, o(0)),
-                    AC.assistantText(`Sent it to the endpoint; it answered 200.\n\nTo install it, type:\n\n\`\`\`\n${COMPACT}\n\`\`\``, o(5)),
+                    AC.assistantText(`Sent it to the endpoint; it answered 200.\n\n${LONG_PARA}\n\nTo install it, type:\n\n\`\`\`\n${COMPACT}\n\`\`\``, o(5)),
                 ]);
                 at = "resetting the grid";
                 await h.ev(`localStorage.setItem(${JSON.stringify(GRID_KEY)}, ${JSON.stringify(JSON.stringify(GRID_EMPTY))})`);
@@ -325,6 +330,73 @@ export default function (kit) {
                         undone.boxes === 0 &&
                         undone.text === "it breaks:" + pasted,
                     { fenced, after, undone }
+                );
+            });
+
+            // 7. Reply twice from the reply (a short passage, then a long one), then type: two quote blocks over the editor,
+            // each a bar and upright text with no frame, lined up with the typed text, the long one cut at three lines;
+            // the draft keeps them as `>` lines before what was typed
+            await run("7. two Reply quotes are blocks over the box", async (name) => {
+                await clearBox(h, A);
+                const reply = async (needle) => {
+                    const picked = await h.ev(`(() => {
+                        const layer = ${layerOf(A)};
+                        const walk = document.createTreeWalker(layer, NodeFilter.SHOW_TEXT);
+                        for (let n = walk.nextNode(); n != null; n = walk.nextNode()) {
+                            if (n.parentElement?.closest("[data-chat-input]") != null) continue;
+                            const at = n.textContent.indexOf(${JSON.stringify(needle)});
+                            if (at < 0) continue;
+                            n.parentElement.scrollIntoView({ block: "center" });
+                            const r = document.createRange();
+                            r.setStart(n, at);
+                            r.setEnd(n, at + ${JSON.stringify(needle)}.length);
+                            const sel = getSelection();
+                            sel.removeAllRanges();
+                            sel.addRange(r);
+                            return true;
+                        }
+                        return false;
+                    })()`);
+                    const shown = picked && (await polishWaitFor(h, `!!document.querySelector("[data-chat-quote-button]")`, SHORT_MS));
+                    if (shown) await h.ev(`document.querySelector("[data-chat-quote-button]").click()`);
+                    await polishNap(250);
+                    return shown;
+                };
+                const first = await reply("Sent it to the endpoint; it answered 200.");
+                const second = await reply(LONG_PARA);
+                await typeLines(h, A, ["có, thêm cache đi"]);
+                await polishWaitFor(h, `${layerOf(A)}?.querySelectorAll("[data-chat-quote-chip]").length === 2`, SHORT_MS);
+                const got = await h.ev(`(() => {
+                    const layer = ${layerOf(A)};
+                    const input = layer?.querySelector("[data-chat-input]");
+                    const typed = [...(input?.querySelectorAll("span[data-lexical-text]") ?? [])][0]?.getBoundingClientRect();
+                    const quotes = [...(layer?.querySelectorAll("[data-chat-quote-chip]") ?? [])].map((q) => {
+                        const cs = getComputedStyle(q);
+                        const bar = q.firstElementChild?.getBoundingClientRect();
+                        const words = q.children[1];
+                        const wr = words?.getBoundingClientRect();
+                        const lh = words ? parseFloat(getComputedStyle(words).lineHeight) : 0;
+                        return {
+                            framed: cs.borderTopWidth !== "0px" || cs.backgroundColor !== "rgba(0, 0, 0, 0)",
+                            barLeft: bar ? Math.round(bar.left) : null,
+                            lines: wr && lh > 0 ? Math.round(wr.height / lh) : null,
+                            italic: words ? getComputedStyle(words).fontStyle === "italic" : null,
+                        };
+                    });
+                    return { typedLeft: typed ? Math.round(typed.left) : null, quotes, draft: null };
+                })()`);
+                got.draft = await readBox(h, A).then((b) => b.text).catch(() => null);
+                await shot(h, "7-two-quotes");
+                const [q1, q2] = got.quotes;
+                rec(
+                    `${name}: two [data-chat-quote-chip] blocks, neither framed nor italic, each bar within 2px of the typed text's left edge; the short one 1 line, the long one 3`,
+                    first &&
+                        second &&
+                        got.quotes.length === 2 &&
+                        got.quotes.every((q) => !q.framed && q.italic === false && q.barLeft != null && got.typedLeft != null && Math.abs(q.barLeft - got.typedLeft) <= 2) &&
+                        q1.lines === 1 &&
+                        q2.lines === 3,
+                    { first, second, ...got }
                 );
             });
 
