@@ -59,7 +59,7 @@ const ELEMENTS_OTHER = filled(boxElements("retro", 40, 40, "retro"), "#c3fae8");
 export default function (kit) {
     const { waveService, polishNap, ahReload, GRID_KEY, GRID_EMPTY } = kit;
     const { makeTab, closeTabs } = AC.tabFixtures({ waveService });
-    const LS_KEYS = [GRID_KEY, "agent.chatmode", "agent.boards"];
+    const LS_KEYS = [GRID_KEY, "agent.chatmode", "agent.openboards"];
 
     const scenario = {
         name: NAME,
@@ -528,7 +528,7 @@ export default function (kit) {
                     h,
                     `const S = await mod("app/view/boards/boardsplitstore.ts");
                     return {
-                        split: globalStore.get(S.boardSplitAtom(${q(A)})),
+                        split: ([...globalStore.get((await mod("app/view/boards/boardentries.ts")).openBoardsAtom).values()][0] ?? null),
                         focus: globalStore.get(agentsModel().focusIdAtom),
                         surface: globalStore.get(agentsModel().surfaceAtom),
                         chat: window.__arcChatMode?.get(${q(A)}) ?? null,
@@ -557,7 +557,7 @@ export default function (kit) {
 
             // --- 9b. an ended agent's board goes to a live agent of its project and opens beside its Chat ---
             await run("9b. Open beside Chat… on an ended board lists the project's live agent; picking it takes the board over and opens it beside that agent's Chat, ask box on", async (name) => {
-                await boardPage(h, `(await mod("app/view/boards/boardsplitstore.ts")).closeBoard(${q(A)}); return true;`);
+                await boardPage(h, `const S = await mod("app/view/boards/boardsplitstore.ts"); for (const b of [...globalStore.get((await mod("app/view/boards/boardentries.ts")).openBoardsAtom).values()]) S.closeBoard(agentsModel(), b); return true;`);
                 await h.goto("library");
                 await h.ev(`document.querySelector('[data-library-tab="boards"]')?.click()`);
                 await until(async () => (await count(`[data-library-board="${B_OLD}"]`)) === 1);
@@ -578,7 +578,7 @@ export default function (kit) {
                 const st = await boardPage(
                     h,
                     `const S = await mod("app/view/boards/boardsplitstore.ts");
-                    return { split: globalStore.get(S.boardSplitAtom(${q(A)})), surface: globalStore.get(agentsModel().surfaceAtom) };`
+                    return { split: ([...globalStore.get((await mod("app/view/boards/boardentries.ts")).openBoardsAtom).values()][0] ?? null), surface: globalStore.get(agentsModel().surfaceAtom) };`
                 );
                 // the ask box sends again: with a question typed, Send is on (an ended agent's board keeps it off)
                 const ask = await until(() =>
@@ -622,7 +622,7 @@ export default function (kit) {
                 await boardPage(
                     h,
                     `const S = await mod("app/view/boards/boardsplitstore.ts");
-                    S.closeBoard(${q(A)});
+                    for (const b of [...globalStore.get((await mod("app/view/boards/boardentries.ts")).openBoardsAtom).values()]) S.closeBoard(agentsModel(), b);
                     globalStore.set(agentsModel().projectFilterAtom, ${q(EMPTY_PROJECT)});
                     return true;`
                 );
@@ -656,7 +656,7 @@ export default function (kit) {
                 AC.agentPage(
                     h,
                     `const S = await mod("app/view/boards/boardsplitstore.ts");
-                    if (${q(ctx.agent?.tabId ?? null)} != null) S.closeBoard(${q(ctx.agent?.tabId ?? null)});
+                    for (const b of [...globalStore.get((await mod("app/view/boards/boardentries.ts")).openBoardsAtom).values()]) S.closeBoard(agentsModel(), b);
                     globalStore.set(agentsModel().projectFilterAtom, ${q(ctx.prevFilter ?? "all")});
                     const G = await mod("app/view/agents/gridstore.ts");
                     G.endSplit(agentsModel());

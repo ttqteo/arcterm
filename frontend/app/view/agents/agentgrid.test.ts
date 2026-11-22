@@ -21,7 +21,7 @@ import {
     reconcileProjectGrids,
     removeCell,
     replaceFocused,
-    settleCompanions,
+    settleRiders,
     splitGrids,
     splitZones,
     swapCells,
@@ -613,80 +613,98 @@ describe("splitGrids", () => {
     });
 });
 
-// a cell that rides with another: `board:<id>` depends on `<id>` being a cell of the same grid
-const boardOf = (id: string) => (id.startsWith("board:") ? id.slice("board:".length) : undefined);
+// a rider: a board cell, which never holds focus and needs a tab in its grid
+const isRider = (id: string) => id.startsWith("board:");
 
-describe("settleCompanions", () => {
-    it("is the grid as it was with no companionOf", () => {
-        expect(settleCompanions(g(["board:a", "b"]), undefined)).toEqual(g(["board:a", "b"]));
+describe("settleRiders", () => {
+    it("is the grid as it was with no isRider", () => {
+        expect(settleRiders(g(["board:p/x", "b"]), undefined)).toEqual(g(["board:p/x", "b"]));
     });
-    it("drops a companion whose own cell is not in the grid", () => {
-        expect(settleCompanions(g(["b", "board:a"]), boardOf)).toEqual(g(["b"]));
+    it("keeps a board beside any tab, not only the chat it reads", () => {
+        expect(settleRiders(g(["b", "board:p/x"]), isRider)).toEqual(g(["b", "board:p/x"]));
     });
-    it("keeps a companion beside its cell", () => {
-        expect(settleCompanions(g(["a", "board:a"]), boardOf)).toEqual(g(["a", "board:a"]));
+    it("never leaves a board focused: focus goes to the first tab", () => {
+        expect(settleRiders(g(["board:p/x", "a", "b"], "board:p/x"), isRider).focused).toBe("a");
     });
-    it("never leaves a companion focused: focus goes to its own cell", () => {
-        expect(settleCompanions(g(["a", "board:a", "b"], "board:a"), boardOf).focused).toBe("a");
+    it("leaves a tab's focus as it was", () => {
+        expect(settleRiders(g(["a", "board:p/x", "b"], "b"), isRider).focused).toBe("b");
     });
-    it("falls to the first tab when the companion's own cell is not there", () => {
-        expect(settleCompanions(g(["board:a", "b"], "board:a"), boardOf)).toEqual(g(["b"]));
-    });
-    it("empties a grid of companions alone", () => {
-        expect(settleCompanions(g(["board:a"]), boardOf)).toEqual(EMPTY_GRID);
+    it("empties a grid of boards alone", () => {
+        expect(settleRiders(g(["board:p/x", "board:p/y"]), isRider)).toEqual(EMPTY_GRID);
     });
 });
 
-describe("reconcileProjectGrids with companion cells", () => {
+describe("reconcileProjectGrids with board cells", () => {
     const live = (...ids: string[]) => new Set(ids);
     const projects = (m: Record<string, string>) => new Map(Object.entries(m));
     const pg = (grid: GridState) => ({ project: "p", grids: { p: grid } });
 
-    it("prunes a board cell whose agent left", () => {
-        const next = reconcileProjectGrids(pg(g(["a", "board:a"])), {
+    it("prunes a board cell whose board closed", () => {
+        const next = reconcileProjectGrids(pg(g(["a", "board:p/x"])), {
+            focusId: "a",
+            eligible: live("a"),
+            projectOf: projects({ a: "p" }),
+            isRider,
+            seeded: true,
+        });
+        expect(next.grids.p).toEqual(g(["a"]));
+    });
+
+    it("keeps a board cell in a grid that holds no agent of its chat", () => {
+        const next = reconcileProjectGrids(pg(g(["b", "board:p/x"])), {
+            focusId: "b",
+            eligible: live("b", "board:p/x"),
+            projectOf: projects({ b: "p", "board:p/x": "p" }),
+            isRider,
+            seeded: true,
+        });
+        expect(next.grids.p).toEqual(g(["b", "board:p/x"]));
+    });
+
+    it("prunes a board cell from another project's grid", () => {
+        const start = { project: "p", grids: { p: g(["b", "board:q/x"]) } };
+        const next = reconcileProjectGrids(start, {
+            focusId: "b",
+            eligible: live("b", "board:q/x"),
+            projectOf: projects({ b: "p", "board:q/x": "q" }),
+            isRider,
+            seeded: true,
+        });
+        expect(next.grids.p).toEqual(g(["b"]));
+    });
+
+    it("never focuses a board cell", () => {
+        const next = reconcileProjectGrids(pg(g(["board:p/x", "a"], "board:p/x")), {
+            focusId: "board:p/x",
+            eligible: live("a", "board:p/x"),
+            projectOf: projects({ a: "p", "board:p/x": "p" }),
+            isRider,
+            seeded: true,
+        });
+        expect(next.grids.p.ids).toEqual(["board:p/x", "a"]);
+        expect(next.grids.p.focused).toBe("a");
+    });
+
+    it("drops the board cells of a grid whose tabs all left", () => {
+        const next = reconcileProjectGrids(pg(g(["a", "board:p/x"])), {
             focusId: undefined,
-            eligible: live(),
-            projectOf: projects({}),
-            companionOf: boardOf,
+            eligible: live("board:p/x"),
+            projectOf: projects({ "board:p/x": "p" }),
+            isRider,
             seeded: true,
         });
         expect(next.grids).toEqual({});
     });
 
-    it("prunes a board cell that is not in its agent's grid", () => {
-        const start = { project: "p", grids: { p: g(["b", "board:a"]), q: g(["a"]) } };
-        const next = reconcileProjectGrids(start, {
-            focusId: "b",
-            eligible: live("a", "b", "board:a"),
-            projectOf: projects({ a: "q", b: "p", "board:a": "q" }),
-            companionOf: boardOf,
-            seeded: true,
-        });
-        expect(next.grids.p).toEqual(g(["b"]));
-        expect(next.grids.q).toEqual(g(["a"]));
-    });
-
-    it("keeps the board cell beside its agent and never focuses it", () => {
-        const next = reconcileProjectGrids(pg(g(["board:a", "a"], "board:a")), {
-            focusId: "board:a",
-            eligible: live("a", "board:a"),
-            projectOf: projects({ a: "p", "board:a": "p" }),
-            companionOf: boardOf,
-            seeded: true,
-        });
-        expect(next.grids.p.ids).toEqual(["board:a", "a"]);
-        expect(next.grids.p.focused).toBe("a");
-    });
-
     it("is idempotent", () => {
         const input = {
             focusId: "a",
-            eligible: live("a", "board:a"),
-            projectOf: projects({ a: "p", "board:a": "p" }),
-            companionOf: boardOf,
+            eligible: live("a", "board:p/x"),
+            projectOf: projects({ a: "p", "board:p/x": "p" }),
+            isRider,
             seeded: true,
         };
-        const once = reconcileProjectGrids(pg(g(["a", "board:a"])), input);
+        const once = reconcileProjectGrids(pg(g(["a", "board:p/x"])), input);
         expect(reconcileProjectGrids(once, input)).toEqual(once);
     });
 });

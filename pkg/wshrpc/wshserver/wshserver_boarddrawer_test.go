@@ -209,8 +209,9 @@ func TestBoardAgentDrawTakesOverABoardWhoseAgentIsGone(t *testing.T) {
 	}
 }
 
-// Library's Open beside Chat: a live Claude agent of the board's project takes over a board whose agent is gone; a board
-// whose agent is live, an agent of another project or harness, and one not running are refused, the tie left as it was
+// Library's Open beside Chat and the board cell's Chat picker: a live Claude agent of the board's project takes the board
+// over, whether its agent is gone or still live; an agent of another project or harness, and one not running are refused,
+// the tie left as it was
 func TestBoardTakeOver(t *testing.T) {
 	w := newBoardWorld(t)
 	res := w.draw(w.block, "Auth flow", "how login works", "draw the login")
@@ -221,8 +222,14 @@ func TestBoardTakeOver(t *testing.T) {
 	}
 
 	otherTab, _ := w.addAgent("reviewer")
-	if _, err := take(otherTab); err == nil || !strings.Contains(err.Error(), "still running") {
-		t.Errorf("taking a live agent's board: %v", err)
+	if info, err := take(otherTab); err != nil || info.AgentTabId != otherTab {
+		t.Errorf("moving a live agent's board to another live chat: %+v %v", info, err)
+	}
+	if talk := w.talk(b.BoardId); talk.Agent.TabId != otherTab || talk.Agent.ReadTs != 0 {
+		t.Errorf("after the move the drawer reads the new chat from its start: %+v", talk.Agent)
+	}
+	if info, err := take(w.tab); err != nil || info.AgentTabId != w.tab {
+		t.Errorf("moving it back: %+v %v", info, err)
 	}
 	if info, err := take(w.tab); err != nil || info.AgentTabId != w.tab {
 		t.Errorf("the board's own agent: %+v %v", info, err)

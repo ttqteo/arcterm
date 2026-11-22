@@ -177,7 +177,7 @@ func boardAgentOf(row *agentRow) wshrpc.BoardAgent {
 }
 
 // takeOverBoard ties info's board to row's agent, keeping its drawing, turns and drawer session. The caller holds
-// boardCreate and has checked that the board's own agent is gone.
+// boardCreate.
 func takeOverBoard(dir string, info wshrpc.BoardInfo, row *agentRow) (wshrpc.BoardInfo, error) {
 	agent := boardAgentOf(row)
 	if _, err := boardstore.UpdateTalk(dir, info.ID, func(talk *wshrpc.BoardTalk) error {
@@ -190,9 +190,10 @@ func takeOverBoard(dir string, info wshrpc.BoardInfo, row *agentRow) (wshrpc.Boa
 	return info, nil
 }
 
-// BoardTakeOverCommand is Library's Open beside Chat on an ended agent's board: the chosen agent, a live Claude agent of
-// the board's project, takes it over, and the board's list moves it beside that agent's Chat. A board whose agent is
-// still live is refused; one already tied to the chosen agent is left as it is.
+// BoardTakeOverCommand ties a board to the chosen chat, a live Claude agent of the board's project: Library's Open beside
+// Chat on an ended agent's board, and the board cell's Chat picker, which moves a board between live chats. The drawer
+// reads the new chat from the start of its session; the board's list moves it under that chat. One already tied to the
+// chosen agent is left as it is.
 func (ws *WshServer) BoardTakeOverCommand(ctx context.Context, data wshrpc.CommandBoardTakeOverData) (*wshrpc.BoardInfo, error) {
 	_, rows, err := boardRoster(ctx)
 	if err != nil {
@@ -226,9 +227,6 @@ func (ws *WshServer) BoardTakeOverCommand(ctx context.Context, data wshrpc.Comma
 	}
 	if info.AgentTabId == row.TabId {
 		return &info, nil
-	}
-	if live := agentRowByTab(rows, info.AgentTabId); live != nil {
-		return nil, fmt.Errorf("board %q belongs to %s, which is still running", info.Name, boardAgentTitle(live))
 	}
 	info, err = takeOverBoard(dir, info, row)
 	if err != nil {

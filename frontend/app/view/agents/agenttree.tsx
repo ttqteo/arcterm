@@ -207,15 +207,14 @@ import { parseDocReview } from "./docreview";
 import { openReview } from "./docreviewstore";
 import { placementStyle } from "./agentgrid";
 import { boardCellId } from "../boards/boardcell";
-import { openBoardIdsAtom } from "../boards/boardentries";
+import { openBoardsAtom } from "../boards/boardentries";
 import { useBoardList } from "../boards/boardstore";
-import { boardSplitAtom, closeBoard, openBoard } from "../boards/boardsplitstore";
+import { closeBoard, openBoard } from "../boards/boardsplitstore";
 import {
     canOpenInSplit,
     isInSplit,
     openInSplit,
     projectGridsAtom,
-    removeBoardCell,
     removeFromSplit,
     treeSplits,
 } from "./gridstore";
@@ -3294,10 +3293,9 @@ function BoardRow({
 }: {
     model: AgentsViewModel;
     row: Extract<ProjectTreeRow, { kind: "board" }>;
-    cellShown: boolean; // the board cell of this agent is a cell of the grid on screen
+    cellShown: boolean; // the board's cell is a cell of the grid on screen
 }) {
-    const entry = useAtomValue(boardSplitAtom(row.agentId));
-    const open = cellShown && entry?.boardId === row.boardId;
+    const open = cellShown;
     const show = () => openBoard(model, row.agentId, row.boardProject, row.boardId);
     const onContextMenu = (e: React.MouseEvent) => {
         const items: ContextMenuItem[] = [
@@ -3308,10 +3306,7 @@ function BoardRow({
                       {
                           label: "Close board",
                           icon: <X size={15} />,
-                          click: () => {
-                              closeBoard(row.agentId);
-                              removeBoardCell(model, row.agentId);
-                          },
+                          click: () => closeBoard(model, { project: row.boardProject, boardId: row.boardId }),
                       } as ContextMenuItem,
                   ]
                 : []),
@@ -3569,8 +3564,8 @@ export const AgentTree = memo(function AgentTree({ model }: { model: AgentsViewM
     const terminals = useAtomValue(model.terminalsAtom);
     const dockedId = useAtomValue(dockedTerminalAtom);
     // every project's split as the surface reconciles it: each is one row in its folder (projectTree)
-    // the agents with a board open, read here so the tree redraws when one opens or closes (its cell is a cell of a split)
-    const openBoards = useAtomValue(openBoardIdsAtom);
+    // the open boards, read here so the tree redraws when one opens or closes (its cell is a cell of a split)
+    const openBoards = useAtomValue(openBoardsAtom);
     const splits = treeSplits(projectGrids, { focusId, agents, terminals, dockedId, seeded, openBoards });
     // every agent's boards, most recently active first (boardsOfAgent's order): the first is its row under the agent
     const boardList = useBoardList("");
@@ -3877,7 +3872,7 @@ export const AgentTree = memo(function AgentTree({ model }: { model: AgentsViewM
                                         <BoardRow
                                             model={model}
                                             row={r}
-                                            cellShown={shownCells.has(boardCellId(r.agentId))}
+                                            cellShown={shownCells.has(boardCellId({ project: r.boardProject, boardId: r.boardId }))}
                                         />
                                     );
                                 case "split":

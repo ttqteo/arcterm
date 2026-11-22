@@ -71,7 +71,7 @@ const requestTurn = (id, over = {}) => ({
 export default function (kit) {
     const { waveService, polishNap, ahReload, GRID_KEY, GRID_EMPTY } = kit;
     const { makeTab, closeTabs } = AC.tabFixtures({ waveService });
-    const LS_KEYS = [GRID_KEY, "agent.chatmode", "agent.boards"];
+    const LS_KEYS = [GRID_KEY, "agent.chatmode", "agent.openboards"];
 
     // a record's time: real time, strictly after the one before, so the transcript reads in the order it was written
     const stamp = (ctx) => {
@@ -220,12 +220,12 @@ export default function (kit) {
                     `const S = await mod("app/view/boards/boardsplitstore.ts");
                     const model = agentsModel();
                     return {
-                        split: globalStore.get(S.boardSplitAtom(${JSON.stringify(A)})),
+                        split: ([...globalStore.get((await mod("app/view/boards/boardentries.ts")).openBoardsAtom).values()][0] ?? null),
                         focus: globalStore.get(model.focusIdAtom),
                         surface: globalStore.get(model.surfaceAtom),
                         chat: window.__arcChatMode?.get(${JSON.stringify(A)}) ?? null,
                         // the board's own cell of the Agent grid, beside the agent's: drawn (a box) while the entry is open
-                        cell: [...document.querySelectorAll('[data-board-cell-of=${JSON.stringify(A)}] [data-board-cell]')].filter((el) => el.getBoundingClientRect().width > 0).length,
+                        cell: [...document.querySelectorAll('[data-board-cell-of] [data-board-cell]')].filter((el) => el.getBoundingClientRect().width > 0).length,
                     };`
                 );
             const toastShows = async () => (await toasts()).some((t) => t.text.includes(`The drawer drew on ${BOARD_NAME}`));
@@ -233,9 +233,7 @@ export default function (kit) {
                 AC.agentPage(
                     h,
                     `const S = await mod("app/view/boards/boardsplitstore.ts");
-                    const G = await mod("app/view/agents/gridstore.ts");
-                    S.closeBoard(${JSON.stringify(A)});
-                    G.removeBoardCell(agentsModel(), ${JSON.stringify(A)});
+                    for (const b of [...globalStore.get((await mod("app/view/boards/boardentries.ts")).openBoardsAtom).values()]) S.closeBoard(agentsModel(), b);
                     // the cell goes a render later: wait, so no canvas of the board is left beside a smoke canvas's own
                     return await until(() => document.querySelector("[data-board-cell]") == null, 5000);`
                 );
@@ -629,7 +627,7 @@ export default function (kit) {
                 AC.agentPage(
                     h,
                     `const S = await mod("app/view/boards/boardsplitstore.ts");
-                    for (const id of ${JSON.stringify([ctx.agent?.tabId, ctx.other?.tabId].filter(Boolean))}) S.closeBoard(id);
+                    for (const b of [...globalStore.get((await mod("app/view/boards/boardentries.ts")).openBoardsAtom).values()]) S.closeBoard(agentsModel(), b);
                     const N = await mod("app/cockpit/notificationstore.ts");
                     globalStore.set(N.toastsAtom, []);
                     return true;`

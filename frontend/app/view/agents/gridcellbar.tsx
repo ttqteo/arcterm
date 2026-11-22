@@ -187,22 +187,45 @@ export function GridCellBar({
     );
 }
 
-// The bar over a board cell: the shapes mark, the board's name and an x that closes the board (the agent's cell stays).
-// Not a drag handle: a board is no agent to rearrange, and it has no chat switch or initiative chip of its own.
-export function BoardCellBar({ agentId, title, onRemove }: { agentId: string; title: string; onRemove: () => void }) {
+// The bar over a board cell: the shapes mark, the board's name, the chat it reads, and an x that closes the board (the
+// other cells stay). A board cell is a cell of its own, so the bar is a drag handle as a tab's is: drag it onto another
+// cell and the drop zones answer as they do for a row from the tree.
+export function BoardCellBar({
+    cellId,
+    title,
+    chat,
+    onRemove,
+}: {
+    cellId: string;
+    title: string;
+    chat: string; // the chat the board reads, "" when it has none
+    onRemove: () => void;
+}) {
     return (
         <div
-            data-board-cell-bar={agentId}
-            title={title}
-            className="flex h-[26px] shrink-0 select-none items-center gap-[7px] border-b border-border bg-surface px-[8px] text-muted"
+            data-board-cell-bar={cellId}
+            draggable
+            onDragStart={(e) => beginAgentDrag(e, cellId)}
+            onDragEnd={endAgentDrag}
+            title={`${title}${chat !== "" ? `, reads ${chat}` : ""}. Drag to rearrange`}
+            className="flex h-[26px] shrink-0 cursor-grab select-none items-center gap-[7px] border-b border-border bg-surface px-[8px] text-muted active:cursor-grabbing"
         >
+            <GripVertical size={12} aria-hidden className="shrink-0 text-ink-faint" />
             <Shapes size={12} aria-hidden className="shrink-0 text-ink-faint" />
-            <span className="min-w-0 flex-1 truncate text-[12px] font-medium">{title}</span>
+            <span className="min-w-0 truncate text-[12px] font-medium">{title}</span>
+            {chat !== "" ? (
+                <span data-board-cell-chat className="min-w-0 flex-1 truncate text-[11.5px] text-ink-faint">
+                    · {chat}
+                </span>
+            ) : (
+                <span className="flex-1" />
+            )}
             <button
                 type="button"
-                data-board-cell-remove={agentId}
+                data-board-cell-remove={cellId}
                 aria-label={`Close the board ${title}`}
-                title="Close the board (the agent keeps its cell)"
+                title="Close the board (the other cells stay)"
+                onMouseDown={noDragStart}
                 onClick={onRemove}
                 className={BAR_BUTTON}
             >

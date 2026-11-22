@@ -40,7 +40,7 @@ function model(ids: string[], focus?: string, terminalIds: string[] = []): GridM
 
 beforeEach(() => {
     globalStore.set(projectGridsAtom, EMPTY_PROJECT_GRIDS);
-    globalStore.set(boardEntriesAtom, {});
+    globalStore.set(boardEntriesAtom, []);
     globalStore.set(centerModeAtom, "terminal");
 });
 
@@ -451,81 +451,101 @@ describe("treeSplits", () => {
     });
 });
 
+// open boards of project "p", by board id; their cells are `board:p/<id>`
 const openBoards = (...ids: string[]) =>
-    globalStore.set(boardEntriesAtom, Object.fromEntries(ids.map((id) => [id, { project: "p", boardId: `b-${id}` }])));
+    globalStore.set(
+        boardEntriesAtom,
+        ids.map((id) => ({ project: "p", boardId: id }))
+    );
+const B = (id: string) => ({ project: "p", boardId: id });
+// the grid of project "p", shown
+const setP = (grid: GridState) => globalStore.set(projectGridsAtom, { project: "p", grids: { p: grid } });
+// a roster whose agents are in project "p", the open boards' project
+function modelP(ids: string[], focus?: string): GridModel {
+    return {
+        focusIdAtom: atom<string | undefined>(focus),
+        agentsAtom: atom(ids.map((id) => ({ id, blockId: `blk-${id}`, project: "p" }))),
+        terminalsAtom: atom([]),
+    };
+}
 
 describe("gridEligibility", () => {
-    it("adds a board cell for each live agent with a board open, in its agent's project", () => {
-        const tabs = [
-            { id: "a", blockId: "blk-a", project: "p" },
-            { id: "b", blockId: "blk-b", project: "q" },
-            { id: "c" },
-        ];
-        const { eligible, projectOf, companionOf } = gridEligibility(tabs, new Set(["b", "c", "gone"]));
-        expect([...eligible]).toEqual(["a", "b", "board:b"]);
-        expect(projectOf.get("board:b")).toBe("q");
-        expect(companionOf("board:b")).toBe("b");
-        expect(companionOf("b")).toBeUndefined();
+    it("adds a cell for each open board, in its board's project, whatever agents run", () => {
+        const tabs = [{ id: "a", blockId: "blk-a", project: "p" }, { id: "c" }];
+        const open = new Map([
+            ["q/x", { project: "q", boardId: "x" }],
+            ["p/y", { project: "p", boardId: "y" }],
+        ]);
+        const { eligible, projectOf, isRider } = gridEligibility(tabs, open);
+        expect([...eligible]).toEqual(["a", "board:q/x", "board:p/y"]);
+        expect(projectOf.get("board:q/x")).toBe("q");
+        expect(isRider("board:q/x")).toBe(true);
+        expect(isRider("a")).toBe(false);
     });
 });
 
 describe("board cells in the grid", () => {
-    it("openBoardCell adds the board cell right of the agent, the agent staying the focused cell", () => {
-        const m = model(["a"], "a");
-        openBoards("a");
-        openBoardCell(m, "a");
-        expect(globalStore.get(agentGridAtom)).toEqual(g(["a", "board:a"], "a"));
+    it("openBoardCell adds the board cell right of the chat, which stays the focused cell", () => {
+        const m = modelP(["a"], "a");
+        openBoards("x");
+        openBoardCell(m, B("x"), "a");
+        expect(globalStore.get(agentGridAtom)).toEqual(g(["a", "board:p/x"], "a"));
         expect(globalStore.get(m.focusIdAtom)).toBe("a");
     });
 
-    it("a board cell with no board open is not a cell: it is pruned", () => {
-        globalStore.set(agentGridAtom, g(["a", "board:a"], "a"));
-        expect(currentGrid(model(["a"], "a")).ids).toEqual(["a"]);
+    it("a board cell whose board is not open is not a cell: it is pruned", () => {
+        setP(g(["a", "board:p/x"], "a"));
+        expect(currentGrid(modelP(["a"], "a")).ids).toEqual(["a"]);
     });
 
-    it("prunes a board cell whose agent left (an agent that ended while arcterm was closed)", () => {
-        openBoards("a");
-        globalStore.set(agentGridAtom, g(["b", "board:a"], "b"));
-        expect(currentGrid(model(["b"], "b")).ids).toEqual(["b"]);
+    it("prunes a cell saved before boards were cells of their own", () => {
+        openBoards("x");
+        setP(g(["a", "board:a"], "a"));
+        expect(currentGrid(modelP(["a"], "a")).ids).toEqual(["a"]);
+    });
+
+    it("keeps a board cell beside an agent other than the chat it reads", () => {
+        openBoards("x");
+        setP(g(["b", "board:p/x"], "b"));
+        expect(currentGrid(modelP(["b"], "b")).ids).toEqual(["b", "board:p/x"]);
     });
 
     it("removeBoardCell leaves the agent's cell alone", () => {
-        const m = model(["a"], "a");
-        openBoards("a");
-        globalStore.set(agentGridAtom, g(["a", "board:a"], "a"));
-        removeBoardCell(m, "a");
+        const m = modelP(["a"], "a");
+        openBoards("x");
+        setP(g(["a", "board:p/x"], "a"));
+        removeBoardCell(m, B("x"));
         expect(globalStore.get(agentGridAtom)).toEqual(g(["a"], "a"));
     });
 
-    it("removing the agent's cell takes its board cell along, and focus never lands on the board", () => {
-        const m = model(["a", "b"], "a");
-        openBoards("a");
-        globalStore.set(agentGridAtom, g(["a", "board:a", "b"], "a"));
+    it("removing an agent's cell leaves the board with the other tab, and focus never lands on the board", () => {
+        const m = modelP(["a", "b"], "a");
+        openBoards("x");
+        setP(g(["a", "board:p/x", "b"], "a"));
         removeFromGrid(m, "a");
         const grid = globalStore.get(agentGridAtom);
-        expect(grid.ids).toEqual(["b"]);
+        expect(grid.ids).toEqual(["board:p/x", "b"]);
         expect(globalStore.get(m.focusIdAtom)).toBe("b");
     });
 
-    it("removing the last agent cell beside a board cell does not focus the board", () => {
-        const m = model(["a", "b"], "b");
-        openBoards("a");
-        globalStore.set(agentGridAtom, g(["a", "board:a", "b"], "b"));
-        removeFromGrid(m, "b");
-        expect(globalStore.get(m.focusIdAtom)).toBe("a");
-        expect(globalStore.get(agentGridAtom)).toEqual(g(["a", "board:a"], "a"));
+    it("removing the last tab beside a board cell takes the board's cell too", () => {
+        const m = modelP(["a"], "a");
+        openBoards("x");
+        setP(g(["a", "board:p/x"], "a"));
+        removeFromGrid(m, "a");
+        expect(globalStore.get(agentGridAtom).ids).toEqual([]);
     });
 
     it("never lets the grid's focused be a board cell", () => {
-        const m = model(["a"], "a");
-        openBoards("a");
-        globalStore.set(agentGridAtom, { ids: ["board:a", "a"], focused: "board:a" });
+        const m = modelP(["a"], "a");
+        openBoards("x");
+        setP({ ids: ["board:p/x", "a"], focused: "board:p/x" });
         expect(currentGrid(m).focused).toBe("a");
     });
 
     it("treeSplits reads the open boards when none are passed", () => {
-        openBoards("a");
-        const grids = { project: "p", grids: { p: g(["a", "board:a"], "a") } };
+        openBoards("x");
+        const grids = { project: "p", grids: { p: g(["a", "board:p/x"], "a") } };
         const input = {
             focusId: "a",
             agents: [{ id: "a", blockId: "blk-a", project: "p" }],
@@ -533,15 +553,15 @@ describe("board cells in the grid", () => {
             dockedId: null,
             seeded: true,
         };
-        expect(treeSplits(grids, input).grids.p.ids).toEqual(["a", "board:a"]);
-        expect(treeSplits(grids, { ...input, openBoards: new Set() }).grids.p.ids).toEqual(["a"]);
+        expect(treeSplits(grids, input).grids.p.ids).toEqual(["a", "board:p/x"]);
+        expect(treeSplits(grids, { ...input, openBoards: new Map() }).grids.p.ids).toEqual(["a"]);
     });
 
     it("a full grid gives a board cell the last other cell, and the focused tab keeps its cell", () => {
-        const m = model(["x", "a", "y", "z"], "a");
-        openBoards("a");
-        globalStore.set(agentGridAtom, g(["x", "a", "y", "z"], "a"));
-        openBoardCell(m, "a");
-        expect(globalStore.get(agentGridAtom).ids).toEqual(["x", "a", "y", "board:a"]);
+        const m = modelP(["x", "a", "y", "z"], "a");
+        openBoards("x");
+        setP(g(["x", "a", "y", "z"], "a"));
+        openBoardCell(m, B("x"), "a");
+        expect(globalStore.get(agentGridAtom).ids).toEqual(["x", "a", "y", "board:p/x"]);
     });
 });

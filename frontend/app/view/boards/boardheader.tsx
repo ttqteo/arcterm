@@ -1,23 +1,42 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-// The board cell's header: the board's name (a switcher while the agent has more than one board), its facts, Expand or
-// Collapse (the cell over the whole grid), and Close. While a part of
+// The board cell's header: the board's name (a switcher while its chat has more than one board), its facts, the chat
+// the board reads (a picker of the project's live Claude chats, which moves the board to another), Hide or Show turns
+// (the turns column folded to a strip), Expand or Collapse (the cell over the whole grid), and Close. While a part of
 // the board is read (boardparts.ts), the facts give way to the part's name, a ‹ n/N › stepper and Whole board; on the
 // whole board a ‹ N parts › stepper starts the reading.
 
 import { cn } from "@/util/util";
-import { Check, ChevronDown, ChevronLeft, ChevronRight, Maximize2, Minimize2, Shapes, X } from "lucide-react";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import {
+    Check,
+    ChevronDown,
+    ChevronLeft,
+    ChevronRight,
+    Maximize2,
+    MessageSquare,
+    Minimize2,
+    PanelRightClose,
+    PanelRightOpen,
+    Shapes,
+    X,
+} from "lucide-react";
+import { useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 import { stepPart, type BoardPart } from "./boardparts";
 import { boardFacts } from "./boardtalkmodel";
 
 export interface BoardHeaderProps {
     board: BoardInfo | undefined; // null-ish until the list has been read
-    boards: readonly BoardInfo[]; // every board of the agent: what the switcher lists
+    boards: readonly BoardInfo[]; // every board of its chat: what the switcher lists
     expanded: boolean;
     onSwitch: (boardId: string) => void;
     onToggleExpanded: () => void;
+    // the chat the board reads: its title, and whether it still runs
+    chat?: { id: string; title: string; alive: boolean };
+    chats?: readonly { id: string; name: string }[]; // the live Claude chats of the board's project, to move it to
+    onChat?: (tabId: string) => void;
+    turnsFolded?: boolean;
+    onToggleTurns?: () => void;
     onClose: () => void;
     parts?: readonly BoardPart[];
     part?: number | null;
@@ -49,8 +68,8 @@ function HeaderButton({
     );
 }
 
-// the name; with other boards of the same agent it opens a list to switch to one
-function BoardSwitcher({ board, boards, onSwitch }: Pick<BoardHeaderProps, "board" | "boards" | "onSwitch">) {
+// a menu's open state, closed by a press outside `root`
+function useMenu(): [boolean, (open: boolean) => void, RefObject<HTMLDivElement>] {
     const [open, setOpen] = useState(false);
     const root = useRef<HTMLDivElement>(null);
     useEffect(() => {
@@ -65,6 +84,89 @@ function BoardSwitcher({ board, boards, onSwitch }: Pick<BoardHeaderProps, "boar
         document.addEventListener("pointerdown", onDown, true);
         return () => document.removeEventListener("pointerdown", onDown, true);
     }, [open]);
+    return [open, setOpen, root as RefObject<HTMLDivElement>];
+}
+
+// The chat the board reads, as a menu of the project's live Claude chats: picking one moves the board to it. An ended
+// chat reads as such, and the menu is how the board gets a chat again.
+function ChatPicker({ chat, chats, onChat }: Required<Pick<BoardHeaderProps, "chat" | "chats" | "onChat">>) {
+    const [open, setOpen, root] = useMenu();
+    const label = chat.alive ? chat.title : chat.title !== "" ? `${chat.title} (ended)` : "No chat";
+    return (
+        <div
+            ref={root}
+            className="relative min-w-0 flex-none"
+            onKeyDown={(e) => {
+                if (open && e.key === "Escape") {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setOpen(false);
+                }
+            }}
+        >
+            <button
+                type="button"
+                data-board-chat={chat.id}
+                data-board-chat-ended={chat.alive ? undefined : ""}
+                aria-haspopup="menu"
+                aria-expanded={open}
+                title="The chat this board reads. Pick another to move the board to it"
+                onClick={() => setOpen(!open)}
+                className={cn(
+                    "flex max-w-[180px] cursor-pointer items-center gap-1 rounded-[6px] px-1.5 py-0.5 hover:bg-surface-hover",
+                    chat.alive ? "text-secondary" : "text-warning"
+                )}
+            >
+                <MessageSquare size={12} strokeWidth={2} aria-hidden className="flex-none" />
+                <span className="truncate">{label}</span>
+                <ChevronDown size={12} strokeWidth={2} aria-hidden className="flex-none text-muted" />
+            </button>
+            {open ? (
+                <div
+                    role="menu"
+                    aria-label="Move the board to a chat"
+                    className="absolute right-0 top-full z-30 mt-1 flex min-w-[220px] flex-col rounded-[8px] border border-edge-mid bg-surface-raised py-1 shadow-popover-sm"
+                >
+                    <div className="px-3 py-1 text-[11.5px] text-muted">Reads the chat</div>
+                    {chats.length === 0 ? (
+                        <div data-board-chat-none className="px-3 py-1.5 text-[12px] text-muted">
+                            No Claude chat of this project is running
+                        </div>
+                    ) : (
+                        chats.map((c) => (
+                            <button
+                                key={c.id}
+                                type="button"
+                                role="menuitem"
+                                data-board-chat-item={c.id}
+                                aria-current={c.id === chat.id ? "true" : undefined}
+                                onClick={() => {
+                                    setOpen(false);
+                                    if (c.id !== chat.id) {
+                                        onChat(c.id);
+                                    }
+                                }}
+                                className={cn(
+                                    "flex cursor-pointer items-center gap-2 px-3 py-1.5 text-left text-[12px] hover:bg-surface-hover",
+                                    c.id === chat.id ? "text-primary" : "text-secondary"
+                                )}
+                            >
+                                <span className="min-w-0 flex-1 truncate">{c.name}</span>
+                                {c.id === chat.id ? (
+                                    <Check size={12} strokeWidth={2} aria-hidden className="flex-none" />
+                                ) : null}
+                            </button>
+                        ))
+                    )}
+                </div>
+            ) : null}
+        </div>
+    );
+}
+
+// the name; with other boards of the same chat it opens a list to switch to one
+function BoardSwitcher({ board, boards, onSwitch }: Pick<BoardHeaderProps, "board" | "boards" | "onSwitch">) {
+    const [open, setOpen, root] = useMenu();
     const name = board?.name ?? "Board";
     if (boards.length < 2) {
         return (
@@ -102,7 +204,7 @@ function BoardSwitcher({ board, boards, onSwitch }: Pick<BoardHeaderProps, "boar
             {open ? (
                 <div
                     role="menu"
-                    aria-label="Boards of this agent"
+                    aria-label="Boards of this chat"
                     className="absolute left-0 top-full z-30 mt-1 flex min-w-[220px] flex-col rounded-[8px] border border-edge-mid bg-surface-raised py-1 shadow-popover-sm"
                 >
                     {boards.map((b) => (
@@ -143,6 +245,11 @@ export function BoardHeader({
     onSwitch,
     onToggleExpanded,
     onClose,
+    chat,
+    chats,
+    onChat,
+    turnsFolded = false,
+    onToggleTurns,
     parts = [],
     part = null,
     onPart,
@@ -229,6 +336,22 @@ export function BoardHeader({
                 </>
             ) : null}
             <div className="flex-1" />
+            {chat != null && chats != null && onChat != null ? (
+                <ChatPicker chat={chat} chats={chats} onChat={onChat} />
+            ) : null}
+            {onToggleTurns != null ? (
+                <HeaderButton
+                    label={turnsFolded ? "Show turns" : "Hide turns"}
+                    attr="data-board-turns-toggle"
+                    onClick={onToggleTurns}
+                >
+                    {turnsFolded ? (
+                        <PanelRightOpen size={14} strokeWidth={2} />
+                    ) : (
+                        <PanelRightClose size={14} strokeWidth={2} />
+                    )}
+                </HeaderButton>
+            ) : null}
             <HeaderButton label={expandLabel} attr="data-board-expand" onClick={onToggleExpanded}>
                 {expanded ? <Minimize2 size={14} strokeWidth={2} /> : <Maximize2 size={14} strokeWidth={2} />}
             </HeaderButton>

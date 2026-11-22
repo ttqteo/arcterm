@@ -577,33 +577,22 @@ export function projectGridsEquals(a: ProjectGrids, b: ProjectGrids): boolean {
 
 export interface ProjectReconcileInput extends ReconcileInput {
     projectOf: ReadonlyMap<string, string>; // each tab's project, as the sidebar's folders file it
-    // The id a cell depends on, for a cell that rides with another (a board cell with its agent); undefined for a tab.
-    companionOf?: (id: string) => string | undefined;
+    // Whether a cell is a rider (a board cell): one that never holds focus and needs a tab in its grid.
+    isRider?: (id: string) => boolean;
 }
 
-// A grid with every companion cell kept only while its companion is a cell of the same grid, and with a companion never
-// the focused cell: focus goes to the companion's own cell, else the first tab. A grid of companions alone is empty.
-// Pure and idempotent; with no `companionOf` the grid comes back as it was.
-export function settleCompanions(
-    state: GridState,
-    companionOf: ((id: string) => string | undefined) | undefined
-): GridState {
+// A grid whose riders never hold focus (focus goes to the first tab) and that holds riders only beside a tab: a grid
+// of riders alone is empty. Pure and idempotent; with no `isRider` the grid comes back as it was.
+export function settleRiders(state: GridState, isRider: ((id: string) => boolean) | undefined): GridState {
     const s = normalizeGrid(state);
-    if (companionOf == null) {
+    if (isRider == null) {
         return s;
     }
-    const orphan = (id: string) => {
-        const c = companionOf(id);
-        return c != null && !s.ids.includes(c);
-    };
-    const kept = s.ids.some(orphan) ? removeIds(s, orphan) : s;
-    if (kept.focused == null || companionOf(kept.focused) == null) {
-        return kept;
+    const tab = s.ids.find((id) => !isRider(id));
+    if (tab == null) {
+        return { ids: [], focused: null };
     }
-    const own = companionOf(kept.focused);
-    const focused =
-        own != null && kept.ids.includes(own) ? own : (kept.ids.find((id) => companionOf(id) == null) ?? null);
-    return focused == null ? { ids: [], focused: null } : { ...kept, focused };
+    return s.focused != null && isRider(s.focused) ? { ...s, focused: tab } : s;
 }
 
 // reconcileGrid for every project: the focused tab's project's grid is shown and follows the focus, each grid keeps
@@ -629,7 +618,7 @@ export function reconcileProjectGrids(state: ProjectGrids, input: ProjectReconci
             p === project
                 ? reconcileGrid(grid, { focusId: input.focusId, eligible: mine, seeded: true })
                 : pruneMissing(grid, mine);
-        const settled = settleCompanions(next, input.companionOf);
+        const settled = settleRiders(next, input.isRider);
         if (settled.ids.length > 0) {
             grids[p] = settled;
         }

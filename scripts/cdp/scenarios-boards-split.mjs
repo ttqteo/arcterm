@@ -1,7 +1,8 @@
 // Scenario `boards-split`: a board as a cell of the Agent grid beside its agent's Chat (docs/superpowers/specs/
 // 2026-11-22-board-cells-design.md). The agent's tree lists the board as a row under it; clicking the row opens it as a
-// cell right of the agent's, `[data-board-cell]` inside a `[data-board-cell-of]` wrapper that is a sibling of the agent's
-// `[data-agent-terminal]` cell, never inside it. Its header, turns and ask box are the steps below, each a screenshot plus
+// cell right of the agent's, `[data-board-cell]` inside a `[data-board-cell-of="<project>/<board>"]` wrapper that is a
+// sibling of the agent's `[data-agent-terminal]` cell, never inside it. A board cell is a cell of its own (more than one
+// can be open); these steps open one at a time, openBoardOn closing the others first. Its header, turns and ask box are the steps below, each a screenshot plus
 // a DOM assert. Beside Chat only the latest turn shows, so a step that reads one turn's row puts that turn last; a dense
 // board (B3) reads one part at a time (8b), a small one (B1) reads whole.
 //
@@ -110,7 +111,7 @@ const runningTurn = (now, over = {}) => ({
 export default function (kit) {
     const { waveService, polishNap, ahReload, GRID_KEY, GRID_EMPTY } = kit;
     const { makeTab, closeTabs } = AC.tabFixtures({ waveService });
-    const LS_KEYS = [GRID_KEY, "agent.chatmode", "agent.boards", "agent.header.buttons"];
+    const LS_KEYS = [GRID_KEY, "agent.chatmode", "agent.openboards", "board.turns.folded", "agent.header.buttons"];
 
     const rosterRows = (ctx) =>
         [ctx.agent, ctx.other, ctx.third, ctx.fourth].filter(Boolean).map((tab, i) => ({
@@ -155,7 +156,7 @@ export default function (kit) {
                 at = "resetting the grid";
                 await h.ev(`localStorage.setItem(${q(GRID_KEY)}, ${q(JSON.stringify(GRID_EMPTY))})`);
                 await h.ev(`localStorage.removeItem("agent.chatmode")`);
-                await h.ev(`localStorage.removeItem("agent.boards")`);
+                await h.ev(`localStorage.removeItem("agent.openboards")`);
                 if (!(await ahReload(h))) throw new Error("the page did not come back after the reload");
                 await h.goto("agent");
 
@@ -221,7 +222,8 @@ export default function (kit) {
             const GRID = "[data-agent-grid]";
             // the agent's own cell (Chat and its terminal), and the board's: a sibling cell of the grid, never inside it
             const CELL = `[data-agent-terminal="${A}"]`;
-            const BOARD = `[data-board-cell-of="${A}"]`;
+            const BOARD = "[data-board-cell-of]";
+            const CELL_ID = (id) => `board:${PROJECT}/${id}`;
             const SPLIT = (id) => `${BOARD} [data-board-cell="${id}"]`;
             const CANVAS = (id) => `[data-board-canvas="${id}"]`;
             const TREE_ROW = (id) => `[data-tree-board="${id}"]`;
@@ -247,11 +249,12 @@ export default function (kit) {
                     h,
                     `const S = await mod("app/view/boards/boardsplitstore.ts");
                     const D = await mod("app/view/agents/docreviewstore.ts");
-                    const split = globalStore.get(S.boardSplitAtom(${q(A)}));
+                    const E = await mod("app/view/boards/boardentries.ts");
+                    const split = [...globalStore.get(E.openBoardsAtom).values()][0] ?? null;
                     return {
                         split,
-                        max: globalStore.get(S.boardMaxAtom(${q(A)})),
-                        stored: window.localStorage.getItem("agent.boards"),
+                        max: split != null ? globalStore.get(S.boardMaxAtom(E.boardKey(split))) : false,
+                        stored: window.localStorage.getItem("agent.openboards"),
                         chat: window.__arcChatMode?.get(${q(A)}) ?? null,
                         review: globalStore.get(D.docReviewStateAtom(${q(A)}))?.mode ?? null,
                         focus: globalStore.get(agentsModel().focusIdAtom),
@@ -261,6 +264,10 @@ export default function (kit) {
                 AC.agentPage(
                     h,
                     `const S = await mod("app/view/boards/boardsplitstore.ts");
+                    const E = await mod("app/view/boards/boardentries.ts");
+                    for (const b of [...globalStore.get(E.openBoardsAtom).values()]) {
+                        if (b.boardId !== ${q(boardId)}) S.closeBoard(agentsModel(), b);
+                    }
                     S.openBoard(agentsModel(), ${q(A)}, ${q(PROJECT)}, ${q(boardId)});
                     return true;`
                 );
@@ -268,7 +275,8 @@ export default function (kit) {
                 AC.agentPage(
                     h,
                     `const S = await mod("app/view/boards/boardsplitstore.ts");
-                    S.closeBoard(${q(A)});
+                    const E = await mod("app/view/boards/boardentries.ts");
+                    for (const b of [...globalStore.get(E.openBoardsAtom).values()]) S.closeBoard(agentsModel(), b);
                     return true;`
                 );
             const heap = async () => {
@@ -775,7 +783,7 @@ export default function (kit) {
                 // collapsed first, so the cell Chat gets back is what is measured
                 await click(`${SPLIT(B1)} [data-board-expand]`);
                 await until(() => h.ev(`document.querySelector(${q(SPLIT(B1))})?.dataset.boardMax !== "true"`));
-                const clicked = await click(`[data-board-cell-remove="${A}"]`);
+                const clicked = await click(`[data-board-cell-remove="${CELL_ID(B1)}"]`);
                 const closed = await until(async () => (await count("[data-board-cell]")) === 0 && (await state()).split == null && (await gridCount()) === "1");
                 // measure once the pane is back to its box
                 await until(async () => JSON.stringify(await termBox()) === JSON.stringify(termBefore));
@@ -811,8 +819,8 @@ export default function (kit) {
                 );
             });
 
-            // --- 8a. the agent cell's x takes its board cell with it ---
-            await run("8a. reopening beside Chat, then the agent cell's x: no board cell is left", async (name) => {
+            // --- 8a. the agent cell's x leaves its board: a board is a cell of its own ---
+            await run("8a. reopening beside Chat, then the agent cell's x: the board stays beside the other agent", async (name) => {
                 // a second cell, so the agent's cell has an x to press: the other agent beside it
                 await AC.agentPage(
                     h,
@@ -825,15 +833,16 @@ export default function (kit) {
                 const threeUp = await until(async () => (await gridCount()) === "3" && (await shownCells("[data-board-cell]")) === 1);
                 const cellsBefore = await h.ev(`[...document.querySelectorAll("[data-agent-cell]")].length`);
                 const clicked = await click(`[data-agent-cell-remove="${A}"]`);
-                const gone = await until(async () => (await count("[data-board-cell]")) === 0 && (await count(`[data-board-cell-of]`)) === 0);
+                const stays = await until(async () => (await gridCount()) === "2" && (await shownCells("[data-board-cell]")) === 1);
                 await polishNap(300);
                 const cells = await gridCount();
                 const st = await state();
+                const focus = st.focus;
                 await shot("8a-agent-x");
                 rec(
                     name,
-                    threeUp && clicked && gone && cells === "1" && cellsBefore === 3 && (await count(`[data-board-cell-of="${A}"]`)) === 0,
-                    { threeUp, cellsBefore, cells, split: st.split }
+                    threeUp && clicked && stays && cells === "2" && cellsBefore === 3 && st.split?.boardId === B1 && focus === B,
+                    { threeUp, cellsBefore, cells, split: st.split, focus }
                 );
                 // the grid and the tree back as they were: the agent alone, no entry left
                 await closeBoardOn();
@@ -1070,8 +1079,8 @@ export default function (kit) {
                 // an entry with no cell in the grid draws nothing: a board cell exists only once openBoard has given it one
                 await AC.agentPage(
                     h,
-                    `const S = await mod("app/view/boards/boardsplitstore.ts");
-                    globalStore.set(S.boardSplitAtom(${q(A)}), { project: ${q(PROJECT)}, boardId: ${q(B1)} });
+                    `const E = await mod("app/view/boards/boardentries.ts");
+                    globalStore.set(E.boardEntriesAtom, [{ project: ${q(PROJECT)}, boardId: ${q(B1)} }]);
                     return true;`
                 );
                 await polishNap(600);
@@ -1095,6 +1104,81 @@ export default function (kit) {
                         st.chat === "chat" &&
                         st.split?.boardId === B1,
                     { chatGone, drawnInTerminal, before: before.chat, after: st.chat, chatBack, split: st.split }
+                );
+            });
+
+            // --- 12. two boards open at once, each a cell of its own ---
+            await run("12. two boards open side by side: [agent | board | board], each closing alone", async (name) => {
+                await openBoardOn(B1);
+                await AC.agentPage(
+                    h,
+                    `const S = await mod("app/view/boards/boardsplitstore.ts");
+                    S.openBoard(agentsModel(), ${q(A)}, ${q(PROJECT)}, ${q(B2)});
+                    return true;`
+                );
+                const both = await until(
+                    async () => (await gridCount()) === "3" && (await shownCells(SPLIT(B1))) === 1 && (await shownCells(SPLIT(B2))) === 1
+                );
+                await canvasReady(B2);
+                await polishNap(300);
+                await shot("12-two-boards");
+                const closed = await click(`[data-board-cell-remove="${CELL_ID(B2)}"]`);
+                const one = await until(async () => (await gridCount()) === "2" && (await count(SPLIT(B2))) === 0 && (await shownCells(SPLIT(B1))) === 1);
+                const st = await state();
+                rec(name, both && closed && one && st.split?.boardId === B1, { both, closed, one, split: st.split });
+            });
+
+            // --- 13. the chat picker moves the board to another chat ---
+            await run("13. the header's chat picker lists the project's chats and moves the board to the picked one", async (name) => {
+                await openBoardOn(B1);
+                await until(async () => (await shownCells(SPLIT(B1))) === 1);
+                const chatBefore = await text(`${SPLIT(B1)} [data-board-chat]`);
+                const opened = await click(`${SPLIT(B1)} [data-board-chat]`);
+                const listed = await until(async () => (await count(`${SPLIT(B1)} [data-board-chat-item]`)) >= 2);
+                await shot("13-chat-picker");
+                const picked = await click(`${SPLIT(B1)} [data-board-chat-item="${B}"]`);
+                const calls = await boardCalls(h, "BoardTakeOverCommand");
+                const moved = await until(async () => (await h.ev(`document.querySelector(${q(`${SPLIT(B1)} [data-board-chat]`)})?.getAttribute("data-board-chat")`)) === B);
+                const chatAfter = await text(`${SPLIT(B1)} [data-board-chat]`);
+                // the board's cell stays where it was: moving its chat moves no cell
+                const cells = await gridCount();
+                await shot("13-chat-moved");
+                const last = calls.at(-1);
+                rec(
+                    name,
+                    opened && listed && picked && moved && last?.boardid === B1 && last?.tabid === B && cells === "2" && chatAfter !== chatBefore,
+                    { opened, listed, picked, moved, call: last, chatBefore, chatAfter, cells }
+                );
+                // back to the first chat, so the steps after read it as before
+                await click(`${SPLIT(B1)} [data-board-chat]`);
+                await until(async () => (await count(`${SPLIT(B1)} [data-board-chat-item="${A}"]`)) === 1);
+                await click(`${SPLIT(B1)} [data-board-chat-item="${A}"]`);
+                await until(async () => (await h.ev(`document.querySelector(${q(`${SPLIT(B1)} [data-board-chat]`)})?.getAttribute("data-board-chat")`)) === A);
+            });
+
+            // --- 14. Hide turns folds the column to a strip ---
+            await run("14. Hide turns folds the expanded board's turns column to a 14px strip; the strip opens it again", async (name) => {
+                await openBoardOn(B1);
+                await until(async () => (await shownCells(SPLIT(B1))) === 1);
+                await click(`${SPLIT(B1)} [data-board-expand]`);
+                await until(() => h.ev(`document.querySelector(${q(SPLIT(B1))})?.dataset.boardMax === "true"`));
+                const column = await until(async () => (await count(`${SPLIT(B1)} [data-board-turns-column]`)) === 1);
+                const canvasBefore = await box(`${SPLIT(B1)} ${CANVAS(B1)}`);
+                const folded = await click(`${SPLIT(B1)} [data-board-turns-toggle]`);
+                const strip = await until(async () => (await count(`${SPLIT(B1)} [data-board-turns-strip]`)) === 1 && (await count(`${SPLIT(B1)} [data-board-turns-column]`)) === 0);
+                await polishNap(300);
+                const stripBox = await box(`${SPLIT(B1)} [data-board-turns-strip]`);
+                const canvasAfter = await box(`${SPLIT(B1)} ${CANVAS(B1)}`);
+                const kept = await h.ev(`JSON.parse(localStorage.getItem("board.turns.folded") ?? "{}")[${q(`${PROJECT}/${B1}`)}] === true`);
+                await shot("14-turns-folded");
+                const reopened = await click(`${SPLIT(B1)} [data-board-turns-strip]`);
+                const back = await until(async () => (await count(`${SPLIT(B1)} [data-board-turns-column]`)) === 1);
+                await click(`${SPLIT(B1)} [data-board-expand]`);
+                await until(() => h.ev(`document.querySelector(${q(SPLIT(B1))})?.dataset.boardMax !== "true"`));
+                rec(
+                    name,
+                    column && folded && strip && near(stripBox?.w, 14, 1) && (canvasAfter?.w ?? 0) > (canvasBefore?.w ?? 0) + 200 && kept && reopened && back,
+                    { column, folded, strip, stripW: stripBox?.w, canvasBefore: canvasBefore?.w, canvasAfter: canvasAfter?.w, kept, reopened, back }
                 );
             });
 
@@ -1126,8 +1210,9 @@ export default function (kit) {
                     h,
                     `const S = await mod("app/view/boards/boardsplitstore.ts");
                     const D = await mod("app/view/agents/docreviewstore.ts");
+                    const E = await mod("app/view/boards/boardentries.ts");
+                    for (const b of [...globalStore.get(E.openBoardsAtom).values()]) S.closeBoard(agentsModel(), b);
                     for (const id of ${q([ctx.agent?.tabId, ctx.other?.tabId, ctx.third?.tabId, ctx.fourth?.tabId].filter(Boolean))}) {
-                        S.closeBoard(id);
                         globalStore.set(D.docReviewStateAtom(id), null);
                     }
                     const G = await mod("app/view/agents/gridstore.ts");

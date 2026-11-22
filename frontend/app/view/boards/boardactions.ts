@@ -44,3 +44,8 @@ export function retryBoardTurn(board: BoardRef, turnId: string): Promise<void> {
 export function rerouteBoardTurn(board: BoardRef, turnId: string): Promise<void> {
     return RpcApi.BoardRerouteCommand(TabRpcClient, { project: board.project, boardid: board.boardId, turnid: turnId });
 }
+
+// ties the board to another chat, a live Claude agent of its project: the drawer reads that chat from the next turn on
+export async function moveBoardToChat(board: BoardRef, tabId: string): Promise<void> {
+    await RpcApi.BoardTakeOverCommand(TabRpcClient, { project: board.project, boardid: board.boardId, tabid: tabId });
+}

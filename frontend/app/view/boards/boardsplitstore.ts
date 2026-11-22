@@ -1,81 +1,91 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-// Which board each agent's board cell shows (boardentries.ts holds the persisted entries; boardcell.ts the cell's rules
-// and gridstore.ts the grid). Module-level, like the chat mode, because any opener (the board card, the toast, Library,
-// `wsh ui`, the tree's board row) sets it without holding a cell.
+// The open board cells (boardentries.ts holds the persisted list; boardcell.ts the cell's rules and gridstore.ts the
+// grid). Module-level, like the chat mode, because any opener (the board card, the toast, Library, `wsh ui`, the tree's
+// board row) opens one without holding a cell.
 
 import { globalStore } from "@/app/store/jotaiStore";
-import { atom, type PrimitiveAtom, type SetStateAction, type WritableAtom } from "jotai";
+import { atom, type PrimitiveAtom } from "jotai";
 import { atomFamily, atomWithStorage } from "jotai/utils";
 import { setAgentView } from "../agents/agentview";
 import { setChatMode } from "../agents/chatmodestore";
-import { openBoardCell, type GridModel } from "../agents/gridstore";
-import { boardEntriesAtom, boardEntryMapAtom, parseBoardEntries, type BoardSplit } from "./boardentries";
+import { openBoardCell, removeBoardCell, replaceBoardCell, type GridModel } from "../agents/gridstore";
+import { boardEntriesAtom, boardKey, openBoardsAtom, parseBoardEntries, type BoardSplit } from "./boardentries";
 
 export type { BoardSplit } from "./boardentries";
 
-// null = no board open for this agent (no board cell beside it). Read and written as one entry of the persisted map.
-export const boardSplitAtom = atomFamily(
-    (agentId: string): WritableAtom<BoardSplit | null, [SetStateAction<BoardSplit | null>], void> =>
-        atom(
-            (get) => get(boardEntryMapAtom)[agentId] ?? null,
-            (get, set, next) => {
-                const entries = { ...get(boardEntryMapAtom) };
-                const value = typeof next === "function" ? next(entries[agentId] ?? null) : next;
-                if (value == null) {
-                    delete entries[agentId];
-                } else {
-                    entries[agentId] = { project: value.project, boardId: value.boardId };
-                }
-                set(boardEntriesAtom, entries);
+// Whether a board is open as a cell.
+export const boardOpenAtom = atomFamily((key: string) => atom((get) => get(openBoardsAtom).has(key)));
+
+function setOpen(ref: BoardSplit, open: boolean): void {
+    const list = parseBoardEntries(globalStore.get(boardEntriesAtom)).filter((b) => boardKey(b) !== boardKey(ref));
+    globalStore.set(boardEntriesAtom, open ? [...list, { project: ref.project, boardId: ref.boardId }] : list);
+}
+
+// Expand: the board cell fills the whole grid, the others hidden under it. Per board and not persisted, so a launch
+// opens a split as it was saved, not covered.
+export const boardMaxAtom = atomFamily((_key: string) => atom(false) as PrimitiveAtom<boolean>);
+
+export function setBoardMax(ref: BoardSplit, on: boolean): void {
+    globalStore.set(boardMaxAtom(boardKey(ref)), on);
+}
+
+// The turns column folded to a strip, per board and kept across launches (by board key).
+const turnsFoldedStoreAtom = atomWithStorage<Record<string, boolean>>("board.turns.folded", {}, undefined, {
+    getOnInit: true,
+}) as PrimitiveAtom<Record<string, boolean>>;
+
+export const turnsFoldedAtom = atomFamily((key: string) =>
+    atom(
+        (get) => get(turnsFoldedStoreAtom)?.[key] === true,
+        (get, set, folded: boolean) => {
+            const next = { ...(get(turnsFoldedStoreAtom) ?? {}) };
+            if (folded) {
+                next[key] = true;
+            } else {
+                delete next[key];
             }
-        )
+            set(turnsFoldedStoreAtom, next);
+        }
+    )
 );
-
-// Expand: the board cell fills the whole grid, the others hidden under it. Per agent and not persisted, so a launch opens
-// a split as it was saved, not covered.
-export const boardMaxAtom = atomFamily((_agentId: string) => atom(false) as PrimitiveAtom<boolean>);
-
-export function setBoardMax(agentId: string, on: boolean): void {
-    globalStore.set(boardMaxAtom(agentId), on);
-}
-
-// Drops the entries of agents that are not in `live`, so a board whose agent ended while arcterm was closed leaves no
-// orphan in localStorage. The surface calls it once the roster is seeded.
-export function pruneBoardEntries(live: ReadonlySet<string>): void {
-    const entries = parseBoardEntries(globalStore.get(boardEntriesAtom));
-    const kept = Object.fromEntries(Object.entries(entries).filter(([id]) => live.has(id)));
-    if (Object.keys(kept).length !== Object.keys(entries).length) {
-        globalStore.set(boardEntriesAtom, kept);
-    }
-}
 
 // what openBoard needs of AgentsViewModel; spelled out so it can be tested without one
 export interface BoardOpenModel extends GridModel {
     openTerminal(agentId: string): void;
 }
 
-// Focus the agent on the Agent surface, put its terminal slot back (closing a Review, Brainstorm or Canvas pane) and its
-// chat mode on Chat, then set the board and give it a cell right of the agent's. With the cell already on screen it only
-// switches board.
+// Open a board as a cell of its own beside the chat it was opened from (`agentId`): focus that agent on the Agent
+// surface, put its terminal slot back (closing a Review, Brainstorm or Canvas pane) and its chat mode on Chat, then
+// open the board and give it a cell right of the agent's. A board already on screen stays where it is.
 export function openBoard(model: BoardOpenModel, agentId: string, project: string, boardId: string): void {
+    const ref = { project, boardId };
     model.openTerminal(agentId);
     setAgentView(agentId, "terminal", Date.now());
     setChatMode(agentId, "chat");
-    globalStore.set(boardSplitAtom(agentId), { project, boardId });
-    openBoardCell(model, agentId);
+    setOpen(ref, true);
+    openBoardCell(model, ref, agentId);
 }
 
-// The entry goes and Expand with it; the cell leaves the grid at the next reconcile (it is eligible only with an entry).
-export function closeBoard(agentId: string): void {
-    globalStore.set(boardSplitAtom(agentId), null);
-    globalStore.set(boardMaxAtom(agentId), false);
+// The board closes and Expand with it; its cell leaves the grid.
+export function closeBoard(model: GridModel, ref: BoardSplit): void {
+    removeBoardCell(model, ref);
+    setOpen(ref, false);
+    setBoardMax(ref, false);
 }
 
-// the header's switcher: another of the agent's boards in the same cell
-export function switchBoard(agentId: string, boardId: string): void {
-    globalStore.set(boardSplitAtom(agentId), (split) => (split == null ? split : { ...split, boardId }));
+// The header's switcher: another board in the same cell, in its square. The new board opens before the cell changes
+// (a board that is not open is no cell to put there), the old one closes after.
+export function switchBoard(model: GridModel, from: BoardSplit, boardId: string): void {
+    const to = { project: from.project, boardId };
+    if (boardKey(to) === boardKey(from)) {
+        return;
+    }
+    setOpen(to, true);
+    replaceBoardCell(model, from, to);
+    setOpen(from, false);
+    setBoardMax(from, false);
 }
 
 // The Agent tree's own fold, chosen by hand and kept across launches.

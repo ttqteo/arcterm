@@ -30,6 +30,19 @@ in the dev app: `node scripts/whatsnew-shot.mjs <topic> [--selector <css>]` writ
 `whatsnew.test.ts` fails a big line with neither (in Unreleased and from 1.9.0 on), a missing file, one over 120 KB,
 and a picture given to a line that is not big.
 
+## Unreleased
+
+### Added
+
+- A board's header names the chat it reads, and its menu moves the board to another Claude chat of the project, even
+  while the first one is still running; the board then reads the new chat.
+- Hide turns, in a board's header, folds its turns column and ask box to a thin strip so the canvas gets the room.
+
+### Changed
+
+- A board is a pane of its own in the split, like an agent: drag it by its bar, open more than one at once, and it stays
+  open when the agent it was opened beside leaves the split.
+
 ## 1.14.0 — 2026-11-22
 
 ### Changed

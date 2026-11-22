@@ -2,59 +2,72 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // A board as a cell of the Agent surface's grid: the third kind of cell beside agents and terminals, id
-// `board:<agentId>`, one per agent. Pure: the id encoding and the rule that adds the cell to a grid. Which board the cell
-// shows is boardsplitstore.ts's entry; that a board cell lives only beside its agent is agentgrid.ts's settleCompanions
-// (gridstore.ts passes boardCellAgent as `companionOf`).
+// `board:<project>/<boardId>`, a cell of its own that any number of boards can have. Pure: the id encoding and the rule
+// that adds the cell to a grid. Which boards are open is boardentries.ts's list. A board cell is a rider
+// (agentgrid.ts settleRiders): it never holds focus, and a grid with no tab in it drops it.
 
-import { addCell, MAX_CELLS, normalizeGrid, placesOf, type GridState } from "../agents/agentgrid";
+import { addCell, MAX_CELLS, normalizeGrid, placesOf, removeCell, type GridState } from "../agents/agentgrid";
+import { boardKey, parseBoardKey, type BoardSplit } from "./boardentries";
 
 export const BOARD_CELL_PREFIX = "board:";
 
-export function boardCellId(agentId: string): string {
-    return `${BOARD_CELL_PREFIX}${agentId}`;
+export function boardCellId(ref: BoardSplit): string {
+    return `${BOARD_CELL_PREFIX}${boardKey(ref)}`;
 }
 
-// The agent a board cell belongs to; undefined for any id that is not a board cell (an agent or a terminal).
-export function boardCellAgent(id: string): string | undefined {
-    return id.startsWith(BOARD_CELL_PREFIX) && id.length > BOARD_CELL_PREFIX.length
-        ? id.slice(BOARD_CELL_PREFIX.length)
-        : undefined;
+// The board a cell shows; undefined for an agent or terminal id, and for a board cell saved before boards were cells
+// of their own (`board:<agentId>`), which no open board matches.
+export function boardCellRef(id: string): BoardSplit | undefined {
+    return id.startsWith(BOARD_CELL_PREFIX) ? parseBoardKey(id.slice(BOARD_CELL_PREFIX.length)) : undefined;
 }
 
+// Whether `id` is a board cell's, an old one included: never a tab.
 export function isBoardCell(id: string): boolean {
-    return boardCellAgent(id) != null;
+    return id.startsWith(BOARD_CELL_PREFIX);
 }
 
-// The board cells that can exist: one for each agent that is eligible (live, has a terminal) and has a board open.
-export function boardCellIds(eligibleAgents: ReadonlySet<string>, open: ReadonlySet<string>): string[] {
-    return [...eligibleAgents].filter((id) => open.has(id)).map(boardCellId);
+// The board cells that can exist: one for each open board.
+export function boardCellIds(open: Iterable<BoardSplit>): string[] {
+    return [...open].map(boardCellId);
 }
 
-// Opening a board on the grid on screen: the agent's board cell goes right of the agent's cell. Nothing changes when the
-// cell is already there (the cell switches board on its own). A full grid gives up the last cell in reading order that
-// is neither the agent nor the focused one, in its place; that tab keeps running. The agent stays the focused cell, the
-// board cell never is. An agent with no cell here starts a grid of its own, [agent | board].
-export function openBoardCellIn(grid: GridState, agentId: string): GridState {
+// Opening a board cell on the grid on screen, right of `beside` (the chat it was opened from, or the board's own chat)
+// when that is a cell here, else right of the focused cell. Nothing changes when the cell is already there. A full
+// grid gives up the last cell in reading order that is neither `beside` nor the focused one, in its place; that tab
+// keeps running. Focus stays where it was (a board cell is never focused), and goes to `beside` when the grid starts
+// with it: a tab with no cell here starts a grid of its own, [beside | board].
+export function openBoardCellIn(grid: GridState, cellId: string, beside: string | undefined): GridState {
     const s = normalizeGrid(grid);
-    const board = boardCellId(agentId);
-    if (s.ids.includes(board)) {
+    if (s.ids.includes(cellId)) {
         return s;
     }
-    const at = s.ids.indexOf(agentId);
+    const anchor = beside != null && s.ids.includes(beside) ? beside : (s.focused ?? undefined);
+    const at = anchor != null ? s.ids.indexOf(anchor) : -1;
     if (at < 0) {
-        return { ids: [agentId, board], focused: agentId };
+        return beside != null ? { ids: [beside, cellId], focused: beside } : s;
     }
     if (s.ids.length < MAX_CELLS) {
-        return { ...addCell(s, board, at, "right"), focused: agentId };
+        return { ...addCell(s, cellId, at, "right"), focused: s.focused };
     }
-    const give = [...s.ids].reverse().find((id) => id !== agentId && id !== s.focused);
+    const give = [...s.ids].reverse().find((id) => id !== anchor && id !== s.focused);
     if (give == null) {
-        // unreachable in a grid of four (the agent and the focused cell are at most two of them)
+        // unreachable in a grid of four (the anchor and the focused cell are at most two of them)
         return s;
     }
-    const ids = s.ids.map((id) => (id === give ? board : id));
-    const places = placesOf(s);
+    const ids = s.ids.map((id) => (id === give ? cellId : id));
     // same ids order, same places: the board takes the given-up cell's square
-    const next = normalizeGrid({ ids, focused: agentId, places });
-    return next;
+    return normalizeGrid({ ids, focused: s.focused, places: placesOf(s) });
+}
+
+// A cell switched to another board: the new board takes the old one's square. When the new board already has a cell
+// here, the old cell goes instead.
+export function replaceBoardCellIn(grid: GridState, from: string, to: string): GridState {
+    const s = normalizeGrid(grid);
+    if (!s.ids.includes(from)) {
+        return s;
+    }
+    if (s.ids.includes(to)) {
+        return removeCell(s, from);
+    }
+    return normalizeGrid({ ids: s.ids.map((id) => (id === from ? to : id)), focused: s.focused, places: placesOf(s) });
 }

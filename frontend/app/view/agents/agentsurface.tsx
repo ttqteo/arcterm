@@ -29,15 +29,10 @@ import { useKeybindings } from "@/app/store/keybindings/store";
 import * as WOS from "@/app/store/wos";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
-import { boardCellAgent, boardCellId } from "@/app/view/boards/boardcell";
-import { openBoardIdsAtom } from "@/app/view/boards/boardentries";
+import { boardCellRef } from "@/app/view/boards/boardcell";
+import { boardKey, openBoardsAtom, type BoardSplit } from "@/app/view/boards/boardentries";
 import { BoardCell } from "@/app/view/boards/boardsplit";
-import {
-    boardMaxAtom,
-    boardSplitAtom,
-    closeBoard,
-    pruneBoardEntries,
-} from "@/app/view/boards/boardsplitstore";
+import { boardMaxAtom, closeBoard } from "@/app/view/boards/boardsplitstore";
 import { useBoardList } from "@/app/view/boards/boardstore";
 import { CodePeekContext } from "@/app/view/code/codepeekhost";
 import { dismissRouteBand } from "@/app/view/jarvis/jarvisroutestore";
@@ -105,7 +100,6 @@ import {
     gridEligibility,
     openInSplit,
     projectGridsAtom,
-    removeBoardCell,
     removeFromGrid,
 } from "./gridstore";
 import { finalRowFocusId } from "./finalstage";
@@ -189,9 +183,9 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
     // The grid's cells are live agents and terminals with a terminal, but not the one in the panel (it has its own
     // place; a stored cell it held is pruned). A done worker's transcript replaces the grid (terminalShown), which leaves
     // the saved grid as it was.
-    // `eligible` is the tabs only (what focus, the fallback and the neighbour choose among); `gridEligible` adds the board
-    // cells that ride beside an agent with a board open, which is what the grids reconcile against.
-    const openBoardIds = useAtomValue(openBoardIdsAtom);
+    // `eligible` is the tabs only (what focus, the fallback and the neighbour choose among); `gridEligible` adds the open
+    // boards' cells, which is what the grids reconcile against.
+    const openBoards = useAtomValue(openBoardsAtom);
     const gridTabs = useMemo(
         () => [...agents, ...terminals.filter((t) => t.id !== dock.dockedId)],
         [agents, terminals, dock.dockedId]
@@ -200,8 +194,8 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
     const {
         eligible: gridEligible,
         projectOf: tabProjects,
-        companionOf,
-    } = useMemo(() => gridEligibility(gridTabs, openBoardIds), [gridTabs, openBoardIds]);
+        isRider,
+    } = useMemo(() => gridEligibility(gridTabs, openBoards), [gridTabs, openBoards]);
     // the tree's nav order while the chosen item is live, so when it closes its place goes to the row beside it
     // rather than the top of the roster
     const navOrderRef = useRef<string[]>([]);
@@ -270,10 +264,10 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
                 focusId: agent?.id,
                 eligible: gridEligible,
                 projectOf: tabProjects,
-                companionOf,
+                isRider,
                 seeded,
             }),
-        [projectGrids, agent?.id, gridEligible, tabProjects, companionOf, seeded]
+        [projectGrids, agent?.id, gridEligible, tabProjects, isRider, seeded]
     );
     const reconciled = shownGrid(reconciledGrids);
     // what the cells on screen are a grid of: the split, or the focused tab alone while it is no cell of the split (the
@@ -301,24 +295,19 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
     const cells = terminalShown ? visibleCells(reconciled, { focusId: agent?.id, collapsed: fullscreen }) : [];
     const cellOf = new Map(cells.map((cell, index) => [cell.id, { cell, index }] as const));
     const multi = cells.length > 1;
-    // A board entry saved for an agent that ended while arcterm was closed goes once the roster is read (before that its
-    // agent may only not have arrived yet). Once: a tab dropping off the roster for a moment must not take its board.
-    const boardsPruned = useRef(false);
-    useEffect(() => {
-        if (seeded && !boardsPruned.current) {
-            boardsPruned.current = true;
-            pruneBoardEntries(new Set([...agents, ...terminals].map((a) => a.id)));
-        }
-    }, [seeded, agents, terminals]);
-    // Expand: a board cell on screen whose agent has it on takes the whole grid and the other cells hide under it, still
+    // Expand: a board cell on screen that has it on takes the whole grid and the other cells hide under it, still
     // mounted. The panel's maximize (dockMax, below) wins over it.
-    const boardAgentKey = cells.flatMap((cell) => boardCellAgent(cell.id) ?? []).join(",");
+    const boardCellKey = cells.filter((cell) => boardCellRef(cell.id) != null).map((cell) => cell.id).join("\n");
     const maxedBoardAtom = useMemo(
         () =>
-            atom((get) =>
-                (boardAgentKey === "" ? [] : boardAgentKey.split(",")).find((id) => get(boardMaxAtom(id))) ?? null
+            atom(
+                (get) =>
+                    (boardCellKey === "" ? [] : boardCellKey.split("\n")).find((id) => {
+                        const ref = boardCellRef(id);
+                        return ref != null && get(boardMaxAtom(boardKey(ref)));
+                    }) ?? null
             ),
-        [boardAgentKey]
+        [boardCellKey]
     );
     const maxedBoard = useAtomValue(maxedBoardAtom);
     // whose header, ask bar and rail show: a terminal focused in a split keeps the split's agent's, so moving between
@@ -349,7 +338,7 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
     const docked = !fullscreen || dockMax ? dockable : undefined;
     // the cells' tiled look (gaps, borders, bars) is off while the dock covers them
     const tiled = multi && !dockMax;
-    const boardMax = maxedBoard != null && !dockMax ? boardCellId(maxedBoard) : null;
+    const boardMax = maxedBoard != null && !dockMax ? maxedBoard : null;
     // A terminal whose folder was removed (a worktree that went when its branch landed) shows a card over its pane
     // (worktreegonecard.tsx). The folders are read as the terminals change and as a pane is shown (worktreegonestore.ts).
     const goneIds = useAtomValue(goneTerminalIdsAtom);
@@ -703,10 +692,9 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
         const wrap = wrapRef.current;
         (cellInputOf(wrap, globalStore.get(model.focusIdAtom) ?? "") ?? wrap)?.focus({ preventScroll: true });
     }, [removals]);
-    // a board cell's x: the board closes and the cell goes at once; the agent's cell stays and keeps focus
-    const onRemoveBoard = (agentId: string) => {
-        closeBoard(agentId);
-        removeBoardCell(model, agentId);
+    // a board cell's x: the board closes and the cell goes at once; the other cells stay and focus with them
+    const onRemoveBoard = (ref: BoardSplit) => {
+        closeBoard(model, ref);
         setRemovals((n) => n + 1);
     };
     const onRemoveCell = (id: string) => {
@@ -1006,23 +994,22 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
                                         </div>
                                     );
                                 })}
-                            {/* A board is a cell of its own beside its agent's, drawn after the tab cells in this same grid
-                                (never inside one, so Chat keeps its whole cell). It mounts only while shown, so a hidden
-                                split or another project costs no canvas; the panel's maximize hides it. It is never the
-                                focused cell: no focus handler, so a press or a key inside leaves the agent in focus. */}
+                            {/* A board is a cell of its own, drawn after the tab cells in this same grid (never inside
+                                one, so Chat keeps its whole cell). It mounts only while shown, so a hidden split or another
+                                project costs no canvas; the panel's maximize hides it. It is never the focused cell: no
+                                focus handler, so a press or a key inside leaves the focused cell in focus. */}
                             {dockMax
                                 ? null
                                 : cells.map((cell) => {
-                                      const owner = boardCellAgent(cell.id);
-                                      const a = owner != null ? cellTabById.get(owner) : undefined;
-                                      if (a == null) {
+                                      const ref = boardCellRef(cell.id);
+                                      if (ref == null) {
                                           return null;
                                       }
                                       return (
                                           <BoardGridCell
                                               key={cell.id}
                                               model={model}
-                                              agent={a}
+                                              board={ref}
                                               id={cell.id}
                                               style={
                                                   boardMax === cell.id
@@ -1030,7 +1017,7 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
                                                       : placementStyle(cell.placement)
                                               }
                                               index={cellOf.get(cell.id)?.index}
-                                              onRemove={() => onRemoveBoard(a.id)}
+                                              onRemove={() => onRemoveBoard(ref)}
                                               dropGrid={seeded && onScreen.ids.includes(cell.id) ? onScreen : null}
                                           />
                                       );
@@ -1079,11 +1066,11 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
     );
 }
 
-// One board cell's wrapper: the cell bar (the board's name, an x), the board, and the drop zones as a tab's cell has. Nothing
-// when the agent has no board open (its entry went a render before the grid did).
+// One board cell's wrapper: the cell bar (the board's name, its chat, an x), the board, and the drop zones as a tab's
+// cell has.
 function BoardGridCell({
     model,
-    agent,
+    board,
     id,
     style,
     index,
@@ -1091,30 +1078,29 @@ function BoardGridCell({
     dropGrid,
 }: {
     model: AgentsViewModel;
-    agent: AgentVM;
+    board: BoardSplit;
     id: string;
     style: React.CSSProperties;
     index: number | undefined;
     onRemove: () => void;
     dropGrid: GridState | null;
 }) {
-    const split = useAtomValue(boardSplitAtom(agent.id));
-    const list = useBoardList(split?.project ?? "");
-    if (split == null) {
-        return null;
-    }
-    const name = list?.find((b) => b.id === split.boardId)?.name ?? "Board";
+    const list = useBoardList(board.project);
+    const roster = useAtomValue(model.agentsAtom);
+    const info = list?.find((b) => b.id === board.boardId);
+    const name = info?.name ?? "Board";
+    const chat = roster.find((a) => a.id === info?.agenttabid)?.name || info?.agenttitle || "";
     return (
         <div
             role="group"
             aria-label={name}
             data-agent-cell={index}
-            data-board-cell-of={agent.id}
+            data-board-cell-of={boardKey(board)}
             style={style}
             className="relative isolate flex min-h-0 min-w-0 flex-col overflow-hidden rounded-[8px] border border-edge-mid"
         >
-            <BoardCellBar agentId={agent.id} title={name} onRemove={onRemove} />
-            <BoardCell model={model} agent={agent} multi />
+            <BoardCellBar cellId={id} title={name} chat={chat} onRemove={onRemove} />
+            <BoardCell model={model} board={board} />
             {dropGrid != null ? <GridDropOverlay model={model} id={id} grid={dropGrid} mentionTo={null} /> : null}
         </div>
     );

@@ -12,11 +12,13 @@ export interface BoardAskBoxProps {
     selection: BoardSelection | null;
     // askAllowed(talk, alive): no turn is running or queued
     allowed: boolean;
+    // what the box says while it waits for a line; the board cell says to pick a chat when its chat has ended
+    placeholder?: string;
     // true once the line went; false keeps the words in the box (the caller says why)
     onAsk: (question: string) => Promise<boolean>;
 }
 
-export function BoardAskBox({ selection, allowed, onAsk }: BoardAskBoxProps) {
+export function BoardAskBox({ selection, allowed, onAsk, placeholder }: BoardAskBoxProps) {
     const [text, setText] = useState("");
     const [sending, setSending] = useState(false);
     const question = text.trim();
@@ -62,7 +64,7 @@ export function BoardAskBox({ selection, allowed, onAsk }: BoardAskBoxProps) {
                             void send();
                         }
                     }}
-                    placeholder="Ask, or ask for a drawing…"
+                    placeholder={placeholder ?? "Ask, or ask for a drawing…"}
                     aria-label="Ask about this board"
                     className="min-w-0 flex-1 bg-transparent text-[13px] text-primary outline-none placeholder:text-ink-faint"
                 />

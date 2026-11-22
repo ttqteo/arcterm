@@ -12,7 +12,7 @@ import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { atom, useAtomValue, type PrimitiveAtom } from "jotai";
 import { useEffect, useMemo } from "react";
-import { boardSplitAtom } from "../boards/boardsplitstore";
+import { boardKey, openBoardsAtom } from "../boards/boardentries";
 import { boardListAtom, loadBoardList, watchBoardUpdates } from "../boards/boardstore";
 import { buildAgentTree } from "./agenttreemodel";
 import { councilListAtom, loadCouncils } from "./councilstore";
@@ -109,8 +109,11 @@ export function useRefItems(
     const sessions = useAtomValue(sessionsArchiveAtom);
     const efforts = useAtomValue(refEffortsAtom);
     const boards = useAtomValue(boardListAtom(""));
-    // the board open beside this Chat, which the picker lists first
-    const openBoardId = useAtomValue(boardSplitAtom(selfId))?.boardId;
+    // the open board that reads this Chat (the most recently active, when several do), which the picker lists first
+    const openBoards = useAtomValue(openBoardsAtom);
+    const openBoardId = (boards ?? []).find(
+        (b) => b.agenttabid === selfId && openBoards.has(boardKey({ project: b.project, boardId: b.id }))
+    )?.id;
     const sessionsUnread = sessions == null;
     useEffect(() => {
         if (!want || project === "") {

@@ -93,8 +93,8 @@ type CommandBoardAnswerAckData struct {
 	Error    string   `json:"error,omitempty"` // the landing failed: the turn fails and nothing changed
 }
 
-// CommandBoardTakeOverData is Library's Open beside Chat on a board whose agent has ended: TabId, a live Claude agent of
-// the board's project, takes the board over.
+// CommandBoardTakeOverData ties a board to a chat: TabId, a live Claude agent of the board's project, takes the board
+// over, whether its chat ended (Library's Open beside Chat) or is still running (the board cell's Chat picker).
 type CommandBoardTakeOverData struct {
 	Project string `json:"project"`
 	BoardId string `json:"boardid"`

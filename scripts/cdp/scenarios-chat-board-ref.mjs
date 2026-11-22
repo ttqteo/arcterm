@@ -69,7 +69,7 @@ const ENTER = { key: "Enter", code: "Enter", windowsVirtualKeyCode: 13 };
 export default function (kit) {
     const { waveService, polishWaitFor, polishNap, ahReload, GRID_KEY, GRID_EMPTY } = kit;
     const { makeTab, closeTabs } = AC.tabFixtures({ waveService });
-    const LS_KEYS = [GRID_KEY, "agent.chatmode", "agent.boards"];
+    const LS_KEYS = [GRID_KEY, "agent.chatmode", "agent.openboards"];
 
     const scenario = {
         name: NAME,
@@ -126,15 +126,15 @@ export default function (kit) {
                 await AC.agentPage(
                     h,
                     `const S = await mod("app/view/boards/boardsplitstore.ts");
-                    globalStore.set(S.boardSplitAtom(${JSON.stringify(ctx.agent.tabId)}), { project: ${JSON.stringify(PROJECT)}, boardId: ${JSON.stringify(OPEN_ID)} });
+                    globalStore.set((await mod("app/view/boards/boardentries.ts")).boardEntriesAtom, [{ project: ${JSON.stringify(PROJECT)}, boardId: ${JSON.stringify(OPEN_ID)} }]);
                     return true;`
                 );
                 await AC.focusAgent(h, ctx.agent.tabId);
-                // the entry is the board "open beside Chat"; its cell joins the agent's grid so it shows as well
+                // the board is open and reads this Chat; its cell joins the agent's grid so it shows as well
                 await AC.agentPage(
                     h,
                     `const G = await mod("app/view/agents/gridstore.ts");
-                    G.openBoardCell(agentsModel(), ${JSON.stringify(ctx.agent.tabId)});
+                    G.openBoardCell(agentsModel(), { project: ${JSON.stringify(PROJECT)}, boardId: ${JSON.stringify(OPEN_ID)} }, ${JSON.stringify(ctx.agent.tabId)});
                     return true;`
                 );
             } catch (e) {
@@ -201,7 +201,7 @@ export default function (kit) {
                 await AC.agentPage(
                     h,
                     `const S = await mod("app/view/boards/boardsplitstore.ts");
-                    S.closeBoard(${JSON.stringify(A)});
+                    for (const b of [...globalStore.get((await mod("app/view/boards/boardentries.ts")).openBoardsAtom).values()]) S.closeBoard(agentsModel(), b);
                     return true;`
                 );
                 await polishNap(300);
@@ -213,7 +213,7 @@ export default function (kit) {
                         s = await AC.agentPage(
                             h,
                             `const S = await mod("app/view/boards/boardsplitstore.ts");
-                            return globalStore.get(S.boardSplitAtom(${JSON.stringify(A)}));`
+                            return ([...globalStore.get((await mod("app/view/boards/boardentries.ts")).openBoardsAtom).values()][0] ?? null);`
                         );
                         if (s?.boardId === OPEN_ID) break;
                         await polishNap(250);
@@ -242,7 +242,7 @@ export default function (kit) {
                 AC.agentPage(
                     h,
                     `const S = await mod("app/view/boards/boardsplitstore.ts");
-                    if (${JSON.stringify(ctx.agent?.tabId ?? "")}) S.closeBoard(${JSON.stringify(ctx.agent?.tabId ?? "")});
+                    for (const b of [...globalStore.get((await mod("app/view/boards/boardentries.ts")).openBoardsAtom).values()]) S.closeBoard(agentsModel(), b);
                     return true;`
                 )
             );
