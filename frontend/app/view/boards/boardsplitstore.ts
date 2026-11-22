@@ -23,6 +23,14 @@ function setOpen(ref: BoardSplit, open: boolean): void {
     globalStore.set(boardEntriesAtom, open ? [...list, { project: ref.project, boardId: ref.boardId }] : list);
 }
 
+// Opens a board without placing its cell: a drop places it (griddropoverlay.tsx), and a board cell is eligible only
+// while its board is open.
+export function ensureBoardOpen(ref: BoardSplit): void {
+    if (!globalStore.get(openBoardsAtom).has(boardKey(ref))) {
+        setOpen(ref, true);
+    }
+}
+
 // Expand: the board cell fills the whole grid, the others hidden under it. Per board and not persisted, so a launch
 // opens a split as it was saved, not covered.
 export const boardMaxAtom = atomFamily((_key: string) => atom(false) as PrimitiveAtom<boolean>);

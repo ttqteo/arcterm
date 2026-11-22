@@ -37,12 +37,33 @@ function errorText(e: unknown): string {
     return e instanceof Error ? e.message : String(e);
 }
 
-// the cell of one open board, keyed by the board: a selection, a Show and an error belong to one board
-export function BoardCell({ model, board }: { model: AgentsViewModel; board: BoardSplit }) {
-    return <OpenCell key={boardKey(board)} model={model} split={board} />;
+// the cell of one open board, keyed by the board: a selection, a Show and an error belong to one board. `alone`: the
+// board over the whole centre (agentcenter.ts's board mode), laid out as an expanded cell, its Close back to the agent.
+export function BoardCell({
+    model,
+    board,
+    alone,
+    onClose,
+}: {
+    model: AgentsViewModel;
+    board: BoardSplit;
+    alone?: boolean;
+    onClose?: () => void;
+}) {
+    return <OpenCell key={boardKey(board)} model={model} split={board} alone={alone} onClose={onClose} />;
 }
 
-function OpenCell({ model, split }: { model: AgentsViewModel; split: BoardSplit }) {
+function OpenCell({
+    model,
+    split,
+    alone = false,
+    onClose,
+}: {
+    model: AgentsViewModel;
+    split: BoardSplit;
+    alone?: boolean;
+    onClose?: () => void;
+}) {
     const { project, boardId } = split;
     const key = boardKey(split);
     const onAgentSurface = useAtomValue(model.surfaceAtom) === "agent";
@@ -77,8 +98,8 @@ function OpenCell({ model, split }: { model: AgentsViewModel; split: BoardSplit 
     const ofChat = chatId !== "" ? boardsOfAgent(list, chatId) : [];
     const boards = board != null && !ofChat.some((b) => b.id === board.id) ? [board, ...ofChat] : ofChat;
     // Expand: the cell fills the whole grid (agentsurface.tsx hides the others under it)
-    const expanded = useAtomValue(boardMaxAtom(key));
-    const closeCell = () => closeBoard(model, split);
+    const expanded = useAtomValue(boardMaxAtom(key)) || alone;
+    const closeCell = () => (onClose != null ? onClose() : closeBoard(model, split));
 
     // the board was deleted (the list is read and no longer has it): its cell goes
     const gone = list != null && board == null;
@@ -112,7 +133,7 @@ function OpenCell({ model, split }: { model: AgentsViewModel; split: BoardSplit 
             onOtherWay={(turn) => void act(() => rerouteBoardTurn(target, turn.id))}
             onStop={() => void act(() => stopBoardTurn(target))}
             onRetry={(turn) => void act(() => retryBoardTurn(target, turn.id))}
-            onEarlier={() => setBoardMax(split, true)}
+            onEarlier={alone ? undefined : () => setBoardMax(split, true)}
         />
     );
 
@@ -132,7 +153,7 @@ function OpenCell({ model, split }: { model: AgentsViewModel; split: BoardSplit 
                 boards={boards}
                 expanded={expanded}
                 onSwitch={(id) => switchBoard(model, split, id)}
-                onToggleExpanded={() => setBoardMax(split, !expanded)}
+                onToggleExpanded={alone ? undefined : () => setBoardMax(split, !expanded)}
                 onClose={closeCell}
                 chat={{ id: chatId, title: chatTitle, alive }}
                 chats={chats}

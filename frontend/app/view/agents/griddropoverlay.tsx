@@ -15,6 +15,7 @@ import { useAtomValue } from "jotai";
 import { useState } from "react";
 import { moveBoardToChat } from "../boards/boardactions";
 import { boardCellRef } from "../boards/boardcell";
+import { ensureBoardOpen } from "../boards/boardsplitstore";
 import { agentDragAtom, endAgentDrag } from "./agentdragstore";
 import type { DropZone, GridState } from "./agentgrid";
 import { mentionToken } from "./agentrowmodel";
@@ -115,6 +116,10 @@ function ActiveOverlay({ model, id, grid, mentionTo: tabMention, cell, dragId }:
             }
             focusTerm(mentionTo);
             return;
+        }
+        // a board dragged from its tree row may not be open yet: open it, so it can be a cell
+        if (board != null) {
+            ensureBoardOpen(board);
         }
         if (board != null && ties && picked === "center") {
             // the board reads this chat from now on, and sits right of it when it had no cell

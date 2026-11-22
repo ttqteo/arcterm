@@ -44,8 +44,9 @@ and a picture given to a line that is not big.
 
 - A board is a pane of its own in the split, like an agent: drag it by its bar, open more than one at once, and it stays
   open when the agent it was opened beside leaves the split. In the Agent tree it is a row of its own beside the
-  agents, naming the chat it reads, and a cell of the split row while the split holds it; dropping it on the middle of
-  another Claude agent's pane makes it read that chat.
+  agents, naming the chat it reads, and a cell of the split row while the split holds it; a click on its row shows it
+  alone, the way a click on an agent does, and dropping it on the middle of another Claude agent's pane makes it read
+  that chat.
 - Switching back to an agent in Chat shows its conversation at once instead of a skeleton; what it wrote meanwhile
   appears when it has been read, all at once.
 

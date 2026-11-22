@@ -382,9 +382,9 @@ export default function (kit) {
                 );
             });
 
-            await run("1b. clicking the row opens the board as a cell beside Chat: Chat keeps half the grid, the tree stays open", async (name) => {
+            await run("1b. Open (the Chat card's route) opens the board as a cell beside Chat: Chat keeps half the grid, the tree stays open", async (name) => {
                 const chatBefore = await box(`[data-agent-chat="${A}"]`);
-                const clicked = await click(TREE_ROW(B1));
+                const clicked = await openBoardOn(B1);
                 const shown = await until(async () => (await box(SPLIT(B1))) != null);
                 const ready = await canvasReady(B1);
                 await polishNap(500);
@@ -1236,6 +1236,29 @@ export default function (kit) {
                 );
                 await AC.focusAgent(h, A);
                 await until(async () => (await gridCount()) === "2");
+            });
+
+            // --- 16. the tree row shows the board alone ---
+            await run("16. clicking a board's tree row shows it alone over the centre, its chat kept; Close goes back to the agent", async (name) => {
+                await closeBoardOn();
+                await AC.focusAgent(h, A);
+                await until(async () => (await gridCount()) === "1");
+                const clicked = await click(TREE_ROW(B1));
+                const alone = await until(async () => (await count(`[data-board-alone="${PROJECT}/${B1}"]`)) === 1);
+                const ready = await until(() => h.ev(`document.querySelector(${q(`[data-board-alone] ${CANVAS(B1)}`)})?.dataset.boardReady === "true"`));
+                const gridShown = (await shownCells("[data-agent-grid]")) > 0;
+                const selected = await h.ev(`document.querySelector(${q(TREE_ROW(B1))})?.hasAttribute("data-tree-board-open") ?? null`);
+                const chat = await h.ev(`document.querySelector('[data-board-alone] [data-board-chat]')?.getAttribute("data-board-chat") ?? null`);
+                const noExpand = (await count("[data-board-alone] [data-board-expand]")) === 0;
+                await polishNap(300);
+                await shot("16-board-alone");
+                const closed = await click("[data-board-alone] [data-board-close]");
+                const back = await until(async () => (await count("[data-board-alone]")) === 0 && (await shownCells(CELL)) === 1);
+                rec(
+                    name,
+                    clicked && alone && ready && !gridShown && selected === true && chat === A && noExpand && closed && back,
+                    { clicked, alone, ready, gridShown, selected, chat, noExpand, closed, back }
+                );
             });
 
             // --- 11. what an open board costs the page ---

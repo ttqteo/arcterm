@@ -30,7 +30,7 @@ export interface BoardHeaderProps {
     boards: readonly BoardInfo[]; // every board of its chat: what the switcher lists
     expanded: boolean;
     onSwitch: (boardId: string) => void;
-    onToggleExpanded: () => void;
+    onToggleExpanded?: () => void; // left out for a board shown alone, which already fills the centre
     // the chat the board reads: its title, and whether it still runs
     chat?: { id: string; title: string; alive: boolean };
     chats?: readonly { id: string; name: string }[]; // the live Claude chats of the board's project, to move it to
@@ -352,9 +352,11 @@ export function BoardHeader({
                     )}
                 </HeaderButton>
             ) : null}
-            <HeaderButton label={expandLabel} attr="data-board-expand" onClick={onToggleExpanded}>
-                {expanded ? <Minimize2 size={14} strokeWidth={2} /> : <Maximize2 size={14} strokeWidth={2} />}
-            </HeaderButton>
+            {onToggleExpanded != null ? (
+                <HeaderButton label={expandLabel} attr="data-board-expand" onClick={onToggleExpanded}>
+                    {expanded ? <Minimize2 size={14} strokeWidth={2} /> : <Maximize2 size={14} strokeWidth={2} />}
+                </HeaderButton>
+            ) : null}
             <HeaderButton label="Close" attr="data-board-close" onClick={onClose}>
                 <X size={14} strokeWidth={2} />
             </HeaderButton>

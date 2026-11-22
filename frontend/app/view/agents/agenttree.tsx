@@ -151,9 +151,12 @@ import { parkedAge, parkedMeta, parkedTitle } from "./parkedmodel";
 import { openParked, parkedLaunchesAtom, removeParkedWithUndo, showHeld, startHeld } from "./parkedstore";
 import { terminalStatusLine, type TerminalStatusLine } from "./terminalstatus";
 import {
+    boardAloneAtom,
     centerModeAtom,
     heldSelAtom,
+    leaveCenter,
     overviewProjectAtom,
+    showBoardAlone,
     showCouncil,
     showCouncilSetupWithAgents,
     showProjectOverview,
@@ -3290,16 +3293,27 @@ function QueuedEntryRow({ model, row }: { model: AgentsViewModel; row: QueuedRow
     );
 }
 
-// What a board's row and its split cell do: open it (a cell beside its chat when that is live, else beside the cell in
-// focus), and its menu: Open, Remove from split while a split holds it, Close board while it is open.
-function useBoardActions(model: AgentsViewModel, b: TreeBoard) {
+// What a board's row and its split cell do. A click shows the board alone over the centre, as a click on an agent shows
+// it alone; one whose cell is in the split on screen shows that split. Its menu: Open in split (a cell right of the agent
+// in focus), Remove from split while a split holds it, Close board while it is open. It drags onto the grid from either
+// place: an edge places it, the centre of a Claude agent's cell has it read that chat (griddropoverlay.tsx).
+function useBoardActions(model: AgentsViewModel, b: TreeBoard, cellShown: boolean) {
     const ref = { project: b.boardProject, boardId: b.boardId };
     const key = `${b.boardProject}/${b.boardId}`;
     const isOpen = useAtomValue(boardOpenAtom(key));
+    const center = useAtomValue(centerModeAtom);
+    const alone = useAtomValue(boardAloneAtom);
+    const shownAlone = center === "board" && alone?.project === ref.project && alone.boardId === ref.boardId;
     const cellId = treeBoardCellId(b);
     const show = () => {
-        const roster = globalStore.get(model.agentsAtom);
-        const beside = roster.some((a) => a.id === b.chatId) ? b.chatId : globalStore.get(model.focusIdAtom);
+        if (cellShown) {
+            showTerminal();
+            return;
+        }
+        showBoardAlone(ref);
+    };
+    const openInSplit = () => {
+        const beside = globalStore.get(model.focusIdAtom);
         if (beside != null) {
             openBoard(model, beside, ref.project, ref.boardId);
         }
@@ -3308,21 +3322,32 @@ function useBoardActions(model: AgentsViewModel, b: TreeBoard) {
         const items: ContextMenuItem[] = [{ label: "Open", icon: <PenTool size={15} />, click: show }];
         if (isInSplit(model, cellId)) {
             items.push(...splitCellMenuItems(model, cellId));
+        } else {
+            items.push({ label: "Open in split", icon: <Columns2 size={15} />, click: openInSplit });
         }
-        if (isOpen) {
+        if (isOpen || shownAlone) {
             items.push(
                 { type: "separator" },
-                { label: "Close board", icon: <X size={15} />, click: () => closeBoard(model, ref) }
+                {
+                    label: "Close board",
+                    icon: <X size={15} />,
+                    click: () => {
+                        if (shownAlone) {
+                            leaveCenter();
+                        }
+                        closeBoard(model, ref);
+                    },
+                }
             );
         }
         ContextMenuModel.getInstance().showContextMenu(items, e);
     };
-    // an open board drags onto the grid as an agent does: an edge splits, the centre of a Claude agent's cell ties it to
-    // that chat (griddropoverlay.tsx)
-    const drag: React.HTMLAttributes<HTMLDivElement> = isOpen
-        ? { draggable: true, onDragStart: (e) => beginAgentDrag(e, cellId), onDragEnd: endAgentDrag }
-        : {};
-    return { show, onContextMenu, drag };
+    const drag: React.HTMLAttributes<HTMLDivElement> = {
+        draggable: true,
+        onDragStart: (e) => beginAgentDrag(e, cellId),
+        onDragEnd: endAgentDrag,
+    };
+    return { show, onContextMenu, drag, selected: cellShown || shownAlone };
 }
 
 // A board, a peer of the folder's agents (agentsidebarmodel.ts's "board" row): the board's name and the chat it reads.
@@ -3337,8 +3362,7 @@ function BoardRow({
     row: Extract<ProjectTreeRow, { kind: "board" }>;
     cellShown: boolean; // the board's cell is a cell of the grid on screen
 }) {
-    const open = cellShown;
-    const { show, onContextMenu, drag } = useBoardActions(model, row);
+    const { show, onContextMenu, drag, selected: open } = useBoardActions(model, row, cellShown);
     return (
         <div
             data-tree-board={row.boardId}
@@ -3373,7 +3397,7 @@ function BoardRow({
 // A board's cell in a split row: the board mark and its name. A click opens nothing new (its cell is already in the
 // split); the x takes it out of the split, as an agent's does.
 function BoardSplitCellView({ model, cell }: { model: AgentsViewModel; cell: BoardSplitCell }) {
-    const { show, onContextMenu, drag } = useBoardActions(model, cell.board);
+    const { show, onContextMenu, drag } = useBoardActions(model, cell.board, true);
     return (
         <div
             data-split-cell={cell.id}
@@ -3626,10 +3650,16 @@ export const AgentTree = memo(function AgentTree({ model }: { model: AgentsViewM
     const splits = treeSplits(projectGrids, { focusId, agents, terminals, dockedId, seeded, openBoards });
     // the boards the tree lists: the open ones, and each live chat's latest (treeBoards)
     const boardList = useBoardList("");
-    const boards = useMemo(
-        () => treeBoards(boardList, new Set(openBoards.keys()), agents),
-        [boardList, openBoards, agents]
-    );
+    // a board shown alone stays listed while it shows, open or not
+    const alone = useAtomValue(boardAloneAtom);
+    const aloneKey = center === "board" && alone != null ? `${alone.project}/${alone.boardId}` : null;
+    const boards = useMemo(() => {
+        const listed = new Set(openBoards.keys());
+        if (aloneKey != null) {
+            listed.add(aloneKey);
+        }
+        return treeBoards(boardList, listed, agents);
+    }, [boardList, openBoards, agents, aloneKey]);
     const shownCells = new Set(splits.project != null ? (splits.grids[splits.project]?.ids ?? []) : []);
     // project name -> root path, as activenav.ts builds it: the folders a terminal's branch chip is read against
     const registered = useAtomValue(projectsAtom);

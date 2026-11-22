@@ -42,7 +42,7 @@ import { atom, useAtomValue, useSetAtom } from "jotai";
 import { MotionConfig } from "motion/react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { activeNavOrder } from "./activenav";
-import { centerModeAtom, showTerminal, type CenterMode } from "./agentcenter";
+import { boardAloneAtom, centerModeAtom, leaveCenter, showTerminal, type CenterMode } from "./agentcenter";
 import type { AgentsViewModel } from "./agents";
 import { AgentDetailsRail } from "./agentdetailsrail";
 import {
@@ -1067,6 +1067,19 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
     );
 }
 
+// A board alone over the centre (agentcenter.ts's board mode): its Close goes back to the agent in focus.
+function BoardAlone({ model }: { model: AgentsViewModel }) {
+    const board = useAtomValue(boardAloneAtom);
+    if (board == null) {
+        return null;
+    }
+    return (
+        <div data-board-alone={boardKey(board)} className="flex min-h-0 min-w-0 flex-1 flex-col">
+            <BoardCell model={model} board={board} alone onClose={leaveCenter} />
+        </div>
+    );
+}
+
 // One board cell's wrapper: the cell bar (the board's name, its chat, an x), the board, and the drop zones as a tab's
 // cell has.
 function BoardGridCell({
@@ -1139,6 +1152,8 @@ function AgentCenterPane({ model, mode }: { model: AgentsViewModel; mode: Exclud
                 <CouncilPane model={model} />
             ) : mode === "project" ? (
                 <ProjectOverview model={model} />
+            ) : mode === "board" ? (
+                <BoardAlone model={model} />
             ) : (
                 <HeldPane model={model} />
             )}

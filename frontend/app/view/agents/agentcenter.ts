@@ -10,6 +10,8 @@
 //   project   one project's Overview (projectoverview.tsx): what in it waits on you and runs; which project is overviewProjectAtom
 //   held      one agent arcterm held while the machine was busy (heldpane.tsx): its task, Start now, Add to initiative;
 //             which one is heldSelAtom, a parked launch's id (parkedstore.ts)
+//   board     one board alone, over the whole centre (boards/boardsplit.tsx BoardCell): a click on its tree row. Which
+//             board is boardAloneAtom; it still reads its own chat, and is dragged into a split from its bar
 // The terminal stack stays mounted, hidden, in the others, so a live xterm is never torn down and re-fitted.
 // Conversation History, the Canvas gallery, the Councils list and an ended session's or run's transcript are not centre
 // modes: they are the Library surface (view/library/librarystore.ts), and a council that is still in the tree opens here.
@@ -37,7 +39,7 @@ import {
 } from "./councilstore";
 import { reopenView } from "./councilsummarymodel";
 
-export type CenterMode = "terminal" | "council" | "project" | "held";
+export type CenterMode = "terminal" | "council" | "project" | "held" | "board";
 
 export const centerModeAtom = atom<CenterMode>("terminal") as PrimitiveAtom<CenterMode>;
 
@@ -46,6 +48,25 @@ export const overviewProjectAtom = atom("") as PrimitiveAtom<string>;
 
 // the held agent the `held` mode shows, by its parked launch's id
 export const heldSelAtom = atom("") as PrimitiveAtom<string>;
+
+// the board the `board` mode shows alone
+export const boardAloneAtom = atom<{ project: string; boardId: string } | null>(null) as PrimitiveAtom<{
+    project: string;
+    boardId: string;
+} | null>;
+
+/** Show one board alone over the Agent surface's centre: a peer of an agent shown alone, the split kept aside as it is.
+ *  From another surface pass the model, which lands on Agent. */
+export function showBoardAlone(
+    board: { project: string; boardId: string },
+    model?: Pick<AgentsViewModel, "surfaceAtom">
+): void {
+    globalStore.set(boardAloneAtom, { project: board.project, boardId: board.boardId });
+    globalStore.set(centerModeAtom, "board");
+    if (model != null) {
+        landOn(model.surfaceAtom, "agent");
+    }
+}
 
 /** Back from the centre to the focused agent's terminal. */
 export function leaveCenter(): void {
