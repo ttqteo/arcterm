@@ -20,7 +20,7 @@ const SENT = '```curl https://api.example.test/v1/one \\\n  -H "Authorization: B
 const SENT_FIRST = "curl https://api.example.test/v1/one";
 // the reply's one-line command: a compact row with Run and Copy, as Claude Desktop draws it (codeblock.tsx)
 const COMPACT = "! task install";
-// a reply paragraph long enough that a quote of it stops at three lines in the box (step 7)
+// a reply paragraph long enough to wrap in the box (step 7)
 const LONG_PARA =
     "The endpoint took 180 ms on the first call and 40 ms on the next ones, so the cold start is the token check, not the model. " +
     "Caching the key for a minute would cut the first call to about the same as the rest, and the logs show no retries in the last hour. " +
@@ -357,10 +357,9 @@ export default function (kit) {
                 );
             });
 
-            // 7. Reply twice from the reply (a short passage, then a long one), then type: two quote blocks over the editor,
-            // each a bar and upright text with no frame, lined up with the typed text, the long one cut at three lines;
-            // the draft keeps them as `>` lines before what was typed
-            await run("7. two Reply quotes are blocks over the box", async (name) => {
+            // 7. Reply, type, Reply again, type: each quote lands in the text where the person is, drawn there as a quote
+            // (a bar beside it), so the draft reads quote, text, quote, text; nothing is drawn over the editor
+            await run("7. Reply quotes stay where they were put", async (name) => {
                 await clearBox(h, A);
                 const reply = async (needle) => {
                     const picked = await h.ev(`(() => {
@@ -387,40 +386,29 @@ export default function (kit) {
                     return shown;
                 };
                 const first = await reply("Sent it to the endpoint; it answered 200.");
-                const second = await reply(LONG_PARA);
                 await typeLines(h, A, ["có, thêm cache đi"]);
-                await polishWaitFor(h, `${layerOf(A)}?.querySelectorAll("[data-chat-quote-chip]").length === 2`, SHORT_MS);
+                const second = await reply(LONG_PARA);
+                await typeLines(h, A, ["cái này thì sao?"]);
+                await polishWaitFor(h, `(${inputOf(A)})?.parentElement?.querySelectorAll("[data-chat-quote-bar]").length === 2`, SHORT_MS);
                 const got = await h.ev(`(() => {
                     const layer = ${layerOf(A)};
-                    const input = layer?.querySelector("[data-chat-input]");
-                    const typed = [...(input?.querySelectorAll("span[data-lexical-text]") ?? [])][0]?.getBoundingClientRect();
-                    const quotes = [...(layer?.querySelectorAll("[data-chat-quote-chip]") ?? [])].map((q) => {
-                        const cs = getComputedStyle(q);
-                        const bar = q.firstElementChild?.getBoundingClientRect();
-                        const words = q.children[1];
-                        const wr = words?.getBoundingClientRect();
-                        const lh = words ? parseFloat(getComputedStyle(words).lineHeight) : 0;
-                        return {
-                            framed: cs.borderTopWidth !== "0px" || cs.backgroundColor !== "rgba(0, 0, 0, 0)",
-                            barLeft: bar ? Math.round(bar.left) : null,
-                            lines: wr && lh > 0 ? Math.round(wr.height / lh) : null,
-                            italic: words ? getComputedStyle(words).fontStyle === "italic" : null,
-                        };
-                    });
-                    return { typedLeft: typed ? Math.round(typed.left) : null, quotes, draft: null };
+                    return {
+                        bars: (${inputOf(A)})?.parentElement?.querySelectorAll("[data-chat-quote-bar]").length ?? 0,
+                        overEditor: layer?.querySelectorAll("[data-chat-quotes], [data-chat-quote-chip]").length ?? 0,
+                    };
                 })()`);
-                got.draft = await readBox(h, A).then((b) => b.text).catch(() => null);
-                await shot(h, "7-two-quotes");
-                const [q1, q2] = got.quotes;
+                const draft = await readBox(h, A).then((b) => b.text).catch(() => "");
+                const at = (t) => draft.indexOf(t);
+                const ordered =
+                    at("> Sent it to the endpoint") === 0 &&
+                    at("> Sent it to the endpoint") < at("có, thêm cache đi") &&
+                    at("có, thêm cache đi") < at("> " + LONG_PARA.slice(0, 20)) &&
+                    at("> " + LONG_PARA.slice(0, 20)) < at("cái này thì sao?");
+                await shot(h, "7-quotes-in-place");
                 rec(
-                    `${name}: two [data-chat-quote-chip] blocks, neither framed nor italic, each bar within 2px of the typed text's left edge; the short one 1 line, the long one 3`,
-                    first &&
-                        second &&
-                        got.quotes.length === 2 &&
-                        got.quotes.every((q) => !q.framed && q.italic === false && q.barLeft != null && got.typedLeft != null && Math.abs(q.barLeft - got.typedLeft) <= 2) &&
-                        q1.lines === 1 &&
-                        q2.lines === 3,
-                    { first, second, ...got }
+                    `${name}: the draft reads quote, text, quote, text; two [data-chat-quote-bar] in the editor; no quote block over it`,
+                    first && second && ordered && got.bars === 2 && got.overEditor === 0,
+                    { first, second, ordered, ...got, draft }
                 );
             });
 

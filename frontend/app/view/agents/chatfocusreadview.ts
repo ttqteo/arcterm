@@ -38,7 +38,7 @@ import {
 } from "./chatfocusread";
 import { registerFocusReader } from "./chatfocusreadstore";
 import { chatBoxText, writeChatBox } from "./chatinsert";
-import { withLeadQuote } from "./chatquote";
+import { withChatQuote } from "./chatquote";
 
 type BlockKind = "text" | "you" | "code" | "table" | "card";
 
@@ -488,7 +488,7 @@ export function useFocusRead(
             const texts = litGroup(lit, blocks.length, sizeRef.current)
                 .map((i) => quoteTextOf(blocks[i]))
                 .filter((t): t is string => t != null && t.trim() !== "");
-            const next = texts.length > 0 ? withLeadQuote(chatBoxText(agentId), texts.join("\n\n")) : null;
+            const next = texts.length > 0 ? withChatQuote(chatBoxText(agentId), texts.join("\n\n")) : null;
             if (next != null) {
                 writeChatBox(agentId, next);
             }

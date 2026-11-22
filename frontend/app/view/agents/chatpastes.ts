@@ -10,7 +10,6 @@
 
 import { fenceRanges } from "./chatfences";
 import { looksLikeCode } from "./chatmarks";
-import { joinQuotes, splitQuotes } from "./chatquote";
 
 const OPEN = "";
 const CLOSE = "";
@@ -101,15 +100,14 @@ export function expandPastes(text: string, tagged = false): string {
     return body.trim() === "" ? body + blocks : body.replace(/\s+$/, "") + SEP + blocks;
 }
 
-// the whole draft (quotes, typed text, pastes) with its pastes changed by `edit`, which also gets the typed text
+// the whole draft (typed text, pastes) with its pastes changed by `edit`, which also gets the typed text
 function editPastes(
     full: string,
     edit: (body: string, pastes: string[]) => { body: string; pastes: string[] }
 ): string {
-    const { quotes, body: rest } = splitQuotes(full);
-    const { body, pastes } = splitPastes(rest);
+    const { body, pastes } = splitPastes(full);
     const next = edit(body, pastes);
-    return joinQuotes(quotes, joinPastes(next.body, next.pastes));
+    return joinPastes(next.body, next.pastes);
 }
 
 /** The whole draft with one more paste folded at its end. */

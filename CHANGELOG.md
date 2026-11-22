@@ -42,11 +42,11 @@ and a picture given to a line that is not big.
   instead of a bar across the whole Chat.
 - A long paste you folded into a chip shows in your sent message as a "Pasted · N lines" card you open, the way a
   paste in Claude Code's own box does, instead of plain text under the question you typed.
+- A Reply's quote goes into Chat's box where you are typing, drawn there as a quote, instead of a block over the box:
+  quote, your words, another quote, more words reads in the order you wrote it, and a long quote scrolls with the text.
 
 ### Fixed
 
-- A quote in Chat's box keeps its line breaks: replying to a list shows one item per line instead of running them
-  together.
 - A new Claude session no longer opens with a reminder that some memories are over 30 days old: the start-of-session
   memory check names only broken memories (a missing file, a dead link or path), and old ones wait in Setup's memory
   review, where Still true quiets them.
