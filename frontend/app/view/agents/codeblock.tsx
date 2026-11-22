@@ -63,12 +63,13 @@ export function CodeBlock({ code, lang, path }: { code: string; lang?: string; p
         );
     };
     // One line with no language or a shell's (a command, most often): one compact row, as Claude Desktop draws it, the
-    // line wrapped, then Run (▷) and Copy as icons at its right; no head, no line number
+    // line wrapped, then Run (▷) and Copy as icons at its right; no head, no line number. It is as wide as its command
+    // (w-fit), up to the column, so `! task install` reads as a small box, not a bar across the Chat
     if (isCompactBlock(code, lang, path)) {
         return (
             <div
                 data-code-compact=""
-                className="my-1.5 flex items-start gap-2 rounded-[8px] border border-border bg-surface-code py-[7px] pr-[8px] pl-[12px]"
+                className="my-1.5 flex w-fit max-w-full items-start gap-2 rounded-[8px] border border-border bg-surface-code py-[7px] pr-[8px] pl-[12px]"
             >
                 <span
                     data-code-line

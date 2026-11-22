@@ -183,14 +183,17 @@ export default function (kit) {
                         runTitle: row?.querySelector("[data-code-run]")?.getAttribute("title") ?? null,
                         copy: !!row?.querySelector("[data-code-copy] button"),
                         height: row ? Math.round(row.getBoundingClientRect().height) : null,
+                        // as wide as its command, not the reply column
+                        width: row ? Math.round(row.getBoundingClientRect().width) : null,
+                        column: row?.parentElement ? Math.round(row.parentElement.getBoundingClientRect().width) : null,
                         mono: line ? /mono/i.test(getComputedStyle(line).fontFamily) : false,
                     };
                 })()`);
                 await h.ev(`${layerOf(A)}?.querySelector("[data-code-compact]")?.scrollIntoView({ block: "center" })`);
                 await shot(h, "1b-compact-command");
                 rec(
-                    `${name}: "${COMPACT}" in the reply is one [data-code-compact] row in mono, no head, a Run (into this agent, as \`! command\`) and a Copy button, under 48px tall`,
-                    up && got.text === COMPACT && !got.head && got.run && got.runTitle === "Run in this agent (! in Chat)" && got.copy && got.mono && got.height != null && got.height < 48,
+                    `${name}: "${COMPACT}" in the reply is one [data-code-compact] row in mono, no head, a Run (into this agent, as \`! command\`) and a Copy button, under 48px tall, narrower than the column`,
+                    up && got.text === COMPACT && !got.head && got.run && got.runTitle === "Run in this agent (! in Chat)" && got.copy && got.mono && got.height != null && got.height < 48 && got.width != null && got.column != null && got.width < got.column - 40,
                     { up, ...got }
                 );
             });
