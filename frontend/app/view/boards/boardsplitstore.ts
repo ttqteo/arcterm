@@ -23,9 +23,34 @@ function setOpen(ref: BoardSplit, open: boolean): void {
     globalStore.set(boardEntriesAtom, open ? [...list, { project: ref.project, boardId: ref.boardId }] : list);
 }
 
+// The boards removed from the tree's list, by key, with their activets then (agentsidebarmodel.ts treeBoards): kept
+// across launches; opening one again takes it off.
+export const hiddenBoardsAtom = atomWithStorage<Record<string, number>>("board.tree.hidden", {}, undefined, {
+    getOnInit: true,
+}) as PrimitiveAtom<Record<string, number>>;
+
+export function unhide(ref: BoardSplit): void {
+    const key = boardKey(ref);
+    const hidden = globalStore.get(hiddenBoardsAtom) ?? {};
+    if (key in hidden) {
+        const next = { ...hidden };
+        delete next[key];
+        globalStore.set(hiddenBoardsAtom, next);
+    }
+}
+
+// Remove from list: the board closes (its cell goes) and its tree row with it until it is active again.
+export function removeBoardFromList(model: GridModel, ref: BoardSplit, activets: number): void {
+    if (globalStore.get(openBoardsAtom).has(boardKey(ref))) {
+        closeBoard(model, ref);
+    }
+    globalStore.set(hiddenBoardsAtom, { ...(globalStore.get(hiddenBoardsAtom) ?? {}), [boardKey(ref)]: activets });
+}
+
 // Opens a board without placing its cell: a drop places it (griddropoverlay.tsx), and a board cell is eligible only
 // while its board is open.
 export function ensureBoardOpen(ref: BoardSplit): void {
+    unhide(ref);
     if (!globalStore.get(openBoardsAtom).has(boardKey(ref))) {
         setOpen(ref, true);
     }
@@ -72,6 +97,7 @@ export function openBoard(model: BoardOpenModel, agentId: string, project: strin
     model.openTerminal(agentId);
     setAgentView(agentId, "terminal", Date.now());
     setChatMode(agentId, "chat");
+    unhide(ref);
     setOpen(ref, true);
     openBoardCell(model, ref, agentId);
 }

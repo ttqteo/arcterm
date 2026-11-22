@@ -380,6 +380,7 @@ export interface TreeBoard {
     name: string;
     chatId: string;
     chat: string;
+    activets: number; // the board's last turn or answer: Remove from list keeps it out until a later one
 }
 
 // One cell of a split row. `menu` is the row menu its right-click opens, the one its own row in the tree has: an
@@ -488,11 +489,14 @@ function foldSplit(
 
 /** Pure: the boards the tree lists, in `list`'s order (most recently active first): every open board (`open`, its
  *  `<project>/<boardId>` keys), and each live chat's latest board, so a board just drawn shows without opening it. The
- *  rest are Library's. `chat` names the chat it reads, from the roster or the board's own title. */
+ *  rest are Library's. `chat` names the chat it reads, from the roster or the board's own title. `hidden` holds the
+ *  boards removed from the list, by key, with the board's `activets` when it was removed: one that is not open stays
+ *  out until it is active again (a new turn or drawing). */
 export function treeBoards(
     list: readonly BoardInfo[] | null | undefined,
     open: ReadonlySet<string>,
-    agents: readonly Pick<AgentVM, "id" | "name">[]
+    agents: readonly Pick<AgentVM, "id" | "name">[],
+    hidden: Readonly<Record<string, number>> = {}
 ): TreeBoard[] {
     const names = new Map(agents.map((a) => [a.id, a.name]));
     const latest = new Set<string>();
@@ -504,7 +508,10 @@ export function treeBoards(
         if (first) {
             latest.add(chatId);
         }
-        if (!first && !open.has(`${b.project}/${b.id}`)) {
+        const key = `${b.project}/${b.id}`;
+        if (open.has(key)) {
+            // listed
+        } else if (!first || (hidden[key] != null && b.activets <= hidden[key])) {
             continue;
         }
         out.push({
@@ -513,13 +520,21 @@ export function treeBoards(
             name: b.name,
             chatId,
             chat: (live ? names.get(chatId) : undefined) || b.agenttitle || "",
+            activets: b.activets,
         });
     }
     return out;
 }
 
 function boardOfRow(r: Extract<ProjectTreeRow, { kind: "board" }>): TreeBoard {
-    return { boardProject: r.boardProject, boardId: r.boardId, name: r.name, chatId: r.chatId, chat: r.chat };
+    return {
+        boardProject: r.boardProject,
+        boardId: r.boardId,
+        name: r.name,
+        chatId: r.chatId,
+        chat: r.chat,
+        activets: r.activets,
+    };
 }
 
 /** Pure: the root a council opened with no project named (the palette's New council…, `wsh ui do new-council`) starts

@@ -852,6 +852,7 @@ describe("projectTree", () => {
             name: `name-${id}`,
             chatId,
             chat,
+            activets: 1,
         });
 
         describe("treeBoards", () => {
@@ -864,6 +865,17 @@ describe("projectTree", () => {
                 expect(treeBoards(list, new Set(), agents).map((b) => b.boardId)).toEqual(["b3", "b1"]);
                 const open = new Set(["waveterm/b2", "waveterm/b0"]);
                 expect(treeBoards(list, open, agents).map((b) => b.boardId)).toEqual(["b3", "b2", "b1", "b0"]);
+            });
+            it("leaves out a board removed from the list until it is active again, unless it is open", () => {
+                const list = [board("b3", "a", 9), board("b1", "b", 3)];
+                expect(treeBoards(list, new Set(), agents, { "waveterm/b3": 9 }).map((b) => b.boardId)).toEqual(["b1"]);
+                expect(treeBoards(list, new Set(), agents, { "waveterm/b3": 5 }).map((b) => b.boardId)).toEqual([
+                    "b3",
+                    "b1",
+                ]);
+                expect(
+                    treeBoards(list, new Set(["waveterm/b3"]), agents, { "waveterm/b3": 9 }).map((b) => b.boardId)
+                ).toEqual(["b3", "b1"]);
             });
             it("names the chat from the roster, else the board's own title", () => {
                 const gone = { ...board("b0", "gone"), agenttitle: "claude · old" };

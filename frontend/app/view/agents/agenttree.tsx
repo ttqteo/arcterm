@@ -40,6 +40,7 @@ import {
     CopyPlus,
     CornerUpLeft,
     ExternalLink,
+    EyeOff,
     FileDiff,
     Gift,
     Folder,
@@ -216,7 +217,14 @@ import { openReview } from "./docreviewstore";
 import { placementStyle } from "./agentgrid";
 import { openBoardsAtom } from "../boards/boardentries";
 import { useBoardList } from "../boards/boardstore";
-import { boardOpenAtom, closeBoard, openBoard } from "../boards/boardsplitstore";
+import {
+    boardOpenAtom,
+    closeBoard,
+    hiddenBoardsAtom,
+    openBoard,
+    removeBoardFromList,
+    unhide,
+} from "../boards/boardsplitstore";
 import {
     canOpenInSplit,
     isInSplit,
@@ -3310,6 +3318,7 @@ function useBoardActions(model: AgentsViewModel, b: TreeBoard, cellShown: boolea
             showTerminal();
             return;
         }
+        unhide(ref);
         showBoardAlone(ref);
     };
     const openInSplit = () => {
@@ -3325,21 +3334,30 @@ function useBoardActions(model: AgentsViewModel, b: TreeBoard, cellShown: boolea
         } else {
             items.push({ label: "Open in split", icon: <Columns2 size={15} />, click: openInSplit });
         }
+        items.push({ type: "separator" });
         if (isOpen || shownAlone) {
-            items.push(
-                { type: "separator" },
-                {
-                    label: "Close board",
-                    icon: <X size={15} />,
-                    click: () => {
-                        if (shownAlone) {
-                            leaveCenter();
-                        }
-                        closeBoard(model, ref);
-                    },
-                }
-            );
+            items.push({
+                label: "Close board",
+                icon: <X size={15} />,
+                click: () => {
+                    if (shownAlone) {
+                        leaveCenter();
+                    }
+                    closeBoard(model, ref);
+                },
+            });
         }
+        // the row goes too, until the board is drawn on again; the board itself stays, in Library → Boards
+        items.push({
+            label: "Remove from list",
+            icon: <EyeOff size={15} />,
+            click: () => {
+                if (shownAlone) {
+                    leaveCenter();
+                }
+                removeBoardFromList(model, ref, b.activets);
+            },
+        });
         ContextMenuModel.getInstance().showContextMenu(items, e);
     };
     const drag: React.HTMLAttributes<HTMLDivElement> = {
@@ -3652,14 +3670,15 @@ export const AgentTree = memo(function AgentTree({ model }: { model: AgentsViewM
     const boardList = useBoardList("");
     // a board shown alone stays listed while it shows, open or not
     const alone = useAtomValue(boardAloneAtom);
+    const hiddenBoards = useAtomValue(hiddenBoardsAtom);
     const aloneKey = center === "board" && alone != null ? `${alone.project}/${alone.boardId}` : null;
     const boards = useMemo(() => {
         const listed = new Set(openBoards.keys());
         if (aloneKey != null) {
             listed.add(aloneKey);
         }
-        return treeBoards(boardList, listed, agents);
-    }, [boardList, openBoards, agents, aloneKey]);
+        return treeBoards(boardList, listed, agents, hiddenBoards);
+    }, [boardList, openBoards, agents, aloneKey, hiddenBoards]);
     const shownCells = new Set(splits.project != null ? (splits.grids[splits.project]?.ids ?? []) : []);
     // project name -> root path, as activenav.ts builds it: the folders a terminal's branch chip is read against
     const registered = useAtomValue(projectsAtom);

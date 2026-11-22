@@ -26,7 +26,9 @@ import {
     boardMaxAtom,
     boardOpenAtom,
     closeBoard,
+    hiddenBoardsAtom,
     openBoard,
+    removeBoardFromList,
     setBoardMax,
     switchBoard,
     turnsFoldedAtom,
@@ -62,6 +64,7 @@ beforeEach(() => {
     calls.length = 0;
     globalStore.set(projectGridsAtom, EMPTY_PROJECT_GRIDS);
     globalStore.set(boardEntriesAtom, []);
+    globalStore.set(hiddenBoardsAtom, {});
     globalStore.set(centerModeAtom, "terminal");
 });
 
@@ -175,6 +178,19 @@ describe("switchBoard", () => {
         openBoard(m, "a1", "arcterm", "b1");
         switchBoard(m, B1, "b1");
         expect(open()).toEqual(["arcterm/b1"]);
+    });
+});
+
+describe("removeBoardFromList", () => {
+    it("closes an open board, hides it with its activets, and opening it again shows it", () => {
+        const m = model(["a1"]);
+        openBoard(m, "a1", "arcterm", "b1");
+        removeBoardFromList(m, B1, 42);
+        expect(globalStore.get(boardOpenAtom("arcterm/b1"))).toBe(false);
+        expect(globalStore.get(agentGridAtom).ids).toEqual(["a1"]);
+        expect(globalStore.get(hiddenBoardsAtom)).toEqual({ "arcterm/b1": 42 });
+        openBoard(m, "a1", "arcterm", "b1");
+        expect(globalStore.get(hiddenBoardsAtom)).toEqual({});
     });
 });
 
