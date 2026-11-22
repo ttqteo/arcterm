@@ -92,6 +92,8 @@ import { clearLocalCards } from "./chatlocalstore";
 import { noteLostBash } from "./chatlostbashstore";
 import { bashMode } from "./chatmodel";
 import { setChatMode } from "./chatmodestore";
+import { PasteChips } from "./chatpastechips";
+import { expandPastes, joinPastes, splitPastes, unfoldPaste, withoutPaste, withPaste } from "./chatpastes";
 import {
     holdLine,
     isSendNowKey,
@@ -333,13 +335,16 @@ function ComposerBox({
     // The quotes that open the message (a Reply's) are chips over the editor, not lines in it (chatquote.ts
     // splitQuotes): `text` is what the editor shows and edits, the rest of the box works on it, and `message` (what
     // goes) is still the whole draft. The outside box API (registerChatBox) reads and writes the whole draft.
-    const { quotes, body: text } = splitQuotes(fullText);
-    const setText = (t: string) => setFullText(joinQuotes(quotes, t));
+    // A long paste folds out of the text the same way, into a chip over it (chatpastes.ts): it stays in the draft after
+    // the typed text, and `message` writes it out.
+    const { quotes, body: rest } = splitQuotes(fullText);
+    const { body: text, pastes } = splitPastes(rest);
+    const setText = (t: string) => setFullText(joinQuotes(quotes, joinPastes(t, pastes)));
     const dropQuote = (i: number) =>
         setFullText(
             joinQuotes(
                 quotes.filter((_, k) => k !== i),
-                text
+                rest
             )
         );
     // a Sleep under way (fallasleepstore): the box is shut until the agent sleeps, and says what is happening
@@ -509,7 +514,7 @@ function ComposerBox({
                         return false;
                     }
                     recalled.current = { at: null, shown: "" };
-                    caretAfter.current = splitQuotes(t).body.length;
+                    caretAfter.current = splitPastes(splitQuotes(t).body).body.length;
                     latest.current.setFull(t);
                     box.focus({ preventScroll: true });
                     return true;
@@ -583,8 +588,8 @@ function ComposerBox({
             return;
         }
         if (answersAsk && ready) {
-            // the quote chips are part of the answer
-            const words = fullText.trim();
+            // the quote and paste chips are part of the answer
+            const words = expandPastes(fullText).trim();
             // nothing typed, or the ask was already answered (a row clicked meanwhile): nothing goes
             if (words === "" || !answerAgentAsk(model, agent.id, {}, { 0: words })) {
                 return;
@@ -1151,6 +1156,15 @@ function ComposerBox({
                 the person to act */}
                         <ChatBgLine model={model} agent={agent} />
                         <AttachmentTray items={att.attachments} onRemove={att.remove} onRetry={att.retry} />
+                        <PasteChips
+                            pastes={pastes}
+                            frame={boxRef}
+                            onRemove={(i) => latest.current.setFull(withoutPaste(latest.current.full, i))}
+                            onUnfold={(i) => {
+                                latest.current.setFull(unfoldPaste(latest.current.full, i));
+                                editorRef.current?.focus();
+                            }}
+                        />
                         <QuoteChips
                             quotes={quotes}
                             onRemove={dropQuote}
@@ -1218,6 +1232,7 @@ function ComposerBox({
                                     // a click outside the box closes bash mode's Tab list (a click on a row keeps the focus here)
                                     onBlur={bashList.onBlur}
                                     onPasteFiles={promptBox.onPasteFiles}
+                                    onLongPaste={(p) => latest.current.setFull(withPaste(latest.current.full, p))}
                                     onKeyDown={(e) => {
                                         // → or Tab at the end of a bash command with the ghost text showing takes it, as Claude Code's does;
                                         // the ghost is never shown while the Tab list is open, so this Tab is not a completion's. A

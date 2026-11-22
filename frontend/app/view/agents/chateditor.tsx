@@ -98,6 +98,7 @@ import {
 import { $createFileMentionNode, $isFileMentionNode, FileMentionNode } from "./chateditorpill";
 import { $createRefMentionNode, $isRefMentionNode, RefMentionNode } from "./chateditorrefpill";
 import { codePaste } from "./chatmarks";
+import { foldsPaste } from "./chatpastes";
 import { gapAfterMention, gapBeforeMention } from "./filementiontokens";
 import { shellLine } from "./shellhighlight";
 
@@ -149,6 +150,9 @@ export interface ChatEditorProps {
     onKeyDown?(e: KeyLike): void;
     /** a paste whose clipboard holds files comes here; true = taken (the editor then pastes nothing) */
     onPasteFiles?(e: ClipboardEvent): boolean;
+    /** a long paste (chatpastes.ts foldsPaste) comes here instead of into the text, to fold into a chip; left out, every
+     *  paste goes in. Never in a bash command. */
+    onLongPaste?(pasted: string): void;
     /** the editor lost the focus: `relatedTarget` is where it went (null for a click on something that takes none, or the
      *  window losing the focus) */
     onBlur?(e: FocusEvent): void;
@@ -604,6 +608,23 @@ function $pasteCode(editor: LexicalEditor, event: ClipboardEvent, bash: boolean)
     return true;
 }
 
+/** A long paste goes to `fold` (a chip over the text) instead of into the text. Runs in the paste command's update; true
+ *  when the paste was taken. */
+function $foldPaste(event: ClipboardEvent, fold: (pasted: string) => void): boolean {
+    const pasted = event.clipboardData?.getData("text/plain") ?? "";
+    if (pasted === "" || !$isRangeSelection($getSelection())) {
+        return false;
+    }
+    const doc = $readDoc();
+    const at = $selectionOffsets(doc);
+    if (at == null || !foldsPaste(linesText(doc.lines), at.start, pasted)) {
+        return false;
+    }
+    event.preventDefault();
+    fold(pasted);
+    return true;
+}
+
 const NO_RECT = typeof DOMRect === "undefined" ? ({} as DOMRect) : new DOMRect();
 
 // ---- the editor ----
@@ -892,6 +913,10 @@ const Bridge = forwardRef<EditorLike, BridgeProps>(function Bridge({ props, said
                         return false;
                     }
                     event.preventDefault();
+                    return true;
+                }
+                const fold = props.current.onLongPaste;
+                if (fold != null && !props.current.bash && $foldPaste(event, fold)) {
                     return true;
                 }
                 return $pasteCode(editor, event, props.current.bash ?? false);

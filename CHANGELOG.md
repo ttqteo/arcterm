@@ -50,6 +50,9 @@ and a picture given to a line that is not big.
 
 ### Added
 
+- A long paste in Chat's box (10 lines or more, or 1,000 characters) folds into a "Pasted text" chip over the box,
+  like an attachment, so your question stays in view. Click the chip to read it all or put it back in the text; it is
+  sent after your message, fenced when it is code or a log.
 - Hold `Option` (`Alt` on Windows) a moment on the Agent surface and each header button shows its key: `K` for Chat
   and Terminal, `D` the rail, `I` the initiative, `F` fullscreen, `S` Ship, `W` Close. Press `Option` and the letter to
   use it.

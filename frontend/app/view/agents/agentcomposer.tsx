@@ -9,6 +9,7 @@ import { wakeAgent, wakeErrorToast } from "./agentsleep";
 import { askBtw, logLine, submitToAgent } from "./agentsubmit";
 import type { AgentState, AgentVM } from "./agentsviewmodel";
 import { withResultLines } from "./chatinitiative";
+import { expandPastes } from "./chatpastes";
 import { btwQuestion, processGone, repeatsSend, sendFailure, type LastSend, type SendFailure } from "./chatpending";
 import { mergeTaken } from "./chattakeback";
 import { messageWithAttachments, type Attachment } from "./composerattachments";
@@ -132,7 +133,8 @@ export function useAgentSend(
     const waking = useWaking(agent?.id) || sending;
     // a message now would undo the Sleep under way (or cut its compaction short): the box waits until it sleeps
     const fallingAsleep = useFallingAsleep(agent?.id, agent?.sleeping != null);
-    const message = messageWithAttachments(text.trim(), attachments ?? []);
+    // a long paste folded into a chip (chatpastes.ts) goes written out
+    const message = messageWithAttachments(expandPastes(text).trim(), attachments ?? []);
     const canSend = canSendComposer(message, blockId) && !waking && fallingAsleep == null;
     // a failed send's text back in the box, ahead of what was typed since (read from the store, not this render's text)
     const putBack = (t: string) => {
