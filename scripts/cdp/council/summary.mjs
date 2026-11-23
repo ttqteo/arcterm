@@ -183,7 +183,9 @@ const BRAINSTORM_FACTS = `(() => {
     return {
         heading: t(root.querySelector("[data-council-directions-heading]")),
         titles: all("[data-council-direction] [data-council-title]").map(t),
-        steps: all("[data-council-direction] [data-council-first-step]").map(t),
+        // a First step is a label span over the step's own span, two blocks: innerText parts them with a newline only
+        // once layout has run, and without one reads "First stepTry it…", so read each span and join them with a space
+        steps: all("[data-council-direction] [data-council-first-step]").map((s) => [...s.children].map(t).join(" ")),
         meta: all("[data-council-direction]").map((d) => t(d.querySelector("[data-council-meta]")) ?? ""),
         chips: all("[data-council-direction]").map((d) => [...d.querySelectorAll("[data-council-chip]")].map((c) => c.dataset.councilChip)),
         keptHeading: t(root.querySelector("[data-council-kept] [data-council-kept-heading]")),
