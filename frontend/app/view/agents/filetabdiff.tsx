@@ -3,8 +3,10 @@
 //
 // The File tab's Diff view: a file from the agent's Files changed against the commit that list is measured from, so
 // the change reads beside the agent's terminal instead of on the Diff surface. The working copy is the one the tab
-// already read; only the committed side is read here. A file that matches HEAD (a Chat turn's edit already committed)
-// shows the change of the newest commit that touched it instead, named above the diff, until it is edited again.
+// already read; only the committed side is read here, unless the list ends at a commit (an agent's own edits, B..H):
+// then both sides are that range's, as on the Diff surface, so another writer's later change to the file stays out.
+// A file that matches HEAD (a Chat turn's edit already committed) shows the change of the newest commit that touched
+// it instead, named above the diff, until it is edited again.
 
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
@@ -22,7 +24,8 @@ const MonacoDiffViewer = lazy(() => import("@/app/monaco/monaco-react").then((m)
 // file, and the diff shows that commit's change (a Chat turn's file whose edit is already committed)
 type Base =
     | { kind: "loading" }
-    | { kind: "text"; text: string; commit?: { hash: string; subject: string; head: string } }
+    // `end`: the end commit's copy, which stands in for the working copy
+    | { kind: "text"; text: string; commit?: { hash: string; subject: string; head: string }; end?: string }
     | { kind: "none"; message: string };
 
 // unified only: the panel is never wide enough for two readable columns
@@ -46,6 +49,7 @@ export function FileTabDiff({
     cwd,
     rel,
     base,
+    end,
     modified,
     reread,
     wrap,
@@ -56,6 +60,7 @@ export function FileTabDiff({
     cwd: string;
     rel: string;
     base: string; // "" is HEAD
+    end?: string; // the commit the change ends at; absent, the working copy
     modified: string; // "" for a file deleted from the working tree
     reread?: number;
     wrap: boolean;
@@ -76,20 +81,32 @@ export function FileTabDiff({
         fireAndForget(async () => {
             let next: Base;
             try {
-                const r = await RpcApi.GitFileAtRefCommand(TabRpcClient, {
-                    cwd,
-                    ref: base || "HEAD",
-                    path: rel,
-                    maxbytes: MAX_DIFF_BYTES,
-                });
+                const read = (ref: string) =>
+                    RpcApi.GitFileAtRefCommand(TabRpcClient, { cwd, ref, path: rel, maxbytes: MAX_DIFF_BYTES });
+                const [r, e] = await Promise.all([read(base || "HEAD"), end ? read(end) : undefined]);
                 // missing is an added file: everything in it is new
                 next = r.binary
                     ? { kind: "none", message: "The committed copy is a binary file." }
                     : r.toolarge
                       ? { kind: "none", message: "The committed copy is larger than 2 MB." }
                       : { kind: "text", text: r.content ?? "" };
+                // missing at the end is a file the agent deleted: everything in it is gone
+                if (next.kind === "text" && e != null) {
+                    next =
+                        e.binary || e.toolarge
+                            ? {
+                                  kind: "none",
+                                  message: `The agent's copy is ${e.binary ? "a binary file" : "larger than 2 MB"}.`,
+                              }
+                            : { ...next, end: e.content ?? "" };
+                }
                 // nothing changed since HEAD: the change is committed, so show the newest commit's change to the file
-                if (next.kind === "text" && next.text === modifiedNow.current && (base === "" || base === "HEAD")) {
+                if (
+                    next.kind === "text" &&
+                    !end &&
+                    next.text === modifiedNow.current &&
+                    (base === "" || base === "HEAD")
+                ) {
                     const last = await RpcApi.GitFileAtRefCommand(TabRpcClient, {
                         cwd,
                         ref: "HEAD",
@@ -115,7 +132,7 @@ export function FileTabDiff({
         return () => {
             live = false;
         };
-    }, [cwd, rel, base, reread]);
+    }, [cwd, rel, base, end, reread]);
 
     if (orig.kind === "loading") {
         return null;
@@ -128,11 +145,13 @@ export function FileTabDiff({
             </div>
         );
     }
+    // the side the change ends at: the end commit's copy, else the working copy
+    const after = orig.end ?? modified;
     // the commit's change while the working copy still matches HEAD; edited since, the diff against HEAD again
     const shown = orig.commit != null && orig.commit.head !== modified ? { text: orig.commit.head } : orig;
     const commit = shown === orig ? orig.commit : undefined;
     // no commit changed it and nothing differs (an undone edit): a diff with every line folded away reads as broken
-    if (commit == null && shown.text === modified && (base === "" || base === "HEAD")) {
+    if (commit == null && shown.text === after && (base === "" || base === "HEAD")) {
         return (
             <div
                 data-file-diff-same={abs}
@@ -166,7 +185,7 @@ export function FileTabDiff({
                         // "filediff/" keeps these models apart from the Diff surface's and the Code surface's
                         path={`filediff/${abs}`}
                         original={shown.text}
-                        modified={modified}
+                        modified={after}
                         language={languageForPath(abs)}
                         options={options}
                         onMount={(diff) => {

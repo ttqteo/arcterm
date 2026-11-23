@@ -33,27 +33,44 @@ type agentEditsEntry struct {
 	rtn       wshrpc.CommandGitAgentEditsRtnData
 }
 
-// one entry per transcript path, so the Diff surface's poll rebuilds only when a transcript has grown;
-// building maps the cwd plus transcript path to a lock, so overlapping asks (the card, the rail and the Cockpit at
-// page load) wait for one build instead of each writing B and H's loose objects at once
+// both maps are keyed by agentEditsSlot (cwd plus transcript path). m holds one answer per slot, so the Diff surface's
+// poll rebuilds only when a transcript has grown, and two cwds asking about one transcript keep an answer each;
+// building holds a lock per slot while anyone holds or waits on it, so overlapping asks (the card, the rail and the
+// Cockpit at page load) wait for one build instead of each writing B and H's loose objects at once
 var agentEditsCache = struct {
 	sync.Mutex
 	m        map[string]agentEditsEntry
-	building map[string]*sync.Mutex
-}{m: map[string]agentEditsEntry{}, building: map[string]*sync.Mutex{}}
+	building map[string]*buildLock
+}{m: map[string]agentEditsEntry{}, building: map[string]*buildLock{}}
 
-// lockAgentEdits takes the build lock of one cwd and transcript; the caller releases it with the returned func.
-func lockAgentEdits(cwd, transcript string) (unlock func()) {
-	k := cwd + "\x00" + transcript
+type buildLock struct {
+	sync.Mutex
+	users int // holders and waiters; the last to unlock drops the lock from building
+}
+
+func agentEditsSlot(cwd, transcript string) string {
+	return cwd + "\x00" + transcript
+}
+
+// lockAgentEdits takes the build lock of one slot; the caller releases it with the returned func.
+func lockAgentEdits(slot string) (unlock func()) {
 	agentEditsCache.Lock()
-	mu := agentEditsCache.building[k]
-	if mu == nil {
-		mu = &sync.Mutex{}
-		agentEditsCache.building[k] = mu
+	bl := agentEditsCache.building[slot]
+	if bl == nil {
+		bl = &buildLock{}
+		agentEditsCache.building[slot] = bl
 	}
+	bl.users++
 	agentEditsCache.Unlock()
-	mu.Lock()
-	return mu.Unlock
+	bl.Lock()
+	return func() {
+		bl.Unlock()
+		agentEditsCache.Lock()
+		if bl.users--; bl.users == 0 {
+			delete(agentEditsCache.building, slot)
+		}
+		agentEditsCache.Unlock()
+	}
 }
 
 func (ws *WshServer) GitAgentEditsCommand(ctx context.Context, data wshrpc.CommandGitAgentEditsData) (*wshrpc.CommandGitAgentEditsRtnData, error) {
@@ -87,7 +104,8 @@ func readAgentEdits(ctx context.Context, data wshrpc.CommandGitAgentEditsData) (
 	}
 	// held through the cache check, the parse and the build: a caller that waited finds the cache filled, and reads
 	// the transcript's size and mtime after the build that ran ahead of it
-	defer lockAgentEdits(data.Cwd, data.TranscriptPath)()
+	slot := agentEditsSlot(data.Cwd, data.TranscriptPath)
+	defer lockAgentEdits(slot)()
 	co, err := agentedits.CheckoutOf(ctx, data.Cwd)
 	switch {
 	case errors.Is(err, agentedits.ErrNotRepo):
@@ -105,7 +123,7 @@ func readAgentEdits(ctx context.Context, data wshrpc.CommandGitAgentEditsData) (
 		return nil, 0, false, err
 	}
 	agentEditsCache.Lock()
-	e, ok := agentEditsCache.m[data.TranscriptPath]
+	e, ok := agentEditsCache.m[slot]
 	agentEditsCache.Unlock()
 	if ok && e.key == key {
 		r := e.rtn
@@ -120,7 +138,7 @@ func readAgentEdits(ctx context.Context, data wshrpc.CommandGitAgentEditsData) (
 		return nil, l.EditCalls, false, err
 	}
 	agentEditsCache.Lock()
-	agentEditsCache.m[data.TranscriptPath] = agentEditsEntry{key: key, editCalls: l.EditCalls, rtn: *rtn}
+	agentEditsCache.m[slot] = agentEditsEntry{key: key, editCalls: l.EditCalls, rtn: *rtn}
 	agentEditsCache.Unlock()
 	return rtn, l.EditCalls, false, nil
 }

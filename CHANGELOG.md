@@ -151,6 +151,8 @@ and a picture given to a line that is not big.
 
 ### Fixed
 
+- A file opened from a Claude agent's Files changed shows only that agent's own edits on its Diff, as the Diff surface
+  does, instead of also showing a later change someone else made to the same file.
 - Typing `>` in Chat's box shows the quote's bar at once, before anything follows it, instead of an empty line that
   gave no sign the quote had started.
 - An agent with an unsent message in its box shows the word "draft" on its row's second line, in place of the blue pen

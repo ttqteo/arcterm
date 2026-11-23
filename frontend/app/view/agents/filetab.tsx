@@ -279,6 +279,7 @@ export function FileTab({
                 cwd={(diff.cwd ?? ref.root)!}
                 rel={diff.rel}
                 base={diff.base}
+                end={diff.end}
                 modified={state.kind === "text" ? state.text : ""}
                 reread={ref.reread}
                 wrap={wrap}

@@ -300,6 +300,38 @@ func TestGitAgentEditsConcurrentCallsBuildOnce(t *testing.T) {
 	}
 }
 
+// The rail asks from the agent's cwd and another view from the repository root: each keeps its own cached answer
+// instead of the two evicting each other's from one slot, and no build lock outlives its builds.
+func TestGitAgentEditsTwoCwdsOnOneTranscriptKeepTheirCaches(t *testing.T) {
+	buf := captureLog(t)
+	repo := editsRepo(t, map[string]string{"sub/a.txt": "a\n"})
+	sub := filepath.Join(repo, "sub")
+	transcript := editsTranscript(t)
+	appendTranscript(t, transcript, transcriptLines(t, sub, []transcriptCall{
+		{"Write", map[string]any{"file_path": filepath.Join(sub, "b.txt"), "content": "b\n"}},
+	}))
+
+	for range 2 {
+		agentEdits(t, repo, transcript)
+		agentEdits(t, sub, transcript)
+	}
+	var caches []string
+	for _, ln := range editsLogLines(buf, transcript) {
+		if m := editsLogLine.FindStringSubmatch(ln); m != nil {
+			caches = append(caches, m[3])
+		}
+	}
+	if want := []string{"miss", "miss", "hit", "hit"}; !reflect.DeepEqual(caches, want) {
+		t.Errorf("cache per call (root, sub, root, sub) = %v, want %v", caches, want)
+	}
+	agentEditsCache.Lock()
+	held := len(agentEditsCache.building)
+	agentEditsCache.Unlock()
+	if held != 0 {
+		t.Errorf("%d build locks left after every build ended, want 0", held)
+	}
+}
+
 func TestGitAgentEditsLogsTheErrorOnAFailure(t *testing.T) {
 	buf := captureLog(t)
 	repo := editsRepo(t, map[string]string{"a.txt": "a\n"})
