@@ -134,6 +134,47 @@ func TestTakeBriefsSkipsWhenTheProjectFolderIsNotThere(t *testing.T) {
 	}
 }
 
+// A council with no project folder has nowhere to copy into: takeBriefs leaves it as it is and writes nothing. An empty
+// Project cleans to ".", so a copy that slipped through would land under the working folder, which the test owns.
+func TestTakeBriefsTakesNothingWhenTheCouncilHasNoProject(t *testing.T) {
+	work := t.TempDir()
+	t.Chdir(work)
+	outside := t.TempDir()
+	notes := filepath.Join(outside, "notes.md")
+	writeBrief(t, notes, "# Notes\n")
+
+	for _, project := range []string{"", "  "} {
+		c := testCouncil("c1")
+		c.Project, c.Files = project, []string{notes, "pkg/ram.go"}
+		takeBriefs(c, briefDay)
+		if want := []string{notes, "pkg/ram.go"}; !reflect.DeepEqual(c.Files, want) {
+			t.Errorf("project %q: files = %q, want them exactly as given %q", project, c.Files, want)
+		}
+		if len(c.Briefs) != 0 {
+			t.Errorf("project %q: briefs = %+v, want none: there is no project to copy into", project, c.Briefs)
+		}
+	}
+
+	for root, want := range map[string][]string{work: nil, outside: {"notes.md"}} {
+		var found []string
+		err := filepath.WalkDir(root, func(p string, _ os.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+			if rel, _ := filepath.Rel(root, p); rel != "." {
+				found = append(found, filepath.ToSlash(rel))
+			}
+			return nil
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !reflect.DeepEqual(found, want) {
+			t.Errorf("under %s: found %q, want %q: nothing is written to disk", root, found, want)
+		}
+	}
+}
+
 func TestTakeBriefsDoesNotCopyTwiceOnARerun(t *testing.T) {
 	notes := filepath.Join(t.TempDir(), "notes.md")
 	writeBrief(t, notes, "first\n")

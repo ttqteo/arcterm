@@ -18,7 +18,7 @@ import (
 // give, and keeps it in testdata/glance-golden.json; councilfiguresmodel.test.ts reads the same two files and checks the
 // TypeScript against them. A change to the formula fails here until the golden is rewritten (`go test ./pkg/council
 // -run Golden -update`), and then fails there until the TypeScript follows.
-var updateGolden = flag.Bool("update", false, "rewrite testdata/glance-golden.json from the figures fixture")
+var updateGolden = flag.Bool("update", false, "rewrite the goldens under testdata/: glance-golden.json from the figures fixture, report-review.md, report-review.discussion.md and report-brainstorm-vi.md from what the report writes now")
 
 const (
 	figuresFixture = "../../scripts/cdp/council/rail-apps-figures.json"
