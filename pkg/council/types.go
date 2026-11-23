@@ -160,6 +160,25 @@ type CouncilEvidence struct {
 	Region *CouncilRegion `json:"region,omitempty"`
 }
 
+// CouncilFigure is one number a Review's report relies on that a project file holds: Value as the cited line writes it,
+// what it Measures, and the line it comes from. The seat declares it (CouncilProposal.Figures); Go checks it with the
+// same cite check as evidence (Cite, CiteNote) and also that the value is in the quote. Council.Figures is the checked,
+// deduplicated list the report's Figures table reads.
+type CouncilFigure struct {
+	Value    string `json:"value"`    // the number as the quoted line writes it: "1,248 ms", "30%"
+	Measures string `json:"measures"` // what it measures, in the language of the person's question
+	Ref      string `json:"ref"`      // "path:line"
+	// Quote is the exact text the cited line holds, which the value must appear in.
+	Quote string `json:"quote,omitempty"`
+	// Cite is CiteOK or CiteWrong once Go has checked it; empty when it was not checked.
+	Cite string `json:"cite,omitempty"`
+	// CiteNote says why a figure is wrong: "line 900 is past the end (412 lines)", "value not in the quote".
+	CiteNote string `json:"citenote,omitempty"`
+	// From is the ids of the proposals that declared it. Set only on Council.Figures, where copies of one figure from
+	// several seats are one.
+	From []string `json:"from,omitempty"`
+}
+
 // CouncilRegion is a screenshot cite Go located: the image it boxes, the box as fractions (0..1) of that image's width
 // and height (clamped into it), and the PNG Go drew of the box with a red rectangle on it and a margin around it. Once
 // drawn, the PNG stands: Image may since have left the disk.
@@ -236,6 +255,7 @@ type CouncilProposal struct {
 	Title     string            `json:"title"`
 	Argument  string            `json:"argument"`
 	Evidence  []CouncilEvidence `json:"evidence,omitempty"`
+	Figures   []CouncilFigure   `json:"figures,omitempty"` // the numbers the idea relies on that a project file holds, each with Go's check; Review only
 	Ts        int64             `json:"ts"`
 	Withdrawn bool              `json:"withdrawn,omitempty"`
 	Cut       bool              `json:"cut,omitempty"`    // unticked by the person at the pause
@@ -347,7 +367,22 @@ type CouncilDirection struct {
 	Stances   map[string]CouncilStance `json:"stances"` // expert id -> stance; the authors are left out
 	Agreed    bool                     `json:"agreed"`
 	FirstStep string                   `json:"firststep,omitempty"` // the one thing to do first
+	// Task is what to do, in up to 15 words: the row the report's to-do table shows. Why is the one sentence that says why.
+	// Kind is a Task* value, and Files the project paths the task changes. All four are empty on a direction summarized
+	// before they existed, and the report then falls back (reasoning's first sentence for Why, "—" for Files and Kind).
+	Task  string   `json:"task,omitempty"`
+	Why   string   `json:"why,omitempty"`
+	Kind  string   `json:"kind,omitempty"`
+	Files []string `json:"files,omitempty"`
 }
+
+// The kinds of one CouncilDirection.Kind: new work, an edit of existing text, or a decision the person has to make. Any
+// other word reads as no kind.
+const (
+	TaskNew      = "new"
+	TaskEdit     = "edit"
+	TaskDecision = "decision"
+)
 
 type CouncilSummary struct {
 	Text       string             `json:"text"`
@@ -508,6 +543,15 @@ type CouncilAutoGenerate struct {
 	Mode     string `json:"mode"`
 }
 
+// CouncilBrief is one file or folder the person gave the council from outside its project, and what Start did with it:
+// Copy is where the copy sits (project-relative, forward slashes; `files` then names it), or Skipped says why it was not
+// copied (too big, unreadable, not there) and `files` keeps the original.
+type CouncilBrief struct {
+	Source  string `json:"source"`            // the absolute path it was given as
+	Copy    string `json:"copy,omitempty"`    // the project-relative path of its copy, with forward slashes
+	Skipped string `json:"skipped,omitempty"` // why it was not copied
+}
+
 type Council struct {
 	Id               string                       `json:"id"`
 	Project          string                       `json:"project"` // the project folder, the experts' cwd
@@ -568,6 +612,12 @@ type Council struct {
 	// Zones is a Brainstorm's zones, one per panel seat in panel order, set by the zone call before round 1. Nil when
 	// the council has none: a Review, a panel of one seat, a failed zone call, or a council saved before zones.
 	Zones []CouncilZone `json:"zones,omitempty"`
+	// Figures is the proposals' figures, deduplicated, each with the ids that declared it, which Go rewrites after every
+	// check pass (ApplyChecks). Review only: nil in a Brainstorm.
+	Figures []CouncilFigure `json:"figures,omitempty"`
+	// Briefs records each file or folder from outside the project that Start copied into it, or could not (see
+	// CouncilBrief); `files` holds the copies.
+	Briefs []CouncilBrief `json:"briefs,omitempty"`
 }
 
 // The rounds a council with agents may run: the ideas round and up to two reply passes. A council with no Rounds, and
