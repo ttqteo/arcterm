@@ -10,8 +10,18 @@
 
 import type { AgentEntry, AgentState } from "./agentsviewmodel";
 import { stripResultLines } from "./chatinitiative";
+import { joinPastes, PASTE_FROM, splitPastes } from "./chatpastes";
 import type { PendingMessage } from "./chatpending";
+import { splitTagged, unwrapWholePaste } from "./chattagblocks";
 import { splitRules } from "./tuiscreen";
+
+/** Pure: a message of yours as it was sent, from its transcript record: without the result lines Arc put in front of it,
+ *  and out of the paste Claude Code wraps a whole multi-line message in, the paste tags it escaped inside put back. Read
+ *  raw, a take-back put Claude Code's wrapper in the chat box, and the message sent again went in wrapped twice, which
+ *  its pending bubble never matched (2026-11-23). */
+export function sentText(text: string): string {
+    return unwrapWholePaste(stripResultLines(text));
+}
 
 /** What a key takes back: `queued`, the messages sent while Claude worked (↑ in Claude Code's box); `interrupt`, the
  *  message that started a turn Claude has not answered yet (Esc in Claude Code's box stops it). `ids` are the pending
@@ -50,8 +60,9 @@ export function takeBackPlan(
     }
     const last = entries?.[entries.length - 1];
     if (last?.kind === "user") {
-        // what comes back into the box is what the person wrote: the result lines Arc put in front of it are not theirs
-        return { kind: "interrupt", ids: [], texts: [stripResultLines(last.text)] };
+        // what comes back into the box is what the person wrote: not the result lines Arc put in front of it, nor the
+        // paste Claude Code wrapped it in
+        return { kind: "interrupt", ids: [], texts: [sentText(last.text)] };
     }
     return null;
 }
@@ -142,11 +153,46 @@ export function typedEcho(lines: string[] | null, text: string): TypedEcho {
     return squash(rows.map((r) => r.replace(/^\s*❯/, "")).join("")) === "" ? "absent" : "other";
 }
 
+// a message as a draft: its typed text and the pastes it carried, folded back into chips. A sent message has its pastes
+// written out at its end as <pasted_content from="chat"> blocks (chatpastes.ts expandPastes); a draft (a failed send's
+// text) keeps them as chips already. Anything else after or between them stays text, as it was.
+function asDraft(text: string): { body: string; pastes: string[] } {
+    const draft = splitPastes(text);
+    if (draft.pastes.length > 0) {
+        return draft;
+    }
+    const parts = splitTagged(text);
+    let end = parts.length;
+    while (end > 0) {
+        const p = parts[end - 1];
+        if (p.kind !== "tag" || p.tag !== "pasted_content" || p.attrs.from !== PASTE_FROM) {
+            break;
+        }
+        end--;
+    }
+    const head = parts.slice(0, end);
+    if (end === parts.length || head.length > 1 || head[0]?.kind === "tag") {
+        return { body: text, pastes: [] };
+    }
+    const body = head.length === 0 ? "" : (head[0] as { text: string }).text.replace(/\s+$/, "");
+    return { body, pastes: parts.slice(end).map((p) => (p as { body: string }).body) };
+}
+
 /** The chat box after a take-back: the messages first, one per line, then what the box held, as Claude Code's box puts
- *  them back ahead of your draft. */
+ *  them back ahead of your draft. The pastes the messages carried come back as chips, ahead of the box's own. */
 export function mergeTaken(texts: string[], box: string): string {
-    const taken = texts.join("\n");
-    return box === "" ? taken : `${taken}\n${box}`;
+    const taken = texts.map(asDraft);
+    const held = splitPastes(box);
+    const body = [...taken.map((t) => t.body), held.body].filter((b) => b !== "").join("\n");
+    return joinPastes(body, [...taken.flatMap((t) => t.pastes), ...held.pastes]);
+}
+
+/** Where the caret goes after a take-back: after the messages' typed text, which mergeTaken puts first. */
+export function takenCaret(texts: string[]): number {
+    return texts
+        .map((t) => asDraft(t).body)
+        .filter((b) => b !== "")
+        .join("\n").length;
 }
 
 /** how long after a take-back the record it took may still reach Chat: Claude Code wrote it before the Esc, and Chat
@@ -192,7 +238,7 @@ function matchTrailing(
         if (e.uuid == null || skip.has(e.uuid)) {
             continue;
         }
-        const i = left.indexOf(stripResultLines(e.text));
+        const i = left.indexOf(sentText(e.text));
         if (i >= 0) {
             uuids.push(e.uuid);
             left.splice(i, 1);
