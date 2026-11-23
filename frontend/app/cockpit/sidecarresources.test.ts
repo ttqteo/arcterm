@@ -2,7 +2,15 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it } from "vitest";
-import { endNote, otherKey, pushHistory, resourcesFor, resourcesLost, resourcesOf } from "./sidecarresources";
+import {
+    endNote,
+    otherKey,
+    pushHistory,
+    readFailure,
+    resourcesFor,
+    resourcesLost,
+    resourcesOf,
+} from "./sidecarresources";
 
 const MB = 1024 * 1024;
 
@@ -28,6 +36,25 @@ function snap(over: Partial<ResMonSnapshotData> = {}): ResMonSnapshotData {
         ...over,
     };
 }
+
+describe("readFailure and a failed read", () => {
+    it("words a timeout and keeps any other error as it is", () => {
+        expect(readFailure(new Error("EC-TIME: timeout waiting for response"))).toBe(
+            "the Resource Manager did not answer in time"
+        );
+        expect(readFailure("no route")).toBe("no route");
+    });
+    it("says why there is no reading yet, and drops the reason once one is in", () => {
+        expect(resourcesOf(null, [], [], new Map(), "x")).toEqual({
+            state: "measuring",
+            rows: [],
+            others: [],
+            history: [],
+            failed: "x",
+        });
+        expect(resourcesOf(snap(), [], [], new Map(), "x")).not.toHaveProperty("failed");
+    });
+});
 
 describe("resourcesOf", () => {
     it("reads measuring before a snapshot and unsupported off Windows", () => {

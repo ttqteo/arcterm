@@ -80,6 +80,8 @@ and a picture given to a line that is not big.
 
 ### Fixed
 
+- A long code block in Chat no longer hides its lines under its header when the pinned prompt above it goes away: the header moves up as the pinned prompt leaves.
+- Sidecar's Resources no longer sits on "Measuring…" when the machine is too busy to answer in time: it says it can't read and keeps trying, and its reads no longer pile up behind a slow one.
 - Chat's tool rows are easier to read and to close. Hovering a command's line shows its description, not a tooltip
   holding the whole script; an opened row's header stays at the top of Chat while its output scrolls past, its command
   scrolls inside a box of its own, and a Collapse button at its foot folds it and brings you back to the row.

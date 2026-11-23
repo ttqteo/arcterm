@@ -158,6 +158,7 @@ export interface SidecarResources {
     memTotal?: number; // bytes, for the RAM chart's figure
     swapTotal?: number; // bytes: the swap files' size now (macOS grows them as it needs); the charts show only the swap in use
     ask?: number; // the page's open act these answer (`resourcesFor`): a snapshot sent before a close carries the last one's
+    failed?: string; // why no reading has come: the last read failed (a timeout under load), and the bridge keeps trying
 }
 
 export type SidecarAct =

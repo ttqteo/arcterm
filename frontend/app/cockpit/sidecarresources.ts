@@ -117,10 +117,11 @@ export function resourcesOf(
     snap: ResMonSnapshotData | null,
     sidecarPids: readonly number[],
     history: SidecarResourcePoint[] = [],
-    notes: ReadonlyMap<string, string> = new Map()
+    notes: ReadonlyMap<string, string> = new Map(),
+    failed: string | null = null
 ): SidecarResources {
     if (snap == null) {
-        return { state: "measuring", rows: [], others: [], history };
+        return { state: "measuring", rows: [], others: [], history, ...(failed != null ? { failed } : {}) };
     }
     if (!snap.supported) {
         return { state: "unsupported", rows: [], others: [], history: [] };
@@ -184,6 +185,13 @@ export function resourcesOf(
             ? { swapTotal: roundMem(snap.machine.swaptotal) }
             : {}),
     };
+}
+
+/** Why a resources read failed, as the panel says it: a timeout (the backend busy, often with the machine at 100% CPU)
+ *  in words, anything else as the error said it. */
+export function readFailure(e: unknown): string {
+    const msg = e instanceof Error ? e.message : String(e);
+    return /timeout/i.test(msg) ? "the Resource Manager did not answer in time" : msg;
 }
 
 /**

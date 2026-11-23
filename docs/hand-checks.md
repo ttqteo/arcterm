@@ -49,6 +49,14 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
 - [ ] (arcterm) **A Chat visual's scrollbar** (`bridgeScript` in `pkg/htmlserve/htmlserve.go`). A visual taller than
   640 px that scrolls inside its frame: no scrollbar until the pointer is over it, then a thin thumb as the app's own.
   Needs the rebuilt wavesrv.
+- [ ] (arcterm) **A code block's sticky head when the pinned prompt leaves** (`useIsPresent` in
+  `pinnedpromptbar.tsx`). In Chat, scroll a long code block under a pinned prompt so its head sticks, then scroll so
+  the pinned prompt goes (to the end, or back to its bubble) → the head moves to the top at once, no gap above it
+  with lines showing, no line hidden under it.
+- [ ] (arcterm) **Sidecar's Resources under load** (`pollResources` in `sidecarbridge.tsx`). With the machine near
+  100% CPU, open Sidecar's wall: the arcterm column reads `Can't read: the Resource Manager did not answer in time.
+  Retrying…` in amber while reads time out, and its rows and charts fill once one answers; the last reading stays
+  drawn through a later timeout.
 
 - [ ] (arcterm) **Brainstorm tab: board thumbnails and the rail's dots** (`BoardChip` in `railbrainstormpane.tsx`,
   `RailTabStrip` in `agentrailpanel.tsx`, `RailStripTab.dot` in `collapsiblerail.tsx`). On an agent with a brainstorm
