@@ -12800,6 +12800,108 @@ const codeDiff = {
     },
 };
 
+// --- code: a TypeScript file with no TypeScript worker ----------------------------------------------
+// The bundle ships no Monaco ts.worker (vite.config.ts noTypeScriptWorker; monaco-env.ts turns the TypeScript
+// language service off). A .ts file still opens in Code, colored by its grammar, and nothing asks for the worker;
+// the Hack face, now woff2, still loads.
+const CODE_TS_PROJECT = "verify-code-ts";
+const CODE_TS_FILE = "sample.ts";
+const codeTsPlain = {
+    name: "code-ts-plain",
+    surface: "code",
+    async arrange(h) {
+        const dir = mkdtempSync(join(tmpdir(), "verify-code-ts-"));
+        const ctx = { dir };
+        try {
+            git(dir, "init", "-q", "--initial-branch=main");
+            writeFileSync(join(dir, CODE_TS_FILE), "export const a = 1;\n");
+            git(dir, "add", ".");
+            git(dir, "commit", "-q", "-m", "seed");
+            writeFileSync(
+                join(dir, CODE_TS_FILE),
+                'interface Point { x: number; y: number }\nexport function len(p: Point): number {\n    return Math.hypot(p.x, p.y); // "hypot"\n}\n'
+            );
+            await h.rpc("createproject", { name: CODE_TS_PROJECT, path: dir });
+            ctx.project = CODE_TS_PROJECT;
+            await waitForProjectInConfig(h, CODE_TS_PROJECT);
+        } catch (e) {
+            ctx.arrangeError = String(e?.message ?? e);
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        if (ctx.arrangeError != null) {
+            return [{ step: "0. the repo and the project", ok: false, detail: ctx.arrangeError }];
+        }
+        const steps = [];
+        await h.ev(`(() => {
+            window.__codeTsErrors = [];
+            const keep = (m) => window.__codeTsErrors.push(String(m));
+            window.addEventListener("error", (e) => keep(e.message));
+            window.addEventListener("unhandledrejection", (e) => keep(e.reason?.message ?? e.reason));
+            return true;
+        })()`);
+        await h.goto("code");
+        const picked = await h.ev(`(async () => {
+            const chip = document.querySelector('[data-code-project-picker]');
+            if (!chip) return 'no picker';
+            chip.click();
+            const sel = '[data-code-picker-row=${JSON.stringify(CODE_TS_PROJECT)}]';
+            for (let i = 0; i < 40 && !document.querySelector(sel); i++) await new Promise((r) => setTimeout(r, 250));
+            document.querySelector(sel)?.click();
+            const shown = () => (document.querySelector('[data-code-project-picker]')?.textContent || '').trim();
+            for (let i = 0; i < 40 && shown() !== ${JSON.stringify(CODE_TS_PROJECT)}; i++) await new Promise((r) => setTimeout(r, 250));
+            for (let i = 0; i < 40 && !document.querySelector('[data-code-column-tab]'); i++) await new Promise((r) => setTimeout(r, 250));
+            return shown();
+        })()`);
+        await h.ev(`(() => { document.querySelector('[data-code-column-tab="changed"]')?.click(); return true; })()`);
+        const row = `document.querySelector('[data-code-changed-row=${JSON.stringify(CODE_TS_FILE)}]')`;
+        await polishWaitFor(h, `!!${row}`, 10000);
+        await h.ev(`(() => { ${row}?.click(); return true; })()`);
+        const mounted = await polishWaitFor(h, `!!document.querySelector('.monaco-editor .view-line')`, 15000);
+        // a few seconds for anything that would ask the language service (hover, diagnostics) to try
+        await new Promise((r) => setTimeout(r, 2500));
+        const seen = await lookEval(
+            h,
+            `
+            const wrapper = await lookResolve("app/monaco/monaco-react.tsx");
+            if (wrapper == null) return { error: "monaco-react.tsx is not in the import graph" };
+            const source = await (await fetch(wrapper)).text();
+            const dep = source.match(/from\\s*["']([^"']*monaco-editor[^"']*)["']/)?.[1];
+            if (dep == null) return { error: "monaco-react.tsx imports no monaco-editor url" };
+            const monaco = await import(new URL(dep, wrapper).href);
+            const languages = monaco.editor.getEditors().map((e) => e.getModel()?.getLanguageId() ?? null);
+            const mode = monaco.typescript.typescriptDefaults.modeConfiguration;
+            const tokens = new Set([...document.querySelectorAll('.monaco-editor .view-line span[class*="mtk"]')].map((s) => s.className));
+            return {
+                languages,
+                anyProviderOn: Object.values(mode).some(Boolean),
+                tokenClasses: tokens.size,
+                errors: window.__codeTsErrors,
+            };
+        `
+        ).catch((e) => ({ error: String(e?.message ?? e) }));
+        steps.push({
+            step: "a .ts file opens in Monaco as typescript, colored by its grammar",
+            ok: picked === CODE_TS_PROJECT && mounted === true && seen?.languages?.includes("typescript") && seen.tokenClasses >= 3,
+            detail: seen?.error ?? `picked=${picked} mounted=${mounted} ${JSON.stringify(seen)}`,
+        });
+        steps.push({
+            step: "the TypeScript language service is off and nothing asked for its worker",
+            ok: seen?.error == null && seen.anyProviderOn === false && seen.errors.every((m) => !/worker/i.test(m)),
+            detail: seen?.error ?? `errors=${JSON.stringify(seen?.errors)}`,
+        });
+        const hack = await h.ev(`(async () => {
+            const f = new FontFace("HackProbe", "url('fonts/hacknerdmono-regular.woff2')");
+            try { await f.load(); return f.status; } catch (e) { return "error: " + (e?.message ?? e); }
+        })()`);
+        steps.push({ step: "the Hack face loads from its woff2", ok: hack === "loaded", detail: String(hack) });
+        await h.shot("cdp-shots/code-ts-plain.png");
+        return steps;
+    },
+    teardown: (h, ctx) => codeDiff.teardown(h, ctx),
+};
+
 // the Code picker row of one registered project, by name
 const chooseProjectNamed = (h, name) =>
     h.ev(`(() => {
@@ -75135,6 +75237,7 @@ export const SCENARIOS = [
     codeGitStatus,
     codePlainDir,
     codeDiff,
+    codeTsPlain,
     codeBlame,
     codeMarkdown,
     codeTexPdf,

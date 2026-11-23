@@ -73,3 +73,10 @@ debug = "line-tables-only"
 
 [profile.dev.package."*"]
 debug = false
+
+# the installed exe: link-time optimization across all crates, in one codegen unit, takes the code section
+# from ~11 MB down; a release build takes a few minutes longer for it
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true

@@ -38,22 +38,22 @@ function loadHackNerdFont() {
         return;
     }
     isHackFontLoaded = true;
-    const hackRegular = new FontFace("Hack", "url('fonts/hacknerdmono-regular.ttf')", {
+    const hackRegular = new FontFace("Hack", "url('fonts/hacknerdmono-regular.woff2')", {
         style: "normal",
         weight: "400",
         unicodeRange: HACK_RANGE,
     });
-    const hackBold = new FontFace("Hack", "url('fonts/hacknerdmono-bold.ttf')", {
+    const hackBold = new FontFace("Hack", "url('fonts/hacknerdmono-bold.woff2')", {
         style: "normal",
         weight: "700",
         unicodeRange: HACK_RANGE,
     });
-    const hackItalic = new FontFace("Hack", "url('fonts/hacknerdmono-italic.ttf')", {
+    const hackItalic = new FontFace("Hack", "url('fonts/hacknerdmono-italic.woff2')", {
         style: "italic",
         weight: "400",
         unicodeRange: HACK_RANGE,
     });
-    const hackBoldItalic = new FontFace("Hack", "url('fonts/hacknerdmono-bolditalic.ttf')", {
+    const hackBoldItalic = new FontFace("Hack", "url('fonts/hacknerdmono-bolditalic.woff2')", {
         style: "italic",
         weight: "700",
         unicodeRange: HACK_RANGE,
