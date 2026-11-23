@@ -153,6 +153,18 @@ describe("unwrapWholePaste", () => {
             expect(unwrapWholePaste(msg)).toBe(msg);
         }
     });
+
+    it("turns the paste tags Claude Code escaped inside the wrap back, so Chat's paste folds as a card", () => {
+        // as a queued Chat message with a folded paste reached the transcript (2026-11-23)
+        const sent =
+            '<pasted_content id="f994">\ntest\n\n<\\pasted_content from="chat">\nline one\nline two\n<\\/pasted_content>\n</pasted_content id="f994">';
+        const body = unwrapWholePaste(sent);
+        expect(body).toBe('test\n\n<pasted_content from="chat">\nline one\nline two\n</pasted_content>');
+        expect(splitTagged(body)).toEqual([
+            { kind: "text", text: "test\n" },
+            tag("pasted_content", "line one\nline two", { from: "chat" }),
+        ]);
+    });
 });
 
 describe("tagLabel", () => {

@@ -132,6 +132,15 @@ describe("userTextCount", () => {
         expect(userTextCount(entries, "bash mode không đẹp lắm")).toBe(0);
     });
 
+    it("counts a wrapped message whose folded paste Claude Code escaped, so its Queued bubble goes", () => {
+        const sent = 'test\n\n<pasted_content from="chat">\nline one\nline two\n</pasted_content>';
+        const escaped = sent
+            .replace("<pasted_content", "<\\pasted_content")
+            .replace("</pasted_content", "<\\/pasted_content");
+        const entries = [user(`<pasted_content id="f994">\n${escaped}\n</pasted_content id="f994">`)];
+        expect(userTextCount(entries, sent)).toBe(1);
+    });
+
     it("counts a message that carries initiative result lines as the person's own text (result line)", () => {
         const lines = ["initiative: added note to Auth (effort:ab12) › 2", "initiative: dismissed chunk for Auth"];
         const sent = withResultLines(lines, "now the tests");

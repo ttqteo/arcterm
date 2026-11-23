@@ -39,6 +39,12 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
   same at the cursor's folder; Esc or a click away cancels; a name that exists shows "Something with that name is
   already here." The Code tree's New File and Rename still work (their name row moved to `code/nameinput.tsx`).
 
+- [ ] (arcterm) **A folded paste sent while the agent works reads as a Pasted card** (`unwrapWholePaste`,
+  `chattagblocks.ts`). Unit tests only. While a Claude agent is working, type a line in Chat, paste 10+ lines (it folds
+  into a chip) and send: once the transcript holds it, your bubble shows the line and a "Pasted · N lines" card, with
+  no `<\pasted_content from="chat">` text, and the Queued bubble under the conversation goes away (also after
+  switching surface and back).
+
 - [ ] (arcterm) **Sidecar's Resources panel opened right after the column closes starts on Measuring, not the
   column's history** (`sidecar.tsx` `useResourcesPanel`, `resourcesFor`). Unit tests and the typecheck only. With
   Sidecar wide (P) and its Resources column filled for a minute, narrow it to Q and at once click the title bar's

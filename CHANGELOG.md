@@ -64,6 +64,8 @@ and a picture given to a line that is not big.
 
 - Sidecar's Resources panel opened just after its column closed no longer flashes the column's charts for half a
   second before measuring.
+- A paste you folded into a chip, sent while the agent was working, shows as a "Pasted" card in your message instead
+  of raw text with `<\pasted_content>` tags, and its "Queued" bubble no longer stays stuck under the conversation.
 
 ## 1.9.0 — 2026-11-22
 
