@@ -126,13 +126,22 @@ export async function refreshSubagents(id: string, transcriptPath: string | unde
     try {
         const [subs, tr] = await Promise.all([
             RpcApi.GetSubagentsCommand(TabRpcClient, { path: transcriptPath }),
-            RpcApi.GetAgentTranscriptCommand(TabRpcClient, { path: transcriptPath, maxlines: PARENT_TAIL_LINES }),
+            // tasksdir: where a running Monitor writes its output, which its start result does not say
+            RpcApi.GetAgentTranscriptCommand(TabRpcClient, {
+                path: transcriptPath,
+                maxlines: PARENT_TAIL_LINES,
+                tasksdir: true,
+            }),
         ]);
         if (loadSeq.get(id) !== seq) {
             return;
         }
         // now on every read, so a Monitor past its timeout reads stopped at the next poll
-        setIn(backgroundTasksByIdAtom, id, extractBackgroundTasks(tr.lines ?? [], { now: Date.now() }));
+        setIn(
+            backgroundTasksByIdAtom,
+            id,
+            extractBackgroundTasks(tr.lines ?? [], { now: Date.now(), tasksDir: tr.tasksdir })
+        );
         setIn(compactionsByIdAtom, id, extractCompactions(tr.lines ?? []));
         const files = subs.subagents ?? [];
         if (files.length === 0) {

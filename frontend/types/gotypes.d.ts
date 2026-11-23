@@ -1767,6 +1767,7 @@ declare global {
         fromstart?: boolean;
         before?: number;
         frombyte?: number;
+        tasksdir?: boolean;
     };
 
     // wshrpc.CommandGetAgentTranscriptRtnData
@@ -1777,6 +1778,7 @@ declare global {
         end: number;
         partial?: boolean;
         reset?: boolean;
+        tasksdir?: string;
     };
 
     // wshrpc.CommandGetAttentionRtnData

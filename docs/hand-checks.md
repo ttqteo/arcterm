@@ -77,6 +77,12 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
   no `<\pasted_content from="chat">` text, and the Queued bubble under the conversation goes away (also after
   switching surface and back).
 
+- [ ] (arcterm) **A running Monitor's Output tab shows its output** (`transcriptprojection.ts`
+  `extractBackgroundTasks` tasksDir, `agentsessions.ClaudeTasksDir`). Unit tests, the typecheck and the folder lookup
+  against a real session only. Have a Claude agent arm a Monitor that prints a line every few seconds (`while true; do
+  date; sleep 3; done`), open its row in the Agent tree and pick Output: lines appear while it watches, not "No output
+  yet" until it ends. (A `CLAUDE_CODE_TMPDIR` set for one claude launch but not for arcterm is not followed: wavesrv
+  reads its own environment.)
 - [ ] (arcterm) **Sidecar's Resources panel opened right after the column closes starts on Measuring, not the
   column's history** (`sidecar.tsx` `useResourcesPanel`, `resourcesFor`). Unit tests and the typecheck only. With
   Sidecar wide (P) and its Resources column filled for a minute, narrow it to Q and at once click the title bar's

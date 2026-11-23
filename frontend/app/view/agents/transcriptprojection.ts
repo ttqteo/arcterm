@@ -1039,8 +1039,15 @@ function monitorEventOf(text: string): { id: string; body: string } | undefined 
  *  A Monitor also carries its timeout and what it reported: its events are its status-less notifications, each
  *  written as an enqueue and then as a user record or a queued_command attachment, so a copy counts only when no
  *  enqueue of the same body is waiting for it. A Monitor past its timeout writes no record, so with `now` a
- *  running one that is past its expiry reads stopped at the expiry; without it the clock is not consulted. */
-export function extractBackgroundTasks(lines: string[], opts: { now?: number } = {}): BackgroundTask[] {
+ *  running one that is past its expiry reads stopped at the expiry; without it the clock is not consulted.
+ *
+ *  A Monitor's start result names no output file, and only its end notification does, so with `tasksDir` (the
+ *  session's Claude Code tasks folder, GetAgentTranscriptCommand's TasksDir) a Monitor with a task id and no file yet
+ *  reads `<tasksDir>/<task id>.output`, where Claude Code writes it while it runs. */
+export function extractBackgroundTasks(
+    lines: string[],
+    opts: { now?: number; tasksDir?: string } = {}
+): BackgroundTask[] {
     const calls = new Map<string, { label: string; command?: string; ts: number; monitor: boolean }>();
     const tasks = new Map<string, BackgroundTask>();
     const byTaskId = new Map<string, BackgroundTask>();
@@ -1170,6 +1177,16 @@ export function extractBackgroundTasks(lines: string[], opts: { now?: number } =
                         t.outputFile = outputFile;
                     }
                 }
+            }
+        }
+    }
+    if (opts.tasksDir) {
+        // the folder's own separator, so the path reads like the ones Claude Code prints
+        const sep = opts.tasksDir.includes("\\") ? "\\" : "/";
+        const dir = opts.tasksDir.replace(/[\\/]+$/, "");
+        for (const t of tasks.values()) {
+            if (t.monitor && t.taskId && t.outputFile == null) {
+                t.outputFile = `${dir}${sep}${t.taskId}.output`;
             }
         }
     }

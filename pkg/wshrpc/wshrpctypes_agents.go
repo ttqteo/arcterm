@@ -168,6 +168,9 @@ type CommandGetAgentTranscriptData struct {
 	// lines in them, so an append never re-reads the file. MaxLines is ignored; Start and Total come back 0.
 	// Setting more than one of Before, FromByte and FromStart is an error, as is a negative Before or FromByte.
 	FromByte int64 `json:"frombyte,omitempty"`
+	// TasksDir asks for the folder Claude Code writes the session's background task and Monitor output to, in the
+	// answer's TasksDir; it costs a stat or two, so only the background-task read sets it
+	TasksDir bool `json:"tasksdir,omitempty"`
 }
 
 // CommandGetSessionPeekData asks for the last Count messages of a Claude transcript (a .jsonl path). Count outside
@@ -214,6 +217,9 @@ type CommandGetAgentTranscriptRtnData struct {
 	// Reset says the file is now shorter than FromByte (replaced or truncated): no lines are returned and the caller
 	// reads the tail again.
 	Reset bool `json:"reset,omitempty"`
+	// TasksDir, when asked for: the session's Claude Code tasks folder (agentsessions.ClaudeTasksDir), where a task
+	// <id> writes <id>.output; empty when there is none
+	TasksDir string `json:"tasksdir,omitempty"`
 }
 
 type CommandGetSubagentsData struct {

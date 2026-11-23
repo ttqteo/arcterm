@@ -75,6 +75,7 @@ and a picture given to a line that is not big.
   titles the session, and the header fades the title's words in when it arrives.
 - Updating arcterm removes the `wsh` copies earlier versions left in its install folder, which had grown by 14 MB per
   release (about 260 MB by 1.13.0).
+- A running Monitor's Output tab shows what it has printed so far, instead of "No output yet" until it ends.
 - Sidecar's Resources panel opened just after its column closed no longer flashes the column's charts for half a
   second before measuring.
 - A paste you folded into a chip, sent while the agent was working, shows as a "Pasted" card in your message instead

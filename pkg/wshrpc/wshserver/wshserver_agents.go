@@ -42,6 +42,9 @@ func (ws *WshServer) GetAgentTranscriptCommand(ctx context.Context, data wshrpc.
 	if err != nil {
 		return nil, fmt.Errorf("reading agent transcript: %w", err)
 	}
+	if data.TasksDir {
+		rtn.TasksDir = agentsessions.ClaudeTasksDir(data.Path, agentsessions.ClaudeTempRoot())
+	}
 	return rtn, nil
 }
 
