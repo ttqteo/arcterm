@@ -565,15 +565,6 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
   up (started in the foreground, so it detaches), open the footer's Servers: the :4310 row is not an arcterm agent's
   (no owner, or a SIEM-portal agent's); in Agent, the SIEM-portal folder row shows :4310 beside :8100's agent row.
   `fix/servers-owner`.
-- [ ] (arcterm) **Sidecar HUD skin: Sidecar's renderer plus the GPU process on a release build, before the HUD and with
-  it.** The scenarios only read a dev app's idle cost (the `sidecar-orbit` step "HUD idle cost"), never a release
-  build's memory. Build the last commit before the HUD (`task tauri:build FROM=9b2297587`, the spec and plan commit)
-  and the one with it, install each in turn, open P with 12 agents, and read Sidecar's WebView2 renderer plus the GPU process it adds
-  (Task Manager → Details, the `msedgewebview2.exe` rows under Sidecar's window) after an hour on screen, each build.
-  Write both figures into the "Sidecar HUD skin" row of `docs/open-issues.md` "RAM watch", against the "Sidecar, part
-  3" row's: the HUD should add the stacked strokes and a few hundred static SVG nodes, not a visible step in either
-  process. Also watch the GPU process's CPU while P idles: the ping is the only thing that should keep it awake.
-  Commit: test(sidecar) HUD scenario steps, RAM watch row and changelog line
 - [ ] (arcterm) **A close chip in Chat's box.** Have a Claude agent commit something and read its reply: the header's ✓
   Close shows, and the chips over the box end in "đóng agent" (or "close agent" when you write English) with a circled
   check, beside "push đi" and the model's step, even when the row is full. A click (or Tab to it, then Enter) asks to
