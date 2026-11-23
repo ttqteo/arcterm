@@ -1691,6 +1691,27 @@ func TestListFilesIncludesTrackedAndUntrackedButNotIgnored(t *testing.T) {
 	}
 }
 
+// Past the cap, an untracked dump sorting early must not push the tracked files out: tracked first, then the shallowest
+// untracked, and the kept paths come back sorted.
+func TestCapListingKeepsTrackedThenShallowUntracked(t *testing.T) {
+	entries := []string{
+		"? a-dump/run/1.json", "? a-dump/run/2.json", "? a-dump/run/3.json",
+		"H z/PREREG.md", "H b.go", "? notes.md", "H z/deep/c.go",
+	}
+	paths, truncated := capListing(entries, 5)
+	if !truncated {
+		t.Fatalf("truncated = false, want true")
+	}
+	want := []string{"a-dump/run/1.json", "b.go", "notes.md", "z/PREREG.md", "z/deep/c.go"}
+	if strings.Join(paths, "|") != strings.Join(want, "|") {
+		t.Fatalf("paths = %v, want %v", paths, want)
+	}
+	all, cut := capListing(entries, 100)
+	if cut || len(all) != len(entries) || all[0] != "a-dump/run/1.json" {
+		t.Fatalf("under the cap: paths = %v truncated = %v, want every path sorted", all, cut)
+	}
+}
+
 // A directory ignored as a whole comes back as one entry, not walked; an ignored file inside a tracked
 // directory is its own entry. Opening the directory lists one level of it.
 func TestListFilesIgnoredDirectoryIsOneEntryListedOnDemand(t *testing.T) {

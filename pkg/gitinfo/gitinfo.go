@@ -1992,8 +1992,9 @@ func ListFiles(ctx context.Context, cwd string) (*FileList, error) {
 	go func() {
 		defer wg.Done()
 		t := time.Now()
-		// -z: NUL-separated, so a path containing a space or non-ASCII byte survives unquoted.
-		out, err = run(ctx, cwd, "ls-files", "--cached", "--others", "--exclude-standard", "-z")
+		// -z: NUL-separated, so a path containing a space or non-ASCII byte survives unquoted. -t tags each path ("H "
+		// tracked, "? " untracked), which capListing reads to keep the tracked ones when the cap cuts.
+		out, err = run(ctx, cwd, "ls-files", "--cached", "--others", "--exclude-standard", "-t", "-z")
 		outDur = time.Since(t)
 	}()
 	go func() {
@@ -2026,15 +2027,7 @@ func ListFiles(ctx context.Context, cwd string) (*FileList, error) {
 		}
 		return nil, err
 	}
-	paths := splitNul(out)
-	// --cached and --others cannot overlap (others is untracked-only) but the concatenation is
-	// not globally ordered, so sort for a stable tree.
-	sort.Strings(paths)
-	truncated := false
-	if len(paths) > maxListFiles {
-		paths = paths[:maxListFiles]
-		truncated = true
-	}
+	paths, truncated := capListing(splitNul(out), maxListFiles)
 	// The tree is still usable without the ignored entries, so a failure there leaves them out rather than failing the
 	// listing.
 	ignored := []string{}
@@ -2046,6 +2039,48 @@ func ListFiles(ctx context.Context, cwd string) (*FileList, error) {
 		}
 	}
 	return &FileList{Paths: paths, Ignored: ignored, IsRepo: true, Truncated: truncated}, nil
+}
+
+// capListing turns `ls-files -t` entries ("H path", "? path") into sorted paths, at most max. Past the cap it keeps the
+// tracked files first, then the untracked ones, each shallowest first: an agent's output dump of ten thousand
+// untracked files (results/run-42/…) must not push the repository's own files out of the tree and the filter, which a
+// plain alphabetical cut did to every path sorting after the dump.
+func capListing(entries []string, max int) ([]string, bool) {
+	type entry struct {
+		path      string
+		untracked bool
+		depth     int
+	}
+	all := make([]entry, 0, len(entries))
+	for _, e := range entries {
+		if len(e) < 3 || e[1] != ' ' {
+			continue // not a tagged entry
+		}
+		p := e[2:]
+		all = append(all, entry{path: p, untracked: e[0] == '?', depth: strings.Count(p, "/")})
+	}
+	truncated := len(all) > max
+	if truncated {
+		sort.Slice(all, func(i, j int) bool {
+			a, b := all[i], all[j]
+			if a.untracked != b.untracked {
+				return !a.untracked
+			}
+			if a.depth != b.depth {
+				return a.depth < b.depth
+			}
+			return a.path < b.path
+		})
+		all = all[:max]
+	}
+	paths := make([]string, len(all))
+	for i, e := range all {
+		paths[i] = e.path
+	}
+	// --cached and --others cannot overlap (others is untracked-only) but the concatenation is not globally ordered,
+	// so sort for a stable tree.
+	sort.Strings(paths)
+	return paths, truncated
 }
 
 func splitNul(out string) []string {

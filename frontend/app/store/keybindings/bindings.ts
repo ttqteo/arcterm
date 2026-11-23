@@ -2183,6 +2183,10 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
             label: "Open the transcript",
             when: fullscreenChordActive,
             run: () => {
+                // in the panel's Files tab the key is the tab's own: Code's Search on its folder (railtreepane.tsx)
+                if (globalThis.document?.activeElement?.closest?.("[data-rail-tree]") != null) {
+                    return false;
+                }
                 const agent = globalStore.get(model.agentsAtom).find((a) => a.id === focusId());
                 // showing Chat, the conversation is on screen already and the rail has no Transcript tab
                 if (!agent?.transcriptPath || agent.sleeping || getChatMode(agent) === "chat") {

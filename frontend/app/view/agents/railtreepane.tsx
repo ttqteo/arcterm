@@ -18,12 +18,13 @@ import { ContextMenuModel } from "@/app/store/contextmenu";
 import { globalStore } from "@/app/store/jotaiStore";
 import { provisionalIndex } from "@/app/view/code/codemutate";
 import { pinsFor } from "@/app/view/code/codepins";
-import { codePinsAtom, toggleCodePinIn } from "@/app/view/code/codestore";
+import { codePinsAtom, searchInCode, toggleCodePinIn } from "@/app/view/code/codestore";
 import { visibleRows, type TreeRow } from "@/app/view/code/codetree";
 import { treeKeyAction, type TreeKey } from "@/app/view/code/codetreekeys";
 import { NameInput } from "@/app/view/code/nameinput";
 import { pathMenuItems } from "@/app/view/code/pathmenu";
 import { revealInList } from "@/app/view/code/treescroll";
+import { formatChordString } from "@/util/keysym";
 import { joinRepoPath, repoBasename } from "@/util/paths";
 import { cn, fireAndForget } from "@/util/util";
 import { useAtomValue } from "jotai";
@@ -148,10 +149,8 @@ export function RailTreePane({
         () => (filtering ? filterRows(listing?.files ?? [], query) : null),
         [filtering, listing?.files, query]
     );
-    const rows = useMemo(
-        () => filtered?.rows ?? visibleRows(tree, new Set(state.expanded)),
-        [filtered, tree, state.expanded]
-    );
+    const treeRows = useMemo(() => visibleRows(tree, new Set(state.expanded)), [tree, state.expanded]);
+    const rows = filtered?.rows ?? treeRows;
 
     // an ignored directory git reported as one entry shows its contents once listed: this covers every way a directory
     // opens, and an opened one that a listing nested further
@@ -485,7 +484,8 @@ export function RailTreePane({
         ) : null;
 
     const status = listing?.status ?? "loading"; // before the first load has started, it is about to
-    const firstLoad = status === "loading" && rows.length === 0;
+    // the tree's own rows, not the filter's: a filter nothing matches during a reload is not a first load
+    const firstLoad = status === "loading" && treeRows.length === 0;
     let body: React.ReactNode;
     if (status === "error") {
         body = (
@@ -557,10 +557,18 @@ export function RailTreePane({
                     {rows.length === 0 && creating == null ? (
                         <div data-rail-filter-empty className="px-3 py-2 text-[11.5px] text-muted">
                             {filtering
-                                ? isPathQuery(query)
-                                    ? `No file path has “${query.trim()}”`
-                                    : `No file name has “${query.trim()}”`
+                                ? (isPathQuery(query)
+                                      ? `No file path has “${query.trim()}”`
+                                      : `No file name has “${query.trim()}”`) +
+                                  (listing?.truncated
+                                      ? ` among the first ${listing.files.length.toLocaleString("en-US")} files`
+                                      : "")
                                 : "No files"}
+                            {filtering ? (
+                                <div data-rail-filter-content-hint className="mt-1 text-ink-faint">
+                                    {formatChordString("Mod:Shift:f")} searches inside the files
+                                </div>
+                            ) : null}
                         </div>
                     ) : null}
                 </div>
@@ -590,7 +598,20 @@ export function RailTreePane({
     }
 
     return (
-        <div data-rail-tree data-rail-tree-state={status} className="flex min-h-0 flex-1 flex-col">
+        <div
+            data-rail-tree
+            data-rail-tree-state={status}
+            // Mod+Shift+F from the filter or the tree: Code's Search on this folder with the filter's text, for the
+            // files' contents (agent:transcript lets the key through while focus is in here)
+            onKeyDown={(ev) => {
+                if ((ev.ctrlKey || ev.metaKey) && ev.shiftKey && !ev.altKey && ev.key.toLowerCase() === "f") {
+                    ev.preventDefault();
+                    ev.stopPropagation();
+                    searchInCode(model, cwd, query.trim());
+                }
+            }}
+            className="flex min-h-0 flex-1 flex-col"
+        >
             <div className="flex h-10 shrink-0 items-center gap-1.5 border-b border-border px-2.5">
                 <span title={cwd} className="min-w-0 flex-1 truncate text-[11.5px] font-medium text-ink-hi">
                     {repoBasename(cwd)}

@@ -32,6 +32,14 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
   asked, the ask comes back as a refusal whose reason tells the agent to ask you first.
 ## 2026-11-23
 
+- [ ] (arcterm) **Files tab: big repo listing, filter during reload, Ctrl+Shift+F to Code's Search**
+  (`capListing` in `pkg/gitinfo/gitinfo.go`, `railtreepane.tsx`, `searchInCode` in `code/codestore.ts`). Go, vitest
+  and the typecheck only; not run in the app. In mit-thesis (24k files, 11.6k untracked under
+  `deltapov/results/aamas2027_rebuttal`): the Files tab shows "Showing the first 20,000 files" and filtering `PREREG`
+  finds the two `harnesspov/results/*/PREREG.md`; while an agent turn ends (a reload) the filtered list stays instead of
+  the skeleton. With focus in the filter box or the tree, `Ctrl+Shift+F` lands on Code, on mit-thesis, Search mode, the
+  filter's text in the box and its results listed; with focus in the terminal, `Ctrl+Shift+F` still opens Transcript.
+
 - [ ] (arcterm) **The link to wavesrv survives the launch stall, and a dead one reconnects** (`pkg/web/ws.go`,
   `frontend/app/store/ws.ts`, `frontend/tauri/stallwatch.ts`). Go and vitest tests only; not run in the app. After
   installing, quit and reopen arcterm a few times: `waveapp.log` should show no `WritePump error ... i/o timeout` in the

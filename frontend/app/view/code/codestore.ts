@@ -1427,6 +1427,34 @@ export async function openInCode(
     await openPath(target.rel, { line: target.line ?? null });
 }
 
+// Ctrl+Shift+F from the Agent panel's Files tab: the Code surface's Search on that folder, holding the Files filter's
+// text, run at once when it has some. A project switch clears the search (selectProject's resetSearch, before its
+// first await), so the query is set after that synchronous part; the index load goes on meanwhile.
+export function searchInCode(model: AgentsViewModel, projectPath: string, query: string): void {
+    const project = resolveJumpProject(projectPath);
+    const cur = globalStore.get(codeProjectAtom);
+    if (cur == null || !sameRepoPath(cur.path, project.path)) {
+        fireAndForget(() => selectProject(project));
+    }
+    globalStore.set(codeSearchQueryAtom, query);
+    globalStore.set(codeSearchModeAtom, "search");
+    landOn(model.surfaceAtom, "code");
+    if (query.trim() !== "") {
+        fireAndForget(() => runSearch(project, query, globalStore.get(codeSearchOptsAtom)));
+    }
+    // a collapsed sidebar opens (as code:search does), and the pane focuses its input on mount; one already showing
+    // needs it here
+    window.requestAnimationFrame(() => {
+        const opener = document.querySelector<HTMLButtonElement>('button[aria-label^="Expand Code sidebar"]');
+        if (opener != null && !opener.classList.contains("hidden")) {
+            opener.click();
+        }
+        const input = document.querySelector<HTMLInputElement>("[data-code-search-input]");
+        input?.focus();
+        input?.select();
+    });
+}
+
 function resolveJumpProject(projectPath: string): CodeProject {
     const registry = globalStore.get(projectsAtom) ?? {};
     for (const [name, v] of Object.entries(registry)) {
