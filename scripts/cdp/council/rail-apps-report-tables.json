@@ -1,0 +1,246 @@
+{
+  "id": "fx-council-report-tables",
+  "project": "",
+  "feature": "Ghim ứng dụng trên rail",
+  "question": "Nên sửa gì ở các ứng dụng ghim trên thanh rail trước?",
+  "files": [
+    "frontend/app/view/agents/railapps.ts",
+    "frontend/app/view/agents/railappsstore.ts",
+    "pkg/services/model.go"
+  ],
+  "group": "ui-feature",
+  "lang": "vi",
+  "experts": [
+    {
+      "id": "ux",
+      "name": "UX",
+      "model": "sonnet",
+      "brief": "Bạn xem tính năng này như chuyên gia UX. Hỏi xem một người có tìm, đọc và dùng được nó mà không cần ai chỉ."
+    },
+    {
+      "id": "ram",
+      "name": "RAM",
+      "model": "sonnet",
+      "brief": "Bạn xem tính năng này về bộ nhớ. Hỏi cái gì ở lại trong bộ nhớ, bao lâu, và đã ghi vào RAM watch chưa."
+    },
+    {
+      "id": "skeptic",
+      "name": "Skeptic",
+      "model": "sonnet",
+      "brief": "Bạn là người hoài nghi. Nêu cái gì sẽ hỏng: đầu vào chưa ai thử, trạng thái hai tính năng cùng chạm, điều một chuyên gia nói mà chưa kiểm."
+    },
+    {
+      "id": "coordinator",
+      "name": "Coordinator",
+      "model": "opus",
+      "coordinator": true,
+      "brief": "Bạn là điều phối viên. Gộp các đề xuất nói cùng một ý, xếp hạng các hướng còn lại, và đánh dấu yếu những nhận định không dẫn nguồn."
+    }
+  ],
+  "sessionid": "fx-council-session",
+  "state": "done",
+  "round": 3,
+  "proposals": [
+    {
+      "id": "P1",
+      "author": "ux",
+      "title": "Chuyển ghim từ localStorage sang settings",
+      "argument": "Xoá hồ sơ WebView2 là mất ghim. railappsstore.ts giữ ghim trong localStorage, và rail chỉ cho ghim tối đa 3 ứng dụng.",
+      "evidence": [
+        {
+          "ref": "frontend/app/view/agents/railappsstore.ts:12",
+          "cite": "ok"
+        }
+      ],
+      "figures": [
+        {
+          "value": "3",
+          "measures": "số ứng dụng tối đa ghim trên rail",
+          "ref": "frontend/app/view/agents/railapps.ts:10",
+          "quote": "MAX_RAIL_APPS = 3",
+          "cite": "ok"
+        }
+      ],
+      "ts": 1792573310000
+    },
+    {
+      "id": "P2",
+      "author": "ram",
+      "title": "Đo một ứng dụng nguội trước khi giữ nó thức",
+      "argument": "Giữ một ứng dụng thức giữ cả dev server của nó. Chưa ai đo một ứng dụng vừa thức dậy tốn bao nhiêu, nên chưa nên quyết.",
+      "evidence": [
+        {
+          "ref": "pkg/services/model.go:38",
+          "cite": "ok"
+        }
+      ],
+      "figures": [
+        {
+          "value": "1,248 ms",
+          "measures": "thời gian mở lại một ứng dụng nguội",
+          "ref": "pkg/services/model.go:38",
+          "quote": "reopen cold start 1,248 ms",
+          "cite": "ok"
+        },
+        {
+          "value": "3 s",
+          "measures": "thời gian mở lại một ứng dụng, theo trí nhớ",
+          "ref": "pkg/services/model.go:99",
+          "quote": "about 3 s",
+          "cite": "wrong",
+          "citenote": "line 99 is past the end (64 lines)"
+        }
+      ],
+      "ts": 1792573395000
+    }
+  ],
+  "replies": [
+    {
+      "id": "r1",
+      "proposalid": "P1",
+      "author": "ram",
+      "stance": "accept",
+      "text": "Không tốn gì khi chạy.",
+      "round": 2,
+      "ts": 1792573440000
+    },
+    {
+      "id": "r2",
+      "proposalid": "P1",
+      "author": "skeptic",
+      "stance": "accept",
+      "text": "Ghim phải theo tôi sang máy mới.",
+      "round": 2,
+      "ts": 1792573444000
+    },
+    {
+      "id": "r3",
+      "proposalid": "P2",
+      "author": "ux",
+      "stance": "accept",
+      "text": "Được, nếu con số quyết định.",
+      "round": 2,
+      "ts": 1792573448000
+    },
+    {
+      "id": "r4",
+      "proposalid": "P2",
+      "author": "skeptic",
+      "stance": "challenge",
+      "text": "Đo trên một ứng dụng thật, đừng đoán.",
+      "round": 2,
+      "ts": 1792573452000
+    }
+  ],
+  "figures": [
+    {
+      "value": "3",
+      "measures": "số ứng dụng tối đa ghim trên rail",
+      "ref": "frontend/app/view/agents/railapps.ts:10",
+      "quote": "MAX_RAIL_APPS = 3",
+      "cite": "ok",
+      "from": [
+        "P1"
+      ]
+    },
+    {
+      "value": "1,248 ms",
+      "measures": "thời gian mở lại một ứng dụng nguội",
+      "ref": "pkg/services/model.go:38",
+      "quote": "reopen cold start 1,248 ms",
+      "cite": "ok",
+      "from": [
+        "P2"
+      ]
+    },
+    {
+      "value": "3 s",
+      "measures": "thời gian mở lại một ứng dụng, theo trí nhớ",
+      "ref": "pkg/services/model.go:99",
+      "quote": "about 3 s",
+      "cite": "wrong",
+      "citenote": "line 99 is past the end (64 lines)",
+      "from": [
+        "P2"
+      ]
+    }
+  ],
+  "summary": {
+    "text": "Chuyển ghim sang settings trước: ai cũng đồng ý và không tốn gì khi chạy. Việc giữ một ứng dụng luôn thức chờ một con số đo.",
+    "answer": "Chuyển ghim sang settings trước; chưa giữ ứng dụng nào luôn thức khi chưa có số đo.",
+    "directions": [
+      {
+        "rank": 1,
+        "title": "Chuyển ghim từ localStorage sang settings",
+        "reasoning": "Mọi chuyên gia đồng ý và nó không tốn gì khi chạy. Xoá hồ sơ không còn làm mất ghim.",
+        "from": [
+          "P1"
+        ],
+        "stances": {
+          "ram": "accept",
+          "skeptic": "accept"
+        },
+        "agreed": true,
+        "firststep": "Đọc danh sách ghim từ settings khi khởi động",
+        "task": "Chuyển danh sách ghim rail sang settings",
+        "why": "Xoá hồ sơ WebView2 hiện làm mất ghim của người dùng.",
+        "kind": "new",
+        "files": [
+          "frontend/app/view/agents/railappsstore.ts",
+          "pkg/wconfig/settingsconfig.go"
+        ]
+      },
+      {
+        "rank": 2,
+        "title": "Đo một ứng dụng nguội trước khi giữ nó thức",
+        "reasoning": "Giữ một ứng dụng thức giữ cả dev server của nó. Chưa ai đo nó tốn bao nhiêu, nên cần một con số trước khi quyết.",
+        "from": [
+          "P2"
+        ],
+        "stances": {
+          "ux": "accept",
+          "skeptic": "challenge"
+        },
+        "agreed": false
+      }
+    ],
+    "outcomes": {
+      "P1": "Direction 1",
+      "P2": "Direction 2"
+    },
+    "asks": [
+      {
+        "text": "Một ứng dụng giữ thức tốn bao nhiêu RAM sau một giờ?",
+        "to": "ram"
+      }
+    ],
+    "at": 1792573860000
+  },
+  "stats": {
+    "ux": {
+      "ms": 250000,
+      "tokens": 190000,
+      "calls": 2
+    },
+    "ram": {
+      "ms": 300000,
+      "tokens": 170000,
+      "calls": 2
+    },
+    "skeptic": {
+      "ms": 320000,
+      "tokens": 185000,
+      "calls": 2
+    },
+    "coordinator": {
+      "ms": 90000,
+      "tokens": 140000,
+      "calls": 1
+    }
+  },
+  "tokens": 685000,
+  "calls": 7,
+  "started": 1792573200000,
+  "created": 1792573170000,
+  "updated": 1792573980000
+}

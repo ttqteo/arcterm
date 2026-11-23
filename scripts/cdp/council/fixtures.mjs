@@ -33,7 +33,9 @@ export const COUNCIL_PROJECT = "council-fixture";
 // `room-attached` a running council (no live agent) whose person's post carries an image and names a project file: the
 // post's `attachments` holds a placeholder the step patches to the PNG it wrote (`ATTACHMENT_PLACEHOLDER`), and `figures`
 // a finished Review with five seats' stats, a timeline of timed steps and a nine-idea argument map: what the Report's,
-// the Map's and the figures' scenarios (figures.mjs) draw
+// the Map's and the figures' scenarios (figures.mjs) draw, and `report-tables` a finished Review in Vietnamese with the
+// to-do and figures tables' data: one direction with every task field and one with none (its row falls back), two
+// verified figures and one that failed (reporttables.mjs)
 export const COUNCIL_FIXTURES = [
     "round1",
     "round2",
@@ -45,6 +47,7 @@ export const COUNCIL_FIXTURES = [
     "room-awaiting",
     "room-attached",
     "figures",
+    "report-tables",
 ];
 export const ATTACHMENT_PLACEHOLDER = "<PNG>";
 export const COUNCIL_ID_PREFIX = "fx-council-";
@@ -57,7 +60,7 @@ const ROOT_WAIT_MS = 10_000;
 // Where each fixture sits on the clock. A running council's clock is `now - started`, so those two end at "now" and
 // their header reads 3:48 and 7:20 whenever the scenario looks (the room's 19:20); the rest are placed by when they were
 // created, so the tree (newest created first) lists round1, round2, awaiting, room-awaiting, room, failed, done, figures,
-// notrun.
+// notrun, report-tables.
 const PLACE = {
     round1: { updatedAgoMs: 0 },
     round2: { updatedAgoMs: 0 },
@@ -69,6 +72,7 @@ const PLACE = {
     "room-awaiting": { createdAgoMs: 18 * MINUTE },
     "room-attached": { updatedAgoMs: 0 },
     figures: { createdAgoMs: 45 * MINUTE },
+    "report-tables": { createdAgoMs: 90 * MINUTE },
 };
 
 /** The fixture as authored (project empty, times around 2026-10-21 09:00 UTC). */
@@ -243,10 +247,16 @@ const norm = (p) => (p || "").replace(/\\/g, "/").replace(/\/+$/, "").toLowerCas
 
 function makeRepo(dir) {
     mkdirSync(dir, { recursive: true });
-    const git = (...args) =>
-        execFileSync("git", ["-C", dir, "-c", "user.name=verify", "-c", "user.email=verify@example.invalid", ...args], {
-            stdio: "pipe",
-        });
+    // a failed git says why: execFileSync's own message names only the command
+    const git = (...args) => {
+        try {
+            return execFileSync("git", ["-C", dir, "-c", "user.name=verify", "-c", "user.email=verify@example.invalid", ...args], {
+                stdio: "pipe",
+            });
+        } catch (e) {
+            throw new Error(`git ${args[0]} in ${dir} failed (${e.status ?? e.code}): ${String(e.stderr ?? "").trim() || e.message}`);
+        }
+    };
     git("init", "-q");
     writeFileSync(join(dir, "README.md"), "# council fixture\n");
     git("add", "README.md");

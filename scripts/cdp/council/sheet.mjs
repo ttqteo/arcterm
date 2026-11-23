@@ -154,7 +154,11 @@ export const councilSheet = {
             await h.shot("cdp-shots/jarvis-council-sheet-work-on.png");
             const read = await h.ev(`(() => ({
                 heading: document.querySelector("[data-launcher] h2")?.innerText?.trim() ?? "",
-                task: document.querySelector("[data-launcher] #launcher-task")?.value ?? "",
+                // the Task box is Chat's editor (contenteditable, 2026-11-17), not a textarea: its text, blank lines as one
+                task: (() => {
+                    const el = document.querySelector("[data-launcher] #launcher-task");
+                    return el == null ? "" : (el.value ?? el.innerText).replace(/\\n{3,}/g, "\\n\\n").trim();
+                })(),
                 project: document.querySelector(${q(`[data-project-row="${COUNCIL_PROJECT}"]`)})?.getAttribute("aria-checked") ?? "",
             }))()`);
             await sleep(1000);

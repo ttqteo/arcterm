@@ -586,10 +586,12 @@ export interface OutlineEntry {
     rank: number | null;
 }
 
-/** Pure: the report's outline, in page order: the answer, What it settled (while the memory holds a result), At a glance
- *  (the figures of how the panel stands, while the summary has a direction), the directions (each one under them), the
- *  kept or also-raised ideas, the Final proposal while a message is pinned (finalProposal), and last What it spent (the
- *  figures of the tokens and the time, folded at the foot, while the council recorded any). Who agrees with which idea is the Map tab's, not a section here. Empty before a summary
+/** Pure: the report's outline, in page order: the answer, To do (the table of the ranked directions' tasks, while the
+ *  summary ranked one), Figures (the table of the figures Go verified, while there is one), What it settled (while the
+ *  memory holds a result), the directions (each one under them), the kept or also-raised ideas, the Final proposal while a
+ *  message is pinned (finalProposal), and last What it spent (the figures of the tokens and the time, folded at the foot,
+ *  while the council recorded any). At a glance is no entry any more: it is folded inside About the council, which has
+ *  none either, like What it spent. Who agrees with which idea is the Map tab's, not a section here. Empty before a summary
  *  unless a message is pinned: then the Final proposal alone, which the report shows without one. */
 export function outlineOf(c: Council): OutlineEntry[] {
     const final: OutlineEntry[] =
@@ -599,11 +601,14 @@ export function outlineOf(c: Council): OutlineEntry[] {
         return final;
     }
     const entries: OutlineEntry[] = [{ id: "answer", label: "The answer", count: null, depth: 0, rank: null }];
+    if (hasTodoRows(c)) {
+        entries.push({ id: "todo", label: "To do", count: null, depth: 0, rank: null });
+    }
+    if (hasFigureRows(c)) {
+        entries.push({ id: "figures", label: "Figures", count: null, depth: 0, rank: null });
+    }
     if (hasSettled(c)) {
         entries.push({ id: "settled", label: "What it settled", count: null, depth: 0, rank: null });
-    }
-    if (hasGlanceFigures(c)) {
-        entries.push({ id: "glance", label: "At a glance", count: null, depth: 0, rank: null });
     }
     const directions = [...summary.directions].sort((a, b) => a.rank - b.rank);
     if (directions.length > 0) {
@@ -630,9 +635,9 @@ export function outlineOf(c: Council): OutlineEntry[] {
 }
 
 /** Pure: the tab bar's jump links: the outline's sections after the answer (the answer is the cover), in page order:
- *  What it settled, At a glance, the directions and the kept ideas when there are any, then the Final proposal while a
- *  message is pinned. What it spent is no link: it is the cost of the council, not its result, folded at the foot of the
- *  page. Empty before a summary unless a message is pinned: then the Final proposal alone. */
+ *  To do, Figures when there are any, What it settled, the directions and the kept ideas when there are any, then the
+ *  Final proposal while a message is pinned. What it spent is no link: it is the cost of the council, not its result,
+ *  folded at the foot of the page. Empty before a summary unless a message is pinned: then the Final proposal alone. */
 export function jumpLinks(c: Council): OutlineEntry[] {
     return outlineOf(c).filter((e) => e.depth === 0 && e.id !== "answer" && e.id !== "spend");
 }
@@ -653,6 +658,23 @@ export function hasSettled(c: Council): boolean {
  *  model. */
 export function hasGlanceFigures(c: Council): boolean {
     return (c.summary?.directions.length ?? 0) > 0;
+}
+
+/** Pure: the Report's to-do table (councilreporttables.ts) has a row: the summary ranked a direction. */
+export function hasTodoRows(c: Council): boolean {
+    return (c.summary?.directions.length ?? 0) > 0;
+}
+
+/** Pure: Go checked this figure and it holds (`cite` is "ok": the line exists, the quote is near it and the value is in
+ *  the quote). The one rule for which figures the Figures table lists; councilreporttables.ts and `outlineOf` read it. A
+ *  figure that is not verified (wrong, or not checked yet) is About the council's, with its note. */
+export function isVerifiedFigure(f: CouncilFigure): boolean {
+    return f.cite === "ok";
+}
+
+/** Pure: the Report's "Figures" table has a row: some figure of the council was verified. */
+export function hasFigureRows(c: Council): boolean {
+    return (c.figures ?? []).some(isVerifiedFigure);
 }
 
 /** Pure: the Report's "What it spent" section draws (figures C and D): some seat in `c.stats` has tokens, or some seat's

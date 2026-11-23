@@ -8,14 +8,18 @@
 // cover: the title, what was asked, the answer in one bold sentence with the coordinator's text under it, and a glance
 // box beside them: the state, three figures, the panel with each model and what each seat did (a click opens the
 // Discussion on that seat's messages alone), and where the council saved itself, docs/council/, a click or the `⋯` menu
-// opening that document. Under the cover the body: What it settled (the council's memory: the chosen direction, then
-// Agreed, Still open and Ruled out; councilmemorymodel.ts settledOf), At a glance (the evidence × agreement quadrant of a Review and the
-// direction × seat stance grid, councilglancefigures.tsx; a click on a point or a row opens that direction's card and
-// glides to it), the directions as cards (one open at a
-// time, its detail under the grid: the coordinator's reasoning and each expert's position), and at the foot What it spent,
+// opening that document. Under the cover the body, the project's facts first: To do (a table, a row per direction: the
+// task, why, its files, its kind) and Figures (a table of the figures Go verified, each with its `path:line`), in the
+// council's language (councilreporttables.ts, councilreporttablesview.tsx; the same two tables as the saved report's
+// main file), then What it settled (the council's memory: the chosen direction, then
+// Agreed, Still open and Ruled out; councilmemorymodel.ts settledOf), the directions as cards (one open at a
+// time, its detail under the grid: the coordinator's reasoning and each expert's position), and at the foot, folded,
+// About the council (At a glance: the evidence × agreement quadrant of a Review and the direction × seat stance grid,
+// councilglancefigures.tsx, where a click on a point or a row opens that direction's card and glides to it; and the
+// figures that did not check out, with Go's note) and What it spent,
 // folded to one line of tokens, calls and time (a click opens what each seat spent and when it worked,
-// councilspendfigures.tsx; a click on a seat opens the Discussion on its messages; it is the council's cost, not its
-// result, so it has no jump link), and at the bottom one line that
+// councilspendfigures.tsx; a click on a seat opens the Discussion on its messages; both are about the council, not its
+// result, so they have no jump link), and at the bottom one line that
 // opens the Map tab, where every idea stands against every expert. The other sections are jump links,
 // and draw only what the council recorded (councilfiguresmodel.ts words every takeaway; no model call draws or words a
 // figure). A finished council opens on it; Summarize on the
@@ -31,7 +35,8 @@
 
 import { launchAgent } from "@/app/cockpit/cockpit-actions";
 import { useCopyFeedback } from "@/app/element/copyfeedback";
-import { viewFade } from "@/app/element/motiontokens";
+import { foldReveal, viewFade } from "@/app/element/motiontokens";
+import { usePartMotion } from "@/app/element/springbatch";
 import { Tooltip } from "@/app/element/tooltip";
 import { globalStore } from "@/app/store/jotaiStore";
 import { RpcApi } from "@/app/store/wshclientapi";
@@ -57,7 +62,7 @@ import {
     PinOff,
     TriangleAlert,
 } from "lucide-react";
-import { motion } from "motion/react";
+import { AnimatePresence, motion } from "motion/react";
 import { useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
 import { showCouncilSetup } from "./agentcenter";
 import { openRefInCode } from "./agentrailstore";
@@ -67,6 +72,7 @@ import { CouncilAvatar, CouncilText } from "./councilchat";
 import { askChips } from "./councilchatmodel";
 import { ClaimBadgeChip, WrongCiteChip } from "./councilchecks";
 import { avatarTone, modeWord, seatInitials } from "./councildiscussionmodel";
+import { glancePoints, stanceGrid } from "./councilfiguresmodel";
 import { finalProposal, type FinalProposal } from "./councilfinalmodel";
 import { GlanceFigures } from "./councilglancefigures";
 import { CouncilHeaderRow } from "./councilheader";
@@ -88,6 +94,8 @@ import {
     type CouncilLang,
     type StanceLabel,
 } from "./councilmodel";
+import { failedFigureRows } from "./councilreporttables";
+import { FailedFiguresTable, FiguresTable, TodoTable } from "./councilreporttablesview";
 import { retryHold } from "./councilretry";
 import { RetryWithButton } from "./councilretrymenu";
 import { revealCouncilMessage } from "./councilreveal";
@@ -142,6 +150,8 @@ const savedDocAtom = atomFamily((_id: string) => atom<string | null>(null) as Pr
 const keptOpenAtom = atomFamily((_id: string) => atom(false) as PrimitiveAtom<boolean>);
 // whether What it spent is unfolded at the foot of the report
 const spendOpenAtom = atomFamily((_id: string) => atom(false) as PrimitiveAtom<boolean>);
+// whether About the council (At a glance and the figures that did not check out) is unfolded above it
+const aboutOpenAtom = atomFamily((_id: string) => atom(false) as PrimitiveAtom<boolean>);
 interface MadeInitiative {
     oid: string;
     title: string;
@@ -544,6 +554,75 @@ function SpendFold({ c, onSeat }: { c: Council; onSeat: (id: string) => void }) 
     );
 }
 
+// "About the council", folded above What it spent: what says how the council stood and worked rather than what it found,
+// so it stays out of the way until opened: At a glance (the evidence × agreement quadrant and the stance grid) and the
+// figures that did not check out, with Go's note. Folded, one quiet row names what is inside. The body opens with the
+// sessions' fold (foldReveal); its spacing is padding inside it, so the height grows from nothing. A figure's click on a
+// direction (a point, a row) still opens that direction's card, which is elsewhere on the page.
+function AboutFold({ c, onOpenDirection }: { c: Council; onOpenDirection: (rank: number) => void }) {
+    const [open, setOpen] = useAtom(aboutOpenAtom(c.id));
+    // with reduced motion the body opens and folds at once
+    const fold = usePartMotion(foldReveal);
+    const failed = useMemo(() => failedFigureRows(c), [c]);
+    const glance = useMemo(() => hasGlanceFigures(c) && (glancePoints(c) != null || stanceGrid(c) != null), [c]);
+    if (!glance && failed.length === 0) {
+        return null;
+    }
+    const Chevron = open ? ChevronUp : ChevronDown;
+    const line = [
+        glance ? "At a glance" : "",
+        failed.length > 0 ? `${failed.length} ${failed.length === 1 ? "figure" : "figures"} did not check out` : "",
+    ]
+        .filter((part) => part !== "")
+        .join(" · ");
+    return (
+        <section data-council-section="about" aria-label="About the council" className="flex flex-col">
+            <button
+                type="button"
+                data-council-about-toggle
+                aria-expanded={open}
+                aria-controls={open ? "council-about" : undefined}
+                onClick={() => setOpen(!open)}
+                className={cn(
+                    "group flex w-fit cursor-pointer items-baseline gap-[10px] rounded-[4px] border-0 bg-transparent p-0 text-left",
+                    FOCUS
+                )}
+            >
+                <span className="text-[13.5px] font-semibold text-secondary group-hover:text-primary">
+                    About the council
+                </span>
+                {/* open, its blocks say it */}
+                {!open ? <span className="text-[12.5px] text-muted">{line}</span> : null}
+                <Chevron size={13} aria-hidden className="self-center text-muted group-hover:text-primary" />
+            </button>
+            <AnimatePresence initial={false}>
+                {open ? (
+                    <motion.div key="about" id="council-about" data-council-about-body {...fold}>
+                        <div className="flex flex-col gap-8 pt-4">
+                            {glance ? (
+                                <div data-council-about-block="glance" className="flex min-w-0 flex-col gap-4">
+                                    <h2 className="m-0 text-[19px] font-semibold tracking-[-0.01em] text-primary">
+                                        At a glance
+                                    </h2>
+                                    <GlanceFigures c={c} onOpenDirection={onOpenDirection} />
+                                </div>
+                            ) : null}
+                            {failed.length > 0 ? (
+                                <div data-council-about-block="failed" className="flex min-w-0 flex-col gap-4">
+                                    <h2 className="m-0 text-[19px] font-semibold tracking-[-0.01em] text-primary">
+                                        Figures that did not check out
+                                    </h2>
+                                    <FailedFiguresTable rows={failed} />
+                                </div>
+                            ) : null}
+                        </div>
+                    </motion.div>
+                ) : null}
+            </AnimatePresence>
+        </section>
+    );
+}
+
 // The ideas kept aside under the ranked directions (Also raised, or Wild ideas kept aside): the long tail of the report,
 // so it starts folded behind its heading and count, and a click on them opens the grid. The fold is the council's
 // (keptOpenAtom), so the header's jump link to this section can open it.
@@ -744,25 +823,6 @@ function glideToEl(box: HTMLElement, el: HTMLElement) {
     glideTo(box, box.scrollTop + el.getBoundingClientRect().top - box.getBoundingClientRect().top - 12);
 }
 
-// A figures section of the report ("At a glance", "What it spent"): its heading over the figures, which draw their own
-// frames, takeaways and Table toggles. It fades in as it mounts, like the page does, and `data-council-section` is what
-// its jump link scrolls to (sectionOf's default branch).
-function FiguresSection({ id, title, children }: { id: string; title: string; children: ReactNode }) {
-    return (
-        <motion.section
-            variants={viewFade}
-            initial="initial"
-            animate="animate"
-            data-council-section={id}
-            aria-label={title}
-            className="flex flex-col gap-4"
-        >
-            <h2 className="m-0 text-[19px] font-semibold tracking-[-0.01em] text-primary">{title}</h2>
-            {children}
-        </motion.section>
-    );
-}
-
 // The header's jump links (board M-report-cover.dc.html), before its seats: a button per section after the answer,
 // scrolling the box under the header so the section's top lands 12px under the box's top (as far as it can scroll).
 function JumpLinks({ c, scroller }: { c: Council; scroller: RefObject<HTMLDivElement | null> }) {
@@ -793,9 +853,9 @@ function JumpLinks({ c, scroller }: { c: Council; scroller: RefObject<HTMLDivEle
                     onClick={() => go(e)}
                     className={cn(
                         "flex h-7 flex-none cursor-pointer items-center gap-[6px] self-center rounded-md px-[10px] text-[13px] text-muted hover:bg-surface-hover hover:text-primary",
-                        // the title is the only part of the row that shrinks, so the two figure sections' links
-                        // give way first: a header narrower than this keeps the links it had before the figures
-                        (e.id === "glance" || e.id === "spend") && "@max-[1000px]:hidden",
+                        // the title is the only part of the row that shrinks, so the two tables' links, the newest,
+                        // give way first: a header narrower than this keeps the links it had before the tables
+                        (e.id === "todo" || e.id === "figures") && "@max-[1000px]:hidden",
                         FOCUS
                     )}
                 >
@@ -1515,12 +1575,9 @@ function SummaryView({ model, c }: { model: AgentsViewModel; c: Council }) {
                 </div>
                 {summary != null ? (
                     <div className="mx-auto flex max-w-[1180px] flex-col gap-11 px-10 pb-[72px] pt-9">
+                        <TodoTable c={c} />
+                        <FiguresTable c={c} />
                         {settled != null ? <SettledSection settled={settled} /> : null}
-                        {hasGlanceFigures(c) ? (
-                            <FiguresSection id="glance" title="At a glance">
-                                <GlanceFigures c={c} onOpenDirection={openDirection} />
-                            </FiguresSection>
-                        ) : null}
                         {directions.length > 0 ? (
                             <section className="flex flex-col gap-4">
                                 {heading !== "" ? (
@@ -1558,7 +1615,7 @@ function SummaryView({ model, c }: { model: AgentsViewModel; c: Council }) {
                                 ) : null}
                             </section>
                         ) : null}
-                        {kept.length > 0 ? <KeptSection key={c.id} c={c} rows={kept} /> : null}
+                        {kept.length > 0 ? <KeptSection key={`kept:${c.id}`} c={c} rows={kept} /> : null}
                         {finalSection}
                         {asks.length > 0 ? (
                             <section data-council-asks-next className="flex flex-col gap-4">
@@ -1590,8 +1647,9 @@ function SummaryView({ model, c }: { model: AgentsViewModel; c: Council }) {
                                 {dropped}
                             </span>
                         ) : null}
+                        <AboutFold c={c} onOpenDirection={openDirection} />
                         {hasSpendFigures(c) ? <SpendFold c={c} onSeat={openSeat} /> : null}
-                        <RatingRow key={c.id} c={c} />
+                        <RatingRow key={`rating:${c.id}`} c={c} />
                         <MapLink c={c} />
                     </div>
                 ) : finalSection != null ? (

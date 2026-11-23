@@ -398,10 +398,11 @@ export const councilSummary = {
             // close the direction again for the steps after
             await click(h, `${DIRECTION(1)}[data-council-direction-toggle]`);
             await h.ev(`document.querySelector(${q(BOX)}).scrollTop = 0`);
-            // the matrix is no section of the Report any more (the Map tab holds it): the links are At a glance, the
-            // directions, and What it spent (the done fixture has seats with tokens; the figures' own steps are council-figures')
+            // the matrix is no section of the Report any more (the Map tab holds it): the links are To do and the
+            // directions (the done fixture has no figure and no memory; At a glance, inside About the council, and What
+            // it spent have no link; the figures' own steps are council-figures')
             const ok =
-                entries.join("|") === ["glance:At a glance", "directions:Directions 4", "spend:What it spent"].join("|") &&
+                entries.join("|") === ["todo:To do", "directions:Directions 4"].join("|") &&
                 Math.abs(placed.scrollTop - expected) <= 4 &&
                 placed.barTop === barTop &&
                 placed.barBottom <= placed.boxTop + 1 &&
@@ -543,10 +544,26 @@ export const councilSummary = {
             return { ok: drawn && !asked && !/You asked/.test(text), detail: JSON.stringify({ drawn, asked }) };
         });
 
-        await step("no proposal id shows anywhere in the Summary's text, directions closed", async () => {
-            const text = await h.ev(`document.querySelector(${q(SUMMARY)}).innerText`);
-            const ids = text.match(/\bP\d+\b/g) ?? [];
-            return { ok: ids.length === 0 && text.length > 0, detail: JSON.stringify({ ids }) };
+        await step("no proposal id shows anywhere in the Summary's text, directions closed, but in a To do Why that falls back to the reasoning", async () => {
+            // a To do row of a direction with no `why` (saved before the field) shows the reasoning's first sentence, as
+            // the .md does (spec decision 4), and that may name a proposal (direction 3: "P2 and P3 meet…"); only those
+            // cells are left out of the read, and the row with a written why (direction 1) is held to the rule
+            const read = await h.ev(`(() => {
+                const root = document.querySelector(${q(SUMMARY)});
+                const skipped = [...root.querySelectorAll("[data-council-todo-why-fallback]")];
+                const strict = [...root.querySelectorAll('[data-council-todo-cell="why"]:not([data-council-todo-why-fallback])')].map((c) => c.innerText.trim());
+                skipped.forEach((c) => (c.style.display = "none"));
+                const text = root.innerText;
+                skipped.forEach((c) => (c.style.display = ""));
+                return { text, skipped: skipped.length, strict };
+            })()`);
+            const ids = read.text.match(/\bP\d+\b/g) ?? [];
+            const ok =
+                ids.length === 0 &&
+                read.text.length > 0 &&
+                read.skipped === 3 &&
+                read.strict.join("|") === "A cleared WebView2 profile no longer loses the pins.";
+            return { ok, detail: JSON.stringify({ ids, skipped: read.skipped, strict: read.strict }) };
         });
 
         await step("four directions in rank order, each tagged in words, each with a stance chip per expert", async () => {
@@ -714,8 +731,9 @@ export const councilSummary = {
             const gone = {
                 section: await exists(h, "[data-council-matrix]"),
                 toggle: await exists(h, "[data-council-matrix-toggle]"),
-                // the stance matrix's table is gone; the At a glance figures' own (a stance grid, a figure's Table view) are not it
-                table: await h.ev(`[...document.querySelectorAll(${q(`${SUMMARY} table`)})].some((t) => !t.closest("[data-council-figure]"))`),
+                // the stance matrix's table is gone; the At a glance figures' own (a stance grid, a figure's Table view)
+                // and the report's To do and Figures tables are not it
+                table: await h.ev(`[...document.querySelectorAll(${q(`${SUMMARY} table`)})].some((t) => !t.closest("[data-council-figure], [data-council-table-scroll]"))`),
                 jump: await exists(h, `${SUMMARY} [data-council-jump='matrix']`),
                 heading: /Every expert on every idea/.test(text),
             };
@@ -939,8 +957,15 @@ export const councilSummary = {
             const path = asKept === "" || isAbsolute(asKept) ? asKept : join(ctx.repo, asKept);
             const inProject = slashes(path).startsWith(`${slashes(ctx.repo)}/docs/council/`);
             const body = shown && path !== "" && existsSync(path) ? readFileSync(path, "utf8") : "";
-            // the report, then the whole discussion and the run facts (council.Document)
-            const sections = ["# Council: Rail apps", "## Matrix", "## The discussion", "## Run facts"].filter((s) => !body.includes(s));
+            // the main file is the short report (its title and the to-do table, then a link to the side file); the
+            // matrix, the whole discussion and the run facts are in the .discussion.md beside it (council.WriteDocument)
+            const sidePath = path.replace(/\.md$/, ".discussion.md");
+            const side = body !== "" && existsSync(sidePath) ? readFileSync(sidePath, "utf8") : "";
+            const sections = [
+                ...["# Council: Rail apps", "## To do"].filter((s) => !body.includes(s)),
+                ...["## Matrix", "## The discussion", "## Run facts"].filter((s) => !side.includes(s)).map((s) => `side ${s}`),
+                ...(body.includes("## The discussion") ? ["main still holds ## The discussion"] : []),
+            ];
             // now that it has saved, the menu opens the document instead of saving another
             const items = shown ? await menuItems(h) : [];
             const ok =
@@ -1340,7 +1365,7 @@ export const councilSummary = {
                 facts.steps.length === 3 &&
                 stepsInFrame &&
                 facts.steps.every((s) => s === "First step Try it on one screen") &&
-                facts.jumps === "glance,directions,kept,spend" &&
+                facts.jumps === "todo,directions,kept" &&
                 facts.keptGrid === "grid" &&
                 facts.keptBorder === "0px" &&
                 // who had an idea is its avatars; the line of facts names only who built on it
@@ -1393,7 +1418,7 @@ export const councilSummary = {
                 !items.some((i) => i.startsWith("open-doc=")) &&
                 review.heading == null &&
                 review.steps.length === 0 &&
-                review.jumps === "glance,directions,spend" &&
+                review.jumps === "todo,directions" &&
                 review.keptHeading == null &&
                 review.dropped == null &&
                 review.docpath == null &&
@@ -1459,7 +1484,7 @@ export const councilSummary = {
                 folded.directions.join("|") === [...TITLES, FIFTH].join("|") &&
                 folded.directionsShown &&
                 foldedInFrame &&
-                folded.jumps === "glance,directions,kept,spend" &&
+                folded.jumps === "todo,directions,kept" &&
                 folded.heading === "Also raised" &&
                 folded.count === String(RAISED.length) &&
                 folded.toggleTag === "BUTTON" &&

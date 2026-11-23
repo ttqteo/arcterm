@@ -313,6 +313,7 @@
         "rank": 1,
         "title": "Move the rail pins from localStorage to settings",
         "reasoning": "Every expert accepts it and it costs nothing at run time: a cleared profile no longer loses the pins.",
+        "why": "A cleared WebView2 profile no longer loses the pins.",
         "from": [
           "P5"
         ],

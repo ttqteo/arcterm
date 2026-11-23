@@ -12,7 +12,8 @@
 // (a council's report in the Brief's sheet, 2026-11-05-jarvis-revamp-design.md decision 8), and the three of the council
 // figures (docs/superpowers/plans/2026-11-19-council-figures.md): council-figures (the Report's At a glance and What it
 // spent), council-figures-graph (the Map's argument map and its Matrix | Graph switch) and council-bench-chart (Library →
-// Councils' folded Benchmark). Each one's
+// Councils' folded Benchmark), and council-report-tables (the Report's To do and Figures tables and its folded About
+// the council, docs/superpowers/plans/2026-11-23-council-report-tables.md). Each one's
 // arrange / assert / teardown live in ./council/<view>.mjs, so the tasks that build a view touch only their own file; the
 // shared fixtures (a temp project, the six rail-apps councils, the RpcApi stand-ins) are ./council/fixtures.mjs.
 //
@@ -29,6 +30,7 @@ import { councilMap } from "./council/map.mjs";
 import { councilMemory } from "./council/memory.mjs";
 import { councilNeedsYou } from "./council/needsyou.mjs";
 import { councilRegions } from "./council/regions.mjs";
+import { councilReportTables } from "./council/reporttables.mjs";
 import { councilRouting } from "./council/routing.mjs";
 import { councilAsk, councilSetup } from "./council/setup.mjs";
 import { councilSheet } from "./council/sheet.mjs";
@@ -61,5 +63,6 @@ export function makeCouncilScenarios(fx) {
         scenario("council-regions", councilRegions),
         scenario("council-final-proposal", councilFinalProposal),
         scenario("jarvis-council-sheet", councilSheet),
+        scenario("council-report-tables", councilReportTables),
     ];
 }
