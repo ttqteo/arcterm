@@ -34,6 +34,9 @@ and a picture given to a line that is not big.
 
 ### Added
 
+- A folded Agent sidebar still gets you to any agent: its thin strip shows a dot per agent (green working, amber
+  asking), and resting the pointer on it, or holding Alt, opens a small card of your agents by project to pick one,
+  with their Alt+1..9 numbers while Alt is held. The terminal beside it keeps its size. <!-- big --> <!-- shot: 1.10.0-tree-peek.webp -->
 - `wsh protect -- <command>` runs one long job with the machine held for it: it goes ahead of the heavy-job queue,
   starts once the heavy jobs already running finish, and every other agent's build, typecheck or test suite (and a
   run's Verify or Final) waits until it exits, even with the queue off or paused. The Jobs chip says Protected, and

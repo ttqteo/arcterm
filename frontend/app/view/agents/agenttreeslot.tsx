@@ -3,11 +3,13 @@
 
 // The Agent tree's place on the Agent surface, beside a thin strip that folds and opens it by hand (treeFoldedAtom,
 // boardsplitstore.ts), a choice kept across launches. The tree stays open beside a board: it holds the board's row. It
-// slides open and shut on the spring (springFoldWidth), and the strip's chevron turns with it.
+// slides open and shut on the spring (springFoldWidth), and the strip's chevron turns with it. Folded, the strip shows a
+// dot per agent, and a pause on it (or Alt held) opens the peek card to pick one without unfolding (treepeek.tsx).
 
 import { MOTION, springFoldWidth } from "@/app/element/motiontokens";
 import { usePartMotion } from "@/app/element/springbatch";
 import { Tooltip } from "@/app/element/tooltip";
+import { cn } from "@/util/util";
 import { useAtom } from "jotai";
 import { ChevronLeft } from "lucide-react";
 import { AnimatePresence, motion, MotionConfig } from "motion/react";
@@ -15,6 +17,7 @@ import { treeFoldedAtom } from "../boards/boardsplitstore";
 import type { AgentsViewModel } from "./agents";
 import type { AgentVM } from "./agentsviewmodel";
 import { AgentTree } from "./agenttree";
+import { PeekStripDots, TreePeekCard, usePeekHover } from "./treepeek";
 
 export function AgentTreeSlot({ model, agent }: { model: AgentsViewModel; agent: AgentVM | undefined }) {
     if (agent == null) {
@@ -27,6 +30,28 @@ function FoldableTree({ model }: { model: AgentsViewModel }) {
     const [folded, setFolded] = useAtom(treeFoldedAtom);
     const fold = usePartMotion(springFoldWidth);
     const toggle = () => setFolded(!folded);
+    const peek = usePeekHover(folded);
+    const strip = (
+        <button
+            type="button"
+            data-agent-tree-strip={folded ? "folded" : "open"}
+            aria-label={folded ? "Show agents" : "Fold agents"}
+            onClick={toggle}
+            className={cn(
+                "flex h-full w-[14px] shrink-0 cursor-pointer flex-col items-center border-r border-border bg-surface text-muted hover:bg-surface-raised hover:text-primary",
+                folded ? "justify-start pt-[8px]" : "justify-center"
+            )}
+        >
+            <motion.span
+                className="flex shrink-0"
+                animate={{ rotate: folded ? 180 : 0 }}
+                transition={{ duration: MOTION.durMacro, ease: MOTION.easeFluid }}
+            >
+                <ChevronLeft size={11} strokeWidth={2} aria-hidden />
+            </motion.span>
+            {folded ? <PeekStripDots model={model} /> : null}
+        </button>
+    );
     return (
         <MotionConfig reducedMotion="user">
             <AnimatePresence initial={false}>
@@ -36,28 +61,18 @@ function FoldableTree({ model }: { model: AgentsViewModel }) {
                     </motion.div>
                 )}
             </AnimatePresence>
-            <Tooltip
-                content={folded ? "Show agents" : "Fold agents"}
-                placement="right"
-                divClassName="flex h-full shrink-0"
-                hideOnClick
-            >
-                <button
-                    type="button"
-                    data-agent-tree-strip={folded ? "folded" : "open"}
-                    aria-label={folded ? "Show agents" : "Fold agents"}
-                    onClick={toggle}
-                    className="flex h-full w-[14px] shrink-0 cursor-pointer items-center justify-center border-r border-border bg-surface text-muted hover:bg-surface-raised hover:text-primary"
-                >
-                    <motion.span
-                        className="flex"
-                        animate={{ rotate: folded ? 180 : 0 }}
-                        transition={{ duration: MOTION.durMacro, ease: MOTION.easeFluid }}
-                    >
-                        <ChevronLeft size={11} strokeWidth={2} aria-hidden />
-                    </motion.span>
-                </button>
-            </Tooltip>
+            {folded ? (
+                // folded, the strip lists the agents as dots and a pause on it opens the peek card, which names them, so
+                // it carries no tooltip of its own
+                <div className="relative flex h-full shrink-0" onPointerEnter={peek.enter} onPointerLeave={peek.leave}>
+                    {strip}
+                    <TreePeekCard model={model} folded={folded} hoverOpen={peek.hoverOpen} onPicked={peek.close} />
+                </div>
+            ) : (
+                <Tooltip content="Fold agents" placement="right" divClassName="flex h-full shrink-0" hideOnClick>
+                    {strip}
+                </Tooltip>
+            )}
         </MotionConfig>
     );
 }

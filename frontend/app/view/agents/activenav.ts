@@ -7,7 +7,7 @@
 
 import { globalStore } from "@/app/store/jotaiStore";
 import type { AgentsViewModel } from "./agents";
-import { projectTree, treeNavIds } from "./agentsidebarmodel";
+import { projectTree, treeNavIds, type ProjectTreeRow } from "./agentsidebarmodel";
 import { buildAgentTree } from "./agenttreemodel";
 import { waitMap } from "./agentwaits";
 import { projectGridsAtom, treeSplits } from "./gridstore";
@@ -21,6 +21,11 @@ import { hiddenServicesAtom, servicesAtom } from "./servicesstore";
 import { backgroundTasksByIdAtom } from "./subagentsstore";
 
 export function activeNavOrder(model: AgentsViewModel): string[] {
+    return treeNavIds(activeNavRows(model));
+}
+
+// the project tree's rows the order is read from; the folded tree's peek card lists them too (treepeekmodel.ts)
+export function activeNavRows(model: AgentsViewModel): ProjectTreeRow[] {
     const agents = globalStore.get(model.agentsAtom);
     const terminals = globalStore.get(model.terminalsAtom);
     const focusId = globalStore.get(model.focusIdAtom);
@@ -38,22 +43,20 @@ export function activeNavOrder(model: AgentsViewModel): string[] {
             roots.set(name, project.path);
         }
     }
-    return treeNavIds(
-        projectTree({
-            tree,
+    return projectTree({
+        tree,
+        terminals,
+        filter: globalStore.get(model.projectFilterAtom),
+        collapsed: globalStore.get(collapsedProjectsAtom),
+        roots,
+        splits: treeSplits(globalStore.get(projectGridsAtom), {
+            focusId,
+            agents,
             terminals,
-            filter: globalStore.get(model.projectFilterAtom),
-            collapsed: globalStore.get(collapsedProjectsAtom),
-            roots,
-            splits: treeSplits(globalStore.get(projectGridsAtom), {
-                focusId,
-                agents,
-                terminals,
-                dockedId: globalStore.get(dockedTerminalAtom),
-                seeded: globalStore.get(rosterSeededAtom),
-            }),
-            roster: [...agents, ...terminals],
-            ...treeServiceInput(globalStore.get(servicesAtom) ?? [], focusId, globalStore.get(hiddenServicesAtom)),
-        })
-    );
+            dockedId: globalStore.get(dockedTerminalAtom),
+            seeded: globalStore.get(rosterSeededAtom),
+        }),
+        roster: [...agents, ...terminals],
+        ...treeServiceInput(globalStore.get(servicesAtom) ?? [], focusId, globalStore.get(hiddenServicesAtom)),
+    });
 }
