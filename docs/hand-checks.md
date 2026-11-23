@@ -32,6 +32,12 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
   asked, the ask comes back as a refusal whose reason tells the agent to ask you first.
 ## 2026-11-23
 
+- [ ] (arcterm) **Chat: Esc takes back a sent message with pastes as chips** (`sentText` / `mergeTaken` in
+  `chattakeback.ts`). In Chat, type a line, paste two long blocks (each folds to a chip), send, and press Esc at once
+  while Claude works with no reply yet → the box holds the typed line and the two chips, no `<pasted_content id=…>`
+  text. Press Enter → the message lands once, as it was sent; no bubble of it stays under the conversation after the
+  reply.
+
 - [ ] (arcterm) **Chat: a message from another agent as Markdown** (`SentMarkdown` in `chatconversation.tsx`,
   `messageText` in `chatmodel.ts`). Send an agent a long message with `wsh agents send` (a paragraph, a numbered list,
   some `code`) → in its Chat the `message · from <agent>` card shows no `tab <id>` line but a mono chip with the tab id's

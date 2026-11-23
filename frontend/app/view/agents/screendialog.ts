@@ -8,7 +8,7 @@
 // a way to the terminal: an agent that waits on the person never leaves Chat empty.
 
 import type { AgentEntry } from "./agentsviewmodel";
-import { stripResultLines } from "./chatinitiative";
+import { sentText } from "./chattakeback";
 import { tuiDialog, tuiPromptUp, tuiScreenTail, type TuiDialog } from "./tuiscreen";
 
 export type ScreenCard = { kind: "dialog"; dialog: TuiDialog } | { kind: "terminal"; rows: string[] };
@@ -84,7 +84,7 @@ export function lastPromptText(entries: readonly AgentEntry[]): string | null {
     for (let i = entries.length - 1; i >= 0; i--) {
         const e = entries[i];
         if (e.kind === "user") {
-            const text = stripResultLines(e.text).trim();
+            const text = sentText(e.text).trim();
             return text === "" ? null : text;
         }
     }

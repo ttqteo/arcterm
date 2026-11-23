@@ -80,6 +80,7 @@ and a picture given to a line that is not big.
 
 ### Fixed
 
+- Esc in Chat on a message you just sent with pastes now puts it back as you wrote it, pastes as chips, not wrapped in Claude Code's paste tags. Sending it again no longer leaves a stray copy of it under the conversation.
 - A long code block in Chat no longer hides its lines under its header when the pinned prompt above it goes away: the header moves up as the pinned prompt leaves.
 - Sidecar's Resources no longer sits on "Measuring…" when the machine is too busy to answer in time: it says it can't read and keeps trying, and its reads no longer pile up behind a slow one.
 - Chat's tool rows are easier to read and to close. Hovering a command's line shows its description, not a tooltip

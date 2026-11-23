@@ -1,15 +1,18 @@
 import { describe, expect, it } from "vitest";
 import type { AgentEntry } from "./agentsviewmodel";
 import { withResultLines } from "./chatinitiative";
+import { expandPastes, joinPastes } from "./chatpastes";
 import type { PendingMessage } from "./chatpending";
 import {
     boxHolds,
     boxShowsTyped,
     inputBoxRows,
     mergeTaken,
+    sentText,
     takeBackPlan,
     TAKEN_BACK_LANDS_MS,
     takenBackOf,
+    takenCaret,
     typedEcho,
     withoutTakenBack,
 } from "./chattakeback";
@@ -190,6 +193,46 @@ describe("mergeTaken", () => {
     it("puts the taken-back messages ahead of what the box holds, one per line, as Claude Code does", () => {
         expect(mergeTaken(["first", "second"], "")).toBe("first\nsecond");
         expect(mergeTaken(["first"], "draft")).toBe("first\ndraft");
+        expect(takenCaret(["first", "second"])).toBe("first\nsecond".length);
+    });
+    it("folds a message's pastes back into chips, after the box's own, and keeps the caret after the typed text", () => {
+        const box = joinPastes("and this", ["box paste"]);
+        expect(mergeTaken([SENT], box)).toBe(joinPastes(`${TYPED}\nand this`, [...PASTES, "box paste"]));
+        expect(mergeTaken([SENT], "")).toBe(DRAFT);
+        expect(takenCaret([SENT])).toBe(TYPED.length);
+    });
+    it("leaves a paste block it cannot fold as text: one Claude Code wrapped, or one with text after it", () => {
+        const other = `<pasted_content id="aa">\nx\n</pasted_content id="aa">`;
+        expect(mergeTaken([other], "")).toBe(other);
+        const after = `${SENT}\n\nmore`;
+        expect(mergeTaken([after], "")).toBe(after);
+    });
+});
+
+// a message sent from Chat's box with two folded pastes, and how Claude Code writes it to the transcript: wrapped whole as
+// a paste, the paste tags inside escaped (2026-11-23, session 783a6c34)
+const TYPED = "> Chưa đọc PDF X.js nên chưa biết.\n2 kết quả novelty";
+const PASTES = ["**Có**, bài báo x.js\ndòng hai", "**Chưa.** LLMVD.js\ndòng hai"];
+const DRAFT = joinPastes(TYPED, PASTES);
+const SENT = expandPastes(DRAFT, true);
+const claudeWrapped = (text: string, id = "0234") =>
+    `\n\n<pasted_content id="${id}">\n${text.replace(/<(\/?pasted_content\b)/g, "<\\$1")}\n</pasted_content id="${id}">`;
+
+describe("a message Claude Code wrapped whole, taken back after it landed", () => {
+    it("comes back as it was sent, not as Claude Code's wrapped text", () => {
+        expect(sentText(claudeWrapped(SENT))).toBe(SENT);
+        expect(takeBackPlan("Escape", [], [said("done"), you(claudeWrapped(SENT))], "working")).toEqual({
+            kind: "interrupt",
+            ids: [],
+            texts: [SENT],
+        });
+    });
+    it("is found and hidden by that text", () => {
+        const entries: AgentEntry[] = [said("done"), { kind: "user", text: claudeWrapped(SENT), uuid: "u1" }];
+        const plan = takeBackPlan("Escape", [], entries, "working")!;
+        const taken = takenBackOf(plan, entries, 1000);
+        expect(taken.uuids).toEqual(["u1"]);
+        expect(withoutTakenBack(entries, taken, 1200).entries).toEqual([entries[0]]);
     });
 });
 
