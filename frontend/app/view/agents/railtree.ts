@@ -65,6 +65,34 @@ export function revealRow(s: RailTreeState, path: string): RailTreeState {
     return { ...moveCursorTo(s, path), expanded };
 }
 
+// New File / New Folder into `dir` ("" the root): `dir` and every folder above it open, so the name row shows as its first
+// child. The selection stays.
+export function openToDir(s: RailTreeState, dir: string): RailTreeState {
+    if (dir === "") {
+        return s;
+    }
+    const expanded = [...s.expanded];
+    for (let cut = dir.indexOf("/"); ; cut = dir.indexOf("/", cut + 1)) {
+        const p = cut === -1 ? dir : dir.slice(0, cut);
+        if (!expanded.includes(p)) {
+            expanded.push(p);
+        }
+        if (cut === -1) {
+            break;
+        }
+    }
+    return expanded.length === s.expanded.length ? s : { ...s, expanded };
+}
+
+// What a new entry `rel` leaves the tree as once made: its folders open, and it the one row selected under the cursor; a
+// new folder opens too, so the next New File from it lands inside.
+export function afterCreate(s: RailTreeState, rel: string, isDir: boolean): RailTreeState {
+    const cut = rel.lastIndexOf("/");
+    const opened = openToDir(s, cut === -1 ? "" : rel.slice(0, cut));
+    const next = moveCursorTo(opened, rel);
+    return isDir && !next.expanded.includes(rel) ? { ...next, expanded: [...next.expanded, rel] } : next;
+}
+
 // Collapse All: every folder closes, and the cursor climbs to the top-level row that held it, the one place it still shows
 export function collapseAll(s: RailTreeState): RailTreeState {
     const closed = { ...s, expanded: [] };

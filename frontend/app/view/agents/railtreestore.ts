@@ -6,13 +6,15 @@
 // selected rows (railtree.ts). Every atom is module-scoped: the rail unmounts with the Agent surface, and the tree must
 // still be there, as it was left, when the surface comes back.
 
+import { pushToast } from "@/app/cockpit/notificationstore";
 import { globalStore } from "@/app/store/jotaiStore";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { buildTree, dirsToList, lazyDirs, type TreeNode } from "@/app/view/code/codetree";
+import { joinRepoPath } from "@/util/paths";
 import { atom, type PrimitiveAtom } from "jotai";
 import { atomFamily } from "jotai/utils";
-import { EMPTY_RAIL_TREE, pruneExpanded, type RailTreeState } from "./railtree";
+import { afterCreate, EMPTY_RAIL_TREE, pruneExpanded, type RailTreeState } from "./railtree";
 
 export type RailListingStatus = "loading" | "ready" | "error";
 
@@ -43,8 +45,13 @@ export const railListingsAtom = atom<Record<string, RailListing>>({}) as Primiti
 // by cwd, then by the ignored directory opened in it: that directory's entries (codestore.ts codeIgnoredListedAtom)
 export const railIgnoredListedAtom = atom<Record<string, Listed>>({}) as PrimitiveAtom<Record<string, Listed>>;
 
+// by cwd: the empty folders New Folder made, which git lists no file under, so the tree would lose them on a reload
+export const railMadeDirsAtom = atom<Record<string, string[]>>({}) as PrimitiveAtom<Record<string, string[]>>;
+const NO_DIRS: string[] = [];
+
 export const railListingAtom = atomFamily((cwd: string) => atom((get) => get(railListingsAtom)[cwd]));
 export const railListedAtom = atomFamily((cwd: string) => atom((get) => get(railIgnoredListedAtom)[cwd] ?? NO_LISTED));
+export const railMadeDirsForAtom = atomFamily((cwd: string) => atom((get) => get(railMadeDirsAtom)[cwd] ?? NO_DIRS));
 
 // by agent id: switching agents or surfaces and coming back finds the tree as it was left
 export const railTreeStateAtom = atomFamily(
@@ -70,8 +77,23 @@ export function railIgnoredEntries(ignored: readonly string[], listed: Listed): 
     return [...ignored, ...Object.values(reachableListed(ignored, listed)).flat()];
 }
 
-export function railTree(listing: RailListing | undefined, listed: Listed): TreeNode[] {
-    return listing == null ? [] : buildTree(listing.files, railIgnoredEntries(listing.ignored, listed));
+export function railTree(
+    listing: RailListing | undefined,
+    listed: Listed,
+    madeDirs: readonly string[] = NO_DIRS
+): TreeNode[] {
+    return listing == null ? [] : buildTree(listing.files, railIgnoredEntries(listing.ignored, listed), madeDirs);
+}
+
+// every path a new name could clash with: the listing, the ignored entries opened so far and the folders made here
+export function railExistingPaths(
+    listing: RailListing | undefined,
+    listed: Listed,
+    madeDirs: readonly string[]
+): string[] {
+    return listing == null
+        ? [...madeDirs]
+        : [...listing.files, ...railIgnoredEntries(listing.ignored, listed), ...madeDirs];
 }
 
 // Same ceiling as codestore.ts: the RPC layer's own 5s binds the server-side context, and a cold first walk of a big
@@ -85,6 +107,48 @@ const listingDirs = new Set<string>();
 
 function putListing(cwd: string, listing: RailListing): void {
     globalStore.set(railListingsAtom, (m) => ({ ...m, [cwd]: listing }));
+}
+
+function madeDirsFor(cwd: string): string[] {
+    return globalStore.get(railMadeDirsAtom)[cwd] ?? NO_DIRS;
+}
+
+// New File / New Folder: makes `name` in `dir` ("" the root) of the tree at `cwd`, then reloads the tree with it selected.
+// Returns the new entry's repo-relative path, or null when the write failed (a toast says why) — the tree reloads either
+// way, so it shows what is there rather than what was meant.
+export async function createRailEntry(
+    cwd: string,
+    agentId: string,
+    dir: string,
+    name: string,
+    isDir: boolean
+): Promise<string | null> {
+    const rel = dir === "" ? name : `${dir}/${name}`;
+    let ok = true;
+    try {
+        if (isDir) {
+            await RpcApi.FileMkdirCommand(TabRpcClient, { info: { path: joinRepoPath(cwd, rel) } });
+        } else {
+            await RpcApi.FileCreateCommand(TabRpcClient, { info: { path: joinRepoPath(cwd, rel) } });
+        }
+    } catch (e) {
+        ok = false;
+        pushToast({
+            title: `Could not create ${rel}`,
+            message: e instanceof Error ? e.message : String(e),
+            level: "warn",
+        });
+    }
+    if (ok && isDir) {
+        globalStore.set(railMadeDirsAtom, (m) => ({ ...m, [cwd]: [...(m[cwd] ?? []), rel] }));
+    }
+    await reloadTree(cwd, agentId);
+    if (!ok) {
+        return null;
+    }
+    const stateAtom = railTreeStateAtom(agentId);
+    globalStore.set(stateAtom, afterCreate(globalStore.get(stateAtom), rel, isDir));
+    return rel;
 }
 
 function listedFor(cwd: string): Listed {
@@ -211,7 +275,7 @@ function pruneAgentTree(agentId: string, cwd: string): void {
     }
     const stateAtom = railTreeStateAtom(agentId);
     const state = globalStore.get(stateAtom);
-    const pruned = pruneExpanded(state, railTree(listing, listedFor(cwd)));
+    const pruned = pruneExpanded(state, railTree(listing, listedFor(cwd), madeDirsFor(cwd)));
     if (pruned !== state) {
         globalStore.set(stateAtom, pruned);
     }

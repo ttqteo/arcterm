@@ -8,17 +8,20 @@
 // the surface changes. The files pinned in Code for this folder list above the tree, and pin from here too: one list
 // (codepins.ts), so a pin on either side shows on the other. Files and folders dropped from the OS (Finder, Explorer)
 // are copied into the folder under the pointer (railfiledrop.ts); the originals stay where they are. The tree's own rows
-// dropped on one of its folders move there (railmove.ts).
+// dropped on one of its folders move there (railmove.ts). New File and New Folder (the row menu, a right-click on the
+// tree's blank space for the root, n and Shift+N) make an entry in the folder pointed at, named in a row typed in place.
 
 import { isUnderRoot, toRel } from "@/app/cockpit/openfileroute";
 import { FileIcon } from "@/app/element/fileicon";
 import { SkeletonLine } from "@/app/element/skeleton";
 import { ContextMenuModel } from "@/app/store/contextmenu";
 import { globalStore } from "@/app/store/jotaiStore";
+import { provisionalIndex } from "@/app/view/code/codemutate";
 import { pinsFor } from "@/app/view/code/codepins";
 import { codePinsAtom, toggleCodePinIn } from "@/app/view/code/codestore";
 import { visibleRows, type TreeRow } from "@/app/view/code/codetree";
 import { treeKeyAction, type TreeKey } from "@/app/view/code/codetreekeys";
+import { NameInput } from "@/app/view/code/nameinput";
 import { pathMenuItems } from "@/app/view/code/pathmenu";
 import { revealInList } from "@/app/view/code/treescroll";
 import { joinRepoPath, repoBasename } from "@/util/paths";
@@ -28,6 +31,8 @@ import {
     ChevronDown,
     ChevronRight,
     ChevronsDownUp,
+    FilePlus,
+    FolderPlus,
     LocateFixed,
     Pin,
     PinOff,
@@ -49,6 +54,7 @@ import {
     collapseAll,
     dragPaths,
     moveCursorTo,
+    openToDir,
     revealRow,
     shouldReloadTree,
     toggleExpanded,
@@ -57,9 +63,12 @@ import {
     type TreeReloadObservation,
 } from "./railtree";
 import {
+    createRailEntry,
     listIgnoredDirs,
+    railExistingPaths,
     railListedAtom,
     railListingAtom,
+    railMadeDirsForAtom,
     railTree,
     railTreeStateAtom,
     reloadTree,
@@ -96,6 +105,7 @@ export function RailTreePane({
 }) {
     const listing = useAtomValue(railListingAtom(cwd));
     const listed = useAtomValue(railListedAtom(cwd));
+    const madeDirs = useAtomValue(railMadeDirsForAtom(cwd));
     const stateAtom = railTreeStateAtom(agentId);
     const state = useAtomValue(stateAtom);
     const pinned = pinsFor(useAtomValue(codePinsAtom), cwd);
@@ -118,6 +128,8 @@ export function RailTreePane({
     const [query, setQuery] = useState("");
     const filtering = query.trim() !== "";
     const filterRef = useRef<HTMLInputElement>(null);
+    // New File / New Folder waiting on its name: the folder it goes in ("" the root)
+    const [creating, setCreating] = useState<{ dir: string; isDir: boolean } | null>(null);
 
     // The pane only exists while the Files tab shows, so mounting is the tab being shown, and a later change of the
     // agent's state is one while it shows (a turn ending may have created files). The caller keys the pane by agent
@@ -130,7 +142,8 @@ export function RailTreePane({
         seen.current = next;
     }, [agentState, cwd, agentId]);
 
-    const tree = useMemo(() => railTree(listing, listed), [listing, listed]);
+    const tree = useMemo(() => railTree(listing, listed, madeDirs), [listing, listed, madeDirs]);
+    const existing = useMemo(() => railExistingPaths(listing, listed, madeDirs), [listing, listed, madeDirs]);
     const filtered = useMemo(
         () => (filtering ? filterRows(listing?.files ?? [], query) : null),
         [filtering, listing?.files, query]
@@ -171,6 +184,41 @@ export function RailTreePane({
             setLocate((n) => n + 1);
         }
     };
+
+    // the name row shows as the folder's first child, so the filter, which would hide it, is cleared and the folder opened
+    const startCreate = (dir: string, isDir: boolean) => {
+        setQuery("");
+        globalStore.set(stateAtom, openToDir(globalStore.get(stateAtom), dir));
+        setCreating({ dir, isDir });
+    };
+    const commitCreate = (name: string) => {
+        if (creating == null) {
+            return;
+        }
+        const { dir, isDir } = creating;
+        setCreating(null);
+        treeRef.current?.focus();
+        fireAndForget(async () => {
+            const rel = await createRailEntry(cwd, agentId, dir, name, isDir);
+            if (rel != null && !isDir) {
+                openFile(rel);
+            }
+        });
+    };
+    const createItems = (dir: string) => [
+        {
+            label: "New File",
+            icon: <FilePlus size={13} strokeWidth={1.8} />,
+            accel: "n",
+            click: () => startCreate(dir, false),
+        },
+        {
+            label: "New Folder",
+            icon: <FolderPlus size={13} strokeWidth={1.8} />,
+            accel: "Shift:n",
+            click: () => startCreate(dir, true),
+        },
+    ];
 
     // Esc leaves the filter with the cursor where it was, revealed in the whole tree
     const clearFilter = () => {
@@ -223,6 +271,12 @@ export function RailTreePane({
             ev.preventDefault();
             ev.stopPropagation();
             clearFilter();
+            return;
+        }
+        if ((ev.key === "n" || ev.key === "N") && !ev.ctrlKey && !ev.metaKey && !ev.altKey) {
+            ev.preventDefault();
+            const { s, rows: now } = current();
+            startCreate(dropDirFor(now.find((r) => r.path === s.cursor) ?? null), ev.shiftKey);
             return;
         }
         const key = KEYS[ev.key];
@@ -371,6 +425,8 @@ export function RailTreePane({
                                       { type: "separator" as const },
                                   ]
                                 : []),
+                            ...createItems(dropDirFor(row)),
+                            { type: "separator" as const },
                             ...pathMenuItems(joinRepoPath(cwd, row.path), row.path),
                         ],
                         ev
@@ -413,6 +469,20 @@ export function RailTreePane({
             </div>
         );
     };
+
+    const provisional = creating != null && !filtering ? provisionalIndex(rows, creating.dir) : -1;
+    const nameRow =
+        creating != null ? (
+            <NameInput
+                key="__new"
+                initial=""
+                dir={creating.dir}
+                depth={creating.dir === "" ? 0 : (rows.find((r) => r.path === creating.dir)?.depth ?? -1) + 1}
+                existing={existing}
+                onCommit={commitCreate}
+                onCancel={() => setCreating(null)}
+            />
+        ) : null;
 
     const status = listing?.status ?? "loading"; // before the first load has started, it is about to
     const firstLoad = status === "loading" && rows.length === 0;
@@ -468,13 +538,23 @@ export function RailTreePane({
                     onDragOver={onFilesOver}
                     onDragLeave={onFilesLeave}
                     onDrop={onFilesDrop}
+                    onContextMenu={(ev) => {
+                        if (rowAt(ev.target) != null) {
+                            return; // the row's own menu
+                        }
+                        ContextMenuModel.getInstance().showContextMenu(
+                            [...createItems(""), { type: "separator" }, ...pathMenuItems(cwd, null)],
+                            ev
+                        );
+                    }}
                     className={cn(
                         "min-h-0 flex-1 select-none overflow-y-auto py-1.5 outline-none",
                         dropDir === "" && "bg-accent/5 ring-1 ring-inset ring-accent"
                     )}
                 >
-                    {rows.map(renderRow)}
-                    {rows.length === 0 ? (
+                    {rows.flatMap((row, i) => (i === provisional ? [nameRow, renderRow(row)] : [renderRow(row)]))}
+                    {provisional >= rows.length ? nameRow : null}
+                    {rows.length === 0 && creating == null ? (
                         <div data-rail-filter-empty className="px-3 py-2 text-[11.5px] text-muted">
                             {filtering
                                 ? isPathQuery(query)

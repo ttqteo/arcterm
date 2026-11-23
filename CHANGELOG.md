@@ -41,6 +41,9 @@ and a picture given to a line that is not big.
   agents are told to write a picture they want you to see as an image, so it shows in the reply.
 - Library → Boards can delete a board: the trash button on a row (on hover) or in the open board's header asks first,
   then moves the drawing and its turns to `~/.arc/trash`, where they stay 7 days.
+- The agent panel's Files tree can make files and folders: New File and New Folder in a row's right-click menu (a
+  right-click on blank space makes them at the top), or `n` and `Shift+N`; you type the name in place, and a new file
+  opens in the File tab.
 
 ### Changed
 

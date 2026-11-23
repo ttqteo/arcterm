@@ -33,9 +33,9 @@ import {
     Trash2,
     X,
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { projectDraftPaths } from "./codedraft";
-import { existingTreePaths, nameErrorMessage, provisionalIndex, validateName } from "./codemutate";
+import { existingTreePaths, provisionalIndex } from "./codemutate";
 import { pinsFor } from "./codepins";
 import { CODE_PATH_MIME, codeTreeDragAtom, openSide } from "./codeside";
 import { changedDirs, statusGlyph, type CodeStatus } from "./codestatus";
@@ -71,6 +71,7 @@ import {
 } from "./codestore";
 import type { TreeRow } from "./codetree";
 import { codeLocateAtom, collapseAllDirs, locateOpenFile } from "./codetreeactions";
+import { NameInput } from "./nameinput";
 import { pathMenuItems } from "./pathmenu";
 import { revealInList } from "./treescroll";
 
@@ -146,6 +147,7 @@ export function CodeTreePane({ model }: { model: AgentsViewModel }) {
                 depth={provisionalDepth}
                 existing={paths}
                 onCommit={(name) => fireAndForget(() => createEntry(edit.dir, name, edit.isDir))}
+                onCancel={cancelEdit}
             />
         ) : null;
 
@@ -273,6 +275,7 @@ export function CodeTreePane({ model }: { model: AgentsViewModel }) {
                     depth={0}
                     existing={paths.filter((p) => p !== row.path && !p.startsWith(`${row.path}/`))}
                     onCommit={(name) => fireAndForget(() => renamePath(row.path, name))}
+                    onCancel={cancelEdit}
                 />
             ) : (
                 <span className="min-w-0 truncate">{row.name}</span>
@@ -465,54 +468,6 @@ function PinnedFiles({ root, pinned, openFile }: { root: string; pinned: readonl
                     );
                 })}
             </div>
-        </div>
-    );
-}
-
-// Enter commits, Escape cancels, and the error shows while you type — the pre-check reads the index
-// snapshot, so it can be wrong, which is why the write still surfaces the backend's error.
-function NameInput({
-    initial,
-    dir,
-    depth,
-    existing,
-    onCommit,
-}: {
-    initial: string;
-    dir: string;
-    depth: number;
-    existing: readonly string[];
-    onCommit: (name: string) => void;
-}) {
-    const [value, setValue] = useState(initial);
-    // an unchanged rename is not an error, but an empty create is — so the skip only applies to a
-    // name that is both non-empty and untouched
-    const trimmed = value.trim();
-    const err = trimmed !== "" && trimmed === initial ? null : validateName(value, dir, existing);
-    return (
-        <div style={{ paddingLeft: 8 + depth * 12 }} className="flex w-full items-center gap-1.5 py-[3px] pr-2">
-            <input
-                autoFocus
-                value={value}
-                data-code-name-input
-                onChange={(e) => setValue(e.target.value)}
-                onBlur={cancelEdit}
-                onKeyDown={(e) => {
-                    e.stopPropagation(); // the tree's j/k/n bindings must not eat what you type
-                    if (e.key === "Escape") {
-                        cancelEdit();
-                    }
-                    if (e.key === "Enter" && err == null) {
-                        onCommit(trimmed);
-                    }
-                }}
-                className="min-w-0 flex-1 select-text rounded-[4px] border border-border bg-surface px-1 py-[1px] text-[12px] text-primary outline-none"
-            />
-            {err != null ? (
-                <span title={nameErrorMessage(err)} className="flex-none text-[10px] text-error">
-                    {nameErrorMessage(err)}
-                </span>
-            ) : null}
         </div>
     );
 }

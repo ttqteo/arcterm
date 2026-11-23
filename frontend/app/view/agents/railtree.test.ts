@@ -4,11 +4,13 @@
 import { buildTree, visibleRows } from "@/app/view/code/codetree";
 import { describe, expect, it } from "vitest";
 import {
+    afterCreate,
     clickRow,
     collapseAll,
     dragPaths,
     EMPTY_RAIL_TREE,
     moveCursorTo,
+    openToDir,
     pruneExpanded,
     revealRow,
     shouldReloadTree,
@@ -365,5 +367,42 @@ describe("shouldReloadTree", () => {
 
     it("treats a state that appears or disappears as a change", () => {
         expect(shouldReloadTree({ state: undefined, tabShown: true }, { state: "idle", tabShown: true })).toBe(true);
+    });
+});
+
+describe("openToDir", () => {
+    it("opens the folder and every folder above it, keeping the rest", () => {
+        const s = state({ expanded: ["docs"], selected: ["README.md"], cursor: "README.md" });
+        expect(openToDir(s, "src/app")).toEqual({ ...s, expanded: ["docs", "src", "src/app"] });
+    });
+
+    it("returns the same state for the root or a folder already open", () => {
+        const s = state({ expanded: ["src", "src/app"] });
+        expect(openToDir(s, "")).toBe(s);
+        expect(openToDir(s, "src/app")).toBe(s);
+    });
+});
+
+describe("afterCreate", () => {
+    it("selects a new file and opens its folders", () => {
+        expect(afterCreate(state({ selected: ["README.md"] }), "src/app/new.ts", false)).toEqual({
+            expanded: ["src", "src/app"],
+            selected: ["src/app/new.ts"],
+            anchor: "src/app/new.ts",
+            cursor: "src/app/new.ts",
+        });
+    });
+
+    it("opens a new folder too", () => {
+        expect(afterCreate(state(), "docs/drafts", true).expanded).toEqual(["docs", "docs/drafts"]);
+    });
+
+    it("selects a new file at the root without opening anything", () => {
+        expect(afterCreate(state(), "notes.md", false)).toEqual({
+            expanded: [],
+            selected: ["notes.md"],
+            anchor: "notes.md",
+            cursor: "notes.md",
+        });
     });
 });
