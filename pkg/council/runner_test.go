@@ -3538,9 +3538,17 @@ func TestMarkStaleSavesTheStoppedCouncilsDocument(t *testing.T) {
 	if err != nil {
 		t.Fatalf("the document was not written: %v", err)
 	}
-	for _, w := range []string{"# Council: Idle sleep for services", "Title from ux", "It breaks.", "- Ended: stopped"} {
-		if !strings.Contains(string(body), w) {
-			t.Errorf("the document lacks %q\n%s", w, body)
+	if w := "# Council: Idle sleep for services"; !strings.Contains(string(body), w) {
+		t.Errorf("the document lacks %q\n%s", w, body)
+	}
+	// The seats' proposals and the run facts sit in the side file since the report split.
+	side, err := os.ReadFile(SidePath(want))
+	if err != nil {
+		t.Fatalf("the side file was not written: %v", err)
+	}
+	for _, w := range []string{"Title from ux", "It breaks.", "- Ended: stopped"} {
+		if !strings.Contains(string(side), w) {
+			t.Errorf("the side file lacks %q\n%s", w, side)
 		}
 	}
 	if q := h.load("queued"); q.State != StateQueued || q.DocPath != "" {
