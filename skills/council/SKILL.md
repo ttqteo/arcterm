@@ -138,12 +138,15 @@ first). `wait` polls until the council stops running (a queued one included), th
 markdown. Sum it up in the conversation in a few lines: for a review, the top direction, why it ranked there, its first
 step and where the panel disagreed; for a brainstorm, the ideas worth trying with their first steps, and a wild idea only when it
 changes the choice. Then carry on from there with the spec, the plan, the draft or the problem. `wait` prints no cite
-check: before you repeat a `path:line` of the report as fact, read the saved document's Cite check section (or run
-`wsh council cites <document>`), and say so when the place is listed wrong, with no keyword near the line, as not
-checked (a bare file name no full path of the report names), or as a line with nothing to look for: read those by hand.
+check: before you repeat a `path:line` of the report as fact, read the Cite check section of the saved document's side
+file, `<document>.discussion.md` (or run `wsh council cites <document>`), and say so when the place is listed wrong, with
+no keyword near the line, as not checked (a bare file name no full path of the report names), or as a line with nothing
+to look for: read those by hand.
 
 A council's directions are only in its report. Its document is saved under the project's `docs/council/` when it ends
-(done or stopped); `wsh council show <id> --json` carries its path as `docpath`.
+(done or stopped) as two files: the short report (`<name>.md`: the answer, a to-do table, the figures Go checked, what
+the council settled) and `<name>.discussion.md`, which holds each direction in full, the matrix, the Cite check, the whole
+discussion and the run facts; `wsh council show <id> --json` carries the report's path as `docpath`.
 
 ## Seating chats
 

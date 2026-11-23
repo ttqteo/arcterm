@@ -61,6 +61,28 @@ func TestDocPathDefault(t *testing.T) {
 	}
 }
 
+// Document names its files by the path the council was saved at, which may be a Windows path read on a Mac, else by the
+// default a first save would pick.
+func TestDocFileName(t *testing.T) {
+	useDocDay(t)
+	c := docCouncil("/p")
+	if got := docFileName(c); got != "2026-10-21-idle-sleep-for-services.md" {
+		t.Errorf("default name = %q", got)
+	}
+	for saved, want := range map[string]string{
+		`D:\thesis\docs\council\2026-11-19-x.md`: "2026-11-19-x.md",
+		"/p/docs/council/y.md":                   "y.md",
+		"z.md":                                   "z.md",
+	} {
+		c.DocPath = saved
+		if got := docFileName(c); got != want {
+			t.Errorf("docFileName(%q) = %q, want %q", saved, got, want)
+		}
+	}
+	c.DocPath = `D:\thesis\docs\council\2026-11-19-x.md`
+	mustContain(t, "document", Document(c), "[2026-11-19-x.discussion.md](2026-11-19-x.discussion.md)", "The report: [2026-11-19-x.md](2026-11-19-x.md).")
+}
+
 func TestDocPathPickedPath(t *testing.T) {
 	project := t.TempDir()
 	c := docCouncil(project)
@@ -124,12 +146,48 @@ func TestDocPathNotGit(t *testing.T) {
 		t.Fatalf("WriteDocument in a plain folder: %v", err)
 	}
 	body, err := os.ReadFile(path)
-	if err != nil || string(body) != documentWith(c, nil, citeRoots(c)) {
-		t.Fatalf("the file = %q, %v, want the document with its cite check", body, err)
+	if err != nil {
+		t.Fatal(err)
+	}
+	side, err := os.ReadFile(SidePath(path))
+	if err != nil || string(body)+"\n"+string(side) != documentWith(c, nil, citeRoots(c)) {
+		t.Fatalf("the files = %q and %q, %v, want the document with its cite check: the report, then its side file", body, side, err)
 	}
 	if _, err := os.Stat(filepath.Join(project, ".git")); err == nil {
 		t.Error("writing the document made a .git")
 	}
+}
+
+// WriteDocument writes two files and returns the main one's path: the short report, which links its side file, and the
+// side file, which links back and holds what is about how the council worked.
+func TestWriteDocumentWritesTheReportAndItsSideFile(t *testing.T) {
+	useDocDay(t)
+	project := t.TempDir()
+	c := docCouncil(project)
+	c.Summary = &CouncilSummary{Answer: "Sleep after a minute.", Directions: []CouncilDirection{{Rank: 1, Title: "Sleep sooner", Reasoning: "It saves RAM. It costs a wake.", Agreed: true}}}
+	path, err := WriteDocument(c, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := filepath.Join(project, "docs", "council", "2026-10-21-idle-sleep-for-services.md")
+	if path != want {
+		t.Fatalf("WriteDocument returned %q, want the main file %q", path, want)
+	}
+	main, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	side, err := os.ReadFile(SidePath(path))
+	if err != nil {
+		t.Fatalf("the side file was not written: %v", err)
+	}
+	mustContain(t, "main file", string(main), "# Council: Idle sleep for services!", "**Sleep after a minute.**", "## To do",
+		"[2026-10-21-idle-sleep-for-services.discussion.md](2026-10-21-idle-sleep-for-services.discussion.md)")
+	mustNotContain(t, "main file", string(main), "## The discussion", "## Run facts", "## Matrix", "## Cite check", "## Directions", "Stances:")
+	mustContain(t, "side file", string(side), "# Council discussion: Idle sleep for services!",
+		"The report: [2026-10-21-idle-sleep-for-services.md](2026-10-21-idle-sleep-for-services.md)",
+		"## Directions", "## Matrix", "## The discussion", "## Run facts")
+	mustNotContain(t, "side file", string(side), "## To do")
 }
 
 func TestDocPathSavedTwiceKeepsOneFile(t *testing.T) {
@@ -147,8 +205,8 @@ func TestDocPathSavedTwiceKeepsOneFile(t *testing.T) {
 		t.Fatalf("second save = %q, %v, want %q again", second, err, first)
 	}
 	files, err := os.ReadDir(filepath.Dir(first))
-	if err != nil || len(files) != 1 {
-		t.Errorf("docs/council holds %d files, %v, want one", len(files), err)
+	if err != nil || len(files) != 2 {
+		t.Errorf("docs/council holds %d files, %v, want the report and its side file", len(files), err)
 	}
 
 	// a DocPath that points outside the project is not trusted: the default path is used

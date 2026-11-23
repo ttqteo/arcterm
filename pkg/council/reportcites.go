@@ -94,7 +94,8 @@ var discussionWhoRe = regexp.MustCompile(`^- \*\*(.+?)\*\* (.+?)(?: · |$)(?:on 
 
 // splitReport cuts a document into its items, each named by where it stands. The run facts, and the person's own
 // question, cite nothing a check should read, so they are left out; so are headings and the matrix (its cells are cut
-// short, and their claims stand whole in the discussion).
+// short, and their claims stand whole in the discussion), the check's own earlier section, and the side file's list of
+// the figures that did not check out (its refs are the failed ones, listed with why, not claims of the report).
 func splitReport(doc string) []reportBlock {
 	var blocks []reportBlock
 	section := ""
@@ -111,8 +112,8 @@ func splitReport(doc string) []reportBlock {
 			section = strings.TrimSpace(strings.TrimPrefix(line, "## "))
 			continue
 		}
-		if section == "Run facts" || section == "Cite check" || section == "Matrix" || strings.HasPrefix(line, "# ") ||
-			strings.HasPrefix(line, "You asked: ") {
+		if section == "Run facts" || section == "Cite check" || section == "Matrix" || section == failedFiguresHeading ||
+			strings.HasPrefix(line, "# ") || isAskedLine(line) {
 			continue
 		}
 		if blockStartRe.MatchString(line) || cur == nil {
@@ -123,6 +124,12 @@ func splitReport(doc string) []reportBlock {
 	}
 	flush()
 	return blocks
+}
+
+// isAskedLine says line is the report's own line with the person's question ("You asked: …", "Bạn hỏi: …"), in whichever
+// language the report was written in, which cites nothing a check should read.
+func isAskedLine(line string) bool {
+	return strings.HasPrefix(line, englishWords.asked) || strings.HasPrefix(line, vietnameseWords.asked)
 }
 
 // blockWhere names an item for the check's list: the discussion's speaker and what they did, else the section.

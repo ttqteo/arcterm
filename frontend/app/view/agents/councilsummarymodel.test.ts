@@ -391,7 +391,7 @@ describe("a report's top and its folded rest", () => {
 
     it("counts both in the outline and the jump links: the count the fold shows is the kept rows", () => {
         expect(jumpLinks(review).map((e) => [e.id, e.count])).toEqual([
-            ["glance", null],
+            ["todo", null],
             ["directions", 5],
             ["kept", 4],
         ]);
@@ -914,14 +914,43 @@ describe("expertActivity", () => {
 });
 
 describe("outlineOf", () => {
-    it("lists the answer, At a glance and the directions with each one under them, and no matrix: the Map tab holds it", () => {
+    it("lists the answer, To do and the directions with each one under them, and no matrix: the Map tab holds it", () => {
         expect(outlineOf(council()).map((e) => [e.id, e.label, e.count, e.depth])).toEqual([
             ["answer", "The answer", null, 0],
-            ["glance", "At a glance", null, 0],
+            ["todo", "To do", null, 0],
             ["directions", "Directions", 2, 0],
             ["direction:1", "direction 1", null, 1],
             ["direction:2", "direction 2", null, 1],
         ]);
+    });
+
+    it("has no At a glance entry: it is folded inside About the council, which has none", () => {
+        expect(outlineOf(council()).map((e) => e.id)).not.toContain("glance");
+        expect(outlineOf(council()).map((e) => e.id)).not.toContain("about");
+    });
+
+    it("lists Figures right after To do only while Go verified a figure", () => {
+        const ok = { value: "1,248 ms", measures: "cold start", ref: "a.go:1", cite: "ok" };
+        const wrong = {
+            value: "9 ms",
+            measures: "warm start",
+            ref: "a.go:2",
+            cite: "wrong",
+            citenote: "value not in the quote",
+        };
+        expect(outlineOf(council({ figures: [ok, wrong] })).map((e) => [e.id, e.label])).toContainEqual([
+            "figures",
+            "Figures",
+        ]);
+        expect(
+            outlineOf(council({ figures: [ok] }))
+                .map((e) => e.id)
+                .slice(0, 3)
+        ).toEqual(["answer", "todo", "figures"]);
+        // a failed figure alone, or one Go has not checked, makes no table
+        expect(outlineOf(council({ figures: [wrong] })).map((e) => e.id)).not.toContain("figures");
+        expect(outlineOf(council({ figures: [{ ...ok, cite: undefined }] })).map((e) => e.id)).not.toContain("figures");
+        expect(outlineOf(council()).map((e) => e.id)).not.toContain("figures");
     });
 
     it("names a Brainstorm's ideas and the ideas kept aside, and a Review's ideas also raised", () => {
@@ -930,24 +959,24 @@ describe("outlineOf", () => {
         const brainstorm = outlineOf(council({ mode: "brainstorm", summary: kept }));
         expect(brainstorm.filter((e) => e.depth === 0).map((e) => [e.label, e.count])).toEqual([
             ["The answer", null],
-            ["At a glance", null],
+            ["To do", null],
             ["Ideas worth trying", 2],
             ["Wild ideas kept aside", 2],
         ]);
         expect(outlineOf(council({ summary: kept })).find((e) => e.id === "kept")?.label).toBe("Also raised");
     });
 
-    it("leaves At a glance out when the summary ranked no direction", () => {
+    it("leaves To do out when the summary ranked no direction", () => {
         const none = { text: "", directions: [], outcomes: {}, at: 15 };
         expect(outlineOf(council({ summary: none })).map((e) => e.id)).toEqual(["answer"]);
     });
 
-    it("lists What it settled right after the answer when the memory holds a direction or an entry", () => {
+    it("lists What it settled after To do when the memory holds a direction or an entry", () => {
         const chosen = { text: "Ship B", how: "pin", at: 1 };
         expect(outlineOf(council({ memory: { chosen } })).map((e) => e.id)).toEqual([
             "answer",
+            "todo",
             "settled",
-            "glance",
             "directions",
             "direction:1",
             "direction:2",
@@ -968,7 +997,7 @@ describe("outlineOf", () => {
         const spent = outlineOf(council({ summary: kept, stats }));
         expect(spent.map((e) => e.id)).toEqual([
             "answer",
-            "glance",
+            "todo",
             "directions",
             "direction:1",
             "direction:2",
@@ -998,7 +1027,7 @@ describe("outlineOf", () => {
         const withKept = outlineOf(council({ summary: kept, finalpick: "P2" }));
         expect(withKept.map((e) => e.id)).toEqual([
             "answer",
-            "glance",
+            "todo",
             "directions",
             "direction:1",
             "direction:2",
@@ -1014,7 +1043,7 @@ describe("outlineOf", () => {
         });
         expect(outlineOf(council({ finalpick: "r1" })).map((e) => e.id)).toEqual([
             "answer",
-            "glance",
+            "todo",
             "directions",
             "direction:1",
             "direction:2",
@@ -1036,16 +1065,26 @@ describe("outlineOf", () => {
 });
 
 describe("jumpLinks", () => {
-    it("lists At a glance, the directions and the kept ideas of a Brainstorm", () => {
+    it("lists To do, the directions and the kept ideas of a Brainstorm", () => {
         const base = council();
         const kept = { ...base.summary!, kept: [direction(3, ["P6"]), direction(4, ["P7"])] };
         const links = jumpLinks(council({ mode: "brainstorm", summary: kept }));
-        expect(links.map((e) => e.id)).toEqual(["glance", "directions", "kept"]);
+        expect(links.map((e) => e.id)).toEqual(["todo", "directions", "kept"]);
         expect(links.map((e) => e.count)).toEqual([null, 2, 2]);
     });
 
     it("leaves out kept when a Review keeps nothing aside", () => {
-        expect(jumpLinks(council()).map((e) => e.id)).toEqual(["glance", "directions"]);
+        expect(jumpLinks(council()).map((e) => e.id)).toEqual(["todo", "directions"]);
+    });
+
+    it("lists To do, then Figures when Go verified one, ahead of the rest, and never At a glance", () => {
+        const ok = { value: "1,248 ms", measures: "cold start", ref: "a.go:1", cite: "ok" };
+        expect(jumpLinks(council({ figures: [ok] })).map((e) => [e.id, e.label])).toEqual([
+            ["todo", "To do"],
+            ["figures", "Figures"],
+            ["directions", "Directions"],
+        ]);
+        expect(jumpLinks(council()).map((e) => e.id)).not.toContain("glance");
     });
 
     it("has no link to What it spent: the cost is folded at the foot, not a result", () => {
@@ -1053,16 +1092,16 @@ describe("jumpLinks", () => {
         const kept = { ...base.summary!, kept: [direction(3, ["P6"])] };
         const stats = { ram: { ms: 900, tokens: 1200, calls: 1 } };
         expect(jumpLinks(council({ summary: kept, stats, finalpick: "P2" })).map((e) => e.id)).toEqual([
-            "glance",
+            "todo",
             "directions",
             "kept",
             "final",
         ]);
     });
 
-    it("leads with What it settled when the memory holds a result", () => {
+    it("lists What it settled after To do when the memory holds a result", () => {
         const memory = { entries: [{ id: "m1", kind: "open", text: "which first?", by: "auto", at: 1 }] };
-        expect(jumpLinks(council({ memory })).map((e) => e.id)).toEqual(["settled", "glance", "directions"]);
+        expect(jumpLinks(council({ memory })).map((e) => e.id)).toEqual(["todo", "settled", "directions"]);
     });
 
     it("is empty before a summary while nothing is pinned", () => {
@@ -1073,12 +1112,12 @@ describe("jumpLinks", () => {
         const base = council();
         const kept = { ...base.summary!, kept: [direction(3, ["P6"])] };
         expect(jumpLinks(council({ summary: kept, finalpick: "P2" })).map((e) => e.id)).toEqual([
-            "glance",
+            "todo",
             "directions",
             "kept",
             "final",
         ]);
-        expect(jumpLinks(council({ finalpick: "r1" })).map((e) => e.id)).toEqual(["glance", "directions", "final"]);
+        expect(jumpLinks(council({ finalpick: "r1" })).map((e) => e.id)).toEqual(["todo", "directions", "final"]);
     });
 
     it("is only the Final proposal when a message is pinned and there is no summary", () => {

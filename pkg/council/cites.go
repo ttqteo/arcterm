@@ -277,7 +277,9 @@ func citesAnything(ev []CouncilEvidence) bool {
 // agent seat's own working directory); nil, or an empty answer, leaves that expert's cites unchecked, and a label then
 // follows from the runs alone. A held or dropped proposal and a plain reply (an answer to the person) are left exactly as
 // they are. In a Brainstorm only an idea that cites something is checked and labelled: an idea with no cite makes no claim
-// about today's code and gets no label, and every reply is left as it is. It checks from scratch each time.
+// about today's code and gets no label, and every reply is left as it is. A Review's sent proposals also get their
+// figures checked (checkFigure), with their author's roots, and Council.Figures is rewritten from them (collectFigures);
+// a Brainstorm's stays nil. It checks from scratch each time.
 func ApplyChecks(c *Council, rootsFor func(expertId string) []string) {
 	if c == nil {
 		return
@@ -298,9 +300,18 @@ func ApplyChecks(c *Council, rootsFor func(expertId string) []string) {
 			p.Label = ""
 			continue
 		}
-		p.Evidence = CheckEvidence(p.Evidence, roots(p.Author), shots)
+		authorRoots := roots(p.Author)
+		p.Evidence = CheckEvidence(p.Evidence, authorRoots, shots)
 		p.Label = LabelOf(p.Evidence, p.Runs)
+		if !isBrainstorm(c) && len(p.Figures) > 0 {
+			checked := make([]CouncilFigure, len(p.Figures))
+			for j, f := range p.Figures {
+				checked[j] = checkFigure(f, authorRoots)
+			}
+			p.Figures = checked
+		}
 	}
+	c.Figures = collectFigures(c) // nil in a Brainstorm
 	if isBrainstorm(c) {
 		return
 	}

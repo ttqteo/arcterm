@@ -275,9 +275,16 @@ agrees with which idea in Map" mở nó.
   kiểm, một góc nhìn còn thiếu). Chúng là các chip dưới tin mới nhất và dưới **Ask next**; bấm một chip là câu hỏi vào ô
   nhắn, có sẵn `@` tới chuyên gia nó dành cho, để bạn sửa rồi gửi.
 - **Was this useful?** với **Useful** và **Not really**; đổi được về sau.
-- **Tài liệu đã lưu**: mỗi council xong được lưu trong project thành `docs/council/<ngày>-<tính năng>.md`, gồm cả cuộc
-  thảo luận. Báo cáo hiện đường dẫn và mở được file.
-- **Cite check** trong tài liệu đã lưu, ngay sau Matrix: Go đọc lại mọi `path:line` mà báo cáo trích, cả câu của
+- **Tài liệu đã lưu**: mỗi council xong được lưu trong project thành hai file. File chính
+  `docs/council/<ngày>-<tính năng>.md` ngắn, viết bằng ngôn ngữ của câu hỏi: hướng được chọn, câu trả lời, bảng **việc
+  cần làm** (việc, vì sao, file nó đụng, loại: mới, sửa hay quyết định), bảng **số liệu** mà Go đã đối chiếu với file của
+  project (chỉ số liệu khớp), Agreed / Ruled out / Open, Final proposal và một link sang file phụ. File phụ
+  `<ngày>-<tính năng>.discussion.md` (tiêu đề tiếng Anh) giữ At a glance, các hướng đầy đủ, Ask next, Matrix, số liệu
+  không khớp, file không chép được, Cite check, cuộc thảo luận và Run facts. Báo cáo hiện đường dẫn và mở được file.
+  `wsh council redoc` viết lại các báo cáo cũ của project theo dạng này (`--dry-run` để xem trước).
+- **File ngoài project** đưa cho council được chép vào `docs/council/briefs/` lúc council bắt đầu, để các dòng báo cáo
+  trích đọc được trên máy nào cũng vậy; file hay thư mục quá 1 MB không chép, và được ghi tên trong file phụ.
+- **Cite check** trong file phụ, ngay sau Matrix: Go đọc lại mọi `path:line` mà báo cáo trích, cả câu của
   coordinator (phần nhãn ở trên chỉ kiểm bằng chứng chuyên gia tự khai), không gọi model. Mỗi chỗ được trích là **hold**
   (file có, dòng nằm trong file, và một từ khóa của câu trích nó có ở dòng đó hoặc trong ba dòng quanh), **no keyword**
   (dòng có thật nhưng không chứa từ nào của câu trích: đọc tay), **wrong** (không có file, hay dòng vượt cuối file),

@@ -490,12 +490,20 @@ func TestCouncilSaveDocWritesTheDocument(t *testing.T) {
 	if err != nil {
 		t.Fatalf("the doc was not written: %v", err)
 	}
-	if string(body) != council.Document(c) {
-		t.Errorf("the doc is not council.Document:\n%s", body)
+	// the file is the main report and its side file sits beside it: together they are council.Document
+	side, err := os.ReadFile(council.SidePath(want))
+	if err != nil {
+		t.Fatalf("the side file was not written: %v", err)
 	}
-	for _, w := range []string{"# Council: Idle sleep for services!", "## The discussion", "**UX** proposes", "## Run facts"} {
-		if !strings.Contains(string(body), w) {
-			t.Errorf("the doc lacks %q:\n%s", w, body)
+	if string(body)+"\n"+string(side) != council.Document(c) {
+		t.Errorf("the two files are not council.Document:\n%s\n---\n%s", body, side)
+	}
+	if !strings.Contains(string(body), "# Council: Idle sleep for services!") {
+		t.Errorf("the report lacks its title:\n%s", body)
+	}
+	for _, w := range []string{"## The discussion", "**UX** proposes", "## Run facts"} {
+		if !strings.Contains(string(side), w) || strings.Contains(string(body), w) {
+			t.Errorf("%q should be in the side file only:\n%s\n---\n%s", w, body, side)
 		}
 	}
 
@@ -511,8 +519,8 @@ func TestCouncilSaveDocWritesTheDocument(t *testing.T) {
 		t.Errorf("second save = %+v, %v, want the same file %q", again, err, want)
 	}
 	files, _ := os.ReadDir(filepath.Dir(want))
-	if len(files) != 1 {
-		t.Errorf("docs/council holds %d files after two saves, want 1", len(files))
+	if len(files) != 2 {
+		t.Errorf("docs/council holds %d files after two saves, want the report and its side file", len(files))
 	}
 }
 

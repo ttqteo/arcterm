@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -429,4 +430,124 @@ func TestApplyChecksBrainstorm(t *testing.T) {
 	if !reflect.DeepEqual(again, c) {
 		t.Error("ApplyChecks twice on a Brainstorm differs from once")
 	}
+}
+
+// ApplyChecks checks each sent Review proposal's figures with its author's roots and then derives Council.Figures.
+func TestApplyChecksFigures(t *testing.T) {
+	projA := t.TempDir()
+	projB := t.TempDir() // a second seat's own working directory
+	writeCiteFile(t, projA, "pkg/idle.go", figureFile)
+	writeCiteFile(t, projB, "only/b.go", figureFile)
+	rootsFor := func(id string) []string {
+		if id == "seatB" {
+			return []string{projB}
+		}
+		return []string{projA}
+	}
+	good := func(measures string) CouncilFigure {
+		return CouncilFigure{Value: "300", Measures: measures, Ref: "pkg/idle.go:3", Quote: "const idleWaitSeconds = 300"}
+	}
+	build := func(mode string) *Council {
+		return &Council{
+			Mode: mode,
+			Proposals: []CouncilProposal{
+				{Id: "P1", Author: "ux", Evidence: []CouncilEvidence{{Ref: "pkg/idle.go:3"}}, Figures: []CouncilFigure{
+					good("from ux"),
+					{Value: "301", Measures: "wrong value", Ref: "pkg/idle.go:3", Quote: "const idleWaitSeconds = 300"},
+					{Value: "1,248 ms", Measures: "wake", Ref: "pkg/idle.go:12", Quote: `const wakeLatency = "1,248 ms"`},
+				}},
+				{Id: "P2", Author: "ram", Figures: []CouncilFigure{good("from ram")}}, // no evidence, still has figures
+				{Id: "P3", Author: "ux", Draft: DraftHeld, Figures: []CouncilFigure{good("held")}},
+				{Id: "P4", Author: "seatB", Figures: []CouncilFigure{
+					{Value: "300", Measures: "in b", Ref: "only/b.go:3", Quote: "const idleWaitSeconds = 300"},
+					good("a ref only ux's tree has"), // seatB's own directory has no pkg/idle.go
+				}},
+			},
+		}
+	}
+
+	t.Run("a review", func(t *testing.T) {
+		c := build("")
+		ApplyChecks(c, rootsFor)
+
+		p1 := c.Proposals[0].Figures
+		if p1[0].Cite != CiteOK || p1[1].Cite != CiteWrong || p1[1].CiteNote != "value not in the quote" || p1[2].Cite != CiteOK {
+			t.Errorf("P1's figures = %+v, want ok, wrong (value not in the quote), ok", p1)
+		}
+		if got := c.Proposals[1].Figures[0].Cite; got != CiteOK {
+			t.Errorf("P2's figure Cite = %q, want ok", got)
+		}
+		if got := c.Proposals[2].Figures[0].Cite; got != "" {
+			t.Errorf("a held proposal's figure was checked: %q", got)
+		}
+		p4 := c.Proposals[3].Figures
+		if p4[0].Cite != CiteOK || p4[1].Cite != CiteWrong {
+			t.Errorf("seatB's figures = %+v, want ok in its own directory and wrong in another's", p4)
+		}
+
+		// Council.Figures: the same figure from ux and ram is one, verified; ux's 301 and seatB's out-of-tree copy are
+		// their own figures (the latter a copy of the same figure as P1's first, so it joins it)
+		got := map[string]CouncilFigure{}
+		for _, f := range c.Figures {
+			got[f.Value+" "+f.Ref] = f
+		}
+		if len(c.Figures) != 4 {
+			t.Fatalf("Council.Figures = %+v, want 4 distinct figures", c.Figures)
+		}
+		f300 := got["300 pkg/idle.go:3"]
+		if f300.Cite != CiteOK || f300.Measures != "from ux" || !slices.Equal(f300.From, []string{"P1", "P2", "P4"}) {
+			t.Errorf("figure 300 = %+v, want one verified figure from P1, P2 and P4", f300)
+		}
+		if f := got["301 pkg/idle.go:3"]; f.Cite != CiteWrong || !slices.Equal(f.From, []string{"P1"}) {
+			t.Errorf("figure 301 = %+v, want wrong, from P1", f)
+		}
+		if f := got["300 only/b.go:3"]; f.Cite != CiteOK || !slices.Equal(f.From, []string{"P4"}) {
+			t.Errorf("figure 300 in b = %+v, want ok, from P4", f)
+		}
+		for _, f := range c.Figures {
+			if f.Measures == "held" {
+				t.Errorf("a held proposal's figure reached Council.Figures: %+v", f)
+			}
+		}
+	})
+
+	t.Run("a second run changes nothing and drops figures that are gone", func(t *testing.T) {
+		c := build(ModeReview)
+		ApplyChecks(c, rootsFor)
+		once := build(ModeReview)
+		ApplyChecks(once, rootsFor)
+		ApplyChecks(c, rootsFor)
+		if !reflect.DeepEqual(c, once) {
+			t.Error("ApplyChecks twice differs from once")
+		}
+		c.Proposals[0].Figures, c.Proposals[1].Figures, c.Proposals[3].Figures = nil, nil, nil
+		ApplyChecks(c, rootsFor)
+		if c.Figures != nil {
+			t.Errorf("Council.Figures = %+v after every figure left, want nil", c.Figures)
+		}
+	})
+
+	t.Run("a nil roots function leaves a well-formed figure unchecked", func(t *testing.T) {
+		c := build("")
+		ApplyChecks(c, nil)
+		if got := c.Proposals[0].Figures[0].Cite; got != "" {
+			t.Errorf("a figure was checked with no roots: %q", got)
+		}
+		if len(c.Figures) == 0 {
+			t.Error("Council.Figures is empty: the unchecked figures still belong to it")
+		}
+		for _, f := range c.Figures {
+			if f.Cite == CiteOK {
+				t.Errorf("a figure verified with no tree: %+v", f)
+			}
+		}
+	})
+
+	t.Run("a Brainstorm gets none", func(t *testing.T) {
+		c := build(ModeBrainstorm)
+		ApplyChecks(c, rootsFor)
+		if c.Figures != nil {
+			t.Errorf("a Brainstorm's Council.Figures = %+v, want nil", c.Figures)
+		}
+	})
 }

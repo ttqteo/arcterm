@@ -6,7 +6,7 @@
 // councilscenarios.mjs as arrange(h, fx), assert(h, ctx, fx), teardown(h, ctx, fx).
 //
 //   council-figures        the Report of the `figures` fixture (a finished Review: five seats' stats, a timeline of timed
-//                          steps, three directions): At a glance (the evidence × agreement quadrant and the stance grid),
+//                          steps, three directions): To do, then About the council opened on At a glance (the evidence × agreement quadrant and the stance grid),
 //                          then, through its jump link, What it spent (each seat's tokens, and when each worked and what it
 //                          read twice), the hovers and clicks of each, the Table views and the narrow pane
 //   council-figures-graph  the Map of the same council: the Matrix | Graph switch, the argument map, the hover that dims
@@ -124,15 +124,27 @@ const WIDE = { width: 1600, height: 950, deviceScaleFactor: 1, mobile: false };
 
 // ---- the Report ----
 
-// the Report of the council, drawn: its three directions and the At a glance figures
-async function openReport(h, id) {
+// the Report of the council, drawn: its three directions, and (unless `about` is false) About the council opened on the
+// At a glance figures, which it holds folded
+async function openReport(h, id, { about = true } = {}) {
     await openCouncil(h, id, "summary");
     const drawn = `document.querySelector(${q(SUMMARY)})?.dataset.councilId === ${q(id)} &&
         document.querySelectorAll("[data-council-direction]").length === 3 &&
-        !!document.querySelector('[data-council-figure="glance"]') &&
-        !!document.querySelector('[data-council-figure="stance-grid"]')`;
-    if (!(await until(h, drawn))) throw new Error("the Report did not draw its directions and At a glance figures");
+        !!document.querySelector("[data-council-about-toggle]")`;
+    if (!(await until(h, drawn))) throw new Error("the Report did not draw its directions and About the council");
     // the sections fade in as they mount
+    await sleep(500);
+    if (about) await openAbout(h);
+}
+
+// opens About the council, folded above What it spent, and waits for the At a glance figures inside it
+async function openAbout(h) {
+    if ((await h.ev(`document.querySelector("[data-council-about-toggle]")?.getAttribute("aria-expanded")`)) !== "true") {
+        await click(h, "[data-council-about-toggle]");
+    }
+    const drawn = `!!document.querySelector('[data-council-figure="glance"]') && !!document.querySelector('[data-council-figure="stance-grid"]')`;
+    if (!(await until(h, drawn))) throw new Error("About the council did not open on the At a glance figures");
+    // the fold opens over its own motion
     await sleep(500);
 }
 
@@ -187,26 +199,31 @@ export const councilFigures = {
     async assert(h, ctx) {
         const steps = [];
         const step = stepper(steps);
-        await openReport(h, ctx.councilId);
+        await openReport(h, ctx.councilId, { about: false });
 
-        await step("What it settled sits under the cover, At a glance between it and the directions, and What it spent folded at the foot, each computed from the council", async () => {
+        await step("To do and What it settled sit under the cover, the directions after them, About the council folded under the directions with At a glance inside it, and What it spent folded at the foot, each computed from the council", async () => {
+            // folded, About the council draws no figure
+            const aboutFolded = await h.ev(`document.querySelector("[data-council-about-toggle]")?.getAttribute("aria-expanded") === "false" && !document.querySelector('[data-council-figure="glance"]')`);
+            await openAbout(h);
             const facts = await h.ev(`(() => {
                 const t = (s) => document.querySelector(s)?.innerText?.replace(/\\s+/g, " ").trim() ?? null;
                 const after = (a, b) => !!a && !!b && !!(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
                 const cover = document.querySelector("[data-council-cover]");
-                const glance = document.querySelector('[data-council-section="glance"]');
+                const todo = document.querySelector('[data-council-section="todo"]');
+                const about = document.querySelector('[data-council-section="about"]');
+                const glance = document.querySelector('[data-council-about-block="glance"]');
                 const spend = document.querySelector('[data-council-section="spend"]');
                 const settled = document.querySelector('[data-council-section="settled"]');
                 const last = document.querySelector('[data-council-direction="3"]');
                 return {
-                    order: after(cover, settled) && after(settled, glance) && after(glance, document.querySelector('[data-council-direction="1"]')) && after(last, spend),
+                    order: after(cover, todo) && after(todo, settled) && after(settled, document.querySelector('[data-council-direction="1"]')) && after(last, about) && about.contains(glance) && after(about, spend),
                     // nothing after What it spent but the rating row and the Map link
                     spendLast: !!spend && [...document.querySelectorAll("[data-council-section], [data-council-asks-next], [data-council-kept]")].pop() === spend,
                     settledHeading: t('[data-council-section="settled"] > h2'),
                     settledDirection: t("[data-council-settled-direction]"),
                     settledGroups: [...document.querySelectorAll("[data-council-settled]")].map((g) => g.dataset.councilSettled).join(","),
                     settledWhy: t('[data-council-settled="ruledout"]'),
-                    glanceHeading: t('[data-council-section="glance"] > h2'),
+                    glanceHeading: t('[data-council-about-block="glance"] > h2'),
                     spendToggle: t("[data-council-spend-toggle]"),
                     spendFolded: document.querySelector("[data-council-spend-toggle]")?.getAttribute("aria-expanded") === "false" && !document.querySelector('[data-council-figure="spend"]'),
                     glanceCaption: t('[data-council-figure="glance"] figcaption'),
@@ -260,13 +277,14 @@ export const councilFigures = {
                     })(),
                 };
             })()`);
-            // the header's link brings At a glance to the top of the page: the board's picture and the What's new one
-            // (a clip of the section, which only holds what is on screen) both show it whole
+            // At a glance brought to the top of the page (it has no jump link: About the council holds it): the board's
+            // picture and the What's new one (a clip of the block, which only holds what is on screen) both show it whole
             await jumpTo(h, "settled");
             await h.shot("cdp-shots/council-figures-settled.png");
-            await jumpTo(h, "glance");
+            await h.ev(`document.querySelector('[data-council-about-block="glance"]').scrollIntoView({ block: "start" })`);
+            await sleep(400);
             await h.shot("cdp-shots/council-figures.png");
-            const pic = await h.whatsnewShot("council-figures", { selector: '[data-council-section="glance"]' });
+            const pic = await h.whatsnewShot("council-figures", { selector: '[data-council-about-block="glance"]' });
             await openSpend(h);
             const opened = await h.ev(`(() => {
                 const t = (s) => document.querySelector(s)?.innerText?.replace(/\\s+/g, " ").trim() ?? null;
@@ -275,6 +293,7 @@ export const councilFigures = {
             await h.shot("cdp-shots/council-figures-spend-open.png");
             Object.assign(facts, opened);
             const ok =
+                aboutFolded &&
                 facts.order &&
                 facts.spendLast &&
                 facts.settledHeading === "What it settled" &&
@@ -291,8 +310,9 @@ export const councilFigures = {
                 facts.spendCaption?.includes("1.5M a call") &&
                 // the Skeptic's lane holds 200 steps: the oldest are gone, so it is the last ones that were kept
                 !!facts.lanesCaption &&
-                // the fixture keeps two ideas aside, so Also raised is a link after the directions; What it spent has none
-                facts.jumps === "settled,glance,directions,kept" &&
+                // the fixture keeps two ideas aside, so Also raised is a link after the directions; it has no figure,
+                // so Figures has none; neither has About the council (At a glance) nor What it spent
+                facts.jumps === "todo,settled,directions,kept" &&
                 facts.points === 3 &&
                 facts.rows === 3 &&
                 (facts.sideBySide || facts.stacked) &&
@@ -301,7 +321,7 @@ export const councilFigures = {
                 facts.grid.lastSeatInside &&
                 facts.grid.backingInside &&
                 facts.grid.pillsWhole;
-            return { ok, detail: JSON.stringify({ ...facts, pic }) };
+            return { ok, detail: JSON.stringify({ aboutFolded, ...facts, pic }) };
         });
 
         await step("a hover on a point of the quadrant opens its tooltip (evidence held, backing), a click opens that direction's card, and a click on a row of the stance grid opens its direction", async () => {
@@ -435,7 +455,7 @@ export const councilFigures = {
                     };
                 })()`);
                 // the narrowed pane's board shows the two figures stacked, not the cover above them
-                await h.ev(`document.querySelector('[data-council-section="glance"]').scrollIntoView({ block: "start" })`);
+                await h.ev(`document.querySelector('[data-council-about-block="glance"]').scrollIntoView({ block: "start" })`);
                 await sleep(300);
                 await h.shot("cdp-shots/council-figures-narrow.png");
                 const ok =

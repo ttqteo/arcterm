@@ -278,6 +278,48 @@ func TestParseRound1ReadsTheCheckerAndWhy(t *testing.T) {
 	}
 }
 
+// A proposal's "figures" are the numbers it relies on that a project file holds: each is read with its fields trimmed, and an
+// entry with no value or no ref is dropped, since Go cannot check a number with no place. Go's check comes later (ApplyChecks).
+func TestParseRound1ReadsFigures(t *testing.T) {
+	props, _, err := ParseRound1(jsonFence(`{"overview": "", "proposals": [
+	  {"title": "Sleep sooner", "argument": "A", "figures": [
+	    {"value": " 300 ", "measures": " seconds a service idles ", "ref": " pkg/services/idle.go:42 ", "quote": " idleWait = 300 "},
+	    {"value": "", "measures": "no value", "ref": "pkg/a.go:1", "quote": "x"},
+	    {"value": "7", "measures": "no ref", "ref": "  ", "quote": "x"},
+	    {"value": "7", "measures": "no ref field at all"},
+	    {"value": 30, "measures": "a bare number", "ref": "pkg/b.go:9", "quote": "limit = 30"},
+	    {"value": "9", "ref": "pkg/c.go:3"},
+	    "30% of the rows",
+	    null
+	  ]},
+	  {"title": "Show the state", "argument": "B"},
+	  {"title": "Wake on hover", "argument": "C", "figures": "none"},
+	  {"title": "Wake on tap", "argument": "D", "figures": []}
+	]}`))
+	if err != nil || len(props) != 4 {
+		t.Fatalf("got %+v, %v", props, err)
+	}
+	want := []CouncilFigure{
+		{Value: "300", Measures: "seconds a service idles", Ref: "pkg/services/idle.go:42", Quote: "idleWait = 300"},
+		{Value: "30", Measures: "a bare number", Ref: "pkg/b.go:9", Quote: "limit = 30"},
+		{Value: "9", Ref: "pkg/c.go:3"},
+	}
+	if !reflect.DeepEqual(props[0].Figures, want) {
+		t.Errorf("figures = %+v, want %+v: trimmed, a number value kept as its text, and the entries with no value or no ref dropped",
+			props[0].Figures, want)
+	}
+	for i := 1; i < 4; i++ {
+		if props[i].Figures != nil {
+			t.Errorf("proposal %d figures = %+v, want none (a reply that holds no list still reads)", i+1, props[i].Figures)
+		}
+	}
+	for _, f := range props[0].Figures {
+		if f.Cite != "" || f.CiteNote != "" || f.From != nil {
+			t.Errorf("a parsed figure carries a verdict or From: %+v", f)
+		}
+	}
+}
+
 func TestParseRound1KeepsEveryRequestForTheRunnerToCap(t *testing.T) {
 	// the cap of 2 per expert is Go's to apply when it runs them, with the reason on the third; parsing keeps all of them
 	props, _, err := ParseRound1(jsonFence(`{"proposals": [{"title": "T", "argument": "A", "verify": [
@@ -628,6 +670,25 @@ func TestShapesParse(t *testing.T) {
 		props[0].Evidence[0].Quote == "" || props[0].Runs != nil || !hasPicture(props[1].Argument) {
 		t.Errorf("round1ShapeNoVerify: %+v, %v", props, err)
 	}
+	// every round 1 shape of a Review, the agent seat's and a panel of one's included, shows one example figure whose value is
+	// in its quote; the Brainstorm shapes ask for none
+	for name, shape := range map[string]string{"round1Shape": round1Shape, "round1ShapeNoChecker": round1ShapeNoChecker,
+		"round1ShapeNoVerify": round1ShapeNoVerify} {
+		props, _, err := ParseRound1(jsonFence(shape))
+		if err != nil || len(props) != 2 || len(props[0].Figures) != 1 || props[1].Figures != nil {
+			t.Errorf("%s: figures %+v, %v; want one on the first proposal and none on the second", name, props, err)
+			continue
+		}
+		if f := props[0].Figures[0]; f.Value == "" || f.Measures == "" || f.Ref == "" || !strings.Contains(f.Quote, f.Value) {
+			t.Errorf("%s: its example figure %+v needs a value, what it measures, a ref and a quote holding the value", name, f)
+		}
+	}
+	for name, shape := range map[string]string{"brainstormRound1Shape": brainstormRound1Shape,
+		"brainstormRound1ShapeFor": brainstormRound1ShapeFor(&Council{})} {
+		if strings.Contains(shape, "figures") {
+			t.Errorf("%s asks for figures: a Brainstorm asks for none", name)
+		}
+	}
 	if strings.Contains(round1ShapeNoVerify, "verify") || strings.Contains(round1ShapeNoVerify, "check") {
 		t.Errorf("round1ShapeNoVerify still shows verify or a checker:\n%s", round1ShapeNoVerify)
 	}
@@ -653,6 +714,19 @@ func TestShapesParse(t *testing.T) {
 		len(weak) != 1 || len(sum.Directions[0].Stances) != 0 || sum.Answer == "" || len(sum.Asks) != 2 || sum.Asks[0].To != "skeptic" ||
 		sum.Asks[1].To != "" {
 		t.Errorf("synthesisShape: %+v, %+v, %v", sum, weak, err)
+	}
+	// both synthesis shapes, with and without a question, show a direction's task, why, kind (one of the three) and files
+	for name, shape := range map[string]string{"synthesisShape": synthesisShape, "synthesisShapeNoQuestion": synthesisShapeNoQuestion,
+		"brainstormSynthesisShape": brainstormSynthesisShape, "brainstormSynthesisShapeNoQuestion": brainstormSynthesisShapeNoQuestion} {
+		s, _, err := ParseSynthesis(jsonFence(shape))
+		if err != nil || len(s.Directions) != 1 {
+			t.Errorf("%s: %+v, %v", name, s, err)
+			continue
+		}
+		if d := s.Directions[0]; d.Task == "" || d.Why == "" || len(d.Files) == 0 ||
+			!slices.Contains([]string{TaskNew, TaskEdit, TaskDecision}, d.Kind) {
+			t.Errorf("%s: its direction %+v needs a task, why, a kind that is new, edit or decision, and files", name, d)
+		}
 	}
 	for _, shape := range []string{synthesisShape, brainstormSynthesisShape} {
 		for _, key := range []string{`"stances"`, `"agreed"`, `"outcomes"`} {
@@ -714,6 +788,42 @@ func TestParseSynthesisReadsTheLeanShapeAndAnOlderReply(t *testing.T) {
 	}
 	if old.Outcomes["P4"] != "Withdrawn in round 2" || len(old.Outcomes) != 2 {
 		t.Errorf("older reply outcomes = %v, want both read", old.Outcomes)
+	}
+}
+
+// A direction carries what the report's to-do table shows: "task", "why", "kind" and "files". A kind outside the three reads as
+// none, the files are trimmed with the empty ones dropped, and a reply from before the fields reads with all four empty.
+func TestParseSynthesisReadsADirectionsTaskFields(t *testing.T) {
+	sum, _, err := ParseSynthesis(jsonFence(`{"text": "Two.", "directions": [
+		{"rank": 1, "title": "Sleep sooner", "reasoning": "R", "firststep": "F", "task": "  Cut the idle wait to one minute  ",
+		 "why": " It saves RAM. ", "kind": "edit", "files": [" pkg/services/idle.go ", "", "  ", "docs/spec.md"], "from": ["P1"]},
+		{"rank": 2, "title": "Pick a wake policy", "kind": " Decision ", "files": [], "from": ["P2"]},
+		{"rank": 3, "title": "Add a badge", "kind": "NEW", "from": ["P3"]},
+		{"rank": 4, "title": "Polish", "kind": "refactor", "files": "pkg/a.go", "from": ["P4"]},
+		{"rank": 5, "title": "Older", "from": ["P5"]}],
+		"kept": [{"title": "Rename the chip", "reasoning": "r", "task": "ignored", "kind": "edit", "from": ["P6"]}]}`))
+	if err != nil || len(sum.Directions) != 5 {
+		t.Fatalf("got %+v, %v", sum, err)
+	}
+	d := sum.Directions
+	if d[0].Task != "Cut the idle wait to one minute" || d[0].Why != "It saves RAM." || d[0].Kind != TaskEdit ||
+		!slices.Equal(d[0].Files, []string{"pkg/services/idle.go", "docs/spec.md"}) {
+		t.Errorf("first direction = %+v, want its task, why, kind and files read, trimmed, with the empty file dropped", d[0])
+	}
+	if d[1].Kind != TaskDecision || len(d[1].Files) != 0 {
+		t.Errorf("second direction = %+v, want kind decision (case and spaces folded) and no files", d[1])
+	}
+	if d[2].Kind != TaskNew {
+		t.Errorf("third direction kind = %q, want new", d[2].Kind)
+	}
+	if d[3].Kind != "" || !slices.Equal(d[3].Files, []string{"pkg/a.go"}) {
+		t.Errorf("fourth direction = %+v, want a kind outside the three read as none and a lone file name read as one file", d[3])
+	}
+	if d[4].Task != "" || d[4].Why != "" || d[4].Kind != "" || d[4].Files != nil {
+		t.Errorf("a direction with none of the fields = %+v, want all four empty", d[4])
+	}
+	if k := sum.Kept[0]; k.Task != "" || k.Kind != "" || k.Why != "" {
+		t.Errorf("a kept idea took direction fields: %+v", k)
 	}
 }
 

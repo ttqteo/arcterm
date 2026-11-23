@@ -215,6 +215,60 @@ func TestAuditReportCitesIgnoresTheTopicsOwnWords(t *testing.T) {
 	}
 }
 
+// The side file lists the figures that did not check out, each with the ref that failed and why: those refs are not
+// claims of the report, so the audit leaves the section out (as it leaves out the cite check's own), while a verified
+// figure's ref in the main report's table is read like any other cite. The person's own question is left out too, in
+// either language.
+func TestAuditReportCitesSkipsTheFailedFiguresAndTheQuestion(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "a.go"), []byte("package a\nconst wake = 1248 // idle wake time in ms\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	doc := "# Hội đồng: x\n\nBạn hỏi: xem b.go:1 và c.go:1 giùm.\n\nYou asked: look at d.go:1.\n\n" +
+		"## Số liệu\n\n| Giá trị | Đo gì | Nguồn |\n|---|---|---|\n| 1248 | idle wake time | `a.go:2` |\n\n" +
+		"## " + failedFiguresHeading + "\n\n| Value | Measures | Source | Why |\n|---|---|---|---|\n| 40% | share of cases | `gone.go:9` | file not found |\n\n" +
+		"## The discussion\n\n- **UX** proposes · P1 · Wake\n  It reads wake.go:3 in full.\n"
+	got := auditByRef(AuditReportCites(doc, []string{root}))
+	if len(got) != 2 {
+		t.Errorf("audit = %+v, want a.go:2 and wake.go:3 only", got)
+	}
+	if c, ok := got["a.go:2"]; !ok || c.Verdict != CiteHolds {
+		t.Errorf("a.go:2 = %+v, %v, want it to hold: a verified figure's ref is the report's own cite", c, ok)
+	}
+	if _, ok := got["gone.go:9"]; ok {
+		t.Error("the failed figure's ref was read as a cite of the report")
+	}
+	for _, skipped := range []string{"b.go:1", "c.go:1", "d.go:1"} {
+		if _, ok := got[skipped]; ok {
+			t.Errorf("%s, in the question, was read as a cite", skipped)
+		}
+	}
+}
+
+// The saved side file's cite check reads the main report's cites too (a figure's source in its table), and lists a failed
+// figure's ref nowhere: it is not a cite of the report.
+func TestWriteDocumentChecksTheMainReportsCitesAndSkipsFailedFigures(t *testing.T) {
+	useDocDay(t)
+	project := t.TempDir()
+	c := docCouncil(project)
+	c.Figures = []CouncilFigure{
+		{Value: "1,248 ms", Measures: "idle wake", Ref: "ghost/x.go:9", Cite: CiteOK},
+		{Value: "40%", Measures: "share", Ref: "ghost/failed.go:3", Cite: CiteWrong, CiteNote: "file not found"},
+	}
+	path, err := WriteDocument(c, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	side, err := os.ReadFile(SidePath(path))
+	if err != nil {
+		t.Fatal(err)
+	}
+	mustContain(t, "side file", string(side), "- `ghost/x.go:9` (Figures): file not found")
+	check := string(side)[strings.Index(string(side), "## Cite check"):strings.Index(string(side), "## The discussion")]
+	mustNotContain(t, "cite check", check, "failed.go")
+	mustContain(t, "side file", string(side), "| 40% | share | `ghost/failed.go:3` | file not found |") // still listed, with why
+}
+
 func TestCiteCheckSectionTalliesAndLists(t *testing.T) {
 	root := auditProject(t)
 	s := CiteCheckSection(auditDoc, []string{root})
@@ -253,7 +307,8 @@ func TestCiteCheckSectionTalliesAndLists(t *testing.T) {
 	}
 }
 
-// the saved document carries the section between the matrix and the discussion; Document, which reads no file, does not
+// the saved side file carries the section between the matrix and the discussion, and the main report does not hold it;
+// Document, which reads no file, has none
 func TestWriteDocumentChecksItsCites(t *testing.T) {
 	useDocDay(t)
 	project := t.TempDir()
@@ -265,7 +320,14 @@ func TestWriteDocumentChecksItsCites(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	data, err := os.ReadFile(path)
+	main, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(main), "Cite check") {
+		t.Errorf("the main report holds the cite check:\n%s", main)
+	}
+	data, err := os.ReadFile(SidePath(path))
 	if err != nil {
 		t.Fatal(err)
 	}

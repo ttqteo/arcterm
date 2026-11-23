@@ -4,6 +4,8 @@
 package council
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -99,7 +101,7 @@ func memoryCouncil() *Council {
 func TestMarkdownMemory(t *testing.T) {
 	md := Markdown(memoryCouncil())
 	mustContain(t, "markdown", md,
-		"## Memory\n\n### Direction\n\nShow the state first\n\n",
+		"## Chosen direction\n\nShow the state first\n\n",
 		"Pinned by you · from P1 · 2023-11-14 22:13 UTC\n",
 		"outranks the report below",
 		"### Earlier directions\n\n",
@@ -107,9 +109,9 @@ func TestMarkdownMemory(t *testing.T) {
 		"- Sleep after a minute · Written by you · replaced 2023-11-14 21:56 UTC\n")
 	mustNotContain(t, "markdown", md, "A waiting suggestion", "A held direction") // a card is not a direction yet
 
-	// the chosen direction, what it replaced, then the report: its answer, its directions and the matrix
+	// the chosen direction, what it replaced, then the report: its answer, its to-do table and its directions, and the matrix
 	last := -1
-	for _, w := range []string{"# Council:", "You asked:", "## Memory", "### Earlier directions", "The panel prefers", "## Directions", "## Matrix"} {
+	for _, w := range []string{"# Council:", "You asked:", "## Chosen direction", "### Earlier directions", "The panel prefers", "## To do", "## Directions", "## Matrix"} {
 		i := strings.Index(md, w)
 		if i < 0 || i < last {
 			t.Errorf("%q is missing or out of order (at %d, after %d) in\n%s", w, i, last, md)
@@ -121,17 +123,17 @@ func TestMarkdownMemory(t *testing.T) {
 		t.Errorf("Replaced is not newest first\n%s", md)
 	}
 
-	// the saved document has it too, above the discussion
+	// the saved document has it too, in the main file above the side file's discussion
 	doc := Document(memoryCouncil())
-	if d, x := strings.Index(doc, "## Memory"), strings.Index(doc, "## The discussion"); d < 0 || x < d {
-		t.Errorf("the saved document lacks the memory above the discussion\n%s", doc)
+	if d, x := strings.Index(doc, "## Chosen direction"), strings.Index(doc, "## The discussion"); d < 0 || x < d {
+		t.Errorf("the saved document lacks the chosen direction above the discussion\n%s", doc)
 	}
 }
 
 // A council with no memory, or one holding only cards, reads as it did before the memory.
 func TestMarkdownMemoryLeftOutWhenThereIsNone(t *testing.T) {
 	plain := Markdown(markdownCouncil())
-	mustNotContain(t, "markdown", plain, "## Memory", "Earlier directions")
+	mustNotContain(t, "markdown", plain, "## Chosen direction", "Earlier directions")
 
 	c := markdownCouncil()
 	c.Memory = &CouncilMemory{
@@ -147,7 +149,7 @@ func TestMarkdownMemoryLeftOutWhenThereIsNone(t *testing.T) {
 	c = markdownCouncil()
 	c.Memory = &CouncilMemory{Chosen: &CouncilMemoryDirection{Text: "Only this", How: DirectionWritten}}
 	md := Markdown(c)
-	mustContain(t, "markdown", md, "## Memory\n\n### Direction\n\nOnly this\n\nWritten by you\n")
+	mustContain(t, "markdown", md, "## Chosen direction\n\nOnly this\n\nWritten by you\n")
 	mustNotContain(t, "markdown", md, "Earlier directions", " UTC") // no time when none was recorded
 }
 
@@ -159,10 +161,10 @@ func TestMarkdownMemoryAfterAnUnpin(t *testing.T) {
 		{Text: "Show the state first", How: DirectionPin, From: "r7", At: 1_699_999_000_000, Replaced: 1_700_000_000_000, Ended: EndUnpinned},
 	}}
 	md := Markdown(c)
-	mustContain(t, "markdown", md, "### Direction\n\nNone is chosen now.\n\n", "### Earlier directions\n\n",
+	mustContain(t, "markdown", md, "## Chosen direction\n\nNone is chosen now.\n\n", "### Earlier directions\n\n",
 		"- Show the state first · Pinned by you · from r7 · unpinned 2023-11-14 22:13 UTC\n")
 	mustNotContain(t, "markdown", md, "outranks")
-	if c, r, s := strings.Index(md, "### Direction"), strings.Index(md, "### Earlier directions"), strings.Index(md, "## Directions"); c > r || r > s {
+	if c, r, s := strings.Index(md, "## Chosen direction"), strings.Index(md, "### Earlier directions"), strings.Index(md, "## Directions"); c > r || r > s {
 		t.Errorf("sections out of order\n%s", md)
 	}
 }
@@ -181,8 +183,8 @@ func TestMarkdownMemoryHowWords(t *testing.T) {
 		{CouncilMemoryDirection{How: DirectionSuggested}, "Accepted from a suggestion"},
 		{CouncilMemoryDirection{}, "Set by you"},
 	} {
-		if got := memoryHow(tc.d); got != tc.want {
-			t.Errorf("memoryHow(%+v) = %q, want %q", tc.d, got, tc.want)
+		if got := englishWords.how(tc.d); got != tc.want {
+			t.Errorf("how(%+v) = %q, want %q", tc.d, got, tc.want)
 		}
 	}
 }
@@ -513,20 +515,21 @@ func TestMarkdownDiscussion(t *testing.T) {
 	c := documentCouncil()
 	doc := Document(c)
 
-	// the report comes first and is what Markdown returns with the glance chart ahead of the directions; the discussion
-	// and the run facts follow it
-	report := strings.TrimRight(markdownWith(c, true), "\n")
-	if !strings.HasPrefix(doc, report+"\n\n## The discussion\n\n") {
-		t.Errorf("the document does not open with the report then the discussion\n%s", doc)
+	// the main report comes first, then the side file, which holds the discussion and the run facts
+	main := strings.TrimRight(reportMain(c, SidePath(docFileName(c))), "\n")
+	side := reportSide(c, docFileName(c), main, nil, nil)
+	if doc != main+"\n\n"+side {
+		t.Errorf("the document is not the main report then the side file\n%s", doc)
+	}
+	if !strings.HasPrefix(side, "# Council discussion: Idle sleep for services\n\nThe report: [") {
+		t.Errorf("the side file does not open with a link back to the report\n%s", side)
 	}
 	for _, w := range []string{"You asked: Which direction first? Keep to: no new setting.", "**Show the sleep state first.**"} {
-		if !strings.Contains(doc, w) {
-			t.Errorf("the report lacks %q\n%s", w, doc)
+		if !strings.Contains(main, w) {
+			t.Errorf("the main report lacks %q\n%s", w, main)
 		}
 	}
-	if strings.Contains(report, "The discussion") || strings.Contains(report, "Run facts") {
-		t.Errorf("Markdown is the report only, but holds\n%s", report)
-	}
+	mustNotContain(t, "main report", main, "## The discussion", "## Run facts", "## Matrix", "## Cite check", "## Ask next", "Stances:", "## At a glance")
 
 	wantLines := []string{
 		"- **You** sets the goal\n  Which direction first? Keep to: no new setting.\n",
@@ -834,11 +837,12 @@ func TestMarkdownMemorySection(t *testing.T) {
 		"- Third · Pinned by you · unpinned 2023-11-14 22:13 UTC\n",
 		"- Second · Written by you · edited 2023-11-14 21:56 UTC\n",
 		"- First · Written by you · replaced 2023-11-14 21:40 UTC\n",
-		"### Agreed\n\n- The list reads top to bottom\n\n",
-		"### Ruled out\n\n- A second window (why: costs 100 MB)\n\n",
-		"### Open\n\n- Does the badge need a count\n\n")
+		"## Agreed\n\n- The list reads top to bottom\n\n",
+		"## Ruled out\n\n- A second window (why: costs 100 MB)\n\n",
+		"## Open\n\n- Does the badge need a count\n\n")
+	// the chosen direction and what it replaced sit above the answer; the entries follow the tables
 	last := -1
-	for _, w := range []string{"## Memory", "### Direction", "### Earlier directions", "### Agreed", "### Ruled out", "### Open", "The panel prefers"} {
+	for _, w := range []string{"## Chosen direction", "### Earlier directions", "The panel prefers", "## To do", "## Agreed", "## Ruled out", "## Open", "## Directions"} {
 		i := strings.Index(md, w)
 		if i < 0 || i < last {
 			t.Errorf("%q is missing or out of order (at %d, after %d) in\n%s", w, i, last, md)
@@ -850,8 +854,8 @@ func TestMarkdownMemorySection(t *testing.T) {
 	c = markdownCouncil()
 	c.Memory = &CouncilMemory{Entries: []CouncilMemoryEntry{entry(EntryOpen, "Which first", EntryByAuto)}}
 	md = Markdown(c)
-	mustContain(t, "markdown", md, "## Memory\n\n### Open\n\n- Which first\n\n")
-	mustNotContain(t, "markdown", md, "### Direction", "### Agreed", "### Ruled out", "None is chosen")
+	mustContain(t, "markdown", md, "## Open\n\n- Which first\n")
+	mustNotContain(t, "markdown", md, "## Chosen direction", "## Agreed", "## Ruled out", "None is chosen")
 }
 
 func TestMarkdownNoMemory(t *testing.T) {
@@ -861,5 +865,269 @@ func TestMarkdownNoMemory(t *testing.T) {
 	if got := Markdown(c); got != plain {
 		t.Errorf("an empty memory changed the document\n%s", got)
 	}
-	mustNotContain(t, "markdown", plain, "## Memory")
+	mustNotContain(t, "markdown", plain, "## Chosen direction", "## Agreed", "## Open")
+}
+
+// ---- the main file and the side file ----
+
+// The main file is what is about the project and nothing about how the council worked: none of the sections that judge
+// the council, in either language. They are the side file's.
+func TestMainReportHoldsNoCouncilAboutSections(t *testing.T) {
+	for name, c := range map[string]*Council{"English": documentCouncil(), "Vietnamese": goldenReviewCouncil()} {
+		c.Summary.Asks = []CouncilAsk{{Text: "Does it hold on a Mac?", To: "skeptic"}}
+		c.Summary.Kept = []CouncilDirection{{Rank: 1, Title: "Poll less", Reasoning: "Halves the wakeups.", From: []string{"P1"}}}
+		main := reportMain(c, "x.discussion.md")
+		mustNotContain(t, name+" main file", main, "Matrix", "Run facts", "Cite check", "Ask next", "Stances", "The discussion", "At a glance",
+			"## Directions", "## Also raised", "First step:", "Where the tokens went", "Poll less")
+		side := reportSide(c, "x.md", main, nil, nil)
+		mustContain(t, name+" side file", side, "## At a glance", "## Directions", "## Also raised", "## Ask next", "## Matrix", "## The discussion", "## Run facts")
+		mustNotContain(t, name+" side file", side, "## "+wordsOf(c).todo, "## "+wordsOf(c).figures)
+	}
+}
+
+// An English council's main file has English headings and columns; a Vietnamese council's has Vietnamese ones.
+func TestMainReportWordsFollowTheLanguage(t *testing.T) {
+	c := documentCouncil()
+	c.Figures = []CouncilFigure{{Value: "60", Measures: "cases", Ref: "a.go:1", Cite: CiteOK}}
+	c.Memory = &CouncilMemory{Entries: []CouncilMemoryEntry{entry(EntryAgreed, "A", EntryByYou), {Kind: EntryRuledOut, Text: "B", Why: "slow"}, entry(EntryOpen, "C", EntryByYou)}}
+	main := reportMain(c, "x.discussion.md")
+	mustContain(t, "English main file", main, "# Council: Idle sleep for services\n", "You asked: Which direction first?", "## To do\n",
+		"| # | Task | Why | Files | Kind |\n", "## Figures\n", "| Value | Measures | Source |\n", "## Agreed\n", "## Ruled out\n\n- B (why: slow)\n", "## Open\n",
+		"The full reasoning, the discussion and how the council worked: [x.discussion.md](x.discussion.md).")
+	mustNotContain(t, "English main file", main, "Việc", "Số liệu", "Đã chốt", "Bạn hỏi")
+
+	vi := goldenReviewCouncil()
+	main = reportMain(vi, "x.discussion.md")
+	mustContain(t, "Vietnamese main file", main, "# Hội đồng: Thêm tập cá npm vào benchmark\n", "Bạn hỏi: Nên thêm tập cá npm", "## Việc cần làm\n",
+		"| # | Việc | Vì sao | File đụng tới | Loại |\n", "## Số liệu\n", "| Giá trị | Đo gì | Nguồn |\n", "## Đã chốt\n", "## Đã loại\n", "(vì sao: ", "## Còn mở\n",
+		"## Hướng đã chọn\n", "## Đề xuất cuối cùng\n\n_Từ Phương pháp_", "Lập luận đầy đủ, cuộc thảo luận và cách hội đồng làm việc: [x.discussion.md](x.discussion.md).")
+	mustNotContain(t, "Vietnamese main file", main, "## To do", "## Figures", "You asked", "## Agreed", "Final proposal")
+	// the link is the last line of the main file
+	if !strings.HasSuffix(strings.TrimRight(main, "\n"), "[x.discussion.md](x.discussion.md).") {
+		t.Errorf("the main file does not end with the link to its side file\n%s", main)
+	}
+}
+
+// One row per direction in rank order, with each field of the row falling back when the coordinator wrote none: Việc to
+// the first step in a Brainstorm and to the title in a Review, Vì sao to the first sentence of the reasoning, and "—" for
+// files and kind.
+func TestTodoTableRowsAndFallbacks(t *testing.T) {
+	c := markdownCouncil()
+	c.Summary.Directions = []CouncilDirection{
+		{Rank: 1, Title: "Show the state", Reasoning: "Long reasoning.", Task: "Show the sleep state in the tree row", Why: "People ask why it is slow.",
+			Kind: TaskNew, Files: []string{"frontend/tree.tsx", "pkg/a|b.go"}, FirstStep: "Add the word."},
+		{Rank: 2, Title: "Sleep sooner", Reasoning: "It answers\nthe question people ask. It costs a wake.", FirstStep: "Cut the timer to 60 s."},
+		{Rank: 3, Title: "A | pipe in a title", Kind: "refactor"}, // a kind outside the three reads as none; no reasoning, no why
+	}
+	main := reportMain(c, "x.discussion.md")
+	for _, row := range []string{
+		"| 1 | Show the sleep state in the tree row | People ask why it is slow. | `frontend/tree.tsx`, `pkg/a\\|b.go` | new work |\n",
+		"| 2 | Sleep sooner | It answers the question people ask. | — | — |\n", // a Review: the title, not the first step
+		"| 3 | A \\| pipe in a title | — | — | — |\n",
+	} {
+		mustContain(t, "main file", main, row)
+	}
+
+	// a Brainstorm's idea is the action its first step names
+	b := savedBrainstorm()
+	b.Summary.Directions = append(b.Summary.Directions, CouncilDirection{Rank: 2, Title: "No step", Reasoning: "Because."})
+	mustContain(t, "brainstorm main file", reportMain(b, "x.discussion.md"),
+		"| 1 | Open the report when a council ends. | Newcomers read the answer. | — | — |\n", "| 2 | No step | Because. | — | — |\n")
+
+	// no summary and no direction: no table
+	c.Summary.Directions = nil
+	mustNotContain(t, "main file with no direction", reportMain(c, "x"), "## To do")
+	c.Summary = nil
+	mustNotContain(t, "main file with no summary", reportMain(c, "x"), "## To do")
+}
+
+// Why falls back to the first sentence of the reasoning read as one line, so a row stays a row; a why is used as written.
+func TestTodoWhyFallsBackToTheFirstSentenceOfTheReasoning(t *testing.T) {
+	for in, want := range map[string]string{
+		"First one. Second one.":         "First one.",
+		"No stop at all":                 "No stop at all",
+		"Line one\nstill the first. Two": "Line one still the first.",
+		"":                               "",
+	} {
+		if got := todoWhy(CouncilDirection{Reasoning: in}); got != want {
+			t.Errorf("todoWhy(%q) = %q, want %q", in, got, want)
+		}
+	}
+	if got := todoWhy(CouncilDirection{Why: "  Said\nexactly. ", Reasoning: "Other."}); got != "Said exactly." {
+		t.Errorf("a why is used as it is, on one line: %q", got)
+	}
+}
+
+// The main file's figures table holds the figures Go verified, with their line; the rest are the side file's, with why.
+func TestFiguresTableHoldsOnlyVerifiedFigures(t *testing.T) {
+	c := goldenReviewCouncil()
+	c.Figures = append(c.Figures, CouncilFigure{Value: "9 s", Measures: "never checked", Ref: "x.go:1"})
+	main := reportMain(c, "x.discussion.md")
+	mustContain(t, "main file", main, "| 60 ca | số ca benchmark hiện có | `results/m5.json:12` |\n")
+	mustNotContain(t, "main file", main, "33%", "9 s", "curve.json", "never checked")
+	side := reportSide(c, "x.md", main, nil, nil)
+	mustContain(t, "side file", side, "## Figures that did not check out\n",
+		"| 33% | ca best-of-k phủ | `results/curve.json:900` | line 900 is past the end (60 lines) |\n",
+		"| 9 s | never checked | `x.go:1` | not checked |\n")
+	failed, _, _ := strings.Cut(side[strings.Index(side, "## Figures that did not check out"):], "## Files not copied") // the verified one is not listed there
+	mustNotContain(t, "failed figures section", failed, "m5.json")
+
+	// no verified figure: no section in the main file; none that failed: none in the side file
+	c.Figures = c.Figures[1:]
+	mustNotContain(t, "main file with none verified", reportMain(c, "x"), "## Số liệu")
+	c.Figures = c.Figures[:0]
+	mustNotContain(t, "side file with none failed", reportSide(c, "x.md", "", nil, nil), "did not check out")
+	c.Figures = nil
+	mustNotContain(t, "main file with no figures", reportMain(c, "x"), "## Số liệu")
+}
+
+// A brief that was not copied is listed in the side file with why; one that was copied is not a warning.
+func TestSideFileListsTheFilesNotCopied(t *testing.T) {
+	c := goldenReviewCouncil()
+	c.Briefs = []CouncilBrief{{Source: "/tmp/a/facts.md", Copy: "docs/council/briefs/2026-11-23-c-vi-facts.md"}, {Source: "/tmp/a/big.pdf", Skipped: "3.1 MB is over the 1 MB cap"}}
+	side := reportSide(c, "x.md", "", nil, nil)
+	mustContain(t, "side file", side, "## Files not copied\n", "- `/tmp/a/big.pdf`: 3.1 MB is over the 1 MB cap")
+	mustNotContain(t, "side file", side, "facts.md")
+	mustNotContain(t, "main file", reportMain(c, "x"), "Files not copied", "big.pdf")
+	c.Briefs = c.Briefs[:1]
+	mustNotContain(t, "side file with every brief copied", reportSide(c, "x.md", "", nil, nil), "Files not copied")
+}
+
+// Markdown, what an agent reads, is the main file's content with no link, then the detail the side file keeps, with the
+// pinned Final proposal still last.
+func TestMarkdownIsTheMainContentThenTheDetail(t *testing.T) {
+	c := goldenReviewCouncil()
+	md := Markdown(c)
+	mustNotContain(t, "markdown", md, "discussion.md", "## At a glance", "## The discussion", "## Run facts")
+	last := -1
+	for _, w := range []string{"# Hội đồng:", "## Hướng đã chọn", "## Việc cần làm", "## Số liệu", "## Đã chốt", "## Directions", "## Also raised", "## Ask next", "## Matrix", "## Đề xuất cuối cùng"} {
+		i := strings.Index(md, w)
+		if i < 0 || i < last {
+			t.Errorf("%q is missing or out of order (at %d, after %d) in\n%s", w, i, last, md)
+		}
+		last = max(last, i)
+	}
+	if !strings.Contains(md, "   First step: Chọn 20 gói") {
+		t.Errorf("an agent needs the first step in the detail\n%s", md)
+	}
+}
+
+// goldenReviewCouncil is a done Review in Vietnamese: two directions (the first with every field the to-do table reads,
+// the second with none, so its row falls back), a chosen direction and a memory, one verified figure and one that failed,
+// and a brief that was not copied. testdata/report-review.md and report-review.discussion.md are its two files.
+func goldenReviewCouncil() *Council {
+	return &Council{
+		Id: "c-vi", Project: "/p", Feature: "Thêm tập cá npm vào benchmark", Question: "Nên thêm tập cá npm vào benchmark trước hay sửa lại chương 3?",
+		Lang: LangVi, Mode: ModeReview, ModeWhy: "một việc đã có, chờ được phán xét", State: StateDone,
+		Started: 1_000, Updated: 1_000 + 372_000, Tokens: 820_000, Calls: 9, Harness: "2026-11-23.1",
+		DocPath: "/p/docs/council/2026-11-23-them-tap-ca-npm.md",
+		Experts: []CouncilExpert{
+			{Id: "meth", Name: "Phương pháp", Model: "sonnet"},
+			{Id: "rev", Name: "Phản biện", Model: "sonnet"},
+			{Id: "lead", Name: "Điều phối", Model: "opus", Coordinator: true},
+		},
+		Proposals: []CouncilProposal{
+			{Id: "P1", Author: "meth", Title: "Thêm 20 gói npm có CVE trước", Argument: "Tập npm đổi các con số của chương 3.", Ts: 10,
+				Evidence: []CouncilEvidence{{Ref: "results/m5.json:12", Cite: CiteOK}}},
+			{Id: "P2", Author: "rev", Title: "Sửa chữ chương 3 trước", Argument: "Chương 3 còn hai chỗ viết sai tên tập.", Ts: 20},
+		},
+		Replies: []CouncilReply{
+			{Id: "r1", ProposalId: "P1", Author: "rev", Stance: StanceChallenge, Text: "Hai chỗ sai tên tập vẫn phải sửa.", Ts: 30},
+			{Id: "r2", ProposalId: "P2", Author: "meth", Stance: StanceAccept, Text: "Sửa sau khi có số liệu mới thì đỡ viết lại.", Ts: 40},
+		},
+		Summary: &CouncilSummary{
+			Answer: "Thêm tập npm trước, rồi sửa chữ chương 3.",
+			Text:   "Tập npm làm đổi số liệu của chương 3, nên sửa chữ sau khi có số liệu mới.",
+			Directions: []CouncilDirection{
+				{Rank: 1, Title: "Thêm 20 gói npm có CVE", From: []string{"P1"}, Agreed: true,
+					Reasoning: "Tập npm đổi các con số của chương 3. Sửa chữ trước sẽ phải viết lại.",
+					FirstStep: "Chọn 20 gói trong results/npm/pool.csv.", Stances: map[string]CouncilStance{"rev": StanceChallenge},
+					Task: "Thêm 20 gói npm có CVE vào benchmark", Why: "Tập npm đổi các con số của chương 3.", Kind: TaskNew,
+					Files: []string{"benchmark/npm.csv", "docs/ch3.tex"}},
+				{Rank: 2, Title: "Sửa chữ chương 3", From: []string{"P2"},
+					Reasoning: "Chương 3 còn hai chỗ viết sai tên tập. Nên sửa sau khi có số liệu mới.",
+					Stances:   map[string]CouncilStance{"meth": StanceAccept}},
+			},
+			Kept:     []CouncilDirection{{Rank: 1, Title: "Bỏ tập PyPI", Reasoning: "Không có CVE nào để đo.", From: []string{"P2"}}},
+			Asks:     []CouncilAsk{{Text: "Thầy có cần đủ 60 gói không?", To: "rev"}},
+			Outcomes: map[string]string{"P1": "Hướng 1", "P2": "Hướng 2"},
+		},
+		Memory: &CouncilMemory{
+			Chosen: &CouncilMemoryDirection{Text: "Thêm npm trước", How: DirectionPin, From: "P1", At: 1_700_000_000_000},
+			Entries: []CouncilMemoryEntry{
+				entry(EntryAgreed, "Số liệu chương 3 lấy từ results/m5.json", EntryByYou),
+				{Kind: EntryRuledOut, Text: "Bỏ tập PyPI", Why: "không có CVE nào", By: EntryByAuto},
+				entry(EntryOpen, "Có cần đủ 60 gói không?", EntryByAuto),
+			},
+		},
+		FinalPick: "P1",
+		Figures: []CouncilFigure{
+			{Value: "60 ca", Measures: "số ca benchmark hiện có", Ref: "results/m5.json:12", Quote: `"n_cases": 60`, Cite: CiteOK, From: []string{"P1"}},
+			{Value: "33%", Measures: "ca best-of-k phủ", Ref: "results/curve.json:900", Quote: "covered 33", Cite: CiteWrong, CiteNote: "line 900 is past the end (60 lines)", From: []string{"P2"}},
+		},
+		Briefs: []CouncilBrief{{Source: "/tmp/scratch/facts.md", Skipped: "no such file"}},
+	}
+}
+
+// goldenBrainstormVi is a done Brainstorm in Vietnamese whose directions carry none of the to-do fields: its table's Việc is
+// each idea's first step. testdata/report-brainstorm-vi.md is its main file.
+func goldenBrainstormVi() *Council {
+	return &Council{
+		Id: "b-vi", Project: "/p", Feature: "Council cho người mới", Question: "Council mở ra là cả đống luồng, không ai biết làm gì. Sửa sao?", Lang: LangVi,
+		Mode: ModeBrainstorm, ModeWhy: "một mục tiêu chưa có đáp án", State: StateDone, Started: 5_000, Updated: 50_000,
+		Experts: []CouncilExpert{
+			{Id: "ux", Name: "UX", Model: "sonnet"},
+			{Id: "skeptic", Name: "Hoài nghi", Model: "sonnet"},
+			{Id: "lead", Name: "Điều phối", Model: "opus", Coordinator: true},
+		},
+		Proposals: []CouncilProposal{
+			{Id: "P1", Author: "ux", Title: "Mở báo cáo trước", Argument: "Cho xem câu trả lời trước.", Ts: 10},
+			{Id: "P2", Author: "skeptic", Title: "Council như một trò chơi", Argument: "Có cấp độ và huy hiệu.", Wild: true, Ts: 20},
+		},
+		Summary: &CouncilSummary{
+			Answer: "Mở báo cáo trước, giấu cuộc tranh luận sau một nút.",
+			Text:   "Người mới đọc câu trả lời trước; tranh luận chỉ mở khi họ cần.",
+			Directions: []CouncilDirection{
+				{Rank: 1, Title: "Báo cáo lên trước", Reasoning: "Người mới đọc câu trả lời. Tranh luận dài làm họ lạc.", From: []string{"P1"}, Agreed: true,
+					FirstStep: "Mở báo cáo khi council xong."},
+				{Rank: 2, Title: "Nút xem tranh luận", Reasoning: "Giữ cuộc tranh luận cho ai cần.", From: []string{"P1"},
+					FirstStep: "Thêm nút \"Xem tranh luận\" dưới câu trả lời."},
+			},
+			Kept:     []CouncilDirection{{Rank: 1, Title: "Council như một trò chơi", Reasoning: "Có thể làm người ta tò mò.", From: []string{"P2"}}},
+			Outcomes: map[string]string{"P1": "Hướng 1", "P2": "Giữ lại"},
+		},
+	}
+}
+
+// checkGolden compares got with testdata/<name>, or rewrites the file under -update (the flag TestGlanceGolden has: it
+// rewrites that golden too, from the same fixture).
+func checkGolden(t *testing.T, name, got string) {
+	t.Helper()
+	path := filepath.Join("testdata", name)
+	if *updateGolden {
+		if err := os.WriteFile(path, []byte(got), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return
+	}
+	want, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read %s: %v (run `go test ./pkg/council -run Golden -update` to write it)", path, err)
+	}
+	if string(want) != got {
+		t.Errorf("%s differs from what the report writes now (run `go test ./pkg/council -run Golden -update` to rewrite it).\n--- want\n%s\n--- got\n%s", name, want, got)
+	}
+}
+
+func TestReportGoldenReview(t *testing.T) {
+	c := goldenReviewCouncil()
+	mainName, sideName := "2026-11-23-them-tap-ca-npm.md", "2026-11-23-them-tap-ca-npm.discussion.md"
+	main := reportMain(c, sideName)
+	checkGolden(t, "report-review.md", main)
+	checkGolden(t, "report-review.discussion.md", reportSide(c, mainName, main, nil, nil))
+}
+
+func TestReportGoldenBrainstormVi(t *testing.T) {
+	c := goldenBrainstormVi()
+	checkGolden(t, "report-brainstorm-vi.md", reportMain(c, "2026-11-23-council-cho-nguoi-moi.discussion.md"))
 }

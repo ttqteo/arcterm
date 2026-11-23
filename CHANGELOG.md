@@ -52,9 +52,18 @@ and a picture given to a line that is not big.
   opens in the File tab.
 - `Ctrl+Shift+F` in the agent panel's Files tab searches inside the files: it opens Code's Search on the agent's folder
   with what you typed in the filter.
+- Files outside the project that you give a council are copied into `docs/council/briefs/` when it starts, so the lines
+  its report cites resolve on every machine; one too large to copy is named in the report instead.
+- `wsh council redoc` rewrites a project's old council reports in the new short layout (`--dry-run` lists what it would
+  rewrite).
 
 ### Changed
 
+- A council's saved report is now short: a to-do table (each task, why, the files it touches, its kind) and a table of
+  the figures checked against the project's files, written in the question's language. The full reasoning, the
+  discussion and everything about how the council worked move to a `.discussion.md` file beside it.
+- A council's Report in the cockpit opens with the same two tables, To do and Figures, under the answer; At a glance
+  and the figures that did not check out are folded under About the council.
 - The version at the bottom right reads only the number again (`v1.9.0`); What's new, which it opens, says when the build was made beside the version. The commit stays in Settings → About.
 - A message another agent sends you reads like a message in Chat: its whole text in the reading font, with its lists, paragraphs and `code` drawn as Markdown, folded under a fade with Show more when long, instead of six lines of monospace that began with the sender's tab id; that id is now a short chip beside the sender's name, which opens its conversation like the name does.
 - On the sending side, a message an agent sends another shows in its Chat as a card where it was sent: who it went to, whether it started a turn, and the message as Markdown (read from the file it was written to when sent with `--file`). The answer it brings back with `--wait` or `wsh agents read` shows under it as a card of its own, instead of a tool line and an `.output` file to open.

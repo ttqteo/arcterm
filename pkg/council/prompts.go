@@ -18,8 +18,16 @@ import (
 // score of a harness it did not run. Bump it, as <YYYY-MM-DD>.<n>, in the same commit as any change to a prompt, a role
 // brief or a default model. 2026-11-12.1 is round 2 of the Brainstorm bench: it changed how a Brainstorm report is
 // scored (one whole list judged, recall@3 and recall@all), not a prompt, role brief or model, and it is bumped so that
-// no row scored the old way is read beside the new ones.
-const HarnessVersion = "2026-11-12.1"
+// no row scored the old way is read beside the new ones. 2026-11-23.1 is the report-tables change: a Review's round 1
+// asks each seat for its figures, both syntheses ask each direction for a task, why, kind and files, and every field the
+// person reads is now written in the question's language.
+const HarnessVersion = "2026-11-23.1"
+
+// figuresField is the "figures" line of round1Shape, on its first proposal: a number the proposal relies on that a project
+// file holds, with the line it sits on and that line's text. Every variant of round1Shape keeps it, the agent seat's too; a
+// Brainstorm's shapes are not derived from round1Shape and ask for none. The value is in its quote, as Go requires.
+const figuresField = `,
+      "figures": [{"value": "300", "measures": "seconds a service idles before it sleeps", "ref": "pkg/services/idle.go:42", "quote": "idleWaitSeconds = 300"}]`
 
 // verifyField is the "verify" line of round1Shape: one request, in an allowed form, with what the expert expects. An agent
 // seat's shape (round1ShapeNoVerify) is round1Shape without it, since Go runs nothing for a seat.
@@ -47,7 +55,7 @@ const (
     {
       "title": "a short title for the change you propose",
       "argument": "why, in about 70 words, with a table, a list or a diagram when it compares or counts",
-      "evidence": [{"ref": "pkg/services/idle.go:42", "quote": "the exact text of that line"}]` + verifyField + checkerField + `
+      "evidence": [{"ref": "pkg/services/idle.go:42", "quote": "the exact text of that line"}]` + figuresField + verifyField + checkerField + `
     },
     {
       "title": "Sleep after one idle minute",
@@ -95,6 +103,10 @@ const (
       "title": "a short title for the direction",
       "reasoning": "why it ranks here",
       "firststep": "the one thing to do first",
+      "task": "at most 15 words: what to do",
+      "why": "one sentence: why it is worth doing",
+      "kind": "edit",
+      "files": ["pkg/services/idle.go"],
       "from": ["P2", "P3"]
     }
   ],
@@ -214,6 +226,10 @@ const (
       "title": "a short title for the idea worth trying",
       "reasoning": "why it is worth trying",
       "firststep": "the one thing to do first",
+      "task": "at most 15 words: what to do",
+      "why": "one sentence: why it is worth doing",
+      "kind": "new",
+      "files": ["pkg/services/idle.go"],
       "from": ["P2", "P3"]
     }
   ],
@@ -318,12 +334,34 @@ const (
 	summaryRule = `The person reads "answer" and "text" first, above the directions, so keep them short: "answer" is one ` +
 		`plain sentence of at most 25 words, "text" at most three short sentences (about 60 words) on where the panel ` +
 		`landed, naming any missing expert in one clause. Do not retell the directions in "text", and put no path:line ` +
-		`or other evidence ref in either: the evidence stays with the directions. Write "answer" and "text" in the ` +
-		`language the person's question is written in, and "asks" too; every other field stays in English.`
+		`or other evidence ref in either: the evidence stays with the directions. Write every field the person reads in ` +
+		`the language the person's question is written in: "answer", "text", "asks", each direction's "title", ` +
+		`"reasoning", "firststep", "task" and "why", and each kept item's "title" and "reasoning". Technical terms, ids, ` +
+		`paths and JSON keys stay as they are.`
 	summaryRuleNoQuestion = `The person reads "text" first, above the directions, so keep it short: at most three short ` +
 		`sentences (about 60 words) on where the panel landed, naming any missing expert in one clause. Do not retell ` +
 		`the directions, and put no path:line or other evidence ref in it: the evidence stays with the directions. ` +
-		`Write "text" in the language the feature is written in, and "asks" too; every other field stays in English.`
+		`Write every field the person reads in the language the feature is written in: "text", "asks", each direction's ` +
+		`"title", "reasoning", "firststep", "task" and "why", and each kept item's "title" and "reasoning". Technical ` +
+		`terms, ids, paths and JSON keys stay as they are.`
+
+	// directionFieldsRule is in both synthesis prompts, a Brainstorm's too: the four fields beside "firststep" that the
+	// report's to-do table is built from (the table falls back to the first step or the title when one is empty).
+	directionFieldsRule = `Each direction also carries four fields for the report's to-do list: "task" is what to do, in at ` +
+		`most 15 words, written as a to-do; "why" is one sentence on why it is worth doing; "kind" is "new" (work that ` +
+		`adds something), "edit" (a change to something that already exists) or "decision" (a choice the person has to ` +
+		`make); and "files" lists the project paths the task changes, and is empty when it changes none.`
+
+	// figuresRule is in round 1 of a Review, an agent seat's first turn included, after the evidence rule and the quote
+	// rule: the numbers a proposal relies on that a project file holds, which Go checks (checkFigure) and puts in the
+	// report's table of figures. figuresRuleFor adds the language "measures" is written in.
+	figuresRule = `A proposal may also list the figures it relies on, in "figures": each number a project file holds that ` +
+		`the proposal counts on, such as a limit, a size, a count or a time. Give its "value" exactly as the quoted line ` +
+		`writes it, "ref" as the path:line it sits on, "quote" as that line's text, copied as you read it, and "measures" ` +
+		`as what the number measures, in a few words. Go checks that the quote is at that line and that the value is in ` +
+		`the quote, and only a number that passes goes in the report's table of figures. List only a number a file holds: ` +
+		`leave out a number nobody wrote down, an estimate and a number you worked out, and leave "figures" out of a ` +
+		`proposal that relies on none.`
 
 	// askRule is in both synthesis prompts: the questions the report suggests the person ask next, which the Discussion
 	// offers above its composer.
@@ -930,7 +968,8 @@ func checkerRule(c *Council) string {
 }
 
 // round1Task is what the ideas round asks, and the shape of the answer: the end of the round 1 prompt, and of an agent
-// seat's first turn. verify says the expert is a role expert in a Review, not an agent seat: it may ask Go to run commands
+// seat's first turn. A Review also asks for each proposal's figures (figuresRuleFor), the agent seat's included. verify
+// says the expert is a role expert in a Review, not an agent seat: it may ask Go to run commands
 // for its proposals, and it names a checker for each when the panel has another seat to name. A Brainstorm asks for
 // evidence only for a claim about today's code (brainstormGroundRule, with its quote), and for no check; one that holds
 // zones names e's zone and lists every seat's.
@@ -954,6 +993,7 @@ func round1Task(c *Council, e CouncilExpert, verify bool) string {
 		"Each proposal has a short title, an argument, and the evidence it rests on.\n\n")
 	b.WriteString(evidenceRule + "\n\n")
 	b.WriteString(quoteRule + "\n\n")
+	b.WriteString(figuresRuleFor(c) + "\n\n")
 	shape := round1ShapeNoVerify
 	if verify {
 		b.WriteString(verifyRule + "\n\n")
@@ -967,6 +1007,21 @@ func round1Task(c *Council, e CouncilExpert, verify bool) string {
 	b.WriteString(pictureCheck + "\n\n")
 	b.WriteString(jsonRule + "\n```json\n" + shape + "\n```\n")
 	return b.String()
+}
+
+// figuresRuleFor is figuresRule and the language a figure's "measures" is written in: the council's, which is the
+// question's (the feature's when there is no question). A council saved with no language reads it from its question, as
+// Start does (councilLang).
+func figuresRuleFor(c *Council) string {
+	lang := c.Lang
+	if lang == "" {
+		lang = councilLang(c.Question, c.Feature)
+	}
+	name := "English"
+	if lang == LangVi {
+		name = "Vietnamese"
+	}
+	return figuresRule + ` Write "measures" in ` + name + `, the language of the person's question.`
 }
 
 // writeZonesTask is the zone block of a Brainstorm's round 1 task: e's own zone, every seat's, and how an idea names the
@@ -1750,7 +1805,8 @@ func SynthesisPrompt(c *Council) string {
 		"changes wording, names or formatting takes one of the %d places only when no direction of another kind is left. A "+
 		"direction whose proposals are all Guess or Disproved takes none: put it in \"kept\".\n", n, n)
 	b.WriteString("4. For each of them, \"reasoning\" says why it ranks here, and \"firststep\" is its first step: the one " +
-		"thing to do first, a text edit to make now or the first piece of new work, small enough to start this week.\n")
+		"thing to do first, a text edit to make now or the first piece of new work, small enough to start this week. " +
+		directionFieldsRule + "\n")
 	b.WriteString("5. In \"kept\", list every other direction, best first, each with a title, one line on what it asks for, " +
 		"and its ids in \"from\". The person reads them as Also raised. Leave \"kept\" empty when there are none.\n")
 	b.WriteString("6. In \"weak\", mark any claim that cites no evidence, or whose evidence does not show what it says. " +
@@ -1813,7 +1869,7 @@ func writeBrainstormSynthesisTask(b *strings.Builder, c *Council) string {
 			"A wild idea never takes one of the %d places.\n", n, tie, n)
 	}
 	b.WriteString("3. For each of them, \"reasoning\" says why it is worth trying, and \"firststep\" is its first step: the one " +
-		"thing to do first, small enough to start this week.\n")
+		"thing to do first, small enough to start this week. " + directionFieldsRule + "\n")
 	b.WriteString("4. In \"kept\", list the wild ideas that were not chosen (the ones marked wild above), each with a title, a " +
 		"line on why it is worth remembering, and its ids in \"from\". Leave \"kept\" empty when there are none.\n")
 	b.WriteString("5. Treat the person's replies, and what they liked or disliked, as the person's own view and weigh them.\n")

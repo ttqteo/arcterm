@@ -3261,6 +3261,8 @@ declare global {
         lang?: string;
         snapshot?: string;
         zones?: CouncilZone[];
+        figures?: CouncilFigure[];
+        briefs?: CouncilBrief[];
     };
 
     // council.CouncilActivity
@@ -3406,6 +3408,13 @@ declare global {
         stopped: boolean;
     };
 
+    // council.CouncilBrief
+    type CouncilBrief = {
+        source: string;
+        copy?: string;
+        skipped?: string;
+    };
+
     // wshrpc.CouncilChangedData
     type CouncilChangedData = {
         id: string;
@@ -3422,6 +3431,10 @@ declare global {
         stances: {[key: string]: string};
         agreed: boolean;
         firststep?: string;
+        task?: string;
+        why?: string;
+        kind?: string;
+        files?: string[];
     };
 
     // wshrpc.CouncilEstimateRtnData
@@ -3474,6 +3487,17 @@ declare global {
     type CouncilFailure = {
         round: number;
         error: string;
+    };
+
+    // council.CouncilFigure
+    type CouncilFigure = {
+        value: string;
+        measures: string;
+        ref: string;
+        quote?: string;
+        cite?: string;
+        citenote?: string;
+        from?: string[];
     };
 
     // council.CouncilGroup
@@ -3545,6 +3569,7 @@ declare global {
         title: string;
         argument: string;
         evidence?: CouncilEvidence[];
+        figures?: CouncilFigure[];
         ts: number;
         withdrawn?: boolean;
         cut?: boolean;

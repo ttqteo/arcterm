@@ -3538,9 +3538,17 @@ func TestMarkStaleSavesTheStoppedCouncilsDocument(t *testing.T) {
 	if err != nil {
 		t.Fatalf("the document was not written: %v", err)
 	}
-	for _, w := range []string{"# Council: Idle sleep for services", "Title from ux", "It breaks.", "- Ended: stopped"} {
-		if !strings.Contains(string(body), w) {
-			t.Errorf("the document lacks %q\n%s", w, body)
+	if w := "# Council: Idle sleep for services"; !strings.Contains(string(body), w) {
+		t.Errorf("the document lacks %q\n%s", w, body)
+	}
+	// The seats' proposals and the run facts sit in the side file since the report split.
+	side, err := os.ReadFile(SidePath(want))
+	if err != nil {
+		t.Fatalf("the side file was not written: %v", err)
+	}
+	for _, w := range []string{"Title from ux", "It breaks.", "- Ended: stopped"} {
+		if !strings.Contains(string(side), w) {
+			t.Errorf("the side file lacks %q\n%s", w, side)
 		}
 	}
 	if q := h.load("queued"); q.State != StateQueued || q.DocPath != "" {
@@ -4111,13 +4119,21 @@ func TestDocPathSavedOnEnd(t *testing.T) {
 	if c.State != StateDone || c.DocPath != want {
 		t.Fatalf("done council: %s with the document at %q, want %q", c.State, c.DocPath, want)
 	}
-	body, err := os.ReadFile(want)
+	main, err := os.ReadFile(want)
 	if err != nil {
 		t.Fatalf("the document was not written: %v", err)
 	}
-	for _, w := range []string{"# Council: Idle sleep for services", "The panel prefers showing the state.", "## The discussion", "proposes · P1 · Title from ", "## Run facts", "- Ended: done"} {
+	if !strings.Contains(string(main), "# Council: Idle sleep for services") || !strings.Contains(string(main), "The panel prefers showing the state.") {
+		t.Errorf("the report lacks its title and answer\n%s", main)
+	}
+	// the discussion and the run facts are in the side file beside it
+	body, err := os.ReadFile(SidePath(want))
+	if err != nil {
+		t.Fatalf("the side file was not written: %v", err)
+	}
+	for _, w := range []string{"## The discussion", "proposes · P1 · Title from ", "## Run facts", "- Ended: done"} {
 		if !strings.Contains(string(body), w) {
-			t.Errorf("the document lacks %q\n%s", w, body)
+			t.Errorf("the side file lacks %q\n%s", w, body)
 		}
 	}
 	h.mu.Lock()
@@ -4132,10 +4148,10 @@ func TestDocPathSavedOnEnd(t *testing.T) {
 		t.Fatal(err)
 	}
 	c = h.wait("a")
-	body, _ = os.ReadFile(want)
+	body, _ = os.ReadFile(SidePath(want))
 	files, _ := os.ReadDir(filepath.Dir(want))
-	if c.DocPath != want || len(files) != 1 || !strings.Contains(string(body), "What about the Mac?") {
-		t.Errorf("after a follow-up: document %q, %d files, new reply in it %v; want the same file rewritten", c.DocPath, len(files), strings.Contains(string(body), "What about the Mac?"))
+	if c.DocPath != want || len(files) != 2 || !strings.Contains(string(body), "What about the Mac?") {
+		t.Errorf("after a follow-up: document %q, %d files, new reply in it %v; want the same two files rewritten", c.DocPath, len(files), strings.Contains(string(body), "What about the Mac?"))
 	}
 
 	// stopped: what the finished rounds hold is saved too
@@ -4144,8 +4160,8 @@ func TestDocPathSavedOnEnd(t *testing.T) {
 	if got, err := h.r.Stop("b"); err != nil || got.State != StateStopped || got.DocPath == "" {
 		t.Fatalf("Stop = %+v, %v, want stopped with a document", got, err)
 	}
-	if body, err := os.ReadFile(h.load("b").DocPath); err != nil || !strings.Contains(string(body), "- Ended: stopped") {
-		t.Errorf("the stopped council's document = %q, %v", body, err)
+	if body, err := os.ReadFile(SidePath(h.load("b").DocPath)); err != nil || !strings.Contains(string(body), "- Ended: stopped") {
+		t.Errorf("the stopped council's side file = %q, %v", body, err)
 	}
 	// a council that ended paused is stopped by Stop with no run behind it: it saves its document there
 	p := councilAs(t, "p", "p-")
@@ -6566,6 +6582,9 @@ func TestRunnerChecksLabelAfterRound1AndTheReplyPass(t *testing.T) {
 
 func TestRunnerChecksCitesIntoAttachedFilesAndFolders(t *testing.T) {
 	h := newHarness(t)
+	prevDay := DocDay
+	t.Cleanup(func() { DocDay = prevDay })
+	DocDay = func() time.Time { return time.Date(2026, 11, 23, 9, 0, 0, 0, time.Local) }
 	proj := checkProject(t)
 	outside := t.TempDir()
 	notes := filepath.Join(outside, "notes.md")
@@ -6575,26 +6594,31 @@ func TestRunnerChecksCitesIntoAttachedFilesAndFolders(t *testing.T) {
 	c := claimCouncil("c1", proj)
 	c.Files = []string{notes, folder, "pkg/ram.go"} // a file and a folder outside the project, and a project file as written in Setup
 	c.PauseAfterRound1 = true
-	h.f.setText("ux/r1", claimJSON("The attached file", []map[string]string{cite(notes+":2", "wake on demand")}))
-	h.f.setText("ram/r1", claimJSON("Its bare name", []map[string]string{cite("notes.md:2", "")}))
+	// Start copies the outside file and folder under docs/council/briefs/, and the seats read and cite the copies
+	notesCopy := "docs/council/briefs/2026-11-23-c1-notes.md"
+	h.f.setText("ux/r1", claimJSON("The attached file's copy", []map[string]string{cite(notesCopy+":2", "wake on demand")}))
+	h.f.setText("ram/r1", claimJSON("The original outside", []map[string]string{cite(notes+":2", "wake on demand")}))
 	h.f.setText("newuser/r1", claimJSON("A file in the attached folder", []map[string]string{cite("design.txt:2", "two")}))
-	h.f.setText("skeptic/r1", claimJSON("A file nothing attached", []map[string]string{cite(filepath.Join(outside, "other.md")+":1", "")}))
+	h.f.setText("skeptic/r1", claimJSON("Its bare name", []map[string]string{cite("notes.md:2", "")}))
 
 	paused := h.run(c)
+	if want := []string{notesCopy, "docs/council/briefs/2026-11-23-c1-" + filepath.Base(folder), "pkg/ram.go"}; !slices.Equal(paused.Files, want) {
+		t.Fatalf("files = %q, want the copies %q", paused.Files, want)
+	}
 	got := func(author string) CouncilEvidence {
 		return proposalOf(t, paused, ideaBy(t, paused, author)).Evidence[0]
 	}
 	if e := got("ux"); e.Cite != CiteOK {
-		t.Errorf("a cite of an attached file by its absolute path = %+v, want ok", e)
+		t.Errorf("a cite of an attached file's copy = %+v, want ok", e)
 	}
-	if e := got("ram"); e.Cite != CiteWrong {
-		t.Errorf("a cite of an attached file by its bare name = %+v, want wrong: a file root matches only its own path", e)
+	if e := got("ram"); e.Cite != CiteWrong || !strings.Contains(e.CiteNote, "outside") {
+		t.Errorf("a cite of the original an attached file was copied from = %+v, want wrong and outside", e)
 	}
 	if e := got("newuser"); e.Cite != CiteOK {
 		t.Errorf("a cite of a file in an attached folder = %+v, want ok", e)
 	}
-	if e := got("skeptic"); e.Cite != CiteWrong || !strings.Contains(e.CiteNote, "outside") {
-		t.Errorf("a cite of a file beside an attached file = %+v, want wrong and outside", e)
+	if e := got("skeptic"); e.Cite != CiteWrong {
+		t.Errorf("a cite of an attached file by its bare name = %+v, want wrong: a file root matches only its own path", e)
 	}
 }
 

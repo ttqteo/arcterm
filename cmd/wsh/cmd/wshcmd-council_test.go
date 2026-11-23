@@ -477,6 +477,22 @@ func TestCouncilPanelRefusesWhatCannotRun(t *testing.T) {
 	}
 }
 
+func TestCouncilBriefWarnings(t *testing.T) {
+	c := &council.Council{Briefs: []council.CouncilBrief{
+		{Source: "/home/me/notes.md", Copy: "docs/council/briefs/2026-11-23-c1-notes.md"},
+		{Source: "/home/me/paper.pdf", Skipped: "it holds 2048 KB, over the 1 MB cap"},
+		{Source: "/home/me/gone.md", Skipped: "it cannot be read: no such file"},
+	}}
+	want := "warning: /home/me/paper.pdf was not copied into docs/council/briefs: it holds 2048 KB, over the 1 MB cap\n" +
+		"warning: /home/me/gone.md was not copied into docs/council/briefs: it cannot be read: no such file\n"
+	if got := councilBriefWarnings(c); got != want {
+		t.Errorf("warnings\n got %q\nwant %q", got, want)
+	}
+	if got := councilBriefWarnings(&council.Council{Briefs: c.Briefs[:1]}); got != "" {
+		t.Errorf("a council whose briefs were all copied warns %q", got)
+	}
+}
+
 func TestCouncilEstimateLine(t *testing.T) {
 	group, experts, err := councilPanel(councilTestRoles(), "ui-feature")
 	if err != nil {

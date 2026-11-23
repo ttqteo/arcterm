@@ -309,7 +309,84 @@ func TestOnlyTheSynthesisKeepsTheSummaryShortAndInTheQuestionsLanguage(t *testin
 		mustNotContain(t, name+" prompt", p, summaryRule)
 	}
 	mustContain(t, "synthesis prompt", summaryRule, "at most 25 words", "at most three short sentences", "no path:line",
-		"the language the person's question is written in", "every other field stays in English")
+		"the language the person's question is written in")
+}
+
+// Every field the person reads is written in the question's language (the feature's when there is no question); technical
+// terms, ids, paths and JSON keys stay as they are. Neither synthesis, a Brainstorm's included, says other fields stay English.
+func TestSynthesisPromptWritesEveryFieldThePersonReadsInTheQuestionsLanguage(t *testing.T) {
+	fields := []string{`"answer"`, `"text"`, `"asks"`, `"title"`, `"reasoning"`, `"firststep"`, `"task"`, `"why"`, "each kept item"}
+	mustContain(t, "summaryRule", summaryRule, append([]string{"in the language the person's question is written in",
+		"Technical terms, ids, paths and JSON keys stay as they are"}, fields...)...)
+	noQuestion := []string{`"text"`, `"asks"`, `"title"`, `"reasoning"`, `"firststep"`, `"task"`, `"why"`, "each kept item"}
+	mustContain(t, "summaryRuleNoQuestion", summaryRuleNoQuestion, append([]string{"in the language the feature is written in",
+		"Technical terms, ids, paths and JSON keys stay as they are"}, noQuestion...)...)
+	mustNotContain(t, "summaryRule", summaryRule, "stays in English")
+	mustNotContain(t, "summaryRuleNoQuestion", summaryRuleNoQuestion, "stays in English", "person's question")
+
+	vi := func(c *Council) *Council { c.Lang = LangVi; c.Question = "Hướng nào nên làm trước?"; return c }
+	review, brainstorm := vi(promptCouncil()), vi(brainstormCouncil())
+	for name, p := range map[string]string{"review": SynthesisPrompt(review), "brainstorm": SynthesisPrompt(brainstorm)} {
+		mustContain(t, name+" synthesis prompt of a Vietnamese council", p, summaryRule)
+		mustNotContain(t, name+" synthesis prompt of a Vietnamese council", p, "stays in English")
+	}
+	review.Question, brainstorm.Question = " ", " "
+	for name, p := range map[string]string{"review": SynthesisPrompt(review), "brainstorm": SynthesisPrompt(brainstorm)} {
+		mustContain(t, name+" synthesis prompt with no question", p, summaryRuleNoQuestion)
+		mustNotContain(t, name+" synthesis prompt with no question", p, "stays in English")
+	}
+}
+
+// Both syntheses, a Brainstorm's included, ask each direction for the four fields the report's to-do table shows.
+func TestSynthesisPromptAsksEachDirectionForATaskWhyKindAndFiles(t *testing.T) {
+	for name, c := range map[string]*Council{"review": promptCouncil(), "brainstorm": brainstormCouncil()} {
+		p := SynthesisPrompt(c)
+		mustContain(t, name+" synthesis prompt", p, directionFieldsRule, `"task"`, `"why"`, `"kind"`, `"files"`)
+		mustContain(t, name+" direction fields rule", directionFieldsRule, "at most 15 words", "one sentence",
+			`"new"`, `"edit"`, `"decision"`, "project paths")
+		noQuestion := *c
+		noQuestion.Question = " "
+		mustContain(t, name+" synthesis prompt with no question", SynthesisPrompt(&noQuestion), directionFieldsRule, `"task"`, `"files"`)
+	}
+	// the seats' prompts never ask for them
+	c := promptCouncil()
+	mustNotContain(t, "round 1 prompt", Round1Prompt(c, c.Experts[0]), directionFieldsRule, `"firststep"`)
+}
+
+// A Review's round 1 asks each seat for the numbers its proposals rely on that a project file holds, with the quote of the
+// line they sit on, and for what each measures in the question's language. Every variant of the shape carries the field,
+// the agent seat's included; a Brainstorm asks for none.
+func TestRound1PromptAsksAReviewForFigures(t *testing.T) {
+	c := promptCouncil()
+	p := Round1Prompt(c, c.Experts[0])
+	mustContain(t, "round 1 prompt", p, figuresRuleFor(c), `"figures"`, `"measures"`, `"value"`,
+		"exactly as the quoted line writes it", "leave out a number nobody wrote down", `Write "measures" in English`)
+	mustNotContain(t, "round 1 prompt", p, `Write "measures" in Vietnamese`)
+
+	// the language of the question, said by name (messageRules mentions Vietnamese in every prompt, so the sentence is the test)
+	vi := promptCouncil()
+	vi.Lang, vi.Question = LangVi, "Hướng nào nên làm trước?"
+	mustContain(t, "Vietnamese round 1 prompt", Round1Prompt(vi, vi.Experts[0]), figuresRuleFor(vi), `Write "measures" in Vietnamese`)
+	mustNotContain(t, "Vietnamese round 1 prompt", Round1Prompt(vi, vi.Experts[0]), `Write "measures" in English`)
+	// a council saved with no language reads it from its question, as Start does
+	old := promptCouncil()
+	old.Lang, old.Question = "", "Hướng nào nên làm trước?"
+	mustContain(t, "round 1 prompt of a council with no language", Round1Prompt(old, old.Experts[0]), `Write "measures" in Vietnamese`)
+
+	// the agent seat's first turn asks the same, with no verify request
+	agent := round1Task(c, c.Experts[0], false)
+	mustContain(t, "agent seat's task", agent, figuresRuleFor(c), `"figures"`)
+	mustNotContain(t, "agent seat's task", agent, `"verify"`)
+
+	// a panel of one has no checker to name and still shows figures
+	solo := promptCouncil()
+	solo.Experts = solo.Experts[:1]
+	mustContain(t, "solo round 1 task", round1Task(solo, solo.Experts[0], true), `"figures"`)
+
+	b := brainstormCouncil()
+	pb := Round1Prompt(b, b.Experts[0])
+	mustNotContain(t, "brainstorm round 1 prompt", pb, `"figures"`, `"measures"`, figuresRuleFor(b))
+	mustNotContain(t, "round 2 prompt", Round2Prompt(c, c.Experts[0]), `"figures"`)
 }
 
 // The person reads a reason, a summary, an answer and a weak note, and the UI shows no proposal id: every prompt that
