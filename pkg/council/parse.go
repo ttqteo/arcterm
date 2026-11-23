@@ -168,6 +168,94 @@ func (l *verifyList) UnmarshalJSON(b []byte) error {
 	return nil
 }
 
+// figureList reads a proposal's "figures": [{"value": "300", "measures": "what it measures", "ref": "path:line", "quote":
+// "the line's text"}]. Like "verify" it is optional and read leniently, so a reply is never failed over it: a list that is
+// not a list, an item that is not an object, and an entry with no value or no ref (Go cannot check a number that has no
+// place) are each left out, each field is trimmed, and a value or other field written as a bare number reads as its text.
+// What is kept has no verdict: ApplyChecks gives it one.
+type figureList []CouncilFigure
+
+func (l *figureList) UnmarshalJSON(b []byte) error {
+	*l = nil
+	var raw []json.RawMessage
+	if err := json.Unmarshal(b, &raw); err != nil {
+		return nil
+	}
+	var out []CouncilFigure
+	for _, r := range raw {
+		var obj struct {
+			Value    json.RawMessage `json:"value"`
+			Measures json.RawMessage `json:"measures"`
+			Ref      json.RawMessage `json:"ref"`
+			Quote    json.RawMessage `json:"quote"`
+		}
+		if err := json.Unmarshal(r, &obj); err != nil {
+			continue
+		}
+		f := CouncilFigure{Value: plainText(obj.Value), Measures: plainText(obj.Measures), Ref: plainText(obj.Ref), Quote: plainText(obj.Quote)}
+		if f.Value == "" || f.Ref == "" {
+			continue
+		}
+		out = append(out, f)
+	}
+	*l = out
+	return nil
+}
+
+// plainText is a JSON string trimmed, or a JSON number as it was written, and "" for anything else (null, a missing field).
+func plainText(raw json.RawMessage) string {
+	var s string
+	if err := json.Unmarshal(raw, &s); err == nil {
+		return strings.TrimSpace(s)
+	}
+	var n json.Number
+	if err := json.Unmarshal(raw, &n); err == nil {
+		return n.String()
+	}
+	return ""
+}
+
+// pathList reads a direction's "files", the project paths its task changes: a list of strings, trimmed with the empty ones
+// dropped, or one path written as a bare string. Anything else reads as none; the reply stands.
+type pathList []string
+
+func (l *pathList) UnmarshalJSON(b []byte) error {
+	*l = nil
+	var out []string
+	add := func(s string) {
+		if s = strings.TrimSpace(s); s != "" {
+			out = append(out, s)
+		}
+	}
+	var one string
+	if err := json.Unmarshal(b, &one); err == nil {
+		add(one)
+	} else {
+		var raw []json.RawMessage
+		if err := json.Unmarshal(b, &raw); err != nil {
+			return nil
+		}
+		for _, r := range raw {
+			var s string
+			if err := json.Unmarshal(r, &s); err == nil {
+				add(s)
+			}
+		}
+	}
+	*l = out
+	return nil
+}
+
+// directionKind is a direction's "kind" as one of the Task* values: case and spaces folded, and any other word, an empty one
+// included, reads as none.
+func directionKind(s string) string {
+	switch k := strings.ToLower(strings.TrimSpace(s)); k {
+	case TaskNew, TaskEdit, TaskDecision:
+		return k
+	}
+	return ""
+}
+
 // extractJSON returns the JSON the model ended its reply with: the last ```json fence, or, when the reply has no such
 // fence, the last top-level object that is valid JSON.
 func extractJSON(reply string) ([]byte, bool) {
@@ -349,7 +437,9 @@ func parseStance(word string) (CouncilStance, error) {
 // evidence gets one weak chip saying so; the runner takes that chip off a Brainstorm's ideas, which need none. A
 // proposal's wild flag is a Brainstorm's, and the runner clears it in a Review. A proposal's verify list becomes its
 // Runs, each a request with State empty; a Brainstorm asks for none, and the runner clears any it is given. A proposal's
-// checker and checkwhy are the seat its author named to check it and why, as written: the runner settles the seat.
+// checker and checkwhy are the seat its author named to check it and why, as written: the runner settles the seat. A
+// proposal's figures (figureList) are kept as written, with no verdict; the Brainstorm shapes ask for none, and the
+// council's figures are only ever derived from a Review's (ApplyChecks).
 func ParseRound1(reply string) ([]CouncilProposal, string, error) {
 	const what = "round 1"
 	var r struct {
@@ -358,6 +448,7 @@ func ParseRound1(reply string) ([]CouncilProposal, string, error) {
 			Title    string       `json:"title"`
 			Argument string       `json:"argument"`
 			Evidence evidenceList `json:"evidence"`
+			Figures  figureList   `json:"figures"`
 			Verify   verifyList   `json:"verify"`
 			Wild     bool         `json:"wild"`
 			Checker  string       `json:"checker"`
@@ -384,6 +475,7 @@ func ParseRound1(reply string) ([]CouncilProposal, string, error) {
 			Title:    strings.TrimSpace(p.Title),
 			Argument: strings.TrimSpace(p.Argument),
 			Evidence: ev,
+			Figures:  []CouncilFigure(p.Figures),
 			Runs:     []CouncilRun(p.Verify),
 			Wild:     p.Wild,
 			Checker:  strings.TrimSpace(p.Checker),
@@ -532,6 +624,10 @@ func ParseSynthesis(reply string) (CouncilSummary, []WeakNote, error) {
 			Title     string            `json:"title"`
 			Reasoning string            `json:"reasoning"`
 			FirstStep string            `json:"firststep"`
+			Task      string            `json:"task"`
+			Why       string            `json:"why"`
+			Kind      string            `json:"kind"`
+			Files     pathList          `json:"files"`
 			From      []string          `json:"from"`
 			Stances   map[string]string `json:"stances"`
 			Agreed    *bool             `json:"agreed"`
@@ -566,6 +662,10 @@ func ParseSynthesis(reply string) (CouncilSummary, []WeakNote, error) {
 			Title:     strings.TrimSpace(d.Title),
 			Reasoning: strings.TrimSpace(d.Reasoning),
 			FirstStep: strings.TrimSpace(d.FirstStep),
+			Task:      strings.TrimSpace(d.Task),
+			Why:       strings.TrimSpace(d.Why),
+			Kind:      directionKind(d.Kind),
+			Files:     []string(d.Files),
 			From:      append([]string{}, d.From...),
 			Stances:   map[string]CouncilStance{},
 		}
