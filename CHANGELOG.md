@@ -66,6 +66,10 @@ and a picture given to a line that is not big.
   second before measuring.
 - A paste you folded into a chip, sent while the agent was working, shows as a "Pasted" card in your message instead
   of raw text with `<\pasted_content>` tags, and its "Queued" bubble no longer stays stuck under the conversation.
+- arcterm no longer loses its backend right after launch: when the window was busy for a while after opening, the link
+  could drop and stay dead, so sleeping agents read as their project's name, Chat showed a skeleton and a pasted
+  picture would not send until arcterm restarted. The link now holds through the busy start, and reconnects by itself
+  if it ever goes quiet.
 
 ## 1.9.0 — 2026-11-22
 

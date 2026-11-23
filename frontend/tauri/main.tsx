@@ -9,6 +9,7 @@ import { installVaultSyncTriggers } from "@/app/store/vaultsync";
 import { hlog, installTauriApi, type InitData } from "./api";
 import { installChromeListeners } from "./chrome";
 import { resolveBootIds } from "./bootids";
+import { installStallWatch } from "./stallwatch";
 import { loadFonts } from "@/util/fontutil";
 
 // WebKit (the macOS webview) has no requestIdleCallback; termwrap's terminal-state cache runs on it.
@@ -79,6 +80,7 @@ async function boot() {
         } as WaveInitOpts);
 
         installVaultSyncTriggers();
+        installStallWatch(hlog);
         createRoot(document.getElementById("main")).render(<CockpitRoot />);
         hlog("cockpit rendered");
         markBoot("rendered");

@@ -32,6 +32,14 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
   asked, the ask comes back as a refusal whose reason tells the agent to ask you first.
 ## 2026-11-23
 
+- [ ] (arcterm) **The link to wavesrv survives the launch stall, and a dead one reconnects** (`pkg/web/ws.go`,
+  `frontend/app/store/ws.ts`, `frontend/tauri/stallwatch.ts`). Go and vitest tests only; not run in the app. After
+  installing, quit and reopen arcterm a few times: `waveapp.log` should show no `WritePump error ... i/o timeout` in the
+  first minute, sleeping agents get their titles, and a pasted picture sends. If a link does drop, the log shows
+  `[ws] link closed …` or `[ws] link silent …` then `[ws] link reopened`, and the cockpit recovers within ~a minute
+  without a restart. Each launch should also log `[stall] frame at …` lines for the post-render freeze: they name what
+  held the main thread, the input for fixing the freeze itself.
+
 - [ ] (arcterm) **New File / New Folder in the agent panel's Files tree** (`railtreepane.tsx`, `createRailEntry` in
   `railtreestore.ts`). Unit tests and the typecheck only. Right-click a folder → New File, type `x.md`, Enter: the file
   appears selected under that folder and opens in the File tab. New Folder makes an empty folder that stays after
