@@ -8,7 +8,9 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/shirou/gopsutil/v4/process"
@@ -48,9 +50,13 @@ func (ws *WshServer) JobSlotCommand(ctx context.Context, data wshrpc.CommandJobS
 		if q != nil {
 			noteMissed(ctx, q, data.Missed)
 		}
-		if !heavy || job.LongRunning() || q == nil {
+		if q == nil || !data.Protect && (!heavy || job.LongRunning()) {
 			send(wshrpc.JobSlotUpdate{Run: &yes})
 			return
+		}
+		if data.Protect && (!heavy || job.LongRunning()) {
+			// a Protect job queues whatever memgate calls it (python, a docker compose up), named for its command
+			job = memgate.Job{Name: protectName(data.Command)}
 		}
 		src := jobqueue.Source{BlockId: data.BlockId}
 		if data.BlockId != "" {
@@ -67,7 +73,8 @@ func (ws *WshServer) JobSlotCommand(ctx context.Context, data wshrpc.CommandJobS
 		// in another one, else the table's; every caller gets it, pi's included. A heavy command queues whatever the
 		// figure comes to: a small one only means it fits sooner
 		bytes, basis := jobpeaks.Default.Estimate(job.Name, jobProject(ctx, data.BlockId), job.Bytes)
-		slot, err := q.Acquire(ctx, jobqueue.Request{Name: job.Name, Bytes: bytes, Basis: basis, Source: src}, func(w jobqueue.Wait) {
+		req := jobqueue.Request{Name: job.Name, Bytes: bytes, Basis: basis, Source: src, Protect: data.Protect}
+		slot, err := q.Acquire(ctx, req, func(w jobqueue.Wait) {
 			// runs under the queue's lock: a full buffer drops the line, and the next place supersedes it
 			select {
 			case ch <- wshrpc.RespOrErrorUnion[wshrpc.JobSlotUpdate]{Response: wshrpc.JobSlotUpdate{Queued: w.Position, Behind: w.Behind, For: w.For}}:
@@ -84,16 +91,25 @@ func (ws *WshServer) JobSlotCommand(ctx context.Context, data wshrpc.CommandJobS
 			return
 		}
 		defer slot.Release()
-		if !send(wshrpc.JobSlotUpdate{Run: &yes}) {
+		started := wshrpc.JobSlotUpdate{Run: &yes}
+		if data.Protect {
+			started.Job = slot.Id()
+			defer holdPids.Delete(slot.Id())
+		}
+		if !send(started) {
 			return
 		}
 		reclaimed := false
 		select {
 		case <-ctx.Done():
-			// a caller that handed the slot on (`wsh jobslot --hold-parent`, for a background command) has left
-			// once its command may start: the slot stays while the shell running the command does
-			if data.HoldPid > 0 {
-				reclaimed = !holdWhileRunning(data.HoldPid, slot.Reclaimed())
+			// a caller that handed the slot on (`wsh jobslot --hold-parent`, for a background command; `wsh protect`,
+			// to its child) has left once its command may start: the slot stays while that process runs
+			pid := data.HoldPid
+			if v, ok := holdPids.Load(slot.Id()); ok && pid == 0 {
+				pid = v.(int32)
+			}
+			if pid > 0 {
+				reclaimed = !holdWhileRunning(pid, slot.Reclaimed())
 			}
 		case <-slot.Reclaimed():
 			reclaimed = true
@@ -103,6 +119,40 @@ func (ws *WshServer) JobSlotCommand(ctx context.Context, data wshrpc.CommandJobS
 		}
 	}()
 	return ch
+}
+
+// holdPids are the processes Protect slots were handed to by JobSlotHold, by job id, for as long as their stream lives
+var holdPids sync.Map
+
+// protectNameMax is how long a Protect job's name runs before it is cut: the popover's row and the waiting jobs'
+// reason "protected: <name> is running" both show it
+const protectNameMax = 60
+
+// protectName is the command a Protect job runs, as its name: its words on one line, cut at protectNameMax
+func protectName(command string) string {
+	name := strings.Join(strings.Fields(command), " ")
+	if r := []rune(name); len(r) > protectNameMax {
+		name = string(r[:protectNameMax-1]) + "…"
+	}
+	if name == "" {
+		return "protected job"
+	}
+	return name
+}
+
+// JobSlotHoldCommand hands a started Protect slot to a process (`wsh protect`'s child), which then holds it past the
+// stream until it exits, as HoldPid does for one known up front.
+func (ws *WshServer) JobSlotHoldCommand(ctx context.Context, data wshrpc.CommandJobSlotHoldData) error {
+	if data.Job == "" || data.Pid <= 0 {
+		return fmt.Errorf("jobslothold needs a job and a pid")
+	}
+	if jobqueue.Default == nil || !slices.ContainsFunc(jobqueue.Default.Snapshot().Jobs, func(j jobqueue.Job) bool {
+		return j.Id == data.Job && j.Running && j.Protect
+	}) {
+		return fmt.Errorf("no running Protect job %q", data.Job)
+	}
+	holdPids.Store(data.Job, data.Pid)
+	return nil
 }
 
 // noteMissed counts the commands earlier wsh jobslots ran without a slot because they never reached wavesrv
@@ -209,6 +259,7 @@ func JobQueueData(s jobqueue.Snapshot) wshrpc.JobQueueData {
 			TabId:     j.Source.TabId,
 			RunId:     j.Source.RunId,
 			Label:     j.Source.Label,
+			Protected: j.Protect,
 			TaskIds:   splitTasks(j.Source.Tasks),
 		})
 	}

@@ -73,7 +73,8 @@ Other useful commands:
   runs, the Claude mod and the pi tools extension call `wsh jobslot`; a heavy one (a build, the typecheck, a whole test
   suite, `npm install`; dev servers excluded) waits in wavesrv's queue (`pkg/jobqueue`) until its RAM fits (by default,
   `jobs:mode` `auto`; `slots` also caps them at `jobs:slots` at once, `off` never waits, and `jobs:pauseuntil` is off
-  for a while; on macOS "fits" reads the OS memory pressure, on Windows the commit charge against the RAM), and holds its slot while it runs. A heavy Claude command run with `run_in_background` waits inside its own
+  for a while, except while a `wsh protect` job is queued or running: it goes ahead of the queue, starts once no heavy
+  job runs, and holds every other heavy one back, engine steps included, whatever the mode, until its command exits; on macOS "fits" reads the OS memory pressure, on Windows the commit charge against the RAM), and holds its slot while it runs. A heavy Claude command run with `run_in_background` waits inside its own
   shell instead (the mod puts `wsh jobslot --hold-parent` in front of it), and wavesrv holds the slot until that shell
   exits; the permission check still reads the command as written. The engine's Verify,
   Final and heavy Setup queue too. A command the person skipped from the Jobs popover comes back "Not run: …": don't

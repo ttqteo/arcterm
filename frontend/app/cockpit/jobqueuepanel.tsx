@@ -21,7 +21,7 @@ import { runTitle } from "@/app/view/agents/runlineage";
 import { openTarget } from "@/app/view/jarvis/openref";
 import { cn, fireAndForget } from "@/util/util";
 import { atom, useAtomValue } from "jotai";
-import { Pause } from "lucide-react";
+import { Pause, ShieldCheck } from "lucide-react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
     bypassLine,
@@ -196,6 +196,20 @@ function Row({
                 <span data-job-name className="min-w-0 flex-1 truncate text-[12.5px] text-primary" title={job.name}>
                     {job.name}
                 </span>
+                {job.protected ? (
+                    <span
+                        data-job-protected
+                        title={
+                            running
+                                ? "wsh protect: every other heavy job waits until it exits"
+                                : "wsh protect: it starts once the heavy jobs running now finish, then every other heavy job waits"
+                        }
+                        className="flex flex-none items-center gap-[3px] text-[10.5px] font-semibold text-accent"
+                    >
+                        <ShieldCheck size={11} aria-hidden />
+                        Protected
+                    </span>
+                ) : null}
                 <span className="flex flex-none items-baseline gap-1 whitespace-nowrap">
                     <span data-job-size title={size.title} className="text-[12px] tabular-nums text-secondary">
                         {size.text}

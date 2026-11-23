@@ -19,10 +19,20 @@ function runningCount(d: JobQueueData): number {
     return d.jobs.filter((j) => j.running).length;
 }
 
-/** The chip's text, or null when nothing runs or waits and the chip is not drawn. */
+/** The `wsh protect` job holding the machine (spec 2026-11-23-protect-job-design.md): every other heavy job waits on it
+ * while it runs. null when none runs. */
+export function protectedJob(d: JobQueueData | null): JobQueueJob | null {
+    return d?.jobs.find((j) => j.running && j.protected) ?? null;
+}
+
+/** The chip's text, or null when nothing runs or waits and the chip is not drawn. A running Protect job says so first:
+ * "Protected · 2 queued". */
 export function chipLabel(d: JobQueueData): string | null {
     const running = runningCount(d);
     const queued = d.jobs.length - running;
+    if (protectedJob(d) != null) {
+        return queued > 0 ? `Protected · ${queued} queued` : "Protected";
+    }
     if (running > 0 && queued > 0) {
         return `${running} · ${queued} queued`;
     }
@@ -47,6 +57,10 @@ function paceText(d: JobQueueData): string {
 /** The chip's tooltip. */
 export function queueTitle(d: JobQueueData): string {
     const running = runningCount(d);
+    const held = protectedJob(d);
+    if (held != null) {
+        return `Heavy jobs: protected: ${held.name} is running, every other heavy job waits until it exits (${d.jobs.length - running} queued)`;
+    }
     return `Heavy jobs: ${running} running, ${d.jobs.length - running} queued (${paceText(d)}; set in the popover)`;
 }
 
@@ -125,7 +139,8 @@ export function bypassOnly(d: JobQueueData, now: number): boolean {
  * else chipLabel, or, with the queue empty, "2 ran unqueued" for a while after commands ran without a slot. */
 export function chipText(d: JobQueueData, now: number): string | null {
     const left = pauseLeft(d, now);
-    if (left == null) {
+    // a Protect job holds whatever the pause says
+    if (left == null || protectedJob(d) != null) {
         return chipLabel(d) ?? (bypassOnly(d, now) ? `${d.bypassed} ran unqueued` : null);
     }
     const running = runningCount(d);
@@ -135,7 +150,7 @@ export function chipText(d: JobQueueData, now: number): string | null {
 /** The chip's tooltip: the pause while one is on, else queueTitle. */
 export function chipTitle(d: JobQueueData, now: number): string {
     const left = pauseLeft(d, now);
-    if (left == null) {
+    if (left == null || protectedJob(d) != null) {
         return bypassOnly(d, now)
             ? `Heavy jobs: ${bypassLine(d, now)}. The queue answered too late, so they ran at once (details in the popover)`
             : queueTitle(d);
@@ -203,11 +218,15 @@ export function sizeLabel(job: JobQueueJob): { text: string; tag: string; title:
     return { text, tag: "measured", title: rule, measured: true };
 }
 
-/** The rows' order: running jobs first, the longest-running on top, then the queue in the order it will be served. */
+/** The rows' order: running jobs first, a Protect job on top, then the longest-running, then the queue in the order it
+ * will be served (a queued Protect job is already its head). */
 export function ordered(jobs: JobQueueJob[]): JobQueueJob[] {
     return [...jobs].sort((a, b) => {
         if (a.running !== b.running) {
             return a.running ? -1 : 1;
+        }
+        if (a.running && !!a.protected !== !!b.protected) {
+            return a.protected ? -1 : 1;
         }
         if (a.running) {
             return (a.startedts ?? 0) - (b.startedts ?? 0);

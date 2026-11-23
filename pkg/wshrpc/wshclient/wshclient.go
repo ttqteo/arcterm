@@ -1375,6 +1375,12 @@ func JobSlotCommand(w *wshutil.WshRpc, data wshrpc.CommandJobSlotData, opts *wsh
 	return sendRpcRequestResponseStreamHelper[wshrpc.JobSlotUpdate](w, "jobslot", data, opts)
 }
 
+// command "jobslothold", wshserver.JobSlotHoldCommand
+func JobSlotHoldCommand(w *wshutil.WshRpc, data wshrpc.CommandJobSlotHoldData, opts *wshrpc.RpcOpts) error {
+	_, err := sendRpcRequestCallHelper[any](w, "jobslothold", data, opts)
+	return err
+}
+
 // command "landrun", wshserver.LandRunCommand
 func LandRunCommand(w *wshutil.WshRpc, data wshrpc.CommandLandRunData, opts *wshrpc.RpcOpts) (*waveobj.RunLand, error) {
 	resp, err := sendRpcRequestCallHelper[*waveobj.RunLand](w, "landrun", data, opts)

@@ -34,6 +34,12 @@ and a picture given to a line that is not big.
 
 ### Added
 
+- `wsh protect -- <command>` runs one long job with the machine held for it: it goes ahead of the heavy-job queue,
+  starts once the heavy jobs already running finish, and every other agent's build, typecheck or test suite (and a
+  run's Verify or Final) waits until it exits, even with the queue off or paused. The Jobs chip says Protected, and
+  the popover lists it first.
+- `docker build`, `docker buildx build`, `docker compose build` and `docker compose up -d` from an agent now wait their
+  turn in the heavy-job queue like any other build.
 - A board's header names the chat it reads, and its menu moves the board to another Claude chat of the project, even
   while the first one is still running; the board then reads the new chat. <!-- big --> <!-- shot: 1.10.0-board-chat.webp -->
 - Hide turns, in a board's header, folds its turns column and ask box to a thin strip so the canvas gets the room.

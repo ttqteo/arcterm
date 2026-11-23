@@ -19,6 +19,7 @@ import {
     paceValue,
     pauseLeft,
     pausePatch,
+    protectedJob,
     queuedJobFor,
     queuedStepFor,
     queuedTag,
@@ -396,6 +397,42 @@ describe("jobqueue", () => {
             expect(label.measured).toBe(true);
             expect(label.tag).toBe("measured");
             expect(label.title).toBe("2.1 GB: max of the recent runs × 1.2");
+        });
+    });
+
+    describe("Protect (spec 2026-11-23-protect-job-design.md)", () => {
+        const held = job({
+            id: "p",
+            name: "python scripts/audit_guard.py",
+            running: true,
+            protected: true,
+            startedts: 9,
+        });
+        const waiting = job({
+            id: "q",
+            position: 1,
+            reason: "protected: python scripts/audit_guard.py is running",
+        });
+        it("lists the Protect job first, ahead of a job that started earlier", () => {
+            const out = ordered([waiting, job({ id: "seat", running: true, startedts: 1 }), held]);
+            expect(out.map((j) => j.id)).toEqual(["p", "seat", "q"]);
+        });
+        it("finds only a running Protect job", () => {
+            const d = { slots: 1, mode: "auto", jobs: [waiting, held] };
+            expect(protectedJob(d)?.id).toBe("p");
+            expect(protectedJob({ ...d, jobs: [{ ...held, running: false }] })).toBeNull();
+            expect(protectedJob(null)).toBeNull();
+        });
+        it("the chip says Protected and names it in the tooltip", () => {
+            const d = { slots: 1, mode: "auto", jobs: [held, waiting] };
+            expect(chipLabel(d)).toBe("Protected · 1 queued");
+            expect(chipLabel({ ...d, jobs: [held] })).toBe("Protected");
+            expect(queueTitle(d)).toContain("protected: python scripts/audit_guard.py is running");
+        });
+        it("a Protect job holds through a pause, and the chip says so", () => {
+            const d = { slots: 1, mode: "auto", pauseduntil: 10_000, jobs: [held, waiting] };
+            expect(chipText(d, 1_000)).toBe("Protected · 1 queued");
+            expect(chipTitle(d, 1_000)).toContain("protected:");
         });
     });
 });

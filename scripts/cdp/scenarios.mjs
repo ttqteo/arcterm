@@ -58778,6 +58778,46 @@ const jobqueueChip = {
             JSON.stringify({ opened, landed, surface, sheet })
         );
 
+        // 9c. a Protect job (wsh protect, docs/superpowers/specs/2026-11-23-protect-job-design.md): listed first, tagged
+        // Protected, with no Skip; the job waiting on it says why, and keeps Run now and Skip
+        await h.ev(`window.__jobQueueInject({
+            slots: 1, mode: "auto",
+            jobs: [
+                { id: "jw", name: "task check:ts", bytes: 3221225472, position: 1,
+                  reason: "protected: python scripts/audit_guard.py is running", queuedts: Date.now() - 60_000 },
+                { id: "jsr", name: "council seat", bytes: 0, running: true,
+                  queuedts: Date.now() - 3_600_000, startedts: Date.now() - 3_600_000 },
+                { id: "jpr", name: "python scripts/audit_guard.py", bytes: 0, running: true, protected: true,
+                  queuedts: Date.now() - 600_000, startedts: Date.now() - 600_000 },
+            ],
+        })`);
+        await polishWaitFor(h, `!!document.querySelector("[data-job-queue-chip][data-job-queue-protected]")`, 3000);
+        const protChip = await chipText();
+        await click("[data-job-queue-chip]");
+        await polishWaitFor(h, `!!document.querySelector('[data-job-queue-panel] [data-job-row="jpr"]')`, 3000);
+        all = await rows();
+        const protTag = await h.ev(
+            `!!document.querySelector('[data-job-queue-panel] [data-job-row="jpr"] [data-job-protected]')`
+        );
+        await h.shot("cdp-shots/jobqueue-chip-protected.png");
+        const [pRow, , wRow] = all;
+        rec(
+            "9c. a Protect job: the chip says Protected · 1 queued; its row is first, tagged Protected, with no Skip; the job waiting on it says protected: … is running and keeps Run now and Skip",
+            protChip === "Protected · 1 queued" &&
+                all.length === 3 &&
+                pRow?.id === "jpr" &&
+                protTag &&
+                !pRow.skip &&
+                !pRow.runNow &&
+                wRow?.id === "jw" &&
+                wRow.text.includes("protected: python scripts/audit_guard.py is running") &&
+                wRow.runNow &&
+                wRow.skip,
+            JSON.stringify({ protChip, protTag, rows: all.map((r) => ({ id: r.id, runNow: r.runNow, skip: r.skip })) })
+        );
+        await escape();
+        await polishWaitFor(h, `!document.querySelector("[data-job-queue-panel]")`, 3000);
+
         // 10. Pause 1h: written to jobs:pauseuntil, read back from the queue's own snapshot, counted down on the chip,
         // and Resume ends it. A running job is injected only so the chip is there to open the popover from
         await h.ev(`window.__jobQueueInject({

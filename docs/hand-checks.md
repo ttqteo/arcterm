@@ -32,6 +32,14 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
   asked, the ask comes back as a refusal whose reason tells the agent to ask you first.
 ## 2026-11-23
 
+- [ ] (arcterm) **`wsh protect` against a live wavesrv** (`cmd/wsh/cmd/wshcmd-protect.go`, `pkg/jobqueue`). In an
+  arcterm terminal of a build with this change, run `wsh protect -- bash -c "sleep 120"` while an agent runs
+  `task check:ts` → stderr says `protect waits #1 …`, it starts once the typecheck ends, the Jobs chip reads
+  `Protected`, and an agent's `npx vitest run` then waits with `protected: bash -c sleep 120 is running`. Kill the
+  `wsh` process (not its child) → the slot stays until the sleep ends. Restart arcterm mid-sleep → stderr warns
+  `lost arcterm's job queue` and asks again; note whether it ever prints `Protect is back on` (the new wavesrv mints a
+  new auth key, and may refuse the old terminal's WAVETERM_JWT). Unit and CDP-fixture tested only (the scenario injects the queue). Run
+  cf8677a6.
 - [ ] (arcterm) **Files tab: big repo listing, filter during reload, Ctrl+Shift+F to Code's Search**
   (`capListing` in `pkg/gitinfo/gitinfo.go`, `railtreepane.tsx`, `searchInCode` in `code/codestore.ts`). Go, vitest
   and the typecheck only; not run in the app. In mit-thesis (24k files, 11.6k untracked under
