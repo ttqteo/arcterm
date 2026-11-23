@@ -32,6 +32,12 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
   asked, the ask comes back as a refusal whose reason tells the agent to ask you first.
 ## 2026-11-23
 
+- [ ] (arcterm) **Chat tool rows: tooltip, sticky header, Collapse** (`frontend/app/view/agents/chatstepsview.tsx`).
+  In Chat, hover a stretch line or row whose command is a long script → the tooltip is its one-line description. Open a
+  row with a tall command/output and scroll down → the row's header sticks under the pinned prompt (not behind it) with
+  the page background; click it, or Collapse at the row's foot → the row folds and Chat lands on the row, not past it.
+  Check the box's rounded corners still clip, and a stretch/fold row still opens and folds on its spring.
+
 - [ ] (arcterm) **`wsh protect` against a live wavesrv** (`cmd/wsh/cmd/wshcmd-protect.go`, `pkg/jobqueue`). In an
   arcterm terminal of a build with this change, run `wsh protect -- bash -c "sleep 120"` while an agent runs
   `task check:ts` → stderr says `protect waits #1 …`, it starts once the typecheck ends, the Jobs chip reads

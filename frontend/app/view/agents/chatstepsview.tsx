@@ -16,9 +16,9 @@ import { springReveal } from "@/app/element/motiontokens";
 import { modalsModel } from "@/app/store/modalmodel";
 import { useLocalImage } from "@/app/view/jarvis/localimage";
 import { cn } from "@/util/util";
-import { ArrowUpRight, ChevronDown, ChevronRight, ImageOff } from "lucide-react";
+import { ArrowUpRight, ChevronDown, ChevronRight, ChevronUp, ImageOff } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
-import { useState, type KeyboardEvent, type ReactNode } from "react";
+import { useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { detailExceedsInline, type AgentActionEntry } from "./agentsviewmodel";
 import { editCounts, foldOf, pictureOf, stepOf, stepRows, stretchPictures, type StepChip } from "./chatsteps";
 import { stepSummary, stretchTime } from "./chatstepsummary";
@@ -26,6 +26,7 @@ import { CommandOutput, outputAsCode, ShellCommand } from "./commandtext";
 import { stretchMs, type WorkItem } from "./compacttimeline";
 import { PromptImages, ToolDetailBody, useNow } from "./narrationtimeline";
 import { PathLink } from "./pathlinkcontext";
+import { PINNED_PROMPT_HEIGHT_VAR } from "./pinnedpromptbar";
 
 function baseName(path: string): string {
     return path.split(/[\\/]/).pop() || path;
@@ -68,7 +69,9 @@ const hasFolder = (path: string) => /[\\/]/.test(path);
 function Target({ chip }: { chip: StepChip }) {
     if (chip.kind === "description") {
         return (
-            <span data-chat-step-chip="description" title={chip.command} className="min-w-0 truncate text-secondary">
+            // the tooltip is the description, never the command: a long script made a native tooltip a screen tall over
+            // the conversation; the row opens to `$ command`
+            <span data-chat-step-chip="description" title={chip.text} className="min-w-0 truncate text-secondary">
                 {chip.text}
             </span>
         );
@@ -141,17 +144,26 @@ function ExitMark({ exit }: { exit: number | null }) {
     );
 }
 
-function OpenFullView({ action }: { action: AgentActionEntry }) {
+// an opened row's foot: Open full view, and Collapse, which folds the row from its end, so a tall output needs no scroll
+// back up to its header to close it
+function OpenedFoot({ action, onCollapse }: { action: AgentActionEntry; onCollapse: () => void }) {
+    const btn = "inline-flex cursor-pointer items-center gap-1 text-[11px] text-muted hover:text-secondary";
     return (
-        <button
-            type="button"
-            aria-label="Open full view"
-            onClick={() => modalsModel.pushModal("AgentToolDetailModal", { action })}
-            className="inline-flex cursor-pointer items-center gap-1 self-start text-[11px] text-muted hover:text-secondary"
-        >
-            <ArrowUpRight size={12} strokeWidth={2.2} aria-hidden />
-            Open full view
-        </button>
+        <div className="flex items-center gap-3">
+            <button
+                type="button"
+                aria-label="Open full view"
+                onClick={() => modalsModel.pushModal("AgentToolDetailModal", { action })}
+                className={btn}
+            >
+                <ArrowUpRight size={12} strokeWidth={2.2} aria-hidden />
+                Open full view
+            </button>
+            <button type="button" data-chat-step-collapse onClick={onCollapse} className={btn}>
+                <ChevronUp size={12} strokeWidth={2.2} aria-hidden />
+                Collapse
+            </button>
+        </div>
     );
 }
 
@@ -172,13 +184,21 @@ function Opened({ children }: { children: ReactNode }) {
 }
 
 // an opened command: `$ command` in a code block, then its output in a box that scrolls, both in colour (commandtext.tsx)
-function CommandDetail({ action, command }: { action: AgentActionEntry; command: string }) {
+function CommandDetail({
+    action,
+    command,
+    onCollapse,
+}: {
+    action: AgentActionEntry;
+    command: string;
+    onCollapse: () => void;
+}) {
     const output = action.detail?.kind === "bash" ? action.detail.output : "";
     return (
         <Opened>
             <div
                 data-chat-step-command
-                className="whitespace-pre-wrap rounded-[6px] bg-surface-code px-3 py-2 font-mono text-[12px] text-primary [overflow-wrap:anywhere]"
+                className="max-h-[240px] overflow-auto whitespace-pre-wrap rounded-[6px] bg-surface-code px-3 py-2 font-mono text-[12px] text-primary [overflow-wrap:anywhere]"
             >
                 <span className="select-none text-muted">$ </span>
                 <ShellCommand command={command} />
@@ -192,13 +212,21 @@ function CommandDetail({ action, command }: { action: AgentActionEntry; command:
                     <CommandOutput command={command} output={output} />
                 </pre>
             ) : null}
-            <OpenFullView action={action} />
+            <OpenedFoot action={action} onCollapse={onCollapse} />
         </Opened>
     );
 }
 
 // an opened read, edit, search…: its output or diff in a code panel
-function StepDetail({ action, detail }: { action: AgentActionEntry; detail: NonNullable<AgentActionEntry["detail"]> }) {
+function StepDetail({
+    action,
+    detail,
+    onCollapse,
+}: {
+    action: AgentActionEntry;
+    detail: NonNullable<AgentActionEntry["detail"]>;
+    onCollapse: () => void;
+}) {
     return (
         <Opened>
             <div
@@ -209,7 +237,7 @@ function StepDetail({ action, detail }: { action: AgentActionEntry; detail: NonN
             >
                 <ToolDetailBody detail={detail} variant="inline" />
             </div>
-            <OpenFullView action={action} />
+            <OpenedFoot action={action} onCollapse={onCollapse} />
         </Opened>
     );
 }
@@ -318,9 +346,23 @@ function StepRow({
     // a picture it read opens to the picture: its result holds no text, so it has no detail to open
     const picture = step.running ? null : pictureOf(action);
     const opens = detail != null || picture != null;
+    const rowRef = useRef<HTMLDivElement>(null);
+    // a row folded while its header is stuck (from the header or the foot's Collapse) has its own place above the screen:
+    // the reader is brought back to it, under the pinned prompt (scroll-margin-top), instead of to what came after it
+    const toggle = () => {
+        const row = rowRef.current;
+        const box = row?.parentElement;
+        const stuck =
+            open && row != null && box != null && row.getBoundingClientRect().top - box.getBoundingClientRect().top > 1;
+        onToggle();
+        if (stuck) {
+            requestAnimationFrame(() => rowRef.current?.scrollIntoView({ block: "start" }));
+        }
+    };
     return (
         <div>
             <div
+                ref={rowRef}
                 data-chat-step
                 data-chat-step-running={step.running ? "" : undefined}
                 data-tool-running={step.running ? "" : undefined}
@@ -329,8 +371,20 @@ function StepRow({
                 role={opens ? "button" : undefined}
                 tabIndex={opens ? 0 : undefined}
                 aria-expanded={opens ? open : undefined}
-                {...rowHandlers(opens, onToggle)}
-                className={cn(ROW, bare && "pl-9", opens && "cursor-pointer hover:bg-surface")}
+                {...rowHandlers(opens, toggle)}
+                className={cn(
+                    ROW,
+                    bare && "pl-9",
+                    opens && "cursor-pointer hover:bg-surface",
+                    // opened, the row sticks to the top of Chat while its output scrolls past, so a click folds it from
+                    // anywhere in it; below the pinned prompt as a code block's head does (codeblock.tsx), which is why
+                    // every box around it clips with overflow-clip, never -hidden (that would make it the scroller)
+                    open && "sticky z-[5] bg-background"
+                )}
+                style={{
+                    top: open ? `var(${PINNED_PROMPT_HEIGHT_VAR}, 0px)` : undefined,
+                    scrollMarginTop: `var(${PINNED_PROMPT_HEIGHT_VAR}, 0px)`,
+                }}
             >
                 {step.verb !== "" ? (
                     <span data-chat-step-verb className={cn("shrink-0", step.failed ? "text-error" : "text-muted")}>
@@ -370,9 +424,10 @@ function StepRow({
                             key="detail"
                             action={action}
                             command={(detail.kind === "bash" ? detail.command : undefined) ?? command}
+                            onCollapse={toggle}
                         />
                     ) : (
-                        <StepDetail key="detail" action={action} detail={detail} />
+                        <StepDetail key="detail" action={action} detail={detail} onCollapse={toggle} />
                     )
                 ) : null}
             </AnimatePresence>
@@ -441,7 +496,7 @@ function FoldRow({
                         initial="initial"
                         animate="animate"
                         exit="exit"
-                        className="overflow-hidden"
+                        className="overflow-clip"
                     >
                         {actions.map((action, k) => (
                             <div key={start + k} className="border-t border-border">
@@ -487,7 +542,7 @@ function StepList({ work, live }: { work: WorkItem; live: boolean }) {
                         variants={springReveal}
                         initial="initial"
                         animate="animate"
-                        className={cn("overflow-hidden", i > 0 && "border-t border-border")}
+                        className={cn("overflow-clip", i > 0 && "border-t border-border")}
                     >
                         {row.actions.length === 1 ? (
                             <StepRow
@@ -544,7 +599,7 @@ export function ChatSteps({
     if (work.actions.length === 1 && !growing) {
         return (
             <div data-chat-work data-chat-work-single className="flex flex-col">
-                <div data-chat-tools className="overflow-hidden rounded-[10px] border border-edge-mid">
+                <div data-chat-tools className="overflow-clip rounded-[10px] border border-edge-mid">
                     <StepList work={work} live={live} />
                 </div>
             </div>
@@ -607,9 +662,9 @@ export function ChatSteps({
                         initial="initial"
                         animate="animate"
                         exit="exit"
-                        className="overflow-hidden"
+                        className="overflow-clip"
                     >
-                        <div className="mt-2 overflow-hidden rounded-[10px] border border-edge-mid">
+                        <div className="mt-2 overflow-clip rounded-[10px] border border-edge-mid">
                             <StepList work={work} live={live} />
                         </div>
                     </motion.div>

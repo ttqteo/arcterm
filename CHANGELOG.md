@@ -73,6 +73,9 @@ and a picture given to a line that is not big.
 
 ### Fixed
 
+- Chat's tool rows are easier to read and to close. Hovering a command's line shows its description, not a tooltip
+  holding the whole script; an opened row's header stays at the top of Chat while its output scrolls past, its command
+  scrolls inside a box of its own, and a Collapse button at its foot folds it and brings you back to the row.
 - Settings → Agents shows each Claude account's own limits. A `claude -p` an agent ran from its shell used your /login
   account but its usage was saved under the agent's token account, so a token account could show your /login
   account's numbers; the /login row now keeps updating while a token account is the one new agents use, instead of
