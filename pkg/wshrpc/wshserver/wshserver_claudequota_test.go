@@ -11,25 +11,19 @@ import (
 	"github.com/wavetermdev/waveterm/pkg/claudequota"
 )
 
-func TestClaudeQuotaOnlyForDefault(t *testing.T) {
+// the poll reads the /login account whichever account is active: its answer names that account, which is where
+// the frontend files it, so the /login row stays current while a token account runs new agents
+func TestClaudeQuotaReadsTheLoginAccountWhateverIsActive(t *testing.T) {
 	oldEmail := loginEmail
 	loginEmail = func() string { return "mozox@example.com" }
 	t.Cleanup(func() { loginEmail = oldEmail })
-	called := false
 	pct := 42.0
 	get := func(context.Context) *claudequota.Quota {
-		called = true
 		return &claudequota.Quota{FiveHourPct: &pct, CapturedAt: time.UnixMilli(1000)}
 	}
-	if got := claudeQuotaFor(context.Background(), "a1234abcd", get); called || got.FiveHourPct != nil || got.Email != "" {
-		t.Fatalf("non-Default account: called=%v got=%+v", called, got)
-	}
-	got := claudeQuotaFor(context.Background(), "", get)
-	if !called || got.FiveHourPct == nil || *got.FiveHourPct != 42 {
-		t.Fatalf("Default: called=%v got=%+v", called, got)
-	}
-	if got.Email != "mozox@example.com" {
-		t.Fatalf("Default answer should name the /login account, got %q", got.Email)
+	got := claudeQuotaFor(context.Background(), get)
+	if got.FiveHourPct == nil || *got.FiveHourPct != 42 || got.Email != "mozox@example.com" {
+		t.Fatalf("got %+v, want the /login account's reading named by its email", got)
 	}
 }
 
@@ -37,7 +31,7 @@ func TestClaudeQuotaNothingKnownHasNoEmail(t *testing.T) {
 	oldEmail := loginEmail
 	loginEmail = func() string { return "mozox@example.com" }
 	t.Cleanup(func() { loginEmail = oldEmail })
-	got := claudeQuotaFor(context.Background(), "", func(context.Context) *claudequota.Quota { return nil })
+	got := claudeQuotaFor(context.Background(), func(context.Context) *claudequota.Quota { return nil })
 	if got.FiveHourPct != nil || got.Email != "" {
 		t.Fatalf("no quota: got %+v", got)
 	}
@@ -95,7 +89,7 @@ func TestClaudeQuotaCarriesScopedWeeks(t *testing.T) {
 			CapturedAt:  time.UnixMilli(1000),
 		}
 	}
-	got := claudeQuotaFor(context.Background(), "", get)
+	got := claudeQuotaFor(context.Background(), get)
 	if len(got.ScopedWeeks) != 1 || got.ScopedWeeks[0].Model != "Fable" || got.ScopedWeeks[0].Pct != 4 ||
 		got.ScopedWeeks[0].Reset == nil || *got.ScopedWeeks[0].Reset != reset {
 		t.Fatalf("scoped weeks = %+v", got.ScopedWeeks)
