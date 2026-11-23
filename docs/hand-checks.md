@@ -32,6 +32,16 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
   asked, the ask comes back as a refusal whose reason tells the agent to ask you first.
 ## 2026-11-23
 
+- [ ] (arcterm) **An update removes the old `wsh` copies** (`NSIS_HOOK_PREINSTALL` in `src-tauri/installer-hooks.nsh`).
+  Only the installer was built, never run. Install a build from this commit over an arcterm whose
+  `%LOCALAPPDATA%\arcterm\bin` holds several `wsh-*-windows.x64.exe`: afterwards `bin\` holds `wavesrv.x64.exe` and this
+  version's `wsh` only, and arcterm starts, its terminals have `wsh`, and an agent's hooks still report to the cockpit.
+- [ ] (arcterm) **The release build itself, after the size cut** (`frontend/tauri/vite.config.ts`, `[profile.release]`
+  in `src-tauri/Cargo.toml`). The dev app passed `code-ts-plain`, `code-diff` and `chat-math`, but the dev server
+  skips the build-only parts. In the installed app: open a `.ts` file in Code (colored, no error toast), write a formula
+  in Chat (KaTeX draws), open a board with Vietnamese text (Shantell Sans) and with Chinese text (draws in a system font),
+  pick Hack as the terminal font, and play the Office music.
+
 - [ ] (arcterm) **New File / New Folder in the agent panel's Files tree** (`railtreepane.tsx`, `createRailEntry` in
   `railtreestore.ts`). Unit tests and the typecheck only. Right-click a folder → New File, type `x.md`, Enter: the file
   appears selected under that folder and opens in the File tab. New Folder makes an empty folder that stays after

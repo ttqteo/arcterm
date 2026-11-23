@@ -1,7 +1,7 @@
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react-swc";
 import { cpSync, createReadStream, existsSync, realpathSync } from "fs";
-import { resolve, sep } from "path";
+import { relative, resolve, sep } from "path";
 import { defineConfig, searchForWorkspaceRoot, type Plugin } from "vite";
 import { buildCommit } from "./buildcommit";
 
@@ -30,6 +30,54 @@ const fontOverrides: Record<string, string> = {
     [`${NUNITO_FILE}Tk3j6zbXWjgevT5.woff2`]: "cyrillic-ext",
 };
 const overrideFile = (subset: string) => resolve(shantellDir, `shantell-sans-${subset}-400-normal.woff2`);
+// Xiaolai, Excalidraw's hand-drawn Chinese face, is 209 woff2 files and 13 MB: two thirds of everything else the
+// frontend puts in the app. It is left out, and a board's Chinese text draws in the system's CJK font instead.
+const SKIPPED_FONT_DIRS = new Set(["Xiaolai"]);
+const keptFont = (rel: string) => !SKIPPED_FONT_DIRS.has(rel.split(/[\\/]/)[0]);
+
+// Monaco's TypeScript worker is the whole TypeScript compiler, 7 MB. monaco-env.ts turns its language service off,
+// so no worker is ever asked for, but monaco's workerManager still names it as `new Worker(new URL('ts.worker.js',
+// import.meta.url))`, which makes Vite emit it anyway. Replacing that with a throw keeps the file out of the bundle.
+function noTypeScriptWorker(): Plugin {
+    return {
+        name: "arc-no-ts-worker",
+        enforce: "pre",
+        transform(code, id) {
+            if (
+                !/monaco-editor[\\/]esm[\\/]vs[\\/]language[\\/]typescript[\\/]workerManager\.js$/.test(
+                    id.split("?")[0]
+                )
+            ) {
+                return null;
+            }
+            const out = code.replace(
+                /new Worker\(new URL\(['"]ts\.worker\.js['"], import\.meta\.url\)[^)]*\)/,
+                `(() => { throw new Error("arcterm ships no TypeScript worker (see monaco-env.ts)"); })()`
+            );
+            if (out === code) {
+                // a monaco upgrade moved the line: fail the build rather than ship the 7 MB again unnoticed
+                this.error("arc-no-ts-worker: the ts.worker line in monaco's workerManager.js was not found");
+            }
+            return out;
+        },
+    };
+}
+
+// KaTeX's stylesheet lists each of its 20 fonts as woff2, woff and ttf; WebView2 and WKWebView both take the woff2,
+// so the other two only made Vite emit 40 files (~1 MB) nothing loads. Dropping them from the src lists before Vite
+// reads the urls keeps them out of the bundle.
+function katexWoff2Only(): Plugin {
+    return {
+        name: "arc-katex-woff2-only",
+        enforce: "pre",
+        transform(code, id) {
+            if (!/[\\/]katex[\\/]dist[\\/]katex(\.min)?\.css$/.test(id.split("?")[0])) {
+                return null;
+            }
+            return code.replace(/,\s*url\([^)]*\.(?:woff|ttf)\)\s*format\("(?:woff|truetype)"\)/g, "");
+        },
+    };
+}
 
 function excalidrawFonts(): Plugin {
     return {
@@ -39,7 +87,7 @@ function excalidrawFonts(): Plugin {
                 const rel = decodeURIComponent((req.url ?? "").split("?")[0]).replace(/^\/+/, "");
                 const subset = fontOverrides[rel];
                 const file = subset ? overrideFile(subset) : resolve(excalidrawFontsDir, rel);
-                if ((!subset && !file.startsWith(excalidrawFontsDir + sep)) || !existsSync(file)) {
+                if ((!subset && !file.startsWith(excalidrawFontsDir + sep)) || !keptFont(rel) || !existsSync(file)) {
                     return next();
                 }
                 res.setHeader("Content-Type", "font/woff2");
@@ -48,7 +96,10 @@ function excalidrawFonts(): Plugin {
         },
         writeBundle() {
             const dest = resolve(outDir, ...EXCALIDRAW_FONTS_URL.split("/").filter(Boolean));
-            cpSync(excalidrawFontsDir, dest, { recursive: true });
+            cpSync(excalidrawFontsDir, dest, {
+                recursive: true,
+                filter: (src) => keptFont(relative(excalidrawFontsDir, src)),
+            });
             for (const [rel, subset] of Object.entries(fontOverrides)) {
                 cpSync(overrideFile(subset), resolve(dest, rel));
             }
@@ -63,7 +114,7 @@ export default defineConfig({
     // serve the workspace-root public/ (Font Awesome, fonts, logos, cockpit fixtures). Without this,
     // publicDir defaults to frontend/tauri/public, which does not exist, and /fontawesome/* 404s to the SPA fallback.
     publicDir: resolve(fe, "../public"),
-    plugins: [react(), tailwindcss(), excalidrawFonts()],
+    plugins: [react(), tailwindcss(), excalidrawFonts(), katexWoff2Only(), noTypeScriptWorker()],
     // the commit this bundle is built from, shown beside the version (cockpit/versioninfo.ts)
     define: { __ARC_COMMIT__: JSON.stringify(buildCommit(process.env)) },
     // each checkout keeps its own optimized-deps cache, in a real directory of its own. A worktree's

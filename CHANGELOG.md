@@ -47,6 +47,9 @@ and a picture given to a line that is not big.
 
 ### Changed
 
+- The installer is about 30 MB instead of 47 MB. To get there, Code no longer gives TypeScript and JavaScript hovers,
+  completions or error squiggles (it still colors them), and a board's Chinese text draws in the system font instead of
+  Excalidraw's hand-drawn Chinese face.
 - A council's Ease of use seat also reviews what a screenshot cannot show: whether each state change animates or snaps, what a second press mid-slide leaves behind, the empty, error and long-text states, and the clicks a task takes; it says which of these it read in code and did not see.
 - Opening a running agent's board from Library, a mention or `wsh ui` shows it alone over the Agent view, as a click on
   its tree row does, instead of putting it in a split beside the chat.
@@ -62,6 +65,8 @@ and a picture given to a line that is not big.
 
 ### Fixed
 
+- Updating arcterm removes the `wsh` copies earlier versions left in its install folder, which had grown by 14 MB per
+  release (about 260 MB by 1.13.0).
 - Sidecar's Resources panel opened just after its column closed no longer flashes the column's charts for half a
   second before measuring.
 - A paste you folded into a chip, sent while the agent was working, shows as a "Pasted" card in your message instead

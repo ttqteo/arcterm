@@ -30,6 +30,11 @@
 
 !macro NSIS_HOOK_PREINSTALL
   !insertmacro ARC_STOP_INSTALLED
+  ; wsh ships version-named (bin\wsh-1.9.0-windows.x64.exe), so the template never overwrites the last release's
+  ; copy and bin\ kept one 14 MB wsh per release (19 of them, ~260 MB, by 1.13.0). Every one goes before the copy;
+  ; this install's own lands right after. Nothing runs them in place: terminals run the copy in the data dir's bin\
+  ; and hooks the one under ~/.arc/bin, and a locked file is skipped, not an error.
+  Delete "$INSTDIR\bin\wsh-*-windows.x64.exe"
 !macroend
 
 !macro NSIS_HOOK_PREUNINSTALL
