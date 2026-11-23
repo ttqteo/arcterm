@@ -32,6 +32,10 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
   asked, the ask comes back as a refusal whose reason tells the agent to ask you first.
 ## 2026-11-23
 
+- [ ] (arcterm) **Footer version is just the number; What's new says when it was built** (`versiontag.tsx`,
+  `whatsnewsheet.tsx`). In the installed build, the bottom right reads `v1.x.y` with no commit after it; click it →
+  What's new's header reads `in arcterm 1.x.y · built YYYY-MM-DD HH:MM`, and Settings → About still has the Commit
+  row. The `whats-new` scenario could not run (no dev app on CDP).
 - [ ] (arcterm) **Chat: Esc takes back a sent message with pastes as chips** (`sentText` / `mergeTaken` in
   `chattakeback.ts`). In Chat, type a line, paste two long blocks (each folds to a chip), send, and press Esc at once
   while Claude works with no reply yet → the box holds the typed line and the two chips, no `<pasted_content id=…>`
