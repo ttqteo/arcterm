@@ -59,6 +59,7 @@ and a picture given to a line that is not big.
 
 ### Fixed
 
+- A running Monitor's Output tab shows what it has printed so far, instead of "No output yet" until it ends.
 - Sidecar's Resources panel opened just after its column closed no longer flashes the column's charts for half a
   second before measuring.
 

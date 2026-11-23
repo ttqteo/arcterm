@@ -1495,6 +1495,38 @@ describe("extractBackgroundTasks", () => {
         expect(extractBackgroundTasks(lines)[0]).toMatchObject({ taskId: "bm2", status: "stopped" });
     });
 
+    // a Monitor's start result names no output file, so its Output tab read "No output yet" until it ended
+    it("a running Monitor reads its output from the session's tasks folder", () => {
+        const start = [monitor("m1"), result("m1", "Monitor started (task bm1, expires in 30m)")];
+        const tasksDir = "C:\\Temp\\claude\\b68f13e3d62d9606\\s1\\tasks";
+        expect(extractBackgroundTasks(start, { tasksDir })[0].outputFile).toBe(`${tasksDir}\\bm1.output`);
+        expect(extractBackgroundTasks(start, { tasksDir: "/tmp/claude/p/s1/tasks" })[0].outputFile).toBe(
+            "/tmp/claude/p/s1/tasks/bm1.output"
+        );
+        // no folder, or no task id yet: nothing to read
+        expect(extractBackgroundTasks(start)[0].outputFile).toBeUndefined();
+        expect(extractBackgroundTasks([monitor("m2")], { tasksDir })).toEqual([]);
+    });
+
+    it("a Monitor's notified output file wins over the tasks folder's, and a shell task keeps its own", () => {
+        const lines = [
+            monitor("m1"),
+            result("m1", "Monitor started (task bm1, expires in 30m)"),
+            JSON.stringify({
+                type: "user",
+                message: {
+                    content:
+                        "<task-notification>\n<task-id>bm1</task-id>\n<tool-use-id>m1</tool-use-id>\n<output-file>D:\\x\\bm1.output</output-file>\n<status>completed</status>\n</task-notification>",
+                },
+            }),
+            bash("t1", { command: "sleep 9", run_in_background: true }),
+            result("t1", "Command running in background with ID: bt1. Output is being written to: D:\\y\\bt1.output."),
+        ];
+        const [mon, shell] = extractBackgroundTasks(lines, { tasksDir: "C:\\T\\tasks" });
+        expect(mon.outputFile).toBe("D:\\x\\bm1.output");
+        expect(shell.outputFile).toBe("D:\\y\\bt1.output");
+    });
+
     it("a Monitor whose start was refused is not a task", () => {
         expect(extractBackgroundTasks([monitor("m3"), result("m3", "Monitor is not available")])).toEqual([]);
     });
