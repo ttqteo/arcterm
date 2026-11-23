@@ -30,6 +30,14 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
   merge from another checkout (`cd ../main && git merge x`) is judged in that checkout, where the agent branch's own
   commits cannot make a row out of date (a failed or no-result row still asks). In an engine worker, where nobody can be
   asked, the ask comes back as a refusal whose reason tells the agent to ask you first.
+## 2026-11-23
+
+- [ ] (arcterm) **The File tab's Diff of an agent's edits ignores another writer's later change** (`filetabdiff.tsx`,
+  `agentdetailsrail.tsx` `openChangedFile`, ac468412f). Typecheck only. Under a Claude agent that edited `a.txt`, add
+  a line to `a.txt` yourself (another terminal), then open `a.txt` from the rail's Files changed: its Diff shows the
+  agent's change and not your line, as the Diff surface's Agent's edits does; Source still shows your line. A file the
+  agent deleted reads all removed. A non-Claude agent's file (no edits range) still diffs against the working copy.
+
 ## 2026-11-22
 
 - [ ] (arcterm) **A board is a tree row and a cell beside Chat, in the real app** (`boards/boardcell.ts`,
