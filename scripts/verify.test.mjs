@@ -2,7 +2,7 @@ import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { LOAD_FAILED, SHARDS, SHARD_MIN_TESTS, countTopLevelTests, dealShards, failedVitestFiles, failedVitestTests, goSummary, goTestEnv, limiter, needsGoGraph, packageResults, partitionPackages, planVerify, readChanged, readChangedFile, reportFlaky, rerunVitestAlone, rerunnableTests, runPattern, testSharded, typechecked } from "./verify.mjs";
+import { BATCH_TESTS, LOAD_FAILED, SHARDS, SHARD_MIN_TESTS, countTopLevelTests, dealShards, failedVitestFiles, failedVitestTests, goSummary, goTestEnv, limiter, needsGoGraph, packageResults, partitionPackages, planVerify, readChanged, readChangedFile, reportFlaky, rerunVitestAlone, rerunnableTests, runPattern, testSharded, typechecked } from "./verify.mjs";
 
 const MOD = "github.com/wavetermdev/waveterm";
 const graph = [
@@ -307,7 +307,8 @@ describe("reportFlaky", () => {
 // fails every run, one in `failsOnce` fails its first run only, and a package in `broken` does not build. Each run
 // waits a few timers, so runs of different packages finish interleaved.
 function fakeProcs({ tests = 6, fails = [], failsOnce = [], broken = [] } = {}) {
-    const stats = { active: 0, max: 0, runs: 0 };
+    // batches: how many tests each -test.run process was given; args: every run's arguments
+    const stats = { active: 0, max: 0, runs: 0, batches: [], args: [] };
     const ran = new Set();
     const tick = (n) => new Promise((r) => setTimeout(r, n));
     const proc = {
@@ -319,6 +320,7 @@ function fakeProcs({ tests = 6, fails = [], failsOnce = [], broken = [] } = {}) 
             stats.active++;
             stats.max = Math.max(stats.max, stats.active);
             stats.runs++;
+            stats.args.push(args);
             await tick(1 + (stats.runs % 3));
             stats.active--;
             const names = Array.from({ length: tests }, (_, i) => `Test${pkg.tag}${i}`);
@@ -327,7 +329,9 @@ function fakeProcs({ tests = 6, fails = [], failsOnce = [], broken = [] } = {}) 
             }
             const lines = [];
             let ok = true;
-            for (const name of args[1].slice(2, -2).split("|")) {
+            const batch = args[1].slice(2, -2).split("|");
+            stats.batches.push(batch.length);
+            for (const name of batch) {
                 const failed = fails.includes(name) || (failsOnce.includes(name) && !ran.has(name));
                 ran.add(name);
                 ok &&= !failed;
@@ -371,14 +375,36 @@ describe("limiter", () => {
 });
 
 describe("testSharded", () => {
+    // enough tests that each package has more batches than SHARDS
+    const many = BATCH_TESTS * SHARDS * 2;
     it("overlaps the packages' test processes, never more than the limit at once", async () => {
-        const fake = fakeProcs();
+        const fake = fakeProcs({ tests: many });
         const { ok } = await runAll(pkgsNamed("a", "b", "c"), SHARDS + 2, fake);
         expect(ok).toBe(true);
         // one package at a time would peak at SHARDS
         expect(fake.stats.max).toBe(SHARDS + 2);
-        // a list and SHARDS shards per package
-        expect(fake.stats.runs).toBe(3 * (1 + SHARDS));
+        // a list and a process per batch for each package
+        expect(fake.stats.runs).toBe(3 * (1 + many / BATCH_TESTS));
+    });
+    it("runs at most SHARDS of one package's test processes at once", async () => {
+        const fake = fakeProcs({ tests: many });
+        expect((await runAll(pkgsNamed("a"), 100, fake)).ok).toBe(true);
+        expect(fake.stats.max).toBe(SHARDS);
+    });
+    // the 10-minute alarm is per process: a quarter of pkg/orchestrate (~320 s on 2026-11-23) tripped it on a loaded
+    // machine with no test hung, so a process runs a batch small enough that only a hang reaches it
+    it("gives no test process more than BATCH_TESTS tests, and runs every test once", async () => {
+        const fake = fakeProcs({ tests: 3 * BATCH_TESTS + 1 });
+        const { ok, out } = await runAll(pkgsNamed("a"), SHARDS + 2, fake);
+        expect(ok).toBe(true);
+        expect(Math.max(...fake.stats.batches)).toBeLessThanOrEqual(BATCH_TESTS);
+        expect(fake.stats.batches).toHaveLength(4);
+        expect(out.match(/^=== a ran /gm)).toHaveLength(3 * BATCH_TESTS + 1);
+    });
+    it("gives each test process the full 10-minute alarm", async () => {
+        const fake = fakeProcs({ tests: many });
+        await runAll(pkgsNamed("a"), SHARDS + 2, fake);
+        expect(fake.stats.args.filter((a) => a[0] === "-test.run").every((a) => a.includes("-test.timeout=10m"))).toBe(true);
     });
     it("writes each package's output in one piece, ending with its ok line", async () => {
         const pkgs = pkgsNamed("a", "b", "c");
@@ -412,7 +438,8 @@ describe("testSharded", () => {
         expect(ok).toBe(true);
         expect(flaky).toEqual(["m/pkg/b Testb1"]);
         expect(packageResults(out).every((r) => r.ok)).toBe(true);
-        expect(fake.stats.runs).toBe(2 * (1 + SHARDS) + 1);
+        // a list and one batch per package (6 tests), and the rerun
+        expect(fake.stats.runs).toBe(2 * (1 + 1) + 1);
     });
     it("fails a package that does not build and still tests the others", async () => {
         const { ok, out } = await runAll(pkgsNamed("a", "b"), SHARDS + 2, fakeProcs({ broken: ["m/pkg/a"] }));

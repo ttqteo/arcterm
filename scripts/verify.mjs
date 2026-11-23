@@ -26,8 +26,14 @@ const GO_DIRS = /^(pkg|cmd|db|claude|skills)\//;
 // a package with at least this many top-level tests is split across processes: here those take 2.6 to 110 s, and
 // below it all but one run in seconds
 export const SHARD_MIN_TESTS = 100;
-// pkg/orchestrate took ~100 s in one process, 37-52 s in 4, and 33 s in 6
+// a sharded package runs this many of its test processes at once. pkg/orchestrate took ~100 s in one process, 37-52 s
+// in 4, and 33 s in 6 (2026-09-27, 546 tests); at 1,245 tests (2026-11-23) its tests add up to ~1,300 s
 export const SHARDS = 4;
+// a test process runs at most this many tests. go's 10-minute alarm is per process, and while one process ran a
+// quarter of pkg/orchestrate (~320 s on a lightly loaded machine, 2026-11-23) a merge Verify on a loaded one reached
+// it with no test hung: the test running at the alarm had been running 1 to 54 s, and the timeout failed the merge
+// with no test to rerun. A batch is ~20 s here, so the alarm again means a test hung. A process starts in ~130 ms.
+export const BATCH_TESTS = 20;
 // the sharded packages share this many test processes at once: two packages' shards overlap fully, and on this
 // 12-core machine the rest stays with the run's workers, which compete for the same cores
 export const MAX_TEST_PROCESSES = 2 * SHARDS;
@@ -126,6 +132,12 @@ export function dealShards(names, n) {
     return shards;
 }
 
+// batchTests deals the names into the fewest batches of at most BATCH_TESTS, round robin, so a run of slow tests
+// with one prefix (TestLand...) spreads across batches instead of filling one.
+export function batchTests(names) {
+    return dealShards(names, Math.ceil(names.length / BATCH_TESTS));
+}
+
 export function runPattern(names) {
     return `^(${names.join("|")})$`;
 }
@@ -165,8 +177,8 @@ export function packageResults(output) {
     return results;
 }
 
-// partitionPackages splits the packages into those whose tests are dealt across SHARDS processes and those run by
-// one plain go test. a package go list could not resolve has no dir; go test reports why.
+// partitionPackages splits the packages into those whose tests are dealt into batches, SHARDS processes at a time,
+// and those run by one plain go test. a package go list could not resolve has no dir; go test reports why.
 export function partitionPackages(pkgs, countOf) {
     const sharded = pkgs.filter((p) => p.dir && countOf(p.dir) >= SHARD_MIN_TESTS);
     const plain = pkgs.filter((p) => !sharded.includes(p));
@@ -235,7 +247,8 @@ function testSource(dir) {
 }
 
 // goTest runs the packages like go test, except that a package with many tests is built once and its tests are
-// dealt across SHARDS processes; go test runs one package's tests in one process however many cores are idle.
+// dealt into batches of BATCH_TESTS, run SHARDS processes at a time; go test runs one package's tests in one process
+// however many cores are idle.
 // The plain and the sharded packages run at the same time: each took ~75 s alone, and together they take ~105 s
 // rather than ~150 s. Each half runs to its end, so the fix round sees every failure.
 async function goTest(args) {
@@ -420,8 +433,11 @@ export async function testSharded(pkgs, limit, proc, write, flaky) {
     return results.every(Boolean);
 }
 
-async function testOneSharded(pkg, build, run, write, flaky) {
+async function testOneSharded(pkg, build, runAny, write, flaky) {
     const start = Date.now();
+    // at most SHARDS of this package's processes at once, whatever the shared limit leaves free
+    const mine = limiter(SHARDS);
+    const run = (pkg, args) => mine(() => runAny(pkg, args));
     const built = await build(pkg);
     write(built.output);
     if (!built.ok) {
@@ -436,7 +452,7 @@ async function testOneSharded(pkg, build, run, write, flaky) {
         return false;
     }
     const names = listed.stdout.split("\n").map((l) => l.trim()).filter((l) => LISTED_TEST.test(l));
-    const results = await Promise.all(dealShards(names, SHARDS).map((shard) => run(pkg, ["-test.run", runPattern(shard), "-test.timeout=10m"])));
+    const results = await Promise.all(batchTests(names).map((batch) => run(pkg, ["-test.run", runPattern(batch), "-test.timeout=10m"])));
     for (const r of results) {
         write(r.output);
     }
