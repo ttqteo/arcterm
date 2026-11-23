@@ -1989,6 +1989,18 @@ describe("chat mode keys", () => {
         expect(b.run(inTerm)).not.toBe(false);
         expect(globalStore.get(railPanelsAtom).a1?.tab).toBe("transcript");
     });
+
+    it("Mod+Shift+F passes the key to the panel's Files tab while focus is in it", () => {
+        const b = find(modelWith("a1", [claude]), "agent:transcript");
+        setChatMode("a1", "terminal");
+        const inFiles = { closest: (sel: string) => (sel === "[data-rail-tree]" ? {} : null) };
+        vi.stubGlobal("document", { activeElement: inFiles });
+        try {
+            expect(b.run(inTerm)).toBe(false);
+        } finally {
+            vi.unstubAllGlobals();
+        }
+    });
 });
 
 describe("agent:review", () => {

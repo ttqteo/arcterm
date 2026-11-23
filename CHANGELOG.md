@@ -44,6 +44,8 @@ and a picture given to a line that is not big.
 - The agent panel's Files tree can make files and folders: New File and New Folder in a row's right-click menu (a
   right-click on blank space makes them at the top), or `n` and `Shift+N`; you type the name in place, and a new file
   opens in the File tab.
+- `Ctrl+Shift+F` in the agent panel's Files tab searches inside the files: it opens Code's Search on the agent's folder
+  with what you typed in the filter.
 
 ### Changed
 
@@ -62,6 +64,10 @@ and a picture given to a line that is not big.
 
 ### Fixed
 
+- In a repository with more than 20,000 files, the Files tab and Code no longer drop the repository's own files when
+  an output folder of thousands of untracked files fills the list: tracked files are kept first. Filtering the Files tab
+  while it reloads no longer covers it with a loading placeholder, and a filter with no match says when only part of the
+  files was searched.
 - Sidecar's Resources panel opened just after its column closed no longer flashes the column's charts for half a
   second before measuring.
 - A paste you folded into a chip, sent while the agent was working, shows as a "Pasted" card in your message instead
