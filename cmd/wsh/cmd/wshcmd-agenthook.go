@@ -58,6 +58,8 @@ type ccHookEvent struct {
 	NotificationType string          `json:"notification_type"`
 	PermissionMode   string          `json:"permission_mode"`
 	Trigger          string          `json:"trigger"`
+	// Prompt is what the person submitted, on UserPromptSubmit only
+	Prompt string `json:"prompt"`
 	// Reason is why a SessionEnd fired: clear, resume, logout, prompt_input_exit, other
 	Reason string `json:"reason"`
 	// Error is the kind of API error a StopFailure turn ended on: rate_limit, authentication_failed, server_error …
@@ -628,6 +630,20 @@ func readFirstUserPrompt(path string) string {
 	}
 }
 
+// firstPromptTitle is the head-text title of a session with no ai-title: its first prompt. The first
+// UserPromptSubmit fires before Claude Code writes that prompt to the transcript, so an empty transcript there
+// takes the prompt the event carries: it is the first one. Without it the row fell back to the project name
+// between the launch's own title and the ai-title.
+func firstPromptTitle(ev ccHookEvent, transcriptPath string) string {
+	if t := titleFromPrompt(readFirstUserPrompt(transcriptPath)); t != "" {
+		return t
+	}
+	if ev.HookEventName == "UserPromptSubmit" {
+		return titleFromPrompt(ev.Prompt)
+	}
+	return ""
+}
+
 // shadowSessionRecord is the `session` line of an opencode shadow transcript.
 type shadowSessionRecord struct {
 	Type  string `json:"type"`
@@ -923,7 +939,7 @@ func agentHookRun(cmd *cobra.Command, args []string) error {
 			// no ai-title (a session opened with a slash command) -> the session's first prompt, so
 			// the row still gets a head-text summary instead of the bare agent name
 			if data.Title == "" {
-				data.Title = titleFromPrompt(readFirstUserPrompt(transcriptPath))
+				data.Title = firstPromptTitle(ev, transcriptPath)
 			}
 		}
 	}

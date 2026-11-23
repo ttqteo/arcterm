@@ -40,6 +40,13 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
   the skeleton. With focus in the filter box or the tree, `Ctrl+Shift+F` lands on Code, on mit-thesis, Search mode, the
   filter's text in the box and its results listed; with focus in the terminal, `Ctrl+Shift+F` still opens Transcript.
 
+- [ ] (arcterm) **A new agent's name goes from your first message straight to its title, the words fading in**
+  (`frontend/app/element/textswap.tsx`, `frontend/app/view/agents/launchtitles.ts`, `firstPromptTitle` in
+  `cmd/wsh/cmd/wshcmd-agenthook.go`). Vitest and Go tests only; not run in the app. After installing a build with it,
+  start a Claude agent from New agent with a task: the header and its tree row read the task's first line, never the
+  project name, until Claude's title arrives; then the header's name changes in place, its words fading in left to
+  right in about half a second. Switching to another agent swaps the name at once, with no fade. Branch
+  `feat/title-swap`.
 - [ ] (arcterm) **The link to wavesrv survives the launch stall, and a dead one reconnects** (`pkg/web/ws.go`,
   `frontend/app/store/ws.ts`, `frontend/tauri/stallwatch.ts`). Go and vitest tests only; not run in the app. After
   installing, quit and reopen arcterm a few times: `waveapp.log` should show no `WritePump error ... i/o timeout` in the

@@ -29,6 +29,7 @@ import { SESSION_BRAINSTORM } from "@/app/view/agents/brainstormstore";
 import { pendsAsBubble } from "@/app/view/agents/chatpending";
 import { addPending } from "@/app/view/agents/chatpendingstore";
 import { buildLaunchMeta, runtimeCreatesAgentPanel, type Runtime } from "@/app/view/agents/launch";
+import { launchTitlesAtom } from "@/app/view/agents/launchtitles";
 import { archivedSession, nextToReopen, recentlyClosedAtom, sessionById } from "@/app/view/agents/recentlyclosed";
 import {
     loadSessionsArchive,
@@ -192,6 +193,11 @@ export async function launchAgent(model: AgentsViewModel, opts: LaunchAgentOpts)
             ...(resumedTranscript && !first ? { resuming: true } : {}),
         };
         globalStore.set(model.pendingLaunchesAtom, [...globalStore.get(model.pendingLaunchesAtom), pending]);
+        // a new session keeps that name once its row reports in, until its own title arrives (a resume has its title)
+        const fromTask = launchTitle(opts.task);
+        if (fromTask && !opts.label && !resumedTranscript) {
+            globalStore.set(launchTitlesAtom, { ...globalStore.get(launchTitlesAtom), [tabId]: fromTask });
+        }
         // the task it starts on is its first message: Chat shows it as yours while the harness starts, until the
         // transcript holds it (a /command is a command row there, never a bubble)
         if (first && pendsAsBubble(first)) {

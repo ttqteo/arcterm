@@ -472,6 +472,35 @@ func TestReadFirstUserPrompt(t *testing.T) {
 	}
 }
 
+// the first UserPromptSubmit comes before the transcript holds the prompt: the event's own prompt names the session,
+// so the row never falls back to the project name between the launch title and the ai-title
+func TestFirstPromptTitleFromEvent(t *testing.T) {
+	dir := t.TempDir()
+	empty := filepath.Join(dir, "empty.jsonl")
+	if err := os.WriteFile(empty, []byte(`{"type":"system"}`+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	submit := ccHookEvent{HookEventName: "UserPromptSubmit", Prompt: "\n  sao lag vậy\nmore"}
+	if got := firstPromptTitle(submit, empty); got != "sao lag vậy" {
+		t.Fatalf("empty transcript on submit: title = %q, want the event's prompt", got)
+	}
+	if got := firstPromptTitle(submit, filepath.Join(dir, "missing.jsonl")); got != "sao lag vậy" {
+		t.Fatalf("no transcript file yet: title = %q, want the event's prompt", got)
+	}
+	// a later prompt never renames the session: the transcript's first one wins
+	held := filepath.Join(dir, "held.jsonl")
+	if err := os.WriteFile(held, []byte(`{"type":"user","message":{"content":"fix the build"}}`+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := firstPromptTitle(ccHookEvent{HookEventName: "UserPromptSubmit", Prompt: "and the tests"}, held); got != "fix the build" {
+		t.Fatalf("title = %q, want the transcript's first prompt", got)
+	}
+	// only UserPromptSubmit carries a prompt
+	if got := firstPromptTitle(ccHookEvent{HookEventName: "Stop", Prompt: "x"}, empty); got != "" {
+		t.Fatalf("Stop on an empty transcript: title = %q, want empty", got)
+	}
+}
+
 // a session opened with `!`: the shell run names it only until a typed prompt exists, never as raw tags
 func TestReadFirstUserPromptShellRun(t *testing.T) {
 	shell := []string{
