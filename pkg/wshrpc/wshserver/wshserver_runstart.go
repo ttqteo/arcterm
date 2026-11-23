@@ -75,11 +75,15 @@ var (
 		}
 		return strings.Split(strings.ReplaceAll(string(out), "\r\n", "\n"), "\n"), nil
 	}
-	// runStartQuota is the account's quota reading; empty when there is none to show.
+	// runStartQuota is the active account's quota reading; empty when there is none to show, and under a token
+	// account, as the reading is the /login account's and the run spends the token's.
 	runStartQuota = func(ctx context.Context) *wshrpc.CommandGetClaudeQuotaRtnData {
+		if claudeaccount.Active() != "" {
+			return &wshrpc.CommandGetClaudeQuotaRtnData{}
+		}
 		ctx, cancel := context.WithTimeout(ctx, runStartQuotaWait)
 		defer cancel()
-		return claudeQuotaFor(ctx, claudeaccount.Active(), claudequota.Get)
+		return claudeQuotaFor(ctx, claudequota.Get)
 	}
 	runStartWindowTokens = usagestats.WindowTokens
 )

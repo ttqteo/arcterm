@@ -163,6 +163,24 @@ func TestNewerOfLiveAndCache(t *testing.T) {
 	}
 }
 
+// /login moved to another account and no session has fetched since: the cache is the old account's, and the
+// answer names the new one, so it must not be read as the new account's numbers
+func TestCacheOfAnotherAccountIsNotRead(t *testing.T) {
+	cfg := `{"oauthAccount":{"accountUuid":"b","emailAddress":"new@example.com"},` + cacheFile[1:]
+	f := newFixture(t, "", cfg)
+	if q := f.reader.Get(context.Background()); q != nil {
+		t.Fatalf("want nil for a cache of account a under login b, got %+v", q)
+	}
+}
+
+func TestCacheOfTheLoginAccountIsRead(t *testing.T) {
+	cfg := `{"oauthAccount":{"accountUuid":"a","emailAddress":"me@example.com"},` + cacheFile[1:]
+	f := newFixture(t, "", cfg)
+	if q := f.reader.Get(context.Background()); q == nil || q.Source != SourceCache {
+		t.Fatalf("want the cache of the login account, got %+v", q)
+	}
+}
+
 func TestLoginEmailFromTheConfigFile(t *testing.T) {
 	cfg := `{"numStartups":3,"oauthAccount":{"accountUuid":"u","emailAddress":"  Mozox@Example.COM ","displayName":"M"}}`
 	f := newFixture(t, "", cfg)

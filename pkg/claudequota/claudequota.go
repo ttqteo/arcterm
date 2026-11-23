@@ -111,10 +111,12 @@ type credentialsFile struct {
 type configFile struct {
 	CachedUsageUtilization *struct {
 		FetchedAtMs int64     `json:"fetchedAtMs"`
+		AccountUuid string    `json:"accountUuid"`
 		Utilization usageBody `json:"utilization"`
 	} `json:"cachedUsageUtilization"`
 	// the account /login stored
 	OauthAccount *struct {
+		AccountUuid  string `json:"accountUuid"`
 		EmailAddress string `json:"emailAddress"`
 	} `json:"oauthAccount"`
 }
@@ -290,7 +292,8 @@ func (r *Reader) fetch(ctx context.Context, token string) (usageBody, error) {
 	return body, nil
 }
 
-// Claude Code's cached copy, as of when it fetched it; nil when it keeps none
+// Claude Code's cached copy, as of when it fetched it; nil when it keeps none, or when it is another account's than
+// the one /login stored now (/login moved and no session has fetched since), as the answer is named after that one
 func (r *Reader) cached() *Quota {
 	_, configPath, err := r.paths()
 	if err != nil {
@@ -305,6 +308,10 @@ func (r *Reader) cached() *Quota {
 		return nil
 	}
 	c := cfg.CachedUsageUtilization
+	if cfg.OauthAccount != nil && cfg.OauthAccount.AccountUuid != "" && c.AccountUuid != "" &&
+		c.AccountUuid != cfg.OauthAccount.AccountUuid {
+		return nil
+	}
 	return quotaFrom(c.Utilization, time.UnixMilli(c.FetchedAtMs), SourceCache)
 }
 

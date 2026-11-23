@@ -40,6 +40,12 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
   `lost arcterm's job queue` and asks again; note whether it ever prints `Protect is back on` (the new wavesrv mints a
   new auth key, and may refuse the old terminal's WAVETERM_JWT). Unit and CDP-fixture tested only (the scenario injects the queue). Run
   cf8677a6.
+- [ ] (arcterm) **Claude account rows keep their own limits** (`claudeQuotaFor` in `wshserver_agents.go`,
+  `captureInherited` in `claudeaccount.go`, `cached` in `claudequota.go`, `session.measure` in arc-mod
+  `register.ts`). Go tests only. With a token account active, Settings → Agents: the /login row's age stays under 5
+  min and its Week matches `/usage` in a /login session; in a token agent run `claude -p "hi"` from its shell → that
+  token row does not take /login's numbers and the agent's context % does not jump. Fixes the 18200210 row showing
+  the /login account's 0%/51%.
 - [ ] (arcterm) **Files tab: big repo listing, filter during reload, Ctrl+Shift+F to Code's Search**
   (`capListing` in `pkg/gitinfo/gitinfo.go`, `railtreepane.tsx`, `searchInCode` in `code/codestore.ts`). Go, vitest
   and the typecheck only; not run in the app. In mit-thesis (24k files, 11.6k untracked under
