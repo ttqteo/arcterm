@@ -2376,7 +2376,8 @@ mod tests {
             assert!(unsafe { DestroyIcon(icon) } != 0, "{size}px");
         }
         // a size between two frames takes the next one up, and nothing is not a size
-        assert!(make_icon(30).is_ok());
+        let between = make_icon(30).unwrap_or_else(|e| panic!("30px: {e}"));
+        assert!(unsafe { DestroyIcon(between) } != 0, "30px");
         assert!(make_icon(0).is_err());
         assert!(make_icon(-1).is_err());
     }
