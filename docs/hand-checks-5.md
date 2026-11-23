@@ -256,8 +256,8 @@ are in that file. Tick a line here when it holds, then remove it; a part left em
   (and a server, the lead, an initiative or Ship/Commit/Close when they apply), with no ✳, state word, model, context
   or ⌥C; hover the dot → its state; flip to Terminal → the full header is back and Chat/Terminal did not move. An agent
   with no initiative: the header shows a `+ Link to initiative` chip with an `i` keycap that opens the picker under it,
-  and `i` opens it too, in Chat and in Terminal; a linked agent's Chat header has no ◇ chip, and `i` opens its band
-  (`agentheader.tsx` `lean`; the `initiative-link` scenario is updated by the chat-initiative-link plan's Task 6).
+  and `i` opens it too, in Chat and in Terminal; a linked agent's header shows its ◇ chip in Chat as in Terminal, and
+  the chip and `i` open the rail's Initiative tab (`agentheader.tsx` `InitiativeLink`; the `initiative-link` scenario).
 - [ ] (arcterm) A Chat message queued mid-turn reads as you wrote it: while a Claude agent works, send from its Chat a
   message of two lines with a pasted screenshot → once Claude takes it in, your bubble shows the two lines and the
   picture as a thumbnail, with no `<pasted_content id="…">` tags and no `Attached images:` list; a paste inside a
