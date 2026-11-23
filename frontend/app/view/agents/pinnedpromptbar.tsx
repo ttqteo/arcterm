@@ -28,7 +28,7 @@ import {
     useInteractions,
 } from "@floating-ui/react";
 import { ArrowUp, ChevronsUpDown } from "lucide-react";
-import { AnimatePresence, motion, MotionConfig, useMotionValue, useReducedMotion } from "motion/react";
+import { AnimatePresence, motion, MotionConfig, useIsPresent, useMotionValue, useReducedMotion } from "motion/react";
 import {
     useEffect,
     useLayoutEffect,
@@ -246,6 +246,9 @@ function PinnedBand({
     cardClassName?: string;
 }) {
     const reduce = useReducedMotion();
+    // false once the band starts leaving: it fades out over what it stood above, so it no longer holds room for a sticky
+    // row under it (a code block's head would stay a band's height down, over the lines it should show, until unmount)
+    const present = useIsPresent();
     const bandRef = useRef<HTMLDivElement>(null);
     const push = useMotionValue(0);
     const menu = prompts != null && prompts.length >= PROMPT_MENU_MIN ? prompts : null;
@@ -303,6 +306,10 @@ function PinnedBand({
         if (root == null || scroller == null || band == null) {
             return;
         }
+        if (!present) {
+            reportBandBottom(scroller, band, null);
+            return;
+        }
         let frame = 0;
         const measure = () => {
             frame = 0;
@@ -331,7 +338,7 @@ function PinnedBand({
             }
             reportBandBottom(scroller, band, null);
         };
-    }, [rootRef, index, push, pad]);
+    }, [rootRef, index, push, pad, present]);
     const jump = () => scrollToPrompt(rootRef.current, index, !reduce);
     const pick = (i: number) => {
         setOpen(false);

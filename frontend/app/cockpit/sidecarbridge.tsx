@@ -94,7 +94,7 @@ import {
     type HeavyNotes,
 } from "./sidecarbridgemodel";
 import { learnActOf, needActsOf, sidecarNeeds } from "./sidecarneeds";
-import { END_NOTE_MS, endNote, otherKey, pushHistory, resourcesOf } from "./sidecarresources";
+import { END_NOTE_MS, endNote, otherKey, pushHistory, readFailure, resourcesOf } from "./sidecarresources";
 import { orbitTiles, scopeTiles, sidecarSnapshot, wallAgentIds, type CockpitScope } from "./sidecarsnapshot";
 import {
     EMPTY_TRACK,
@@ -185,6 +185,11 @@ export function SidecarBridge({ model }: { model: AgentsViewModel }) {
         // the machine's readings for the charts, the last 5 minutes; kept only while the band or the panel shows
         let resHistory: SidecarResourcePoint[] = [];
         let resTimer: ReturnType<typeof setInterval> | null = null;
+        // a read is out: the next tick skips, so reads slower than the poll (a busy backend) never stack up behind it, as
+        // resmonstore.ts's poll does
+        let resInFlight = false;
+        // why the last read failed, until one succeeds: the panel says it instead of measuring on forever
+        let resFailed: string | null = null;
         // what an End task came to, by the other app's row key, each until its timer drops it
         const endNotes = new Map<string, string>();
         const endNoteTimers = new Map<string, ReturnType<typeof setTimeout>>();
@@ -231,6 +236,7 @@ export function SidecarBridge({ model }: { model: AgentsViewModel }) {
             resPanel = null;
             resReading = null;
             resHistory = [];
+            resFailed = null;
             endNoteTimers.forEach((t) => clearTimeout(t));
             endNoteTimers.clear();
             endNotes.clear();
@@ -408,7 +414,7 @@ export function SidecarBridge({ model }: { model: AgentsViewModel }) {
                 ...(resPanel != null
                     ? {
                           resources: {
-                              ...resourcesOf(resReading, resPanel.pids, resHistory, endNotes),
+                              ...resourcesOf(resReading, resPanel.pids, resHistory, endNotes, resFailed),
                               ...(resPanel.ask != null ? { ask: resPanel.ask } : {}),
                           },
                       }
@@ -587,6 +593,10 @@ export function SidecarBridge({ model }: { model: AgentsViewModel }) {
 
         // the Resource Manager's snapshot with the processes outside arcterm; the backend samples them only while asked
         const pollResources = async (): Promise<void> => {
+            if (resInFlight) {
+                return;
+            }
+            resInFlight = true;
             try {
                 const snap = await RpcApi.ResMonSnapshotCommand(
                     TabRpcClient,
@@ -598,10 +608,19 @@ export function SidecarBridge({ model }: { model: AgentsViewModel }) {
                 if (resPanel != null) {
                     resReading = snap ?? null;
                     resHistory = pushHistory(resHistory, resReading);
+                    resFailed = null;
                     onChange();
                 }
             } catch (e) {
                 failure("resources read", e);
+                // the last reading stays drawn; with none yet, the panel says why instead of measuring
+                const why = readFailure(e);
+                if (resPanel != null && resFailed !== why) {
+                    resFailed = why;
+                    onChange();
+                }
+            } finally {
+                resInFlight = false;
             }
         };
 

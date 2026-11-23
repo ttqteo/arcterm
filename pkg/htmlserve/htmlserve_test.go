@@ -281,6 +281,16 @@ func TestBridgeTakesTheSchemeFromTheHash(t *testing.T) {
 	}
 }
 
+// A page in a frame scrolls with the app's scrollbars, hidden until the pointer is over it, and that style goes first in
+// the head so a page's own scrollbar rules still win.
+func TestBridgeGivesThePageTheAppsScrollbars(t *testing.T) {
+	for _, want := range []string{"::-webkit-scrollbar-thumb", ":not(:hover){--arc-sb:transparent}", "--arc-ink-faint", "insertBefore(sb, head.firstChild)"} {
+		if !strings.Contains(bridgeScript, want) {
+			t.Errorf("the bridge never mentions %s", want)
+		}
+	}
+}
+
 func TestWithSuffixReadsTheFileThenTheSuffix(t *testing.T) {
 	s := withSuffix{f: strings.NewReader("abcdef"), size: 6, suffix: []byte("XYZ")}
 	for _, tc := range []struct {

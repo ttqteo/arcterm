@@ -50,6 +50,41 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
   project → `docs/council/briefs/` holds `<date>-<council id>-<file name>`, the experts cite the copy, and the report's
   side file has no "Files not copied". Give it a folder over 1 MB → `wsh council start` prints
   `warning: <folder> was not copied into docs/council/briefs: …` and the side file lists it under "Files not copied".
+- [ ] (arcterm) **Footer version is just the number; What's new says when it was built** (`versiontag.tsx`,
+  `whatsnewsheet.tsx`). In the installed build, the bottom right reads `v1.x.y` with no commit after it; click it →
+  What's new's header reads `in arcterm 1.x.y · built YYYY-MM-DD HH:MM`, and Settings → About still has the Commit
+  row. The `whats-new` scenario could not run (no dev app on CDP).
+- [ ] (arcterm) **Chat: Esc takes back a sent message with pastes as chips** (`sentText` / `mergeTaken` in
+  `chattakeback.ts`). In Chat, type a line, paste two long blocks (each folds to a chip), send, and press Esc at once
+  while Claude works with no reply yet → the box holds the typed line and the two chips, no `<pasted_content id=…>`
+  text. Press Enter → the message lands once, as it was sent; no bubble of it stays under the conversation after the
+  reply.
+
+- [ ] (arcterm) **Chat: a message from another agent as Markdown** (`SentMarkdown` in `chatconversation.tsx`,
+  `messageText` in `chatmodel.ts`). Send an agent a long message with `wsh agents send` (a paragraph, a numbered list,
+  some `code`) → in its Chat the `message · from <agent>` card shows no `tab <id>` line but a mono chip with the tab id's
+  first 8 characters after the name (hover: `tab <full id>`; a click opens that tab, as the name does), the text in the 13px reading
+  face with real list markers and code chips, cut at ~7 lines under a fade with Show more; Show more opens it on the
+  spring, Show less folds it back, a second press mid-slide turns it around. A short message shows no fold.
+
+- [ ] (arcterm) **Chat: the sender's side of a message to another agent** (`chatagentsend.ts`,
+  `chatagentsendcard.tsx`). In a Claude agent, have it write a message to a file and `wsh agents send <tab> --file <it>`,
+  then `wsh agents wait <tab> && wsh agents read <tab>` with `run_in_background`, and Read the output file → after the
+  send's tool line a card `→ message to <agent badge> · started a turn` with the file's text as Markdown and
+  `from <file>` under it; after the Read, a card set in a step, `← answer from <agent badge>`, with the answer. Also
+  `wsh agents send <tab> "x" --wait` in the foreground: both cards after the one call. A send to a closed tab: the
+  card's border red and `not sent: …`. The badge opens that agent; a closed one reads as its id.
+- [ ] (arcterm) **A Chat visual's scrollbar** (`bridgeScript` in `pkg/htmlserve/htmlserve.go`). A visual taller than
+  640 px that scrolls inside its frame: no scrollbar until the pointer is over it, then a thin thumb as the app's own.
+  Needs the rebuilt wavesrv.
+- [ ] (arcterm) **A code block's sticky head when the pinned prompt leaves** (`useIsPresent` in
+  `pinnedpromptbar.tsx`). In Chat, scroll a long code block under a pinned prompt so its head sticks, then scroll so
+  the pinned prompt goes (to the end, or back to its bubble) → the head moves to the top at once, no gap above it
+  with lines showing, no line hidden under it.
+- [ ] (arcterm) **Sidecar's Resources under load** (`pollResources` in `sidecarbridge.tsx`). With the machine near
+  100% CPU, open Sidecar's wall: the arcterm column reads `Can't read: the Resource Manager did not answer in time.
+  Retrying…` in amber while reads time out, and its rows and charts fill once one answers; the last reading stays
+  drawn through a later timeout.
 
 - [ ] (arcterm) **Brainstorm tab: board thumbnails and the rail's dots** (`BoardChip` in `railbrainstormpane.tsx`,
   `RailTabStrip` in `agentrailpanel.tsx`, `RailStripTab.dot` in `collapsiblerail.tsx`). On an agent with a brainstorm

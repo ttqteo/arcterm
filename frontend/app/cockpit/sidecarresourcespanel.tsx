@@ -220,7 +220,15 @@ function ArctermRows({ resources, divider }: { resources: SidecarResources | und
             {(resources?.rows ?? []).map((r) => (
                 <Row key={r.key} row={r} />
             ))}
-            {resources == null || resources.rows.length === 0 ? (
+            {resources?.failed != null && resources.rows.length === 0 ? (
+                <div
+                    data-sidecar-resources-failed
+                    className="px-2 py-1 text-[12px] text-warning"
+                    title={`Reading the resources failed: ${resources.failed}. Sidecar keeps trying every 2 s.`}
+                >
+                    Can't read: {resources.failed}. Retrying…
+                </div>
+            ) : resources == null || resources.rows.length === 0 ? (
                 <div className="px-2 py-1 text-[12px] text-hud-muted">Measuring…</div>
             ) : null}
         </>

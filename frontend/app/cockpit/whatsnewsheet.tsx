@@ -65,7 +65,7 @@ import {
     type LucideIcon,
 } from "lucide-react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from "react";
-import { versionInfoAtom } from "./versioninfo";
+import { formatBuildTime, versionInfoAtom } from "./versioninfo";
 import {
     entryBody,
     entryLead,
@@ -149,7 +149,8 @@ const FOLD_ICON = { changes: SECTION_ICON.Added, fixes: SECTION_ICON.Fixed };
 
 export function WhatsNewSheet({ model }: { model: AgentsViewModel }) {
     const open = useAtomValue(whatsNewOpenAtom);
-    const current = useAtomValue(versionInfoAtom).app;
+    const version = useAtomValue(versionInfoAtom);
+    const current = version.app;
     const [releases, setReleases] = useState<Release[] | null>(null);
 
     useEffect(() => {
@@ -172,6 +173,11 @@ export function WhatsNewSheet({ model }: { model: AgentsViewModel }) {
                         <HeaderPet />
                         <span className="text-[14px] font-semibold text-primary">What's new</span>
                         <span className="text-[12.5px] tabular-nums text-muted">in arcterm {current}</span>
+                        {version.buildTime > 0 ? (
+                            <span data-whats-new-built className="text-[12px] tabular-nums text-muted">
+                                · built {formatBuildTime(version.buildTime)}
+                            </span>
+                        ) : null}
                         <span className="ml-auto shrink-0 rounded-[5px] border border-edge-mid px-[7px] py-0.5 font-mono text-[10.5px] text-muted">
                             esc
                         </span>

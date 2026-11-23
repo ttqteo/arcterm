@@ -115,6 +115,10 @@ function samePart(a: AgentPart, b: AgentPart): boolean {
             );
         case "boarddraw":
             return b.kind === "boarddraw" && a.key === b.key && a.board === b.board;
+        case "agentsend":
+            return b.kind === "agentsend" && a.key === b.key && JSON.stringify(a.send) === JSON.stringify(b.send);
+        case "agentanswer":
+            return b.kind === "agentanswer" && a.key === b.key && JSON.stringify(a.answer) === JSON.stringify(b.answer);
     }
 }
 
@@ -156,6 +160,7 @@ export function sameChatItem(a: ChatItem, b: ChatItem): boolean {
                 a.from === other.from &&
                 a.header === other.header &&
                 a.tabId === other.tabId &&
+                a.markdown === other.markdown &&
                 sameStrings(a.lines, other.lines)
             );
         }

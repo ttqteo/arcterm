@@ -65240,7 +65240,7 @@ const whatsNew = {
         })()`);
         rec(
             "1. the footer's version is a button in the UI font, and reads only the version",
-            footer.tag === "BUTTON" && /^v\d/.test(footer.text ?? "") && !/mono/i.test(footer.font ?? ""),
+            footer.tag === "BUTTON" && /^v\d+\.\d+\.\d+$/.test((footer.text ?? "").trim()) && !/mono/i.test(footer.font ?? ""),
             JSON.stringify(footer)
         );
         rec("2. the shortcuts button is a round help icon, not a boxed ?", footer.helpIcon && footer.helpText === "", JSON.stringify(footer));

@@ -75,6 +75,7 @@ import {
 import { plainText } from "./ansitext";
 import { procExited } from "./brainstormmodel";
 import type { BrainstormState } from "./brainstormstore";
+import { ChatAgentAnswerCard, ChatAgentSendCard, SentMarkdown } from "./chatagentsendcard";
 import { arrivalFrom, tailArrivals } from "./chatarrival";
 import { boardsDrawn, wordsOf } from "./chatboard";
 import { ChatBoardCard, ChatBoardChip } from "./chatboardcard";
@@ -574,6 +575,16 @@ function SentCard({ item, model }: { item: Extract<ChatItem, { kind: "sent" }>; 
     const head = (
         <>
             <span className="min-w-0 truncate font-medium text-primary">{item.header}</span>
+            {/* the sender's tab, short: part of the head, so a click opens it too; the whole id on hover */}
+            {tabId != null ? (
+                <span
+                    data-chat-sent-tab
+                    title={`tab ${tabId}`}
+                    className="flex-none self-center rounded-[4px] bg-surface-raised px-[5px] py-px font-mono text-[10.5px] leading-[1.4] text-muted group-hover:text-secondary"
+                >
+                    {tabId.slice(0, 8)}
+                </span>
+            ) : null}
             <span className="flex-none text-[11.5px] text-muted">
                 {item.from === "run" ? "from the run" : "from the cockpit"}
             </span>
@@ -607,7 +618,9 @@ function SentCard({ item, model }: { item: Extract<ChatItem, { kind: "sent" }>; 
             ) : (
                 <div className="flex min-w-0 items-baseline gap-2 text-[12.5px]">{head}</div>
             )}
-            {lines.length > 0 ? (
+            {item.markdown != null ? (
+                <SentMarkdown text={item.markdown} />
+            ) : lines.length > 0 ? (
                 <div className="flex flex-col font-mono text-[11.5px] leading-[1.55] text-secondary">
                     {lines.map((line, i) => (
                         <div key={i} className="[overflow-wrap:anywhere]">
@@ -616,7 +629,7 @@ function SentCard({ item, model }: { item: Extract<ChatItem, { kind: "sent" }>; 
                     ))}
                 </div>
             ) : null}
-            {folds ? (
+            {folds && item.markdown == null ? (
                 <button
                     type="button"
                     aria-expanded={open}
@@ -1502,6 +1515,9 @@ export function ChatConversation({
             } else if (part.kind === "boarddraw") {
                 // the end-of-turn card reads the agent's project and the cockpit it opens the board in
                 out.push(`board:${model != null}`);
+            } else if (part.kind === "agentsend" || part.kind === "agentanswer") {
+                // the badge of the agent at the other end opens through the chat's links
+                out.push(`peer:${model != null}`);
             } else if (part.kind === "runstart") {
                 const slot = placed.byAnchor.get(part.key);
                 const ended = slot?.runId != null ? endedByRun.get(slot.runId) : undefined;
@@ -1642,6 +1658,11 @@ export function ChatConversation({
             // a `wsh board draw` call: its board's card is at the end of the turn (below the parts), once per board
             case "boarddraw":
                 return null;
+            // a message the agent sent another, and the answer it brought back (chatagentsendcard.tsx)
+            case "agentsend":
+                return <ChatAgentSendCard send={part.send} />;
+            case "agentanswer":
+                return <ChatAgentAnswerCard answer={part.answer} />;
             // a Doc review: answered, its row. Unanswered, the live card is the dock's (chatpane.tsx), as the handoff's is,
             // so a live agent's conversation draws nothing; an agent that exited has the static card here
             case "docreview": {

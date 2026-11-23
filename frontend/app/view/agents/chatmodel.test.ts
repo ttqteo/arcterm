@@ -287,7 +287,27 @@ describe("what arcterm typed", () => {
             header: "message · from design lead",
             lines: ["tab tab-1234", "rename the helper", "and rerun the tests"],
             tabId: "tab-1234",
+            markdown: "rename the helper\nand rerun the tests",
         });
+    });
+
+    it("keeps a message's whole text as written, past six lines and with its blank lines, for the card's Markdown", () => {
+        const body = [
+            "Diagnose §13:",
+            "",
+            "1. `crash_before_sink` in 6 cases",
+            "2. second",
+            "",
+            ...Array(8).fill("more"),
+        ];
+        const text = `[Message from agent "mit-thesis" (tab t-9), sent with wsh agents send. Not typed by the user.]\n${body.join("\n")}\n`;
+        const [item] = chatItems([you(text)]);
+        expect((item as Extract<ChatItem, { kind: "sent" }>).markdown).toBe(body.join("\n"));
+    });
+
+    it("gives no Markdown to a sent card that is not a message from an agent", () => {
+        const [item] = chatItems([you(fixture("child-done"))]);
+        expect(item).not.toHaveProperty("markdown");
     });
 
     it("reads a wake as a 'sent' card from the cockpit, headed by what the wake holds, one line per event", () => {
@@ -736,6 +756,94 @@ describe("chatItems: verdict, handoff, run-start, council-start and Doc review p
                 },
             });
             expect(kinds(chatItems([you("x"), two]))).toEqual(["work"]);
+        });
+    });
+
+    describe("a message to another agent", () => {
+        const sh = (command: string, output: string, exit = 0): AgentEntry =>
+            action("ran", { outcome: "ok", detail: { kind: "bash", command, output, exit } });
+        const SENT = "sent to 12e2f9e1: it started a turn\nread the answer with: wsh agents read 12e2f9e1\n";
+
+        it("draws a send after its call, which stays a tool line, with its text", () => {
+            const items = chatItems([you("tell it"), action("read"), sh(`wsh agents send 12e2 "go on"`, SENT)]);
+            expect(kinds(items)).toEqual(["work", "agentsend"]);
+            const work = part(items, 0);
+            expect(work.kind === "work" && work.work.actions.map((a) => a.verb)).toEqual(["read", "ran"]);
+            expect(part(items, 1)).toEqual({
+                kind: "agentsend",
+                key: "agentsend:2",
+                send: { tab: "12e2", text: "go on", how: "started" },
+            });
+        });
+
+        it("reads a --file message from the Write that made the file, the latest one", () => {
+            const wrote = (text: string) =>
+                action("wrote", {
+                    path: "C:\\tmp\\scratch\\msg.md",
+                    detail: {
+                        kind: "edit",
+                        files: [
+                            {
+                                path: "C:\\tmp\\scratch\\msg.md",
+                                badge: "A",
+                                adds: 1,
+                                dels: 0,
+                                lines: text.split("\n").map((t) => ({ sign: "+" as const, text: t })),
+                            },
+                        ],
+                    },
+                });
+            const items = chatItems([
+                you("tell it"),
+                wrote("old"),
+                wrote("1. first\n\n2. `second`"),
+                sh(`wsh agents send 12e2 --file /c/tmp/scratch/msg.md`, SENT),
+            ]);
+            expect(part(items, 1)).toMatchObject({
+                kind: "agentsend",
+                send: { file: "/c/tmp/scratch/msg.md", text: "1. first\n\n2. `second`" },
+            });
+        });
+
+        it("draws the answer a --wait printed under the send", () => {
+            const items = chatItems([you("ask it"), sh(`wsh agents send 12e2 "x" --wait`, `${SENT}All done.`)]);
+            expect(kinds(items)).toEqual(["work", "agentsend", "agentanswer"]);
+            expect(part(items, 2)).toEqual({
+                kind: "agentanswer",
+                key: "agentanswer:1",
+                answer: { tab: "12e2", text: "All done." },
+            });
+        });
+
+        it("draws the answer of a read run in the background at the Read of its output file", () => {
+            const out = "C:\\Users\\me\\tasks\\bq1.output";
+            const items = chatItems([
+                you("ask it"),
+                sh(`wsh agents send 12e2 "x"`, SENT),
+                sh(
+                    `wsh agents wait 12e2 && wsh agents read 12e2`,
+                    `Command running in background with ID: bq1. Output is being written to: ${out}`
+                ),
+                says("waiting"),
+                action("read", {
+                    path: out,
+                    detail: {
+                        kind: "read",
+                        snippet: "     1\t12e2f9e1 (lead) stopped working: it is idle\n     2\tSix are error_before.",
+                    },
+                }),
+            ]);
+            const parts = agentOf(items, 1).parts;
+            expect(parts.map((p) => p.kind)).toEqual(["work", "agentsend", "work", "prose", "work", "agentanswer"]);
+            expect(parts[5]).toMatchObject({ answer: { tab: "12e2", text: "Six are error_before." } });
+        });
+
+        it("leaves a read of another file in the work", () => {
+            const items = chatItems([
+                you("x"),
+                action("read", { path: "a.ts", detail: { kind: "read", snippet: "1\tx" } }),
+            ]);
+            expect(kinds(items)).toEqual(["work"]);
         });
     });
 

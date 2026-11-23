@@ -123,6 +123,23 @@ const HISTORY_MAX = 20;
 // a command as it was typed, every run of whitespace one space: the transcript keeps a /btw's question on one line
 const flat = (s: string): string => s.replace(/\s+/g, " ").trim();
 
+// a message out of every paste Claude Code wrapped it in whole: a text that already held its wrapper (one an Esc
+// take-back put back raw before 2026-11-23) went in wrapped twice. A few rounds at most, so a pathological text ends.
+function unwrapped(s: string): string {
+    let cur = s;
+    for (let i = 0; i < 4; i++) {
+        const next = unwrapWholePaste(cur);
+        if (next === cur) {
+            break;
+        }
+        cur = next;
+    }
+    return cur;
+}
+
+// what a message of yours is compared by: a sent text and a transcript record (its result lines dropped) alike
+const ownFlat = (s: string): string => flat(unwrapped(s));
+
 // the command of a bash-mode `! cmd`, every run of whitespace one space, or null for anything else (a bare ! included)
 function bashCommand(text: string): string | null {
     const t = text.trimStart();
@@ -139,13 +156,13 @@ function bashCommand(text: string): string | null {
  *  message Claude Code wrapped whole as a paste (a send with a picture or a line break goes in as one) counts as its
  *  body, or its Queued bubble never goes. A `! cmd` counts as its bash row (name `!`, the command as args). */
 export function userTextCount(entries: AgentEntry[], text: string): number {
-    const wantFlat = flat(text);
+    const wantFlat = ownFlat(text);
     const bash = bashCommand(text);
     let n = 0;
     for (const e of entries) {
         // the result lines Arc put in front of the message are no part of what the person wrote (stripResultLines also
         // unwraps a whole paste, so a message that carried them is compared by its own text)
-        if (e.kind === "user" && flat(unwrapWholePaste(stripResultLines(e.text))) === wantFlat) {
+        if (e.kind === "user" && ownFlat(stripResultLines(e.text)) === wantFlat) {
             n++;
         } else if (e.kind === "command" && e.name === "!") {
             if (bash != null && flat(e.args ?? "") === bash) {
@@ -183,11 +200,11 @@ function heldWith(got: string, want: string, sent: readonly string[]): boolean {
 /** How many of the entries are your messages that hold this text with other text in front (heldWith; every run of
  *  whitespace one space). `sent` is the box's history (chatpendingstore.ts sentHistory). */
 export function userTextWithinCount(entries: AgentEntry[], text: string, sent: readonly string[] = []): number {
-    const want = flat(text);
+    const want = ownFlat(text);
     const sentFlat = sent.map(flat);
     let n = 0;
     for (const e of entries) {
-        if (e.kind === "user" && heldWith(flat(unwrapWholePaste(stripResultLines(e.text))), want, sentFlat)) {
+        if (e.kind === "user" && heldWith(ownFlat(stripResultLines(e.text)), want, sentFlat)) {
             n++;
         }
     }

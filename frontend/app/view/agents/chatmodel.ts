@@ -26,6 +26,15 @@ import type {
     BtwAnswer,
     ShellResult,
 } from "./agentsviewmodel";
+import {
+    agentAnswerOf,
+    agentSendOf,
+    answerFileOf,
+    readText,
+    samePath,
+    type AgentAnswer,
+    type AgentSend,
+} from "./chatagentsend";
 import { boardDrawAnchor } from "./chatboard";
 import { councilStartAnchor, type CouncilAnchor } from "./chatcouncil";
 import { isDocReviewAsk } from "./chatdocreview";
@@ -66,7 +75,11 @@ export type AgentPart =
     | { kind: "docreview"; key: string; question: AskQuestionDetail }
     // a `wsh board draw` call and the board it names, as the call spells it: it draws nothing where it is (the call stays a
     // tool line), the turn ends in one card per board (chatboard.ts boardsDrawn, chatboardcard.tsx)
-    | { kind: "boarddraw"; key: string; board: string };
+    | { kind: "boarddraw"; key: string; board: string }
+    // a message this agent sent another with `wsh agents send`, after the call (which stays a tool line), and the answer
+    // a `--wait` or a `wsh agents read` brought back, after the call or the Read that holds it (chatagentsend.ts)
+    | { kind: "agentsend"; key: string; send: AgentSend }
+    | { kind: "agentanswer"; key: string; answer: AgentAnswer };
 
 /** Who sent a prompt arcterm typed into the session. */
 export type SentFrom = "run" | "cockpit";
@@ -105,8 +118,9 @@ export type ChatItem =
           lost?: string;
       }
     // a prompt arcterm typed: `header` names it, `lines` are its fields as "label value" and its body (at most SENT_LINES);
-    // `tabId` the tab of the agent that sent it with `wsh agents send`, which the card opens
-    | { kind: "sent"; key: string; from: SentFrom; header: string; lines: string[]; tabId?: string }
+    // `tabId` the tab of the agent that sent it with `wsh agents send`, which the card opens. Such a message also carries
+    // `markdown`, its whole text as the agent wrote it, which the card draws in place of `lines` (the tab is the head's link)
+    | { kind: "sent"; key: string; from: SentFrom; header: string; lines: string[]; tabId?: string; markdown?: string }
     // everything the agent said and did between two of the items around it
     | { kind: "agent"; key: string; parts: AgentPart[] }
     | { kind: "marker"; key: string; item: ChatMarker };
@@ -136,11 +150,18 @@ function wakeLines(wake: Wake): string[] {
     ].slice(0, SENT_LINES);
 }
 
-type Sent = { from: SentFrom; header: string; lines: string[]; tabId?: string };
+type Sent = { from: SentFrom; header: string; lines: string[]; tabId?: string; markdown?: string };
 
 // the tab of the agent a `wsh agents send` message came from, or undefined for any other prompt
 function senderTab(card: Card): string | undefined {
     return card.role === "message" ? card.fields.find((f) => f.label === "tab")?.value : undefined;
+}
+
+// a `wsh agents send` message's own text, whole and as written: everything under its one-line `[Message from agent …]`
+// opening (prompt-core.ts MESSAGE), its blank lines kept, so its paragraphs, lists and code read as Markdown
+function messageText(prompt: string): string {
+    const nl = prompt.indexOf("\n");
+    return nl < 0 ? "" : prompt.slice(nl + 1).trim();
 }
 
 // what arcterm typed, or null for text a person wrote. The text is trimmed to be read only: a trailing newline must not
@@ -166,7 +187,7 @@ function readSent(text: string): Sent | null {
             from: "cockpit",
             header: cardHeader(sent),
             lines: cardLines(sent),
-            ...(tabId != null ? { tabId } : {}),
+            ...(tabId != null ? { tabId, markdown: messageText(t) } : {}),
         };
     }
     return null;
@@ -252,6 +273,16 @@ function momentOf(action: AgentActionEntry): Moment | null {
 
 type VerdictPart = Extract<AgentPart, { kind: "verdict" }>;
 
+// the last item that matches, or null (the lib this repo compiles against has no findLast)
+function lastOf<T>(items: readonly T[], match: (t: T) => boolean): T | null {
+    for (let i = items.length - 1; i >= 0; i--) {
+        if (match(items[i])) {
+            return items[i];
+        }
+    }
+    return null;
+}
+
 /**
  * Pure: the transcript as chat items. Every agent-side item (a message, a stretch of tools) between two of your
  * messages, a sent card or a marker joins one group; a marker splits the agent's side in two, since it is a point in the
@@ -270,6 +301,50 @@ export function chatItems(entries: AgentEntry[]): ChatItem[] {
     // group is complete, since the call it names may come after it
     let calls: ReviewerCall[] = [];
     const unpaired: { part: VerdictPart; blockIndex: number; calls: ReviewerCall[] }[] = [];
+    // the files the conversation wrote (Write), the latest last, whose text a `wsh agents send --file` sent
+    const written: { path: string; text: string }[] = [];
+    // the output files of `wsh agents send --wait` and `wsh agents read` calls run in the background: the Read of one
+    // holds the answer
+    const answerFiles: { path: string; command: string }[] = [];
+    // a message to another agent and its answer, as parts (chatagentsend.ts), or none for any other call
+    const agentsParts = (a: AgentActionEntry, index: number): AgentPart[] => {
+        const d = a.detail;
+        if (a.verb === "wrote" && d?.kind === "edit" && a.path != null) {
+            const lines = d.files[0]?.lines ?? [];
+            written.push({ path: a.path, text: lines.map((l) => l.text).join("\n") });
+            return [];
+        }
+        if (d?.kind === "bash") {
+            const command = d.command ?? "";
+            const out: AgentPart[] = [];
+            const send = agentSendOf(command, d.output, d.exit);
+            if (send != null) {
+                const file = send.file;
+                const wrote = file != null && send.text == null ? lastOf(written, (w) => samePath(file, w.path)) : null;
+                out.push({
+                    kind: "agentsend",
+                    key: `agentsend:${index}`,
+                    send: wrote != null ? { ...send, text: wrote.text } : send,
+                });
+            }
+            const file = answerFileOf(command, d.output);
+            if (file != null) {
+                answerFiles.push({ path: file, command });
+            }
+            const answer = agentAnswerOf(command, d.output);
+            if (answer != null) {
+                out.push({ kind: "agentanswer", key: `agentanswer:${index}`, answer });
+            }
+            return out;
+        }
+        const path = a.path;
+        if (d?.kind === "read" && path != null) {
+            const from = lastOf(answerFiles, (f) => samePath(path, f.path));
+            const answer = from != null ? agentAnswerOf(from.command, readText(d.snippet)) : null;
+            return answer != null ? [{ kind: "agentanswer", key: `agentanswer:${index}`, answer }] : [];
+        }
+        return [];
+    };
     // the group the next agent-side item joins, opened by that item's own entry index
     const agentParts = (index: number): AgentPart[] => {
         if (group == null) {
@@ -372,11 +447,17 @@ export function chatItems(entries: AgentEntry[]): ChatItem[] {
                 const before = parts.length;
                 const draws: Extract<AgentPart, { kind: "boarddraw" }>[] = [];
                 item.actions.forEach((a, k) => {
+                    const index = item.startIndex + k;
+                    const said = agentsParts(a, index);
+                    if (said.length > 0) {
+                        cut(k + 1);
+                        parts.push(...said);
+                        return;
+                    }
                     const moment = momentOf(a);
                     if (moment == null) {
                         return;
                     }
-                    const index = item.startIndex + k;
                     if (moment.kind === "boarddraw") {
                         draws.push({ kind: "boarddraw", key: `boarddraw:${index}`, board: moment.board });
                         return;

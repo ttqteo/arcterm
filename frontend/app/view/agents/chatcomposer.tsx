@@ -143,7 +143,7 @@ import {
     type ChipRowKind,
     type RunningActions,
 } from "./chatsuggest";
-import { mergeTaken, takeBackPlan, takenBackOf } from "./chattakeback";
+import { mergeTaken, takeBackPlan, takenBackOf, takenCaret } from "./chattakeback";
 import { noteTakenBack, takeBack } from "./chattakebackstore";
 import { attachmentBlocker, useComposerAttachments } from "./composerattachments";
 import { fallAsleepLabel } from "./fallasleepstore";
@@ -842,7 +842,13 @@ function ComposerBox({
                         }
                     }
                 }
-                latest.current.setText(mergeTaken(texts, latest.current.text), texts.join("\n").length);
+                // a message that carried pastes brings them back as chips, so it writes the whole draft (the caret then
+                // goes to the end); any other goes into the typed text with the caret after it
+                if (splitPastes(mergeTaken(texts, "")).pastes.length > 0) {
+                    latest.current.setFull(mergeTaken(texts, latest.current.full));
+                } else {
+                    latest.current.setText(mergeTaken(texts, latest.current.text), takenCaret(texts));
+                }
             });
             if (result === "none") {
                 onNone?.();

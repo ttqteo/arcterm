@@ -64,6 +64,10 @@ and a picture given to a line that is not big.
   discussion and everything about how the council worked move to a `.discussion.md` file beside it.
 - A council's Report in the cockpit opens with the same two tables, To do and Figures, under the answer; At a glance
   and the figures that did not check out are folded under About the council.
+- The version at the bottom right reads only the number again (`v1.9.0`); What's new, which it opens, says when the build was made beside the version. The commit stays in Settings → About.
+- A message another agent sends you reads like a message in Chat: its whole text in the reading font, with its lists, paragraphs and `code` drawn as Markdown, folded under a fade with Show more when long, instead of six lines of monospace that began with the sender's tab id; that id is now a short chip beside the sender's name, which opens its conversation like the name does.
+- On the sending side, a message an agent sends another shows in its Chat as a card where it was sent: who it went to, whether it started a turn, and the message as Markdown (read from the file it was written to when sent with `--file`). The answer it brings back with `--wait` or `wsh agents read` shows under it as a card of its own, instead of a tool line and an `.output` file to open.
+- A visual drawn in Chat scrolls with the app's scrollbars: hidden until the pointer is over it.
 - The installer is about 30 MB instead of 47 MB. To get there, Code no longer gives TypeScript and JavaScript hovers,
   completions or error squiggles (it still colors them), and a board's Chinese text draws in the system font instead of
   Excalidraw's hand-drawn Chinese face.
@@ -86,6 +90,9 @@ and a picture given to a line that is not big.
 
 ### Fixed
 
+- Esc in Chat on a message you just sent with pastes now puts it back as you wrote it, pastes as chips, not wrapped in Claude Code's paste tags. Sending it again no longer leaves a stray copy of it under the conversation.
+- A long code block in Chat no longer hides its lines under its header when the pinned prompt above it goes away: the header moves up as the pinned prompt leaves.
+- Sidecar's Resources no longer sits on "Measuring…" when the machine is too busy to answer in time: it says it can't read and keeps trying, and its reads no longer pile up behind a slow one.
 - Chat's tool rows are easier to read and to close. Hovering a command's line shows its description, not a tooltip
   holding the whole script; an opened row's header stays at the top of Chat while its output scrolls past, its command
   scrolls inside a box of its own, and a Collapse button at its foot folds it and brings you back to the row.

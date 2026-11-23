@@ -125,6 +125,18 @@ describe("userTextCount", () => {
         expect(userTextCount(entries, "!pwd")).toBe(0);
     });
 
+    it("counts a message sent with Claude Code's wrapper in it, which it wrapped a second time (2026-11-23)", () => {
+        // an Esc take-back put Claude Code's wrapped text in the box, and it went again as it was: wrapped twice, the
+        // tags inside escaped once more, so its bubble stood under the conversation for 30 minutes
+        const esc = (s: string) => s.replace(/<(\/?pasted_content\b)/g, "<\\$1");
+        const sent = `> quote\nnovelty\n\n<pasted_content from="chat">\nbody\n</pasted_content>`;
+        const once = `<pasted_content id="0234">\n${esc(sent)}\n</pasted_content id="0234">`;
+        const twice = `\n\n<pasted_content id="0234">\n${esc(once)}\n</pasted_content id="0234">`;
+        expect(userTextCount([user(twice)], once)).toBe(1);
+        expect(userTextCount([user(twice)], sent)).toBe(1);
+        expect(userTextCount([user(once)], "novelty")).toBe(0);
+    });
+
     it("counts a message Claude Code wrapped whole as a paste (a send with a picture or a line break goes in so)", () => {
         const sent = "bash mode không đẹp lắm\n\nAttached images:\n- C:\\a\\image.png";
         const entries = [user(`<pasted_content id="45ce">\n${sent}\n</pasted_content id="45ce">`)];

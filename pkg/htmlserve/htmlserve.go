@@ -214,7 +214,10 @@ const scrollScript = `<script>(function () {
 // arc-visual-prompt), takes the parent's colours (arc-visual-theme sets --arc-<name> custom properties on the page's
 // root) and says arc-html-ready once it is listening. A frame whose address ends in #arc-scheme=dark (or light) gets that
 // color-scheme on its root at once, before its first paint: a page with none in a dark app is otherwise drawn on an
-// opaque white canvas (a frame whose scheme differs from its parent's is never see-through), white behind dark text. Every page gets it, but only Chat's visual frame listens: a page
+// opaque white canvas (a frame whose scheme differs from its parent's is never see-through), white behind dark text. It
+// also gives the page the app's scrollbars (tailwindsetup.css): out of sight until the pointer is over what scrolls, a
+// thin thumb then, in --arc-ink-faint. That style goes first in the head, so a page that styles its own scrollbars keeps
+// them. Every page gets it, but only Chat's visual frame listens: a page
 // opened in the File tab that calls sendPrompt is not heard. The theme keys are held to a short name and the values to
 // a short string, so a message cannot set anything but a custom property of this prefix. A page whose own
 // Content-Security-Policy refuses inline scripts has no bridge, and Chat keeps the height it last knew.
@@ -229,6 +232,14 @@ const bridgeScript = `<script>(function () {
   if (p === window) return;
   var scheme = /(?:^#|&)arc-scheme=(dark|light)(?:&|$)/.exec(location.hash);
   if (scheme) document.documentElement.style.colorScheme = scheme[1];
+  var sb = document.createElement("style");
+  sb.textContent = ":not(:hover){--arc-sb:transparent}:hover{--arc-sb:var(--arc-ink-faint,rgba(128,128,128,.45))}" +
+    "::-webkit-scrollbar{width:8px;height:8px}" +
+    "::-webkit-scrollbar-thumb{background-color:var(--arc-sb);border-radius:4px;border:2px solid transparent;background-clip:padding-box}" +
+    "::-webkit-scrollbar-thumb:hover,::-webkit-scrollbar-thumb:active{background-color:var(--arc-muted,rgba(128,128,128,.7));border-width:1px}" +
+    "::-webkit-scrollbar-track,::-webkit-scrollbar-corner{background:transparent}";
+  var head = document.head || document.documentElement;
+  head.insertBefore(sb, head.firstChild);
   var last = 0, raf = 0;
   function report() {
     raf = 0;
