@@ -32,6 +32,13 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
   asked, the ask comes back as a refusal whose reason tells the agent to ask you first.
 ## 2026-11-23
 
+- [ ] (arcterm) **New File / New Folder in the agent panel's Files tree** (`railtreepane.tsx`, `createRailEntry` in
+  `railtreestore.ts`). Unit tests and the typecheck only. Right-click a folder → New File, type `x.md`, Enter: the file
+  appears selected under that folder and opens in the File tab. New Folder makes an empty folder that stays after
+  Refresh; right-click blank space below the rows makes one at the top; `n` / `Shift+N` with the tree focused does the
+  same at the cursor's folder; Esc or a click away cancels; a name that exists shows "Something with that name is
+  already here." The Code tree's New File and Rename still work (their name row moved to `code/nameinput.tsx`).
+
 - [ ] (arcterm) **Sidecar's Resources panel opened right after the column closes starts on Measuring, not the
   column's history** (`sidecar.tsx` `useResourcesPanel`, `resourcesFor`). Unit tests and the typecheck only. With
   Sidecar wide (P) and its Resources column filled for a minute, narrow it to Q and at once click the title bar's

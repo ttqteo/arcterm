@@ -29,7 +29,7 @@ import {
     type DropEntryLike,
 } from "./railfiledrop";
 import { moveFailedToast, planMove } from "./railmove";
-import { railTreeStateAtom, reloadTree } from "./railtreestore";
+import { railMadeDirsAtom, railTreeStateAtom, reloadTree } from "./railtreestore";
 
 const CHUNK_TIMEOUT_MS = 30000;
 // files written at once; a file's own chunks go one after another
@@ -199,6 +199,10 @@ export async function moveRowsInto(
             continue;
         }
         moved.push(step.to);
+        // an empty folder New Folder made is a row only through this list, so it has to follow the move
+        globalStore.set(railMadeDirsAtom, (m) =>
+            m[cwd] == null ? m : { ...m, [cwd]: m[cwd].map((d) => renamedPath(d, step.from, step.to)) }
+        );
         renameCodePinsIn(cwd, step.from, step.to);
         carryPanelFiles(cwd, agentId, step.from, step.to);
     }
