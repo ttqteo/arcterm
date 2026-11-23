@@ -1246,12 +1246,16 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
         }
         const mod = e.metaKey || e.ctrlKey || e.altKey;
         // Tab walks the dialog's stops and wraps, as the DAG modal's trap does; focus never leaves the dialog. With a Task
-        // or Goal box, the Start column is no stop: Alt+1–9 picks there from the box, so Tab goes from the box to Project
+        // or Goal box, the Start column is no stop: Alt+1–9 picks there from the box, so Tab goes from the box to Project.
+        // Nothing else in the Task row is a stop either: the attachment chips' open and remove buttons are for the
+        // pointer, as the row's icons are, or Tab from the box lands on a chip instead of the project
         if (e.key === "Tab" && !mod) {
             e.preventDefault();
             const box = isTool || isCouncil ? null : isRun ? goalRef.current : taskRef.current;
             const stops = Array.from(root.querySelectorAll<HTMLElement>(FOCUSABLE)).filter(
-                (el) => box == null || el !== startRef.current
+                (el) =>
+                    (box == null || el !== startRef.current) &&
+                    (el.closest("[data-launcher-task-row]") == null || inTaskBox(el))
             );
             focusTrapTarget(stops, document.activeElement, e.shiftKey)?.focus();
             return;
