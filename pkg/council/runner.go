@@ -359,8 +359,10 @@ func endRun(c *Council, now int64) {
 // one without: it runs today's two rounds. It is also where the draft mode is taken: cleared and frozen again from the
 // seats the council has now, so a re-run of a saved council takes the mode its seats give at that start. And it is where
 // the council's language is read, from the question else the feature (LangOf), and each stock role's seat is named in it
-// (NameSeats): a seat the person renamed, an agent seat and a role of their own keep the name they have.
+// (NameSeats): a seat the person renamed, an agent seat and a role of their own keep the name they have. And it is where
+// the files from outside the project are copied into it (takeBriefs), so every prompt, cite root and Setup reads the copy.
 func (r *Runner) beginFresh(c *Council) {
+	takeBriefs(c, DocDay())
 	c.State, c.Round, c.Started, c.Error = StateRunning, 1, r.now(), ""
 	r.beginRun(c)
 	c.Harness = HarnessVersion

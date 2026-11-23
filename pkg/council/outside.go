@@ -56,12 +56,22 @@ func councilFilePath(c *Council, f string) string {
 }
 
 // changedFiles are the council's files modified after since (ms), in the order the council lists them. A file that cannot
-// be read is not listed: it did not change, it went.
+// be read is not listed: it did not change, it went. A brief copied in from outside (takeBriefs) is watched at its source
+// too, listed where `files` names its copy, since the person goes on editing the original.
 func changedFiles(c *Council, since int64) []string {
+	sources := map[string]string{} // copy -> source
+	for _, b := range c.Briefs {
+		if b.Copy != "" {
+			sources[b.Copy] = b.Source
+		}
+	}
 	var out []string
 	for _, f := range c.Files {
 		if at := fileMtime(councilFilePath(c, f)); at > since {
 			out = append(out, f)
+		}
+		if src, ok := sources[filepath.ToSlash(strings.TrimSpace(f))]; ok && fileMtime(src) > since {
+			out = append(out, src)
 		}
 	}
 	return out

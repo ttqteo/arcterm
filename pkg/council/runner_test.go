@@ -6582,6 +6582,9 @@ func TestRunnerChecksLabelAfterRound1AndTheReplyPass(t *testing.T) {
 
 func TestRunnerChecksCitesIntoAttachedFilesAndFolders(t *testing.T) {
 	h := newHarness(t)
+	prevDay := DocDay
+	t.Cleanup(func() { DocDay = prevDay })
+	DocDay = func() time.Time { return time.Date(2026, 11, 23, 9, 0, 0, 0, time.Local) }
 	proj := checkProject(t)
 	outside := t.TempDir()
 	notes := filepath.Join(outside, "notes.md")
@@ -6591,26 +6594,31 @@ func TestRunnerChecksCitesIntoAttachedFilesAndFolders(t *testing.T) {
 	c := claimCouncil("c1", proj)
 	c.Files = []string{notes, folder, "pkg/ram.go"} // a file and a folder outside the project, and a project file as written in Setup
 	c.PauseAfterRound1 = true
-	h.f.setText("ux/r1", claimJSON("The attached file", []map[string]string{cite(notes+":2", "wake on demand")}))
-	h.f.setText("ram/r1", claimJSON("Its bare name", []map[string]string{cite("notes.md:2", "")}))
+	// Start copies the outside file and folder under docs/council/briefs/, and the seats read and cite the copies
+	notesCopy := "docs/council/briefs/2026-11-23-c1-notes.md"
+	h.f.setText("ux/r1", claimJSON("The attached file's copy", []map[string]string{cite(notesCopy+":2", "wake on demand")}))
+	h.f.setText("ram/r1", claimJSON("The original outside", []map[string]string{cite(notes+":2", "wake on demand")}))
 	h.f.setText("newuser/r1", claimJSON("A file in the attached folder", []map[string]string{cite("design.txt:2", "two")}))
-	h.f.setText("skeptic/r1", claimJSON("A file nothing attached", []map[string]string{cite(filepath.Join(outside, "other.md")+":1", "")}))
+	h.f.setText("skeptic/r1", claimJSON("Its bare name", []map[string]string{cite("notes.md:2", "")}))
 
 	paused := h.run(c)
+	if want := []string{notesCopy, "docs/council/briefs/2026-11-23-c1-" + filepath.Base(folder), "pkg/ram.go"}; !slices.Equal(paused.Files, want) {
+		t.Fatalf("files = %q, want the copies %q", paused.Files, want)
+	}
 	got := func(author string) CouncilEvidence {
 		return proposalOf(t, paused, ideaBy(t, paused, author)).Evidence[0]
 	}
 	if e := got("ux"); e.Cite != CiteOK {
-		t.Errorf("a cite of an attached file by its absolute path = %+v, want ok", e)
+		t.Errorf("a cite of an attached file's copy = %+v, want ok", e)
 	}
-	if e := got("ram"); e.Cite != CiteWrong {
-		t.Errorf("a cite of an attached file by its bare name = %+v, want wrong: a file root matches only its own path", e)
+	if e := got("ram"); e.Cite != CiteWrong || !strings.Contains(e.CiteNote, "outside") {
+		t.Errorf("a cite of the original an attached file was copied from = %+v, want wrong and outside", e)
 	}
 	if e := got("newuser"); e.Cite != CiteOK {
 		t.Errorf("a cite of a file in an attached folder = %+v, want ok", e)
 	}
-	if e := got("skeptic"); e.Cite != CiteWrong || !strings.Contains(e.CiteNote, "outside") {
-		t.Errorf("a cite of a file beside an attached file = %+v, want wrong and outside", e)
+	if e := got("skeptic"); e.Cite != CiteWrong {
+		t.Errorf("a cite of an attached file by its bare name = %+v, want wrong: a file root matches only its own path", e)
 	}
 }
 

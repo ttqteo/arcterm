@@ -458,6 +458,19 @@ func councilStartedLine(c *council.Council, feature, mode, group string, est *ws
 		councilMeasuredText(est))
 }
 
+// councilBriefWarnings is what a council that started at once prints to stderr for each file from outside its project
+// that Start could not copy into it (Council.Briefs): one line each, "" when every one was copied. A queued council takes
+// its copies when it starts, so its warnings are only in the report's side file.
+func councilBriefWarnings(c *council.Council) string {
+	var b strings.Builder
+	for _, br := range c.Briefs {
+		if br.Skipped != "" {
+			fmt.Fprintf(&b, "warning: %s was not copied into docs/council/briefs: %s\n", br.Source, br.Skipped)
+		}
+	}
+	return b.String()
+}
+
 // councilQueuedLine is the line a start prints when another council runs: the council it waits for (running is that
 // council as saved, nil when it could not be read) and the new council's own id, which `wsh council wait` takes.
 func councilQueuedLine(c, running *council.Council) string {
@@ -763,6 +776,7 @@ func councilStartRun(cmd *cobra.Command, args []string) error {
 		group = plan.group.Id
 	}
 	fmt.Println(councilStartedLine(c, feature, plan.mode, group, plan.est))
+	fmt.Fprint(os.Stderr, councilBriefWarnings(c))
 	return nil
 }
 
