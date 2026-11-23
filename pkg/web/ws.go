@@ -24,7 +24,12 @@ import (
 )
 
 const wsReadWaitTimeout = 15 * time.Second
-const wsWriteWaitTimeout = 10 * time.Second
+
+// How long one write may wait for the WebView to take it. The WebView stops reading while its main thread is busy, and
+// right after the cockpit first renders it was busy 12 to 43 s on every launch measured (waveapp.log, 2026-11-20 to
+// 11-23): at 10 s the write timed out on 3 launches of 4 and the link was dropped mid-boot. A var for the tests.
+var wsWriteWaitTimeout = 30 * time.Second
+
 const wsPingPeriodTickTime = 10 * time.Second
 const wsInitialPingTime = 1 * time.Second
 const wsMaxMessageSize = 10 * 1024 * 1024
@@ -85,7 +90,18 @@ func getStringFromMap(jmsg map[string]any, key string) string {
 	return ""
 }
 
-func processWSCommand(jmsg map[string]any, outputCh chan any, rpcInputCh chan baseds.RpcInputChType) {
+// sendToWriter queues msg for the write loop, unless that loop has ended: then nothing drains outputCh, and a send
+// would block its caller for good.
+func sendToWriter(outputCh chan<- any, writerDone <-chan struct{}, msg any) bool {
+	select {
+	case outputCh <- msg:
+		return true
+	case <-writerDone:
+		return false
+	}
+}
+
+func processWSCommand(jmsg map[string]any, outputCh chan any, writerDone <-chan struct{}, rpcInputCh chan baseds.RpcInputChType) {
 	var rtnErr error
 	var cmdType string
 	defer func() {
@@ -101,7 +117,7 @@ func processWSCommand(jmsg map[string]any, outputCh chan any, rpcInputCh chan ba
 			return
 		}
 		rtn := map[string]any{"type": "error", "error": rtnErr.Error()}
-		outputCh <- rtn
+		sendToWriter(outputCh, writerDone, rtn)
 	}()
 	wsCommand, err := webcmd.ParseWSCommandMap(jmsg)
 	if err != nil {
@@ -127,7 +143,10 @@ func processWSCommand(jmsg map[string]any, outputCh chan any, rpcInputCh chan ba
 	}
 }
 
-func ReadLoop(conn *websocket.Conn, outputCh chan any, closeCh chan any, rpcInputCh chan baseds.RpcInputChType, routeId string) {
+// ReadLoop reads until the connection fails, or until the write loop has ended (writerDone) and an answer it owes
+// could not be sent: a ping's pong used to block here once the writer was gone, so the read loop never returned, the
+// link was never unregistered and the WebView, whose pings were still read, never saw the socket close.
+func ReadLoop(conn *websocket.Conn, outputCh chan any, writerDone <-chan struct{}, closeCh chan any, rpcInputCh chan baseds.RpcInputChType, routeId string) {
 	readWait := wsReadWaitTimeout
 	conn.SetReadLimit(wsMaxMessageSize)
 	conn.SetReadDeadline(time.Now().Add(readWait))
@@ -153,14 +172,17 @@ func ReadLoop(conn *websocket.Conn, outputCh chan any, closeCh chan any, rpcInpu
 		if msgType == "ping" {
 			now := time.Now()
 			pongMessage := map[string]interface{}{"type": "pong", "stime": now.UnixMilli()}
-			outputCh <- pongMessage
+			if !sendToWriter(outputCh, writerDone, pongMessage) {
+				log.Printf("[websocket] ReadPump (%s): the write loop has ended, closing\n", routeId)
+				break
+			}
 			continue
 		}
 		wsCommand := getStringFromMap(jmsg, "wscommand")
 		if wsCommand == "" {
 			continue
 		}
-		processWSCommand(jmsg, outputCh, rpcInputCh)
+		processWSCommand(jmsg, outputCh, writerDone, rpcInputCh)
 	}
 }
 
@@ -178,7 +200,11 @@ func writeWsMessage(conn *websocket.Conn, barr []byte) error {
 	return conn.WriteMessage(websocket.TextMessage, barr)
 }
 
+// WriteLoop writes until a write fails or the read loop ends. Either way it closes the connection as it returns: a
+// failed ping used to return with the socket open, so the WebView kept a link nothing wrote to and never reconnected
+// (2026-11-23 10:17: three minutes of "timeout waiting for response" until arcterm was restarted).
 func WriteLoop(conn *websocket.Conn, outputCh chan any, closeCh chan any, routeId string) {
+	defer conn.Close()
 	ticker := time.NewTicker(wsInitialPingTime)
 	defer ticker.Stop()
 	initialPing := true
@@ -199,7 +225,6 @@ func WriteLoop(conn *websocket.Conn, outputCh chan any, closeCh chan any, routeI
 			}
 			err = writeWsMessage(conn, barr)
 			if err != nil {
-				conn.Close()
 				log.Printf("[websocket] WritePump error (%s): %v\n", routeId, err)
 				return
 			}
@@ -297,6 +322,13 @@ func HandleWsInternal(w http.ResponseWriter, r *http.Request) error {
 	defer close(wproxy.ToRemoteCh)
 	registerConn(wsConnId, stableId, wproxy)
 	defer unregisterConn(wsConnId, stableId)
+	runWsLoops(conn, outputCh, closeCh, wproxy, stableId)
+	return nil
+}
+
+// runWsLoops runs the read and write loops and the RPC forwarder of one connection until both loops have ended.
+func runWsLoops(conn *websocket.Conn, outputCh chan any, closeCh chan any, wproxy *wshutil.WshRpcProxy, routeId string) {
+	writerDone := make(chan struct{})
 	wg := &sync.WaitGroup{}
 	wg.Add(2)
 	go func() {
@@ -311,16 +343,16 @@ func HandleWsInternal(w http.ResponseWriter, r *http.Request) error {
 			panichandler.PanicHandler("HandleWsInternal:ReadLoop", recover())
 		}()
 		defer wg.Done()
-		ReadLoop(conn, outputCh, closeCh, wproxy.FromRemoteCh, stableId)
+		ReadLoop(conn, outputCh, writerDone, closeCh, wproxy.FromRemoteCh, routeId)
 	}()
 	go func() {
 		defer func() {
 			panichandler.PanicHandler("HandleWsInternal:WriteLoop", recover())
 		}()
 		defer wg.Done()
-		WriteLoop(conn, outputCh, closeCh, stableId)
+		defer close(writerDone)
+		WriteLoop(conn, outputCh, closeCh, routeId)
 	}()
 	wg.Wait()
 	close(wproxy.FromRemoteCh)
-	return nil
 }
