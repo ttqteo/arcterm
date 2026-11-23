@@ -64,7 +64,6 @@ and a picture given to a line that is not big.
   discussion and everything about how the council worked move to a `.discussion.md` file beside it.
 - A council's Report in the cockpit opens with the same two tables, To do and Figures, under the answer; At a glance
   and the figures that did not check out are folded under About the council.
-
 - The installer is about 30 MB instead of 47 MB. To get there, Code no longer gives TypeScript and JavaScript hovers,
   completions or error squiggles (it still colors them), and a board's Chinese text draws in the system font instead of
   Excalidraw's hand-drawn Chinese face.
