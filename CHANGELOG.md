@@ -67,9 +67,13 @@ and a picture given to a line that is not big.
   limit shows the limit and whether it is over, numbers over rounds or dates are a line, and numbers in one unit are
   bars side by side. The saved report gets the same groups, with a Relation column. Go checks every relation against
   the figures it verified, and lists one that does not hold under About the council. <!-- big --> <!-- shot: 1.10.0-council-figure-charts.webp -->
+- A split on the Agent surface can be resized: drag the line between its cells to give one more room, and double-click
+  it to even them again. Each project's split keeps its own sizes.
 
 ### Changed
 
+- Dragging an agent onto the split is smoother: the drop zones fade in, the highlighted half glides from edge to edge
+  instead of jumping, and the row you drag dims while it is held.
 - A council's saved report is now short: a to-do table (each task, why, the files it touches, its kind) and a table of
   the figures checked against the project's files, written in the question's language. The full reasoning, the
   discussion and everything about how the council worked move to a `.discussion.md` file beside it.

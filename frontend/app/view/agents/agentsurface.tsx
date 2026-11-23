@@ -92,6 +92,7 @@ import { subjectDecision } from "./focussubject";
 import { BoardCellBar, GridCellBar } from "./gridcellbar";
 import { mentionTarget } from "./griddrop";
 import { GridDropOverlay } from "./griddropoverlay";
+import { GridSashes, gridSizesAtom, sashTemplate, sizesOf } from "./gridsash";
 import {
     agentGridAtom,
     currentGrid,
@@ -404,6 +405,12 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
     const dockHeight = clampDockHeight(dragDockHeight ?? storedDockHeight, gridHeight);
     // folded, the row is the strip; untiled it keeps a 6px margin around it, as the cells do when tiled
     const dockRowPx = dockFolded ? DOCK_STRIP_PX + (tiled ? 0 : 12) : dockHeight;
+    // the split's shares (gridsash.tsx): each project's grid keeps its own; the sashes show only on a tiled split with
+    // nothing maximized over it
+    const gridProject = reconciledGrids.project ?? "";
+    const gridSizes = sizesOf(useAtomValue(gridSizesAtom), gridProject);
+    const rowsAfter = docked != null ? `${dockRowPx}px` : "";
+    const sashes = gridShown && tiled && boardMax == null;
 
     // the stage's row becomes its verifier's session once that is in the roster, and the focus goes with the row
     const stageFocusId = stage ? finalRowFocusId(stage.run, agents) : undefined;
@@ -881,13 +888,15 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
                             data-terminal-docked={docked?.id}
                             data-terminal-dock-folded={docked != null && dockFolded ? "true" : undefined}
                             style={
-                                docked != null
-                                    ? { gridTemplateRows: `minmax(0, 1fr) minmax(0, 1fr) ${dockRowPx}px` }
-                                    : undefined
+                                {
+                                    gridTemplateColumns: sashTemplate("col", gridSizes.col, ""),
+                                    gridTemplateRows: sashTemplate("row", gridSizes.row, rowsAfter),
+                                    "--sash-gap": tiled ? "6px" : "0px",
+                                } as React.CSSProperties
                             }
                             className={cn(
                                 "min-h-0 min-w-0 flex-1",
-                                gridShown ? "grid grid-cols-2 grid-rows-2" : "hidden",
+                                gridShown ? "grid" : "hidden",
                                 gridShown && tiled && "gap-[6px] p-[6px]"
                             )}
                         >
@@ -1058,6 +1067,15 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
                                           />
                                       );
                                   })}
+                            {sashes ? (
+                                <GridSashes
+                                    gridRef={gridRef}
+                                    project={gridProject}
+                                    places={cells.map((cell) => cell.placement)}
+                                    sizes={gridSizes}
+                                    rowsAfter={rowsAfter}
+                                />
+                            ) : null}
                         </div>
                         {isEndedWorkerId(agent.id) ? (
                             <EndedTranscript model={model} agent={agent} />
