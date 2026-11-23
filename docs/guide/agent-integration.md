@@ -69,6 +69,7 @@ Agent chạy trong terminal của arcterm có `wsh` và dùng nó để nói chu
 | `wsh runs …` | `start`, `list`, `show`, `answer`, `cancel`, `land`, `ack`, `attention` |
 | `wsh agents …` | `list` các tab agent, `send` tin cho một tab, `read` câu trả lời, `wait` đến khi một tab ngừng làm việc |
 | `wsh ui …` | `reveal <address>` mở một run, terminal agent, record hay surface; `state` đọc người dùng đang nhìn gì; `actions` / `do` chạy một hành động của cockpit |
+| `wsh protect -- <lệnh>` | Chạy một job dài với mọi lệnh nặng khác trong hàng đợi chờ đến khi nó thoát ([Giữ máy cho một job dài](usage.md#giữ-máy-cho-một-job-dài-wsh-protect)) |
 | `wsh effort …` | Tạo và cập nhật initiative và chunk; `wsh effort chunk add … --proposed` đề xuất một chunk để bạn chấp nhận hoặc bỏ ([bên dưới](#đề-xuất-chunk)) |
 | `wsh jarvis dag …`, `wsh jarvis complete` | Trong terminal của lead hoặc worker: điều khiển DAG của run, kết thúc run hay task |
 

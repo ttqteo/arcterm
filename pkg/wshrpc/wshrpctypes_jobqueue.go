@@ -12,6 +12,7 @@ type JobQueueCommands interface {
 	GetJobQueueCommand(ctx context.Context) (*JobQueueData, error)                                    // the running and queued heavy jobs
 	JobQueueRunNowCommand(ctx context.Context, data CommandJobQueueActData) error                     // start a queued job past both gates
 	JobQueueSkipCommand(ctx context.Context, data CommandJobQueueActData) error                       // refuse a queued agent job
+	JobSlotHoldCommand(ctx context.Context, data CommandJobSlotHoldData) error                        // keep a started slot for as long as a process runs (wsh protect's child)
 }
 
 type CommandJobSlotData struct {
@@ -26,6 +27,16 @@ type CommandJobSlotData struct {
 	// Missed are commands earlier `wsh jobslot`s ran without a slot because they could not reach wavesrv at all
 	// (a connect that failed or hung): wsh keeps them on disk and hands them over with the next request
 	Missed []JobSlotMissed `json:"missed,omitempty"`
+	// Protect asks for a Protect slot (`wsh protect`): it queues whatever memgate calls the command, goes ahead of
+	// every queued job, and holds every other heavy job back while it runs
+	Protect bool `json:"protect,omitempty"`
+}
+
+// CommandJobSlotHoldData hands a started slot to a process: wavesrv keeps it until that process exits, even past the
+// stream. `wsh protect` sends it once its child has started.
+type CommandJobSlotHoldData struct {
+	Job string `json:"job"` // the id run true carried
+	Pid int32  `json:"pid"`
 }
 
 type JobSlotMissed struct {
@@ -42,6 +53,8 @@ type JobSlotUpdate struct {
 	For    string `json:"for,omitempty"`
 	Run    *bool  `json:"run,omitempty"`
 	Reason string `json:"reason,omitempty"`
+	// Job is the started job's id, with run true on a Protect request, for JobSlotHold
+	Job string `json:"job,omitempty"`
 }
 
 type JobQueueJob struct {
@@ -59,6 +72,8 @@ type JobQueueJob struct {
 	TabId     string `json:"tabid,omitempty"`
 	RunId     string `json:"runid,omitempty"`
 	Label     string `json:"label,omitempty"`
+	// Protected is a `wsh protect` job: listed first, every other heavy job waits on it while it runs
+	Protected bool `json:"protected,omitempty"`
 	// TaskIds are the run's tasks an engine step is for (a task's Setup or Verify, a merge batch's Verify); none for
 	// a step of the whole run (Final, land) or an agent's command
 	TaskIds []string `json:"taskids,omitempty"`

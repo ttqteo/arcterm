@@ -3,7 +3,7 @@
 
 import { cn } from "@/util/util";
 import { useAtomValue } from "jotai";
-import { Layers, Pause, TriangleAlert } from "lucide-react";
+import { Layers, Pause, ShieldCheck, TriangleAlert } from "lucide-react";
 import { useEffect, useState } from "react";
 import {
     bypassOnly,
@@ -11,6 +11,7 @@ import {
     chipTitle,
     longWait,
     pauseLeft,
+    protectedJob,
     queuedTag,
     recentBypass,
     runQueuedTag,
@@ -46,13 +47,16 @@ export function JobQueueChip({ compact = false }: { compact?: boolean } = {}) {
     if (data == null || label == null) {
         return null;
     }
-    const warn = longWait(data, now) || bypassOnly(data, now);
-    const Icon = warn ? TriangleAlert : paused ? Pause : Layers;
+    const protecting = protectedJob(data) != null;
+    // a Protect job keeps every queued job waiting on purpose: that is not a stuck queue
+    const warn = !protecting && (longWait(data, now) || bypassOnly(data, now));
+    const Icon = warn ? TriangleAlert : protecting ? ShieldCheck : paused ? Pause : Layers;
     return (
         <button
             type="button"
             data-job-queue-chip
             data-job-queue-paused={paused ? "" : undefined}
+            data-job-queue-protected={protecting ? "" : undefined}
             aria-haspopup="dialog"
             aria-label={compact ? label : undefined}
             title={compact ? `${label}\n${chipTitle(data, now)}` : chipTitle(data, now)}

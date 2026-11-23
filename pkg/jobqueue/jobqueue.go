@@ -3,10 +3,16 @@
 
 // Package jobqueue holds the heavy shell jobs of every agent and engine run on this machine (builds, the
 // typecheck, whole test suites) to a few at a time, so concurrent runs stop starving each other of CPU and
-// disk. One FIFO; no job overtakes another. By default (jobs:mode auto) the head starts as soon as its RAM peak
-// fits, so a job waits only when running it would push the machine into swap; jobs:mode slots also caps how many
-// run at once, and off never makes one wait. Where the OS reads its own memory pressure (macOS) that decides
-// instead of the free-RAM count, and jobs:pauseuntil turns the queue off for a while.
+// disk. One FIFO; no job overtakes another, except a Protect request (`wsh protect`), which goes ahead of every
+// queued job. By default (jobs:mode auto) the head starts as soon as its RAM peak fits, so a job waits only when
+// running it would push the machine into swap; jobs:mode slots also caps how many run at once, and off never makes
+// one wait. Where the OS reads its own memory pressure (macOS) that decides instead of the free-RAM count, and
+// jobs:pauseuntil turns the queue off for a while.
+//
+// Protect holds the machine for one long job: its request starts once no heavy job runs, and while it is queued or
+// running every other heavy job waits, engine steps included, even with the queue off or paused (the one exception
+// to "off never makes one wait"). Run now still pushes a job through, a NoCPU call is exempt both ways, and MaxHold
+// never reclaims a Protect slot.
 package jobqueue
 
 import (
@@ -79,6 +85,10 @@ const (
 	ReasonBrowserRunBusy = "an e2e or smoke run is running"
 	// ModeAuto's CPU cap is full (autoCap), "CPU busy, 2 at a time"
 	reasonCPUBusy = "CPU busy, %d at a time"
+	// a Protect job runs (its name): every other heavy job waits until it exits
+	reasonProtected = "protected: %s is running"
+	// a Protect job waits for the heavy jobs already running to finish, and every job behind it waits with it
+	reasonProtectWaits = "protected: %s waits for %d running %s to finish"
 )
 
 // autoCap is how many heavy jobs ModeAuto runs at once on cpus CPUs: one per CPUsPerJob, and always one.
@@ -170,6 +180,9 @@ type Request struct {
 	Source Source
 	// Basis is what Bytes rests on; the zero Basis is the table's estimate
 	Basis Basis
+	// Protect is a `wsh protect` job: it goes ahead of every queued job, starts once no heavy job runs, holds every
+	// other heavy job back while it runs, and is never reclaimed
+	Protect bool
 }
 
 // Job is one queued or running job as the cockpit sees it.
@@ -246,6 +259,9 @@ func (s *Slot) Release() {
 	})
 }
 
+// Id is the job's id, as the snapshot lists it.
+func (s *Slot) Id() string { return s.e.Id }
+
 // Reclaimed closes when the queue took the slot back (an agent job held past MaxHold).
 func (s *Slot) Reclaimed() <-chan struct{} { return s.reclaim }
 
@@ -313,15 +329,25 @@ func clampSlots(n int) int {
 // pressure has not seen that job's peak yet); warn and critical only once no job runs. With none it is the free
 // RAM less the peaks of jobs still ramping up, which must fit its peak. It stops at the first job that cannot
 // start, and returns why the rest wait.
+//
+// Protect is read first, before ModeOff: a Protect job (Acquire queues it at the front) starts once no CPU job runs,
+// whatever the slots, RAM or pressure say, and while one is queued or running no other job starts unless it is
+// forced or NoCPU. A NoCPU job past a Protect still meets the other gates.
 func plan(jobs []Job, slots, cpus int, mode string, available uint64, pressure Pressure, now time.Time) ([]string, string) {
 	running, rampingJobs, cpuJobs := 0, 0, 0
 	soloRunning := false
+	// protect names the Protect job running, or the one waiting at the head: while it is set, only forced and NoCPU
+	// jobs start
+	protect := ""
 	var ramping uint64
 	for _, j := range jobs {
 		if j.Running {
 			running++
 			if !j.NoCPU {
 				cpuJobs++
+			}
+			if j.Protect && protect == "" {
+				protect = j.Name
 			}
 			soloRunning = soloRunning || memgate.Solo(j.Name)
 			if now.Sub(j.StartedAt) < RampUp {
@@ -333,52 +359,86 @@ func plan(jobs []Job, slots, cpus int, mode string, available uint64, pressure P
 	free := sub(available, ramping)
 	var start []string
 	reason := ""
+	// blocked: a gate other than Protect's stopped the queue, so nothing behind that job starts
+	blocked := false
+	admit := func(j Job) {
+		start = append(start, j.Id)
+		running++
+		if !j.NoCPU {
+			cpuJobs++
+		}
+		rampingJobs++
+		free = sub(free, j.Bytes)
+		soloRunning = soloRunning || memgate.Solo(j.Name)
+	}
 	for _, j := range jobs {
 		if j.Running {
 			continue
 		}
-		if j.Forced || mode == ModeOff {
-			start = append(start, j.Id)
-			running++
-			if !j.NoCPU {
-				cpuJobs++
+		if j.Forced {
+			admit(j)
+			continue
+		}
+		if !j.NoCPU && protect != "" {
+			// a second Protect waits behind the first, like any job
+			if reason == "" {
+				reason = fmt.Sprintf(reasonProtected, protect)
 			}
-			rampingJobs++
-			free = sub(free, j.Bytes)
-			soloRunning = soloRunning || memgate.Solo(j.Name)
 			continue
 		}
-		if reason != "" {
+		if j.Protect {
+			protect = j.Name
+			if cpuJobs > 0 {
+				if reason == "" {
+					reason = fmt.Sprintf(reasonProtectWaits, j.Name, cpuJobs, plural(cpuJobs, "job", "jobs"))
+				}
+				continue
+			}
+			admit(j)
 			continue
 		}
+		if mode == ModeOff {
+			admit(j)
+			continue
+		}
+		if blocked {
+			continue
+		}
+		why := ""
 		switch {
 		case mode == ModeSlots && running >= slots:
-			reason = "slot busy"
+			why = "slot busy"
 		case mode == ModeAuto && !j.NoCPU && cpuJobs >= autoCap(cpus):
-			reason = fmt.Sprintf(reasonCPUBusy, autoCap(cpus))
+			why = fmt.Sprintf(reasonCPUBusy, autoCap(cpus))
 		case soloRunning && memgate.Solo(j.Name):
-			reason = ReasonBrowserRunBusy
+			why = ReasonBrowserRunBusy
 		// critical still starts one once nothing runs: holding every job left agents waiting with no end in sight,
 		// until the person paused the queue and every job started at once (2026-11-04)
 		case pressure == PressureCritical && running > 0:
-			reason = ReasonPressureCritical
+			why = ReasonPressureCritical
 		case pressure == PressureWarn && running > 0:
-			reason = ReasonPressureHigh
+			why = ReasonPressureHigh
 		case (pressure == PressureUnknown || pressure == PressureNormal && rampingJobs > 0) &&
 			!memgate.Fits(memgate.Job{Name: j.Name, Bytes: j.Bytes}, free):
-			reason = fmt.Sprintf("needs %s, %s free", memgate.FormatGB(j.Bytes), memgate.FormatGB(free))
-		default:
-			start = append(start, j.Id)
-			running++
-			if !j.NoCPU {
-				cpuJobs++
-			}
-			rampingJobs++
-			free = sub(free, j.Bytes)
-			soloRunning = soloRunning || memgate.Solo(j.Name)
+			why = fmt.Sprintf("needs %s, %s free", memgate.FormatGB(j.Bytes), memgate.FormatGB(free))
 		}
+		if why != "" {
+			blocked = true
+			if reason == "" {
+				reason = why
+			}
+			continue
+		}
+		admit(j)
 	}
 	return start, reason
+}
+
+func plural(n int, one, many string) string {
+	if n == 1 {
+		return one
+	}
+	return many
 }
 
 func sub(a, b uint64) uint64 {
@@ -403,7 +463,16 @@ func (q *Queue) Acquire(ctx context.Context, req Request, wait func(Wait)) (*Slo
 		reclaim:  make(chan struct{}),
 		wait:     wait,
 	}
-	q.entries = append(q.entries, e)
+	if req.Protect {
+		// ahead of every queued job, behind the Protect jobs queued before it
+		at := slices.IndexFunc(q.entries, func(o *entry) bool { return !o.Running && !o.Protect })
+		if at < 0 {
+			at = len(q.entries)
+		}
+		q.entries = slices.Insert(q.entries, at, e)
+	} else {
+		q.entries = append(q.entries, e)
+	}
 	q.mu.Unlock()
 	q.evaluate(ctx)
 	select {
@@ -596,7 +665,7 @@ func (q *Queue) NoteBypass(name string, src Source, at time.Time) {
 	q.evaluate(context.Background())
 }
 
-// RunNow starts a queued job past both gates; false for an unknown or already running job.
+// RunNow starts a queued job past every gate, Protect's included; false for an unknown or already running job.
 func (q *Queue) RunNow(id string) bool {
 	q.mu.Lock()
 	var found bool
@@ -635,13 +704,14 @@ func (q *Queue) Skip(id string) bool {
 	return skipped != nil
 }
 
-// Reclaim takes back the slot of every agent job that has held it past MaxHold.
+// Reclaim takes back the slot of every agent job that has held it past MaxHold. A Protect job holds its slot until
+// its process exits, so it is never reclaimed.
 func (q *Queue) Reclaim() {
 	q.mu.Lock()
 	now := q.cfg.Now()
 	var taken []*entry
 	for _, e := range q.entries {
-		if e.Running && !e.Engine && now.Sub(e.StartedAt) > MaxHold {
+		if e.Running && !e.Engine && !e.Protect && now.Sub(e.StartedAt) > MaxHold {
 			taken = append(taken, e)
 		}
 	}
@@ -686,14 +756,28 @@ func Hold(ctx context.Context, req Request) (release func(), err error) {
 }
 
 // Off reports whether the default queue starts every job at once: jobs:mode off, or a jobs:pauseuntil still ahead.
-// It is the person's "don't wait for memory", which the engine's worker gate obeys too. With no default queue it is
-// false.
+// It is the person's "don't wait for memory", which the engine's worker gate obeys too. While a Protect job is
+// queued or running it is false: Protect holds whatever the mode. With no default queue it is false.
 func Off() bool {
 	q := Default
 	if q == nil {
 		return false
 	}
+	return q.off()
+}
+
+func (q *Queue) off() bool {
+	if q.protecting() {
+		return false
+	}
 	return NormMode(q.cfg.Mode()) == ModeOff || !q.pausedUntil(q.cfg.Now()).IsZero()
+}
+
+// protecting says a Protect job is queued or running.
+func (q *Queue) protecting() bool {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	return slices.ContainsFunc(q.entries, func(e *entry) bool { return e.Protect })
 }
 
 // Poke has the default queue read its inputs again now: a changed jobs:slots or jobs:mode takes effect at once

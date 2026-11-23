@@ -239,13 +239,35 @@ Nếu bạn **Skip** một lệnh, agent nhận lời nhắn "Not run: …" dặ
 
 ### Chỗ thuộc về một tiến trình còn sống
 
-Lệnh chạy xong, agent sập hoặc tab đóng thì chỗ được trả lại. Phòng khi một tiến trình bị bỏ quên, chỗ của một agent giữ quá 60 phút bị lấy lại; chỗ của run sống đúng bằng bước của run.
+Lệnh chạy xong, agent sập hoặc tab đóng thì chỗ được trả lại. Phòng khi một tiến trình bị bỏ quên, chỗ của một agent giữ quá 60 phút bị lấy lại; chỗ của run sống đúng bằng bước của run; chỗ của `wsh protect` giữ đến khi lệnh của nó thoát, dù bao lâu.
 
 Antigravity và lệnh Claude chạy nền (`run_in_background`) không báo lúc lệnh xong, nên chúng chờ đến lượt rồi trả chỗ ngay: hàng đợi chỉ xếp thứ tự lúc chúng **bắt đầu**.
 
+### Giữ máy cho một job dài: `wsh protect`
+
+Một job dài và nhạy thời gian (một lần đo độ tin cậy chạy container Docker, một benchmark) mất CPU, RAM và đĩa mỗi khi build, typecheck hay bộ test của agent khác chạy cạnh nó, và ra các lỗi giả (timeout, crash). Chạy nó qua `wsh protect`:
+
+```
+wsh protect -- python scripts/audit_guard.py
+```
+
+- `wsh` chạy lệnh như một tiến trình con, stdin, stdout và stderr đi thẳng qua, và thoát với mã thoát của lệnh. Lệnh chạy đúng như viết, không qua shell: một pipeline thì bọc trong một shell, `wsh protect -- bash -c "a && b"`.
+- Yêu cầu của nó **vượt lên trước** mọi lệnh đang chờ, rồi chờ mọi lệnh nặng **đang chạy** xong (không lệnh nào bị giết). Nó chạy rồi thì mọi lệnh nặng khác chờ, của agent lẫn bước của engine (Verify, Final, Setup nặng), với lý do `protected: <lệnh> is running`.
+- Nó giữ chỗ cả khi hàng đợi **Off** hay đang **Pause**: đó là ngoại lệ duy nhất của "Off không bắt lệnh nào chờ". Lệnh kết thúc thì Off và Pause chạy lại như cũ.
+- Chỗ giữ đến khi lệnh thoát; giới hạn 60 phút không áp dụng. Chạy được từ terminal bạn gõ, từ agent (cả `run_in_background`), hay dưới `wsh detach`. Hai `wsh protect` cùng lúc thì cái sau chờ cái trước.
+- Chip Jobs ghi `Protected` (`Protected · 2 queued`, kèm khiên), và popover xếp lệnh đó lên đầu với tag **Protected** và không có Skip. Các lệnh chờ nó vẫn có **Run now** (đẩy một lệnh qua ngay) và **Skip**.
+
+Những gì nó **không** giữ lại:
+
+- Lệnh nhẹ (git, đọc file, một test đơn lẻ) và các ghế council.
+- Một run đang chạy vẫn khởi động worker mới: chỉ các bước xếp hàng của nó chờ.
+- Việc ngoài hàng đợi của arcterm: lệnh docker bạn tự gõ, build của IDE, và `docker compose up` chạy foreground (nó chạy đến khi dừng, như một dev server).
+
+Ngoài arcterm, hoặc khi arcterm không trả lời, lệnh vẫn chạy và `wsh` in cảnh báo ra stderr. Nếu mất kết nối giữa chừng (arcterm khởi động lại), `wsh` cảnh báo, thử lại mỗi 5 giây, rồi xin Protect lại: nó lại vượt lên trước và chờ các lệnh nặng đã bắt đầu trong lúc mất kết nối.
+
 ### Không xếp hàng, và khi hàng đợi hỏng
 
-- Dev server (`task dev`, `tauri dev`) chạy đến khi bạn dừng nó, nên không bao giờ xếp hàng.
+- Dev server (`task dev`, `tauri dev`, và `docker compose up` không có `-d`) chạy đến khi bạn dừng nó, nên không bao giờ xếp hàng.
 - Lệnh bạn gõ trong một terminal không đi qua hàng đợi (không hook nào thấy chúng). Codex và OpenCode cũng không.
 - Hàng đợi hỏng thì lệnh vẫn chạy: nếu `wsh jobslot` gặp lỗi (wavesrv cũ, mất kết nối), agent cứ chạy lệnh của nó. Khởi động lại wavesrv làm trống hàng và các lệnh đang chờ chạy luôn. Hàng đợi không bao giờ chặn một agent chỉ vì nó hỏng.
 
@@ -259,10 +281,11 @@ Lệnh được coi là nặng, kèm ước lượng đỉnh RAM tính trên Mac
 | `cargo tauri build`, `task dev`, `vite build`, `task check:ts` (và `tsc`) | 3 GB |
 | `go test ./...`, `node scripts/verify.mjs` | 2,5 GB |
 | `cargo build`, `cargo test`, `vitest` chạy toàn bộ, `go test pkg/orchestrate` | 2 GB |
+| `docker build`, `docker buildx build`, `docker compose build`, `docker compose up -d` | 2 GB |
 | `task build:backend` | 1,5 GB |
 | `npm install` (và `task init`) | 1 GB |
 
-Một file test đơn lẻ hoặc lọc theo tên (`-run`, `-t`) là nhẹ và không bao giờ xếp hàng. Bảng lệnh nằm trong `pkg/memgate/memgate.go`.
+Một file test đơn lẻ hoặc lọc theo tên (`-run`, `-t`) là nhẹ và không bao giờ xếp hàng. Lệnh docker chạy trong daemon (trên Windows và macOS là một VM), ngoài cây tiến trình mà arcterm đo, nên số trong bảng là số chúng dùng mãi, không bị số đo thay. Bảng lệnh nằm trong `pkg/memgate/memgate.go`.
 
 ### Hàng đợi tự học đỉnh RAM
 

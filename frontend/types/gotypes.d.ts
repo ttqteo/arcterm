@@ -2417,6 +2417,13 @@ declare global {
         holdpid?: number;
         giveupts?: number;
         missed?: JobSlotMissed[];
+        protect?: boolean;
+    };
+
+    // wshrpc.CommandJobSlotHoldData
+    type CommandJobSlotHoldData = {
+        job: string;
+        pid: number;
     };
 
     // wshrpc.CommandLandRunData
@@ -4340,6 +4347,7 @@ declare global {
         tabid?: string;
         runid?: string;
         label?: string;
+        protected?: boolean;
         taskids?: string[];
         measured?: boolean;
         elsewhere?: boolean;
@@ -4360,6 +4368,7 @@ declare global {
         for?: string;
         run?: boolean;
         reason?: string;
+        job?: string;
     };
 
     // wshrpc.LearnAddition

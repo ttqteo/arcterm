@@ -59,7 +59,26 @@ var (
 	jobSmoke      = Job{"smoke script", 1536 * mib}
 	jobPytest     = Job{"pytest (all)", 1 * gib}
 	jobAstroBuild = Job{"astro build", 2 * gib}
+	// docker's work runs in its daemon (on Windows and macOS a VM), outside the CLI's process tree, so these are the
+	// table's figures for good: jobmeter cannot measure them (Measurable)
+	jobDockerBuild       = Job{"docker build", 2 * gib}
+	jobDockerBuildx      = Job{"docker buildx build", 2 * gib}
+	jobDockerComposeUp   = Job{"docker compose up -d", 2 * gib}
+	jobDockerComposeBld  = Job{"docker compose build", 2 * gib}
+	jobDockerComposeUpFg = Job{"docker compose up", 2 * gib}
 )
+
+// dockerJobs are the jobs whose peak runs outside the process tree jobmeter reads
+var dockerJobs = map[Job]bool{
+	jobDockerBuild: true, jobDockerBuildx: true, jobDockerComposeUp: true, jobDockerComposeBld: true,
+	jobDockerComposeUpFg: true,
+}
+
+// Measurable says a measured peak of the job's process tree is its real peak: false for docker, whose work runs in its
+// daemon, so a measured figure would replace the table's with the CLI's few MB.
+func (j Job) Measurable() bool {
+	return !dockerJobs[j]
+}
 
 // Solo says a job of this name runs alone among its kind even where the RAM would fit another: an e2e or smoke run
 // drives Chromium and often starts servers and builds too, so two at once saturate the CPU long before the RAM.
@@ -76,6 +95,9 @@ func Classify(command string) (Job, bool) {
 // Job{Name: pattern, Bytes: LearnedBytes}. A program memgate has a rule for keeps its verdict whatever learned holds,
 // so `go test -run X` stays light. The heaviest step wins as in Classify; a nil learned is Classify.
 func ClassifyWith(command string, learned map[string]bool) (Job, bool) {
+	if Protected(command) {
+		return Job{}, false
+	}
 	var heaviest Job
 	for _, words := range steps(command) {
 		if job, ok := classifyStep(words, learned); ok && job.Bytes > heaviest.Bytes {
@@ -94,18 +116,32 @@ func ClassifyWith(command string, learned map[string]bool) (Job, bool) {
 // Steps that do no work are dropped first (cd, echo, the pipeline tails: noWork), and a sh/bash/zsh -c step is not
 // a program of its own: its command line is read in its place, exactly where classifyStep recurses.
 func Pattern(command string) (name string, known bool, ok bool) {
+	if Protected(command) {
+		return "", false, false
+	}
 	work := workSteps(command, nil)
 	if len(work) != 1 {
 		return "", false, false
 	}
 	step := work[0]
 	if job, heavy, ruled := classifyProgram(step.name, step.args, nil); ruled {
-		if heavy {
+		if heavy && job.Measurable() {
 			return job.Name, true, true
 		}
 		return "", false, false
 	}
 	return unknownPattern(step.name, step.args), false, true
+}
+
+// Protected says the command line starts with `wsh protect`: wsh holds a Protect slot for what it runs, so the line
+// takes no slot of its own (it would wait on itself) and is never learned, whatever runs after it.
+func Protected(command string) bool {
+	work := workSteps(command, nil)
+	if len(work) == 0 || work[0].name != "wsh" {
+		return false
+	}
+	op, _ := firstOperand(work[0].args)
+	return op == "protect"
 }
 
 // a step that runs a program: its name (by any path, .exe trimmed) and args, past env assignments and wrappers
@@ -167,9 +203,10 @@ func Fits(job Job, available uint64) bool {
 	return available >= job.Bytes+Headroom
 }
 
-// LongRunning says the job is a dev server: it runs until stopped, so it never holds a queue slot.
+// LongRunning says the job is a dev server: it runs until stopped, so it never holds a queue slot. A foreground
+// `docker compose up` (no -d) is one too.
 func (j Job) LongRunning() bool {
-	return j == jobDev
+	return j == jobDev || j == jobDockerComposeUpFg
 }
 
 // FormatGB is a byte count as the card shows it: GB with one decimal, "3 GB" rather than "3.0 GB".
@@ -332,6 +369,10 @@ func classifyProgram(name string, args []string, learned map[string]bool) (job J
 		job, heavy = classifyCargo(args)
 	case "go":
 		job, heavy = classifyGo(args)
+	case "docker":
+		job, heavy = classifyDocker(args)
+	case "docker-compose":
+		job, heavy = classifyCompose(args)
 	default:
 		return classifyToolRule(name, args)
 	}
@@ -687,6 +728,51 @@ func classifyNode(args []string) (Job, bool) {
 		case ".mjs", ".js", ".cjs", ".ts", ".mts":
 			return browserScript(strings.TrimSuffix(path.Base(a), ext))
 		}
+	}
+	return Job{}, false
+}
+
+// docker's global flags that take a value, so its subcommand is found past them: docker --context ci build .
+var dockerValueFlags = []string{"-c", "--context", "--config", "-H", "--host", "-l", "--log-level"}
+
+// docker build, docker buildx build and docker compose up / build; everything else (run, ps, logs) is light
+func classifyDocker(args []string) (Job, bool) {
+	ops := skipValueFlags(args, dockerValueFlags)
+	if len(ops) == 0 {
+		return Job{}, false
+	}
+	switch ops[0] {
+	case "build", "image":
+		if ops[0] == "build" || has(operands(ops[1:]), "build") {
+			return jobDockerBuild, true
+		}
+	case "buildx", "builder":
+		if has(operands(ops[1:]), "build") {
+			return jobDockerBuildx, true
+		}
+	case "compose":
+		return classifyCompose(ops[1:])
+	}
+	return Job{}, false
+}
+
+// compose's flags that take a value, wherever they sit: docker compose -f ci.yml up -d
+var composeValueFlags = []string{"-f", "--file", "-p", "--project-name", "--project-directory", "--profile",
+	"--env-file", "--ansi", "--progress", "--parallel"}
+
+// compose build is heavy; compose up is heavy detached (-d, --detach, --wait) and a dev server in the foreground,
+// which runs until it is stopped (LongRunning)
+func classifyCompose(args []string) (Job, bool) {
+	args = dropValueFlags(args, composeValueFlags)
+	sub, rest := firstOperand(args)
+	switch sub {
+	case "build":
+		return jobDockerComposeBld, true
+	case "up":
+		if has(rest, "-d", "--detach", "--wait") {
+			return jobDockerComposeUp, true
+		}
+		return jobDockerComposeUpFg, true
 	}
 	return Job{}, false
 }

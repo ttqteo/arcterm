@@ -1380,6 +1380,12 @@ export class RpcApiType {
         return client.wshRpcStream("jobslot", data, opts);
     }
 
+    // command "jobslothold" [call]
+    JobSlotHoldCommand(client: WshClient, data: CommandJobSlotHoldData, opts?: RpcOpts): Promise<void> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "jobslothold", data, opts);
+        return client.wshRpcCall("jobslothold", data, opts);
+    }
+
     // command "landrun" [call]
     LandRunCommand(client: WshClient, data: CommandLandRunData, opts?: RpcOpts): Promise<RunLand> {
         if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "landrun", data, opts);
