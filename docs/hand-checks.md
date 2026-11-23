@@ -32,6 +32,15 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
   asked, the ask comes back as a refusal whose reason tells the agent to ask you first.
 ## 2026-11-23
 
+- [ ] (arcterm) **Brainstorm tab: board thumbnails and the rail's dots** (`BoardChip` in `railbrainstormpane.tsx`,
+  `RailTabStrip` in `agentrailpanel.tsx`, `RailStripTab.dot` in `collapsiblerail.tsx`). On an agent with a brainstorm
+  that lists boards, open the panel's Brainstorm tab → each board is a card with the board drawn small at the card's
+  width (a tall one cut at 150px), its name and `new` under it; a click, or Tab then Enter, opens it large in the dialog,
+  and Esc puts focus back on the card. Before wavesrv serves the folder a card is its name only. While the agent asks
+  through the brainstorm the tab's dot is amber (as the header's Brainstorm switch); otherwise accent while a board is
+  new. Fold the panel → the strip's Brainstorm, Initiative and Council icons wear the same dots. Watch RAM with several
+  boards listed: each card is a live page while the tab shows.
+
 - [ ] (arcterm) **Chat tool rows: tooltip, sticky header, Collapse** (`frontend/app/view/agents/chatstepsview.tsx`).
   In Chat, hover a stretch line or row whose command is a long script → the tooltip is its one-line description. Open a
   row with a tall command/output and scroll down → the row's header sticks under the pinned prompt (not behind it) with

@@ -47,7 +47,14 @@ import {
     shortIds,
     worktreeName,
 } from "./agentrailmodel";
-import { RailResizeGrip, RailStats, RailTabStrip, useWideWidth } from "./agentrailpanel";
+import {
+    councilDotClass,
+    RAIL_DOT,
+    RailResizeGrip,
+    RailStats,
+    RailTabStrip,
+    useWideWidth,
+} from "./agentrailpanel";
 import {
     bgSessionLive,
     bgTaskElapsed,
@@ -76,7 +83,9 @@ import { displayAgeMs, formatAgeShort, type AgentVM } from "./agentsviewmodel";
 import { setAgentView } from "./agentview";
 import { BackgroundTaskTail } from "./backgroundtaskpeek";
 import { backgroundActivity, shownState } from "./bgactivity";
-import { brainstormAtom, brainstormBandAtom } from "./brainstormstore";
+import { brainstormTabDot } from "./brainstormband";
+import { waitsOnUser } from "./brainstormmodel";
+import { brainstormAtom, brainstormBandAtom, shownBrainstormFile } from "./brainstormstore";
 import { agentCacheStatusAtom, formatCacheCountdown, loadCacheStatusForAgent } from "./cachestatusstore";
 import { canvasStateAtom, selectCanvasTab } from "./canvasstore";
 import { useChatMode } from "./chatmodestore";
@@ -798,8 +807,18 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
     const council = useAgentCouncil(agent);
     // what the agent has, which sets the tabs the strip draws: Brainstorm while a brainstorm is attached, Initiative
     // while the agent is linked to one. Both are the agent's own, so they stay while a subagent's interior is open
-    const hasBrainstorm = useAtomValue(brainstormAtom(agent.id)) != null;
-    const brainstormNew = (useAtomValue(brainstormBandAtom(agent.id))?.newCount ?? 0) > 0;
+    const brainstormState = useAtomValue(brainstormAtom(agent.id));
+    const hasBrainstorm = brainstormState != null;
+    // the Brainstorm tab's dot, the header's own (brainstormTabDot): amber while the agent asks through the brainstorm,
+    // else the accent while a board is new. Opening the tab takes no board as seen, so `shown` is never passed
+    const brainstormFile = shownBrainstormFile(brainstormState);
+    const brainstormDot = brainstormTabDot(
+        useAtomValue(brainstormBandAtom(agent.id))?.newCount ?? 0,
+        brainstormFile != null && waitsOnUser(brainstormFile) && agent.state === "asking",
+        false
+    );
+    const brainstormDotClass = brainstormDot == null ? null : RAIL_DOT[brainstormDot];
+    const initiativeDotClass = planReview.proposed > 0 ? RAIL_DOT.asking : null;
     const has: RailHas = {
         tree: hasTree,
         transcript: hasTranscript,
@@ -1550,8 +1569,8 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
                         panel={panel}
                         has={has}
                         council={council}
-                        brainstormNew={brainstormNew}
-                        initiativeAsking={planReview.proposed > 0}
+                        brainstormDot={brainstormDotClass}
+                        initiativeDot={initiativeDotClass}
                     />
                     <RailStats
                         stats={planRailStats(railInput)}
@@ -1670,6 +1689,7 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
                               key: "council",
                               icon: <MessagesSquare size={17} strokeWidth={1.8} aria-hidden />,
                               ariaLabel: "Council",
+                              dot: councilDotClass(council) ?? undefined,
                               onClick: () => {
                                   selectRailTab(agent.id, "council", has);
                                   showRail();
@@ -1683,6 +1703,7 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
                               key: "brainstorm",
                               icon: <Lightbulb size={17} strokeWidth={1.8} aria-hidden />,
                               ariaLabel: "Brainstorm",
+                              dot: brainstormDotClass ?? undefined,
                               onClick: () => {
                                   selectRailTab(agent.id, "brainstorm", has);
                                   showRail();
@@ -1696,6 +1717,7 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
                               key: "initiative",
                               icon: <Diamond size={17} strokeWidth={1.8} aria-hidden />,
                               ariaLabel: "Initiative (i)",
+                              dot: initiativeDotClass ?? undefined,
                               onClick: () => {
                                   selectRailTab(agent.id, "initiative", has);
                                   showRail();

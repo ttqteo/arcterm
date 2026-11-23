@@ -80,15 +80,17 @@ export function RailTabStrip({
     panel,
     has,
     council,
-    brainstormNew,
-    initiativeAsking,
+    brainstormDot,
+    initiativeDot,
 }: {
     agentId: string;
     panel: PanelState;
     has: RailHas;
     council: Council | null; // the council the agent started: the Council tab's, none without one
-    brainstormNew: boolean; // the attached brainstorm has a board the person has not seen: the Brainstorm tab's dot
-    initiativeAsking: boolean; // the initiative holds a proposed plan waiting for a decision: the Initiative tab's dot
+    // the Brainstorm tab's dot (a RAIL_DOT class): asking while the agent asks through it, new while a board is unseen
+    brainstormDot: string | null;
+    // the Initiative tab's dot: asking while the initiative holds a proposed plan waiting for a decision
+    initiativeDot: string | null;
 }) {
     const keys = stripKeys(panel, has);
     const shown = shownTab(panel, has);
@@ -200,7 +202,7 @@ export function RailTabStrip({
                 <RailDotTab
                     icon={Lightbulb}
                     label="Brainstorm"
-                    dot={brainstormNew ? "bg-accent" : null}
+                    dot={brainstormDot}
                     on={current === "brainstorm"}
                     tabProps={tabProps("brainstorm")}
                 />
@@ -210,7 +212,7 @@ export function RailTabStrip({
                     icon={Diamond}
                     label="Initiative (i)"
                     keyshortcut="i"
-                    dot={initiativeAsking ? "bg-asking" : null}
+                    dot={initiativeDot}
                     on={current === "initiative"}
                     tabProps={tabProps("initiative")}
                 />
@@ -245,8 +247,8 @@ function railTabDotClass(on: boolean, color: string): string {
 }
 
 // The Brainstorm and Initiative tabs: an icon, there only while the agent has the thing, and a dot while it holds
-// something the person has not seen (Brainstorm: a new board, accent) or must decide (Initiative: a proposed plan,
-// asking). They fade in as the Council tab does.
+// something the person must answer (Brainstorm: the agent asks through it; Initiative: a proposed plan, both asking) or
+// has not seen (Brainstorm: a new board, accent). They fade in as the Council tab does.
 function RailDotTab({
     icon: Icon,
     label,
@@ -280,7 +282,16 @@ function RailDotTab({
     );
 }
 
+// the dot colours of the Brainstorm and Initiative tabs, on the strip and on the folded panel's icons alike
+export const RAIL_DOT = { asking: "bg-asking", new: "bg-accent" } as const;
+
 const COUNCIL_DOT = { working: "bg-working", asking: "bg-asking", error: "bg-error" } as const;
+
+/** The Council tab's dot class, or null: the folded panel's Council icon wears the same one. */
+export function councilDotClass(council: Council): string | null {
+    const { dot } = railCouncilTab(council);
+    return dot == null ? null : COUNCIL_DOT[dot];
+}
 
 // The Council tab (canvas rail-council-chat, board B): there while the agent has started a council, its body the
 // council's chat. Its dot is the tone of the council's row in the tree, and `c` selects it (agent:council-chat). It fades

@@ -5,7 +5,8 @@
 // (docs/superpowers/specs/2026-11-20-agent-rail-brainstorm-initiative-tabs-design.md, canvas board D-timeline). The head
 // is its title, `Open` with the `b` key and one meta line (the agent's state, how many decisions are the user's, how many
 // boards); the body numbers the decisions in the design's order with each board under the decision it illustrates, then
-// lists the boards of parts not decided yet under `Open parts`. A board's chip opens it large in the dialog over the
+// lists the boards of parts not decided yet under `Open parts`. Each board is a card that draws its page small, always (the
+// pages load only while this tab is on screen, lazily, so the RAM is this one panel's); a card opens it large in the dialog over the
 // agent's cell (openChatBoard, ChatBoardDialog in brainstormbandview.tsx), and takes that board as seen; opening the tab
 // takes none as seen. What is drawn comes from railbrainstorm.ts (the rows and the state it is in) over brainstormband.ts.
 //
@@ -13,6 +14,7 @@
 // its handler answers `b` itself, opening the Brainstorm view, which the global binding would do anywhere else.
 
 import { KeyCap } from "@/app/element/keycap";
+import { useDimensionsWithCallbackRef } from "@/app/hook/useDimensions";
 import { formatChordString } from "@/util/keysym";
 import { cn } from "@/util/util";
 import { useAtomValue } from "jotai";
@@ -24,6 +26,7 @@ import { backgroundActivity, shownState } from "./bgactivity";
 import type { BandBoard } from "./brainstormband";
 import { openBrainstorm, openChatBoard } from "./brainstormbandview";
 import { brainstormAtom, brainstormBandAtom } from "./brainstormstore";
+import { boardUrl, DEFAULT_BOARD_H, DEFAULT_BOARD_W } from "./canvasmodel";
 import { machineServersReadingAtom } from "./machineserversstore";
 import { brainstormPaneState, railBrainstormRows } from "./railbrainstorm";
 import { backgroundTasksByIdAtom } from "./subagentsstore";
@@ -173,21 +176,71 @@ export function RailBrainstormPane({ agent }: { model: AgentsViewModel; agent: A
     );
 }
 
-/** One board, as a chip: the board icon, its file name and `new` while the person has not seen it. A button, so Tab
- *  reaches it; it opens the board in the dialog over the cell (or the Brainstorm tab when the board cannot open there yet). */
+// the thumbnail's tallest: a tall board shows its top, as the gallery's card does
+const THUMB_MAX_H = 150;
+
+/** One board, as a card: its page drawn small (the board itself at the card's width, scaled, its top when it is tall)
+ *  over its file name and `new` while the person has not seen it. The page loads lazily and takes no pointer or focus, so
+ *  the card is one button: Tab reaches it, and it opens the board in the dialog over the cell (or the Brainstorm tab when
+ *  the board cannot open there yet). Until wavesrv serves the design folder there is no page, and the card is its name. */
 function BoardChip({ agent, board }: { agent: AgentVM; board: BandBoard }) {
+    const s = useAtomValue(brainstormAtom(agent.id));
+    const [measureRef, , rect] = useDimensionsWithCallbackRef<HTMLDivElement>();
+    const canvas = s?.file?.canvas;
+    const src = s?.base != null && canvas != null ? boardUrl(s.base, canvas, board.name) : null;
+    const size = s?.boards.find((b) => b.name === board.name);
+    const w = size?.w ?? DEFAULT_BOARD_W;
+    const h = size?.h ?? DEFAULT_BOARD_H;
+    const width = rect?.width ?? 0;
+    const scale = width > 0 ? width / w : 0;
+    const open = () => openChatBoard(agent.id, board.name);
+    // a div with the button role, not a <button>: a button may not hold the iframe
     return (
-        <button
-            type="button"
+        <div
+            role="button"
+            tabIndex={0}
             data-rail-board={board.name}
             data-new={board.isNew ? "" : undefined}
+            aria-label={`Open ${board.name}`}
             title={`Open ${board.name}`}
-            onClick={() => openChatBoard(agent.id, board.name)}
-            className="flex h-[22px] max-w-full cursor-pointer items-center gap-[6px] rounded-[6px] border border-edge-mid bg-surface-raised px-[8px] text-[11px] text-secondary outline-none hover:bg-surface-hover focus-visible:ring-2 focus-visible:ring-accent"
+            onClick={open}
+            onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    open();
+                }
+            }}
+            className={cn(
+                "group relative flex w-full min-w-0 cursor-zoom-in flex-col overflow-hidden rounded-[8px] border bg-surface-raised outline-none focus-visible:ring-2 focus-visible:ring-accent",
+                board.isNew ? "border-accent/60" : "border-edge-mid hover:border-edge-strong"
+            )}
         >
-            <LayoutTemplate size={13} strokeWidth={1.8} aria-hidden className="flex-none text-muted" />
-            <span className="min-w-0 truncate">{board.name}</span>
-            {board.isNew ? <span className="flex-none text-[10.5px] font-semibold text-accent">new</span> : null}
-        </button>
+            {src != null ? (
+                <div
+                    ref={measureRef}
+                    data-rail-board-thumb
+                    className="relative w-full overflow-hidden border-b border-edge-mid bg-background"
+                    style={{ height: scale > 0 ? Math.min(THUMB_MAX_H, Math.round(h * scale)) : THUMB_MAX_H }}
+                >
+                    {scale > 0 ? (
+                        <iframe
+                            src={src}
+                            title={board.name}
+                            aria-hidden
+                            tabIndex={-1}
+                            loading="lazy"
+                            sandbox="allow-scripts allow-same-origin"
+                            className="pointer-events-none absolute left-0 top-0 border-0"
+                            style={{ width: w, height: h, transform: `scale(${scale})`, transformOrigin: "0 0" }}
+                        />
+                    ) : null}
+                </div>
+            ) : null}
+            <div className="flex h-[26px] min-w-0 items-center gap-[6px] px-[8px] text-[11px] text-secondary group-hover:text-ink-hi">
+                <LayoutTemplate size={13} strokeWidth={1.8} aria-hidden className="flex-none text-muted" />
+                <span className="min-w-0 truncate">{board.name}</span>
+                {board.isNew ? <span className="flex-none text-[10.5px] font-semibold text-accent">new</span> : null}
+            </div>
+        </div>
     );
 }

@@ -70,6 +70,10 @@ and a picture given to a line that is not big.
   dropping it on the middle of another Claude agent's pane makes it read that chat.
 - Switching back to an agent in Chat shows its conversation at once instead of a skeleton; what it wrote meanwhile
   appears when it has been read, all at once.
+- The agent panel's Brainstorm tab shows each board as a small picture of the board itself, not just its file name; a
+  click still opens it large.
+- The agent panel's Brainstorm tab wears the amber dot while the agent asks you through the brainstorm, as the header's
+  Brainstorm switch does, and the folded panel's Brainstorm, Initiative and Council icons wear the same dots as its tabs.
 
 ### Fixed
 

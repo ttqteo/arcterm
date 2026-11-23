@@ -141,6 +141,8 @@ export interface RailStripTab {
     ariaLabel: string;
     onClick: () => void;
     badge?: number;
+    // a status dot's background class (bg-asking, bg-accent…), at the icon's top right as the open panel's tab wears it
+    dot?: string;
 }
 
 const RAIL_EXPANDED_PX = 300; // matches the app-bar usage column (app-bar.tsx) → continuous divider
@@ -332,6 +334,16 @@ export function CollapsibleRail({
                                     className="relative flex h-8 w-8 cursor-pointer items-center justify-center rounded-[8px] text-muted hover:bg-surface-hover hover:text-secondary"
                                 >
                                     {t.icon}
+                                    {t.dot != null && !t.badge ? (
+                                        <span
+                                            aria-hidden
+                                            data-rail-strip-dot
+                                            className={cn(
+                                                "absolute right-[6px] top-[5px] h-[7px] w-[7px] rounded-full ring-2 ring-surface",
+                                                t.dot
+                                            )}
+                                        />
+                                    ) : null}
                                     {t.badge ? (
                                         <span className="absolute -right-1 -top-1 flex h-[15px] min-w-[15px] items-center justify-center rounded-full border-2 border-surface bg-surface-selected px-[3px] text-[9.5px] font-bold tabular-nums leading-none text-primary">
                                             {t.badge}
