@@ -32,6 +32,25 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
   asked, the ask comes back as a refusal whose reason tells the agent to ask you first.
 ## 2026-11-23
 
+- [ ] (arcterm) **`wsh council redoc` rewrites a project's old reports** (`cmd/wsh/cmd/wshcmd-council-redoc.go`). After
+  installing a build with the council report tables, run `wsh council redoc --project <mit-thesis> --dry-run` on
+  Windows → 16 reports to rewrite and 6 left untouched ("no council record on this machine"; seen on the Windows store
+  on 2026-11-23); then without `--dry-run` → each line says `rewrote`, and the exit code is 0. Open one regenerated
+  report (the short main file: the to-do table, the figures table only when the council declared any, the memory) and
+  the `.discussion.md` beside it (Matrix, Cite check, The discussion, Run facts); an old council has no figures table.
+  Run it again on the Mac for the 6 the Windows store lacks. A council still running is skipped with its state. Only the
+  pairing is unit tested; the writes go through wavesrv's `CouncilSaveDocCommand`, which no test here drives.
+- [ ] (arcterm) **Vietnamese re-summary of five councils** (`wsh council summarize`; the synthesis language rule). With
+  the same build, run `wsh council summarize <id>` for `5e31814143638517`, `27f5e22576cf98bf`, `0c4145c0d29de45b`,
+  `51d083251b2dc133` and `5a8ffa6d661752a0`, one at a time (~0.5M tokens in all; each waits on a Token burn card) → each
+  report's directions (title, reasoning, first step, task, why) come back in Vietnamese, with paths and ids as they
+  are. `0f74c5be72277053` stays out: its question is English, so a re-summary would come back English.
+- [ ] (arcterm) **A council's outside file is copied into the project** (`pkg/council/briefs.go`, `wsh council start`
+  warnings). With the same build, start a council (a small panel) in a project with `--files` set to a file outside the
+  project → `docs/council/briefs/` holds `<date>-<council id>-<file name>`, the experts cite the copy, and the report's
+  side file has no "Files not copied". Give it a folder over 1 MB → `wsh council start` prints
+  `warning: <folder> was not copied into docs/council/briefs: …` and the side file lists it under "Files not copied".
+
 - [ ] (arcterm) **Brainstorm tab: board thumbnails and the rail's dots** (`BoardChip` in `railbrainstormpane.tsx`,
   `RailTabStrip` in `agentrailpanel.tsx`, `RailStripTab.dot` in `collapsiblerail.tsx`). On an agent with a brainstorm
   that lists boards, open the panel's Brainstorm tab → each board is a card with the board drawn small at the card's
