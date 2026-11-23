@@ -286,9 +286,17 @@ describe("sessionTitle", () => {
         expect(sessionTitle(undefined, undefined, "Transcript title")).toBe("Transcript title");
         expect(sessionTitle(undefined, "Scanned title", "Transcript title")).toBe("Scanned title");
     });
+    it("keeps the launch's own title until the session reports one, never the project name in between", () => {
+        // a new session's SessionStart reports in before its first prompt, with no title
+        expect(sessionTitle(undefined, undefined, undefined, "sao lag vậy")).toBe("sao lag vậy");
+        expect(sessionTitle("", "", "", "sao lag vậy")).toBe("sao lag vậy");
+        expect(sessionTitle("Hiệu năng chậm bất thường", undefined, undefined, "sao lag vậy")).toBe(
+            "Hiệu năng chậm bất thường"
+        );
+    });
     it("is undefined when none has one, so the row falls back to its project", () => {
         expect(sessionTitle(undefined, undefined)).toBeUndefined();
-        expect(sessionTitle("", "", "")).toBeUndefined();
+        expect(sessionTitle("", "", "", "")).toBeUndefined();
     });
 });
 

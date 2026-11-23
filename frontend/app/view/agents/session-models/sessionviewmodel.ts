@@ -205,13 +205,15 @@ export function labelChanged(draft: string, current: string | undefined): boolea
  *  report one (its exit publishes a bare idle, and a restart leaves it no status at all), and codex reports none, so the
  *  title the Conversations archive scanned from the same transcript stands in. The archive holds only the newest
  *  sessions, so for an agent asleep behind more of them the title read from its own transcript's tail does
- *  (sleepertitles.ts). */
+ *  (sleepertitles.ts). Last, the title a launch took from its task (launchtitles.ts): a new session reports in before
+ *  its first prompt, so without it the row read the project name between the launch and the ai-title. */
 export function sessionTitle(
     statusTitle: string | undefined,
     scannedTask: string | undefined,
-    transcriptTitle?: string
+    transcriptTitle?: string,
+    launchTitle?: string
 ): string | undefined {
-    return statusTitle || scannedTask || transcriptTitle || undefined;
+    return statusTitle || scannedTask || transcriptTitle || launchTitle || undefined;
 }
 
 function rowLabel(s: SessionInput, includeService: boolean): string {

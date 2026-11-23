@@ -13,6 +13,7 @@ import { pushToast } from "@/app/cockpit/notificationstore";
 import { useSettle } from "@/app/element/motionhooks";
 import { MOTION } from "@/app/element/motiontokens";
 import { Segmented } from "@/app/element/segmented";
+import { TextSwap } from "@/app/element/textswap";
 import { ContextMenuModel } from "@/app/store/contextmenu";
 import { globalStore } from "@/app/store/jotaiStore";
 import * as WOS from "@/app/store/wos";
@@ -894,7 +895,7 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
                                 className="mr-[5px] inline-block align-[-1px] text-accent-soft"
                             />
                         ) : null}
-                        {name}
+                        <TextSwap text={name} swapKey={agent.id} />
                     </span>
                     {stage ? null : (
                         <>

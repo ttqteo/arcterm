@@ -62,6 +62,8 @@ and a picture given to a line that is not big.
 
 ### Fixed
 
+- A new agent's name no longer flips to its project's name while it starts: it reads your first message until Claude
+  titles the session, and the header fades the title's words in when it arrives.
 - Sidecar's Resources panel opened just after its column closed no longer flashes the column's charts for half a
   second before measuring.
 - A paste you folded into a chip, sent while the agent was working, shows as a "Pasted" card in your message instead
