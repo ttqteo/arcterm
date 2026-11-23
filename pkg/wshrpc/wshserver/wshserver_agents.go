@@ -432,7 +432,7 @@ func (ws *WshServer) FindProjectFoldersCommand(ctx context.Context, data wshrpc.
 }
 
 func (ws *WshServer) GetClaudeQuotaCommand(ctx context.Context) (*wshrpc.CommandGetClaudeQuotaRtnData, error) {
-	return claudeQuotaFor(ctx, claudeaccount.Active(), claudequota.Get), nil
+	return claudeQuotaFor(ctx, claudequota.Get), nil
 }
 
 // RefreshClaudeQuotaCommand is GetClaudeQuotaCommand asking the usage endpoint now: the Usage surface's
@@ -441,18 +441,16 @@ func (ws *WshServer) RefreshClaudeQuotaCommand(ctx context.Context) (*wshrpc.Com
 	return refreshClaudeQuotaFor(ctx, claudeaccount.Active(), claudequota.Refresh), nil
 }
 
-// a setup-token cannot read the usage endpoint (403), and the credentials file and Claude Code's
-// cached answer belong to the /login account: say nothing rather than another account's numbers.
-// The answer carries that account's email, so the frontend files the numbers under the real account
-// rather than under "Default", whose owner changes whenever /login does.
-func claudeQuotaFor(ctx context.Context, active string, get func(context.Context) *claudequota.Quota) *wshrpc.CommandGetClaudeQuotaRtnData {
-	if active != "" {
-		return &wshrpc.CommandGetClaudeQuotaRtnData{}
-	}
+// The credentials file and Claude Code's cached answer belong to the /login account, whichever account is
+// active, and the answer carries that account's email: the frontend files the numbers under it, so the /login
+// row stays current while a token account runs new agents. (A setup-token cannot read the usage endpoint, 403,
+// so a token account's own numbers come only from its sessions.)
+func claudeQuotaFor(ctx context.Context, get func(context.Context) *claudequota.Quota) *wshrpc.CommandGetClaudeQuotaRtnData {
 	return claudeQuotaAnswer(get(ctx), time.Time{})
 }
 
-// claudeQuotaFor for a refresh: a token account's answer is empty without asking anyone, as there
+// a refresh is the Usage surface's button for the active account's donut: a token account's answer is empty
+// without asking anyone, as the endpoint has nothing for it
 func refreshClaudeQuotaFor(ctx context.Context, active string, refresh func(context.Context) (*claudequota.Quota, time.Time)) *wshrpc.CommandGetClaudeQuotaRtnData {
 	if active != "" {
 		return &wshrpc.CommandGetClaudeQuotaRtnData{}

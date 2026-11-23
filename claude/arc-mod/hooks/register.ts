@@ -836,7 +836,10 @@ export const register: Register = (on) => {
     });
 
     on("session.measure", async ($, e, next) => {
-        const args = active ? usageArgs(e) : null;
+        // only the block's own session, as for listenToCockpit: a `claude -p` an agent runs from Bash inherits
+        // WAVETERM_BLOCKID and ARC_CLAUDE_ACCOUNT but not the token (Claude Code keeps it from its children), so it
+        // runs on /login and would file /login's windows under the agent's account, and its context over the agent's
+        const args = active && isInteractive ? usageArgs(e) : null;
         if (args) {
             try {
                 const ran = await $.process.run([WSH, ...args]);

@@ -67,6 +67,11 @@ and a picture given to a line that is not big.
 
 ### Fixed
 
+- Settings → Agents shows each Claude account's own limits. A `claude -p` an agent ran from its shell used your /login
+  account but its usage was saved under the agent's token account, so a token account could show your /login
+  account's numbers; the /login row now keeps updating while a token account is the one new agents use, instead of
+  freezing at its last reading; and after /login moves to another account, the old account's numbers are no longer
+  shown as the new one's.
 - In a repository with more than 20,000 files, the Files tab and Code no longer drop the repository's own files when
   an output folder of thousands of untracked files fills the list: tracked files are kept first. Filtering the Files tab
   while it reloads no longer covers it with a loading placeholder, and a filter with no match says when only part of the

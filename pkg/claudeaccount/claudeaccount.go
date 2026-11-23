@@ -189,6 +189,11 @@ func captureInherited() {
 			inherited[k] = nil
 		}
 	}
+	// Claude Code passes ARC_CLAUDE_ACCOUNT on to its children but not the token: an arcterm started from inside a
+	// token agent gets the id alone, and its Default runs on /login, which the id would misname
+	if inherited[tokenVar] == nil {
+		inherited[accountVar] = nil
+	}
 }
 
 func restore(k string) {

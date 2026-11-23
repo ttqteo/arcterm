@@ -52,8 +52,8 @@ function recordAnswer(q: CommandGetClaudeQuotaRtnData): boolean {
     if (usage == null) {
         return false;
     }
-    // wavesrv answers only for the Default account; the identity learns its email first, so the
-    // snapshot saved as "claude:default" before it was known moves to that account
+    // wavesrv answers for the /login account whichever is active; the identity learns its email first, so
+    // the snapshot saved as "claude:default" before it was known moves to that account
     noteLoginEmail(q.email);
     // the answer carries every window the account reports: a week it lacks (a Team seat's) is none
     recordRateLimit(quotaKey(q), usage, q.capturedat, true);
@@ -105,7 +105,8 @@ export function startClaudeQuotaPolling(): void {
     void readClaudeQuota();
     setInterval(() => void readClaudeQuota(), POLL_MS);
     // a switch to Default asks at once rather than at the next poll, which is why the app bar needs no refresh
-    // button; a token account has nothing to ask (the endpoint answers for Default only) and shows its saved reading
+    // button; the poll keeps the /login row current under a token account too, which itself has nothing to ask (the
+    // endpoint answers for /login only) and shows what its sessions last reported
     globalStore.sub(activeClaudeAccountAtom, () => {
         if (globalStore.get(activeClaudeAccountAtom) === "") {
             void refreshClaudeQuota();

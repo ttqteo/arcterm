@@ -157,6 +157,31 @@ func TestApplyEnvReachesChildProcess(t *testing.T) {
 	}
 }
 
+// Claude Code hands its children ARC_CLAUDE_ACCOUNT but not the token it ran on, so an arcterm started from inside a
+// token agent (`! task install`) inherits an account id with no token: its Default runs on /login, and a session
+// there must not claim the token account (its usage would be filed under it)
+func TestInheritedAccountWithoutItsTokenIsDropped(t *testing.T) {
+	useTemp(t)
+	t.Setenv(accountVar, "a9c34dd72")
+	os.Unsetenv(tokenVar)
+	captureInherited()
+	ApplyEnv("")
+	if v, set := os.LookupEnv(accountVar); set {
+		t.Fatalf("Default kept the inherited account %q with no token", v)
+	}
+}
+
+func TestInheritedAccountWithItsTokenIsKept(t *testing.T) {
+	useTemp(t)
+	t.Setenv(accountVar, "a9c34dd72")
+	t.Setenv(tokenVar, "sk-ant-oat01-zzz")
+	captureInherited()
+	ApplyEnv("")
+	if os.Getenv(accountVar) != "a9c34dd72" || os.Getenv(tokenVar) != "sk-ant-oat01-zzz" {
+		t.Fatal("an inherited account with its token should be restored as it came")
+	}
+}
+
 func TestApplyEnvUnknownAccountFallsBackToDefault(t *testing.T) {
 	useTemp(t)
 	os.Unsetenv(tokenVar)
