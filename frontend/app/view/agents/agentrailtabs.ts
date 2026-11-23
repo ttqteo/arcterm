@@ -61,8 +61,10 @@ export interface FileRef {
     title?: string;
     // opened from Files changed: the repository path git knows it by, and the commit that list is measured from ("" is
     // HEAD). Set, the tab offers Diff, against the same base as the list's +N -N. `cwd`: the folder git reads it from,
-    // `rel` then relative to it (a Chat turn's file card, whose file may sit in another work tree); absent, `root`
-    diff?: { rel: string; base: string; cwd?: string };
+    // `rel` then relative to it (a Chat turn's file card, whose file may sit in another work tree); absent, `root`.
+    // `end`: the commit the list ends at (an agent's own edits, base..end), so the Diff reads that commit's copy instead
+    // of the working copy, which may hold another writer's later change; absent, the working copy
+    diff?: { rel: string; base: string; cwd?: string; end?: string };
 }
 
 export type FileView = "preview" | "source" | "diff";

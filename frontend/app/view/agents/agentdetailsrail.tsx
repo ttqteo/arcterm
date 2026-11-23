@@ -941,7 +941,10 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
             abs: joinRepoPath(cwd, path),
             root: cwd,
             reread: Date.now(), // the agent may have changed it since it was last open
-            diff: { rel: path, base: onBranch ? branchDiff.ref : (railState?.ref ?? "") },
+            // an agent's edits end at their synthetic commit, as the list's +N -N and the Diff surface do
+            diff: onBranch
+                ? { rel: path, base: branchDiff.ref }
+                : { rel: path, base: railState?.ref ?? "", end: railState?.end || undefined },
         });
     };
     // a commit row opens the Diff surface on that commit: the branch compare where there is one, else the Log
