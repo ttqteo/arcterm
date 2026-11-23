@@ -157,6 +157,7 @@ export interface SidecarResources {
     history: SidecarResourcePoint[]; // the last 5 minutes, oldest first
     memTotal?: number; // bytes, for the RAM chart's figure
     swapTotal?: number; // bytes: the swap files' size now (macOS grows them as it needs); the charts show only the swap in use
+    ask?: number; // the page's open act these answer (`resourcesFor`): a snapshot sent before a close carries the last one's
 }
 
 export type SidecarAct =
@@ -170,8 +171,9 @@ export type SidecarAct =
     | { kind: "needact"; key: string; act: string } // a Jarvis row's button: one of that need's acts in the last snapshot
     // a run row: that run's sheet in the main window (a run of the last snapshot); no id, the runs in Jarvis
     | { kind: "run"; id?: string }
-    // the resource panel opened (with the pids the host says draw the page; re-sent as they change) or closed
-    | { kind: "resources"; open: boolean; pids: number[] }
+    // the resource panel opened (with the pids the host says draw the page; re-sent as they change) or closed; `ask`
+    // numbers each opening, and the bridge puts it on the resources it sends back
+    | { kind: "resources"; open: boolean; pids: number[]; ask?: number }
     // the page became hidden (minimized, on another Space, covered whole) or shown again: hidden, it is sent nothing
     | { kind: "visible"; visible: boolean };
 

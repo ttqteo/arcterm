@@ -201,3 +201,13 @@ export function resourcesLost(
 ): boolean {
     return want && snap != null && snap.resources == null && heardAt > askedAt;
 }
+
+/**
+ * The resources the page draws for its opening number `ask`: none (the panel or the column measures) until the bridge
+ * answers that opening. A snapshot the bridge sent before it heard a close still carries the closed panel's or
+ * column's readings and history, and drawn in a panel opened right after, it showed that stale history for about half
+ * a second, then nothing (the close's snapshot), then the fresh series.
+ */
+export function resourcesFor(resources: SidecarResources | undefined, ask: number): SidecarResources | undefined {
+    return resources != null && resources.ask === ask ? resources : undefined;
+}

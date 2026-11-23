@@ -12,7 +12,7 @@ import { layoutFor, type FormChange, type SidecarLayout } from "@/app/cockpit/si
 import { SidecarMachineContext } from "@/app/cockpit/sidecarmachine";
 import { SidecarOrbit } from "@/app/cockpit/sidecarorbit";
 import { frameOf, frameReason, screenState } from "@/app/cockpit/sidecarorbitmodel";
-import { resourcesLost } from "@/app/cockpit/sidecarresources";
+import { resourcesFor, resourcesLost } from "@/app/cockpit/sidecarresources";
 import { SidecarResourcesPanel } from "@/app/cockpit/sidecarresourcespanel";
 import { NATIVE_MAC_FRAME, SidecarTitleBar, toggleSidecarFullscreen } from "@/app/cockpit/sidecartitlebar";
 import {
@@ -22,6 +22,7 @@ import {
     type SidecarAct,
     type SidecarForm,
     type SidecarMachine,
+    type SidecarResources,
     type SidecarSnapshot,
 } from "@/app/cockpit/sidecartypes";
 import { useApplyCockpitTheme } from "@/app/view/agents/themestore";
@@ -29,7 +30,7 @@ import { loadFonts } from "@/util/fontutil";
 import { cn } from "@/util/util";
 import { invoke } from "@tauri-apps/api/core";
 import { emit, listen } from "@tauri-apps/api/event";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import "./tailwind.css";
 
@@ -103,20 +104,38 @@ function useSidecarForm(): [SidecarForm, (change: FormChange) => void] {
 // the hello is wiped. A snapshot heard means the page's hello was answered; the panel and the column still show at once
 // (measuring) from the page's own state, whatever the bridge has heard. The bridge also says hello on its own when it
 // mounts with Sidecar open, which can land after the open act: a later snapshot with no resources asks again
-// (`resourcesLost`).
-function useResourcesPanel(band: boolean, heard: Heard | null, visible: boolean): [boolean, () => void, () => void] {
+// (`resourcesLost`). Each opening is numbered (`session`), the bridge sends the number back on the resources, and the page
+// draws only the resources of its current opening (`resourcesFor`): a snapshot sent before the bridge heard the last
+// close still holds the closed column's history.
+function useResourcesPanel(
+    band: boolean,
+    heard: Heard | null,
+    visible: boolean
+): [boolean, () => void, () => void, SidecarResources | undefined] {
     const [open, setOpen] = useState(false);
     if (band && open) {
         setOpen(false);
     }
     // a hidden page asks for no readings: the panel stays open and asks again once it shows
     const want = (open || band) && heard != null && visible;
+    // a new number the render `want` turns on, so that render already measures instead of drawing the last opening's
+    const [session, setSession] = useState(0);
+    const [wanted, setWanted] = useState(false);
+    if (want !== wanted) {
+        setWanted(want);
+        if (want) {
+            setSession((s) => s + 1);
+        }
+    }
     // the last open act: its pids, to ask again with, and when it went
     const asked = useRef<{ pids: number[]; at: number }>({ pids: [], at: 0 });
-    const ask = useCallback((pids: number[]) => {
-        asked.current = { pids, at: Date.now() };
-        send({ kind: "resources", open: true, pids });
-    }, []);
+    const ask = useCallback(
+        (pids: number[]) => {
+            asked.current = { pids, at: Date.now() };
+            send({ kind: "resources", open: true, pids, ask: session });
+        },
+        [session]
+    );
     useEffect(() => {
         if (!want) {
             return;
@@ -154,7 +173,7 @@ function useResourcesPanel(band: boolean, heard: Heard | null, visible: boolean)
     }, [heard, want, ask]);
     const toggle = useCallback(() => setOpen((o) => !o), []);
     const close = useCallback(() => setOpen(false), []);
-    return [open, toggle, close];
+    return [open, toggle, close, want ? resourcesFor(heard?.snap.resources, session) : undefined];
 }
 
 function readVisible(): boolean {
@@ -204,7 +223,13 @@ function SidecarRoot() {
     const wall = layout === "wall";
     const [form, changeForm] = useSidecarForm();
     const visible = useVisible(heard != null);
-    const [resourcesOpen, toggleResources, closeResources] = useResourcesPanel(wall, heard, visible);
+    const [resourcesOpen, toggleResources, closeResources, resources] = useResourcesPanel(wall, heard, visible);
+    // the wall's column draws the same gated resources as the panel
+    const snap = heard?.snap;
+    const shownSnap = useMemo(
+        () => (snap == null || snap.resources === resources ? snap : { ...snap, resources }),
+        [snap, resources]
+    );
     // Date.now() too: the dashboard adds (clock - heard.at) to the snapshot's own `now`, so the two must share one clock
     const [clock, setClock] = useState(() => Date.now());
 
@@ -289,13 +314,18 @@ function SidecarRoot() {
                         ) : layout === "small" ? (
                             <SidecarCompact snap={heard.snap} receivedAt={heard.at} clock={clock} send={send} />
                         ) : (
-                            <SidecarOrbit snap={heard.snap} receivedAt={heard.at} clock={clock} send={send} />
+                            <SidecarOrbit
+                                snap={shownSnap ?? heard.snap}
+                                receivedAt={heard.at}
+                                clock={clock}
+                                send={send}
+                            />
                         )}
                     </SidecarMachineContext.Provider>
                 </div>
                 {resourcesOpen && (
                     <SidecarResourcesPanel
-                        resources={heard?.snap.resources}
+                        resources={resources}
                         onClose={closeResources}
                         onEnd={endApp}
                         alert={heard == null ? null : alertOf(heard.snap)}

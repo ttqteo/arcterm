@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it } from "vitest";
-import { endNote, otherKey, pushHistory, resourcesLost, resourcesOf } from "./sidecarresources";
+import { endNote, otherKey, pushHistory, resourcesFor, resourcesLost, resourcesOf } from "./sidecarresources";
 
 const MB = 1024 * 1024;
 
@@ -198,5 +198,25 @@ describe("resourcesLost", () => {
         expect(resourcesLost(true, shown, 200, 100)).toBe(false);
         expect(resourcesLost(false, {}, 200, 100)).toBe(false);
         expect(resourcesLost(true, undefined, 200, 100)).toBe(false);
+    });
+});
+
+describe("resourcesFor", () => {
+    const of = (ask?: number) => ({
+        state: "ready" as const,
+        rows: [],
+        others: [],
+        history: [{ t: 1, cpu: 10, mem: 40 }],
+        ...(ask != null ? { ask } : {}),
+    });
+
+    it("draws the readings that answer this opening", () => {
+        expect(resourcesFor(of(4), 4)).toEqual(of(4));
+    });
+
+    it("measures on readings sent for an earlier opening: the column's history is not the new panel's", () => {
+        expect(resourcesFor(of(3), 4)).toBeUndefined();
+        expect(resourcesFor(of(), 4)).toBeUndefined();
+        expect(resourcesFor(undefined, 4)).toBeUndefined();
     });
 });

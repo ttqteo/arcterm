@@ -57,6 +57,11 @@ and a picture given to a line that is not big.
 - Switching back to an agent in Chat shows its conversation at once instead of a skeleton; what it wrote meanwhile
   appears when it has been read, all at once.
 
+### Fixed
+
+- Sidecar's Resources panel opened just after its column closed no longer flashes the column's charts for half a
+  second before measuring.
+
 ## 1.9.0 — 2026-11-22
 
 ### Added

@@ -179,7 +179,8 @@ export function SidecarBridge({ model }: { model: AgentsViewModel }) {
         let consumersTimer: ReturnType<typeof setInterval> | null = null;
         let cpuTimer: ReturnType<typeof setInterval> | null = null;
         // The resource panel (the page's machine figures, clicked): polled only while the page has it open.
-        let resPanel: { pids: number[] } | null = null;
+        // `ask` is the page's opening number, sent back on the resources so the page can tell them from a closed one's
+        let resPanel: { pids: number[]; ask?: number } | null = null;
         let resReading: ResMonSnapshotData | null = null;
         // the machine's readings for the charts, the last 5 minutes; kept only while the band or the panel shows
         let resHistory: SidecarResourcePoint[] = [];
@@ -405,7 +406,12 @@ export function SidecarBridge({ model }: { model: AgentsViewModel }) {
                 ...(stats != null ? { machine: machineOf(stats, platformName()) } : {}),
                 ...(strain != null ? { strain } : {}),
                 ...(resPanel != null
-                    ? { resources: resourcesOf(resReading, resPanel.pids, resHistory, endNotes) }
+                    ? {
+                          resources: {
+                              ...resourcesOf(resReading, resPanel.pids, resHistory, endNotes),
+                              ...(resPanel.ask != null ? { ask: resPanel.ask } : {}),
+                          },
+                      }
                     : {}),
             };
         };
@@ -680,7 +686,7 @@ export function SidecarBridge({ model }: { model: AgentsViewModel }) {
                         onChange();
                         return;
                     }
-                    resPanel = { pids: act.pids };
+                    resPanel = { pids: act.pids, ...(act.ask != null ? { ask: act.ask } : {}) };
                     if (resTimer == null) {
                         resTimer = setInterval(() => void pollResources(), RESOURCES_POLL_MS);
                         void pollResources();

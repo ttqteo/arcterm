@@ -32,6 +32,11 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
   asked, the ask comes back as a refusal whose reason tells the agent to ask you first.
 ## 2026-11-23
 
+- [ ] (arcterm) **Sidecar's Resources panel opened right after the column closes starts on Measuring, not the
+  column's history** (`sidecar.tsx` `useResourcesPanel`, `resourcesFor`). Unit tests and the typecheck only. With
+  Sidecar wide (P) and its Resources column filled for a minute, narrow it to Q and at once click the title bar's
+  RAM · CPU figures: the panel shows Measuring…, then a fresh series, never the column's 5-minute charts for half a
+  second. Widen back to P: the column measures, then fills, likewise.
 - [ ] (arcterm) **The File tab's Diff of an agent's edits ignores another writer's later change** (`filetabdiff.tsx`,
   `agentdetailsrail.tsx` `openChangedFile`, ac468412f). Typecheck only. Under a Claude agent that edited `a.txt`, add
   a line to `a.txt` yourself (another terminal), then open `a.txt` from the rail's Files changed: its Diff shows the
