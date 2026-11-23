@@ -297,7 +297,11 @@ func TestWriteDocumentEmbedsRegions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	body, _ := os.ReadFile(path)
+	// the evidence lines are the discussion's, which the side file holds; the regions folder is named for the main file
+	body, err := os.ReadFile(SidePath(path))
+	if err != nil {
+		t.Fatal(err)
+	}
 	folder := strings.TrimSuffix(filepath.Base(path), ".md") + "-regions"
 	kept := filepath.Base(c.Proposals[0].Evidence[0].Region.Crop)
 	if !strings.Contains(string(body), "  ![home.png#save]("+folder+"/"+kept+")\n") {
@@ -312,7 +316,7 @@ func TestWriteDocumentEmbedsRegions(t *testing.T) {
 	if !fileExists(filepath.Join(filepath.Dir(path), folder, kept)) {
 		t.Error("the crop was not copied beside the document")
 	}
-	if Document(c) == string(body) {
-		t.Error("Document embeds no region, so the file should differ from it")
+	if strings.HasSuffix(Document(c), string(body)) {
+		t.Error("Document embeds no region, so the side file should differ from its end")
 	}
 }

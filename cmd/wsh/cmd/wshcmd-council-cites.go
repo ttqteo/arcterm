@@ -4,7 +4,9 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -18,9 +20,11 @@ var councilCitesCmd = &cobra.Command{
 	Short: "check every path:line a saved council report cites, with no model",
 	Args:  cobra.ExactArgs(1),
 	Long: `Read every path:line the report cites, in its directions and in the whole discussion, and print the same "Cite
-check" a council saves into its document: how many places hold (the file is there, the line is in it, and a keyword of
+check" a council saves into its side file: how many places hold (the file is there, the line is in it, and a keyword of
 a sentence citing it is on or within 3 lines of it), how many have no such keyword near the line, how many are wrong
 (no such file, or a line past the end), and how many lie outside the folders read, each with where the report cites it.
+A saved report is two files, the report (<name>.md) and its side file (<name>.discussion.md, which holds the discussion
+and the Cite check): give either one and the other is read with it when it is there, the two audited as one text.
 A file named only by its bare name ("chat.go:3") is read through the full path the report cites elsewhere; one that no
 full path names, or that two do, is counted as not checked, not as wrong. A line with nothing to look for (no keyword in
 the sentences that cite it) is counted apart: it is there, but it does not count as holding.
@@ -28,7 +32,7 @@ It reads files only: no model is called and nothing is written. A report under <
 <project>; --root names the folders instead (repeat it for more, the first one first).`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		roots, _ := cmd.Flags().GetStringArray("root")
-		data, err := os.ReadFile(args[0])
+		text, err := councilCitesText(args[0])
 		if err != nil {
 			return err
 		}
@@ -36,7 +40,7 @@ It reads files only: no model is called and nothing is written. A report under <
 		if err != nil {
 			return err
 		}
-		section := council.CiteCheckSection(string(data), roots)
+		section := council.CiteCheckSection(text, roots)
 		if section == "" {
 			fmt.Printf("%s cites no path:line.\n", args[0])
 			return nil
@@ -44,6 +48,31 @@ It reads files only: no model is called and nothing is written. A report under <
 		fmt.Print(section)
 		return nil
 	},
+}
+
+// councilCitesText is the text `wsh council cites` audits for a report: the file given and, when there is one, the file
+// that goes with it, the main report first and its side file after (the council's two files are one report). A file with
+// no sibling, such as a report saved before the split, is read alone; a sibling that cannot be read is an error.
+func councilCitesText(report string) (string, error) {
+	data, err := os.ReadFile(report)
+	if err != nil {
+		return "", err
+	}
+	sibling, isMain := council.SidePath(report), true
+	if council.IsSidePath(report) {
+		sibling, isMain = strings.TrimSuffix(report, council.DiscussionSuffix)+".md", false
+	}
+	other, err := os.ReadFile(sibling)
+	if errors.Is(err, fs.ErrNotExist) {
+		return string(data), nil
+	}
+	if err != nil {
+		return "", err
+	}
+	if isMain {
+		return string(data) + "\n" + string(other), nil
+	}
+	return string(other) + "\n" + string(data), nil
 }
 
 // councilCitesRoots are the folders `wsh council cites` reads a report against, absolute: the --root folders when given,

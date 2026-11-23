@@ -14,80 +14,232 @@ import (
 
 const matrixReasonRunes = 120 // a matrix cell keeps one line of the reason, cut here
 
-// Markdown is the report as a document, what `wsh council wait` and `show` print: the feature, the question, the
-// direction the person chose with the ones it replaced (writeMemory, none without a memory), the question's
-// one-sentence answer, the coordinator's paragraph, the directions in rank order (a Brainstorm's ideas worth trying),
-// each with its first step and each expert's stance, then one line each for a Brainstorm's wild ideas kept aside or a
-// Review's directions also raised, the questions to ask next, then proposals × experts, and last the message the person
-// pinned as the Final proposal, while one is pinned. Document adds the whole discussion and the run facts to it.
-func Markdown(c *Council) string { return markdownWith(c, false) }
+// A saved report is two files. The main file (reportMain) holds what is about the person's project, in the language of
+// their question: the feature, the question, the direction they chose, the answer, a to-do table with one row per
+// direction, a table of the figures Go checked against the project's files, what the council settled (Agreed, Ruled out,
+// Open), the message they pinned as the Final proposal, and a line that links the side file. The side file
+// (reportSide, `<name>.discussion.md`) holds everything about how the council got there, with English headings: the
+// at-a-glance chart, each direction in full, the matrix, the figures that did not check out, the cite check, the whole
+// discussion and the run facts. Document is both, one after the other; WriteDocument writes each to its own file.
 
-// markdownWith is Markdown, with the at-a-glance chart of a Review's directions ahead of them when charts is set: the
-// saved document draws it; what `wsh council show` and `wait` print for an agent leaves it out.
-func markdownWith(c *Council, charts bool) string {
-	var b strings.Builder
-	fmt.Fprintf(&b, "# Council: %s\n\n", c.Feature)
-	if q := oneLine(c.Question); q != "" {
-		fmt.Fprintf(&b, "You asked: %s\n\n", q)
-	}
-	writeMemory(&b, c)
-	if c.Summary == nil {
-		b.WriteString("_No summary yet._\n")
-	} else {
-		if a := oneLine(c.Summary.Answer); a != "" {
-			fmt.Fprintf(&b, "**%s**\n\n", a)
-		}
-		if t := strings.TrimSpace(c.Summary.Text); t != "" {
-			b.WriteString(t + "\n\n")
-		}
-		if charts {
-			writeGlanceChart(&b, c)
-		}
-		if len(c.Summary.Directions) > 0 {
-			if isBrainstorm(c) {
-				b.WriteString("## Ideas worth trying\n\n")
-			} else {
-				b.WriteString("## Directions\n\n")
-			}
-			for i, d := range c.Summary.Directions {
-				writeDirection(&b, c, i+1, d)
-			}
-		}
-		if len(c.Summary.Kept) > 0 {
-			if isBrainstorm(c) {
-				b.WriteString("## Wild ideas kept aside\n\n")
-			} else {
-				b.WriteString("## Also raised\n\n")
-			}
-			for _, d := range c.Summary.Kept {
-				writeKept(&b, c, d)
-			}
-			b.WriteString("\n")
-		}
-		if len(c.Summary.Asks) > 0 {
-			b.WriteString("## Ask next\n\n")
-			for _, a := range c.Summary.Asks {
-				fmt.Fprintf(&b, "- %s: %s\n", askedOf(c, a), oneLine(a.Text))
-			}
-			b.WriteString("\n")
-		}
-	}
-	if len(sentProposals(c)) > 0 {
-		b.WriteString("\n## Matrix\n\n")
-		writeMatrix(&b, c)
-	}
-	writeFinalProposal(&b, c)
-	return b.String()
+// Markdown is the report as an agent reads it, what `wsh council wait` and `show` print: the main file's content with
+// no link to a side file (the feature, the question, the direction the person chose with the ones it replaced, the
+// question's one-sentence answer, the coordinator's paragraph, the to-do and figures tables, the memory's entries),
+// then the detail an agent acts on that the saved report keeps in its side file: the directions in rank order (a
+// Brainstorm's ideas worth trying) each with its reasoning, first step and each expert's stance, one line each for a
+// Brainstorm's wild ideas kept aside or a Review's directions also raised, the questions to ask next, then proposals ×
+// experts, and last the message the person pinned as the Final proposal, while one is pinned.
+func Markdown(c *Council) string {
+	w := wordsOf(c)
+	parts := mainParts(c, w)
+	parts = append(parts, detailParts(c)...)
+	return joinParts(append(parts, finalProposalPart(c, w))...)
 }
 
-// writeFinalProposal ends the report with the message the person pinned (Council.FinalPick): the seat that wrote it,
-// then its markdown. It writes nothing while nothing is pinned, or the pin names a message the council lacks.
-func writeFinalProposal(b *strings.Builder, c *Council) {
+// sect runs write on a fresh builder and gives what it wrote, its trailing newlines cut.
+func sect(write func(b *strings.Builder)) string {
+	var b strings.Builder
+	write(&b)
+	return strings.TrimRight(b.String(), "\n")
+}
+
+// joinParts is the parts that hold something as one document: a blank line between two, one newline at the end, and
+// nothing at all when no part holds anything.
+func joinParts(parts ...string) string {
+	var keep []string
+	for _, p := range parts {
+		if p = strings.TrimRight(p, "\n"); p != "" {
+			keep = append(keep, p)
+		}
+	}
+	if len(keep) == 0 {
+		return ""
+	}
+	return strings.Join(keep, "\n\n") + "\n"
+}
+
+// mainParts are the sections the main file and Markdown share, in order: the title, the question, the direction the
+// person chose, the answer with the coordinator's paragraph, the to-do table, the figures table and the memory's entries.
+func mainParts(c *Council, w reportWords) []string {
+	parts := []string{"# " + w.title + c.Feature}
+	if q := oneLine(c.Question); q != "" {
+		parts = append(parts, w.asked+q)
+	}
+	return append(parts, memoryDirectionPart(c, w), answerPart(c, w), todoPart(c, w), figuresPart(c, w), memoryEntriesPart(c, w))
+}
+
+// answerPart is the question's one-sentence answer in bold, then the coordinator's paragraph; the note that there is no
+// summary yet while the council has none.
+func answerPart(c *Council, w reportWords) string {
+	if c.Summary == nil {
+		return w.noSummary
+	}
+	var parts []string
+	if a := oneLine(c.Summary.Answer); a != "" {
+		parts = append(parts, "**"+a+"**")
+	}
+	if t := strings.TrimSpace(c.Summary.Text); t != "" {
+		parts = append(parts, t)
+	}
+	return strings.Join(parts, "\n\n")
+}
+
+// detailParts are the sections of detail an agent acts on, in order: the directions in full, the kept ones, the
+// questions to ask next and the matrix. The side file holds them (after its at-a-glance chart) and Markdown prints them.
+func detailParts(c *Council) []string {
+	var parts []string
+	if c.Summary != nil {
+		parts = append(parts, directionsPart(c), keptPart(c), asksPart(c))
+	}
+	if len(sentProposals(c)) > 0 {
+		parts = append(parts, sect(func(b *strings.Builder) {
+			b.WriteString("## Matrix\n\n")
+			writeMatrix(b, c)
+		}))
+	}
+	return parts
+}
+
+// directionsPart is the directions in rank order, each in full: a Review's "Directions", a Brainstorm's "Ideas worth
+// trying".
+func directionsPart(c *Council) string {
+	if len(c.Summary.Directions) == 0 {
+		return ""
+	}
+	return sect(func(b *strings.Builder) {
+		if isBrainstorm(c) {
+			b.WriteString("## Ideas worth trying\n\n")
+		} else {
+			b.WriteString("## Directions\n\n")
+		}
+		for i, d := range c.Summary.Directions {
+			writeDirection(b, c, i+1, d)
+		}
+	})
+}
+
+// keptPart is a Brainstorm's wild ideas kept aside, or a Review's directions also raised, a line each.
+func keptPart(c *Council) string {
+	if len(c.Summary.Kept) == 0 {
+		return ""
+	}
+	return sect(func(b *strings.Builder) {
+		if isBrainstorm(c) {
+			b.WriteString("## Wild ideas kept aside\n\n")
+		} else {
+			b.WriteString("## Also raised\n\n")
+		}
+		for _, d := range c.Summary.Kept {
+			writeKept(b, c, d)
+		}
+	})
+}
+
+// asksPart is the questions to ask the panel next.
+func asksPart(c *Council) string {
+	if len(c.Summary.Asks) == 0 {
+		return ""
+	}
+	return sect(func(b *strings.Builder) {
+		b.WriteString("## Ask next\n\n")
+		for _, a := range c.Summary.Asks {
+			fmt.Fprintf(b, "- %s: %s\n", askedOf(c, a), oneLine(a.Text))
+		}
+	})
+}
+
+// cellOr is a table cell's text, or "—" when it holds nothing.
+func cellOr(s string) string {
+	if s = tableCell(s); s == "" {
+		return "—"
+	}
+	return s
+}
+
+// todoPart is the to-do table: one row per direction in rank order, with the task (at most 15 words), why in one
+// sentence, the project files it touches and its kind. A direction summarized before those fields existed falls back
+// (todoTask, todoWhy), and shows "—" for files and kind. The cockpit's Report draws the same rows
+// (todoRows in frontend/app/view/agents/councilreporttables.ts): change one rule and change the other.
+func todoPart(c *Council, w reportWords) string {
+	if c.Summary == nil || len(c.Summary.Directions) == 0 {
+		return ""
+	}
+	return sect(func(b *strings.Builder) {
+		fmt.Fprintf(b, "## %s\n\n", w.todo)
+		fmt.Fprintf(b, "| %s | %s | %s | %s | %s |\n|---|---|---|---|---|\n", w.colNo, w.colTask, w.colWhy, w.colFiles, w.colKind)
+		for i, d := range c.Summary.Directions {
+			fmt.Fprintf(b, "| %d | %s | %s | %s | %s |\n", i+1, cellOr(todoTask(c, d)), cellOr(todoWhy(d)), todoFiles(d), w.kindWord(d.Kind))
+		}
+	})
+}
+
+// todoTask is a direction's row title: its task; else a Brainstorm's first step, which is its idea's action; else the title.
+func todoTask(c *Council, d CouncilDirection) string {
+	if t := oneLine(d.Task); t != "" {
+		return t
+	}
+	if isBrainstorm(c) {
+		if s := oneLine(d.FirstStep); s != "" {
+			return s
+		}
+	}
+	return oneLine(d.Title)
+}
+
+// todoWhy is a direction's reason in one sentence: its why; else the first sentence of its reasoning read as one line
+// (firstSentence, which also cuts it at briefMax characters).
+func todoWhy(d CouncilDirection) string {
+	if s := oneLine(d.Why); s != "" {
+		return s
+	}
+	return firstSentence(oneLine(d.Reasoning))
+}
+
+// todoFiles is a direction's files as code, joined by commas; "—" for none.
+func todoFiles(d CouncilDirection) string {
+	var files []string
+	for _, f := range d.Files {
+		if f = tableCell(f); f != "" {
+			files = append(files, "`"+f+"`")
+		}
+	}
+	if len(files) == 0 {
+		return "—"
+	}
+	return strings.Join(files, ", ")
+}
+
+// figuresPart is the figures table: the figures Go checked against the project's files (Cite is ok), each with what it
+// measures and the line it comes from. It is empty when none checked out; the ones that did not are the side file's.
+func figuresPart(c *Council, w reportWords) string {
+	var rows []string
+	for _, f := range c.Figures {
+		if f.Cite == CiteOK {
+			rows = append(rows, fmt.Sprintf("| %s | %s | %s |", cellOr(f.Value), cellOr(f.Measures), refCell(f.Ref)))
+		}
+	}
+	if len(rows) == 0 {
+		return ""
+	}
+	return fmt.Sprintf("## %s\n\n| %s | %s | %s |\n|---|---|---|\n%s", w.figures, w.colValue, w.colMeasures, w.colSource, strings.Join(rows, "\n"))
+}
+
+// refCell is a figure's `path:line` as code in a table cell; "—" with none.
+func refCell(ref string) string {
+	if ref = tableCell(ref); ref == "" {
+		return "—"
+	}
+	return "`" + ref + "`"
+}
+
+// finalProposalPart is the message the person pinned (Council.FinalPick): the seat that wrote it, then its markdown. It
+// is empty while nothing is pinned, or the pin names a message the council lacks.
+func finalProposalPart(c *Council, w reportWords) string {
 	body, ok := MessageMarkdown(c, c.FinalPick)
 	if !ok {
-		return
+		return ""
 	}
-	fmt.Fprintf(b, "\n## Final proposal\n\n_From %s_\n\n%s\n", messageSeatName(c, c.FinalPick), body)
+	return fmt.Sprintf("## %s\n\n_%s %s_\n\n%s", w.finalProposal, w.fromSeat, messageSeatName(c, c.FinalPick), body)
 }
 
 // messageSeatName is the display name of the seat that wrote an idea or a reply. A chat seat is named for its tab, which
@@ -159,96 +311,73 @@ func memoryTime(ms int64) string {
 	return time.UnixMilli(ms).UTC().Format("2006-01-02 15:04 UTC")
 }
 
-// memoryHow is how a direction was set, in words: "Pinned by you", "Written by you", or "Accepted from the check after
-// round N" / "Accepted from all green" for a suggestion the person accepted.
-func memoryHow(d CouncilMemoryDirection) string {
-	switch d.How {
-	case DirectionPin:
-		return "Pinned by you"
-	case DirectionWritten:
-		return "Written by you"
-	case DirectionSuggested:
-		switch {
-		case d.Source == SourceCheck && d.Round > 0:
-			return fmt.Sprintf("Accepted from the check after round %d", d.Round)
-		case d.Source == SourceCheck:
-			return "Accepted from the check"
-		case d.Source == SourceGreen:
-			return "Accepted from all green"
-		}
-		return "Accepted from a suggestion"
-	}
-	return "Set by you"
-}
-
-// memoryEnded is the word for how a replaced direction left: "replaced", "edited" or "unpinned".
-func memoryEnded(d CouncilMemoryDirection) string {
-	switch d.Ended {
-	case EndEdited, EndUnpinned:
-		return d.Ended
-	}
-	return EndReplaced
-}
-
-// writeMemory is the council's memory as the document carries it, above the report: under `## Memory` the direction the
-// person chose, then Earlier directions (newest first, each ending with how it left and when), so a reader never takes a
-// direction the person left for the one in force, then the Agreed, Ruled out (with why) and Open entries. A council whose
-// memory holds no direction, no earlier direction and no entry writes nothing; one whose chosen direction was unpinned
-// says none is chosen now, and keeps the history. A waiting suggestion or a held direction is not a direction yet, so it
-// is not here.
-func writeMemory(b *strings.Builder, c *Council) {
+// memoryDirectionPart is the direction the person chose, above the answer, then the Earlier directions (newest first, each
+// ending with how it left and when), so a reader never takes a direction the person left for the one in force. A council
+// whose memory holds neither writes nothing; one whose chosen direction was unpinned says none is chosen now, and keeps the
+// history. A waiting suggestion or a held direction is not a direction yet, so it is not here.
+func memoryDirectionPart(c *Council, w reportWords) string {
 	m := c.Memory
-	if m == nil || (m.Chosen == nil && len(m.Replaced) == 0 && len(m.Entries) == 0) {
-		return
+	if m == nil || (m.Chosen == nil && len(m.Replaced) == 0) {
+		return ""
 	}
-	b.WriteString("## Memory\n\n")
-	if m.Chosen != nil || len(m.Replaced) > 0 {
-		b.WriteString("### Direction\n\n")
+	return sect(func(b *strings.Builder) {
+		fmt.Fprintf(b, "## %s\n\n", w.chosen)
 		if d := m.Chosen; d != nil {
 			fmt.Fprintf(b, "%s\n\n", strings.TrimSpace(d.Text))
-			meta := []string{memoryHow(*d)}
+			meta := []string{w.how(*d)}
 			if d.From != "" {
-				meta = append(meta, "from "+d.From)
+				meta = append(meta, w.from+" "+d.From)
 			}
 			if d.At > 0 {
 				meta = append(meta, memoryTime(d.At))
 			}
 			fmt.Fprintf(b, "%s\n\n", strings.Join(meta, " · "))
-			b.WriteString("_The person settled on this: it outranks the report below wherever the two differ._\n\n")
+			b.WriteString(w.outranks + "\n\n")
 		} else {
-			b.WriteString("None is chosen now.\n\n")
+			b.WriteString(w.noChosen + "\n\n")
 		}
-	}
-	if len(m.Replaced) > 0 {
-		b.WriteString("### Earlier directions\n\n")
+		if len(m.Replaced) == 0 {
+			return
+		}
+		fmt.Fprintf(b, "### %s\n\n", w.earlier)
 		for _, d := range m.Replaced {
-			fmt.Fprintf(b, "- %s · %s", oneLine(d.Text), memoryHow(d))
+			fmt.Fprintf(b, "- %s · %s", oneLine(d.Text), w.how(d))
 			if d.From != "" {
-				b.WriteString(" · from " + d.From)
+				b.WriteString(" · " + w.from + " " + d.From)
 			}
-			fmt.Fprintf(b, " · %s", memoryEnded(d))
+			fmt.Fprintf(b, " · %s", w.ended(d))
 			if d.Replaced > 0 {
 				b.WriteString(" " + memoryTime(d.Replaced))
 			}
 			b.WriteString("\n")
 		}
-		b.WriteString("\n")
+	})
+}
+
+// memoryEntriesPart is what the council settled: the Agreed, Ruled out (with why) and Open entries of its memory, each
+// kind under a heading of its own, only the kinds that have some.
+func memoryEntriesPart(c *Council, w reportWords) string {
+	m := c.Memory
+	if m == nil {
+		return ""
 	}
-	for _, k := range []struct{ kind, title string }{{EntryAgreed, "Agreed"}, {EntryRuledOut, "Ruled out"}, {EntryOpen, "Open"}} {
-		entries := m.EntriesOf(k.kind)
-		if len(entries) == 0 {
-			continue
-		}
-		fmt.Fprintf(b, "### %s\n\n", k.title)
-		for _, e := range entries {
-			fmt.Fprintf(b, "- %s", oneLine(e.Text))
-			if e.Why != "" {
-				fmt.Fprintf(b, " (why: %s)", oneLine(e.Why))
+	return sect(func(b *strings.Builder) {
+		for _, k := range []struct{ kind, title string }{{EntryAgreed, w.agreed}, {EntryRuledOut, w.ruledOut}, {EntryOpen, w.open}} {
+			entries := m.EntriesOf(k.kind)
+			if len(entries) == 0 {
+				continue
+			}
+			fmt.Fprintf(b, "## %s\n\n", k.title)
+			for _, e := range entries {
+				fmt.Fprintf(b, "- %s", oneLine(e.Text))
+				if e.Why != "" {
+					fmt.Fprintf(b, " (%s: %s)", w.why, oneLine(e.Why))
+				}
+				b.WriteString("\n")
 			}
 			b.WriteString("\n")
 		}
-		b.WriteString("\n")
-	}
+	})
 }
 
 // askedOf is who a question to ask next goes to: the seat's name, or the whole panel.
@@ -401,30 +530,97 @@ func matrixOutcome(c *Council, p CouncilProposal) string {
 
 // ---- the saved document ----
 
-// Document is what a finished council saves into its project: the report (Markdown, with a Review's at-a-glance chart
-// ahead of its directions), then "The discussion", every proposal and reply in the order it was said, then the run facts
-// and the charts of what each seat spent (charts.go).
+// Document is what a finished council saves into its project, both files one after the other, as `wsh read` prints it:
+// the main report (reportMain), then its side file (reportSide: the at-a-glance chart, the directions in full, the
+// matrix, the discussion, the run facts and the charts of what each seat spent). It names the files by the path the
+// council was saved at, else by the one a save would pick now.
 func Document(c *Council) string { return documentWith(c, nil, nil) }
 
 // documentWith is Document with each message's screenshot regions embedded under its evidence line: crops maps a region's
 // crop PNG to the relative link the document reaches its copy by (WriteDocument copies them). A region it does not map
 // stays the text ref alone. With roots it also checks every `path:line` the report and the discussion cite against them
-// (AuditReportCites) and puts the "Cite check" section between the matrix and the discussion; with none it reads no file.
+// (AuditReportCites) and puts the "Cite check" section in the side file; with none it reads no file.
 func documentWith(c *Council, crops map[string]string, roots []string) string {
-	head := strings.TrimRight(markdownWith(c, true), "\n") + "\n\n"
+	mainName := docFileName(c)
+	main := reportMain(c, SidePath(mainName))
+	return main + "\n" + reportSide(c, mainName, main, crops, roots)
+}
+
+// reportMain is the saved report's main file: the sections mainParts writes, the Final proposal while one is pinned, and
+// the line that links the side file, named sideName (its base name: both files sit in one folder).
+func reportMain(c *Council, sideName string) string {
+	w := wordsOf(c)
+	parts := mainParts(c, w)
+	return joinParts(append(parts, finalProposalPart(c, w), fmt.Sprintf(w.sideLink, sideName))...)
+}
+
+// failedFiguresHeading is the side file's section of the figures that did not check out. The cite check does not read it
+// as the report's own cites (splitReport): its refs are the failed ones, listed with why.
+const failedFiguresHeading = "Figures that did not check out"
+
+// reportSide is the saved report's side file, English whatever the council's language: a link back to the main file
+// (named mainName), the at-a-glance chart, the detail (detailParts), the figures that did not check out, the files the
+// council could not copy into the project, the cite check, the whole discussion and the run facts. main is the main
+// file's text, which the cite check reads together with the side file's own. crops and roots are documentWith's.
+func reportSide(c *Council, mainName, main string, crops map[string]string, roots []string) string {
 	var disc strings.Builder
 	writeDiscussion(&disc, c, crops)
-	var b strings.Builder
-	b.WriteString(head)
-	if len(roots) > 0 && !isBrainstorm(c) {
-		writeCiteCheck(&b, AuditReportCites(head+"## The discussion\n\n"+disc.String(), roots))
+	parts := []string{
+		"# Council discussion: " + c.Feature,
+		fmt.Sprintf("The report: [%[1]s](%[1]s).", mainName),
+		sect(func(b *strings.Builder) { writeGlanceChart(b, c) }),
 	}
-	b.WriteString("## The discussion\n\n")
-	b.WriteString(disc.String())
-	b.WriteString("\n## Run facts\n\n")
-	writeRunFacts(&b, c)
-	writeRunCharts(&b, c)
-	return b.String()
+	parts = append(parts, detailParts(c)...)
+	parts = append(parts, failedFiguresPart(c), briefsPart(c))
+	if len(roots) > 0 && !isBrainstorm(c) {
+		audit := AuditReportCites(main+"\n"+joinParts(parts...)+"\n## The discussion\n\n"+disc.String(), roots)
+		parts = append(parts, sect(func(b *strings.Builder) { writeCiteCheck(b, audit) }))
+	}
+	parts = append(parts, "## The discussion\n\n"+disc.String(), sect(func(b *strings.Builder) {
+		b.WriteString("## Run facts\n\n")
+		writeRunFacts(b, c)
+		writeRunCharts(b, c)
+	}))
+	return joinParts(parts...)
+}
+
+// failedFiguresPart lists the figures the seats declared that Go could not confirm against the project's files, each
+// with why, so a number left out of the report's Figures table is not lost. It is empty when every figure checked out.
+func failedFiguresPart(c *Council) string {
+	var rows []string
+	for _, f := range c.Figures {
+		if f.Cite == CiteOK {
+			continue
+		}
+		note := oneLine(f.CiteNote)
+		if note == "" {
+			note = "not checked"
+		}
+		rows = append(rows, fmt.Sprintf("| %s | %s | %s | %s |", cellOr(f.Value), cellOr(f.Measures), refCell(f.Ref), tableCell(note)))
+	}
+	if len(rows) == 0 {
+		return ""
+	}
+	return "## " + failedFiguresHeading + "\n\n" +
+		"The seats declared these numbers; Go could not confirm them against the files, so the report's Figures table leaves them out.\n\n" +
+		"| Value | Measures | Source | Why |\n|---|---|---|---|\n" + strings.Join(rows, "\n")
+}
+
+// briefsPart lists the files given to the council from outside its project that Start could not copy into it, with why:
+// the council read each where it is, so a cite of one may not resolve on another machine. It is empty when none failed.
+func briefsPart(c *Council) string {
+	var lines []string
+	for _, br := range c.Briefs {
+		if br.Skipped != "" {
+			lines = append(lines, fmt.Sprintf("- `%s`: %s", br.Source, oneLine(br.Skipped)))
+		}
+	}
+	if len(lines) == 0 {
+		return ""
+	}
+	return "## Files not copied\n\n" +
+		"These files lie outside the project and were not copied into `docs/council/briefs/`, so the council read them where they are.\n\n" +
+		strings.Join(lines, "\n")
 }
 
 // docName is who said a message, as the document names them.
@@ -469,8 +665,9 @@ func proseOf(text string) string {
 }
 
 // labelWord is the word the document gives a claim's check label (the Label* values): "Ran", "Disproved", "Read code" or
-// "Guess". It is empty for no label, and for a word nothing labels with. The document's own words are English, whatever
-// the council's language; the Map and the chips draw the council's language from their own table.
+// "Guess". It is empty for no label, and for a word nothing labels with. The side file's own words are English, whatever
+// the council's language, and so are the prompts' (the main file's own words follow the council's language: reportWords);
+// the Map and the chips draw the council's language from their own table.
 func labelWord(label string) string {
 	switch label {
 	case LabelRan:

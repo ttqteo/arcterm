@@ -83,7 +83,7 @@ func DocPath(c *Council, asked string) (string, error) {
 			return path, nil
 		}
 	}
-	stem := filepath.Join(project, "docs", "council", DocDay().Format("2006-01-02")+"-"+FeatureSlug(c.Feature))
+	stem := filepath.Join(project, "docs", "council", docStem(c))
 	for n := 1; ; n++ {
 		path := stem + ".md"
 		if n > 1 {
@@ -97,10 +97,27 @@ func DocPath(c *Council, asked string) (string, error) {
 	}
 }
 
-// WriteDocument writes Document(c) at DocPath(c, asked), making the folders, and returns the path; the crops of its
-// screenshot regions are copied into `<doc name>-regions/` beside it and embedded (copyRegions), and every `path:line` it
-// cites is checked against the council's folders (citeRoots) into its "Cite check" section, with no model. It writes
-// those files and nothing else: it never stages or commits, and it works in a folder that is not a git repository.
+// docStem is the default name of a council's document without its extension: the day and the feature's slug.
+func docStem(c *Council) string {
+	return DocDay().Format("2006-01-02") + "-" + FeatureSlug(c.Feature)
+}
+
+// docFileName is the base name of a council's main document: the file it was saved at, else the one a first save would
+// pick now (without the -2 DocPath adds when that name is taken, which needs the project's folder). It splits on both
+// kinds of slash, since a council saved on Windows can be read on a Mac.
+func docFileName(c *Council) string {
+	if prev := strings.TrimSpace(c.DocPath); prev != "" {
+		return prev[strings.LastIndexAny(prev, `/\`)+1:]
+	}
+	return docStem(c) + ".md"
+}
+
+// WriteDocument writes the council's report at DocPath(c, asked), making the folders, and returns that path: the main
+// file there (reportMain) and its side file beside it at SidePath (reportSide). The crops of the screenshot regions are
+// copied into `<doc name>-regions/` and embedded in the side file (copyRegions), and every `path:line` the report and the
+// discussion cite is checked against the council's folders (citeRoots) into the side file's "Cite check" section, with no
+// model. It writes those files and nothing else: it never stages or commits, and it works in a folder that is not a git
+// repository. The side file is written first, so a main file that is there never links one that is not.
 func WriteDocument(c *Council, asked string) (string, error) {
 	path, err := DocPath(c, asked)
 	if err != nil {
@@ -109,7 +126,13 @@ func WriteDocument(c *Council, asked string) (string, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return "", fmt.Errorf("creating %s: %w", filepath.Dir(path), err)
 	}
-	if err := os.WriteFile(path, []byte(documentWith(c, copyRegions(c, path), citeRoots(c))), 0o644); err != nil {
+	side := SidePath(path)
+	main := reportMain(c, filepath.Base(side))
+	sideDoc := reportSide(c, filepath.Base(path), main, copyRegions(c, path), citeRoots(c))
+	if err := os.WriteFile(side, []byte(sideDoc), 0o644); err != nil {
+		return "", fmt.Errorf("writing %s: %w", side, err)
+	}
+	if err := os.WriteFile(path, []byte(main), 0o644); err != nil {
 		return "", fmt.Errorf("writing %s: %w", path, err)
 	}
 	return path, nil

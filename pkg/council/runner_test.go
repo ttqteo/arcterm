@@ -4111,13 +4111,21 @@ func TestDocPathSavedOnEnd(t *testing.T) {
 	if c.State != StateDone || c.DocPath != want {
 		t.Fatalf("done council: %s with the document at %q, want %q", c.State, c.DocPath, want)
 	}
-	body, err := os.ReadFile(want)
+	main, err := os.ReadFile(want)
 	if err != nil {
 		t.Fatalf("the document was not written: %v", err)
 	}
-	for _, w := range []string{"# Council: Idle sleep for services", "The panel prefers showing the state.", "## The discussion", "proposes · P1 · Title from ", "## Run facts", "- Ended: done"} {
+	if !strings.Contains(string(main), "# Council: Idle sleep for services") || !strings.Contains(string(main), "The panel prefers showing the state.") {
+		t.Errorf("the report lacks its title and answer\n%s", main)
+	}
+	// the discussion and the run facts are in the side file beside it
+	body, err := os.ReadFile(SidePath(want))
+	if err != nil {
+		t.Fatalf("the side file was not written: %v", err)
+	}
+	for _, w := range []string{"## The discussion", "proposes · P1 · Title from ", "## Run facts", "- Ended: done"} {
 		if !strings.Contains(string(body), w) {
-			t.Errorf("the document lacks %q\n%s", w, body)
+			t.Errorf("the side file lacks %q\n%s", w, body)
 		}
 	}
 	h.mu.Lock()
@@ -4132,10 +4140,10 @@ func TestDocPathSavedOnEnd(t *testing.T) {
 		t.Fatal(err)
 	}
 	c = h.wait("a")
-	body, _ = os.ReadFile(want)
+	body, _ = os.ReadFile(SidePath(want))
 	files, _ := os.ReadDir(filepath.Dir(want))
-	if c.DocPath != want || len(files) != 1 || !strings.Contains(string(body), "What about the Mac?") {
-		t.Errorf("after a follow-up: document %q, %d files, new reply in it %v; want the same file rewritten", c.DocPath, len(files), strings.Contains(string(body), "What about the Mac?"))
+	if c.DocPath != want || len(files) != 2 || !strings.Contains(string(body), "What about the Mac?") {
+		t.Errorf("after a follow-up: document %q, %d files, new reply in it %v; want the same two files rewritten", c.DocPath, len(files), strings.Contains(string(body), "What about the Mac?"))
 	}
 
 	// stopped: what the finished rounds hold is saved too
@@ -4144,8 +4152,8 @@ func TestDocPathSavedOnEnd(t *testing.T) {
 	if got, err := h.r.Stop("b"); err != nil || got.State != StateStopped || got.DocPath == "" {
 		t.Fatalf("Stop = %+v, %v, want stopped with a document", got, err)
 	}
-	if body, err := os.ReadFile(h.load("b").DocPath); err != nil || !strings.Contains(string(body), "- Ended: stopped") {
-		t.Errorf("the stopped council's document = %q, %v", body, err)
+	if body, err := os.ReadFile(SidePath(h.load("b").DocPath)); err != nil || !strings.Contains(string(body), "- Ended: stopped") {
+		t.Errorf("the stopped council's side file = %q, %v", body, err)
 	}
 	// a council that ended paused is stopped by Stop with no run behind it: it saves its document there
 	p := councilAs(t, "p", "p-")
