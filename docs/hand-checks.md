@@ -32,6 +32,24 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
   asked, the ask comes back as a refusal whose reason tells the agent to ask you first.
 ## 2026-11-23
 
+- [ ] (arcterm) **Chat: a message from another agent as Markdown** (`SentMarkdown` in `chatconversation.tsx`,
+  `messageText` in `chatmodel.ts`). Send an agent a long message with `wsh agents send` (a paragraph, a numbered list,
+  some `code`) → in its Chat the `message · from <agent>` card shows no `tab <id>` line but a mono chip with the tab id's
+  first 8 characters after the name (hover: `tab <full id>`; a click opens that tab, as the name does), the text in the 13px reading
+  face with real list markers and code chips, cut at ~7 lines under a fade with Show more; Show more opens it on the
+  spring, Show less folds it back, a second press mid-slide turns it around. A short message shows no fold.
+
+- [ ] (arcterm) **Chat: the sender's side of a message to another agent** (`chatagentsend.ts`,
+  `chatagentsendcard.tsx`). In a Claude agent, have it write a message to a file and `wsh agents send <tab> --file <it>`,
+  then `wsh agents wait <tab> && wsh agents read <tab>` with `run_in_background`, and Read the output file → after the
+  send's tool line a card `→ message to <agent badge> · started a turn` with the file's text as Markdown and
+  `from <file>` under it; after the Read, a card set in a step, `← answer from <agent badge>`, with the answer. Also
+  `wsh agents send <tab> "x" --wait` in the foreground: both cards after the one call. A send to a closed tab: the
+  card's border red and `not sent: …`. The badge opens that agent; a closed one reads as its id.
+- [ ] (arcterm) **A Chat visual's scrollbar** (`bridgeScript` in `pkg/htmlserve/htmlserve.go`). A visual taller than
+  640 px that scrolls inside its frame: no scrollbar until the pointer is over it, then a thin thumb as the app's own.
+  Needs the rebuilt wavesrv.
+
 - [ ] (arcterm) **Brainstorm tab: board thumbnails and the rail's dots** (`BoardChip` in `railbrainstormpane.tsx`,
   `RailTabStrip` in `agentrailpanel.tsx`, `RailStripTab.dot` in `collapsiblerail.tsx`). On an agent with a brainstorm
   that lists boards, open the panel's Brainstorm tab → each board is a card with the board drawn small at the card's

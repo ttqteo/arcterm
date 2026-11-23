@@ -112,6 +112,8 @@ export const THEME_VARS: Record<string, string> = {
     edge: "--color-edge-mid",
     ink: "--color-ink-hi",
     "ink-mid": "--color-ink-mid",
+    // the scrollbar thumb the bridge gives the page (htmlserve.go), as the app's own
+    "ink-faint": "--color-ink-faint",
     muted: "--color-muted",
     accent: "--color-accent",
     success: "--color-success",

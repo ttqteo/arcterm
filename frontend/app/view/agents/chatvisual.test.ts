@@ -230,6 +230,7 @@ describe("themeVars", () => {
             edge: "--color-edge-mid",
             ink: "--color-ink-hi",
             "ink-mid": "--color-ink-mid",
+            "ink-faint": "--color-ink-faint",
             muted: "--color-muted",
             accent: "--color-accent",
             success: "--color-success",

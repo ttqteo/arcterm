@@ -55,6 +55,9 @@ and a picture given to a line that is not big.
 
 ### Changed
 
+- A message another agent sends you reads like a message in Chat: its whole text in the reading font, with its lists, paragraphs and `code` drawn as Markdown, folded under a fade with Show more when long, instead of six lines of monospace that began with the sender's tab id; that id is now a short chip beside the sender's name, which opens its conversation like the name does.
+- On the sending side, a message an agent sends another shows in its Chat as a card where it was sent: who it went to, whether it started a turn, and the message as Markdown (read from the file it was written to when sent with `--file`). The answer it brings back with `--wait` or `wsh agents read` shows under it as a card of its own, instead of a tool line and an `.output` file to open.
+- A visual drawn in Chat scrolls with the app's scrollbars: hidden until the pointer is over it.
 - The installer is about 30 MB instead of 47 MB. To get there, Code no longer gives TypeScript and JavaScript hovers,
   completions or error squiggles (it still colors them), and a board's Chinese text draws in the system font instead of
   Excalidraw's hand-drawn Chinese face.
