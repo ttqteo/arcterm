@@ -94,7 +94,7 @@ import {
     type CouncilLang,
     type StanceLabel,
 } from "./councilmodel";
-import { failedFigureRows } from "./councilreporttables";
+import { droppedRelationRows, failedFigureRows } from "./councilreporttables";
 import { FailedFiguresTable, FiguresTable, TodoTable } from "./councilreporttablesview";
 import { retryHold } from "./councilretry";
 import { RetryWithButton } from "./councilretrymenu";
@@ -564,14 +564,16 @@ function AboutFold({ c, onOpenDirection }: { c: Council; onOpenDirection: (rank:
     // with reduced motion the body opens and folds at once
     const fold = usePartMotion(foldReveal);
     const failed = useMemo(() => failedFigureRows(c), [c]);
+    const dropped = useMemo(() => droppedRelationRows(c), [c]);
     const glance = useMemo(() => hasGlanceFigures(c) && (glancePoints(c) != null || stanceGrid(c) != null), [c]);
-    if (!glance && failed.length === 0) {
+    if (!glance && failed.length === 0 && dropped.length === 0) {
         return null;
     }
     const Chevron = open ? ChevronUp : ChevronDown;
     const line = [
         glance ? "At a glance" : "",
         failed.length > 0 ? `${failed.length} ${failed.length === 1 ? "figure" : "figures"} did not check out` : "",
+        dropped.length > 0 ? `${dropped.length} ${dropped.length === 1 ? "relation" : "relations"} did not hold` : "",
     ]
         .filter((part) => part !== "")
         .join(" · ");
@@ -613,6 +615,17 @@ function AboutFold({ c, onOpenDirection }: { c: Council; onOpenDirection: (rank:
                                         Figures that did not check out
                                     </h2>
                                     <FailedFiguresTable rows={failed} />
+                                </div>
+                            ) : null}
+                            {dropped.length > 0 ? (
+                                <div data-council-about-block="dropped" className="flex min-w-0 flex-col gap-4">
+                                    <h2 className="m-0 text-[19px] font-semibold tracking-[-0.01em] text-primary">
+                                        Figure relations that did not hold
+                                    </h2>
+                                    <FailedFiguresTable
+                                        rows={dropped}
+                                        intro="A seat said these numbers relate to another (a part of a whole, an earlier value, a limit), and Go found it does not hold, so the Figures section shows each on its own."
+                                    />
                                 </div>
                             ) : null}
                         </div>

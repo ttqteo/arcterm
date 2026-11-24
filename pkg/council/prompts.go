@@ -20,14 +20,16 @@ import (
 // scored (one whole list judged, recall@3 and recall@all), not a prompt, role brief or model, and it is bumped so that
 // no row scored the old way is read beside the new ones. 2026-11-23.1 is the report-tables change: a Review's round 1
 // asks each seat for its figures, both syntheses ask each direction for a task, why, kind and files, and every field the
-// person reads is now written in the question's language.
-const HarnessVersion = "2026-11-23.1"
+// person reads is now written in the question's language. 2026-11-24.1 asks each figure for an optional "group", "of"
+// (the whole it is part of), "was", "limit" and "bound", "unit" and "at", from which the report draws its figures as
+// groups of bars, changes, limits, comparisons and lines over time.
+const HarnessVersion = "2026-11-24.1"
 
 // figuresField is the "figures" line of round1Shape, on its first proposal: a number the proposal relies on that a project
 // file holds, with the line it sits on and that line's text. Every variant of round1Shape keeps it, the agent seat's too; a
 // Brainstorm's shapes are not derived from round1Shape and ask for none. The value is in its quote, as Go requires.
 const figuresField = `,
-      "figures": [{"value": "300", "measures": "seconds a service idles before it sleeps", "ref": "pkg/services/idle.go:42", "quote": "idleWaitSeconds = 300"}]`
+      "figures": [{"value": "300", "measures": "seconds a service idles before it sleeps", "ref": "pkg/services/idle.go:42", "quote": "idleWaitSeconds = 300", "group": "idle timeouts", "unit": "s"}, {"value": "60", "measures": "seconds of it spent stopping the service", "ref": "pkg/services/idle.go:44", "quote": "stopGraceSeconds = 60", "group": "idle timeouts", "of": "300", "was": "90", "unit": "s"}]`
 
 // verifyField is the "verify" line of round1Shape: one request, in an allowed form, with what the expert expects. An agent
 // seat's shape (round1ShapeNoVerify) is round1Shape without it, since Go runs nothing for a seat.
@@ -354,14 +356,29 @@ const (
 
 	// figuresRule is in round 1 of a Review, an agent seat's first turn included, after the evidence rule and the quote
 	// rule: the numbers a proposal relies on that a project file holds, which Go checks (checkFigure) and puts in the
-	// report's table of figures. figuresRuleFor adds the language "measures" is written in.
+	// report's table of figures, with the optional "group" and "of" its bars are drawn from (relateFigures). figuresRuleFor
+	// adds the language "measures" and "group" are written in.
 	figuresRule = `A proposal may also list the figures it relies on, in "figures": each number a project file holds that ` +
 		`the proposal counts on, such as a limit, a size, a count or a time. Give its "value" exactly as the quoted line ` +
 		`writes it, "ref" as the path:line it sits on, "quote" as that line's text, copied as you read it, and "measures" ` +
 		`as what the number measures, in a few words. Go checks that the quote is at that line and that the value is in ` +
 		`the quote, and only a number that passes goes in the report's table of figures. List only a number a file holds: ` +
 		`leave out a number nobody wrote down, an estimate and a number you worked out, and leave "figures" out of a ` +
-		`proposal that relies on none.`
+		`proposal that relies on none. Optional fields let the report draw how the numbers hang together, each as a ` +
+		`chart, so give every one that is true. "group" is a short name, a few words, for the set of figures the number ` +
+		`is read with (the same name on every figure of the set, in every proposal); leave it out of a number that ` +
+		`stands alone. "of" is the value of the whole the number is part of: for a count, the count it is one part of ` +
+		`("94" of "135", "135" of "947"); for a rate, a percentage, a fraction or a ratio, the denominator it is over ` +
+		`("0.7059" of "170"); two rates of one numerator over different denominators, each with its own "of", show the ` +
+		`gap between them. "was" is the value the same thing had before (an older run, the last draft, the paper's ` +
+		`number against the new result): "80" with "was": "60". "limit" is a threshold the number is held to (a budget, ` +
+		`a target, a cap), with "bound": "max" when it should stay at or under it and "min" when at or over it. "unit" ` +
+		`is what it counts in ("ca", "ms", "%"); figures of one group with one unit are drawn side by side to compare. ` +
+		`"at" is when it holds ("2026-11-20", "v2", "vòng 3"); figures of one group and unit that each have one are ` +
+		`drawn as a line over time. Write "of", "was" and "limit" as the value of another of your figures, which must ` +
+		`be a number a file holds like any other (a fraction may name its own denominator: "120/151"). Go checks each ` +
+		`relation: the other figure must be a checked figure of the same kind (both counts or both rates), a part no ` +
+		`larger than its whole, and the parts of one whole may not add up to more than it.`
 
 	// askRule is in both synthesis prompts: the questions the report suggests the person ask next, which the Discussion
 	// offers above its composer.
@@ -1021,7 +1038,7 @@ func figuresRuleFor(c *Council) string {
 	if lang == LangVi {
 		name = "Vietnamese"
 	}
-	return figuresRule + ` Write "measures" in ` + name + `, the language of the person's question.`
+	return figuresRule + ` Write "measures" and "group" in ` + name + `, the language of the person's question.`
 }
 
 // writeZonesTask is the zone block of a Brainstorm's round 1 task: e's own zone, every seat's, and how an idea names the

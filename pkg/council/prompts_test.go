@@ -360,18 +360,18 @@ func TestRound1PromptAsksAReviewForFigures(t *testing.T) {
 	c := promptCouncil()
 	p := Round1Prompt(c, c.Experts[0])
 	mustContain(t, "round 1 prompt", p, figuresRuleFor(c), `"figures"`, `"measures"`, `"value"`,
-		"exactly as the quoted line writes it", "leave out a number nobody wrote down", `Write "measures" in English`)
-	mustNotContain(t, "round 1 prompt", p, `Write "measures" in Vietnamese`)
+		"exactly as the quoted line writes it", "leave out a number nobody wrote down", `"group"`, `"of"`, `"was"`, `"limit"`, `"bound"`, `"unit"`, `"at"`, "a checked figure of the same kind", `Write "measures" and "group" in English`)
+	mustNotContain(t, "round 1 prompt", p, `Write "measures" and "group" in Vietnamese`)
 
 	// the language of the question, said by name (messageRules mentions Vietnamese in every prompt, so the sentence is the test)
 	vi := promptCouncil()
 	vi.Lang, vi.Question = LangVi, "Hướng nào nên làm trước?"
-	mustContain(t, "Vietnamese round 1 prompt", Round1Prompt(vi, vi.Experts[0]), figuresRuleFor(vi), `Write "measures" in Vietnamese`)
-	mustNotContain(t, "Vietnamese round 1 prompt", Round1Prompt(vi, vi.Experts[0]), `Write "measures" in English`)
+	mustContain(t, "Vietnamese round 1 prompt", Round1Prompt(vi, vi.Experts[0]), figuresRuleFor(vi), `Write "measures" and "group" in Vietnamese`)
+	mustNotContain(t, "Vietnamese round 1 prompt", Round1Prompt(vi, vi.Experts[0]), `Write "measures" and "group" in English`)
 	// a council saved with no language reads it from its question, as Start does
 	old := promptCouncil()
 	old.Lang, old.Question = "", "Hướng nào nên làm trước?"
-	mustContain(t, "round 1 prompt of a council with no language", Round1Prompt(old, old.Experts[0]), `Write "measures" in Vietnamese`)
+	mustContain(t, "round 1 prompt of a council with no language", Round1Prompt(old, old.Experts[0]), `Write "measures" and "group" in Vietnamese`)
 
 	// the agent seat's first turn asks the same, with no verify request
 	agent := round1Task(c, c.Experts[0], false)

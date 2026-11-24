@@ -169,7 +169,7 @@ func TestCollectFigures(t *testing.T) {
 		}
 	})
 
-	t.Run("a place written as a line or a range with a column is one place", func(t *testing.T) {
+	t.Run("a place written as a line or a range with a column is one place, and a range quoting the same line joins it", func(t *testing.T) {
 		c := &Council{Proposals: []CouncilProposal{
 			{Id: "P1", Author: "ux", Figures: []CouncilFigure{fig("300", "a", "a.go:42", CiteOK)}},
 			{Id: "P2", Author: "ram", Figures: []CouncilFigure{fig("300", "a", "a.go:L42", CiteOK)}},
@@ -177,8 +177,9 @@ func TestCollectFigures(t *testing.T) {
 			{Id: "P4", Author: "ram", Figures: []CouncilFigure{fig("300", "a", "a.go:42-45", CiteOK)}},
 		}}
 		got := collectFigures(c)
-		if len(got) != 2 || !slices.Equal(got[0].From, []string{"P1", "P2", "P3"}) || !slices.Equal(got[1].From, []string{"P4"}) {
-			t.Errorf("collectFigures = %+v, want line 42 as one figure and the range as another", got)
+		// the line written three ways is one place, so only the range is another ref
+		if len(got) != 1 || !slices.Equal(got[0].From, []string{"P1", "P2", "P3", "P4"}) || !slices.Equal(got[0].Refs, []string{"a.go:42-45"}) {
+			t.Errorf("collectFigures = %+v, want one figure at a.go:42, also at a.go:42-45", got)
 		}
 	})
 

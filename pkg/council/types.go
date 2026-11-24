@@ -177,6 +177,50 @@ type CouncilFigure struct {
 	// From is the ids of the proposals that declared it. Set only on Council.Figures, where copies of one figure from
 	// several seats are one.
 	From []string `json:"from,omitempty"`
+	// Refs is the other places that hold the same figure (a copy of the file, a nearby line), each "path:line". Set only on
+	// Council.Figures, by the merge of copies (collectFigures).
+	Refs []string `json:"refs,omitempty"`
+	// Group is the short name of the set of figures this one is read with ("Bản vá trong X.js"), in the language of the
+	// person's question; "" for a figure that stands alone. On Council.Figures every figure linked to another (a part and
+	// its whole, a value and its earlier one or its limit) takes the first group among them.
+	Group string `json:"group,omitempty"`
+	// Of is the whole this figure is a part of: for a count, the count it is part of ("947"); for a rate (a %, a fraction,
+	// a number between 0 and 1), the denominator it is over ("170"). The seat writes it; on Council.Figures Go keeps it only
+	// when the relation checks out (relateFigures) and rewrites it to the whole figure's Value, else clears it and says why
+	// in RelNote.
+	Of string `json:"of,omitempty"`
+	// Was is the value this figure had before, itself a figure ("60" for a count that is now "80", "79,5%" for a rate that
+	// is now "70,6%"); kept on Council.Figures as the earlier figure's Value only when that is a checked figure of the same
+	// kind (both counts or both rates).
+	Was string `json:"was,omitempty"`
+	// Limit is the threshold this figure is held to, itself a figure ("1000" for a time with a 1000 ms budget); kept on
+	// Council.Figures as the limit figure's Value only when that is a checked figure of the same kind. Bound says which
+	// side is good: "max" (the figure should stay at or under it, the default) or "min" (at or over it).
+	Limit string `json:"limit,omitempty"`
+	Bound string `json:"bound,omitempty"`
+	// Unit is what the figure counts in ("ca", "ms", "%"), the same word on every figure of a group that compares; the
+	// report draws the figures of one group and one unit side by side. Written by the seat, kept as written.
+	Unit string `json:"unit,omitempty"`
+	// At is when the figure holds ("2026-11-20", "vòng 2", "v1"); the figures of one group and unit that each have one are
+	// drawn as a line over time. Written by the seat, kept as written.
+	At string `json:"at,omitempty"`
+	// RelNote says why Go dropped a relation the seat declared (Of, Was or Limit), several joined by "; ": "the whole 170
+	// is not a checked figure", "the earlier value 60 is not a checked figure". Set only on Council.Figures.
+	RelNote string `json:"relnote,omitempty"`
+	// Amount is the figure read as a count, when it is one (not a rate): 947 for "947", 1248 for "1,248 ms". Set only on
+	// Council.Figures, for a verified figure; 0 otherwise.
+	Amount float64 `json:"amount,omitempty"`
+	// Rate says the figure is a rate (a %, a fraction "120/151", or a number between 0 and 1) rather than a count. Set only
+	// on Council.Figures, for a verified figure.
+	Rate bool `json:"rate,omitempty"`
+	// Level is the figure as one number the report draws to: the count, or the rate as 0..1. Set only on Council.Figures,
+	// for a verified figure that reads as a number.
+	Level float64 `json:"level,omitempty"`
+	// Share is the part of its whole this figure is, 0..1: the rate itself, or the count over the whole's. Set only on
+	// Council.Figures, with Of.
+	Share float64 `json:"share,omitempty"`
+	// Breach says the figure is on the wrong side of its Limit: over a max, under a min. Set only with Limit.
+	Breach bool `json:"breach,omitempty"`
 }
 
 // CouncilRegion is a screenshot cite Go located: the image it boxes, the box as fractions (0..1) of that image's width

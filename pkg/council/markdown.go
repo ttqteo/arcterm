@@ -5,9 +5,11 @@ package council
 
 import (
 	"fmt"
+	"math"
 	"regexp"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -210,18 +212,190 @@ func todoFiles(d CouncilDirection) string {
 }
 
 // figuresPart is the figures table: the figures Go checked against the project's files (Cite is ok), each with what it
-// measures and the line it comes from. It is empty when none checked out; the ones that did not are the side file's.
+// measures and the lines it comes from. When a seat named groups, each group is a table under its own heading, the
+// figures that stand alone last under "Other figures"; inside one, each whole comes before its parts (figureSections).
+// A table where a figure relates to another has a Relation column (relationCell). It is empty when none checked out; the ones that did not
+// are the side file's.
 func figuresPart(c *Council, w reportWords) string {
-	var rows []string
-	for _, f := range c.Figures {
-		if f.Cite == CiteOK {
-			rows = append(rows, fmt.Sprintf("| %s | %s | %s |", cellOr(f.Value), cellOr(f.Measures), refCell(f.Ref)))
-		}
-	}
-	if len(rows) == 0 {
+	sections := figureSections(c.Figures)
+	if len(sections) == 0 {
 		return ""
 	}
-	return fmt.Sprintf("## %s\n\n| %s | %s | %s |\n|---|---|---|\n%s", w.figures, w.colValue, w.colMeasures, w.colSource, strings.Join(rows, "\n"))
+	out := []string{"## " + w.figures}
+	grouped := sections[0].name != ""
+	for _, s := range sections {
+		if grouped {
+			name := s.name
+			if name == "" {
+				name = w.otherFigures
+			}
+			out = append(out, "### "+tableCell(name))
+		}
+		out = append(out, figureTable(s.figs, w))
+	}
+	return strings.Join(out, "\n\n")
+}
+
+// figureTable is one group's rows, with a Relation column when any of them relates to another figure (relationCell).
+func figureTable(figs []CouncilFigure, w reportWords) string {
+	rel := slices.ContainsFunc(figs, func(f CouncilFigure) bool { return relationCell(f, figs, w) != "—" })
+	head := fmt.Sprintf("| %s | %s | %s |\n|---|---|---|", w.colValue, w.colMeasures, w.colSource)
+	if rel {
+		head = fmt.Sprintf("| %s | %s | %s | %s |\n|---|---|---|---|", w.colValue, w.colRelation, w.colMeasures, w.colSource)
+	}
+	rows := []string{head}
+	for _, f := range figs {
+		if rel {
+			rows = append(rows, fmt.Sprintf("| %s | %s | %s | %s |", cellOr(f.Value), relationCell(f, figs, w), cellOr(f.Measures), sourcesCell(f)))
+		} else {
+			rows = append(rows, fmt.Sprintf("| %s | %s | %s |", cellOr(f.Value), cellOr(f.Measures), sourcesCell(f)))
+		}
+	}
+	return strings.Join(rows, "\n")
+}
+
+// relationCell is how a figure relates to the others, its parts joined by "; " ("—" for none): its share of a whole
+// ("14,3% của 947"), the change from its earlier value ("từ 60, +20"; a rate's in points, "từ 79,5%, −8,9 điểm"), its
+// side of a limit ("vượt ngưỡng tối đa 1000"), and when it holds ("lúc v2"). in is the figure's table, where the earlier
+// value is looked up by value for its number. councilreporttables.ts's relationText is its twin.
+func relationCell(f CouncilFigure, in []CouncilFigure, w reportWords) string {
+	var parts []string
+	if f.Of != "" {
+		parts = append(parts, fmt.Sprintf("%s %s %s", localNumber(percentText(f.Share), w), w.ofWhole, tableCell(f.Of)))
+	}
+	if f.Was != "" {
+		change := fmt.Sprintf("%s %s", w.fromWas, tableCell(f.Was))
+		if i := slices.IndexFunc(in, func(g CouncilFigure) bool { return g.Value == f.Was }); i >= 0 {
+			change += ", " + changeText(f.Level-in[i].Level, f.Rate, w)
+		}
+		parts = append(parts, change)
+	}
+	if f.Limit != "" {
+		side := w.withinMax
+		switch {
+		case f.Bound == "min" && f.Breach:
+			side = w.underMin
+		case f.Bound == "min":
+			side = w.meetsMin
+		case f.Breach:
+			side = w.overMax
+		}
+		parts = append(parts, fmt.Sprintf("%s %s", side, tableCell(f.Limit)))
+	}
+	if f.At != "" {
+		parts = append(parts, fmt.Sprintf("%s %s", w.atTime, tableCell(f.At)))
+	}
+	if len(parts) == 0 {
+		return "—"
+	}
+	return strings.Join(parts, "; ")
+}
+
+// changeText is a change with its sign ("+20", "−8,9 điểm"): a count's in its own units, a rate's in percentage points
+// with one decimal.
+func changeText(d float64, rate bool, w reportWords) string {
+	sign := "+"
+	if d < 0 {
+		sign, d = "−", -d
+	}
+	if rate {
+		return sign + localNumber(strconv.FormatFloat(math.Round(d*1000)/10, 'f', -1, 64), w) + " " + w.points
+	}
+	return sign + localNumber(numberText(math.Round(d*100)/100), w)
+}
+
+// localNumber writes a number's decimal point as the report's language does ("79,5%" in Vietnamese).
+func localNumber(s string, w reportWords) string {
+	if w.decimalComma {
+		return strings.Replace(s, ".", ",", 1)
+	}
+	return s
+}
+
+// sourcesCell is a figure's ref and the other places that hold it (Refs), each as code, joined by commas.
+func sourcesCell(f CouncilFigure) string {
+	cells := []string{refCell(f.Ref)}
+	for _, r := range f.Refs {
+		if r = tableCell(r); r != "" {
+			cells = append(cells, "`"+r+"`")
+		}
+	}
+	return strings.Join(cells, ", ")
+}
+
+// figureSection is one group of the figures table: its name ("" for the figures that stand alone) and its verified
+// figures in reading order.
+type figureSection struct {
+	name string
+	figs []CouncilFigure
+}
+
+// figureSections is the verified figures split by group, the groups in the order each was first named and the figures
+// with no group last; inside a group each figure with no whole there comes in the order declared, each followed by its
+// parts (a part's whole is the group's first other count whose value is the part's Of), depth first. With no group named
+// it is one section named "". councilreporttables.ts's figureSections is its twin: change one and change the other.
+func figureSections(figs []CouncilFigure) []figureSection {
+	var names []string
+	byName := map[string][]CouncilFigure{}
+	for _, f := range figs {
+		if f.Cite != CiteOK {
+			continue
+		}
+		if _, ok := byName[f.Group]; !ok {
+			names = append(names, f.Group)
+		}
+		byName[f.Group] = append(byName[f.Group], f)
+	}
+	if i := slices.Index(names, ""); i >= 0 {
+		names = append(slices.Delete(names, i, i+1), "")
+	}
+	var out []figureSection
+	for _, name := range names {
+		out = append(out, figureSection{name: name, figs: wholesFirst(byName[name])})
+	}
+	return out
+}
+
+// wholesFirst orders one group's figures: each figure whose whole is not in the group, in order, then its parts, depth
+// first.
+func wholesFirst(figs []CouncilFigure) []CouncilFigure {
+	parent := make([]int, len(figs))
+	for i, f := range figs {
+		parent[i] = -1
+		if f.Of == "" {
+			continue
+		}
+		for j, g := range figs {
+			if j != i && !g.Rate && g.Value == f.Of {
+				parent[i] = j
+				break
+			}
+		}
+	}
+	var out []CouncilFigure
+	seen := make([]bool, len(figs))
+	var visit func(i int)
+	visit = func(i int) {
+		if seen[i] {
+			return
+		}
+		seen[i] = true
+		out = append(out, figs[i])
+		for k := range figs {
+			if parent[k] == i {
+				visit(k)
+			}
+		}
+	}
+	for i := range figs {
+		if parent[i] < 0 {
+			visit(i)
+		}
+	}
+	for i := range figs { // a loop relateFigures let through would leave figures unvisited: keep them, in order
+		visit(i)
+	}
+	return out
 }
 
 // refCell is a figure's `path:line` as code in a table cell; "—" with none.
@@ -585,7 +759,8 @@ func reportSide(c *Council, mainName, main string, crops map[string]string, root
 }
 
 // failedFiguresPart lists the figures the seats declared that Go could not confirm against the project's files, each
-// with why, so a number left out of the report's Figures table is not lost. It is empty when every figure checked out.
+// with why, so a number left out of the report's Figures table is not lost, then the verified figures whose part-of-whole
+// relation Go dropped, with why. It is empty when every figure and relation checked out.
 func failedFiguresPart(c *Council) string {
 	var rows []string
 	for _, f := range c.Figures {
@@ -598,13 +773,28 @@ func failedFiguresPart(c *Council) string {
 		}
 		rows = append(rows, fmt.Sprintf("| %s | %s | %s | %s |", cellOr(f.Value), cellOr(f.Measures), refCell(f.Ref), tableCell(note)))
 	}
-	if len(rows) == 0 {
-		return ""
+	var dropped []string
+	for _, f := range c.Figures {
+		if f.Cite == CiteOK && f.RelNote != "" {
+			dropped = append(dropped, fmt.Sprintf("| %s | %s | %s | %s |", cellOr(f.Value), cellOr(f.Measures), refCell(f.Ref), tableCell(oneLine(f.RelNote))))
+		}
 	}
-	return "## " + failedFiguresHeading + "\n\n" +
-		"The seats declared these numbers; Go could not confirm them against the files, so the report's Figures table leaves them out.\n\n" +
-		"| Value | Measures | Source | Why |\n|---|---|---|---|\n" + strings.Join(rows, "\n")
+	var parts []string
+	if len(rows) > 0 {
+		parts = append(parts, "## "+failedFiguresHeading+"\n\n"+
+			"The seats declared these numbers; Go could not confirm them against the files, so the report's Figures table leaves them out.\n\n"+
+			"| Value | Measures | Source | Why |\n|---|---|---|---|\n"+strings.Join(rows, "\n"))
+	}
+	if len(dropped) > 0 {
+		parts = append(parts, "## "+droppedRelationsHeading+"\n\n"+
+			"A seat said these numbers are part of a whole, and Go found it does not hold, so the Figures table shows each on its own.\n\n"+
+			"| Value | Measures | Source | Why |\n|---|---|---|---|\n"+strings.Join(dropped, "\n"))
+	}
+	return strings.Join(parts, "\n\n")
 }
+
+// droppedRelationsHeading is the side file's section of the figures whose "of" did not hold (CouncilFigure.RelNote).
+const droppedRelationsHeading = "Figure relations that did not hold"
 
 // briefsPart lists the files given to the council from outside its project that Start could not copy into it, with why:
 // the council read each where it is, so a cite of one may not resolve on another machine. It is empty when none failed.

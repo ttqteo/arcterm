@@ -20,6 +20,10 @@ type reportWords struct {
 	kindNew, kindEdit, kindDecision                 string // what a row's Loại column says; a row with none says "—"
 
 	figures, colValue, colMeasures, colSource string // the figures table
+	colRelation, otherFigures                 string // the column of how a figure relates to others; the ungrouped figures' heading
+	// the words of that column: "14.3% of 947", "from 60, +20", "−8.9 pts", "over the max 1000", "at v2"
+	ofWhole, fromWas, points, overMax, withinMax, underMin, meetsMin, atTime string
+	decimalComma                                                             bool // numbers are written with a decimal comma ("79,5%")
 
 	finalProposal, fromSeat string // fromSeat opens the line that names who wrote it: "From UX"
 	sideLink                string // a format with the side file's name twice: the link's text and its target
@@ -40,6 +44,9 @@ var englishWords = reportWords{
 	kindNew: "new work", kindEdit: "text edit", kindDecision: "decision",
 
 	figures: "Figures", colValue: "Value", colMeasures: "Measures", colSource: "Source",
+	colRelation: "Relation", otherFigures: "Other figures",
+	ofWhole: "of", fromWas: "from", points: "pts", overMax: "over the max", withinMax: "within the max",
+	underMin: "under the min", meetsMin: "meets the min", atTime: "at",
 
 	finalProposal: "Final proposal", fromSeat: "From",
 	sideLink: "The full reasoning, the discussion and how the council worked: [%[1]s](%[1]s).",
@@ -61,6 +68,9 @@ var vietnameseWords = reportWords{
 	kindNew: "việc mới", kindEdit: "sửa chữ", kindDecision: "quyết định",
 
 	figures: "Số liệu", colValue: "Giá trị", colMeasures: "Đo gì", colSource: "Nguồn",
+	colRelation: "Liên hệ", otherFigures: "Số khác",
+	ofWhole: "của", fromWas: "từ", points: "điểm", overMax: "vượt ngưỡng tối đa", withinMax: "trong ngưỡng tối đa",
+	underMin: "dưới mức tối thiểu", meetsMin: "đạt mức tối thiểu", atTime: "lúc", decimalComma: true,
 
 	finalProposal: "Đề xuất cuối cùng", fromSeat: "Từ",
 	sideLink: "Lập luận đầy đủ, cuộc thảo luận và cách hội đồng làm việc: [%[1]s](%[1]s).",

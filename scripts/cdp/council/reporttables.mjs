@@ -8,7 +8,8 @@
 // "—"), two figures Go verified and one it found wrong. The steps: Việc cần làm first under the answer; Số liệu lists only
 // the verified figures with their `path:line`; About the council is folded until opened, then holds At a glance and the
 // failed figure with its note; at a narrow pane the tables fit without the page scrolling sideways; an English council
-// (the `done` fixture) heads its table in English.
+// (the `done` fixture) heads its table in English; and the `figure-charts` fixture draws every chart of the Figures section
+// and lists the relation Go dropped under About the council.
 //
 // The hooks are called by councilscenarios.mjs as arrange(h, fx), assert(h, ctx, fx), teardown(h, ctx, fx). Nothing here
 // calls a model or spends a token: the councils are written into the data dir (fixtures.mjs `seedCouncil`).
@@ -69,6 +70,7 @@ export const councilReportTables = {
         try {
             ctx.councilId = await seedCouncil(h, ctx, "report-tables");
             ctx.englishId = await seedCouncil(h, ctx, "done");
+            ctx.chartsId = await seedCouncil(h, ctx, "figure-charts");
         } catch (e) {
             await teardownCouncilProject(h, ctx).catch(() => {});
             throw e;
@@ -262,6 +264,114 @@ export const councilReportTables = {
                 table.rows[0][2] === "A cleared WebView2 profile no longer loses the pins." &&
                 !figures;
             return { ok, detail: JSON.stringify({ table, figures }) };
+        });
+
+        await step("Số liệu draws each group as its chart: parts of a whole, rates over their denominators, a change, limits, a line over rounds and a comparison", async () => {
+            await openReport(h, ctx.chartsId, 2);
+            const facts = await h.ev(`(() => {
+                const fig = document.querySelector(${q(FIGURES)});
+                if (fig == null) return null;
+                const t = (el) => el?.innerText?.replace(/\s+/g, " ").trim() ?? null;
+                const groups = [...fig.querySelectorAll("[data-council-figure-group]")].map((g) => ({
+                    name: g.dataset.councilFigureGroup,
+                    heading: t(g.querySelector("h3")),
+                    charts: [...g.querySelectorAll("[data-council-figure-bar]")].map((b) => b.dataset.councilFigureBar),
+                    rows: g.querySelectorAll("[data-council-figure-row]").length,
+                }));
+                const box = fig.getBoundingClientRect();
+                return {
+                    groups,
+                    segments: [...fig.querySelectorAll("[data-council-figure-segment]")].map((s) => s.dataset.councilFigureSegment),
+                    pcts: [...fig.querySelectorAll("[data-council-figure-pct]")].map(t),
+                    delta: t(fig.querySelector("[data-council-figure-delta]")),
+                    sides: [...fig.querySelectorAll("[data-council-figure-side]")].map((s) => s.dataset.councilFigureSide + ":" + t(s)),
+                    points: [...fig.querySelectorAll("[data-council-figure-point]")].map((p) => p.dataset.councilFigurePoint),
+                    compare: [...fig.querySelectorAll("[data-council-figure-compare]")].map((c) => c.dataset.councilFigureCompare),
+                    overflow: [...fig.querySelectorAll("[data-council-figure-bar]")].some((b) => b.getBoundingClientRect().right > box.right + 1),
+                };
+            })()`);
+            await h.ev(`document.querySelector(${q(FIGURES)})?.scrollIntoView({ block: "start" })`);
+            await sleep(300);
+            await h.shot("cdp-shots/council-report-tables-charts.png");
+            await h.whatsnewShot?.("council-figure-charts", { selector: FIGURES });
+            // one picture per group, each scrolled to the top of the pane, so every chart is on the contact sheet
+            for (const [i, g] of (facts?.groups ?? []).entries()) {
+                await h.ev(`document.querySelector('[data-council-figure-group=${JSON.stringify(JSON.stringify(g.name)).slice(1, -1)}]')?.scrollIntoView({ block: "start" })`);
+                await sleep(300);
+                await h.shot(`cdp-shots/council-report-tables-charts-${i + 1}.png`);
+            }
+            const g = Object.fromEntries((facts?.groups ?? []).map((x) => [x.name, x]));
+            const ok =
+                facts != null &&
+                g["Bản vá X.js"]?.charts.join(",") === "stack" &&
+                facts.segments.join(",") === "94,41,rest" &&
+                g["Tỉ lệ chặn"]?.charts.join(",") === "rate,rate" &&
+                g["Tỉ lệ chặn"].rows === 2 &&
+                facts.pcts.join("|") === "70,6% của 170|79,5% của 151" &&
+                g["Trước và sau replay"]?.charts.join(",") === "change" &&
+                facts.delta === "−8,9 điểm" &&
+                g["Ngân sách thời gian"]?.charts.join(",") === "limit,limit" &&
+                facts.sides.join("|") === "breach:vượt ngưỡng tối đa 1000|ok:đạt mức tối thiểu 0.8" &&
+                g["Theo vòng chạy"]?.charts.join(",") === "series" &&
+                facts.points.join(",") === "vòng 1,vòng 2,vòng 3,vòng 4" &&
+                g["Lớp lỗi"]?.charts.join(",") === "compare" &&
+                facts.compare.join(",") === "18,7,6" &&
+                g[""]?.heading === "Số khác" &&
+                g[""].rows === 2 &&
+                !facts.overflow;
+            return { ok, detail: JSON.stringify(facts) };
+        });
+
+        await step("at a narrow pane (520px) every chart stays inside the pane, and no two labels of the line over rounds overlap", async () => {
+            const original = await h.ev(`(() => {
+                const root = document.querySelector(${q(SUMMARY)});
+                const prev = root.getAttribute("style") ?? "";
+                root.style.width = "520px";
+                root.style.maxWidth = "520px";
+                return prev;
+            })()`);
+            try {
+                await sleep(400);
+                const m = await h.ev(`(() => {
+                    const root = document.querySelector(${q(SUMMARY)});
+                    const fig = root.querySelector(${q(FIGURES)});
+                    const box = fig.getBoundingClientRect();
+                    const scroll = root.querySelector("[data-council-scroll]");
+                    const overlap = (els) => {
+                        const r = els.map((e) => e.getBoundingClientRect()).sort((a, b) => a.left - b.left);
+                        return r.some((a, i) => i > 0 && r[i - 1].right > a.left + 1);
+                    };
+                    return {
+                        width: Math.round(root.getBoundingClientRect().width),
+                        sideways: scroll ? scroll.scrollWidth - scroll.clientWidth : 0,
+                        outside: [...fig.querySelectorAll("[data-council-figure-bar]")]
+                            .filter((b) => b.getBoundingClientRect().right > box.right + 1)
+                            .map((b) => b.dataset.councilFigureBar),
+                        atOverlap: overlap([...fig.querySelectorAll("[data-council-figure-at]")]),
+                    };
+                })()`);
+                await h.ev(`document.querySelector('[data-council-figure-bar="series"]')?.scrollIntoView({ block: "center" })`);
+                await sleep(300);
+                await h.shot("cdp-shots/council-report-tables-charts-narrow.png");
+                const ok = m.width === 520 && m.sideways <= 1 && m.outside.length === 0 && !m.atOverlap;
+                return { ok, detail: JSON.stringify(m) };
+            } finally {
+                await h.ev(`document.querySelector(${q(SUMMARY)})?.setAttribute("style", ${q(original)})`);
+                await sleep(300);
+            }
+        });
+
+        await step("About the council lists the figure relation Go dropped, with why", async () => {
+            await h.ev(`document.querySelector(${q(TOGGLE)})?.click()`);
+            const shown = await until(h, `!!document.querySelector('[data-council-about-block="dropped"]')`);
+            const note = await h.ev(
+                `[...document.querySelectorAll('[data-council-about-block="dropped"] [data-council-failed-note]')].map((n) => n.innerText.trim()).join("|")`
+            );
+            await h.ev(`document.querySelector('[data-council-about-block="dropped"]')?.scrollIntoView({ block: "center" })`);
+            await sleep(400);
+            await h.shot("cdp-shots/council-report-tables-dropped.png");
+            await h.ev(`document.querySelector(${q(TOGGLE)})?.click()`);
+            return { ok: shown && note === "the whole 999 is not a checked figure", detail: JSON.stringify({ shown, note }) };
         });
 
         return steps;
