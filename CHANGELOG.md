@@ -109,6 +109,7 @@ and a picture given to a line that is not big.
 
 ### Fixed
 
+- A Claude agent you answer, in its terminal or on arcterm's card, reads working again at once. It used to stay "asking" in the tree and the roster until its next tool call, through a long answer or a file it was writing.
 - A prompt that starts with `@` and the id of a council, a run or a past conversation now goes to the agent you typed it to, which reads that id, instead of being dropped as a message to an agent that isn't there.
 - A message a hook stops before it reaches the agent now shows "Not sent" in Chat with the reason, and its text comes back to the box once. Before, Chat showed it as sent, and each retry added another copy to the terminal's box.
 - A folded Agent sidebar stays folded when a new agent is held because the machine is busy, and when a council, a project's Overview or a board opens in the centre; it used to spring open on its own.

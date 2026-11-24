@@ -53,6 +53,15 @@ export class TurnStatus {
         return this.enqueue(statusArgs("working", transcriptPath), run);
     }
 
+    // a question claude asked was answered, in its dialog or on arcterm's card, and the turn works on. no settings
+    // hook says so: a card's answer runs no PostToolUse, and the mod's PostToolUse hook skips the settings ones for a
+    // call the card raced, agent-hook's working among them. the cockpit read asking until the next tool call, through
+    // a long answer or a file being written
+    answered(transcriptPath: string | null, run: Report): Promise<void> {
+        this.idleSent = false;
+        return this.enqueue(statusArgs("working", transcriptPath), run);
+    }
+
     private enqueue(args: string[], run: Report): Promise<void> {
         this.chain = this.chain.then(() => run(args)).catch(() => undefined);
         return this.chain;

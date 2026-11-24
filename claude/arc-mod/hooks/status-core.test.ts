@@ -74,6 +74,32 @@ describe("TurnStatus", () => {
         await status.stepped(undefined, null, run);
         expect(sent).toEqual([["agentstatus", "--state", "working", "--agent", "claude"]]);
     });
+
+    it("reports working each time a question is answered, mid-turn: no settings hook does", async () => {
+        const { sent, run } = recorder();
+        const status = new TurnStatus();
+        await status.answered("/t.jsonl", run);
+        await status.answered("/t.jsonl", run);
+        expect(sent).toEqual([WORKING, WORKING]);
+    });
+
+    it("queues an answer's working behind an idle still landing, and a dismissal's idle after it lands last", async () => {
+        const { sent, run } = recorder();
+        const status = new TurnStatus();
+        void status.ended(IDLE, run);
+        void status.answered("/t.jsonl", run);
+        await status.ended(IDLE, run);
+        expect(sent).toEqual([IDLE, WORKING, IDLE]);
+    });
+
+    it("an answer's working stands in for the step's: the turn's next step sends nothing more", async () => {
+        const { sent, run } = recorder();
+        const status = new TurnStatus();
+        await status.ended(IDLE, run);
+        await status.answered("/t.jsonl", run);
+        await status.stepped(undefined, "/t.jsonl", run);
+        expect(sent).toEqual([IDLE, WORKING]);
+    });
 });
 
 describe("idleArgs", () => {
