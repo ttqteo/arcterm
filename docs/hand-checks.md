@@ -921,15 +921,13 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
   columns, then open and close Sidecar (Ctrl+P → Open Sidecar) ten times → arcterm's counts come back to the same
   level after each close instead of growing by two per cycle, and after each reopen the title bar and the taskbar
   button still draw the screen-badge icon. Commit: fix(sidecar) free the window's icons when Sidecar closes
-- [ ] (arcterm) **Sidecar P/Q across a real day: the question heuristic's misses, the ping from across the room, RAM of
-  P with 12 agents after a day.** The `sidecar-orbit` and `sidecar-compact` scenarios read fixtures: they cannot judge
-  a real day. With real agents for a day: (1) a finished agent whose last message asks something gets a Needs you row
-  (Enter: reply in the main window), and a rhetorical question at the end of a report does too, which is the miss to
-  count (spec "Open": a miss only adds a row, and answering or opening it clears it); note the false rows and any
-  question it did not catch. (2) From across the room (a second screen, 2 m away), a waiting node or row pings and you
-  see it without reading; nothing else on the screen moves. (3) RAM of P with 12 agents after a day on screen, against
-  the 100 MB budget: write the figures into the "Sidecar, part 3" row of `docs/open-issues.md` "RAM watch" (the main
-  window's renderer grows on its own: read Sidecar's renderer plus the GPU process it adds, as the part-1 row does).
+- [ ] (arcterm) **Sidecar P/Q across a real day: the question heuristic's misses, the ping from across the room.** The
+  `sidecar-orbit` and `sidecar-compact` scenarios read fixtures: they cannot judge a real day. With real agents for a
+  day: (1) a finished agent whose last message asks something gets a Needs you row (Enter: reply in the main window),
+  and a rhetorical question at the end of a report does too, which is the miss to count (spec "Open": a miss only adds
+  a row, and answering or opening it clears it); note the false rows and any question it did not catch. (2) From across
+  the room (a second screen, 2 m away), a waiting node or row pings and you see it without reading; nothing else on the
+  screen moves. (P's RAM after a day was read on 2026-11-24: the "Sidecar, part 3" row of `docs/open-issues.md`.)
   Commit: test(sidecar) CDP scenarios for the orbit dashboard, full and compact
 - [ ] (arcterm) **Packaged build: Sidecar has its own taskbar button with the screen badge, not arcterm's icon;
   right-click shows no "Pin to taskbar"; closing arcterm closes it.** Windows only; the dev app shares the exe's icon
@@ -1350,13 +1348,6 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
   while it changes frame, checked over Win32 with the production bundle in a debug host), the taskbar button stays,
   and typing goes to the terminal straight after the switch (the cloak must not take the focus).
   Windows release: the switch feels well under a second. Commit: fix(float) Full ↔ Float switches in half the time
-- [ ] (arcterm) **Sidecar's RAM against the 100 MB budget, on a release build.** The run could not take it: it needs
-  `task tauri:build` and a day on screen. Install the build, run 12 agents, open Sidecar and leave it a day with the
-  strain band showing for part of it (a heavy build, or one `yes > /dev/null` per core), then read the private working set of
-  its WebView2 renderer plus the GPU process's growth when it opened (Task Manager → Details, or `Get-Process
-  msedgewebview2` with Sidecar closed and open). Under 100 MB and level after the day → write the figures into the
-  part-2 row of `docs/open-issues.md` "RAM watch" and tick this; over → a defect to fix before the next release (the
-  spec's section 5). Part 1 read ~48 MB with 11 agents. Commit: test(sidecar) the sidecar-wall scenario for part 2
 - [ ] (arcterm) **The S button shrinks and restores a real window, and the relaunch keeps it.** The scenario presses S
   and the pin on a real window (340×440 pinned, then back to the size it had, in the wall), but cannot relaunch the app,
   so the relaunch is a Rust test of the decision only. Open Sidecar on a screen of a different scale from the main
