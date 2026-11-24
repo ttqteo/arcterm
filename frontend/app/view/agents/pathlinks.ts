@@ -18,8 +18,8 @@ const URL_RE = /\b[a-z][a-z0-9+.-]*:\/\/\S+/gi;
 // an optional root (a drive, ~, ./, ../ or a separator), then segments of path characters joined by separators; the
 // first may be a dot folder (~/.claude/…)
 const PATH_RE = /(?:[A-Za-z]:[\\/]|~[\\/]|\.{1,2}[\\/]|[\\/])?\.?[\w@+-][\w.@+-]*(?:[\\/][\w.@+-]+)*/g;
-// what may follow a path: :12, :12:5, (12) or (12,5)
-const SUFFIX_RE = /^(?::(\d+)(?::(\d+))?|\((\d+)(?:,\s*(\d+))?\))/;
+// what may follow a path: :12, :12:5, a range :12-40 (or 12–40) that opens at its first line, (12) or (12,5)
+const SUFFIX_RE = /^(?::(\d+)(?::(\d+)|[-–]\d+)?|\((\d+)(?:,\s*(\d+))?\))/;
 // a file name's extension: a letter then 1–9 letters or digits, so ".ts" and ".go" but not "e.g" or "0.4s"
 const EXT_RE = /\.[A-Za-z][A-Za-z0-9]{1,9}$/;
 const SEP_RE = /[\\/]/;

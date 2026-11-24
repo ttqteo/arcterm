@@ -175,6 +175,16 @@ describe("inlinePathOf", () => {
         expect(inlinePathOf("package.json")?.path).toBe("package.json");
     });
 
+    it("accepts a line range and opens at its first line", () => {
+        expect(inlinePathOf("obsidian_harness/active_todos.md:57-77")).toMatchObject({
+            path: "obsidian_harness/active_todos.md",
+            line: 57,
+            text: "obsidian_harness/active_todos.md:57-77",
+        });
+        expect(inlinePathOf("paper.html:567–568")).toMatchObject({ path: "paper.html", line: 567 });
+        expect(inlinePathOf("a/b.ts:12:5")).toMatchObject({ line: 12, col: 5 });
+    });
+
     it("refuses code that is not only a path, or a name that is not a source file", () => {
         expect(inlinePathOf("console.log")).toBeNull();
         expect(inlinePathOf("npm run dev")).toBeNull();

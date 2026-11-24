@@ -110,6 +110,7 @@ and a picture given to a line that is not big.
 
 - A prompt that starts with `@` and the id of a council, a run or a past conversation now goes to the agent you typed it to, which reads that id, instead of being dropped as a message to an agent that isn't there.
 - A message a hook stops before it reaches the agent now shows "Not sent" in Chat with the reason, and its text comes back to the box once. Before, Chat showed it as sent, and each retry added another copy to the terminal's box.
+- A file path with a line range in Chat (`notes/todo.md:57-77`) is a link again, opening the file at the range's first line; in a terminal the range is part of the link too.
 - Tab from New agent's Task box goes straight to the project again when the task has attachments, instead of stopping on each attachment chip first.
 - Esc in Chat on a message you just sent with pastes now puts it back as you wrote it, pastes as chips, not wrapped in Claude Code's paste tags. Sending it again no longer leaves a stray copy of it under the conversation.
 - A long code block in Chat no longer hides its lines under its header when the pinned prompt above it goes away: the header moves up as the pinned prompt leaves.
