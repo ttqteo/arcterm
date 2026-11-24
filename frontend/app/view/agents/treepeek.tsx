@@ -28,12 +28,26 @@ import {
     type PeekDot,
     type PeekGroup,
 } from "./treepeekmodel";
+import { unreadLabel } from "./unreadagents";
+import { unreadAgentsAtom } from "./unreadagentsstore";
 
 const DOT_CLASS: Record<PeekDot, string> = {
     asking: "bg-asking",
+    unread: "bg-accent",
     working: "bg-working",
     idle: "bg-ink-faint",
 };
+
+// on the strip an idle dot steps back (smaller) so the ones that want you stand out; the selected one is a bar, in a
+// lighter grey when it is idle, so it reads at a glance whatever its state
+function stripDotClass(dot: PeekDot, selected: boolean): string {
+    if (selected) {
+        return cn("h-[14px] w-[6px] rounded-full", dot === "idle" ? "bg-secondary" : DOT_CLASS[dot]);
+    }
+    return dot === "idle"
+        ? "h-[4px] w-[4px] rounded-full bg-ink-faint"
+        : cn("h-[7px] w-[7px] rounded-full", DOT_CLASS[dot]);
+}
 
 // the groups, re-read whenever the roster, the focus or the folders change
 function usePeekGroups(model: AgentsViewModel): PeekGroup[] {
@@ -43,8 +57,14 @@ function usePeekGroups(model: AgentsViewModel): PeekGroup[] {
     useAtomValue(model.projectFilterAtom);
     useAtomValue(collapsedProjectsAtom);
     const tools = useAtomValue(toolsStatusAtom) ?? [];
+    const unread = useAtomValue(unreadAgentsAtom);
     const byId = new Map<string, AgentVM>([...agents, ...terminals].map((v) => [v.id, v]));
-    return peekGroups(activeNavRows(model), byId, (v) => (v.kind === "terminal" ? toolTerminalName(v, tools) : v.name));
+    return peekGroups(
+        activeNavRows(model),
+        byId,
+        (v) => (v.kind === "terminal" ? toolTerminalName(v, tools) : v.name),
+        unread
+    );
 }
 
 // The pointer's half of when the card shows: open after a pause on the strip, closed a moment after the pointer leaves
@@ -87,15 +107,15 @@ export function PeekStripDots({ model }: { model: AgentsViewModel }) {
     const groups = usePeekGroups(model);
     const focusId = useAtomValue(model.focusIdAtom);
     return (
-        <span data-tree-peek-dots className="flex min-h-0 flex-col items-center gap-[5px] overflow-hidden pt-[6px]">
+        <span data-tree-peek-dots className="flex min-h-0 flex-col items-center gap-[6px] overflow-hidden pt-[6px]">
             {peekDots(groups).map((d) => (
                 <span
                     key={d.id}
+                    data-tree-peek-dot={d.dot}
                     className={cn(
-                        "h-[5px] w-[5px] shrink-0 rounded-full",
-                        DOT_CLASS[d.dot],
-                        d.gapBefore && "mt-[6px]",
-                        d.id === focusId && "ring-2 ring-muted"
+                        "shrink-0 transition-[height,width,background-color] duration-150",
+                        stripDotClass(d.dot, d.id === focusId),
+                        d.gapBefore && "mt-[8px]"
                     )}
                 />
             ))}
@@ -153,13 +173,21 @@ function PeekCard({ model, altHeld, onPicked }: { model: AgentsViewModel; altHel
                                 className={cn(
                                     "flex h-[28px] min-w-0 shrink-0 cursor-pointer items-center gap-2 rounded-md px-2 text-left text-[13px]",
                                     r.id === focusId ? "bg-surface-selected text-primary" : "hover:bg-surface-hover",
-                                    r.id !== focusId && (r.dot === "idle" ? "text-secondary" : "text-primary")
+                                    r.id !== focusId && (r.dot === "idle" ? "text-secondary" : "text-primary"),
+                                    r.dot === "unread" && "font-semibold"
                                 )}
                             >
                                 <span className={cn("h-[6px] w-[6px] shrink-0 rounded-full", DOT_CLASS[r.dot])} />
                                 <span className="min-w-0 flex-1 truncate">{r.name}</span>
                                 {r.dot === "asking" ? (
                                     <span className="shrink-0 text-[11px] text-asking">asking</span>
+                                ) : r.unread != null ? (
+                                    <span
+                                        data-tree-peek-unread={r.unread}
+                                        className="flex h-[15px] min-w-[15px] shrink-0 items-center justify-center rounded-full bg-accent px-1 text-[9.5px] font-bold tabular-nums text-background"
+                                    >
+                                        {unreadLabel(r.unread)}
+                                    </span>
                                 ) : null}
                                 {altHeld && r.digit != null ? (
                                     <kbd className="min-w-[16px] shrink-0 rounded-[4px] border border-edge-strong bg-surface-selected px-[3px] text-center font-mono text-[10px] leading-[14px] text-primary">

@@ -76,6 +76,26 @@ describe("peekGroups", () => {
         expect(groups[0].rows.map((r) => r.digit)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, undefined]);
     });
 
+    it("marks an agent with unread turns, which an asking one still outranks", () => {
+        const a = vm("a");
+        const b = vm("b", { state: "working" });
+        const c = vm("c", { state: "asking" });
+        const d = vm("d", { sleeping: { since: 1, freedBytes: 0 } });
+        const rows = [group("p"), parent(a, "p"), parent(b, "p"), parent(c, "p"), parent(d, "p")];
+        const unread = new Map([
+            ["a", 2],
+            ["b", 1],
+            ["c", 1],
+            ["d", 3],
+        ]);
+        expect(peekGroups(rows, byIdOf([a, b, c, d]), nameOf, unread)[0].rows).toMatchObject([
+            { id: "a", dot: "unread", unread: 2 },
+            { id: "b", dot: "unread", unread: 1 },
+            { id: "c", dot: "asking", unread: 1 },
+            { id: "d", dot: "unread", unread: 3 },
+        ]);
+    });
+
     it("names the no-folder group as the tree does", () => {
         const t = vm("t", { kind: "terminal" });
         expect(peekGroups([group(HOME_PROJECT), terminal(t, HOME_PROJECT)], byIdOf([t]), nameOf)[0].label).toBe(

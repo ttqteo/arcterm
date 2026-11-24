@@ -14,13 +14,15 @@ export const PEEK_OPEN_DELAY_MS = 180;
 // the time the pointer has to cross from the strip to the card (or back) before it closes
 export const PEEK_CLOSE_GRACE_MS = 150;
 
-export type PeekDot = "asking" | "working" | "idle";
+// unread: it finished turns you have not read (unreadAgentsAtom), drawn in the accent the tree's unread count wears
+export type PeekDot = "asking" | "unread" | "working" | "idle";
 
 export interface PeekRow {
     id: string;
     name: string;
     dot: PeekDot;
     terminal: boolean;
+    unread?: number; // its finished turns not read yet, when there are any
     digit?: number; // its Alt digit, for the first AGENT_DIGITS of the tree's order
 }
 
@@ -30,9 +32,15 @@ export interface PeekGroup {
     rows: PeekRow[];
 }
 
-function dotOf(vm: AgentVM): PeekDot {
+function dotOf(vm: AgentVM, unread: number): PeekDot {
     if (vm.kind === "terminal") {
         return vm.running ? "working" : "idle";
+    }
+    if (vm.state === "asking" && !vm.sleeping) {
+        return "asking";
+    }
+    if (unread > 0) {
+        return "unread";
     }
     if (vm.sleeping) {
         return "idle";
@@ -43,11 +51,12 @@ function dotOf(vm: AgentVM): PeekDot {
 /** Pure: the card's groups, a group per project folder in the tree's order holding the rows it lists there. An id the
  *  roster no longer knows (a service's tab) is left out but keeps its place in the digit count, so a row's digit is
  *  always the Alt+N that reaches it. A folded project folder lists no rows (the tree's order skips it too), so it is
- *  left out. */
+ *  left out. `unread` is each agent's count of finished turns not read (unreadAgentsAtom). */
 export function peekGroups(
     rows: readonly ProjectTreeRow[],
     byId: ReadonlyMap<string, AgentVM>,
-    nameOf: (vm: AgentVM) => string
+    nameOf: (vm: AgentVM) => string,
+    unread: ReadonlyMap<string, number> = new Map()
 ): PeekGroup[] {
     const groups: PeekGroup[] = [];
     const seen = new Set<string>();
@@ -69,11 +78,13 @@ export function peekGroups(
             if (vm == null || current == null) {
                 continue;
             }
+            const unreadCount = unread.get(id) ?? 0;
             current.rows.push({
                 id,
                 name: nameOf(vm),
-                dot: dotOf(vm),
+                dot: dotOf(vm, unreadCount),
                 terminal: vm.kind === "terminal",
+                ...(unreadCount > 0 ? { unread: unreadCount } : {}),
                 digit: index <= AGENT_DIGITS ? index : undefined,
             });
         }
