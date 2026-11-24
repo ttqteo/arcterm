@@ -1285,6 +1285,12 @@ declare global {
         rating: string;
     };
 
+    // wshrpc.CommandCouncilRefigureData
+    type CommandCouncilRefigureData = {
+        id: string;
+        model?: string;
+    };
+
     // wshrpc.CommandCouncilReplyData
     type CommandCouncilReplyData = {
         id: string;
@@ -3262,6 +3268,7 @@ declare global {
         snapshot?: string;
         zones?: CouncilZone[];
         figures?: CouncilFigure[];
+        figurerelations?: CouncilFigure[];
         briefs?: CouncilBrief[];
     };
 
@@ -3596,6 +3603,13 @@ declare global {
         checker?: string;
         checkwhy?: string;
         zone?: string;
+    };
+
+    // wshrpc.CouncilRefigureRtnData
+    type CouncilRefigureRtnData = {
+        figures: CouncilFigure[];
+        tokens: number;
+        path?: string;
     };
 
     // council.CouncilRegion

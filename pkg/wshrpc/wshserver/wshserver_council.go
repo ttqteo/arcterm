@@ -446,6 +446,47 @@ func councilFileBytes(project string, files []string) int64 {
 	return total
 }
 
+// CouncilRefigureCommand makes the one no-tools call behind `wsh council refigure`: it writes the relations of a
+// finished Review's verified figures, stores them on the council (FigureRelations), checks them with the figures
+// (RefreshFigures) and rewrites the saved report, when there is one, so its Figures section draws them. A council that
+// is running is refused, since its run rewrites the figures.
+func (ws *WshServer) CouncilRefigureCommand(ctx context.Context, data wshrpc.CommandCouncilRefigureData) (*wshrpc.CouncilRefigureRtnData, error) {
+	if data.Id == "" {
+		return nil, errors.New("a council id is required")
+	}
+	c, err := council.Load(data.Id)
+	if err != nil {
+		return nil, err
+	}
+	switch c.State {
+	case council.StateRunning, council.StateAwaiting, council.StateQueued:
+		return nil, fmt.Errorf("council %s is %s: refigure it once it is over", c.Id, c.State)
+	}
+	council.RefreshFigures(c)
+	rels, tokens, err := councilRunner.Refigure(ctx, c, data.Model)
+	if err != nil {
+		return nil, err
+	}
+	saved, err := council.Update(c.Id, func(c *council.Council) error {
+		c.FigureRelations = rels
+		council.RefreshFigures(c)
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	publishCouncilChanged(saved)
+	rtn := &wshrpc.CouncilRefigureRtnData{Figures: saved.Figures, Tokens: tokens}
+	if strings.TrimSpace(saved.DocPath) != "" {
+		path, err := council.WriteDocument(saved, "")
+		if err != nil {
+			return rtn, fmt.Errorf("the relations are saved, but the report was not rewritten: %w", err)
+		}
+		rtn.Path = path
+	}
+	return rtn, nil
+}
+
 // CouncilSaveDocCommand writes the council's document (the report, the whole discussion and the run facts) into its
 // project, at the path asked for or the default one. It writes the file and nothing else: it never stages or commits.
 // The path is kept on the council (DocPath) and announced, so the report can open the document, and the next save,

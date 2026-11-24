@@ -92,6 +92,8 @@ func kindOf(prompt string) string {
 		return "suggest"
 	case strings.Contains(prompt, "You write the opening of a council"):
 		return "autogen"
+	case strings.HasPrefix(prompt, "A council of reviewers judged"):
+		return "refigure"
 	}
 	return "?"
 }

@@ -1592,3 +1592,8 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
   → the 2026-11-24 SecBench report (council 5186f93c) lists 94, 947, 170 and 79,5% once each, each with both its
   places. Checked only in the browser cockpit with a fixture council (`council-report-tables`, 8/8) and a worktree
   wavesrv, not in WebView2 and not with a model writing the fields. Commit: feat(council) Figures drawn as charts
+- [ ] (arcterm) `wsh council refigure` on an old council: after installing, `wsh council refigure 5186f93c` → it prints
+  each verified figure with its relations and the tokens, and rewrites the SecBench report; the Report's Số liệu (app and
+  `.md`) groups X.js 947 → 135 → 94 + 41 and the replay rates (70,6% of 170, from 79,5% of 151). Check the Liên hệ
+  column for a link haiku guessed (a preview on a copy also said "151 of 170"). Tried on a copy of the record with haiku
+  only, not through wavesrv. Commit: feat(council) wsh council refigure

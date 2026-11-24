@@ -95,7 +95,8 @@ func sameFigure(a, b CouncilFigure) bool {
 // merged figure is verified when any copy is; its value, ref, quote and verdict are those of the verified copy with the
 // longest value (the first of equals), else of the copy with the longest value; Refs holds the other copies' refs, once
 // each; its Measures is the first non-empty one in proposal order among the verified copies, else among all of them, and
-// its Group, Of, Was, Limit, Bound, Unit and At the first non-empty ones among all; and From lists the proposals that declared it, once each. It is nil
+// its Group, Of, Was, Limit, Bound, Unit and At the first non-empty ones among all, each still empty one filled from the
+// council's FigureRelations (applyRelations, written by refigure); and From lists the proposals that declared it, once each. It is nil
 // for a Brainstorm, which asks for none, and when there is nothing to collect. It reads the proposals' figures and leaves
 // them as they are.
 func collectFigures(c *Council) []CouncilFigure {
@@ -148,6 +149,7 @@ func collectFigures(c *Council) []CouncilFigure {
 		f.Bound = firstNonEmpty(m.copies, nil, func(g CouncilFigure) string { return g.Bound })
 		f.Unit = firstNonEmpty(m.copies, nil, func(g CouncilFigure) string { return g.Unit })
 		f.At = firstNonEmpty(m.copies, nil, func(g CouncilFigure) string { return g.At })
+		applyRelations(&f, m.copies, c.FigureRelations)
 		f.Refs = nil
 		seen := map[string]bool{refKey(f.Ref): true}
 		for _, g := range m.copies {
