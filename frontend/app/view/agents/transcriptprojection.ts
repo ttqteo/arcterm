@@ -259,6 +259,21 @@ function attachLocalOutput(entries: AgentEntry[], content: string): void {
 }
 
 // Claude interruption marker, both "[Request interrupted by user]" and the "...for tool use]" variant.
+const DROPPED_PREFIX = "Prompt dropped by a hook:";
+
+/** The hook's reason when `rec` is Claude Code's notice for a prompt a hook dropped (`promptSubmitEnding.ending.kind`
+ *  `dropped_by_hook`; the content's prefix where an older Claude Code wrote no ending), else null. "" when it gave none. */
+export function droppedReason(rec: any): string | null {
+    const ending = rec?.promptSubmitEnding?.ending;
+    if (ending?.kind === "dropped_by_hook") {
+        return typeof ending.reason === "string" ? ending.reason.trim() : "";
+    }
+    if (rec?.subtype === "informational" && typeof rec.content === "string" && rec.content.startsWith(DROPPED_PREFIX)) {
+        return rec.content.slice(DROPPED_PREFIX.length).trim();
+    }
+    return null;
+}
+
 function isInterrupted(text: string): boolean {
     return text.trimStart().startsWith("[Request interrupted by user");
 }
@@ -692,6 +707,14 @@ export function projectTranscript(lines: string[]): AgentEntry[] {
         if (btw != null) {
             const { question, ...answer } = btw;
             entries.push({ kind: "command", name: "/btw", args: question, btw: answer });
+            continue;
+        }
+        // a prompt a hook dropped before it reached the model (an arc @mention that went nowhere, another plugin's
+        // refusal): Claude Code writes no user record for it, only this notice, so without it Chat showed the message as
+        // sent and the agent as silent
+        const dropped = rec.type === "system" ? droppedReason(rec) : null;
+        if (dropped != null) {
+            entries.push({ kind: "interrupted", dropped });
             continue;
         }
         if (rec.type === "system" && rec.subtype === "local_command" && typeof rec.content === "string") {

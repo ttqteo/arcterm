@@ -13,6 +13,8 @@ import {
     WAKING_LINE,
     btwQuestion,
     delivered,
+    droppedCount,
+    droppedIds,
     echoStep,
     holdLine,
     isSendNowKey,
@@ -45,6 +47,42 @@ const msg = (text: string): AgentEntry => ({ kind: "message", text });
 
 // a message that landed is done with: its bubble must not come back when its record later leaves the conversation (a
 // rewind made it a dead branch, 2026-11-16: "làm đi" stood under the conversation again for half an hour)
+// a prompt a hook dropped leaves no user record, only a Not sent marker: its bubble stood as sent while the agent slept
+// on (2026-11-24, "@5186f93c44bfd00f có visualize ko")
+describe("droppedIds", () => {
+    const notSent: AgentEntry = { kind: "interrupted", dropped: "arc: not sent" };
+    const at = (id: string, sentAt: number, drops: number | undefined, text = id): PendingMessage => ({
+        id,
+        text,
+        sentAt,
+        seen: 0,
+        ...(drops != null ? { drops } : {}),
+    });
+
+    it("counts only the Not sent markers, never an interruption", () => {
+        expect(droppedCount([user("a"), { kind: "interrupted" }, notSent, msg("b"), notSent])).toBe(2);
+        expect(pendingMessage("a", "x", [user("a"), notSent], 0, false).drops).toBe(1);
+        expect(pendingMessage("a", "x", [], 0, false).drops).toBeUndefined();
+    });
+
+    it("names a message sent before a new marker, and none while the count stands", () => {
+        const before = [user("go on"), notSent];
+        expect(droppedIds([at("a", 1, 1)], before)).toEqual([]);
+        expect(droppedIds([at("a", 1, 1)], [...before, notSent])).toEqual(["a"]);
+    });
+
+    it("hands one marker to one message, oldest first", () => {
+        const pending = [at("b", 2, 0), at("a", 1, 0)];
+        expect(droppedIds(pending, [user("x"), notSent])).toEqual(["a"]);
+        expect(droppedIds(pending, [user("x"), notSent, notSent])).toEqual(["a", "b"]);
+    });
+
+    it("leaves a command's card and a message with no count to measure from", () => {
+        const btw: PendingMessage = { ...at("q", 1, 0), kind: "btw" };
+        expect(droppedIds([btw, at("l", 1, undefined)], [notSent])).toEqual([]);
+    });
+});
+
 describe("landedIds", () => {
     const sent = (id: string, text: string, seen = 0): PendingMessage => ({ id, text, sentAt: 0, seen });
     it("names the pending messages the transcript holds more often than when they were sent", () => {

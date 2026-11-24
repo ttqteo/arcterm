@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { leadingMention, mentionRefusal, sendArgs, sendOutcome } from "./mention-core";
+import { keptHereNotice, leadingMention, mentionRefusal, notAnAgent, sendArgs, sendOutcome } from "./mention-core";
 
 describe("leadingMention", () => {
     it("reads a leading @ and a short tab id as the target, the rest as the message", () => {
@@ -86,6 +86,19 @@ describe("sendOutcome", () => {
             notice: 'arc: not sent to @3f2a91bc: tab "3f2a91bc" is not a live agent session; wsh agents list shows the live agents',
             refill: true,
         });
+    });
+
+    it("tells an id that names no live agent from a send that failed", () => {
+        const stderr =
+            'Error: tab "5186f93c44bfd00f" is not a live agent session; wsh agents list shows the live agents\n';
+        expect(notAnAgent({ exitCode: 1, stdout: "", stderr })).toBe(true);
+        const several = 'tab "3f2a" matches several live agents: …';
+        expect(notAnAgent({ exitCode: 1, stdout: "", stderr: several })).toBe(false);
+        expect(notAnAgent({ exitCode: 1, stdout: "", stderr: "connection refused" })).toBe(false);
+        expect(notAnAgent({ exitCode: 0, stdout: "sent", stderr: "" })).toBe(false);
+        expect(keptHereNotice("5186f93c44bfd00f")).toBe(
+            "arc: @5186f93c44bfd00f is not a live agent, so this session takes the prompt"
+        );
     });
 
     it("names the exit code when a failure printed nothing", () => {

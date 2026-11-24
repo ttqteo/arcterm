@@ -23,7 +23,7 @@ import { heavyArgs, heldInBackground, heldOriginal, jobslotArgs, jobslotLine } f
 import { liveFile, LiveGather, serialWriter } from "./live-core";
 import { lintContext, lintMemory, parseMemory, referencedPaths, shouldReport, taskNames } from "./memlint-core";
 import type { Ran } from "./mention-core";
-import { leadingMention, mentionRefusal, sendArgs, sendOutcome } from "./mention-core";
+import { keptHereNotice, leadingMention, mentionRefusal, notAnAgent, sendArgs, sendOutcome } from "./mention-core";
 import { refsContext } from "./refs-core";
 import { idleArgs, TurnStatus } from "./status-core";
 import {
@@ -874,8 +874,8 @@ export const register: Register = (on) => {
     // "@<tab id> text" typed at this prompt goes to that agent's session and never reaches this one's model.
     // only the person's own Enter: the cockpit's prompts and a peer's arrive with another origin
     on("prompt.submit", async ($, e, next) => {
-        const m = active && e.origin.kind === "composer" ? leadingMention(e.text) : null;
-        if (m === null) {
+        // the prompt goes on to this session's model
+        const keep = async () => {
             await promptStarted($, e.origin.kind);
             // a skill or an MCP server added since the last prompt shows on the next `/`; not awaited
             void publishCommands($);
@@ -898,6 +898,10 @@ export const register: Register = (on) => {
                 return next({ ...e, context: [...(e.context ?? []), ...added] });
             }
             return next(e);
+        };
+        const m = active && e.origin.kind === "composer" ? leadingMention(e.text) : null;
+        if (m === null) {
+            return keep();
         }
         const putBack = () =>
             void $.prompt
@@ -913,6 +917,11 @@ export const register: Register = (on) => {
             ran = await $.process.run([WSH, ...sendArgs(m)]);
         } catch (err) {
             ran = { exitCode: -1, stdout: "", stderr: String(err) };
+        }
+        if (notAnAgent(ran)) {
+            // a council's or a run's id: the person asks this session about it (refsContext reads `@<id>` as one)
+            $.ui.log(keptHereNotice(m.id));
+            return keep();
         }
         const out = sendOutcome(m.id, ran);
         if (out.refill) {

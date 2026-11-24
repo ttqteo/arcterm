@@ -613,7 +613,7 @@ export function CompactTranscript({
             case "notification":
                 return <TaskNotificationRow summary={item.summary} status={item.status} result={item.result} />;
             case "interrupted":
-                return <InterruptedDivider />;
+                return <InterruptedDivider dropped={item.dropped} />;
         }
     };
 

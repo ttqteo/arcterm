@@ -21,6 +21,17 @@ list (its number is not reused).
 Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) ·
 [part 4](hand-checks-4.md) · [part 3](hand-checks-3.md) · [part 2](hand-checks-2.md) (oldest).
 
+## 2026-11-24
+
+- [ ] (arcterm) **An @id that is not a live agent stays in the session; a dropped prompt reads Not sent in Chat**
+  (`notAnAgent` in `claude/arc-mod/hooks/mention-core.ts`, `@<id>` in `refs-core.ts`; `droppedReason` in
+  `transcriptprojection.ts`, `droppedIds` in `chatpending.ts`, `takeBackDropped` in `chattakebackstore.ts`). After
+  installing a build with it, in a Claude agent's Chat send `@<a council's id> có visualize ko`: a grey line says the
+  id is not a live agent, and the agent answers after reading the council with `wsh read`. Then send
+  `@<a live agent's tab id>` alone (the mod refuses a mention with no message): Chat draws a yellow "Not sent" line with
+  the reason, the bubble goes, the text is back in Chat's box once, and the terminal's box is empty. Not tried in the dev
+  app: the divider's look and the take-back were checked by unit tests and the typecheck only.
+
 - [ ] (arcterm) **The agent asks before a merge while Verify is red or amber** (`verifyGateAsk` in
   `claude/arc-mod/hooks/register.ts`, `verifygate-core.ts`; the rail's Verify tile, `docs/agents/verify.md`). After
   installing a build with it, in a Claude agent on this repo's default branch (a checkout with `.arc/verify.json`), run a

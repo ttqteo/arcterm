@@ -634,6 +634,34 @@ describe("projectTranscript task-notification, stdout, and interrupts", () => {
         ]);
     });
 
+    // the record Claude Code 2.1.331 wrote for the arc mod's @mention that went to no live agent (2026-11-24)
+    it("reads a prompt a hook dropped as a Not sent marker carrying the hook's reason", () => {
+        const reason = 'arc: not sent to @5186f93c44bfd00f: tab "5186f93c44bfd00f" is not a live agent session';
+        const out = projectTranscript([
+            L({ type: "user", message: { content: "go on" } }),
+            L({
+                type: "system",
+                subtype: "informational",
+                level: "warning",
+                content: `Prompt dropped by a hook: ${reason}`,
+                promptSubmitEnding: { ending: { kind: "dropped_by_hook", reason }, promptKept: false },
+            }),
+            // an older Claude Code with no ending: the content's prefix says it
+            L({ type: "system", subtype: "informational", content: "Prompt dropped by a hook: other: no" }),
+            L({
+                type: "system",
+                subtype: "informational",
+                promptSubmitEnding: { ending: { kind: "dropped_by_hook" } },
+            }),
+        ]);
+        expect(out).toEqual([
+            { kind: "user", text: "go on" },
+            { kind: "interrupted", dropped: reason },
+            { kind: "interrupted", dropped: "other: no" },
+            { kind: "interrupted", dropped: "" },
+        ]);
+    });
+
     it("drops an orphan user-string <local-command-stdout> record (with ANSI) rather than leaking the raw tag", () => {
         const content = "<local-command-stdout>[2mCompacted (ctrl+o to see full summary)[22m</local-command-stdout>";
         expect(projectTranscript([L({ type: "user", message: { content } })])).toEqual([]);
