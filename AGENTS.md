@@ -2,285 +2,161 @@
 
 Guidance for AI coding agents working in this repository — the single project instruction file,
 read by both Pi and Claude Code (which loads `AGENTS.md` for a project that has no `CLAUDE.md`).
-
 Personal working-style conventions are projected into every harness by arcterm (`~/.claude/CLAUDE.md`,
-`~/.pi/agent/AGENTS.md`) and apply here too; they are not repeated in this file.
+`~/.pi/agent/AGENTS.md`) and are not repeated here.
+
+This file keeps the rules. The how and the why behind them are in `docs/reference/dev-workflow.md` (build, release,
+tests, mods, job queue, worktrees, CDP, changelog markup, engine plans) and `docs/reference/architecture.md`: read the
+section you need before working in that area.
 
 ## Project status
 
-arcterm — an agent cockpit for driving and supervising coding agents. It began as a fork of Wave Terminal (the code still uses Wave names: `wavesrv`, `wsh`, `waveobj`); the desktop shell was **migrated from Electron to Tauri**. `main` is the Tauri build; the original Electron shell was removed from `main` and preserved on the `legacy/electron` branch.
-
-Consequences that matter while working here:
-
-- The upstream Electron-era docs are **gone** (2026-07-31 cleanup): `BUILD.md`, `CONTRIBUTING.md`, `RELEASES.md`, `SECURITY.md`, `CODE_OF_CONDUCT.md`, the whole Docusaurus site under `docs/`, and `aiprompts/` were deleted; `README.md` was rewritten for arcterm. Trust the Taskfile and this file for run/build flow. `docs/README.md` maps what remains.
-- Tauri packaging targets **Windows** (`cargo tauri build` → NSIS; bundles `wavesrv.x64.exe` + `wsh-*-windows.x64.exe`) and **macOS on Apple silicon** (`src-tauri/tauri.macos.conf.json`, merged over `tauri.conf.json` on a Mac → `.app` + `.dmg`, signed with the self-signed certificate `arcterm_local_mac` in the login keychain, not notarized: a fixed identity keeps the permissions macOS grants arcterm (Screen Recording…) across installs, which an ad-hoc signature, a new cdhash each build, loses; `APPLE_SIGNING_IDENTITY=-` signs ad-hoc on a Mac without it; bundles `wavesrv.arm64` + `wsh-*-darwin.arm64`, macOS 13+). On an 8 GB Mac the Vite build and `task check:ts` exhaust Node's default heap: prefix them with `NODE_OPTIONS=--max-old-space-size=4096`.
+arcterm — an agent cockpit for driving and supervising coding agents. It began as a fork of Wave Terminal (the code
+still uses Wave names: `wavesrv`, `wsh`, `waveobj`); `main` is the Tauri build (the Electron shell is on
+`legacy/electron`). The upstream docs are gone: trust the Taskfile and this file for run/build flow; `docs/README.md`
+maps what remains. Packaging targets Windows (NSIS) and macOS on Apple silicon (`.app` + `.dmg`, self-signed
+`arcterm_local_mac`). On an 8 GB Mac prefix the Vite build and `task check:ts` with
+`NODE_OPTIONS=--max-old-space-size=4096`.
 
 ## Build & dev commands
 
-The build is orchestrated by [Task](https://taskfile.dev) (`Taskfile.yml`), a `make` replacement. Tasks chain Go, Rust, and npm steps.
+Builds run through [Task](https://taskfile.dev) (`Taskfile.yml`), chaining Go, Rust and npm steps.
 
 | Command | What it does |
 |---|---|
 | `task init` | First-time setup: `npm install` + `go mod tidy`. |
-| `task dev` (alias of `task tauri:dev`) | The main way to run. Builds the dev-host backend only (wavesrv + host wsh), syncs `pi/` artifacts and the version, then `cargo tauri dev` (Vite dev server on `:5174`, HMR). |
-| `task build:backend` | Release backend build into `dist/bin/`: `wavesrv` (stripped windows x64 on Windows; arm64 + amd64 on a Mac) and `wsh` for the one target the host's bundle ships — windows x64 on Windows, darwin arm64 on a Mac; on a Mac also `apple-translate.arm64`, Quick translate's Apple Translation helper (`swiftc`, `pkg/translate/apple/`). |
-| `task build:backend:quickdev:windows` | Rebuilds only `wavesrv` (no wsh, no generate) — the fast loop for Go server changes. |
-| `task generate` | Regenerates TS + Go bindings from Go source. **Run after changing any wshrpc / waveobj / wconfig type.** |
-| `task check:ts` | Typecheck the frontend (see the tsc gotcha below), then the Claude Code mods under `claude/` (`scripts/check-mods.mjs`). |
-| `npm test` / `npx vitest` | Frontend unit tests (vitest). |
-| `task tauri:build` (alias `build:app`, and what `npm run build` now runs) | Production build of a **commit**, not the working tree (`scripts/release-build.mjs`): it checks HEAD out into `.worktrees/release-build` (junctioning `node_modules`, `src-tauri/target`, `dist/bin`), so edits other agents make in the checkout meanwhile stay out; syncs the version, builds the backend, then `cargo tauri build`, and copies the installer (`.exe`, or `.dmg` on a Mac) into the gitignored `releases/` with the commit in its name (`arcterm_0.15.11_5900060a2_x64-setup.exe`). Commit what you want in the build first. It does not bump by default (`BUMP=none`); for a release pass `BUMP=auto` (or `patch\|minor\|major`) and commit the bump. **An agent that builds for the person to install passes `BUMP=auto` unasked** (`--bump auto --dry-run` on `scripts/release-build.mjs` previews the pick): it makes a minor release when `CHANGELOG.md`'s Unreleased section holds 60 lines or more (`MIN_RELEASE_LINES`), whatever their sections, or 5 `<!-- big -->` lines (What's new's cards are full), and builds with no bump otherwise, the lines (a big one too) waiting in Unreleased for the next minor; it never picks a patch (the person's standing ask, 2026-11-19, raised from one big line or 20 lines on 2026-11-22 after 1.7.0 to 1.14.0 came out in four days). After a bump, commit it (`package.json`, `package-lock.json`, the synced version sites, `CHANGELOG.md`'s dated heading) before the install line. Before that, an Unreleased section of 120 lines or more is split into even minor releases first (also the person's ask): `node scripts/changelog-split.mjs` (`--dry-run` to preview) cuts its lines by when each landed into dated minor releases of at least 60, leaves the newest part Unreleased and moves `package.json` and its sites to the last version it wrote; commit `CHANGELOG.md` and those files, then build with `BUMP=auto`. `auto` reads the built commit's `CHANGELOG.md` Unreleased lines (`scripts/release-bump.mjs`); major is always by hand, for a release that breaks something for the person (a feature removed, a config or `wsh`/hook contract changed without migrating). A hand-picked bump smaller than the lines call for stops the build unless `FORCE=1`. A bumped build tags its commit `v<version>` (local, never pushed). `FROM=<commit>` builds another commit; `FROM=tree` builds the checkout with its uncommitted edits (named `<commit>-dirty`). |
-| `task install` | Install the last `tauri:build` over the installed arcterm and reopen it: on Windows the installer with no pages (`/P /UPDATE /R`), started through `wsh detach` from a terminal inside arcterm so arcterm's job does not kill it with the app it closes; on a Mac `scripts/install-mac.mjs`, which quits arcterm, swaps in the built `arcterm.app` under `/Applications` and reopens it from a detached process (so it works from a terminal inside arcterm; log in `$TMPDIR/arcterm-install.log`, `--dry-run` to preview). It closes the running arcterm and every agent in it, so an agent never runs it, even when asked to "build and install": build, check the installer landed in `releases/`, finish the rest (commit, notes, what to try), then end the turn with the installer path and `! task install` for the person to type. |
-| `task check:version` | Fail if `package.json`'s version has drifted from `src-tauri/tauri.conf.json` or `src-tauri/Cargo.toml`. `package.json` is the single source of truth; `scripts/sync-tauri-version.mjs` holds the list of sites. |
-| `npm run cockpit:fixtures -- <scenario>` | Inject a fixture roster into the dev app: writes the scenario (source: `scripts/cockpit-fixtures/`) to `public/cockpit-fixtures/active.json`; reload the app to load it. `--clear` returns to live data; no argument lists scenarios. |
-
-Other useful commands:
-
-- **Single frontend test:** `npx vitest run frontend/app/view/agents/projectname.test.ts`, or filter by name: `npx vitest run -t "handles backslash paths"`.
-- **Go tests:** one test is `go test ./pkg/x -run '^TestName$'`; on Windows prefix it with
-  `CGO_ENABLED=1 CC="zig cc -target x86_64-windows-gnu"` (Bash), or every test that opens the sqlite store panics with
-  cgo off (`goTestEnv` in `scripts/verify.mjs` sets the same). For a whole package, list your changed paths in a file and run `ARC_VERIFY_CHANGED=<that file> node scripts/verify.mjs ./pkg/x ./pkg/y` (`git diff --name-only main > <file>`): it tests only the packages those paths can break and deals a large package's tests into batches of 20 (`BATCH_TESTS`), each its own process, 4 at a time. `pkg/orchestrate` is ~1,250 tests, none parallel, adding up to ~1,300 s (2026-11-23): one plain `go test` process cannot finish it inside go's 10-minute alarm, and this way takes 6 to 9 min. Keep go's default 10-minute timeout: it is per process, and a batch takes ~20 s, so a run that reaches it holds a hung test, and the timeout's goroutine dump names it. Before batches, a quarter of the package (~320 s) per process tripped it on a loaded machine with no test hung.
-- **Rust tests:** `cargo test --manifest-path src-tauri/Cargo.toml`.
-- **Lint / format:** flat ESLint config (`eslint.config.js`) + Prettier (`prettier.config.cjs`), but **no Task/npm wrapper** — run `npx eslint` and `npx prettier --check` directly, **on paths**: `npx eslint .` also walks the worktree copies under `.worktrees/` and `.claude/worktrees/`.
-- **HEAD is not formatter-clean** (`gofmt -l pkg cmd` lists ~50 files; prettier fails in places too). Check only the files you touched; never `--write` the tree. Never run prettier on `scripts/*.mjs` — `.editorconfig` omits `.mjs`, so prettier reindents those hand-formatted 4-space files to 2.
-- **Clear dev data:** the dev app keeps its store, config, and WebView2 profile in `%LOCALAPPDATA%\dev.arc.app-dev\{data,config,EBWebView}` (isolated from a packaged install, which uses `dev.arc.app`). `task dev:cleardata` / `dev:clearconfig` clear `data` / `config`; stop the dev app first. Delete `EBWebView` by hand.
-- **Logs:** the Tauri host writes wavesrv's stderr (including panic stacks), frontend `fe-log` lines, and its own `[tauri]` lines, timestamped, to `waveapp.log` in the data dir: `%LOCALAPPDATA%\dev.arc.app\data\` packaged, `dev.arc.app-dev\data\` dev. Past 10 MB it rolls to `waveapp.1.log` (one backup). `[tauri] wavesrv stderr closed` marks a backend exit.
+| `task dev` | The main way to run: dev backend (wavesrv + host wsh), syncs `pi/` artifacts and the version, then `cargo tauri dev` (Vite on `:5174`, HMR). |
+| `task build:backend` | Release backend into `dist/bin/` (wavesrv + wsh for the host's bundle). |
+| `task build:backend:quickdev:windows` | Rebuilds only `wavesrv`: the fast loop for Go server changes. |
+| `task generate` | Regenerates TS + Go bindings. **Run after changing any wshrpc / waveobj / wconfig type.** |
+| `task check:ts` | Typecheck the frontend, then the Claude Code mods under `claude/`. ~2 min: give it a longer timeout. |
+| `npm test` / `npx vitest run <file>` / `-t "<name>"` | Frontend unit tests. |
+| `go test ./pkg/x -run '^TestName$'` | One Go test. A whole package: `ARC_VERIFY_CHANGED=<file of changed paths> node scripts/verify.mjs ./pkg/x` (batches; needed for `pkg/orchestrate`). On Windows prefix with `CGO_ENABLED=1 CC="zig cc -target x86_64-windows-gnu"`. |
+| `cargo test --manifest-path src-tauri/Cargo.toml` | Rust tests. |
+| `task tauri:build` | Production build of a **commit** (not the working tree) into `releases/`. Commit first. **An agent that builds for the person to install passes `BUMP=auto` unasked** and commits the bump; never a patch, major only by hand. Bump rules and the 120-line changelog split: dev-workflow "Release builds". |
+| `task install` | Installs the last build over the running arcterm, closing it and **every agent in it**: an agent never runs it. Build, check the installer landed in `releases/`, finish the rest, then end the turn with the installer path and `! task install` for the person to type. |
+| `task check:version` | Fail if `package.json`'s version drifted from the Tauri sites (`package.json` is the source of truth). |
 
 ### Gotchas
 
-- **`npx tsc` stack-overflows on this repo.** Typecheck with `task check:ts` (it runs `node --stack-size=4000 node_modules/typescript/lib/tsc.js --noEmit`). It takes ~2 minutes — give the command a longer timeout than the 2-minute default. The baseline is clean (exit 0) — any error it reports is yours.
-- **Task resolves the global `VERSION` var once per `task` process.** Bumping the version and building in the same invocation stamps the Go binaries (and the `wsh-<version>-*` filenames) with the *pre-bump* version. That is why `tauri:build` shells out to `tauri:build:post-bump` instead of using a nested `task:` call — and why the callee can't be marked `internal`.
-- **Never hand-edit generated files, including merge conflicts.** Go is the source of truth for the wire protocol and object types; `task generate` writes `frontend/app/store/wshclientapi.ts`, `frontend/app/store/services.ts`, `frontend/types/gotypes.d.ts`, `frontend/types/waveevent.d.ts`, `pkg/wshrpc/wshclient/wshclient.go`, and `pkg/{waveobj,wconfig}/metaconsts.go`. Edit the Go definitions, then regenerate.
-- **`pi/` is the source for the pi artifacts `wsh` embeds.** `task sync:piartifacts` (run by every dev and backend build) copies `pi/extensions/*` and `pi/themes/arc.json` over `cmd/wsh/cmd/pi-*-extension.ts` and `cmd/wsh/cmd/arc-theme.json` — edit `pi/`, never the copies.
-- **`claude/arc-mod/` is the Claude Code mod `wsh` embeds, straight from that folder** (`claude/mods.go`, package `claude`; there is no copy to keep in step). `wsh install-agent-hooks` writes it, minus tests, `testdata/` and `.claude-plugin/types/` (`claude.Shipped`), to `~/.arc/claude-mod` and lists that folder in `env.CLAUDE_CODE_PLUGIN_DIRS` of `~/.claude/settings.json`, so every claude launch loads it. Check it with `claude plugin validate claude/arc-mod`; `task check:ts` typechecks it (and the two below) with Claude Code's own strict options, against the `claude-code` types Claude Code writes beside the installed copy (`~/.arc/claude-mod/.claude-plugin/types/`, skipped with a note until a claude launch has written them), tests left to vitest. A mod has no `setTimeout` or other Node or DOM globals: wait with `$.clock`. A hook that fails is skipped (fails open), so every gating hook in `register.ts` names its choice with a `.catch`: `passOn` where arcterm's trouble must not hold the person's work, a refusal or an ask for a guard (the shell's `refusal`, the foreign-repo edit check, an `@mention`); `claude plugin validate` lists one without it. Its pure logic is in `hooks/*-core.ts`, tested by vitest. `claude/arc-view-mod/` is a second mod that travels the same way (installed to `~/.arc/claude-view-mod`): it draws the transcript rows of prompts the arc mod submits, and must stay its own plugin because Claude Code never runs a plugin's `ui.render` hook on a row that plugin raised. `claude plugin test` does not apply that rule, so judge a drawn row in a live session. `claude/skim-mod/` (installed to `~/.arc/claude-skim-mod`) is a third: the highlighted must-read sentences and `/skim`. It is also published on its own as `ttqteo/claude-skim`; `node scripts/publish-skim.mjs` copies it there, so edit `claude/skim-mod/`, never that repo.
-- **arcterm's own skills live in `skills/`** (runs, cockpit, design, detach, doc-review, handoff, initiatives, brainstorm, learn, notes, council, steps, ux-check, visual), embedded into `wavesrv` by `skills/skills.go`. Every agent-sync apply (each agent launch) seeds them into the vault's skills root, which then projects them into each harness's skills dir, except Claude's: it gets them in the installed arc mod (`~/.arc/claude-mod/skills/`, additions included), which lists them as `arc:<skill>` — edit `skills/`, never the vault, `~/.arc/claude-mod/skills` or `~/.claude/skills` copies, which the next launch overwrites. A skill's `.arc/` delta directory in the vault is kept. `pi/skills/arc-dev` belongs to the pi package and stays there.
-- **`src-tauri/icons/icon.ico`, `icon.icns` and `icon.png` are generated by `node scripts/gen-app-icon.mjs`**,
-  which draws every frame pixel-exact from the mark's grid. Don't regenerate it with `cargo tauri icon`: that downscales
-  `public/logos/arcterm.png` and blurs the pixel-art mark at taskbar sizes. Tauri takes the ICO's first
-  frame as the window icon, so the host replaces it with the exe's resource icons
-  (`use_resource_window_icons` in `src-tauri/src/main.rs`).
-- **Run builds and long scripts through Bash, not PowerShell 5.1.** PowerShell turns a native command's stderr into
-  errors, so a build that logs to stderr reads as failed and stops early, and it strips the quotes from inline JSON
-  arguments. Write files with the Write tool, not a Git Bash heredoc or `cat >`, and edit scripts with Edit, not
-  `sed -i`.
-- **A new registered `waveobj` type needs a SQL migration** in `db/migrations-wstore/NNNNNN.{up,down}.sql`, or it fails at runtime with "no such table".
-- **Stop the dev app by PID, never by image name.** The dev app and the user's packaged arcterm share the
-  image names `wave-tauri.exe` and `wavesrv.x64.exe`, so `taskkill /IM wave-tauri.exe` also kills the
-  running arcterm — and every agent inside it (run 700db496 lost a worker's uncommitted edits this way).
-  List `Get-Process wave-tauri,wavesrv.x64 | Select Id,Path`, and stop only the PID whose path is in a
-  repo checkout (`src-tauri\target`, `dist\bin`), never one under `AppData\Local\arcterm` (or
-  `AppData\Local\Arc`, where installs from before the rename live).
-- **A heavy shell command waits its turn, and can come back "Not run: …".** Before every Bash command an agent
-  runs, the Claude mod and the pi tools extension call `wsh jobslot`; a heavy one (a build, the typecheck, a whole test
-  suite, `npm install`; dev servers excluded) waits in wavesrv's queue (`pkg/jobqueue`) until its RAM fits (by default,
-  `jobs:mode` `auto`; `slots` also caps them at `jobs:slots` at once, `off` never waits, and `jobs:pauseuntil` is off
-  for a while, except while a `wsh protect` job is queued or running: it goes ahead of the queue, starts once no heavy
-  job runs, and holds every other heavy one back, engine steps included, whatever the mode, until its command exits; on macOS "fits" reads the OS memory pressure, on Windows the commit charge against the RAM), and holds its slot while it runs. A heavy Claude command run with `run_in_background` waits inside its own
-  shell instead (the mod puts `wsh jobslot --hold-parent` in front of it), and wavesrv holds the slot until that shell
-  exits; the permission check still reads the command as written. The engine's Verify,
-  Final and heavy Setup queue too. A command the person skipped from the Jobs popover comes back "Not run: …": don't
-  retry it — carry on and report it skipped. The commands and their RAM estimates are one table in
-  `pkg/memgate/memgate.go`, the fallback: wavesrv measures each Claude Bash command's process-tree peak
-  (`pkg/jobmeter`), keeps the last 5 per command pattern and project in `jobpeaks.json` in the data dir
-  (`pkg/jobpeaks`) and admits the next run on the largest × 1.2, so a measured peak replaces the table's number; an
-  unknown command (`make build`) measured at 1 GB or more queues too, which wavesrv tells `wsh jobslot` through
-  `~/.arc/jobslot-learned.json` (written only by a wavesrv that installs the global hooks, not a dev app). A single test
-  file or `-run` filter is light and never queues.
-- **A subagent or workflow spawn can come back "Not run: …".** The Claude mod asks `wsh tokengate` before every
-  `Agent`, `Task` or `Workflow` call; a costly one (a big share of the 5h window, a full window, 3+ agents, a
-  workflow) waits on a Token burn card. A refusal is the person's call for the rest of that prompt: don't retry
-  the spawn; do the work in the session and report it. Rules and estimate are in `pkg/tokengate`.
-- **Say what a fan-out will cost before starting it.** Token cost grows as context size × tool calls × agents,
-  and almost all of it is cache reads: on 2026-10-08 a docs rewrite with four research subagents and a few real Claude
-  agents staged for screenshots took the account from ~20M to ~220M tokens in an hour. Before you launch several
-  subagents, a workflow, or real agents (demo agents, an engine run), give a rough estimate and ask, or take the cheap
-  path: one agent, narrow reads, existing docs. Never launch real agents only to stage screenshots without asking. The
-  5-hour meter is in the app bar: when it climbs fast mid-task, say so and offer to stop.
-- **A subagent that reads a lot of code to write something gets split in two.** A research subagent reads and returns
-  a short fact sheet with `path:line` for each fact; a fresh writing subagent works from the sheet and reads no code;
-  one page per writer. The 2026-10-08 rewrite's ~200M went to subagents that `cat` whole files, then made ~140 calls
-  on a 400–566k context. Paste the briefs in `docs/agents/subagent-briefs.md` into the prompts.
-- **A subagent that only collects runs on haiku.** When its job is to gather, not judge — list or fetch things (files,
-  schemas, Notion databases, API objects), grep and report `path:line`, check a list against a source, or the research
-  half of the split above — launch it with `model: "haiku"` and have it return raw facts; the lead does the
-  interpreting. Design, review, root-cause debugging, writing code or prose, and any agent holding write tools where a
-  slip is costly stay on sonnet or better. The 2026-10-10 read-only survey of 21 Notion database schemas took sonnet
-  ~207k tokens over 48 calls: a haiku job.
-- CGO backend builds use the **zig** compiler for cross/static linking (required dependency, see `Taskfile.yml` `build:server:*`).
-- **Worktrees (Windows):** `task worktree:prepare` (run inside the worktree) junctions `node_modules`,
-  `src-tauri/target`, `dist/bin` from the main checkout so `task dev` there is fast instead of a cold
-  npm+cargo install. `npm:install` (behind `task dev` and `task check:ts`) skips the install when
-  `node_modules` is a link, so both are safe in a junctioned worktree, an engine run's included; a real
-  `npm install` there would replace the junction with a full copy.
-  Remove with `task worktree:cleanup -- <path>` — it deletes the junction links
-  first, never a real directory (a recursive delete can follow a junction into the main checkout and
-  wipe its `node_modules`), then runs `git worktree remove` and `git branch -d`. To run a worktree dev app beside the main one it needs its own everything:
-  CDP port and WebView2 profile (`WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS="--remote-debugging-port=9223"`,
-  `WEBVIEW2_USER_DATA_FOLDER`), Vite port (`task dev -- --config <json>` setting `build.devUrl` and a
-  `beforeDevCommand` with `--port N --strictPort`), store (`ARC_DEV_DATA_DIR`, a short path: wavesrv binds
-  `data\wave.sock` under it, and Windows caps a unix socket path at 108 bytes), and its own `CARGO_TARGET_DIR`
-  and `dist/bin` instead of the junctions, which a build writes through into the main checkout.
-  `ARC_DEV_NO_GLOBAL_INSTALL=1` keeps it from installing its hooks and `~/.arc/bin/wsh` over yours, and keeps its
-  wavesrv on a vault in its own data dir with no agent sync into your harnesses (`browser-app.mjs` always sets it).
-  `scripts/cdp/final-verify.mjs` does all of it and runs the scenarios itself, but only with an out dir: by hand,
-  `ARC_FINAL_OUT=<dir> node scripts/cdp/final-verify.mjs <scenario...>` (without it, it exits 3 "ARC_FINAL_OUT is not
-  set"). Against a worktree app you started yourself, `CDP_PORT=<port> task verify:ui -- <scenario...>`.
+- **`npx tsc` stack-overflows on this repo.** Use `task check:ts`. Its baseline is clean: any error it reports is yours.
+- **Never hand-edit generated files, including merge conflicts.** `task generate` writes
+  `frontend/app/store/wshclientapi.ts`, `services.ts`, `frontend/types/gotypes.d.ts`, `waveevent.d.ts`,
+  `pkg/wshrpc/wshclient/wshclient.go` and `pkg/{waveobj,wconfig}/metaconsts.go`: edit the Go definitions, regenerate.
+- **Edit sources, never their copies:** `pi/` (not `cmd/wsh/cmd/pi-*-extension.ts` / `arc-theme.json`);
+  `claude/arc-mod/`, `claude/arc-view-mod/`, `claude/skim-mod/` (not `~/.arc/claude-*` or the `ttqteo/claude-skim`
+  repo); `skills/` (not the vault, `~/.arc/claude-mod/skills` or `~/.claude/skills`). Mod rules (no `setTimeout`, wait
+  with `$.clock`; every gating hook names its `.catch`; `claude plugin validate claude/arc-mod`): dev-workflow
+  "Claude Code mods".
+- **App icons come from `node scripts/gen-app-icon.mjs`**, never `cargo tauri icon` (it blurs the pixel-art mark).
+- **A new registered `waveobj` type needs a SQL migration** in `db/migrations-wstore/NNNNNN.{up,down}.sql`.
+- **Lint and format only the paths you touched** (`npx eslint <paths>`, `npx prettier --check <paths>`): HEAD is not
+  formatter-clean, `npx eslint .` walks the worktree copies, and never `--write` the tree. Never run prettier on
+  `scripts/*.mjs` (hand-formatted 4-space files).
+- **On Windows:** run builds and long scripts through Bash, not PowerShell 5.1 (it turns stderr into errors and strips
+  JSON quotes); write files with the Write tool and edit with Edit, not heredocs or `sed -i`. **Stop the dev app by
+  PID, never by image name**: it shares `wave-tauri.exe` / `wavesrv.x64.exe` with the person's arcterm (dev-workflow
+  "Stopping the dev app").
+- **A heavy shell command waits its turn** in wavesrv's job queue (`wsh jobslot`, `pkg/jobqueue`), and **a subagent or
+  workflow spawn waits on a Token burn card** (`wsh tokengate`). Either can come back "Not run: …": that is the
+  person's call. Don't retry it; carry on and report it skipped (or do the work in the session).
+- **Say what a fan-out will cost before starting it.** Cost grows as context × tool calls × agents, almost all cache
+  reads. Before several subagents, a workflow or real agents (an engine run, demo agents), estimate and ask, or take the
+  cheap path. Never launch real agents only to stage screenshots without asking. A subagent that reads a lot of code to
+  write gets split: a research subagent returns `path:line` facts, a fresh writer works from them
+  (`docs/agents/subagent-briefs.md`). A subagent that only collects runs on haiku. Why: dev-workflow "Subagent cost".
+- **Worktrees:** `task worktree:prepare` junctions the main checkout's `node_modules`, `src-tauri/target`, `dist/bin`;
+  remove one only with `task worktree:cleanup -- <path>` (a recursive delete follows the junctions into the main
+  checkout). A second dev app beside the main one: dev-workflow "Worktrees".
+- CGO backend builds need **zig**.
 
-### Visual verification (dev)
+### Verifying UI
 
-There is no jsdom/render-test harness for the cockpit — verify rendered UI by screenshotting the **live dev app** over the Chrome DevTools Protocol. Tauri renders through WebView2 (Chromium/Edge on Windows), which speaks CDP.
+There are no jsdom render tests: verify rendered UI on the live dev app over CDP (`task verify:ui -- <scenario...>`,
+`scripts/cdp/scenarios.mjs`; `node scripts/cdp-shot.mjs` for one shot; on a Mac `task dev:browser` first, since
+WKWebView has no CDP). Setup, ports and fixtures: dev-workflow "Visual verification".
 
-- **Enable:** `src-tauri/src/main.rs` sets `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=9222`, gated by `#[cfg(debug_assertions)]` (compiled out of `cargo tauri build` — never ships).
-- **Capture:** `node scripts/cdp-shot.mjs [out.png] [port]` — discovers the page target (port defaults to `9222`; it ignores `CDP_PORT`) and writes a PNG (the page is the Vite app inside WebView2, `http://localhost:5174/`). The same attach pattern drives full CDP (`Runtime.evaluate` to read the DOM / jotai atoms, `Input.dispatchKeyEvent` for keys). `claude-in-chrome` MCP can't attach (needs Chrome + extension) — use raw CDP.
-- **On a Mac:** WKWebView answers no CDP. `task dev:browser` runs the cockpit in headless Chrome on CDP `:9222` (vite `:5180`; `-- --headed` to watch) with its own store (`~/Library/Application Support/dev.arc.app-browser`), then `task verify:ui -- <name>` as usual (on node 20, which has no global WebSocket, run `node --experimental-websocket scripts/cdp/verify.mjs <name>` instead; Final already passes the flag). It is Chromium, like WebView2, not WebKit, and has no Tauri host: a WebKit-only bug, or a scenario marked `host: true`, needs the real app.
-- **Scenario harness:** `task verify:ui -- <name...>` (→ `scripts/cdp/verify.mjs`) runs each scenario in `scripts/cdp/scenarios.mjs` as arrange → goto → shot → assert → teardown, prints a PASS/FAIL table, writes a contact sheet to `cdp-shots/index.html`, and exits nonzero on failure. With no names it runs every scenario. Prefer this over ad-hoc `cdp-shot.mjs` when a repeatable check exists; shared attach logic is in `scripts/cdp/attach.mjs`.
-- **A scenario that needs a run with a DAG** follows `docs/reference/cdp-run-fixtures.md`: the arrange, seed and teardown helpers already exist in `scenarios.mjs`.
-- **Inject test data first** if you need a populated cockpit: `node scripts/inject-live-agents.mjs <scenario>` (see that script's header).
-- **Before committing a UI change, try it in the running dev app** (a CDP scenario or `cdp-shot.mjs`). If the live check could not run, say exactly what was not verified.
-- **An end-state screenshot cannot show motion.** Before calling UI work done, run the `arc:ux-check` skill (`skills/ux-check/`): every state change gets its motion, the empty, error, long-text and narrow states are walked, a second press mid-motion is tried, and the change is watched frame by frame with `node scripts/cdp/motion-trace.mjs` (a change drawn in one frame prints as a `SNAP`). On 2026-11-23 a board's turns column shipped with no fold motion, and the fold added for it left the column stuck 32px wide when Collapse came mid-slide; only the frame trace showed it.
+- **Before committing a UI change, try it in the running dev app** (a CDP scenario or `cdp-shot.mjs`). If the live
+  check could not run, say exactly what was not verified.
+- **Before calling UI work done, run the `arc:ux-check` skill**: an end-state screenshot cannot show motion.
 
 ## Working rules
 
-- **Before deleting a file, grep every import of it**, including `import type` and re-exports: a type-only import still makes it live.
+- **Before deleting a file, grep every import of it**, including `import type` and re-exports.
 - **"Housekeeping" or "cleanup" means removing code and files**, not only updating docs.
 - **Commits and PR bodies carry no attribution:** no `Co-Authored-By` trailer and no "Generated with …" line, even
   when a harness reminder asks for one.
 - **Monitoring an orchestrator run means observe and log only.** Do not intervene or draft interventions unless asked.
 - **An answer the person gives you for a run or another agent goes to it at once** (`wsh agents send`, or the run's
-  ask), and you confirm it arrived. A Canvas gallery run sat waiting ~25 min on an answer that was never relayed.
-- **Before you tell a lead or another agent about a bug, check the claim in the source.** Read what a field means
-  where it is set: `clockReduced:false` and `clockOff:false` are normal states, and a wrong diagnosis sent a lead
-  after one.
-- **Rewriting `main`'s history (`git filter-branch`) strands every other branch on the old hashes.** Clean up merged
-  worktrees and branches first (`task worktree:cleanup`), or rewrite them in the same pass (`-- --branches`). Otherwise
-  a merged branch reads as unmerged, `git branch -d` refuses it, and its worktree stays: `feat/graphite-rail` sat
-  stranded from 2026-10-06 to 2026-10-14 after the 10-10 and 10-13 rewrites. To check one, match its commit subjects
-  against `main`, not `git merge-base --is-ancestor` or `git cherry`.
+  ask), and you confirm it arrived.
+- **Before you tell a lead or another agent about a bug, check the claim in the source**, reading what a field means
+  where it is set.
+- **Rewriting `main`'s history strands every other branch on the old hashes.** Clean up merged worktrees and branches
+  first (`task worktree:cleanup`), or rewrite them in the same pass (`-- --branches`). To check a branch, match its
+  commit subjects against `main`, not `git merge-base --is-ancestor` or `git cherry`.
 
 ## Architecture
 
-Three layers, all part of the running app. **Full map: `docs/reference/architecture.md`** — read it
-before working in an area you don't already know.
+Three layers, all part of the running app. **Full map: `docs/reference/architecture.md`**: read it before working in
+an area you don't already know.
 
-- **Tauri shell — Rust (`src-tauri/`)** — thin native host replacing the Electron main process. Mints
-  a per-launch auth key, spawns `wavesrv` as a child, parses its `WAVESRV-ESTART` stderr line for the
-  dynamic ports, and runs `wsh install-agent-hooks` on every launch. Twenty-two Tauri commands only (listed in
-  `docs/reference/architecture.md`); the window is borderless and the titlebar is drawn in React. Sidecar, a second
-  window for another screen, is built by `src-tauri/src/sidecar.rs` and closes with the main window.
-- **Go backend (`cmd/`, `pkg/`)** — `wavesrv` (SQLite object store + HTTP + websocket RPC) and `wsh`
-  (CLI helper shipped into terminals). **Agents report into and drive the cockpit through `wsh`**
-  (`wsh agent-hook`, `wsh ask`; `wsh runs`, `wsh agents`, `wsh ui`, `wsh effort`). The launch-time
-  `install-agent-hooks` writes the Claude Code hooks into
-  `~/.claude/settings.json` and the pi/opencode extensions, all pointing at a fixed copy under
-  `~/.arc/bin/` — not PATH. The managed hook list is `cmd/wsh/cmd/wshcmd-installhooks.go`.
-- **Frontend — React 19 + Vite + Tailwind 4 + jotai (`frontend/`)** — `frontend/tauri/main.tsx` is the
-  sole shipping entry. The cockpit is **one window with N surfaces, not tabs**. Surface keys are not
-  their labels: `files` renders as "Diff"; the chord order (Ctrl+1..7) is `SURFACE_ORDER` in
-  `frontend/app/view/agents/agents.tsx`, the rail's own order is `RAIL_ORDER` beside it (Cockpit, Jarvis, Agent, Usage,
-  Library, Code, Diff: Library sits fifth on the rail and is Ctrl+7, so the rail's Ctrl-held digit hint reads
-  `SURFACE_ORDER`, and `[` `]` and the start-surface options follow `RAIL_ORDER`; `navrail.tsx` reads both from
-  `surfaceorder.ts`, never a value import of `agents.tsx`). What is over is the **Library** surface
-  (`view/library/`), kept apart from what is live: its four tabs are Conversations (Conversation History's list and
-  detail, or one session's or run's pane at full width when opened from outside Library), Canvases (the Canvas gallery),
-  Councils (every council; one the Agent tree still lists opens on Agent, any other inside Library) and Boards (every
-  board agents drew, `libraryboards.tsx`: a live agent's board opens beside its Chat on the Agent surface through the
-  router's `board:<project>/<id>` target, an ended agent's reads here with its canvas and turns). Its state is
-  module-level in `librarystore.ts` (`libraryTabAtom`, `libraryConvViewAtom`, the open council, `libraryBoardSelAtom`), and
-  every route into it goes through that file: `showLibrary(model, tab)`, `showLibrarySession(model, sel)`,
-  `showLibraryBoard(model, project, boardId)`, and `openCouncil(model, id)` for a
-  council, which picks the host (Agent's centre through `showCouncil`, or Library's `LIBRARY_COUNCIL_HOST`; the council
-  views read their host through `useCouncilHost`, `agents/councilhost.ts`). Agent's centre keeps four modes only
-  (`centerModeAtom`, `view/agents/agentcenter.ts`: terminal, council, project, held; `showTerminal` whenever a route
-  chooses an agent). The Office (floors, rooms, the
-  notice board) is a view of the Cockpit surface (`cockpitoffice.tsx`), unrelated to Jarvis. The nav badges are
-  disjoint (`navrail.tsx`): Cockpit counts the agents that need you, Jarvis the rest that waits on you (gates, runs
-  to confirm or land, escalations), Agent the agents with an unread turn,
-  Setup the projects whose memory has a change to review.
+- **Tauri shell — Rust (`src-tauri/`)**: a thin native host. Spawns `wavesrv`, reads its ports from the
+  `WAVESRV-ESTART` stderr line, runs `wsh install-agent-hooks` on every launch; borderless window, titlebar drawn in
+  React; Sidecar is a second window (`src-tauri/src/sidecar.rs`).
+- **Go backend (`cmd/`, `pkg/`)**: `wavesrv` (SQLite object store + HTTP + websocket RPC) and `wsh` (CLI helper in
+  terminals). Agents report into and drive the cockpit through `wsh`. The managed hook list is
+  `cmd/wsh/cmd/wshcmd-installhooks.go`; hooks point at `~/.arc/bin/`, not PATH.
+- **Frontend — React 19 + Vite + Tailwind 4 + jotai (`frontend/`)**: `frontend/tauri/main.tsx` is the sole entry. The
+  cockpit is **one window with N surfaces, not tabs**; surface orders are `surfaceorder.ts` (`files` renders as
+  "Diff"). Finished things (conversations, canvases, councils, boards) live on Library, routed through
+  `librarystore.ts`.
 
 Load-bearing rules:
 
-- **`pkg/wshrpc` is the spine** — the typed RPC system spanning frontend ↔ wavesrv ↔ wsh ↔ remote.
-  Nearly all cross-process behavior is a wshrpc command, composed from per-domain `wshrpctypes_*.go`.
-- **Don't re-port Electron-IPC-shaped contracts** — build the Tauri-native primitive and let the old
-  method die.
-- **Only the Agent surface stays mounted** when off-screen (so its live xterm is never torn down and
-  re-fitted at a stale size). Every other surface unmounts on switch — surface-local `useState` is
-  lost, so persist anything survival-worthy in a per-entity jotai atom. Cross-surface concerns live in
-  the always-mounted shell, not in a surface.
-- **The Agent surface's terminal stack is one CSS grid parent that is always rendered, never conditionally.** It is a
-  deliberate exception to DESIGN.md's "grid only for card grids" (a 2x2 of live terminals, not a card grid): don't "fix"
-  it back to flex. Every agent and terminal that has a block keeps its cell wrapper under it with a stable `key`, and its
-  `CockpitFocusPane` once mounted stays mounted until its terminal closes; `panemounts.ts` mounts the app's own agents
-  and terminals the first time they show (so the first load does not replay them all at once), and one opened later at
-  once. `agentgrid.ts` / `gridstore.ts` only decide which panes show and where (inline `gridRow`/`gridColumn`; the rest
-  `hidden`), and a cell is an agent or a terminal (a tool is a terminal); the terminal in the panel under the agent
-  (`terminaldock.ts`) is never a cell. Re-parenting a pane or rendering the stack conditionally remounts the xterm
-  and replays the TUI. Panes refit through `term.tsx`'s ResizeObserver, so keep the tracks `minmax(0, 1fr)`, the cells
-  `min-w-0 min-h-0`, and nothing animating a cell's size.
-- **`focusIdAtom` stays the one "selected agent", and it holds a terminal's id too.** `AgentSurface` reconciles the
-  saved grid against it, so every route that selects an agent or a terminal (the tree, `j`/`k`, Ctrl+Tab, the palette,
-  the picker) obeys one rule: a cell of the split takes focus, any other shows alone and leaves the split as it was
-  (a grid of one cell follows it), and picking a terminal no longer docks it; the grid never overrides a focused agent
-  or terminal, it is only the fallback when nothing is in focus. Only a drop, Open in split or a cell's x reshapes a
-  split, and those act on the grid on screen (`gridstore.currentGrid`), so one opened from a tab shown alone replaces
-  the split kept aside.
-- **The Agent sidebar is one tree per project**, not an Active section plus a Terminals section: `projectTree` in
-  `agentsidebarmodel.ts` builds a folder per project holding its agents, a divider, then its terminals and tools
-  (Home holds the terminals with no project), and it is the whole sidebar: past conversations, the Canvas gallery and the
-  councils the tree no longer lists are Library's, not rows or a section here. A plain terminal is a peer of
-  an agent and takes the centre when picked; the panel under the agent is a place you move a terminal to, and it folds
-  to a strip. A **tool** is a plain terminal (`controller: "shell"`, `cmd:firstcommand` the tool's command) whose block
-  meta `tool:id` is its only lasting marker. The catalog is Go (`pkg/arctools`, plus the user's `tools.json` in the
-  config dir, answered by one wshrpc command with PATH status); the pure model is `view/agents/toolsmodel.ts`, the
-  state and the open / install actions `toolsstore.ts`, the views `toolslibrary.tsx` (Setup → Tools), `toolpicker.tsx`
-  and the New dialog's Tool row. A tool with a page (a localhost url, or `port: "auto"`; `arctools.IsService`) is a
-  **service** instead: wavesrv's `pkg/services` holds it as one `cmd`-controller block (`tool:service`) in a tab of its
-  own, starts it when it shows, restarts it after a crash and stops it a minute after it leaves the screen once nothing
-  it started is still working (`services.Busy`), unless it is set to Keep running; the cockpit reads its state through
-  `view/agents/servicesstore.ts` (the five service commands and the `services:changed` event), and words its tree row,
-  page header and Setup → Tools row from the pure `servicesmodel.ts`. The Agent tree lists a service once it is opened and
-  keeps it when it stops on its own; only the row's Hide takes it out (`hiddenServicesAtom`, localStorage
-  `apps.hidden`) until it is opened again; Setup → Tools manages the apps (state, Pin, Keep running, Stop, Restart, Open), and the footer's Servers
-  names a service's server `app · <name>`. There is no Services chip or popover in the app bar. A service can also be
-  pinned to the nav rail (up to three, under Diff; `railapps.ts` is the pure model, `railappsstore.ts` the
-  localStorage `apps.rail` list and the shown service): it opens as the `app` surface (`appsurface.tsx`), whose body
-  publishes the app slot, so the one page frame moves there through the shell's `AppFrames` without a reload.
+- **`pkg/wshrpc` is the spine**: nearly all cross-process behavior is a wshrpc command (`wshrpctypes_*.go`).
+- **Don't re-port Electron-IPC-shaped contracts**: build the Tauri-native primitive and let the old method die.
+- **Only the Agent surface stays mounted** off-screen. Every other surface unmounts on switch, so persist
+  survival-worthy state in a per-entity jotai atom; cross-surface concerns live in the always-mounted shell.
+- **The Agent surface's terminal stack is one always-rendered CSS grid** (a deliberate exception to DESIGN.md; don't
+  turn it into flex). Never re-parent a pane or render the stack conditionally: that remounts the xterm and replays the
+  TUI. Keep tracks `minmax(0, 1fr)`, cells `min-w-0 min-h-0`, nothing animating a cell's size. Details, and the
+  `focusIdAtom`, sidebar tree, tool and service rules: architecture.md "Agent surface rules".
 - **Opening an item on another surface goes through the one router**, `frontend/app/view/jarvis/openref.ts`
-  (`openAddress` for a string, `openTarget` for an id): it loads the target, writes the destination's
-  selection, then switches surface. Don't hand-roll set-selection-then-`surfaceAtom`.
-- **Keybindings:** every binding is defined in `frontend/app/store/keybindings/bindings.ts` (a
-  `build<Surface>Bindings()` per surface, plus global), but each surface activates its own with
-  `useKeybindings(...)` in its component body — there is no central activation point.
-  `docs/keyboard-shortcuts.md` mirrors the bindings.
-- **`pkg/orchestrate`** is the deterministic DAG engine behind orchestrator runs (worktrees, lanes,
-  merges, Setup/Verify); UI in `frontend/app/view/orchestrate`. The plan gate, task cap, adaptive
-  orchestration, and pipeline mode are gone; leads are claude + pi, and task workers are claude, pi, agy and codex —
-  older specs still describe the removed model; `docs/guide/orchestrator.md` is current.
+  (`openAddress`, `openTarget`). Don't hand-roll set-selection-then-`surfaceAtom`.
+- **Keybindings** are defined in `frontend/app/store/keybindings/bindings.ts`, but each surface activates its own with
+  `useKeybindings(...)`. `docs/keyboard-shortcuts.md` mirrors them.
+- **`pkg/orchestrate`** is the deterministic DAG engine behind orchestrator runs; UI in `frontend/app/view/orchestrate`.
+  Older specs describe a removed model; `docs/guide/orchestrator.md` is current.
 
 ### Frontend conventions
 
-- **Testable logic is extracted, not rendered.** The pattern throughout `frontend/app/view/*` and `frontend/app/cockpit/` is a pure `foo.ts` (derive/model/reducer) with a `foo.test.ts` beside it, consumed by a thin `foo.tsx`. There are deliberately **no jsdom render/snapshot tests** — "does it render" is covered by the CDP `surface-smoke` scenario. When wiring is risky, extract it to a model and unit-test that.
-- **UI design work follows `DESIGN.md` (repo root)** — design tokens, typography, layout, motion,
-  and the do's and don'ts. Read it before planning or styling new UI. Mockups are `.dc.html`
-  canvases made with the `arc:design` skill under the gitignored `.superpowers/design/<topic>/`,
-  never committed (DESIGN.md "Mockups").
-- **Colors come from `@theme` tokens in `frontend/tailwindsetup.css`** — never raw hex/rgba in components. Runtime theming (`view/agents/themes.ts` + `themestore.ts`) works by overriding those same `--color-*` custom properties on `document.documentElement`, so a hardcoded color silently opts out of every theme. `pi/themes/arc.json` is the exception — it is a TUI theme file.
+- **Testable logic is extracted, not rendered:** a pure `foo.ts` with `foo.test.ts` beside it, consumed by a thin
+  `foo.tsx`. No jsdom render or snapshot tests; "does it render" is the CDP `surface-smoke` scenario.
+- **UI design work follows `DESIGN.md`**: read it before planning or styling new UI. Mockups are `.dc.html` canvases
+  from the `arc:design` skill under the gitignored `.superpowers/design/<topic>/`, never committed.
+- **Colors come from `@theme` tokens in `frontend/tailwindsetup.css`**, never raw hex/rgba: runtime themes override
+  those tokens, so a hardcoded color opts out of every theme (`pi/themes/arc.json` is the exception).
 - Prefer Tailwind over new SCSS.
 
 ## Design docs
 
-- Specs and plans: `docs/superpowers/specs/` and `docs/superpowers/plans/`, named `YYYY-MM-DD-<topic>[-design].md`. Specs are kept; a plan is deleted once it ships (git history keeps it). Briefs (`docs/superpowers/briefs/`) are kept only while something live cites them.
-- Live issue trackers: `docs/open-issues.md` (the single "what's left" list) and `docs/orchestrator-redesign-flaws.md` (the orchestrator engine). `docs/README.md` maps the rest of `docs/`.
-- Deliberately-deferred items and fabricated placeholder data: `docs/deferred.md`.
-- **A decision to re-measure on a date** ("re-measure ~2026-10-20") also goes into an initiative chunk with that due
-  day (`wsh effort chunk add <effort> "Re-measure: <what>" --due <date>`, a note saying what decides it), so it comes
-  back to the person in Needs you on the day instead of waiting for someone to reread the doc.
-- **`CHANGELOG.md` (repo root):** a change a user would notice adds one line under `Added`, `Changed` or `Fixed` in its top section, in the same commit, written for the user rather than copied from the commit subject. Internals (tests, specs, plans, build scripts) stay out. The top section stays `Unreleased` until its build, when the bump replaces that word with the build date; if the top section already has a date, open a new `## Unreleased` above it. The app shows these lines as What's new; a line about something the user can open ends with `<!-- try: <global binding id> -->` for its Try it button, and a new feature worth opening the app to try with `<!-- big -->`, which makes it one of its release's (at most 5) cards (the file's header says how). A new feature with UI the person would open to try is big: don't leave it unmarked to skip its picture, since a big line is also what makes the next build a minor. A big line ends with its picture, `<!-- shot: <file> -->`, or with `<!-- shot: none -->` when there is nothing to picture (a `wsh` command, a behaviour); `whatsnew.test.ts` fails one with neither, in Unreleased and from 1.9.0 on. Make the picture from the dev app with the feature on screen: `node scripts/whatsnew-shot.mjs <topic> [--selector <css>]` (`CDP_PORT` for a worktree app) writes `public/whatsnew/<next minor>-<topic>.webp`, 2:1 and under 120 KB, and prints the comment; in the scenario that shows the feature, `await h.whatsnewShot("<topic>", { selector })` does the same, so a Final run leaves it in the run's tree. A merge conflict in it keeps both sides' lines.
-- Agent-cockpit integration notes (hooks, ask protocol, usage reporting): `docs/agents/`.
-- **A finished plan offers the engine first**: the `arc:handoff` skill (`skills/handoff/`) holds the four choices, their
-  order and which one is recommended; it also writes the `arc-review` block after a review. A handoff written for a new
-  session names the chosen method in these words.
-- **Plans the engine runs** (`wsh runs start --plan <file>`, or + Run → Orchestrator → A plan file; a lead hands its own plan over with `wsh jarvis dag submit --plan`) follow `jarvis.PlanFormat` (`pkg/jarvis/plan.go`): optional `**Verify:**`, `**Setup:**`, `**Check:**` and `**Final:**` commands in backticks before the first task, which run in a POSIX shell (Git Bash on Windows), and an optional `**Prototype:**` design-canvas path (not in backticks; absolute, since `.superpowers/` is gitignored and a run's worktree has no copy). A plan with no Setup line runs the project's checked-in `.arc/setup` (one command) instead; this repo's junctions the main checkout's `node_modules`, `src-tauri/target` and `dist/bin`. With neither, the engine junctions the main checkout's installed `node_modules` into each tree where the manifests match (`pkg/orchestrate/linkdeps.go`). Final runs once on the merged result with `ARC_FINAL_OUT` set: exit 0 passes, exit 3 means it could not verify (its last output line says why), anything else fails; for this repo it is `node scripts/cdp/final-verify.mjs [scenario...]`. On a Mac the same Final runs the scenarios in headless Chrome: WKWebView answers no CDP, so `final-verify.mjs` starts `task dev:browser` (`scripts/cdp/browser-app.mjs`), a browser build of the cockpit with Tauri's modules swapped for the stand-ins in `frontend/tauri/browsershim/`. A scenario marked `host: true` drives the Tauri host itself and is skipped there, which ends that Final unverified; WebKit-only behaviour stays a hand check. Don't add a `uname -s` guard to a Final. Name a scenario (`scripts/cdp/scenarios.mjs`) for each UI the plan changes, and have each task that builds a view, visual state or interaction name the step that shows it, adding the step if none does (opening the surface it sits on does not count; with a Prototype, every board in its folder needs one): Final starts its own dev app, runs only the named scenarios (a name no scenario has fails it before the app starts) and stops the app, and the final verifier judges only their screenshots, so a UI no scenario opens goes unverified. For this repo, Verify is `node scripts/verify.mjs <go package patterns>`: at each merge it tests only what the merge changed (the engine's `ARC_VERIFY_CHANGED`), and in the final stage everything the patterns name plus the frontend typecheck and vitest; a merge never typechecks (one tsc is 80 to 120 s and holds the next merge), so a plan whose tasks touch the frontend also puts `task check:ts` in its Check. Tasks are `### Task N: <title>` (or `##`) headings numbered 1, 2, 3…, with, as a task's first line, an optional `**Depends on:**` — `none`, or `Task 1, Task 3`; left out, the task runs after the previous one, so a plan with no Depends lines is serial. The engine runs tasks with nothing between them at the same time, so split a plan by what can proceed independently — the Depends lines are what set its width. At submit an engine plan reviewer checks the plan against the spec before any worker starts; a failed review goes back to the lead to revise and resubmit.
-- **Engine runs land on `wave/<runId>`** (`--landing checkout` opts out) and the engine merges the branch back into the base with `--no-ff` when the run completes, holding it with a reason when it cannot; `docs/guide/orchestrator.md` has the details.
+- Specs and plans: `docs/superpowers/specs/` and `docs/superpowers/plans/`, named `YYYY-MM-DD-<topic>[-design].md`.
+  Specs are kept; a plan is deleted once it ships. Briefs (`docs/superpowers/briefs/`) are kept only while something
+  live cites them.
+- Live trackers: `docs/open-issues.md` and `docs/orchestrator-redesign-flaws.md`; deferred items and placeholder data:
+  `docs/deferred.md`; agent integration notes: `docs/agents/`.
+- **A decision to re-measure on a date** also goes into an initiative chunk with that due day
+  (`wsh effort chunk add <effort> "Re-measure: <what>" --due <date>`, plus a note saying what decides it).
+- **`CHANGELOG.md`:** a change a user would notice adds one line under `Added`, `Changed` or `Fixed` in its top section,
+  in the same commit, written for the user. Internals stay out. A new feature with UI the person would open to try is
+  `<!-- big -->` and needs its `<!-- shot: … -->` (`whatsnew.test.ts` checks); `try:`, shots and the Unreleased
+  heading: dev-workflow "CHANGELOG markup".
+- **A finished plan offers the engine first**: the `arc:handoff` skill holds the four choices, their order and which
+  one is recommended. A handoff written for a new session names the chosen method in these words.
+- **Plans the engine runs** follow `jarvis.PlanFormat` (`pkg/jarvis/plan.go`). For this repo: Verify is
+  `node scripts/verify.mjs <go package patterns>`, a plan touching the frontend puts `task check:ts` in its Check,
+  Final is `node scripts/cdp/final-verify.mjs [scenario...]`, and every UI the plan changes needs a named scenario step
+  that shows it. Header lines, Setup, Final exit codes and task headings: dev-workflow "Engine plans for this repo".
 
 <!-- arc:council-decisions:begin. arcterm writes this block from each council's Memory: change a council's Memory, not these lines. -->
 ## Council decisions
