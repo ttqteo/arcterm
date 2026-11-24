@@ -981,6 +981,107 @@ func TestFiguresTableHoldsOnlyVerifiedFigures(t *testing.T) {
 	mustNotContain(t, "main file with no figures", reportMain(c, "x"), "## Số liệu")
 }
 
+// Grouped figures: each group is a table under its heading (in the council's language), each whole before its parts,
+// with a Share column where a part is; the figures with no group come last under "Số khác"; the other places a figure
+// sits are in its source cell; and a relation Go dropped is listed in the side file with why.
+func TestFiguresTableGroupsFiguresAndShowsShares(t *testing.T) {
+	c := goldenReviewCouncil() // Vietnamese
+	v := func(value, measures, ref, group, of string) CouncilFigure {
+		return CouncilFigure{Value: value, Measures: measures, Ref: ref, Quote: value, Cite: CiteOK, Group: group, Of: of}
+	}
+	figs := []CouncilFigure{
+		v("94", "bản vá không chặn PoC", "x.md:614", "", "135"),
+		v("947", "advisory có bản vá", "x.md:613", "Bản vá X.js", ""),
+		v("464", "advisory trùng SecBench", "x.md:619", "", ""),
+		v("135", "bản vá không hợp lệ", "x.md:46", "", "947"),
+		v("0.7059", "tỉ lệ blocked_clean", "r.json:57", "Tỉ lệ chặn", "170"),
+		v("170", "mẫu số", "r.json:55", "", ""),
+		v("5", "phần của số không có", "r.json:1", "", "999"),
+	}
+	figs[5].Refs = []string{"h/r.json:54"}
+	c.Figures = relateFigures(figs)
+	main := reportMain(c, "x.discussion.md")
+	mustContain(t, "main file", main,
+		"## Số liệu\n\n### Bản vá X.js\n\n| Giá trị | Liên hệ | Đo gì | Nguồn |\n|---|---|---|---|\n"+
+			"| 947 | — | advisory có bản vá | `x.md:613` |\n"+
+			"| 135 | 14,3% của 947 | bản vá không hợp lệ | `x.md:46` |\n"+
+			"| 94 | 69,6% của 135 | bản vá không chặn PoC | `x.md:614` |\n\n",
+		"### Tỉ lệ chặn\n\n| Giá trị | Liên hệ | Đo gì | Nguồn |\n|---|---|---|---|\n"+
+			"| 170 | — | mẫu số | `r.json:55`, `h/r.json:54` |\n"+
+			"| 0.7059 | 70,6% của 170 | tỉ lệ blocked_clean | `r.json:57` |\n\n",
+		"### Số khác\n\n| Giá trị | Đo gì | Nguồn |\n|---|---|---|\n| 464 | advisory trùng SecBench | `x.md:619` |\n| 5 |")
+	side := reportSide(c, "x.md", main, nil, nil)
+	mustContain(t, "side file", side, "## Figure relations that did not hold\n",
+		"| 5 | phần của số không có | `r.json:1` | the whole 999 is not a checked figure |")
+
+	// an English council writes the share with a decimal point and names the others "Other figures"
+	c.Lang = LangEn
+	main = reportMain(c, "x.discussion.md")
+	mustContain(t, "English main file", main, "| Value | Relation | Measures | Source |", "| 135 | 14.3% of 947 |", "### Other figures")
+}
+
+// The Relation column says the change from an earlier value (a rate's in points), the side of a limit and when a figure
+// holds, each in the council's language; a relation that names no checked figure is the side file's.
+func TestFiguresTableSaysChangeLimitAndTime(t *testing.T) {
+	c := goldenReviewCouncil() // Vietnamese
+	v := func(value, group string, set func(*CouncilFigure)) CouncilFigure {
+		f := CouncilFigure{Value: value, Measures: "m", Ref: "a.md:1", Quote: value, Cite: CiteOK, Group: group}
+		if set != nil {
+			set(&f)
+		}
+		return f
+	}
+	c.Figures = relateFigures([]CouncilFigure{
+		v("79,5%", "Tỉ lệ", nil),
+		v("70,6%", "", func(f *CouncilFigure) { f.Was = "79,5%" }),
+		v("60", "Số ca", nil),
+		v("80", "", func(f *CouncilFigure) { f.Was = "60" }),
+		v("1248 ms", "Thời gian", func(f *CouncilFigure) { f.Limit = "1000" }),
+		v("1000", "", nil),
+		v("0.75", "Recall", func(f *CouncilFigure) { f.Limit = "0.8"; f.Bound = "min" }),
+		v("0.8", "", nil),
+		v("12", "Theo vòng", func(f *CouncilFigure) { f.At = "v1"; f.Unit = "ca" }),
+		v("15", "Theo vòng", func(f *CouncilFigure) { f.At = "v2"; f.Unit = "ca" }),
+		v("9", "", func(f *CouncilFigure) { f.Was = "7" }),
+	})
+	main := reportMain(c, "x.discussion.md")
+	mustContain(t, "main file", main,
+		"| 70,6% | từ 79,5%, −8,9 điểm |",
+		"| 80 | từ 60, +20 |",
+		"| 1248 ms | vượt ngưỡng tối đa 1000 |",
+		"| 0.75 | dưới mức tối thiểu 0.8 |",
+		"| 12 | lúc v1 |", "| 15 | lúc v2 |")
+	mustContain(t, "side file", reportSide(c, "x.md", main, nil, nil), "| 9 | m | `a.md:1` | the earlier value 7 is not a checked figure |")
+
+	c.Lang = LangEn
+	mustContain(t, "English main file", reportMain(c, "x.discussion.md"),
+		"| 70,6% | from 79,5%, −8.9 pts |", "| 1248 ms | over the max 1000 |", "| 0.75 | under the min 0.8 |", "| 12 | at v1 |")
+}
+
+func TestRelateFiguresWasAndLimit(t *testing.T) {
+	figs := relateFigures([]CouncilFigure{
+		{Value: "80", Ref: "a:1", Quote: "80", Cite: CiteOK, Was: "60", Group: "Số ca"},
+		{Value: "60", Ref: "a:2", Quote: "60", Cite: CiteOK},
+		{Value: "0.9", Ref: "a:3", Quote: "0.9", Cite: CiteOK, Limit: "0.8", Bound: "MIN"},
+		{Value: "0.8", Ref: "a:4", Quote: "0.8", Cite: CiteOK},
+		{Value: "50%", Ref: "a:5", Quote: "50%", Cite: CiteOK, Was: "60"}, // a rate cannot come from a count
+		{Value: "5", Ref: "a:6", Quote: "5", Cite: CiteOK, Limit: "3", Bound: "sideways"},
+		{Value: "3", Ref: "a:7", Quote: "3", Cite: CiteOK},
+	})
+	if f := figs[0]; f.Was != "60" || f.Level != 80 || figs[1].Group != "Số ca" {
+		t.Errorf("80 = %+v (60's group %q), want was 60, level 80, and 60 in its group", f, figs[1].Group)
+	}
+	if f := figs[2]; f.Limit != "0.8" || f.Bound != "min" || f.Breach || f.Level != 0.9 {
+		t.Errorf("0.9 = %+v, want a min limit of 0.8 it meets", f)
+	}
+	if f := figs[4]; f.Was != "" || !strings.Contains(f.RelNote, "is a count and the value a rate") {
+		t.Errorf("50%% = %+v, want its was dropped: a count", f)
+	}
+	if f := figs[5]; f.Limit != "3" || f.Bound != "" || !f.Breach {
+		t.Errorf("5 = %+v, want over its max of 3 (an unknown bound reads as max)", f)
+	}
+}
+
 // A brief that was not copied is listed in the side file with why; one that was copied is not a warning.
 func TestSideFileListsTheFilesNotCopied(t *testing.T) {
 	c := goldenReviewCouncil()

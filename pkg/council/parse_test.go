@@ -670,17 +670,22 @@ func TestShapesParse(t *testing.T) {
 		props[0].Evidence[0].Quote == "" || props[0].Runs != nil || !hasPicture(props[1].Argument) {
 		t.Errorf("round1ShapeNoVerify: %+v, %v", props, err)
 	}
-	// every round 1 shape of a Review, the agent seat's and a panel of one's included, shows one example figure whose value is
-	// in its quote; the Brainstorm shapes ask for none
+	// every round 1 shape of a Review, the agent seat's and a panel of one's included, shows two example figures of one group,
+	// the second a part "of" the first, each value in its quote; the Brainstorm shapes ask for none
 	for name, shape := range map[string]string{"round1Shape": round1Shape, "round1ShapeNoChecker": round1ShapeNoChecker,
 		"round1ShapeNoVerify": round1ShapeNoVerify} {
 		props, _, err := ParseRound1(jsonFence(shape))
-		if err != nil || len(props) != 2 || len(props[0].Figures) != 1 || props[1].Figures != nil {
-			t.Errorf("%s: figures %+v, %v; want one on the first proposal and none on the second", name, props, err)
+		if err != nil || len(props) != 2 || len(props[0].Figures) != 2 || props[1].Figures != nil {
+			t.Errorf("%s: figures %+v, %v; want two on the first proposal and none on the second", name, props, err)
 			continue
 		}
-		if f := props[0].Figures[0]; f.Value == "" || f.Measures == "" || f.Ref == "" || !strings.Contains(f.Quote, f.Value) {
-			t.Errorf("%s: its example figure %+v needs a value, what it measures, a ref and a quote holding the value", name, f)
+		for _, f := range props[0].Figures {
+			if f.Value == "" || f.Measures == "" || f.Ref == "" || !strings.Contains(f.Quote, f.Value) || f.Group == "" {
+				t.Errorf("%s: its example figure %+v needs a value, what it measures, a ref, a quote holding the value and a group", name, f)
+			}
+		}
+		if whole, part := props[0].Figures[0], props[0].Figures[1]; part.Of != whole.Value || part.Group != whole.Group {
+			t.Errorf("%s: the second example figure %+v should be a part of the first %+v, in its group", name, part, whole)
 		}
 	}
 	for name, shape := range map[string]string{"brainstormRound1Shape": brainstormRound1Shape,

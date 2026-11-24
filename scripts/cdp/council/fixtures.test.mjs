@@ -69,7 +69,7 @@ const NOW = Date.UTC(2026, 9, 21, 12, 0, 0);
 const placed = (name, now = NOW) => placeCouncil(loadCouncilFixture(name), name, "/work/fixture", now);
 
 describe("the fixtures as records", () => {
-    it("has the six the plan names, the two rooms, the room with an attachment, the figures council and the report tables council, each under its own id", () => {
+    it("has the six the plan names, the two rooms, the room with an attachment, the figures council, the report tables council and the figure charts council, each under its own id", () => {
         expect(COUNCIL_FIXTURES).toEqual([
             "round1",
             "round2",
@@ -82,6 +82,7 @@ describe("the fixtures as records", () => {
             "room-attached",
             "figures",
             "report-tables",
+            "figure-charts",
         ]);
         for (const name of COUNCIL_FIXTURES) {
             expect(loadCouncilFixture(name).id).toBe(councilFixtureId(name));
@@ -492,7 +493,7 @@ describe("placeCouncil", () => {
         expect(c.skips[0].ts).toBeLessThan(c.updated);
     });
 
-    it("sorts the tree newest created first: round1, round2, awaiting, room-awaiting, room-attached, room, failed, done, figures, notrun, report-tables", () => {
+    it("sorts the tree newest created first: round1, round2, awaiting, room-awaiting, room-attached, room, failed, done, figures, notrun, report-tables, figure-charts", () => {
         const order = [...COUNCIL_FIXTURES].sort((a, b) => placed(b).created - placed(a).created);
         expect(order).toEqual([
             "round1",
@@ -506,6 +507,7 @@ describe("placeCouncil", () => {
             "figures",
             "notrun",
             "report-tables",
+            "figure-charts",
         ]);
         // the four Task 13 lists keep the plan's order: Running, Waiting on you, Done, Not run
         const four = ["notrun", "done", "awaiting", "round2"].sort((a, b) => placed(b).created - placed(a).created);

@@ -485,24 +485,22 @@ func TestApplyChecksFigures(t *testing.T) {
 			t.Errorf("seatB's figures = %+v, want ok in its own directory and wrong in another's", p4)
 		}
 
-		// Council.Figures: the same figure from ux and ram is one, verified; ux's 301 and seatB's out-of-tree copy are
-		// their own figures (the latter a copy of the same figure as P1's first, so it joins it)
+		// Council.Figures: the same figure from ux and ram is one, verified, and seatB's copy of the same line in another
+		// file joins it (same quote, same value), its ref kept in Refs; ux's 301 is its own figure
 		got := map[string]CouncilFigure{}
 		for _, f := range c.Figures {
 			got[f.Value+" "+f.Ref] = f
 		}
-		if len(c.Figures) != 4 {
-			t.Fatalf("Council.Figures = %+v, want 4 distinct figures", c.Figures)
+		if len(c.Figures) != 3 {
+			t.Fatalf("Council.Figures = %+v, want 3 distinct figures", c.Figures)
 		}
 		f300 := got["300 pkg/idle.go:3"]
-		if f300.Cite != CiteOK || f300.Measures != "from ux" || !slices.Equal(f300.From, []string{"P1", "P2", "P4"}) {
-			t.Errorf("figure 300 = %+v, want one verified figure from P1, P2 and P4", f300)
+		if f300.Cite != CiteOK || f300.Measures != "from ux" || !slices.Equal(f300.From, []string{"P1", "P2", "P4"}) ||
+			!slices.Equal(f300.Refs, []string{"only/b.go:3"}) {
+			t.Errorf("figure 300 = %+v, want one verified figure from P1, P2 and P4, also at only/b.go:3", f300)
 		}
 		if f := got["301 pkg/idle.go:3"]; f.Cite != CiteWrong || !slices.Equal(f.From, []string{"P1"}) {
 			t.Errorf("figure 301 = %+v, want wrong, from P1", f)
-		}
-		if f := got["300 only/b.go:3"]; f.Cite != CiteOK || !slices.Equal(f.From, []string{"P4"}) {
-			t.Errorf("figure 300 in b = %+v, want ok, from P4", f)
 		}
 		for _, f := range c.Figures {
 			if f.Measures == "held" {

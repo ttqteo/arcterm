@@ -31,6 +31,18 @@ export interface ReportWords {
     value: string;
     measures: string;
     source: string;
+    share: string; // the Share column's heading
+    of: string; // "14,3% của 947"
+    rest: string; // what a whole's parts leave: "812 còn lại"
+    otherFigures: string; // the heading of the figures with no group, when some have one
+    points: string; // a rate's change: "−8,9 điểm"
+    overMax: string;
+    withinMax: string;
+    underMin: string;
+    meetsMin: string;
+    before: string; // a change's earlier figure: "trước"
+    after: string; // and its later one: "sau"
+    limitLabel: string; // the mark on a limit bar
     kinds: Record<TaskKind, string>;
 }
 
@@ -48,6 +60,18 @@ const WORDS: Record<CouncilLang, ReportWords> = {
         value: "Giá trị",
         measures: "Đo gì",
         source: "Nguồn",
+        share: "Tỉ lệ",
+        of: "của",
+        rest: "còn lại",
+        otherFigures: "Số khác",
+        points: "điểm",
+        overMax: "vượt ngưỡng tối đa",
+        withinMax: "trong ngưỡng tối đa",
+        underMin: "dưới mức tối thiểu",
+        meetsMin: "đạt mức tối thiểu",
+        before: "trước",
+        after: "sau",
+        limitLabel: "ngưỡng",
         kinds: { new: "việc mới", edit: "sửa chữ", decision: "quyết định" },
     },
     en: {
@@ -61,6 +85,18 @@ const WORDS: Record<CouncilLang, ReportWords> = {
         value: "Value",
         measures: "Measures",
         source: "Source",
+        share: "Share",
+        of: "of",
+        rest: "rest",
+        otherFigures: "Other figures",
+        points: "pts",
+        overMax: "over the max",
+        withinMax: "within the max",
+        underMin: "under the min",
+        meetsMin: "meets the min",
+        before: "before",
+        after: "after",
+        limitLabel: "limit",
         kinds: { new: "new work", edit: "text edit", decision: "decision" },
     },
 };
@@ -147,17 +183,358 @@ export interface FigureRow {
     value: string;
     measures: string;
     ref: string; // `path:line`
+    refs: string[]; // the other places that hold the same figure (a copy of the file, a nearby line)
+    group: string; // "" for a figure that stands alone
+    of: string; // the whole it is part of, as Go kept it (the whole figure's value); "" for none
+    share: number | null; // its part of that whole, 0..1; null with no whole
+    rate: boolean; // a %, a fraction or a decimal between 0 and 1, rather than a count
+    amount: number; // the count, for one that is a count; 0 otherwise
+    level: number | null; // the figure as one number: the count, or the rate as 0..1; null when it reads as none
+    was: string; // the earlier figure's value, as Go kept it; "" for none
+    limit: string; // the limit figure's value, as Go kept it; "" for none
+    bound: "max" | "min"; // which side of the limit is good
+    breach: boolean; // on the wrong side of its limit
+    unit: string; // what it counts in, as the seat wrote it
+    at: string; // when it holds, as the seat wrote it
 }
 
-/** Pure: the figures table's rows: the figures Go verified, as `Council.figures` holds them (Go deduplicated them and
- *  kept the first verified copy's reference). A figure that did not check out is `failedFigureRows`'. */
+const toRow = (f: CouncilFigure): FigureRow => {
+    const of = oneLine(f.of);
+    return {
+        value: oneLine(f.value),
+        measures: oneLine(f.measures),
+        ref: oneLine(f.ref),
+        refs: (f.refs ?? []).map(oneLine).filter((r) => r !== ""),
+        group: oneLine(f.group),
+        of,
+        share: of !== "" && typeof f.share === "number" ? f.share : null,
+        rate: f.rate === true,
+        amount: typeof f.amount === "number" ? f.amount : 0,
+        level: typeof f.level === "number" ? f.level : null,
+        was: oneLine(f.was),
+        limit: oneLine(f.limit),
+        bound: f.bound === "min" ? "min" : "max",
+        breach: f.breach === true,
+        unit: oneLine(f.unit),
+        at: oneLine(f.at),
+    };
+};
+
+/** Pure: the figures table's rows: the figures Go verified, as `Council.figures` holds them (Go merged the copies of one
+ *  figure, kept its other places in `refs`, and checked each relation). A figure that did not check out is
+ *  `failedFigureRows`'. */
 export function figureRows(c: Council): FigureRow[] {
-    return (c.figures ?? [])
-        .filter(isVerifiedFigure)
-        .map((f) => ({ value: oneLine(f.value), measures: oneLine(f.measures), ref: oneLine(f.ref) }));
+    return (c.figures ?? []).filter(isVerifiedFigure).map(toRow);
 }
 
-export interface FailedFigureRow extends FigureRow {
+export interface FigureSection {
+    name: string; // the group's name; "" for the figures with no group
+    rows: FigureRow[]; // each whole before its parts
+}
+
+// a row's whole in its section: the first other count whose value is the row's `of`, or -1
+function parentsOf(rows: FigureRow[]): number[] {
+    return rows.map((r, i) => (r.of === "" ? -1 : rows.findIndex((w, j) => j !== i && !w.rate && w.value === r.of)));
+}
+
+/** Pure: the verified figures split by group, the groups in the order each was first named and the figures with no group
+ *  last; inside a group each figure whose whole is not there comes in order, followed by its parts, depth first. The
+ *  twin of pkg/council/markdown.go's figureSections and wholesFirst: change one and change the other. */
+export function figureSections(c: Council): FigureSection[] {
+    const byName = new Map<string, FigureRow[]>();
+    for (const r of figureRows(c)) {
+        byName.set(r.group, [...(byName.get(r.group) ?? []), r]);
+    }
+    const names = [...byName.keys()].filter((n) => n !== "");
+    if (byName.has("")) {
+        names.push("");
+    }
+    return names.map((name) => {
+        const rows = byName.get(name)!;
+        const parent = parentsOf(rows);
+        const seen = new Set<number>();
+        const out: FigureRow[] = [];
+        const visit = (i: number) => {
+            if (seen.has(i)) {
+                return;
+            }
+            seen.add(i);
+            out.push(rows[i]);
+            parent.forEach((p, k) => p === i && visit(k));
+        };
+        parent.forEach((p, i) => p < 0 && visit(i));
+        rows.forEach((_, i) => visit(i)); // a loop Go let through would leave rows unvisited: keep them, in order
+        return { name, rows: out };
+    });
+}
+
+/** Pure: a share as a percentage with one decimal and no trailing ".0", with a decimal comma in Vietnamese: "79,5%",
+ *  "70%". The twin of pkg/council/figurerel.go's percentText and markdown.go's localNumber. */
+export function percentText(share: number, lang: CouncilLang): string {
+    const text = (Math.round(share * 1000) / 10).toFixed(1).replace(/\.0$/, "") + "%";
+    return lang === "vi" ? text.replace(".", ",") : text;
+}
+
+/** Pure: a count as the council's language writes it: "812", "1.248" in Vietnamese, "1,248" in English. */
+export function countText(n: number, lang: CouncilLang): string {
+    return new Intl.NumberFormat(lang === "vi" ? "vi-VN" : "en-US", { maximumFractionDigits: 2 }).format(n);
+}
+
+/** Pure: a change with its sign, "+20" or "−8,9 điểm": a count's in its own units, a rate's in percentage points with one
+ *  decimal. The twin of markdown.go's changeText. */
+export function changeText(delta: number, rate: boolean, lang: CouncilLang): string {
+    const sign = delta < 0 ? "−" : "+";
+    const d = Math.abs(delta);
+    if (rate) {
+        const pts = (Math.round(d * 1000) / 10).toString();
+        return `${sign}${lang === "vi" ? pts.replace(".", ",") : pts} ${reportWords(lang).points}`;
+    }
+    return sign + countText(Math.round(d * 100) / 100, lang);
+}
+
+/** Pure: a figure's side of its limit in words: "vượt ngưỡng tối đa 1000", "đạt mức tối thiểu 0.8". The twin of the limit
+ *  part of markdown.go's relationCell. */
+export function limitText(row: FigureRow, lang: CouncilLang): string {
+    const w = reportWords(lang);
+    const side = row.bound === "min" ? (row.breach ? w.underMin : w.meetsMin) : row.breach ? w.overMax : w.withinMax;
+    return `${side} ${row.limit}`;
+}
+
+export interface StackSegment {
+    row: FigureRow | null; // null for what is left of a whole its parts do not cover
+    label: string; // the value, or "812 còn lại"
+    share: number; // its part of the bar's whole, 0..1
+    depth: number; // 0 for a part of the bar's whole, 1 for a part of a part, …: the fill steps lighter with it
+}
+
+/** One whole that counts split: its parts side by side in one bar, each part that is split itself drawn as its parts. */
+export interface StackBar {
+    kind: "stack";
+    whole: FigureRow;
+    segments: StackSegment[];
+    subtotals: string[]; // "135 = 94 + 41" for each part drawn as its own parts
+    rows: FigureRow[]; // every figure the bar draws, the whole first: what its sources line names
+}
+
+/** One rate over its denominator: "0.7059" of "170". */
+export interface RateBar {
+    kind: "rate";
+    row: FigureRow;
+    share: number;
+    pct: string; // "70,6% của 170"
+}
+
+/** A figure and the value it had before: "60 → 80", "+20". */
+export interface ChangeView {
+    kind: "change";
+    from: FigureRow;
+    to: FigureRow;
+    delta: string; // "+20", "−8,9 điểm"
+    dir: "up" | "down" | "same";
+    scale: number; // the larger of the two levels: both bars are drawn against it
+}
+
+/** A figure held to a limit: a bar to its level with the limit marked on it. */
+export interface LimitView {
+    kind: "limit";
+    row: FigureRow;
+    limit: FigureRow;
+    text: string; // "vượt ngưỡng tối đa 1000"
+    scale: number; // the bar's full width: a little past the larger of the figure and its limit
+}
+
+/** Figures of one unit, side by side, largest first. */
+export interface CompareView {
+    kind: "compare";
+    unit: string;
+    rows: FigureRow[];
+    max: number;
+}
+
+/** Figures of one unit over time, in the order of when each holds. */
+export interface SeriesView {
+    kind: "series";
+    unit: string;
+    rows: FigureRow[];
+    min: number;
+    max: number;
+}
+
+export type FigureChart = StackBar | RateBar | ChangeView | LimitView | CompareView | SeriesView;
+
+export interface FigureSectionView {
+    name: string; // "" for the figures with no group
+    bars: FigureChart[];
+    loose: FigureRow[]; // the figures no chart draws, as table rows
+}
+
+// below this, what is left of a whole is rounding, not a part
+const EPS = 1e-6;
+// how far past the larger of a figure and its limit the limit bar runs, so the limit's mark is never on the edge
+const LIMIT_HEADROOM = 1.15;
+
+/** Pure: the order of figures over time: by date when every `at` starts with one (2026-11-20), by the first number in it
+ *  when every one has one (v1, vòng 3), else as declared. */
+export function byTime(rows: FigureRow[]): FigureRow[] {
+    const date = /^\d{4}-\d{2}(-\d{2})?/;
+    if (rows.every((r) => date.test(r.at))) {
+        return [...rows].sort((a, b) => a.at.localeCompare(b.at));
+    }
+    const num = (s: string) => Number(/\d+(\.\d+)?/.exec(s)?.[0]);
+    if (rows.every((r) => Number.isFinite(num(r.at)))) {
+        return [...rows].sort((a, b) => num(a.at) - num(b.at));
+    }
+    return rows;
+}
+
+/** Pure: which of a line's n points keep their labels: all of up to `max`; past it the first, the last and every
+ *  `ceil((n - 1) / (max - 1))`-th between, so at most about `max` labels share the width. */
+export function seriesLabels(n: number, max = 6): boolean[] {
+    if (n <= max) {
+        return Array.from({ length: n }, () => true);
+    }
+    const step = Math.ceil((n - 1) / (max - 1));
+    return Array.from({ length: n }, (_, i) => i === n - 1 || (i % step === 0 && n - 1 - i >= step / 2));
+}
+
+/** Pure: what one section draws, each figure at most once, in this order of claim: a stacked bar for each count whose
+ *  parts are counts and that is no part itself (parts split further drawn as their own parts, what a whole's parts leave
+ *  as "rest"); a bar for each rate over its denominator; a change for each figure with an earlier value (both figures);
+ *  a limit bar for each figure with a limit (both); then, of the figures left, a line over time for each unit with two or
+ *  more that say when they hold, and bars side by side for each unit with two or more; and a table of the rest. Charts
+ *  come in the section's order, the lines and comparisons last. */
+export function sectionView(section: FigureSection, lang: CouncilLang): FigureSectionView {
+    const words = reportWords(lang);
+    const rows = section.rows;
+    const parent = parentsOf(rows);
+    const countKids = (i: number) => rows.flatMap((r, k) => (parent[k] === i && !r.rate && r.share != null ? [k] : []));
+    const drawn = new Set<number>();
+    const bars: FigureChart[] = [];
+    const indexOf = (value: string, not: number) => rows.findIndex((r, j) => j !== not && r.value === value);
+    rows.forEach((r, i) => {
+        if (r.rate && r.share != null) {
+            drawn.add(i);
+            bars.push({
+                kind: "rate",
+                row: r,
+                share: r.share,
+                pct: `${percentText(r.share, lang)} ${words.of} ${r.of}`,
+            });
+            return;
+        }
+        const isCountPart = !r.rate && r.share != null && parent[i] >= 0;
+        if (r.rate || isCountPart || countKids(i).length === 0) {
+            return;
+        }
+        const segments: StackSegment[] = [];
+        const subtotals: string[] = [];
+        const barRows: FigureRow[] = [r];
+        drawn.add(i);
+        const split = (node: number, frac: number, depth: number) => {
+            const kids = countKids(node);
+            let covered = 0;
+            for (const k of kids) {
+                const part = frac * rows[k].share!;
+                covered += rows[k].share!;
+                drawn.add(k);
+                barRows.push(rows[k]);
+                if (countKids(k).length > 0) {
+                    split(k, part, depth + 1);
+                } else {
+                    segments.push({ row: rows[k], label: rows[k].value, share: part, depth });
+                }
+            }
+            const left = 1 - covered;
+            const restAmount = rows[node].amount - kids.reduce((sum, k) => sum + rows[k].amount, 0);
+            if (node !== i && kids.length > 0) {
+                const parts = kids.map((k) => rows[k].value);
+                if (left > EPS) {
+                    parts.push(`${countText(restAmount, lang)} ${words.rest}`);
+                }
+                subtotals.push(`${rows[node].value} = ${parts.join(" + ")}`);
+            }
+            if (left > EPS) {
+                segments.push({
+                    row: null,
+                    label: `${countText(restAmount, lang)} ${words.rest}`,
+                    share: frac * left,
+                    depth: -1,
+                });
+            }
+        };
+        split(i, 1, 0);
+        bars.push({ kind: "stack", whole: r, segments, subtotals, rows: barRows });
+    });
+    rows.forEach((r, i) => {
+        if (r.was !== "" && r.level != null && !drawn.has(i)) {
+            const j = indexOf(r.was, i);
+            const from = rows[j];
+            if (j >= 0 && from.level != null) {
+                drawn.add(i).add(j);
+                const d = r.level - from.level;
+                bars.push({
+                    kind: "change",
+                    from,
+                    to: r,
+                    delta: changeText(d, r.rate, lang),
+                    dir: Math.abs(d) < 1e-12 ? "same" : d > 0 ? "up" : "down",
+                    scale: Math.max(Math.abs(r.level), Math.abs(from.level)) || 1,
+                });
+            }
+        }
+        if (r.limit !== "" && r.level != null) {
+            const j = indexOf(r.limit, i);
+            const limit = rows[j];
+            if (j >= 0 && limit.level != null) {
+                drawn.add(i).add(j);
+                bars.push({
+                    kind: "limit",
+                    row: r,
+                    limit,
+                    text: limitText(r, lang),
+                    scale: Math.max(r.level, limit.level) * LIMIT_HEADROOM || 1,
+                });
+            }
+        }
+    });
+    const byUnit = (keep: (r: FigureRow) => boolean) => {
+        const m = new Map<string, number[]>();
+        rows.forEach((r, i) => {
+            if (!drawn.has(i) && r.level != null && keep(r)) {
+                const key = `${r.unit}|${r.rate}`;
+                m.set(key, [...(m.get(key) ?? []), i]);
+            }
+        });
+        return [...m.values()].filter((ix) => ix.length >= 2);
+    };
+    for (const ix of byUnit((r) => r.at !== "")) {
+        ix.forEach((i) => drawn.add(i));
+        const levels = ix.map((i) => rows[i].level!);
+        bars.push({
+            kind: "series",
+            unit: rows[ix[0]].unit,
+            rows: byTime(ix.map((i) => rows[i])),
+            min: Math.min(...levels),
+            max: Math.max(...levels),
+        });
+    }
+    for (const ix of byUnit((r) => r.unit !== "")) {
+        ix.forEach((i) => drawn.add(i));
+        const sorted = ix.map((i) => rows[i]).sort((a, b) => b.level! - a.level!);
+        bars.push({
+            kind: "compare",
+            unit: sorted[0].unit,
+            rows: sorted,
+            max: Math.max(...sorted.map((r) => r.level!)) || 1,
+        });
+    }
+    return { name: section.name, bars, loose: rows.filter((_, i) => !drawn.has(i)) };
+}
+
+export interface FailedFigureRow {
+    value: string;
+    measures: string;
+    ref: string;
     note: string; // Go's reason: "value not in the quote", "line 900 is past the end (412 lines)"; "not checked" with none
 }
 
@@ -172,5 +549,18 @@ export function failedFigureRows(c: Council): FailedFigureRow[] {
             measures: oneLine(f.measures),
             ref: oneLine(f.ref),
             note: oneLine(f.citenote) || "not checked",
+        }));
+}
+
+/** Pure: the verified figures one of whose relations (of, was, limit) Go dropped, each with why (`relnote`): what "About
+ *  the council" lists under "Figure relations that did not hold", as the side file does. */
+export function droppedRelationRows(c: Council): FailedFigureRow[] {
+    return (c.figures ?? [])
+        .filter((f) => isVerifiedFigure(f) && oneLine(f.relnote) !== "")
+        .map((f) => ({
+            value: oneLine(f.value),
+            measures: oneLine(f.measures),
+            ref: oneLine(f.ref),
+            note: oneLine(f.relnote),
         }));
 }

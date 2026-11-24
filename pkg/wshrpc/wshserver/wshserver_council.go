@@ -458,13 +458,16 @@ func (ws *WshServer) CouncilSaveDocCommand(ctx context.Context, data wshrpc.Comm
 	if err != nil {
 		return nil, err
 	}
+	// a council checked before today's merge and relation rules (wsh council redoc on an old one) reads by them
+	refreshed := council.RefreshFigures(c)
 	path, err := council.WriteDocument(c, data.Path)
 	if err != nil {
 		return nil, err
 	}
-	if path != c.DocPath {
+	if path != c.DocPath || refreshed {
 		saved, err := council.Update(c.Id, func(c *council.Council) error {
 			c.DocPath = path
+			council.RefreshFigures(c)
 			return nil
 		})
 		if err != nil {

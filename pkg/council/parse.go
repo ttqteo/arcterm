@@ -169,7 +169,9 @@ func (l *verifyList) UnmarshalJSON(b []byte) error {
 }
 
 // figureList reads a proposal's "figures": [{"value": "300", "measures": "what it measures", "ref": "path:line", "quote":
-// "the line's text"}]. Like "verify" it is optional and read leniently, so a reply is never failed over it: a list that is
+// "the line's text", "group": "the set it is read with", "of": "the whole it is part of", "was": "its earlier value",
+// "limit": "its threshold", "bound": "max" or "min", "unit": "what it counts in", "at": "when it holds"}] (all but the
+// first four optional). Like "verify" it is optional and read leniently, so a reply is never failed over it: a list that is
 // not a list, an item that is not an object, and an entry with no value or no ref (Go cannot check a number that has no
 // place) are each left out, each field is trimmed, and a value or other field written as a bare number reads as its text.
 // What is kept has no verdict: ApplyChecks gives it one.
@@ -188,11 +190,23 @@ func (l *figureList) UnmarshalJSON(b []byte) error {
 			Measures json.RawMessage `json:"measures"`
 			Ref      json.RawMessage `json:"ref"`
 			Quote    json.RawMessage `json:"quote"`
+			Group    json.RawMessage `json:"group"`
+			Of       json.RawMessage `json:"of"`
+			Was      json.RawMessage `json:"was"`
+			Limit    json.RawMessage `json:"limit"`
+			Bound    json.RawMessage `json:"bound"`
+			Unit     json.RawMessage `json:"unit"`
+			At       json.RawMessage `json:"at"`
 		}
 		if err := json.Unmarshal(r, &obj); err != nil {
 			continue
 		}
-		f := CouncilFigure{Value: plainText(obj.Value), Measures: plainText(obj.Measures), Ref: plainText(obj.Ref), Quote: plainText(obj.Quote)}
+		f := CouncilFigure{
+			Value: plainText(obj.Value), Measures: plainText(obj.Measures), Ref: plainText(obj.Ref), Quote: plainText(obj.Quote),
+			Group: collapseSpace(plainText(obj.Group)), Of: plainText(obj.Of), Was: plainText(obj.Was),
+			Limit: plainText(obj.Limit), Bound: strings.ToLower(plainText(obj.Bound)), Unit: collapseSpace(plainText(obj.Unit)),
+			At: collapseSpace(plainText(obj.At)),
+		}
 		if f.Value == "" || f.Ref == "" {
 			continue
 		}

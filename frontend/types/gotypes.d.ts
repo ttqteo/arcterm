@@ -3498,6 +3498,20 @@ declare global {
         cite?: string;
         citenote?: string;
         from?: string[];
+        refs?: string[];
+        group?: string;
+        of?: string;
+        was?: string;
+        limit?: string;
+        bound?: string;
+        unit?: string;
+        at?: string;
+        relnote?: string;
+        amount?: number;
+        rate?: boolean;
+        level?: number;
+        share?: number;
+        breach?: boolean;
     };
 
     // council.CouncilGroup

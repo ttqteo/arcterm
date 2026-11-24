@@ -282,6 +282,16 @@ agrees with which idea in Map" mở nó.
   `<ngày>-<tính năng>.discussion.md` (tiêu đề tiếng Anh) giữ At a glance, các hướng đầy đủ, Ask next, Matrix, số liệu
   không khớp, file không chép được, Cite check, cuộc thảo luận và Run facts. Báo cáo hiện đường dẫn và mở được file.
   `wsh council redoc` viết lại các báo cáo cũ của project theo dạng này (`--dry-run` để xem trước).
+- **Số liệu vẽ thành hình**: mỗi chuyên gia khai số liệu kèm các trường tuỳ chọn, và Report vẽ theo chúng: `group` (tên
+  nhóm: các số cùng nhóm nằm dưới một tiêu đề), `of` (số tổng mà nó là một phần, hoặc mẫu số của một tỉ lệ: thanh
+  phần/tổng như 947 → 94 + 41 + phần còn lại, hay thanh tỉ lệ 70,6% của 170 cạnh 79,5% của 151), `was` (giá trị trước:
+  trước → sau và độ chênh, tỉ lệ thì tính bằng điểm), `limit` với `bound` `max`/`min` (ngưỡng: thanh có vạch ngưỡng,
+  vượt thì tô cảnh báo kèm biểu tượng), `at` (lúc nào: các số cùng nhóm và đơn vị thành một đường theo thời gian), và
+  `unit` (các số cùng nhóm và đơn vị thành các cột so sánh, lớn nhất trước). Go kiểm từng liên hệ trên chính các số nó
+  đã xác minh (số kia phải là một số đã kiểm, cùng loại đếm hay tỉ lệ; phần không lớn hơn tổng; các phần cộng lại không
+  vượt tổng), bỏ liên hệ sai và ghi lý do vào **Figure relations that did not hold** trong About the council và file
+  phụ. Cùng một số trích ở file gốc và ở bản chép của nó chỉ hiện một lần, nguồn ghi cả hai. File chính in cùng các
+  nhóm đó, với cột **Liên hệ** ("14,3% của 947", "từ 60, +20", "vượt ngưỡng tối đa 1000", "lúc v2").
 - **File ngoài project** đưa cho council được chép vào `docs/council/briefs/` lúc council bắt đầu, để các dòng báo cáo
   trích đọc được trên máy nào cũng vậy; file hay thư mục quá 1 MB không chép, và được ghi tên trong file phụ.
 - **Cite check** trong file phụ, ngay sau Matrix: Go đọc lại mọi `path:line` mà báo cáo trích, cả câu của

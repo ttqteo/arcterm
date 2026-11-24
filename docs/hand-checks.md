@@ -1585,3 +1585,10 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
 - [ ] (arcterm) A bug report's picture survives done: in the session that handled a bug report, after `wsh bugreport done`
   moves its folder to `reports/done/<id>/`, the screen.png thumb on the step row still shows and a click zooms it (not
   the crossed-out "no longer on disk" frame). Unit-tested only. Commit: 1b016b95d (`localimage.ts` `doneReportPath`).
+- [ ] (arcterm) Council Figures drawn as charts, with real seats: after a build, start a Review council in mit-thesis on
+  a question that leans on numbers (the patch replay, X.js) → the seats' figures carry `group` and some of `of`, `was`,
+  `limit`, `unit`, `at`, and the Report's Số liệu draws groups as bars, a change, a limit, a line or a comparison;
+  any relation Go dropped is listed with why under About the council. Then `wsh council redoc --project <mit-thesis>`
+  → the 2026-11-24 SecBench report (council 5186f93c) lists 94, 947, 170 and 79,5% once each, each with both its
+  places. Checked only in the browser cockpit with a fixture council (`council-report-tables`, 8/8) and a worktree
+  wavesrv, not in WebView2 and not with a model writing the fields. Commit: feat(council) Figures drawn as charts
