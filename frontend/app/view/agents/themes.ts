@@ -466,6 +466,21 @@ const HueSatFloor = 55;
 const HueLightMin = 58;
 const HueLightMax = 72;
 
+// What marks a finished turn you have not read (the tree's count, the folded strip's dot, the nav rail's Agent badge):
+// a blue in every theme, as a chat app's unread mark is. The theme's own blue slot when it has one, else its accent when
+// that is already a blue, else the accent turned to blue, keeping its saturation and lightness.
+const UnreadHue = 216;
+const BlueHueMin = 200;
+const BlueHueMax = 245;
+
+export function unreadColor(palette: ThemePalette): string {
+    if (palette.ansiBlue != null) {
+        return palette.ansiBlue;
+    }
+    const { h } = colord(palette.accent).toHsl();
+    return h >= BlueHueMin && h <= BlueHueMax ? palette.accent : atHue(palette.accent, UnreadHue);
+}
+
 function atHue(base: string, h: number): string {
     const hsl = colord(base).toHsl();
     return colord({
@@ -640,6 +655,7 @@ export function buildThemeVars(
         "--color-edge-faint": p.edgeFaint,
         // accent + ramp
         "--color-accent": p.accent,
+        "--color-unread": unreadColor(p),
         "--color-accent-400": p.accent,
         "--color-accenthover": lighten(p.accent, 0.14),
         "--color-accent-300": lighten(p.accent, 0.14),

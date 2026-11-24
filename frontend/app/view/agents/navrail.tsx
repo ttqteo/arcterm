@@ -76,8 +76,8 @@ export const TOOL_ITEMS: { key: SurfaceKey; label: string }[] = [
 export const ITEMS = [...CORE_ITEMS, ...TOOL_ITEMS];
 
 // a badge says the surface wants you (asking); Agent's says something finished that you have not read, which is news
-// rather than a request, so it takes the accent
-const BADGE_FILL: Partial<Record<SurfaceKey, string>> = { agent: "bg-accent" };
+// rather than a request, so it takes the unread blue
+const BADGE_FILL: Partial<Record<SurfaceKey, string>> = { agent: "bg-unread" };
 
 // One pinned app. It reads the 1s clock itself (the title says how long a crash has lasted), so the tick re-renders the
 // three pins, not the whole rail.

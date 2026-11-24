@@ -33,7 +33,7 @@ import { unreadAgentsAtom } from "./unreadagentsstore";
 
 const DOT_CLASS: Record<PeekDot, string> = {
     asking: "bg-asking",
-    unread: "bg-accent",
+    unread: "bg-unread",
     working: "bg-working",
     idle: "bg-ink-faint",
 };
@@ -184,7 +184,7 @@ function PeekCard({ model, altHeld, onPicked }: { model: AgentsViewModel; altHel
                                 ) : r.unread != null ? (
                                     <span
                                         data-tree-peek-unread={r.unread}
-                                        className="flex h-[15px] min-w-[15px] shrink-0 items-center justify-center rounded-full bg-accent px-1 text-[9.5px] font-bold tabular-nums text-background"
+                                        className="flex h-[15px] min-w-[15px] shrink-0 items-center justify-center rounded-full bg-unread px-1 text-[9.5px] font-bold tabular-nums text-background"
                                     >
                                         {unreadLabel(r.unread)}
                                     </span>

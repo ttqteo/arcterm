@@ -75,6 +75,7 @@ and a picture given to a line that is not big.
 
 ### Changed
 
+- Unread turns are marked in blue in every theme, as a chat app marks unread messages: the count beside an agent in the Agent sidebar, its dot on the folded sidebar's strip and the Agent badge on the nav rail. In the Claude and Carbon themes they used to take the theme's orange accent.
 - Dragging an agent onto the split is smoother: the drop zones fade in, the highlighted half glides from edge to edge
   instead of jumping, and the row you drag dims while it is held.
 - A council's saved report is now short: a to-do table (each task, why, the files it touches, its kind) and a table of

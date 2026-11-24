@@ -1562,7 +1562,7 @@ function ParentRow({
         <span
             data-agent-unread={unreadCount}
             aria-label={`${unreadCount} finished ${unreadCount === 1 ? "turn" : "turns"} not read yet`}
-            className="flex h-[15px] min-w-[15px] flex-none items-center justify-center rounded-full bg-accent px-1 text-[9.5px] font-bold tabular-nums text-background"
+            className="flex h-[15px] min-w-[15px] flex-none items-center justify-center rounded-full bg-unread px-1 text-[9.5px] font-bold tabular-nums text-background"
         >
             {unreadLabel(unreadCount)}
         </span>
@@ -2820,7 +2820,7 @@ function SplitCell({
             ) : unreadCount > 0 ? (
                 <span
                     data-agent-unread={unreadCount}
-                    className="flex h-[14px] min-w-[14px] flex-none items-center justify-center rounded-full bg-accent px-1 text-[9px] font-bold tabular-nums text-background"
+                    className="flex h-[14px] min-w-[14px] flex-none items-center justify-center rounded-full bg-unread px-1 text-[9px] font-bold tabular-nums text-background"
                 >
                     {unreadLabel(unreadCount)}
                 </span>
