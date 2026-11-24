@@ -1,7 +1,7 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// Pure model for the folded Agent tree's peek: the 14px strip it folds to shows a dot per agent and terminal, and a
+// Pure model for the folded Agent tree's peek: the 20px strip it folds to shows a dot per agent and terminal, and a
 // small card opens beside it (a pause on the strip, or Alt held) listing them by project, name and state only, to pick
 // one without unfolding the tree. Rows and digits follow the tree's own order (activeNavRows), so the card's numbers are
 // the Alt+1..9 the tree shows. No React, no Wave runtime imports.

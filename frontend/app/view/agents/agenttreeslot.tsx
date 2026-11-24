@@ -38,8 +38,9 @@ function FoldableTree({ model }: { model: AgentsViewModel }) {
             aria-label={folded ? "Show agents" : "Fold agents"}
             onClick={toggle}
             className={cn(
-                "flex h-full w-[14px] shrink-0 cursor-pointer flex-col items-center border-r border-border bg-surface text-muted hover:bg-surface-raised hover:text-primary",
-                folded ? "justify-start pt-[8px]" : "justify-center"
+                "flex h-full shrink-0 cursor-pointer flex-col items-center border-r border-border bg-surface text-muted hover:bg-surface-raised hover:text-primary",
+                // folded, it is wide enough for the lit tile behind the open agent's dot (treepeek.tsx)
+                folded ? "w-[20px] justify-start pt-[8px]" : "w-[14px] justify-center"
             )}
         >
             <motion.span

@@ -39,8 +39,8 @@ const DOT_CLASS: Record<PeekDot, string> = {
 };
 
 // on the strip an idle dot steps back (smaller) so the ones that want you stand out; the selected one keeps its state's
-// dot (an idle one grows to full size in a lighter grey) and is marked by a bar on the strip's left edge, the nav rail's
-// own mark for what is open, which glides from one dot to the next as the selection moves
+// dot (an idle one grows to full size in a lighter grey) on a lit tile, the fill the tree's selected row wears, which
+// glides from one dot to the next as the selection moves
 function stripDotClass(dot: PeekDot, selected: boolean): string {
     if (dot !== "idle") {
         return cn("h-[7px] w-[7px] rounded-full", DOT_CLASS[dot]);
@@ -120,14 +120,14 @@ export function PeekStripDots({ model }: { model: AgentsViewModel }) {
                             layoutId="tree-strip-selected"
                             data-tree-peek-selected
                             transition={{ duration: MOTION.durMacro, ease: MOTION.easeFluid }}
-                            // centred by top, not a translate: motion owns transform while it glides
-                            className="absolute left-0 top-[calc(50%-7px)] h-[14px] w-[2.5px] rounded-r-[2px] bg-primary"
+                            // centred by top and left, not a translate: motion owns transform while it glides
+                            className="absolute left-[calc(50%-8px)] top-[calc(50%-7px)] h-[14px] w-[16px] rounded-[5px] bg-surface-selected"
                         />
                     ) : null}
                     <span
                         data-tree-peek-dot={d.dot}
                         className={cn(
-                            "shrink-0 transition-[height,width,background-color] duration-150",
+                            "relative shrink-0 transition-[height,width,background-color] duration-150",
                             stripDotClass(d.dot, d.id === focusId)
                         )}
                     />
