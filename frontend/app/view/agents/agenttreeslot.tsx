@@ -15,18 +15,12 @@ import { ChevronLeft } from "lucide-react";
 import { AnimatePresence, motion, MotionConfig } from "motion/react";
 import { treeFoldedAtom } from "../boards/boardsplitstore";
 import type { AgentsViewModel } from "./agents";
-import type { AgentVM } from "./agentsviewmodel";
 import { AgentTree } from "./agenttree";
 import { PeekStripDots, TreePeekCard, usePeekHover } from "./treepeek";
 
-export function AgentTreeSlot({ model, agent }: { model: AgentsViewModel; agent: AgentVM | undefined }) {
-    if (agent == null) {
-        return <AgentTree model={model} />;
-    }
-    return <FoldableTree model={model} />;
-}
-
-function FoldableTree({ model }: { model: AgentsViewModel }) {
+// The person's fold holds in every centre mode, and with no agent open: a launch arcterm held while the machine was
+// busy switches the centre to its held pane, and that must not unfold the tree they folded.
+export function AgentTreeSlot({ model }: { model: AgentsViewModel }) {
     const [folded, setFolded] = useAtom(treeFoldedAtom);
     const fold = usePartMotion(springFoldWidth);
     const toggle = () => setFolded(!folded);

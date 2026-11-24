@@ -57,7 +57,6 @@ import { AgentHeader } from "./agentheader";
 import { AgentLaunchHero } from "./agentlaunchhero";
 import type { AgentsViewModel } from "./agents";
 import { asksInTerminal, projectOf, type AgentVM } from "./agentsviewmodel";
-import { AgentTree } from "./agenttree";
 import { AgentTreeSlot } from "./agenttreeslot";
 import { appShows } from "./appmodel";
 import { AppPane } from "./apppane";
@@ -795,7 +794,7 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
                     data-cockpit-surface-wrap
                     className="flex h-full w-full bg-background outline-none"
                 >
-                    <AgentTree model={model} />
+                    <AgentTreeSlot model={model} />
                     <div className="flex min-w-0 flex-1 flex-col">
                         {centerMode === "terminal" ? (
                             <AgentLaunchHero model={model} />
@@ -817,14 +816,9 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
                 className="flex h-full w-full bg-background outline-none"
             >
                 {/* the tree stays in canvas, review and brainstorm mode: hiding it made reaching another agent a round trip through the terminal */}
-                {/* beside a board the tree folds to a strip (agenttreeslot.tsx); only in terminal mode, where the board shows */}
-                {!fullscreen || centerMode !== "terminal" ? (
-                    centerMode === "terminal" ? (
-                        <AgentTreeSlot model={model} agent={agent} />
-                    ) : (
-                        <AgentTree model={model} />
-                    )
-                ) : null}
+                {/* folded to its strip (agenttreeslot.tsx), it stays folded whatever the centre shows: a held launch, a
+                    council or an Overview opening must not unfold it */}
+                {!fullscreen || centerMode !== "terminal" ? <AgentTreeSlot model={model} /> : null}
                 <div className="flex min-w-0 flex-1 flex-col">
                     {/* terminal stack stays mounted (hidden) while a subagent interior or a centre mode is shown, so
                         returning to the parent never remounts/replays the live TUI (frame-stacking) */}

@@ -318,7 +318,7 @@ describe("widths", () => {
     });
 
     it("counts a folded tree as its strip only", () => {
-        expect(wideWidthMax(1680, 78, TREE_STRIP_PX)).toBe(1680 - 78 - 14 - 420);
+        expect(wideWidthMax(1680, 78, TREE_STRIP_PX)).toBe(1680 - 78 - 20 - 420);
     });
 
     it("clamps a dragged width between the minimum and the maximum", () => {
