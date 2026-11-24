@@ -282,6 +282,37 @@
       "from": [
         "P1"
       ],
+      "quote": "0.62",
+      "value": "0.62",
+      "measures": "tỉ lệ chặn trên mẫu mới",
+      "ref": "results/replay-v3.json:8",
+      "group": "Tỉ lệ theo mẫu số",
+      "of": "100",
+      "share": 0.62,
+      "was": "40/80 = 50%",
+      "rate": true,
+      "level": 0.62
+    },
+    {
+      "cite": "ok",
+      "from": [
+        "P1"
+      ],
+      "quote": "40/80 = 50%",
+      "value": "40/80 = 50%",
+      "measures": "tỉ lệ chặn trên mẫu cũ",
+      "ref": "results/replay-v3.json:4",
+      "group": "Tỉ lệ theo mẫu số",
+      "of": "80",
+      "share": 0.5,
+      "rate": true,
+      "level": 0.5
+    },
+    {
+      "cite": "ok",
+      "from": [
+        "P1"
+      ],
       "quote": "1248 ms",
       "value": "1248 ms",
       "measures": "thời gian replay một PoC",

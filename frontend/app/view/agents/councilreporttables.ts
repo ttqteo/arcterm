@@ -331,7 +331,9 @@ export interface ChangeView {
     to: FigureRow;
     delta: string; // "+20", "−8,9 điểm"
     dir: "up" | "down" | "same";
-    scale: number; // the larger of the two levels: both bars are drawn against it
+    scale: number; // what both bars are drawn against: 1 (100%) for two rates, else the larger of the two levels
+    fromText: string; // the earlier figure as the chart says it: "79,5%" for a rate, its value for a count
+    toText: string;
 }
 
 /** A figure held to a limit: a bar to its level with the limit marked on it. */
@@ -411,8 +413,17 @@ export function sectionView(section: FigureSection, lang: CouncilLang): FigureSe
     const drawn = new Set<number>();
     const bars: FigureChart[] = [];
     const indexOf = (value: string, not: number) => rows.findIndex((r, j) => j !== not && r.value === value);
+    // the earlier figure a figure names with was, when both read as a level: the pair is drawn as one change
+    const wasOf = (i: number) => {
+        const r = rows[i];
+        const j = r.was !== "" && r.level != null ? indexOf(r.was, i) : -1;
+        return j >= 0 && rows[j].level != null ? j : -1;
+    };
+    // a rate on either side of a change is drawn by the change ("79,5% → 70,6%"), not as a bar over its denominator:
+    // claimed as two bars first, the pair stood as two unrelated meters and the drop it is about was never drawn
+    const inChange = new Set(rows.flatMap((_, i) => (wasOf(i) >= 0 ? [i, wasOf(i)] : [])));
     rows.forEach((r, i) => {
-        if (r.rate && r.share != null) {
+        if (r.rate && r.share != null && !inChange.has(i)) {
             drawn.add(i);
             bars.push({
                 kind: "rate",
@@ -466,21 +477,23 @@ export function sectionView(section: FigureSection, lang: CouncilLang): FigureSe
         bars.push({ kind: "stack", whole: r, segments, subtotals, rows: barRows });
     });
     rows.forEach((r, i) => {
-        if (r.was !== "" && r.level != null && !drawn.has(i)) {
-            const j = indexOf(r.was, i);
+        const j = drawn.has(i) ? -1 : wasOf(i);
+        if (j >= 0) {
             const from = rows[j];
-            if (j >= 0 && from.level != null) {
-                drawn.add(i).add(j);
-                const d = r.level - from.level;
-                bars.push({
-                    kind: "change",
-                    from,
-                    to: r,
-                    delta: changeText(d, r.rate, lang),
-                    dir: Math.abs(d) < 1e-12 ? "same" : d > 0 ? "up" : "down",
-                    scale: Math.max(Math.abs(r.level), Math.abs(from.level)) || 1,
-                });
-            }
+            drawn.add(i).add(j);
+            const d = r.level! - from.level!;
+            const rates = r.rate && from.rate;
+            const text = (row: FigureRow) => (rates ? percentText(row.level!, lang) : row.value);
+            bars.push({
+                kind: "change",
+                from,
+                to: r,
+                delta: changeText(d, r.rate, lang),
+                dir: Math.abs(d) < 1e-12 ? "same" : d > 0 ? "up" : "down",
+                scale: rates ? 1 : Math.max(Math.abs(r.level!), Math.abs(from.level!)) || 1,
+                fromText: text(from),
+                toText: text(r),
+            });
         }
         if (r.limit !== "" && r.level != null) {
             const j = indexOf(r.limit, i);
