@@ -72,7 +72,7 @@ import { ChatGoalStrip } from "./chatgoal";
 import { isHandoffAsk } from "./chathandoff";
 import { ChatHandoffCard } from "./chathandoffcard";
 import { holdSwitchLine } from "./chatinitiativestore";
-import { cancelQueuedChat, submitIntoChatBox } from "./chatinsert";
+import { cancelQueuedChat, chatBoxText, focusChatBox, replaceChatBox, submitIntoChatBox } from "./chatinsert";
 import { CHAT_JUMP_KEYS, registerChatJump } from "./chatjump";
 import { ChatLimitStrip } from "./chatlimitstripview";
 import {
@@ -92,6 +92,7 @@ import { canSendNow, compactingNow, SEND_NOW_KEYS, turnStatsLabel, workingLine }
 import { setChatMode, useChatShown } from "./chatmodestore";
 import {
     btwQuestion,
+    droppedIds,
     landedIds,
     pendingLine,
     pendingStill,
@@ -121,8 +122,8 @@ import {
 } from "./chatsuggest";
 import { markChunkDone, requestModelSuggest, useEffortDetail, useModelSuggest } from "./chatsuggeststore";
 import { TaggedPromptText } from "./chattagblock";
-import { withoutTakenBack } from "./chattakeback";
-import { noteTakenBack, useTakenBack } from "./chattakebackstore";
+import { mergeTaken, withoutTakenBack } from "./chattakeback";
+import { noteTakenBack, takeBackDropped, useTakenBack } from "./chattakebackstore";
 import { VERDICT_TOPIC } from "./chatverdict";
 import { ChatVisualHost } from "./chatvisualview";
 import { doneSuggestion } from "./donesuggest";
@@ -958,6 +959,27 @@ function ChatPaneBody({ model, agent, barred }: { model: AgentsViewModel; agent:
             dropPendingIds(agent.id, landed);
         }
     }, [sent, entries, agent.id]);
+    // a message a hook dropped (its "Not sent" marker landed, and no record of it will): its bubble goes and its text
+    // comes back to the box, out of Claude Code's box when the hook put it back there, so the next send is not typed
+    // after that copy (two drops left the @mention four times in the terminal's box)
+    useEffect(() => {
+        const ids = droppedIds(sent, entries);
+        if (ids.length === 0) {
+            return;
+        }
+        const texts = sent.filter((p) => ids.includes(p.id)).map((p) => p.text);
+        dropPendingIds(agent.id, ids);
+        const put = (back: string[]) => {
+            replaceChatBox(agent.id, mergeTaken(back, chatBoxText(agent.id)));
+            focusChatBox(agent.id);
+        };
+        const blockId = agent.blockId;
+        if (blockId == null) {
+            put(texts);
+            return;
+        }
+        fireAndForget(() => takeBackDropped(agent.id, blockId, texts, put));
+    }, [sent, entries, agent.id, agent.blockId]);
     const [now, setNow] = useState(() => Date.now());
     const idleSince = useIdleSince(agent.state === "idle");
     const pending = pendingStill(sent, entries, now, idleSince, sentHistory(agent.id));

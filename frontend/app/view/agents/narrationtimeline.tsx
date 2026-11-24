@@ -679,16 +679,28 @@ function EditBurstRow({ files, adds, dels }: { files: EditFile[]; adds: number; 
     );
 }
 
-// The human interrupted the agent mid-turn. A thin centered marker, not a You bubble.
-export function InterruptedDivider() {
+// The human interrupted the agent mid-turn. A thin centered marker, not a You bubble. With `dropped`, a prompt a hook
+// dropped before the model saw it: "Not sent", in the warning tone, and the hook's reason under the line.
+export function InterruptedDivider({ dropped }: { dropped?: string }) {
+    const notSent = dropped != null;
     return (
-        <div className="mt-3 flex items-center gap-2.5">
-            <span className="h-px flex-1 bg-edge-mid" />
-            <span className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border border-edge-strong bg-surface px-2.5 py-0.5 text-[10.5px] font-semibold uppercase leading-[1.6] tracking-[0.1em] text-ink-mid">
-                <Ban size={10} strokeWidth={2.4} aria-hidden />
-                Interrupted
-            </span>
-            <span className="h-px flex-1 bg-edge-mid" />
+        <div className="mt-3">
+            <div className="flex items-center gap-2.5">
+                <span className={cn("h-px flex-1", notSent ? "bg-warning/40" : "bg-edge-mid")} />
+                <span
+                    className={cn(
+                        "inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border bg-surface px-2.5 py-0.5 text-[10.5px] font-semibold uppercase leading-[1.6] tracking-[0.1em]",
+                        notSent ? "border-warning/50 text-warning" : "border-edge-strong text-ink-mid"
+                    )}
+                >
+                    <Ban size={10} strokeWidth={2.4} aria-hidden />
+                    {notSent ? "Not sent" : "Interrupted"}
+                </span>
+                <span className={cn("h-px flex-1", notSent ? "bg-warning/40" : "bg-edge-mid")} />
+            </div>
+            {notSent && dropped !== "" ? (
+                <div className="mt-1.5 text-center text-[12px] leading-snug break-words text-ink-mid">{dropped}</div>
+            ) : null}
         </div>
     );
 }
@@ -911,7 +923,7 @@ export function NarrationTimeline({
                             animate={{ opacity: 1 }}
                             transition={{ duration: MOTION.durMicro, ease: MOTION.easeFluid }}
                         >
-                            <InterruptedDivider />
+                            <InterruptedDivider dropped={item.dropped} />
                         </motion.div>
                     );
                 }

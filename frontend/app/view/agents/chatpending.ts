@@ -41,6 +41,9 @@ export interface PendingMessage {
      *  rule does not drop it meanwhile: dropped at five seconds and drawn again as its record landed, the message blinked
      *  out and back. Once the Enter goes the mark goes (delivered) and its idle wait starts from then. */
     sending?: boolean;
+    /** How many dropped prompts (droppedCount) the transcript held when it was sent: one more after it means a hook
+     *  dropped this message (droppedIds). Absent when no transcript was read at the send. */
+    drops?: number;
 }
 
 /** The pending message for `text` sent at `now`: how many of `entries` (the transcript as drawn then) already hold its
@@ -62,6 +65,8 @@ export function pendingMessage(
         sentAt: now,
         seen: userTextCount(entries, text),
         seenWithin: userTextWithinCount(entries, text, sent),
+        // none read yet (a launch's first message, which a resumed transcript may follow): no count to measure from
+        ...(entries.length > 0 ? { drops: droppedCount(entries) } : {}),
         queued: busy,
         ...(kind != null ? { kind } : {}),
         ...(waking ? { waking: true } : sending ? { sending: true } : {}),
@@ -274,6 +279,32 @@ export function pendingStill(
  *  (an Esc rewind made it a dead branch, and "làm đi" stood under the conversation again until the 30-minute limit). */
 export function landedIds(pending: PendingMessage[], entries: AgentEntry[], sent: readonly string[] = []): string[] {
     return pending.filter((p) => landed(p, entries, sent)).map((p) => p.id);
+}
+
+/** Pure: how many prompts a hook dropped in `entries` (the "Not sent" markers). */
+export function droppedCount(entries: AgentEntry[]): number {
+    return entries.reduce((n, e) => (e.kind === "interrupted" && e.dropped != null ? n + 1 : n), 0);
+}
+
+/** Pure: the pending messages (a message, not a /btw, panel or `! cmd`) a hook dropped: the transcript holds more
+ *  "Not sent" markers than when each was sent, handed out oldest message first, one marker each. Claude Code writes no
+ *  user record for a dropped prompt, so the bubble would otherwise stand as sent; the pane takes them back into the box. */
+export function droppedIds(pending: PendingMessage[], entries: AgentEntry[]): string[] {
+    const now = droppedCount(entries);
+    const out: string[] = [];
+    // markers handed out so far, by the count each message saw at its send: a marker one message took is not another's
+    const taken = new Map<number, number>();
+    for (const p of [...pending].sort((a, b) => a.sentAt - b.sentAt)) {
+        if (p.kind != null || p.drops == null) {
+            continue;
+        }
+        const before = [...taken].reduce((n, [at, k]) => (at >= p.drops! ? n + k : n), 0);
+        if (now - p.drops - before > 0) {
+            out.push(p.id);
+            taken.set(p.drops, (taken.get(p.drops) ?? 0) + 1);
+        }
+    }
+    return out;
 }
 
 /** Whether a send gets a pending bubble. A message does, and so does a command with a pending kind (a /btw, a bare

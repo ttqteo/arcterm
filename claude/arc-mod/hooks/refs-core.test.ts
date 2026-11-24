@@ -44,6 +44,21 @@ describe("promptRefs", () => {
         const many = Array.from({ length: 8 }, (_, i) => `run:${String(i).repeat(8)}`).join(" ");
         expect(promptRefs(many)).toHaveLength(MAX_REFS);
     });
+
+    it("reads @<id> as an id to look up, at the start or inside the prompt", () => {
+        expect(promptRefs("@5186f93c44bfd00f có visualize ko")).toEqual([{ kind: null, id: "5186f93c44bfd00f" }]);
+        expect(promptRefs("so sánh @5186F93C với council 0c28170c")).toEqual([
+            { kind: null, id: "5186f93c" },
+            { kind: "council", id: "0c28170c" },
+        ]);
+    });
+
+    it("leaves an @ that is a file, an email or shorter than a tab id", () => {
+        expect(promptRefs("@src/abcdef12.ts")).toEqual([]);
+        expect(promptRefs("mail me@deadbeef12.io")).toEqual([]);
+        expect(promptRefs("@abc123")).toEqual([]);
+        expect(promptRefs("pkg@deadbeef12")).toEqual([]);
+    });
 });
 
 describe("refsContext", () => {

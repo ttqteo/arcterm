@@ -100,10 +100,29 @@ export function takeBackAfterKey(
     return run(agentId, blockId, key, texts, { waitMs: AFTER_KEY_WAIT_MS, requeue: false, put });
 }
 
+// a hook that puts the dropped prompt back (the arc mod's @mention) has done so by the time the drop's notice is read
+const DROPPED_WAIT_MS = 1_500;
+
+/** Takes a message a hook dropped (chatpending.ts droppedIds) back into the chat box through `put`: out of Claude Code's
+ *  box first when the hook put it back there, so the next send does not type it after the copy; straight into the chat
+ *  box when the box never shows it (a hook that kept nothing). Left where it is when the box would not clear. */
+export async function takeBackDropped(
+    agentId: string,
+    blockId: string,
+    texts: string[],
+    put: (texts: string[]) => void
+): Promise<TakeBackResult> {
+    const result = await run(agentId, blockId, null, texts, { waitMs: DROPPED_WAIT_MS, requeue: false, put });
+    if (result === "none") {
+        put(texts);
+    }
+    return result;
+}
+
 async function run(
     agentId: string,
     blockId: string,
-    key: string,
+    key: string | null,
     texts: string[],
     opts: { waitMs: number; requeue: boolean; put: (texts: string[]) => void }
 ): Promise<TakeBackResult> {
@@ -112,7 +131,9 @@ async function run(
     }
     running.add(agentId);
     try {
-        await keys(blockId, key);
+        if (key != null) {
+            await keys(blockId, key);
+        }
         const lines = await waitForBox(blockId, texts, Date.now() + opts.waitMs);
         if (lines == null) {
             return "none";

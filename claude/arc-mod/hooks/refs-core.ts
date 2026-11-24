@@ -1,8 +1,8 @@
 // a prompt that names an arcterm id ("đọc agent 5065bd8c rồi…", "council:0c28170c", a pick of the chat box's @ picker)
 // gets one line of context telling claude to read it with `wsh read`, which finds what the id is; a board
 // (`board:3f2a1b9c`, the picker's pick of one) gets its own line telling claude to draw on it with `wsh board draw`. kept free of the
-// engine so vitest can run it; register.ts holds the prompt.submit hook. A prompt that starts with @<tab id> is not
-// this: it goes to that agent (mention-core.ts).
+// engine so vitest can run it; register.ts holds the prompt.submit hook. A prompt that starts with @<id> of a live
+// agent's tab is not this: it goes to that agent (mention-core.ts); with any other id it stays and is read here.
 
 // an id the prompt names: its kind when the prompt says it (agent, run, council, session, effort, board), else null, which
 // `wsh read` looks up in every kind
@@ -19,6 +19,9 @@ const ADDRESS = /(?<![\w/.-])(agent|tab|run|council|session|effort|board):([0-9a
 // "council 0c28170c368b5ab0", "phiên 4b199176". A bare hash alone is left out: it is as likely a commit
 const CUED =
     /(?<![\p{L}\p{N}_])(agent|tab|run|council|session|effort|board|phiên|chat|hội đồng|initiative)((?:\s*\/\s*[\p{L}]+)*)\s+([0-9a-f]{8}[0-9a-f-]*)(?![\w/.-])/giu;
+// "@5186f93c44bfd00f", as the person writes a council's or a run's id they ask about: an @mention that went to no live
+// agent (mention-core.ts notAnAgent) stays here, and an @ in the middle of a prompt never sends
+const AT = /(?<![\w/.@-])@([0-9a-f]{8}[0-9a-f-]*)(?![\w/.-])/gi;
 // a whole uuid stands alone: no commit looks like one
 const UUID = /(?<![\w/.-])([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(?![\w/.-])/gi;
 
@@ -48,6 +51,9 @@ export function promptRefs(text: string): Ref[] {
         // "run/agent 5065bd8c" names two kinds: wsh read finds which
         const kind = (m[2] ?? "").trim() === "" ? kindOf(m[1] ?? "") : null;
         found.push({ at: m.index ?? 0, ref: { kind, id: (m[3] ?? "").toLowerCase() } });
+    }
+    for (const m of text.matchAll(AT)) {
+        found.push({ at: m.index ?? 0, ref: { kind: null, id: (m[1] ?? "").toLowerCase() } });
     }
     for (const m of text.matchAll(UUID)) {
         found.push({ at: m.index ?? 0, ref: { kind: null, id: (m[1] ?? "").toLowerCase() } });

@@ -1,5 +1,6 @@
 // a prompt the person starts with @ and another agent's tab id goes to that agent's session instead of this one,
-// through `wsh agents send`. kept free of the engine so vitest can run it; register.ts holds the prompt.submit hook.
+// through `wsh agents send`; an id that names no live agent (a council, a run) leaves the prompt with this session.
+// kept free of the engine so vitest can run it; register.ts holds the prompt.submit hook.
 
 // what a typed prompt names: the tab id or its prefix, and the message after it ("" when there is none)
 export type Mention = { id: string; body: string };
@@ -37,6 +38,17 @@ const lines = (s: string) =>
         .split("\n")
         .map((l) => l.trim())
         .filter(Boolean);
+
+// a send wavesrv refused because the id names no live agent: a council, a run, a past session, an initiative look the
+// same as a tab id, so the prompt was about that id, not for it, and goes on to this session (refs-core.ts reads it)
+export function notAnAgent(ran: Ran): boolean {
+    return ran.exitCode !== 0 && /is not a live agent session/.test(ran.stderr);
+}
+
+// the line the person sees when an @id prompt stays in this session
+export function keptHereNotice(id: string): string {
+    return `arc: @${id} is not a live agent, so this session takes the prompt`;
+}
 
 export function sendOutcome(id: string, ran: Ran): SendOutcome {
     if (ran.exitCode === 0) {

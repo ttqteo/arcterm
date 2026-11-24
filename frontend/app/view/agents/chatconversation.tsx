@@ -891,7 +891,7 @@ function Marker({ item, agentId }: { item: ChatMarker; agentId?: string }) {
         case "compaction":
             return <ChatCompactionDivider item={item} agentId={agentId} />;
         case "interrupted":
-            return <InterruptedDivider />;
+            return <InterruptedDivider dropped={item.dropped} />;
         case "notification":
             return <TaskNotificationRow summary={item.summary} status={item.status} result={item.result} />;
     }

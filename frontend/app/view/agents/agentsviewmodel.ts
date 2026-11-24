@@ -93,8 +93,9 @@ export type AgentEntry =
     // a background Task/subagent finished (Claude's <task-notification>): summary + optional full result, and the
     // tool-use id of the call it names when it carries one
     | { kind: "notification"; summary: string; status?: string; result?: string; toolUseId?: string }
-    // the human interrupted the agent mid-turn ([Request interrupted by user])
-    | { kind: "interrupted" }
+    // the human interrupted the agent mid-turn ([Request interrupted by user]); with `dropped`, a prompt of yours a hook
+    // dropped before the model saw it, and the hook's reason ("" when it gave none)
+    | { kind: "interrupted"; dropped?: string }
     | {
           kind: "action";
           verb: string;
@@ -312,7 +313,7 @@ export type TimelineItem =
       }
     | { kind: "compaction"; trigger?: string; preTokens?: number; postTokens?: number; summary?: string; index: number }
     | { kind: "notification"; summary: string; status?: string; result?: string; toolUseId?: string; index: number }
-    | { kind: "interrupted"; index: number }
+    | { kind: "interrupted"; dropped?: string; index: number }
     | { kind: "action"; action: AgentActionEntry; index: number }
     | { kind: "group"; startIndex: number; actions: AgentActionEntry[] }
     | { kind: "edit-burst"; startIndex: number; files: EditFile[]; adds: number; dels: number };
@@ -404,7 +405,11 @@ export function groupTimeline(entries: AgentEntry[], threshold = CollapseRunThre
                 index: i,
             });
         } else if (e.kind === "interrupted") {
-            items.push({ kind: "interrupted", index: i });
+            items.push(
+                e.dropped != null
+                    ? { kind: "interrupted", dropped: e.dropped, index: i }
+                    : { kind: "interrupted", index: i }
+            );
         }
     });
     flush();
