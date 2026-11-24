@@ -6,7 +6,7 @@
 // over the centre, so the terminal under it never resizes.
 
 import { digitHintAtom } from "@/app/cockpit/digithints";
-import { springPop } from "@/app/element/motiontokens";
+import { MOTION, springPop } from "@/app/element/motiontokens";
 import { usePartMotion } from "@/app/element/springbatch";
 import { cn } from "@/util/util";
 import { useAtomValue } from "jotai";
@@ -38,15 +38,14 @@ const DOT_CLASS: Record<PeekDot, string> = {
     idle: "bg-ink-faint",
 };
 
-// on the strip an idle dot steps back (smaller) so the ones that want you stand out; the selected one is a bar, in a
-// lighter grey when it is idle, so it reads at a glance whatever its state
+// on the strip an idle dot steps back (smaller) so the ones that want you stand out; the selected one keeps its state's
+// dot (an idle one grows to full size in a lighter grey) and is marked by a bar on the strip's left edge, the nav rail's
+// own mark for what is open, which glides from one dot to the next as the selection moves
 function stripDotClass(dot: PeekDot, selected: boolean): string {
-    if (selected) {
-        return cn("h-[14px] w-[6px] rounded-full", dot === "idle" ? "bg-secondary" : DOT_CLASS[dot]);
+    if (dot !== "idle") {
+        return cn("h-[7px] w-[7px] rounded-full", DOT_CLASS[dot]);
     }
-    return dot === "idle"
-        ? "h-[4px] w-[4px] rounded-full bg-ink-faint"
-        : cn("h-[7px] w-[7px] rounded-full", DOT_CLASS[dot]);
+    return selected ? "h-[7px] w-[7px] rounded-full bg-secondary" : "h-[4px] w-[4px] rounded-full bg-ink-faint";
 }
 
 // the groups, re-read whenever the roster, the focus or the folders change
@@ -107,17 +106,32 @@ export function PeekStripDots({ model }: { model: AgentsViewModel }) {
     const groups = usePeekGroups(model);
     const focusId = useAtomValue(model.focusIdAtom);
     return (
-        <span data-tree-peek-dots className="flex min-h-0 flex-col items-center gap-[6px] overflow-hidden pt-[6px]">
+        <span
+            data-tree-peek-dots
+            className="flex min-h-0 w-full flex-col items-center gap-[6px] overflow-hidden pb-[8px] pt-[6px]"
+        >
             {peekDots(groups).map((d) => (
                 <span
                     key={d.id}
-                    data-tree-peek-dot={d.dot}
-                    className={cn(
-                        "shrink-0 transition-[height,width,background-color] duration-150",
-                        stripDotClass(d.dot, d.id === focusId),
-                        d.gapBefore && "mt-[8px]"
-                    )}
-                />
+                    className={cn("relative flex w-full shrink-0 justify-center", d.gapBefore && "mt-[8px]")}
+                >
+                    {d.id === focusId ? (
+                        <motion.span
+                            layoutId="tree-strip-selected"
+                            data-tree-peek-selected
+                            transition={{ duration: MOTION.durMacro, ease: MOTION.easeFluid }}
+                            // centred by top, not a translate: motion owns transform while it glides
+                            className="absolute left-0 top-[calc(50%-7px)] h-[14px] w-[2.5px] rounded-r-[2px] bg-primary"
+                        />
+                    ) : null}
+                    <span
+                        data-tree-peek-dot={d.dot}
+                        className={cn(
+                            "shrink-0 transition-[height,width,background-color] duration-150",
+                            stripDotClass(d.dot, d.id === focusId)
+                        )}
+                    />
+                </span>
             ))}
         </span>
     );
