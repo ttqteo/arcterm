@@ -8,10 +8,12 @@
 // active, and never over the cell being dragged.
 
 import { pushToast } from "@/app/cockpit/notificationstore";
+import { MOTION } from "@/app/element/motiontokens";
 import { focusTerm, pasteIntoTerm } from "@/app/view/term/termpaste";
 import { isMacOS } from "@/util/platformutil";
 import { cn } from "@/util/util";
 import { useAtomValue } from "jotai";
+import { motion, useReducedMotion } from "motion/react";
 import { useState } from "react";
 import { moveBoardToChat } from "../boards/boardactions";
 import { boardCellRef } from "../boards/boardcell";
@@ -149,9 +151,9 @@ function ActiveOverlay({ model, id, grid, mentionTo: tabMention, cell, dragId }:
         focusCellSoon(dropped);
     };
 
-    const box = mention ? { left: 0, top: 0, width: 100, height: 100 } : zone != null ? zoneBox(zone) : null;
+    const box = mention ? FULL_BOX : zone != null ? zoneBox(zone) : null;
     return (
-        <div
+        <motion.div
             aria-hidden="true"
             data-agent-drop-overlay={id}
             data-drop-zones={zones.join(" ")}
@@ -163,29 +165,67 @@ function ActiveOverlay({ model, id, grid, mentionTo: tabMention, cell, dragId }:
                 setMention(false);
             }}
             onDrop={onDrop}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ duration: MOTION.durMicro, ease: MOTION.easeFluid }}
             className="absolute inset-0 z-30 bg-background/40"
         >
-            {box != null && zone != null ? (
-                <div
-                    className={cn(
-                        "pointer-events-none absolute flex items-center justify-center rounded-[6px]",
-                        "border-2 border-dashed border-accent bg-accentbg"
-                    )}
-                    style={{
-                        left: `${box.left}%`,
-                        top: `${box.top}%`,
-                        width: `${box.width}%`,
-                        height: `${box.height}%`,
-                    }}
-                >
+            <ZoneHighlight box={box}>
+                {box != null && zone != null ? (
                     <span className="flex flex-col items-center gap-[2px] text-[12px] font-semibold text-accent-soft">
                         {mention ? `Mention ${mentionToken(dragId)}` : zoneLabel(zone, moving, ties)}
                         {mentionTo != null && !mention ? (
                             <span className="text-[10.5px] font-medium text-muted">hold {mentionKey()} to mention</span>
                         ) : null}
                     </span>
-                </div>
-            ) : null}
-        </div>
+                ) : null}
+            </ZoneHighlight>
+        </motion.div>
+    );
+}
+
+const FULL_BOX = { left: 0, top: 0, width: 100, height: 100 };
+
+// The highlighted half (or the whole cell) the drop would take. Once shown it stays mounted for the drag and glides on
+// the shape spring from zone to zone, as VS Code's editor drop target does, instead of jumping; when the pointer leaves
+// the cell it fades out where it was, so coming back fades it in there rather than sliding in from a corner.
+function ZoneHighlight({
+    box,
+    children,
+}: {
+    box: { left: number; top: number; width: number; height: number } | null;
+    children: React.ReactNode;
+}) {
+    const [last, setLast] = useState(box);
+    if (box != null && box !== last) {
+        setLast(box);
+    }
+    const reduce = useReducedMotion();
+    if (last == null) {
+        return null;
+    }
+    const at = { left: `${last.left}%`, top: `${last.top}%`, width: `${last.width}%`, height: `${last.height}%` };
+    return (
+        <motion.div
+            className={cn(
+                "pointer-events-none absolute flex items-center justify-center overflow-hidden rounded-[6px]",
+                "border-2 border-dashed border-accent bg-accentbg"
+            )}
+            initial={{ opacity: 0, ...at }}
+            animate={{ opacity: box != null ? 1 : 0, ...at }}
+            transition={
+                reduce
+                    ? { duration: 0 }
+                    : {
+                          left: MOTION.spring,
+                          top: MOTION.spring,
+                          width: MOTION.spring,
+                          height: MOTION.spring,
+                          opacity: { duration: MOTION.durMicro, ease: MOTION.easeFluid },
+                      }
+            }
+        >
+            {children}
+        </motion.div>
     );
 }

@@ -1,6 +1,7 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
+import { colord } from "colord";
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
@@ -18,6 +19,7 @@ import {
     PanelSelectedLift,
     panelTextColor,
     THEMES,
+    unreadColor,
     type ThemePalette,
 } from "./themes";
 
@@ -519,5 +521,24 @@ describe("buildThemeVars — ANSI custom properties", () => {
     it("role overrides reach the ANSI vars", () => {
         const vars = buildThemeVars(activePalette("midnight"), { error: "#ff0000" });
         expect(vars["--ansi-red"]).toBe("#ff0000");
+    });
+});
+
+describe("unreadColor", () => {
+    it("is a blue in every theme, whatever its accent", () => {
+        for (const t of THEMES) {
+            const { h, s } = colord(unreadColor(t.palette)).toHsl();
+            expect([t.id, h >= 200 && h <= 245 && s >= 40]).toEqual([t.id, true]);
+        }
+    });
+
+    it("keeps a blue accent, and prefers the theme's own blue slot", () => {
+        expect(unreadColor(activePalette(DEFAULT_THEME_PRESET))).toBe(activePalette(DEFAULT_THEME_PRESET).accent);
+        expect(unreadColor(activePalette("claude"))).toBe(activePalette("claude").ansiBlue);
+    });
+
+    it("follows a custom accent override like the rest of the theme", () => {
+        const vars = buildThemeVars(activePalette("carbon"), { accent: "#4d9fff" });
+        expect(vars["--color-unread"]).toBe("#4d9fff");
     });
 });

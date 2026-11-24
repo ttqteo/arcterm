@@ -121,7 +121,7 @@ export const RAIL_WIDE_MIN_PX = 360;
 // person's ask, 2026-11-22); at 420px Chat still reads
 export const CHAT_MIN_PX = 420;
 // the folded tree's strip (agenttreeslot.tsx), which stays when the tree folds
-export const TREE_STRIP_PX = 14;
+export const TREE_STRIP_PX = 20;
 
 export function panelFor(panels: Record<string, PanelState>, agentId: string, defaultTab: RailTab): PanelState {
     // File, Files, Transcript, Council, Brainstorm and Initiative are never defaults: an unseen agent has no file open,

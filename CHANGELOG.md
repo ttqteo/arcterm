@@ -34,6 +34,9 @@ and a picture given to a line that is not big.
 
 ### Added
 
+- A folded Agent sidebar still gets you to any agent: its thin strip shows a dot per agent (green working, amber
+  asking, blue for turns you have not read, the open one on a lit tile like the selected row in the tree), and resting the pointer on it, or holding Alt, opens a small card of your agents by project to pick one,
+  with their Alt+1..9 numbers while Alt is held. The terminal beside it keeps its size. <!-- big --> <!-- shot: 1.10.0-tree-peek.webp -->
 - `wsh protect -- <command>` runs one long job with the machine held for it: it goes ahead of the heavy-job queue,
   starts once the heavy jobs already running finish, and every other agent's build, typecheck or test suite (and a
   run's Verify or Final) waits until it exits, even with the queue off or paused. The Jobs chip says Protected, and
@@ -67,10 +70,15 @@ and a picture given to a line that is not big.
   limit shows the limit and whether it is over, numbers over rounds or dates are a line, and numbers in one unit are
   bars side by side. The saved report gets the same groups, with a Relation column. Go checks every relation against
   the figures it verified, and lists one that does not hold under About the council. <!-- big --> <!-- shot: 1.10.0-council-figure-charts.webp -->
+- A split on the Agent surface can be resized: drag the line between its cells to give one more room, and double-click
+  it to even them again. Each project's split keeps its own sizes.
 
 ### Changed
 
 - In a council report's Figures, the parts of one whole (94 | 41 of 135) each have their own colour, matched by the legend under the bar, instead of lighter and lighter shades of one colour.
+- Unread turns are marked in blue in every theme, as a chat app marks unread messages: the count beside an agent in the Agent sidebar, its dot on the folded sidebar's strip and the Agent badge on the nav rail. In the Claude and Carbon themes they used to take the theme's orange accent.
+- Dragging an agent onto the split is smoother: the drop zones fade in, the highlighted half glides from edge to edge
+  instead of jumping, and the row you drag dims while it is held.
 - A council's saved report is now short: a to-do table (each task, why, the files it touches, its kind) and a table of
   the figures checked against the project's files, written in the question's language. The full reasoning, the
   discussion and everything about how the council worked move to a `.discussion.md` file beside it.
@@ -105,6 +113,9 @@ and a picture given to a line that is not big.
 - A council report's Figures now draws a rate and the earlier rate it replaced as one before → after chart ("79,5% → 70,6%, −8,9 điểm"), even when each rate has its own denominator. Before, the two stood as separate bars and the drop between them was not drawn.
 - A prompt that starts with `@` and the id of a council, a run or a past conversation now goes to the agent you typed it to, which reads that id, instead of being dropped as a message to an agent that isn't there.
 - A message a hook stops before it reaches the agent now shows "Not sent" in Chat with the reason, and its text comes back to the box once. Before, Chat showed it as sent, and each retry added another copy to the terminal's box.
+- A folded Agent sidebar stays folded when a new agent is held because the machine is busy, and when a council, a project's Overview or a board opens in the centre; it used to spring open on its own.
+- A file path with a line range in Chat (`notes/todo.md:57-77`) is a link again, opening the file at the range's first line; in a terminal the range is part of the link too.
+- Tab from New agent's Task box goes straight to the project again when the task has attachments, instead of stopping on each attachment chip first.
 - Esc in Chat on a message you just sent with pastes now puts it back as you wrote it, pastes as chips, not wrapped in Claude Code's paste tags. Sending it again no longer leaves a stray copy of it under the conversation.
 - A long code block in Chat no longer hides its lines under its header when the pinned prompt above it goes away: the header moves up as the pinned prompt leaves.
 - Sidecar's Resources no longer sits on "Measuring…" when the machine is too busy to answer in time: it says it can't read and keeps trying, and its reads no longer pile up behind a slow one.

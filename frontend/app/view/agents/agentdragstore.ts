@@ -13,6 +13,39 @@ export const agentDragAtom = atom<{ id: string } | null>(null) as PrimitiveAtom<
 
 interface DragSource {
     dataTransfer: { setData(format: string, data: string): void; effectAllowed: string } | null;
+    currentTarget?: EventTarget | null;
+}
+
+// The row or bar being dragged fades to half, as VS Code dims a tree row it drags, so the eye keeps where the drag
+// came from. A Web Animation rather than a class: the many row components keep no drag state and never re-render for
+// it, and reverse() fades it back from wherever it is if the drag ends mid-fade.
+const SOURCE_DIM = 0.5;
+let dimmed: Animation | null = null;
+
+function reducedMotion(): boolean {
+    return typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches === true;
+}
+
+function dimSource(target: EventTarget | null | undefined): void {
+    undimSource();
+    if (typeof Element === "undefined" || !(target instanceof Element) || typeof target.animate !== "function") {
+        return;
+    }
+    dimmed = target.animate([{ opacity: 1 }, { opacity: SOURCE_DIM }], {
+        duration: reducedMotion() ? 0 : 140,
+        easing: "cubic-bezier(0.22, 1, 0.36, 1)",
+        fill: "forwards",
+    });
+}
+
+function undimSource(): void {
+    const anim = dimmed;
+    dimmed = null;
+    if (anim == null) {
+        return;
+    }
+    anim.onfinish = () => anim.cancel();
+    anim.reverse();
 }
 
 let disarm: (() => void) | null = null;
@@ -69,9 +102,12 @@ export function beginAgentDrag(e: DragSource, id: string): void {
     if (pending != null) {
         clearTimeout(pending);
     }
+    // the source dims after the tick too: the browser takes its drag image from the row as dragstart leaves it
+    const source = e.currentTarget;
     pending = setTimeout(() => {
         pending = null;
         globalStore.set(agentDragAtom, { id });
+        dimSource(source);
     }, 0);
 }
 
@@ -82,5 +118,6 @@ export function endAgentDrag(): void {
         pending = null;
     }
     globalStore.set(agentDragAtom, null);
+    undimSource();
     disarm?.();
 }

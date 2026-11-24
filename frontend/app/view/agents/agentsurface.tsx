@@ -57,7 +57,6 @@ import { AgentHeader } from "./agentheader";
 import { AgentLaunchHero } from "./agentlaunchhero";
 import type { AgentsViewModel } from "./agents";
 import { asksInTerminal, projectOf, type AgentVM } from "./agentsviewmodel";
-import { AgentTree } from "./agenttree";
 import { AgentTreeSlot } from "./agenttreeslot";
 import { appShows } from "./appmodel";
 import { AppPane } from "./apppane";
@@ -92,6 +91,7 @@ import { subjectDecision } from "./focussubject";
 import { BoardCellBar, GridCellBar } from "./gridcellbar";
 import { mentionTarget } from "./griddrop";
 import { GridDropOverlay } from "./griddropoverlay";
+import { GridSashes, gridSizesAtom, sashTemplate, sizesOf } from "./gridsash";
 import {
     agentGridAtom,
     currentGrid,
@@ -404,6 +404,12 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
     const dockHeight = clampDockHeight(dragDockHeight ?? storedDockHeight, gridHeight);
     // folded, the row is the strip; untiled it keeps a 6px margin around it, as the cells do when tiled
     const dockRowPx = dockFolded ? DOCK_STRIP_PX + (tiled ? 0 : 12) : dockHeight;
+    // the split's shares (gridsash.tsx): each project's grid keeps its own; the sashes show only on a tiled split with
+    // nothing maximized over it
+    const gridProject = reconciledGrids.project ?? "";
+    const gridSizes = sizesOf(useAtomValue(gridSizesAtom), gridProject);
+    const rowsAfter = docked != null ? `${dockRowPx}px` : "";
+    const sashes = gridShown && tiled && boardMax == null;
 
     // the stage's row becomes its verifier's session once that is in the roster, and the focus goes with the row
     const stageFocusId = stage ? finalRowFocusId(stage.run, agents) : undefined;
@@ -788,7 +794,7 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
                     data-cockpit-surface-wrap
                     className="flex h-full w-full bg-background outline-none"
                 >
-                    <AgentTree model={model} />
+                    <AgentTreeSlot model={model} />
                     <div className="flex min-w-0 flex-1 flex-col">
                         {centerMode === "terminal" ? (
                             <AgentLaunchHero model={model} />
@@ -810,14 +816,9 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
                 className="flex h-full w-full bg-background outline-none"
             >
                 {/* the tree stays in canvas, review and brainstorm mode: hiding it made reaching another agent a round trip through the terminal */}
-                {/* beside a board the tree folds to a strip (agenttreeslot.tsx); only in terminal mode, where the board shows */}
-                {!fullscreen || centerMode !== "terminal" ? (
-                    centerMode === "terminal" ? (
-                        <AgentTreeSlot model={model} agent={agent} />
-                    ) : (
-                        <AgentTree model={model} />
-                    )
-                ) : null}
+                {/* folded to its strip (agenttreeslot.tsx), it stays folded whatever the centre shows: a held launch, a
+                    council or an Overview opening must not unfold it */}
+                {!fullscreen || centerMode !== "terminal" ? <AgentTreeSlot model={model} /> : null}
                 <div className="flex min-w-0 flex-1 flex-col">
                     {/* terminal stack stays mounted (hidden) while a subagent interior or a centre mode is shown, so
                         returning to the parent never remounts/replays the live TUI (frame-stacking) */}
@@ -881,13 +882,15 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
                             data-terminal-docked={docked?.id}
                             data-terminal-dock-folded={docked != null && dockFolded ? "true" : undefined}
                             style={
-                                docked != null
-                                    ? { gridTemplateRows: `minmax(0, 1fr) minmax(0, 1fr) ${dockRowPx}px` }
-                                    : undefined
+                                {
+                                    gridTemplateColumns: sashTemplate("col", gridSizes.col, ""),
+                                    gridTemplateRows: sashTemplate("row", gridSizes.row, rowsAfter),
+                                    "--sash-gap": tiled ? "6px" : "0px",
+                                } as React.CSSProperties
                             }
                             className={cn(
                                 "min-h-0 min-w-0 flex-1",
-                                gridShown ? "grid grid-cols-2 grid-rows-2" : "hidden",
+                                gridShown ? "grid" : "hidden",
                                 gridShown && tiled && "gap-[6px] p-[6px]"
                             )}
                         >
@@ -1058,6 +1061,15 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
                                           />
                                       );
                                   })}
+                            {sashes ? (
+                                <GridSashes
+                                    gridRef={gridRef}
+                                    project={gridProject}
+                                    places={cells.map((cell) => cell.placement)}
+                                    sizes={gridSizes}
+                                    rowsAfter={rowsAfter}
+                                />
+                            ) : null}
                         </div>
                         {isEndedWorkerId(agent.id) ? (
                             <EndedTranscript model={model} agent={agent} />

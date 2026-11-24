@@ -39973,6 +39973,7 @@ const codeTreeOnArrival = {
 // one grid per project (gridstore.ts): { project, grids: { [project]: { ids, focused, places? } } }
 const GRID_KEY = "agent.grids";
 const GRID_EMPTY = { project: null, grids: {} };
+const GRID_SIZES_KEY = "agent.gridSizes"; // gridsash.tsx
 const GRID_PROJECT = "verify-grid";
 const GRID_NAMES = ["grid-a", "grid-b", "grid-c", "grid-d", "grid-e"];
 const GRID_MARK = "agent-grid";
@@ -40179,6 +40180,7 @@ const agentGrid = {
             tabIds: [],
             agents: [],
             prevGrid: await h.ev(`localStorage.getItem(${JSON.stringify(GRID_KEY)})`),
+            prevSizes: await h.ev(`localStorage.getItem(${JSON.stringify(GRID_SIZES_KEY)})`),
             // the header's Fullscreen button is off by default (it sits in the More menu): step 9 turns it on
             prevHeaderButtons: await h.ev(`localStorage.getItem("agent.header.buttons")`),
         };
@@ -40199,6 +40201,8 @@ const agentGrid = {
             await h.ev(
                 `localStorage.setItem(${JSON.stringify(GRID_KEY)}, ${JSON.stringify(JSON.stringify(GRID_EMPTY))})`
             );
+            // even columns and rows, whatever split the person had dragged
+            await h.ev(`localStorage.removeItem(${JSON.stringify(GRID_SIZES_KEY)})`);
             if (!(await ahReload(h))) throw new Error("the page did not come back after the reload");
             await h.goto("agent");
             const ids = ctx.agents.map((a) => a.tabId);
@@ -40313,6 +40317,54 @@ const agentGrid = {
             );
             await fitStep("2b. both terminals refit to their cell");
             await h.shot("cdp-shots/agent-grid-2.png");
+
+            // 2c. the sash between the two columns, dragged with real pointer input (it captures the pointer): A narrows,
+            // B widens, the panes refit, the share is saved, and a double-click evens them again for the steps after
+            const sashAt = () =>
+                h.ev(`(() => {
+                    const s = document.querySelector('[data-grid-sash="col"]');
+                    if (!s) return null;
+                    const r = s.getBoundingClientRect();
+                    return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) };
+                })()`);
+            const mouse = (type, at, clickCount = 1) =>
+                h.cdp("Input.dispatchMouseEvent", {
+                    type,
+                    x: at.x,
+                    y: at.y,
+                    button: "left",
+                    buttons: type === "mouseReleased" ? 0 : 1,
+                    clickCount,
+                });
+            const sash = await sashAt();
+            if (sash != null) {
+                await mouse("mousePressed", sash);
+                for (let i = 1; i <= 8; i++) await mouse("mouseMoved", { x: sash.x - i * 25, y: sash.y });
+                await mouse("mouseReleased", { x: sash.x - 200, y: sash.y });
+            }
+            await settle();
+            lay = await gridLayout(h);
+            const sizes = await h.ev(`localStorage.getItem(${JSON.stringify(GRID_SIZES_KEY)})`);
+            rec(
+                "2c. dragging the column sash 200px left narrows A, widens B and saves the share",
+                sash != null && cellAt(lay, A).w < cellAt(lay, B).w - 300 && /"col":0\.[0-4]/.test(sizes ?? ""),
+                { sash, lay, sizes }
+            );
+            await fitStep("2d. both terminals refit after the sash drag");
+            await h.shot("cdp-shots/agent-grid-2-sash.png");
+            const sashNow = await sashAt();
+            if (sashNow != null) {
+                await mouse("mousePressed", sashNow, 1);
+                await mouse("mouseReleased", sashNow, 1);
+                await mouse("mousePressed", sashNow, 2);
+                await mouse("mouseReleased", sashNow, 2);
+            }
+            await settle();
+            lay = await gridLayout(h);
+            rec("2e. a double-click on the sash evens the columns again", gridSameSize(cellAt(lay, A), cellAt(lay, B)), {
+                sashNow,
+                lay,
+            });
 
             // 3. three cells: C stacked under B, A keeping the full height. B sits beside A, so it offers no left or
             // right edge, only the two it can be split along
@@ -40652,6 +40704,7 @@ const agentGrid = {
             )
         );
         await step("restore the saved grid", () => h.ev(restoreStorageKey(GRID_KEY, ctx.prevGrid)));
+        await step("restore the split's shares", () => h.ev(restoreStorageKey(GRID_SIZES_KEY, ctx.prevSizes)));
         await step("restore the header buttons", () =>
             h.ev(restoreStorageKey("agent.header.buttons", ctx.prevHeaderButtons))
         );
