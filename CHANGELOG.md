@@ -111,6 +111,9 @@ and a picture given to a line that is not big.
 ### Fixed
 
 - A council report's Figures now draws a rate and the earlier rate it replaced as one before → after chart ("79,5% → 70,6%, −8,9 điểm"), even when each rate has its own denominator. Before, the two stood as separate bars and the drop between them was not drawn.
+- In the New dialog, a long command no longer drops onto a line of its own below the `›` prompt: it stays on the prompt's line and scrolls inside the field.
+- A zoomed-out board's "Read <part>" label no longer covers a selected shape's style panel or the toolbar: it shows only while the pointer is over the drawing, and not while a shape is selected.
+- A Claude agent you answer, in its terminal or on arcterm's card, reads working again at once. It used to stay "asking" in the tree and the roster until its next tool call, through a long answer or a file it was writing.
 - A prompt that starts with `@` and the id of a council, a run or a past conversation now goes to the agent you typed it to, which reads that id, instead of being dropped as a message to an agent that isn't there.
 - A message a hook stops before it reaches the agent now shows "Not sent" in Chat with the reason, and its text comes back to the box once. Before, Chat showed it as sent, and each retry added another copy to the terminal's box.
 - A folded Agent sidebar stays folded when a new agent is held because the machine is busy, and when a council, a project's Overview or a board opens in the centre; it used to spring open on its own.

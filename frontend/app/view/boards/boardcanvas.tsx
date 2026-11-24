@@ -166,6 +166,8 @@ function OpenBoard({ project, boardId, highlightIds, onSelection, part: partProp
     const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const savingRef = useRef<Promise<void>>(Promise.resolve());
     const selectionRef = useRef("");
+    // a shape is selected: Excalidraw's style panel is open in the top-left corner, where a part's Read label lands
+    const [selecting, setSelecting] = useState(false);
     // the latest callback, so the long-lived handlers below never call a stale render's
     const onSelectionRef = useRef(onSelection);
     onSelectionRef.current = onSelection;
@@ -551,6 +553,7 @@ function OpenBoard({ project, boardId, highlightIds, onSelection, part: partProp
         const selection = ids.join(",");
         if (selection !== selectionRef.current) {
             selectionRef.current = selection;
+            setSelecting(ids.length > 0);
             onSelectionRef.current?.({ ids, label: selectionLabel(elements, ids) });
         }
         views.set({ zoom: appState.zoom.value, scrollX: appState.scrollX, scrollY: appState.scrollY });
@@ -660,7 +663,7 @@ function OpenBoard({ project, boardId, highlightIds, onSelection, part: partProp
             >
                 {theme === "dark" ? <Sun size={14} strokeWidth={2} /> : <Moon size={14} strokeWidth={2} />}
             </button>
-            {ready && part == null ? <PartHover parts={parts} views={views} onPick={setPart} /> : null}
+            {ready && part == null && !selecting ? <PartHover parts={parts} views={views} onPick={setPart} /> : null}
         </div>
     );
 }
@@ -668,7 +671,9 @@ function OpenBoard({ project, boardId, highlightIds, onSelection, part: partProp
 // While the board is too small to read, the part under the pointer gets a dashed outline and one label, Read <name>,
 // inside its top-left corner (below the toolbar when its top is off the view); a click on the label opens it. One label
 // at a time, so nothing piles up, and none while a button is held (drawing, dragging). It follows every pan and pinch
-// through the view store, without re-rendering the canvas.
+// through the view store, without re-rendering the canvas. Only the drawing itself (Excalidraw's canvas) or the label
+// counts as over a part: over the toolbar, the zoom buttons or a shape's style panel the label would cover the control.
+// While a shape is selected there is no label at all (BoardCanvas), as its style panel holds the corner it clamps to.
 function PartHover({
     parts,
     views,
@@ -690,7 +695,10 @@ function PartHover({
         }
         const onMove = (e: PointerEvent) => {
             const at = views.get();
-            if (at == null || e.buttons !== 0) {
+            const onDrawing =
+                e.target instanceof HTMLCanvasElement ||
+                (e.target instanceof Node && root.current?.contains(e.target) === true);
+            if (at == null || e.buttons !== 0 || !onDrawing) {
                 setHover(null);
                 return;
             }

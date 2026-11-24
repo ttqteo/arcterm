@@ -53,6 +53,55 @@ The **Tauri cockpit (`frontend/tauri/main.tsx`) is the sole shipping frontend** 
 - **Only the Agent surface stays mounted** when off-screen (hidden via `display:none`, so its live xterm is never torn down and re-fitted at a stale size). Every other surface unmounts on switch — surface-local `useState` is lost, so persist anything survival-worthy in a per-entity jotai atom.
 - Cross-surface concerns (pending-launch pruning, ask-draft reset, channel priming) live in the always-mounted shell, not in a surface.
 
+The Office (floors, rooms, the notice board) is a view of the Cockpit surface (`cockpitoffice.tsx`), unrelated to
+Jarvis. The nav badges are disjoint (`navrail.tsx`): Cockpit counts the agents that need you, Jarvis the rest that
+waits on you (gates, runs to confirm or land, escalations), Agent the agents with an unread turn, Setup the projects
+whose memory has a change to review.
+
+### Agent surface rules
+
+- **The terminal stack is one CSS grid parent that is always rendered, never conditionally.** It is a deliberate
+  exception to DESIGN.md's "grid only for card grids" (a 2x2 of live terminals, not a card grid): don't "fix" it back to
+  flex. Every agent and terminal that has a block keeps its cell wrapper under it with a stable `key`, and its
+  `CockpitFocusPane` once mounted stays mounted until its terminal closes; `panemounts.ts` mounts the app's own agents
+  and terminals the first time they show (so the first load does not replay them all at once), and one opened later at
+  once. `agentgrid.ts` / `gridstore.ts` only decide which panes show and where (inline `gridRow`/`gridColumn`; the rest
+  `hidden`), and a cell is an agent or a terminal (a tool is a terminal); the terminal in the panel under the agent
+  (`terminaldock.ts`) is never a cell. Re-parenting a pane or rendering the stack conditionally remounts the xterm and
+  replays the TUI. Panes refit through `term.tsx`'s ResizeObserver, so keep the tracks `minmax(0, 1fr)`, the cells
+  `min-w-0 min-h-0`, and nothing animating a cell's size.
+- **`focusIdAtom` stays the one "selected agent", and it holds a terminal's id too.** `AgentSurface` reconciles the
+  saved grid against it, so every route that selects an agent or a terminal (the tree, `j`/`k`, Ctrl+Tab, the palette,
+  the picker) obeys one rule: a cell of the split takes focus, any other shows alone and leaves the split as it was (a
+  grid of one cell follows it), and picking a terminal no longer docks it; the grid never overrides a focused agent or
+  terminal, it is only the fallback when nothing is in focus. Only a drop, Open in split or a cell's x reshapes a split,
+  and those act on the grid on screen (`gridstore.currentGrid`), so one opened from a tab shown alone replaces the split
+  kept aside.
+- **The sidebar is one tree per project**, not an Active section plus a Terminals section: `projectTree` in
+  `agentsidebarmodel.ts` builds a folder per project holding its agents, a divider, then its terminals and tools (Home
+  holds the terminals with no project), and it is the whole sidebar: past conversations, the Canvas gallery and the
+  councils the tree no longer lists are Library's, not rows or a section here. A plain terminal is a peer of an agent
+  and takes the centre when picked; the panel under the agent is a place you move a terminal to, and it folds to a
+  strip.
+- **A tool** is a plain terminal (`controller: "shell"`, `cmd:firstcommand` the tool's command) whose block meta
+  `tool:id` is its only lasting marker. The catalog is Go (`pkg/arctools`, plus the user's `tools.json` in the config
+  dir, answered by one wshrpc command with PATH status); the pure model is `view/agents/toolsmodel.ts`, the state and the
+  open / install actions `toolsstore.ts`, the views `toolslibrary.tsx` (Setup → Tools), `toolpicker.tsx` and the New
+  dialog's Tool row.
+- **A service** is a tool with a page (a localhost url, or `port: "auto"`; `arctools.IsService`): wavesrv's
+  `pkg/services` holds it as one `cmd`-controller block (`tool:service`) in a tab of its own, starts it when it shows,
+  restarts it after a crash and stops it a minute after it leaves the screen once nothing it started is still working
+  (`services.Busy`), unless it is set to Keep running; the cockpit reads its state through
+  `view/agents/servicesstore.ts` (the five service commands and the `services:changed` event), and words its tree row,
+  page header and Setup → Tools row from the pure `servicesmodel.ts`. The Agent tree lists a service once it is opened
+  and keeps it when it stops on its own; only the row's Hide takes it out (`hiddenServicesAtom`, localStorage
+  `apps.hidden`) until it is opened again; Setup → Tools manages the apps (state, Pin, Keep running, Stop, Restart,
+  Open), and the footer's Servers names a service's server `app · <name>`. There is no Services chip or popover in the
+  app bar. A service can also be pinned to the nav rail (up to three, under Diff; `railapps.ts` is the pure model,
+  `railappsstore.ts` the localStorage `apps.rail` list and the shown service): it opens as the `app` surface
+  (`appsurface.tsx`), whose body publishes the app slot, so the one page frame moves there through the shell's
+  `AppFrames` without a reload.
+
 Frontend structure:
 
 - **`frontend/app/store/`** — the state + IPC core: jotai atoms (`global-atoms`, `global`), `GlobalModel`, the wshrpc client plumbing (`wshclient`, `wshclientapi` [generated], `wshrouter`, `wshrpcutil`, `tabrpcclient`), **WOS** (`wos.ts` — `loadAndPinWaveObject`, ORef objects mirrored from Go), `wps` (wave pub/sub events), and keybindings (`keybindings/` — matcher, dispatcher, g-leader chords; `keymodel.ts` is the older layer).

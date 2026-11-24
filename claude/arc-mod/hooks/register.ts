@@ -1240,6 +1240,12 @@ export const register: Register = (on) => {
                 (answer) => "deny" in answer,
                 (ms) => $.clock.sleep(ms)
             );
+            // an answer takes the cockpit off asking at once (status-core.ts answered); a dismissal ends the turn,
+            // which reports idle
+            const answer = settled && ("dialog" in settled ? settled.dialog : settled.card);
+            if (answer && !("deny" in answer)) {
+                void turnStatus.answered(transcriptPath, (args) => reportStatus($, args));
+            }
             if (settled && "dialog" in settled) {
                 return settled.dialog;
             }
