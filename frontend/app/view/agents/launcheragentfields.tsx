@@ -517,21 +517,28 @@ export function AgentFields({
                     }}
                     className="flex min-h-[34px] min-w-0 shrink-0 cursor-text flex-wrap items-center gap-[6px] rounded-[8px] border border-transparent bg-surface-code py-1 pl-3 pr-[6px] focus-within:border-accent-700"
                 >
-                    <span data-cmd-prompt="1" className="font-mono text-[12px] font-semibold text-success">
-                        ›
+                    {/* The prompt and the input never part: a command wider than the strip shrinks the input on the
+                        prompt's line (it scrolls inside) instead of wrapping the input onto a row of its own. */}
+                    <span
+                        data-cmd-prompt="1"
+                        className="flex min-w-0 max-w-full shrink items-center gap-[6px] font-mono text-[12px]"
+                    >
+                        <span data-cmd-prompt="1" className="shrink-0 font-semibold text-success">
+                            ›
+                        </span>
+                        <input
+                            id="launcher-cmd"
+                            aria-label="Command"
+                            value={startup}
+                            readOnly={resume != null}
+                            onChange={(e) => setStartup(e.target.value)}
+                            placeholder={runtime === "terminal" ? "default shell" : runtimeStartupCommand(runtime)}
+                            style={{
+                                width: `${Math.max(startup.length + 1, runtime === "terminal" && !startup ? 14 : 4)}ch`,
+                            }}
+                            className="min-w-0 shrink bg-transparent text-secondary outline-none"
+                        />
                     </span>
-                    <input
-                        id="launcher-cmd"
-                        aria-label="Command"
-                        value={startup}
-                        readOnly={resume != null}
-                        onChange={(e) => setStartup(e.target.value)}
-                        placeholder={runtime === "terminal" ? "default shell" : runtimeStartupCommand(runtime)}
-                        style={{
-                            width: `${Math.max(startup.length + 1, runtime === "terminal" && !startup ? 14 : 4)}ch`,
-                        }}
-                        className="max-w-full bg-transparent font-mono text-[12px] text-secondary outline-none"
-                    />
                     {enabledFlags.map((f) => (
                         <span
                             key={f.id}
