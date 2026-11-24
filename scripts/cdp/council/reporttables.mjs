@@ -282,6 +282,9 @@ export const councilReportTables = {
                 return {
                     groups,
                     segments: [...fig.querySelectorAll("[data-council-figure-segment]")].map((s) => s.dataset.councilFigureSegment),
+                    // each part of a whole wears its own categorical slot, none of them the accent
+                    fills: [...fig.querySelectorAll("[data-council-figure-segment]:not([data-council-figure-segment=rest])")].map((s) => getComputedStyle(s).backgroundColor),
+                    changes: [...fig.querySelectorAll("[data-council-figure-bar=change]")].map((b) => t(b.querySelector("span"))),
                     pcts: [...fig.querySelectorAll("[data-council-figure-pct]")].map(t),
                     delta: t(fig.querySelector("[data-council-figure-delta]")),
                     sides: [...fig.querySelectorAll("[data-council-figure-side]")].map((s) => s.dataset.councilFigureSide + ":" + t(s)),
@@ -305,6 +308,10 @@ export const councilReportTables = {
                 facts != null &&
                 g["Bản vá X.js"]?.charts.join(",") === "stack" &&
                 facts.segments.join(",") === "94,41,rest" &&
+                facts.fills.length === 2 &&
+                new Set(facts.fills).size === 2 &&
+                g["Tỉ lệ theo mẫu số"]?.charts.join(",") === "change" &&
+                facts.changes.join("|") === "79,5% → 70,6%|50% → 62%" &&
                 g["Tỉ lệ chặn"]?.charts.join(",") === "rate,rate" &&
                 g["Tỉ lệ chặn"].rows === 2 &&
                 facts.pcts.join("|") === "70,6% của 170|79,5% của 151" &&

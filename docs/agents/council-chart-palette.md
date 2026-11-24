@@ -53,3 +53,28 @@ validator's "relief required: visible labels or table view" for the brainstorm p
 lightest surfaces; figure F gives it both (a direct label on every newest-harness point, and the Table toggle), and the
 purple is never the only way to tell brainstorm apart: it is the only ◆. If a theme later fails a hard check, step that
 slot's lightness (keep it inside L 0.48–0.67) and rerun the loop above over every theme.
+
+## The Figures parts palette
+
+A council report's Figures section draws the parts of one whole (a stacked bar: 94 | 41 of 135) each in its own colour,
+`--color-figure-1..6` in this fixed order (one slot per part, never cycled; a bar of more than six parts draws them all
+in the accent's steps instead). It is the dataviz skill's categorical palette, its dark steps, kept across themes like
+`chart-1..4`. A rate, a change, a limit and a comparison of figures of one unit stay in the accent: those are one series,
+not parts of different kinds.
+
+| Token | Hue | Hex |
+|---|---|---|
+| `figure-1` | blue | `#3987e5` |
+| `figure-2` | orange | `#d95926` |
+| `figure-3` | aqua | `#199e70` |
+| `figure-4` | yellow | `#c98500` |
+| `figure-5` | magenta | `#d55181` |
+| `figure-6` | green | `#0ca30c` |
+| `figure-ink` | label inside a part | `#111111` |
+
+**Validator run, 2026-11-24:** `node <validator> "#3987e5,#d95926,#199e70,#c98500,#d55181,#0ca30c" --mode dark --surface
+<surfaceRaised>` (adjacent pairs: the parts sit side by side) for each of the ten `surfaceRaised` values in `THEMES`:
+every one "ALL CHECKS PASS", worst colour-blind ΔE 8.4 (`#c98500` ↔ `#199e70`, protan), worst normal-vision ΔE 19.3
+(`#d55181` ↔ `#c98500`), all six ≥ 3:1 on every surface. Every part also has its line in the legend under the bar, so
+colour never names a part alone. A label inside a part is `figure-ink`: 4.8 to 6.2:1 on the six slots, where white is
+3.1 to 3.9:1.

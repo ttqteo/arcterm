@@ -276,6 +276,20 @@
     --color-chart-3: #2a9d8f; /* team */
     --color-chart-4: #b04fbf; /* brainstorm */
 
+    /* The parts of one whole in a council report's Figures (a stacked bar: 94 | 41 of 135), in this fixed order, one
+       slot per part: the dataviz skill's categorical palette, dark steps. An identity palette like chart-1..4, kept
+       across themes; a bar of more parts than slots falls back to the accent's steps. Validated adjacent-pairs on every
+       theme's surfaceRaised (worst colour-blind ΔE 8.4, normal-vision 19.3, all ≥ 3:1), and every part also has its
+       legend line, so colour never names a part alone. A label inside a part is figure-ink (≥ 4.8:1 on every slot;
+       white is ~3:1). docs/agents/council-chart-palette.md has the run. */
+    --color-figure-1: #3987e5; /* blue */
+    --color-figure-2: #d95926; /* orange */
+    --color-figure-3: #199e70; /* aqua */
+    --color-figure-4: #c98500; /* yellow */
+    --color-figure-5: #d55181; /* magenta */
+    --color-figure-6: #0ca30c; /* green */
+    --color-figure-ink: #111111;
+
     /* Runtime accents — trademark colors: Claude coral (claude-color.svg #D97757); Codex is a
        monochrome mark (codex.svg #111), inverted to near-white for legibility on the dark cockpit.
        The Claude mark is the one runtime color a theme tints (ThemePalette.claudeMark in

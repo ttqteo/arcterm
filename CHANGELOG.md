@@ -70,6 +70,7 @@ and a picture given to a line that is not big.
 
 ### Changed
 
+- In a council report's Figures, the parts of one whole (94 | 41 of 135) each have their own colour, matched by the legend under the bar, instead of lighter and lighter shades of one colour.
 - A council's saved report is now short: a to-do table (each task, why, the files it touches, its kind) and a table of
   the figures checked against the project's files, written in the question's language. The full reasoning, the
   discussion and everything about how the council worked move to a `.discussion.md` file beside it.
@@ -101,6 +102,7 @@ and a picture given to a line that is not big.
 
 ### Fixed
 
+- A council report's Figures now draws a rate and the earlier rate it replaced as one before → after chart ("79,5% → 70,6%, −8,9 điểm"), even when each rate has its own denominator. Before, the two stood as separate bars and the drop between them was not drawn.
 - A prompt that starts with `@` and the id of a council, a run or a past conversation now goes to the agent you typed it to, which reads that id, instead of being dropped as a message to an agent that isn't there.
 - A message a hook stops before it reaches the agent now shows "Not sent" in Chat with the reason, and its text comes back to the box once. Before, Chat showed it as sent, and each retry added another copy to the terminal's box.
 - Esc in Chat on a message you just sent with pastes now puts it back as you wrote it, pastes as chips, not wrapped in Claude Code's paste tags. Sending it again no longer leaves a stray copy of it under the conversation.

@@ -179,12 +179,18 @@ export function FiguresTable({ c }: { c: Council }) {
 // a figure's places as one mono line: its ref, then the other places that hold it
 const placesOf = (r: FigureRow) => [r.ref, ...r.refs].filter((p) => p !== "");
 
-// the fills of a bar's parts in order: one hue, each part a step lighter than the one before, so two neighbours never
-// share a fill; a bar of more parts than steps repeats from the strongest. What is left of the whole is the bare track.
-const PART_FILLS = ["bg-accent", "bg-accent/60", "bg-accent/35", "bg-accent/20"];
+// the fills of a bar's parts in order: the parts are different things, so each takes the next slot of the categorical
+// palette (tailwindsetup.css figure-1..6), never cycled. A bar of more parts than slots draws them all in one hue
+// instead, each a step lighter than the one before, so two neighbours never share a fill. What is left of the whole is
+// the bare track.
+const PART_FILLS = ["bg-figure-1", "bg-figure-2", "bg-figure-3", "bg-figure-4", "bg-figure-5", "bg-figure-6"];
+const PART_STEPS = ["bg-accent", "bg-accent/60", "bg-accent/35", "bg-accent/20"];
 
-function segmentFill(s: StackSegment, index: number): string {
-    return s.row == null ? "bg-pill" : PART_FILLS[index % PART_FILLS.length];
+function segmentFill(s: StackSegment, index: number, parts: number): string {
+    if (s.row == null) {
+        return "bg-pill";
+    }
+    return parts <= PART_FILLS.length ? PART_FILLS[index] : PART_STEPS[index % PART_STEPS.length];
 }
 
 // below this share a part's label does not fit inside it: the legend under the bar names it
@@ -194,8 +200,11 @@ const LABEL_MIN_SHARE = 0.09;
  *  as its share), a legend naming each part, the parts split further as "135 = 94 + 41", and the lines it comes from. */
 function StackBarView({ bar, lang }: { bar: StackBar; lang: CouncilLang }) {
     // a part's place among the parts (the rest is none), which picks its fill in the bar and the legend alike
-    const fills = new Map(bar.segments.filter((s) => s.row != null).map((s, i) => [s, segmentFill(s, i)]));
+    const named = bar.segments.filter((s) => s.row != null);
+    const fills = new Map(named.map((s, i) => [s, segmentFill(s, i, named.length)]));
     const parts = [...fills.keys()];
+    // a categorical fill takes the near-black ink (≥ 4.8:1 on every slot); the accent's steps keep the primary ink
+    const ink = named.length <= PART_FILLS.length ? "text-figure-ink" : "text-primary";
     return (
         <div data-council-figure-bar="stack" className="flex min-w-0 flex-col gap-2">
             <div className="flex min-w-0 flex-wrap items-baseline gap-x-2">
@@ -211,8 +220,8 @@ function StackBarView({ bar, lang }: { bar: StackBar; lang: CouncilLang }) {
                         style={{ flexGrow: s.share, flexBasis: 0 }}
                         className={cn(
                             "flex min-w-[3px] items-center overflow-hidden rounded-[4px] px-2 text-[11.5px] tabular-nums",
-                            fills.get(s) ?? segmentFill(s, 0),
-                            s.row == null ? "text-muted" : "text-primary"
+                            fills.get(s) ?? segmentFill(s, 0, named.length),
+                            s.row == null ? "text-muted" : ink
                         )}
                     >
                         {s.share >= LABEL_MIN_SHARE ? <span className="truncate">{s.label}</span> : null}
@@ -355,7 +364,7 @@ function ChangeChart({ chart, lang }: { chart: ChangeView; lang: CouncilLang }) 
         <div data-council-figure-bar="change" className="flex min-w-0 flex-col gap-2">
             <div className="flex min-w-0 flex-wrap items-baseline gap-x-2">
                 <span className="font-semibold tabular-nums text-primary">
-                    {chart.from.value} → {chart.to.value}
+                    {chart.fromText} → {chart.toText}
                 </span>
                 <span
                     data-council-figure-delta

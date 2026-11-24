@@ -405,10 +405,51 @@ describe("sectionView's other charts", () => {
         const [rates] = views();
         expect(rates.loose).toEqual([]);
         expect(rates.bars).toEqual([
-            expect.objectContaining({ kind: "change", delta: "−8,9 điểm", dir: "down", scale: 0.795 }),
+            expect.objectContaining({ kind: "change", delta: "−8,9 điểm", dir: "down", scale: 1 }),
         ]);
         const c = rates.bars[0] as ChangeView;
         expect([c.from.value, c.to.value]).toEqual(["79,5%", "70,6%"]);
+        expect([c.fromText, c.toText]).toEqual(["79,5%", "70,6%"]);
+    });
+
+    // council 5186f93c (2026-11-24): two rates over their denominators, the later naming the earlier with was. Each was
+    // claimed as a bar over its denominator first, so they stood as two meters and the drop was never drawn
+    it("draws two rates over their denominators as one change when one names the other with was", () => {
+        const [rates] = figureSections(
+            council({
+                lang: "vi",
+                figures: [
+                    figure({
+                        value: "0.7059",
+                        group: "Tỉ lệ",
+                        of: "170",
+                        share: 0.7059,
+                        was: "120/151 = 79,5%",
+                        rate: true,
+                        level: 0.7059,
+                    }),
+                    figure({
+                        value: "120/151 = 79,5%",
+                        group: "Tỉ lệ",
+                        of: "151",
+                        share: 120 / 151,
+                        rate: true,
+                        level: 120 / 151,
+                    }),
+                ],
+            })
+        ).map((s) => sectionView(s, "vi"));
+        expect(rates.bars.map((b) => b.kind)).toEqual(["change"]);
+        const c = rates.bars[0] as ChangeView;
+        expect([c.fromText, c.toText, c.delta, c.scale]).toEqual(["79,5%", "70,6%", "−8,9 điểm", 1]);
+        expect(rates.loose).toEqual([]);
+    });
+
+    it("keeps a rate with no earlier value as a bar over its denominator", () => {
+        const [rates] = figureSections(
+            council({ figures: [figure({ value: "0.4", group: "R", of: "10", share: 0.4, rate: true, level: 0.4 })] })
+        ).map((s) => sectionView(s, "en"));
+        expect(rates.bars.map((b) => b.kind)).toEqual(["rate"]);
     });
 
     it("draws a figure against its limit, with its side in words", () => {
