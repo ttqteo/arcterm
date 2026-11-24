@@ -56,6 +56,9 @@ and a picture given to a line that is not big.
   its report cites resolve on every machine; one too large to copy is named in the report instead.
 - `wsh council redoc` rewrites a project's old council reports in the new short layout (`--dry-run` lists what it would
   rewrite).
+- `wsh council refigure <id>` draws an old council's figures as charts: one small model call says how its verified
+  numbers hang together (parts of a whole, a value before and after, a limit), Go checks each link, and the council's
+  report is rewritten with them. A number that is the earlier value of another is no longer also taken as a part of it.
 - A council Report's Figures table lists a number once even when the seats cited it in a file and in its copy, with
   both places in its source.
 - A council Report's Figures are drawn, not only listed: the numbers the seats group together sit under the group's

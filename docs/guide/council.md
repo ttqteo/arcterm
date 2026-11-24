@@ -292,6 +292,12 @@ agrees with which idea in Map" mở nó.
   vượt tổng), bỏ liên hệ sai và ghi lý do vào **Figure relations that did not hold** trong About the council và file
   phụ. Cùng một số trích ở file gốc và ở bản chép của nó chỉ hiện một lần, nguồn ghi cả hai. File chính in cùng các
   nhóm đó, với cột **Liên hệ** ("14,3% của 947", "từ 60, +20", "vượt ngưỡng tối đa 1000", "lúc v2").
+- **Council cũ chưa khai liên hệ**: `wsh council refigure <id>` gọi một model không có công cụ (mặc định haiku,
+  `--model` để đổi; khoảng 40k token, phần lớn là system prompt của claude) trên các số đã xác minh của council, để nó
+  khai `group`, `of`, `was`, `limit`, `bound`, `unit`, `at`. Các liên hệ này được lưu riêng trên record
+  (`figurerelations`), không ghi vào đề xuất của chuyên gia, và điều chuyên gia đã khai luôn được ưu tiên. Go kiểm từng
+  liên hệ như với chuyên gia rồi viết lại báo cáo đã lưu. Model vẫn có thể đoán sai một liên hệ mà Go không bác được (một
+  số nhỏ hơn số kia nên trông như một phần của nó), nên hãy đọc lại cột Liên hệ. Chạy lại thì các liên hệ cũ bị thay.
 - **File ngoài project** đưa cho council được chép vào `docs/council/briefs/` lúc council bắt đầu, để các dòng báo cáo
   trích đọc được trên máy nào cũng vậy; file hay thư mục quá 1 MB không chép, và được ghi tên trong file phụ.
 - **Cite check** trong file phụ, ngay sau Matrix: Go đọc lại mọi `path:line` mà báo cáo trích, cả câu của

@@ -659,6 +659,11 @@ type Council struct {
 	// Figures is the proposals' figures, deduplicated, each with the ids that declared it, which Go rewrites after every
 	// check pass (ApplyChecks). Review only: nil in a Brainstorm.
 	Figures []CouncilFigure `json:"figures,omitempty"`
+	// FigureRelations is the group, of, was, limit, bound, unit and at that `wsh council refigure` wrote for the figures
+	// of a council whose seats declared none, each entry naming its figure by Value and Ref. collectFigures fills a
+	// figure's empty fields from it and relateFigures checks them as a seat's; a seat's own declaration wins. Nil unless
+	// refigure ran.
+	FigureRelations []CouncilFigure `json:"figurerelations,omitempty"`
 	// Briefs records each file or folder from outside the project that Start copied into it, or could not (see
 	// CouncilBrief); `files` holds the copies.
 	Briefs []CouncilBrief `json:"briefs,omitempty"`

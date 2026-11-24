@@ -152,7 +152,7 @@ func numberText(n float64) string { return strconv.FormatFloat(n, 'f', -1, 64) }
 //
 // Was (the value before) and Limit (a threshold) each hold when they name another verified figure of the same kind (both
 // counts or both rates), the one in the same group first; a Limit also sets Breach from Bound ("min", else "max"). Two
-// figures that are each other's Was keep only the first one's.
+// figures that are each other's Was keep only the first one's, and two linked by a Was and an Of keep the Was.
 //
 // Then every figure linked to another by a kept relation takes the first group among the figures so linked, in list
 // order, and each group is written as its first spelling (case and spaces folded). An unverified figure is left with no
@@ -295,6 +295,13 @@ func relateFigures(figs []CouncilFigure) []CouncilFigure {
 				note(i, fmt.Sprintf("%s and %s are each other's earlier value", collapseSpace(figs[i].Value), collapseSpace(figs[j].Value)))
 			} else {
 				wasOf[i], figs[i].Was = j, figs[j].Value
+				// an earlier value of a thing is not also a part of it, nor its whole: the was stands, the of goes
+				if parent[i] == j {
+					dropOf(i, fmt.Sprintf("%s is also its earlier value, so not its whole", collapseSpace(figs[j].Value)))
+				}
+				if parent[j] == i {
+					dropOf(j, fmt.Sprintf("%s is also the earlier value of %s, so not a part of it", collapseSpace(figs[j].Value), collapseSpace(figs[i].Value)))
+				}
 			}
 		}
 		if j := link(i, declared[i][2], "limit"); j >= 0 {
@@ -305,6 +312,8 @@ func relateFigures(figs []CouncilFigure) []CouncilFigure {
 		if limitOf[i] < 0 {
 			figs[i].Bound = ""
 		}
+	}
+	for i := range figs {
 		figs[i].RelNote = strings.Join(notes[i], "; ")
 	}
 	groupFigures(figs, parent, wasOf, limitOf)
