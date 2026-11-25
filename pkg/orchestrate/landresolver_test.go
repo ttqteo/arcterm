@@ -338,8 +338,12 @@ func TestLandLineLeavesAFixtureResolvingLandAlone(t *testing.T) {
 			t.Fatalf("fixture land = %+v after a drive, want it unchanged %+v", got, fixture)
 		}
 	}
-	if len(*stopped) != 0 {
-		t.Fatalf("stopped %v, want no session touched", *stopped)
+	// stopRunWorkers is package-wide, so a stage another test left finishing can stop its own run meanwhile: only this
+	// fixture's runs count
+	for _, id := range *stopped {
+		if id == f.ownerID || id == fixture.Resolver {
+			t.Fatalf("stopped %v, want no session of the fixture touched", *stopped)
+		}
 	}
 }
 
