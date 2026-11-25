@@ -436,7 +436,7 @@ export function HistoryColumn({
 
     const noRows =
         q === "" ? (
-            <Note attr="data-history-empty">{`No sessions in ${project} in the last 7 days.`}</Note>
+            <Note attr="data-history-empty">{`No ended sessions in ${project} in the last 7 days.`}</Note>
         ) : (
             <Note attr="data-history-nomatch">
                 <p>{`Nothing in the last 7 days matches "${q}".`}</p>
