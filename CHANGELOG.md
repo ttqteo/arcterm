@@ -111,6 +111,8 @@ and a picture given to a line that is not big.
 
 ### Fixed
 
+- A new agent whose terminal was not on screen when it started (Start now on a held agent, or another view over it)
+  starts at once and works on its task, instead of waiting until you open it.
 - On Windows, arcterm no longer pops up a terminal window when it checks your agent CLIs' versions (such as
   `agy --version`, half a minute after launch and every 6 hours) or updates one.
 - After you approve a brainstorm and start its run, the agent's row reads "starting run" and the builder check card reads Working until the run is created, instead of "asking question" and Waiting on you. A builder check waiting on you names it ("review builder check", "answer 2 builder questions") rather than "asking question" with no number.
