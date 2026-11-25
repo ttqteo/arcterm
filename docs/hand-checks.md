@@ -23,6 +23,11 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
 
 ## 2026-11-25
 
+- [ ] (arcterm) Chat bare `! cmd` line: an agent reply holding a line `! python -c "t.replace('**A**','**B**')"` outside
+  code draws it as a compact command row with Run and Copy, its `**` kept, no bold word. `task verify:ui --
+  chat-code-box` step 1b2 checks it; it did not run (the dev app was stopped for low memory). Unit-tested only
+  (`bashlines.ts`; 991477356).
+
 - [ ] (arcterm) Chat table Copy: hover a table in a Claude reply; the copy button sits right of the header row, over no
   cell. Click it, paste in Chat's input: a `| … |` Markdown table arrives; paste in Google Docs: real ruled cells.
   Layout measured in headless Edge only (`markdown.scss`, `markdown-table.ts`; d7ecb89a1).
