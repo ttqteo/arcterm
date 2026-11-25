@@ -194,8 +194,17 @@ export function dagStatusPill(group: Pick<TaskGroup, "status" | "planreview">): 
 
 // the dag statuses the graph header's Cancel still applies to. awaiting-plan is cancellable: abandoning a run at its
 // gate is a normal answer, and the alternative would be approving work you do not want in order to be allowed to stop
-// it. paused is too: a paused run is live, not finished, and its Cancel clears the pause.
-const CANCELLABLE_DAG = new Set(["running", "awaiting-review", "awaiting-plan", "plan-review", "finalizing", "paused"]);
+// it. paused is too: a paused run is live, not finished, and its Cancel clears the pause. So is blocked: a dag waiting on
+// the human after a failed task or Final may be one they give up on, and the engine's cancel takes any status.
+const CANCELLABLE_DAG = new Set([
+    "running",
+    "awaiting-review",
+    "awaiting-plan",
+    "plan-review",
+    "finalizing",
+    "paused",
+    "blocked",
+]);
 
 export function dagCancellable(status: string): boolean {
     return CANCELLABLE_DAG.has(status);
