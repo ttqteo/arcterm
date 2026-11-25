@@ -411,6 +411,24 @@ func ChatHabitsCommand(w *wshutil.WshRpc, opts *wshrpc.RpcOpts) (*wshrpc.Command
 	return resp, err
 }
 
+// command "chatjudge", wshserver.ChatJudgeCommand
+func ChatJudgeCommand(w *wshutil.WshRpc, data wshrpc.CommandChatJudgeData, opts *wshrpc.RpcOpts) (*wshrpc.ChatJudgeRecord, error) {
+	resp, err := sendRpcRequestCallHelper[*wshrpc.ChatJudgeRecord](w, "chatjudge", data, opts)
+	return resp, err
+}
+
+// command "chatjudgelist", wshserver.ChatJudgeListCommand
+func ChatJudgeListCommand(w *wshutil.WshRpc, data wshrpc.CommandChatJudgeListData, opts *wshrpc.RpcOpts) (*wshrpc.CommandChatJudgeListRtnData, error) {
+	resp, err := sendRpcRequestCallHelper[*wshrpc.CommandChatJudgeListRtnData](w, "chatjudgelist", data, opts)
+	return resp, err
+}
+
+// command "chatjudgestop", wshserver.ChatJudgeStopCommand
+func ChatJudgeStopCommand(w *wshutil.WshRpc, data wshrpc.CommandChatJudgeStopData, opts *wshrpc.RpcOpts) error {
+	_, err := sendRpcRequestCallHelper[any](w, "chatjudgestop", data, opts)
+	return err
+}
+
 // command "chatsuggest", wshserver.ChatSuggestCommand
 func ChatSuggestCommand(w *wshutil.WshRpc, data wshrpc.CommandChatSuggestData, opts *wshrpc.RpcOpts) (*wshrpc.CommandChatSuggestRtnData, error) {
 	resp, err := sendRpcRequestCallHelper[*wshrpc.CommandChatSuggestRtnData](w, "chatsuggest", data, opts)

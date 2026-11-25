@@ -28,13 +28,18 @@ import { shipOffer, type ShipGit } from "./shipmodel";
 export type ChipKind = "commit" | "push" | "reply" | "done" | "next" | "close";
 
 /** One suggested reply: `text` is both what the chip says and what a click sends, except a `done` chip's, whose click
- *  ticks `chunk` done on the agent's initiative and sends nothing. */
+ *  ticks `chunk` done on the agent's initiative and sends nothing, and the judge's added chip, whose click sends `send`. */
 export interface ChatChip {
     text: string;
     kind: ChipKind;
-    source: "rule" | "model" | "fallback";
+    /** `judge`: the option the deep judge added (chatjudge.ts judgedChips) */
+    source: "rule" | "model" | "fallback" | "judge";
     /** a `done` or `next` chip's chunk, by its exact label */
     chunk?: string;
+    /** the judge's pick of the row, light or deep: drawn with the scale, and first in the row (chatjudge.ts judgedChips) */
+    judged?: boolean;
+    /** what a click sends when it is not `text`: only the judge's added chip, which says what its label means */
+    send?: string;
 }
 
 /** The part of an initiative the initiative rule reads. A workref's `ts` is when it was attached (ms). */
@@ -42,16 +47,20 @@ export interface ChipEffort {
     chunks?: { label: string; status: string; workrefs?: { kind: string; oref: string; ts?: number }[] }[];
 }
 
-/** What a chip is drawn with: its kind's icon, and a reply that asks for a build ("build đi", "build it") the hammer. */
-export type ChipIcon = Exclude<ChipKind, "reply"> | "build";
+/** What a chip is drawn with: its kind's icon, a reply that asks for a build ("build đi", "build it") the hammer, and
+ *  the judge's pick the scale. */
+export type ChipIcon = Exclude<ChipKind, "reply"> | "build" | "judge";
 
 const BUILD_REPLY = /^\s*(re)?build\b/i;
 
 /** Pure: the icon a chip is drawn with, or null for a plain reply. A build reply still sends as typed; the hammer only
- *  marks it, as commit's and push's icons mark theirs. */
-export function chipIcon(c: Pick<ChatChip, "kind" | "text">): ChipIcon | null {
+ *  marks it, as commit's and push's icons mark theirs. The judge's pick has the scale, over the hammer. */
+export function chipIcon(c: Pick<ChatChip, "kind" | "text" | "judged">): ChipIcon | null {
     if (c.kind !== "reply") {
         return c.kind;
+    }
+    if (c.judged === true) {
+        return "judge";
     }
     return BUILD_REPLY.test(c.text) ? "build" : null;
 }
@@ -623,15 +632,24 @@ export function withChipText(typed: string, t: string): string {
     return /\s$/.test(typed) ? typed + t : typed + " " + t;
 }
 
-/** Pure: the empty box's line while a chip is picked: what Enter does with it, Shift+Enter when the chip's text can be
- *  edited first (chipEditable), then the keys that move on or let go. */
-export function pickedHint(chip: ChatChip, editable = false): HintPart[] {
+/** Pure: the empty box's line while a chip is picked: what Enter does with it, then the judge's `reason` when the chip is
+ *  its pick, Shift+Enter when the chip's text can be edited first (chipEditable), then the keys that move on or let go. */
+export function pickedHint(chip: ChatChip, editable = false, reason?: string): HintPart[] {
     const does =
         chip.kind === "close"
             ? " closes this agent"
             : chip.kind === "done" && chip.chunk != null
               ? ` marks “${chip.chunk}” done`
               : ` sends “${chip.text}”`;
+    const why = reason?.trim() ?? "";
     const edit: HintPart[] = editable ? [{ key: "Shift+Enter" }, " edits first · "] : [];
-    return [{ key: "Enter" }, does + " · ", ...edit, { key: "Tab" }, " next · ", { key: "Esc" }, " back to typing"];
+    return [
+        { key: "Enter" },
+        (why === "" ? does : `${does} — ${why}`) + " · ",
+        ...edit,
+        { key: "Tab" },
+        " next · ",
+        { key: "Esc" },
+        " back to typing",
+    ];
 }

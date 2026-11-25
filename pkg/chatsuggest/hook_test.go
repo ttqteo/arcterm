@@ -31,8 +31,25 @@ func TestHooksAwaitTakesTheModsAnswer(t *testing.T) {
 		h.End("b1", call.Key, "làm A đi\nlàm B đi", false)
 	}()
 	out, ok := h.Await(context.Background(), "b1", askReply, true, true)
-	if !ok || !reflect.DeepEqual(out, []string{"làm A đi", "làm B đi"}) {
+	if !ok || !reflect.DeepEqual(out.Replies, []string{"làm A đi", "làm B đi"}) {
 		t.Fatalf("Await = %v %v", out, ok)
+	}
+}
+
+// the mod's text is read by ParseAnswer when it ends, so the pick and the descriptions come back with the replies
+func TestHooksEndKeepsThePickAndTheDescriptions(t *testing.T) {
+	h := fastHooks()
+	call := h.Begin("b1", Request{Reply: askReply})
+	h.End("b1", call.Key, "làm A đi\n= sửa ở ba nơi\nlàm B đi\n= gom ở một nơi\nPICK 2: vì gom ở một nơi gọn hơn", false)
+	out, ok := h.Await(context.Background(), "b1", askReply, true, false)
+	want := Answer{
+		Replies: []string{"làm A đi", "làm B đi"},
+		Descs:   []string{"sửa ở ba nơi", "gom ở một nơi"},
+		Pick:    "làm B đi",
+		Reason:  "vì gom ở một nơi gọn hơn",
+	}
+	if !ok || !reflect.DeepEqual(out, want) {
+		t.Fatalf("Await = %#v %v, want %#v", out, ok, want)
 	}
 }
 
@@ -52,7 +69,7 @@ func TestHooksAwaitWaitsForABeginThatComesLate(t *testing.T) {
 		h.End("b1", call.Key, "làm A đi", false)
 	}()
 	out, ok := h.Await(context.Background(), "b1", askReply, true, true)
-	if !ok || !reflect.DeepEqual(out, []string{"làm A đi"}) {
+	if !ok || !reflect.DeepEqual(out.Replies, []string{"làm A đi"}) {
 		t.Fatalf("Await = %v %v", out, ok)
 	}
 }
@@ -95,7 +112,7 @@ func TestHooksAwaitMatchesTheTurn(t *testing.T) {
 	h.End("b1", call.Key, "làm A đi", false)
 	// the same reply with other spacing is the same turn
 	if out, ok := h.Await(context.Background(), "b1", "Two ways.\n\n  Want me to do A, or B?\n", true, false); !ok ||
-		len(out) != 1 {
+		len(out.Replies) != 1 {
 		t.Fatalf("respaced reply: %v %v", out, ok)
 	}
 	// another block, another reply, or a question read differently are not
@@ -118,7 +135,7 @@ func TestHooksEndForAnOlderBeginIsDropped(t *testing.T) {
 	h.End("b1", call.Key, "làm A đi", false)
 	h.End("b1", call.Key, "làm B đi", false) // a second end is dropped too
 	out, ok := h.Await(context.Background(), "b1", askReply, true, false)
-	if !ok || !reflect.DeepEqual(out, []string{"làm A đi"}) {
+	if !ok || !reflect.DeepEqual(out.Replies, []string{"làm A đi"}) {
 		t.Fatalf("Await = %v %v", out, ok)
 	}
 }
@@ -152,6 +169,44 @@ func TestEndsWithQuestion(t *testing.T) {
 		if got := EndsWithQuestion(c.reply); got != c.want {
 			t.Errorf("EndsWithQuestion(%q) = %v, want %v", c.reply, got, c.want)
 		}
+	}
+}
+
+// the judge reads this sentence and never the ones before it, which may hold the agent's lean
+func TestQuestionSentence(t *testing.T) {
+	cases := []struct {
+		name  string
+		reply string
+		want  string
+	}{
+		{"the lean before the question stays out", "Hướng B nhỏ hơn. Mình nghiêng A. A hay B?", "A hay B?"},
+		{"a question before the last one stays out", "Bạn chọn gì? A hay B?", "A hay B?"},
+		{"a colon ends a sentence, as the frontend reads it", "Hai cách: A hay B?", "A hay B?"},
+		{"an ellipsis does not", "Còn… A hay B?", "Còn… A hay B?"},
+		{"fullwidth question mark", "Hai hướng. Chọn A hay B？", "Chọn A hay B？"},
+		{"fenced code after the question is no prose", "Mình nghiêng A. A hay B?\n\n```arc-steps\n- [x] một\n```\n", "A hay B?"},
+		{"an unclosed fence after the question", "Mình nghiêng A. A hay B?\n\n```unclosed\ncode", "A hay B?"},
+		{"highlight marks around it", "==Mình nghiêng A. A hay B?==", "A hay B?"},
+		{"emphasis marks around it", "**Hướng nào, A hay B?**", "Hướng nào, A hay B?"},
+		{"the last line of prose only", "Hai hướng:\n1. A\n2. B\n\nChọn A hay B?\n", "Chọn A hay B?"},
+		{"marks inside the sentence stay", "Dùng **A** hay **B**?", "Dùng **A** hay **B**?"},
+		{"the reply does not end in a question", "Hỏi A hay B? Mình chọn A.", ""},
+		{"a question on an earlier line", "A hay B?\nMình nghiêng A.", ""},
+		{"only code after a statement", "Xong rồi.\n```go\nx := 1\n```", ""},
+		{"empty", "", ""},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := QuestionSentence(c.reply); got != c.want {
+				t.Errorf("QuestionSentence(%q) = %q, want %q", c.reply, got, c.want)
+			}
+			if c.want != "" && !EndsWithQuestion(c.reply) {
+				t.Errorf("the case %q has a sentence but EndsWithQuestion says no: the two must agree", c.reply)
+			}
+			if c.want == "" && EndsWithQuestion(c.reply) {
+				t.Errorf("the case %q has no sentence but EndsWithQuestion says yes: the two must agree", c.reply)
+			}
+		})
 	}
 }
 
@@ -245,7 +300,7 @@ func TestHooksAwaitWhySaysWhyItTookNoAnswer(t *testing.T) {
 		call := h.Begin("b1", Request{Reply: askReply})
 		wantWhy(t, h.End("b1", call.Key, "làm A đi", false), "taken: 1 chips")
 		out, ok, why, headless := h.AwaitWhy(ctx, "b1", askReply, true, true)
-		if !ok || why != "" || headless || len(out) != 1 {
+		if !ok || why != "" || headless || len(out.Replies) != 1 {
 			t.Fatalf("AwaitWhy = %v %v %q %v", out, ok, why, headless)
 		}
 		wantWhy(t, h.End("b1", call.Key, "làm B đi", false), "already ended")

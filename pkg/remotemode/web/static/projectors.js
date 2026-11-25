@@ -383,6 +383,17 @@ function attachLocalOutput(entries, content) {
   }
   last.shell = last.shell == null ? { output, error } : { output: joinOutput(last.shell.output, output), error: joinOutput(last.shell.error, error) };
 }
+var DROPPED_PREFIX = "Prompt dropped by a hook:";
+function droppedReason(rec) {
+  const ending = rec?.promptSubmitEnding?.ending;
+  if (ending?.kind === "dropped_by_hook") {
+    return typeof ending.reason === "string" ? ending.reason.trim() : "";
+  }
+  if (rec?.subtype === "informational" && typeof rec.content === "string" && rec.content.startsWith(DROPPED_PREFIX)) {
+    return rec.content.slice(DROPPED_PREFIX.length).trim();
+  }
+  return null;
+}
 function isInterrupted(text) {
   return text.trimStart().startsWith("[Request interrupted by user");
 }
@@ -709,6 +720,11 @@ function projectTranscript(lines) {
     if (btw != null) {
       const { question, ...answer } = btw;
       entries.push({ kind: "command", name: "/btw", args: question, btw: answer });
+      continue;
+    }
+    const dropped = rec.type === "system" ? droppedReason(rec) : null;
+    if (dropped != null) {
+      entries.push({ kind: "interrupted", dropped });
       continue;
     }
     if (rec.type === "system" && rec.subtype === "local_command" && typeof rec.content === "string") {

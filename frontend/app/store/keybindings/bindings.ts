@@ -75,6 +75,7 @@ import { focusChatBox, hasChatBox, interruptChat } from "@/app/view/agents/chati
 import { CHAT_JUMP_KEYS, jumpChatToLatest } from "@/app/view/agents/chatjump";
 import { cellView, cellViewOptions, chatCapable, nextCellView } from "@/app/view/agents/chatmode";
 import { getChatMode, selectCellView } from "@/app/view/agents/chatmodestore";
+import { liveJudgeAtom, runLiveJudge } from "@/app/view/agents/chatsuggeststore";
 import { sendPendingComments } from "@/app/view/agents/commentsend";
 import { sideJumpTarget, type CompareRow } from "@/app/view/agents/comparerows";
 import {
@@ -2211,6 +2212,30 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
                 }
                 const showingChat = slotView() === "terminal" && getChatMode(agent) === "chat";
                 selectCellView(agent.id, showingChat ? "terminal" : "chat", Date.now());
+            },
+        },
+        {
+            // Judge it on the choice question Chat shows under the focused agent's message (chatjudgeline.tsx), or Retry
+            // after a failed judge, from the box or anywhere else on the surface. The agent's Chat pane writes what its live
+            // line offers into liveJudgeAtom (the key cannot see the pane's state), so the key is live only while the line
+            // offers Judge it or Retry (not Stop: the line's own button stops) and passes on otherwise
+            id: "agent:chat-judge",
+            keys: "Alt:j",
+            group: "Agent",
+            label: "Judge the choice question in Chat: a fresh sonnet reads the code (Retry after a failure)",
+            when: (ctx) => {
+                if (ctx.surface !== "agent" || ctx.modalOpen || !centerAtRest()) {
+                    return false;
+                }
+                const action = globalStore.get(liveJudgeAtom)[focusId() ?? ""]?.action;
+                return action === "judge" || action === "retry";
+            },
+            run: () => {
+                const id = focusId();
+                if (id == null) {
+                    return false;
+                }
+                runLiveJudge(id);
             },
         },
         {

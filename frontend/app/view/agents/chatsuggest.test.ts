@@ -499,6 +499,33 @@ describe("Tab through the suggested replies", () => {
         expect(pickedHint(b, false)).toEqual(pickedHint(b));
     });
 
+    it("pickedHint says the judge's reason after what Enter sends, before the other keys", () => {
+        expect(pickedHint(b, false, "nhỏ hơn và đã có cache")).toEqual([
+            { key: "Enter" },
+            " sends “vẽ thử” — nhỏ hơn và đã có cache · ",
+            { key: "Tab" },
+            " next · ",
+            { key: "Esc" },
+            " back to typing",
+        ]);
+        expect(pickedHint(b, true, "nhỏ hơn")).toEqual([
+            { key: "Enter" },
+            " sends “vẽ thử” — nhỏ hơn · ",
+            { key: "Shift+Enter" },
+            " edits first · ",
+            { key: "Tab" },
+            " next · ",
+            { key: "Esc" },
+            " back to typing",
+        ]);
+    });
+
+    it("pickedHint is as before with no reason, or a blank one", () => {
+        expect(pickedHint(b, false, undefined)).toEqual(pickedHint(b));
+        expect(pickedHint(b, false, "")).toEqual(pickedHint(b));
+        expect(pickedHint(b, true, "  ")).toEqual(pickedHint(b, true));
+    });
+
     it("chipEditable: a sent text is editable, a done chip and a next chip that starts its chunk are not", () => {
         const next: ChatChip = { text: "làm tiếp: Docs", kind: "next", source: "rule", chunk: "Docs" };
         expect(chipEditable(b, true)).toBe(true);
@@ -538,6 +565,13 @@ describe("chipIcon", () => {
         expect(chipIcon({ kind: "push", text: "build and push" })).toBe("push");
         expect(chipIcon({ kind: "done", text: "xong: a" })).toBe("done");
         expect(chipIcon({ kind: "next", text: "go on with: b" })).toBe("next");
+    });
+
+    it("marks a judged chip with the scale, ahead of the build hammer", () => {
+        expect(chipIcon({ kind: "reply", text: "A, sửa parseFrame", judged: true })).toBe("judge");
+        expect(chipIcon({ kind: "reply", text: "build đi", judged: true })).toBe("judge");
+        expect(chipIcon({ kind: "reply", text: "build đi", judged: false })).toBe("build");
+        expect(chipIcon({ kind: "reply", text: "A, sửa parseFrame", judged: false })).toBeNull();
     });
 });
 

@@ -34,6 +34,7 @@ and a picture given to a line that is not big.
 
 ### Added
 
+- When an agent ends on a choice question (A or B?), Chat shows under its message a suggested answer and why (hover the name for the reason), and Judge it (Alt+J) starts a fresh sonnet session that reads the code without seeing which option the agent leans to and may name a better one. The judged answer sits first in the chips, so Cmd/Ctrl+Enter sends it. <!-- big --> <!-- shot: none -->
 - A folded Agent sidebar still gets you to any agent: its thin strip shows a dot per agent (green working, amber
   asking, blue for turns you have not read, the open one on a lit tile like the selected row in the tree), and resting the pointer on it, or holding Alt, opens a small card of your agents by project to pick one,
   with their Alt+1..9 numbers while Alt is held. The terminal beside it keeps its size. <!-- big --> <!-- shot: 1.10.0-tree-peek.webp -->
