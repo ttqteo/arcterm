@@ -1901,6 +1901,7 @@ func TestInstallAgentHooks_unparseableClaudeSettingsStillInstallTheOtherAgents(t
 // a user's hook sharing a group with an Arc hook survives the rewrite; only Arc's own hook is replaced
 // (kael a341995a8)
 func TestMergeAgentHooksKeepsForeignHookInAManagedGroup(t *testing.T) {
+	skipUnlessWindows(t)
 	existing := map[string]any{
 		"hooks": map[string]any{
 			"Stop": []any{
