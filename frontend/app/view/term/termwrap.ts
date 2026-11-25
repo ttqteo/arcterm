@@ -38,6 +38,7 @@ import { Terminal } from "@xterm/xterm";
 import debug from "debug";
 import * as jotai from "jotai";
 import { debounce } from "throttle-debounce";
+import { hiddenStartSize, startsWhileHidden } from "./hiddenstart";
 import { setCommandRunning, setLastCommand } from "./lastcommand";
 import {
     handleOsc16162Command,
@@ -722,7 +723,26 @@ export class TermWrap {
         if (this.replayPosition === "prompt") {
             setCommandRunning(this.blockId, false);
         }
+        this.startIfHiddenLaunch(replayed);
         this.runProcessIdleTimeout();
+    }
+
+    // a new launch whose pane is hidden starts now, not when someone first opens it (hiddenstart.ts)
+    private startIfHiddenLaunch(replayed: boolean) {
+        if (!startsWhileHidden({ hidden: this.isHidden(), started: this.hasResized, replayed })) {
+            return;
+        }
+        const onScreen = [...liveTermWraps.values()]
+            .filter((w) => w !== this && w.loaded && !w.isHidden())
+            .map((w) => ({ cols: w.terminal.cols, rows: w.terminal.rows }));
+        const size = hiddenStartSize(onScreen, { cols: this.terminal.cols, rows: this.terminal.rows });
+        if (size.cols !== this.terminal.cols || size.rows !== this.terminal.rows) {
+            this.terminal.resize(size.cols, size.rows);
+        }
+        this.hasResized = true;
+        // its first fit, when it shows, sends the PTY the pane's real size, and the TUI repaints whole at it
+        this.logFit("hidden-start");
+        this.resyncController("hidden launch");
     }
 
     dispose() {
