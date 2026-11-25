@@ -40,6 +40,7 @@ import {
     PinOff,
     RefreshCw,
     Search,
+    TextSearch,
     X,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
@@ -617,6 +618,17 @@ export function RailTreePane({
                 <span title={cwd} className="min-w-0 flex-1 truncate text-[11.5px] font-medium text-ink-hi">
                     {repoBasename(cwd)}
                 </span>
+                {/* the onKeyDown chord above as a button: Code's Search on this folder, with the filter's text */}
+                <button
+                    type="button"
+                    data-rail-tree-search
+                    aria-label="Search inside the files"
+                    title={`Search inside the files in Code (${formatChordString("Mod:Shift:f")})`}
+                    onClick={() => searchInCode(model, cwd, query.trim())}
+                    className={ICON_BTN}
+                >
+                    <TextSearch size={13} aria-hidden />
+                </button>
                 <button
                     type="button"
                     data-rail-tree-locate

@@ -46,6 +46,8 @@ and a picture given to a line that is not big.
 - A run an agent starts with `wsh runs start` sits under that agent in the Agent tree, and a run its own agent starts
   sits one level further; a run started from the cockpit, or whose agent has closed, keeps a row of its own (from the
   kaeltran16 fork).
+- The agent panel's Files tab has a Search button at the top, beside Locate: it opens Code's Search on that folder,
+  with the filter's text, as `Mod`+`Shift`+`F` does there.
 
 ### Changed
 
