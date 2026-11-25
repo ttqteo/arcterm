@@ -40,6 +40,7 @@ and a picture given to a line that is not big.
 
 ### Changed
 
+- The green server mark beside an agent or a project lists every port its servers listen on, not two and a `+N`.
 - The suggested answer under an agent's last message shows its reason right in the line, without hovering the name;
   older messages still keep it in the tooltip.
 

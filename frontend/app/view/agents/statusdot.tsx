@@ -4,7 +4,7 @@
 import { cn } from "@/util/util";
 import { Server } from "lucide-react";
 import type { ShownState } from "./bgactivity";
-import { portsLabel, serverLabel, shortPortsLabel, type DevServerRow } from "./devserversmodel";
+import { portsLabel, serverLabel, type DevServerRow } from "./devserversmodel";
 
 // Single source of truth for the in-view dot. Working is the status green, never the accent: the accent is focus and
 // the primary action, so a working dot in it read as selected. Waiting (its turn ended, background work it started
@@ -43,8 +43,8 @@ export function StatusDot({
 
 // The dev servers an agent's background tasks left listening (bgactivity.ts launchedServers). They do not make it
 // working, so its dot stays idle; this green server glyph says one still runs, and `ports` adds their ports beside it.
-// `ports` writes the ports beside the glyph, two at most and `+N` for the rest; `count` writes only how many (a narrow
-// header); the title always lists every port
+// `ports` writes every port beside the glyph (the row's name truncates first); `count` writes only how many (a narrow
+// header); the title lists every port with the command that holds it
 export function ServerMark({ servers, ports, count }: { servers: DevServerRow[]; ports?: boolean; count?: boolean }) {
     if (servers.length === 0) {
         return null;
@@ -57,11 +57,11 @@ export function ServerMark({ servers, ports, count }: { servers: DevServerRow[];
             role="img"
             aria-label={`${servers.length} ${servers.length === 1 ? "server" : "servers"} running in the background`}
             title={title}
-            className="flex flex-none items-center gap-[3px] text-[10.5px] tabular-nums text-success"
+            className="flex flex-none items-center gap-[3px] whitespace-nowrap text-[10.5px] tabular-nums text-success"
         >
             <Server size={11} strokeWidth={2.2} aria-hidden />
             {ports
-                ? shortPortsLabel(servers.flatMap((s) => s.ports))
+                ? portsLabel(servers.flatMap((s) => s.ports))
                 : count
                   ? servers.flatMap((s) => s.ports).length || servers.length
                   : null}

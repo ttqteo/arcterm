@@ -23,6 +23,10 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
 
 ## 2026-11-25
 
+- [ ] (arcterm) **Every port beside the server mark.** On an agent that left 3+ ports listening (e.g. `task dev`:
+  vite, WebView2 CDP, wavesrv), its tree row shows every port after the green server glyph (`:5174 :9223 :58458
+  :58459`), no `+N`; the agent's name truncates first, the ports stay whole. Also the project header row.
+
 - [ ] (arcterm) **Quote from a file into the chat box.** On an agent showing Chat, open a markdown file in its panel's
   File tab and select part of a paragraph: a Quote button (key `q`) floats beside Comment. `q` (or the button) puts
   `path:N-M` (the paragraph's lines, the path relative to the agent's folder) and the passage as `> ` lines into the

@@ -11,7 +11,6 @@ import {
     serverLabel,
     serverName,
     serverUrl,
-    shortPortsLabel,
     stopRefusal,
     terminalLog,
     uptimeLabel,
@@ -127,14 +126,6 @@ describe("serverUrl, portsLabel, ownerLabel, copyText", () => {
         expect(portsLabel([4321])).toBe(":4321");
         expect(portsLabel([4321, 24678])).toBe(":4321 :24678");
         expect(portsLabel([])).toBe("");
-    });
-
-    it("keeps two ports beside the mark and counts the rest", () => {
-        expect(shortPortsLabel([5175])).toBe(":5175");
-        expect(shortPortsLabel([5175, 9230])).toBe(":5175 :9230");
-        expect(shortPortsLabel([5175, 9230, 51321])).toBe(":5175 :9230 +1");
-        expect(shortPortsLabel([5175, 9230, 51321, 51322])).toBe(":5175 :9230 +2");
-        expect(shortPortsLabel([])).toBe("");
     });
 
     it("says who started the server", () => {
