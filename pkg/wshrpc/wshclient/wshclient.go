@@ -1525,6 +1525,48 @@ func NotifyCommand(w *wshutil.WshRpc, data wshrpc.NotifyCommandData, opts *wshrp
 	return err
 }
 
+// command "pairbrief", wshserver.PairBriefCommand
+func PairBriefCommand(w *wshutil.WshRpc, data wshrpc.CommandPairBriefData, opts *wshrpc.RpcOpts) (*wshrpc.CommandPairBriefRtnData, error) {
+	resp, err := sendRpcRequestCallHelper[*wshrpc.CommandPairBriefRtnData](w, "pairbrief", data, opts)
+	return resp, err
+}
+
+// command "pairget", wshserver.PairGetCommand
+func PairGetCommand(w *wshutil.WshRpc, data wshrpc.CommandPairGetData, opts *wshrpc.RpcOpts) (*wshrpc.PairView, error) {
+	resp, err := sendRpcRequestCallHelper[*wshrpc.PairView](w, "pairget", data, opts)
+	return resp, err
+}
+
+// command "pairlist", wshserver.PairListCommand
+func PairListCommand(w *wshutil.WshRpc, opts *wshrpc.RpcOpts) (*wshrpc.CommandPairListRtnData, error) {
+	resp, err := sendRpcRequestCallHelper[*wshrpc.CommandPairListRtnData](w, "pairlist", nil, opts)
+	return resp, err
+}
+
+// command "pairrunnow", wshserver.PairRunNowCommand
+func PairRunNowCommand(w *wshutil.WshRpc, data wshrpc.CommandPairRunNowData, opts *wshrpc.RpcOpts) error {
+	_, err := sendRpcRequestCallHelper[any](w, "pairrunnow", data, opts)
+	return err
+}
+
+// command "pairsay", wshserver.PairSayCommand
+func PairSayCommand(w *wshutil.WshRpc, data wshrpc.CommandPairSayData, opts *wshrpc.RpcOpts) error {
+	_, err := sendRpcRequestCallHelper[any](w, "pairsay", data, opts)
+	return err
+}
+
+// command "pairstart", wshserver.PairStartCommand
+func PairStartCommand(w *wshutil.WshRpc, data wshrpc.CommandPairStartData, opts *wshrpc.RpcOpts) (*wshrpc.PairView, error) {
+	resp, err := sendRpcRequestCallHelper[*wshrpc.PairView](w, "pairstart", data, opts)
+	return resp, err
+}
+
+// command "pairunpair", wshserver.PairUnpairCommand
+func PairUnpairCommand(w *wshutil.WshRpc, data wshrpc.CommandPairGetData, opts *wshrpc.RpcOpts) error {
+	_, err := sendRpcRequestCallHelper[any](w, "pairunpair", data, opts)
+	return err
+}
+
 // command "path", wshserver.PathCommand
 func PathCommand(w *wshutil.WshRpc, data wshrpc.PathCommandData, opts *wshrpc.RpcOpts) (string, error) {
 	resp, err := sendRpcRequestCallHelper[string](w, "path", data, opts)

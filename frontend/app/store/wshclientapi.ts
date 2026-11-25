@@ -1530,6 +1530,48 @@ export class RpcApiType {
         return client.wshRpcCall("notify", data, opts);
     }
 
+    // command "pairbrief" [call]
+    PairBriefCommand(client: WshClient, data: CommandPairBriefData, opts?: RpcOpts): Promise<CommandPairBriefRtnData> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "pairbrief", data, opts);
+        return client.wshRpcCall("pairbrief", data, opts);
+    }
+
+    // command "pairget" [call]
+    PairGetCommand(client: WshClient, data: CommandPairGetData, opts?: RpcOpts): Promise<PairView> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "pairget", data, opts);
+        return client.wshRpcCall("pairget", data, opts);
+    }
+
+    // command "pairlist" [call]
+    PairListCommand(client: WshClient, opts?: RpcOpts): Promise<CommandPairListRtnData> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "pairlist", null, opts);
+        return client.wshRpcCall("pairlist", null, opts);
+    }
+
+    // command "pairrunnow" [call]
+    PairRunNowCommand(client: WshClient, data: CommandPairRunNowData, opts?: RpcOpts): Promise<void> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "pairrunnow", data, opts);
+        return client.wshRpcCall("pairrunnow", data, opts);
+    }
+
+    // command "pairsay" [call]
+    PairSayCommand(client: WshClient, data: CommandPairSayData, opts?: RpcOpts): Promise<void> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "pairsay", data, opts);
+        return client.wshRpcCall("pairsay", data, opts);
+    }
+
+    // command "pairstart" [call]
+    PairStartCommand(client: WshClient, data: CommandPairStartData, opts?: RpcOpts): Promise<PairView> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "pairstart", data, opts);
+        return client.wshRpcCall("pairstart", data, opts);
+    }
+
+    // command "pairunpair" [call]
+    PairUnpairCommand(client: WshClient, data: CommandPairGetData, opts?: RpcOpts): Promise<void> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "pairunpair", data, opts);
+        return client.wshRpcCall("pairunpair", data, opts);
+    }
+
     // command "path" [call]
     PathCommand(client: WshClient, data: PathCommandData, opts?: RpcOpts): Promise<string> {
         if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "path", data, opts);

@@ -2568,6 +2568,52 @@ declare global {
         body?: string;
     };
 
+    // wshrpc.CommandPairBriefData
+    type CommandPairBriefData = {
+        workertab: string;
+    };
+
+    // wshrpc.CommandPairBriefRtnData
+    type CommandPairBriefRtnData = {
+        text: string;
+    };
+
+    // wshrpc.CommandPairGetData
+    type CommandPairGetData = {
+        pairid: string;
+    };
+
+    // wshrpc.CommandPairListRtnData
+    type CommandPairListRtnData = {
+        pairs: PairInfo[];
+    };
+
+    // wshrpc.CommandPairRunNowData
+    type CommandPairRunNowData = {
+        pairid: string;
+        msgid: string;
+        command: string;
+    };
+
+    // wshrpc.CommandPairSayData
+    type CommandPairSayData = {
+        pairid: string;
+        text: string;
+        to: string;
+        replyto: string;
+        item?: number;
+    };
+
+    // wshrpc.CommandPairStartData
+    type CommandPairStartData = {
+        workertab: string;
+        judgetab: string;
+        holdheavy: boolean;
+        tokencap: number;
+        note: string;
+        briefed: boolean;
+    };
+
     // wshrpc.CommandPauseRunData
     type CommandPauseRunData = {
         channelid: string;
@@ -4737,6 +4783,93 @@ declare global {
     type OpenFileData = {
         path: string;
         edit?: boolean;
+    };
+
+    // wshrpc.PairDecided
+    type PairDecided = {
+        asks: PairItem[];
+        agreed: PairItem[];
+        open: PairItem[];
+    };
+
+    // wshrpc.PairHeld
+    type PairHeld = {
+        command: string;
+        ts: number;
+        runts?: number;
+    };
+
+    // wshrpc.PairInfo
+    type PairInfo = {
+        id: string;
+        project: string;
+        worker: PairSide;
+        judges: PairSide[];
+        state: string;
+        stopreason: string;
+        owed: boolean;
+        messagecount: number;
+        lastts: number;
+    };
+
+    // wshrpc.PairItem
+    type PairItem = {
+        num: number;
+        kind: string;
+        text: string;
+        note: string;
+        chips: string[];
+        msgid: string;
+        reopenedby: string;
+        newby: string;
+        answer: string;
+    };
+
+    // wshrpc.PairMessage
+    type PairMessage = {
+        id: string;
+        from: string;
+        tab: string;
+        ts: number;
+        text: string;
+        quote: string;
+        replyto: string;
+        to: string;
+        held: PairHeld[];
+    };
+
+    // wshrpc.PairSide
+    type PairSide = {
+        tab: string;
+        name: string;
+        harness: string;
+        gone?: boolean;
+    };
+
+    // wshrpc.PairUpdateData
+    type PairUpdateData = {
+        pairid: string;
+        workertab: string;
+    };
+
+    // wshrpc.PairView
+    type PairView = {
+        id: string;
+        project: string;
+        worker: PairSide;
+        judges: PairSide[];
+        state: string;
+        stopreason: string;
+        owed: boolean;
+        messagecount: number;
+        lastts: number;
+        holdheavy: boolean;
+        tokencap: number;
+        tokens: number;
+        note: string;
+        createdts: number;
+        messages: PairMessage[];
+        decided: PairDecided;
     };
 
     // waveobj.ParkedLaunch

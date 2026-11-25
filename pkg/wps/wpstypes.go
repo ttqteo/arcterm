@@ -64,6 +64,9 @@ const (
 
 	// boards (pkg/boardstore): a board's list or talk changed, or a drawer answer is waiting in its inbox
 	Event_BoardUpdate = "board:update" // type: wshrpc.BoardUpdateData
+
+	// pairs (pkg/agentpair): a pair changed (a message, a stop, a judge added, a hold), after every change
+	Event_PairUpdate = "pair:update" // type: wshrpc.PairUpdateData
 )
 
 var AllEvents []string = []string{
@@ -101,6 +104,7 @@ var AllEvents []string = []string{
 	Event_XmasTreeChanged,
 	Event_RemoteStatus,
 	Event_BoardUpdate,
+	Event_PairUpdate,
 }
 
 type WaveEvent struct {

@@ -78,6 +78,7 @@ type WshRpcInterface interface {
 	ChatSuggestCommands
 	BugReportCommands
 	BoardCommands
+	PairCommands
 	WshRpcRemoteFileInterface
 	WshRpcFileInterface
 }
