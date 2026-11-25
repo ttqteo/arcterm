@@ -465,7 +465,10 @@ func (m *Manager) addSystem(p *Pair, text string) {
 // resume puts a stopped pair back to relaying. After a token-cap stop the cap counts again from now.
 func resume(p *Pair, now int64) {
 	if p.StopReason == StopTokenCap {
-		p.CapFromTs, p.Tokens = now, 0
+		p.CapFromTs, p.Tokens, p.Worker.Tokens = now, 0, 0
+		for i := range p.Judges {
+			p.Judges[i].Tokens = 0
+		}
 	}
 	p.State, p.StopReason = StateRelaying, ""
 }
@@ -662,22 +665,27 @@ func (m *Manager) settle(ctx context.Context, id string, tookJudge bool) {
 	since, tabs := p.CapFromTs, memberTabs(p)
 	m.mu.Unlock()
 
-	var total int64
-	counted := true
+	// a session that cannot be read keeps its last count, so the total never drops for a failed read
+	counts := map[string]int64{}
 	for _, tab := range tabs {
 		n, err := m.Link.Tokens(ctx, tab, since)
 		if err != nil {
 			log.Printf("pair %s: counting the tokens of %s: %v\n", id, tab, err)
-			counted = false // a partial count would drop the total: keep the last one
 			continue
 		}
-		total += n
+		counts[tab] = n
 	}
 
 	m.change(id, func(p *Pair) bool {
 		changed := false
-		if counted && p.CapFromTs == since && p.Tokens != total {
-			p.Tokens, changed = total, true
+		if p.CapFromTs == since {
+			total := setSideTokens(&p.Worker, counts)
+			for i := range p.Judges {
+				total += setSideTokens(&p.Judges[i], counts)
+			}
+			if p.Tokens != total {
+				p.Tokens, changed = total, true
+			}
 		}
 		if p.State != StateRelaying {
 			return changed
@@ -695,6 +703,15 @@ func (m *Manager) settle(ctx context.Context, id string, tookJudge bool) {
 		}
 		return changed
 	})
+}
+
+// setSideTokens takes a side's new count when one was read (a gone judge is not read, so it keeps its last) and returns
+// the side's count.
+func setSideTokens(s *Side, counts map[string]int64) int64 {
+	if n, ok := counts[s.Tab]; ok {
+		s.Tokens = n
+	}
+	return s.Tokens
 }
 
 // stop pauses the pair and says why in one system line. The judge replies behind a no-new-points or a settled stop ask

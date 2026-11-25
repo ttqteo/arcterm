@@ -52,6 +52,9 @@ type Side struct {
 	Harness string `json:"harness"`
 	Gone    bool   `json:"gone,omitempty"`
 	Briefed bool   `json:"briefed,omitempty"` // a judge launched with the brief as its task, or sent the brief as its first prompt
+	// Tokens is this session's spend since the pair's CapFromTs, as last counted. A gone judge's stays: its session
+	// is no longer read, but what it spent still counts toward the cap.
+	Tokens int64 `json:"tokens,omitempty"`
 }
 
 // Message is one message of the conversation. Raw is what the agent wrote, fences and quote line included: the view
@@ -81,7 +84,7 @@ type Pair struct {
 	State      string `json:"state"`
 	StopReason string `json:"stopreason,omitempty"`
 	CapFromTs  int64  `json:"capfromts"` // tokens count from here: pairing, or the person's message that resumed a token-cap stop
-	Tokens     int64  `json:"tokens"`    // spent since CapFromTs, as of the last turn end
+	Tokens     int64  `json:"tokens"`    // spent since CapFromTs, as of the last turn end: every side's Tokens, gone judges included
 
 	Messages []Message `json:"messages"`
 	// Pending is, per tab, the ids of the messages waiting for that agent, delivered as one prompt.

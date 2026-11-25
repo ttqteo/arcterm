@@ -765,6 +765,46 @@ func TestManagerGoneJudgeLeavesTheOthersRelaying(t *testing.T) {
 	}
 }
 
+// what a judge spent before it went still counts: its session is no longer read, so the pair keeps its last count
+func TestManagerGoneJudgeTokensStillCount(t *testing.T) {
+	r := newRig(t)
+	r.link.add("j2", "Judge two")
+	r.link.agent("w").tokens, r.link.agent("j1").tokens = 600_000, 900_000
+	r.link.give("w", workerPlan)
+	v := r.start(wshrpc.CommandPairStartData{TokenCap: 2_000_000})
+	r.start(wshrpc.CommandPairStartData{JudgeTab: "j2"})
+	r.link.setState("j1", "idle")
+	r.link.setState("j2", "idle")
+	r.reply("j1", "> Plan v1.\nOne finding.\n"+judgeBlock("new: a"))
+	if view := r.view(v.Id); view.Tokens != 1_500_000 {
+		t.Fatalf("tokens %d: want the worker's and judge one's", view.Tokens)
+	}
+
+	delete(r.link.agents, "j1")
+	r.m.memberGone(v.Id, "j1")
+	r.link.agent("w").tokens = 1_100_000
+	r.reply("w", "Again.\n"+pairBlock("O1 a"))
+	view := r.view(v.Id)
+	if !view.Judges[0].Gone {
+		t.Fatalf("judges %+v: want judge one gone", view.Judges)
+	}
+	if view.State != StateStopped || view.StopReason != StopTokenCap || view.Tokens != 2_000_000 {
+		t.Fatalf("state %s / %s, tokens %d: judge one's 900k still counts, so the pair is at its cap", view.State, view.StopReason, view.Tokens)
+	}
+
+	// the person's message resumes the stop, and the cap counts again from it: the gone judge's spend is behind it
+	r.link.agent("w").tokens = 0
+	if err := r.m.Say(ctx, wshrpc.CommandPairSayData{PairId: v.Id, Text: "Go on."}); err != nil {
+		t.Fatal(err)
+	}
+	if view := r.view(v.Id); view.State != StateRelaying || view.Tokens != 0 {
+		t.Fatalf("state %s, tokens %d after the person's message", view.State, view.Tokens)
+	}
+	if in := r.internal(v.Id); in.Judges[0].Tokens != 0 {
+		t.Fatalf("the gone judge still holds %d from before the resume", in.Judges[0].Tokens)
+	}
+}
+
 func TestManagerResumeAJudgeAddedToAPairWithNoJudgeLeft(t *testing.T) {
 	r := newRig(t)
 	v := r.paired(workerPlan)
