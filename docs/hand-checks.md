@@ -23,6 +23,14 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
 
 ## 2026-11-25
 
+- [ ] (arcterm) Kael sync 11-25: a real agent's quick run nests under it in the Agent tree (the CDP scenario
+  `run-nesting` draws a dev-mock roster with seeded runs, and this run's agent ran no CDP, so neither the live nesting
+  nor the row's move has been watched). In an agent's tab have it run `wsh runs start --project <dir> "<goal>"` → once
+  the run's tab appears, its row sits right under the agent's row (and its checks), one tree guide in, and the folder's
+  count includes it; `j` from the agent goes to it next. Have that run's agent run `wsh runs start` too → its
+  run sits under it, two guides in. Close the first agent's tab → its run moves back to a top-level row with no jump
+  or flicker (the row keeps its key, so it slides), and the run under it is one guide in. A run started from the New
+  dialog stays a top-level row. Spec: `docs/superpowers/specs/2026-11-25-kael-sync-agent-tree-nesting-design.md`.
 - [ ] (arcterm) Kael sync 11-25: a real run of 4 tasks or fewer takes the fast track end to end (the Go tests own each
   engine claim; the CDP scenarios `kael1125-fast-track-label` and `kael1125-fast-track-views` draw seeded runs, so no
   real run's agents have been watched). Start a plan-file run of 2 to 4 tasks with a Verify line → the plan review has
