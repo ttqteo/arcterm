@@ -3,7 +3,7 @@
 
 import { cn } from "@/util/util";
 import { ArrowUpRight, Check, ChevronLeft, ChevronRight, FileText, SquareTerminal, X } from "lucide-react";
-import { useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { AgentsViewModel } from "./agents";
 import {
     answerHint,
@@ -364,10 +364,18 @@ export function AnswerBar({
     // read that one as a question index), and tied to the ask so the next ask opens on its first question
     const askKey = askSentKey(agent) ?? agent.id;
     const [submitTabFor, setSubmitTabFor] = useState<string | null>(null);
+    const onSubmitTab = submitTabFor === askKey;
+    // the Submit tab takes the focus onto its Submit button, so Enter sends: the field or option the tab was reached
+    // from unmounts with its question, which dropped the focus on the page, where no key reaches the card
+    const submitRef = useRef<HTMLButtonElement>(null);
+    useEffect(() => {
+        if (onSubmitTab) {
+            submitRef.current?.focus({ preventScroll: true });
+        }
+    }, [onSubmitTab]);
     if (questions.length === 0) {
         return null;
     }
-    const onSubmitTab = submitTabFor === askKey;
     const goQuestion = (qi: number) => {
         setSubmitTabFor(null);
         onSelectQuestion?.(qi);
@@ -448,12 +456,16 @@ export function AnswerBar({
     const ready = canSubmitAsk(questions, selections, texts ?? {});
     const submitButton = (
         <button
+            ref={submitRef}
             type="button"
+            // focused, it keeps Enter for its own press, away from the surface's shortcuts (an Enter binding
+            // would take it, since a programmatic focus is not one Tab reached)
+            data-owns-keys
             disabled={!ready}
-            title={ready ? "Send the answers" : "Answer every question first"}
+            title={ready ? "Send the answers (Enter)" : "Answer every question first"}
             onClick={onSubmit}
             className={cn(
-                "flex h-[23px] shrink-0 cursor-pointer items-center gap-1.5 rounded-[6px] border-0 px-[11px] text-[11.5px] font-bold disabled:cursor-default",
+                "flex h-[23px] shrink-0 cursor-pointer items-center gap-1.5 rounded-[6px] border-0 px-[11px] text-[11.5px] font-bold outline-none focus-visible:ring-2 focus-visible:ring-primary/40 disabled:cursor-default",
                 ready
                     ? agent.state === "asking"
                         ? "bg-warning text-background"
