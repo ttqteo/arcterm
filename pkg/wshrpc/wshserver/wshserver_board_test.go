@@ -371,6 +371,63 @@ func TestBoardAskDrawsAndListsAnswering(t *testing.T) {
 	}
 }
 
+const (
+	// a board with one drawing: the frame f1, "Login", around the rectangle s0
+	loginDrawingElements = `[{"id":"s0","type":"rectangle","x":0,"y":0,"width":10,"height":10,"frameId":"f1"},` +
+		`{"id":"f1","type":"frame","x":-10,"y":-10,"width":30,"height":30,"name":"Login"}]`
+	// an edit of that drawing
+	boardEdit = `{"title":"Login, simpler","edit":true,"update":[{"id":"s0","label":"login"}]}`
+	// the line the turn prompt names the drawing in view with
+	loginInView = `The drawing in view: "Login" (id f1)`
+)
+
+// putLoginDrawing saves a board file holding the Login drawing, as the canvas would have saved it.
+func (w *boardWorld) putLoginDrawing(info wshrpc.BoardInfo) {
+	w.t.Helper()
+	read, err := w.ws.BoardReadCommand(w.ctx, w.ref(info.ID))
+	if err != nil {
+		w.t.Fatal(err)
+	}
+	data := strings.Replace(read.Data, `"elements":[]`, `"elements":`+loginDrawingElements, 1)
+	if saved, err := w.ws.BoardSaveCommand(w.ctx, wshrpc.CommandBoardSaveData{Project: w.project, BoardId: info.ID, Data: data, BaseRev: read.Rev}); err != nil || saved.Conflict {
+		w.t.Fatalf("save: %+v %v", saved, err)
+	}
+}
+
+// the drawing in view comes with the ask: the turn keeps it, the drawer's prompt names it, and an edit lands with it
+func TestBoardAskKeepsTheDrawingInView(t *testing.T) {
+	w := newBoardWorld(t)
+	info := w.makeBoard("Auth flow")
+	w.putLoginDrawing(info)
+	w.model.reply = func(boarddrawer.Call) (string, error) { return boardEdit, nil }
+
+	err := w.ws.BoardAskCommand(w.ctx, wshrpc.CommandBoardAskData{Project: w.project, BoardId: info.ID, Question: "simpler", DrawingId: "f1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if turn := w.lastTurn(info.ID); turn.DrawingId != "f1" {
+		t.Errorf("the turn lost the drawing in view: %+v", turn)
+	}
+	answer := w.land("")
+	if answer.DrawingId != "f1" || answer.Title != "Login, simpler" || answer.Update == "" {
+		t.Errorf("the edit is delivered with its frame and title: %+v", answer)
+	}
+	w.waitTurn(info.ID, answer.TurnId, boarddrawer.StateAnswered)
+	if prompts := w.model.prompts(); len(prompts) != 1 || !strings.Contains(prompts[0], loginInView) {
+		t.Errorf("the drawer's prompt must name the drawing in view: %q", prompts)
+	}
+	waitFor(t, func() bool { return !boardDrawer.Busy(boarddrawer.Board{Project: w.project, BoardId: info.ID}) }, "the board to be free")
+
+	// a new drawing, with the same one in view, is delivered with its title and no frame to join
+	w.model.reply = nil
+	if err := w.ws.BoardAskCommand(w.ctx, wshrpc.CommandBoardAskData{Project: w.project, BoardId: info.ID, Question: "and logout", DrawingId: "f1"}); err != nil {
+		t.Fatal(err)
+	}
+	if fresh := w.land(""); fresh.DrawingId != "" || fresh.Title != "Auth flow" {
+		t.Errorf("a new drawing is delivered with its title and no frame: %+v", fresh)
+	}
+}
+
 func TestBoardAskRefusedOnAnEndedAgent(t *testing.T) {
 	w := newBoardWorld(t)
 	info := w.makeBoard("Auth flow")
@@ -540,6 +597,49 @@ func TestBoardRerouteBothWays(t *testing.T) {
 		if turn.ID == forwarded.ID && (turn.State != boarddrawer.StateForwarded || turn.Forward == nil) {
 			t.Errorf("the original forwarded turn changed: %+v", turn)
 		}
+	}
+}
+
+// both ways of sending a line the other way keep the drawing it was asked in
+func TestBoardRerouteKeepsTheDrawingInView(t *testing.T) {
+	w := newBoardWorld(t)
+	info := w.makeBoard("Auth flow")
+	w.putLoginDrawing(info)
+	seed := func(turn wshrpc.BoardTurn) {
+		t.Helper()
+		_, err := boardstore.UpdateTalk(w.dir(), info.ID, func(talk *wshrpc.BoardTalk) error {
+			talk.Turns = append(talk.Turns, turn)
+			return nil
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// a drawn turn goes to the agent: the turn sent keeps the drawing
+	seed(wshrpc.BoardTurn{ID: "drawn", Kind: boarddrawer.KindAsk, Question: "why two stores?", DrawingId: "f1", State: boarddrawer.StateAnswered, Added: 1})
+	if err := w.ws.BoardRerouteCommand(w.ctx, w.turnRef(info.ID, "drawn")); err != nil {
+		t.Fatal(err)
+	}
+	boardForwards.work.Wait()
+	if sent := w.lastTurn(info.ID); sent.From != "drawn" || sent.State != boarddrawer.StateForwarded || sent.DrawingId != "f1" {
+		t.Errorf("the turn sent to the agent: %+v", sent)
+	}
+
+	// a forwarded turn is drawn instead: the new turn is asked in the drawing, and the drawer is told so
+	seed(wshrpc.BoardTurn{ID: "fwd", Kind: boarddrawer.KindAsk, Question: "show the cache", DrawingId: "f1", State: boarddrawer.StateForwarded,
+		Forward: &wshrpc.BoardForward{State: boarddrawer.ForwardSent}})
+	if err := w.ws.BoardRerouteCommand(w.ctx, w.turnRef(info.ID, "fwd")); err != nil {
+		t.Fatal(err)
+	}
+	redone := w.lastTurn(info.ID)
+	if redone.From != "fwd" || redone.DrawingId != "f1" {
+		t.Errorf("the turn drawn instead: %+v", redone)
+	}
+	w.land("")
+	w.waitTurn(info.ID, redone.ID, boarddrawer.StateAnswered)
+	if prompts := w.model.prompts(); len(prompts) != 1 || !strings.Contains(prompts[0], loginInView) {
+		t.Errorf("the drawer must be told the drawing in view: %q", prompts)
 	}
 }
 

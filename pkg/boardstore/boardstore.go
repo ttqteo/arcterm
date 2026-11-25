@@ -38,7 +38,8 @@ const (
 	unsafeNameChars  = `<>:"/\|?*`
 	unsafeNameFiller = "_"
 
-	typeText = "text"
+	typeText  = "text"
+	typeFrame = "frame"
 )
 
 // The turn states a list row is worked out from (BoardTurn.State). "failed" is also the row's own state.
@@ -71,12 +72,12 @@ type element struct {
 	IsDeleted   bool   `json:"isDeleted"`
 }
 
-// shapes counts the board's live elements as its header does: a deleted element is gone, and bound text is part of
-// its container. The drawer counts the same way.
+// shapes counts the board's live elements as its header does: a deleted element is gone, bound text is part of its
+// container, and a drawing's frame is no shape. The drawer counts the same way.
 func (f boardFile) shapes() int {
 	n := 0
 	for _, e := range f.Elements {
-		if e.IsDeleted || e.Id == "" || (e.Type == typeText && e.ContainerId != "") {
+		if e.IsDeleted || e.Id == "" || e.Type == typeFrame || (e.Type == typeText && e.ContainerId != "") {
 			continue
 		}
 		n++

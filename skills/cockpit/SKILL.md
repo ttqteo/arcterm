@@ -44,7 +44,7 @@ and never answers in words. Don't draw a one-line answer.
   `--context-file <path>` (`-` reads stdin). Windows PowerShell 5.1 splits such an argument to a native command, and
   its pipe to one drops every non-ASCII letter, so from PowerShell write the file with the Write tool and pass its path;
   never flatten the briefing to one line or strip its accents to get it through.
-- Later: one line, `wsh board draw --board <name> --ask "<what to change or add>"`.
+- Later: one line, `wsh board draw --board <name> --ask "<what to draw>"`.
 - A prompt that holds `board:<id>` (the person picked a board in Chat's `@` picker) asks about that board: pass it as
   written, `--board board:<id>`, with `--ask` carrying their request.
 - A board an ended agent drew is taken over by the next agent of its project that draws on it: `--ask` on its name
@@ -53,6 +53,8 @@ and never answers in words. Don't draw a one-line answer.
 - Keep the briefing short. The drawer reads what you said in the conversation since its last read, so don't restate
   it, and never paste shapes or coordinates. Say what to draw and the angle (the boxes that matter, the direction of
   the flow), not the explanation itself.
+- Every request becomes one new, short drawing: one idea, a handful of boxes, a few words each. For more, send another
+  request, and it becomes another drawing beside the first, never a denser one.
 - A board draws bar and line charts to scale, beside the boxes. For one, give the drawer the numbers themselves, with
   their labels and units, in the briefing or the `--ask` line ("add a bar chart of pass rate: baseline 0.42, LLM
   0.61, agent 0.70"); it never invents numbers. A chart of numbers on its own, with no drawing around it, reads better
@@ -62,11 +64,12 @@ and never answers in words. Don't draw a one-line answer.
   - `Still drawing on board "<name>"; its card in Chat shows when it lands.` — the wait ran out; carry on (exit 0).
   - `Couldn't draw on board "<name>": <reason>` — nothing changed (exit 1); an RPC error prints the same way.
 - The board never opens by itself: your turn in Chat gets a card for it (name, shape count, **Open**), and the person
-  opens it beside Chat when they want to look. The drawer may move, restyle or remove any shape on it, hand-drawn ones
-  included, so don't rely on a shape staying where it was.
+  opens it beside Chat when they want to look. Your request always lands as a new drawing in its own frame, beside the
+  earlier ones: the drawer changes an earlier drawing only when the person asks it to on the board, so a drawing of
+  yours stays as it was until then.
 
 **Questions asked on the board reach you.** The person can select shapes and ask about them on the board. When the
 drawer can't answer that by drawing, it forwards the question to you as a message headed
 `[From board "<name>" · on <shapes> · turn <id>]`, then their words. Treat it as the person's own message: answer in
-words, in your reply. If your answer changes the picture, send the drawer a one-line
-`wsh board draw --board <name> --ask "<the change>"`.
+words, in your reply. If your answer is worth a picture, send the drawer a one-line
+`wsh board draw --board <name> --ask "<what to draw>"`: it becomes a new drawing beside the others.

@@ -17,7 +17,7 @@ import (
 )
 
 const (
-	drawAnswer  = `{"title":"wavesrv, opened up","add":[{"type":"rectangle","id":"a","x":0,"y":300,"width":10,"height":10},{"type":"text","id":"b","x":0,"y":340,"text":"x"}],"update":[{"id":"box","x":40}]}`
+	drawAnswer  = `{"title":"wavesrv, opened up","add":[{"type":"rectangle","id":"a","x":0,"y":300,"width":10,"height":10},{"type":"text","id":"b","x":0,"y":340,"text":"x"}]}`
 	wordsAnswer = `{"reply":"Nothing to draw."}`
 	emptyBoard  = `{"type":"excalidraw","elements":[]}`
 )
@@ -254,7 +254,7 @@ func TestAskFirstTurnThenResume(t *testing.T) {
 	land(t, f, d, board, turn.ID, "n1", "n2")
 	talk := settled(t, f, d)
 	got := talk.Turns[0]
-	if got.State != StateAnswered || got.Title != "wavesrv, opened up" || got.Added != 2 || got.Changed != 1 || got.Removed != 0 ||
+	if got.State != StateAnswered || got.Title != "wavesrv, opened up" || got.Added != 2 || got.Changed != 0 || got.Removed != 0 ||
 		got.AnsweredTs != 1000 || got.Forward != nil || !slices.Equal(got.ShapeIds, []string{"n1", "n2"}) {
 		t.Errorf("first turn: %+v", got)
 	}
@@ -274,7 +274,7 @@ func TestAskFirstTurnThenResume(t *testing.T) {
 		t.Errorf("a board with no agent reads no transcript: %v", f.reads)
 	}
 	if len(f.delivered) != 1 || f.delivered[0].TurnId != turn.ID || f.delivered[0].Project != "waveterm" || f.delivered[0].BoardId != "b1" ||
-		f.delivered[0].Add == "" || f.delivered[0].Update == "" || f.delivered[0].Ts != 1000 {
+		f.delivered[0].Add == "" || f.delivered[0].Title != "wavesrv, opened up" || f.delivered[0].DrawingId != "" || f.delivered[0].Ts != 1000 {
 		t.Errorf("delivered: %+v", f.delivered)
 	}
 
@@ -669,6 +669,144 @@ func TestRequestNeverForwards(t *testing.T) {
 	}
 }
 
+const editAnswer = `{"title":"Cache, simpler","edit":true,"add":[{"type":"text","id":"n","x":0,"y":60,"text":"hot"}],"update":[{"id":"cache","label":"c"}]}`
+
+// an ask names the drawing in view: the turn keeps it, the prompt names it, and an edit answer is delivered with it
+func TestAskEditsTheDrawingInView(t *testing.T) {
+	f := newFake(reply(editAnswer))
+	f.files["b1"] = framedSceneFile
+	d := New(f.deps())
+	f.landsAnswers(d, board)
+	turn, err := d.Ask(board, wshrpc.BoardTurn{Kind: KindAsk, Question: "Simpler.", DrawingId: "f1"})
+	if err != nil || turn.DrawingId != "f1" {
+		t.Fatalf("ask: %+v %v", turn, err)
+	}
+	got := settled(t, f, d).Turns[0]
+	if got.State != StateAnswered || got.DrawingId != "f1" || got.Title != "Cache, simpler" || got.Added != 1 || got.Changed != 1 {
+		t.Errorf("turn: %+v", got)
+	}
+	if calls := f.callList(); len(calls) != 1 || !strings.Contains(calls[0].Prompt, drawingInViewHead+`"Cache path" (id f1)`) {
+		t.Errorf("the prompt must name the drawing in view: %+v", calls)
+	}
+	if len(f.delivered) != 1 || f.delivered[0].TurnId != turn.ID || f.delivered[0].DrawingId != "f1" || f.delivered[0].Title != "Cache, simpler" ||
+		f.delivered[0].Update == "" {
+		t.Errorf("delivered: %+v", f.delivered)
+	}
+}
+
+// with a drawing in view, an answer that is not an edit is a new drawing: delivered with its title and no drawing id
+func TestAskNewDrawingWithAnotherInView(t *testing.T) {
+	f := newFake(reply(drawAnswer))
+	f.files["b1"] = framedSceneFile
+	d := New(f.deps())
+	f.landsAnswers(d, board)
+	if _, err := d.Ask(board, wshrpc.BoardTurn{Kind: KindAsk, Question: "And the store?", DrawingId: "f1"}); err != nil {
+		t.Fatal(err)
+	}
+	got := settled(t, f, d).Turns[0]
+	if got.State != StateAnswered || got.DrawingId != "f1" {
+		t.Errorf("the turn keeps the drawing in view it was asked in: %+v", got)
+	}
+	if len(f.delivered) != 1 || f.delivered[0].DrawingId != "" || f.delivered[0].Title != "wavesrv, opened up" {
+		t.Errorf("a new drawing is delivered with its title and no drawing id: %+v", f.delivered)
+	}
+}
+
+// a drawing that is gone from the board is no drawing in view: an edit of it fails the turn
+func TestAskEditOfAGoneDrawingFails(t *testing.T) {
+	f := newFake(reply(editAnswer))
+	f.files["b1"] = framedSceneFile
+	d := New(f.deps())
+	if _, err := d.Ask(board, wshrpc.BoardTurn{Kind: KindAsk, Question: "Simpler.", DrawingId: "gonef"}); err != nil {
+		t.Fatal(err)
+	}
+	got := settled(t, f, d).Turns[0]
+	if got.State != StateFailed || !strings.Contains(got.Reason, "no drawing is in view") || f.deliveredCount() != 0 {
+		t.Errorf("an edit with no drawing in view must fail the turn: %+v, delivered %d", got, f.deliveredCount())
+	}
+	if p := f.callList()[0].Prompt; strings.Contains(p, drawingInViewHead) || !strings.Contains(p, noDrawingLine) {
+		t.Errorf("the prompt must say no drawing is in view:\n%s", p)
+	}
+}
+
+// Retry asks the turn again in the drawing it was first asked in
+func TestRetryKeepsTheDrawingInView(t *testing.T) {
+	fail := true
+	f := newFake(nil)
+	f.files["b1"] = framedSceneFile
+	f.run = func(ctx context.Context, c Call) (string, error) {
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		if fail {
+			return "", errors.New("the drawer's session exited before it replied (exit status 1)")
+		}
+		return editAnswer, nil
+	}
+	d := New(f.deps())
+	f.landsAnswers(d, board)
+	turn, err := d.Ask(board, wshrpc.BoardTurn{Kind: KindAsk, Question: "Simpler.", DrawingId: "f1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := settled(t, f, d).Turns[0]; got.State != StateFailed || got.DrawingId != "f1" {
+		t.Fatalf("a failed turn keeps its drawing: %+v", got)
+	}
+	f.mu.Lock()
+	fail = false
+	f.mu.Unlock()
+	if err := d.Retry(board, turn.ID); err != nil {
+		t.Fatal(err)
+	}
+	if got := settled(t, f, d).Turns[0]; got.State != StateAnswered || got.DrawingId != "f1" {
+		t.Errorf("retried turn: %+v", got)
+	}
+	calls := f.callList()
+	if len(calls) != 2 || !strings.Contains(calls[1].Prompt, drawingInViewHead+`"Cache path" (id f1)`) {
+		t.Errorf("the retry must name the drawing the turn was asked in: %+v", calls)
+	}
+	if len(f.delivered) != 1 || f.delivered[0].DrawingId != "f1" {
+		t.Errorf("delivered: %+v", f.delivered)
+	}
+}
+
+// an agent's request has no drawing in view, so it is always a new drawing, even on a board with drawings
+func TestRequestMakesNewDrawings(t *testing.T) {
+	turns := map[string]wshrpc.BoardTurn{
+		"a briefing":         requests("Draw the store.", "facts"),
+		"a one-line request": requests("Draw the retry loop.", ""),
+	}
+	for name, in := range turns {
+		for _, edit := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s, edit %v", name, edit), func(t *testing.T) {
+				answer := drawAnswer
+				if edit {
+					answer = editAnswer
+				}
+				f := newFake(reply(answer))
+				f.files["b1"] = framedSceneFile
+				d := New(f.deps())
+				f.landsAnswers(d, board)
+				if _, err := d.Ask(board, in); err != nil {
+					t.Fatal(err)
+				}
+				got := settled(t, f, d).Turns[0]
+				if p := f.callList()[0].Prompt; strings.Contains(p, drawingInViewHead) || !strings.Contains(p, "draw it as a new drawing") {
+					t.Errorf("a request has no drawing in view and is drawn as a new one:\n%s", p)
+				}
+				if edit {
+					if got.State != StateFailed || !strings.Contains(got.Reason, "no drawing is in view") || f.deliveredCount() != 0 {
+						t.Errorf("an edit must fail the request's turn: %+v, delivered %d", got, f.deliveredCount())
+					}
+					return
+				}
+				if got.State != StateAnswered || len(f.delivered) != 1 || f.delivered[0].DrawingId != "" || f.delivered[0].Title != "wavesrv, opened up" {
+					t.Errorf("want a new drawing: %+v, delivered %+v", got, f.delivered)
+				}
+			})
+		}
+	}
+}
+
 // a line the drawer flags, or one it answers with nothing at all, goes to the agent: a question is never dropped
 func TestForwardQuestionOnAsk(t *testing.T) {
 	for name, answer := range map[string]string{
@@ -941,7 +1079,7 @@ func TestAnsweredLandsTheTurn(t *testing.T) {
 		t.Fatal(err)
 	}
 	waitFor(t, "the answer", func() bool { return f.hasPublished(UpdateAnswer, turn.ID) })
-	if got := f.talk("b1").Turns[0]; got.State != StateAnswering || got.Title != "wavesrv, opened up" || got.Added != 2 || got.Changed != 1 {
+	if got := f.talk("b1").Turns[0]; got.State != StateAnswering || got.Title != "wavesrv, opened up" || got.Added != 2 || got.Changed != 0 {
 		t.Errorf("a delivered turn stays answering, with its counts, until it lands: %+v", got)
 	}
 	if err := d.Answered(board, turn.ID, []string{"n1", "n2", "box"}); err != nil {
@@ -1139,7 +1277,7 @@ func TestWaitReturnsAtEndStates(t *testing.T) {
 			t.Fatal(err)
 		}
 		got := <-done
-		if got.State != StateAnswered || got.Added != 2 || got.Changed != 1 || got.Title != "wavesrv, opened up" {
+		if got.State != StateAnswered || got.Added != 2 || got.Changed != 0 || got.Title != "wavesrv, opened up" {
 			t.Errorf("wait: %+v", got)
 		}
 	})
