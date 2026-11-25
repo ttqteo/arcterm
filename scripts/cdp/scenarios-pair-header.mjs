@@ -179,27 +179,27 @@ export default function (kit) {
         return box == null ? false : tap(h, selector);
     }
 
-    // The fixture's blocks are not real ones, so the pane's controller start fails and the header reads "failed to start",
-    // which rightly wins over the state the steps read. Once the pane has tried, that refusal is cleared (as
-    // scenarios-agent-header.mjs does), and the header says what the fixture says.
-    async function show(h, id, blockId) {
+    // The fixture's blocks are not real ones. arrange marks the roster a fixture's (setFixtureRoster) before it sets it, so
+    // a pane's refused controller start is never "failed to start": a refusal's long text would overflow the header, and
+    // the header keeps its icons until it has the width that overflow needed (headermodel.nextHeaderLabels). Clearing the
+    // refusal after it showed raced a pane that tried late. A step reads the header once it holds its words.
+    async function show(h, id) {
         await focusAgent(h, id);
-        await polishWaitFor(h, `!!${HEADER}?.querySelector("[data-agent-start-error]")`, 3_000);
-        await agentPage(
+        await polishWaitFor(
             h,
-            `const { getStartErrorAtom } = await mod("app/view/agents/agentcontrollerstore.ts");
-            globalStore.set(getStartErrorAtom(${q(blockId)}), undefined);
+            `!${HEADER}?.querySelector("[data-agent-start-error]") && ${HEADER}?.getAttribute("data-header-labels") === "words"`,
+            WAIT_MS
+        );
+    }
+    // on while the pair roster stands in; put back to what a fixture loaded at boot says (devmock.loadDevMockRoster)
+    const markFixture = (h, on) =>
+        agentPage(
+            h,
+            `const { setFixtureRoster } = await mod("app/view/agents/agentcontrollerstore.ts");
+            const { devMockAgentsAtom } = await mod("app/view/agents/devmock.ts");
+            setFixtureRoster(${on ? "true" : "globalStore.get(devMockAgentsAtom) != null"});
             return true;`
         );
-        await polishWaitFor(h, `!${HEADER}?.querySelector("[data-agent-start-error]")`, 3_000);
-        // That refusal's long text overflowed the header for a moment, and the header keeps its icons until it has the width
-        // that overflow needed (headermodel.nextHeaderLabels): give it the room, then take it back. Only the fixture's
-        // fake blocks do this; a real agent's header never shows the refusal.
-        await narrowTo(h, 3_000);
-        await polishWaitFor(h, `${HEADER}?.getAttribute("data-header-labels") === "words"`, WAIT_MS);
-        await narrowTo(h, null);
-        await polishNap(200);
-    }
     const waitHeader = (h, name, extra = "true") =>
         polishWaitFor(h, `(${HEADER}?.querySelector("[data-header-name] .font-semibold")?.textContent ?? "").includes(${q(name)}) && (${extra})`, WAIT_MS);
     const waitMenu = (h) => polishWaitFor(h, `!!${MENU}`, WAIT_MS);
@@ -221,6 +221,8 @@ export default function (kit) {
                     ctx.prevSeen = await h.ev(`localStorage.getItem("agent.pairseen")`);
                     await watchCenter(h);
                     ctx.now = Date.now();
+                    // the flag goes first: a pane starts as soon as the roster names its block
+                    await markFixture(h, true);
                     await setRoster(h, pairRoster(ctx.now));
                     await stubPairRpc(h);
                     await seedPair(h, []);
@@ -244,12 +246,11 @@ export default function (kit) {
                 rec("0. the pair roster, the stubs and an empty pair list were set", ctx.arrangeError == null && ctx.ready === true, ctx.arrangeError ?? { ready: ctx.ready });
                 if (ctx.arrangeError != null) return steps;
 
-                const workerBlock = "fx-blk-pair-worker";
                 const view = pairView(ctx.now);
 
                 await run("add-judge-menu", async () => {
                     // an agent in no pair: the Add judge button, and under it K2's menu
-                    await show(h, PAIR.worker, workerBlock);
+                    await show(h, PAIR.worker);
                     await waitHeader(h, ctx.worker, `!!${HEADER}.querySelector("[data-pair-add-judge]")`);
                     const header = await h.ev(readHeader);
                     await click(h, "[data-agent-header] [data-pair-add-judge]");
@@ -394,7 +395,7 @@ export default function (kit) {
 
                 await run("judge-header", async () => {
                     // the judge's own header: Judging, opening the same conversation, and no Add judge
-                    await show(h, PAIR.judge, "fx-blk-pair-judge");
+                    await show(h, PAIR.judge);
                     await waitHeader(h, "Judge: Plan oracle-tightening", `!!${HEADER}.querySelector("[data-pair-open]")`);
                     await polishNap(300);
                     const header = await h.ev(readHeader);
@@ -418,7 +419,7 @@ export default function (kit) {
                 await run("no-judge-left", async () => {
                     // two judges in the pair: the label counts them, and no live agent of the project is left to add
                     await seedPair(h, [pairView(ctx.now, { judges: 2 })]);
-                    await show(h, PAIR.worker, workerBlock);
+                    await show(h, PAIR.worker);
                     await waitHeader(h, ctx.worker, `!!${HEADER}.querySelector("[data-pair-open]")`);
                     await polishNap(300);
                     const header = await h.ev(readHeader);
@@ -476,6 +477,7 @@ export default function (kit) {
                 await attempt("put the generated pair commands back", () => restorePairRpc(h));
                 await attempt("clear the pair mocks", () => seedPair(h, null));
                 await attempt("drop the pair roster", () => restoreRoster(h));
+                await attempt("put the fixture flag back", () => markFixture(h, false));
                 // the seen counts are kept in localStorage: the page's own value goes back
                 await attempt("restore what was seen", () =>
                     h.ev(
