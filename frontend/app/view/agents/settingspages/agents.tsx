@@ -1,8 +1,8 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// Settings > Agents: the Claude subscription new agents run on, when an idle agent sleeps, and the flags every
-// launch starts with.
+// Settings > Agents: the Claude subscription new agents run on, the GitHub account they commit with, when an idle
+// agent sleeps, and the flags every launch starts with.
 
 import { ContextMenuModel } from "@/app/store/contextmenu";
 import { getSettingsKeyAtom } from "@/app/store/global";
@@ -13,7 +13,7 @@ import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { cn, fireAndForget } from "@/util/util";
 import { useAtom, useAtomValue } from "jotai";
 import { Check, Ellipsis } from "lucide-react";
-import { lazy, Suspense, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useContext, useEffect, useMemo, useState } from "react";
 import type { AgentsViewModel } from "../agents";
 import { formatAgeShort } from "../agentsviewmodel";
 import { defaultAccountName, knownClaudeEmails, quotaLine, rowQuota, type RowQuota } from "../claudeaccount";
@@ -34,6 +34,7 @@ import {
     FLAG_RUNTIMES,
     Note,
     RowCtx,
+    RowInlineInput,
     Select,
     SettingCard,
     SettingRow,
@@ -41,6 +42,7 @@ import {
     Toggle,
     writeConfig,
 } from "../settingsui";
+import { GitAccountsCard } from "./gitaccounts";
 
 export function AgentsPage({
     model,
@@ -54,6 +56,7 @@ export function AgentsPage({
     return (
         <>
             <ClaudeAccountCard model={model} />
+            <GitAccountsCard />
             <SettingCard id="sleep" label="Sleep idle agents">
                 <SleepRows />
             </SettingCard>
@@ -191,71 +194,6 @@ function errorText(e: unknown): string {
 const ClaudeSigninModal = lazy(() =>
     import("@/app/cockpit/claude-signin-modal").then((m) => ({ default: m.ClaudeSigninModal }))
 );
-
-// A row's in-place field (rename, or the email to tie the account to): Enter commits, Esc cancels, and a blur
-// commits what was typed, or cancels when there is nothing new. Its clicks and keys never reach the row, so
-// they never select it.
-function RowInlineInput({
-    initial,
-    placeholder,
-    label,
-    attrs,
-    onCommit,
-    onCancel,
-}: {
-    initial: string;
-    placeholder: string;
-    label: string;
-    attrs: Record<string, string>;
-    onCommit: (v: string) => void;
-    onCancel: () => void;
-}) {
-    const ref = useRef<HTMLInputElement>(null);
-    const [draft, setDraft] = useState(initial);
-    const done = useRef(false);
-    useEffect(() => {
-        ref.current?.focus();
-        ref.current?.select();
-    }, []);
-    // the unmount that follows a finish can blur the field once more
-    const finish = (commit: boolean) => {
-        if (done.current) {
-            return;
-        }
-        done.current = true;
-        const next = draft.trim();
-        if (commit && next !== "" && next !== initial) {
-            onCommit(next);
-        } else {
-            onCancel();
-        }
-    };
-    return (
-        <input
-            ref={ref}
-            type="text"
-            {...attrs}
-            value={draft}
-            placeholder={placeholder}
-            aria-label={label}
-            spellCheck={false}
-            onChange={(e) => setDraft(e.target.value)}
-            onBlur={() => finish(true)}
-            onClick={(e) => e.stopPropagation()}
-            onKeyDown={(e) => {
-                e.stopPropagation();
-                if (e.key === "Enter") {
-                    e.preventDefault();
-                    finish(true);
-                } else if (e.key === "Escape") {
-                    e.preventDefault();
-                    finish(false);
-                }
-            }}
-            className="w-[220px] max-w-full rounded border border-edge-mid bg-surface px-2.5 py-[4px] text-[12px] font-normal text-primary outline-none focus:border-accent-700"
-        />
-    );
-}
 
 // The account list and the tokens live behind the claudeaccount RPCs, not in settings; only the active
 // id is a setting (claude:activeaccount). wavesrv applies that setting to its own environment before it

@@ -1238,6 +1238,78 @@ func GetWorkerCapacityCommand(w *wshutil.WshRpc, opts *wshrpc.RpcOpts) (*wshrpc.
 	return resp, err
 }
 
+// command "gitaccountadd", wshserver.GitAccountAddCommand
+func GitAccountAddCommand(w *wshutil.WshRpc, data wshrpc.CommandGitAccountAddData, opts *wshrpc.RpcOpts) (*wshrpc.GitAccountData, error) {
+	resp, err := sendRpcRequestCallHelper[*wshrpc.GitAccountData](w, "gitaccountadd", data, opts)
+	return resp, err
+}
+
+// command "gitaccountaddroot", wshserver.GitAccountAddRootCommand
+func GitAccountAddRootCommand(w *wshutil.WshRpc, data wshrpc.CommandGitAccountRootData, opts *wshrpc.RpcOpts) error {
+	_, err := sendRpcRequestCallHelper[any](w, "gitaccountaddroot", data, opts)
+	return err
+}
+
+// command "gitaccountchecktoken", wshserver.GitAccountCheckTokenCommand
+func GitAccountCheckTokenCommand(w *wshutil.WshRpc, data wshrpc.CommandGitAccountTokenData, opts *wshrpc.RpcOpts) (*wshrpc.GitHubUserData, error) {
+	resp, err := sendRpcRequestCallHelper[*wshrpc.GitHubUserData](w, "gitaccountchecktoken", data, opts)
+	return resp, err
+}
+
+// command "gitaccountfix", wshserver.GitAccountFixCommand
+func GitAccountFixCommand(w *wshutil.WshRpc, data wshrpc.CommandGitAccountFixData, opts *wshrpc.RpcOpts) (*wshrpc.GitAccountFixRtnData, error) {
+	resp, err := sendRpcRequestCallHelper[*wshrpc.GitAccountFixRtnData](w, "gitaccountfix", data, opts)
+	return resp, err
+}
+
+// command "gitaccountlist", wshserver.GitAccountListCommand
+func GitAccountListCommand(w *wshutil.WshRpc, opts *wshrpc.RpcOpts) (*wshrpc.GitAccountListRtnData, error) {
+	resp, err := sendRpcRequestCallHelper[*wshrpc.GitAccountListRtnData](w, "gitaccountlist", nil, opts)
+	return resp, err
+}
+
+// command "gitaccountremove", wshserver.GitAccountRemoveCommand
+func GitAccountRemoveCommand(w *wshutil.WshRpc, data wshrpc.CommandGitAccountLoginData, opts *wshrpc.RpcOpts) error {
+	_, err := sendRpcRequestCallHelper[any](w, "gitaccountremove", data, opts)
+	return err
+}
+
+// command "gitaccountremoveroot", wshserver.GitAccountRemoveRootCommand
+func GitAccountRemoveRootCommand(w *wshutil.WshRpc, data wshrpc.CommandGitAccountRootData, opts *wshrpc.RpcOpts) error {
+	_, err := sendRpcRequestCallHelper[any](w, "gitaccountremoveroot", data, opts)
+	return err
+}
+
+// command "gitaccountscan", wshserver.GitAccountScanCommand
+func GitAccountScanCommand(w *wshutil.WshRpc, opts *wshrpc.RpcOpts) (*wshrpc.GitAccountScanRtnData, error) {
+	resp, err := sendRpcRequestCallHelper[*wshrpc.GitAccountScanRtnData](w, "gitaccountscan", nil, opts)
+	return resp, err
+}
+
+// command "gitaccountsetdefault", wshserver.GitAccountSetDefaultCommand
+func GitAccountSetDefaultCommand(w *wshutil.WshRpc, data wshrpc.CommandGitAccountLoginData, opts *wshrpc.RpcOpts) error {
+	_, err := sendRpcRequestCallHelper[any](w, "gitaccountsetdefault", data, opts)
+	return err
+}
+
+// command "gitaccountsettoken", wshserver.GitAccountSetTokenCommand
+func GitAccountSetTokenCommand(w *wshutil.WshRpc, data wshrpc.CommandGitAccountTokenData, opts *wshrpc.RpcOpts) error {
+	_, err := sendRpcRequestCallHelper[any](w, "gitaccountsettoken", data, opts)
+	return err
+}
+
+// command "gitaccounttokenstate", wshserver.GitAccountTokenStateCommand
+func GitAccountTokenStateCommand(w *wshutil.WshRpc, data wshrpc.CommandGitAccountLoginData, opts *wshrpc.RpcOpts) (*wshrpc.GitAccountTokenStateData, error) {
+	resp, err := sendRpcRequestCallHelper[*wshrpc.GitAccountTokenStateData](w, "gitaccounttokenstate", data, opts)
+	return resp, err
+}
+
+// command "gitaccountupdate", wshserver.GitAccountUpdateCommand
+func GitAccountUpdateCommand(w *wshutil.WshRpc, data wshrpc.CommandGitAccountUpdateData, opts *wshrpc.RpcOpts) error {
+	_, err := sendRpcRequestCallHelper[any](w, "gitaccountupdate", data, opts)
+	return err
+}
+
 // command "gitagentedits", wshserver.GitAgentEditsCommand
 func GitAgentEditsCommand(w *wshutil.WshRpc, data wshrpc.CommandGitAgentEditsData, opts *wshrpc.RpcOpts) (*wshrpc.CommandGitAgentEditsRtnData, error) {
 	resp, err := sendRpcRequestCallHelper[*wshrpc.CommandGitAgentEditsRtnData](w, "gitagentedits", data, opts)

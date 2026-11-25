@@ -12,7 +12,7 @@ Mở bằng nút **Settings** ở đáy nav rail, hoặc `Ctrl+G` rồi `,`. Set
 - **Tìm kiếm.** Ô **Search settings** ở đầu cột trái lọc theo tiêu đề, mô tả và khóa cấu hình, trên mọi trang; chỉ những trang còn kết quả mới hiện.
 - Cấu hình dạng `synced` nằm trong `settings.json` ở thư mục `config` (xem [Bắt đầu](getting-started.md#dữ-liệu-cấu-hình-và-log)); `Revert` xóa khóa đó để mặc định của app có hiệu lực lại.
 
-<!-- shot: settings-agents.png | Trang Agents: thẻ Claude account (hàng Default với tag /login và hai thanh 5h/Week, một hàng tài khoản token với menu ⋯), thẻ Sleep idle agents, thẻ Launch flags với tab runtime | Mở Settings (`Ctrl+G` `,`), bấm `[data-section="agents"]`. Tài khoản token cần thêm thật qua **+ Add account**; thẻ Launch flags là `[data-flag-tabs]`. Scenario CDP `settings-pages` đi qua cả chín trang -->
+<!-- shot: settings-agents.png | Trang Agents: thẻ Claude account (hàng Default với tag /login và hai thanh 5h/Week, một hàng tài khoản token với menu ⋯), thẻ GitHub accounts (hàng Default và các tài khoản gắn với thư mục), thẻ Sleep idle agents, thẻ Launch flags với tab runtime | Mở Settings (`Ctrl+G` `,`), bấm `[data-section="agents"]`. Tài khoản token cần thêm thật qua **+ Add account**; thẻ Launch flags là `[data-flag-tabs]`. Scenario CDP `settings-pages` đi qua cả chín trang -->
 
 ## Làm thế nào
 
@@ -29,6 +29,20 @@ Trang **Agents**, thẻ **Claude account**. Mỗi tài khoản là một dòng: 
 **Tài khoản riêng cho một project**: **+ Project account** gắn một tài khoản cho một project. Agent và terminal mở trong project đó dùng tài khoản này, council và lệnh AI nền chạy trong thư mục đó cũng vậy; các project khác vẫn dùng tài khoản đang được chọn. Footer của hộp New ghi tên tài khoản mà lần khởi chạy sẽ dùng.
 
 Quota Claude là của tài khoản đang chọn. Tài khoản thêm bằng token không đọc được quota khi không có session chạy; số của nó có sau khi một session của nó báo về.
+
+### Gắn tài khoản GitHub với thư mục
+
+Trang **Agents**, thẻ **GitHub accounts**, ngay dưới Claude account. Dùng khi một máy có hai tài khoản GitHub (cá nhân và công việc): mỗi tài khoản gắn với một hay nhiều thư mục gốc, và mọi repo nằm dưới thư mục đó commit bằng tên và email của tài khoản ấy, push bằng token của nó, ở bất kỳ nơi nào git chạy (terminal của arcterm, terminal khác, IDE), kể cả khi arcterm đang đóng. Ngoài các thư mục gốc, git vẫn dùng danh tính và credential helper của máy như trước; thẻ gọi đó là dòng **Default**.
+
+Thẻ viết một khối có đánh dấu vào `~/.gitconfig` (mỗi thư mục là một `includeIf`) và một file `~/.gitconfig-<login>` cho mỗi tài khoản. Token nằm trong kho credential của hệ điều hành (Keychain trên Mac, Credential Manager trên Windows), không nằm trong arcterm hay trong repo. Mỗi máy giữ danh sách riêng; không có gì đồng bộ qua vault.
+
+1. **Thêm tài khoản**: bấm **+ Add account**, nhập login GitHub và dán token (classic hoặc fine-grained; token fine-grained chỉ phủ một chủ sở hữu, nên tài khoản push vào repo của một tổ chức cần token classic hoặc token tạo cho tổ chức đó). **Check token** hỏi GitHub token này của ai và từ chối nếu bị từ chối hoặc không đúng login. Bước sau hỏi email commit (điền sẵn email công khai của GitHub), thư mục gốc đầu tiên (ô đường dẫn hoặc **Browse…**) và, với tài khoản đầu tiên, login mà git dùng ở mọi thư mục khác. **Save** ghi cấu hình và lưu token.
+2. **Mỗi dòng** ghi login, tên và email commit, thư mục (hoặc **No folder** khi tài khoản chưa có thư mục), trạng thái token và số repo dưới các thư mục đó (dấu `—` trong lúc đang quét). Trạng thái token là **Token saved**, **Token refused by GitHub**, **No token saved** hoặc **Couldn't reach GitHub** (máy offline không bị đọc là token bị từ chối); thẻ kiểm tra mỗi lần mở, không kiểm tra nền.
+3. Menu **⋯** của một tài khoản: **Rename** (tên commit; login không đổi được), **Change email**, **Replace token** (kiểm tra token mới như lúc thêm), **Add folder**, **Remove folder** (một dòng cho mỗi thư mục) và **Remove account** (xóa token khỏi kho credential và file `~/.gitconfig-<login>`; bị từ chối khi đó là login mặc định). **+ Add folder** ở chân thẻ làm như **Add folder**: có từ hai tài khoản thì hỏi chọn tài khoản trước. Thư mục phải là đường dẫn tuyệt đối đang tồn tại và không được nằm trong, hay chứa, thư mục của tài khoản khác.
+4. Menu **⋯** của dòng **Default** có **Change default login**: login mà git dùng ở các thư mục ngoài mọi thư mục gốc. arcterm không bao giờ đổi `user.name` hay `user.email` toàn cục.
+5. **Sửa token nằm trong remote URL**: nếu repo dưới một thư mục có token trong URL remote (`https://<token>@github.com/...`, hiện ra trong `git remote -v` và transcript của agent), dải cảnh báo dưới dòng tài khoản đếm chúng, kèm repo tự đặt tên hoặc email riêng. Nút trong dải mở danh sách mọi repo sẽ bị đổi, mỗi dòng có ô tick: dòng token và dòng `~/.git-credentials` (các dòng github.com giữ token dưới dạng văn bản thường) được tick sẵn; dòng danh tính để trống, vì repo có thể đặt danh tính riêng có chủ ý. Bỏ tick dòng nào thì để nguyên dòng đó, rồi bấm **Fix N items**: arcterm sao lưu từng file trước khi sửa. Mỗi dòng báo kết quả riêng; dòng lỗi hiện màu lỗi, hộp thoại ở lại và những dòng còn lại vẫn được sửa. Nút chỉ bật khi tài khoản đã có token trong kho credential và GitHub chấp nhận token đó, để việc gỡ token khỏi URL không làm lần push kế tiếp hỏng.
+
+Bản sao lưu nằm trong thư mục dữ liệu của arcterm (`git-accounts-backup/`, giữ 20 lần gần nhất). Thẻ không viết lại các commit cũ đã đi với email sai, không đụng SSH key và chỉ hỗ trợ github.com.
 
 ### Chọn model cho run mới
 
@@ -138,7 +152,7 @@ Ba công tắc thông báo đầu mặc định bật; **Telegram** mặc địn
 
 ### Agents
 
-Gồm ba thẻ: **Claude account**, **Sleep idle agents** và **Launch flags**. Cách dùng ở phần "Làm thế nào" bên trên.
+Gồm bốn thẻ: **Claude account**, **GitHub accounts**, **Sleep idle agents** và **Launch flags**. Cách dùng của hai thẻ tài khoản ở phần "Làm thế nào" bên trên.
 
 **Sleep idle agents** (bật sẵn, 30 phút): agent rảnh quá số phút này thì ngủ, tức tiến trình dừng để trả RAM nhưng hàng và hội thoại vẫn còn; **Wake**, hoặc một tin gửi tới nó, cho nó làm tiếp từ chỗ cũ. Khi RAM thiếu, agent rảnh lâu nhất ngủ sớm hơn. Agent Claude rảnh mà tiến trình của nó đã phình quá 1.5 GB thì ngủ sau một phút rảnh, không đợi hết số phút (Claude Code có lúc tự ngốn CPU khi rảnh và RAM lớn dần mãi). Không bao giờ ngủ: agent bạn đang xem (kể cả khi bạn chuyển sang cửa sổ khác mà nó vẫn hiện trên Agent), agent của run, agent còn việc chạy nền.
 

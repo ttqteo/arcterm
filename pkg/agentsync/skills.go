@@ -5,12 +5,14 @@ package agentsync
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
+	"syscall"
 
 	"github.com/wavetermdev/waveterm/pkg/harness"
 	"gopkg.in/yaml.v3"
@@ -510,7 +512,9 @@ func observeSkills(dir string) ([]ObservedEntry, error) {
 func canonicalSkills(skillsRoot string) ([]string, error) {
 	entries, err := os.ReadDir(skillsRoot)
 	if err != nil {
-		if os.IsNotExist(err) {
+		// a file where a parent folder should be is "no vault yet" on every OS (Windows says not found, a Mac
+		// says not a directory): the plan stands, and the apply reports the folder it cannot create
+		if os.IsNotExist(err) || errors.Is(err, syscall.ENOTDIR) {
 			return nil, nil
 		}
 		return nil, fmt.Errorf("reading canonical skills: %w", err)

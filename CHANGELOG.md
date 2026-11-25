@@ -34,6 +34,10 @@ and a picture given to a line that is not big.
 
 ### Added
 
+- GitHub accounts, one per folder: in Settings → Agents, tie each GitHub account to the folders its repos live in, and
+  every repo under them commits with that account's name and email and pushes with its token, in any terminal or IDE,
+  with arcterm open or not. The card also finds repos that keep a token in their remote URL and removes it in one
+  reviewed pass. <!-- big --> <!-- shot: 1.11.0-git-accounts.webp -->
 - Open a tool in a split: `Ctrl`+`Enter` (`⌘`+`Enter` on a Mac) in Open a tool (`Ctrl`+`Shift`+`O`) opens it as a cell
   under the agent you are looking at, beside the Shift+Enter that opens it in the panel. With the split full (4 cells)
   the tool opens in the centre. <!-- try: open-tool -->
