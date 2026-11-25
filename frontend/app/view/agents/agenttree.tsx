@@ -279,7 +279,12 @@ import {
     getSubagentExpandAtom,
     toggleSubagentExpand,
 } from "./session-models/agentstatusstore";
-import { subagentExpanded, visibleSubagents, type SubagentState } from "./session-models/sessionviewmodel";
+import {
+    SUBAGENT_FOLD_AT,
+    subagentExpanded,
+    visibleSubagents,
+    type SubagentState,
+} from "./session-models/sessionviewmodel";
 import { DigitHint } from "./digithint";
 import { ServerMark, StatusDot } from "./statusdot";
 import { folderServers, rowServers } from "./treeservers";
@@ -575,11 +580,13 @@ function Guides({ depth }: { depth: 1 | 2 }) {
 }
 
 // `word` follows the label only where its @container line has room for it, so a narrow sidebar keeps just the count;
-// `wide` asks for more room, for a line that also holds a run's progress and badges
+// `wide` asks for more room, for a line that also holds a run's progress and badges; `crowded` more still, for an
+// agent's line that holds two fold chips beside its RAM, tokens and age (with both words it ran past the row's end)
 function FoldChip({
     label,
     word,
     wide,
+    crowded,
     open,
     onToggle,
     ariaShow,
@@ -588,6 +595,7 @@ function FoldChip({
     label: string;
     word?: string;
     wide?: boolean;
+    crowded?: boolean;
     open: boolean;
     onToggle: () => void;
     ariaShow: string;
@@ -607,7 +615,11 @@ function FoldChip({
         >
             {open ? <ChevronDown size={10} aria-hidden /> : <ChevronRight size={10} aria-hidden />}
             {label}
-            {word ? <span className={cn("hidden", wide ? "@[250px]:inline" : "@[200px]:inline")}>{word}</span> : null}
+            {word ? (
+                <span className={cn("hidden", crowded ? "@[320px]:inline" : wide ? "@[250px]:inline" : "@[200px]:inline")}>
+                    {word}
+                </span>
+            ) : null}
         </button>
     );
 }
@@ -1393,28 +1405,33 @@ function ParentRow({
         );
     };
 
-    const subsChip =
-        subs.length > 0 ? (
-            <FoldChip
-                label={String(subs.length)}
-                word={subs.length === 1 ? "subagent" : "subagents"}
-                open={expanded}
-                onToggle={() => toggleSubagentExpand(oref, expanded)}
-                ariaShow="Show subagents"
-                ariaHide="Hide subagents"
-            />
-        ) : null;
-    const tasksChip =
-        taskRows.length >= TASK_FOLD_AT ? (
-            <FoldChip
-                label={String(taskRows.length)}
-                word="running"
-                open={tasksOpenNow}
-                onToggle={() => toggleTasksOpen(agent.id, tasksOpenNow)}
-                ariaShow="Show background tasks"
-                ariaHide="Hide background tasks"
-            />
-        ) : null;
+    // a lone subagent always shows under the row, so only from SUBAGENT_FOLD_AT on is there a chip to fold them
+    const hasSubsChip = subs.length >= SUBAGENT_FOLD_AT;
+    const hasTasksChip = taskRows.length >= TASK_FOLD_AT;
+    // both chips on one line leave their words less room before the RAM, tokens and age columns
+    const crowded = hasSubsChip && hasTasksChip;
+    const subsChip = hasSubsChip ? (
+        <FoldChip
+            label={String(subs.length)}
+            word="subagents"
+            crowded={crowded}
+            open={expanded}
+            onToggle={() => toggleSubagentExpand(oref, expanded)}
+            ariaShow="Show subagents"
+            ariaHide="Hide subagents"
+        />
+    ) : null;
+    const tasksChip = hasTasksChip ? (
+        <FoldChip
+            label={String(taskRows.length)}
+            word="running"
+            crowded={crowded}
+            open={tasksOpenNow}
+            onToggle={() => toggleTasksOpen(agent.id, tasksOpenNow)}
+            ariaShow="Show background tasks"
+            ariaHide="Hide background tasks"
+        />
+    ) : null;
 
     // a double-click opens the row: the agent chosen and typing in its terminal, as Ctrl+Tab from a terminal brings it.
     // Folding a lead's workers or an agent's subagents is its chip's. A click on a button inside the row is that button's.

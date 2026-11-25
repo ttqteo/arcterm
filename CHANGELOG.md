@@ -111,6 +111,9 @@ and a picture given to a line that is not big.
 
 ### Fixed
 
+- An agent's row in the tree no longer runs past its edge when it has subagents and background tasks: a single
+  subagent or background task just shows under the row, a fold chip comes from two on, and two fold chips on one line
+  keep only their counts.
 - A new agent whose terminal was not on screen when it started (Start now on a held agent, or another view over it)
   starts at once and works on its task, instead of waiting until you open it.
 - On Windows, arcterm no longer pops up a terminal window when it checks your agent CLIs' versions (such as

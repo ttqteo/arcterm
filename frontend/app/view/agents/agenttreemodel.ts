@@ -821,7 +821,7 @@ export interface BackgroundTaskRow {
 }
 
 /** How many running background tasks an agent holds before its rows fold behind a chip by default. */
-export const TASK_FOLD_AT = 3;
+export const TASK_FOLD_AT = 2;
 
 /** Pure: whether an agent's `n` running background-task rows show. Fewer than TASK_FOLD_AT always show and take no
  *  chip, since each leaves the tree when its command ends; from TASK_FOLD_AT on they fold, unless the person opened

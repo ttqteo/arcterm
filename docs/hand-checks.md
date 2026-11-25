@@ -23,6 +23,10 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
 
 ## 2026-11-25
 
+- [ ] (arcterm) Agent row fold chips from two on: in the Agents tree, an agent with one subagent or one background
+  task shows it under the row with no chip; from two of either a chip folds them; with both chips on one line they keep
+  their count only and the RAM/tokens/age columns stay inside the row (no overflow). `agenttree.tsx`.
+
 - [ ] (arcterm) **Judge for a choice question, the light mark on real haiku** (the Final's `chat-judge` fakes both
   judges). Have a Claude agent end a turn on an A-or-B question written as prose ("… Mình nghiêng A. A hay B?"). Under
   its message a line reads "Gợi ý <one chip>" with "· rê vào để xem lý do"; hovering the name shows a one-sentence reason
