@@ -119,7 +119,9 @@ var lookPath = exec.LookPath
 
 // versionCommand is a seam for tests; production behavior is `<bin> --version` under the caller ctx.
 var versionCommand = func(ctx context.Context, bin string) ([]byte, error) {
-	return exec.CommandContext(ctx, bin, "--version").CombinedOutput()
+	cmd := exec.CommandContext(ctx, bin, "--version")
+	HideWindow(cmd)
+	return cmd.CombinedOutput()
 }
 
 // ValidateCapable checks that the runtime is in the catalog and may do operation, without probing the
