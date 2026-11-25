@@ -49,6 +49,7 @@ import {
     toolsErrorAtom,
     toolsStatusAtom,
     type InstallResult,
+    type OpenToolPlace,
     type OpenToolResult,
 } from "./toolsstore";
 
@@ -256,7 +257,7 @@ export function ToolPicker({ model }: { model: AgentsViewModel }) {
         listRef.current?.querySelector(`[data-idx="${selIndex}"]`)?.scrollIntoView({ block: "nearest" });
     }, [selIndex, rows.length]);
 
-    const openRow = async (row: PickerRow, place: "centre" | "panel") => {
+    const openRow = async (row: PickerRow, place: OpenToolPlace) => {
         const why = openRefusal(row, PLATFORM);
         if (why != null) {
             setNotice(why);
@@ -442,7 +443,7 @@ export function ToolPicker({ model }: { model: AgentsViewModel }) {
                             ))
                         )}
                     </div>
-                    <div className="flex shrink-0 items-center gap-3.5 border-t border-border px-4 py-[9px] text-[12px] text-muted">
+                    <div className="flex shrink-0 flex-wrap items-center gap-x-3.5 gap-y-1 border-t border-border px-4 py-[9px] text-[12px] text-muted">
                         {hints.open ? (
                             <span className="flex items-center gap-1.5">
                                 <span className={KEY_CAP}>{formatChordString("Enter")}</span>
@@ -453,6 +454,12 @@ export function ToolPicker({ model }: { model: AgentsViewModel }) {
                             <span className="flex items-center gap-1.5">
                                 <span className={KEY_CAP}>{formatChordString("Shift:Enter")}</span>
                                 {hints.panel}
+                            </span>
+                        ) : null}
+                        {hints.split ? (
+                            <span className="flex items-center gap-1.5">
+                                <span className={KEY_CAP}>{formatChordString("Mod:Enter")}</span>
+                                {hints.split}
                             </span>
                         ) : null}
                         {hints.install ? (

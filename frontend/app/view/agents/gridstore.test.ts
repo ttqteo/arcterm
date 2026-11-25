@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { globalStore } from "@/app/store/jotaiStore";
-import { atom } from "jotai";
+import { atom, type PrimitiveAtom } from "jotai";
 import { beforeEach, describe, expect, it } from "vitest";
 import { boardEntriesAtom } from "../boards/boardentries";
 import { centerModeAtom } from "./agentcenter";
@@ -19,10 +19,13 @@ import {
     isInSplit,
     openBoardCell,
     openInSplit,
+    openInSplitWhenLive,
+    pendingSplitAtom,
     projectGridsAtom,
     removeBoardCell,
     removeFromGrid,
     removeFromSplit,
+    settlePendingSplit,
     treeSplits,
     type GridModel,
 } from "./gridstore";
@@ -289,6 +292,68 @@ describe("openInSplit", () => {
             ],
         });
         expect(globalStore.get(m.focusIdAtom)).toBe("t");
+    });
+});
+
+describe("openInSplit below", () => {
+    it("puts the terminal under the agent alone on screen", () => {
+        const m = model(["a"], "a", ["t"]);
+        expect(openInSplit(m, "t", "bottom")).toBe(true);
+        expect(globalStore.get(agentGridAtom)).toEqual({
+            ...g(["a", "t"], "t"),
+            places: [
+                { row: 1, col: 1, rowSpan: 1, colSpan: 2 },
+                { row: 2, col: 1, rowSpan: 1, colSpan: 2 },
+            ],
+        });
+    });
+});
+
+describe("openInSplitWhenLive", () => {
+    // a terminal that arrives on the roster later, with no block at first, as a fresh launch does
+    function launching(focus: string) {
+        const terminals = atom<{ id: string; blockId?: string }[]>([]) as PrimitiveAtom<
+            { id: string; blockId?: string }[]
+        >;
+        const m: GridModel = {
+            focusIdAtom: atom<string | undefined>(focus),
+            agentsAtom: atom([{ id: focus, blockId: `blk-${focus}` }]),
+            terminalsAtom: terminals,
+        };
+        return { m, terminals };
+    }
+    beforeEach(() => globalStore.set(pendingSplitAtom, null));
+
+    it("waits for the terminal's block, then gives it the cell under the agent", () => {
+        const { m, terminals } = launching("a");
+        openInSplitWhenLive(m, "t");
+        expect(globalStore.get(pendingSplitAtom)).toBe("t");
+        expect(globalStore.get(m.focusIdAtom)).toBe("a");
+        globalStore.set(terminals, [{ id: "t" }]);
+        settlePendingSplit(m);
+        expect(globalStore.get(pendingSplitAtom)).toBe("t");
+        globalStore.set(terminals, [{ id: "t", blockId: "blk-t" }]);
+        settlePendingSplit(m);
+        expect(globalStore.get(pendingSplitAtom)).toBeNull();
+        expect(globalStore.get(agentGridAtom).ids).toEqual(["a", "t"]);
+        expect(globalStore.get(agentGridAtom).places?.[1]).toEqual({ row: 2, col: 1, rowSpan: 1, colSpan: 2 });
+        expect(globalStore.get(m.focusIdAtom)).toBe("t");
+    });
+    it("splits at once for a terminal already live", () => {
+        const m = model(["a"], "a", ["t"]);
+        openInSplitWhenLive(m, "t");
+        expect(globalStore.get(pendingSplitAtom)).toBeNull();
+        expect(globalStore.get(agentGridAtom).ids).toEqual(["a", "t"]);
+    });
+    it("shows the terminal in the centre when the grid has no room for it", () => {
+        const m = model(["a", "b", "c", "d"], "a", ["t"]);
+        globalStore.set(agentGridAtom, g(["a", "b", "c", "d"], "a"));
+        globalStore.set(centerModeAtom, "council");
+        openInSplitWhenLive(m, "t");
+        expect(globalStore.get(pendingSplitAtom)).toBeNull();
+        expect(globalStore.get(agentGridAtom).ids).toEqual(["a", "b", "c", "d"]);
+        expect(globalStore.get(m.focusIdAtom)).toBe("t");
+        expect(globalStore.get(centerModeAtom)).toBe("terminal");
     });
 });
 

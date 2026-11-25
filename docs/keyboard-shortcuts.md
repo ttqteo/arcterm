@@ -108,6 +108,7 @@ agent's header `…` menu, and Search → Commands → "Open a tool…". The sea
 | `↑` / `↓` | Move through the list (Installed, Not installed, Yours); the pointer moves the selection too |
 | `Enter` | Open the selected tool in the centre. A tool that is not installed, is installing, failed, or is not on PATH answers with a line instead |
 | `Shift`+`Enter` | Open it in the panel under the agent |
+| `Mod`+`Enter` | Open it as a split cell under the agent in view; with the split full (4 cells) it opens in the centre |
 | `Mod`+`I` | Install the selected built-in tool that is not installed |
 | `Esc` | Close |
 

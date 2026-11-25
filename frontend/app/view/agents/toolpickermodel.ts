@@ -190,16 +190,18 @@ export function openRefusal(row: PickerRow, platform: string): string | null {
 export interface FooterHints {
     open: string | null; // "Open lazygit"; null when the selected row does not open
     panel: string | null;
+    split: string | null;
     install: boolean; // Ctrl I does something on the selected row
 }
 
 export function footerHints(row: PickerRow | undefined): FooterHints {
     if (row == null) {
-        return { open: null, panel: null, install: false };
+        return { open: null, panel: null, split: null, install: false };
     }
     return {
         open: row.tool.found ? `Open ${row.tool.name}` : null,
         panel: row.tool.found ? "Open in the panel" : null,
+        split: row.tool.found ? "Open in a split" : null,
         install: row.state === "not-installed",
     };
 }
@@ -214,13 +216,14 @@ export interface PickerKeyEvent {
 
 export type PickerAction =
     | { kind: "move"; sel: number }
-    | { kind: "open"; place: "centre" | "panel" }
+    | { kind: "open"; place: "centre" | "panel" | "split" }
     | { kind: "install" }
     | { kind: "close" };
 
 // What a key does in the dialog; null leaves it to the search box (typing, the caret, Backspace). Enter on any row is an
 // open: whether the row can open is the dialog's to say (openRefusal), so a tool that is not installed answers rather
-// than doing nothing.
+// than doing nothing. Enter opens in the centre, Shift+Enter in the panel, Mod+Enter (Ctrl, ⌘ on a Mac) in a split under
+// the agent in view.
 export function pickerKey(state: { sel: number; rows: PickerRow[] }, e: PickerKeyEvent): PickerAction | null {
     const count = state.rows.length;
     const sel = Math.max(0, Math.min(state.sel, count - 1));
@@ -230,8 +233,16 @@ export function pickerKey(state: { sel: number; rows: PickerRow[] }, e: PickerKe
             return count > 0 ? { kind: "move", sel: (sel + 1) % count } : null;
         case "ArrowUp":
             return count > 0 ? { kind: "move", sel: (sel - 1 + count) % count } : null;
-        case "Enter":
-            return count > 0 && plain ? { kind: "open", place: e.shiftKey ? "panel" : "centre" } : null;
+        case "Enter": {
+            if (count === 0) {
+                return null;
+            }
+            if (plain) {
+                return { kind: "open", place: e.shiftKey ? "panel" : "centre" };
+            }
+            const mod = e.ctrlKey !== e.metaKey; // one of them, not both
+            return mod && !e.shiftKey && !e.altKey ? { kind: "open", place: "split" } : null;
+        }
         case "Escape":
             return { kind: "close" };
         case "i":

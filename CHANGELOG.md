@@ -34,6 +34,9 @@ and a picture given to a line that is not big.
 
 ### Added
 
+- Open a tool in a split: `Ctrl`+`Enter` (`⌘`+`Enter` on a Mac) in Open a tool (`Ctrl`+`Shift`+`O`) opens it as a cell
+  under the agent you are looking at, beside the Shift+Enter that opens it in the panel. With the split full (4 cells)
+  the tool opens in the centre. <!-- try: open-tool -->
 - Judge pairs stay readable after they end: Library's Conversations lists each pair under the session of the agent that
   worked, read-only with its Decided list, and pairs synced from your other machine read the same. `wsh read <pair id>`
   prints one as text.

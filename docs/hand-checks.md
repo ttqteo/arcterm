@@ -23,6 +23,10 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
 
 ## 2026-11-25
 
+- [ ] (arcterm) **Open a tool in a split.** With one agent in view, press `Ctrl+Shift+O`, pick a tool and press
+  `Ctrl+Enter`: the picker closes and the tool appears as a cell under the agent (agent top, tool bottom), focused,
+  the cell growing in with the grid's own motion rather than snapping; the footer reads `Ctrl Enter Open in a split`
+  and wraps instead of overflowing in a narrow window. With 4 cells already, the tool opens in the centre instead.
 - [ ] (arcterm) Library pairs: take the What's new shot of a pair nested in Conversations and promote the Added line to
   big. In the dev app seed an ended pair under a session, open Library → Conversations, then
   `node scripts/whatsnew-shot.mjs library-pairs --selector "[data-agent-history]"` and move the Added line in
