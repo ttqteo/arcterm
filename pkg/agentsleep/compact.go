@@ -143,6 +143,32 @@ func cacheRunningOut(c Candidate, now time.Time, s Settings) bool {
 	return cacheLeft(c.Cache, now) <= CompactLead
 }
 
+// CompactSkip is why an idle Claude agent that a compaction would be worth is not compacted, for the loop's log; "" when
+// nothing stands in the way, when its context is under the threshold, or when Claude Code's own idle compaction looks
+// after it. The 2026-11-25 re-measure found idle 100k+ agents going cold with nothing in the log to say why. A run's
+// agent and one with no control stream have no cache read (the transcript is read only when a compaction could follow),
+// so those two reasons stand alone; a cache gone cold under a context over the threshold is the miss itself.
+func CompactSkip(c Candidate, now time.Time, s Settings) string {
+	if !s.Compact || c.Harness != "claude" || !c.Idle {
+		return ""
+	}
+	switch {
+	case c.RunOwned:
+		return "a run owns it"
+	case !c.HasStream:
+		return "its session has no control stream"
+	case c.Cache.LastTurn.IsZero() || c.Cache.Compacted || c.Cache.Tokens < s.CompactAt:
+		return ""
+	case c.CompactFailed:
+		return "a compaction at its last turn gave up"
+	case !c.Cache.OneHour:
+		return "its cache is the 5-minute kind"
+	case cacheLeft(c.Cache, now) <= 0:
+		return "its cache went cold first"
+	}
+	return ""
+}
+
 // Compaction is one compaction a check asks for; ThenSleep is set when the agent sleeps once it lands.
 type Compaction struct {
 	TabId     string

@@ -287,6 +287,52 @@ type sleepLoop struct {
 	notify   func(wshrpc.NotifyCommandData)
 	// sleep puts one agent to sleep: sleepAgent, a seam so a test needs no controller
 	sleep func(ctx context.Context, row *agentRow, force bool) (*wshrpc.CommandAgentsSleepRtnData, error)
+	// skipLogged is, by block, the compaction skip last logged (reason and last turn), so each is logged once
+	skipLogged map[string]string
+}
+
+// logCompactSkips logs, once per agent and reason, why an idle agent a compaction would be worth was not compacted this
+// check (agentsleep.CompactSkip): idle 100k+ agents went cold with nothing in the log to say why (2026-11-25).
+func (l *sleepLoop) logCompactSkips(cands []agentsleep.Candidate, rows map[string]*agentRow, plan agentsleep.Plan, now time.Time, s agentsleep.Settings, live map[string]bool) {
+	if l.skipLogged == nil {
+		l.skipLogged = map[string]string{}
+	}
+	for id := range l.skipLogged {
+		if !live[id] {
+			delete(l.skipLogged, id)
+		}
+	}
+	compacting := map[string]bool{}
+	for _, cp := range plan.Compact {
+		compacting[cp.TabId] = true
+	}
+	for _, c := range cands {
+		reason := ""
+		if !compacting[c.TabId] && c.CompactSent.IsZero() {
+			reason = agentsleep.CompactSkip(c, now, s)
+		}
+		if reason == "" {
+			delete(l.skipLogged, c.BlockId)
+			continue
+		}
+		key := reason + "@" + c.Cache.LastTurn.Format(time.RFC3339)
+		if l.skipLogged[c.BlockId] == key {
+			continue
+		}
+		l.skipLogged[c.BlockId] = key
+		name := c.TabId
+		if row := rows[c.TabId]; row != nil {
+			name = row.Name
+			if c.RunOwned && row.RunId != "" {
+				reason += " (run " + row.RunId + ")"
+			}
+		}
+		ctxNote := ""
+		if c.Cache.Tokens > 0 {
+			ctxNote = fmt.Sprintf(" at %dk", c.Cache.Tokens/1000)
+		}
+		log.Printf("agent sleep: not compacting %q (block %s)%s: %s\n", name, c.BlockId, ctxNote, reason)
+	}
 }
 
 func newSleepLoop(notify func(wshrpc.NotifyCommandData)) *sleepLoop {
@@ -401,6 +447,7 @@ func (l *sleepLoop) tick(ctx context.Context) {
 	}
 
 	plan := agentsleep.Decide(cands, now, s, free)
+	l.logCompactSkips(cands, rows, plan, now, s, live)
 	lastTurn := map[string]time.Time{} // by tab id
 	for _, c := range cands {
 		lastTurn[c.TabId] = c.Cache.LastTurn
