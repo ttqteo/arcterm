@@ -10,6 +10,7 @@ import {
     discussTogetherSeats,
     extendRow,
     NO_ROW_SELECTION,
+    pairPickable,
     pickedRowIds,
     seatableOf,
     selectableRowIds,
@@ -1542,6 +1543,78 @@ describe("Discuss together", () => {
         it("skips an id that is not in the roster", () => {
             expect(discussTogetherSeats(["a", "gone", "b"], agents, roots).map((s) => s.id)).toEqual(["a", "b"]);
         });
+    });
+});
+
+describe("pairPickable (Pair: worker + judge)", () => {
+    // a live claude agent: no project path is needed, a pair reads the same code through its tab
+    const live = (id: string, over: Partial<AgentVM> = {}): AgentVM => ({
+        ...vm(id, "idle"),
+        agent: "claude",
+        ...over,
+    });
+    const side = (tab: string): PairSide => ({ tab, name: tab, harness: "claude" });
+    const inPair = (worker: string, ...judges: string[]): PairInfo => ({
+        id: `pair-${worker}`,
+        project: "waveterm",
+        worker: side(worker),
+        judges: judges.map(side),
+        state: "relaying",
+        stopreason: "",
+        owed: false,
+        messagecount: 0,
+        lastts: 0,
+    });
+    const agents = [
+        live("a"),
+        live("b", { agent: "pi" }),
+        live("c", { agent: "codex" }),
+        live("d"),
+        live("t", { kind: "terminal" }),
+        live("bg", { kind: "background" }),
+        live("sleepy", { sleeping: { since: 1, freedBytes: 1 } }),
+    ];
+
+    it("is the two picked agents, the first picked working and the second judging", () => {
+        const got = pairPickable(["b", "a"], agents, []);
+        expect(got?.worker.id).toBe("b");
+        expect(got?.judge.id).toBe("a");
+        expect(pairPickable(["a", "b"], agents, [])?.worker.id).toBe("a");
+    });
+
+    it("takes a claude and a pi agent, and a sleeping one, whose pair wakes it with its first message", () => {
+        expect(pairPickable(["a", "sleepy"], agents, [])).not.toBeNull();
+        expect(pairPickable(["b", "sleepy"], agents, [])).not.toBeNull();
+    });
+
+    it("offers nothing for fewer or more than two picked", () => {
+        expect(pairPickable([], agents, [])).toBeNull();
+        expect(pairPickable(["a"], agents, [])).toBeNull();
+        expect(pairPickable(["a", "b", "d"], agents, [])).toBeNull();
+    });
+
+    it("offers nothing when either one is a codex agent, a terminal or a background agent: they cannot be messaged", () => {
+        expect(pairPickable(["a", "c"], agents, [])).toBeNull();
+        expect(pairPickable(["c", "a"], agents, [])).toBeNull();
+        expect(pairPickable(["a", "t"], agents, [])).toBeNull();
+        expect(pairPickable(["bg", "a"], agents, [])).toBeNull();
+        expect(pairPickable(["a", "n"], [...agents, live("n", { agent: undefined })], [])).toBeNull();
+    });
+
+    it("offers nothing when either one is already in a pair, as the working agent or as a judge", () => {
+        expect(pairPickable(["a", "b"], agents, [inPair("a", "d")])).toBeNull();
+        expect(pairPickable(["b", "d"], agents, [inPair("a", "d")])).toBeNull();
+        // another pair does not matter
+        expect(pairPickable(["b", "sleepy"], agents, [inPair("a", "d")])).not.toBeNull();
+    });
+
+    it("counts a pair that has ended as no pair", () => {
+        expect(pairPickable(["a", "b"], agents, [{ ...inPair("a", "d"), state: "ended" }])).not.toBeNull();
+    });
+
+    it("offers nothing for an id that is not in the roster", () => {
+        expect(pairPickable(["a", "gone"], agents, [])).toBeNull();
+        expect(pairPickable(["gone", "a"], agents, [])).toBeNull();
     });
 });
 

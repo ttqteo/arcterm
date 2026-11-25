@@ -60,6 +60,7 @@ import {
     Plus,
     Radio,
     RotateCcw,
+    Scale,
     Square,
     SquareTerminal,
     Sun,
@@ -87,6 +88,7 @@ import {
     discussTogetherSeats,
     extendRow,
     NO_ROW_SELECTION,
+    pairPickable,
     pickedRowIds,
     selectableRowIds,
     selectOnly,
@@ -160,6 +162,7 @@ import {
     showBoardAlone,
     showCouncil,
     showCouncilSetupWithAgents,
+    showPair,
     showProjectOverview,
     showTerminal,
 } from "./agentcenter";
@@ -293,6 +296,9 @@ import { runningBackgroundTasks } from "./transcriptprojection";
 import { unreadLabel } from "./unreadagents";
 import { attentionAtom, splitAttention } from "./attentionstore";
 import { unreadAgentsAtom } from "./unreadagentsstore";
+import { PairSheet } from "./pairsheet";
+import type { PairSheetPick } from "./pairsheetmodel";
+import { usePairs } from "./pairstore";
 import { showServiceMenu } from "./servicemenu";
 import { canRestart, serviceHeaderLine, serviceRowWords, serviceTreeWords, treeServiceInput } from "./servicesmodel";
 import {
@@ -3768,8 +3774,15 @@ export const AgentTree = memo(function AgentTree({ model }: { model: AgentsViewM
     const digits = agentDigits(treeNavIds(rows));
     // The multi-selection: Ctrl/Cmd+click and Shift+click pick agent rows (agenttreemodel.ts) beside the focused agent.
     // A row that leaves the tree (closed, folded, filtered out) leaves the selection; the right-click menu of a picked
-    // row offers Discuss together from two claude or pi agents. The seats go in the order they were picked.
+    // row offers Discuss together from two claude or pi agents, and Pair: worker + judge from exactly two that are in no
+    // pair. The seats go in the order they were picked; the first picked works.
     const sel = useAtomValue(rowSelectionAtom);
+    const pairs = usePairs();
+    // the pairing sheet while it is open, and what held the focus before the menu took it: Cancel and Escape give it back.
+    // Not the tree root: its rows take no focus of their own, so what the menu displaced is the only place to return to
+    const [pairing, setPairing] = useState<PairSheetPick | null>(null);
+    const treeRef = useRef<HTMLDivElement>(null);
+    const focusBeforeMenu = useRef<HTMLElement | null>(null);
     const selectable = selectableRowIds(rows);
     const selectableKey = selectable.join(",");
     useEffect(() => {
@@ -3783,6 +3796,22 @@ export const AgentTree = memo(function AgentTree({ model }: { model: AgentsViewM
     // a council or History instead of its terminal
     const shownFocus = () =>
         globalStore.get(centerModeAtom) === "terminal" ? globalStore.get(model.focusIdAtom) : undefined;
+    const closePairSheet = () => {
+        setPairing(null);
+        const back = focusBeforeMenu.current;
+        focusBeforeMenu.current = null;
+        if (back?.isConnected) {
+            back.focus({ preventScroll: true });
+        }
+    };
+    // the pair is made: the working agent is chosen (its Chat is where the conversation's name goes back to, and the picks
+    // clear), then the conversation turns its centre. The focus is not given back: what had it is behind the conversation now
+    const openPaired = (view: PairView) => {
+        setPairing(null);
+        focusBeforeMenu.current = null;
+        selectAgentRow(model, view.worker.tab);
+        showPair(view.id, model);
+    };
     const picksFor = (id: string): RowPicks => ({
         picked: sel.ids.includes(id),
         any: sel.ids.length > 0,
@@ -3798,9 +3827,23 @@ export const AgentTree = memo(function AgentTree({ model }: { model: AgentsViewM
             const picked = pickedRowIds(cur, shownFocus(), selectable);
             const onPicked = picked.includes(id);
             const seats = onPicked ? discussTogetherSeats(picked, agents, roots) : [];
+            const pair = onPicked ? pairPickable(picked, agents, pairs) : null;
             // the picked agents that work for no run close together; a lead or worker stays, closed from its run
             const closable = onPicked ? closablePicked(cur, agents, selectable) : [];
             const items: ContextMenuItem[] = [];
+            if (pair != null) {
+                // the menu takes the focus as it opens: read what held it now, for the sheet's Cancel to give back
+                focusBeforeMenu.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+                items.push({
+                    label: "Pair: worker + judge",
+                    // the menu's hint sits on the label's row and the label gives way to it, so the hint stays short and
+                    // the whole sentence is the row's tooltip
+                    sublabel: "they talk it through",
+                    title: "The two talk it through, you get what they settled",
+                    icon: <Scale size={15} />,
+                    click: () => setPairing({ worker: pair.worker, judge: pair.judge }),
+                });
+            }
             if (seats.length > 0) {
                 items.push({
                     label: "Discuss together",
@@ -3851,6 +3894,7 @@ export const AgentTree = memo(function AgentTree({ model }: { model: AgentsViewM
 
     return (
         <div
+            ref={treeRef}
             data-agent-tree
             className={cn(
                 "relative isolate flex shrink-0 select-none flex-col border-r border-border bg-surface",
@@ -4141,6 +4185,18 @@ export const AgentTree = memo(function AgentTree({ model }: { model: AgentsViewM
                     <ElsewhereRow model={model} agents={elsewhere.agents} asking={elsewhere.asking} />
                 ) : null}
             </div>
+            <AnimatePresence>
+                {pairing != null && treeRef.current != null ? (
+                    <PairSheet
+                        key="pair-sheet"
+                        model={model}
+                        anchor={treeRef.current}
+                        picked={pairing}
+                        onClose={closePairSheet}
+                        onPaired={openPaired}
+                    />
+                ) : null}
+            </AnimatePresence>
         </div>
     );
 });
