@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+	"github.com/wavetermdev/waveterm/pkg/agentpair"
 	"github.com/wavetermdev/waveterm/pkg/agentsessions"
 	"github.com/wavetermdev/waveterm/pkg/council"
 	"github.com/wavetermdev/waveterm/pkg/waveobj"
@@ -24,6 +25,7 @@ const (
 	readKindAgent   = "agent"
 	readKindRun     = "run"
 	readKindCouncil = "council"
+	readKindPair    = "pair"
 	readKindSession = "session"
 	readKindEffort  = "effort"
 )
@@ -40,19 +42,21 @@ const (
 
 // the kinds in the order a bare id is looked up in, and the one a match list is sorted by; sessions last, as the
 // costliest scan and the one a live agent's id never names
-var readKinds = []string{readKindAgent, readKindRun, readKindCouncil, readKindEffort, readKindSession}
+var readKinds = []string{readKindAgent, readKindRun, readKindCouncil, readKindPair, readKindEffort, readKindSession}
 
 var readCmd = &cobra.Command{
 	Use:   "read <id>",
-	Short: "print what an arcterm id holds: a live agent's last turns, a run, a council and its discussion, a past conversation or an initiative",
+	Short: "print what an arcterm id holds: a live agent's last turns, a run, a council and its discussion, a judge pair's conversation, a past conversation or an initiative",
 	Long: `Look an id up and print what it holds, to read before acting on it. The id is a full id or a unique prefix of one
 (the 8 characters 'wsh agents list' and 'wsh runs list' print), bare or with its kind as the cockpit writes it:
-agent:<tab> (or tab:), run:<id>, council:<id>, session:<id>, effort:<id>. A bare id is looked up in every kind; one
-that matches several things lists them, and kind:id picks one.
+agent:<tab> (or tab:), run:<id>, council:<id>, pair:<id>, session:<id>, effort:<id>. A bare id is looked up in every
+kind; one that matches several things lists them, and kind:id picks one.
 
   agent    the live agent's last --turns prompts and answers, its last answer in full
   run      the run's status, route, commits, task digest and report ('wsh runs show')
   council  the council's report, matrix and whole discussion, follow-up questions included
+  pair     a working agent and its judge(s): every message, then what was agreed, answered and left open; any
+           pair, live, ended or synced from another machine
   session  a past conversation's last --turns prompts and answers
   effort   the initiative's chunks, statuses and notes ('wsh effort show')
 
@@ -179,11 +183,11 @@ func readRun(cmd *cobra.Command, args []string) error {
 	hits = pickReadHits(id, hits)
 	switch len(hits) {
 	case 0:
-		what := "a live agent, a run, a council, an initiative or a past conversation"
+		what := "a live agent, a run, a council, a pair, an initiative or a past conversation"
 		if kind != "" {
 			what = "a " + kind
 		}
-		return fmt.Errorf("%q is not %s ('wsh agents list --all', 'wsh runs list', 'wsh council list --project \"\"' list the ids)", id, what)
+		return fmt.Errorf("%q is not %s ('wsh agents list --all', 'wsh runs list', 'wsh council list --project \"\"' list the ids; 'wsh read pair:<id>' reads a pair by the first 8 characters of its id)", id, what)
 	case 1:
 	default:
 		return readAmbiguous(id, hits)
@@ -238,6 +242,16 @@ func readCandidates(cmd *cobra.Command, kind, id string) ([]readHit, error) {
 			out = append(out, readHit{Kind: readKindCouncil, Id: c.Id, Label: fmt.Sprintf("%s · %s", c.State, c.Feature)})
 		}
 		return out, nil
+	case readKindPair:
+		rtn, err := wshclient.PairHistoryCommand(RpcClient, wshrpc.CommandPairHistoryData{Project: ""}, &wshrpc.RpcOpts{Timeout: runsReadTimeoutMs})
+		if err != nil {
+			return nil, err
+		}
+		out := make([]readHit, 0, len(rtn.Pairs))
+		for _, p := range rtn.Pairs {
+			out = append(out, readHit{Kind: readKindPair, Id: p.Id, Label: readPairLabel(p)})
+		}
+		return out, nil
 	case readKindEffort:
 		rtn, err := wshclient.EffortListCommand(RpcClient, wshrpc.CommandEffortListData{IncludeArchived: true}, nil)
 		if err != nil {
@@ -286,6 +300,23 @@ type readRunData struct {
 	rows []runsRow
 }
 
+// readPairLabel tells one pair from another in a match list: its state, the working agent and the judges' short ids.
+func readPairLabel(p wshrpc.PairInfo) string {
+	worker := p.Worker.Name
+	if worker == "" {
+		worker = "Working agent"
+	}
+	judges := make([]string, len(p.Judges))
+	for i, j := range p.Judges {
+		judges[i] = agentsShort(j.Tab)
+	}
+	label := fmt.Sprintf("%s · %s · judge %s", p.State, worker, strings.Join(judges, ", "))
+	if p.Synced {
+		label += " · synced"
+	}
+	return label
+}
+
 func readAgentLabel(a wshrpc.AgentInfo) string {
 	parts := []string{a.Project, a.Harness, a.State}
 	if a.Title != "" {
@@ -332,6 +363,12 @@ func readText(cmd *cobra.Command, h readHit, turns int) (string, error) {
 			return "", err
 		}
 		return council.Document(c), nil
+	case readKindPair:
+		v, err := wshclient.PairGetCommand(RpcClient, wshrpc.CommandPairGetData{PairId: h.Id}, &wshrpc.RpcOpts{Timeout: runsReadTimeoutMs})
+		if err != nil {
+			return "", err
+		}
+		return agentpair.Document(v, time.Local), nil
 	case readKindEffort:
 		data := wshrpc.CommandEffortGetData{EffortOID: h.Id}
 		if RpcContext.BlockId != "" {
