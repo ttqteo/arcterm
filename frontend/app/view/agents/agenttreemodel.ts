@@ -55,7 +55,12 @@ export type AgentTreeRow =
           nested?: boolean;
           waitsFor?: string;
           checks?: ChecksFold;
+          // which side of a pair it is, as a row under its pair's row
+          pairRole?: "worker" | "judge";
       }
+    // a pair (pkg/agentpair) in its working agent's place: the conversation. While `open`, the working agent and its
+    // judges follow it as `nested` parent rows with their `pairRole`
+    | { kind: "pair"; project: string; pairId: string; worker: AgentVM; judges: AgentVM[]; open: boolean }
     // a builder check's reviewer or a judge under the brainstorming agent that started it; `stageRole` is which, and
     // `state` is that agent's record of it
     | { kind: "check"; agent: AgentVM; project: string; stageRole: string; state: BuilderCheckRecord["state"] }
@@ -107,7 +112,32 @@ export interface TreeFolds {
     checksOpen?: ReadonlyMap<string, { open: boolean; key: string }>;
     // an agent's fold of its running background-task rows, by its id (tasksShown)
     tasksOpen?: ReadonlyMap<string, boolean>;
+    // a pair's fold of its working agent's and judges' rows, by the pair's id (pairShown)
+    pairsOpen?: ReadonlyMap<string, boolean>;
 }
+
+/** Pure: whether a pair's agents show under its row. One of them asking you, or chosen while the centre shows its own
+ *  view (`focusId`), shows them whatever was folded; else the person's fold, folded by default: the pair's row stands for
+ *  the conversation, and its line already says how each side stands. */
+export function pairShown(
+    team: readonly Pick<AgentVM, "id" | "state">[],
+    fold: boolean | undefined,
+    focusId: string | undefined
+): boolean {
+    if (team.some((a) => a.state === "asking" || a.id === focusId)) {
+        return true;
+    }
+    return fold ?? false;
+}
+
+// The pairs the tree folds: the active ones (not ended), and the agent chosen while the centre shows an agent's own view
+// (undefined over the pair's conversation, whose row is then the chosen one)
+export interface TreePairs {
+    list: readonly PairInfo[];
+    focusId?: string;
+}
+
+const NO_PAIRS: TreePairs = { list: [] };
 
 // What a brainstorming agent's row knows of the check and judge sessions under it: their states in row order, whether
 // their rows show, and `key`, the set they are, which a fold the person makes is kept against.
@@ -513,14 +543,19 @@ const NO_WAITS: ReadonlyMap<string, string> = new Map();
  *
  *  A brainstorming agent's builder check and judge sessions (its `builderCheck` and `brainstormJudge` records name their
  *  runs) are `check` rows right under its row while they show (checksShown), and count in its folder either way; with
- *  its tab gone they are plain rows. */
+ *  its tab gone they are plain rows.
+ *
+ *  An active pair whose working agent has a plain row of its own (no run, waiting on no one) is a `pair` row in that
+ *  agent's place, its judges leaving their own places; while it shows (pairShown) the working agent and the judges follow
+ *  it as nested rows. All of them count in the working agent's folder. */
 export function buildAgentTree(
     agents: AgentVM[],
     order: string[],
     lineage: Lineage = NO_LINEAGE,
     folds: TreeFolds = NO_FOLDS,
     focusId?: string,
-    waits: ReadonlyMap<string, string> = NO_WAITS
+    waits: ReadonlyMap<string, string> = NO_WAITS,
+    pairs: TreePairs = NO_PAIRS
 ): AgentTreeRow[] {
     const rank = new Map(order.map((id, i) => [id, i] as const));
     const sorted = [...agents].sort(
@@ -556,6 +591,26 @@ export function buildAgentTree(
             }
         }
     }
+    // the pairs that fold: by the working agent's id, the pair and its judges in the roster (each a plain agent, in no
+    // other pair, no check of a brainstorm's). An agent is in at most one pair, so the first pair to claim one keeps it
+    const byTab = new Map(sorted.map((a) => [a.id, a] as const));
+    const plainAgent = (a: AgentVM | undefined): a is AgentVM =>
+        a != null && lineage.roles[a.id] == null && !(a.runId != null && checkOwners.has(a.runId));
+    const pairOfWorker = new Map<string, { pairId: string; judges: AgentVM[] }>();
+    const pairedJudges = new Set<string>();
+    for (const p of pairs.list) {
+        const worker = byTab.get(p.worker.tab);
+        if (p.state === "ended" || !plainAgent(worker) || waits.has(worker.id) || pairOfWorker.has(worker.id)) {
+            continue;
+        }
+        const judges = (p.judges ?? []).flatMap((j) => {
+            const a = byTab.get(j.tab);
+            return plainAgent(a) && a.id !== worker.id && !pairedJudges.has(a.id) && !pairOfWorker.has(a.id) ? [a] : [];
+        });
+        judges.forEach((j) => pairedJudges.add(j.id));
+        pairOfWorker.set(worker.id, { pairId: p.id, judges });
+    }
+
     type Nested = { agent: AgentVM; stageRole: string; state: BuilderCheckRecord["state"] };
     const checks = new Map<string, Nested[]>(); // by the brainstorming agent's id
     // the agents whose checks a run they started has left behind: nothing of them shows or counts (checksSuperseded)
@@ -588,6 +643,9 @@ export function buildAgentTree(
             placedRuns.add(role.leadRunId);
             const run = lineage.runs[role.leadRunId];
             push({ kind: "run", project: run.project || UNGROUPED_PROJECT, run });
+        } else if (pairedJudges.has(a.id)) {
+            // a pair's judge sits under its pair's row, which its working agent places
+            continue;
         } else if (a.runId != null && checkOwners.has(a.runId)) {
             const { owner, stageRole, state } = checkOwners.get(a.runId);
             checks.set(owner.id, [...(checks.get(owner.id) ?? []), { agent: a, stageRole, state }]);
@@ -642,7 +700,8 @@ export function buildAgentTree(
         for (const item of g.items) {
             if (item.kind === "parent") {
                 const nested = superseded.has(item.agent.id) ? [] : (checks.get(item.agent.id) ?? []);
-                const members = [item.agent, ...nested.map((n) => n.agent)];
+                const pairing = pairOfWorker.get(item.agent.id);
+                const members = [item.agent, ...nested.map((n) => n.agent), ...(pairing?.judges ?? [])];
                 count += members.length;
                 attn += members.filter((a) => a.state === "asking").length;
                 running += members.filter((a) => a.state === "working").length;
@@ -651,7 +710,32 @@ export function buildAgentTree(
                 }
                 const target = waits.get(item.agent.id);
                 const waitsFor = target != null ? byId.get(target)?.name : undefined;
-                body.push(...withChecks(waitsFor != null ? { ...item, waitsFor } : item));
+                if (pairing != null) {
+                    const team = [item.agent, ...pairing.judges];
+                    const open = pairShown(team, folds.pairsOpen?.get(pairing.pairId), pairs.focusId);
+                    body.push({
+                        kind: "pair",
+                        project: item.project,
+                        pairId: pairing.pairId,
+                        worker: item.agent,
+                        judges: pairing.judges,
+                        open,
+                    });
+                    if (open) {
+                        body.push(...withChecks({ ...item, nested: true, pairRole: "worker" }));
+                        for (const judge of pairing.judges) {
+                            body.push({
+                                kind: "parent",
+                                agent: judge,
+                                project: item.project,
+                                nested: true,
+                                pairRole: "judge",
+                            });
+                        }
+                    }
+                } else {
+                    body.push(...withChecks(waitsFor != null ? { ...item, waitsFor } : item));
+                }
                 for (const agent of waiters.get(item.agent.id) ?? []) {
                     body.push(...withChecks({ kind: "parent", agent, project: item.project, nested: true }));
                 }

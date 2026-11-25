@@ -6,10 +6,10 @@
 // importing the surface. settingssurface.tsx keeps its own UI-font variant — a different look, not a
 // duplicate of this one.
 
-import { indicatorSlide } from "@/app/element/motiontokens";
+import { indicatorSlide, MOTION } from "@/app/element/motiontokens";
 import { cn } from "@/util/util";
-import { MotionConfig, motion } from "motion/react";
-import { useId, type ReactNode } from "react";
+import { motion, MotionConfig } from "motion/react";
+import { useId, useRef, type ReactNode } from "react";
 
 export function Segmented<T extends string>({
     value,
@@ -20,7 +20,8 @@ export function Segmented<T extends string>({
     title,
     slide,
 }: {
-    value: T;
+    // null: no option is chosen and none is filled (the agent header while a pair's conversation stands in its place)
+    value: T | null;
     // `disabled`: this option is drawn dimmed and takes no press (its `title` says why); the others draw as ever.
     // `dataAttrs`: extra data attributes on the option's button, for a caller that has to find it
     options: {
@@ -42,6 +43,13 @@ export function Segmented<T extends string>({
     const tabs = role === "tablist";
     // unique per control, so two sliding controls on one screen never share a fill
     const fillId = useId();
+    // with no option chosen (null), a sliding fill stays under the last one and fades out, and fades back in where it was,
+    // instead of vanishing in one frame
+    const lastValue = useRef(value);
+    if (value != null) {
+        lastValue.current = value;
+    }
+    const filled = slide ? (value ?? lastValue.current) : value;
     const buttons = options.map((o) => (
         <button
             key={o.key}
@@ -63,12 +71,17 @@ export function Segmented<T extends string>({
         >
             {slide ? (
                 <>
-                    {value === o.key ? (
+                    {filled === o.key ? (
                         <motion.span
                             layoutId={fillId}
                             data-slide-fill
                             aria-hidden
-                            transition={indicatorSlide}
+                            initial={false}
+                            animate={{ opacity: value == null ? 0 : 1 }}
+                            transition={{
+                                ...indicatorSlide,
+                                opacity: { duration: MOTION.durMicro, ease: MOTION.easeFluid },
+                            }}
                             className="absolute inset-0 rounded-[inherit] bg-accentbg"
                         />
                     ) : null}

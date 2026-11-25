@@ -298,6 +298,9 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
     // mounted, and comes back as it was. stackHidden is also what hides the whole column (header and all) in the
     // subagent-interior and centre-mode cases.
     const stackHidden = showSub || centerMode !== "terminal";
+    // a pair's conversation stands in the place of the agent's view, under its header (whose Pair button toggles it):
+    // the column shows, the grid and the panes that swap into it stay hidden
+    const pairInStack = centerMode === "pair" && !showSub;
     const terminalShown = agent != null && !stackHidden && swapped == null && !isEndedWorkerId(agent.id);
     // Until the roster is seeded the saved cells are not pruned, so a cell whose agent has not arrived yet still holds
     // its slot (deliberate: showing the arrived ones full-size first would redraw their TUIs twice). It has no pane, so
@@ -823,7 +826,7 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
                 <div className="flex min-w-0 flex-1 flex-col">
                     {/* terminal stack stays mounted (hidden) while a subagent interior or a centre mode is shown, so
                         returning to the parent never remounts/replays the live TUI (frame-stacking) */}
-                    <div className={cn("flex min-h-0 flex-1 flex-col", stackHidden && "hidden")}>
+                    <div className={cn("flex min-h-0 flex-1 flex-col", stackHidden && !pairInStack && "hidden")}>
                         {/* a maximized dock is the terminal's own view, its bar the only header: the agent's header
                             would name an agent that is not on screen */}
                         {dockMax ? null : (
@@ -845,16 +848,27 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
                                         <AgentHeader model={model} agent={subject!} />
                                     </div>
                                 )}
-                                <DivergenceBanner decision={decision} onRejoin={rejoin} />
-                                <HeldAskBar agent={subject!} />
-                                {/* keyed: its list's open state and a failed read belong to one agent. The key carries a
-                                    prefix because SleepingCard below is keyed by the agent's id, and two siblings with
-                                    one key leave an orphaned band behind when the agent changes */}
-                                <JarvisRouteBand key={`route-band:${subject!.id}`} model={model} agent={subject!} />
-                                {/* keyed: the card's pending wake and its failure belong to one agent. A Claude agent
-                                    asleep draws Chat, whose box says it sleeps: the card is left for a failed wake */}
-                                <SleepingCard key={agent.id} agent={agent} failureOnly={chatCapable(agent)} />
-                                {showCompacted ? (
+                                {/* the agent's own bands belong over its own view, not over its pair's conversation */}
+                                {pairInStack ? null : (
+                                    <>
+                                        <DivergenceBanner decision={decision} onRejoin={rejoin} />
+                                        <HeldAskBar agent={subject!} />
+                                        {/* keyed: its list's open state and a failed read belong to one agent. The key
+                                            carries a prefix because SleepingCard below is keyed by the agent's id, and
+                                            two siblings with one key leave an orphaned band behind when the agent
+                                            changes */}
+                                        <JarvisRouteBand
+                                            key={`route-band:${subject!.id}`}
+                                            model={model}
+                                            agent={subject!}
+                                        />
+                                        {/* keyed: the card's pending wake and its failure belong to one agent. A Claude
+                                            agent asleep draws Chat, whose box says it sleeps: the card is left for a
+                                            failed wake */}
+                                        <SleepingCard key={agent.id} agent={agent} failureOnly={chatCapable(agent)} />
+                                    </>
+                                )}
+                                {showCompacted && !pairInStack ? (
                                     <div
                                         data-brainstorm-compacted
                                         className="mx-[16px] mt-[12px] flex flex-none items-center gap-[10px] rounded-[8px] border border-edge-mid bg-surface-raised px-[12px] py-[10px]"
@@ -1072,7 +1086,9 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
                                 />
                             ) : null}
                         </div>
-                        {isEndedWorkerId(agent.id) ? (
+                        {pairInStack ? (
+                            <PairPane model={model} />
+                        ) : isEndedWorkerId(agent.id) ? (
                             <EndedTranscript model={model} agent={agent} />
                         ) : stage != null && agent.id === stage.agent.id ? (
                             <FinalStagePane model={model} run={stage.run} />
@@ -1093,7 +1109,9 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
                     {showSub && centerMode === "terminal" ? (
                         <SubagentInterior sub={focusSub!} parentName={agent.name} />
                     ) : null}
-                    {centerMode !== "terminal" ? <AgentCenterPane model={model} mode={centerMode} /> : null}
+                    {centerMode !== "terminal" && !pairInStack ? (
+                        <AgentCenterPane model={model} mode={centerMode} />
+                    ) : null}
                 </div>
                 {/* a plain terminal alone has no details of its own: no rail, the tree reaches the others. In a split
                     with an agent it keeps that agent's (headSubject). Nor does a maximized dock, which is a terminal on

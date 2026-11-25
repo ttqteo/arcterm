@@ -17,6 +17,7 @@ import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { atom } from "jotai";
 import { showPair } from "./agentcenter";
 import { resolveCwd } from "./agentcwdresolve";
+import { openRailDecided } from "./agentrailstore";
 import { shortTabId } from "./agentrowmodel";
 import type { AgentsViewModel } from "./agents";
 import { projectOf, type AgentVM, type PendingLaunch } from "./agentsviewmodel";
@@ -166,6 +167,7 @@ export async function openNewJudge(model: AgentsViewModel, worker: AgentVM, proj
         if (at === judgeTab || at === worker.id) {
             globalStore.set(model.focusIdAtom, worker.id);
             showPair(view.id);
+            openRailDecided(worker.id);
         }
     } catch (e) {
         addFailed(worker, e);
@@ -177,6 +179,7 @@ export async function pickJudge(worker: AgentVM, judgeTab: string): Promise<void
     try {
         const view = await RpcApi.PairStartCommand(TabRpcClient, pairStartData(worker.id, judgeTab, false));
         showPair(view.id);
+        openRailDecided(worker.id);
     } catch (e) {
         addFailed(worker, e);
     }
