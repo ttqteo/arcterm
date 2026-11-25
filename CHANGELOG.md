@@ -34,6 +34,10 @@ and a picture given to a line that is not big.
 
 ### Added
 
+- GitHub accounts, one per folder: in Settings → Agents, tie each GitHub account to the folders its repos live in, and
+  every repo under them commits with that account's name and email and pushes with its token, in any terminal or IDE,
+  with arcterm open or not. The card also finds repos that keep a token in their remote URL and removes it in one
+  reviewed pass. <!-- big --> <!-- shot: none -->
 - Judge pairs stay readable after they end: Library's Conversations lists each pair under the session of the agent that
   worked, read-only with its Decided list, and pairs synced from your other machine read the same. `wsh read <pair id>`
   prints one as text.

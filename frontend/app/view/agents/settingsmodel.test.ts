@@ -287,7 +287,7 @@ describe("settings pages", () => {
             "general/startup", "general/menubar", "general/notifications",
             "remote/remotemode", "remote/remotesetup",
             "appearance/theme", "appearance/colors", "appearance/fonts", "appearance/agentrows", "appearance/agentheader", "appearance/chat",
-            "agents/claudeaccount", "agents/sleep", "agents/flags",
+            "agents/claudeaccount", "agents/gitaccounts", "agents/sleep", "agents/flags",
             "runs/runs", "runs/whilework", "runs/dume", "runs/tokenburn",
             "terminal/text", "terminal/cursor", "terminal/behavior",
             "headless/runtime", "headless/openrouter",
@@ -318,6 +318,7 @@ describe("settings pages", () => {
             "appearance.headersplit", "appearance.headerfloat", "appearance.headerfullscreen",
         ]);
         expect(cards["agents/claudeaccount"]).toEqual([]);
+        expect(cards["agents/gitaccounts"]).toEqual([]);
         expect(cards["agents/sleep"]).toEqual([
             "agents.sleepidle",
             "agents.sleepaftermin",
@@ -491,6 +492,18 @@ describe("filterSections", () => {
             const found = filterSections(sections(), q);
             expect(found.flatMap((s) => s.cards.map((c) => c.id))).toContain("claudeaccount");
         }
+    });
+
+    it("finds the row-less GitHub accounts card by its label and keywords, and the Claude card stays its own", () => {
+        for (const q of ["github", "commit email", "Credential", "push"]) {
+            const found = filterSections(sections(), q);
+            const ids = found.flatMap((s) => s.cards.map((c) => `${s.id}/${c.id}`));
+            expect(ids).toContain("agents/gitaccounts");
+            expect(ids).not.toContain("agents/claudeaccount");
+        }
+        expect(filterSections(sections(), "claude account").flatMap((s) => s.cards.map((c) => c.id))).toEqual([
+            "claudeaccount",
+        ]);
     });
 
     it("returns nothing when no row or card matches", () => {
