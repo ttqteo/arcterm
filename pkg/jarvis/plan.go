@@ -98,6 +98,9 @@ const PlanFormat = "Plan format. Verify, Setup and Check are optional, go before
 	"**Files:** `<a path Task 2 does not list>`\n" +
 	"<runs beside Task 2>\n"
 
+// FastTrackMaxTasks is the most tasks a plan-file dag can have and still take the fast track.
+const FastTrackMaxTasks = 4
+
 // Plan is a parsed implementation plan: its tasks as DAG nodes ("t-N"), plus the plan-level commands.
 type Plan struct {
 	Title  string

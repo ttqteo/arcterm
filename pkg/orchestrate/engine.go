@@ -191,6 +191,9 @@ func sessionRunIDs(g *waveobj.TaskGroup) []string {
 	if g.Final != nil && g.Final.VerifierRunID != "" {
 		ids = append(ids, g.Final.VerifierRunID)
 	}
+	if g.Final != nil && g.Final.EndReview != nil && g.Final.EndReview.RunID != "" {
+		ids = append(ids, g.Final.EndReview.RunID)
+	}
 	return ids
 }
 

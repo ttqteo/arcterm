@@ -709,6 +709,11 @@ type TaskGroup struct {
 	// PastFinals are the finished earlier rounds of the final stage, oldest first: a fix round keeps the round it
 	// fixes here instead of overwriting it.
 	PastFinals []FinalStage `json:"pastfinals,omitempty"`
+
+	// FastTrack is set once, at the first plan-file submit, when the plan has jarvis.FastTrackMaxTasks tasks or
+	// fewer: a light plan review, no per-task review, and one end review of the merged diff. A fix round's added
+	// tasks do not change it. Never set for a dag submitted as JSON.
+	FastTrack bool `json:"fasttrack,omitempty"`
 }
 
 // PlanReviewStage is one dag's plan review: its round, the reviewer sessions judging it, and the round's merged text.
@@ -720,6 +725,10 @@ type PlanReviewStage struct {
 	PlanText  string           `json:"plantext,omitempty"`  // the plan as this round's reviewers read it
 	SpecText  string           `json:"spectext,omitempty"`  // the spec likewise (empty with no spec file)
 	Prior     *PlanReviewPrior `json:"prior,omitempty"`     // round 2: what round 1 found, read and picked
+
+	// Amended is set with state accepted when the light review failed and the lead's amended resubmit dispatched,
+	// as against the lead proceeding on the human's word.
+	Amended bool `json:"amended,omitempty"`
 
 	// PastRounds are the earlier rounds' reviewers, oldest first; a dag stored before this field reads as one round.
 	PastRounds []PlanReviewRound `json:"pastrounds,omitempty"`
@@ -783,6 +792,21 @@ type FinalStage struct {
 	// Shots is what the Final command wrote into OutDir, read once it exited
 	Shots         []FinalShot `json:"shots,omitempty"`
 	ShotsManifest bool        `json:"shotsmanifest,omitempty"` // Shots came from shots.json (verdicts and steps); false is a plain PNG listing
+
+	// EndReview is a fast-track dag's review of the whole merged diff, beside the commands. Nil on the full path.
+	EndReview *FinalEndReview `json:"endreview,omitempty"`
+}
+
+// FinalEndReview is a fast-track dag's review of the whole merged diff, beside the final stage's commands.
+type FinalEndReview struct {
+	State      string `json:"state"` // reviewing | passed | failed | lost | stopped (the human ended the stage)
+	RunID      string `json:"runid,omitempty"`
+	StartedTs  int64  `json:"startedts,omitempty"`
+	Respawns   int    `json:"respawns,omitempty"`
+	Text       string `json:"text,omitempty"`       // the summary, the findings, or why it was lost
+	Unverified string `json:"unverified,omitempty"` // a pass's --unverified note
+	Waiting    bool   `json:"waiting,omitempty"`    // the rest of the stage ended and its outcome waits on this verdict
+	Judged     bool   `json:"judged,omitempty"`     // with Waiting: the verifier gave the rest of the stage its verdict
 }
 
 // FinalShot is one scenario of a Final command's screenshots: its files, and the steps it ran when the command

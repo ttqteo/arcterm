@@ -616,6 +616,7 @@ export const BRAINSTORM_JUDGE_ROLE = "brainstorm-judge";
 const STAGE_LABELS: Record<string, string> = {
     "plan-reviewer": "Plan review",
     verifier: "Final verification",
+    "end-reviewer": "End review",
     "land-resolver": "Conflict resolver",
     [BUILDER_CHECK_ROLE]: "Builder check",
     [BRAINSTORM_JUDGE_ROLE]: "Judge",

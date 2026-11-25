@@ -114,6 +114,8 @@ import kael1113DagScenarios from "./scenarios-kael1113-dag.mjs";
 import kael1113FinalScenarios from "./scenarios-kael1113-final.mjs";
 import kael1113PickScenarios from "./scenarios-kael1113-pick.mjs";
 import kael1113TimelineScenarios from "./scenarios-kael1113-timeline.mjs";
+import kael1125LabelScenarios from "./scenarios-kael1125-label.mjs";
+import kael1125ViewsScenarios from "./scenarios-kael1125-views.mjs";
 import modalFocusHomeScenarios from "./scenarios-modal-focus-home.mjs";
 import parkedLaunchScenarios from "./scenarios-parked-launch.mjs";
 import monitorTasksScenarios from "./scenarios-monitor-tasks.mjs";
@@ -75792,6 +75794,8 @@ export const SCENARIOS = [
     ...kael1113TimelineScenarios({ ...KAEL_KITS, run: RUN_KIT }),
     ...kael1113FinalScenarios({ ...KAEL_KITS, run: RUN_KIT }),
     ...kael1113PickScenarios({ ...KAEL_KITS, run: RUN_KIT }),
+    ...kael1125LabelScenarios({ ...KAEL_KITS, run: RUN_KIT }),
+    ...kael1125ViewsScenarios({ ...KAEL_KITS, run: RUN_KIT }),
     ...codeImageZoomScenarios(CODE_KIT),
     ...codeBlameDraftScenarios(CODE_KIT),
     ...diffFileKeysScenarios(FILES_KIT),

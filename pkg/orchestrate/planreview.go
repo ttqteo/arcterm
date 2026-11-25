@@ -44,6 +44,7 @@ const (
 	PlanReviewLens_Tests    = "tests"
 	PlanReviewLens_Final    = "final"
 	PlanReviewLens_Followup = "followup"
+	PlanReviewLens_Light    = "light" // a fast-track dag's one reviewer
 )
 
 // Plan reviewer states (PlanReviewer.State).
@@ -62,6 +63,7 @@ var planReviewLensTitles = map[string]string{
 	PlanReviewLens_Tests:    "Tests and commands",
 	PlanReviewLens_Final:    "Final coverage",
 	PlanReviewLens_Followup: "Round-2 follow-up",
+	PlanReviewLens_Light:    "Light review",
 }
 
 // PlanReviewLensTitle is a lens's title, or the key itself for one this build does not know.

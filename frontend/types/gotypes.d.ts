@@ -4330,6 +4330,18 @@ declare global {
         append?: boolean;
     };
 
+    // waveobj.FinalEndReview
+    type FinalEndReview = {
+        state: string;
+        runid?: string;
+        startedts?: number;
+        respawns?: number;
+        text?: string;
+        unverified?: string;
+        waiting?: boolean;
+        judged?: boolean;
+    };
+
     // waveobj.FinalShot
     type FinalShot = {
         name: string;
@@ -4362,6 +4374,7 @@ declare global {
         output?: string;
         shots?: FinalShot[];
         shotsmanifest?: boolean;
+        endreview?: FinalEndReview;
     };
 
     // wconfig.FullConfigType
@@ -5007,6 +5020,7 @@ declare global {
         plantext?: string;
         spectext?: string;
         prior?: PlanReviewPrior;
+        amended?: boolean;
         pastrounds?: PlanReviewRound[];
     };
 
@@ -5912,6 +5926,7 @@ declare global {
         planreview?: PlanReviewStage;
         final?: FinalStage;
         pastfinals?: FinalStage[];
+        fasttrack?: boolean;
     };
 
     // waveobj.TaskNode

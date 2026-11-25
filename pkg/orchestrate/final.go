@@ -40,6 +40,8 @@ const (
 	FinalStep_Check  = "check"
 	FinalStep_Verify = "verify"
 	FinalStep_Final  = "final"
+	// FinalStep_Review is the end review's settling, recorded as a final-step event; it is never FinalStage.Step.
+	FinalStep_Review = "review"
 )
 
 // FinalExitUnverified is the final stage's exit code for "could not verify": its last output line says why. The

@@ -9,6 +9,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/wavetermdev/waveterm/pkg/baseds"
+	"github.com/wavetermdev/waveterm/pkg/jarvis"
 	"github.com/wavetermdev/waveterm/pkg/resmon"
 	"github.com/wavetermdev/waveterm/pkg/util/jobobject"
 	"github.com/wavetermdev/waveterm/pkg/waveobj"
@@ -58,6 +59,8 @@ func TestResMonResolverLabels(t *testing.T) {
 		t.Fatal(err)
 	}
 	seedUsageRun(t, lead.ChannelOID, waveobj.Run{TaskId: "2", DagORef: lead.DagORef, Phases: workerPhase(workerTab)})
+	endReviewBlock, endReviewTab := seedResMonTab(t, "end review tab", "claude")
+	seedUsageRun(t, lead.ChannelOID, waveobj.Run{StageRole: jarvis.UsageRole_EndReviewer, DagORef: lead.DagORef, Phases: workerPhase(endReviewTab)})
 	quick := seedUsageRun(t, "", waveobj.Run{Mode: "quick", Goal: "fix the cache\nthen tidy"})
 
 	cases := []struct {
@@ -70,6 +73,7 @@ func TestResMonResolverLabels(t *testing.T) {
 			resmon.OwnerInfo{Kind: wshrpc.ResMonOwner_AgentTab, Label: "Fix the sidecar labels", Runtime: "claude", Agent: true}},
 		{"terminal tab", blockOwner(shellBlock), resmon.OwnerInfo{Kind: wshrpc.ResMonOwner_AgentTab, Label: "scratch"}},
 		{"run worker", blockOwner(workerBlock), resmon.OwnerInfo{Kind: wshrpc.ResMonOwner_RunWorker, Label: "cache-miss notice · Task 2", Runtime: "pi", Agent: true}},
+		{"end reviewer", blockOwner(endReviewBlock), resmon.OwnerInfo{Kind: wshrpc.ResMonOwner_RunWorker, Label: "cache-miss notice · End reviewer", Runtime: "claude", Agent: true}},
 		{"run lead", blockOwner(leadBlock), resmon.OwnerInfo{Kind: wshrpc.ResMonOwner_RunWorker, Label: "cache-miss notice · lead", Runtime: "pi", Agent: true}},
 		{"run command", jobobject.Owner{Kind: jobobject.OwnerKind_RunCmd, Id: lead.ID, Cmd: "Verify"},
 			resmon.OwnerInfo{Kind: wshrpc.ResMonOwner_RunCmd, Label: "cache-miss notice · Verify"}},
