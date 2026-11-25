@@ -212,7 +212,9 @@ export function validateAct(raw: unknown, last: SidecarSnapshot | null): ActChec
             const pids = Array.isArray(raw.pids)
                 ? raw.pids.filter((p): p is number => typeof p === "number" && Number.isInteger(p) && p > 0)
                 : [];
-            return { ok: true, act: { kind: "resources", open: raw.open, pids } };
+            // the page's opening number goes back on the readings: without it the page (resourcesFor) draws none
+            const ask = typeof raw.ask === "number" && Number.isInteger(raw.ask) ? { ask: raw.ask } : {};
+            return { ok: true, act: { kind: "resources", open: raw.open, pids, ...ask } };
         }
         case "visible":
             if (typeof raw.visible !== "boolean") {

@@ -44,6 +44,27 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
   `node scripts/cdp/final-verify.mjs chat-judge` on a dev app, which writes `public/whatsnew/<version>-chat-judge.webp`;
   commit that file and change the CHANGELOG line's `<!-- shot: none -->` to `<!-- shot: <version>-chat-judge.webp -->`
   (`whatsnew.test.ts` checks it).
+- [ ] (arcterm) No console window for harness probes (Windows): launch a build with this fix and wait 30 s (the first
+  harness update check) → no Windows Terminal window opens with `agy.exe --version`; pressing Update on a harness
+  opens none either (`harness.HideWindow`, `pkg/harness/catalog.go` `versionCommand`, `pkg/harnessupdate/update.go`).
+- [ ] (arcterm) Brainstorm run starting: approve a brainstorm's builder check and press Start in the launcher; until
+  the run is created, the agent's sidebar row reads "starting run" (not "asking question") and Chat's builder check
+  card reads Working with "The run is starting", not the amber Waiting on you (`withStartingRun`, `checkCard`).
+- [ ] (arcterm) Overview with an agent asleep in its tab: open SIEM-parser's Overview (its one session `Bàn giao
+  SIEM-1759` asleep) → Now lists it under Idle 1 with a moon and `asleep · …`, and the Activity footer reads
+  `Last 7 days: 1 session · 152.7M tokens`, not 0 sessions. Seen in the `project-overview` CDP scenario with a fixture
+  agent; the footer's count of a real live session only in `projectoverviewmodel.test.ts`.
+- [ ] (arcterm) Sidecar Resources: open Sidecar on the wall (and the small form's Resources tab); within a few seconds
+  the band lists Sidecar and arcterm rows and the CPU/RAM charts start drawing, instead of "Measuring…" for good (the
+  `resources` act's `ask` was dropped by `validateAct`, so `resourcesFor` refused every reading).
+- [ ] (arcterm) Sidecar Needs you: an agent whose last message ends `… kiểm lại file \`x.json\` giúp bạn?` shows the whole
+  last sentence, not `json\` giúp bạn?`.
+- [ ] (arcterm) Initiative pane Latest note: a note longer than six lines scrolls inside its box (wheel and scrollbar),
+  the rest of the pane still scrolls.
+- [ ] (arcterm) Chat bare `! cmd` line: an agent reply holding a line `! python -c "t.replace('**A**','**B**')"` outside
+  code draws it as a compact command row with Run and Copy, its `**` kept, no bold word. `task verify:ui --
+  chat-code-box` step 1b2 checks it; it did not run (the dev app was stopped for low memory). Unit-tested only
+  (`bashlines.ts`; 991477356).
 
 - [ ] (arcterm) Chat table Copy: hover a table in a Claude reply; the copy button sits right of the header row, over no
   cell. Click it, paste in Chat's input: a `| … |` Markdown table arrives; paste in Google Docs: real ruled cells.

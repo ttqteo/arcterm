@@ -803,7 +803,7 @@ function InitiativePane({ model, agent }: { model: AgentsViewModel; agent: Agent
                             <div
                                 data-rail-initiative-note
                                 title={formatAgo(Date.now() - note.ts)}
-                                className="line-clamp-6 break-words rounded-[8px] bg-background px-[10px] py-[8px] text-[12px] leading-[1.5] text-secondary"
+                                className="max-h-[124px] overflow-y-auto break-words rounded-[8px] bg-background px-[10px] py-[8px] text-[12px] leading-[1.5] text-secondary"
                             >
                                 {note.text}
                             </div>

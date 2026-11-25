@@ -213,3 +213,36 @@ func TestDecideCompactsAnAwakeAgentWhenClaudeCodeCannot(t *testing.T) {
 		}
 	}
 }
+
+func TestCompactSkipNamesWhatStoodInTheWay(t *testing.T) {
+	awake := Settings{Compact: true, CompactAt: CompactAtDefault, CompactAwake: true}
+	with := func(f func(*Candidate)) Candidate {
+		c := big("a", 20*time.Minute)
+		f(&c)
+		return c
+	}
+	cases := map[string]struct {
+		c    Candidate
+		s    Settings
+		want string
+	}{
+		"nothing in the way":          {big("a", 20*time.Minute), awake, ""},
+		"a run owns it":               {with(func(c *Candidate) { c.RunOwned, c.Cache = true, CacheState{} }), awake, "a run owns it"},
+		"no stream":                   {with(func(c *Candidate) { c.HasStream, c.Cache = false, CacheState{} }), awake, "its session has no control stream"},
+		"cache not read":              {with(func(c *Candidate) { c.Cache = CacheState{} }), awake, ""},
+		"under the threshold":         {with(func(c *Candidate) { c.Cache.Tokens = 60_000 }), awake, ""},
+		"already compacted":           {with(func(c *Candidate) { c.Cache.Compacted = true }), awake, ""},
+		"gave up":                     {with(func(c *Candidate) { c.CompactFailed = true }), awake, "a compaction at its last turn gave up"},
+		"5-minute cache":              {with(func(c *Candidate) { c.Cache.OneHour = false }), awake, "its cache is the 5-minute kind"},
+		"went cold":                   {big("a", 70*time.Minute), awake, "its cache went cold first"},
+		"went cold, Claude's own job": {big("a", 70*time.Minute), Settings{Compact: true, CompactAt: CompactAtDefault}, "its cache went cold first"},
+		"working":                     {with(func(c *Candidate) { c.Idle = false }), awake, ""},
+		"compaction off":              {with(func(c *Candidate) { c.RunOwned = true }), Settings{CompactAt: CompactAtDefault, CompactAwake: true}, ""},
+		"another harness":             {with(func(c *Candidate) { c.Harness, c.HasStream = "codex", false }), awake, ""},
+	}
+	for name, tc := range cases {
+		if got := CompactSkip(tc.c, t0, tc.s); got != tc.want {
+			t.Errorf("%s: got %q, want %q", name, got, tc.want)
+		}
+	}
+}

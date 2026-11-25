@@ -157,6 +157,19 @@ describe("validateAct", () => {
             act: { kind: "resources", open: false, pids: [] },
         });
         expect(validateAct({ kind: "resources" }, null).ok).toBe(false);
+    });
+
+    // dropped, the bridge sent the readings with no opening number and the page (resourcesFor) refused every one: the
+    // panel and the wall's band sat on "Measuring…" for good
+    it("keeps the resource panel's opening number", () => {
+        expect(validateAct({ kind: "resources", open: true, pids: [12], ask: 3 }, null)).toEqual({
+            ok: true,
+            act: { kind: "resources", open: true, pids: [12], ask: 3 },
+        });
+        expect(validateAct({ kind: "resources", open: true, pids: [], ask: "3" }, null)).toEqual({
+            ok: true,
+            act: { kind: "resources", open: true, pids: [] },
+        });
         expect(validateAct({ kind: "visible", visible: false, extra: 1 }, null)).toEqual({
             ok: true,
             act: { kind: "visible", visible: false },

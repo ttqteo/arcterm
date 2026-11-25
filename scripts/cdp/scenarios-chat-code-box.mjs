@@ -20,6 +20,9 @@ const SENT = '```curl https://api.example.test/v1/one \\\n  -H "Authorization: B
 const SENT_FIRST = "curl https://api.example.test/v1/one";
 // the reply's one-line command: a compact row with Run and Copy, as Claude Desktop draws it (codeblock.tsx)
 const COMPACT = "! task install";
+// a command the reply wrote as a bare line, not in code: Chat fences it (bashlines.ts), so its `**` stay and it draws as a
+// command row instead of prose with a bold word in it (step 1b2)
+const BARE = `! python -c "t.replace('**WAITING.**','**SIGNED.**')"`;
 // a reply paragraph long enough to wrap in the box (step 7)
 const LONG_PARA =
     "The endpoint took 180 ms on the first call and 40 ms on the next ones, so the cold start is the token check, not the model. " +
@@ -102,7 +105,7 @@ export default function (kit) {
                 const o = (sec) => ({ cwd: ctx.dir, ts: new Date(Date.now() - 600_000 + sec * 1000).toISOString() });
                 ctx.transcript = AC.writeTranscript(ctx.dir, "chat-code-box", [
                     AC.userText(SENT, o(0)),
-                    AC.assistantText(`Sent it to the endpoint; it answered 200.\n\n${LONG_PARA}\n\n![the shot](${ctx.image})\n\n![relative](cdp-shots/none.png)\n\nTo install it, type:\n\n\`\`\`\n${COMPACT}\n\`\`\``, o(5)),
+                    AC.assistantText(`Sent it to the endpoint; it answered 200.\n\n${LONG_PARA}\n\n![the shot](${ctx.image})\n\n![relative](cdp-shots/none.png)\n\nTo install it, type:\n\n\`\`\`\n${COMPACT}\n\`\`\`\n\nThen sign it:\n\n${BARE}`, o(5)),
                 ]);
                 at = "resetting the grid";
                 await h.ev(`localStorage.setItem(${JSON.stringify(GRID_KEY)}, ${JSON.stringify(JSON.stringify(GRID_EMPTY))})`);
@@ -199,6 +202,28 @@ export default function (kit) {
             });
 
             // 1c. a local image in the reply: read from disk and drawn (not the webview's broken image); a relative one is named
+            // 1b2. a `! cmd` the reply wrote bare: a compact row too, its text as written (the `**` kept, no bold in the reply)
+            await run("1b2. bare command line is a compact row", async (name) => {
+                const find = `[...(${layerOf(A)}?.querySelectorAll("[data-code-compact]") ?? [])].find((r) => r.querySelector("[data-code-line]")?.textContent === ${JSON.stringify(BARE)})`;
+                const up = await polishWaitFor(h, `!!(${find})`, WAIT_MS);
+                const got = await h.ev(`(() => {
+                    const row = ${find};
+                    return {
+                        rows: ${layerOf(A)}?.querySelectorAll("[data-code-compact]").length ?? 0,
+                        run: !!row?.querySelector("[data-code-run]"),
+                        copy: !!row?.querySelector("[data-code-copy] button"),
+                        bold: [...(${layerOf(A)}?.querySelectorAll("strong") ?? [])].map((s) => s.textContent).filter((t) => /WAITING|SIGNED/.test(t)),
+                    };
+                })()`);
+                await h.ev(`(${find})?.scrollIntoView({ block: "center" })`);
+                await shot(h, "1b2-bare-command");
+                rec(
+                    `${name}: the bare line ${BARE} draws as a second [data-code-compact] row with its text as written, Run and Copy, and no <strong> holds WAITING or SIGNED`,
+                    up && got.rows === 2 && got.run && got.copy && got.bold.length === 0,
+                    { up, ...got }
+                );
+            });
+
             await run("1c. local image in a reply is drawn", async (name) => {
                 const drawn = await polishWaitFor(h, `!!${layerOf(A)}?.querySelector("[data-reply-image] img")?.complete`, WAIT_MS);
                 const got = await h.ev(`(() => {

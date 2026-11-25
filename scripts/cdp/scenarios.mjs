@@ -57715,7 +57715,9 @@ const settingsPages = {
         );
 
         // agents-sleep: the Sleep card's four rows in order, the two Compact rows drawing the config in force (on and
-        // 100k unless the person changed them), each on one line; the threshold dims while compaction is off
+        // 100k unless the person changed them); the threshold dims while compaction is off. The rows carry a
+        // description under the title, so they are taller than the one-line flag rows; the switch's says who compacts
+        // an awake agent, which arcterm itself does when Claude Code's own compaction is off
         const sleepCfg = (await h.rpc("getfullconfig", null))?.settings ?? {};
         const compactOn = sleepCfg["agents:compactidle"] ?? true;
         const compactAtK = sleepCfg["agents:compactatk"] ?? 100;
@@ -57732,6 +57734,7 @@ const settingsPages = {
                 atValue: at?.querySelector(".tabular-nums")?.textContent.trim() ?? null,
                 atUnit: at?.textContent.includes("k tokens") ?? false,
                 atDimmed: at ? at.querySelector(".opacity-50") != null : null,
+                namesArcterm: row("agents.compactidle")?.textContent.includes("by arcterm") ?? false,
                 heights: ["agents.compactidle", "agents.compactatk"].map((id) =>
                     Math.round(row(id)?.getBoundingClientRect().height ?? 0)
                 ),
@@ -57741,7 +57744,7 @@ const settingsPages = {
         await polishNap(200);
         await h.shot("cdp-shots/settings-pages-agents-sleep.png");
         rec(
-            "agents-sleep: Sleep idle agents, minutes, Compact before the cache goes cold, its k-token threshold; both Compact rows show the config, one line each",
+            "agents-sleep: Sleep idle agents, minutes, Compact before the cache goes cold, its k-token threshold; both Compact rows show the config, the switch's text names arcterm",
             agentsSleep != null &&
                 JSON.stringify(agentsSleep.rows) ===
                     JSON.stringify(["agents.sleepidle", "agents.sleepaftermin", "agents.compactidle", "agents.compactatk"]) &&
@@ -57750,7 +57753,8 @@ const settingsPages = {
                 agentsSleep.atValue === String(compactAtK) &&
                 agentsSleep.atUnit &&
                 agentsSleep.atDimmed === !compactOn &&
-                agentsSleep.heights.every((px) => px > 0 && px < 44),
+                agentsSleep.namesArcterm &&
+                agentsSleep.heights.every((px) => px > 0 && px < 160),
             JSON.stringify({ ...agentsSleep, compactOn, compactAtK })
         );
 
@@ -72552,6 +72556,7 @@ const OV_OTHER = "verify-overview-other";
 const OV_ASK_ID = "fx-ov-ask";
 const OV_WORK_ID = "fx-ov-work";
 const OV_ELSEWHERE_ID = "fx-ov-elsewhere";
+const OV_SLEEP_ID = "fx-ov-sleep";
 const OV_SESSION_ID = "ov-1";
 const OV_TERM_NAME = "verify-overview terminal";
 const OV_OTHER_TERM_NAME = "verify-overview-other terminal";
@@ -73158,7 +73163,8 @@ const projectOverview = {
                 JSON.stringify(tips)
             );
 
-            // 5e. the summary and the footer read the seed (the footer's session count is History's: the one ended session), the
+            // 5e. the summary and the footer read the seed (the footer counts History's sessions read, live ones too; here the
+            // one ended session), the
             // legend has five level swatches and the no-record one, and the month labels sit over the columns 1 to 51
             const footerUp = await polishWaitFor(
                 h,
@@ -73428,7 +73434,8 @@ const projectOverview = {
                 })
             );
 
-            // 8. two agents in the project (one asks, one works), one asking in the other, and a held run in each project
+            // 8. three agents in the project (one asks, one works, one asleep), one asking in the other, and a held run in
+            // each project
             const now = Date.now();
             mkdirSync(new URL(".", TREE_RAIL_FIXTURE), { recursive: true });
             writeFileSync(
@@ -73466,6 +73473,19 @@ const projectOverview = {
                             activeMs: 60_000,
                             stateSince: now - 60_000,
                             blockId: "fx-blk-ov-work",
+                        },
+                        {
+                            id: OV_SLEEP_ID,
+                            name: "overview sleeper",
+                            project: OV_PROJECT,
+                            task: "hand over the parser",
+                            state: "idle",
+                            agent: "claude",
+                            model: "opus",
+                            idleSince: now - 3 * 3_600_000,
+                            stateSince: now - 3 * 3_600_000,
+                            sleeping: { since: now - 2 * 3_600_000, freedBytes: 300_000_000 },
+                            blockId: "fx-blk-ov-sleep",
                         },
                         {
                             id: OV_ELSEWHERE_ID,
@@ -73526,11 +73546,15 @@ const projectOverview = {
                     theirs: !!page.querySelector('[data-needs-you-row="ov-theirs"]'),
                     work: text(work),
                     quiet: !!page.querySelector("[data-overview-quiet]"),
+                    idleHead: text(page.querySelector("[data-overview-idle] h2")),
+                    sleeper: text(page.querySelector('[data-overview-idle-row="${OV_SLEEP_ID}"][data-asleep]')),
+                    moon: !!page.querySelector('[data-overview-idle-row="${OV_SLEEP_ID}"] svg[aria-label="asleep"]'),
+                    sleeperElsewhere: !!page.querySelector('[data-overview-running-row="${OV_SLEEP_ID}"], [data-overview-finished-row="${OV_SLEEP_ID}"]'),
                 };
             })()`);
             await h.shot("cdp-shots/project-overview-8.png");
             rec(
-                "8. with agents in the project the page lists, under Needs you 2, the asking agent (asking, its question) and this project's held run, and not the other project's agent or run; Running lists the working agent with what it does and an age",
+                "8. with agents in the project the page lists, under Needs you 2, the asking agent (asking, its question) and this project's held run, and not the other project's agent or run; Running lists the working agent with what it does and an age; Idle 1 lists the asleep agent with a moon, 'asleep · its task' and how long it has slept, and no other block lists it",
                 reloaded &&
                     hook &&
                     opened8 &&
@@ -73546,7 +73570,11 @@ const projectOverview = {
                     (page8.work ?? "").includes("Editing overview.tsx") &&
                     // the age is its own span after the activity, so the text runs on into it
                     /(\d+[mhd]|just now)$/.test(page8.work ?? "") &&
-                    !page8.quiet,
+                    !page8.quiet &&
+                    page8.idleHead === "Idle 1" &&
+                    /^overview sleeper ?asleep · hand over the parser ?2h$/.test(page8.sleeper ?? "") &&
+                    page8.moon &&
+                    !page8.sleeperElsewhere,
                 JSON.stringify({ reloaded, hook, opened8, mineUp, workUp, ...page8 })
             );
 
@@ -74413,7 +74441,7 @@ const projectOverviewHistory = {
             await h.ev(`window.${OVH_MOCK_KEY}.mode.noSessionsB = true`);
             const opened11b = await ovhReopen(h, ctx, OVH_B);
             const empty11b = await polishWaitFor(h, ovHas("[data-history-empty]"), 8000);
-            const line = `No sessions in ${OVH_B} in the last 7 days.`;
+            const line = `No ended sessions in ${OVH_B} in the last 7 days.`;
             const page11b = await h.ev(`(() => {
                 const empty = document.querySelector("[data-history-empty]");
                 return {

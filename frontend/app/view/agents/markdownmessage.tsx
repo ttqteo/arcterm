@@ -22,6 +22,7 @@ import ReactMarkdown, { defaultUrlTransform, type Components } from "react-markd
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
 import type { PluggableList } from "unified";
+import { fenceBangLines } from "./bashlines";
 import { FilePill } from "./chatfilepill";
 import { codePicturePath, imageSrcKind, keepLocalImageUrl, localImagePath } from "./chatimagesrc";
 import { INITIATIVE_LANG } from "./chatinitiative";
@@ -220,12 +221,14 @@ function InlineCode({ className, children }: { className?: string; children?: Re
 // diagrams, your bubble in Chat takes mentions; an agent's transcript takes none, so it never loads mermaid. `refs` is the
 // references alone, for an agent's reply in Chat (no `@path` pills: an agent's `@` is not a pick): an `agent:`… token as
 // a badge, and a code span that is an id (`4e6ea128`, refbadge.ts codeRef) as the badge of what it names, the code as
-// written when it names nothing. `mentions` includes `refs`.
+// written when it names nothing. `mentions` includes `refs`. `commands` fences a bare `! cmd` line (bashlines.ts), so a
+// command an agent forgot to put in code draws as the command row it meant, not as prose Markdown rewrote.
 export interface MarkdownExtras {
     marks?: boolean;
     diagrams?: boolean;
     mentions?: boolean;
     refs?: boolean;
+    commands?: boolean;
 }
 
 const MARK_COMPONENT: Components = {
@@ -341,7 +344,7 @@ function renderMd(text: string, extras: MarkdownExtras = {}) {
             components={componentsFor(extras)}
             urlTransform={urlTransform}
         >
-            {guardDollars(text)}
+            {guardDollars(extras.commands ? fenceBangLines(text) : text)}
         </ReactMarkdown>
     );
 }
@@ -365,6 +368,7 @@ export const MarkdownMessage = memo(function MarkdownMessage({
     diagrams,
     mentions,
     refs,
+    commands,
 }: { text: string; className?: string } & MarkdownExtras) {
     const segments = splitInsightBlocks(text);
     // the selection is drawn over the text by selectionpaint.ts, not by the engine (WebKit fills the margins)
@@ -386,9 +390,9 @@ export const MarkdownMessage = memo(function MarkdownMessage({
             />
             {segments.map((seg, i) =>
                 seg.kind === "insight" ? (
-                    <InsightCallout key={i} text={seg.text} extras={{ marks, diagrams, mentions, refs }} />
+                    <InsightCallout key={i} text={seg.text} extras={{ marks, diagrams, mentions, refs, commands }} />
                 ) : (
-                    <Fragment key={i}>{renderMd(seg.text, { marks, diagrams, mentions, refs })}</Fragment>
+                    <Fragment key={i}>{renderMd(seg.text, { marks, diagrams, mentions, refs, commands })}</Fragment>
                 )
             )}
         </div>
