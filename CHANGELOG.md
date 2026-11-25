@@ -49,6 +49,9 @@ and a picture given to a line that is not big.
 - A run an agent starts with `wsh runs start` sits under that agent in the Agent tree, and a run its own agent starts
   sits one level further; a run started from the cockpit, or whose agent has closed, keeps a row of its own (from the
   kaeltran16 fork).
+- Each drawer answer on a board is its own titled drawing: the row above the board lists them one click away, and the
+  view moves to a new drawing as it lands unless you went back to an earlier one, which then shows a `new` mark on the
+  new one (from the kaeltran16 fork). <!-- big --> <!-- shot: 1.11.0-board-drawings.webp -->
 
 ### Changed
 
@@ -77,6 +80,10 @@ and a picture given to a line that is not big.
   it adds another judge; on a judge, a link goes to the agent it judges), and the rail turns to Decided.
 - In Chat, a `! command` an agent asks you to type inside a sentence is highlighted like the must-read lines, so it no
   longer reads as just another piece of code.
+- Boards open for viewing, with no drawing toolbar and drags that pan; press Edit above the board to draw, move or
+  select shapes and ask about them (from the kaeltran16 fork).
+- The drawer keeps each drawing short, a few words per box and one idea per drawing; more becomes another drawing (from
+  the kaeltran16 fork).
 
 ### Fixed
 
@@ -89,6 +96,8 @@ and a picture given to a line that is not big.
 - A background subagent cut off when its agent's session ended no longer shows as running in the Agent tree forever,
   and no longer keeps its agent from going to sleep: it reads stopped, as the agent was told when it resumed.
   the agent's rail with the Decided tab stays beside the conversation.
+- Expanding a board that then fits whole drops its ‹ N parts › stepper, and collapsing it brings the stepper back. The
+  parts used to stay as they were when the board opened.
 
 ## 1.10.0 — 2026-11-25
 

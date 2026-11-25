@@ -375,6 +375,8 @@ declare global {
         add?: string;
         update?: string;
         remove?: string[];
+        title?: string;
+        drawingid?: string;
         ts: number;
     };
 
@@ -446,6 +448,7 @@ declare global {
         question?: string;
         on?: string;
         selectedids?: string[];
+        drawingid?: string;
         context?: string;
         state: string;
         title?: string;
@@ -997,6 +1000,7 @@ declare global {
         question: string;
         on?: string;
         selectedids?: string[];
+        drawingid?: string;
     };
 
     // wshrpc.CommandBoardListData

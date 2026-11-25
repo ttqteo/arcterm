@@ -3,13 +3,15 @@
 
 // A board as a cell of its own in the Agent surface's grid, a peer of the agent and terminal cells (agentsurface.tsx
 // draws the cell's wrapper and bar; boardcell.ts holds the rules). It reads one chat, the board's tie, and its header
-// moves it to another. It holds no xterm, so it mounts only while shown and goes when the cell does.
+// moves it to another. Above the canvas sits the strip (boardstrip.tsx: the drawings row and the Edit switch); a board
+// opens in view mode, so a line asks about the drawing in view and no shapes until Edit is pressed. It holds no xterm,
+// so it mounts only while shown and goes when the cell does.
 //
 // The canvas is mounted only while the Agent surface is on screen. The surface keeps its cells mounted when another
 // surface shows, and a canvas left running there would be a second copy of the board beside Library's, each saving over
 // the other; closed, it saves its edits and the next look reads the file again.
 
-import { springFoldHeight, springFoldWidth } from "@/app/element/motiontokens";
+import { layerFade, springFoldHeight, springFoldWidth } from "@/app/element/motiontokens";
 import { usePartMotion } from "@/app/element/springbatch";
 import { useDimensionsWithCallbackRef } from "@/app/hook/useDimensions";
 import { cn } from "@/util/util";
@@ -33,7 +35,8 @@ import {
     turnsFoldedAtom,
     type BoardSplit,
 } from "./boardsplitstore";
-import { boardsOfAgent, useBoardList, useBoardTalk } from "./boardstore";
+import { boardDrawingsAtom, boardEditingAtom, boardsOfAgent, useBoardList, useBoardTalk } from "./boardstore";
+import { BoardStrip } from "./boardstrip";
 import { agentAlive, askAllowed } from "./boardtalkmodel";
 import { BoardTurns } from "./boardturns";
 
@@ -82,6 +85,12 @@ function OpenCell({
     const [parts, setParts] = useState<BoardPart[]>([]);
     const [part, setPart] = useState<number | null>(null);
     const [turnsFolded, setTurnsFolded] = useAtom(turnsFoldedAtom(key));
+    // the Edit switch and the drawings row the canvas publishes (boardstore.ts): in view mode a selection is only Show's,
+    // so a line asks about the drawing in view and about no shapes; in Edit about the drawing a selection names
+    const editing = useAtomValue(boardEditingAtom(boardId));
+    const drawings = useAtomValue(boardDrawingsAtom(boardId));
+    const askedSelection = editing ? selection : null;
+    const askedDrawing = (editing ? drawings?.selected : null) ?? drawings?.inView ?? null;
 
     // the canvas is gone while another surface shows: what it had selected or shown goes with it
     useEffect(() => {
@@ -93,6 +102,10 @@ function OpenCell({
     }, [onAgentSurface]);
 
     const board = list?.find((b) => b.id === boardId);
+    // nothing drawn and nothing asked: the list is read (the wire omits `shapes` at 0) and the talk holds no turn. A file
+    // that won't open has its own line in the canvas's place.
+    const empty =
+        board != null && (board.shapes ?? 0) === 0 && !board.loaderror && talk != null && talk.turns.length === 0;
     // the chat the board reads (its tie), and the project's live Claude chats it can move to
     const chatId = board?.agenttabid ?? "";
     const alive = agentAlive(chatId, roster);
@@ -144,6 +157,7 @@ function OpenCell({
             onStop={() => void act(() => stopBoardTurn(target))}
             onRetry={(turn) => void act(() => retryBoardTurn(target, turn.id))}
             onEarlier={alone ? undefined : () => setBoardMax(split, true)}
+            emptyText="No turns yet. Ask below; to ask about shapes, press Edit and select them."
         />
     );
 
@@ -179,18 +193,41 @@ function OpenCell({
                 enough (640px), the expanded board has the canvas on the left and on its right the turns column with the
                 ask box under it; narrower (a grid cell), they stack under the canvas, the turns scrolling in what is left */}
             <div className={cn("flex min-h-0 flex-1 flex-col", expanded && "@[640px]:flex-row")}>
-                <div className="relative min-h-0 min-w-0 flex-1">
-                    {onAgentSurface ? (
-                        <BoardCanvas
-                            project={project}
-                            boardId={boardId}
-                            highlightIds={highlight}
-                            onSelection={(s) => setSelection(s.ids.length > 0 ? s : null)}
-                            part={part}
-                            onPart={setPart}
-                            onParts={setParts}
-                        />
-                    ) : null}
+                {/* the board's strip (the drawings row and Edit) sits directly above the canvas, in the canvas's column:
+                    wide, it spans the canvas and not the turns column */}
+                <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+                    <BoardStrip boardId={boardId} />
+                    <div className="relative min-h-0 min-w-0 flex-1">
+                        {onAgentSurface ? (
+                            <BoardCanvas
+                                project={project}
+                                boardId={boardId}
+                                highlightIds={highlight}
+                                onSelection={(s) => setSelection(s.ids.length > 0 ? s : null)}
+                                part={part}
+                                onPart={setPart}
+                                onParts={setParts}
+                            />
+                        ) : null}
+                        <MotionConfig reducedMotion="user">
+                            <AnimatePresence initial={false}>
+                                {onAgentSurface && empty ? (
+                                    <motion.div
+                                        key="empty"
+                                        data-board-empty
+                                        variants={layerFade}
+                                        initial="initial"
+                                        animate="animate"
+                                        exit="exit"
+                                        // over the canvas, which stays under it: a press goes through to draw on it
+                                        className="pointer-events-none absolute inset-0 flex items-center justify-center px-6 text-center text-[13px] leading-[1.5] text-muted"
+                                    >
+                                        Nothing drawn yet. Ask below, or press Edit to draw.
+                                    </motion.div>
+                                ) : null}
+                            </AnimatePresence>
+                        </MotionConfig>
+                    </div>
                 </div>
                 {/* the strip sits before the column, so a folding column shrinks toward the edge and the strip rides
                     out to it; the column slides open and shut on the spring (springFoldWidth beside the canvas,
@@ -246,10 +283,13 @@ function OpenCell({
                                         </div>
                                     ) : null}
                                     <BoardAskBox
-                                        selection={selection}
+                                        editing={editing}
+                                        selection={askedSelection}
                                         allowed={askAllowed(talk, alive)}
                                         placeholder={alive ? undefined : "Its chat has ended: pick a chat above to ask"}
-                                        onAsk={(question) => act(() => askBoard(target, question, selection))}
+                                        onAsk={(question) =>
+                                            act(() => askBoard(target, question, askedSelection, askedDrawing))
+                                        }
                                     />
                                 </div>
                             </motion.div>

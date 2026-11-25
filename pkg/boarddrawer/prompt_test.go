@@ -90,7 +90,7 @@ func TestPromptRequestAndAsk(t *testing.T) {
 	// the agent's request must be drawn, never flagged
 	req := turnPrompt(turnInput{Scene: scene, Request: true, Question: "Draw the retry loop.", AgentTitle: agentName})
 	if !strings.Contains(req, agentName+" asks you to draw: Draw the retry loop.") || strings.Contains(req, "<briefing>") ||
-		!strings.Contains(req, "This is the agent's own request: draw it. Never flag it as a question.") {
+		!strings.Contains(req, "This is the agent's own request: draw it as a new drawing. Never flag it as a question.") {
 		t.Errorf("a one-line request carries its sender and ask, and no briefing block:\n%s", req)
 	}
 	noAsk := turnPrompt(turnInput{Scene: scene, Request: true, Context: "facts", AgentTitle: agentName})
@@ -106,6 +106,45 @@ func TestPromptRequestAndAsk(t *testing.T) {
 	draw := turnPrompt(turnInput{Scene: scene, Question: "Why twice?", Draw: true})
 	if !strings.Contains(draw, "The person sent this line to be drawn: draw it, even if it reads as a question. Never flag it.") {
 		t.Errorf("a line sent to be drawn must say so:\n%s", draw)
+	}
+}
+
+// the drawing in view is named only when the turn's drawing is a live frame; otherwise the turn says none is in view
+func TestPromptDrawingInView(t *testing.T) {
+	framed := mustScene(t, framedSceneFile, nil)
+	inView := turnPrompt(turnInput{Scene: framed, DrawingId: "f1", Question: "Simpler."})
+	if !strings.Contains(inView, drawingInViewHead+`"Cache path" (id f1)`) || !strings.Contains(inView, `"edit": true`) ||
+		!strings.Contains(inView, `"frame":"f1"`) || strings.Contains(inView, noDrawingLine) {
+		t.Errorf("the turn lacks the drawing in view and how an edit is marked:\n%s", inView)
+	}
+	for _, id := range []string{"", "gonef", "cache", "nothere"} {
+		p := turnPrompt(turnInput{Scene: framed, DrawingId: id, Question: "Simpler."})
+		if strings.Contains(p, drawingInViewHead) || !strings.Contains(p, "No drawing is in view: draw this turn's answer as a new drawing.") {
+			t.Errorf("drawing %q is not a live frame, so none is in view:\n%s", id, p)
+		}
+	}
+	// the agent's request has no drawing in view, even on a board with drawings
+	req := turnPrompt(turnInput{Scene: framed, Request: true, Question: "Draw the retry loop."})
+	if strings.Contains(req, drawingInViewHead) || !strings.Contains(req, noDrawingLine) || !strings.Contains(req, "as a new drawing") {
+		t.Errorf("an agent's request is a new drawing:\n%s", req)
+	}
+}
+
+// the drawer prompt asks for one short drawing: new or edit, the limits Arc enforces, and nothing the port dropped
+func TestPromptOneDrawingAtATime(t *testing.T) {
+	first := firstPrompt(firstInput{BoardName: "Board talk"}, turnInput{Scene: Scene{}, Question: "Draw it."})
+	for _, want := range []string{
+		"One drawing at a time", `"edit": true`, "At most 40 shapes in `add`", "at most 12 words", "An agent's request is always a new drawing",
+		"chart", // main's vocabulary stays
+	} {
+		if !strings.Contains(first, want) {
+			t.Errorf("the prompt lacks %q", want)
+		}
+	}
+	for _, gone := range []string{"At most 200 entries", "The whole board is shared", "beside or under what is there", "[ABOUT]", "[TURN]", "elsewhere"} {
+		if strings.Contains(first, gone) {
+			t.Errorf("the prompt still says %q", gone)
+		}
 	}
 }
 

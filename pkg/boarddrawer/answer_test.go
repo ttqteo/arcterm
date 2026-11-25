@@ -9,7 +9,21 @@ import (
 	"testing"
 )
 
-var checkScene = Scene{Types: map[string]string{"box": "rectangle", "note": "text", "link": "arrow", "wire": "line"}, Shapes: 4}
+// checkScene holds two drawings: f1 (box, note, link, wire) and f2 (other), and the loose shape loose.
+var checkScene = Scene{
+	Types: map[string]string{
+		"box": "rectangle", "note": "text", "link": "arrow", "wire": "line", "f1": "frame",
+		"other": "rectangle", "f2": "frame", "loose": "ellipse",
+	},
+	Frames:  map[string]string{"f1": "Cache", "f2": "API"},
+	FrameOf: map[string]string{"box": "f1", "note": "f1", "link": "f1", "wire": "f1", "other": "f2"},
+	Shapes:  6,
+}
+
+const (
+	twelveWords   = "one two three four five six seven eight nine ten eleven twelve"
+	thirteenWords = twelveWords + " thirteen"
+)
 
 const goodAdd = `[{"type":"rectangle","id":"a","x":0,"y":300,"width":10,"height":10,"label":{"text":"A"}}, {"type":"text","id":"b","x":0,"y":340,"text":"note"},{"type":"arrow","id":"ab","x":0,"y":300,"start":{"id":"a"},"end":{"id":"b"}}]`
 
@@ -26,11 +40,12 @@ func manyAdds(n int) string {
 }
 
 func TestParseAnswer(t *testing.T) {
-	a, err := ParseAnswer("```json\n"+answerWith(`,"add":`+goodAdd+`,"update":[{"id":"box", "x":40,"label":"wavesrv"},{"id":"note","text":"hi","strokeColor":"#e03131"}],"remove":["wire"]`)+"\n```", checkScene)
+	// an edit whose add, update and remove stay in the drawing in view
+	a, err := ParseAnswer("```json\n"+answerWith(`,"edit":true,"add":`+goodAdd+`,"update":[{"id":"box", "x":40,"label":"wavesrv"},{"id":"note","text":"hi","strokeColor":"#e03131"}],"remove":["wire"]`)+"\n```", checkScene, "f1")
 	if err != nil {
 		t.Fatalf("valid answer refused: %v", err)
 	}
-	if a.Title != "wavesrv, opened up" || a.Added != 3 || a.Changed != 2 || a.Removed != 1 || a.Question {
+	if !a.Edit || a.Title != "wavesrv, opened up" || a.Added != 3 || a.Changed != 2 || a.Removed != 1 || a.Question {
 		t.Errorf("answer: %+v", a)
 	}
 	for name, s := range map[string]string{"add": a.Add, "update": a.Update} {
@@ -44,47 +59,70 @@ func TestParseAnswer(t *testing.T) {
 
 	// a reply key (words) and an elsewhere key are ignored: words alone draw nothing and flag nothing, and the turn
 	// decides what that means
-	words, err := ParseAnswer(`{"reply":"No drawing needed.","elsewhere":true}`, checkScene)
+	words, err := ParseAnswer(`{"reply":"No drawing needed.","elsewhere":true}`, checkScene, "")
 	if err != nil || words.HasDrawing() || words.Question || words.Add != "" || words.Update != "" || words.Title != "" {
 		t.Errorf("words only must be valid with no drawing and no question: %+v %v", words, err)
 	}
-	q, err := ParseAnswer(`{"question":true}`, checkScene)
+	q, err := ParseAnswer(`{"question":true}`, checkScene, "")
 	if err != nil || !q.Question || q.HasDrawing() {
 		t.Errorf("a question flag must pass as a question: %+v %v", q, err)
 	}
-	if a, err := ParseAnswer(`{"title":"x","add":`+goodAdd+`}`, checkScene); err != nil || a.Added != 3 {
-		t.Errorf("a drawing must pass: %+v %v", a, err)
+	// a new drawing that only adds, with or without a drawing in view
+	for _, inView := range []string{"", "f1"} {
+		if a, err := ParseAnswer(`{"title":"x","add":`+goodAdd+`}`, checkScene, inView); err != nil || a.Added != 3 || a.Edit {
+			t.Errorf("a new drawing (in view %q) must pass: %+v %v", inView, a, err)
+		}
+	}
+	at := fmt.Sprintf(`,"add":[{"type":"rectangle","id":"a","label":{"text":%q}},{"type":"text","id":"b","text":%q}],"update":[{"id":"note","text":%q},{"id":"box","label":%q}]`,
+		twelveWords, twelveWords, twelveWords, twelveWords)
+	if _, err := ParseAnswer(answerWith(`,"edit":true`+at), checkScene, "f1"); err != nil {
+		t.Errorf("%d words must pass: %v", MaxLabelWords, err)
 	}
 
+	edit := func(fields string) string { return answerWith(`,"edit":true` + fields) }
 	cases := []struct {
-		name, reply, wantErr string
+		name, reply, drawing, wantErr string
 	}{
-		{"blank output", "  \n", "without a reply"},
-		{"question with a drawing", `{"question":true,"title":"x","add":` + goodAdd + `}`, "flags a question and also changes"},
-		{"question of the wrong type", `{"question":"yes"}`, "wrong types"},
-		{"prose around", "Here:\n" + answerWith(""), "not one JSON object"},
-		{"two objects", answerWith("") + answerWith(""), "not one JSON object"},
-		{"an array", `[` + answerWith("") + `]`, "not one JSON object"},
-		{"update id not in scene", answerWith(`,"update":[{"id":"nope","x":1}]`), `"nope", which is not on the board`},
-		{"text on a non-text element", answerWith(`,"update":[{"id":"box","text":"hi"}]`), `text on "box"`},
-		{"label on a text element", answerWith(`,"update":[{"id":"note","label":"hi"}]`), `label on "note"`},
-		{"label on a line", answerWith(`,"update":[{"id":"wire","label":"hi"}]`), `label on "wire"`},
-		{"unknown update key", answerWith(`,"update":[{"id":"box","angle":2}]`), `"angle"`},
-		{"update key of the wrong type", answerWith(`,"update":[{"id":"box","x":"left"}]`), `"x" is not a number`},
-		{"update without id", answerWith(`,"update":[{"x":1}]`), "has no id"},
-		{"update twice", answerWith(`,"update":[{"id":"box","x":1},{"id":"box","y":1}]`), `"box" twice`},
-		{"remove id not in scene", answerWith(`,"remove":["gone"]`), `remove names "gone"`},
-		{"arrow binding outside add", answerWith(`,"add":[{"type":"arrow","id":"x","start":{"id":"box"}}]`), `binds to "box"`},
-		{"bad add type", answerWith(`,"add":[{"type":"star","id":"a"}]`), `type "star"`},
-		{"add without id", answerWith(`,"add":[{"type":"text","text":"x"}]`), "has no id"},
-		{"add id twice", answerWith(`,"add":[{"type":"text","id":"a"},{"type":"ellipse","id":"a"}]`), "used twice"},
-		{"201 entries", answerWith(`,"add":` + manyAdds(MaxShapes) + `,"remove":["wire"]`), "201 entries"},
-		{"drawing without a title", `{"add":` + goodAdd + `}`, "no title"},
-		{"wrong field types", `{"remove":[1]}`, "wrong types"},
+		{"blank output", "  \n", "", "without a reply"},
+		{"question with a drawing", `{"question":true,"title":"x","add":` + goodAdd + `}`, "", "flags a question and also changes"},
+		{"question of the wrong type", `{"question":"yes"}`, "", "wrong types"},
+		{"prose around", "Here:\n" + answerWith(""), "", "not one JSON object"},
+		{"two objects", answerWith("") + answerWith(""), "", "not one JSON object"},
+		{"an array", `[` + answerWith("") + `]`, "", "not one JSON object"},
+		{"update id not in scene", answerWith(`,"update":[{"id":"nope","x":1}]`), "", `"nope", which is not on the board`},
+		{"text on a non-text element", answerWith(`,"update":[{"id":"box","text":"hi"}]`), "", `text on "box"`},
+		{"label on a text element", answerWith(`,"update":[{"id":"note","label":"hi"}]`), "", `label on "note"`},
+		{"label on a line", answerWith(`,"update":[{"id":"wire","label":"hi"}]`), "", `label on "wire"`},
+		{"unknown update key", answerWith(`,"update":[{"id":"box","angle":2}]`), "", `"angle"`},
+		{"update key of the wrong type", answerWith(`,"update":[{"id":"box","x":"left"}]`), "", `"x" is not a number`},
+		{"update without id", answerWith(`,"update":[{"x":1}]`), "", "has no id"},
+		{"update twice", answerWith(`,"update":[{"id":"box","x":1},{"id":"box","y":1}]`), "", `"box" twice`},
+		{"remove id not in scene", answerWith(`,"remove":["gone"]`), "", `remove names "gone"`},
+		{"arrow binding outside add", answerWith(`,"add":[{"type":"arrow","id":"x","start":{"id":"box"}}]`), "", `binds to "box"`},
+		{"bad add type", answerWith(`,"add":[{"type":"star","id":"a"}]`), "", `type "star"`},
+		{"add without id", answerWith(`,"add":[{"type":"text","text":"x"}]`), "", "has no id"},
+		{"add id twice", answerWith(`,"add":[{"type":"text","id":"a"},{"type":"ellipse","id":"a"}]`), "", "used twice"},
+		{"drawing without a title", `{"add":` + goodAdd + `}`, "", "no title"},
+		{"wrong field types", `{"remove":[1]}`, "", "wrong types"},
+		{"edit with no drawing in view", edit(`,"add":` + goodAdd), "", "no drawing is in view"},
+		{"edit of a drawing no longer on the board", edit(`,"add":` + goodAdd), "gone", "no drawing is in view"},
+		{"edit of a shape's id as the drawing", edit(`,"add":` + goodAdd), "box", "no drawing is in view"},
+		{"edit updating another drawing's shape", edit(`,"update":[{"id":"other","x":1}]`), "f1", `"other", which is outside the drawing`},
+		{"edit removing a loose shape", edit(`,"remove":["loose"]`), "f1", `"loose", which is outside the drawing`},
+		{"edit updating its frame", edit(`,"update":[{"id":"f1","x":1}]`), "f1", `"f1", a drawing's frame`},
+		{"edit removing a frame", edit(`,"remove":["f2"]`), "f1", `"f2", a drawing's frame`},
+		{"new drawing that updates", answerWith(`,"update":[{"id":"box","x":1}]`), "f1", "a new drawing only adds"},
+		{"new drawing that removes", answerWith(`,"remove":["loose"]`), "", "a new drawing only adds"},
+		{"41 adds", answerWith(`,"add":` + manyAdds(MaxDrawingAdds+1)), "", "adds 41 shapes"},
+		{"41 adds in an edit", edit(`,"add":` + manyAdds(MaxDrawingAdds+1)), "f1", "adds 41 shapes"},
+		{"added text over 12 words", answerWith(`,"add":[{"type":"text","id":"t","text":"` + thirteenWords + `"}]`), "", "13 words"},
+		{"added label over 12 words", answerWith(`,"add":[{"type":"ellipse","id":"e","label":{"text":"` + thirteenWords + `"}}]`), "", "13 words"},
+		{"updated label over 12 words", edit(`,"update":[{"id":"box","label":"` + thirteenWords + `"}]`), "f1", "13 words"},
+		{"updated text over 12 words", edit(`,"update":[{"id":"note","text":"` + thirteenWords + `"}]`), "f1", "13 words"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			_, err := ParseAnswer(c.reply, checkScene)
+			_, err := ParseAnswer(c.reply, checkScene, c.drawing)
 			if err == nil || !strings.Contains(err.Error(), c.wantErr) {
 				t.Fatalf("want error containing %q, got %v", c.wantErr, err)
 			}
@@ -94,8 +132,79 @@ func TestParseAnswer(t *testing.T) {
 		})
 	}
 
-	if _, err := ParseAnswer(answerWith(`,"add":`+manyAdds(MaxShapes)), checkScene); err != nil {
-		t.Errorf("200 entries must pass: %v", err)
+	if _, err := ParseAnswer(answerWith(`,"add":`+manyAdds(MaxDrawingAdds)), checkScene, ""); err != nil {
+		t.Errorf("%d adds must pass: %v", MaxDrawingAdds, err)
+	}
+	// an edit that touches no shape draws nothing, so it has no drawing to keep to, wherever it points
+	if a, err := ParseAnswer(`{"edit":true,"question":true}`, checkScene, ""); err != nil || !a.Question || a.HasDrawing() {
+		t.Errorf("a flagged question with a stray edit key must pass as a question: %+v %v", a, err)
+	}
+}
+
+// bigScene is one drawing, f1, of n shapes s0..s(n-1): a whole answer can reach MaxShapes only as an edit of it.
+func bigScene(n int) Scene {
+	s := Scene{
+		Types: map[string]string{"f1": "frame"}, Frames: map[string]string{"f1": "Big"}, FrameOf: map[string]string{}, Shapes: n,
+	}
+	for i := 0; i < n; i++ {
+		id := fmt.Sprintf("s%d", i)
+		s.Types[id], s.FrameOf[id] = "rectangle", "f1"
+	}
+	return s
+}
+
+// MaxShapes caps the whole answer across add, update and remove; a new drawing (40 adds, nothing else) never gets there
+func TestParseAnswerCapsTheWholeAnswer(t *testing.T) {
+	scene := bigScene(MaxShapes)
+	entries := func(adds, updates, removes int) string {
+		upd := make([]string, updates)
+		for i := range upd {
+			upd[i] = fmt.Sprintf(`{"id":"s%d","x":1}`, i)
+		}
+		rem := make([]string, removes)
+		for i := range rem {
+			rem[i] = fmt.Sprintf("%q", fmt.Sprintf("s%d", updates+i))
+		}
+		return fmt.Sprintf(`,"edit":true,"add":%s,"update":[%s],"remove":[%s]`, manyAdds(adds), strings.Join(upd, ","), strings.Join(rem, ","))
+	}
+	// 40 + 80 + 80
+	a, err := ParseAnswer(answerWith(entries(MaxDrawingAdds, 80, 80)), scene, "f1")
+	if err != nil || a.Added+a.Changed+a.Removed != MaxShapes {
+		t.Errorf("%d entries in an edit must pass: %+v %v", MaxShapes, a, err)
+	}
+	_, err = ParseAnswer(answerWith(entries(MaxDrawingAdds, 81, 80)), scene, "f1")
+	if err == nil || !strings.Contains(err.Error(), "201 entries") || !strings.HasPrefix(err.Error(), unusableHead) {
+		t.Errorf("201 entries in an edit: %v", err)
+	}
+	// a new drawing past 40 adds is refused, however far under 200 it is
+	_, err = ParseAnswer(answerWith(`,"add":`+manyAdds(MaxDrawingAdds+1)), scene, "")
+	if err == nil || !strings.Contains(err.Error(), "adds 41 shapes") {
+		t.Errorf("41 adds in a new drawing: %v", err)
+	}
+}
+
+// the 40 counts what the drawer wrote: a chart is one entry, however many shapes Arc lays out for it
+func TestParseAnswerChartCountsOnceTowardTheAddLimit(t *testing.T) {
+	chart := `{"type":"chart","id":"c%d","kind":"bar","x":0,"y":0,"data":[["a",1],["b",2],["c",3],["d",4]]}`
+	parts := make([]string, MaxDrawingAdds)
+	for i := range parts {
+		parts[i] = fmt.Sprintf(chart, i)
+	}
+	a, err := ParseAnswer(answerWith(`,"add":[`+strings.Join(parts, ",")+`]`), checkScene, "")
+	if err != nil || a.Added != MaxDrawingAdds {
+		t.Fatalf("%d charts must pass as %d adds: %+v %v", MaxDrawingAdds, MaxDrawingAdds, a, err)
+	}
+	if n := strings.Count(a.Add, `"type":"rectangle"`); n <= MaxDrawingAdds {
+		t.Errorf("the charts must still land as the shapes they lay out, got %d rectangles", n)
+	}
+	more := append(parts, fmt.Sprintf(chart, MaxDrawingAdds))
+	if _, err := ParseAnswer(answerWith(`,"add":[`+strings.Join(more, ",")+`]`), checkScene, ""); err == nil || !strings.Contains(err.Error(), "adds 41 shapes") {
+		t.Errorf("41 charts: %v", err)
+	}
+	// a chart's title is laid out by Arc, not written as a label: the 12 words are the drawer's own text
+	title := fmt.Sprintf(`[{"type":"chart","id":"c","kind":"bar","x":0,"y":0,"title":%q,"data":[["a",1]]}]`, thirteenWords)
+	if _, err := ParseAnswer(answerWith(`,"add":`+title), checkScene, ""); err != nil {
+		t.Errorf("a chart's title is not counted in words: %v", err)
 	}
 }
 

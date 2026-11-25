@@ -12,6 +12,9 @@
 //             [data-library-board-agent-line], [data-library-board-summary], [data-library-board-thumb]
 //   open      [data-library-board-open="<id>"] with [data-library-board-conversation], [data-library-board-ended]
 //   empty     [data-library-boards-empty]
+//   strip     [data-board-strip] above the open board's canvas: its drawings row ([data-board-drawings] with a
+//             [data-board-drawing="<id>"] chip each) and the Edit switch [data-board-edit] (aria-pressed); a board opens in
+//             view mode (the canvas's data-board-view-mode); [data-board-empty] over the canvas of a board with no shapes
 
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -33,10 +36,12 @@ const B_ENDED = "b0b1b001"; // wavesrv-startup: its agent ended; the newest
 const B_LIVE = "b0b1b002"; // jobslot-queue: its agent is in the roster
 const B_OLD = "b0b1b003"; // council-rounds: ended, three days old
 const B_OTHER = "b0b1b004"; // another project's board
+const B_EMPTY = "b0b1b005"; // step 7c's board with nothing drawn on it, there only while that step runs
 const N_ENDED = "wavesrv-startup";
 const N_LIVE = "jobslot-queue";
 const N_OLD = "council-rounds";
 const N_OTHER = "retro-flow";
+const N_EMPTY = "empty-notes";
 
 const T_DRAWN = "t-drawn";
 const T_FWD = "t-forwarded";
@@ -294,6 +299,30 @@ export default function (kit) {
                 };
             `;
             const canvasReady = (id) => until(() => h.ev(`document.querySelector(${q(`${OPEN(id)} [data-board-canvas="${id}"]`)})?.dataset.boardReady === "true"`));
+            // the open board's Edit switch, set to on or off: pressed only when it reads the other way, then waited for
+            const setEdit = async (id, on) => {
+                const sel = `${OPEN(id)} [data-board-edit]`;
+                const now = await h.ev(`document.querySelector(${q(sel)})?.getAttribute("aria-pressed") ?? null`);
+                if (now == null) return false;
+                if (now !== String(on)) await click(sel);
+                const ok = await until(() => h.ev(`document.querySelector(${q(sel)})?.getAttribute("aria-pressed") === ${q(String(on))}`));
+                await polishNap(300);
+                return ok;
+            };
+            // the board's mode as drawn: the canvas's view mode flag, Excalidraw's drawing toolbar, the Edit switch. The toolbar
+            // is probed by .App-toolbar-container, which both layouts render only while the drawing tools show: the phone
+            // layout's bottom footer.App-toolbar stays in view mode
+            const modeOf = (id) =>
+                h.ev(`(() => {
+                    const c = document.querySelector(${q(`${OPEN(id)} [data-board-canvas="${id}"]`)});
+                    const e = document.querySelector(${q(`${OPEN(id)} [data-board-edit]`)});
+                    return {
+                        view: c?.dataset.boardViewMode ?? null,
+                        toolbar: !!c?.querySelector(".App-toolbar-container"),
+                        edit: e?.getAttribute("aria-pressed") ?? null,
+                        editLabel: (e?.textContent ?? "").trim(),
+                    };
+                })()`);
             const turnRows = () =>
                 h.ev(`[...document.querySelectorAll(${q(`${OPEN(B_ENDED)} [data-board-turn]`)})].map((row) => ({
                     id: row.getAttribute("data-board-turn"),
@@ -472,8 +501,13 @@ export default function (kit) {
             });
 
             // --- 7. a hand edit saves under the rev the canvas read ---
-            await run("7. a rectangle added on the ended board's canvas is saved: BoardSaveCommand with the board's rev", async (name) => {
+            // Edit is pressed first: a board opens in view mode, and the strip above Library's canvas holds the switch
+            await run("7. in Edit, a rectangle added on the ended board's canvas is saved: BoardSaveCommand with the board's rev", async (name) => {
+                const editOn = await setEdit(B_ENDED, true);
+                // opening the board wrapped its loose shapes in an Earlier drawings frame and saved that once, at rev-0
+                const wrapped = await until(async () => (await boardFile(h, B_ENDED))?.rev !== "rev-0");
                 const before = await boardCalls(h, "BoardSaveCommand");
+                const revBefore = (await boardFile(h, B_ENDED))?.rev;
                 await boardPage(
                     h,
                     `${APP}
@@ -488,20 +522,129 @@ export default function (kit) {
                 const call = calls.at(-1);
                 const file = await boardFile(h, B_ENDED);
                 await shot("7-hand-edit");
+                const wrapSave = before[0] == null ? null : JSON.parse(before[0].data).elements.filter((e) => e.type === "frame" && !e.isDeleted);
                 rec(
                     name,
-                    before.length === 0 &&
+                    editOn &&
+                        wrapped &&
+                        before.length === 1 &&
+                        before[0].baserev === "rev-0" &&
+                        wrapSave?.length === 1 &&
+                        wrapSave[0].name === "Earlier drawings" &&
                         saved &&
-                        calls.length === 1 &&
+                        calls.length === before.length + 1 &&
                         call.project === PROJECT &&
                         call.boardid === B_ENDED &&
-                        call.baserev === "rev-0" &&
+                        call.baserev === revBefore &&
                         String(call.data).includes('"hand-rect"') &&
-                        file?.rev !== "rev-0" &&
+                        file?.rev !== revBefore &&
                         file.elements.some((e) => e.id === "hand-rect") &&
-                        // the drawn shapes are still there
-                        file.elements.some((e) => e.id === "tauri-host"),
-                    { before: before.length, calls: calls.map((c) => ({ boardid: c.boardid, baserev: c.baserev, hasRect: String(c.data).includes("hand-rect") })), rev: file?.rev }
+                        // the drawn shapes are still there, and so is their frame
+                        file.elements.some((e) => e.id === "tauri-host") &&
+                        file.elements.some((e) => e.type === "frame" && !e.isDeleted),
+                    { editOn, before: before.map((c) => ({ baserev: c.baserev, frames: wrapSave?.length })), revBefore, calls: calls.map((c) => ({ boardid: c.boardid, baserev: c.baserev, hasRect: String(c.data).includes("hand-rect") })), rev: file?.rev }
+                );
+            });
+
+            // --- 7b. Library's strip: the Edit switch and the board's drawings row, above a canvas that opens in view mode ---
+            await run("7b. Library's strip shows Edit and the board's chip, and a board opens in view mode there; Edit brings the drawing toolbar back", async (name) => {
+                const chipsOf = () =>
+                    h.ev(`[...document.querySelectorAll(${q(`${OPEN(B_OLD)} [data-board-drawings] [data-board-drawing]`)})].map((b) => {
+                        const clone = b.cloneNode(true);
+                        clone.querySelector("[data-board-drawing-new]")?.remove();
+                        const label = clone.textContent.replace(/\\s+/g, " ").trim();
+                        const m = /^(\\d+)\\s*(.*)$/.exec(label);
+                        return { n: m?.[1] ?? "", title: m?.[2] ?? label, current: b.getAttribute("aria-current") === "true" };
+                    })`);
+                const clicked = await click(`[data-library-board="${B_OLD}"]`);
+                const shown = await until(async () => (await count(OPEN(B_OLD))) === 1);
+                const ready = await canvasReady(B_OLD);
+                await until(async () => (await chipsOf()).length === 1);
+                await polishNap(500);
+                const mode = await modeOf(B_OLD);
+                const chips = await chipsOf();
+                const strip = await h.ev(`(() => {
+                    const s = document.querySelector(${q(`${OPEN(B_OLD)} [data-board-strip]`)})?.getBoundingClientRect();
+                    const c = document.querySelector(${q(`${OPEN(B_OLD)} [data-board-canvas="${B_OLD}"]`)})?.getBoundingClientRect();
+                    return s == null || c == null ? null : { bottom: Math.round(s.bottom), canvasTop: Math.round(c.top), left: Math.round(s.left), canvasLeft: Math.round(c.left) };
+                })()`);
+                await shot("7b-strip");
+                const on = await setEdit(B_OLD, true);
+                const editing = await modeOf(B_OLD);
+                await shot("7b-edit");
+                const off = await setEdit(B_OLD, false);
+                const viewing = await modeOf(B_OLD);
+                rec(
+                    name,
+                    clicked &&
+                        shown &&
+                        ready &&
+                        mode.view === "true" &&
+                        !mode.toolbar &&
+                        mode.edit === "false" &&
+                        mode.editLabel === "Edit" &&
+                        chips.length === 1 &&
+                        chips[0].n === "1" &&
+                        chips[0].title === "Earlier drawings" &&
+                        chips[0].current &&
+                        // above the canvas, in its column
+                        strip != null &&
+                        strip.bottom <= strip.canvasTop + 2 &&
+                        Math.abs(strip.left - strip.canvasLeft) <= 3 &&
+                        on &&
+                        editing.view === "false" &&
+                        editing.toolbar &&
+                        off &&
+                        viewing.view === "true" &&
+                        !viewing.toolbar,
+                    { mode, chips, strip, editing, viewing }
+                );
+            });
+
+            // --- 7c. a board with nothing on it says how to start ---
+            await run("7c. a board with no shapes (its list row has no shapes, as the wire omits 0) shows Nothing drawn yet and names Edit", async (name) => {
+                const now = Date.now();
+                await putBoard(h, { id: B_EMPTY, name: N_EMPTY, project: PROJECT, agent: { tabid: "boards-library-gone-4", title: "claude · notes" }, createdts: now - 600_000, elements: [], turns: [] });
+                const listed = await until(async () => (await count(`[data-library-board="${B_EMPTY}"]`)) === 1);
+                const wire = await boardPage(
+                    h,
+                    `const rows = (await RpcApi.BoardListCommand(null, { project: ${q(PROJECT)} })).boards;
+                    const row = rows.find((b) => b.id === ${q(B_EMPTY)});
+                    return row == null ? null : { hasShapes: "shapes" in row };`
+                );
+                const clicked = await click(`[data-library-board="${B_EMPTY}"]`);
+                const shown = await until(async () => (await count(OPEN(B_EMPTY))) === 1);
+                const ready = await canvasReady(B_EMPTY);
+                const shownEmpty = await until(async () => (await count(`${OPEN(B_EMPTY)} [data-board-empty]`)) === 1);
+                const line = await text(`${OPEN(B_EMPTY)} [data-board-empty]`);
+                const edit = await text(`${OPEN(B_EMPTY)} [data-board-edit]`);
+                await shot("7c-empty-board");
+                // the ended board is open again as steps 8 and 9c expect it, and the fixture goes
+                const back = (await click(`[data-library-board="${B_ENDED}"]`)) && (await until(async () => (await count(OPEN(B_ENDED))) === 1));
+                await canvasReady(B_ENDED);
+                await boardPage(
+                    h,
+                    `delete fx.boards[${q(B_EMPTY)}];
+                    delete fx.talks[${q(B_EMPTY)}];
+                    delete fx.files[${q(B_EMPTY)}];
+                    delete fx.inbox[${q(B_EMPTY)}];
+                    await feed({ project: ${q(PROJECT)}, boardid: ${q(B_EMPTY)}, what: "list" });
+                    return true;`
+                );
+                const gone = await until(async () => (await count(`[data-library-board="${B_EMPTY}"]`)) === 0);
+                rec(
+                    name,
+                    listed &&
+                        wire?.hasShapes === false &&
+                        clicked &&
+                        shown &&
+                        ready &&
+                        shownEmpty &&
+                        line === "Nothing drawn yet. Press Edit to draw on it." &&
+                        edit === "Edit" &&
+                        gone &&
+                        back,
+                    { wire, line, edit, gone, back }
                 );
             });
 

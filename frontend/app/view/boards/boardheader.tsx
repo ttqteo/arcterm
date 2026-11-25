@@ -4,8 +4,9 @@
 // The board cell's header: the board's name (a switcher while its chat has more than one board), its facts, the chat
 // the board reads (a picker of the project's live Claude chats, which moves the board to another), Hide or Show turns
 // (the turns column folded to a strip), Expand or Collapse (the cell over the whole grid), and Close. While a part of
-// the board is read (boardparts.ts), the facts give way to the part's name, a ‹ n/N › stepper and Whole board; on the
-// whole board a ‹ N parts › stepper starts the reading.
+// the drawing in view is read (boardparts.ts), the facts give way to the part's name, a ‹ n/N › stepper and Whole
+// drawing; on the whole drawing a ‹ N parts › stepper starts the reading. The drawings themselves are the strip's row
+// (boardstrip.tsx), not the header's.
 
 import { cn } from "@/util/util";
 import {
@@ -291,11 +292,11 @@ export function BoardHeader({
                     <button
                         type="button"
                         data-board-part-whole
-                        title="Whole board (Esc)"
+                        title="Whole drawing (Esc)"
                         onClick={() => onPart(null)}
                         className="flex-none cursor-pointer rounded-[6px] px-1.5 py-0.5 text-muted hover:bg-surface-hover hover:text-primary"
                     >
-                        Whole board
+                        Whole drawing
                     </button>
                 </>
             ) : board != null ? (
@@ -318,7 +319,7 @@ export function BoardHeader({
                             <button
                                 type="button"
                                 data-board-parts-count
-                                title="Read the board part by part (→)"
+                                title="Read the drawing part by part (→)"
                                 onClick={() => onPart(0)}
                                 className="flex-none cursor-pointer rounded-[6px] px-1 py-0.5 tabular-nums hover:bg-surface-hover hover:text-primary"
                             >
