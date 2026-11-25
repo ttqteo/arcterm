@@ -48,6 +48,10 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
   one wake with all of it and writes one fix round; the fix's tasks run with no Reviewing state and the next final stage
   runs an End review again over the whole merged diff. An end review that passes with `--unverified` leaves the run
   unverified with the reason `end review: …`.
+- [ ] (arcterm) **A failed subagent's row folds away.** On `Plan oracle-tightening` (mit-thesis), the `You are
+  implementing Ta… · failed` row is gone after installing: its agent redid Task 3 after it. On an agent whose subagent
+  failed with nothing after it, hover the row: a ✕ fades in beside `failed`; press it and the row folds on the spring
+  (no snap, no gap left behind), and stays gone after a restart.
 - [ ] (arcterm) **Your pins move into the workspace.** After installing, open an agent in `D:\work\mit\mit-thesis`
   (or Code on it): its Files tab still lists the 4 files you had pinned, in the same order, and
   `wsh getmeta -b workspace:<oid> code:pins` prints them. Pin or unpin one and run the command again: it follows. On the

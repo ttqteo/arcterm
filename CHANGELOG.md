@@ -66,6 +66,8 @@ and a picture given to a line that is not big.
 
 - A new agent's first message with a long paste in it shows the paste as a folded card, not as raw
   `<\pasted_content>` text.
+- A failed subagent no longer stays in the Agent tree forever: it leaves once its agent starts another subagent after
+  it (a retry, or the next piece of work), and a ✕ on its row dismisses it, for good, when the agent moved on without one.
 - A pair names its agents by their title, as the Agent tree does, not by the project their tab was launched in, and
   the agent's rail with the Decided tab stays beside the conversation; the way back to Chat reads as a button.
 - A background subagent cut off when its agent's session ended no longer shows as running in the Agent tree forever,

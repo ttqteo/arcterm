@@ -5873,6 +5873,7 @@ declare global {
         transcriptpath: string;
         firstprompt: string;
         startedatms: number;
+        lastwritems: number;
         done: boolean;
         model?: string;
         endstatus?: string;

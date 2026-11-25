@@ -918,6 +918,48 @@ func TestListSubagentsMissingDir(t *testing.T) {
 	}
 }
 
+// A child's start is its first record's time, not its file's last write; with no timestamp there, the last write
+// stands in. The last write is reported apart, as about when a finished child ended.
+func TestListSubagentsStartAndLastWrite(t *testing.T) {
+	dir := t.TempDir()
+	parent := filepath.Join(dir, "sess.jsonl")
+	if err := os.WriteFile(parent, []byte(`{"type":"user"}`+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	subdir := filepath.Join(dir, "sess", "subagents")
+	if err := os.MkdirAll(subdir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	written := time.Date(2026, 11, 24, 18, 40, 0, 0, time.UTC)
+	write := func(id, rec string) {
+		path := filepath.Join(subdir, "agent-"+id+".jsonl")
+		if err := os.WriteFile(path, []byte(rec+"\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chtimes(path, written, written); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("stamped", `{"type":"user","timestamp":"2026-11-24T18:34:36.123Z","message":{"content":"Implement"}}`)
+	write("bare", `{"type":"user","message":{"content":"Plan"}}`)
+
+	infos, err := listSubagents(parent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	byId := map[string]wshrpc.SubagentFileInfo{}
+	for _, in := range infos {
+		byId[in.AgentId] = in
+	}
+	start := time.Date(2026, 11, 24, 18, 34, 36, 123_000_000, time.UTC).UnixMilli()
+	if got := byId["stamped"]; got.StartedAtMs != start || got.LastWriteMs != written.UnixMilli() {
+		t.Errorf("stamped: start %d last write %d, want %d and %d", got.StartedAtMs, got.LastWriteMs, start, written.UnixMilli())
+	}
+	if got := byId["bare"]; got.StartedAtMs != written.UnixMilli() || got.LastWriteMs != written.UnixMilli() {
+		t.Errorf("bare: start %d last write %d, want both %d", got.StartedAtMs, got.LastWriteMs, written.UnixMilli())
+	}
+}
+
 func TestSubagentDoneSignal(t *testing.T) {
 	dir := t.TempDir()
 	parent := filepath.Join(dir, "sess.jsonl")

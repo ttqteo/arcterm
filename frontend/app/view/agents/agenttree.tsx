@@ -295,7 +295,14 @@ import { DigitHint } from "./digithint";
 import { ServerMark, StatusDot } from "./statusdot";
 import { folderServers, rowServers } from "./treeservers";
 import { clockTime } from "./monitortasks";
-import { backgroundTasksByIdAtom, focusSubagentAtom, monitorPeekAtom, subagentsByIdAtom } from "./subagentsstore";
+import {
+    backgroundTasksByIdAtom,
+    dismissedSubagentsAtom,
+    dismissSubagent,
+    focusSubagentAtom,
+    monitorPeekAtom,
+    subagentsByIdAtom,
+} from "./subagentsstore";
 import { rowFieldsAtom } from "./rowfieldsstore";
 import { AGENT_TREE_WIDE_PX, agentTreeWidth } from "./rowfields";
 import { agentRamAtom, runRamAtom, useAgentRamPoll } from "./agentramstore";
@@ -1444,8 +1451,11 @@ function ParentRow({
     const focusId = useSelectedRowId(model);
     const now = useAtomValue(model.nowAtom);
     const oref = `block:${agent.blockId}`;
-    // drop children that finished (success/done) so a completed fan-out doesn't linger in the tree
-    const subs = visibleSubagents(useAtomValue(subagentsByIdAtom)[agent.id] ?? []);
+    // drop children that finished (success/done) so a completed fan-out doesn't linger in the tree, and failures the
+    // agent moved past or the person dismissed
+    const dismissedIds = useAtomValue(dismissedSubagentsAtom);
+    const dismissed = useMemo(() => new Set(dismissedIds), [dismissedIds]);
+    const subs = visibleSubagents(useAtomValue(subagentsByIdAtom)[agent.id] ?? [], dismissed);
     const expandOverride = useAtomValue(getSubagentExpandAtom(oref));
     const expanded = subagentExpanded(subs, expandOverride);
     // with rows picked (Ctrl/Cmd+click, Shift+click) the picked rows are the selection; else the focused agent's is
@@ -1846,50 +1856,79 @@ function ParentRow({
             <AnimatePresence initial={false}>
                 {expanded ? (
                     <motion.div key="subs" variants={composerReveal} initial="initial" animate="animate" exit="exit" className="overflow-hidden">
-                        {subs.map((s) => (
-                            <div
-                                key={s.id}
-                                onClick={() => {
-                                    if (!s.transcriptPath) {
-                                        return;
-                                    }
-                                    globalStore.set(model.focusIdAtom, agent.id);
-                                    showTerminal();
-                                    globalStore.set(focusSubagentAtom, {
-                                        parentId: agent.id,
-                                        agentId: s.id,
-                                        transcriptPath: s.transcriptPath,
-                                        label: s.type || "subagent",
-                                    });
-                                }}
-                                className={cn(
-                                    "relative flex items-center gap-[9px] rounded-[6px] py-[6px] pl-[28px] pr-[11px] hover:bg-surface-hover",
-                                    s.transcriptPath && "cursor-pointer"
-                                )}
-                            >
-                                <Guides depth={1} />
-                                <Slot>
-                                    <span
-                                        className="h-[7px] w-[7px] shrink-0 rounded-full"
-                                        style={{ background: SUB_COLOR[s.state] }}
-                                    />
-                                </Slot>
-                                <div className="min-w-0 flex-1">
-                                    <div className="truncate text-[11.5px] font-medium text-secondary">
-                                        {s.type || "subagent"}
+                        {/* a row folds on the same reveal as it leaves: a failure the agent moved past or the person dismissed */}
+                        <AnimatePresence initial={false}>
+                            {subs.map((s) => (
+                                <motion.div
+                                    key={s.id}
+                                    variants={composerReveal}
+                                    initial="initial"
+                                    animate="animate"
+                                    exit="exit"
+                                    className="overflow-hidden"
+                                >
+                                    <div
+                                        data-subagent-row={s.id}
+                                        data-subagent-state={s.state}
+                                        onClick={() => {
+                                            if (!s.transcriptPath) {
+                                                return;
+                                            }
+                                            globalStore.set(model.focusIdAtom, agent.id);
+                                            showTerminal();
+                                            globalStore.set(focusSubagentAtom, {
+                                                parentId: agent.id,
+                                                agentId: s.id,
+                                                transcriptPath: s.transcriptPath,
+                                                label: s.type || "subagent",
+                                            });
+                                        }}
+                                        className={cn(
+                                            "group/sub relative flex items-center gap-[9px] rounded-[6px] py-[6px] pl-[28px] pr-[11px] hover:bg-surface-hover",
+                                            s.transcriptPath && "cursor-pointer"
+                                        )}
+                                    >
+                                        <Guides depth={1} />
+                                        <Slot>
+                                            <span
+                                                className="h-[7px] w-[7px] shrink-0 rounded-full"
+                                                style={{ background: SUB_COLOR[s.state] }}
+                                            />
+                                        </Slot>
+                                        <div className="min-w-0 flex-1">
+                                            <div className="truncate text-[11.5px] font-medium text-secondary">
+                                                {s.type || "subagent"}
+                                            </div>
+                                            <div className="mt-[3px] truncate text-[10.5px] text-muted">
+                                                {s.model ?? ""}
+                                            </div>
+                                        </div>
+                                        {/* the dot carries a live child's state; only a failure is worth the words */}
+                                        {s.state === "failure" ? (
+                                            <>
+                                                <span className="whitespace-nowrap text-[10.5px] font-semibold text-error">
+                                                    failed
+                                                </span>
+                                                {/* the agent moving past a failure clears it; this clears one it did not */}
+                                                <button
+                                                    type="button"
+                                                    data-subagent-dismiss={s.id}
+                                                    title="Dismiss this failed subagent"
+                                                    aria-label={`Dismiss failed subagent ${s.type || "subagent"}`}
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        dismissSubagent(s.id);
+                                                    }}
+                                                    className="-mr-[4px] flex h-[18px] w-[18px] flex-none cursor-pointer items-center justify-center rounded-[4px] text-muted opacity-0 transition-opacity duration-100 hover:text-primary focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent group-hover/sub:opacity-100"
+                                                >
+                                                    <X size={12} aria-hidden />
+                                                </button>
+                                            </>
+                                        ) : null}
                                     </div>
-                                    <div className="mt-[3px] truncate text-[10.5px] text-muted">
-                                        {s.model ?? ""}
-                                    </div>
-                                </div>
-                                {/* the dot carries a live child's state; only a failure is worth the words */}
-                                {s.state === "failure" ? (
-                                    <span className="whitespace-nowrap text-[10.5px] font-semibold text-error">
-                                        failed
-                                    </span>
-                                ) : null}
-                            </div>
-                        ))}
+                                </motion.div>
+                            ))}
+                        </AnimatePresence>
                     </motion.div>
                 ) : null}
             </AnimatePresence>
