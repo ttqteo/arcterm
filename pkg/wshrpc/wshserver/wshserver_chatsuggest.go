@@ -52,35 +52,35 @@ func chatHabitTexts() []string {
 func (ws *WshServer) ChatSuggestCommand(ctx context.Context, data wshrpc.CommandChatSuggestData) (*wshrpc.CommandChatSuggestRtnData, error) {
 	start := time.Now()
 	log.Printf("chatsuggest: block=%s ask %s", shortBlock(data.BlockId), replyFacts(data.Reply, data.Question))
-	replies, ok, why, headless := chatHooks().AwaitWhy(ctx, data.BlockId, data.Reply, data.Question, data.Hook)
+	answer, ok, why, headless := chatHooks().AwaitWhy(ctx, data.BlockId, data.Reply, data.Question, data.Hook)
 	if ok {
-		log.Print(chatSuggestLogLine(data.BlockId, "mod", time.Since(start), len(replies), data.Question, nil))
-		return &wshrpc.CommandChatSuggestRtnData{Replies: replies}, nil
+		log.Print(chatSuggestLogLine(data.BlockId, "mod", time.Since(start), answer, data.Question, nil))
+		return &wshrpc.CommandChatSuggestRtnData{Replies: answer.Replies}, nil
 	}
 	log.Printf("chatsuggest: block=%s mod not taken after %dms: %s", shortBlock(data.BlockId), time.Since(start).Milliseconds(), why)
 	if !headless {
 		log.Printf("chatsuggest: block=%s no headless call: the mod is on another reply", shortBlock(data.BlockId))
 		return &wshrpc.CommandChatSuggestRtnData{}, nil
 	}
-	replies, err := chatSuggester().Suggest(ctx, chatsuggest.Request{
+	answer, err := chatSuggester().Suggest(ctx, chatsuggest.Request{
 		Reply:    data.Reply,
 		Recent:   data.Recent,
 		Question: data.Question,
 		Habits:   chatHabitTexts(),
 	})
-	log.Print(chatSuggestLogLine(data.BlockId, "headless", time.Since(start), len(replies), data.Question, err))
+	log.Print(chatSuggestLogLine(data.BlockId, "headless", time.Since(start), answer, data.Question, err))
 	if err != nil {
 		return nil, err
 	}
-	return &wshrpc.CommandChatSuggestRtnData{Replies: replies}, nil
+	return &wshrpc.CommandChatSuggestRtnData{Replies: answer.Replies}, nil
 }
 
 // chatSuggestLogLine is the one line each answer leaves in waveapp.log: which way it came (the arc mod's own, or the
-// headless call), how long it took and how many chips it made for a reply that did or did not end on a question, with
-// the error when the headless call failed. It is what a "no chips" report, and the share of calls that make none for a
-// turn that asks nothing, can be read against.
-func chatSuggestLogLine(blockID, via string, took time.Duration, chips int, question bool, err error) string {
-	line := fmt.Sprintf("chatsuggest: block=%s via=%s %dms chips=%d question=%v", shortBlock(blockID), via, took.Milliseconds(), chips, question)
+// headless call), how long it took, how many chips it made for a reply that did or did not end on a question and
+// whether the model picked one, with the error when the headless call failed. It is what a "no chips" report, and the
+// share of calls that make none for a turn that asks nothing, can be read against.
+func chatSuggestLogLine(blockID, via string, took time.Duration, answer chatsuggest.Answer, question bool, err error) string {
+	line := fmt.Sprintf("chatsuggest: block=%s via=%s %dms chips=%d question=%v pick=%v", shortBlock(blockID), via, took.Milliseconds(), len(answer.Replies), question, answer.Pick != "")
 	if err != nil {
 		line += " err=" + err.Error()
 	}

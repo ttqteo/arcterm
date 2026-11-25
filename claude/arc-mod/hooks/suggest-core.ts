@@ -10,8 +10,9 @@ export const SUGGEST_MODEL = "haiku";
  *  the call from ~2 s to ~1.3 s (measured 2026-11-19) */
 export const SUGGEST_EFFORT = "low";
 
-/** the reply's cap: the replies are up to five short lines, with a little thinking first */
-export const SUGGEST_MAX_TOKENS = 2048;
+/** the reply's cap: the replies are up to five short lines, with a little thinking first, and for a question that
+ *  offers options the answer now carries a description line per chip and a pick line (hook.go ParseAnswer) */
+export const SUGGEST_MAX_TOKENS = 3072;
 
 /** how long the completion may take before it is cut (`timeoutMs` abandons the request): well inside the 10 s wavesrv
  *  waits for the end (hook.go hookMax), so a slow call ends the turn as failed and Chat's own call starts at once instead

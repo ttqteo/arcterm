@@ -24,6 +24,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -74,13 +75,15 @@ Write each reply the way this person writes: their language and their short, cas
 
 A reply only chooses or asks; it never states a fact. Never write something only the person knows (whether a customer uses a product, what they tried, what they saw, a name, a number) as if you knew it: offer the choice and leave the fact out.
 
-When the agent's reply ends with a question, give up to 5 short replies that answer it. First the answer the agent recommends, then the other options it named, each in a few words ("hướng 1 đi", "sửa code luôn"). Every option the question names gets a reply of its own, even when the agent recommends another: "A hay B?" gets one reply that picks A and one that picks B. When the question asks several things, the first reply answers all of them ("B, và ẩn thẻ Pin"), and the next ones change the main choice before the side questions: "A hay B, và có thêm X không?" gets "A, thêm X", "B đi", "A, bỏ X", never four replies that all pick A. Each reply must pick a different answer: never two that say the same thing in other words ("build đi" and "ok build đi" are one answer). Fewer replies are better than repeats. Never a bare "ok" or "yes" when the question offers options. When the question asks yes or no, the app shows yes and no itself: give only replies that say more (a condition, a part of it, something else to do), never the question's own action said back ("đổi luôn đi" to "Đổi luôn không?"), or NONE.
+When the agent's reply ends with a question, give up to 5 short replies that answer it: the options it named, in the order you think reads best, each in a few words ("hướng 1 đi", "sửa code luôn"). Every option the question names gets a reply of its own, even when the agent recommends another: "A hay B?" gets one reply that picks A and one that picks B. When the question asks several things, the first reply answers all of them ("B, và ẩn thẻ Pin"), and the next ones change the main choice before the side questions: "A hay B, và có thêm X không?" gets "A, thêm X", "B đi", "A, bỏ X", never four replies that all pick A. Each reply must pick a different answer: never two that say the same thing in other words ("build đi" and "ok build đi" are one answer). Fewer replies are better than repeats. Never a bare "ok" or "yes" when the question offers options. When the question asks yes or no, the app shows yes and no itself: give only replies that say more (a condition, a part of it, something else to do), never the question's own action said back ("đổi luôn đi" to "Đổi luôn không?"), or NONE.
+
+When the question offers options (it is not a yes-or-no question), also write, on the line right after each reply, one line in this form: = <what this option does, one neutral line: no praise or blame, no word on which one the agent prefers>, in the language of the question (as in "= sửa ở ba nơi gọi parseFrame"). Then, as the last line, write one line in this form: PICK <n>: <one sentence why>, where n is the number of the reply (count only the replies, from 1, not the "=" lines) that you judge the reasonable answer for what this person is doing. Choose it for yourself, on the merits: it may be the option the agent recommends or another one. Write these two kinds of line only for such a question.
 
 When it does not end with a question, give at most 1 reply, and only when the agent has stopped and offers a next step the person must start: one it named ("I can also add tests"), or one its work plainly leads to, such as drawing a mockup of a layout it described in words. Write NONE when the agent says it is still working, will carry on, is waiting on something running, or will report back; when it only reports what it did; or when no next step is clear. Never tell it to go ahead with work it already said it will do. Never suggest commit or push: the app offers those itself.
 
 You may be given messages this person sends often. They show how the person words things. Give one exactly as written only when it is exactly the reply this turn calls for, never because it is listed: "build đi" after a reply about a script that has nothing to build is wrong.
 
-Output only the replies, one per line, with no numbering, quotes or commentary.`
+Output only the replies, one per line, with no numbering, quotes or commentary, and the "=" and PICK lines above where they apply.`
 
 // BuildPrompt is the call's message: the person's last messages, the end of the reply, and what kind of reply to give.
 func BuildPrompt(req Request) string {
@@ -121,7 +124,7 @@ func BuildPrompt(req Request) string {
 }
 
 // promptHabits is the habits the prompt lists: at most HabitMax, one line each, none that commits or pushes (the rules
-// offer those, and Parse would drop the reply).
+// offer those, and ParseAnswer would drop the reply).
 func promptHabits(habits []string) []string {
 	out := []string{}
 	for _, h := range habits {
@@ -171,36 +174,88 @@ func saysSomething(s string) bool {
 	return strings.IndexFunc(s, func(r rune) bool { return unicode.IsLetter(r) || unicode.IsDigit(r) }) >= 0
 }
 
-// Parse reads the model's answer: one reply per line, numbering, bullets, HTML tags and quotes taken off, NONE and
-// lines with no letter or digit left skipped, a reply past replyRunes dropped (a cut reply would send half a sentence), the same reply kept once (sameReply:
-// "build di", "ok build đi" and "Build đi!" are one), and at most five answers to a question or one next step. A next step never commits or pushes: the rules offer those. The replies come best first, never nil.
-func Parse(text string, question bool) []string {
+// pickRe is the model's pick line: "PICK 2: why", the number then ":", "-", "–" or "—".
+var pickRe = regexp.MustCompile(`(?i)^PICK\s*(\d+)\s*[:\-–—]\s*(.*)$`)
+
+// Answer is what the model said: the replies to offer, what each one does, and the one it picks.
+type Answer struct {
+	// the replies, best first as the model ordered them; never nil
+	Replies []string
+	// what each reply's option does, in one neutral line, parallel to Replies ("" where the model wrote none); nil when
+	// it wrote none at all
+	Descs []string
+	// the text of the reply the model picked, and its one-sentence reason: both "" when it picked none, or picked a
+	// reply ParseAnswer dropped or a number that names none, so a pick always names a chip
+	Pick   string
+	Reason string
+}
+
+// ParseAnswer reads the model's answer. The replies: one per line, numbering, bullets, HTML tags and quotes taken off,
+// NONE and lines with no letter or digit left skipped, a reply past replyRunes dropped (a cut reply would send half a
+// sentence), the same reply kept once (sameReply: "build di", "ok build đi" and "Build đi!" are one), and at most five
+// answers to a question or one next step. A next step never commits or pushes: the rules offer those. They come best
+// first, never nil.
+//
+// For a question only, a line that starts with "=" describes the reply line right before it (Descs), so it is read
+// before the reply rules and never becomes a chip; it goes with its reply when that reply is dropped. A "PICK n: why"
+// line picks the model's nth reply line, counting every line it wrote as a reply, dropped or not. Another turn reads
+// neither line, and neither becomes a reply there either.
+func ParseAnswer(text string, question bool) Answer {
 	limit := maxNext
 	if question {
 		limit = maxAnswers
 	}
 	out := []string{}
+	descs := []string{} // parallel to out
 	seen := map[string]bool{}
+	// where each reply line the model wrote went in out, -1 when it was dropped: a pick names a reply by that number
+	var where []int
+	last := -1 // the reply line just read, as an index of out; -1 when it was dropped
+	pick, reason := 0, ""
 	for _, line := range strings.Split(text, "\n") {
-		if len(out) == limit {
-			break
-		}
 		s := bulletRe.ReplaceAllString(strings.TrimSpace(line), "")
-		s = strings.TrimSpace(strings.Trim(strings.TrimSpace(tagRe.ReplaceAllString(s, "")), "\"'`“”‘’"))
-		if !saysSomething(s) || strings.EqualFold(strings.TrimRight(s, "."), "NONE") || utf8.RuneCountInString(s) > replyRunes {
+		if strings.HasPrefix(s, "=") {
+			if question && last >= 0 && descs[last] == "" {
+				descs[last] = strings.TrimSpace(tagRe.ReplaceAllString(strings.TrimLeft(s, "="), ""))
+			}
 			continue
 		}
-		if !question && commitPushRe.MatchString(s) {
+		if m := pickRe.FindStringSubmatch(s); m != nil {
+			if question {
+				pick, _ = strconv.Atoi(m[1])
+				reason = strings.TrimSpace(m[2])
+			}
+			continue
+		}
+		s = strings.TrimSpace(strings.Trim(strings.TrimSpace(tagRe.ReplaceAllString(s, "")), "\"'`“”‘’"))
+		if !saysSomething(s) || strings.EqualFold(strings.TrimRight(s, "."), "NONE") {
 			continue
 		}
 		key := sameReply(s)
-		if seen[key] {
+		keep := utf8.RuneCountInString(s) <= replyRunes && len(out) < limit && !seen[key] &&
+			(question || !commitPushRe.MatchString(s))
+		if !keep {
+			where = append(where, -1)
+			last = -1
 			continue
 		}
 		seen[key] = true
 		out = append(out, s)
+		descs = append(descs, "")
+		last = len(out) - 1
+		where = append(where, last)
 	}
-	return out
+	ans := Answer{Replies: out}
+	for _, d := range descs {
+		if d != "" {
+			ans.Descs = descs
+			break
+		}
+	}
+	if pick >= 1 && pick <= len(where) && where[pick-1] >= 0 {
+		ans.Pick, ans.Reason = out[where[pick-1]], reason
+	}
+	return ans
 }
 
 // replyFiller is the words that change how a reply sounds, not what it answers: "ok build đi" says "build"
@@ -258,14 +313,14 @@ type Suggester struct {
 	sem chan struct{}
 
 	mu       sync.Mutex
-	cache    map[string][]string
+	cache    map[string]Answer
 	order    []string
 	inflight map[string]*call
 }
 
 type call struct {
 	done chan struct{}
-	out  []string
+	out  Answer
 	err  error
 }
 
@@ -277,16 +332,16 @@ func New(run Runner) *Suggester {
 	return &Suggester{
 		run:      run,
 		sem:      make(chan struct{}, parallel),
-		cache:    map[string][]string{},
+		cache:    map[string]Answer{},
 		inflight: map[string]*call{},
 	}
 }
 
-// Suggest answers req's replies, best first. A reply with no text asks nothing. The prompt is the cache key. The call runs on its own clock, not ctx's, so an ask that gives up does not end the answer another is
+// Suggest answers req's replies, with their descriptions and the model's pick. A reply with no text asks nothing. The prompt is the cache key. The call runs on its own clock, not ctx's, so an ask that gives up does not end the answer another is
 // waiting on; a failed call is not kept, so a later ask tries again.
-func (s *Suggester) Suggest(ctx context.Context, req Request) ([]string, error) {
+func (s *Suggester) Suggest(ctx context.Context, req Request) (Answer, error) {
 	if strings.TrimSpace(req.Reply) == "" {
-		return []string{}, nil
+		return Answer{Replies: []string{}}, nil
 	}
 	prompt := BuildPrompt(req)
 	sum := sha256.Sum256([]byte(prompt))
@@ -309,7 +364,7 @@ func (s *Suggester) Suggest(ctx context.Context, req Request) ([]string, error) 
 	case <-c.done:
 		return c.out, c.err
 	case <-ctx.Done():
-		return nil, ctx.Err()
+		return Answer{}, ctx.Err()
 	}
 }
 
@@ -321,7 +376,7 @@ func (s *Suggester) do(key, prompt string, question bool, c *call) {
 		text, err := s.run(runCtx, prompt)
 		<-s.sem
 		if err == nil {
-			c.out = Parse(text, question)
+			c.out = ParseAnswer(text, question)
 		}
 		c.err = err
 	case <-runCtx.Done():

@@ -8,7 +8,7 @@ package chatsuggest
 // (RunClaude: 3-4 s and ~470 MB to start, where the mod's completion runs in a process already up).
 //
 // Begin gives the mod the call to make (this file's prompt and the person's habits, so the prompt stays in one place)
-// and marks the block's turn as on its way; End brings back what the model answered, read by Parse; Await lets Chat's
+// and marks the block's turn as on its way; End brings back what the model answered, read by ParseAnswer; Await lets Chat's
 // ask (ChatSuggestCommand) take that answer. An ask whose turn the mod did not begin, or whose answer did not come in
 // time, runs the headless call as before: the mod is not loaded, its hook failed, or the agent is not claude.
 
@@ -56,7 +56,7 @@ type hookEntry struct {
 	started  time.Time
 	done     chan struct{}
 	ended    bool
-	out      []string
+	out      Answer
 	ok       bool
 }
 
@@ -116,20 +116,21 @@ func (h *Hooks) End(block, key, text string, failed bool) string {
 	}
 	e.ended = true
 	if !failed {
-		e.out = Parse(text, e.question)
+		e.out = ParseAnswer(text, e.question)
 		e.ok = true
 	}
 	close(e.done)
 	if failed {
 		return "taken: the mod got no answer"
 	}
-	return fmt.Sprintf("taken: %d chips, %dms after begin", len(e.out), time.Since(e.started).Milliseconds())
+	return fmt.Sprintf("taken: %d chips, %dms after begin", len(e.out.Replies), time.Since(e.started).Milliseconds())
 }
 
-// Await answers the replies the mod worked out for block's turn that ended on reply, and whether it did: false when
-// the mod did not begin that turn within the wait (expect: the agent is a Claude agent, which has a mod; otherwise no
-// wait), began it for another kind of reply, failed, or did not end it in time. False means: run the headless call.
-func (h *Hooks) Await(ctx context.Context, block, reply string, question, expect bool) ([]string, bool) {
+// Await answers what the mod worked out for block's turn that ended on reply (the replies, their descriptions and its
+// pick), and whether it did: false when the mod did not begin that turn within the wait (expect: the agent is a Claude
+// agent, which has a mod; otherwise no wait), began it for another kind of reply, failed, or did not end it in time.
+// False means: run the headless call.
+func (h *Hooks) Await(ctx context.Context, block, reply string, question, expect bool) (Answer, bool) {
 	out, ok, _, _ := h.AwaitWhy(ctx, block, reply, question, expect)
 	return out, ok
 }
@@ -139,7 +140,7 @@ func (h *Hooks) Await(ctx context.Context, block, reply string, question, expect
 // begin is another reply's: the ask is for a reply that is no turn's end. Either the mod has begun a newer reply (Chat
 // read the transcript late), or the reply is a line the agent wrote mid-turn, which the mod never begins: of 27 such
 // asks in waveapp.log (2026-11-19), the mod began none, and each ran a ~470 MB claude for chips nobody read.
-func (h *Hooks) AwaitWhy(ctx context.Context, block, reply string, question, expect bool) (out []string, ok bool, why string, headless bool) {
+func (h *Hooks) AwaitWhy(ctx context.Context, block, reply string, question, expect bool) (out Answer, ok bool, why string, headless bool) {
 	out, ok, why = h.awaitWhy(ctx, block, reply, question, expect)
 	if ok {
 		return out, true, "", false
@@ -151,9 +152,9 @@ func (h *Hooks) AwaitWhy(ctx context.Context, block, reply string, question, exp
 	return out, false, why, !other
 }
 
-func (h *Hooks) awaitWhy(ctx context.Context, block, reply string, question, expect bool) ([]string, bool, string) {
+func (h *Hooks) awaitWhy(ctx context.Context, block, reply string, question, expect bool) (Answer, bool, string) {
 	if block == "" {
-		return nil, false, "no block"
+		return Answer{}, false, "no block"
 	}
 	key := ReplyKey(reply)
 	var appearBy time.Time
@@ -167,23 +168,23 @@ func (h *Hooks) awaitWhy(ctx context.Context, block, reply string, question, exp
 		h.mu.Unlock()
 		if e != nil && strings.HasPrefix(e.key, key+keySep) {
 			if e.question != question {
-				return nil, false, fmt.Sprintf("question differs: mod %v, chat %v", e.question, question)
+				return Answer{}, false, fmt.Sprintf("question differs: mod %v, chat %v", e.question, question)
 			}
 			return h.wait(ctx, e)
 		}
 		left := time.Until(appearBy)
 		if left <= 0 {
-			return nil, false, h.missWhy(block, key, reply, expect)
+			return Answer{}, false, h.missWhy(block, key, reply, expect)
 		}
 		timer := time.NewTimer(left)
 		select {
 		case <-changed:
 			timer.Stop()
 		case <-timer.C:
-			return nil, false, h.missWhy(block, key, reply, expect)
+			return Answer{}, false, h.missWhy(block, key, reply, expect)
 		case <-ctx.Done():
 			timer.Stop()
-			return nil, false, "the ask ended before the mod began"
+			return Answer{}, false, "the ask ended before the mod began"
 		}
 	}
 }
@@ -205,8 +206,8 @@ func (h *Hooks) missWhy(block, key, reply string, expect bool) string {
 		time.Since(e.started).Milliseconds(), modKey[:8], e.tail, key[:8], logTail(reply))
 }
 
-func (h *Hooks) wait(ctx context.Context, e *hookEntry) ([]string, bool, string) {
-	answer := func() ([]string, bool, string) {
+func (h *Hooks) wait(ctx context.Context, e *hookEntry) (Answer, bool, string) {
+	answer := func() (Answer, bool, string) {
 		h.mu.Lock()
 		defer h.mu.Unlock()
 		if !e.ok {
@@ -221,7 +222,7 @@ func (h *Hooks) wait(ctx context.Context, e *hookEntry) ([]string, bool, string)
 	}
 	left := time.Until(e.started.Add(h.max))
 	if left <= 0 {
-		return nil, false, fmt.Sprintf("the mod's turn began %s ago and has not ended", time.Since(e.started).Round(time.Millisecond))
+		return Answer{}, false, fmt.Sprintf("the mod's turn began %s ago and has not ended", time.Since(e.started).Round(time.Millisecond))
 	}
 	timer := time.NewTimer(left)
 	defer timer.Stop()
@@ -229,9 +230,9 @@ func (h *Hooks) wait(ctx context.Context, e *hookEntry) ([]string, bool, string)
 	case <-e.done:
 		return answer()
 	case <-timer.C:
-		return nil, false, fmt.Sprintf("the mod did not end its turn within %s of begin", h.max)
+		return Answer{}, false, fmt.Sprintf("the mod did not end its turn within %s of begin", h.max)
 	case <-ctx.Done():
-		return nil, false, "the ask ended while the mod worked"
+		return Answer{}, false, "the ask ended while the mod worked"
 	}
 }
 
@@ -258,13 +259,14 @@ func ReplyKey(reply string) string {
 var (
 	fenceRe        = regexp.MustCompile("(?s)```.*?(```|$)")
 	trailingMarkRe = regexp.MustCompile("[=*_`\"'”’)\\]\\s]+$")
+	// where a sentence ends: one of . ! ? ？ 。 : and the space after it. The set the frontend splits the last sentence
+	// on (chatsuggest.ts lastSentenceWords, /[.!?？。:]\s+/): a colon ends one, an ellipsis does not
+	sentenceEndRe = regexp.MustCompile(`[.!?？。:][\s\p{Z}]+`)
 )
 
-// EndsWithQuestion reports whether the reply's last line of prose ends with a question mark: fenced code (a card block
-// written after the question) is not prose, and the emphasis and highlight marks around a sentence do not count. Chat
-// works it out the same way (frontend/app/view/agents/chatsuggest.ts endsWithQuestion); the two must agree, or the
-// mod's answer is set aside for the headless call.
-func EndsWithQuestion(reply string) bool {
+// lastProseBare is the reply's last line of prose with the emphasis and highlight marks closing it taken off, "" when
+// the reply has none: fenced code (a card block written after the question) is not prose.
+func lastProseBare(reply string) string {
 	prose := fenceRe.ReplaceAllString(reply, "")
 	lines := strings.Split(prose, "\n")
 	for i := len(lines) - 1; i >= 0; i-- {
@@ -272,8 +274,37 @@ func EndsWithQuestion(reply string) bool {
 		if line == "" {
 			continue
 		}
-		bare := trailingMarkRe.ReplaceAllString(line, "")
-		return strings.HasSuffix(bare, "?") || strings.HasSuffix(bare, "？")
+		return trailingMarkRe.ReplaceAllString(line, "")
 	}
-	return false
+	return ""
+}
+
+func endsInQuestionMark(bare string) bool {
+	return strings.HasSuffix(bare, "?") || strings.HasSuffix(bare, "？")
+}
+
+// EndsWithQuestion reports whether the reply's last line of prose ends with a question mark: fenced code (a card block
+// written after the question) is not prose, and the emphasis and highlight marks around a sentence do not count. Chat
+// works it out the same way (frontend/app/view/agents/chatsuggest.ts endsWithQuestion); the two must agree, or the
+// mod's answer is set aside for the headless call.
+func EndsWithQuestion(reply string) bool {
+	return endsInQuestionMark(lastProseBare(reply))
+}
+
+// QuestionSentence is the last sentence of the reply's last line of prose when that line ends with a question mark (as
+// EndsWithQuestion reads it), with its own question mark and without the highlight or emphasis marks around it; "" when
+// the reply does not end in a question. Sentences split where the frontend splits them (sentenceEndRe). Never the
+// sentences before the last: they may hold the agent's lean ("Mình nghiêng A. A hay B?" gives "A hay B?"), and the
+// deep judge, which reads this, must not see it.
+func QuestionSentence(reply string) string {
+	bare := lastProseBare(reply)
+	if !endsInQuestionMark(bare) {
+		return ""
+	}
+	sentence := bare
+	// the question marks that close the last sentence are not where the sentence before it ends
+	if ends := sentenceEndRe.FindAllStringIndex(strings.TrimRight(bare, "?？"), -1); len(ends) > 0 {
+		sentence = bare[ends[len(ends)-1][1]:]
+	}
+	return strings.TrimSpace(strings.TrimLeft(sentence, "=*"))
 }
