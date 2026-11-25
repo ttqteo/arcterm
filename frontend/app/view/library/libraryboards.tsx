@@ -11,13 +11,16 @@
 //                          (BoardTakeOverCommand), and opens it beside that agent's Chat
 // Delete board, on a row's hover and in the open board's header, moves it to ~/.arc/trash (boarddelete.ts).
 // Only one canvas per board: the split beside Chat drops its own while another surface shows, so this one never doubles up
-// with it. The model is libraryboardsmodel.ts; the board's own parts are boards/.
+// with it. Above the canvas sits the board's strip (the drawings row and the Edit switch, the same as in the split), and
+// an empty board says so. The model is libraryboardsmodel.ts; the board's own parts are boards/.
 
+import { layerFade } from "@/app/element/motiontokens";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { cn } from "@/util/util";
 import { useAtomValue } from "jotai";
 import { ChevronDown, RefreshCw, Search, Trash2 } from "lucide-react";
+import { AnimatePresence, motion, MotionConfig } from "motion/react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { AgentsViewModel } from "../agents/agents";
 import { sessionKey } from "../agents/sessionsruns";
@@ -26,6 +29,7 @@ import { BoardCanvas } from "../boards/boardcanvas";
 import { parseBoardFile } from "../boards/boardmodel";
 import { openBoard } from "../boards/boardsplitstore";
 import { loadBoardConvert, loadBoardList, useBoardList, useBoardTalk } from "../boards/boardstore";
+import { BoardStrip } from "../boards/boardstrip";
 import { BoardTurns } from "../boards/boardturns";
 import { openTarget } from "../jarvis/openref";
 import { confirmDeleteBoard, DELETE_BOARD_LABEL } from "./boarddelete";
@@ -206,6 +210,9 @@ function BoardDetail({ model, row }: { model: AgentsViewModel; row: BoardRow }) 
     const [error, setError] = useState<string | null>(null);
     const target = { project: row.project, boardId: row.id };
     const sessionId = talk?.agent?.sessionid;
+    // nothing drawn and nothing asked (the row's shapes is 0 for the omitted wire field); a file that won't open has the
+    // canvas's own line in its place
+    const empty = row.shapes === 0 && row.loaderror === "" && talk != null && talk.turns.length === 0;
 
     // a rejection shows above the footer line; the next action that goes clears it
     async function act(fn: () => Promise<void>): Promise<void> {
@@ -249,8 +256,30 @@ function BoardDetail({ model, row }: { model: AgentsViewModel; row: BoardRow }) 
             </div>
             {/* wide enough (640px) the canvas has the turns beside it; narrower they stack, the turns scrolling in what is left */}
             <div className="flex min-h-0 flex-1 flex-col @[640px]:flex-row">
-                <div className="relative min-h-0 min-w-0 flex-1">
-                    <BoardCanvas project={row.project} boardId={row.id} highlightIds={highlight} />
+                {/* the strip (the drawings row and Edit) sits directly above the canvas, in the canvas's column */}
+                <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+                    <BoardStrip boardId={row.id} />
+                    <div className="relative min-h-0 min-w-0 flex-1">
+                        <BoardCanvas project={row.project} boardId={row.id} highlightIds={highlight} />
+                        <MotionConfig reducedMotion="user">
+                            <AnimatePresence initial={false}>
+                                {empty ? (
+                                    <motion.div
+                                        key="empty"
+                                        data-board-empty
+                                        variants={layerFade}
+                                        initial="initial"
+                                        animate="animate"
+                                        exit="exit"
+                                        // over the canvas, which stays under it: a press goes through to draw on it
+                                        className="pointer-events-none absolute inset-0 flex items-center justify-center px-6 text-center text-[13px] leading-[1.5] text-muted"
+                                    >
+                                        Nothing drawn yet. Press Edit to draw on it.
+                                    </motion.div>
+                                ) : null}
+                            </AnimatePresence>
+                        </MotionConfig>
+                    </div>
                 </div>
                 <div className="flex max-h-[45%] min-h-0 flex-none flex-col border-t border-edge-mid @[640px]:max-h-none @[640px]:w-[300px] @[640px]:border-l @[640px]:border-t-0">
                     <BoardTurns

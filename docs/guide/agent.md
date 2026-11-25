@@ -274,6 +274,7 @@ Dòng đầu hộp thoại nói tool sẽ mở ở đâu (`Opens in fix-login's 
 | `↑` / `↓` | Di chuyển |
 | `Enter` | Mở trong trung tâm |
 | `Shift+Enter` | Mở trong panel |
+| `Ctrl+Enter` (`⌘+Enter` trên Mac) | Mở thành một ô split ngay dưới agent đang xem; split đã đủ 4 ô thì tool mở ở trung tâm |
 | `Ctrl+I` | Cài tool chưa cài (tool dựng sẵn) |
 | `Esc` | Đóng |
 

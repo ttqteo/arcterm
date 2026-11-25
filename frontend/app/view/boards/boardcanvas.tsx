@@ -1,16 +1,22 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-// The open board: plain Excalidraw over the board file. It loads the file, autosaves your edits under the rev it
-// read, and takes the drawer's answers live (registerLiveBoard), so an answer landing while you edit goes through
-// updateScene instead of overwriting the file under you, and one Ctrl+Z takes the whole turn back. Excalidraw's
-// runtime is ~2 MB, so it loads (React.lazy) only when a canvas first shows. It fills its nearest positioned ancestor.
+// The open board: plain Excalidraw over the board file, in view mode (drags pan, nothing is drawn) unless the board's
+// Edit switch is on (boardEditingAtom). It loads the file, autosaves your edits under the rev it read, and takes the
+// drawer's answers live (registerLiveBoard), so an answer landing while you edit goes through updateScene instead of
+// overwriting the file under you, and one Ctrl+Z takes the whole turn back. Excalidraw's runtime is ~2 MB, so it loads
+// (React.lazy) only when a canvas first shows. It fills its nearest positioned ancestor.
 // A sun/moon in its top-right corner turns every board light or dark (boardThemeAtom).
 //
-// A dense board fitted to the canvas shows its text at 6 or 7px, so it reads one part at a time (boardparts.ts): while
+// A board is a row of drawings, each an Excalidraw frame (boarddrawings.ts). The canvas publishes the row, the drawing in
+// view and the selection's drawing (boardDrawingsAtom), eases to a drawing the row picks (boardPickAtom), and follows
+// the newest drawing: a new one landing while it is the one in view is fitted, else marked new in the row. A board
+// drawn before drawings is wrapped in one "Earlier drawings" frame as it opens.
+//
+// A dense drawing fitted to the canvas shows its text at 6 or 7px, so it reads one part at a time (boardparts.ts): while
 // the text is too small to read, the part under the pointer shows a Read label, and a click on it (or → and ←, or the
-// header's stepper) eases the view to that part at a size its text reads at; Esc goes back to the whole board. A zoom of
-// your own leaves the part.
+// header's stepper) eases the view to that part at a size its text reads at; Esc goes back to the whole drawing. A zoom
+// of your own leaves the part.
 
 import { MOTION } from "@/app/element/motiontokens";
 import { cubicBezier } from "@/app/element/pulse";
@@ -19,11 +25,29 @@ import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import type { ExcalidrawElement } from "@excalidraw/excalidraw/element/types";
 import type { AppState, BinaryFiles, ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
-import { useAtom } from "jotai";
+import { useAtom, useAtomValue } from "jotai";
 import { Moon, Sun } from "lucide-react";
 import { lazy, Suspense, useEffect, useRef, useState, useSyncExternalStore, type KeyboardEvent } from "react";
 import "./boardcanvas.css";
-import { parseBoardFile, selectionLabel, serializeBoard, withReadableFont, type BoardScene } from "./boardmodel";
+import {
+    afterLanding,
+    askedDrawing,
+    drawingInView,
+    drawingShapes,
+    drawingsOf,
+    drawingViewport,
+    isFollowing,
+    rowState,
+    type Drawing,
+} from "./boarddrawings";
+import {
+    parseBoardFile,
+    selectionLabel,
+    serializeBoard,
+    withReadableFont,
+    wrapEarlier,
+    type BoardScene,
+} from "./boardmodel";
 import {
     boardParts,
     lerpViewport,
@@ -39,11 +63,15 @@ import {
     type Viewport,
 } from "./boardparts";
 import {
+    boardDrawingsAtom,
+    boardEditingAtom,
+    boardPickAtom,
     boardThemeAtom,
     boardViewportAtom,
     loadBoardConvert,
     pointExcalidrawAtLocalFonts,
     registerLiveBoard,
+    type BoardViewport,
 } from "./boardstore";
 
 const AUTOSAVE_MS = 500;
@@ -173,12 +201,30 @@ function OpenBoard({ project, boardId, highlightIds, onSelection, part: partProp
     onSelectionRef.current = onSelection;
     // settles once the scene is in Excalidraw; an answer that arrives before then waits for it
     const readyRef = useRef<Deferred | null>(null);
-    // a board opened for the first time is fitted to the canvas; one with a remembered view keeps it
-    const fitOnOpenRef = useRef(globalStore.get(boardViewportAtom(boardId)) == null);
-    // the file was opened in another face than it was saved in (withReadableFont), and is saved once refitted
-    const turnedOnOpenRef = useRef(false);
+    // The Edit switch, shared by every view of the board: off, Excalidraw is in view mode (drags pan, nothing is drawn).
+    const editing = useAtomValue(boardEditingAtom(boardId));
+    const editingRef = useRef(editing);
+    // the row this board's canvases publish: its drawing in view is on the root for the scenarios
+    const row = useAtomValue(boardDrawingsAtom(boardId));
+    // a pick in the drawings row; one made before this canvas opened is not for it
+    const pick = useAtomValue(boardPickAtom(boardId));
+    const seenPickRef = useRef(pick);
+    // How the board opens, set as the file loads: a board never opened here, or left following its newest drawing, is
+    // fitted to that drawing (fitOnOpen, pending until the view has a size); any other returns to the view it was left in.
+    const fitOnOpenRef = useRef(false);
+    const startViewRef = useRef<BoardViewport | null>(null);
+    // the first frame has placed the view where the board opens; until then a change publishes nothing
+    const openedRef = useRef(false);
+    // The file was changed on opening, so it is saved once refitted: opened in another face than it was saved in
+    // (withReadableFont), or wrapped in an Earlier drawings frame (wrapEarlier).
+    const changedOnOpenRef = useRef(false);
+    // as of the last change that was not mid-ease: the drawing in view, and whether it is the newest
+    const inViewRef = useRef<string | null>(null);
+    const followingRef = useRef(true);
     const [parts, setParts] = useState<BoardPart[]>([]);
     const partsKeyRef = useRef("");
+    // the canvas size the parts were last computed at: needsParts reads it, so a resize recomputes them (syncView)
+    const partsSizeRef = useRef<{ width: number; height: number } | null>(null);
     const onPartsRef = useRef(onParts);
     onPartsRef.current = onParts;
     // controlled by the split's header; Library's canvas keeps its own
@@ -191,7 +237,8 @@ function OpenBoard({ project, boardId, highlightIds, onSelection, part: partProp
     // the zoom a part was opened at, and whether the view is easing there: a zoom of the person's own leaves the part
     const partZoomRef = useRef<number | null>(null);
     const easingRef = useRef<number | null>(null);
-    // the part was left by a zoom of the person's own: the view stays where they took it, no easing back to the whole
+    // the part was left by a move of the view's own (a zoom of the person's, a fit to a drawing): the view stays where
+    // that took it, no easing back to the whole drawing
     const leftByZoomRef = useRef(false);
     const prevPartRef = useRef<number | null>(null);
 
@@ -272,19 +319,27 @@ function OpenBoard({ project, boardId, highlightIds, onSelection, part: partProp
         setShown(found.map((el) => el.id));
     }
 
+    // the parts are read inside the drawing in view; with none in view there are none. A new list closes the part that
+    // was open, since its index may point past the list (or into an empty one); the view stays where it is.
     function updateParts(): void {
         const api = apiRef.current;
         if (api == null) {
             return;
         }
-        const found = boardParts(api.getSceneElements() as unknown as readonly PartElement[]);
+        const inView = inViewRef.current;
+        const found =
+            inView == null
+                ? []
+                : boardParts(drawingShapes(api.getSceneElements(), inView) as unknown as readonly PartElement[]);
         const st = api.getAppState();
+        partsSizeRef.current = { width: st.width, height: st.height };
         const next = needsParts(found, st.width, st.height) ? found : [];
         const key = partsKey(next);
         if (key === partsKeyRef.current) {
             return;
         }
         partsKeyRef.current = key;
+        closePart();
         setParts(next);
         onPartsRef.current?.(next);
     }
@@ -353,7 +408,128 @@ function OpenBoard({ project, boardId, highlightIds, onSelection, part: partProp
         }
     }
 
-    // → and ← step through the parts, Esc goes back to the whole board: only while nothing is selected or being
+    // A fit to a drawing (a pick, a landing, the board opening) moves the view itself, so a part that was open closes and
+    // the view stays where the fit put it.
+    function closePart(): void {
+        if (partRef.current == null) {
+            return;
+        }
+        partZoomRef.current = null;
+        leftByZoomRef.current = true;
+        setPart(null);
+    }
+
+    // The view that shows a drawing whole, eased to (or jumped to when the board opens). A canvas with no size yet has
+    // no view to fit: false, and the caller tries again at its next change.
+    function fitDrawing(d: Drawing | undefined, jump: boolean): boolean {
+        const api = apiRef.current;
+        if (api == null || d == null) {
+            return false;
+        }
+        const st = api.getAppState();
+        if (st.width === 0 || st.height === 0) {
+            return false;
+        }
+        closePart();
+        const to = drawingViewport(d, st.width, st.height);
+        if (jump) {
+            stopEasing();
+            applyView(to, false);
+        } else {
+            easeTo(to);
+        }
+        return true;
+    }
+
+    // leaving a part: back to the whole drawing in view, to the whole board only when none is
+    function wholeDrawing(): void {
+        const api = apiRef.current;
+        if (api == null) {
+            return;
+        }
+        const inView = drawingsOf(api.getSceneElements()).find((d) => d.id === inViewRef.current);
+        if (!fitDrawing(inView, false)) {
+            wholeBoard();
+        }
+    }
+
+    // a board that opens fitted to its newest drawing is placed once its view has a size; the change that placing
+    // causes publishes the row (syncView)
+    function placeOpening(): void {
+        const api = apiRef.current;
+        if (api == null || !fitOnOpenRef.current) {
+            return;
+        }
+        const newest = drawingsOf(api.getSceneElements()).at(-1);
+        if (newest == null || fitDrawing(newest, true)) {
+            fitOnOpenRef.current = false;
+        }
+    }
+
+    // The drawings row, the drawing in view, the drawing the selection names and following, from the scene and view as
+    // they are now: published only when something changed. Not mid-ease (the end of it publishes), and not on a view
+    // with no size (a hidden canvas leaves them as the shown one set them).
+    function syncView(elements: readonly ExcalidrawElement[], appState: AppState): void {
+        if (!openedRef.current || easingRef.current != null || appState.width === 0 || appState.height === 0) {
+            return;
+        }
+        if (fitOnOpenRef.current) {
+            placeOpening();
+            return;
+        }
+        const drawings = drawingsOf(elements);
+        const inView = drawingInView(drawings, {
+            scrollX: appState.scrollX,
+            scrollY: appState.scrollY,
+            zoom: appState.zoom.value,
+            width: appState.width,
+            height: appState.height,
+        });
+        const following = isFollowing(drawings, inView);
+        const drawingChanged = inView !== inViewRef.current;
+        inViewRef.current = inView;
+        followingRef.current = following;
+        const vpAtom = boardViewportAtom(boardId);
+        const vp = globalStore.get(vpAtom);
+        if (
+            vp?.scrollX !== appState.scrollX ||
+            vp?.scrollY !== appState.scrollY ||
+            vp?.zoom !== appState.zoom.value ||
+            vp?.following !== following
+        ) {
+            globalStore.set(vpAtom, {
+                scrollX: appState.scrollX,
+                scrollY: appState.scrollY,
+                zoom: appState.zoom.value,
+                following,
+            });
+        }
+        const rowAtom = boardDrawingsAtom(boardId);
+        const prev = globalStore.get(rowAtom);
+        const next = rowState(prev, drawings, inView, askedDrawing(elements, selectedIds(appState), null));
+        if (next !== prev) {
+            globalStore.set(rowAtom, next);
+        }
+        const sized = partsSizeRef.current;
+        if (drawingChanged) {
+            // another drawing in view reads from its own parts; a part open in the one left is closed, the view stays
+            closePart();
+            updateParts();
+        } else if (sized?.width !== appState.width || sized?.height !== appState.height) {
+            // the canvas was resized (Expand or Collapse, the grid, the window): whether a drawing needs its parts
+            // depends on the size it is read at
+            updateParts();
+        }
+    }
+
+    // a drawing that landed while the view was on an earlier one is marked new in the row
+    function markFresh(id: string): void {
+        globalStore.set(boardDrawingsAtom(boardId), (prev) =>
+            prev == null || prev.fresh.includes(id) ? prev : { ...prev, fresh: [...prev.fresh, id] }
+        );
+    }
+
+    // → and ← step through the parts, Esc goes back to the whole drawing: only while nothing is selected or being
     // written, with the select or hand tool, so Excalidraw's own keys (nudging a selection, leaving a tool) stay its own
     function onKeyDownCapture(e: KeyboardEvent<HTMLDivElement>): void {
         const api = apiRef.current;
@@ -399,11 +575,27 @@ function OpenBoard({ project, boardId, highlightIds, onSelection, part: partProp
                 throw new Error("the board is not open");
             }
             const { landAnswer } = await loadBoardConvert();
-            const { scene, shapeIds } = landAnswer(current(), answer, Date.now());
+            const before = current();
+            // as the person left the view: landing a drawing changes which one is newest
+            const beforeIds = drawingsOf(before.elements).map((d) => d.id);
+            const following = followingRef.current;
+            const inView = inViewRef.current;
+            const { scene, shapeIds } = landAnswer(before, answer, Date.now());
             api.updateScene({
                 elements: scene.elements,
                 captureUpdate: excalidraw.CaptureUpdateAction.IMMEDIATELY,
             });
+            // the view only moves (NEVER captured), so the landing stays one undo step
+            const after = drawingsOf(scene.elements);
+            const landed = afterLanding(beforeIds, following, inView, after, answer.drawingid);
+            if (landed.fit != null) {
+                const target = after.find((d) => d.id === landed.fit);
+                fitDrawing(target, false);
+            }
+            if (landed.fresh != null) {
+                markFresh(landed.fresh);
+            }
+            updateParts();
             await save();
             refitText(false).catch((e) => console.warn("boards: refitting the text failed", boardId, e));
             return shapeIds;
@@ -415,13 +607,19 @@ function OpenBoard({ project, boardId, highlightIds, onSelection, part: partProp
                     throw new Error(read.info.loaderror);
                 }
                 const parsed = parseBoardFile(read.data);
+                // a board drawn before drawings is wrapped in one Earlier drawings frame; saved once the canvas has it
+                const wrapped = wrapEarlier(parsed, Date.now());
                 // a board drawn before its text had a face that shows it (Vietnamese in Excalifont) turns on opening
-                const fonted = withReadableFont(parsed.elements, Date.now());
-                const scene = { ...parsed, elements: fonted.elements };
-                turnedOnOpenRef.current = fonted.changed.length > 0;
+                const fonted = withReadableFont(wrapped.elements, Date.now());
+                const scene = { ...wrapped, elements: fonted.elements };
+                changedOnOpenRef.current = fonted.changed.length > 0 || wrapped !== parsed;
                 if (cancelled) {
                     return;
                 }
+                const left = globalStore.get(boardViewportAtom(boardId));
+                fitOnOpenRef.current =
+                    drawingsOf(scene.elements).length > 0 && (left == null || left.following === true);
+                startViewRef.current = fitOnOpenRef.current ? null : left;
                 revRef.current = read.rev;
                 sceneRef.current = scene;
                 setInitial(scene);
@@ -475,8 +673,8 @@ function OpenBoard({ project, boardId, highlightIds, onSelection, part: partProp
         };
     }, [ready]);
 
-    // the part to read: eased to when another is chosen; the whole board again when it closes. An edit that reshapes
-    // the open part does not move the view under the pen.
+    // the part to read: eased to when another is chosen; the whole drawing in view again when it closes. An edit that
+    // reshapes the open part does not move the view under the pen.
     const partId = part != null ? (parts[part]?.id ?? null) : null;
     useEffect(() => {
         if (!ready) {
@@ -491,7 +689,7 @@ function OpenBoard({ project, boardId, highlightIds, onSelection, part: partProp
         if (part == null) {
             partZoomRef.current = null;
             if (prev != null && !leftByZoomRef.current) {
-                wholeBoard();
+                wholeDrawing();
             }
             leftByZoomRef.current = false;
             return;
@@ -508,6 +706,33 @@ function OpenBoard({ project, boardId, highlightIds, onSelection, part: partProp
     }, [ready, part, partId]);
 
     useEffect(() => stopEasing, []);
+
+    // turning Edit off leaves nothing selected and no tool armed (Excalidraw drops the selection itself when its mode
+    // flips, but not the tool)
+    useEffect(() => {
+        const was = editingRef.current;
+        editingRef.current = editing;
+        const api = apiRef.current;
+        if (!was || editing || api == null || excalidraw == null) {
+            return;
+        }
+        api.setActiveTool({ type: "selection" });
+        api.updateScene({
+            appState: { selectedElementIds: {}, selectedGroupIds: {}, editingGroupId: null },
+            captureUpdate: excalidraw.CaptureUpdateAction.NEVER,
+        });
+    }, [editing]);
+
+    // a pick in the drawings row: the view eases to that drawing, whole (a part that was open closes)
+    useEffect(() => {
+        const api = apiRef.current;
+        if (!ready || api == null || pick == null || pick === seenPickRef.current) {
+            return;
+        }
+        seenPickRef.current = pick;
+        const target = drawingsOf(api.getSceneElements()).find((d) => d.id === pick.drawingId);
+        fitDrawing(target, false);
+    }, [ready, pick]);
 
     // Show
     useEffect(() => {
@@ -526,23 +751,17 @@ function OpenBoard({ project, boardId, highlightIds, onSelection, part: partProp
             if (apiRef.current !== api) {
                 return;
             }
-            sigRef.current = elementsSig(current().elements);
-            // initialData's scrollToContent only centres at zoom 1: beside Chat a drawing wider than the half cell
-            // would run off its edge. A smaller one stays at zoom 1 (maxZoom).
-            const shapes = api.getSceneElements();
-            if (fitOnOpenRef.current && shapes.length > 0) {
-                api.scrollToContent(shapes, { fitToViewport: true, viewportZoomFactor: 0.9 });
-            }
-            fitOnOpenRef.current = false;
-            views.set({
-                zoom: api.getAppState().zoom.value,
-                scrollX: api.getAppState().scrollX,
-                scrollY: api.getAppState().scrollY,
-            });
-            updateParts();
+            const scene = current();
+            sigRef.current = elementsSig(scene.elements);
+            const st = api.getAppState();
+            views.set({ zoom: st.zoom.value, scrollX: st.scrollX, scrollY: st.scrollY });
+            // places the view where the board opens (initialData's scrollToContent only centres at zoom 1, so a drawing
+            // wider than the half cell would run off its edge) and publishes the row
+            openedRef.current = true;
+            syncView(scene.elements, st);
             readyRef.current?.resolve();
             setReady(true);
-            refitText(turnedOnOpenRef.current).catch((e) =>
+            refitText(changedOnOpenRef.current).catch((e) =>
                 console.warn("boards: refitting the text failed", boardId, e)
             );
         });
@@ -569,15 +788,7 @@ function OpenBoard({ project, boardId, highlightIds, onSelection, part: partProp
             leftByZoomRef.current = true;
             setPart(null);
         }
-        const vpAtom = boardViewportAtom(boardId);
-        const vp = globalStore.get(vpAtom);
-        if (vp?.scrollX !== appState.scrollX || vp?.scrollY !== appState.scrollY || vp?.zoom !== appState.zoom.value) {
-            globalStore.set(vpAtom, {
-                scrollX: appState.scrollX,
-                scrollY: appState.scrollY,
-                zoom: appState.zoom.value,
-            });
-        }
+        syncView(elements, appState);
         const sig = elementsSig(elements);
         if (sigRef.current === "" || sig === sigRef.current || sceneRef.current == null) {
             sigRef.current = sigRef.current || sig;
@@ -607,12 +818,14 @@ function OpenBoard({ project, boardId, highlightIds, onSelection, part: partProp
     if (initial == null) {
         return null;
     }
-    const viewport = globalStore.get(boardViewportAtom(boardId));
+    const viewport = startViewRef.current;
     return (
         <div
             className="arc-board absolute inset-0 overflow-hidden"
             data-board-canvas={boardId}
             data-board-ready={ready ? "true" : "false"}
+            data-board-view-mode={editing ? "false" : "true"}
+            data-board-in-view={row?.inView ?? ""}
             data-board-highlight={shown.join(",")}
             data-board-parts={parts.length}
             data-board-part={part ?? ""}
@@ -623,6 +836,8 @@ function OpenBoard({ project, boardId, highlightIds, onSelection, part: partProp
                     excalidrawAPI={onApi}
                     onChange={onChange}
                     theme={theme}
+                    // controlled, so only the Edit switch changes it (Excalidraw's own toggle is off)
+                    viewModeEnabled={!editing}
                     initialData={{
                         elements: initial.elements as ExcalidrawElement[],
                         files: initial.files as BinaryFiles,
@@ -733,7 +948,7 @@ function PartHover({
                     <button
                         type="button"
                         data-board-part-hover={hover}
-                        title="Read this part (→ ← step through them, Esc for the whole board)"
+                        title="Read this part (→ ← step through them, Esc for the whole drawing)"
                         onClick={() => onPick(hover)}
                         className="pointer-events-auto absolute max-w-[240px] cursor-pointer truncate rounded-full border border-edge-mid bg-surface-raised px-2 py-0.5 text-[11.5px] text-secondary shadow-popover-line hover:bg-surface-hover hover:text-primary"
                         style={{ left: Math.max(8, outline.left), top: Math.max(64, outline.top + 4) }}

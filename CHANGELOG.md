@@ -34,6 +34,9 @@ and a picture given to a line that is not big.
 
 ### Added
 
+- Open a tool in a split: `Ctrl`+`Enter` (`⌘`+`Enter` on a Mac) in Open a tool (`Ctrl`+`Shift`+`O`) opens it as a cell
+  under the agent you are looking at, beside the Shift+Enter that opens it in the panel. With the split full (4 cells)
+  the tool opens in the centre. <!-- try: open-tool -->
 - Judge pairs stay readable after they end: Library's Conversations lists each pair under the session of the agent that
   worked, read-only with its Decided list, and pairs synced from your other machine read the same. `wsh read <pair id>`
   prints one as text.
@@ -48,6 +51,9 @@ and a picture given to a line that is not big.
   kaeltran16 fork).
 - The agent panel's Files tab has a Search button at the top, beside Locate: it opens Code's Search on that folder,
   with the filter's text, as `Mod`+`Shift`+`F` does there.
+- Each drawer answer on a board is its own titled drawing: the row above the board lists them one click away, and the
+  view moves to a new drawing as it lands unless you went back to an earlier one, which then shows a `new` mark on the
+  new one (from the kaeltran16 fork). <!-- big --> <!-- shot: 1.11.0-board-drawings.webp -->
 
 ### Changed
 
@@ -56,13 +62,12 @@ and a picture given to a line that is not big.
 - Councils moved into Conversations: the Councils tab is gone, `Mod+G o` opens Conversations with the Council chip on,
   and a council nests under the session that started it.
 - Library's tabs are plain labels with a sliding underline; the 1–3 keys still switch them, named in each tab's tooltip
+  rather than beside its label.
 - In Chat, a pair's list and a judge's marks show as cards instead of code: the newest list with its answer chips,
   an earlier one folded to a row.
 - A fast-track run says so: a `fast track` chip on the run sheet, the same words on `wsh runs show` and Chat's run card.
   The plan review rows read Light review (and `amended by the lead` when the lead's revised plan went ahead), tasks have
   no Reviewing state, and the final stage has an End review step (from the kaeltran16 fork).
-- Library's tabs are plain labels with a sliding underline; the 1–4 keys still switch them, named in each tab's tooltip
-  rather than beside its label.
 - An agent in a brainstorm opens its panel on the Brainstorm tab, and one linked to an initiative on the Initiative tab,
   instead of Overview; once you pick a tab, the panel stays on yours.
 - The green server mark beside an agent or a project lists every port its servers listen on, not two and a `+N`.
@@ -83,6 +88,10 @@ and a picture given to a line that is not big.
   agent when it is in time.
 - Chat's suggested replies answer a question the agent follows with a short sentence or two ("Want me to run it? It
   takes 5 minutes."), as they do one it ends on: before, such a turn got a next step at most, and no yes or no.
+- Boards open for viewing, with no drawing toolbar and drags that pan; press Edit above the board to draw, move or
+  select shapes and ask about them (from the kaeltran16 fork).
+- The drawer keeps each drawing short, a few words per box and one idea per drawing; more becomes another drawing (from
+  the kaeltran16 fork).
 
 ### Fixed
 
@@ -104,7 +113,8 @@ and a picture given to a line that is not big.
   the agent's rail with the Decided tab stays beside the conversation; the way back to Chat reads as a button.
 - A background subagent cut off when its agent's session ended no longer shows as running in the Agent tree forever,
   and no longer keeps its agent from going to sleep: it reads stopped, as the agent was told when it resumed.
-  the agent's rail with the Decided tab stays beside the conversation.
+- Expanding a board that then fits whole drops its ‹ N parts › stepper, and collapsing it brings the stepper back. The
+  parts used to stay as they were when the board opened.
 
 ## 1.10.0 — 2026-11-25
 

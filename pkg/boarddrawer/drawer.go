@@ -134,8 +134,8 @@ func (d *Drawer) Busy(b Board) bool {
 }
 
 // Ask adds in to the board's talk and runs it. in names its Kind (ask or request) and carries what the caller means to
-// say: Question, On, SelectedIds, Context (a request's briefing) and From (the turn a send-the-other-way redoes). Every
-// other field is the drawer's to set. While a turn runs, an ask is refused with BusyReason, and a request waits behind
+// say: Question, On, SelectedIds, DrawingId (the drawing in view when the line was asked), Context (a request's
+// briefing) and From (the turn a send-the-other-way redoes). Every other field is the drawer's to set. While a turn runs, an ask is refused with BusyReason, and a request waits behind
 // it instead. An ask with From set is the person's line sent to be drawn: it may not be flagged as a question.
 func (d *Drawer) Ask(b Board, in wshrpc.BoardTurn) (wshrpc.BoardTurn, error) {
 	if in.Kind != KindAsk && in.Kind != KindRequest {
@@ -143,7 +143,7 @@ func (d *Drawer) Ask(b Board, in wshrpc.BoardTurn) (wshrpc.BoardTurn, error) {
 	}
 	t := wshrpc.BoardTurn{
 		ID: d.d.NewId(), Ts: d.d.Now(), Kind: in.Kind, Question: in.Question, On: in.On,
-		SelectedIds: slices.Clone(in.SelectedIds), Context: in.Context, From: in.From, State: StateAnswering,
+		SelectedIds: slices.Clone(in.SelectedIds), DrawingId: in.DrawingId, Context: in.Context, From: in.From, State: StateAnswering,
 	}
 	t.StartedTs = t.Ts
 	d.mu.Lock()
@@ -485,7 +485,7 @@ func (d *Drawer) answer(ctx context.Context, b Board, talk wshrpc.BoardTalk, tur
 	}
 	agent := d.readAgent(ctx, b, talk.Agent)
 	ti := turnInput{
-		Scene: scene, SelectedIds: turn.SelectedIds, On: turn.On, Question: turn.Question,
+		Scene: scene, SelectedIds: turn.SelectedIds, DrawingId: turn.DrawingId, On: turn.On, Question: turn.Question,
 		Request: turn.Kind == KindRequest, Context: turn.Context, Draw: turn.Kind == KindAsk && turn.From != "",
 		AgentTitle: agent.title, AgentTurns: agent.text,
 	}
@@ -524,7 +524,7 @@ func (d *Drawer) answer(ctx context.Context, b Board, talk wshrpc.BoardTalk, tur
 	if ctx.Err() != nil {
 		return Answer{}, ctx.Err()
 	}
-	answer, err := ParseAnswer(out.Text, scene)
+	answer, err := ParseAnswer(out.Text, scene, turn.DrawingId)
 	if err != nil {
 		return Answer{}, err
 	}
@@ -562,11 +562,15 @@ func (d *Drawer) deliver(ctx context.Context, b Board, turn wshrpc.BoardTurn, a 
 	if err != nil {
 		return err
 	}
-	err = d.d.Deliver(wshrpc.BoardAnswer{
+	delivered := wshrpc.BoardAnswer{
 		ID: d.d.NewId(), Project: b.Project, BoardId: b.BoardId, TurnId: turn.ID,
-		Add: a.Add, Update: a.Update, Remove: a.Remove, Ts: d.d.Now(),
-	})
-	if err != nil {
+		Add: a.Add, Update: a.Update, Remove: a.Remove, Title: a.Title, Ts: d.d.Now(),
+	}
+	// only an edit joins the frame it names: a new drawing gets a frame of its own
+	if a.Edit {
+		delivered.DrawingId = turn.DrawingId
+	}
+	if err = d.d.Deliver(delivered); err != nil {
 		return fmt.Errorf("the drawer's answer could not be delivered: %w", err)
 	}
 	return nil

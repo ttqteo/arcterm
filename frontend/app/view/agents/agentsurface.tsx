@@ -100,6 +100,7 @@ import {
     openInSplit,
     projectGridsAtom,
     removeFromGrid,
+    settlePendingSplit,
 } from "./gridstore";
 import { HeldAskBar } from "./heldaskbar";
 import { HeldPane } from "./heldpane";
@@ -249,6 +250,11 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
             globalStore.set(model.focusIdAtom, agent.id);
         }
     }, [agent?.id, focusId, model]);
+
+    // a terminal opened "in a split" (the tool picker's Mod+Enter) takes its cell under the agent once it is live
+    useEffect(() => {
+        settlePendingSplit(model);
+    }, [terminals, model]);
 
     // the dock atom follows splitDock: empty once its terminal closed, was chosen (it takes the centre) or has no agent
     // left to sit under

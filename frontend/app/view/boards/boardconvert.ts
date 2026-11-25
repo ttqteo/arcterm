@@ -9,7 +9,14 @@ import { convertToExcalidrawElements, exportToSvg, restoreElements } from "@exca
 import type { ExcalidrawElementSkeleton } from "@excalidraw/excalidraw/data/transform";
 import type { ExcalidrawElement } from "@excalidraw/excalidraw/element/types";
 import type { AppState, BinaryFiles } from "@excalidraw/excalidraw/types";
-import { applyAnswer, nunitoTextIds, withReadableFont, type AnswerResult, type BoardScene } from "./boardmodel";
+import {
+    applyAnswer,
+    nunitoTextIds,
+    withReadableFont,
+    type AnswerResult,
+    type BoardScene,
+    type MeasureText,
+} from "./boardmodel";
 
 // new ids on every conversion, so a redraw never collides with the group it replaces
 export function convertSkeleton(skeleton: string): ExcalidrawElement[] {
@@ -71,13 +78,19 @@ export async function sceneThumbnail(scene: BoardScene): Promise<string> {
 }
 
 // the answer on the scene, converted, in a face that can show its text (withReadableFont) and measured: a malformed answer
-// throws, and the applier fails its turn
+// throws, and the applier fails its turn. applyAnswer calls the measuring before the drawing lands, so an edited
+// drawing's frame fits the text as measured, in the face it will show in; the text the font change touched is told
+// back in textIds along with the answer's own changed text.
 export function landAnswer(scene: BoardScene, answer: BoardAnswer, now: number): AnswerResult {
     const added = answer.add ? convertSkeleton(answer.add) : [];
-    const result = applyAnswer(scene, answer, added, now);
-    const fonted = withReadableFont(result.scene.elements, now);
-    const textIds = [...new Set([...result.textIds, ...fonted.changed])];
-    return { ...result, textIds, scene: { ...result.scene, elements: measure(fonted.elements, textIds) } };
+    let fontChanged: string[] = [];
+    const measureText: MeasureText = (elements, changedIds) => {
+        const fonted = withReadableFont(elements, now);
+        fontChanged = fonted.changed;
+        return measure(fonted.elements, [...new Set([...changedIds, ...fonted.changed])]);
+    };
+    const result = applyAnswer(scene, answer, added, now, measureText);
+    return { ...result, textIds: [...new Set([...result.textIds, ...fontChanged])] };
 }
 
 const MAX_FONT_SAMPLE = 4000;

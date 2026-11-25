@@ -64990,7 +64990,8 @@ const TT_CTRL_I_TOOL = {
 
 // --- tools-picker: Open a tool (board Picker), from Ctrl+Shift+O and the agent header's Tool button. Rows say what a
 // tool is doing: an install under way offers Show, a failed one Try again, a command that is not on PATH its Edit. Enter
-// opens the selected tool in the centre, Shift+Enter in the panel, Ctrl+I installs one that is not installed.
+// opens the selected tool in the centre, Shift+Enter in the panel, Ctrl+Enter in a split under the agent, Ctrl+I installs
+// one that is not installed.
 const toolsPicker = {
     name: "tools-picker",
     surface: "agent",
@@ -65096,6 +65097,32 @@ const toolsPicker = {
             "4. shift-enter: Shift+Enter opens the selected tool in the panel, and its row reads panel",
             panelUp && panel.rows.length === 1 && panel.grid.docked === panel.rows[0],
             JSON.stringify(panel)
+        );
+
+        await ttToSurface(h);
+        const before = await h.ev(TT_GRID);
+        await h.ev(TT_OPEN_PICKER);
+        await polishWaitFor(h, `!!${TT_PICKER}`, 4000);
+        await h.ev(setFieldExpr(`document.querySelector("[data-tool-picker-input]")`, "arc-fixture"));
+        await polishWaitFor(h, `${TT_PICKER_ROW("arc-fixture")} != null`, 4000);
+        // the hint is a keycap and its words in one span, so read the footer's text, not a span's
+        const splitHint = await h.ev(`(document.querySelector("[data-tool-picker]")?.textContent ?? "").includes("Open in a split")`);
+        await h.ev(ttPickerKey("Enter", "Enter", { ctrlKey: true }));
+        const splitUp = await polishWaitFor(h, `!${TT_PICKER} && (${TT_GRID}).cells.length === ${before.cells.length + 1}`, 15000);
+        // the new cell is the terminal that was not a cell before, and it sits under the cell above it, not beside it
+        const split = await h.ev(`(() => {
+            const before = ${JSON.stringify(before.cells)};
+            const cells = [...document.querySelectorAll("[data-agent-cell]")].filter((c) => !c.classList.contains("hidden"));
+            const added = cells.find((c) => !before.includes(c.getAttribute("data-agent-terminal")));
+            const r = added?.getBoundingClientRect();
+            const above = r && cells.find((c) => c !== added && c.getBoundingClientRect().bottom <= r.top + 2 && c.getBoundingClientRect().left < r.right && c.getBoundingClientRect().right > r.left);
+            return { added: added?.getAttribute("data-agent-terminal") ?? null, below: !!above, grid: ${TT_GRID} };
+        })()`);
+        await h.shot("cdp-shots/tools-picker-4b-ctrl-enter.png");
+        rec(
+            "4b. ctrl-enter: the footer offers Open in a split, and Ctrl+Enter opens the selected tool as a cell under the agent",
+            splitHint && splitUp && split.added != null && split.below && split.grid.docked !== split.added,
+            JSON.stringify({ splitHint, splitUp, before, ...split })
         );
 
         await ttToSurface(h);

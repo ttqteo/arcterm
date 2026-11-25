@@ -22,31 +22,37 @@ vi.mock("@/app/store/wps", () => ({
 }));
 vi.mock("@/app/cockpit/notificationstore", () => ({ pushToast: (...a: unknown[]) => pushToast(...a) }));
 vi.mock("./boardsplitstore", () => ({ openBoard: (...a: unknown[]) => openBoard(...a) }));
-// the real landAnswer converts through Excalidraw; this one adds one rectangle per answer, and refuses a bad skeleton
-vi.mock("./boardconvert", () => ({
-    landAnswer: (scene: { elements: unknown[] }, answer: BoardAnswer) => {
-        if (answer.add === "not json") {
-            throw new Error("the skeleton is not a list of elements");
-        }
-        return {
-            scene: {
-                ...scene,
-                elements: [
-                    ...scene.elements,
-                    { id: `${answer.id}-r`, type: "rectangle", x: 0, y: 0, width: 100, height: 50, isDeleted: false },
-                ],
-            },
-            shapeIds: [`${answer.id}-r`],
-            textIds: [],
-        };
-    },
-}));
+// the real landAnswer converts through Excalidraw; this one converts to one stub rectangle per answer (the drawer's
+// shapes are in its own coordinates), lands it with the real applyAnswer, and refuses a bad skeleton
+vi.mock("./boardconvert", async () => {
+    const { applyAnswer } = await import("./boardmodel");
+    return {
+        landAnswer: (scene: BoardScene, answer: BoardAnswer, now: number) => {
+            if (answer.add === "not json") {
+                throw new Error("the skeleton is not a list of elements");
+            }
+            const rectangle = {
+                id: `${answer.id}-r`,
+                type: "rectangle",
+                x: 0,
+                y: 0,
+                width: 100,
+                height: 50,
+                isDeleted: false,
+                frameId: null,
+                version: 1,
+            } as unknown as ExcalidrawElement;
+            return applyAnswer(scene, answer, [rectangle], now);
+        },
+    };
+});
 
 import { globalStore } from "@/app/store/jotaiStore";
+import type { ExcalidrawElement } from "@excalidraw/excalidraw/element/types";
 import { atom, type PrimitiveAtom } from "jotai";
 import type { SurfaceKey } from "../agents/agents";
 import { startBoardApplier, type BoardApplierModel } from "./boardapplier";
-import { parseBoardFile } from "./boardmodel";
+import { parseBoardFile, type BoardScene } from "./boardmodel";
 import { boardListAtom, boardTalkAtom, registerLiveBoard } from "./boardstore";
 
 const BOARD = "0a1b2c3d";
@@ -126,7 +132,7 @@ afterEach(() => {
 describe("landing answers", () => {
     it("saves an answer for a closed board under the rev read, then acks it with its shape ids", async () => {
         const order: string[] = [];
-        rpc.BoardAnswerInboxCommand.mockResolvedValue([answer()]);
+        rpc.BoardAnswerInboxCommand.mockResolvedValue([answer({ title: "Request flow" })]);
         rpc.BoardSaveCommand.mockImplementation(async () => (order.push("save"), { rev: "rev-2" }));
         rpc.BoardAnswerAckCommand.mockImplementation(async () => void order.push("ack"));
         stop = startBoardApplier(model);
@@ -135,7 +141,12 @@ describe("landing answers", () => {
         expect(rpc.BoardAnswerInboxCommand).toHaveBeenCalledWith({}, { project: "arcterm", boardid: BOARD });
         const save = rpc.BoardSaveCommand.mock.calls[0][1];
         expect(save).toMatchObject({ project: "arcterm", boardid: BOARD, baserev: "rev-1" });
-        expect(parseBoardFile(save.data).elements.map((el) => el.id)).toEqual(["a-1-r"]);
+        // a closed board's answer lands as a drawing: a titled, numbered frame holding the shape, after it
+        const saved = parseBoardFile(save.data).elements;
+        const frame = saved.find((el) => el.type === "frame");
+        expect(frame).toMatchObject({ name: "Request flow", customData: { arcDrawing: 1 } });
+        expect(saved.map((el) => el.id)).toEqual(["a-1-r", frame?.id]);
+        expect(saved[0].frameId).toBe(frame?.id);
         expect(rpc.BoardAnswerAckCommand.mock.calls[0][1]).toEqual({
             project: "arcterm",
             boardid: BOARD,
@@ -155,7 +166,8 @@ describe("landing answers", () => {
         await vi.waitFor(() => expect(rpc.BoardAnswerAckCommand).toHaveBeenCalledOnce());
         expect(rpc.BoardReadCommand).toHaveBeenCalledTimes(2);
         expect(rpc.BoardSaveCommand.mock.calls.map((c) => c[1].baserev)).toEqual(["rev-1", "rev-9"]);
-        expect(parseBoardFile(rpc.BoardSaveCommand.mock.calls[1][1].data).elements).toHaveLength(1);
+        // the shape and its drawing's frame, once: the first landing was never saved
+        expect(parseBoardFile(rpc.BoardSaveCommand.mock.calls[1][1].data).elements).toHaveLength(2);
         expect(rpc.BoardAnswerAckCommand.mock.calls[0][1]).toMatchObject({ shapeids: ["a-1-r"] });
         expect(rpc.BoardAnswerAckCommand.mock.calls[0][1].error).toBeUndefined();
     });
@@ -336,9 +348,10 @@ describe("one answer in flight per board", () => {
             answer({ id: "a-1", turnid: "t-1", ts: 10 }),
         ]);
         rpc.BoardSaveCommand.mockImplementation(async (_c, data: CommandBoardSaveData) => {
+            // the answer's rectangle, then its frame
             const ids = parseBoardFile(data.data).elements.map((el) => el.id);
-            events.push(`save:${ids.at(-1)}`);
-            if (ids.at(-1) === "a-1-r") {
+            events.push(`save:${ids[0]}`);
+            if (ids[0] === "a-1-r") {
                 await new Promise<void>((r) => (releaseFirst = r));
             }
             return { rev: "rev-2" };

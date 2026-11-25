@@ -83,6 +83,7 @@ type CommandBoardAskData struct {
 	Question    string   `json:"question"`
 	On          string   `json:"on,omitempty"` // the selected shapes' labels
 	SelectedIds []string `json:"selectedids,omitempty"`
+	DrawingId   string   `json:"drawingid,omitempty"` // the drawing in view when the line was asked
 }
 
 type CommandBoardAnswerAckData struct {
@@ -179,7 +180,8 @@ type BoardTurn struct {
 	Question    string        `json:"question,omitempty"`
 	On          string        `json:"on,omitempty"`
 	SelectedIds []string      `json:"selectedids,omitempty"`
-	Context     string        `json:"context,omitempty"` // a request's briefing
+	DrawingId   string        `json:"drawingid,omitempty"` // kept for Retry, Draw instead and Send to agent
+	Context     string        `json:"context,omitempty"`   // a request's briefing
 	State       string        `json:"state"`
 	Title       string        `json:"title,omitempty"`
 	Added       int           `json:"added,omitempty"`
@@ -202,5 +204,8 @@ type BoardAnswer struct {
 	Add     string   `json:"add,omitempty"`    // JSON array text of Excalidraw element skeletons
 	Update  string   `json:"update,omitempty"` // JSON array text of element patches
 	Remove  []string `json:"remove,omitempty"`
-	Ts      int64    `json:"ts"`
+	// Title is a new drawing's frame name; DrawingId is the frame an edit changes, empty for a new drawing.
+	Title     string `json:"title,omitempty"`
+	DrawingId string `json:"drawingid,omitempty"`
+	Ts        int64  `json:"ts"`
 }

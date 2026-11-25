@@ -15,14 +15,18 @@ import (
 const (
 	typeText        = "text"
 	typeArrow       = "arrow"
+	typeFrame       = "frame"
 	fillTransparent = "transparent"
 )
 
 // Scene is the board as the drawer is shown it: one JSON line per live element, and the types of the ids it shows.
+// A drawing is a live frame.
 type Scene struct {
-	Text   string
-	Types  map[string]string // id -> type, for every element the summary lists
-	Shapes int               // live elements, bound text not counted
+	Text    string
+	Types   map[string]string // id -> type, for every element the summary lists
+	Frames  map[string]string // frame id -> its title
+	FrameOf map[string]string // shape id -> the live frame it belongs to; a loose shape is absent
+	Shapes  int               // live elements, bound text and frames not counted
 }
 
 type sceneElement struct {
@@ -35,6 +39,8 @@ type sceneElement struct {
 	Text            string   `json:"text"`
 	OriginalText    string   `json:"originalText"`
 	ContainerId     string   `json:"containerId"`
+	FrameId         string   `json:"frameId"`
+	Name            string   `json:"name"`
 	StartBinding    *binding `json:"startBinding"`
 	EndBinding      *binding `json:"endBinding"`
 	StrokeColor     string   `json:"strokeColor"`
@@ -62,11 +68,12 @@ type sceneLine struct {
 	Stroke   string `json:"stroke,omitempty"`
 	Fill     string `json:"fill,omitempty"`
 	Group    string `json:"group,omitempty"` // the outermost group: a chart's shapes, or shapes grouped by hand
+	Frame    string `json:"frame,omitempty"` // the drawing the shape is in
 	Selected bool   `json:"selected,omitempty"`
 }
 
 // SceneSummary reads a board file into what the drawer is shown: bound text folded into its container's label,
-// deleted elements left out, the selected ids marked.
+// deleted elements left out, the selected ids marked, a frame's title as its label, and each shape's frame.
 func SceneSummary(boardFile []byte, selected []string) (Scene, error) {
 	var file struct {
 		Elements []sceneElement `json:"elements"`
@@ -76,6 +83,7 @@ func SceneSummary(boardFile []byte, selected []string) (Scene, error) {
 	}
 	live := make([]sceneElement, 0, len(file.Elements))
 	labels := map[string]string{}
+	frames := map[string]string{}
 	for _, e := range file.Elements {
 		if e.IsDeleted || e.Id == "" {
 			continue
@@ -84,9 +92,15 @@ func SceneSummary(boardFile []byte, selected []string) (Scene, error) {
 			labels[e.ContainerId] = elementText(e)
 			continue
 		}
+		if e.Type == typeFrame {
+			frames[e.Id] = e.Name
+			labels[e.Id] = e.Name
+		}
 		live = append(live, e)
 	}
-	scene := Scene{Types: make(map[string]string, len(live)), Shapes: len(live)}
+	scene := Scene{
+		Types: make(map[string]string, len(live)), Frames: frames, FrameOf: map[string]string{}, Shapes: len(live) - len(frames),
+	}
 	var buf bytes.Buffer
 	enc := json.NewEncoder(&buf)
 	enc.SetEscapeHTML(false)
@@ -110,6 +124,11 @@ func SceneSummary(boardFile []byte, selected []string) (Scene, error) {
 		}
 		if e.EndBinding != nil {
 			line.End = e.EndBinding.ElementId
+		}
+		// a frame Excalidraw deleted can still be named by its former children
+		if _, ok := frames[e.FrameId]; ok {
+			line.Frame = e.FrameId
+			scene.FrameOf[e.Id] = e.FrameId
 		}
 		if err := enc.Encode(line); err != nil {
 			return Scene{}, err

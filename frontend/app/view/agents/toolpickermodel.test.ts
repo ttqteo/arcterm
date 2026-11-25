@@ -264,10 +264,11 @@ describe("openRefusal", () => {
 describe("footerHints", () => {
     const row = (t: ToolStatus, state: PickerRow["state"]): PickerRow => ({ tool: t, state });
 
-    it("offers to open the selected tool, in the centre and in the panel", () => {
+    it("offers to open the selected tool, in the centre, in the panel and in a split", () => {
         expect(footerHints(row(tool("lazygit"), "installed"))).toEqual({
             open: "Open lazygit",
             panel: "Open in the panel",
+            split: "Open in a split",
             install: false,
         });
     });
@@ -282,6 +283,7 @@ describe("footerHints", () => {
         expect(footerHints(row(tool("gitui", { found: false }), "not-installed"))).toEqual({
             open: null,
             panel: null,
+            split: null,
             install: true,
         });
     });
@@ -291,6 +293,7 @@ describe("footerHints", () => {
             expect(footerHints(row(tool("x", { found: false }), state))).toEqual({
                 open: null,
                 panel: null,
+                split: null,
                 install: false,
             });
         }
@@ -301,7 +304,7 @@ describe("footerHints", () => {
     });
 
     it("offers nothing with no row", () => {
-        expect(footerHints(undefined)).toEqual({ open: null, panel: null, install: false });
+        expect(footerHints(undefined)).toEqual({ open: null, panel: null, split: null, install: false });
     });
 });
 
@@ -350,9 +353,17 @@ describe("pickerKey", () => {
         expect(pickerKey({ sel: 0, rows: [] }, key("Enter"))).toBeNull();
     });
 
-    it("leaves Enter with Ctrl or Alt to the app", () => {
-        expect(pickerKey({ sel: 0, rows }, key("Enter", { ctrlKey: true }))).toBeNull();
+    it("opens in a split on Ctrl+Enter, and on Cmd+Enter as a Mac has it", () => {
+        expect(pickerKey({ sel: 0, rows }, key("Enter", { ctrlKey: true }))).toEqual({ kind: "open", place: "split" });
+        expect(pickerKey({ sel: 0, rows }, key("Enter", { metaKey: true }))).toEqual({ kind: "open", place: "split" });
+        expect(pickerKey({ sel: 0, rows: [] }, key("Enter", { ctrlKey: true }))).toBeNull();
+    });
+
+    it("leaves Enter with Alt, or a Mod chord with more keys, to the app", () => {
         expect(pickerKey({ sel: 0, rows }, key("Enter", { altKey: true }))).toBeNull();
+        expect(pickerKey({ sel: 0, rows }, key("Enter", { ctrlKey: true, shiftKey: true }))).toBeNull();
+        expect(pickerKey({ sel: 0, rows }, key("Enter", { ctrlKey: true, altKey: true }))).toBeNull();
+        expect(pickerKey({ sel: 0, rows }, key("Enter", { ctrlKey: true, metaKey: true }))).toBeNull();
     });
 
     it("installs on Ctrl+I over a row that is not installed, and only there", () => {
