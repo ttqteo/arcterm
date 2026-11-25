@@ -48004,8 +48004,8 @@ const agentChat = {
             // 75. a mention that is already a pill is not one being typed. @../a lists alpha.ts and beta.md: the first ↓ moves to
             // beta.md and stays there (a select event that finds the caret where it was does not send it back to the top), Enter
             // picks it (a pill and a space). Backspace takes the space, so the caret is right after the pill and the box's text
-            // ends in @../beta.md: the list stays shut, and stays shut with the pill selected (←), where it used to open on the
-            // text of the pill it had just written
+            // ends in @../beta.md: the list stays shut, where it used to open on the text of the pill it had just written. (←
+            // there opens the pill into its text, being typed again: step 71b.)
             await polishWaitFor(h, `${acVal(acBox(A))} === ""`, 3000);
             await acType(h, acBox(A), "@../a", false);
             const two75 = await polishWaitFor(h, `document.querySelectorAll("[data-chat-mention]").length === 2`, 8000);
@@ -48035,21 +48035,16 @@ const agentChat = {
             const text75 = await h.ev(`({ text: ${boxText75}, inner: ${acVal(acBox(A))} })`);
             const shutAtEnd75 = await shut75(1000);
             const atEnd75 = await acPills(h, acBox(A));
-            await acKey(h, acKeys.left);
-            await polishNap(150);
-            const shutLeft75 = await shut75(1000);
-            const left75 = await acPills(h, acBox(A));
             await h.shot("cdp-shots/agent-chat-75-at-pill-shut.png");
             await acClear(h, acBox(A));
             await polishWaitFor(h, `!document.querySelector("[data-chat-mentions]")`, 3000);
             rec(
-                "75. @../a lists alpha.ts and beta.md; the first ↓ highlights beta.md and it stays there; Enter picks it as a pill; Backspace takes the space after it and the list stays shut for a second with the caret right after the pill, and with the pill selected (←)",
+                "75. @../a lists alpha.ts and beta.md; the first ↓ highlights beta.md and it stays there; Enter picks it as a pill; Backspace takes the space after it and the list stays shut for a second with the caret right after the pill",
                 two75 && top75?.rows[0]?.selected === true && moved75 && down75?.rows.length === 2 && down75.rows[1].key === "../beta.md" &&
                     down75.rows[1].selected === true && down75.rows[0].selected === false &&
                     pilled75 && closedAfterPick75 &&
-                    spaceGone75 && shutAtEnd75 && atEnd75.length === 1 && atEnd75[0].path === "../beta.md" &&
-                    shutLeft75 && left75.length === 1 && left75[0].selected === true,
-                { two75, top75, moved75, down75, pilled75, closedAfterPick75, spaceGone75, text75, shutAtEnd75, atEnd75, shutLeft75, left75 }
+                    spaceGone75 && shutAtEnd75 && atEnd75.length === 1 && atEnd75[0].path === "../beta.md",
+                { two75, top75, moved75, down75, pilled75, closedAfterPick75, spaceGone75, text75, shutAtEnd75, atEnd75 }
             );
 
             // 76. Bash mode, as Claude Desktop draws its shell mode: a text that starts with `!` stays one row, with a "Bash" pill

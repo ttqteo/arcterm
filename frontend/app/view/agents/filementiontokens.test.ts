@@ -29,6 +29,14 @@ describe("mentionTokens", () => {
         expect(paths("open @src/app.ts ", 17)).toEqual(["src/app.ts"]);
         expect(paths("open @src/app.ts now", 3)).toEqual(["src/app.ts"]);
     });
+    it("skips a token the caret stands in the trailing punctuation of, and keeps it once a space follows", () => {
+        // `@src/app.` with the extension still to come
+        expect(paths("open @src/app.", 14)).toEqual([]);
+        expect(paths("open @src/app.ts, now", 17)).toEqual([]);
+        expect(paths("open @src/app.ts, now", 18)).toEqual(["src/app.ts"]);
+        // without a caret the punctuation is still left out of the path
+        expect(paths("open @src/app.")).toEqual(["src/app"]);
+    });
 });
 
 describe("mentionBaseName", () => {

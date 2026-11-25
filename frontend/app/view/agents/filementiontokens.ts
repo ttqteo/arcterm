@@ -20,7 +20,8 @@ const PATH_LIKE = /[\\/]|\.[A-Za-z0-9]{1,8}$/;
 const TRAILING_PUNCT = /[.,;:!?)\]}'"]+$/;
 
 /** Pure: the file mentions in `text`, in order. With `caret`, a token the caret is in or at the end of (still being
- *  typed) is left out; one followed by a space the caret has passed is kept. */
+ *  typed) is left out, and so is one the caret stands in the trailing punctuation of (`@src/app.|`: the extension may
+ *  follow); one followed by a space the caret has passed is kept. */
 export function mentionTokens(text: string, caret?: number): MentionToken[] {
     const out: MentionToken[] = [];
     for (let i = 0; i < text.length; i++) {
@@ -29,6 +30,9 @@ export function mentionTokens(text: string, caret?: number): MentionToken[] {
         }
         let path: string;
         let end: number;
+        // where the word the caret would still be typing ends: past a trailing `.` too, so `@src/app.` with the caret
+        // after the `.` is a path whose extension is on its way, not `@src/app` and a full stop
+        let typing: number;
         if (text[i + 1] === '"') {
             const close = text.indexOf('"', i + 2);
             if (close < 0) {
@@ -36,15 +40,17 @@ export function mentionTokens(text: string, caret?: number): MentionToken[] {
             }
             path = text.slice(i + 2, close);
             end = close + 1;
+            typing = end;
         } else {
             const word = /^\S+/.exec(text.slice(i + 1))?.[0] ?? "";
             path = word.replace(TRAILING_PUNCT, "");
             end = i + 1 + path.length;
+            typing = i + 1 + word.length;
         }
         if (path === "" || path.includes("@") || !PATH_LIKE.test(path.replace(/[\\/]+$/, "") || path)) {
             continue;
         }
-        if (caret != null && caret > i && caret <= end) {
+        if (caret != null && caret > i && caret <= typing) {
             continue;
         }
         out.push({ start: i, end, path });

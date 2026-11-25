@@ -142,6 +142,8 @@ and a picture given to a line that is not big.
 
 ### Fixed
 
+- A file path typed by hand in Chat's message box no longer turns into a pill at the dot before its extension
+  (`@src/app.` became a pill of `src/app`); it becomes one once a space follows it or the caret leaves it.
 - A long message of yours in Chat opens and folds smoothly on Show more / Show less instead of jumping.
 - On Windows, an image an agent's reply names by a full path written with backslashes (`C:\Users\…\shot.png`) is drawn
   in Chat, where it showed as "not a full path".

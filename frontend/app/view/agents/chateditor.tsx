@@ -8,7 +8,9 @@
 // into that text and a caret offset and handed to `onChange`, and a `value` that is not what the editor last said (a
 // picker's pick, a recalled message, an insert, a send) rebuilds the editor from it, a mention or a reference that is
 // complete becoming a pill or a badge. One typed or pasted by hand becomes one too, in place, once it is finished (a space
-// or punctuation after it; `$settleTypedText`): the text does not change, so nothing is reported and no rebuild follows.
+// after it, or for a reference punctuation too: a file's `.` may be its extension starting; `$settleTypedText`): the
+// text does not change, so nothing is reported and no rebuild follows. ← or → into a pill opens it back into its text to
+// edit (`$openPill`); it is a pill again once the caret leaves it.
 // So the slash menu, the `@` picker, recall and the send path go on working on a string and offsets, and the handle this
 // editor gives its parent (`EditorLike`) answers like the part of a `<textarea>` they use. The arithmetic (text <-> lines,
 // caret <-> offset) is chateditornodes.ts / chateditormodel.ts; this file is the Lexical wiring around it.
@@ -224,8 +226,8 @@ function $gapAroundPills(node: TextNode): void {
     }
 }
 
-/** A file mention or a reference typed or pasted into a text node is a pill or a badge once it is finished (a space or
- *  punctuation after it, `atomRunsIn`): the node is split at the ends of each one and its middle part replaced by the node
+/** A file mention or a reference typed or pasted into a text node is a pill or a badge once it is finished (`atomRunsIn`:
+ *  the caret past it and a space, or a reference's punctuation): the node is split at the ends of each one and its middle part replaced by the node
  *  it stands for. The box's text does not change (a badge's text is its `raw`, a pill's `mentionText`), so the update
  *  listener reports nothing and no outside rebuild follows. `splitText` carries a caret in the node to the part it falls
  *  in and a caret at a token's end (still typing) never splits it, but `replace` moves a caret on the part it replaces to
@@ -394,8 +396,8 @@ function $setPoint(point: PointType, doc: Doc, place: EditorPlace): void {
     point.set(paragraph.getKey(), place.index + (after ? 1 : 0), "element");
 }
 
-/** whether the selection is on a pill (a file pill or a reference badge): one selected (Backspace or ← beside it), or a
- *  collapsed caret right after one */
+/** whether the selection is on a pill (a file pill or a reference badge): one selected (Backspace beside it, or a click),
+ *  or a collapsed caret right after one */
 function $selectionOnPill(doc: Doc): boolean {
     const selection = $getSelection();
     if ($isNodeSelection(selection)) {
