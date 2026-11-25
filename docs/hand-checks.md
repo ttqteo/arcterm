@@ -35,6 +35,11 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
   agent to Terminal: no Quote button, `q` and `Alt`+`Q` do nothing, the right-click item is disabled. Scenario
   `file-quote` covers it with a stub chat box; never run against a dev app.
 
+- [ ] (arcterm) **← opens a file pill in Chat's message box for editing.** In Chat, @-pick a file so it shows as a pill,
+  then press ← until the caret is right after the pill and once more: the pill turns back into its text `@path`, the
+  caret at its end. Backspace and type to change the path, then → past the space: it is a pill again, of the new path.
+  Home then → opens it from the front. Not tried in the app; CDP step agent-chat 71b covers it. Commit: feat(chat) ←
+  or → into a file pill opens it into its text
 - [ ] (arcterm) **Show more / Show less on a long message of yours springs open and shut.** In Chat, send a message
   longer than six lines: its bubble shows six lines fading out. Show more grows the bubble onto the whole text (no jump);
   Show less shrinks it back to six lines and the fade comes back as it lands. Click Show less mid-open: it turns back

@@ -145,6 +145,13 @@ export function caretAmongRuns(runs: { start: number; end: number }[], caret: nu
     return null;
 }
 
+/** Pure: where the caret lands when ← or → walks into a pill or a badge that spans `start`..`end` of the text, opening it
+ *  into its text: at its end for ← (coming from after it), one character in for → (coming from before it). Both are in the
+ *  token, where `segmentsOf` keeps it text, so it stays open while the caret is in it. */
+export function openedCaret(start: number, end: number, backward: boolean): number {
+    return backward ? end : Math.min(start + 1, end);
+}
+
 /** Pure: which of the two spaces around a pill that is taken away goes with it, so deleting `đọc @a/b.ts tiếp` leaves
  *  `đọc tiếp` and not two spaces. `before` and `after` are the text right before and right after the pill in its line ("" at
  *  the line's edge or beside another pill). "after" when a space follows and the pill is at the line's start or has a space

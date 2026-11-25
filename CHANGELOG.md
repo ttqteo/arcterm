@@ -99,6 +99,8 @@ and a picture given to a line that is not big.
   the figures it verified, and lists one that does not hold under About the council. <!-- big --> <!-- shot: 1.10.0-council-figure-charts.webp -->
 - A split on the Agent surface can be resized: drag the line between its cells to give one more room, and double-click
   it to even them again. Each project's split keeps its own sizes.
+- A file pill or an `agent:` badge in Chat's message box can be edited: ← into it from after it (or → from before it)
+  opens it back into its text, `@path`, with the caret in it; move the caret away and it is a pill again.
 
 ### Changed
 

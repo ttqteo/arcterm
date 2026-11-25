@@ -52,6 +52,7 @@ import {
     CLEAR_HISTORY_COMMAND,
     COMMAND_PRIORITY_HIGH,
     COMPOSITION_END_COMMAND,
+    HISTORY_MERGE_TAG,
     HISTORY_PUSH_TAG,
     KEY_BACKSPACE_COMMAND,
     KEY_DELETE_COMMAND,
@@ -79,6 +80,7 @@ import {
     caretAmongRuns,
     fromShown,
     gapToDrop,
+    openedCaret,
     segmentLength,
     segmentsOf,
     shownText,
@@ -536,6 +538,61 @@ function $deletePill(event: KeyboardEvent, backward: boolean): boolean {
     return true;
 }
 
+/** ← with the caret right after a pill or a badge, or → right before one, opens it into its text (`@path`, a reference as
+ *  written) to be edited: the caret lands in that text (`openedCaret`), where a mention stays text. Once the caret leaves
+ *  it, it is a pill again (the Bridge's `opened`, `$unsettledText`). Shift or a modifier keeps the editor's own move. True
+ *  when the key was taken. */
+function $openPill(e: KeyboardEvent): boolean {
+    if ((e.key !== "ArrowLeft" && e.key !== "ArrowRight") || e.shiftKey || e.altKey || e.ctrlKey || e.metaKey) {
+        return false;
+    }
+    const selection = $getSelection();
+    if (!$isRangeSelection(selection) || !selection.isCollapsed()) {
+        return false;
+    }
+    const backward = e.key === "ArrowLeft";
+    const doc = $readDoc();
+    const place = $placeOfPoint(selection.focus, doc);
+    const found = adjacentPill(doc.lines[place.line] ?? [], place.index, place.offset, backward);
+    if (found == null) {
+        return false;
+    }
+    e.preventDefault();
+    const start = placeOffset(doc.lines, { line: place.line, index: found, offset: 0 });
+    const end = placeOffset(doc.lines, { line: place.line, index: found, offset: 1 });
+    const pill = doc.nodes[place.line][found];
+    pill.replace($createTextNode(pill.getTextContent()));
+    const caret = openedCaret(start, end, backward);
+    $selectOffsets($readDoc(), caret, caret);
+    return true;
+}
+
+/** whether a text node holds a finished mention or reference the caret is not in (an opened pill the caret has left).
+ *  Only with a caret, not mid-drag. */
+function $unsettledText(): boolean {
+    const selection = $getSelection();
+    if ($isRangeSelection(selection) && !selection.isCollapsed()) {
+        return false;
+    }
+    const focus = $isRangeSelection(selection) ? selection.focus : null;
+    return $getRoot()
+        .getChildren()
+        .some(
+            (p) =>
+                $isElementNode(p) &&
+                p
+                    .getChildren()
+                    .filter($isTextNode)
+                    .some(
+                        (n) =>
+                            atomRunsIn(
+                                n.getTextContent(),
+                                focus?.type === "text" && focus.key === n.getKey() ? focus.offset : undefined
+                            ).length > 0
+                    )
+        );
+}
+
 /** With a pill selected, ← and → leave it (to before / after it) and a typed character replaces the selection by a
  *  caret after it, so the character is typed there instead of being dropped. */
 function $leaveSelectedPill(e: KeyboardEvent): boolean {
@@ -645,6 +702,8 @@ interface BridgeProps {
 const Bridge = forwardRef<EditorLike, BridgeProps>(function Bridge({ props, said }, ref) {
     const [editor] = useLexicalComposerContext();
     const wasFocused = useRef(false);
+    /** a pill was opened into its text with ← / → and is not a pill again yet */
+    const opened = useRef(false);
 
     const handle = useMemo<EditorLike>(() => {
         // in the whole text's offsets: past the `!` the editor leaves out
@@ -772,9 +831,40 @@ const Bridge = forwardRef<EditorLike, BridgeProps>(function Bridge({ props, said
             },
             COMMAND_PRIORITY_HIGH
         );
+        // a caret move changes no text node, so the transform does not see a pill opened with ← / → that the caret has
+        // left: it is settled here, in the undo step the move belongs to. Only while one is open (`opened`), so a mention
+        // being typed and walked away from stays text, as it did
+        const offLeft = editor.registerUpdateListener(({ editorState, tags }) => {
+            if (!opened.current) {
+                return;
+            }
+            if (tags.has("external") || props.current.bash) {
+                opened.current = false;
+                return;
+            }
+            if (editor.isComposing() || !editorState.read($unsettledText)) {
+                return;
+            }
+            opened.current = false;
+            editor.update(
+                () => {
+                    for (const paragraph of $getRoot().getChildren()) {
+                        if ($isElementNode(paragraph)) {
+                            for (const node of paragraph.getChildren().filter($isTextNode)) {
+                                if (node.isAttached()) {
+                                    $settleTypedText(node, false);
+                                }
+                            }
+                        }
+                    }
+                },
+                { tag: HISTORY_MERGE_TAG }
+            );
+        });
         return () => {
             offTransform();
             offComposed();
+            offLeft();
         };
     }, [editor, props]);
 
@@ -873,6 +963,10 @@ const Bridge = forwardRef<EditorLike, BridgeProps>(function Bridge({ props, said
             (event: KeyboardEvent) => {
                 props.current.onKeyDown?.(keyLike(event, handle));
                 if (event.defaultPrevented) {
+                    return true;
+                }
+                if (!props.current.bash && $openPill(event)) {
+                    opened.current = true;
                     return true;
                 }
                 return $leaveSelectedPill(event);

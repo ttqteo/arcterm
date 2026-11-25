@@ -11,6 +11,7 @@ import {
     isAtom,
     locate,
     mentionText,
+    openedCaret,
     plainOffset,
     segmentLength,
     segmentsOf,
@@ -22,6 +23,28 @@ const text = (t: string): Segment => ({ kind: "text", text: t });
 const pill = (path: string): Segment => ({ kind: "pill", path });
 const join = (segments: Segment[]) =>
     segments.map((s) => (s.kind === "text" ? s.text : s.kind === "ref" ? s.raw : mentionText(s.path))).join("");
+
+describe("openedCaret", () => {
+    // `đọc @src/a.ts tiếp`: the mention is 4..13
+    const source = "đọc @src/a.ts tiếp";
+    it("puts the caret at the end for ←, one character in for →", () => {
+        expect(openedCaret(4, 13, true)).toBe(13);
+        expect(openedCaret(4, 13, false)).toBe(5);
+    });
+    it("lands where the mention stays text, the others staying pills", () => {
+        for (const backward of [true, false]) {
+            expect(segmentsOf(source, openedCaret(4, 13, backward))).toEqual([text(source)]);
+        }
+        const two = "@a.ts @b.ts";
+        expect(segmentsOf(two, openedCaret(6, 11, true))).toEqual([pill("a.ts"), text(" @b.ts")]);
+        expect(segmentsOf(two, openedCaret(0, 5, false))).toEqual([text("@a.ts "), pill("b.ts")]);
+    });
+    it("works for a reference badge too", () => {
+        const ref = "đọc agent:7cd99627 rồi";
+        expect(segmentsOf(ref, openedCaret(4, 18, true))).toEqual([text(ref)]);
+        expect(segmentsOf(ref, openedCaret(4, 18, false))).toEqual([text(ref)]);
+    });
+});
 
 describe("mentionText", () => {
     it("writes @path", () => {

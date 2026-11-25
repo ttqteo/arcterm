@@ -47907,6 +47907,42 @@ const agentChat = {
                 { pilled71, idle71, selected71, ring71, gone71, text71 }
             );
 
+            // 71b. ← into a pill from after it opens it back into its text, the caret at its end: Backspace and typing edit the
+            // path, and → past the space makes it a pill again, of the edited path. Home then → opens it from before it.
+            await acClear(h, acBox(A));
+            await polishWaitFor(h, `${acVal(acBox(A))} === ""`, 3000);
+            await acType(h, acBox(A), "@../al", false);
+            await polishWaitFor(h, `!!document.querySelector('[data-chat-mention="../alpha.ts"]')`, 8000);
+            await acKey(h, acKeys.enter);
+            const pilled71b = await polishWaitFor(h, `!!${acBox(A)}?.querySelector('[data-chat-pill="../alpha.ts"]')`, 3000);
+            await polishNap(250);
+            await acKey(h, acKeys.left);
+            await polishNap(100);
+            await acKey(h, acKeys.left);
+            const opened71b = await polishWaitFor(h, `!${acBox(A)}?.querySelector("[data-chat-pill]")`, 3000);
+            const openText71b = await h.ev(`(${acBox(A)})?.textContent`);
+            await h.shot("cdp-shots/agent-chat-71b-pill-open.png");
+            await acKey(h, acKeys.backspace);
+            await acKey(h, acKeys.backspace);
+            await h.cdp("Input.insertText", { text: "md" });
+            await polishNap(150);
+            const edited71b = await h.ev(acVal(acBox(A)));
+            await acKey(h, acKeys.right);
+            const repilled71b = await polishWaitFor(h, `!!${acBox(A)}?.querySelector('[data-chat-pill="../alpha.md"]')`, 3000);
+            await h.shot("cdp-shots/agent-chat-71b-pill-again.png");
+            await acKey(h, { key: "Home", code: "Home", windowsVirtualKeyCode: 36 });
+            await polishNap(100);
+            await acKey(h, acKeys.right);
+            const openedFront71b = await polishWaitFor(h, `!${acBox(A)}?.querySelector("[data-chat-pill]")`, 3000);
+            const frontVal71b = await h.ev(acVal(acBox(A)));
+            await acClear(h, acBox(A));
+            rec(
+                "71b. ← from right after a pill opens it into its text (@../alpha.ts, no pill); two Backspaces and `md` edit it to @../alpha.md; → past the space makes it a pill of ../alpha.md; Home then → opens it again, the text unchanged",
+                pilled71b && opened71b && openText71b?.startsWith("@../alpha.ts") && edited71b?.startsWith("@../alpha.md") &&
+                    repilled71b && openedFront71b && frontVal71b?.startsWith("@../alpha.md"),
+                { pilled71b, opened71b, openText71b, edited71b, repilled71b, openedFront71b, frontVal71b }
+            );
+
             // 72. "@ walks folders": @../ lists the parent folder's entries, folders first with a trailing /, each as the text a pick
             // writes; Tab on a folder steps into it (the box reads @../docs/, still text) and the list shows that folder's entries
             await polishWaitFor(h, `${acVal(acBox(A))} === ""`, 3000);
