@@ -13,6 +13,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/wavetermdev/waveterm/pkg/chatjudge"
 	"github.com/wavetermdev/waveterm/pkg/chatsuggest"
 	"github.com/wavetermdev/waveterm/pkg/wavebase"
 	"github.com/wavetermdev/waveterm/pkg/wshrpc"
@@ -48,14 +49,21 @@ func chatHabitTexts() []string {
 
 // ChatSuggestCommand answers the replies Chat offers as chips once an agent's turn ends (pkg/chatsuggest), with the
 // person's habits for the model to offer one word for word. A Claude agent's arc mod works them out itself at the turn's
-// end: its answer is taken when it comes in time, and the headless call runs only when it does not.
+// end: its answer is taken when it comes in time, and the headless call runs only when it does not. A turn that ends in a
+// choice (data.Choice) with a key (data.Key) is answered with its record (pkg/chatjudge): the options, the light pick and
+// each option's description, and the deep judge's result once it ran. A turn whose record is already kept is answered
+// from it at once, with no model call, so the chips never change under a judge that read them.
 func (ws *WshServer) ChatSuggestCommand(ctx context.Context, data wshrpc.CommandChatSuggestData) (*wshrpc.CommandChatSuggestRtnData, error) {
 	start := time.Now()
 	log.Printf("chatsuggest: block=%s ask %s", shortBlock(data.BlockId), replyFacts(data.Reply, data.Question))
+	if out, ok := chatSuggestStored(data.Key); ok {
+		log.Print(chatSuggestLogLine(data.BlockId, "record", time.Since(start), chatsuggest.Answer{Replies: out.Replies, Pick: out.Judge.Pick}, data.Question, nil))
+		return out, nil
+	}
 	answer, ok, why, headless := chatHooks().AwaitWhy(ctx, data.BlockId, data.Reply, data.Question, data.Hook)
 	if ok {
 		log.Print(chatSuggestLogLine(data.BlockId, "mod", time.Since(start), answer, data.Question, nil))
-		return &wshrpc.CommandChatSuggestRtnData{Replies: answer.Replies}, nil
+		return chatSuggestRecorded(data, answer), nil
 	}
 	log.Printf("chatsuggest: block=%s mod not taken after %dms: %s", shortBlock(data.BlockId), time.Since(start).Milliseconds(), why)
 	if !headless {
@@ -72,7 +80,46 @@ func (ws *WshServer) ChatSuggestCommand(ctx context.Context, data wshrpc.Command
 	if err != nil {
 		return nil, err
 	}
-	return &wshrpc.CommandChatSuggestRtnData{Replies: answer.Replies}, nil
+	return chatSuggestRecorded(data, answer), nil
+}
+
+// chatSuggestStored answers a turn from the record kept under key: its options' texts as the replies, and the record. No
+// key, or no record under it, is not stored.
+func chatSuggestStored(key string) (*wshrpc.CommandChatSuggestRtnData, bool) {
+	if key == "" {
+		return nil, false
+	}
+	rec, ok := chatJudgeStore().Get(key)
+	if !ok {
+		return nil, false
+	}
+	replies := make([]string, len(rec.Options))
+	for i, o := range rec.Options {
+		replies[i] = o.Text
+	}
+	return &wshrpc.CommandChatSuggestRtnData{Replies: replies, Judge: &rec}, true
+}
+
+// chatSuggestRecorded is the answer the model gave, with the turn's record when it has one: a turn with a key whose reply
+// ends in a choice that the model offered at least two answers to. The record is kept before it is answered with, and a
+// write that fails is logged and answers the chips without it. A turn with no key is never kept.
+func chatSuggestRecorded(data wshrpc.CommandChatSuggestData, answer chatsuggest.Answer) *wshrpc.CommandChatSuggestRtnData {
+	out := &wshrpc.CommandChatSuggestRtnData{Replies: answer.Replies}
+	if data.Key == "" || !chatjudge.Qualifies(data.Choice, answer.Replies) {
+		return out
+	}
+	// a record that is there already (an ask of the same turn that was working while this one was) is the turn's, with
+	// its deep result: Put would replace it whole
+	if stored, ok := chatSuggestStored(data.Key); ok {
+		return stored
+	}
+	rec := chatjudge.NewRecord(data.Key, data.BlockId, chatsuggest.QuestionSentence(data.Reply), data.Recent, answer.Replies, answer.Descs, answer.Pick, answer.Reason)
+	if err := chatJudgeStore().Put(rec); err != nil {
+		log.Printf("chatsuggest: block=%s the turn's judge record was not kept, the chips answer without it: %v", shortBlock(data.BlockId), err)
+		return out
+	}
+	out.Judge = &rec
+	return out
 }
 
 // chatSuggestLogLine is the one line each answer leaves in waveapp.log: which way it came (the arc mod's own, or the
