@@ -3,7 +3,10 @@
 
 // Boards' state, kept at module level because every surface but Agent unmounts on a switch: each project's board
 // list (project "" = every project), each board's talk and viewport, and the open canvases that take the drawer's
-// answers live. A board:update event reloads whatever has been read.
+// answers live. A board:update event reloads whatever has been read. Three more per-board atoms are in memory only and
+// shared by every view of the board (the cell, Library): boardEditingAtom, the Edit switch (a board opens in view mode);
+// boardDrawingsAtom, the drawings row and the drawing in view that the open canvas publishes; boardPickAtom, a pick in
+// that row that the canvas eases to.
 
 import { globalStore } from "@/app/store/jotaiStore";
 import { waveEventSubscribeSingle } from "@/app/store/wps";
@@ -12,11 +15,14 @@ import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { atom, useAtomValue, type PrimitiveAtom } from "jotai";
 import { atomFamily, atomWithStorage } from "jotai/utils";
 import { useEffect } from "react";
+import type { BoardDrawings } from "./boarddrawings";
 
 export interface BoardViewport {
     scrollX: number;
     scrollY: number;
     zoom: number;
+    // the newest drawing is the one in view, so a new one is fitted as it lands
+    following?: boolean;
 }
 
 // null = not read yet
@@ -29,6 +35,24 @@ export const boardTalkAtom = atomFamily(
 // where the open canvas was looking, so a board closed and opened again (or expanded) shows the same place
 export const boardViewportAtom = atomFamily(
     (_boardId: string) => atom<BoardViewport | null>(null) as PrimitiveAtom<BoardViewport | null>
+);
+
+// The three below are per board and in memory only: the strip, the board cell and Library read and write the same state
+// without plumbing callbacks through the canvas.
+// The Edit switch: a board opens in view mode, and every view of it (the cell, Library) shares this one.
+export const boardEditingAtom = atomFamily((_boardId: string) => atom(false) as PrimitiveAtom<boolean>);
+// What the open canvas publishes for the drawings row and the ask; null until a canvas of the board has loaded.
+export const boardDrawingsAtom = atomFamily(
+    (_boardId: string) => atom<BoardDrawings | null>(null) as PrimitiveAtom<BoardDrawings | null>
+);
+// A pick in the drawings row, which the canvas eases to; a new value (a new ts) applies again, so picking the drawing
+// already picked fits it again after the view moved off.
+export interface BoardPick {
+    drawingId: string;
+    ts: number;
+}
+export const boardPickAtom = atomFamily(
+    (_boardId: string) => atom<BoardPick | null>(null) as PrimitiveAtom<BoardPick | null>
 );
 
 // every board's canvas theme, the person's pick on the canvas's sun/moon: the app is dark, the board may be light (for

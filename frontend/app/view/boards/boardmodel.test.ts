@@ -11,6 +11,7 @@ import {
     serializeBoard,
     shapeCount,
     withReadableFont,
+    wrapEarlier,
     type BoardScene,
 } from "./boardmodel";
 
@@ -126,6 +127,14 @@ function answer(extra: Partial<BoardAnswer> = {}): BoardAnswer {
 
 function byId(scene: BoardScene, id: string): any {
     return scene.elements.find((el) => el.id === id);
+}
+
+function frameEl(id: string, x: number, y: number, w: number, h: number, n: number | null, name: string) {
+    return base(id, "frame", x, y, w, h, { name, customData: n == null ? undefined : { arcDrawing: n } });
+}
+
+function framesOf(scene: BoardScene): any[] {
+    return scene.elements.filter((el) => el.type === "frame" && !el.isDeleted);
 }
 
 describe("applyAnswer", () => {
@@ -340,6 +349,40 @@ describe("shapeCount", () => {
         ];
         expect(shapeCount(els)).toBe(2);
         expect(shapeCount([])).toBe(0);
+    });
+
+    it("skips a drawing's frame", () => {
+        const els = [...labelled("wavesrv", 0, 0, "wavesrv"), frameEl("d1", 0, 0, 400, 400, 1, "First")];
+        expect(shapeCount(els)).toBe(1);
+    });
+});
+
+describe("wrapEarlier", () => {
+    it("puts a frameless board's live shapes in one Earlier drawings frame", () => {
+        const gone = rect("gone", 0, 900, 10, 10, { isDeleted: true });
+        const scene = emptyScene([...drawnOnce().elements, gone]);
+        const next = wrapEarlier(scene, NOW);
+        const frames = framesOf(next);
+        expect(frames).toHaveLength(1);
+        const [f] = frames;
+        expect(f).toMatchObject({ name: "Earlier drawings", customData: { arcDrawing: 1 }, frameId: null });
+        const shapes = ["user-note", "user-rect", "box", "box-label"].map((id) => byId(next, id));
+        expect(shapes.map((s) => s.frameId)).toEqual([f.id, f.id, f.id, f.id]);
+        expect(shapes.map((s) => s.version)).toEqual([2, 2, 2, 2]);
+        // padded 40 around everything live: the shapes span x 0..400 (box 200..400), y 0..100 (user-rect 40..100)
+        expect(f).toMatchObject({ x: -40, y: -40, width: 480, height: 180 });
+        // the frame comes after its children; a deleted shape stays as it was
+        expect(next.elements[next.elements.length - 1].id).toBe(f.id);
+        expect(byId(next, "gone")).toBe(gone);
+        expect(scene.elements[0].frameId).toBeNull();
+    });
+
+    it.each([
+        ["an empty board", emptyScene()],
+        ["a board of deleted shapes", emptyScene([rect("gone", 0, 0, 10, 10, { isDeleted: true })])],
+        ["a board with a frame", emptyScene([userRect, frameEl("hand", 0, 0, 10, 10, null, "Mine")])],
+    ])("leaves %s as the same object", (_, scene) => {
+        expect(wrapEarlier(scene, NOW)).toBe(scene);
     });
 });
 

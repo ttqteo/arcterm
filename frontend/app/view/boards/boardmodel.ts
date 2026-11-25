@@ -5,6 +5,7 @@
 // count shapes. Pure: no React, no RPC, no Excalidraw runtime.
 
 import type { ExcalidrawElement } from "@excalidraw/excalidraw/element/types";
+import { drawingData, isFrame } from "./boarddrawings";
 
 const FULL_OPACITY = 100;
 
@@ -108,6 +109,19 @@ function elementBounds(el: ExcalidrawElement): Bounds {
         };
     }
     return { minX: el.x, minY: el.y, maxX: el.x + el.width, maxY: el.y + el.height };
+}
+
+function unionBounds(els: readonly ExcalidrawElement[]): Bounds | null {
+    if (els.length === 0) {
+        return null;
+    }
+    const bs = els.map(elementBounds);
+    return {
+        minX: Math.min(...bs.map((b) => b.minX)),
+        minY: Math.min(...bs.map((b) => b.minY)),
+        maxX: Math.max(...bs.map((b) => b.maxX)),
+        maxY: Math.max(...bs.map((b) => b.maxY)),
+    };
 }
 
 function patch(el: ExcalidrawElement, props: Record<string, unknown>): ExcalidrawElement {
@@ -430,6 +444,42 @@ function routeArrows(els: ExcalidrawElement[], addedIds: Set<string>, movedIds: 
     });
 }
 
+// --- drawings: each is a frame, its children before it as Excalidraw orders them
+
+const FRAME_PADDING = 40; // between a frame and its outermost shape
+const EARLIER_TITLE = "Earlier drawings";
+
+function padded(b: Bounds): Record<string, number> {
+    return {
+        x: b.minX - FRAME_PADDING,
+        y: b.minY - FRAME_PADDING,
+        width: b.maxX - b.minX + 2 * FRAME_PADDING,
+        height: b.maxY - b.minY + 2 * FRAME_PADDING,
+    };
+}
+
+function newFrame(n: number, title: string | null, around: Bounds, now: number): ExcalidrawElement {
+    return newElement(crypto.randomUUID(), now, {
+        type: "frame",
+        ...padded(around),
+        name: title,
+        customData: drawingData(n),
+    });
+}
+
+/** Pure: a board drawn before drawings were frames keeps its live shapes as one drawing, "Earlier drawings", number 1,
+ *  the frame after its children. A board with a frame, or with nothing live, comes back as the same object, so shapes
+ *  drawn loose beside drawings stay loose. */
+export function wrapEarlier(scene: BoardScene, now: number): BoardScene {
+    const shown = live(scene.elements);
+    if (shown.length === 0 || shown.some(isFrame)) {
+        return scene;
+    }
+    const frame = newFrame(1, EARLIER_TITLE, unionBounds(shown), now);
+    const elements = scene.elements.map((el) => (el.isDeleted ? el : bump(el, { frameId: frame.id }, now)));
+    return { ...scene, elements: [...elements, frame] };
+}
+
 // added (already converted) goes on top; update and remove skip ids the board no longer has, since you may have
 // deleted them while the drawer answered.
 export function applyAnswer(
@@ -503,9 +553,9 @@ export function selectionLabel(elements: readonly ExcalidrawElement[], selectedI
     return shapes.length === 1 ? name : `${name} and ${shapes.length - 1} more`;
 }
 
-// a labelled box is one shape
+// a labelled box is one shape; a drawing's frame is not a shape
 export function shapeCount(elements: readonly ExcalidrawElement[]): number {
-    return live(elements).filter((el) => !isBoundText(el) && el.type !== "selection").length;
+    return live(elements).filter((el) => !isBoundText(el) && !isFrame(el) && el.type !== "selection").length;
 }
 
 function plural(n: number, word: string): string {
