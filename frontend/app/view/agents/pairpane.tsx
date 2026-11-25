@@ -6,7 +6,8 @@
 // the width, in time order, every one in full. A message that answers another quotes its line at the top (a click scrolls
 // there), Reply on hover answers that message, and a heavy command the hold refused is the dashed line in the message that
 // held it, with Run now. One composer at the bottom talks to both, or to one with @worker / @judge. There are no rounds
-// here: nothing counts them. The rows are pairmodel.ts's timelineRows; the words are pairpanemodel.ts's.
+// here: nothing counts them. The rows are pairmodel.ts's timelineRows; the words are pairpanemodel.ts's. It stands in the
+// place of the focused agent's own view, under that agent's header, whose Pair button toggles it (agentsurface.tsx).
 
 import { springReveal } from "@/app/element/motiontokens";
 import { usePartMotion } from "@/app/element/springbatch";
@@ -15,7 +16,7 @@ import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { cn } from "@/util/util";
 import { useAtomValue } from "jotai";
-import { ArrowLeft, ArrowUp, Reply, X } from "lucide-react";
+import { ArrowUp, Reply, X } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import {
     useCallback,
@@ -235,7 +236,9 @@ export function PairConversation({
                 onScroll={onScroll}
                 className="flex min-h-0 flex-1 flex-col overflow-y-auto px-5 py-[18px]"
             >
-                <div ref={content} className="flex flex-col gap-3">
+                {/* the column Chat reads in (chatconversation.tsx, 760px), so switching from Chat to Pair keeps the
+                    text where the eye was instead of spreading it over a wide centre */}
+                <div ref={content} data-pair-column className="mx-auto flex w-full max-w-[760px] flex-col gap-3">
                     {rows.length === 0 ? (
                         <div data-pair-empty className="py-6 text-center text-[13px] text-muted">
                             No messages yet.
@@ -261,7 +264,11 @@ export function PairConversation({
             <AnimatePresence initial={false}>
                 {error != null ? (
                     <motion.div key="error" {...errorPart} className="flex-none overflow-hidden">
-                        <div role="alert" data-pair-error className="px-5 pb-1 text-[12.5px] text-error-soft">
+                        <div
+                            role="alert"
+                            data-pair-error
+                            className="mx-auto w-full max-w-[760px] px-5 pb-1 text-[12.5px] text-error-soft"
+                        >
                             {error}
                         </div>
                     </motion.div>
@@ -269,7 +276,7 @@ export function PairConversation({
             </AnimatePresence>
             {controls.endedFooter ? (
                 <div data-pair-ended className="flex-none border-t border-border px-5 py-3 text-[13px] text-muted">
-                    This pair has ended.
+                    <div className="mx-auto w-full max-w-[760px]">This pair has ended.</div>
                 </div>
             ) : null}
             {controls.composer ? (
@@ -285,7 +292,7 @@ export function PairConversation({
     );
 }
 
-// ---- top bar ----
+// ---- the pair's line, under the agent header ----
 
 function PairBar({
     model,
@@ -303,44 +310,43 @@ function PairBar({
     const focusId = useAtomValue(model.focusIdAtom);
     const roster = useAtomValue(model.agentsAtom);
     const judges = view.judges ?? [];
-    // back goes to the Chat of the agent in focus: the working agent's when its Paired button opened this, a judge's when
-    // the judge's header did, so the name on the button is the one whose Chat it returns to
-    const back = [view.worker, ...judges].find((s) => s.tab === focusId) ?? view.worker;
-    const backName = liveName(back, roster);
+    // the agent header above names the agent in focus and its Pair button is the way back (as is Esc), so this line only
+    // says whom it is paired with and how the other side stands: a judge's names the working agent it judges, the working
+    // agent's its judges
+    const judging = judges.some((j) => j.tab === focusId);
+    const others = judging ? [view.worker] : judges;
     return (
         <header
             data-pair-bar
-            className="flex h-[44px] flex-none items-center gap-[10px] border-b border-border bg-surface px-4 text-[13px]"
+            data-pair-bar-role={judging ? "judge" : "worker"}
+            className="flex h-[34px] flex-none items-center gap-[10px] border-b border-border bg-surface px-4 text-[12.5px] text-muted"
         >
-            {/* the way back reads as a button, not a breadcrumb: it is the toggle the header's Paired button came in by */}
-            <button
-                type="button"
-                data-pair-back
-                title={`Back to ${backName}'s Chat (Esc)`}
-                onClick={showTerminal}
-                className={cn(GHOST_BUTTON, "flex min-w-0 max-w-[40%] items-center gap-[6px] text-primary")}
-            >
-                <ArrowLeft size={14} strokeWidth={2} aria-hidden className="flex-none" />
-                <span className="truncate">{backName}</span>
-            </button>
-            <span data-pair-title className="min-w-0 truncate font-semibold">
+            <span data-pair-title className="min-w-0 truncate">
                 {view.state === "ended" ? (
                     "Pair ended"
+                ) : judging ? (
+                    <>
+                        Judging <span className="text-secondary">{liveName(view.worker, roster)}</span>{" "}
+                        <span className="font-mono text-[11.5px]">{shortTabId(view.worker.tab)}</span>
+                    </>
                 ) : judges.length === 1 ? (
                     <>
-                        Paired with judge{" "}
-                        <span className="font-mono text-[11.5px] font-normal text-muted">
-                            {shortTabId(judges[0].tab)}
-                        </span>
+                        Paired with judge <span className="font-mono text-[11.5px]">{shortTabId(judges[0].tab)}</span>
                     </>
                 ) : (
                     `Paired with ${judges.length} judges`
                 )}
             </span>
+            <SideStates model={model} sides={others} word={judging ? "worker" : "judge"} />
             <div className="flex-1" />
-            <JudgeStates model={model} judges={judges} />
             {showUnpair ? (
-                <button type="button" data-pair-unpair disabled={busy} onClick={onUnpair} className={GHOST_BUTTON}>
+                <button
+                    type="button"
+                    data-pair-unpair
+                    disabled={busy}
+                    onClick={onUnpair}
+                    className={cn(GHOST_BUTTON, "h-[24px] text-[12px]")}
+                >
                     Unpair
                 </button>
             ) : null}
@@ -348,25 +354,27 @@ function PairBar({
     );
 }
 
-// each judge's state, read from the roster and ticking: its own component, so the second's tick redraws these words and
-// not the conversation
-function JudgeStates({ model, judges }: { model: AgentsViewModel; judges: PairSide[] }) {
+// the other side's states, read from the roster and ticking: its own component, so the second's tick redraws these words
+// and not the conversation. `word` names the side ("judge", "worker"); several judges are told apart by their short ids
+function SideStates({ model, sides, word }: { model: AgentsViewModel; sides: PairSide[]; word: string }) {
     const roster = useAtomValue(model.agentsAtom);
-    const now = useNow(judges.length > 0);
-    const several = judges.length > 1;
+    const now = useNow(sides.length > 0);
+    const several = sides.length > 1;
     return (
-        <span
-            data-pair-judge-states
-            className="flex min-w-0 items-center gap-3 overflow-hidden text-[12.5px] text-muted"
-        >
-            {judges.map((j) => (
-                <span key={j.tab} data-pair-judge-state={j.tab} className="truncate tabular-nums">
-                    {several ? `judge ${shortTabId(j.tab)} ` : "judge "}
-                    {judgeStatus(
-                        roster.find((a) => a.id === j.tab),
-                        j,
-                        now
-                    )}
+        <span data-pair-judge-states className="flex min-w-0 items-center gap-3 overflow-hidden tabular-nums">
+            {sides.map((s) => (
+                <span key={s.tab} className="flex min-w-0 items-center gap-[10px]">
+                    <span aria-hidden className="flex-none text-ink-faint">
+                        ·
+                    </span>
+                    <span data-pair-judge-state={s.tab} className="truncate">
+                        {several ? `${word} ${shortTabId(s.tab)} ` : `${word} `}
+                        {judgeStatus(
+                            roster.find((a) => a.id === s.tab),
+                            s,
+                            now
+                        )}
+                    </span>
                 </span>
             ))}
         </span>
@@ -601,9 +609,10 @@ function PairComposer({ view, reply, inputRef, onClearReply, onError }: Composer
 
     return (
         <div className="flex-none border-t border-border px-4 py-3">
+            {/* as wide as Chat's box (chatpane.tsx, 720px), centred under the column */}
             <div
                 data-pair-composer-box
-                className="flex flex-col rounded-[18px] border border-edge-mid bg-surface-raised py-[9px] pl-4 pr-[9px] focus-within:border-edge-strong"
+                className="mx-auto flex w-full max-w-[720px] flex-col rounded-[18px] border border-edge-mid bg-surface-raised py-[9px] pl-4 pr-[9px] focus-within:border-edge-strong"
             >
                 {/* the chip opens and folds on springReveal, so the box grows by it instead of jumping; its gap to the field is
                     inside it, or it would be left behind when it folds */}

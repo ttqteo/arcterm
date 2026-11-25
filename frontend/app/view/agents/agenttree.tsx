@@ -99,6 +99,7 @@ import {
     toggleRow,
     workerRowTone,
     type BackgroundTaskRow,
+    type AgentTreeRow,
     type ChecksFold,
     type RowSelection,
     type StageOutcome,
@@ -159,10 +160,10 @@ import {
     heldSelAtom,
     leaveCenter,
     overviewProjectAtom,
+    pairSelAtom,
     showBoardAlone,
     showCouncil,
     showCouncilSetupWithAgents,
-    showPair,
     showProjectOverview,
     showTerminal,
 } from "./agentcenter";
@@ -262,6 +263,7 @@ import { planReviewLensTitle } from "./runtimeline";
 import {
     openRunFold,
     toggleChecksOpen,
+    togglePairOpen,
     toggleRunCollapsed,
     toggleRunDoneOpen,
     toggleRunQueuedOpen,
@@ -303,7 +305,9 @@ import { attentionAtom, splitAttention } from "./attentionstore";
 import { unreadAgentsAtom } from "./unreadagentsstore";
 import { PairSheet } from "./pairsheet";
 import type { PairSheetPick } from "./pairsheetmodel";
-import { usePairs } from "./pairstore";
+import { newCount } from "./pairmodel";
+import { openPairOf, pairOnScreen } from "./pairopen";
+import { pairSeenAtom, usePairs, usePairView } from "./pairstore";
 import { showServiceMenu } from "./servicemenu";
 import { canRestart, serviceHeaderLine, serviceRowWords, serviceTreeWords, treeServiceInput } from "./servicesmodel";
 import {
@@ -667,6 +671,122 @@ function ChecksChip({ agentId, checks }: { agentId: string; checks: ChecksFold }
                 )
             )}
         </button>
+    );
+}
+
+// a side's dot on a folded pair's line, with the word beside it, so the state is never colour alone
+const PAIR_SIDE_DOT: Record<string, string> = { working: "bg-success", asking: "bg-warning" };
+
+// A pair (board B of the pair tree follow-up) in its working agent's place: the conversation. A click opens it, the
+// working agent chosen and its rail on Decided; the chevron folds the working agent and its judges under it. Its second
+// line says how each side stands (the rows under it say more), and its RAM and tokens are the whole pair's.
+function PairTreeRow({
+    model,
+    row,
+    tokens,
+}: {
+    model: AgentsViewModel;
+    row: Extract<AgentTreeRow, { kind: "pair" }>;
+    tokens: ReadonlyMap<string, number>;
+}) {
+    const fields = useAtomValue(rowFieldsAtom);
+    const team = [row.worker, ...row.judges];
+    // the awake agents' terminals, one key so the row redraws when that set changes (as a lead's run RAM does)
+    const blockKey = team
+        .flatMap((a) => (a.blockId != null && a.sleeping == null ? [a.blockId] : []))
+        .sort()
+        .join(",");
+    const ram = useAtomValue(runRamAtom(blockKey));
+    const read = team.flatMap((a) => (tokens.get(a.id) != null ? [tokens.get(a.id)!] : []));
+    const tokenSum = read.length > 0 ? read.reduce((n, t) => n + t, 0) : undefined;
+    const selected = pairOnScreen(useAtomValue(centerModeAtom), useAtomValue(pairSelAtom), row.pairId);
+    const view = usePairView(row.pairId);
+    const seen = useAtomValue(pairSeenAtom(row.pairId));
+    const fresh = view != null && !selected ? newCount(view, seen) : 0;
+    const several = row.judges.length > 1;
+    return (
+        <div
+            data-pair-row={row.pairId}
+            data-pair-row-open={row.open ? "true" : "false"}
+            onClick={() => openPairOf(model, row.worker.id, row.pairId)}
+            title="Open the pair's conversation"
+            className={cn(
+                "relative flex min-w-0 cursor-pointer flex-col rounded-[6px] px-[10px] py-[8px] transition-colors duration-[140ms]",
+                selected ? "bg-surface-selected" : "hover:bg-surface-hover"
+            )}
+        >
+            <div className="flex min-w-0 items-center gap-[6px]">
+                {/* the fold's click is its own: it must not open the conversation */}
+                <button
+                    type="button"
+                    data-pair-row-fold={row.pairId}
+                    aria-expanded={row.open}
+                    aria-label={row.open ? "Hide the pair's agents" : "Show the pair's agents"}
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        togglePairOpen(row.pairId, row.open);
+                    }}
+                    className="-ml-[3px] flex h-[16px] w-[16px] flex-none cursor-pointer items-center justify-center rounded-[4px] text-muted outline-none hover:bg-surface-hover hover:text-primary focus-visible:ring-1 focus-visible:ring-accent"
+                >
+                    <ChevronRight
+                        size={12}
+                        aria-hidden
+                        className={cn(
+                            "transition-transform duration-[140ms] motion-reduce:transition-none",
+                            row.open && "rotate-90"
+                        )}
+                    />
+                </button>
+                <Scale size={13} strokeWidth={1.9} aria-hidden className="flex-none text-accent-soft" />
+                <span
+                    data-pair-row-name
+                    className={cn(
+                        "min-w-0 flex-1 truncate text-[13px] font-semibold",
+                        selected ? "text-primary" : "text-ink-hi"
+                    )}
+                >
+                    {row.worker.name}
+                </span>
+                {fresh > 0 ? (
+                    <span
+                        data-pair-row-new={fresh}
+                        aria-label={`${fresh} new ${fresh === 1 ? "message" : "messages"} in the pair`}
+                        className="flex h-[15px] min-w-[15px] flex-none items-center justify-center rounded-full bg-accent px-1 text-[9.5px] font-bold tabular-nums text-background"
+                    >
+                        {fresh}
+                    </span>
+                ) : null}
+            </div>
+            <div className={cn(CONVERSATION_META, "mt-[3px]")}>
+                <span className="flex min-w-0 flex-1 items-center gap-[8px] overflow-hidden">
+                    {team.map((a, i) => {
+                        const word = i === 0 ? "worker" : several ? `judge ${shortTabId(a.id)}` : "judge";
+                        const state = a.sleeping != null ? "asleep" : a.state;
+                        return (
+                            <span key={a.id} data-pair-row-side={a.id} className="flex min-w-0 items-center gap-[4px]">
+                                <span
+                                    aria-hidden
+                                    className={cn(
+                                        "h-[6px] w-[6px] flex-none rounded-full",
+                                        PAIR_SIDE_DOT[state] ?? "bg-ink-faint"
+                                    )}
+                                />
+                                <span className="truncate">
+                                    {word} {state}
+                                </span>
+                            </span>
+                        );
+                    })}
+                </span>
+                <RowCols
+                    cells={rowCols(fields, { ram, tokens: tokenSum })}
+                    ram={{
+                        attrs: { "data-pair-ram": row.pairId },
+                        title: "RAM the pair's agents and the commands they run hold now",
+                    }}
+                />
+            </div>
+        </div>
     );
 }
 
@@ -1295,10 +1415,12 @@ function ParentRow({
     picks,
     inCouncil,
     checks,
+    pairRole,
 }: {
     model: AgentsViewModel;
     agent: AgentVM;
     checks?: ChecksFold; // the builder check and judge sessions it started, which its chip folds
+    pairRole?: "worker" | "judge"; // which side of a pair it is, as a row under its pair's row: said after its name
     branch?: string; // the git branch its session is on (liveBranches); absent until the scan has seen it
     tokens?: number; // its session's token total (livetokensstore); absent until read
     lead?: { run: RunInfo; open: boolean; live: number };
@@ -1643,6 +1765,11 @@ function ParentRow({
                         >
                             {agent.name}
                         </span>
+                        {pairRole ? (
+                            <span data-agent-pair-role={pairRole} className="flex-none text-[10.5px] text-muted">
+                                {pairRole}
+                            </span>
+                        ) : null}
                         <PaneTag model={model} id={agent.id} />
                         {laterAt != null ? <LaterMark title={laterTitle(laterAt, now, formatAgeShort)} /> : null}
                         {/* a lead's second line already holds its workers chip, progress and badges */}
@@ -3680,7 +3807,13 @@ export const AgentTree = memo(function AgentTree({ model }: { model: AgentsViewM
     // an agent waiting on another (a `wsh agents wait`, a watch loop naming its tab) nests under it (agentwaits.ts)
     const bgTasks = useAtomValue(backgroundTasksByIdAtom);
     const waits = useMemo(() => waitMap(agents, bgTasks), [agents, bgTasks]);
-    const tree = buildAgentTree(agents, order, lineage, folds, focusId, waits);
+    // the active pairs fold their agents under one row each; the agent chosen opens its pair only while the centre shows
+    // that agent's own view (over the conversation, the pair's row is the chosen one)
+    const pairList = usePairs();
+    const tree = buildAgentTree(agents, order, lineage, folds, focusId, waits, {
+        list: pairList,
+        focusId: center === "terminal" ? (focusId ?? undefined) : undefined,
+    });
     const projectGrids = useAtomValue(projectGridsAtom);
     const seeded = useAtomValue(rosterSeededAtom);
     const terminals = useAtomValue(model.terminalsAtom);
@@ -3827,7 +3960,7 @@ export const AgentTree = memo(function AgentTree({ model }: { model: AgentsViewM
         setPairing(null);
         focusBeforeMenu.current = null;
         selectAgentRow(model, view.worker.tab);
-        showPair(view.id, model);
+        openPairOf(model, view.worker.tab, view.id);
     };
     const picksFor = (id: string): RowPicks => ({
         picked: sel.ids.includes(id),
@@ -3904,6 +4037,14 @@ export const AgentTree = memo(function AgentTree({ model }: { model: AgentsViewM
     const rowIds = agents.map((a) => a.id);
     const entranceRef = useRef(initialEntranceState());
     const { animate: entranceIds } = computeEntrances(entranceRef.current, "agents", rowIds);
+    // a pair's agents come in on the row entrance each time its arrow opens them, as a new agent's row does; they are
+    // not new agents, so the entrance guard above lets them snap in. The keys drawn under a pair last time are kept
+    const pairKidKeys = new Set(rows.flatMap((r) => (r.kind === "parent" && r.pairRole != null ? [r.agent.id] : [])));
+    const pairKidsBefore = useRef<ReadonlySet<string>>(pairKidKeys);
+    const pairKidsEnter = new Set([...pairKidKeys].filter((k) => !pairKidsBefore.current.has(k)));
+    useLayoutEffect(() => {
+        pairKidsBefore.current = pairKidKeys;
+    });
     const idsKey = rowIds.join(",");
     useLayoutEffect(() => {
         entranceRef.current = computeEntrances(entranceRef.current, "agents", rowIds).state;
@@ -4060,10 +4201,15 @@ export const AgentTree = memo(function AgentTree({ model }: { model: AgentsViewM
                                             nested={r.nested}
                                             waitsFor={r.waitsFor}
                                             checks={r.checks}
+                                            pairRole={r.pairRole}
                                             picks={picksFor(r.agent.id)}
                                             inCouncil={seated.has(r.agent.id)}
                                         />
                                     );
+                                    break;
+                                case "pair":
+                                    key = `pair-${r.pairId}`;
+                                    body = <PairTreeRow model={model} row={r} tokens={tokens} />;
                                     break;
                                 case "check":
                                     key = r.agent.id;
@@ -4183,7 +4329,7 @@ export const AgentTree = memo(function AgentTree({ model }: { model: AgentsViewM
                                     layout="position"
                                     className={rowIndent(filtered)}
                                     variants={cardVariants}
-                                    initial={entranceIds.has(key) ? "initial" : false}
+                                    initial={entranceIds.has(key) || pairKidsEnter.has(key) ? "initial" : false}
                                     animate="animate"
                                     exit="exit"
                                 >

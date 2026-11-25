@@ -15,6 +15,7 @@ import { setupChildAskSubscription } from "@/app/view/agents/childaskstore";
 import { refreshClaudeIdentity } from "@/app/view/agents/claudeidentity";
 import { startClaudeQuotaPolling } from "@/app/view/agents/claudequota";
 import { setupAgentStatusSubscription } from "@/app/view/agents/session-models/agentstatusstore";
+import { migrateLegacyCodePins } from "@/app/view/code/codepinsstore";
 import {
     atoms,
     getApi,
@@ -24,6 +25,7 @@ import {
 } from "@/store/global";
 import { activeTabIdAtom } from "@/store/tab-model";
 import * as WOS from "@/store/wos";
+import { fireAndForget } from "@/util/util";
 
 export async function bootWaveCore(initOpts: WaveInitOpts): Promise<void> {
     const platform = getApi().getPlatform();
@@ -67,6 +69,8 @@ export async function bootWaveCore(initOpts: WaveInitOpts): Promise<void> {
         const ws = await WOS.loadAndPinWaveObject<Workspace>(WOS.makeORef("workspace", waveWindow.workspaceid));
         ws?.tabids?.forEach((tabid) => WOS.getObjectValue<Tab>(WOS.makeORef("tab", tabid)));
         WOS.wpsSubscribeToObject(WOS.makeORef("workspace", waveWindow.workspaceid));
+        // the Code surface's pins moved from localStorage into the workspace's meta
+        fireAndForget(() => migrateLegacyCodePins(ws));
         document.title = `arcterm - ${initialTab.name}`;
     } catch (e) {
         console.error("Failed initialization error", e);

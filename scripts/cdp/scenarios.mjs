@@ -59,6 +59,7 @@ import agentHeaderScenarios from "./scenarios-agent-header.mjs";
 import pairConversationScenarios from "./scenarios-pair-conversation.mjs";
 import libraryPairsScenarios from "./scenarios-library-pairs.mjs";
 import { PAIR, pairView, seedPair } from "./pair-fixtures.mjs";
+import codePinsScenarios from "./scenarios-code-pins.mjs";
 import pairDecidedScenarios from "./scenarios-pair-decided.mjs";
 import pairHeaderScenarios from "./scenarios-pair-header.mjs";
 import pairTreeScenarios from "./scenarios-pair-tree.mjs";
@@ -75924,6 +75925,7 @@ export const SCENARIOS = [
     ...pairConversationScenarios(RT_KIT),
     ...pairDecidedScenarios(RT_KIT),
     ...libraryPairsScenarios(RT_KIT),
+    ...codePinsScenarios(RT_KIT),
     ...pairHeaderScenarios(RT_KIT),
     ...pairTreeScenarios(RT_KIT),
     ...railVerifyScenarios(RT_KIT),

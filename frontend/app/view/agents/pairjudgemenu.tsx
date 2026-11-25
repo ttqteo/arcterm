@@ -1,12 +1,14 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// The agent header's pair controls (board K2): an unpaired agent's Add judge button and its menu (Open a new judge, then the
-// project's live agents that are in no pair), a paired worker's "Paired with judge … · N new" button beside a small Add
-// judge icon (another judge for the same pair), and a judge's "Judging …". The two buttons that show a pair open its
-// conversation. What picking an entry does is pairlaunch.ts; what the labels say is pairmodel.ts.
+// The agent header's pair controls (board K2, and board C of the tree-and-toggle follow-up): an unpaired agent's Add judge
+// button and its menu (Open a new judge, then the project's live agents that are in no pair), a paired worker's Pair
+// button beside a small + (another judge for the same pair), and a judge's Pair button beside a link to the agent it
+// judges. Pair toggles the centre into the conversation and back. What picking an entry does is pairlaunch.ts; what the
+// labels say is pairmodel.ts.
 
 import { PopoverReveal } from "@/app/element/popoverreveal";
+import { globalStore } from "@/app/store/jotaiStore";
 import { cn, fireAndForget } from "@/util/util";
 import {
     autoUpdate,
@@ -19,13 +21,14 @@ import {
     useInteractions,
 } from "@floating-ui/react";
 import { useAtomValue } from "jotai";
-import { Scale } from "lucide-react";
+import { Link2, Plus, Scale } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
-import { showPair } from "./agentcenter";
+import { centerModeAtom, pairSelAtom, showTerminal } from "./agentcenter";
 import type { AgentsViewModel } from "./agents";
 import type { AgentVM } from "./agentsviewmodel";
 import { judgeChoices, openNewJudge, pickJudge } from "./pairlaunch";
-import { newCount, pairButtonLabel, type PairRole } from "./pairmodel";
+import { liveName, newCount, pairButtonLabel, type PairRole } from "./pairmodel";
+import { pairOnScreen, togglePairOf } from "./pairopen";
 import { pairSeenAtom, usePairs, usePairView } from "./pairstore";
 
 // keyboard focus on these buttons draws as the accent ring, as it does on the run link's × in the same header
@@ -213,7 +216,12 @@ function AddJudgeButton({
                           )
                 }
             >
-                <Scale size={compact ? 15 : 14} strokeWidth={1.8} aria-hidden />
+                {/* beside the Pair button, which has the scales, adding another judge is a plus */}
+                {compact ? (
+                    <Plus size={15} strokeWidth={1.8} aria-hidden />
+                ) : (
+                    <Scale size={14} strokeWidth={1.8} aria-hidden />
+                )}
                 {!compact && words ? "Add judge" : null}
             </button>
             <PairJudgeMenu
@@ -236,37 +244,98 @@ function AddJudgeButton({
     );
 }
 
-// "Paired with judge 4c6ba858 · 2 new" on the working agent, "Judging 61483cd6" on a judge: both open the conversation. Narrow,
-// the words give way to the icon and the count of new messages; the whole label stays its aria-label.
-function PairOpenButton({ pair, role, words }: { pair: PairInfo; role: PairRole; words: boolean }) {
+// The Pair button, beside the header's Chat / Terminal control: it toggles the centre between the agent's own view and its
+// pair's conversation, lit while the conversation shows. The working agent's carries the count of new messages; its whole
+// label ("Paired with judge 4c6ba858 · 2 new", "Judging 61483cd6") is its aria-label. Narrow, the word gives way to the icon.
+function PairToggle({
+    model,
+    agent,
+    pair,
+    role,
+    words,
+}: {
+    model: AgentsViewModel;
+    agent: AgentVM;
+    pair: PairInfo;
+    role: PairRole;
+    words: boolean;
+}) {
     const view = usePairView(pair.id);
     const seen = useAtomValue(pairSeenAtom(pair.id));
+    const on = pairOnScreen(useAtomValue(centerModeAtom), useAtomValue(pairSelAtom), pair.id);
     // until the view is read the list's row stands in: no messages known, so no count
     const known = view ?? ({ ...pair, messages: [] } as PairView);
     const label = pairButtonLabel(known, role, seen);
-    const fresh = role === "worker" ? newCount(known, seen) : 0;
+    const fresh = role === "worker" && !on ? newCount(known, seen) : 0;
     return (
         <button
             type="button"
             data-pair-open={pair.id}
             data-pair-role={role}
             aria-label={label}
-            onClick={() => showPair(pair.id)}
-            title={role === "worker" ? "Open the conversation with your judge" : "Open the conversation you judge in"}
+            aria-pressed={on}
+            onClick={() => togglePairOf(model, agent.id, pair.id)}
+            title={
+                on
+                    ? "Back to this agent's own view (Esc)"
+                    : role === "worker"
+                      ? "Open the conversation with your judge"
+                      : "Open the conversation you judge in"
+            }
             className={cn(
-                "flex cursor-pointer items-center gap-[6px] whitespace-nowrap rounded-[7px] border border-accent/45 bg-accentbg px-[9px] py-[5px] text-[12px] font-semibold text-ink-hi hover:border-accent",
+                "flex cursor-pointer items-center gap-[6px] whitespace-nowrap rounded-[7px] border px-[9px] py-[5px] text-[12px] font-semibold transition-colors duration-[140ms] motion-reduce:transition-none",
+                on
+                    ? "border-accent/45 bg-accentbg text-primary hover:border-accent"
+                    : "border-edge-mid bg-surface-raised text-secondary hover:border-edge-strong hover:text-primary",
                 FOCUS_RING
             )}
         >
             <Scale size={14} strokeWidth={1.8} aria-hidden className="flex-none text-accent-soft" />
-            {words ? label : fresh > 0 ? <span className="tabular-nums">{fresh}</span> : null}
+            {words ? "Pair" : null}
+            {fresh > 0 ? (
+                <span
+                    data-pair-new={fresh}
+                    className="flex h-[15px] min-w-[15px] items-center justify-center rounded-full bg-accent px-1 text-[9.5px] font-bold tabular-nums text-background"
+                >
+                    {fresh}
+                </span>
+            ) : null}
+        </button>
+    );
+}
+
+// A judge's way to the agent it judges, where the working agent's header has its Add judge icon: that agent's own view.
+function JudgedAgentLink({
+    model,
+    worker,
+    iconClass,
+}: {
+    model: AgentsViewModel;
+    worker: PairSide;
+    iconClass: string;
+}) {
+    const roster = useAtomValue(model.agentsAtom);
+    const name = liveName(worker, roster);
+    return (
+        <button
+            type="button"
+            data-pair-worker-link={worker.tab}
+            aria-label={`Open ${name}, the agent you judge`}
+            title={`Open ${name}, the agent you judge`}
+            onClick={() => {
+                globalStore.set(model.focusIdAtom, worker.tab);
+                showTerminal();
+            }}
+            className={cn(iconClass, FOCUS_RING)}
+        >
+            <Link2 size={15} strokeWidth={1.8} aria-hidden />
         </button>
     );
 }
 
 /** What the header carries for pairs, by what the agent is in (`paired`, from usePairOf): no pair, an Add judge button; the
- *  working agent of one, its Paired button and a small Add judge icon (`iconClass` is the header's own icon button); a
- *  judge, its Judging button alone. */
+ *  working agent of one, its Pair button and a small Add judge icon (`iconClass` is the header's own icon button); a
+ *  judge, its Pair button and a link to the agent it judges. */
 export function PairHeaderControls({
     model,
     agent,
@@ -283,11 +352,18 @@ export function PairHeaderControls({
     iconClass: string;
 }) {
     if (paired?.role === "judge") {
-        return <PairOpenButton pair={paired.pair} role="judge" words={words} />;
+        return (
+            <>
+                <PairToggle model={model} agent={agent} pair={paired.pair} role="judge" words={words} />
+                <JudgedAgentLink model={model} worker={paired.pair.worker} iconClass={iconClass} />
+            </>
+        );
     }
     return (
         <>
-            {paired != null ? <PairOpenButton pair={paired.pair} role="worker" words={words} /> : null}
+            {paired != null ? (
+                <PairToggle model={model} agent={agent} pair={paired.pair} role="worker" words={words} />
+            ) : null}
             <AddJudgeButton
                 model={model}
                 agent={agent}

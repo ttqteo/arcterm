@@ -4795,6 +4795,7 @@ declare global {
         "session:collapsedgroups"?: string[];
         "session:later"?: {[key: string]: number};
         "session:helper"?: boolean;
+        "code:pins"?: {[key: string]: string[]};
         "launch:parked"?: ParkedLaunch[];
         "brainstorm:checkstate"?: string;
         "brainstorm:checkts"?: number;

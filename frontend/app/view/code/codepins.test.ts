@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it } from "vitest";
-import { isPinned, parsePins, pinsFor, renamePins, togglePin, unpinUnder } from "./codepins";
+import { isPinned, parsePins, pinsFor, pinsToMigrate, renamePins, togglePin, unpinUnder } from "./codepins";
 
 const repo = "C:\\papers\\thesis";
 
@@ -67,5 +67,38 @@ describe("parsePins", () => {
         expect(parsePins({ a: ["x", 3, ""], b: "nope", c: [] })).toEqual({ a: ["x"] });
         expect(parsePins(["x"])).toEqual({});
         expect(parsePins(null)).toEqual({});
+    });
+});
+
+describe("pinsToMigrate", () => {
+    const old = JSON.stringify({ [repo]: ["main.tex", "refs.bib", "build/main.pdf", "notes.md"] });
+
+    it("moves the localStorage pins, in their order, into a workspace that has none", () => {
+        expect(pinsToMigrate(undefined, old)).toEqual({
+            [repo]: ["main.tex", "refs.bib", "build/main.pdf", "notes.md"],
+        });
+    });
+
+    it("keeps the workspace's pins first and adds only the old ones it lacks", () => {
+        const meta = { [repo]: ["notes.md"], "D:\\other": ["a.go"] };
+        expect(pinsToMigrate(meta, old)).toEqual({
+            [repo]: ["notes.md", "main.tex", "refs.bib", "build/main.pdf"],
+            "D:\\other": ["a.go"],
+        });
+    });
+
+    it("matches a project spelled another way instead of starting a second list", () => {
+        const meta = { "c:/papers/thesis": ["main.tex"] };
+        expect(pinsToMigrate(meta, JSON.stringify({ [repo]: ["main.tex", "x.md"] }))).toEqual({
+            "c:/papers/thesis": ["main.tex", "x.md"],
+        });
+    });
+
+    it("has nothing to write when there is no old key, it is empty or garbage, or the workspace holds it all", () => {
+        expect(pinsToMigrate(undefined, null)).toBeNull();
+        expect(pinsToMigrate(undefined, "{}")).toBeNull();
+        expect(pinsToMigrate(undefined, "not json")).toBeNull();
+        expect(pinsToMigrate(undefined, JSON.stringify({ [repo]: "main.tex" }))).toBeNull();
+        expect(pinsToMigrate({ [repo]: ["main.tex"] }, JSON.stringify({ [repo]: ["main.tex"] }))).toBeNull();
     });
 });

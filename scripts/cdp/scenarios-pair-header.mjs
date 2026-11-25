@@ -25,11 +25,23 @@ const readHeader = `(() => {
     const flat = (el) => (el?.innerText ?? "").replace(/\\s+/g, " ").trim();
     const open = hd.querySelector("[data-pair-open]");
     const add = hd.querySelector("[data-pair-add-judge]");
+    const link = hd.querySelector("[data-pair-worker-link]");
     return {
         labels: hd.getAttribute("data-header-labels"),
         name: flat(hd.querySelector("[data-header-name] .font-semibold")),
         state: flat(hd.querySelector("[data-agent-state-pill]")),
-        open: open ? { text: flat(open), label: open.getAttribute("aria-label"), role: open.getAttribute("data-pair-role") } : null,
+        // the Pair button's words with spaces dropped ("Pair" and its count are separate flex items)
+        open: open
+            ? {
+                  text: flat(open).replace(/\\s+/g, ""),
+                  label: open.getAttribute("aria-label"),
+                  role: open.getAttribute("data-pair-role"),
+                  pressed: open.getAttribute("aria-pressed"),
+                  // it stands right after the Chat / Terminal control it switches with
+                  besideView: !!open.previousElementSibling?.querySelector?.("[role=group]"),
+              }
+            : null,
+        link: link ? { label: link.getAttribute("aria-label"), to: link.getAttribute("data-pair-worker-link") } : null,
         add: add ? { text: flat(add), label: add.getAttribute("aria-label"), expanded: add.getAttribute("aria-expanded") } : null,
     };
 })()`;
@@ -367,11 +379,13 @@ export default function (kit) {
                     await key(h, "Escape", 27);
                     await menuGone(h);
                     rec(
-                        'paired-button: the working agent\'s header reads "Paired with judge 4c6ba858 · 2 new" and its state line "waiting on judge", beside a small Add judge icon (no words) whose menu offers the agents in no pair, not the judge already paired',
+                        'paired-button: the working agent\'s header has a Pair button with its 2 new right after the Chat / Terminal control, not pressed, labelled "Paired with judge 4c6ba858 · 2 new", its state line "waiting on judge", and beside it a small + whose menu offers the agents in no pair, not the judge already paired',
                         header?.labels === "words" &&
-                            header.open?.text === "Paired with judge 4c6ba858 · 2 new" &&
+                            header.open?.text === "Pair2" &&
                             header.open.label === "Paired with judge 4c6ba858 · 2 new" &&
                             header.open.role === "worker" &&
+                            header.open.pressed === "false" &&
+                            header.open.besideView === true &&
                             header.state === "waiting on judge" &&
                             header.add?.text === "" &&
                             header.add.label === "Add another judge" &&
@@ -385,10 +399,27 @@ export default function (kit) {
                     await polishNap(300);
                     const center = await readCenter(h);
                     const seen = await readSeen(h, PAIR.id);
+                    const lit = await h.ev(readHeader);
+                    const railTab = await h.ev(
+                        `document.querySelector('aside[aria-label="Agent details"] [data-rail-tab="decided"]')?.getAttribute("aria-selected") ?? null`
+                    );
+                    await shot(h, "paired-lit");
+                    // pressed again, it goes back to the agent's own view
+                    await click(h, "[data-agent-header] [data-pair-open]");
+                    await polishNap(300);
+                    const back = await readCenter(h);
+                    const unlit = await h.ev(readHeader);
                     rec(
-                        "paired-opens: the Paired button opens the pair centre mode on its pair and counts its messages as seen (the 2 new are gone)",
-                        center.modes.includes("pair") && center.pair === PAIR.id && seen === view.messages.length,
-                        { center, seen }
+                        "paired-opens: the Pair button opens the pair centre mode on its pair under the same header, lit, its 2 new gone (counted as seen), and the rail on Decided; pressed again it goes back to the agent's own view, unlit",
+                        center.modes.includes("pair") &&
+                            center.pair === PAIR.id &&
+                            seen === view.messages.length &&
+                            lit?.open?.pressed === "true" &&
+                            lit.open.text === "Pair" &&
+                            railTab === "true" &&
+                            !back.modes.includes("pair") &&
+                            unlit?.open?.pressed === "false",
+                        { center, seen, lit, railTab, back, unlit }
                     );
                     await leaveCenter(h);
                 });
@@ -404,11 +435,14 @@ export default function (kit) {
                     await polishNap(300);
                     const center = await readCenter(h);
                     rec(
-                        'judge-header: the judge\'s own header reads "Judging 61483cd6", has no Add judge, and its button opens the same conversation',
+                        'judge-header: the judge\'s own header has a Pair button labelled "Judging 61483cd6" with no count, no Add judge but a link to the agent it judges, and its button opens the same conversation',
                         header?.labels === "words" &&
-                            header.open?.text === "Judging 61483cd6" &&
+                            header.open?.text === "Pair" &&
+                            header.open.label === "Judging 61483cd6" &&
                             header.open.role === "judge" &&
                             header.add == null &&
+                            header.link?.to === PAIR.worker &&
+                            header.link.label === "Open Plan oracle-tightening, the agent you judge" &&
                             center.modes.includes("pair") &&
                             center.pair === PAIR.id,
                         { header, center }
@@ -431,8 +465,8 @@ export default function (kit) {
                     await key(h, "Escape", 27);
                     await menuGone(h);
                     rec(
-                        'no-judge-left: with two judges paired the label reads "Paired with 2 judges · 1 new"; the menu still offers Open a new judge, and says no other agent is running where the live list would be',
-                        header?.open?.text === "Paired with 2 judges · 1 new" &&
+                        'no-judge-left: with two judges paired the Pair button\'s label reads "Paired with 2 judges · 1 new"; the menu still offers Open a new judge, and says no other agent is running where the live list would be',
+                        header?.open?.label === "Paired with 2 judges · 1 new" &&
                             menu?.newJudge.startsWith("Open a new judge") &&
                             menu.choices.length === 0 &&
                             menu.empty === true &&

@@ -56,7 +56,8 @@ import { deleteWarning, renamedPath, targetDir } from "./codemutate";
 import { outlineOf } from "./codeoutline";
 import { cleanPathInput, pathErrorMessage, statPathError, validatePathInput } from "./codepathinput";
 import type { PendingJump } from "./codependingjump";
-import { parsePins, renamePins, togglePin, unpinUnder } from "./codepins";
+import { renamePins, togglePin, unpinUnder } from "./codepins";
+import { updateCodePins } from "./codepinsstore";
 import { pruneRecent, pushRecent } from "./coderecents";
 import { DEFAULT_SEARCH_OPTS, type SearchOpts } from "./codesearchopts";
 import {
@@ -141,11 +142,6 @@ export const codeRecentsAtom = atomWithStorage<CodeProject[]>("code.project.rece
     getOnInit: true,
 }) as PrimitiveAtom<CodeProject[]>;
 export const codePickerErrorAtom = atom<string | null>(null) as PrimitiveAtom<string | null>;
-// pinned files per project (codepins.ts), persisted; read through codePinsAtom, which drops anything malformed
-const codePinsStoredAtom = atomWithStorage<unknown>("code.pins", {}, undefined, {
-    getOnInit: true,
-}) as PrimitiveAtom<unknown>;
-export const codePinsAtom = atom((get) => parsePins(get(codePinsStoredAtom)));
 const DRAFTS_STORAGE_KEY = "code.drafts";
 // JSON characters: a conservative slice of the origin's localStorage quota, which the rest of the app
 // shares. A draft that does not fit stays in memory only.
@@ -994,12 +990,12 @@ export async function renamePath(rel: string, newName: string): Promise<void> {
 
 // a move made outside this tree (the Agent panel's Files tab) carries the pins on what it moved, a folder's included
 export function renameCodePinsIn(projectPath: string, rel: string, next: string): void {
-    globalStore.set(codePinsStoredAtom, renamePins(globalStore.get(codePinsAtom), projectPath, rel, next));
+    updateCodePins((pins) => renamePins(pins, projectPath, rel, next));
 }
 
 function carryRename(project: CodeProject, rel: string, next: string): void {
     globalStore.set(codeDraftsAtom, (d) => renameDraftKeys(d, draftKey(project, rel), draftKey(project, next)));
-    globalStore.set(codePinsStoredAtom, renamePins(globalStore.get(codePinsAtom), project.path, rel, next));
+    updateCodePins((pins) => renamePins(pins, project.path, rel, next));
 
     const file = globalStore.get(codeFileAtom);
     if (file.kind !== "none") {
@@ -1034,7 +1030,7 @@ export async function deletePath(rel: string, isDir: boolean): Promise<void> {
             path: joinRepoPath(project.path, rel),
             recursive: isDir,
         });
-        globalStore.set(codePinsStoredAtom, unpinUnder(globalStore.get(codePinsAtom), project.path, rel));
+        updateCodePins((pins) => unpinUnder(pins, project.path, rel));
     } catch (e) {
         // nothing was deleted, so the open file stays open
         globalStore.set(codeMutateErrorAtom, `Could not delete ${rel}: ${errorText(e)}`);
@@ -1085,7 +1081,7 @@ export function toggleCodePin(rel: string): void {
 
 // the same for any folder: the Agent panel's Files tab pins in the agent's worktree, which need not be open in Code
 export function toggleCodePinIn(projectPath: string, rel: string): void {
-    globalStore.set(codePinsStoredAtom, togglePin(globalStore.get(codePinsAtom), projectPath, rel));
+    updateCodePins((pins) => togglePin(pins, projectPath, rel));
 }
 
 export function toggleDir(path: string): void {
