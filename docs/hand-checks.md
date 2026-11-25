@@ -23,6 +23,13 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
 
 ## 2026-11-25
 
+- [ ] (arcterm) Sidecar Resources: open Sidecar on the wall (and the small form's Resources tab); within a few seconds
+  the band lists Sidecar and arcterm rows and the CPU/RAM charts start drawing, instead of "Measuring…" for good (the
+  `resources` act's `ask` was dropped by `validateAct`, so `resourcesFor` refused every reading).
+- [ ] (arcterm) Sidecar Needs you: an agent whose last message ends `… kiểm lại file \`x.json\` giúp bạn?` shows the whole
+  last sentence, not `json\` giúp bạn?`.
+- [ ] (arcterm) Initiative pane Latest note: a note longer than six lines scrolls inside its box (wheel and scrollbar),
+  the rest of the pane still scrolls.
 - [ ] (arcterm) Chat bare `! cmd` line: an agent reply holding a line `! python -c "t.replace('**A**','**B**')"` outside
   code draws it as a compact command row with Run and Copy, its `**` kept, no bold word. `task verify:ui --
   chat-code-box` step 1b2 checks it; it did not run (the dev app was stopped for low memory). Unit-tested only

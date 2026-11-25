@@ -22,8 +22,13 @@ export function endsInQuestion(text: string): string | null {
         return null;
     }
     const body = t.slice(0, -1);
-    const cut = Math.max(...[".", "!", "?", "？", "。", "\n"].map((c) => body.lastIndexOf(c)));
-    const sentence = t.slice(cut + 1).trim();
+    // a sentence ends at a stop, bang or question mark followed by a space (a dot inside `file.json` or 1.9.0 does not),
+    // at a full-width mark or ideographic stop, or at a newline
+    let cut = 0;
+    for (const m of body.matchAll(/[.!?](?=\s)|[？。]|\n/g)) {
+        cut = m.index + 1;
+    }
+    const sentence = t.slice(cut).trim();
     return sentence === "" ? null : sentence;
 }
 

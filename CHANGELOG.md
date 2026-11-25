@@ -110,6 +110,9 @@ and a picture given to a line that is not big.
 
 ### Fixed
 
+- Sidecar's Resources (the wall's band and the small form's panel) shows its readings again. Since the last build it sat on "Measuring…" with empty charts however long you waited.
+- A question in Sidecar's Needs you reads whole: a dot inside a file name or a version (`results.json`, 1.9.0) no longer cuts it to its last few words.
+- The Latest note in an agent's initiative pane scrolls when it runs past six lines, instead of being cut off with no way to read the rest.
 - Settings → Agents → Compact before the cache goes cold no longer says only Claude Code compacts an agent that stays
   awake: when Claude Code's own compaction is off, arcterm does it.
 - In Chat, a `! command` an agent writes as a bare line, not in code, now draws as a command row with Run and Copy, exactly as written. Before, it read as a paragraph: the `**` inside a quoted string turned into bold and dropped out, so the command you saw and copied was not the one the agent wrote.
