@@ -113,8 +113,10 @@ var snapshotBootSkips = []string{
 	"jarvisvolunteer.StartLooseEndSweep",
 	"memhygiene.StartSweep",
 	"wshserver.StartCouncilRunner",
+	"wshserver.StartPairManager",
 	"wshserver.StartRunQueue",
 	"wshserver.StartDumeLoop",
+	"remotemode.Restore",
 }
 
 // snapshotSkips is whether the boot call name stays off: only in a snapshot store, and only for a name in
@@ -759,6 +761,11 @@ func main() {
 	// a run behind it is left alone, so the listeners above being up is no problem
 	if !snapshotSkips("wshserver.StartCouncilRunner") {
 		wshserver.StartCouncilRunner()
+	}
+	// a pair relays prompts to live agents, which a snapshot store never does; its hold on heavy commands and its turn-end
+	// hook read the pair files on first use, so a pair that went quiet while wavesrv was down is picked up here
+	if !snapshotSkips("wshserver.StartPairManager") {
+		wshserver.StartPairManager()
 	}
 	// last: its first evaluation can start a run, which spawns workers that dial back into the listeners above, and
 	// reads settings, so it waits for the config watcher, the engine and the block controller too

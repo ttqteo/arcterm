@@ -57,6 +57,7 @@ const RUN_FIXTURES = [
 ];
 const STREAM_FIXTURES = [
     "agent-message",
+    "pair-message",
     "child-done",
     "child-cancelled",
     "builder-questions",
@@ -315,6 +316,22 @@ describe("parseStreamPrompt", () => {
         expect(field(c, "tab")).toBe("tab-1234");
         expect(labelWidth(c!)).toBe("tab".length);
         expect(c?.body).toEqual(["rename the helper", "and rerun the tests"]);
+    });
+
+    it("reads what arcterm's pair relays as a message from the pair, which has no tab", () => {
+        const c = parseStreamPrompt(fixture("pair-message"));
+        expect(cardHeader(c!)).toBe("message · from arcterm pair");
+        expect(c?.fields).toEqual([]);
+        expect(c?.body).toEqual([
+            'From the judge "review", 14:02:',
+            "> lock the threshold first",
+            "The pilot measures before the threshold is locked: swap the two steps.",
+        ]);
+    });
+
+    it("does not take a person's text for a message from the pair", () => {
+        expect(parseStreamPrompt('[Message from agent "arcterm pair" (typed by me)]\nhi')).toBeNull();
+        expect(parseStreamPrompt("arcterm pair relayed this")).toBeNull();
     });
 
     it("reads a child run's end", () => {

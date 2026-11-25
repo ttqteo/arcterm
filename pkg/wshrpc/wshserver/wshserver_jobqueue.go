@@ -19,7 +19,6 @@ import (
 	"github.com/wavetermdev/waveterm/pkg/memgate"
 	"github.com/wavetermdev/waveterm/pkg/panichandler"
 	"github.com/wavetermdev/waveterm/pkg/wshrpc"
-	"github.com/wavetermdev/waveterm/pkg/wstore"
 )
 
 // JobSlotCommand holds a place in the heavy-job queue for one shell command an agent is about to run, for as
@@ -60,7 +59,7 @@ func (ws *WshServer) JobSlotCommand(ctx context.Context, data wshrpc.CommandJobS
 		}
 		src := jobqueue.Source{BlockId: data.BlockId}
 		if data.BlockId != "" {
-			if tabId, err := wstore.DBFindTabForBlockId(ctx, data.BlockId); err == nil {
+			if tabId, err := blockTabId(ctx, data.BlockId); err == nil {
 				src.TabId = tabId
 			}
 		}
@@ -68,6 +67,14 @@ func (ws *WshServer) JobSlotCommand(ctx context.Context, data wshrpc.CommandJobS
 			// read after the caller stopped waiting: its command already runs without a slot
 			q.NoteBypass(job.Name, src, time.Time{})
 			return
+		}
+		// A command that got here unprotected is heavy and not long-running. The working agent of a pair whose judge has
+		// not answered is refused it before it queues, with the reason it reads (agentpair.Manager.Hold).
+		if !data.Protect && src.TabId != "" {
+			if reason, held := getPairManager().Hold(src.TabId, data.Command); held {
+				send(wshrpc.JobSlotUpdate{Run: &no, Reason: reason})
+				return
+			}
 		}
 		// the figure to admit on is what the command's last runs measured in this project, else (for a learned pattern)
 		// in another one, else the table's; every caller gets it, pi's included. A heavy command queues whatever the
@@ -160,7 +167,7 @@ func noteMissed(ctx context.Context, q *jobqueue.Queue, missed []wshrpc.JobSlotM
 	for _, m := range missed {
 		src := jobqueue.Source{BlockId: m.BlockId}
 		if m.BlockId != "" {
-			if tabId, err := wstore.DBFindTabForBlockId(ctx, m.BlockId); err == nil {
+			if tabId, err := blockTabId(ctx, m.BlockId); err == nil {
 				src.TabId = tabId
 			}
 		}

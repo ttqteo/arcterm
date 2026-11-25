@@ -392,6 +392,13 @@ describe("what arcterm typed", () => {
         }
     });
 
+    it("reads a message the pair relays as a sent card from the cockpit, not as the person's own text", () => {
+        const [item] = chatItems([you(fixture("pair-message"))]);
+        expect(item).toMatchObject({ kind: "sent", from: "cockpit", header: "message · from arcterm pair" });
+        // it comes from the pair, not from an agent's tab, so the card has no sender to open
+        expect(item).not.toHaveProperty("tabId");
+    });
+
     it("keeps a sent card to six lines", () => {
         const body = Array.from({ length: 10 }, (_, i) => `line ${i + 1}`).join("\n");
         const text = `[Message from agent "lead" (tab tab-1), sent with wsh agents send. Not typed by the user. Its sender reads your reply with wsh agents read, so answer here and do not send one back.]\n${body}`;

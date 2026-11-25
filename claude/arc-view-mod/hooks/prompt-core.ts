@@ -277,6 +277,9 @@ export function parseRunPrompt(text: string): Card | null {
 // --- what the cockpit sends over the stream --------------------------------------------------------------------
 
 const MESSAGE = /^\[Message from agent "(.*)" \(tab (\S+)\), sent with wsh agents send\.[^\n]*\]\n([\s\S]*)$/;
+// what arcterm's pair relays between a working agent and its judge (agentmsg.PairEnvelope): the same opening, but its
+// sender is the pair itself, so there is no tab and nothing was sent with wsh agents send
+const PAIR_MESSAGE = /^\[Message from agent "(arcterm pair)" \(relayed by arcterm's pair[^\n]*\]\n([\s\S]*)$/;
 const CHILD = /^\[jarvis\] child (\S+) "(.*)" -> (done|cancelled)(?: \((.+)\))?$/;
 const BRAINSTORM = /^brainstorm: (.+)$/;
 const FOR_LATER = /^(\S+) passed review; its worker's (.+?): ([\s\S]*)$/;
@@ -288,7 +291,11 @@ function lines(text: string): string[] {
 
 function message(text: string): Card | null {
     const m = MESSAGE.exec(text);
-    return m && card("message", { tags: [`from ${m[1]}`], fields: fields(["tab", m[2]]), body: lines(m[3] ?? "") });
+    if (m) {
+        return card("message", { tags: [`from ${m[1]}`], fields: fields(["tab", m[2]]), body: lines(m[3] ?? "") });
+    }
+    const pair = PAIR_MESSAGE.exec(text);
+    return pair && card("message", { tags: [`from ${pair[1]}`], body: lines(pair[2] ?? "") });
 }
 
 // the goal in a child line was written with Go's %q: a quote or backslash in it is escaped, a newline is \n
