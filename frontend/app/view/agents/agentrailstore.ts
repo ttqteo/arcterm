@@ -106,6 +106,13 @@ export function selectRailKey(agentId: string, key: string, has: RailHas): void 
     }
 }
 
+// Opens the rail on the agent's Decided tab, as its pair's conversation takes the centre. The caller knows the agent is in
+// a pair; Decided's place in the strip depends on nothing else.
+export function openRailDecided(agentId: string): void {
+    update(agentId, (p) => selectTab(p, "decided", { ...RAIL_HAS_NONE, decided: true }));
+    globalStore.set(railVisibleAtom, true);
+}
+
 // Opens the rail on the agent's Transcript tab and asks its body for focus. The caller has checked that the agent has a
 // transcript; Transcript's place in the strip does not depend on a worktree, so `tree` is false here.
 export function openRailTranscript(agentId: string): void {

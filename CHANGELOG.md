@@ -55,6 +55,12 @@ and a picture given to a line that is not big.
   button, with no hovering; once you answer, it folds back to a thin line that keeps the reason in the tooltip.
 - A long paste into New agent's Task box folds into a Pasted text chip, as in the chat box, so the task you type around
   it stays in view; the agent still gets the paste whole.
+- Pinned files are kept in the workspace instead of the window's storage, so they survive a reset of the app's web data
+  and a script can read and sync them with `wsh setmeta` (`code:pins`); the pins you have move over on first launch.
+- A pair is one row in the Agent tree, in its working agent's place: a click opens the conversation, and its arrow
+  shows the working agent and the judges under it. Folded, its line says how each side stands.
+- The agent header stays over a pair's conversation: Pair, beside Chat and Terminal, switches between the two (a + beside
+  it adds another judge; on a judge, a link goes to the agent it judges), and the rail turns to Decided.
 
 ### Fixed
 
@@ -62,6 +68,7 @@ and a picture given to a line that is not big.
   the agent's rail with the Decided tab stays beside the conversation; the way back to Chat reads as a button.
 - A background subagent cut off when its agent's session ended no longer shows as running in the Agent tree forever,
   and no longer keeps its agent from going to sleep: it reads stopped, as the agent was told when it resumed.
+  the agent's rail with the Decided tab stays beside the conversation.
 
 ## 1.10.0 — 2026-11-25
 

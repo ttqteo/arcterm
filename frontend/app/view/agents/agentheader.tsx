@@ -62,6 +62,7 @@ import { motion } from "motion/react";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { openBoardsAtom } from "../boards/boardentries";
 import { closeAgentChord, confirmCloseSession, interruptAgent } from "./agentactions";
+import { centerModeAtom, pairSelAtom, showTerminal } from "./agentcenter";
 import { contextLevel, contextTokens } from "./agentrailmodel";
 import { openRailInitiative } from "./agentrailstore";
 import type { AgentsViewModel } from "./agents";
@@ -113,6 +114,7 @@ import { liveTokensAtom } from "./livetokensstore";
 import { machineServersReadingAtom } from "./machineserversstore";
 import { PairHeaderControls } from "./pairjudgemenu";
 import { canPair, waitingOnJudge } from "./pairmodel";
+import { pairOnScreen } from "./pairopen";
 import { usePairOf } from "./pairstore";
 import { planEditChunks } from "./planreviewmodel";
 import { useInitiativeReread, usePlanReview } from "./planreviewstore";
@@ -514,6 +516,10 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
     // controls are for a live claude or pi agent
     const paired = usePairOf(agent.id);
     const pairable = canPair(agent) && !ended && !stage;
+    // its pair's conversation stands in the place of its view: the view control chooses none, and choosing one goes back
+    const center = useAtomValue(centerModeAtom);
+    const pairSel = useAtomValue(pairSelAtom);
+    const pairHere = paired != null && pairOnScreen(center, pairSel, paired.pair.id);
     // a judge owes an answer to the working agent's newest message: with nothing of its own running, it waits on the judge
     const waitingJudge = paired?.role === "worker" && waitingOnJudge(paired.pair);
     // its turn ended but background work it started still runs: working, or waiting when that work only watches
@@ -1014,7 +1020,7 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
                         <Segmented<CellView>
                             role="group"
                             ariaLabel={`Show ${listViews(viewOptions, "or", false)}`}
-                            value={shownView}
+                            value={pairHere ? null : shownView}
                             // the selected option's fill slides to the one picked, as the grid bar's switch does
                             slide
                             options={[
@@ -1117,18 +1123,35 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
                                       ]
                                     : []),
                             ]}
-                            // an agent with no Chat option (not a Claude agent) keeps its stored chat mode
-                            onChange={(v) =>
-                                chatAsleep && v === "chat"
-                                    ? // asleep, the slot shows Chat whatever the stored mode: keep the mode, so it wakes as it was
-                                      setAgentView(agent.id, "terminal", Date.now())
-                                    : chatShown || v === "chat"
-                                      ? selectCellView(agent.id, v, Date.now())
-                                      : setAgentView(agent.id, v, Date.now())
-                            }
+                            // an agent with no Chat option (not a Claude agent) keeps its stored chat mode. Over its
+                            // pair's conversation, any choice leaves the conversation for that view
+                            onChange={(v) => {
+                                if (pairHere) {
+                                    showTerminal();
+                                }
+                                if (chatAsleep && v === "chat") {
+                                    // asleep, the slot shows Chat whatever the stored mode: keep the mode, so it wakes as it was
+                                    setAgentView(agent.id, "terminal", Date.now());
+                                } else if (chatShown || v === "chat") {
+                                    selectCellView(agent.id, v, Date.now());
+                                } else {
+                                    setAgentView(agent.id, v, Date.now());
+                                }
+                            }}
                         />
                         <KeyTip id="agent:chat-toggle-alt" show={chatShown} />
                     </span>
+                ) : null}
+                {/* the Pair button stands beside the view control it switches with (board C) */}
+                {blockId != null && pairable ? (
+                    <PairHeaderControls
+                        model={model}
+                        agent={agent}
+                        project={project}
+                        words={words}
+                        paired={paired}
+                        iconClass={ICON_BTN}
+                    />
                 ) : null}
                 {canSplit && splitInHeader ? (
                     <button
@@ -1146,16 +1169,6 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
                 ) : null}
                 {blockId != null ? (
                     <>
-                        {pairable ? (
-                            <PairHeaderControls
-                                model={model}
-                                agent={agent}
-                                project={project}
-                                words={words}
-                                paired={paired}
-                                iconClass={ICON_BTN}
-                            />
-                        ) : null}
                         {ship != null ? (
                             <button
                                 type="button"

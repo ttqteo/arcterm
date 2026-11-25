@@ -62,6 +62,35 @@ export function unpinUnder(pins: CodePins, project: string, rel: string): CodePi
     return next.length === list.length ? pins : withList(pins, project, next);
 }
 
+// The one-time move of the pins the webview's localStorage kept (`code.pins`, a JSON string) into the workspace's
+// `code:pins`: the map to write, or null when there is nothing to move. Pins already in the workspace stay, first; the
+// old ones join them after, so a list a sync script wrote before this ran loses nothing either.
+export function pinsToMigrate(meta: unknown, local: string | null): CodePins | null {
+    if (local == null) {
+        return null;
+    }
+    let raw: unknown;
+    try {
+        raw = JSON.parse(local);
+    } catch {
+        return null;
+    }
+    const old = parsePins(raw);
+    if (Object.keys(old).length === 0) {
+        return null;
+    }
+    const kept = parsePins(meta);
+    let next = kept;
+    for (const [project, list] of Object.entries(old)) {
+        for (const rel of list) {
+            if (!isPinned(next, project, rel)) {
+                next = togglePin(next, project, rel);
+            }
+        }
+    }
+    return next === kept ? null : next;
+}
+
 export function parsePins(raw: unknown): CodePins {
     if (raw == null || typeof raw !== "object" || Array.isArray(raw)) {
         return {};

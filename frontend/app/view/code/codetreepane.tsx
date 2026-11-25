@@ -37,6 +37,7 @@ import { useEffect, useMemo, useRef } from "react";
 import { projectDraftPaths } from "./codedraft";
 import { existingTreePaths, provisionalIndex } from "./codemutate";
 import { pinsFor } from "./codepins";
+import { codePinsAtom } from "./codepinsstore";
 import { CODE_PATH_MIME, codeTreeDragAtom, openSide } from "./codeside";
 import { changedDirs, statusGlyph, type CodeStatus } from "./codestatus";
 import {
@@ -49,7 +50,6 @@ import {
     codeFileAtom,
     codeIgnoredListedAtom,
     codeIndexAtom,
-    codePinsAtom,
     codePlainAtom,
     codeProjectAtom,
     codeRowsAtom,

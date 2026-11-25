@@ -88,6 +88,8 @@ type MetaTSType struct {
 	SessionLater           map[string]int64 `json:"session:later,omitempty"`           // workspace (session id, its transcript's file stem -> when it was marked for later)
 	SessionHelper          bool             `json:"session:helper,omitempty"`          // tab (a short-lived helper terminal, e.g. the Claude sign-in dialog's; the sidebar skips it)
 
+	CodePins map[string][]string `json:"code:pins,omitempty"` // workspace (the Code surface's pinned files: absolute project path -> repo-relative paths, in pin order; written whole, also by scripts through `wsh setmeta`)
+
 	LaunchParked []ParkedLaunch `json:"launch:parked,omitempty"` // workspace (the New agent launches put off while the machine was busy, oldest first)
 
 	// the builder check on a brainstorm (Arc launches the reviewer and owns its state on the agent's tab)

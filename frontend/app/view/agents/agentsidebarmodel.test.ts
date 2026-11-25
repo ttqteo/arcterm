@@ -1866,6 +1866,25 @@ describe("treeNavIds", () => {
     it("walks agents and terminals the way the tree reads", () => {
         expect(treeNavIds(tree())).toEqual(["a", "b", "t1", "c", "t2"]);
     });
+    it("reaches a folded pair by its working agent, and an open one by its rows", () => {
+        const [a, b] = [agent("a"), agent("b")];
+        const pair = (open: boolean): ProjectTreeRow => ({
+            kind: "pair",
+            project: "waveterm",
+            pairId: "p1",
+            worker: a,
+            judges: [b],
+            open,
+        });
+        expect(treeNavIds([pair(false)])).toEqual(["a"]);
+        expect(
+            treeNavIds([
+                pair(true),
+                { kind: "parent", agent: a, project: "waveterm", nested: true, pairRole: "worker" },
+                { kind: "parent", agent: b, project: "waveterm", nested: true, pairRole: "judge" },
+            ])
+        ).toEqual(["a", "b"]);
+    });
     it("reaches a service by its tab id, and skips one with no tab", () => {
         const rows = projectTree({
             tree: treeOf(agents),

@@ -18,6 +18,8 @@ const fileMove = vi.fn();
 const listWorktrees = vi.fn();
 const listBranches = vi.fn();
 const divergence = vi.fn();
+// the pins live in the workspace's meta (codepinsstore.ts), and vitest boots no workspace
+vi.mock("./codepinsstore", () => ({ updateCodePins: () => {} }));
 vi.mock("@/app/store/wshclientapi", () => ({
     RpcApi: {
         GitListFilesCommand: (...a: any[]) => listFiles(...a),
