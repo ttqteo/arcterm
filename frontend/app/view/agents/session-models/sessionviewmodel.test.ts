@@ -24,6 +24,8 @@ import {
     sessionTitle,
     subagentExpanded,
     visibleSubagents,
+    withDismissed,
+    DISMISSED_SUBAGENTS_KEEP,
     toggleCollapsed,
     type SessionInput,
     type SubagentVM,
@@ -650,6 +652,24 @@ describe("subagentExpanded", () => {
     });
 });
 
+describe("withDismissed", () => {
+    it("adds an id at the end once, and keeps only the newest DISMISSED_SUBAGENTS_KEEP", () => {
+        expect(withDismissed([], "a")).toEqual(["a"]);
+        const list = ["a", "b"];
+        expect(withDismissed(list, "a")).toBe(list);
+        const full = Array.from({ length: DISMISSED_SUBAGENTS_KEEP }, (_, i) => `id${i}`);
+        const next = withDismissed(full, "new");
+        expect(next).toHaveLength(DISMISSED_SUBAGENTS_KEEP);
+        expect(next[0]).toBe("id1");
+        expect(next.at(-1)).toBe("new");
+    });
+    it("starts over from what storage handed back when it is not a list of strings", () => {
+        expect(withDismissed(null, "a")).toEqual(["a"]);
+        expect(withDismissed({ a: 1 }, "a")).toEqual(["a"]);
+        expect(withDismissed(["x", 3, "a"], "a")).toEqual(["x", "a"]);
+    });
+});
+
 describe("visibleSubagents", () => {
     it("keeps working and failure, drops success and done", () => {
         const subs: { id: string; type: string; state: "working" | "success" | "failure" | "done" }[] = [
@@ -663,6 +683,29 @@ describe("visibleSubagents", () => {
     it("returns [] when every child has finished cleanly", () => {
         expect(visibleSubagents([{ id: "a", type: "E", state: "success" }])).toEqual([]);
         expect(visibleSubagents([])).toEqual([]);
+    });
+    // the case from 2026-11-24: a Task 3 attempt cut off by a session restart (last write 18:36:59), redone from 18:42
+    it("drops a failure once the agent started another subagent after it ended", () => {
+        const failed = { id: "f", type: "E", state: "failure" as const, startedAtMs: 100, lastWriteMs: 200 };
+        const redo = { id: "r", type: "E", state: "success" as const, startedAtMs: 300, lastWriteMs: 900 };
+        expect(visibleSubagents([failed, redo])).toEqual([]);
+        // the next subagent still working moves past it too
+        expect(visibleSubagents([failed, { ...redo, state: "working" as const }]).map((s) => s.id)).toEqual(["r"]);
+    });
+    it("keeps a failure a parallel sibling started beside, or one with no last write to compare", () => {
+        const failed = { id: "f", type: "E", state: "failure" as const, startedAtMs: 100, lastWriteMs: 200 };
+        const sibling = { id: "s", type: "E", state: "success" as const, startedAtMs: 150, lastWriteMs: 900 };
+        expect(visibleSubagents([failed, sibling]).map((s) => s.id)).toEqual(["f"]);
+        const { lastWriteMs: _, ...unknownEnd } = failed;
+        expect(visibleSubagents([unknownEnd, { ...sibling, startedAtMs: 999 }]).map((s) => s.id)).toEqual(["f"]);
+    });
+    it("drops a failure the person dismissed, and only that one", () => {
+        const subs = [
+            { id: "f1", type: "E", state: "failure" as const },
+            { id: "f2", type: "E", state: "failure" as const },
+            { id: "w", type: "E", state: "working" as const },
+        ];
+        expect(visibleSubagents(subs, new Set(["f1", "w"])).map((s) => s.id)).toEqual(["f2", "w"]);
     });
 });
 

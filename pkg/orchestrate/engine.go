@@ -191,6 +191,9 @@ func sessionRunIDs(g *waveobj.TaskGroup) []string {
 	if g.Final != nil && g.Final.VerifierRunID != "" {
 		ids = append(ids, g.Final.VerifierRunID)
 	}
+	if g.Final != nil && g.Final.EndReview != nil && g.Final.EndReview.RunID != "" {
+		ids = append(ids, g.Final.EndReview.RunID)
+	}
 	return ids
 }
 
@@ -711,10 +714,17 @@ func scheduleLocked(ctx context.Context, dagID string, held map[string]bool, job
 		if t.State == TaskState_Done && t.RunID != "" && taskInFlight(prevStates[t.ID]) {
 			taskID := t.ID
 			childRunID := t.RunID
-			// a worker goes straight to done only when it reported no commit to review (DeriveTaskStates)
-			unreviewed := ""
-			if taskActive(prevStates[t.ID]) {
-				unreviewed = noCommitLine(taskID, runs[t.RunID], len(unfinishedDescendants(g, taskID)) == 0)
+			// a worker goes straight to done when it reported no commit to review, or on the fast track (DeriveTaskStates)
+			unreviewed, landed := "", ""
+			var caveats []string
+			if worker := runs[t.RunID]; taskActive(prevStates[t.ID]) {
+				switch {
+				case !g.FastTrack || !workerCommitted(t, worker):
+					unreviewed = noCommitLine(taskID, worker, len(unfinishedDescendants(g, taskID)) == 0)
+				case !g.MergeRequired:
+					// nothing merges outside git, so the lines its merge would post go out now
+					landed, caveats = landedLines(g, taskID, worker, "done")
+				}
 			}
 			afterCommit = append(afterCommit, func() {
 				publishDagEvent(DagEventChildDone, g, taskID)
@@ -727,6 +737,9 @@ func scheduleLocked(ctx context.Context, dagID string, held map[string]bool, job
 				}
 				if unreviewed != "" {
 					PostQuiet(ctx, g.ChannelId, g.RunID, unreviewed)
+				}
+				if landed != "" {
+					postLanded(ctx, g, landed, caveats)
 				}
 			})
 		}

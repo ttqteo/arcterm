@@ -87,6 +87,7 @@ describe("eventTitle", () => {
     it("says only the role when the detail names no lens", () => {
         expect(eventTitle(started({ role: "plan-reviewer" }))).toBe("Plan reviewer started");
         expect(eventTitle(started({ role: "verifier" }))).toBe("Final verifier started");
+        expect(eventTitle(started({ role: "end-reviewer" }))).toBe("End reviewer started");
     });
 });
 
@@ -117,6 +118,7 @@ describe("final-step", () => {
         expect(eventTitle(step({ step: "verify", ok: false }))).toBe("Final Verify failed");
         expect(eventTitle(step({ step: "tree", ok: true }))).toBe("Final tree passed");
         expect(eventTitle(step({ step: "final", ok: false }))).toBe("Final command failed");
+        expect(eventTitle(step({ step: "review", ok: false }))).toBe("End review failed");
         expect(eventTitle(step({ step: "other", ok: true }))).toBe("Final step passed");
         expect(eventTone(step({ step: "check", ok: true }))).toBe("text-success");
         expect(eventTone(step({ step: "verify", ok: false }))).toBe("text-warning");
@@ -132,7 +134,9 @@ describe("eventTone", () => {
 
 describe("planReviewLensTitle", () => {
     it("titles every lens, and falls back to the key for one it does not know", () => {
-        expect(["full", "second", "spec", "order", "tests", "final", "followup"].map(planReviewLensTitle)).toEqual([
+        expect(
+            ["full", "second", "spec", "order", "tests", "final", "followup", "light"].map(planReviewLensTitle)
+        ).toEqual([
             "Full review",
             "Second pass",
             "Spec coverage",
@@ -140,6 +144,7 @@ describe("planReviewLensTitle", () => {
             "Tests and commands",
             "Final coverage",
             "Round-2 follow-up",
+            "Light review",
         ]);
         expect(planReviewLensTitle("style")).toBe("style");
     });

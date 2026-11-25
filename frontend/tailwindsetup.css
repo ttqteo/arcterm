@@ -997,6 +997,13 @@ html[data-md-selection]::selection {
     -webkit-box-decoration-break: clone;
     box-decoration-break: clone;
 }
+/* a `! cmd` for the person to type (markdownmessage.tsx InlineCode): the ==mark== tint and the prose's ink, over the
+   code's own grey and indigo, so it reads as the must-read it is. Before the selection rule, so a selected span still
+   shows the band alone */
+.agent-md code[data-command-mark] {
+    color: inherit;
+    background: color-mix(in srgb, var(--color-warning) 25%, transparent);
+}
 /* a code span the selection takes in (selectionpaint.ts): the band alone shows, one shade over the span and the words
    beside it */
 .agent-md code[data-md-selected] {

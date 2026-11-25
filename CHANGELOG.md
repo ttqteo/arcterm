@@ -37,11 +37,20 @@ and a picture given to a line that is not big.
 - Quote from a file into the chat: select a passage in the agent panel's File tab and press Quote (or `q`) in a
   markdown Preview, or Quote in chat (`Alt`+`Q`, or the right-click menu) in Source. It lands in the agent's chat box as
   a `> ` quote under the file and lines it came from (`docs/plan.md:42-44`), the caret under it for your question.
+- Small runs go on a fast track: a plan of 4 tasks or fewer gets one light plan review instead of two rounds, no review
+  of each task, and one end review of the whole merged diff in the final stage; a plan of 5 tasks or more keeps the
+  full review (from the kaeltran16 fork).
+- A run an agent starts with `wsh runs start` sits under that agent in the Agent tree, and a run its own agent starts
+  sits one level further; a run started from the cockpit, or whose agent has closed, keeps a row of its own (from the
+  kaeltran16 fork).
 
 ### Changed
 
 - In Chat, a pair's list and a judge's marks show as cards instead of code: the newest list with its answer chips,
   an earlier one folded to a row.
+- A fast-track run says so: a `fast track` chip on the run sheet, the same words on `wsh runs show` and Chat's run card.
+  The plan review rows read Light review (and `amended by the lead` when the lead's revised plan went ahead), tasks have
+  no Reviewing state, and the final stage has an End review step (from the kaeltran16 fork).
 - Library's tabs are plain labels with a sliding underline; the 1–4 keys still switch them, named in each tab's tooltip
   rather than beside its label.
 - An agent in a brainstorm opens its panel on the Brainstorm tab, and one linked to an initiative on the Initiative tab,
@@ -57,11 +66,15 @@ and a picture given to a line that is not big.
   shows the working agent and the judges under it. Folded, its line says how each side stands.
 - The agent header stays over a pair's conversation: Pair, beside Chat and Terminal, switches between the two (a + beside
   it adds another judge; on a judge, a link goes to the agent it judges), and the rail turns to Decided.
+- In Chat, a `! command` an agent asks you to type inside a sentence is highlighted like the must-read lines, so it no
+  longer reads as just another piece of code.
 
 ### Fixed
 
 - A new agent's first message with a long paste in it shows the paste as a folded card, not as raw
   `<\pasted_content>` text.
+- A failed subagent no longer stays in the Agent tree forever: it leaves once its agent starts another subagent after
+  it (a retry, or the next piece of work), and a ✕ on its row dismisses it, for good, when the agent moved on without one.
 - A pair names its agents by their title, as the Agent tree does, not by the project their tab was launched in, and
   the agent's rail with the Decided tab stays beside the conversation; the way back to Chat reads as a button.
 - A background subagent cut off when its agent's session ended no longer shows as running in the Agent tree forever,

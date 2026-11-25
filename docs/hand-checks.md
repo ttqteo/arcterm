@@ -29,6 +29,47 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
   chevron turning. Press a chip: the chips crossfade to `You answered <chip>` with the box keeping its height. With
   reduced motion on, all of it lands at once. (`task verify:ui -- chat-pair-blocks` checks the end states.)
 
+- [ ] (arcterm) Kael sync 11-25: a real agent's quick run nests under it in the Agent tree (the CDP scenario
+  `run-nesting` draws a dev-mock roster with seeded runs, and this run's agent ran no CDP, so neither the live nesting
+  nor the row's move has been watched). In an agent's tab have it run `wsh runs start --project <dir> "<goal>"` → once
+  the run's tab appears, its row sits right under the agent's row (and its checks), one tree guide in, and the folder's
+  count includes it; `j` from the agent goes to it next. Have that run's agent run `wsh runs start` too → its
+  run sits under it, two guides in. Close the first agent's tab → its run moves back to a top-level row with no jump
+  or flicker (the row keeps its key, so it slides), and the run under it is one guide in. A run started from the New
+  dialog stays a top-level row. Spec: `docs/superpowers/specs/2026-11-25-kael-sync-agent-tree-nesting-design.md`.
+- [ ] (arcterm) Kael sync 11-25: a real run of 4 tasks or fewer takes the fast track end to end (the Go tests own each
+  engine claim; the CDP scenarios `kael1125-fast-track-label` and `kael1125-fast-track-views` draw seeded runs, so no
+  real run's agents have been watched). Start a plan-file run of 2 to 4 tasks with a Verify line → the plan review has
+  one **Light review** row (not Full review and Second pass) and the workers start on its pass; no task ever reads
+  **Reviewing**, and the lead's next wake carries a `t-N merged` line per task (with a caveat line for each non-empty
+  Differs from plan, Not verified or Found not fixed) instead of `passed review`; the final stage lists **End review**
+  before the Verifier and the run's row reads `end review alongside` while Check or Verify runs, then
+  `final: end review reviewing` if it is the only one left; the run sheet's settings line has the `fast track` chip,
+  `wsh runs show <run-id>` ends its route line with `  fast track`, and Chat's run card head reads
+  `Orchestrator run · fast track`. A 5-task plan shows none of that. Plan:
+  `docs/superpowers/plans/2026-11-25-kael-sync-fast-track.md`.
+- [ ] (arcterm) Kael sync 11-25: a light review that fails, and the lead's amended resubmit dispatches. Run a plan of 3
+  or 4 tasks with a flaw the reviewer will catch (a task that edits a file its Files line leaves out, or a Depends with
+  a reason that does not hold) → the Light review row fails and the lead wakes with its findings; it revises the plan
+  and runs `wsh jarvis dag submit` again → the workers start with no second review, the review row and the Sessions row
+  read `amended by the lead` (not `failed`), and `wsh jarvis dag status` says `the light review failed, then the lead
+  amended the plan and it dispatched`. Also resubmit a plan grown past 4 tasks after a failed light review → it leaves
+  the fast track and opens Full review and Second pass. A light reviewer you stop twice reads lost and is replaced by a
+  new Light review row, up to three.
+- [ ] (arcterm) Kael sync 11-25: an end review that fails reaches the lead in one fix round. On a fast-track run let a
+  task land a bug a test would not catch (or have the end reviewer's findings name a missing test) → the End review step
+  fails, the stage's failure text holds an `[End review] …` block after any Check or Verify output, and the lead gets
+  one wake with all of it and writes one fix round; the fix's tasks run with no Reviewing state and the next final stage
+  runs an End review again over the whole merged diff. An end review that passes with `--unverified` leaves the run
+  unverified with the reason `end review: …`.
+- [ ] (arcterm) **A failed subagent's row folds away.** On `Plan oracle-tightening` (mit-thesis), the `You are
+  implementing Ta… · failed` row is gone after installing: its agent redid Task 3 after it. On an agent whose subagent
+  failed with nothing after it, hover the row: a ✕ fades in beside `failed`; press it and the row folds on the spring
+  (no snap, no gap left behind), and stays gone after a restart.
+- [ ] (arcterm) **A `! cmd` inside a sentence is highlighted in Chat.** In an agent's Chat, a reply with a sentence such
+  as "…rồi gõ `! wsh runs land <id> --force`": the code span draws in the same yellow tint as a ==marked== sentence,
+  in the prose's ink rather than the indigo of other code; `!= null` or `$ npm test` in a span stay plain code; a
+  selection over it still shows the band alone. Not tried live: no dev app was up.
 - [ ] (arcterm) **Your pins move into the workspace.** After installing, open an agent in `D:\work\mit\mit-thesis`
   (or Code on it): its Files tab still lists the 4 files you had pinned, in the same order, and
   `wsh getmeta -b workspace:<oid> code:pins` prints them. Pin or unpin one and run the command again: it follows. On the

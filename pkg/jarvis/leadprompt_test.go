@@ -4,6 +4,7 @@
 package jarvis
 
 import (
+	"strconv"
 	"strings"
 	"testing"
 	"unicode/utf8"
@@ -14,13 +15,23 @@ import (
 )
 
 // fork ac548aa57: the most common round-1 plan review finding was a caller or test of a changed signature on no task's
-// Files line, so the lead is told to grep the references before it submits
+// Files line, so the lead is told to grep the references before it submits. The same plan step carries the fast
+// track's short plan.
 func TestEveryPlanningPromptListsCallersOfChangedSignatures(t *testing.T) {
-	want := "for every symbol whose signature, type shape or name a task changes, grep its references across the repo, tests and `scripts/` included, and put each file that must change on that task's Files line"
+	if !strings.Contains(planShortStep, strconv.Itoa(FastTrackMaxTasks)) {
+		t.Fatalf("the short-plan step must name the fast track's limit:\n%s", planShortStep)
+	}
+	steps := map[string]string{
+		"the caller grep": "for every symbol whose signature, type shape or name a task changes, grep its references across the repo, tests and `scripts/` included, and put each file that must change on that task's Files line",
+		"the short plan":  planShortStep,
+	}
 	for _, runtime := range []string{"claude", "pi"} {
 		for _, autonomous := range []bool{false, true} {
-			if p := BuildOrchestratePrompt("ship auth", nil, runtime, autonomous); !strings.Contains(p, want) {
-				t.Errorf("%s autonomous=%v: plan step missing the caller grep:\n%s", runtime, autonomous, p)
+			p := BuildOrchestratePrompt("ship auth", nil, runtime, autonomous)
+			for name, want := range steps {
+				if !strings.Contains(p, want) {
+					t.Errorf("%s autonomous=%v: plan step missing %s:\n%s", runtime, autonomous, name, p)
+				}
 			}
 		}
 	}

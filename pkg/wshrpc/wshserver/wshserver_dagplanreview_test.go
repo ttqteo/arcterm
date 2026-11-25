@@ -5,6 +5,7 @@ package wshserver
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -34,7 +35,8 @@ func stubDagSpawns(t *testing.T) *[]jarvis.RunWorkerOptions {
 	return &spawned
 }
 
-// recordRound records a verdict from every reviewer of the dag's round: full gives fullVerdict, every lens passes.
+// recordRound records a verdict from every reviewer of the dag's round: the full or light reviewer gives fullVerdict,
+// every other lens passes.
 func recordRound(t *testing.T, ctx context.Context, dagID, fullVerdict string) {
 	t.Helper()
 	g, err := wstore.GetDag(ctx, dagID)
@@ -43,13 +45,23 @@ func recordRound(t *testing.T, ctx context.Context, dagID, fullVerdict string) {
 	}
 	for _, r := range g.PlanReview.Reviewers {
 		v, text := orchestrate.ReviewVerdict_Pass, "fine"
-		if r.Lens == orchestrate.PlanReviewLens_Full && fullVerdict == orchestrate.ReviewVerdict_Fail {
+		if (r.Lens == orchestrate.PlanReviewLens_Full || r.Lens == orchestrate.PlanReviewLens_Light) && fullVerdict == orchestrate.ReviewVerdict_Fail {
 			v, text = fullVerdict, "spec 4.1 has no task"
 		}
 		if err := orchestrate.RecordPlanReviewVerdict(ctx, dagID, r.RunID, v, text, nil); err != nil {
 			t.Fatalf("%s: %v", r.Lens, err)
 		}
 	}
+}
+
+// planOfTasks is a plan of n tasks.
+func planOfTasks(n int) string {
+	var b strings.Builder
+	b.WriteString("# Coupons\n")
+	for i := 1; i <= n; i++ {
+		fmt.Fprintf(&b, "\n### Task %d: step %d\nadd step %d\n", i, i, i)
+	}
+	return b.String()
 }
 
 // reviewerRunIDs are the run ids of the round's reviewers, full first.
@@ -90,41 +102,101 @@ func TestDagSubmitReviewsThePlanBeforeAnyWorkerStarts(t *testing.T) {
 		return (&WshServer{}).DagSubmitCommand(ctx, wshrpc.CommandDagSubmitData{ChannelId: channelId, RunId: runId, PlanPath: planPath})
 	}
 
-	t.Run("a plan file opens round 1 and dispatches nothing but the reviewer", func(t *testing.T) {
-		spawned := stubDagSpawns(t)
-		channelId, runId := newRun(t)
-		g, err := submit(channelId, runId, writePlan(t, plan))
-		if err != nil {
-			t.Fatal(err)
-		}
-		if g.PlanReview == nil || g.PlanReview.State != orchestrate.PlanReviewState_Reviewing || g.PlanReview.Round != 1 || g.Status != orchestrate.DagStatus_PlanReview {
-			t.Fatalf("want round 1 reviewing, got status %s review %+v", g.Status, g.PlanReview)
-		}
-		if g.Tasks[0].RunID != "" || len(*spawned) != 2 || len(g.PlanReview.Reviewers) != 2 {
-			t.Fatalf("only the plan reviewers may start, got %+v", *spawned)
-		}
-		for _, opts := range *spawned {
-			if opts.TaskId != "" {
-				t.Fatalf("only the plan reviewers may start, got %+v", *spawned)
+	for _, c := range []struct {
+		name   string
+		tasks  int
+		fast   bool
+		lenses []string
+	}{
+		{"a plan of the fast track's most tasks gets one light reviewer", jarvis.FastTrackMaxTasks, true, []string{orchestrate.PlanReviewLens_Light}},
+		{"a plan of one task more gets the full review", jarvis.FastTrackMaxTasks + 1, false, []string{orchestrate.PlanReviewLens_Full, orchestrate.PlanReviewLens_Second}},
+	} {
+		t.Run(c.name+", and dispatches nothing but its reviewers", func(t *testing.T) {
+			spawned := stubDagSpawns(t)
+			channelId, runId := newRun(t)
+			g, err := submit(channelId, runId, writePlan(t, planOfTasks(c.tasks)))
+			if err != nil {
+				t.Fatal(err)
 			}
-		}
-	})
+			if g.FastTrack != c.fast || g.PlanReview == nil || g.PlanReview.State != orchestrate.PlanReviewState_Reviewing || g.PlanReview.Round != 1 || g.Status != orchestrate.DagStatus_PlanReview {
+				t.Fatalf("want fasttrack %v and round 1 reviewing, got %v, status %s review %+v", c.fast, g.FastTrack, g.Status, g.PlanReview)
+			}
+			var lenses []string
+			for _, r := range g.PlanReview.Reviewers {
+				lenses = append(lenses, r.Lens)
+			}
+			if g.Tasks[0].RunID != "" || len(*spawned) != len(c.lenses) || !reflect.DeepEqual(lenses, c.lenses) {
+				t.Fatalf("only the reviewers %v may start, got lenses %v and %+v", c.lenses, lenses, *spawned)
+			}
+			for _, opts := range *spawned {
+				if opts.TaskId != "" {
+					t.Fatalf("only the plan reviewers may start, got %+v", *spawned)
+				}
+			}
+		})
+	}
 
-	t.Run("a JSON dag has no plan review", func(t *testing.T) {
+	t.Run("a JSON dag has no plan review and no fast track", func(t *testing.T) {
 		stubDagSpawns(t)
 		channelId, runId := newRun(t)
 		g, err := (&WshServer{}).DagSubmitCommand(ctx, wshrpc.CommandDagSubmitData{ChannelId: channelId, RunId: runId, Title: "t", Parallelism: 1, Tasks: []waveobj.TaskNode{{ID: "t-1", Label: "a"}}})
 		if err != nil {
 			t.Fatal(err)
 		}
-		if g.PlanReview != nil || g.Status == orchestrate.DagStatus_PlanReview {
-			t.Fatalf("want no plan review, got status %s review %+v", g.Status, g.PlanReview)
+		if g.PlanReview != nil || g.Status == orchestrate.DagStatus_PlanReview || g.FastTrack {
+			t.Fatalf("want no plan review and no fast track, got status %s fasttrack %v review %+v", g.Status, g.FastTrack, g.PlanReview)
+		}
+	})
+
+	t.Run("an amended plan after a light fail dispatches", func(t *testing.T) {
+		stubDagSpawns(t)
+		channelId, runId := newRun(t)
+		g, err := submit(channelId, runId, writePlan(t, plan))
+		if err != nil {
+			t.Fatal(err)
+		}
+		recordRound(t, ctx, g.OID, orchestrate.ReviewVerdict_Fail)
+		g2, err := submit(channelId, runId, writePlan(t, revised))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if pr := g2.PlanReview; !g2.FastTrack || pr.State != orchestrate.PlanReviewState_Accepted || !pr.Amended || pr.Round != 1 || len(g2.Tasks) != 2 || g2.Tasks[0].RunID == "" {
+			t.Fatalf("want the revised tasks dispatched on an amended accept, got %d tasks, t-1 run %q, %+v", len(g2.Tasks), g2.Tasks[0].RunID, pr)
+		}
+	})
+
+	t.Run("a revision past the fast track's most tasks clears it and gets the full review", func(t *testing.T) {
+		spawned := stubDagSpawns(t)
+		channelId, runId := newRun(t)
+		g, err := submit(channelId, runId, writePlan(t, planOfTasks(jarvis.FastTrackMaxTasks)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		recordRound(t, ctx, g.OID, orchestrate.ReviewVerdict_Fail)
+		spawnedBefore := len(*spawned)
+		g2, err := submit(channelId, runId, writePlan(t, planOfTasks(jarvis.FastTrackMaxTasks+1)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		pr := g2.PlanReview
+		var lenses []string
+		for _, r := range pr.Reviewers {
+			lenses = append(lenses, r.Lens)
+		}
+		if g2.FastTrack || pr.State != orchestrate.PlanReviewState_Reviewing || pr.Amended || pr.Prior != nil || g2.Tasks[0].RunID != "" ||
+			!reflect.DeepEqual(lenses, []string{orchestrate.PlanReviewLens_Full, orchestrate.PlanReviewLens_Second}) || len(*spawned) != spawnedBefore+2 {
+			t.Fatalf("want fasttrack cleared and the full review reading the new plan, got fasttrack %v, lenses %v, spawns %d -> %d, %+v", g2.FastTrack, lenses, spawnedBefore, len(*spawned), pr)
+		}
+		// the light round does not count toward the full review's two: this one can still be followed by another
+		if orchestrate.PlanReviewLastRound(pr) {
+			t.Fatalf("the first full round after a light one must not read as the last, got %+v", pr)
 		}
 	})
 
 	t.Run("a revised plan replaces one whose review failed, and is reviewed again", func(t *testing.T) {
 		spawned := stubDagSpawns(t)
 		channelId, runId := newRun(t)
+		plan, revised := planOfTasks(jarvis.FastTrackMaxTasks+1), planOfTasks(jarvis.FastTrackMaxTasks+2)
 		g, err := submit(channelId, runId, writePlan(t, plan))
 		if err != nil {
 			t.Fatal(err)
@@ -140,7 +212,7 @@ func TestDagSubmitReviewsThePlanBeforeAnyWorkerStarts(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if g2.OID != g.OID || len(g2.Tasks) != 2 || g2.PlanReview.Round != 2 || g2.PlanReview.State != orchestrate.PlanReviewState_Reviewing {
+		if g2.OID != g.OID || len(g2.Tasks) != jarvis.FastTrackMaxTasks+2 || g2.PlanReview.Round != 2 || g2.PlanReview.State != orchestrate.PlanReviewState_Reviewing {
 			t.Fatalf("want the same dag with the revised tasks in round 2, got %d tasks and %+v", len(g2.Tasks), g2.PlanReview)
 		}
 		first, second := reviewerRunIDs(g), reviewerRunIDs(g2)
@@ -185,12 +257,13 @@ func TestPlanReviewResubmitKeepsTheRunsPrototype(t *testing.T) {
 		}
 		return (&WshServer{}).DagSubmitCommand(ctx, wshrpc.CommandDagSubmitData{ChannelId: ch.OID, RunId: run.ID, PlanPath: path})
 	}
-	g, err := submit("**Prototype:** .superpowers/design/first/Main.dc.html\n\n### Task 1: input\n")
+	// past the fast track, so the revision is reviewed again rather than dispatched as an amendment
+	g, err := submit("**Prototype:** .superpowers/design/first/Main.dc.html\n\n" + planOfTasks(jarvis.FastTrackMaxTasks+1))
 	if err != nil {
 		t.Fatal(err)
 	}
 	recordRound(t, ctx, g.OID, orchestrate.ReviewVerdict_Fail)
-	g2, err := submit("**Prototype:** .superpowers/design/other/Main.dc.html\n\n### Task 1: input\n\n### Task 2: spec 4.1\n")
+	g2, err := submit("**Prototype:** .superpowers/design/other/Main.dc.html\n\n" + planOfTasks(jarvis.FastTrackMaxTasks+2))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -210,7 +283,8 @@ func TestPlanReviewResubmitKeepsTheRunsPrototype(t *testing.T) {
 // never at submit, when a failed review would send the plan back to a lead that had dropped its context.
 func TestPlanReviewHandsOffOnlyOnceThePlanClears(t *testing.T) {
 	ctx := context.Background()
-	const plan = "# Coupons\n\n### Task 1: input\nadd the field\n"
+	// past the fast track, for a round of two reviewers
+	plan := planOfTasks(jarvis.FastTrackMaxTasks + 1)
 	var handed []string
 	stub := func(_ context.Context, channelId, runId string) { handed = append(handed, channelId+"/"+runId) }
 	old := postHandoff
@@ -331,7 +405,8 @@ func TestDagSubmitCarriesLightReviewerRoute(t *testing.T) {
 		}
 		return g
 	}
-	g := submit("### Task 1: input\n")
+	// past the fast track: the second pass runs on the Light reviewers route beside the full reviewer
+	g := submit(planOfTasks(jarvis.FastTrackMaxTasks + 1))
 	if g.LightReviewerRoute == nil || *g.LightReviewerRoute != *route {
 		t.Fatalf("the group must hold the run's Light reviewers route, got %+v", g.LightReviewerRoute)
 	}
@@ -345,7 +420,7 @@ func TestDagSubmitCarriesLightReviewerRoute(t *testing.T) {
 		}
 	}
 	recordRound(t, ctx, g.OID, orchestrate.ReviewVerdict_Fail)
-	g2 := submit("### Task 1: input\n\n### Task 2: spec 4.1\n")
+	g2 := submit(planOfTasks(jarvis.FastTrackMaxTasks + 2))
 	stored, err := wstore.GetDag(ctx, g.OID)
 	if err != nil {
 		t.Fatal(err)

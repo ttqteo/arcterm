@@ -128,6 +128,12 @@ func enterReview(t *waveobj.TaskNode, worker *waveobj.Run) {
 	}
 }
 
+// workerCommitted reports a finished worker with a commit to judge. A first attempt that committed nothing has none;
+// a review round's is judged either way, or the rejected commit would land unreviewed.
+func workerCommitted(t *waveobj.TaskNode, r *waveobj.Run) bool {
+	return r != nil && r.EndCommit != "" && (t.ReviewBase != "" || r.EndCommit != r.BaseCommit)
+}
+
 // Dag statuses (derived by RecomputeDagStatus; cancelled is a terminal override).
 const (
 	DagStatus_Running        = "running"
@@ -530,9 +536,8 @@ func DeriveTaskStates(g *waveobj.TaskGroup, runs map[string]*waveobj.Run) {
 		switch r.Status {
 		case jarvis.RunStatus_Done:
 			// only a worker finishing now is reviewed: a task that was already done when review shipped stays done.
-			// A first attempt that committed nothing has nothing to judge; a fix round is judged either way, or the
-			// rejected commit would land unreviewed.
-			if taskActive(t.State) && r.EndCommit != "" && (t.ReviewBase != "" || r.EndCommit != r.BaseCommit) {
+			// A fast-track task is never reviewed: the end review judges the whole merged diff instead.
+			if taskActive(t.State) && workerCommitted(t, r) && !g.FastTrack {
 				enterReview(t, r)
 				continue
 			}

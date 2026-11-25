@@ -10,9 +10,11 @@ import { cn } from "@/util/util";
 import { Lightbulb } from "lucide-react";
 import {
     Children,
+    createContext,
     Fragment,
     isValidElement,
     memo,
+    useContext,
     useEffect,
     useRef,
     type ComponentProps,
@@ -36,6 +38,7 @@ import { StepsBlock } from "./chatsteplistview";
 import { VISUAL_LANG } from "./chatvisual";
 import { VisualBlock } from "./chatvisualview";
 import { CodeBlock } from "./codeblock";
+import { isInlineCommand } from "./coderun";
 import { splitInsightBlocks } from "./insightblocks";
 import { guardDollars } from "./mathdollars";
 import { JUDGE_LANG, PAIR_LANG } from "./pairblocks";
@@ -183,11 +186,19 @@ const MD_COMPONENTS: Components = {
     code: ({ className, children }) => <InlineCode className={className}>{children}</InlineCode>,
 };
 
+// set where the caller opted into `commands` (Chat), read by every inline code span whichever components map drew it
+const CommandsContext = createContext(false);
+
 function InlineCode({ className, children }: { className?: string; children?: ReactNode }) {
     const text = typeof children === "string" ? children : null;
+    const commands = useContext(CommandsContext);
     // remark-math's `$…$`: a formula in the line
     if (text != null && className?.includes("math-inline")) {
         return <MathToken tex={text} />;
+    }
+    // a `! cmd` to type draws in the mark's tint over the code's own colours (tailwindsetup.css data-command-mark)
+    if (commands && className == null && text != null && isInlineCommand(text)) {
+        return <code data-command-mark>{children}</code>;
     }
     const found = className == null && text != null ? inlinePathOf(text) : null;
     if (found == null) {
@@ -225,7 +236,8 @@ function InlineCode({ className, children }: { className?: string; children?: Re
 // references alone, for an agent's reply in Chat (no `@path` pills: an agent's `@` is not a pick): an `agent:`… token as
 // a badge, and a code span that is an id (`4e6ea128`, refbadge.ts codeRef) as the badge of what it names, the code as
 // written when it names nothing. `mentions` includes `refs`. `commands` fences a bare `! cmd` line (bashlines.ts), so a
-// command an agent forgot to put in code draws as the command row it meant, not as prose Markdown rewrote.
+// command an agent forgot to put in code draws as the command row it meant, not as prose Markdown rewrote, and draws a
+// `! cmd` code span in the mark's tint (coderun.ts isInlineCommand).
 export interface MarkdownExtras {
     marks?: boolean;
     diagrams?: boolean;
@@ -349,13 +361,15 @@ function componentsFor(extras: MarkdownExtras): Components {
 
 function renderMd(text: string, extras: MarkdownExtras = {}) {
     return (
-        <ReactMarkdown
-            remarkPlugins={pluginsFor(extras)}
-            components={componentsFor(extras)}
-            urlTransform={urlTransform}
-        >
-            {guardDollars(extras.commands ? fenceBangLines(text) : text)}
-        </ReactMarkdown>
+        <CommandsContext.Provider value={extras.commands === true}>
+            <ReactMarkdown
+                remarkPlugins={pluginsFor(extras)}
+                components={componentsFor(extras)}
+                urlTransform={urlTransform}
+            >
+                {guardDollars(extras.commands ? fenceBangLines(text) : text)}
+            </ReactMarkdown>
+        </CommandsContext.Provider>
     );
 }
 

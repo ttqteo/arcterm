@@ -13,10 +13,11 @@ import { globalStore } from "@/app/store/jotaiStore";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { atom, type PrimitiveAtom } from "jotai";
+import { atomWithStorage } from "jotai/utils";
 import { bgTaskStopNote } from "./agentrailsections";
 import { outputTail } from "./monitortasks";
 import { extractCompactions, type RailCompaction } from "./railcompaction";
-import type { SubagentVM } from "./session-models/sessionviewmodel";
+import { withDismissed, type SubagentVM } from "./session-models/sessionviewmodel";
 import { correlateSubagents } from "./subagentcorrelate";
 import { extractBackgroundTasks, extractSubagentSpawns, type BackgroundTask } from "./transcriptprojection";
 
@@ -37,6 +38,17 @@ export const backgroundTasksByIdAtom = atom<Record<string, BackgroundTask[]>>({}
 export const compactionsByIdAtom = atom<Record<string, RailCompaction[]>>({}) as PrimitiveAtom<
     Record<string, RailCompaction[]>
 >;
+
+// the failed subagents the person dismissed from the Agent tree with their ✕, by subagent id, so a restart does not bring
+// them back
+export const dismissedSubagentsAtom = atomWithStorage<string[]>("agent.subagents.dismissed", [], undefined, {
+    getOnInit: true,
+}) as PrimitiveAtom<string[]>;
+
+/** Hides failed subagent `id` from the Agent tree for good. */
+export function dismissSubagent(id: string): void {
+    globalStore.set(dismissedSubagentsAtom, withDismissed(globalStore.get(dismissedSubagentsAtom), id));
+}
 
 /** The background task whose peek (Events and Output) is open: its agent, its task id, and who draws it. "tree" is
  *  the Agent tree (beside its row; the /tasks card opens it there too), "chat" the chat box's background list (above

@@ -107,6 +107,22 @@ describe("lineageOf", () => {
         expect(lineageOf([lead, worker], reads([leadRun, childRun])).roles.w).toEqual(workerRole);
     });
 
+    it("records the tab that started a plain agent's quick run, and none for a run's own tabs or a cockpit start", () => {
+        const quick = { oid: "quick-run", mode: "quick", origintabid: "origin-tab" } as Run;
+        const cockpit = { oid: "cockpit-run", mode: "quick" } as Run;
+        const startedLead = { ...leadRun, origintabid: "origin-tab" } as Run;
+        const lineage = lineageOf(
+            [
+                { id: "q", runId: "quick-run" },
+                { id: "c", runId: "cockpit-run" },
+                { id: "lead", runId: "lead-run" },
+                worker,
+            ],
+            reads([quick, cockpit, startedLead])
+        );
+        expect(lineage.origins).toEqual({ q: "origin-tab" });
+    });
+
     it("leaves a tab no dag in view names as a plain agent", () => {
         expect(lineageOf([worker], reads([])).roles.w).toBeUndefined();
         expect(lineageOf([lead, { id: "x", runId: "other-run" }], reads([leadRun])).roles.x).toBeUndefined();
@@ -517,6 +533,7 @@ describe("stage sessions", () => {
     it("titles a stage row by its stage", () => {
         expect(stageLabel("plan-reviewer")).toBe("Plan review");
         expect(stageLabel("verifier")).toBe("Final verification");
+        expect(stageLabel("end-reviewer")).toBe("End review");
     });
 
     it("titles a land resolver's row Conflict resolver, and a role it does not know by the role", () => {

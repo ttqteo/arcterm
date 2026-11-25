@@ -817,7 +817,11 @@ func leadAwaitedWake(g *waveobj.TaskGroup) string {
 	}
 	if pr := g.PlanReview; pr != nil && pr.State == PlanReviewState_Failed {
 		read := fmt.Sprintf("The plan review did not pass in round %d: read `wsh jarvis dag status` and `%s`", pr.Round, planReviewFindingsCmd)
-		switch last := pr.Round >= MaxPlanReviewRounds; {
+		// a light round that found something is answered by a resubmit that dispatches, not by another review
+		if PlanReviewRoundLight(pr) && planReviewerFailed(pr.Reviewers) {
+			return fmt.Sprintf("The light plan review did not pass: read `wsh jarvis dag status` and `%s`, revise the plan file to answer each finding, and run `wsh jarvis dag submit` again: %s.", planReviewFindingsCmd, lightResubmitRule())
+		}
+		switch last := PlanReviewLastRound(pr); {
 		case last && g.Autonomous:
 			return fmt.Sprintf("%s. It was the last round. %s.", read, autonomousPastPlanReview)
 		case last:
