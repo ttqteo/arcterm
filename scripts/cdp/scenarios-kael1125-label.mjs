@@ -52,6 +52,8 @@ const READ_SHEET = `(() => {
     const kids = [...(cfg?.children ?? [])];
     const at = chip ? kids.indexOf(chip) : -1;
     const box = chip?.getBoundingClientRect();
+    const cs = chip ? getComputedStyle(chip) : null;
+    const borderWidth = cs ? parseFloat(cs.borderTopWidth) : 0;
     return {
         row: cfg != null,
         chips: cfg?.querySelectorAll("[data-jarvis-brief-sheet-fasttrack]").length ?? 0,
@@ -61,7 +63,9 @@ const READ_SHEET = `(() => {
         approvals: flat(cfg?.querySelector("[data-jarvis-brief-sheet-approvals]")) || null,
         last: kids.length > 0 ? flat(kids[kids.length - 1]) : null,
         drawn: !!box && box.width > 0 && box.right <= window.innerWidth,
-        bordered: chip ? getComputedStyle(chip).borderTopWidth === "1px" : false,
+        // a 1px border snaps to whole device pixels, so at a fractional scale it reads 0.8px: a solid line of 0.5-1px
+        bordered: cs != null && cs.borderTopStyle === "solid" && borderWidth > 0.5 && borderWidth <= 1,
+        borderWidth: cs?.borderTopWidth ?? null,
     };
 })()`;
 

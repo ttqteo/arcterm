@@ -32607,7 +32607,7 @@ const planReviewTreeRows = (want) => `(async () => {
     const flat = (el) => (el?.textContent ?? '').replace(/\\s+/g, ' ').trim();
     const tree = () => document.querySelector('[data-agent-tree]');
     const folds = () => [...(tree()?.querySelectorAll('div.cursor-pointer') ?? [])].filter(
-        (d) => /\\d+ reviews?$/.test(flat(d)) && d.querySelector('.lucide-chevron-right')
+        (d) => /\\b\\d+ reviews?\\b/.test(flat(d)) && d.querySelector('.lucide-chevron-right')
     );
     const titles = () => [...(tree()?.querySelectorAll('div') ?? [])].filter(
         (d) => d.children.length === 0 && flat(d).startsWith(${JSON.stringify(PLAN_REVIEW_TITLE)})
