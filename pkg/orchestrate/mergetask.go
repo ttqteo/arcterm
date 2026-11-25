@@ -435,9 +435,12 @@ func finalVerifyStandsIn(g *waveobj.TaskGroup) bool {
 // FinishMergedTask stamps a landed merge and returns the plan's Verify command when the task now waits on it.
 // The caller holds the dag mutation lock, and removes the tree after releasing it.
 func FinishMergedTask(ctx context.Context, channelID, dagID, childRunID, taskID, sha string) (string, error) {
+	// read before the stamp, which marks the lane merged and overwrites the tip's commit
+	post := fastTrackLanded(ctx, dagID, taskID)
 	if err := persistMergedTask(ctx, channelID, dagID, childRunID, taskID, sha); err != nil {
 		return "", err
 	}
+	post()
 	g, err := wstore.GetDag(ctx, dagID)
 	if err != nil {
 		return "", err
@@ -451,6 +454,46 @@ func FinishMergedTask(ctx context.Context, channelID, dagID, childRunID, taskID,
 	appendRunEvent(ctx, channelID, g.RunID, waveobj.RunEventKindTaskMerged, nil, merged)
 	appendRunEvent(ctx, channelID, g.RunID, waveobj.RunEventKindTaskCleanupPending, nil, map[string]any{"taskid": taskID})
 	return verify, nil
+}
+
+// fastTrackLanded returns what posts the lead the lines of each committed task the merge of tipID's lane lands, on a
+// fast-track dag, where no review pass posted them. A task whose worker committed nothing had its lines at done
+// (noCommitLine). Nothing is typed to a running worker: a later task reads the lane's reports at dispatch. A read that
+// fails only loses lines, never the stamp of a squash git already committed.
+func fastTrackLanded(ctx context.Context, dagID, tipID string) func() {
+	g, err := wstore.GetDag(ctx, dagID)
+	if err != nil {
+		log.Printf("dag %s: reading it for its merged tasks' lines: %v", dagID, err)
+		return func() {}
+	}
+	if !g.FastTrack {
+		return func() {}
+	}
+	type lines struct {
+		quiet   string
+		caveats []string
+	}
+	var landed []lines
+	for _, id := range laneOf(g, tipID) {
+		t := taskByID(g, id)
+		if t.Merged || (t.State != TaskState_Done && id != tipID) || t.RunID == "" {
+			continue
+		}
+		worker, err := wstore.GetRun(ctx, g.ChannelId, t.RunID)
+		if err != nil {
+			log.Printf("dag %s task %s: reading its worker run for its merged lines: %v", dagID, id, err)
+			continue
+		}
+		if workerCommitted(t, worker) {
+			quiet, caveats := landedLines(g, id, worker, "merged")
+			landed = append(landed, lines{quiet, caveats})
+		}
+	}
+	return func() {
+		for _, l := range landed {
+			postLanded(ctx, g, l.quiet, l.caveats)
+		}
+	}
 }
 
 func persistMergedTask(ctx context.Context, channelID, dagID, childRunID, taskID, sha string) error {
