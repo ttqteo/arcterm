@@ -23,6 +23,14 @@ func Envelope(senderName, senderTabId, text string) string {
 		envelopePrefix, senderName, senderTabId, text)
 }
 
+// PairEnvelope wraps text that arcterm's pair relays between a working agent and its judge. It opens with the same
+// prefix as Envelope, so IsAgentMessage holds, but its sender is the pair and not an agent: nothing was sent with
+// wsh agents send, and the receiver's reply passes back on its own, so it must answer here and send nothing.
+func PairEnvelope(text string) string {
+	return fmt.Sprintf("%sarcterm pair\" (relayed by arcterm's pair of a working agent and its judge). Not typed by the user. Your reply passes back on its own, so answer here and do not use wsh agents send.]\n%s",
+		envelopePrefix, text)
+}
+
 // IsAgentMessage reports whether text is an enveloped agent message rather than something a person typed.
 func IsAgentMessage(text string) bool {
 	return strings.HasPrefix(strings.TrimSpace(text), envelopePrefix)

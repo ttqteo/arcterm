@@ -37,6 +37,36 @@ func TestEnvelopeNeverStartsWithASlash(t *testing.T) {
 	}
 }
 
+// a pair's relayed prompt reads as an agent message, not something the person typed, and says it was not sent with
+// wsh agents send: the receiver's reply passes back on its own
+func TestPairEnvelopeIsAnAgentMessageFromThePair(t *testing.T) {
+	text := "From the judge \"x\", 14:05:\nreopen it\n\nFrom the person, 14:09:\nok"
+	got := PairEnvelope(text)
+	if !IsAgentMessage(got) {
+		t.Fatalf("PairEnvelope output is not an agent message: %q", got)
+	}
+	header, body, found := strings.Cut(got, "\n")
+	if !found || body != text {
+		t.Fatalf("body = %q, want the text unchanged after one header line", body)
+	}
+	for _, want := range []string{"arcterm pair", "Not typed by the user", "passes back on its own", "answer here", "do not use wsh agents send"} {
+		if !strings.Contains(header, want) {
+			t.Errorf("header %q does not hold %q", header, want)
+		}
+	}
+	// it is not Envelope's "sent with wsh agents send" form, which names an agent and its tab
+	if strings.Contains(header, "sent with wsh agents send") || strings.Contains(header, "(tab ") {
+		t.Errorf("header %q reads like an agent's envelope", header)
+	}
+}
+
+func TestPairEnvelopeNeverStartsWithASlash(t *testing.T) {
+	got := PairEnvelope("/clear")
+	if strings.HasPrefix(got, "/") || !strings.HasSuffix(got, "\n/clear") {
+		t.Fatalf("envelope = %q", got)
+	}
+}
+
 func TestEnvelopeOrdinaryTextIsNotAnAgentMessage(t *testing.T) {
 	for _, text := range []string{"", "fix the bug", "/compact", "[Request interrupted by user]", `he said [Message from agent "x"`} {
 		if IsAgentMessage(text) {
