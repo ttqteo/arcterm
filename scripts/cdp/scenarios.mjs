@@ -65093,7 +65093,8 @@ const toolsPicker = {
         await polishWaitFor(h, `!!${TT_PICKER}`, 4000);
         await h.ev(setFieldExpr(`document.querySelector("[data-tool-picker-input]")`, "arc-fixture"));
         await polishWaitFor(h, `${TT_PICKER_ROW("arc-fixture")} != null`, 4000);
-        const splitHint = await h.ev(`[...document.querySelectorAll("[data-tool-picker] span")].some((s) => s.textContent === "Open in a split")`);
+        // the hint is a keycap and its words in one span, so read the footer's text, not a span's
+        const splitHint = await h.ev(`(document.querySelector("[data-tool-picker]")?.textContent ?? "").includes("Open in a split")`);
         await h.ev(ttPickerKey("Enter", "Enter", { ctrlKey: true }));
         const splitUp = await polishWaitFor(h, `!${TT_PICKER} && (${TT_GRID}).cells.length === ${before.cells.length + 1}`, 15000);
         // the new cell is the terminal that was not a cell before, and it sits under the cell above it, not beside it
