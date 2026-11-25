@@ -21,6 +21,18 @@ list (its number is not reused).
 Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) ·
 [part 4](hand-checks-4.md) · [part 3](hand-checks-3.md) · [part 2](hand-checks-2.md) (oldest).
 
+## 2026-11-25
+
+- [ ] (arcterm) **On the Mac app: a 100k+ Claude agent is compacted before it sleeps and before its cache goes cold,
+  and keeps a draft** (`pkg/agentsleep/compact.go`, `wshserver_agentsleeploop.go`; e044cc0cb, e2f38fb4f). Seen on the
+  installed Windows app (waveapp.log 11-23..11-25: 17 compactions before sleep and 5 before the cache went cold, every
+  wake writing 40-61k of cache instead of the 100-380k it had), never on the Mac, whose idle and CPU reads differ. On the
+  Mac, with Settings → Agents → Sleep's Compact row on (100k): leave a 100k+ agent off screen until it sleeps; its row
+  works through a `/compact` first, then sleeps, and the waking turn writes about 50k, not its whole context. Then type
+  a draft into an on-screen 100k+ agent's composer and leave it idle ~55 minutes: it compacts, stays awake, and the
+  draft is still there (this part needs `autoCompactEnabled` false in the Mac's `~/.claude.json`; with it on, Claude
+  Code compacts the agent itself).
+
 ## 2026-11-24
 
 - [ ] (arcterm) **An @id that is not a live agent stays in the session; a dropped prompt reads Not sent in Chat**
@@ -854,10 +866,6 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
   reaches the agent; with Telegram paired too, the question goes to both and the first answer wins (the other side says
   it was answered). Hand a claude agent over (`p`): its transcript, a prompt, Stop and a permission Allow work from the
   phone; Take back returns it.
-- [ ] (arcterm) **An awake agent is compacted when Claude Code's idle compaction is off.** With `autoCompactEnabled`
-  false in `~/.claude.json`, leave a Claude agent with 100k+ of context idle on screen for about 55 minutes: it gets one
-  `/compact` (its summary lands, the composer's draft is untouched) and is not put to sleep; the next turn after an
-  hour writes only the summary's cache (Usage → Cold resumes does not count it). Commit e2f38fb4f.
 - [ ] (arcterm) **No white flash switching between HTML files.** Lint and the typecheck only. Open two dark HTML
   pages as tabs in the File pane (or Code), switch back and forth: the pane stays dark until the page draws, a page
   with no background still shows on white, and a kept scroll position still comes back.

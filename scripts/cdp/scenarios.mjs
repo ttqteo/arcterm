@@ -57713,6 +57713,46 @@ const settingsPages = {
             JSON.stringify(agentsDetail)
         );
 
+        // agents-sleep: the Sleep card's four rows in order, the two Compact rows drawing the config in force (on and
+        // 100k unless the person changed them), each on one line; the threshold dims while compaction is off
+        const sleepCfg = (await h.rpc("getfullconfig", null))?.settings ?? {};
+        const compactOn = sleepCfg["agents:compactidle"] ?? true;
+        const compactAtK = sleepCfg["agents:compactatk"] ?? 100;
+        const agentsSleep = await h.ev(`(() => {
+            const card = ${spPane("agents")}?.querySelector('[data-setting-card="sleep"]');
+            if (!card) return null;
+            const row = (id) => card.querySelector('[data-setting-row="' + id + '"]');
+            const at = row("agents.compactatk");
+            const sw = row("agents.compactidle")?.querySelector('[role="switch"]');
+            return {
+                rows: [...card.querySelectorAll("[data-setting-row]")].map((r) => r.getAttribute("data-setting-row")),
+                switchLabel: sw?.getAttribute("aria-label") ?? null,
+                switchOn: sw?.getAttribute("aria-checked") ?? null,
+                atValue: at?.querySelector(".tabular-nums")?.textContent.trim() ?? null,
+                atUnit: at?.textContent.includes("k tokens") ?? false,
+                atDimmed: at ? at.querySelector(".opacity-50") != null : null,
+                heights: ["agents.compactidle", "agents.compactatk"].map((id) =>
+                    Math.round(row(id)?.getBoundingClientRect().height ?? 0)
+                ),
+            };
+        })()`);
+        await h.ev(`${spPane("agents")}?.querySelector('[data-setting-card="sleep"]')?.scrollIntoView({ block: "center" })`);
+        await polishNap(200);
+        await h.shot("cdp-shots/settings-pages-agents-sleep.png");
+        rec(
+            "agents-sleep: Sleep idle agents, minutes, Compact before the cache goes cold, its k-token threshold; both Compact rows show the config, one line each",
+            agentsSleep != null &&
+                JSON.stringify(agentsSleep.rows) ===
+                    JSON.stringify(["agents.sleepidle", "agents.sleepaftermin", "agents.compactidle", "agents.compactatk"]) &&
+                agentsSleep.switchLabel === "Compact before the cache goes cold" &&
+                agentsSleep.switchOn === String(compactOn) &&
+                agentsSleep.atValue === String(compactAtK) &&
+                agentsSleep.atUnit &&
+                agentsSleep.atDimmed === !compactOn &&
+                agentsSleep.heights.every((px) => px > 0 && px < 44),
+            JSON.stringify({ ...agentsSleep, compactOn, compactAtK })
+        );
+
         // runs-detail: the run limits, the heavy-jobs pace and the six token-gate rows sit on Runs & limits
         await spOpen(h, "runs");
         await polishWaitFor(h, `${spRow("tokengate.sessionpct")} != null`, 5000);
