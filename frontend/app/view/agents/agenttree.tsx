@@ -4039,9 +4039,7 @@ export const AgentTree = memo(function AgentTree({ model }: { model: AgentsViewM
     const { animate: entranceIds } = computeEntrances(entranceRef.current, "agents", rowIds);
     // a pair's agents come in on the row entrance each time its arrow opens them, as a new agent's row does; they are
     // not new agents, so the entrance guard above lets them snap in. The keys drawn under a pair last time are kept
-    const pairKidKeys = new Set(
-        rows.flatMap((r) => (r.kind === "parent" && r.pairRole != null ? [r.agent.id] : []))
-    );
+    const pairKidKeys = new Set(rows.flatMap((r) => (r.kind === "parent" && r.pairRole != null ? [r.agent.id] : [])));
     const pairKidsBefore = useRef<ReadonlySet<string>>(pairKidKeys);
     const pairKidsEnter = new Set([...pairKidKeys].filter((k) => !pairKidsBefore.current.has(k)));
     useLayoutEffect(() => {
