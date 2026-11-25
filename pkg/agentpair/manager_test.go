@@ -4,8 +4,12 @@
 package agentpair
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -29,20 +33,23 @@ type fakeAgent struct {
 	texts                  []string
 	sent                   []string // what the pair sent it, in order
 	lastSince              int64    // the sinceMs of the last Tokens call
+	transcript             string   // the transcript path Agent reports; add sets "/t/<tab>", so the session id is the tab
+	agentReads             int      // how many times Agent was asked for it
 }
 
 // fakeLink is a Link over a map of agents. A send starts a turn, as it does on the real roster.
 type fakeLink struct {
-	mu      sync.Mutex
-	agents  map[string]*fakeAgent
-	clock   int64
-	sendErr error
+	mu       sync.Mutex
+	agents   map[string]*fakeAgent
+	clock    int64
+	sendErr  error
+	agentErr error // when set, Agent fails with it
 }
 
 func newFakeLink() *fakeLink { return &fakeLink{agents: map[string]*fakeAgent{}, clock: 1_000_000} }
 
 func (l *fakeLink) add(tab, name string) *fakeAgent {
-	a := &fakeAgent{name: name, harness: "claude", project: "proj", state: "idle"}
+	a := &fakeAgent{name: name, harness: "claude", project: "proj", state: "idle", transcript: "/t/" + tab}
 	l.mu.Lock()
 	l.agents[tab] = a
 	l.mu.Unlock()
@@ -107,7 +114,18 @@ func (l *fakeLink) Agent(_ context.Context, tab string) (AgentFacts, error) {
 	if a == nil {
 		return AgentFacts{}, fmt.Errorf("%s is not an agent", tab)
 	}
-	return AgentFacts{Name: a.name, Harness: a.harness, Project: a.project, Cwd: "/work/" + tab, Transcript: "/t/" + tab}, nil
+	a.agentReads++
+	if l.agentErr != nil {
+		return AgentFacts{}, l.agentErr
+	}
+	return AgentFacts{Name: a.name, Harness: a.harness, Project: a.project, Cwd: "/work/" + tab, Transcript: a.transcript}, nil
+}
+
+// agentReads is how many times the pair asked the roster who the agent at tab is.
+func (l *fakeLink) agentReads(tab string) int {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.agents[tab].agentReads
 }
 
 func (l *fakeLink) RecentTexts(_ context.Context, tab string, n int) ([]string, error) {
@@ -1129,5 +1147,242 @@ func TestManagerStartListsAreNeverNil(t *testing.T) {
 	}
 	if list := r.m.List(); len(list) != 1 || list[0].Judges == nil {
 		t.Fatalf("List = %+v", list)
+	}
+}
+
+// a side's session id is its transcript's file name, with either kind of separator
+func TestStartStoresSessions(t *testing.T) {
+	r := newRig(t)
+	r.link.agent("w").transcript = "/home/u/.claude/projects/p/sess-w.jsonl"
+	r.link.agent("j1").transcript = `C:\Users\u\.claude\projects\p\sess-j1.jsonl`
+	v := r.paired(workerPlan)
+
+	if v.Worker.Session != "sess-w" || len(v.Judges) != 1 || v.Judges[0].Session != "sess-j1" {
+		t.Fatalf("worker %+v, judges %+v: want each side's session id from its transcript", v.Worker, v.Judges)
+	}
+	// the ids are in the file: a fresh manager, as after a restart, reads them back
+	back := r.manager().mustGet(t, v.Id)
+	if back.Worker.Session != "sess-w" || back.Judges[0].Session != "sess-j1" {
+		t.Fatalf("reloaded worker %+v, judges %+v: the ids were not saved", back.Worker, back.Judges)
+	}
+}
+
+func TestJudgeJoinStoresSession(t *testing.T) {
+	r := newRig(t)
+	r.link.add("j2", "Judge two").transcript = "/c/sess-j2.jsonl"
+	r.link.give("w", workerPlan)
+	r.start(wshrpc.CommandPairStartData{})
+	v := r.start(wshrpc.CommandPairStartData{JudgeTab: "j2"})
+
+	if len(v.Judges) != 2 || v.Judges[1].Session != "sess-j2" {
+		t.Fatalf("judges = %+v: the joining judge carries its own session id", v.Judges)
+	}
+	if v.Worker.Session != "w" || v.Judges[0].Session != "j1" {
+		t.Fatalf("worker %+v, first judge %+v: joining a judge leaves the other ids as they were", v.Worker, v.Judges[0])
+	}
+	if back := r.manager().mustGet(t, v.Id); back.Judges[1].Session != "sess-j2" {
+		t.Fatalf("reloaded judges = %+v: the joining judge's id was not saved", back.Judges)
+	}
+}
+
+// a side whose agent had no transcript when it joined takes its id at its first turn end
+func TestSessionAtFirstTurnEnd(t *testing.T) {
+	r := newRig(t)
+	r.link.agent("w").transcript, r.link.agent("j1").transcript = "", ""
+	v := r.paired(workerPlan)
+	if v.Worker.Session != "" || v.Judges[0].Session != "" {
+		t.Fatalf("worker %+v, judges %+v: a transcript-less agent has no id to store", v.Worker, v.Judges)
+	}
+
+	// a read that fails is logged, the turn goes on, and the next turn end asks again
+	r.link.agentErr = errors.New("the roster is not answering")
+	reads := r.link.agentReads("j1")
+	r.reply("j1", "> Plan v1.\nA finding.\n"+judgeBlock("new: a"))
+	view := r.view(v.Id)
+	if view.Judges[0].Session != "" || len(view.Messages) != 2 {
+		t.Fatalf("judges %+v, messages %d: a failed read must not stop the turn from being taken", view.Judges, len(view.Messages))
+	}
+	if r.link.agentReads("j1") != reads+1 {
+		t.Fatalf("the judge's turn end read the roster %d times, want once", r.link.agentReads("j1")-reads)
+	}
+	r.link.agentErr = nil
+
+	// the agent still reports no transcript: no id, and the next turn end asks again
+	r.m.TurnEnded(ctx, "j1")
+	if r.view(v.Id).Judges[0].Session != "" || r.link.agentReads("j1") != reads+2 {
+		t.Fatalf("judges %+v, reads %d: an agent with no transcript is asked again", r.view(v.Id).Judges, r.link.agentReads("j1"))
+	}
+
+	// the transcript appears: the next turn end stores the id, saves and publishes it
+	r.link.agent("j1").transcript = "/c/sess-j1.jsonl"
+	published := r.published()
+	r.m.TurnEnded(ctx, "j1")
+	if got := r.view(v.Id).Judges[0].Session; got != "sess-j1" {
+		t.Fatalf("judge session = %q, want sess-j1", got)
+	}
+	if r.published() <= published {
+		t.Fatal("storing the id published no pair:update")
+	}
+	if r.view(v.Id).Worker.Session != "" {
+		t.Fatal("a judge's turn end gave the worker an id")
+	}
+
+	// the worker takes its own at its own first turn end
+	r.link.agent("w").transcript = "/c/sess-w.jsonl"
+	r.m.TurnEnded(ctx, "w")
+	back := r.manager().mustGet(t, v.Id)
+	if back.Worker.Session != "sess-w" || back.Judges[0].Session != "sess-j1" {
+		t.Fatalf("reloaded worker %+v, judges %+v: both ids are in the file", back.Worker, back.Judges)
+	}
+}
+
+// the first id a side gets is kept for good, and a side that has one is not read again
+func TestSessionKept(t *testing.T) {
+	r := newRig(t)
+	r.link.add("j2", "Judge two").transcript = ""
+	r.link.give("w", workerPlan)
+	r.start(wshrpc.CommandPairStartData{})
+	v := r.start(wshrpc.CommandPairStartData{JudgeTab: "j2"})
+
+	// j1 was paired with an id: the roster later names another session, and no turn end asks
+	readsJ1 := r.link.agentReads("j1")
+	r.link.agent("j1").transcript = "/c/resumed.jsonl"
+	r.reply("j1", "> Plan v1.\nA finding.\n"+judgeBlock("new: a"))
+	r.m.TurnEnded(ctx, "j1")
+	if got := r.view(v.Id).Judges[0].Session; got != "j1" {
+		t.Fatalf("judge session = %q, want j1: the first one stays", got)
+	}
+	if r.link.agentReads("j1") != readsJ1 {
+		t.Fatalf("a side that has an id was read %d more times", r.link.agentReads("j1")-readsJ1)
+	}
+
+	// j2 found its id at its first turn end: that one stays too
+	r.link.agent("j2").transcript = "/c/first.jsonl"
+	r.m.TurnEnded(ctx, "j2")
+	readsJ2 := r.link.agentReads("j2")
+	r.link.agent("j2").transcript = "/c/second.jsonl"
+	r.m.TurnEnded(ctx, "j2")
+	r.reply("j2", "> Plan v1.\nAnother.\n"+judgeBlock("new: b"))
+	if got := r.view(v.Id).Judges[1].Session; got != "first" {
+		t.Fatalf("judge two session = %q, want first", got)
+	}
+	if r.link.agentReads("j2") != readsJ2 {
+		t.Fatalf("a side that has an id was read %d more times", r.link.agentReads("j2")-readsJ2)
+	}
+}
+
+// every change saves through one place, and that place stamps the pair with the manager's clock
+func TestSaveStampsUpdated(t *testing.T) {
+	r := newRig(t)
+	now := int64(5_000_000)
+	r.m.Now = func() time.Time { return time.UnixMilli(now) }
+	r.link.give("w", workerPlan)
+	v := r.start(wshrpc.CommandPairStartData{})
+	if v.UpdatedTs != 5_000_000 {
+		t.Fatalf("UpdatedTs = %d after Start, want 5000000", v.UpdatedTs)
+	}
+
+	now = 6_000_000
+	if err := r.m.Say(ctx, wshrpc.CommandPairSayData{PairId: v.Id, Text: "keep going"}); err != nil {
+		t.Fatal(err)
+	}
+	if got := r.view(v.Id).UpdatedTs; got != 6_000_000 {
+		t.Fatalf("UpdatedTs = %d after a message, want 6000000", got)
+	}
+
+	now = 7_000_000
+	r.reply("j1", "> Plan v1.\nA finding.\n"+judgeBlock("new: a"))
+	if got := r.view(v.Id).UpdatedTs; got != 7_000_000 {
+		t.Fatalf("UpdatedTs = %d after a taken answer, want 7000000", got)
+	}
+	if back := r.manager().mustGet(t, v.Id); back.UpdatedTs != 7_000_000 {
+		t.Fatalf("the file holds UpdatedTs %d, want 7000000", back.UpdatedTs)
+	}
+
+	// a turn end that changes nothing leaves the stamp alone
+	now = 7_500_000
+	r.m.TurnEnded(ctx, "j1")
+	if got := r.view(v.Id).UpdatedTs; got != 7_000_000 {
+		t.Fatalf("UpdatedTs = %d after a turn end with nothing new, want it unchanged", got)
+	}
+
+	// a start that is taken back saves its pair ended, and stamps that save too
+	r.link.add("w2", "Other worker")
+	r.link.add("j2", "Judge two")
+	now = 8_000_000
+	r.m.Publish = func(wshrpc.PairUpdateData) { now += 500_000 } // the clock moves between Start's save and its undo
+	r.link.sendErr = errors.New("the judge is not listening")
+	if _, err := r.m.Start(ctx, wshrpc.CommandPairStartData{WorkerTab: "w2", JudgeTab: "j2"}); err == nil {
+		t.Fatal("Start hid a failed brief")
+	}
+	entries, err := os.ReadDir(r.dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var ended []Pair
+	for _, e := range entries {
+		if e.Name() == v.Id+".json" {
+			continue
+		}
+		data, err := os.ReadFile(filepath.Join(r.dir, e.Name()))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var p Pair
+		if err := json.Unmarshal(data, &p); err != nil {
+			t.Fatal(err)
+		}
+		ended = append(ended, p)
+	}
+	if len(ended) != 1 || ended[0].State != StateEnded || ended[0].UpdatedTs != 8_500_000 {
+		t.Fatalf("the taken-back pair = %+v, want one ended pair stamped 8500000 by its undo", ended)
+	}
+}
+
+// a pair that came from another machine lives in a sibling folder the manager is never given: it is never listed, never
+// delivered to, and its file is never written
+func TestSyncedNeverLoaded(t *testing.T) {
+	r := newRig(t)
+	own := r.paired(workerPlan)
+	r.link.add("sw", "Synced worker")
+	r.link.add("sj", "Synced judge")
+	syncedDir := filepath.Join(filepath.Dir(r.dir), SyncedDirName)
+	synced := &Pair{
+		Id: "synced-1", Project: "proj", TokenCap: DefaultTokenCap, CreatedTs: 1, UpdatedTs: 2, CapFromTs: 1, State: StateRelaying,
+		Worker:   Side{Tab: "sw", Name: "Synced worker", Harness: "claude", Session: "sess-sw"},
+		Judges:   []Side{{Tab: "sj", Name: "Synced judge", Harness: "claude", Session: "sess-sj"}},
+		Messages: []Message{{Id: "m1", From: FromWorker, Tab: "sw", Ts: 1, Raw: "Plan v1."}},
+		Pending:  map[string][]string{"sj": {"m1"}}, Seen: map[string]int64{"sw": 1},
+	}
+	file := store{dir: syncedDir}.path(synced.Id)
+	if err := (store{dir: syncedDir}).save(synced); err != nil {
+		t.Fatal(err)
+	}
+	before, err := os.ReadFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// its agents are on the roster, idle, with answers newer than the file knows: a manager that read the file would act
+	r.link.give("sw", "Plan v2.\n"+pairBlock("O1 x"))
+	r.link.give("sj", "> Plan v1.\nA finding.\n"+judgeBlock("new: a"))
+
+	m := r.manager()
+	m.Load(ctx)
+	if got := m.List(); len(got) != 1 || got[0].Id != own.Id {
+		t.Fatalf("List = %+v, want only the own folder's pair", got)
+	}
+	if m.Paired("sw") || m.Paired("sj") {
+		t.Fatal("a synced pair's agents read as paired")
+	}
+	m.TurnEnded(ctx, "sw")
+	m.TurnEnded(ctx, "sj")
+	if after, err := os.ReadFile(file); err != nil || !bytes.Equal(before, after) {
+		t.Fatalf("the synced file changed (read error %v)", err)
+	}
+	if len(r.link.sent("sw")) != 0 || len(r.link.sent("sj")) != 0 {
+		t.Fatal("a synced pair's agents were sent a prompt")
+	}
+	if entries, err := os.ReadDir(r.dir); err != nil || len(entries) != 1 {
+		t.Fatalf("the own folder holds %d entries (error %v), want its one pair file", len(entries), err)
 	}
 }
