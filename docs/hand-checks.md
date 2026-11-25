@@ -28,6 +28,10 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
   `wsh getmeta -b workspace:<oid> code:pins` prints them. Pin or unpin one and run the command again: it follows. On the
   Mac the same holds once the sync script writes `code:pins` there.
 
+- [ ] (arcterm) **Library's tab underline slides.** Open Library and click Conversations → Boards, then press `1`–`4`
+  fast: the accent underline under the open tab slides to the next one (no jump, no second underline, none left
+  between two tabs), the labels never shift, and hovering a tab shows its name with the key muted at the right. Tab
+  into the strip: the focused tab shows a ring. With reduced motion on, the underline moves at once. Uncommitted.
 - [ ] (arcterm) **The rail opens on the brainstorm or the initiative.** Select an agent you have not clicked a rail tab
   on: with a brainstorm attached the rail shows Brainstorm, with only a linked initiative Initiative, with neither
   Overview. An initiative agent that then starts a brainstorm moves to Brainstorm. Click Overview (or any tab, or open a
@@ -89,9 +93,9 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
 
 - [ ] (arcterm) **Judge for a choice question, the light mark on real haiku** (the Final's `chat-judge` fakes both
   judges). Have a Claude agent end a turn on an A-or-B question written as prose ("… Mình nghiêng A. A hay B?"). Under
-  its message (the last one) a line reads "Gợi ý <one chip>" with a one-sentence reason and "· haiku, chỉ đọc reply"
-  written under it, no hover needed; once you answer, that older line reads "· rê vào để xem lý do" and hovering its
-  name shows the reason; that chip is first in the row with the scale icon. Do it on both paths: an agent whose arc
+  its message (the last one) a card reads "Gợi ý · haiku, chỉ đọc reply" over the pick's name and a one-sentence
+  reason, with a Judge kỹ button, no hover needed; once you answer, it folds to a line reading "· rê vào để xem lý do"
+  and hovering its name shows the reason; that chip is first in the row with the scale icon. Do it on both paths: an agent whose arc
   mod makes the call at the turn's end (the mod path), and one whose mod is off (wavesrv's headless call), and check
   each answer's chips have a pick, a reason and a neutral description (spec "Light mark"; `pkg/chatsuggest`,
   `claude/arc-mod/hooks/register.ts`). A yes-or-no question or a turn with no question gets no line.

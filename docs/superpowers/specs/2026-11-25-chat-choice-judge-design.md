@@ -205,6 +205,11 @@ the key as opaque, except that its part before the first `:` is the agent id, wh
   high ink with a dotted underline as the hover target, and in the light state a dim "· rê vào để xem lý do" / "· hover
   for why". The tooltip holds the reason and its source: "haiku, chỉ đọc reply" / "haiku, read the reply only", or
   the deep judge's "sonnet · 14 file · 41 s". Judge kỹ is an accent text button; Dừng and Thử lại are muted underlined.
+- Changed after shipping (2026-11-25): under the conversation's last message the judge is a card instead of the line
+  (raised fill, edge all round): a small head with the icon, what the judge did and the source or cost, the pick's name
+  in high ink, the reason written out, and the one action as a bordered button with its key. No hover and no hint
+  there. Why: on the turn waiting for an answer the reason is what the person reads, and a hover hid it. Once a newer
+  message comes the card folds back to the line above; the action alone (no pick) stays a line.
 - `ChatChip` gains `judged?: boolean` (draws the scale icon: `chipIcon` answers `"judge"`) and `send?: string` (what a
   click sends when it differs from the label; only the added chip has one). `pickedHint` on a judged chip says the
   reason after what Enter sends.

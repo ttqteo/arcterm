@@ -98,16 +98,25 @@ const LINES = (id) => `(() => {
         const live = [...(body?.children ?? [])].filter((c) => c.getAttribute("aria-hidden") !== "true").at(-1) ?? el;
         const name = live.querySelector("[data-chat-judge-name]");
         const action = live.querySelector("[data-chat-judge-action]");
-        const cs = getComputedStyle(el);
+        const head = live.querySelector("[data-chat-judge-head]");
+        const frame = el.querySelector("[data-chat-judge-frame]") ?? el;
+        const cs = getComputedStyle(frame);
         return {
             key: el.getAttribute("data-chat-judge-line"),
             state: el.getAttribute("data-state"),
+            // "card" under the last message, "line" elsewhere
+            look: el.getAttribute("data-look"),
             text: flat(live),
+            // a card's small head (what the judge did and where the pick comes from), null on a line
+            head: head ? flat(head) : null,
             name: name ? flat(name) : null,
-            // the reason written out under the last message's line, null where it is left to the hover
+            // the reason written out on the last message's card, null where it is left to the hover
             reason: live.querySelector("[data-chat-judge-reason]") ? flat(live.querySelector("[data-chat-judge-reason]")) : null,
             action: action?.getAttribute("data-chat-judge-action") ?? null,
-            actionText: action ? flat(action) : null,
+            actionText: action ? flat(action.querySelector("[data-chat-judge-action-label]") ?? action) : null,
+            // a card is boxed: an edge all round and the raised fill; a line has the rule on top alone
+            boxed: parseFloat(cs.borderLeftWidth) > 0 && cs.backgroundColor !== "rgba(0, 0, 0, 0)",
+            radius: parseFloat(cs.borderTopLeftRadius),
             tails: [...live.querySelectorAll("[data-chat-judge-tail]")].map(flat),
             icon: live.querySelector("[data-chat-judge-icon]")?.getAttribute("data-chat-judge-icon") ?? null,
             scale: !!live.querySelector("svg.lucide-scale"),
@@ -576,9 +585,10 @@ export default function (kit) {
             }
             const leaveName = () => h.cdp("Input.dispatchMouseEvent", { type: "mouseMoved", x: 4, y: 4 });
 
-            // 6. under the question message the light line: "Gợi ý" + the light pick, the reason written out under it (the
-            // last message's line has no hover hint), a hairline rule above, the scale icon, Judge kỹ at its end, and nothing
-            // of it in the composer. Its opening is sampled frame by frame
+            // 6. under the question message (the last one) the light mark is a card: a small head "Gợi ý · haiku, chỉ đọc
+            // reply" with the scale icon, the light pick, the reason written out (no hover hint), Judge kỹ as its button, boxed
+            // in a one-device-pixel edge on the raised fill, and nothing of it in the composer. Its opening is sampled frame by
+            // frame
             await run("6. light line", async (name) => {
                 await h.ev(SAMPLE);
                 const up = await nextTurn("tiếp tục");
@@ -589,18 +599,21 @@ export default function (kit) {
                 const frames = (await h.ev(`window.__cjSamples?.frames ?? []`)) ?? [];
                 await shot(h, "6-light-line");
                 rec(
-                    `${name}: the line is a row of its own right after the question message's item (${UNDER} px under it, never inside it) and reads "Gợi ý ${PICK}" with "${REASON} · haiku, chỉ đọc reply" written under it and no hover hint: state light, a solid hairline rule above it (one device pixel), the scale icon, 12.5 px text, Judge kỹ as its action; every judge line is in the conversation, none in the composer`,
+                    `${name}: the judge is a row of its own right after the question message's item (${UNDER} px under it, never inside it), a card: its head reads "Gợi ý · haiku, chỉ đọc reply", then the name ${PICK} and the reason "${REASON}" written out, no hover hint: state light, boxed (an edge all round, one device pixel, solid, rounded, the raised fill), the scale icon, 12.5 px text, Judge kỹ as its button; every judge line is in the conversation, none in the composer`,
                     up &&
                         sampled &&
                         l != null &&
                         l.state === "light" &&
+                        l.look === "card" &&
                         l.beside &&
                         l.under.includes(replyOf(ctx.turn)) &&
                         Math.abs((l.gap ?? 99) - UNDER) <= 1 &&
-                        l.text.startsWith(`Gợi ý ${PICK}`) &&
+                        l.head === "Gợi ý · haiku, chỉ đọc reply" &&
                         l.name === PICK &&
-                        l.reason === `${REASON} · haiku, chỉ đọc reply` &&
+                        l.reason === REASON &&
                         !l.text.includes("rê vào để xem lý do") &&
+                        l.boxed &&
+                        l.radius > 0 &&
                         l.ruleWidth > 0.5 &&
                         l.ruleWidth <= 1 &&
                         l.ruleStyle === "solid" &&
@@ -644,8 +657,10 @@ export default function (kit) {
                 await leaveName();
                 const gone = await polishWaitFor(h, `!document.querySelector("[data-chat-judge-tip]")`, SHORT_MS);
                 rec(
-                    `${name}: an older message's line reads "· rê vào để xem lý do" with no reason written out, and hovering its name opens a solid raised chip (the surface-raised fill, the strong edge, at most 420 px wide) holding the light reason and then "haiku, chỉ đọc reply" in a dimmer ink, and it is gone once the pointer leaves`,
+                    `${name}: an older message's judge is a line (a rule on top, no box) reading "· rê vào để xem lý do" with no reason written out, and hovering its name opens a solid raised chip (the surface-raised fill, the strong edge, at most 420 px wide) holding the light reason and then "haiku, chỉ đọc reply" in a dimmer ink, and it is gone once the pointer leaves`,
                     older != null &&
+                        older.look === "line" &&
+                        !older.boxed &&
                         older.reason == null &&
                         older.text.includes("· rê vào để xem lý do") &&
                         hovered &&
@@ -673,10 +688,11 @@ export default function (kit) {
                 const chips = await row();
                 await shot(h, "8-no-pick");
                 rec(
-                    `${name}: a record with no light pick on the live turn draws the action alone: the line's text is exactly "Judge kỹ", with no name, no icon and no hint, and no chip is marked judged`,
+                    `${name}: a record with no light pick on the live turn draws the action alone, as a line even under the last message: its text is exactly "Judge kỹ", with no name, no icon and no hint, and no chip is marked judged`,
                     up &&
                         l != null &&
                         l.state === "light" &&
+                        l.look === "line" &&
                         l.text === "Judge kỹ" &&
                         l.name == null &&
                         l.icon == null &&
@@ -786,10 +802,12 @@ export default function (kit) {
                 await leaveName();
                 const last = frames.at(-1);
                 rec(
-                    `${name}: the line reads "Judge chọn ${ADDED.label} (agent không nêu)" with ${JSON.stringify(DEEP_COST)} at its end and no action, the scale icon, and the added chip first in the row; the deep reason is written out under it and hovering the name opens no tooltip`,
+                    `${name}: the card's head reads "Judge chọn · ${DEEP_COST}" (the cost its tail), then "${ADDED.label} (agent không nêu)" and the deep reason written out, with no action, the scale icon, and the added chip first in the row; hovering the name opens no tooltip`,
                     done &&
                         l?.state === "done" &&
-                        l.text.startsWith(`Judge chọn ${ADDED.label} (agent không nêu)`) &&
+                        l.look === "card" &&
+                        l.head === `Judge chọn · ${DEEP_COST}` &&
+                        l.text.includes(`${ADDED.label} (agent không nêu)`) &&
                         l.name === ADDED.label &&
                         l.tails.length === 1 &&
                         l.tails[0] === DEEP_COST &&
@@ -832,12 +850,15 @@ export default function (kit) {
                 await pressAction("stop");
                 const back = await waitState(tk, "light", SHORT_MS);
                 rec(
-                    `${name}: a judge that fails leaves the light mark ("Gợi ý ${PICK}", the judged chip still first), says "Judge không xong: ${JUDGE_ERROR}" and offers Thử lại; Thử lại asks the judge again with retry true`,
+                    `${name}: a judge that fails leaves the light mark on the card ("Gợi ý · haiku, chỉ đọc reply", ${PICK} and its reason, the judged chip still first), says "Judge không xong: ${JUDGE_ERROR}" and offers Thử lại; Thử lại asks the judge again with retry true`,
                     up &&
                         pressed &&
                         failed &&
                         l?.state === "failed" &&
-                        l.text.includes(`Gợi ý ${PICK}`) &&
+                        l.look === "card" &&
+                        l.head === "Gợi ý · haiku, chỉ đọc reply" &&
+                        l.name === PICK &&
+                        l.reason === REASON &&
                         l.text.includes(`Judge không xong: ${JUDGE_ERROR}`) &&
                         l.icon === "scale" &&
                         l.action === "retry" &&
@@ -903,19 +924,21 @@ export default function (kit) {
                 const live = await lineFor(await liveKey());
                 await shot(h, "14-history");
                 rec(
-                    `${name}: once a chip answered, the old message keeps its line ("Gợi ý ${PICK}", under its own message) with no action, the older deep result still reads "Judge chọn ${ADDED.label}", and only the new turn's line offers Judge kỹ`,
+                    `${name}: once a chip answered, the old message's card is a line again ("Gợi ý ${PICK}", under its own message) with no action, the older deep result still reads "Judge chọn ${ADDED.label}", and only the new turn's card offers Judge kỹ`,
                     clicked &&
                         sent &&
                         up &&
                         old != null &&
                         old.state === "light" &&
+                        old.look === "line" &&
                         old.text.startsWith(`Gợi ý ${PICK}`) &&
                         old.under.includes(oldReply) &&
                         old.action == null &&
                         doneOld?.state === "done" &&
                         doneOld.text.startsWith(`Judge chọn ${ADDED.label}`) &&
                         doneOld.action == null &&
-                        live?.action === "judge",
+                        live?.look === "card" &&
+                        live.action === "judge",
                     { clicked, sent, up, old, doneOld, live }
                 );
             });
@@ -949,7 +972,8 @@ export default function (kit) {
                         lists.length === listsBefore + 1 &&
                         lists.at(-1).agentid === A &&
                         l?.state === "light" &&
-                        l.text.startsWith(`Gợi ý ${PICK}`) &&
+                        l.look === "card" &&
+                        l.name === PICK &&
                         l.action === "judge" &&
                         doneOld?.state === "done" &&
                         doneOld.text.startsWith(`Judge chọn ${ADDED.label}`) &&
