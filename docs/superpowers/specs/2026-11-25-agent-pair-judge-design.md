@@ -205,7 +205,7 @@ Made by the lead of the autonomous run that planned this (2026-11-25), each with
   the working agent or the person; for the working agent, a judge's or the person's. Another judge's message waits in a
   judge's queue as context for its next prompt and never starts a turn by itself. Why: judges see one conversation,
   but two judges answering each other would talk past the working agent forever.
-- Delivery is tried right after a message queues, on every turn end of that agent (an idle or asleep status), and on a
+- Delivery is tried right after a message queues, on every turn end of that agent (an idle status, below), and on a
   resume. An asking agent is busy: its queue waits.
 - A relayed prompt opens with the agent message header (`agentmsg`'s envelope prefix, so Chat and the hooks read it as
   not typed by the person), saying the pair relays it and the reply passes back on its own (no `wsh agents send`).
