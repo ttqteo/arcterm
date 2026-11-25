@@ -268,10 +268,49 @@ var (
 	// where a sentence ends: one of . ! ? ？ 。 : and the space after it. The set the frontend splits the last sentence
 	// on (chatsuggest.ts lastSentenceWords, /[.!?？。:]\s+/): a colon ends one, an ellipsis does not
 	sentenceEndRe = regexp.MustCompile(`[.!?？。:][\s\p{Z}]+`)
+	// a question mark that ends a sentence inside a line, with the marks that may close it and the space after it
+	questionInLineRe = regexp.MustCompile("([?？])[=*_`\"'”’)\\]]*[\\s\\p{Z}]+")
+	// where a sentence ends in a question's tail, the tail's own end included
+	tailSentenceRe = regexp.MustCompile(`[.!。:](?:[\s\p{Z}]+|$)`)
+	// a tail that opens with an answer: the agent answered its own question ("Is it fixed? Yes, it is.")
+	selfAnswerRe = regexp.MustCompile(`(?i)^(yes|no|có|không|vâng|đúng)(?:[\s\p{P}]|$)`)
 )
 
-// lastProseBare is the reply's last line of prose with the emphasis and highlight marks closing it taken off, "" when
-// the reply has none: fenced code (a card block written after the question) is not prose.
+// the tail a question may have after it on its line and still close the reply: at most questionTailSentences
+// sentences and questionTailRunes runes. Of 665 turns (2026-11-20..26), 42 asked a question with words after it on the
+// last line; under these limits 35 count, and the person answered 13 of those in a word or two.
+const (
+	questionTailSentences = 2
+	questionTailRunes     = 200
+)
+
+// cutToQuestion is the line ending at its question when a short tail follows the question ("Muốn tôi chạy không? Mất
+// khoảng 5 phút." gives "Muốn tôi chạy không?"), and the line as it is otherwise: one that ends on its question, has
+// none, or whose tail is long, asks again, or answers the question itself. Chat cuts the line the same way
+// (frontend/app/view/agents/chatsuggest.ts cutToQuestion).
+func cutToQuestion(line string) string {
+	if endsInQuestionMark(line) {
+		return line
+	}
+	all := questionInLineRe.FindAllStringSubmatchIndex(line, -1)
+	if len(all) == 0 {
+		return line
+	}
+	m := all[len(all)-1]
+	tail := strings.TrimSpace(line[m[1]:])
+	if tail == "" || strings.ContainsAny(tail, "?？") || utf8.RuneCountInString(tail) > questionTailRunes ||
+		selfAnswerRe.MatchString(tail) {
+		return line
+	}
+	if n := len(tailSentenceRe.FindAllStringIndex(tail, -1)); n > questionTailSentences {
+		return line
+	}
+	return line[:m[3]]
+}
+
+// lastProseBare is the reply's last line of prose with the emphasis and highlight marks closing it taken off, and cut
+// back to its question when a short tail follows it (cutToQuestion), "" when the reply has none: fenced code (a card
+// block written after the question) is not prose.
 func lastProseBare(reply string) string {
 	prose := fenceRe.ReplaceAllString(reply, "")
 	lines := strings.Split(prose, "\n")
@@ -280,7 +319,7 @@ func lastProseBare(reply string) string {
 		if line == "" {
 			continue
 		}
-		return trailingMarkRe.ReplaceAllString(line, "")
+		return cutToQuestion(trailingMarkRe.ReplaceAllString(line, ""))
 	}
 	return ""
 }
@@ -289,7 +328,8 @@ func endsInQuestionMark(bare string) bool {
 	return strings.HasSuffix(bare, "?") || strings.HasSuffix(bare, "？")
 }
 
-// EndsWithQuestion reports whether the reply's last line of prose ends with a question mark: fenced code (a card block
+// EndsWithQuestion reports whether the reply's last line of prose ends with a question mark, or with a question and a
+// short tail after it (cutToQuestion): fenced code (a card block
 // written after the question) is not prose, and the emphasis and highlight marks around a sentence do not count. Chat
 // works it out the same way (frontend/app/view/agents/chatsuggest.ts endsWithQuestion); the two must agree, or the
 // mod's answer is set aside for the headless call.

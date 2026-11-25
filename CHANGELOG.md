@@ -79,6 +79,8 @@ and a picture given to a line that is not big.
 - A Claude agent's turn that asks you nothing no longer starts a background Claude (about 470 MB for several seconds)
   when the agent's own suggestion is late: in a week it found nothing worth a chip. Its suggestion still comes from the
   agent when it is in time.
+- Chat's suggested replies answer a question the agent follows with a short sentence or two ("Want me to run it? It
+  takes 5 minutes."), as they do one it ends on: before, such a turn got a next step at most, and no yes or no.
 
 ### Fixed
 
