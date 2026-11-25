@@ -110,8 +110,8 @@ export function judgeReason(rec: ChatJudgeRecord | undefined): string | null {
 
 /** The line under the agent's message, as chatjudgeline.tsx draws it: `head`, the `name` (the pick: the hover target,
  *  whose tooltip holds `reason` and, dim under it, `source`), the dim `hint` or the `note`, the `tail` at the line's end,
- *  and the one `action` the person can take. An `inline` line (the last message's) has no hover: `reason` and `source`
- *  are written under the head, and there is no hint. None means no line. */
+ *  and the one `action` the person can take. The last message's judge is a card that writes `reason` out, with the
+ *  `source` (or the `tail`) beside its head, so it gets no hint. None means no line. */
 export type JudgeLine =
     | { state: "none" }
     | {
@@ -123,7 +123,6 @@ export type JudgeLine =
           note?: string;
           reason?: string;
           source?: string;
-          inline?: true;
           action?: "judge" | "stop" | "retry";
       };
 
@@ -147,16 +146,16 @@ function lightMark(rec: ChatJudgeRecord, vi: boolean) {
 
 /** Pure: the line under the message holding the question, from its record. `now` (ms) ticks the reading time, `vi` is
  *  the person's language, and `live` says it is the pane's current turn, the only one whose action (judge, stop, retry)
- *  still helps: an old turn's line shows what was judged and nothing to press. `inline` (the conversation's last
- *  message) writes the reason out instead of leaving it to the hover, so the line gives no hint, and a done line no
- *  source (its tail says it). A record with no pick of haiku's and no deep result is the action alone on the live turn
- *  (the deep judge stays reachable), and no line on an old one. A stopped judge reads as the light mark. */
+ *  still helps: an old turn's line shows what was judged and nothing to press. `card` (the conversation's last
+ *  message) writes the reason out instead of leaving it to the hover, so it gives no hint, and a done card no source
+ *  (its tail says it). A record with no pick of haiku's and no deep result is the action alone on the live turn (the
+ *  deep judge stays reachable), and no line on an old one. A stopped judge reads as the light mark. */
 export function judgeLine(
     rec: ChatJudgeRecord | undefined,
     now: number,
     vi: boolean,
     live: boolean,
-    inline = false
+    card = false
 ): JudgeLine {
     if (rec == null) {
         return { state: "none" };
@@ -188,16 +187,14 @@ export function judgeLine(
                 ...(addedPicked ? { note: vi ? "agent không nêu" : "the agent did not name it" } : {}),
                 tail: cost,
                 ...(deep.reason ? { reason: deep.reason } : {}),
-                ...(inline ? (deep.reason ? { inline: true as const } : {}) : { source: cost }),
+                ...(card ? {} : { source: cost }),
             };
         }
         case "failed": {
             const failed = vi ? "Judge không xong" : "Judge failed";
-            const mark = lightMark(rec, vi);
             return {
                 state: "failed",
-                ...mark,
-                ...(inline && mark?.reason != null ? { inline: true as const } : {}),
+                ...lightMark(rec, vi),
                 note: deep.error ? `${failed}: ${deep.error}` : failed,
                 ...(live ? { action: "retry" as const } : {}),
             };
@@ -210,11 +207,7 @@ export function judgeLine(
             return {
                 state: "light",
                 ...mark,
-                ...(!inline
-                    ? { hint: vi ? "rê vào để xem lý do" : "hover for why" }
-                    : mark.reason != null
-                      ? { inline: true as const }
-                      : {}),
+                ...(card ? {} : { hint: vi ? "rê vào để xem lý do" : "hover for why" }),
                 ...(live ? { action: "judge" as const } : {}),
             };
         }

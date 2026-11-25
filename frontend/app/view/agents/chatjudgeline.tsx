@@ -5,15 +5,19 @@
 // choice-judge-design.md, board C-under-reply): one muted line under a hairline rule, no box. The scale icon (a spinner
 // while the deep judge reads), the head and the pick's name (the hover target: its tooltip says why), the dim hint, and
 // at the line's end the one action the person can take: Judge kỹ, Dừng or Thử lại. Under the conversation's last
-// message the reason is written out under the head instead ([data-chat-judge-reason]), with no hover and no hint. What
-// the line says is chatjudge.ts's judgeLine; this draws it and ticks the reading seconds. The record is chatJudgeAtom's, and every action goes through
+// message it is a card instead (data-look="card"): a small head with where the pick comes from, the pick's name, the
+// reason written out ([data-chat-judge-reason]) and the action as a button, with no hover; the action alone (no pick)
+// stays a line there too. What it says is chatjudge.ts's judgeLine; this draws it and ticks the reading seconds. The
+// record is chatJudgeAtom's, and every action goes through
 // runLiveJudge, which acts on what the pane offers for its live turn (liveJudgeAtom, written by chatpane.tsx).
 // Motion: the line opens under its message on the spring and fades in (chatconversation.tsx says when it arrives, `arrive`),
 // and closes the same way when a record leaves it with nothing to show; a state change cross-fades its text on the micro
 // ease and a line that grows or shrinks for it rides the spring (CardSlot). Under reduced motion it mounts at its end
-// state. Markers for the scenarios: [data-chat-judge-line] with data-state, [data-chat-judge-name],
-// [data-chat-judge-tail], [data-chat-judge-icon], [data-chat-judge-body] (what cross-fades), [data-chat-judge-action] and,
-// on the tooltip, [data-chat-judge-tip].
+// state; a line turning into a card or back (the last message changed) cross-fades too, its frame's colours easing.
+// Markers for the scenarios: [data-chat-judge-line] with data-state and data-look, [data-chat-judge-frame] (the rule or
+// the box), [data-chat-judge-head] (a card's), [data-chat-judge-name], [data-chat-judge-tail], [data-chat-judge-icon],
+// [data-chat-judge-body] (what cross-fades), [data-chat-judge-action] with [data-chat-judge-action-label] on a card's
+// button and, on the tooltip, [data-chat-judge-tip].
 
 import { MOTION } from "@/app/element/motiontokens";
 import { formatChordString } from "@/util/keysym";
@@ -48,7 +52,7 @@ const ACTION_TEXT = {
 type ShownLine = Exclude<JudgeLine, { state: "none" }>;
 
 /** The judge's line for one turn's record. `live` is the pane's current turn, the only one whose action still helps;
- *  `inline` is the conversation's last message, whose line writes the reason out rather than leaving it to the hover;
+ *  `inline` is the conversation's last message, whose judge is a card that writes the reason out (no hover);
  *  `cwd` is the agent's project (without it the line shows what was judged and offers nothing); `gap` is the gap of the
  *  column it sits in, which the line takes back to sit close under its message; `arrive` is a line that comes in now,
  *  under a message already drawn, and opens on the spring. Draws nothing when the record has no line to show. */
@@ -94,6 +98,9 @@ export function ChatJudgeLine({
 
     const line = judgeLine(rec, now, vi, live && cwd != null, inline);
     const shown: ShownLine | null = line.state === "none" ? null : line;
+    // the last message's judge is a card; the action alone (no pick to show) stays a line either way
+    const card = inline && shown != null && !bareLine(shown);
+    const look = card ? "card" : "line";
     // a line that was not there (an old turn with nothing to show) and now is opens as an arriving one does
     const wasAbsent = useRef(false);
     if (shown == null) {
@@ -122,21 +129,45 @@ export function ChatJudgeLine({
                     <div
                         data-chat-judge-line={recKey}
                         data-state={shown.state}
-                        className="border-t border-edge-mid pt-[6px] text-[12.5px] leading-[1.5] text-muted"
+                        data-look={look}
+                        className="text-[12.5px] leading-[1.5] text-muted"
                     >
-                        <CardSlot swap={shown.state}>
-                            <div data-chat-judge-body="" className="relative">
-                                <AnimatePresence mode="popLayout" initial={false}>
-                                    <JudgeRow
-                                        key={shown.state}
-                                        line={shown}
-                                        agentId={agentId}
-                                        vi={vi}
-                                        reading={reading}
-                                        tip={tip}
-                                        reduce={!!reduce}
-                                    />
-                                </AnimatePresence>
+                        <CardSlot swap={`${shown.state}:${look}`}>
+                            {/* the frame: a hairline rule over a line, the raised box of a card; its colours ease, its
+                                size is the slot's spring */}
+                            <div
+                                data-chat-judge-frame=""
+                                className={cn(
+                                    "motion-safe:transition-[background-color,border-color] motion-safe:duration-200",
+                                    card
+                                        ? "rounded-md border border-edge-mid bg-surface-raised px-3 py-[10px]"
+                                        : "border-t border-edge-mid pt-[6px]"
+                                )}
+                            >
+                                <div data-chat-judge-body="" className="relative">
+                                    <AnimatePresence mode="popLayout" initial={false}>
+                                        {card ? (
+                                            <JudgeCard
+                                                key={`${shown.state}:card`}
+                                                line={shown}
+                                                agentId={agentId}
+                                                vi={vi}
+                                                reading={reading}
+                                                reduce={!!reduce}
+                                            />
+                                        ) : (
+                                            <JudgeRow
+                                                key={`${shown.state}:line`}
+                                                line={shown}
+                                                agentId={agentId}
+                                                vi={vi}
+                                                reading={reading}
+                                                tip={tip}
+                                                reduce={!!reduce}
+                                            />
+                                        )}
+                                    </AnimatePresence>
+                                </div>
                             </div>
                         </CardSlot>
                     </div>
@@ -165,41 +196,17 @@ function JudgeRow({
     reduce: boolean;
 }) {
     const present = useIsPresent();
-    const fade = reduce ? { duration: 0 } : { duration: MOTION.durMicro, ease: MOTION.easeFluid };
-    const bare = line.head == null && line.name == null && line.note == null;
-    const hasTip = !line.inline && (line.reason != null || line.source != null);
+    const bare = bareLine(line);
+    const hasTip = line.reason != null || line.source != null;
     const action = line.action;
-    const text = action != null ? ACTION_TEXT[action] : null;
-    const actionTip =
-        action === "judge" || action === "retry"
-            ? `${vi ? ACTION_TEXT[action].tipVi : ACTION_TEXT[action].tipEn} (${formatChordString("Alt:j")})`
-            : undefined;
     const tail = line.tail != null && line.tail !== "" ? line.tail : null;
     return (
         <motion.div
-            initial={reduce ? false : { opacity: 0 }}
-            animate={{ opacity: 1, transition: fade }}
-            exit={{ opacity: 0, transition: fade }}
+            {...rowFade(reduce)}
             aria-hidden={present ? undefined : true}
             className={cn("flex items-start gap-2", !present && "pointer-events-none")}
         >
-            {bare ? null : reading ? (
-                <Loader2
-                    data-chat-judge-icon="spin"
-                    size={13}
-                    strokeWidth={1.8}
-                    aria-hidden
-                    className="mt-[3px] flex-none animate-spin motion-reduce:animate-none"
-                />
-            ) : (
-                <Scale
-                    data-chat-judge-icon="scale"
-                    size={13}
-                    strokeWidth={1.8}
-                    aria-hidden
-                    className="mt-[3px] flex-none"
-                />
-            )}
+            {bare ? null : <JudgeIcon reading={reading} className="mt-[3px]" />}
             <div className="flex min-w-0 flex-col gap-[2px]">
                 {/* a long error stops at three lines; the app's tooltip on the note has all of it */}
                 <span className={cn("min-w-0 [overflow-wrap:anywhere]", line.state === "failed" && "line-clamp-3")}>
@@ -248,12 +255,6 @@ function JudgeRow({
                         </>
                     ) : null}
                 </span>
-                {line.inline && line.reason != null ? (
-                    <span data-chat-judge-reason="" className="min-w-0 text-secondary [overflow-wrap:anywhere]">
-                        {line.reason}
-                        {line.source != null ? <span className="text-ink-faint"> · {line.source}</span> : null}
-                    </span>
-                ) : null}
             </div>
             <span className="min-w-0 flex-1" />
             {line.state === "done" && tail != null ? (
@@ -261,11 +262,11 @@ function JudgeRow({
                     {tail}
                 </span>
             ) : null}
-            {action != null && text != null ? (
+            {action != null ? (
                 <button
                     type="button"
                     data-chat-judge-action={action}
-                    title={actionTip}
+                    title={actionTip(action, vi)}
                     onClick={() => runLiveJudge(agentId)}
                     className={cn(
                         "flex-none cursor-pointer rounded-[3px] bg-transparent p-0",
@@ -276,9 +277,144 @@ function JudgeRow({
                             : "text-muted underline hover:text-secondary"
                     )}
                 >
-                    {vi ? text.vi : text.en}
+                    {actionLabel(action, vi)}
                 </button>
             ) : null}
         </motion.div>
     );
+}
+
+/** The last message's judge as a card (one state of it, cross-fading as JudgeRow does): a small head with the icon, what
+ *  the judge did and where the pick comes from (the source, or the cost or reading seconds as its tail), the pick's name
+ *  in high ink, the reason written out, a failed judge's error, and the one action as a button. No hover. */
+function JudgeCard({
+    line,
+    agentId,
+    vi,
+    reading,
+    reduce,
+}: {
+    line: ShownLine;
+    agentId: string;
+    vi: boolean;
+    reading: boolean;
+    reduce: boolean;
+}) {
+    const present = useIsPresent();
+    const action = line.action;
+    const tail = line.tail != null && line.tail !== "" ? line.tail : null;
+    const chord = action === "judge" || action === "retry" ? formatChordString("Alt:j") : null;
+    return (
+        <motion.div
+            {...rowFade(reduce)}
+            aria-hidden={present ? undefined : true}
+            className={cn("flex flex-col gap-[6px]", !present && "pointer-events-none")}
+        >
+            <div data-chat-judge-head="" className="flex items-start gap-[6px] text-[11.5px] leading-[1.45]">
+                <JudgeIcon reading={reading} className="mt-[2px]" />
+                <span className="min-w-0 [overflow-wrap:anywhere]">
+                    {line.head}
+                    {tail != null ? (
+                        <>
+                            {" · "}
+                            <span data-chat-judge-tail="" className="tabular-nums">
+                                {tail}
+                            </span>
+                        </>
+                    ) : line.source != null ? (
+                        <span className="text-ink-faint"> · {line.source}</span>
+                    ) : null}
+                </span>
+            </div>
+            {line.name != null ? (
+                <div className="min-w-0 [overflow-wrap:anywhere]">
+                    <span data-chat-judge-name="" className="text-[13.5px] font-semibold text-primary">
+                        {line.name}
+                    </span>
+                    {line.state === "done" && line.note != null ? <span> ({line.note})</span> : null}
+                </div>
+            ) : null}
+            {line.reason != null ? (
+                <div data-chat-judge-reason="" className="min-w-0 text-secondary [overflow-wrap:anywhere]">
+                    {line.reason}
+                </div>
+            ) : null}
+            {/* a long error stops at three lines; the app's tooltip on it has all of it */}
+            {line.state === "failed" && line.note != null ? (
+                <div title={line.note} className="line-clamp-3 min-w-0 text-error [overflow-wrap:anywhere]">
+                    {line.note}
+                </div>
+            ) : null}
+            {action != null ? (
+                <div className="flex pt-[2px]">
+                    <button
+                        type="button"
+                        data-chat-judge-action={action}
+                        title={actionTip(action, vi)}
+                        onClick={() => runLiveJudge(agentId)}
+                        className={cn(
+                            "flex cursor-pointer items-center gap-[6px] rounded-[4px] border border-edge-strong bg-transparent px-[9px] py-[3px] text-[12px] text-primary hover:bg-hover",
+                            FOCUS_RING
+                        )}
+                    >
+                        <span data-chat-judge-action-label="">{actionLabel(action, vi)}</span>
+                        {chord != null ? (
+                            <kbd aria-hidden className="font-mono text-[10.5px] text-muted">
+                                {chord}
+                            </kbd>
+                        ) : null}
+                    </button>
+                </div>
+            ) : null}
+        </motion.div>
+    );
+}
+
+/** a line with no head, name or note: the action alone, which stays a line even under the last message */
+function bareLine(line: ShownLine): boolean {
+    return line.head == null && line.name == null && line.note == null;
+}
+
+/** one state's fade in and out, on the micro ease (at once under reduced motion) */
+function rowFade(reduce: boolean) {
+    const fade = reduce ? { duration: 0 } : { duration: MOTION.durMicro, ease: MOTION.easeFluid };
+    return {
+        initial: reduce ? false : { opacity: 0 },
+        animate: { opacity: 1, transition: fade },
+        exit: { opacity: 0, transition: fade },
+    } as const;
+}
+
+/** the scale, or the spinner while the deep judge reads */
+function JudgeIcon({ reading, className }: { reading: boolean; className: string }) {
+    return reading ? (
+        <Loader2
+            data-chat-judge-icon="spin"
+            size={13}
+            strokeWidth={1.8}
+            aria-hidden
+            className={cn("flex-none animate-spin motion-reduce:animate-none", className)}
+        />
+    ) : (
+        <Scale
+            data-chat-judge-icon="scale"
+            size={13}
+            strokeWidth={1.8}
+            aria-hidden
+            className={cn("flex-none", className)}
+        />
+    );
+}
+
+function actionLabel(action: NonNullable<ShownLine["action"]>, vi: boolean): string {
+    return vi ? ACTION_TEXT[action].vi : ACTION_TEXT[action].en;
+}
+
+/** the action's tip, with its key: Judge it and Retry only */
+function actionTip(action: NonNullable<ShownLine["action"]>, vi: boolean): string | undefined {
+    if (action !== "judge" && action !== "retry") {
+        return undefined;
+    }
+    const t = ACTION_TEXT[action];
+    return `${vi ? t.tipVi : t.tipEn} (${formatChordString("Alt:j")})`;
 }
