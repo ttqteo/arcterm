@@ -81,6 +81,9 @@ and a picture given to a line that is not big.
 
 ### Changed
 
+- Chat's message box shows what you type as plain text: a ``` block, `inline code` and a `>` quote are no longer drawn
+  as code boxes, chips or slanted quotes while you type them. Your sent message still draws them, and a pasted log or
+  stack trace still goes in wrapped in ```.
 - In a council report's Figures, the parts of one whole (94 | 41 of 135) each have their own colour, matched by the legend under the bar, instead of lighter and lighter shades of one colour.
 - Unread turns are marked in blue in every theme, as a chat app marks unread messages: the count beside an agent in the Agent sidebar, its dot on the folded sidebar's strip and the Agent badge on the nav rail. In the Claude and Carbon themes they used to take the theme's orange accent.
 - Dragging an agent onto the split is smoother: the drop zones fade in, the highlighted half glides from edge to edge
@@ -116,6 +119,9 @@ and a picture given to a line that is not big.
 
 ### Fixed
 
+- A long message of yours in Chat opens and folds smoothly on Show more / Show less instead of jumping.
+- On Windows, an image an agent's reply names by a full path written with backslashes (`C:\Users\…\shot.png`) is drawn
+  in Chat, where it showed as "not a full path".
 - An agent's row in the tree no longer runs past its edge when it has subagents and background tasks: a single
   subagent or background task just shows under the row, a fold chip comes from two on, and two fold chips on one line
   keep only their counts.

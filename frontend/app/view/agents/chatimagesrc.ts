@@ -36,10 +36,22 @@ export function localImagePath(src: string): string {
     }
 }
 
+// a drive path as markdown hands it over: its backslashes percent-encoded (C:%5CUsers%5C…)
+const DRIVE_ENCODED = /^[A-Za-z]:%5C/i;
+
 // react-markdown's urlTransform drops a src whose scheme it does not know, and reads `C:` as one: keep a drive path
-// and a file URL as written, and leave every other URL to its default
+// and a file URL, and leave every other URL to its default. Markdown percent-encodes a destination before the
+// transform sees it (a `\` as %5C, a space in a <…> one as %20), so a drive path is decoded back to the path it names;
+// one with a `%` that is no escape stays as written.
 export function keepLocalImageUrl(url: string, fallback: (url: string) => string): string {
-    return DRIVE.test(url) || url.startsWith("file://") ? url : fallback(url);
+    if (DRIVE.test(url) || DRIVE_ENCODED.test(url)) {
+        try {
+            return decodeURIComponent(url);
+        } catch {
+            return url;
+        }
+    }
+    return url.startsWith("file://") ? url : fallback(url);
 }
 
 // the picture formats the webview draws from a blob, by extension

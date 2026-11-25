@@ -1,90 +1,20 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// The markdown the message box draws while you type it (chateditormarks.tsx), and the paste it fences for you. A ```
-// block is a code box (chatfences.ts finds it); outside one, a line that starts with `>` is a quote and a `code` span is
-// inline code, drawn as the bubble draws them once the message is sent. The text never changes for them: they are
-// formats on the editor's text nodes. A paste of several lines that reads as code or a log (a stack trace, a build's
-// output) goes in wrapped in a ``` block, so it is sent as one.
+// The paste the message box fences for you, and the quotes a sent message ends. A paste of several lines that reads as
+// code or a log (a stack trace, a build's output) goes in wrapped in a ``` block, so it is sent as one. The box itself
+// draws the text as typed, with no markdown.
 
 import { fenceRanges } from "./chatfences";
 
-/** How one line of the message is drawn: a line of a fenced block, a quote line, and the inline code spans on it (as
- *  [start, end) offsets in the line, backticks included). A fenced line is neither a quote nor holds inline spans. */
-export interface LineMark {
-    fenced: boolean;
-    quote: boolean;
-    /** a quote line's `>` and the one space after it, the characters the bar stands for (as the bubble draws a quote,
-     *  without them): their length from the line's start, 0 on any other line */
-    marker: number;
-    spans: [number, number][];
-}
-
-/** How a run of characters is drawn */
-export interface Mark {
-    /** the mono face: a fenced line, or an inline span */
-    code: boolean;
-    /** an inline span (its own chip), not a fenced line */
-    inline: boolean;
-    quote: boolean;
-    /** a quote's `>` and its space: kept in the text, drawn as nothing */
-    marker: boolean;
-}
-
-export interface MarkRun {
-    start: number;
-    end: number;
-    mark: Mark;
-}
-
-// up to three spaces, then `>`; and that with the one space after it, the marker the bubble does not draw
+// up to three spaces, then `>`
 const QUOTE = /^ {0,3}>/;
-const QUOTE_MARKER = /^ {0,3}> ?/;
 
-/** Pure: the inline code spans on a line, as markdown reads them: a run of backticks opens one and the next run of the
- *  same length closes it; a run with no partner is plain text. */
-export function inlineCodeSpans(line: string): [number, number][] {
-    const out: [number, number][] = [];
-    let i = 0;
-    while (i < line.length) {
-        if (line[i] !== "`") {
-            i++;
-            continue;
-        }
-        let n = 0;
-        while (line[i + n] === "`") {
-            n++;
-        }
-        let close = -1;
-        for (let j = i + n; j < line.length; ) {
-            if (line[j] !== "`") {
-                j++;
-                continue;
-            }
-            let m = 0;
-            while (line[j + m] === "`") {
-                m++;
-            }
-            if (m === n) {
-                close = j;
-                break;
-            }
-            j += m;
-        }
-        if (close < 0) {
-            i += n;
-            continue;
-        }
-        out.push([i, close + n]);
-        i = close + n;
-    }
-    return out;
-}
-
-/** Pure: how each of a message's lines is drawn. `inline: false` draws only the fenced blocks (a bash command, whose
- *  text a mirror under the editor draws: a format that changes the glyphs' widths would part the two). */
-export function lineMarks(lines: string[], opts: { inline?: boolean } = {}): LineMark[] {
-    const inline = opts.inline ?? true;
+/** Pure: the message with a blank line after each quote that a line of text follows at once, outside fenced blocks, so
+ *  markdown ends the quote there: `>xx` then `sss` is a quote of `xx` and a line `sss`, where markdown alone would
+ *  carry `sss` into the quote (a lazy continuation line). */
+export function endQuotes(text: string): string {
+    const lines = text.split("\n");
     const fenced = new Set<number>();
     for (const range of fenceRanges(lines)) {
         const last = range.close ?? lines.length - 1;
@@ -92,89 +22,12 @@ export function lineMarks(lines: string[], opts: { inline?: boolean } = {}): Lin
             fenced.add(line);
         }
     }
-    return lines.map((line, i) => {
-        if (fenced.has(i)) {
-            return { fenced: true, quote: false, marker: 0, spans: [] };
-        }
-        if (!inline) {
-            return { fenced: false, quote: false, marker: 0, spans: [] };
-        }
-        const marker = QUOTE_MARKER.exec(line)?.[0].length ?? 0;
-        return { fenced: false, quote: marker > 0, marker, spans: inlineCodeSpans(line) };
-    });
-}
-
-function sameMark(a: Mark, b: Mark): boolean {
-    return a.code === b.code && a.inline === b.inline && a.quote === b.quote && a.marker === b.marker;
-}
-
-/** Pure: how the characters [from, to) of a line are drawn, as runs of one mark each (one run when it is all one). */
-export function markRuns(mark: LineMark, from: number, to: number): MarkRun[] {
-    const cuts = new Set<number>([from, to]);
-    if (mark.marker > from && mark.marker < to) {
-        cuts.add(mark.marker);
-    }
-    for (const [a, b] of mark.spans) {
-        for (const at of [a, b]) {
-            if (at > from && at < to) {
-                cuts.add(at);
-            }
-        }
-    }
-    const points = [...cuts].sort((a, b) => a - b);
-    if (points.length === 1) {
-        // an empty range: one empty run, drawn as what starts there
-        points.push(from);
-    }
-    const out: MarkRun[] = [];
-    for (let k = 0; k + 1 < points.length; k++) {
-        const start = points[k];
-        const end = points[k + 1];
-        const inSpan = mark.spans.some(([a, b]) => start >= a && start < b);
-        const m: Mark = {
-            code: mark.fenced || inSpan,
-            inline: !mark.fenced && inSpan,
-            quote: mark.quote,
-            marker: start < mark.marker,
-        };
-        const last = out[out.length - 1];
-        if (last != null && sameMark(last.mark, m)) {
-            last.end = end;
-        } else {
-            out.push({ start, end, mark: m });
-        }
-    }
-    return out;
-}
-
-/** Pure: the quotes as [first, last] line pairs, a run of quote lines being one quote */
-export function quoteBlocks(marks: LineMark[]): [number, number][] {
-    const out: [number, number][] = [];
-    marks.forEach((m, i) => {
-        if (!m.quote) {
-            return;
-        }
-        const last = out[out.length - 1];
-        if (last != null && last[1] === i - 1) {
-            last[1] = i;
-        } else {
-            out.push([i, i]);
-        }
-    });
-    return out;
-}
-
-/** Pure: the message with a blank line after each quote that a line of text follows at once, outside fenced blocks, so
- *  markdown ends the quote there as the box drew it: `>xx` then `sss` is a quote of `xx` and a line `sss`, where markdown
- *  alone would carry `sss` into the quote (a lazy continuation line). */
-export function endQuotes(text: string): string {
-    const lines = text.split("\n");
-    const marks = lineMarks(lines);
+    const quote = (i: number) => !fenced.has(i) && QUOTE.test(lines[i]);
     const out: string[] = [];
     lines.forEach((line, i) => {
         out.push(line);
-        const next = marks[i + 1];
-        if (marks[i].quote && next != null && !next.quote && !next.fenced && lines[i + 1].trim() !== "") {
+        const next = i + 1;
+        if (quote(i) && next < lines.length && !quote(next) && !fenced.has(next) && lines[next].trim() !== "") {
             out.push("");
         }
     });

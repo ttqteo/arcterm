@@ -42,6 +42,14 @@ describe("keepLocalImageUrl", () => {
         expect(keepLocalImageUrl("javascript:alert(1)", strip)).toBe("");
         expect(keepLocalImageUrl("/Users/a.png", (u) => u)).toBe("/Users/a.png");
     });
+    // markdown hands the transform `![x](C:\Temp\a b.png)` with its backslashes (and a <…> one's space) percent-encoded
+    it("keeps a drive path markdown percent-encoded, decoded back", () => {
+        expect(keepLocalImageUrl("C:%5CUsers%5Cme%5Cshot.png", strip)).toBe("C:\\Users\\me\\shot.png");
+        expect(keepLocalImageUrl("c:%5cTemp%5Ca%20b.png", strip)).toBe("c:\\Temp\\a b.png");
+        expect(keepLocalImageUrl("C:/Temp/a%20b.png", strip)).toBe("C:/Temp/a b.png");
+        // a lone % that is no escape stays as written
+        expect(keepLocalImageUrl("C:%5C100%.png", strip)).toBe("C:%5C100%.png");
+    });
 });
 
 describe("codePicturePath", () => {

@@ -16,9 +16,9 @@ import {
     Loader2,
     X,
 } from "lucide-react";
-import { AnimatePresence, motion } from "motion/react";
+import { AnimatePresence, animate, motion, useReducedMotion, type AnimationPlaybackControls } from "motion/react";
 import { MOTION, composerReveal, shouldFadeEntry } from "@/app/element/motiontokens";
-import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
     burstRenderMode,
     conversationText,
@@ -492,37 +492,95 @@ export function ToolLine({
 // selectable. `mentions` draws an `@path` in it as a file pill (Chat's
 // bubble and its pending copy pass it; the other transcripts draw the text as typed). Code typed on a fence's own line
 // (```curl https://…) stays in the block instead of being read as its language (chatfences.ts splitFenceInfo)
+// The fold springs its height (MOTION.spring) on the outer box, which clips only while it moves: Show more takes the clamp
+// off and grows from the clamped height onto the whole text; Show less keeps the text whole while the box shrinks to six
+// lines and puts the clamp (and its fade) back when it lands. A toggle mid-spring starts from where the box is. Reduced
+// motion jumps.
+const PROMPT_CLAMP_EM = 9.3;
 export function PromptText({ text, mentions }: { text: string; mentions?: boolean }) {
     const clamp = userNeedsClamp(text);
     const [open, setOpen] = useState(false);
+    // the clamp is on: folded and settled (a fold keeps it off until its spring lands)
+    const [shut, setShut] = useState(true);
+    const reduce = useReducedMotion();
+    const box = useRef<HTMLDivElement>(null);
+    const inner = useRef<HTMLDivElement>(null);
+    const from = useRef<number | null>(null);
+    const run = useRef<AnimationPlaybackControls | null>(null);
+    const toggle = (next: boolean) => {
+        from.current = box.current?.getBoundingClientRect().height ?? null;
+        setOpen(next);
+        if (next) {
+            setShut(false);
+        }
+    };
+    useLayoutEffect(() => {
+        const el = box.current;
+        const start = from.current;
+        from.current = null;
+        if (el == null || start == null) {
+            return;
+        }
+        run.current?.stop();
+        run.current = null;
+        el.style.removeProperty("height");
+        el.style.removeProperty("overflow");
+        const whole = el.getBoundingClientRect().height;
+        const em = parseFloat(getComputedStyle(inner.current ?? el).fontSize) || 14;
+        const end = open ? whole : Math.min(whole, PROMPT_CLAMP_EM * em);
+        if (reduce || end === start) {
+            setShut(!open);
+            return;
+        }
+        el.style.overflow = "hidden";
+        el.style.height = `${start}px`;
+        const playing = animate(el, { height: [start, end] }, MOTION.spring);
+        run.current = playing;
+        // a spring stopped for a newer one must not clear the newer one's styles or put the clamp back under it
+        const rest = () => {
+            if (run.current === playing) {
+                run.current = null;
+                el.style.removeProperty("height");
+                el.style.removeProperty("overflow");
+                setShut(!open);
+            }
+        };
+        void playing.finished.then(rest, rest);
+    }, [open, reduce]);
+    useEffect(() => () => run.current?.stop(), []);
     return (
         <>
-            <div
-                className={cn(
-                    // six lines of the 1.55 leading, as USER_CLAMP_LINES in compacttimeline.ts says
-                    clamp &&
-                        !open &&
-                        "max-h-[9.3em] overflow-hidden [mask-image:linear-gradient(to_bottom,black_60%,transparent)]"
-                )}
-            >
-                <MarkdownMessage
-                    text={splitFenceInfo(endQuotes(text))}
-                    mentions={mentions}
-                    className="[overflow-wrap:anywhere] [&_p]:whitespace-pre-wrap"
-                />
+            <div ref={box}>
+                <div
+                    ref={inner}
+                    className={cn(
+                        // six lines of the 1.55 leading, as USER_CLAMP_LINES in compacttimeline.ts says
+                        clamp &&
+                            !open &&
+                            shut &&
+                            "max-h-[9.3em] overflow-hidden [mask-image:linear-gradient(to_bottom,black_60%,transparent)]"
+                    )}
+                >
+                    <MarkdownMessage
+                        text={splitFenceInfo(endQuotes(text))}
+                        mentions={mentions}
+                        className="[overflow-wrap:anywhere] [&_p]:whitespace-pre-wrap"
+                    />
+                </div>
             </div>
             {clamp && !open ? (
                 <span
                     data-prompt-fold-cover
                     aria-hidden
-                    onClick={() => setOpen(true)}
+                    onClick={() => toggle(true)}
                     className="absolute inset-0 cursor-pointer"
                 />
             ) : null}
             {clamp ? (
                 <button
                     type="button"
-                    onClick={() => setOpen((v) => !v)}
+                    aria-expanded={open}
+                    onClick={() => toggle(!open)}
                     className="relative mt-1 cursor-pointer text-[11.5px] text-muted hover:text-secondary"
                 >
                     {open ? "Show less" : "Show more"}

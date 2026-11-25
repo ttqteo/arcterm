@@ -22,8 +22,8 @@
 // mirrors it and scrolls as the editor does (GhostScroll). A bash command's leading `!` (`bash`) is in `value` but not in the editor: it is drawn as an accent marker
 // beside it, a gap before the command, as Claude Code's own box does (chateditormodel.ts `bangSkip`); every text and offset
 // the editor takes or gives is mapped across it, and Backspace at the command's start takes the `!` away, leaving bash mode.
-// A ``` fenced block is drawn as a code box while it is typed, a `code` span as inline code and a `>` line as a quote
-// (chateditormarks.tsx), the text unchanged. A paste of several lines that reads as code or a log goes in fenced
+// Markdown is not drawn while it is typed (a ``` block, a `code` span, a `>` quote show as their characters); the bubble
+// draws it once the message is sent. A paste of several lines that reads as code or a log goes in fenced
 // (chatmarks.ts codePaste); one undo takes the fence away and leaves the raw paste.
 
 import { isMacOS } from "@/util/platformutil";
@@ -73,7 +73,6 @@ import {
     useState,
     type RefObject,
 } from "react";
-import { MARK_THEME, TypedMarks } from "./chateditormarks";
 import {
     atomRunsIn,
     bangSkip,
@@ -984,8 +983,6 @@ export const ChatEditor = forwardRef<EditorLike, ChatEditorProps>(function ChatE
     const [initialConfig] = useState(() => ({
         namespace: "arc-chat-editor",
         nodes: [FileMentionNode, RefMentionNode],
-        // fenced and inline code and a quote's text (chateditormarks.tsx)
-        theme: { text: MARK_THEME },
         editable: !p.readOnly,
         onError: (error: Error) => console.error("chat editor:", error),
         // the draft the box mounts with (a restored one, with its pills; a bash command has none)
@@ -1005,8 +1002,6 @@ export const ChatEditor = forwardRef<EditorLike, ChatEditorProps>(function ChatE
                     </span>
                 ) : null}
                 <div className="relative min-w-0 flex-1">
-                    {/* the boxes behind fenced code and the quotes' bars, under the editor's text */}
-                    <TypedMarks bash={skip > 0} />
                     <PlainTextPlugin
                         contentEditable={
                             <ContentEditable

@@ -23,6 +23,10 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
 
 ## 2026-11-25
 
+- [ ] (arcterm) **Show more / Show less on a long message of yours springs open and shut.** In Chat, send a message
+  longer than six lines: its bubble shows six lines fading out. Show more grows the bubble onto the whole text (no jump);
+  Show less shrinks it back to six lines and the fade comes back as it lands. Click Show less mid-open: it turns back
+  from where it was. Under reduced motion both jump. `narrationtimeline.tsx` PromptText; no scenario.
 - [ ] (arcterm) **Pair two live agents and watch a full exchange end on a stop** (`pkg/agentpair`, the Add judge menu in
   an agent's header, `docs/guide/agent-pair.md`). The pair scenarios run on seeded pairs, so no agent has ever run one.
   With a Claude agent that has a plan open, Add judge → Open a new judge: a judge tab boots on Opus in the same folder,
@@ -661,14 +665,11 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
   on, send a prompt and stay at the bottom while the agent works: when the turn ends the reply's first block is lit on
   the line. Step J to the very end: J keeps going after the group reaches the last block (at ×3 the group shrinks to
   two, then the last block alone), and the accent tick sits beside the lit group, not left at a third of the view. Press
-  Escape in the conversation: focus read turns off (a second Escape goes back, or stops a working turn). Also type `>s`
-  in the box: the quote bar is a full line high, not a dot. `chatfocusread.ts` tickTop / latestReplyStart,
-  `chatfocusreadview.ts`, `bindings.ts` agent:focus-read-off, `chateditormarks.tsx` quote ends; no scenario run.
-- [ ] (arcterm) **A quote in Chat's box draws no `>`, and a line under it stays out.** Type `>xx`, Shift+Enter, `sss`:
-  the box shows `xx` slanted beside the bar with no `>`, and `sss` plain; ← and Backspace across the hidden `> ` take one
-  press per character (two presses to undo the quote) with the caret never lost. Send it: the bubble shows `xx` in the
-  quote and `sss` under it, not both in the quote. `chatmarks.ts` lineMarks marker / endQuotes, `chateditormarks.tsx`
-  `lowercase`; `chat-code-box` step 5 checks the zero-width marker but was not run (no dev app up).
+  Escape in the conversation: focus read turns off (a second Escape goes back, or stops a working turn).
+  `chatfocusread.ts` tickTop / latestReplyStart, `chatfocusreadview.ts`, `bindings.ts` agent:focus-read-off; no
+  scenario run.
+- [ ] (arcterm) **A line under a quote stays out of it once sent.** In Chat's box type `>xx`, Shift+Enter, `sss` and
+  send it: the bubble shows `xx` in the quote and `sss` under it, not both in the quote. `chatmarks.ts` endQuotes.
 - [ ] (arcterm) **A click on a focus-read agent's row lets J/K step at once.** With focus read on for an agent, click
   another agent's row, then that agent's row in the tree: J/K step its blocks with no click in Chat (before, they
   moved to the next agent). j/k pressed in the tree still go from agent to agent; a run row picked to type into
@@ -739,7 +740,7 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
   image, and the box empties of both.
 - [ ] (arcterm) **A paste after a typed ``` closes the block** (`chatmarks.ts` afterOpenFence). In Chat's box type
   ``` and paste two lines of anything: they land on the lines under the fence, a closing ``` follows, and a word typed
-  on the next line sits outside the code box. One undo leaves the raw paste beside the fence.
+  on the next line sits after the closing ```. One undo leaves the raw paste beside the fence.
 - [ ] (arcterm) **A long run's lifecycle rail folds its repeated rows** (`timelinegroups.ts` fold rows,
   `timelinerail.tsx`). Open a finished orchestrator run with many tasks (one with a dozen cleanups at its end): the
   run's end shows one `Cleanup complete ×N · t-1 → t-N` row instead of N rows, and opening it lists each task. A row
@@ -800,12 +801,8 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
   the dev app when written.
 - [ ] (arcterm) **Chat's box fences a real clipboard paste of a log.** The CDP step dispatches a made-up paste event.
   Copy a stack trace from the browser's DevTools console (several `at …` lines) and paste it into Chat's box after a
-  word: it goes in on its own lines inside ``` with the code box behind it, the box grows to show it all, and one
+  word: it goes in on its own lines inside ```, the box grows to show it all, and one
   Ctrl+Z leaves the raw paste with no fence. Paste two lines of Vietnamese prose: they go in as typed, no fence.
-  `feat/chat-input-marks` (956770e3c).
-- [ ] (arcterm) **Telex typed inside a quote and inline code in Chat's box.** Type `> đây là trích dẫn` and
-  `` gõ `lệnh` xong `` with Telex on: every syllable lands whole (none dropped or doubled), the quote line stays
-  slanted with its bar, `` `lệnh` `` stays a chip, and the text after the closing backtick is plain again.
   `feat/chat-input-marks` (956770e3c).
 - [ ] (arcterm) **A self-detaching dev server reads as its own project's.** With SIEM-portal's `astro dev --port 4310`
   up (started in the foreground, so it detaches), open the footer's Servers: the :4310 row is not an arcterm agent's

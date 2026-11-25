@@ -1,7 +1,6 @@
-// Fenced code in Chat: the message box draws a ``` block as a code box while you type it (chateditormarks.tsx), and your
+// Fenced code in Chat: the message box draws what you type as typed (no code box, no quote bar), and your
 // bubble keeps code typed on the fence's own line (```curl https://…) in its block instead of reading it as the
-// language (chatfences.ts splitFenceInfo). Read through [data-chat-code-box] (the box behind the block), the editor's
-// <code> lines, and the code block (its [data-code-head] and rows) in a [data-chat-you] bubble.
+// language (chatfences.ts splitFenceInfo). Read through the editor's text (it holds no <code> or <em>), and the code block (its [data-code-head] and rows) in a [data-chat-you] bubble.
 //
 // One fixture Claude agent over a real tab, a fixture roster row for it (the page's dev mock roster) and a fixture
 // transcript holding the sent prompt. kit holds scenarios.mjs's helpers.
@@ -69,23 +68,14 @@ export default function (kit) {
             console.error(`chat-code-box: the shot ${name} failed: ${e?.message ?? e}`);
         }
     }
-    // the box's code lines, the boxes behind them, and whether each box covers the code lines and leaves the prose out
+    // the box's text, and any markdown drawn in it (none: it draws the text as typed)
     const readBox = (h, id) =>
         h.ev(`(() => {
             const input = ${inputOf(id)};
-            const layer = input?.parentElement?.querySelector("[data-chat-code-layer]");
-            const boxes = [...(layer?.querySelectorAll("[data-chat-code-box]") ?? [])].map((b) => b.getBoundingClientRect());
-            const codes = [...(input?.querySelectorAll("code") ?? [])];
-            const inside = (r) => boxes.some((b) => r.top >= b.top - 0.5 && r.bottom <= b.bottom + 0.5);
-            const prose = [...(input?.querySelectorAll("span[data-lexical-text]") ?? [])].filter((s) => !s.closest("code"));
             return {
                 text: (input?.innerText ?? "").replace(/\\n$/, ""),
-                codeLines: codes.map((c) => c.textContent),
-                mono: codes.every((c) => /mono/i.test(getComputedStyle(c).fontFamily)),
-                boxes: boxes.length,
-                covered: codes.every((c) => inside(c.getBoundingClientRect())),
-                proseOut: prose.every((s) => !inside(s.getBoundingClientRect())),
-                prose: prose.map((s) => s.textContent),
+                drawn: input?.querySelectorAll("code, em").length ?? -1,
+                layers: input?.parentElement?.querySelectorAll("[data-chat-code-layer]").length ?? -1,
             };
         })()`);
 
@@ -240,105 +230,20 @@ export default function (kit) {
                 );
             });
 
-            // 2. a closed block typed in the box: its three lines in mono inside one box, the prose around it outside
-            await run("2. closed block in the box", async (name) => {
+            // 2. a fenced block, a quote and inline code typed in the box: drawn as typed, no markdown
+            await run("2. the box draws markdown as typed", async (name) => {
                 await clearBox(h, A);
-                await typeLines(h, A, ["look at this:", "```bash", "npm run build", "```", "then tell me"]);
-                const boxed = await polishWaitFor(h, `(${inputOf(A)})?.parentElement?.querySelectorAll("[data-chat-code-box]").length === 1`, SHORT_MS);
+                await typeLines(h, A, ["look at this:", "```bash", "npm run build", "```", "> see `npm test` here"]);
                 const got = await readBox(h, A);
-                await shot(h, "2-closed-block");
+                await shot(h, "2-typed-plain");
                 rec(
-                    `${name}: one [data-chat-code-box]; the lines \`\`\`bash, npm run build and \`\`\` are mono <code> inside it; "look at this:" and "then tell me" are outside; the text is as typed`,
-                    boxed &&
-                        got.boxes === 1 &&
-                        JSON.stringify(got.codeLines) === JSON.stringify(["```bash", "npm run build", "```"]) &&
-                        got.mono &&
-                        got.covered &&
-                        got.proseOut &&
-                        got.text === "look at this:\n```bash\nnpm run build\n```\nthen tell me",
+                    `${name}: the text is as typed; no <code> or <em> in the editor and no [data-chat-code-layer] beside it`,
+                    got.drawn === 0 && got.layers === 0 && got.text === "look at this:\n```bash\nnpm run build\n```\n> see `npm test` here",
                     got
                 );
             });
 
-            // 3. a block still open: the box runs to the last line; closing it ends the box there
-            await run("3. open block runs to the end", async (name) => {
-                await clearBox(h, A);
-                await typeLines(h, A, ["```curl https://x.test \\", '  -H "A: b"']);
-                await polishWaitFor(h, `(${inputOf(A)})?.parentElement?.querySelectorAll("[data-chat-code-box]").length === 1`, SHORT_MS);
-                const open = await readBox(h, A);
-                await shot(h, "3-open-block");
-                await typeLines(h, A, ["", "```", "after"]);
-                await polishNap(200);
-                const closed = await readBox(h, A);
-                await shot(h, "3b-closed-after");
-                rec(
-                    `${name}: while open, both lines are code in one box; after \`\`\` and "after", the box ends at the fence and "after" is prose outside it`,
-                    open.boxes === 1 &&
-                        open.codeLines.length === 2 &&
-                        open.covered &&
-                        closed.boxes === 1 &&
-                        closed.codeLines.length === 3 &&
-                        closed.covered &&
-                        closed.proseOut &&
-                        closed.prose.includes("after"),
-                    { open, closed }
-                );
-            });
-
-            // 4. emptied, the box draws no code box
-            await run("4. empty box draws none", async (name) => {
-                await clearBox(h, A);
-                const none = await polishWaitFor(h, `((${inputOf(A)})?.parentElement?.querySelectorAll("[data-chat-code-box]").length ?? -1) === 0`, SHORT_MS);
-                rec(`${name}: no [data-chat-code-box] once the box is empty`, none, { none });
-            });
-
-            // 5. a quote line and inline code typed in the box: the quote slanted with a bar beside it and its `> ` drawn as
-            // nothing (still in the text), each `span` a chip
-            await run("5. quote and inline code in the box", async (name) => {
-                await clearBox(h, A);
-                await typeLines(h, A, ["> see `npm test` here", "plain `x` text"]);
-                await polishWaitFor(h, `(${inputOf(A)})?.parentElement?.querySelectorAll("[data-chat-quote-bar]").length === 1`, SHORT_MS);
-                const got = await h.ev(`(() => {
-                    const input = ${inputOf(A)};
-                    const layer = input?.parentElement?.querySelector("[data-chat-code-layer]");
-                    const bars = [...(layer?.querySelectorAll("[data-chat-quote-bar]") ?? [])].map((b) => b.getBoundingClientRect());
-                    const slanted = [...(input?.querySelectorAll("em") ?? [])];
-                    const codes = [...(input?.querySelectorAll("code") ?? [])];
-                    const plain = [...(input?.querySelectorAll("span[data-lexical-text]") ?? [])].find((s) => s.textContent.startsWith("plain"));
-                    const bar = bars[0];
-                    const pr = plain?.getBoundingClientRect();
-                    return {
-                        text: (input?.innerText ?? "").replace(/\\n$/, ""),
-                        bars: bars.length,
-                        boxes: layer?.querySelectorAll("[data-chat-code-box]").length ?? -1,
-                        quoted: slanted.map((e) => e.textContent).join(""),
-                        italic: slanted.every((e) => getComputedStyle(e).fontStyle === "italic"),
-                        inline: codes.map((c) => c.textContent),
-                        mono: codes.every((c) => /mono/i.test(getComputedStyle(c).fontFamily)),
-                        chip: codes.every((c) => [c, ...c.querySelectorAll("*")].some((e) => getComputedStyle(e).backgroundColor !== "rgba(0, 0, 0, 0)")),
-                        barOnQuoteOnly: bar != null && pr != null && bar.bottom <= pr.top + 1,
-                        // the quote's `> ` is a text node of its own with no width
-                        markerHidden: slanted.some((e) => e.textContent === "> " && e.getBoundingClientRect().width < 1),
-                    };
-                })()`);
-                await shot(h, "5-quote-inline");
-                rec(
-                    `${name}: one [data-chat-quote-bar] beside the first line only; the quote line is <em> italic, its `> ` zero-width; \`npm test\` and \`x\` are mono <code> chips; no code box; the text is as typed`,
-                    got.bars === 1 &&
-                        got.barOnQuoteOnly &&
-                        got.markerHidden &&
-                        got.boxes === 0 &&
-                        got.quoted === "> see `npm test` here" &&
-                        got.italic &&
-                        JSON.stringify(got.inline) === JSON.stringify(["`npm test`", "`x`"]) &&
-                        got.mono &&
-                        got.chip &&
-                        got.text === "> see `npm test` here\nplain `x` text",
-                    got
-                );
-            });
-
-            // 6. a stack trace pasted goes in fenced, one code box; one undo leaves the raw paste
+            // 6. a stack trace pasted goes in fenced; one undo leaves the raw paste
             await run("6. pasted log is fenced, undo leaves it raw", async (name) => {
                 await clearBox(h, A);
                 await typeLines(h, A, ["it breaks:"]);
@@ -350,7 +255,7 @@ export default function (kit) {
                     input.dispatchEvent(new ClipboardEvent("paste", { clipboardData: data, bubbles: true, cancelable: true }));
                     return true;
                 })()`);
-                const fenced = await polishWaitFor(h, `(${inputOf(A)})?.parentElement?.querySelectorAll("[data-chat-code-box]").length === 1`, SHORT_MS);
+                const fenced = await polishWaitFor(h, `(${inputOf(A)})?.innerText?.includes("\`\`\`")`, SHORT_MS);
                 const after = await readBox(h, A);
                 // the box grows on a spring: the shot and the measure wait for it to settle
                 await polishNap(600);
@@ -370,34 +275,17 @@ export default function (kit) {
                 const undone = await readBox(h, A);
                 await shot(h, "6b-undo-raw");
                 rec(
-                    `${name}: the paste after "it breaks:" goes in as "it breaks:\\n\`\`\`\\n<log>\\n\`\`\`" in one code box, all its lines shown; one Ctrl+Z leaves "it breaks:<log>" with no box`,
+                    `${name}: the paste after "it breaks:" goes in as "it breaks:\\n\`\`\`\\n<log>\\n\`\`\`" with all its lines shown; one Ctrl+Z leaves "it breaks:<log>" with no fence`,
                     fenced &&
-                        after.boxes === 1 &&
-                        after.covered &&
                         after.allShown &&
                         after.text === "it breaks:\n```\n" + pasted + "\n```" &&
-                        undone.boxes === 0 &&
                         undone.text === "it breaks:" + pasted,
                     { fenced, after, undone }
                 );
             });
 
-            // 5b. a lone `>`, nothing typed after it yet: its bar shows at a line's height (its `>` is drawn at no size, and
-            // WebKit gives that box no height, so a bar measured from it alone drew nothing)
-            await run("5b. a lone > shows its quote bar", async (name) => {
-                await clearBox(h, A);
-                await typeLines(h, A, [">"]);
-                await polishWaitFor(h, `(${inputOf(A)})?.parentElement?.querySelectorAll("[data-chat-quote-bar]").length === 1`, SHORT_MS);
-                const got = await h.ev(`(() => {
-                    const bar = (${inputOf(A)})?.parentElement?.querySelector("[data-chat-quote-bar]")?.getBoundingClientRect();
-                    return { height: bar ? Math.round(bar.height) : null };
-                })()`);
-                await shot(h, "5b-lone-quote");
-                rec(`${name}: one [data-chat-quote-bar] at least 10px tall`, got.height != null && got.height >= 10, got);
-            });
-
-            // 7. Reply, type, Reply again, type: each quote lands in the text where the person is, drawn there as a quote
-            // (a bar beside it), so the draft reads quote, text, quote, text; nothing is drawn over the editor
+            // 7. Reply, type, Reply again, type: each quote lands in the text where the person is, as a `> ` line, so the
+            // draft reads quote, text, quote, text; nothing is drawn over the editor
             await run("7. Reply quotes stay where they were put", async (name) => {
                 await clearBox(h, A);
                 const reply = async (needle) => {
@@ -428,11 +316,9 @@ export default function (kit) {
                 await typeLines(h, A, ["có, thêm cache đi"]);
                 const second = await reply(LONG_PARA);
                 await typeLines(h, A, ["cái này thì sao?"]);
-                await polishWaitFor(h, `(${inputOf(A)})?.parentElement?.querySelectorAll("[data-chat-quote-bar]").length === 2`, SHORT_MS);
                 const got = await h.ev(`(() => {
                     const layer = ${layerOf(A)};
                     return {
-                        bars: (${inputOf(A)})?.parentElement?.querySelectorAll("[data-chat-quote-bar]").length ?? 0,
                         overEditor: layer?.querySelectorAll("[data-chat-quotes], [data-chat-quote-chip]").length ?? 0,
                     };
                 })()`);
@@ -445,8 +331,8 @@ export default function (kit) {
                     at("> " + LONG_PARA.slice(0, 20)) < at("cái này thì sao?");
                 await shot(h, "7-quotes-in-place");
                 rec(
-                    `${name}: the draft reads quote, text, quote, text; two [data-chat-quote-bar] in the editor; no quote block over it`,
-                    first && second && ordered && got.bars === 2 && got.overEditor === 0,
+                    `${name}: the draft reads quote, text, quote, text; no quote block over the editor`,
+                    first && second && ordered && got.overEditor === 0,
                     { first, second, ordered, ...got, draft }
                 );
             });
