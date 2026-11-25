@@ -77,6 +77,8 @@ and a picture given to a line that is not big.
 
 ### Fixed
 
+- Blame (`b` or its button) on Code in Preview or Diff switches to Source with the column on, instead of lighting the
+  button with nothing beside it; the button reads pressed only while the column shows.
 - Usage's By provider chart draws every day of the picked window, as By work does, instead of starting at the first
   day with usage: a provider used on two days of the last 7 shows 7 columns.
 - Ctrl+P's hint on Code says Alt+O lists the open file's symbols; it said `@` did, but an `@` typed there searches

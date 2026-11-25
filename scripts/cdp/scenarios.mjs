@@ -13072,6 +13072,18 @@ const codeBlame = {
         await h.ev(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'b', code: 'KeyB', bubbles: true }))`);
         const gone = await polishWaitFor(h, `!document.querySelector('[data-code-blame-column]')`, 5000);
         rec("b with the tree focused hides the column", gone === true, `gone=${gone}`);
+
+        // the column draws beside the source editor only: Blame pressed in Diff switches to Source with it on, and back
+        // in Diff the toggle reads unpressed while its setting stays on
+        const BLAME_PRESSED = `document.querySelector('[data-code-blame-toggle]')?.getAttribute('aria-pressed')`;
+        await h.ev(`document.querySelector('[data-code-view-mode="diff"]')?.click()`);
+        await polishWaitFor(h, `!!document.querySelector('[data-code-diff-target]')`, 5000);
+        await h.ev(`document.querySelector('[data-code-blame-toggle]')?.click()`);
+        const toSource = await polishWaitFor(h, `!!document.querySelector('[data-code-blame-column]') && ${BLAME_PRESSED} === 'true'`, 10000);
+        rec("Blame pressed in Diff switches to Source with the column on", toSource === true, `toSource=${toSource}`);
+        await h.ev(`document.querySelector('[data-code-view-mode="diff"]')?.click()`);
+        const unpressed = await polishWaitFor(h, `!document.querySelector('[data-code-blame-column]') && ${BLAME_PRESSED} === 'false'`, 5000);
+        rec("in Diff the Blame toggle reads unpressed", unpressed === true, `unpressed=${unpressed}`);
         return steps;
     },
     // the run first, which ends its hold on the landing tree, then the project and channel, then the dirs

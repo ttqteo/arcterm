@@ -81,6 +81,12 @@ export function blameIsCurrent(state: BlameState, path: string, modtime: number)
     return state.kind === "ready" && state.path === path && state.modtime === modtime;
 }
 
+// What a Blame press (the button or b) does. The column draws beside the source editor only, so a press in Preview or
+// Diff brings the editor up with the column on, never a pressed button with nothing beside it; in Source it flips.
+export function blamePress(on: boolean, sourceShowing: boolean): { on: boolean; toSource: boolean } {
+    return sourceShowing ? { on: !on, toSource: false } : { on: true, toSource: true };
+}
+
 // past this many cells (changed saved lines times changed buffer lines) the middle is not diffed: the table
 // would cost too much per keystroke, so the changed region shows no blame instead
 const MAX_DIFF_CELLS = 2_000_000;
