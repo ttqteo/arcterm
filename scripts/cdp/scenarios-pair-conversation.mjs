@@ -25,7 +25,9 @@ const readPane = `(() => {
     const flat = (el) => (el?.textContent ?? "").replace(/\\s+/g, " ").trim();
     // the messages sit in Chat's 760px column, centred in the timeline: lean and width are read against that column
     const tl = (pane.querySelector("[data-pair-column]") ?? ${TIMELINE}).getBoundingClientRect();
-    const scroller = ${TIMELINE}.getBoundingClientRect();
+    // the scroller's content box, its scrollbar left out, which the column is centred in
+    const sc = ${TIMELINE};
+    const scMid = sc.getBoundingClientRect().left + sc.clientLeft + sc.clientWidth / 2;
     const mid = (tl.left + tl.right) / 2;
     const msgs = [...pane.querySelectorAll("[data-pair-msg]")].map((m) => {
         const art = m.querySelector("article");
@@ -56,7 +58,8 @@ const readPane = `(() => {
         // the agent header stays over the conversation: its Pair button is lit, and is the way back
         toggle: (() => {
             const b = document.querySelector("[data-agent-header] [data-pair-open]");
-            return b ? { pressed: b.getAttribute("aria-pressed"), text: flat(b) } : null;
+            // its words give way to the icon when the header is narrow, so it is read by its label
+            return b ? { pressed: b.getAttribute("aria-pressed"), label: b.getAttribute("aria-label") } : null;
         })(),
         back: !!pane.querySelector("[data-pair-back]"),
         title: flat(pane.querySelector("[data-pair-title]")),
@@ -64,7 +67,7 @@ const readPane = `(() => {
         unpair: !!pane.querySelector("[data-pair-unpair]"),
         msgs,
         placeholder: comp?.getAttribute("placeholder") ?? null,
-        column: { width: Math.round(tl.width), centred: Math.abs((tl.left + tl.right) / 2 - (scroller.left + scroller.right) / 2) <= 2 },
+        column: { width: Math.round(tl.width), centred: Math.abs((tl.left + tl.right) / 2 - scMid) <= 2 },
         // no round counter anywhere
         rounds: /\\bround\\b/i.test(flat(pane)),
     };
@@ -217,7 +220,7 @@ export default function (kit) {
                         convo.msgs.filter((m) => m.held.length > 0).length === 1 &&
                         convo.placeholder === PLACEHOLDER &&
                         convo.toggle?.pressed === "true" &&
-                        convo.toggle.text === "Pair" &&
+                        convo.toggle.label === `Paired with judge ${SHORT.judge}` &&
                         convo.back === false &&
                         convo.title === `Paired with judge ${SHORT.judge}` &&
                         convo.states.length === 1 &&
