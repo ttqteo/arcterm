@@ -45,7 +45,9 @@ no two copies of it.
 
 An end-state screenshot cannot show motion or a stuck in-between size. Record the change frame by frame.
 
-In arcterm, with the dev app running (`task dev` on Windows; `task dev:browser` on a Mac, CDP :9222):
+In arcterm, with the dev app running (`task dev` on Windows; `task dev:browser` on a Mac, CDP :9222), this is the
+one live pass for the work: run the view's scenario (`task verify:ui -- <name>`) for the end state, then trace the
+motion:
 
 ```
 node scripts/cdp/motion-trace.mjs --selector "<css of the parts that move>" \
@@ -60,6 +62,11 @@ the trace is what tells you how it got there.
 
 Elsewhere, use what the project has (Playwright's trace or video, a screen recording, the browser's Performance
 panel), or say plainly that you could not watch it move.
+
+**In an agent an Arc run started** (`ARC_RUN_AGENT` is set), skip this step: start no dev app and run no CDP, since
+the run's Final starts its own app and runs the scenarios once on the merged tree. Do steps 1 to 3 from the code,
+write or update the scenario that shows the view, and for each motion you could not watch add a `- [ ]` line to
+`docs/hand-checks.md` (what to press, what should move and how, where).
 
 ## Reporting
 

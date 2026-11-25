@@ -76,9 +76,12 @@ There are no jsdom render tests: verify rendered UI on the live dev app over CDP
 `scripts/cdp/scenarios.mjs`; `node scripts/cdp-shot.mjs` for one shot; on a Mac `task dev:browser` first, since
 WKWebView has no CDP). Setup, ports and fixtures: dev-workflow "Visual verification".
 
-- **Before committing a UI change, try it in the running dev app** (a CDP scenario or `cdp-shot.mjs`). If the live
-  check could not run, say exactly what was not verified.
-- **Before calling UI work done, run the `arc:ux-check` skill**: an end-state screenshot cannot show motion.
+- **One live pass, when the UI work is done: the `arc:ux-check` skill.** Its last step runs the view's scenario (end
+  state) and `motion-trace` (motion) on the same dev app; there is no separate check per commit. If it could not run,
+  say exactly what was not verified.
+- **An agent an Arc run started (`ARC_RUN_AGENT` is set) runs no CDP:** the run's Final is its only live pass. The
+  agent writes or updates the scenario Final runs, does ux-check's code steps, and adds a `- [ ]` line to
+  `docs/hand-checks.md` for each motion it could not watch.
 
 ## Working rules
 
