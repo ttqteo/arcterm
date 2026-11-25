@@ -149,7 +149,26 @@ if (requested === "auto") {
     }
 }
 
+// Cargo keeps the app crate's artifacts of every version it built: a few weeks of bumps left 5.4 GB of old builds in
+// src-tauri/target. A bump recompiles the crate in both profiles anyway, so dropping them costs no build time; its
+// dependencies stay. Run before the bump, while Cargo.toml still matches Cargo.lock, so cargo rewrites no lock.
+function cleanOldAppBuilds() {
+    for (const profile of [["--release"], []]) {
+        const r = spawnSync("cargo", ["clean", "-p", "wave-tauri", ...profile], {
+            cwd: join(ROOT, "src-tauri"),
+            encoding: "utf8",
+        });
+        const said = (r.stderr || r.stdout || "").trim().split("\n").at(-1);
+        if (r.status !== 0) {
+            console.warn(`cargo clean -p wave-tauri ${profile.join(" ")} skipped: ${said || r.error?.message}`);
+        } else if (said) {
+            console.log(`old wave-tauri builds (${profile.length ? "release" : "debug"}): ${said}`);
+        }
+    }
+}
+
 if (bump !== "none" && !dryRun) {
+    cleanOldAppBuilds();
     // the bump is written to the main checkout, where it gets committed; the snapshot is given the same version below
     run("node", ["version.cjs", bump], ROOT);
     run("node", ["scripts/sync-tauri-version.mjs"], ROOT);
