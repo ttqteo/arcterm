@@ -8,21 +8,22 @@ import (
 	"path/filepath"
 	"reflect"
 	"testing"
-
-	"github.com/wavetermdev/waveterm/pkg/wavebase"
 )
 
-func useTempConfigHome(t *testing.T) string {
+// useTempCouncilRolesDir points the config home at a temp dir naming a temp vault, and returns the vault's config
+// dir, where councilroles.json lives.
+func useTempCouncilRolesDir(t *testing.T) string {
 	t.Helper()
-	dir := t.TempDir()
-	prev := wavebase.ConfigHome_VarCache
-	wavebase.ConfigHome_VarCache = dir
-	t.Cleanup(func() { wavebase.ConfigHome_VarCache = prev })
+	_, vaultDir := setupLayers(t, nil)
+	dir := filepath.Join(vaultDir, VaultConfigDir)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
 	return dir
 }
 
 func TestReadCouncilRolesMissingFileIsEmpty(t *testing.T) {
-	useTempConfigHome(t)
+	useTempCouncilRolesDir(t)
 	cfg, err := ReadCouncilRoles()
 	if err != nil {
 		t.Fatalf("ReadCouncilRoles: %v", err)
@@ -33,7 +34,7 @@ func TestReadCouncilRolesMissingFileIsEmpty(t *testing.T) {
 }
 
 func TestReadCouncilRolesParsesRolesAndGroups(t *testing.T) {
-	dir := useTempConfigHome(t)
+	dir := useTempCouncilRolesDir(t)
 	body := `{"roles":[{"id":"ux","model":"haiku"},{"id":"a11y","name":"Accessibility","brief":"Keyboard only?","model":"sonnet"}],
 "groups":[{"id":"mine","name":"Mine","roles":["ux","skeptic"],"coordinator":"coordinator"}]}`
 	if err := os.WriteFile(filepath.Join(dir, CouncilRolesFile), []byte(body), 0o644); err != nil {
@@ -57,7 +58,7 @@ func TestReadCouncilRolesParsesRolesAndGroups(t *testing.T) {
 }
 
 func TestReadCouncilRolesBrokenFileIsAnError(t *testing.T) {
-	dir := useTempConfigHome(t)
+	dir := useTempCouncilRolesDir(t)
 	if err := os.WriteFile(filepath.Join(dir, CouncilRolesFile), []byte(`{"roles": [`), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -67,7 +68,7 @@ func TestReadCouncilRolesBrokenFileIsAnError(t *testing.T) {
 }
 
 func TestSetUserCouncilGroupWritesTheFile(t *testing.T) {
-	dir := useTempConfigHome(t)
+	dir := useTempCouncilRolesDir(t)
 	g := CouncilGroupConfig{Id: "mine", Name: "Mine", Roles: []string{"ux", "ram"}, Coordinator: "coordinator"}
 	if err := SetUserCouncilGroup(g); err != nil {
 		t.Fatalf("SetUserCouncilGroup: %v", err)
@@ -85,7 +86,7 @@ func TestSetUserCouncilGroupWritesTheFile(t *testing.T) {
 }
 
 func TestSetUserCouncilGroupReplacesTheSameIdAndKeepsTheRoles(t *testing.T) {
-	dir := useTempConfigHome(t)
+	dir := useTempCouncilRolesDir(t)
 	body := `{"roles":[{"id":"ux","model":"haiku"}],
 "groups":[{"id":"one","name":"One","roles":["ux"],"coordinator":"coordinator"},
 {"id":"two","name":"Two","roles":["ram"],"coordinator":"coordinator"}]}`
@@ -113,7 +114,7 @@ func TestSetUserCouncilGroupReplacesTheSameIdAndKeepsTheRoles(t *testing.T) {
 }
 
 func TestSetUserCouncilGroupRefusesABrokenFile(t *testing.T) {
-	dir := useTempConfigHome(t)
+	dir := useTempCouncilRolesDir(t)
 	broken := []byte(`{"roles": [`)
 	path := filepath.Join(dir, CouncilRolesFile)
 	if err := os.WriteFile(path, broken, 0o644); err != nil {

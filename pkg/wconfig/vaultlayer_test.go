@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"testing"
 
@@ -348,5 +349,106 @@ func TestWatcherRetargetsOnVaultPathChange(t *testing.T) {
 	}
 	if !slices.Contains(list, configDir) {
 		t.Errorf("watch list %v lost the config dir %q", list, configDir)
+	}
+}
+
+func TestMigrateCouncilRolesMovesTheLocalFile(t *testing.T) {
+	configDir, vaultDir := setupLayers(t, nil)
+	writes := countVaultWrites(t)
+	local := map[string]any{
+		"roles":  []any{map[string]any{"id": "ux", "model": "haiku"}},
+		"groups": []any{map[string]any{"id": "mine", "roles": []any{"ux"}}},
+	}
+	localPath := filepath.Join(configDir, CouncilRolesFile)
+	writeJSONFile(t, localPath, local)
+	if err := MigrateCouncilRolesToVault(); err != nil {
+		t.Fatalf("MigrateCouncilRolesToVault: %v", err)
+	}
+	got := readJSONFile(t, filepath.Join(vaultDir, VaultConfigDir, CouncilRolesFile))
+	if !reflect.DeepEqual(got, local) {
+		t.Errorf("vault councilroles.json = %v, want %v", got, local)
+	}
+	if _, err := os.Stat(localPath); !os.IsNotExist(err) {
+		t.Errorf("the local file must be renamed away, stat err = %v", err)
+	}
+	if _, err := os.Stat(localPath + councilRolesMigratedSuffix); err != nil {
+		t.Errorf("the local file must be kept as %s: %v", CouncilRolesFile+councilRolesMigratedSuffix, err)
+	}
+	if *writes != 1 {
+		t.Errorf("vault sync poked %d times, want 1", *writes)
+	}
+	cfg, err := ReadCouncilRoles()
+	if err != nil || len(cfg.Roles) != 1 || cfg.Roles[0].Id != "ux" {
+		t.Errorf("ReadCouncilRoles after the move = %+v, %v", cfg, err)
+	}
+}
+
+func TestMigrateCouncilRolesJoinsByIdAndTheVaultWins(t *testing.T) {
+	configDir, vaultDir := setupLayers(t, nil)
+	vaultPath := filepath.Join(vaultDir, VaultConfigDir, CouncilRolesFile)
+	writeJSONFile(t, vaultPath, map[string]any{
+		"roles": []any{map[string]any{"id": "ux", "model": "haiku"}},
+	})
+	writeJSONFile(t, filepath.Join(configDir, CouncilRolesFile), map[string]any{
+		"roles":  []any{map[string]any{"id": "ux", "model": "sonnet"}, map[string]any{"id": "a11y", "name": "Accessibility"}},
+		"groups": []any{map[string]any{"id": "mine", "roles": []any{"a11y"}}},
+	})
+	if err := MigrateCouncilRolesToVault(); err != nil {
+		t.Fatalf("MigrateCouncilRolesToVault: %v", err)
+	}
+	want := map[string]any{
+		"roles":  []any{map[string]any{"id": "ux", "model": "haiku"}, map[string]any{"id": "a11y", "name": "Accessibility"}},
+		"groups": []any{map[string]any{"id": "mine", "roles": []any{"a11y"}}},
+	}
+	if got := readJSONFile(t, vaultPath); !reflect.DeepEqual(got, want) {
+		t.Errorf("vault councilroles.json = %v, want %v", got, want)
+	}
+}
+
+func TestMigrateCouncilRolesWithoutALocalFileWritesNothing(t *testing.T) {
+	_, vaultDir := setupLayers(t, nil)
+	writes := countVaultWrites(t)
+	if err := MigrateCouncilRolesToVault(); err != nil {
+		t.Fatalf("MigrateCouncilRolesToVault: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(vaultDir, VaultConfigDir, CouncilRolesFile)); !os.IsNotExist(err) {
+		t.Errorf("no local file must create no vault file, stat err = %v", err)
+	}
+	if *writes != 0 {
+		t.Errorf("vault sync poked %d times, want 0", *writes)
+	}
+}
+
+func TestMigrateCouncilRolesLeavesABrokenLocalFile(t *testing.T) {
+	configDir, vaultDir := setupLayers(t, nil)
+	localPath := filepath.Join(configDir, CouncilRolesFile)
+	if err := os.WriteFile(localPath, []byte(`{"roles": [`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := MigrateCouncilRolesToVault(); err == nil {
+		t.Fatal("a local file that does not parse must be an error")
+	}
+	if _, err := os.Stat(localPath); err != nil {
+		t.Errorf("the broken local file must stay where it is: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(vaultDir, VaultConfigDir, CouncilRolesFile)); !os.IsNotExist(err) {
+		t.Errorf("a broken local file must write nothing to the vault, stat err = %v", err)
+	}
+}
+
+func TestSetUserCouncilGroupWritesTheVaultAndPokesSync(t *testing.T) {
+	configDir, vaultDir := setupLayers(t, nil)
+	writes := countVaultWrites(t)
+	if err := SetUserCouncilGroup(CouncilGroupConfig{Id: "mine", Roles: []string{"ux"}}); err != nil {
+		t.Fatalf("SetUserCouncilGroup: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(vaultDir, VaultConfigDir, CouncilRolesFile)); err != nil {
+		t.Errorf("councilroles.json not written to the vault: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(configDir, CouncilRolesFile)); !os.IsNotExist(err) {
+		t.Errorf("nothing may be written to the local config dir, stat err = %v", err)
+	}
+	if *writes != 1 {
+		t.Errorf("vault sync poked %d times, want 1", *writes)
 	}
 }

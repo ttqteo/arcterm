@@ -71,8 +71,8 @@ type unmergedPath struct {
 	stages map[int]string // stage → blob id
 }
 
-// Sync commits local changes, merges origin/main and pushes. Conflicts merge field-aware (efforts)
-// or key-level (settings), else keep the local side and save the remote side under conflicts/. No
+// Sync commits local changes, merges origin/main and pushes. Conflicts merge field-aware (efforts),
+// key-level (settings) or by id (council roles), else keep the local side and save the remote side under conflicts/. No
 // git on PATH or no origin remote is not an error: Off says which.
 //
 // The vault lock (LockRoot) is held only for the steps that touch the work tree or index: the
@@ -329,6 +329,8 @@ func mergeConflictContent(rel string, blobs map[int][]byte) ([]byte, bool) {
 		merged, err = mergeEffortStages(blobs)
 	case rel == SettingsSyncPath:
 		merged, err = MergeSettings(blobs[stageBase], blobs[stageOurs], blobs[stageTheirs])
+	case rel == CouncilRolesSyncPath:
+		merged, err = MergeCouncilRoles(blobs[stageBase], blobs[stageOurs], blobs[stageTheirs])
 	default:
 		return nil, false
 	}

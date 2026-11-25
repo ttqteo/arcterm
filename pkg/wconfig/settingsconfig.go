@@ -888,16 +888,22 @@ func SetUserTool(id string, t *ToolKeywords) error {
 	return writeWaveHomeConfigFileLocked(ToolsFile, m)
 }
 
-// readCouncilRolesFile reads councilroles.json into the raw map, which SetUserCouncilGroup writes back, and the
-// typed config. A missing file is an empty config; one that does not parse is an error.
-func readCouncilRolesFile() (waveobj.MetaMapType, CouncilRolesConfig, error) {
+// readCouncilRolesFile reads the vault's councilroles.json into the raw map, which SetUserCouncilGroup writes back,
+// and the typed config. A missing file is an empty config; one that does not parse is an error. $ENV: references
+// resolve only for a read (resolveEnv): one resolved and written back would bake its value into the vault's remote.
+func readCouncilRolesFile(resolveEnv bool) (waveobj.MetaMapType, CouncilRolesConfig, error) {
 	var cfg CouncilRolesConfig
-	m, cerrs := ReadWaveHomeConfigFile(CouncilRolesFile)
+	path := CouncilRolesVaultPath()
+	barr, readErr := os.ReadFile(path)
+	m, cerrs := parseConfigHelper(path, barr, readErr)
 	if len(cerrs) > 0 {
 		return nil, cfg, fmt.Errorf("error reading config file: %v", cerrs[0])
 	}
 	if m == nil {
 		return nil, cfg, nil
+	}
+	if resolveEnv {
+		resolveEnvReplacements(m)
 	}
 	barr, err := json.Marshal(m)
 	if err != nil {
@@ -909,18 +915,26 @@ func readCouncilRolesFile() (waveobj.MetaMapType, CouncilRolesConfig, error) {
 	return m, cfg, nil
 }
 
-// ReadCouncilRoles reads councilroles.json; a missing file is an empty config.
+// ReadCouncilRoles reads the vault's councilroles.json; a missing file is an empty config.
 func ReadCouncilRoles() (CouncilRolesConfig, error) {
-	_, cfg, err := readCouncilRolesFile()
+	_, cfg, err := readCouncilRolesFile(true)
 	return cfg, err
 }
 
-// SetUserCouncilGroup writes one group into councilroles.json, replacing any group of that id and keeping the
-// file's roles and its other groups. A file that does not parse is left as it is.
+// SetUserCouncilGroup writes one group into the vault's councilroles.json, replacing any group of that id and
+// keeping the file's roles and its other groups, then pokes vault sync. A file that does not parse is left as it is.
 func SetUserCouncilGroup(g CouncilGroupConfig) error {
+	if err := setUserCouncilGroupLocked(g); err != nil {
+		return err
+	}
+	notifyVaultLayerWrite()
+	return nil
+}
+
+func setUserCouncilGroupLocked(g CouncilGroupConfig) error {
 	configWriteLock.Lock()
 	defer configWriteLock.Unlock()
-	m, cfg, err := readCouncilRolesFile()
+	m, cfg, err := readCouncilRolesFile(false)
 	if err != nil {
 		return err
 	}
@@ -941,5 +955,5 @@ func SetUserCouncilGroup(g CouncilGroupConfig) error {
 		groups = append(groups, g)
 	}
 	m["groups"] = groups
-	return writeWaveHomeConfigFileLocked(CouncilRolesFile, m)
+	return writeVaultLayerLocked(CouncilRolesVaultPath(), m)
 }

@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -17,15 +18,24 @@ import (
 
 const evidenceSentence = "Cite a path:line for every claim, or a region of an attached screenshot; a claim with neither is marked weak."
 
-// useTempConfig points the config dir at a temp dir, so the person's real councilroles.json is never read, and
-// returns it.
+// useTempConfig points the config dir at a temp dir whose settings name a temp vault, so the person's real
+// councilroles.json is never read or written, and returns the vault's config dir, where councilroles.json lives.
 func useTempConfig(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
+	vaultDir := filepath.Join(t.TempDir(), "vault")
+	settings := `{"` + wconfig.ConfigKey_MemoryVaultPath + `": ` + strconv.Quote(vaultDir) + `}`
+	if err := os.WriteFile(filepath.Join(dir, wconfig.SettingsFile), []byte(settings), 0o644); err != nil {
+		t.Fatalf("write settings: %v", err)
+	}
 	prev := wavebase.ConfigHome_VarCache
 	wavebase.ConfigHome_VarCache = dir
 	t.Cleanup(func() { wavebase.ConfigHome_VarCache = prev })
-	return dir
+	rolesDir := filepath.Join(vaultDir, wconfig.VaultConfigDir)
+	if err := os.MkdirAll(rolesDir, 0o755); err != nil {
+		t.Fatalf("mkdir %s: %v", rolesDir, err)
+	}
+	return rolesDir
 }
 
 func writeRolesFile(t *testing.T, dir, body string) {

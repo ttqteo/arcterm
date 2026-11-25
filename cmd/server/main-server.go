@@ -540,6 +540,9 @@ func main() {
 	if err := wconfig.MigrateSettingsToVault(); err != nil {
 		log.Printf("error migrating settings to the vault: %v\n", err)
 	}
+	if err := wconfig.MigrateCouncilRolesToVault(); err != nil {
+		log.Printf("error migrating the council roles to the vault: %v\n", err)
+	}
 	if err := jarvis.MigrateGlobalProfile(); err != nil {
 		log.Printf("error migrating the jarvis profile to the vault: %v\n", err)
 	}

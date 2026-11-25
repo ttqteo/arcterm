@@ -144,6 +144,7 @@ and a picture given to a line that is not big.
   as code boxes, chips or slanted quotes while you type them. Your sent message still draws them, and a pasted log or
   stack trace still goes in wrapped in ```.
 - In a council report's Figures, the parts of one whole (94 | 41 of 135) each have their own colour, matched by the legend under the bar, instead of lighter and lighter shades of one colour.
+- Your own council roles and groups (`councilroles.json`) now live in the vault and sync between machines like your settings. A role edited on one machine and another role edited on the other both keep their edits. The first start moves the old file from the config folder into the vault.
 - Unread turns are marked in blue in every theme, as a chat app marks unread messages: the count beside an agent in the Agent sidebar, its dot on the folded sidebar's strip and the Agent badge on the nav rail. In the Claude and Carbon themes they used to take the theme's orange accent.
 - Dragging an agent onto the split is smoother: the drop zones fade in, the highlighted half glides from edge to edge
   instead of jumping, and the row you drag dims while it is held.

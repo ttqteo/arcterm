@@ -198,3 +198,98 @@ func migrateSettingsToVaultLocked() (bool, error) {
 	}
 	return moved > 0, nil
 }
+
+// CouncilRolesVaultPath is councilroles.json in the vault's config dir, where the person's council roles and groups
+// live so they follow the vault to every machine.
+func CouncilRolesVaultPath() string {
+	return filepath.Join(VaultRoot(), VaultConfigDir, CouncilRolesFile)
+}
+
+// councilRolesMigratedSuffix names what a migrated local councilroles.json is renamed to: kept beside the config
+// rather than deleted, since a role whose id the vault already had is not carried over.
+const councilRolesMigratedSuffix = ".migrated"
+
+// MigrateCouncilRolesToVault moves a councilroles.json left in the config dir into the vault, then renames the local
+// file. When the vault already has one (another machine moved its own first), the two join by id: the vault keeps
+// its roles and groups, and each local one of an id the vault lacks is added after them. A local file that does not
+// parse stays where it is.
+func MigrateCouncilRolesToVault() error {
+	moved, err := migrateCouncilRolesLocked()
+	if moved {
+		notifyVaultLayerWrite()
+	}
+	return err
+}
+
+func migrateCouncilRolesLocked() (bool, error) {
+	configWriteLock.Lock()
+	defer configWriteLock.Unlock()
+	localPath := filepath.Join(wavebase.GetWaveConfigDir(), CouncilRolesFile)
+	if _, err := os.Stat(localPath); os.IsNotExist(err) {
+		return false, nil
+	}
+	local, err := readSettingsFileRaw(localPath)
+	if err != nil {
+		return false, err
+	}
+	vaultPath := CouncilRolesVaultPath()
+	vault, err := readSettingsFileRaw(vaultPath)
+	if err != nil {
+		return false, err
+	}
+	for key, val := range local {
+		have, clash := vault[key]
+		if !clash {
+			vault[key] = val
+			continue
+		}
+		vault[key] = joinById(have, val)
+	}
+	// vault first: a failure before the rename leaves the local file, and the next start joins it again
+	if err := writeVaultLayerLocked(vaultPath, vault); err != nil {
+		return false, err
+	}
+	if err := os.Rename(localPath, localPath+councilRolesMigratedSuffix); err != nil {
+		return true, fmt.Errorf("renaming the migrated %s: %w", localPath, err)
+	}
+	log.Printf("wconfig: moved %s into the vault layer %s", localPath, vaultPath)
+	return true, nil
+}
+
+// joinById adds to the vault's list each local entry of an id it lacks. A value that is not a list of objects with
+// ids (a scalar key, say) keeps the vault's.
+func joinById(vaultVal, localVal any) any {
+	vaultList, ok := vaultVal.([]any)
+	if !ok {
+		return vaultVal
+	}
+	localList, ok := localVal.([]any)
+	if !ok {
+		return vaultVal
+	}
+	seen := make(map[string]bool, len(vaultList))
+	for _, e := range vaultList {
+		if id := entryId(e); id != "" {
+			seen[id] = true
+		}
+	}
+	out := append([]any{}, vaultList...)
+	for _, e := range localList {
+		id := entryId(e)
+		if id == "" || seen[id] {
+			continue
+		}
+		seen[id] = true
+		out = append(out, e)
+	}
+	return out
+}
+
+func entryId(e any) string {
+	obj, ok := e.(map[string]any)
+	if !ok {
+		return ""
+	}
+	id, _ := obj["id"].(string)
+	return id
+}

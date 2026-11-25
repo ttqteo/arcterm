@@ -52,7 +52,9 @@ Một council là một **nhóm** gồm các chuyên gia theo vai và một ngư
 | Chats with the Other side | các chat bạn chọn + Other side | Host |
 
 Hai nhóm cuối dành cho council có xếp ghế cho chat. Bạn thêm vai của riêng mình trong `councilroles.json`, nằm trong
-thư mục config.
+`config/` của vault (mặc định `~/.waveterm/vault/config/councilroles.json`), nên vai và nhóm theo vault sang mọi máy
+đã bật đồng bộ. Lần đầu mở bản mới, file cũ trong thư mục config được chuyển vào vault và đổi tên thành
+`councilroles.json.migrated`; nếu vault đã có file từ máy khác, hai bên ghép theo `id`, vai trùng `id` giữ bản trong vault.
 
 **Tên vai theo ngôn ngữ của câu hỏi.** Mỗi vai dựng sẵn có một tên tiếng Anh dễ hiểu và một tên tiếng Việt, và council hiện
 bộ tên khớp với ngôn ngữ bạn đặt câu hỏi: câu hỏi có chữ chỉ tiếng Việt mới viết (đ, ă, â, ê, ô, ơ, ư, hay nguyên âm có
