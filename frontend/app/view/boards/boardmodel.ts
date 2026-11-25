@@ -5,7 +5,7 @@
 // count shapes. Pure: no React, no RPC, no Excalidraw runtime.
 
 import type { ExcalidrawElement } from "@excalidraw/excalidraw/element/types";
-import { drawingData, isFrame } from "./boarddrawings";
+import { drawingData, drawingNumber, isFrame } from "./boarddrawings";
 
 const FULL_OPACITY = 100;
 
@@ -163,6 +163,7 @@ export interface AnswerResult {
     scene: BoardScene;
     shapeIds: string[]; // added + changed: what Show selects and the ack sends
     textIds: string[]; // text whose words or container changed: landAnswer re-measures these
+    drawingId: string; // the frame the answer landed in, new or edited
 }
 
 interface AnswerUpdate {
@@ -270,6 +271,7 @@ function newBoundText(container: ExcalidrawElement, label: string, now: number):
         textAlign: "center",
         verticalAlign: "middle",
         containerId: container.id,
+        frameId: container.frameId,
         autoResize: true,
         lineHeight: LABEL_LINE_HEIGHT,
     });
@@ -315,7 +317,8 @@ function applyUpdate(els: ExcalidrawElement[], i: number, u: AnswerUpdate, now: 
             els[i] = patch(els[i], {
                 boundElements: [...(els[i].boundElements ?? []), { type: "text", id: label.id }],
             });
-            els.push(label);
+            // beside its container, as Excalidraw orders bound text, so it stays before the container's frame
+            els.splice(i + 1, 0, label);
             textIds.push(label.id);
         }
         return;
@@ -446,6 +449,7 @@ function routeArrows(els: ExcalidrawElement[], addedIds: Set<string>, movedIds: 
 
 // --- drawings: each is a frame, its children before it as Excalidraw orders them
 
+const DRAWING_GAP = 120; // between a new drawing and everything already on the board
 const FRAME_PADDING = 40; // between a frame and its outermost shape
 const EARLIER_TITLE = "Earlier drawings";
 
@@ -480,15 +484,77 @@ export function wrapEarlier(scene: BoardScene, now: number): BoardScene {
     return { ...scene, elements: [...elements, frame] };
 }
 
+function liveFrameId(elements: readonly ExcalidrawElement[], id: string | undefined): string | null {
+    return id != null && elements.some((el) => el.id === id && isFrame(el) && !el.isDeleted) ? id : null;
+}
+
+// The answer's shapes are in the drawer's own coordinates: the drawing moves right of everything on the board, level
+// with its topmost shape (an empty board: the origin), and a frame is made around it.
+function landNew(
+    els: readonly ExcalidrawElement[],
+    before: readonly ExcalidrawElement[],
+    addedIds: ReadonlySet<string>,
+    title: string | undefined,
+    now: number
+): { elements: ExcalidrawElement[]; drawingId: string } {
+    const board = unionBounds(live(before));
+    const drawn = unionBounds(els.filter((el) => addedIds.has(el.id) && !el.isDeleted)) ?? {
+        minX: 0,
+        minY: 0,
+        maxX: 0,
+        maxY: 0,
+    };
+    const left = board == null ? 0 : board.maxX + DRAWING_GAP;
+    const top = board == null ? 0 : board.minY;
+    const dx = left + FRAME_PADDING - drawn.minX;
+    const dy = top + FRAME_PADDING - drawn.minY;
+    const n = Math.max(0, ...live(before).map((el) => drawingNumber(el) ?? 0)) + 1;
+    const placed = { minX: drawn.minX + dx, minY: drawn.minY + dy, maxX: drawn.maxX + dx, maxY: drawn.maxY + dy };
+    const frame = newFrame(n, title || null, placed, now);
+    const moved = els.map((el) =>
+        addedIds.has(el.id) ? patch(el, { x: el.x + dx, y: el.y + dy, frameId: frame.id }) : el
+    );
+    return { elements: [...moved, frame], drawingId: frame.id };
+}
+
+// An edit uses board coordinates: its shapes join the frame, just before it, and the frame refits to its children.
+function landEdit(
+    els: readonly ExcalidrawElement[],
+    frameId: string,
+    addedIds: ReadonlySet<string>,
+    now: number
+): { elements: ExcalidrawElement[]; drawingId: string } {
+    const joined = els.filter((el) => addedIds.has(el.id)).map((el) => patch(el, { frameId }));
+    const elements = els.filter((el) => !addedIds.has(el.id));
+    const at = elements.findIndex((el) => el.id === frameId);
+    elements.splice(at, 0, ...joined);
+    const fit = unionBounds(elements.filter((el) => el.frameId === frameId && !el.isDeleted));
+    if (fit != null) {
+        elements[at + joined.length] = bump(elements[at + joined.length], padded(fit), now);
+    }
+    return { elements, drawingId: frameId };
+}
+
+/** Re-wraps and re-measures the named text. landAnswer hands in Excalidraw's, so this module never loads it. */
+export type MeasureText = (elements: readonly ExcalidrawElement[], textIds: readonly string[]) => ExcalidrawElement[];
+
+const unmeasured: MeasureText = (elements) => [...elements];
+
 // added (already converted) goes on top; update and remove skip ids the board no longer has, since you may have
-// deleted them while the drawer answered.
+// deleted them while the drawer answered. An answer edits the drawing it names while that frame is still on the
+// board, and otherwise lands as a new drawing, on a board with drawings (wrapEarlier first, for one without). Text is
+// measured before the drawing lands, so its frame fits it as measured.
 export function applyAnswer(
     scene: BoardScene,
     answer: BoardAnswer,
     added: readonly ExcalidrawElement[],
-    now: number
+    now: number,
+    measureText: MeasureText = unmeasured
 ): AnswerResult {
-    const els = [...scene.elements, ...added];
+    const board = wrapEarlier(scene, now);
+    const editing = liveFrameId(board.elements, answer.drawingid);
+    const addedIds = new Set(added.map((el) => el.id));
+    const els = [...board.elements, ...added];
     const liveAt = (id: string): number => els.findIndex((el) => el.id === id && !el.isDeleted);
     const shapeIds = added.filter((el) => !isBoundText(el)).map((el) => el.id);
     const textIds: string[] = [];
@@ -514,11 +580,18 @@ export function applyAnswer(
             els[t] = bump(els[t], { isDeleted: true }, now);
         }
     }
-    routeArrows(els, new Set(added.map((el) => el.id)), movedIds, now);
+    routeArrows(els, addedIds, movedIds, now);
+    const changedText = [...new Set(textIds)].filter((id) => liveAt(id) >= 0);
+    const measured = measureText(els, changedText);
+    const landed =
+        editing != null
+            ? landEdit(measured, editing, addedIds, now)
+            : landNew(measured, board.elements, addedIds, answer.title, now);
     return {
-        scene: { ...scene, elements: els },
+        scene: { ...board, elements: landed.elements },
         shapeIds: [...new Set(shapeIds)].filter((id) => liveAt(id) >= 0),
-        textIds: [...new Set(textIds)].filter((id) => liveAt(id) >= 0),
+        textIds: changedText,
+        drawingId: landed.drawingId,
     };
 }
 
