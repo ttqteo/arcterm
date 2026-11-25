@@ -247,3 +247,8 @@ The "Left to the builder" items, and the calls the build needed beyond them. Eac
 - **CHANGELOG:** one big line under Added with `<!-- shot: none -->`; the scenario calls
   `h.whatsnewShot("git-accounts", …)` so the Final run leaves the picture, to be named on the line afterwards (as the
   boards line did). Why: run workers have no CDP, and a shot named before its file exists fails `whatsnew.test.ts`.
+- **Credentials-only strip (Final round 1 review):** with github.com lines in `~/.git-credentials` and no account showing
+  a strip, one account row carries a strip "~/.git-credentials keeps N github.com line(s) in plain text." whose Fix opens
+  the list with only the credentials row. The row is the default login's account, else the first account. Why: the file
+  is machine-wide, so a strip on every row would be noise, but without one the fix this spec promises is unreachable on
+  a machine whose repos are clean.
