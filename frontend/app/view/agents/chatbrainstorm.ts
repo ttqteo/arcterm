@@ -643,7 +643,10 @@ function checkCard(input: CardInput, f: BrainstormFile): CheckCard | null {
             }
         }
     }
-    const working = stage === "reading" || stage === "taking-in" || f.working != null;
+    // a run under way from Approve (the launcher's start, or a queued entry that has started) is the card at work, not
+    // the card waiting on the user
+    const starting = f.starting === true || queued?.state === "started";
+    const working = stage === "reading" || stage === "taking-in" || f.working != null || starting;
     return {
         kind: "check",
         state: input.exited ? "static" : working ? "working" : "waiting",

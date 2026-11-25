@@ -98,6 +98,9 @@ export type BrainstormFile = {
     done: boolean;
     check: BuilderCheck | null;
     run: string | null;
+    // Arc's own, never in the file: the launcher is starting a run from this design and CreateRun has not returned its
+    // id yet (withStartingRun), so the design waits on the start, not on the user
+    starting?: true;
     // the agent's read of the build's size, written with the spec: "quick" when one worker builds it in one sitting
     runShape?: RunShape;
     compacted?: number;
@@ -541,9 +544,10 @@ export function checkWaits(f: BrainstormFile): boolean {
     return f.check != null && f.working == null && f.run == null;
 }
 
-// the file waits on the user: a question to answer, guesses to confirm, or the builder check's questions and review
+// the file waits on the user: a question to answer, guesses to confirm, or the builder check's questions and review.
+// A run being started from it does not: the user approved, and the start is what it waits on
 export function waitsOnUser(f: BrainstormFile): boolean {
-    return isAsking(f) || awaitsReview(f) || checkWaits(f);
+    return f.starting !== true && (isAsking(f) || awaitsReview(f) || checkWaits(f));
 }
 
 export function asksUser(f: BrainstormFile | null, agent: Pick<AgentVM, "state" | "atPrompt">): boolean {
@@ -577,8 +581,21 @@ export function treeLine(f: BrainstormFile, asking: boolean, runText?: string): 
     if (f.run != null) {
         return { text: runText ?? `run ${f.run.slice(0, RUN_ID_CHARS)}`, runId: f.run };
     }
+    if (f.starting === true) {
+        return { text: "starting run" };
+    }
     if (asking && f.question == null && awaitsReview(f)) {
         return { text: `confirm ${plural(toReview(f), "decision", "decisions")}` };
+    }
+    // the builder check waits on its questions or on the review, never on a talk question
+    if (asking && f.question == null && f.check != null) {
+        const unanswered = f.check.yours.filter((y) => y.a == null).length;
+        return {
+            text:
+                unanswered > 0
+                    ? `answer ${plural(unanswered, "builder question", "builder questions")}`
+                    : "review builder check",
+        };
     }
     if (asking) {
         return { text: `asking question ${f.question?.n ?? ""}`.trim() };
@@ -1656,9 +1673,17 @@ export type StartingRunMark = { runId: string | null; entryId?: string };
 
 export const RUN_STARTING = "The run is starting";
 
-// the file with the run Arc started from it, before the agent has recorded that run itself
+// the file with the run Arc started from it, before the agent has recorded that run itself; a start from the launcher
+// whose CreateRun has not returned yet is `starting`. A queued start is not: the queue speaks for it
+// (queuedForBrainstorm), and a removed entry turns Approve back on
 export function withStartingRun(f: BrainstormFile, starting: StartingRunMark | null): BrainstormFile {
-    return f.run == null && starting?.runId != null ? { ...f, run: starting.runId } : f;
+    if (f.run != null || starting == null) {
+        return f;
+    }
+    if (starting.runId != null) {
+        return { ...f, run: starting.runId };
+    }
+    return starting.entryId == null && f.starting !== true ? { ...f, starting: true } : f;
 }
 
 /** What the run queue holds for a brainstorm's Approve: its entry waiting (`after` names the runs it waits on that have
