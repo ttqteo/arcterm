@@ -41,6 +41,7 @@ import { historyQueryAtom, loadMoreProjectSessions, type ProjectHistory } from "
 import {
     firstRows,
     HISTORY_PAGE,
+    historyCountLabel,
     historyRows,
     historySessionLine,
     isLastChild,
@@ -61,7 +62,7 @@ const ROW =
 // a session row opens Quick look; the full session pane is its Open, or the row's menu
 const SESSION_ROW =
     "flex w-full cursor-pointer flex-col items-stretch gap-[2px] border-t border-edge-mid px-3 py-[9px] text-left first:border-t-0 hover:bg-surface-hover";
-// a child row sits 28px in, its divider starting there too
+// a child row sits 40px in, past the gutter its tree line (STEM) runs in, and its divider starts at its text
 const NESTED_ROW =
     "relative flex w-full cursor-pointer items-center gap-[10px] py-[9px] pl-10 pr-3 text-left before:absolute before:left-10 before:right-0 before:top-0 before:h-px before:bg-edge-mid hover:bg-surface-hover";
 // the tree line a child row hangs off its session on, in the 40px it sits in: the stem runs on through a row a sibling
@@ -397,6 +398,7 @@ export function HistoryColumn({
     // error line shows, with what was read under it
     const busy =
         (h.sessions == null && !h.sessionsError) || (runsError == null && (h.councils == null || h.runs.runs == null));
+    const countLabel = busy ? null : historyCountLabel(sessionCount, h.more, h.sessionsError);
 
     const onSearchKey = (e: KeyboardEvent<HTMLInputElement>) => {
         if (e.key !== "Escape") {
@@ -598,10 +600,9 @@ export function HistoryColumn({
         <section data-overview-history aria-label="History" className="flex min-w-0 flex-1 flex-col gap-[10px]">
             <div className="flex items-center gap-3">
                 <h2 className="text-[11px] font-semibold text-muted">History</h2>
-                {!busy ? (
+                {countLabel != null ? (
                     <span data-history-count className="text-[11px] tabular-nums text-muted">
-                        {sessionCount}
-                        {h.more ? "+" : ""} {sessionCount === 1 && !h.more ? "session" : "sessions"}
+                        {countLabel}
                     </span>
                 ) : null}
                 <span className="flex-1" />

@@ -424,6 +424,15 @@ export function rowsUntil(rows: readonly HistoryRow[], frontier: number | null):
     return end < 0 ? (rows as HistoryRow[]) : rows.slice(0, end);
 }
 
+// History's heading count: the ended sessions read in the window, "+" while older pages are unread. A failed sessions
+// read has no count to give, as while loading (its error row says so), so null leaves it out
+export function historyCountLabel(count: number, more: boolean, failed: boolean): string | null {
+    if (failed) {
+        return null;
+    }
+    return `${count}${more ? "+" : ""} ${count === 1 && !more ? "session" : "sessions"}`;
+}
+
 // the first `limit` top-level rows, each with the rows nested under it, so a page never ends between a session and its
 // runs and councils
 export function firstRows(rows: readonly HistoryRow[], limit: number): HistoryRow[] {

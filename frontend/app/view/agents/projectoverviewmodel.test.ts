@@ -12,6 +12,7 @@ import {
     doingLine,
     finishedRows,
     firstRows,
+    historyCountLabel,
     historyRows,
     historySessionLine,
     isLastChild,
@@ -635,6 +636,20 @@ describe("rowsUntil", () => {
     it("stops at the first top-level row older than the frontier, keeping its session's nested rows", () => {
         expect(rowsUntil(ROWS, 30).map((r) => r.key)).toEqual(["a", "a1", "b"]);
         expect(rowsUntil(ROWS, 20).map((r) => r.key)).toEqual(["a", "a1", "b", "c", "c1"]);
+    });
+});
+
+describe("historyCountLabel", () => {
+    it("counts the sessions read, with + while older ones are unread", () => {
+        expect(historyCountLabel(1, false, false)).toBe("1 session");
+        expect(historyCountLabel(1, true, false)).toBe("1+ sessions");
+        expect(historyCountLabel(0, false, false)).toBe("0 sessions");
+        expect(historyCountLabel(12, false, false)).toBe("12 sessions");
+    });
+
+    it("leaves the count out while the sessions read has failed", () => {
+        expect(historyCountLabel(0, false, true)).toBeNull();
+        expect(historyCountLabel(4, true, true)).toBeNull();
     });
 });
 

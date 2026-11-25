@@ -73748,7 +73748,7 @@ async function ovhInstallInPage(cfg) {
     const prev = api.mockClient ?? null;
     const norm = (p) => String(p ?? "").replace(/[\\/]+/g, "/").replace(/\/$/, "").toLowerCase();
     const held = [];
-    const mode = { holdCouncils: false, runsFail: null, noSessionsB: false, extraSessions: [], release: null, pageBy: 0, asked: [] };
+    const mode = { holdCouncils: false, runsFail: null, sessionsFail: null, noSessionsB: false, extraSessions: [], release: null, pageBy: 0, asked: [] };
     mode.release = () => {
         mode.holdCouncils = false;
         for (const resolve of held.splice(0)) resolve([]);
@@ -73756,6 +73756,7 @@ async function ovhInstallInPage(cfg) {
     const mock = {
         mockWshRpcCall(client, command, data, opts) {
             if (command === "getsessionsactivity") {
+                if (mode.sessionsFail && data?.projectpath) return Promise.reject(new Error(mode.sessionsFail));
                 const all = [...cfg.sessions, ...mode.extraSessions].filter(
                     (s) => !(mode.noSessionsB && norm(s.projectpath) === norm(cfg.dirB))
                 );
@@ -74364,6 +74365,31 @@ const projectOverviewHistory = {
                     page8.council &&
                     recovered,
                 JSON.stringify({ reopen8, error8, ...page8, recovered })
+            );
+
+            // 8b. a failed sessions read: the heading leaves its count out (it read none, so "0 sessions" would be wrong), the
+            // error line says so; Retry reads them and the count comes back
+            await h.ev(`window.${OVH_MOCK_KEY}.mode.sessionsFail = "boom"`);
+            await h.goto("agent");
+            const reopen8b = await ovhReopen(h, ctx, OVH_A);
+            const error8b = await polishWaitFor(h, `(${ovhText("[data-history-error]")} ?? "").includes("Could not read sessions")`, 5000);
+            const page8b = await h.ev(`({
+                count: ${ovhText("[data-history-count]")},
+                heading: !!document.querySelector("[data-overview-history] h2"),
+            })`);
+            await shot("8b");
+            await h.ev(`window.${OVH_MOCK_KEY}.mode.sessionsFail = null`);
+            await h.ev(`document.querySelector("[data-history-retry]")?.click()`);
+            const back8b = await polishWaitFor(
+                h,
+                `!${ovHas("[data-history-error]")} && /^\\d+\\+? sessions?$/.test(${ovhText("[data-history-count]")} ?? "")`,
+                5000
+            );
+            const count8b = await h.ev(ovhText("[data-history-count]"));
+            rec(
+                "8b. a failing sessions read shows `Could not read sessions.` and the History heading has no session count (not `0 sessions`); with the read answering, Retry removes the error and the count comes back",
+                reopen8b && error8b && page8b.heading && page8b.count == null && back8b,
+                JSON.stringify({ reopen8b, error8b, ...page8b, back8b, count8b })
             );
 
             // 9. under 1000px the columns stack: Now, then the Branches card, then History
