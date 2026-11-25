@@ -23,6 +23,10 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
 
 ## 2026-11-25
 
+- [ ] (arcterm) Chat table Copy: hover a table in a Claude reply; the copy button sits right of the header row, over no
+  cell. Click it, paste in Chat's input: a `| … |` Markdown table arrives; paste in Google Docs: real ruled cells.
+  Layout measured in headless Edge only (`markdown.scss`, `markdown-table.ts`; uncommitted).
+
 - [ ] (arcterm) **On the Mac app: a 100k+ Claude agent is compacted before it sleeps and before its cache goes cold,
   and keeps a draft** (`pkg/agentsleep/compact.go`, `wshserver_agentsleeploop.go`; e044cc0cb, e2f38fb4f). Seen on the
   installed Windows app (waveapp.log 11-23..11-25: 17 compactions before sleep and 5 before the cache went cold, every

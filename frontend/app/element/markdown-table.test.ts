@@ -64,10 +64,20 @@ function gfmTable(): Element {
 }
 
 describe("tableClipboard", () => {
-    it("copies the cells as tab-separated rows, header first", () => {
+    it("copies the text as a Markdown table, header first, keeping each column's alignment", () => {
         expect(tableClipboard(gfmTable()).text).toBe(
-            "Task\tMean time\nT1 Start as a guest\t48 s\nT2 Finish a lesson\t222 s"
+            "| Task | Mean time |\n| :--- | ---: |\n| T1 Start as a guest | 48 s |\n| T2 Finish a lesson | 222 s |"
         );
+    });
+
+    it("escapes a pipe in a cell and pads a short row", () => {
+        const t = h(
+            "table",
+            {},
+            h("thead", {}, h("tr", {}, h("th", {}, "a"), h("th", {}, "b"))),
+            h("tbody", {}, h("tr", {}, h("td", {}, "x | y")))
+        );
+        expect(tableClipboard(t).text).toBe("| a | b |\n| --- | --- |\n| x \\| y |  |");
     });
 
     it("copies the HTML table a doc pastes as ruled cells, keeping each column's alignment", () => {
@@ -93,7 +103,7 @@ describe("tableClipboard", () => {
         );
         const out = tableClipboard(t);
         expect(out.html).toContain(`<td style="${CELL}"><strong>bold</strong> and <code>code</code><br>next</td>`);
-        expect(out.text).toBe("bold and code next");
+        expect(out.text).toBe("| bold and code next |\n| --- |");
     });
 
     it("escapes cell text so it pastes as text, not markup", () => {
@@ -121,19 +131,19 @@ describe("tableClipboard", () => {
         expect(out.html).toContain(`<td style="${CELL}"><a href="https://example.com/?a=1&amp;b=2">web</a></td>`);
         expect(out.html).toContain(`<td style="${CELL}">script</td>`);
         expect(out.html).toContain(`<td style="${CELL}">local</td>`);
-        expect(out.text).toBe("web\tscript\tlocal");
+        expect(out.text).toBe("| web | script | local |\n| --- | --- | --- |");
     });
 
     it("folds tabs and line breaks inside a cell so it stays one cell of the text", () => {
         const t = h("table", {}, h("tbody", {}, h("tr", {}, h("td", {}, "a\tb\nc  d"), h("td", {}, "e"))));
-        expect(tableClipboard(t).text).toBe("a b c d\te");
+        expect(tableClipboard(t).text).toBe("| a b c d | e |\n| --- | --- |");
     });
 
     it("reads a raw HTML table with rows straight under it, and keeps a nested table as its cell's content", () => {
         const nested = h("table", {}, h("tr", {}, h("td", {}, "inner")));
         const t = h("table", {}, h("tr", {}, h("th", {}, "outer")), h("tr", {}, h("td", {}, nested)));
         const out = tableClipboard(t);
-        expect(out.text).toBe("outer\ninner");
+        expect(out.text).toBe("| outer |\n| --- |\n| inner |");
         expect(out.html).toBe(
             TABLE +
                 `<tbody><tr><th style="${CELL}">outer</th></tr><tr><td style="${CELL}">inner</td></tr></tbody></table>`

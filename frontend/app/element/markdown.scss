@@ -134,23 +134,21 @@
             border-bottom: 1px solid var(--color-border);
         }
 
-        // as wide as its table, so the copy button sits on the table's corner and not the column's; the block
-        // around it (markdown.tsx) takes the column's width and margins
+        // as wide as its table plus a gutter on its right, where the copy button sits beside the header row instead
+        // of over a cell; the block around it (markdown.tsx) takes the column's width and margins
         .table-box {
             position: relative;
             width: fit-content;
             max-width: 100%;
+            padding-right: 1.75em;
 
             .table-actions {
                 visibility: hidden;
                 position: absolute;
-                top: 0;
+                // the table's top margin, so the button lines up with the header row
+                top: 0.5em;
                 right: 0;
-                margin: 0.143em;
                 padding: 0.143em;
-                border-radius: 4px;
-                // opaque: it covers the end of the header cell under it
-                background-color: var(--color-surface-raised);
             }
 
             &:hover .table-actions,
@@ -402,6 +400,11 @@
         max-width: 100%;
         overflow-x: auto;
         margin: 0.3em 0 1.1em;
+    }
+
+    // the table's top margin above, so the copy button stays level with the header row
+    .table-box .table-actions {
+        top: 0.3em;
     }
 }
 

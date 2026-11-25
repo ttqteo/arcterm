@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // A rendered markdown table as clipboard content: HTML, which a spreadsheet, a doc or Notion pastes as a table with
-// real cells, and tab-separated text for a place that takes only text (a spreadsheet still splits it into cells).
+// real cells, and a GFM Markdown table for a place that takes only text (a chat input, an agent's prompt, an editor),
+// so the table survives the paste and renders again where Markdown does.
 // Read from the table's hast node, so the copy holds the cells and none of the view's styling: a dark theme's
 // colours never land in a pasted document.
 
@@ -93,11 +94,34 @@ function cellStyle(cell: Element): string {
     return typeof align === "string" && ALIGNS.has(align) ? `${CELL_STYLE};text-align:${align}` : CELL_STYLE;
 }
 
+// one cell of the Markdown text: on one line, its pipes escaped so they stay inside the cell
+function mdCell(cell: Element): string {
+    return cellText(cell.children).replace(/\s+/g, " ").trim().replace(/\|/g, "\\|");
+}
+
+const DELIM: Record<string, string> = { left: ":---", right: "---:", center: ":---:" };
+
+// GFM needs a header row: the table's own, else its first row stands in
+function tableMarkdown(rows: Row[]): string {
+    if (rows.length === 0) {
+        return "";
+    }
+    const headAt = rows.findIndex((r) => r.head);
+    const head = rows[headAt >= 0 ? headAt : 0];
+    const body = rows.filter((r) => r !== head);
+    const width = Math.max(...rows.map((r) => r.cells.length), 1);
+    const line = (cells: string[]) => "| " + cells.join(" | ") + " |";
+    const pad = (r: Row) => Array.from({ length: width }, (_, i) => (r.cells[i] ? mdCell(r.cells[i]) : ""));
+    const delim = Array.from({ length: width }, (_, i) => {
+        const align = head.cells[i]?.properties?.align;
+        return (typeof align === "string" && DELIM[align]) || "---";
+    });
+    return [line(pad(head)), line(delim), ...body.map((r) => line(pad(r)))].join("\n");
+}
+
 export function tableClipboard(table: Element): TableClipboard {
     const rows = tableRows(table);
-    const text = rows
-        .map((r) => r.cells.map((c) => cellText(c.children).replace(/\s+/g, " ").trim()).join("\t"))
-        .join("\n");
+    const text = tableMarkdown(rows);
     const rowHtml = (r: Row) =>
         "<tr>" +
         r.cells
