@@ -139,11 +139,17 @@ func (h *Hooks) Await(ctx context.Context, block, reply string, question, expect
 // headless call is worth running for the ask (headless). It is not when the block's mod is at work and its latest
 // begin is another reply's: the ask is for a reply that is no turn's end. Either the mod has begun a newer reply (Chat
 // read the transcript late), or the reply is a line the agent wrote mid-turn, which the mod never begins: of 27 such
-// asks in waveapp.log (2026-11-19), the mod began none, and each ran a ~470 MB claude for chips nobody read.
+// asks in waveapp.log (2026-11-19), the mod began none, and each ran a ~470 MB claude for chips nobody read. Nor is it
+// for a Claude agent's reply that does not end in a question: the mod alone answers those. Of 78 headless calls for
+// such turns (waveapp.log, 2026-11-19 to 11-26) 74 made no chip and none was picked, while the mod's chips for them were
+// picked 14 times. An agent with no mod (expect false) keeps the headless call for every reply: nothing measured it.
 func (h *Hooks) AwaitWhy(ctx context.Context, block, reply string, question, expect bool) (out Answer, ok bool, why string, headless bool) {
 	out, ok, why = h.awaitWhy(ctx, block, reply, question, expect)
 	if ok {
 		return out, true, "", false
+	}
+	if expect && !question {
+		return out, false, why, false
 	}
 	h.mu.Lock()
 	e := h.byBlock[block]

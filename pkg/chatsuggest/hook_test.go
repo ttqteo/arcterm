@@ -245,9 +245,18 @@ func TestHooksAwaitWhySaysWhyItTookNoAnswer(t *testing.T) {
 		wantWhy(t, why, "no begin within")
 		wantHeadless(t, headless, true)
 	})
+	t.Run("no begin for a reply that asks nothing: no headless call", func(t *testing.T) {
+		_, _, why, headless := fastHooks().AwaitWhy(ctx, "b1", "Done, the rail shows it.", false, true)
+		wantWhy(t, why, "no begin within")
+		wantHeadless(t, headless, false)
+	})
 	t.Run("not a Claude agent", func(t *testing.T) {
 		_, _, why, headless := fastHooks().AwaitWhy(ctx, "b1", askReply, true, false)
 		wantWhy(t, why, "not a Claude agent")
+		wantHeadless(t, headless, true)
+	})
+	t.Run("not a Claude agent, a reply that asks nothing: still the headless call", func(t *testing.T) {
+		_, _, _, headless := fastHooks().AwaitWhy(ctx, "b1", "Done, the rail shows it.", false, false)
 		wantHeadless(t, headless, true)
 	})
 	t.Run("another reply begun: both ends shown, no headless call", func(t *testing.T) {
@@ -275,6 +284,12 @@ func TestHooksAwaitWhySaysWhyItTookNoAnswer(t *testing.T) {
 		h := fastHooks()
 		h.Begin("b1", Request{Reply: askReply})
 		_, _, why, headless := h.AwaitWhy(ctx, "b1", askReply, false, true)
+		wantWhy(t, why, "question differs")
+		// Chat reads no question: the mod alone answers such a reply
+		wantHeadless(t, headless, false)
+		h = fastHooks()
+		h.Begin("b1", Request{Reply: "Done, the rail shows it."})
+		_, _, why, headless = h.AwaitWhy(ctx, "b1", "Done, the rail shows it.", true, true)
 		wantWhy(t, why, "question differs")
 		wantHeadless(t, headless, true)
 	})

@@ -74,6 +74,9 @@ and a picture given to a line that is not big.
   it adds another judge; on a judge, a link goes to the agent it judges), and the rail turns to Decided.
 - In Chat, a `! command` an agent asks you to type inside a sentence is highlighted like the must-read lines, so it no
   longer reads as just another piece of code.
+- A Claude agent's turn that asks you nothing no longer starts a background Claude (about 470 MB for several seconds)
+  when the agent's own suggestion is late: in a week it found nothing worth a chip. Its suggestion still comes from the
+  agent when it is in time.
 
 ### Fixed
 
