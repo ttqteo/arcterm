@@ -44,8 +44,11 @@ function location(c: PendingComment, suffix: string): string {
     if (c.side === "modified") {
         return `${c.path}:${span(c)}${suffix}`;
     }
-    const left = sideName(c.refs.original);
-    return `${c.path}: removed ${c.start === c.end ? "line" : "lines"} ${span(c)} of ${left}${suffix}`;
+    const original = c.refs.original;
+    const left = sideName(original);
+    // a rename's removed lines belong to the old name at that ref
+    const path = original.kind === "ref" && original.path ? original.path : c.path;
+    return `${path}: removed ${c.start === c.end ? "line" : "lines"} ${span(c)} of ${left}${suffix}`;
 }
 
 function commentLines(c: PendingComment, suffix: string): string[] {

@@ -95,6 +95,8 @@ and a picture given to a line that is not big.
 
 ### Fixed
 
+- A renamed file's Diff compares it with its old name, instead of drawing the whole file as added, and a comment on its
+  removed lines names the old path. The history graph no longer shows a stash as a branch tip.
 - Enter on a question card's Submit tab sends the answers again: the tab now puts the focus on its Submit button,
   where before the focus fell off the card when the last answer moved you there and Enter did nothing.
 - In an agent's terminal, a path cut off by an ellipsis (`docs/specs/2026-11-01-c…`, a long command's preview cut at

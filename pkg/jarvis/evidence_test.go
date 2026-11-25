@@ -152,7 +152,7 @@ func TestEvidenceRoute(t *testing.T) {
 		observed               string
 		wantHarness, wantModel string
 	}{
-		"transcript model wins over the pinned one": {waveobj.Run{Runtime: "claude", Model: "claude-sonnet-5"}, "claude-opus-5", "claude", "claude-opus-5"},
+		"transcript model wins over the pinned one":   {waveobj.Run{Runtime: "claude", Model: "claude-sonnet-5"}, "claude-opus-5", "claude", "claude-opus-5"},
 		"pinned model when the transcript names none": {waveobj.Run{Runtime: "pi", Model: "deepseek-v4-flash"}, "", "pi", "deepseek-v4-flash"},
 		"empty runtime is the default runtime":        {waveobj.Run{}, "claude-opus-5", runroute.DefaultRuntime(""), "claude-opus-5"},
 		"neither known leaves model empty":            {waveobj.Run{Runtime: "claude"}, "", "claude", ""},
@@ -1312,5 +1312,19 @@ func TestSealEvidenceAfterLandWithAnUnresolvableEndCommitStaysUnsealed(t *testin
 	run.EndCommit = "0123456789abcdef0123456789abcdef01234567"
 	if err := SealEvidence(context.Background(), run); err == nil {
 		t.Errorf("sealed %v with an EndCommit that does not resolve, want an error", run.Evidence)
+	}
+}
+
+// a rename's source field is a path, not an entry: read as one, "xx/foo.go" would key "foo.go"
+func TestParseNumstatStatusSkipsRenameSource(t *testing.T) {
+	numstat := "3\t0\tfoo.go\n0\t0\tnew.go\n"
+	statusZ := "R  new.go\x00xx/foo.go\x00A  foo.go\x00"
+	files := parseNumstatStatus(numstat, statusZ)
+	if len(files) != 2 || files[0].Stat != "A" || files[1].Stat != "M" {
+		t.Errorf("files = %+v, want foo.go A and new.go M", files)
+	}
+	statusZ = "A  foo.go\x00R  new.go\x00xx/foo.go\x00"
+	if files := parseNumstatStatus(numstat, statusZ); len(files) != 2 || files[0].Stat != "A" {
+		t.Errorf("files = %+v, want foo.go to stay A", files)
 	}
 }

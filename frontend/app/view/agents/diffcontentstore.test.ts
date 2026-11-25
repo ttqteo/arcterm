@@ -267,3 +267,16 @@ describe("a read that fails", () => {
         expect(fileRead).not.toHaveBeenCalled();
     });
 });
+
+// a pure rename then reads the same text on both sides, rather than the whole file as added
+describe("a renamed file's pair", () => {
+    it("reads a renamed file's left side at its old path", async () => {
+        fileAtRef.mockImplementation((_c: any, d: any) => Promise.resolve({ content: `${d.path} at ${d.ref}` }));
+        await loadDiffPair("/repo", "src/new.ts", { kind: "commit", hash: "deadbee" }, "src/old.ts");
+        expect(globalStore.get(diffPairAtom)).toMatchObject({
+            path: "src/new.ts",
+            original: "src/old.ts at deadbee^",
+            modified: "src/new.ts at deadbee",
+        });
+    });
+});
