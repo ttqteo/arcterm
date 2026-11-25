@@ -6,6 +6,12 @@
 // a DOM assert. Beside Chat only the latest turn shows, so a step that reads one turn's row puts that turn last; a dense
 // board (B3) reads one part at a time (8b), a small one (B1) reads whole.
 //
+// Steps 17 and 18 are the drawings (docs/superpowers/specs/2026-11-25-kael-sync-boards-drawings-design.md): a board opens
+// in Excalidraw's view mode with an Edit switch in the strip above it (17), and each drawer answer is a numbered frame, a
+// drawing, listed in the strip's row, fitted as it lands and picked by its chip (18). An answer reaches the page as the
+// real one does: left in the fixture inbox (putAnswer) and announced with board:update, so the real applier lands it in
+// the open canvas (or in the fixture file when no canvas is open).
+//
 // Two fixture claude agents over real tabs (no controller, so nothing runs) and a mock roster for them; the first has a
 // short transcript so Chat has something to show beside the board. The board commands are stubbed in the page
 // (boards-fixtures.mjs): no real drawer runs and wavesrv holds no board. A turn's state is whatever the step puts in the
@@ -15,7 +21,19 @@ import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import * as AC from "./agent-page-fixtures.mjs";
-import { boardCalls, boardPage, boxElements, installBoardStubs, putBoard, putTurns, removeBoardStubs, textElement } from "./boards-fixtures.mjs";
+import {
+    boardCalls,
+    boardFile,
+    boardPage,
+    boxElements,
+    feedBoardUpdate,
+    installBoardStubs,
+    putAnswer,
+    putBoard,
+    putTurns,
+    removeBoardStubs,
+    textElement,
+} from "./boards-fixtures.mjs";
 
 const NAME = "boards-split";
 const PROJECT = "boards-split-fx";
@@ -48,6 +66,27 @@ const partOf = (id, x, y, title) => [
     ...filled(boxElements(`${id}-b`, x + 200, y + 40, `${title} B`), "#ffec99"),
 ];
 const ELEMENTS_3 = [...partOf("harness", 0, 0, "Harness"), ...partOf("bench", 2400, 0, "Benchmark"), ...partOf("rq", 0, 1800, "Research questions")];
+
+// the drawings steps (17-18): B4 is a board drawn before drawings were frames (its shapes are loose in the file, and the
+// canvas wraps them in "Earlier drawings" on opening), B5 has nothing on it. Each drawing the drawer answers is a skeleton
+// as the drawer writes it: a labelled box, or a free text.
+const B4 = "b0a5b004";
+const B4_NAME = "auth-flow";
+const B5 = "b0a5b005";
+const B5_NAME = "blank-board";
+const EARLIER = "Earlier drawings";
+const ELEMENTS_4 = [...filled(boxElements("host-box", 40, 40, "host"), "#a5d8ff"), ...filled(boxElements("key-box", 300, 40, "key"), "#ffec99")];
+const skBox = (x, y, label) => ({ type: "rectangle", x, y, width: 180, height: 70, label: { text: label } });
+const skText = (x, y, words) => ({ type: "text", x, y, text: words });
+const DRAWING_2 = { title: "Auth key flow", add: [skBox(0, 0, "Tauri host"), skBox(260, 0, "auth key")] };
+// the free text is what 18e lengthens
+const DRAWING_3 = { title: "Store layout", add: [skBox(0, 0, "SQLite"), skText(260, 20, "note")] };
+const DRAWING_4 = { title: "Job queue", add: [skBox(0, 0, "queue"), skBox(260, 0, "slot")] };
+// Vietnamese: letters the hand-drawn faces lack (ớ ỗ ầ ạ), so the whole board turns to Nunito as the edit lands, and a
+// line several times as wide as "note", which ended just inside its drawing's frame
+const LONG_NOTE = "Khóa mới mỗi lần chạy";
+const DRAG_PX = 60;
+const DRAG_STEPS = 6;
 
 // the talk: your drawn ask, a question forwarded to the agent and answered there, the agent's drawn request
 const TA = "t-ask-drawn";
@@ -329,8 +368,105 @@ export default function (kit) {
                         y: Math.round((el.y + el.height / 2 + s.scrollY) * s.zoom.value + s.offsetTop),
                     };
                 };
+                // the drawings (steps 17-18): each is a frame, numbered in its customData
+                const frames = () =>
+                    (app()?.scene.getNonDeletedElements() ?? [])
+                        .filter((e) => e.type === "frame")
+                        .map((f) => ({ id: f.id, name: f.name, n: f.customData?.arcDrawing ?? null, x: f.x, y: f.y, width: f.width, height: f.height }));
+                const view = () => {
+                    const s = app()?.state;
+                    return s == null ? null : { scrollX: s.scrollX, scrollY: s.scrollY, zoom: s.zoom.value };
+                };
+                // a frame's sides on the canvas in canvas px (Excalidraw maps a scene point to (point + scroll) * zoom), and
+                // the canvas's own size
+                const onCanvas = (id) => {
+                    const a = app();
+                    const f = a?.scene.getNonDeletedElements().find((e) => e.id === id);
+                    if (f == null) return null;
+                    const s = a.state;
+                    const z = s.zoom.value;
+                    return {
+                        left: (f.x + s.scrollX) * z,
+                        top: (f.y + s.scrollY) * z,
+                        right: (f.x + f.width + s.scrollX) * z,
+                        bottom: (f.y + f.height + s.scrollY) * z,
+                        width: s.width,
+                        height: s.height,
+                    };
+                };
+                // the strip's row of drawings, in order; the "new" word is not part of a chip's title
+                const row = () =>
+                    [...document.querySelectorAll('${BOARD} [data-board-drawings] [data-board-drawing]')].map((b) => {
+                        const clone = b.cloneNode(true);
+                        clone.querySelector("[data-board-drawing-new]")?.remove();
+                        const label = clone.textContent.replace(/\\s+/g, " ").trim();
+                        const m = /^(\\d+)\\s*(.*)$/.exec(label);
+                        return {
+                            id: b.getAttribute("data-board-drawing"),
+                            n: m?.[1] ?? "",
+                            title: m?.[2] ?? label,
+                            current: b.getAttribute("aria-current") === "true",
+                            fresh: b.querySelector("[data-board-drawing-new]") != null,
+                            newWord: (b.querySelector("[data-board-drawing-new]")?.textContent ?? "").trim(),
+                        };
+                    });
             `;
             const canvasPage = (body) => boardPage(h, `${APP} ${body}`);
+            // the frame lies wholly on the canvas, and sits in its middle (a drawing fitted whole is centred)
+            const fitted = (b) => b != null && b.left >= -1 && b.top >= -1 && b.right <= b.width + 1 && b.bottom <= b.height + 1;
+            const centred = (b) => b != null && Math.abs((b.left + b.right) / 2 - b.width / 2) <= 3 && Math.abs((b.top + b.bottom) / 2 - b.height / 2) <= 3;
+            const rowNow = () => canvasPage(`return row();`);
+            const framesNow = () => canvasPage(`return frames();`);
+            const chip = (id, drawingId) => `${SPLIT(id)} [data-board-drawings] [data-board-drawing="${drawingId}"]`;
+            // the cell's Edit, set to on or off: pressed only when it reads the other way, then waited for
+            const setEdit = async (id, on) => {
+                const sel = `${SPLIT(id)} [data-board-edit]`;
+                const now = await h.ev(`document.querySelector(${q(sel)})?.getAttribute("aria-pressed") ?? null`);
+                if (now == null) return false;
+                if (now !== String(on)) await click(sel);
+                const ok = await until(() => h.ev(`document.querySelector(${q(sel)})?.getAttribute("aria-pressed") === ${q(String(on))}`));
+                await polishNap(300);
+                return ok;
+            };
+            // the board's mode as drawn: the canvas's flag, Excalidraw's own, its drawing toolbar and style panel, the Edit
+            // switch and the ask box's line
+            const readMode = async (id) => {
+                const m = await canvasPage(`
+                    const c = document.querySelector('${BOARD} [data-board-canvas="${id}"]');
+                    return {
+                        attr: c?.dataset.boardViewMode ?? null,
+                        viewMode: app()?.state.viewModeEnabled ?? null,
+                        toolbar: !!c?.querySelector(".App-toolbar"),
+                        panel: !!c?.querySelector(".selected-shape-actions"),
+                        selected: selected(),
+                    };`);
+                const edit = await h.ev(`document.querySelector(${q(`${SPLIT(id)} [data-board-edit]`)})?.getAttribute("aria-pressed") ?? null`);
+                const hint = await text(`${SPLIT(id)} [data-board-ask-selected]`);
+                return { ...m, edit, hint };
+            };
+            // a left-button drag from a point, px right and px down, as a pointer would
+            const dragBy = async (from, px) => {
+                const to = { x: from.x + px, y: from.y + px };
+                await h.cdp("Input.dispatchMouseEvent", { type: "mouseMoved", x: from.x, y: from.y });
+                await h.cdp("Input.dispatchMouseEvent", { type: "mousePressed", x: from.x, y: from.y, button: "left", buttons: 1, clickCount: 1 });
+                for (let i = 1; i <= DRAG_STEPS; i++) {
+                    const p = { x: from.x + (px * i) / DRAG_STEPS, y: from.y + (px * i) / DRAG_STEPS };
+                    await h.cdp("Input.dispatchMouseEvent", { type: "mouseMoved", ...p, button: "left", buttons: 1 });
+                }
+                await h.cdp("Input.dispatchMouseEvent", { type: "mouseReleased", ...to, button: "left", buttons: 0, clickCount: 1 });
+            };
+            // the drawer's answer to a running turn, left in the inbox and announced; waits for the applier's ack
+            const land = async (boardId, turnId, body) => {
+                const answerId = `ans-${turnId}`;
+                await putTurns(h, boardId, [{ id: turnId, ts: Date.now() - 5000, kind: "ask", question: "draw it", state: "answering", startedts: Date.now() - 4000 }]);
+                await putAnswer(h, boardId, { id: answerId, turnid: turnId, ...body });
+                await feedBoardUpdate(h, { project: PROJECT, boardid: boardId, what: "answer" });
+                const ackOf = async () => (await boardCalls(h, "BoardAnswerAckCommand")).find((c) => c.answerid === answerId);
+                const acked = await until(async () => (await ackOf()) != null);
+                return { acked, ack: await ackOf() };
+            };
+            // the live frames a board's saved file holds
+            const framesInFile = async (boardId) => ((await boardFile(h, boardId))?.elements ?? []).filter((e) => e.type === "frame" && !e.isDeleted);
             // the board is open and its canvas has its scene in Excalidraw
             const canvasReady = (id) => until(() => h.ev(`document.querySelector(${q(`${SPLIT(id)} ${CANVAS(id)}`)})?.dataset.boardReady === "true"`));
             // typed into the field with the focus, as a person types
@@ -483,7 +619,7 @@ export default function (kit) {
                 const shown = await until(() => h.ev(`document.querySelector(${q(`${SPLIT(B1)} ${CANVAS(B1)}`)})?.dataset.boardHighlight === "tauri-host,auth-key"`));
                 const highlight = await h.ev(`document.querySelector(${q(`${SPLIT(B1)} ${CANVAS(B1)}`)})?.dataset.boardHighlight ?? null`);
                 const picked = await canvasPage(`return selected();`);
-                // Show selected the shapes, so the ask box names them
+                // Show selected the shapes, but a board opens in view mode, where the ask box does not name a selection
                 const asking = await text(`${SPLIT(B1)} [data-board-ask-selected]`);
                 await shot("2-turns-show");
                 // the forwarded question last
@@ -514,7 +650,7 @@ export default function (kit) {
                         shown &&
                         highlight === "tauri-host,auth-key" &&
                         picked.join() === "auth-key,tauri-host" &&
-                        asking?.startsWith("Selected "),
+                        asking === "Press Edit to ask about shapes",
                     { base, baseEarlier, rowsA, rowsB, highlight, picked, asking }
                 );
             });
@@ -546,7 +682,11 @@ export default function (kit) {
             });
 
             // --- 4. select a shape on the canvas: the ask box names it, and Ask sends it along ---
-            await run("4. selecting a shape reads Selected <label> in the ask box, and Ask sends on and selectedids", async (name) => {
+            await run("4. in Edit, selecting a shape reads Selected <label> in the ask box, and Ask sends on, selectedids and the shape's drawing", async (name) => {
+                // a board opens in view mode, where a selection is not the ask's: Edit first
+                const editOn = await setEdit(B1, true);
+                // B1's loose shapes were wrapped in one frame when it opened: the drawing a selected shape belongs to
+                const drawings = await framesNow();
                 // Show in step 2 left two shapes selected: with none selected the box says how to select
                 await canvasPage(`app().updateScene({ appState: { selectedElementIds: {} } }); return true;`);
                 await until(async () => (await text(`${SPLIT(B1)} [data-board-ask-selected]`)) === "Select shapes to ask about them");
@@ -572,9 +712,15 @@ export default function (kit) {
                 await until(async () => (await boardCalls(h, "BoardAskCommand")).length === 1);
                 const calls = await boardCalls(h, "BoardAskCommand");
                 const emptied = await until(() => h.ev(`document.querySelector(${q(`${SPLIT(B1)} [data-board-ask-input]`)})?.value === ""`));
+                // back to view mode, as every board opens: the steps after read B1 as a viewer
+                const editOff = await setEdit(B1, false);
                 rec(
                     name,
-                    none === "Select shapes to ask about them" &&
+                    editOn &&
+                        editOff &&
+                        drawings.length === 1 &&
+                        drawings[0].name === EARLIER &&
+                        none === "Select shapes to ask about them" &&
                         selectedText &&
                         picked.join() === "auth-key" &&
                         afterPress.focus === A &&
@@ -592,8 +738,9 @@ export default function (kit) {
                         calls[0].question === "why does it change?" &&
                         calls[0].on === "auth key" &&
                         calls[0].selectedids?.join() === "auth-key" &&
+                        calls[0].drawingid === drawings[0]?.id &&
                         emptied,
-                    { none, at, picked, focus: [afterPress.focus, afterTyping.focus], header: [headerBefore, headerAfterPress, headerAfterTyping], inXterm, asking, calls, emptied }
+                    { none, at, picked, focus: [afterPress.focus, afterTyping.focus], header: [headerBefore, headerAfterPress, headerAfterTyping], inXterm, asking, calls, drawings, emptied }
                 );
             });
 
@@ -889,7 +1036,7 @@ export default function (kit) {
             });
 
             // --- 8b. a dense board reads one part at a time ---
-            await run("8b. a dense board: the header counts its parts, hovering one offers Read, → and Whole board move between them", async (name) => {
+            await run("8b. a dense board: the header counts its parts (inside its Earlier drawings), hovering one offers Read, → and Whole drawing move between them", async (name) => {
                 const CV = `${SPLIT(B3)} ${CANVAS(B3)}`;
                 const attr = (key) => h.ev(`document.querySelector(${q(CV)})?.dataset.${key} ?? null`);
                 const zoom = () => canvasPage(`return app()?.state.zoom.value ?? null;`);
@@ -897,6 +1044,9 @@ export default function (kit) {
                 const ready = await canvasReady(B3);
                 const counted = await until(async () => (await text(`${SPLIT(B3)} [data-board-parts-count]`)) === "3 parts");
                 const fitZoom = await zoom();
+                // the parts are those of the drawing in view: B3's loose shapes, wrapped in one frame as it opened
+                const inView = await attr("boardInView");
+                const drawing = await canvasPage(`return frames().map((f) => [f.id, f.name]);`);
                 // nothing over the board until the pointer is on a part
                 const quiet = (await count(`${CV} [data-board-part-hover]`)) === 0;
                 const over = await canvasPage(`return centreOf("harness-a");`);
@@ -920,7 +1070,8 @@ export default function (kit) {
                 await h.cdp("Input.dispatchKeyEvent", { type: "keyUp", key: "ArrowRight", code: "ArrowRight", windowsVirtualKeyCode: 39 });
                 const stepped = await until(async () => (await attr("boardPart")) === "1");
                 const nextName = await text(`${SPLIT(B3)} [data-board-part-name]`);
-                // Whole board goes back to the fitted view and the parts count
+                // Whole drawing goes back to the drawing in view and the parts count
+                const wholeLabel = await text(`${SPLIT(B3)} [data-board-part-whole]`);
                 const whole = await click(`${SPLIT(B3)} [data-board-part-whole]`);
                 const back = await until(async () => (await attr("boardPart")) === "");
                 const recounted = await until(async () => (await count(`${SPLIT(B3)} [data-board-parts-count]`)) === 1);
@@ -955,6 +1106,10 @@ export default function (kit) {
                         stepperGone &&
                         stepped &&
                         nextName === "Benchmark" &&
+                        drawing.length === 1 &&
+                        drawing[0][1] === EARLIER &&
+                        inView === drawing[0][0] &&
+                        wholeLabel === "Whole drawing" &&
                         whole &&
                         back &&
                         recounted &&
@@ -962,7 +1117,7 @@ export default function (kit) {
                         // a small board reads whole: no parts, no stepper
                         b1Parts === "0" &&
                         b1Stepper === 0,
-                    { fitZoom, hoverText, partZoom, partName, index, nextName, b1Parts, b1Stepper }
+                    { fitZoom, inView, drawing, hoverText, partZoom, partName, index, nextName, wholeLabel, b1Parts, b1Stepper }
                 );
             });
 
@@ -1258,6 +1413,451 @@ export default function (kit) {
                     name,
                     clicked && alone && ready && !gridShown && selected === true && chat === A && noExpand && closed && back,
                     { clicked, alone, ready, gridShown, selected, chat, noExpand, closed, back }
+                );
+            });
+
+            // --- 17. a board opens as a viewer: Excalidraw's view mode, with an Edit switch in the strip above the canvas ---
+            const HINT = (id) => `${SPLIT(id)} [data-board-ask-selected]`;
+            await run("17a. a board opens in view mode: no drawing toolbar, Edit not pressed, the ask box says Press Edit to ask about shapes, and a drag across a shape pans and moves nothing", async (name) => {
+                await closeBoardOn();
+                await openBoardOn(B1);
+                const ready = await canvasReady(B1);
+                await polishNap(600);
+                const mode = await readMode(B1);
+                const strip = await box(`${SPLIT(B1)} [data-board-strip]`);
+                const canvasBox = await box(`${SPLIT(B1)} ${CANVAS(B1)}`);
+                // a drag from the middle of "SQLite", as a pointer would
+                const from = await canvasPage(`
+                    const el = app().scene.getNonDeletedElements().find((e) => e.id === "sqlite");
+                    return { ...centreOf("sqlite"), at: [el.x, el.y], view: view() };`);
+                await dragBy(from, DRAG_PX);
+                await polishNap(400);
+                const after = await canvasPage(`
+                    const el = app().scene.getNonDeletedElements().find((e) => e.id === "sqlite");
+                    return { at: [el.x, el.y], view: view() };`);
+                await shot("17a-view-mode");
+                rec(
+                    name,
+                    ready &&
+                        mode.attr === "true" &&
+                        mode.viewMode === true &&
+                        !mode.toolbar &&
+                        mode.edit === "false" &&
+                        mode.hint === "Press Edit to ask about shapes" &&
+                        // the strip is the canvas column's first row, right above the canvas
+                        strip != null &&
+                        canvasBox != null &&
+                        strip.b <= canvasBox.t + 2 &&
+                        near(strip.l, canvasBox.l, 3) &&
+                        // the drag moved the view and not the shape
+                        from.at.join() === after.at.join() &&
+                        Math.abs(after.view.scrollX - from.view.scrollX) + Math.abs(after.view.scrollY - from.view.scrollY) > 5,
+                    { mode, strip, canvasBox, from, after }
+                );
+            });
+
+            await run("17b. Show in view mode outlines the turn's shapes: they are selected, no style panel, and the ask box still says Press Edit to ask about shapes", async (name) => {
+                const now = Date.now();
+                await putTurns(h, B1, lastTurn(now, TA));
+                await until(async () => rowOf(await turnRows(), TA) != null);
+                const clicked = await click(`${SPLIT(B1)} [data-board-turn="${TA}"] [data-board-turn-show]`);
+                const shown = await until(() => h.ev(`document.querySelector(${q(`${SPLIT(B1)} ${CANVAS(B1)}`)})?.dataset.boardHighlight === "tauri-host,auth-key"`));
+                // the view scrolls to the shapes with an animation: take the state once it has settled
+                await polishNap(900);
+                const mode = await readMode(B1);
+                await shot("17b-show-view-mode");
+                rec(
+                    name,
+                    clicked &&
+                        shown &&
+                        mode.attr === "true" &&
+                        mode.viewMode === true &&
+                        mode.selected.join() === "auth-key,tauri-host" &&
+                        !mode.panel &&
+                        !mode.toolbar &&
+                        mode.hint === "Press Edit to ask about shapes",
+                    { clicked, shown, mode }
+                );
+            });
+
+            await run("17c. Edit brings the drawing toolbar back and a selection names itself; Edit again returns to view mode with nothing selected", async (name) => {
+                // Show left the shapes of 17b selected: with none selected the box says how to select
+                await canvasPage(`app().updateScene({ appState: { selectedElementIds: {} } }); return true;`);
+                const on = await setEdit(B1, true);
+                await until(async () => (await text(HINT(B1))) === "Select shapes to ask about them");
+                const editing = await readMode(B1);
+                await canvasPage(`app().updateScene({ appState: { selectedElementIds: { "auth-key": true } } }); return true;`);
+                const named = await until(async () => (await text(HINT(B1))) === "Selected auth key");
+                await shot("17c-edit");
+                const off = await setEdit(B1, false);
+                await until(async () => (await text(HINT(B1))) === "Press Edit to ask about shapes");
+                const viewing = await readMode(B1);
+                await shot("17c-view-again");
+                rec(
+                    name,
+                    on &&
+                        editing.attr === "false" &&
+                        editing.viewMode === false &&
+                        editing.toolbar &&
+                        editing.edit === "true" &&
+                        editing.hint === "Select shapes to ask about them" &&
+                        named &&
+                        off &&
+                        viewing.attr === "true" &&
+                        viewing.viewMode === true &&
+                        !viewing.toolbar &&
+                        viewing.edit === "false" &&
+                        viewing.selected.length === 0 &&
+                        viewing.hint === "Press Edit to ask about shapes",
+                    { editing, named, viewing }
+                );
+            });
+
+            // --- 18. drawings: each answer is a numbered frame, listed in the strip's row ---
+            await run("18a. an old board opens as one drawing: the row has one chip, 1 Earlier drawings, current, and the saved file holds that frame", async (name) => {
+                await closeBoardOn();
+                await putBoard(h, { id: B4, name: B4_NAME, project: PROJECT, agent: { tabid: A, title: AGENT_TITLE }, turns: [], elements: ELEMENTS_4, createdts: Date.now() - 5_400_000 });
+                await openBoardOn(B4);
+                const ready = await canvasReady(B4);
+                await until(async () => (await rowNow()).length === 1);
+                const chips = await rowNow();
+                // the canvas saves the board once it holds its frame
+                let saved = [];
+                const wrote = await until(async () => (saved = await framesInFile(B4)).length === 1);
+                const file = await boardFile(h, B4);
+                const inFrame = (file?.elements ?? []).filter((e) => e.frameId === saved[0]?.id && !e.isDeleted).length;
+                const strip = await box(`${SPLIT(B4)} [data-board-strip]`);
+                const canvasBox = await box(`${SPLIT(B4)} ${CANVAS(B4)}`);
+                await shot("18a-earlier-drawings");
+                rec(
+                    name,
+                    ready &&
+                        chips.length === 1 &&
+                        chips[0].n === "1" &&
+                        chips[0].title === EARLIER &&
+                        chips[0].current &&
+                        !chips[0].fresh &&
+                        wrote &&
+                        saved[0].id === chips[0].id &&
+                        saved[0].name === EARLIER &&
+                        saved[0].customData?.arcDrawing === 1 &&
+                        // the two boxes and their two labels are inside it
+                        inFrame === 4 &&
+                        file?.rev !== "rev-0" &&
+                        strip != null &&
+                        canvasBox != null &&
+                        strip.b <= canvasBox.t + 2,
+                    { chips, saved: saved.map((f) => ({ id: f.id, name: f.name, customData: f.customData })), inFrame, rev: file?.rev, strip, canvasBox }
+                );
+            });
+
+            await run("18b. beside Chat an answer with a title lands as drawing 2: its chip enters and is current, the view eases to it and its frame ends inside the canvas", async (name) => {
+                const reduced = await h.ev(`matchMedia("(prefers-reduced-motion: reduce)").matches`);
+                // the narrow cell, not the expanded one: the room a drawing has to fit in is the smallest
+                const expandedAttr = await h.ev(`document.querySelector(${q(SPLIT(B4))})?.dataset.boardExpanded ?? null`);
+                const before = await framesNow();
+                // the view once per animation frame, from before the answer lands until the ease is over
+                await canvasPage(`
+                    const m = (fx.motion = { rows: [], done: false });
+                    const t0 = performance.now();
+                    const tick = (now) => {
+                        const s = app()?.state;
+                        if (s != null) m.rows.push([Math.round(now - t0), s.scrollX, s.scrollY, s.zoom.value]);
+                        if (now - t0 < 2500) requestAnimationFrame(tick);
+                        else m.done = true;
+                    };
+                    requestAnimationFrame(tick);
+                    return true;`);
+                const { acked, ack } = await land(B4, "t-b4-2", { add: JSON.stringify(DRAWING_2.add), title: DRAWING_2.title });
+                const current = await until(async () => (await rowNow())[1]?.current === true);
+                await until(() => canvasPage(`return fx.motion.done;`));
+                const motion = await canvasPage(`return fx.motion.rows;`);
+                const moved = motion.map((r, i) => i > 0 && (Math.abs(r[1] - motion[i - 1][1]) > 0.01 || Math.abs(r[2] - motion[i - 1][2]) > 0.01 || Math.abs(r[3] - motion[i - 1][3]) > 0.0001));
+                const ease = {
+                    frames: motion.length,
+                    firstMovedFrame: moved.indexOf(true),
+                    firstMovedMs: motion[moved.indexOf(true)]?.[0] ?? null,
+                    movingFrames: moved.filter(Boolean).length,
+                    lastMovedMs: motion[moved.lastIndexOf(true)]?.[0] ?? null,
+                    reduced,
+                };
+                const after = await framesNow();
+                const old = after.find((f) => f.name === EARLIER);
+                const next = after.find((f) => f.name === DRAWING_2.title);
+                const onCv = next == null ? null : await canvasPage(`return onCanvas(${q(next.id)});`);
+                const chips = await rowNow();
+                const inView = await h.ev(`document.querySelector(${q(`${SPLIT(B4)} ${CANVAS(B4)}`)})?.dataset.boardInView ?? null`);
+                await shot("18b-new-drawing");
+                // the picture of the feature: the cell beside Chat with its row of drawings
+                let picture;
+                try {
+                    picture = await h.whatsnewShot("board-drawings", { selector: BOARD });
+                } catch (e) {
+                    picture = { error: String(e?.message ?? e) };
+                }
+                rec(
+                    name,
+                    expandedAttr === "false" &&
+                        acked &&
+                        ack?.error == null &&
+                        ack?.shapeids?.length === 2 &&
+                        current &&
+                        before.length === 1 &&
+                        after.length === 2 &&
+                        old != null &&
+                        next != null &&
+                        next.n === 2 &&
+                        // right of the board it landed on, with the board's gap, and level with its top
+                        next.x >= old.x + old.width + 100 &&
+                        Math.abs(next.y - old.y) <= 2 &&
+                        chips.length === 2 &&
+                        chips[0].n === "1" &&
+                        chips[0].title === EARLIER &&
+                        !chips[0].current &&
+                        chips[1].n === "2" &&
+                        chips[1].title === DRAWING_2.title &&
+                        chips[1].current &&
+                        !chips[1].fresh &&
+                        inView === next.id &&
+                        fitted(onCv) &&
+                        // it eased: the view moved over several frames and did not jump (reduced motion jumps)
+                        ease.frames >= 10 &&
+                        (reduced || ease.movingFrames >= 3) &&
+                        picture?.error == null &&
+                        /-board-drawings\.webp$/.test(picture?.file ?? ""),
+                    { expandedAttr, ack, old, next, onCv, chips, inView, ease, picture }
+                );
+            });
+
+            await run("18c. a pick fits its drawing; one that lands while you are on an earlier drawing leaves the view and reads new; picking it fits it and clears new", async (name) => {
+                const first = (await rowNow())[0];
+                await click(chip(B4, first.id));
+                const onFirst = await until(async () => (await rowNow())[0]?.current === true);
+                await polishNap(300);
+                const fit1 = await canvasPage(`return onCanvas(${q(first.id)});`);
+                const viewBefore = await canvasPage(`return view();`);
+                const landed = await land(B4, "t-b4-3", { add: JSON.stringify(DRAWING_3.add), title: DRAWING_3.title });
+                const three = await until(async () => (await rowNow()).length === 3);
+                // the chip has entered and the canvas has had its say: the view is where the pick left it
+                await polishNap(900);
+                const chipsAfter = await rowNow();
+                const viewAfter = await canvasPage(`return view();`);
+                await shot("18c-new-while-earlier");
+                const third = chipsAfter[2];
+                await click(chip(B4, third?.id ?? ""));
+                const onThird = await until(async () => {
+                    const r = await rowNow();
+                    return r[2]?.current === true && !r[2].fresh;
+                });
+                await polishNap(300);
+                const fit3 = await canvasPage(`return onCanvas(${q(third?.id ?? "")});`);
+                const chipsPicked = await rowNow();
+                await shot("18c-picked-new");
+                rec(
+                    name,
+                    onFirst &&
+                        fitted(fit1) &&
+                        centred(fit1) &&
+                        landed.acked &&
+                        landed.ack?.error == null &&
+                        three &&
+                        chipsAfter.length === 3 &&
+                        chipsAfter[0].current &&
+                        !chipsAfter[1].current &&
+                        !chipsAfter[2].current &&
+                        // the new drawing is marked, the others are not
+                        third.n === "3" &&
+                        third.title === DRAWING_3.title &&
+                        third.fresh &&
+                        third.newWord === "new" &&
+                        chipsAfter.filter((c) => c.fresh).length === 1 &&
+                        // and the view stayed where the pick left it
+                        JSON.stringify(viewAfter) === JSON.stringify(viewBefore) &&
+                        onThird &&
+                        fitted(fit3) &&
+                        centred(fit3) &&
+                        chipsPicked.every((c) => !c.fresh) &&
+                        chipsPicked.filter((c) => c.current).length === 1,
+                    { fit1, viewBefore, viewAfter, chipsAfter, fit3, chipsPicked }
+                );
+            });
+
+            await run("18d. an ask in view mode sends the drawing in view and no selection; in Edit, a shape of drawing 1 selected sends drawing 1's id", async (name) => {
+                const asksOf = async () => (await boardCalls(h, "BoardAskCommand")).filter((c) => c.boardid === B4);
+                const chips = await rowNow();
+                const inView = chips.find((c) => c.current)?.id;
+                const mode = await readMode(B4);
+                await typeInto(`${SPLIT(B4)} [data-board-ask-input]`, "why a queue?");
+                const clicked = await click(`${SPLIT(B4)} [data-board-ask-send]`);
+                await until(async () => (await asksOf()).length === 1);
+                const viewAsk = (await asksOf())[0];
+                // the stub's answering turn goes, so the box takes the next line
+                await putTurns(h, B4, []);
+                // Edit: drawing 1's "key" box is selected while drawing 3 is the one in view
+                const on = await setEdit(B4, true);
+                await canvasPage(`app().updateScene({ appState: { selectedElementIds: { "key-box": true } } }); return true;`);
+                const named = await until(async () => (await text(HINT(B4))) === "Selected key");
+                await typeInto(`${SPLIT(B4)} [data-board-ask-input]`, "why this key?");
+                const clicked2 = await click(`${SPLIT(B4)} [data-board-ask-send]`);
+                await until(async () => (await asksOf()).length === 2);
+                const editAsk = (await asksOf())[1];
+                await shot("18d-ask-in-edit");
+                const off = await setEdit(B4, false);
+                await putTurns(h, B4, []);
+                rec(
+                    name,
+                    mode.attr === "true" &&
+                        mode.hint === "Press Edit to ask about shapes" &&
+                        clicked &&
+                        inView === chips[2]?.id &&
+                        viewAsk?.question === "why a queue?" &&
+                        viewAsk.drawingid === inView &&
+                        (viewAsk.selectedids ?? []).length === 0 &&
+                        viewAsk.on == null &&
+                        on &&
+                        named &&
+                        clicked2 &&
+                        editAsk?.question === "why this key?" &&
+                        editAsk.drawingid === chips[0].id &&
+                        editAsk.drawingid !== inView &&
+                        editAsk.selectedids?.join() === "key-box" &&
+                        editAsk.on === "key" &&
+                        off,
+                    { chips, inView, viewAsk, editAsk }
+                );
+            });
+
+            await run("18e. an edit answer that lengthens a text keeps it inside its drawing's frame, on a board that turns to Nunito", async (name) => {
+                const target = (await rowNow()).find((c) => c.current);
+                const readText = (id) =>
+                    canvasPage(`
+                        const t = app().scene.getNonDeletedElements().find((e) => e.id === ${q(id)});
+                        return t == null ? null : { x: t.x, y: t.y, width: t.width, height: t.height, text: t.text, fontFamily: t.fontFamily };`);
+                // drawing 3's free text, and its frame as it was
+                const free = await canvasPage(`
+                    const t = app().scene.getNonDeletedElements().find((e) => e.frameId === ${q(target?.id ?? "")} && e.type === "text" && e.containerId == null);
+                    return t == null ? null : { id: t.id, text: t.text, fontFamily: t.fontFamily };`);
+                const old = (await framesNow()).find((f) => f.id === target?.id);
+                const landed = await land(B4, "t-b4-5", { update: JSON.stringify([{ id: free?.id, text: LONG_NOTE }]), drawingid: target?.id, title: DRAWING_3.title });
+                // Nunito loads when the canvas first shows text in it, and the canvas measures its text again then: wait
+                // for the box to hold still
+                let settled = await readText(free?.id);
+                for (let i = 0; i < 20; i++) {
+                    await polishNap(500);
+                    const next = await readText(free?.id);
+                    const still = JSON.stringify(next) === JSON.stringify(settled);
+                    settled = next;
+                    if (still && i >= 2) break;
+                }
+                const fit = await canvasPage(`
+                    const all = app().scene.getNonDeletedElements();
+                    const outside = (e, f) => e.x < f.x - 0.5 || e.y < f.y - 0.5 || e.x + e.width > f.x + f.width + 0.5 || e.y + e.height > f.y + f.height + 0.5;
+                    const mine = frames().find((f) => f.id === ${q(target?.id ?? "")});
+                    return {
+                        frame: mine,
+                        kids: all.filter((e) => e.frameId === mine.id).length,
+                        out: all.filter((e) => e.frameId === mine.id && outside(e, mine)).map((e) => e.id),
+                        // the other drawings' text turned to Nunito too: what spills out of them is reported, not judged
+                        others: frames().filter((f) => f.id !== mine.id).map((f) => ({ n: f.n, out: all.filter((e) => e.frameId === f.id && outside(e, f)).length })),
+                        onCanvas: onCanvas(mine.id),
+                    };`);
+                const chips = await rowNow();
+                await shot("18e-edit-refit");
+                rec(
+                    name,
+                    target != null &&
+                        free?.text === "note" &&
+                        free.fontFamily !== 6 &&
+                        old != null &&
+                        landed.acked &&
+                        landed.ack?.error == null &&
+                        settled?.text === LONG_NOTE &&
+                        settled.fontFamily === 6 &&
+                        // it outgrew the frame as it was, so the frame had to refit
+                        settled.x + settled.width > old.x + old.width &&
+                        fit.out.length === 0 &&
+                        fit.frame.width > old.width &&
+                        // an edit adds no chip, and its drawing stays the one in view, whole on the canvas
+                        chips.length === 3 &&
+                        chips[2].current &&
+                        fitted(fit.onCanvas),
+                    { target, free, old, settled, fit, chips }
+                );
+            });
+
+            await run("18f. a board left following and closed, with an answer landing while it is closed, reopens fitted to its newest drawing", async (name) => {
+                const left = await rowNow();
+                // the newest drawing is the one in view: the board is following
+                const following = left.at(-1)?.current === true;
+                await polishNap(800);
+                await closeBoardOn();
+                await until(async () => (await box(SPLIT(B4))) == null);
+                // the closing canvas saves what it still holds; the answer lands after that
+                await polishNap(800);
+                // no canvas of the board is open: the applier lands the answer in the file
+                const landed = await land(B4, "t-b4-6", { add: JSON.stringify(DRAWING_4.add), title: DRAWING_4.title });
+                let frames = [];
+                const saved = await until(async () => (frames = await framesInFile(B4)).length === 4);
+                await openBoardOn(B4);
+                const ready = await canvasReady(B4);
+                await until(async () => (await rowNow()).length === 4);
+                await polishNap(500);
+                const chips = await rowNow();
+                const newest = chips.at(-1);
+                const onCv = await canvasPage(`return onCanvas(${q(newest?.id ?? "")});`);
+                await shot("18f-reopened-following");
+                rec(
+                    name,
+                    following &&
+                        landed.acked &&
+                        landed.ack?.error == null &&
+                        saved &&
+                        frames.some((f) => f.name === DRAWING_4.title && f.customData?.arcDrawing === 4) &&
+                        ready &&
+                        chips.length === 4 &&
+                        newest.n === "4" &&
+                        newest.title === DRAWING_4.title &&
+                        newest.current &&
+                        !newest.fresh &&
+                        chips.filter((c) => c.current).length === 1 &&
+                        fitted(onCv) &&
+                        centred(onCv),
+                    { left, following, chips, onCv, frames: frames.map((f) => ({ id: f.id, name: f.name, n: f.customData?.arcDrawing })) }
+                );
+            });
+
+            await run("18g. an empty board, expanded, says so over the canvas and in its turns, and both lines name Edit", async (name) => {
+                await closeBoardOn();
+                await putBoard(h, { id: B5, name: B5_NAME, project: PROJECT, agent: { tabid: A, title: AGENT_TITLE }, turns: [], elements: [], createdts: Date.now() - 600_000 });
+                await openBoardOn(B5);
+                const ready = await canvasReady(B5);
+                const clicked = await click(`${SPLIT(B5)} [data-board-expand]`);
+                const expanded = await until(() => h.ev(`document.querySelector(${q(SPLIT(B5))})?.dataset.boardMax === "true"`));
+                const shown = await until(async () => (await count(`${SPLIT(B5)} [data-board-empty]`)) === 1);
+                await polishNap(300);
+                const canvasLine = await text(`${SPLIT(B5)} [data-board-empty]`);
+                const turnsLine = await text(`${SPLIT(B5)} [data-board-turns="full"]`);
+                // nothing drawn, so no row; the Edit switch is there from the start
+                const chips = await count(`${SPLIT(B5)} [data-board-drawings] [data-board-drawing]`);
+                const edit = await text(`${SPLIT(B5)} [data-board-edit]`);
+                await shot("18g-empty");
+                // as the step after expects: collapsed, and no board open
+                await click(`${SPLIT(B5)} [data-board-expand]`);
+                await until(() => h.ev(`document.querySelector(${q(SPLIT(B5))})?.dataset.boardMax !== "true"`));
+                await closeBoardOn();
+                rec(
+                    name,
+                    ready &&
+                        clicked &&
+                        expanded &&
+                        shown &&
+                        canvasLine === "Nothing drawn yet. Ask below, or press Edit to draw." &&
+                        canvasLine.includes("Edit") &&
+                        turnsLine === "No turns yet. Ask below; to ask about shapes, press Edit and select them." &&
+                        turnsLine.includes("Edit") &&
+                        chips === 0 &&
+                        edit === "Edit",
+                    { canvasLine, turnsLine, chips, edit }
                 );
             });
 

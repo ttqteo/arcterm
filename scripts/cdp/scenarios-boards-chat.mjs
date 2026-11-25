@@ -252,8 +252,10 @@ export default function (kit) {
                 const saves = await boardCalls(h, "BoardSaveCommand");
                 const file = await boardFile(h, BOARD_ID);
                 const texts = (file?.elements ?? []).filter((e) => e.type === "text").map((e) => e.text);
-                // the user's box stays; the two the drawer drew land on it, through the real Excalidraw
-                const shapes = (file?.elements ?? []).filter((e) => !(e.type === "text" && e.containerId != null));
+                // the user's box stays; the two the drawer drew land on it, through the real Excalidraw. A drawing's frame is
+                // not a shape: the board's loose box was wrapped in Earlier drawings (1) and the answer is the next drawing (2)
+                const shapes = (file?.elements ?? []).filter((e) => e.type !== "frame" && !(e.type === "text" && e.containerId != null));
+                const drawings = (file?.elements ?? []).filter((e) => e.type === "frame" && !e.isDeleted).map((e) => e.customData?.arcDrawing);
                 rec(
                     name,
                     shown &&
@@ -265,10 +267,11 @@ export default function (kit) {
                         saves.length === 1 &&
                         saves[0].baserev === "rev-0" &&
                         shapes.length === 3 &&
+                        drawings.sort().join() === "1,2" &&
                         texts.includes("wavesrv") &&
                         texts.includes("SQLite") &&
                         texts.includes("my note"),
-                    { toast, acks, saves: saves.map((s) => s.baserev), shapes: shapes.length, texts, fileRev: file?.rev }
+                    { toast, acks, saves: saves.map((s) => s.baserev), shapes: shapes.length, drawings, texts, fileRev: file?.rev }
                 );
             });
 
@@ -327,15 +330,27 @@ export default function (kit) {
                     }
                     return null;
                 };
-                // the canvas's shapes, bound text counted with its box
-                const shapes = () => (app()?.scene.getNonDeletedElements() ?? []).filter((e) => !(e.type === "text" && e.containerId != null));
+                // the canvas's shapes, bound text counted with its box and a drawing's frame not counted
+                const shapes = () => (app()?.scene.getNonDeletedElements() ?? []).filter((e) => e.type !== "frame" && !(e.type === "text" && e.containerId != null));
+                // its drawings' frames
+                const frames = () => (app()?.scene.getNonDeletedElements() ?? []).filter((e) => e.type === "frame");
                 const selected = () => Object.keys(app()?.state.selectedElementIds ?? {}).filter((id) => app().state.selectedElementIds[id]).sort();
             `;
             const canvas = (body) => boardPage(h, `${APP} ${body}`);
-            await run("4. BoardCanvas: loads the file, Show selects shapes, a live answer is one undo step", async (name) => {
+            // A board opens in view mode, where Excalidraw refuses an undo; the strip holds the Edit switch and this bare
+            // canvas has no strip, so the switch is set in the page, where the canvas reads it
+            const setEditing = (on) =>
+                boardPage(
+                    h,
+                    `const { boardEditingAtom } = await mod("app/view/boards/boardstore.ts");
+                    globalStore.set(boardEditingAtom(${JSON.stringify(BOARD_ID)}), ${on});
+                    return true;`
+                );
+            await run("4. BoardCanvas: loads the file, Show selects shapes, a live answer is one undo step (its shapes and its frame together)", async (name) => {
                 // the split step 2 opened holds a canvas of this board once the split is drawn (Task 7): the smoke canvas must
                 // be the board's only mount, since the live answer lands on the newest one
                 await closeSplit();
+                await setEditing(true);
                 await boardPage(
                     h,
                     `// the optimized deps are CommonJS: their exports sit on the module's default
@@ -361,9 +376,11 @@ export default function (kit) {
                     return true;`
                 );
                 const loaded = await until(() => h.ev(`document.querySelector('${CANVAS}')?.dataset.boardReady === "true"`));
+                // Edit is on, so the canvas is no viewer: undo and the drawing tools are Excalidraw's
+                const editing = await until(() => canvas(`return app()?.state.viewModeEnabled === false;`));
                 const file0 = await boardFile(h, BOARD_ID);
-                const shapes0 = (file0?.elements ?? []).filter((e) => !(e.type === "text" && e.containerId != null)).length;
-                const start = await canvas(`return { shapes: shapes().length, selected: selected() };`);
+                const shapes0 = (file0?.elements ?? []).filter((e) => e.type !== "frame" && !(e.type === "text" && e.containerId != null)).length;
+                const start = await canvas(`return { shapes: shapes().length, frames: frames().length, selected: selected() };`);
                 await shot("canvas");
                 // the fonts come from the app (/excalidraw/fonts/), never from esm.sh, which the CSP refuses and offline cannot
                 // reach: Excalidraw is pointed at the app's own path, the app serves a font file there, and what the canvas
@@ -390,7 +407,10 @@ export default function (kit) {
                 const afterShow = await canvas(`return { selected: selected(), selections: fx.smoke.selections };`);
                 await shot("canvas-show");
 
-                // a live answer: handed to this canvas, one updateScene, saved under the canvas's rev, acked with its ids
+                // a live answer: handed to this canvas, one updateScene, saved under the canvas's rev, acked with its ids. The
+                // baselines come after the canvas's own save on opening (it wraps a board with no frame in Earlier drawings
+                // and saves once; this one has frames from the answers above, and the wait for the fonts and for Show is
+                // long past it either way), so the one save counted below is the answer's
                 const acks0 = (await boardCalls(h, "BoardAnswerAckCommand")).length;
                 const reads0 = (await boardCalls(h, "BoardReadCommand")).length;
                 const saves0 = (await boardCalls(h, "BoardSaveCommand")).length;
@@ -398,13 +418,13 @@ export default function (kit) {
                 await putAnswer(h, BOARD_ID, { id: "ans-3", turnid: "t-req-3", add: SKELETON });
                 await feedBoardUpdate(h, { project: PROJECT, boardid: BOARD_ID, what: "answer" });
                 const landed = await until(async () => (await boardCalls(h, "BoardAnswerAckCommand")).length === acks0 + 1);
-                const afterAnswer = await canvas(`return { shapes: shapes().length };`);
+                const afterAnswer = await canvas(`return { shapes: shapes().length, frames: frames().length };`);
                 const acks = await boardCalls(h, "BoardAnswerAckCommand");
                 const saves = await boardCalls(h, "BoardSaveCommand");
                 const reads = await boardCalls(h, "BoardReadCommand");
                 await shot("canvas-answer");
 
-                // one Ctrl+Z takes the whole turn back
+                // one Ctrl+Z takes the whole turn back: its two shapes and its frame
                 await canvas(`app().focusContainer?.(); document.querySelector('${CANVAS} .excalidraw')?.focus(); return true;`);
                 // Excalidraw's undo is Cmd+Z on a Mac and Ctrl+Z elsewhere (modifiers: 4 is Meta, 2 is Ctrl)
                 const mac = await h.ev(`/Mac/.test(navigator.platform)`);
@@ -412,12 +432,13 @@ export default function (kit) {
                     await h.cdp("Input.dispatchKeyEvent", { type, modifiers: mac ? 4 : 2, key: "z", code: "KeyZ", windowsVirtualKeyCode: 90 });
                 }
                 const undone = await until(async () => (await canvas(`return shapes().length;`)) === afterAnswer.shapes - 2);
-                const afterUndo = await canvas(`return { shapes: shapes().length };`);
+                const afterUndo = await canvas(`return { shapes: shapes().length, frames: frames().length };`);
                 await shot("canvas-undo");
 
                 rec(
                     name,
                     loaded &&
+                        editing &&
                         fontUrls.assetPath === "/excalidraw/" &&
                         fontUrls.served.ok &&
                         fontUrls.served.type === "font/woff2" &&
@@ -432,14 +453,19 @@ export default function (kit) {
                         acks.at(-1).error == null &&
                         acks.at(-1).shapeids?.length === 2 &&
                         afterAnswer.shapes === start.shapes + 2 &&
+                        // the answer is one new drawing: one frame more, which the one undo takes with the shapes
+                        afterAnswer.frames === start.frames + 1 &&
                         saves.length === saves0 + 1 &&
                         // the canvas takes the answer itself: the applier never read the file for it
                         reads.length === reads0 &&
                         undone &&
-                        afterUndo.shapes === start.shapes,
-                    { loaded, fontUrls, shapes0, start, shown, afterShow, afterAnswer, ack: acks.at(-1), saves: saves.length - saves0, reads: reads.length - reads0, undone, afterUndo }
+                        afterUndo.shapes === start.shapes &&
+                        afterUndo.frames === start.frames,
+                    { loaded, editing, fontUrls, shapes0, start, shown, afterShow, afterAnswer, ack: acks.at(-1), saves: saves.length - saves0, reads: reads.length - reads0, undone, afterUndo }
                 );
             });
+            // Edit goes off again, whatever the step did: the board is a viewer again for the steps after it
+            await setEditing(false).catch((e) => console.error(`boards-chat: turning Edit off failed: ${e?.message ?? e}`));
 
             // --- the card in Chat: A's transcript is the conversation ---
             const LAYER = `document.querySelector('[data-agent-chat="${A}"]')`;
