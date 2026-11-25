@@ -12,17 +12,19 @@ import (
 	"github.com/wavetermdev/waveterm/pkg/jarvis"
 )
 
-// A stage session's prompt opens with its opener and the run id (planReviewPrompt, verifierPrompt), so
-// LaunchOriginOf can read the role back from a transcript.
+// A stage session's prompt opens with its opener and the run id (planReviewPrompt, verifierPrompt, endReviewPrompt),
+// so LaunchOriginOf can read the role back from a transcript.
 const (
 	planReviewerOpener = "You are the plan reviewer for run "
 	verifierOpener     = "You are the final verifier for run "
+	endReviewerOpener  = "You are the end reviewer for run "
 	landResolverOpener = "You are the land resolver for run "
 )
 
 var stageOpeners = map[string]string{
 	jarvis.UsageRole_PlanReviewer: planReviewerOpener,
 	jarvis.UsageRole_Verifier:     verifierOpener,
+	jarvis.UsageRole_EndReviewer:  endReviewerOpener,
 	jarvis.UsageRole_LandResolver: landResolverOpener,
 }
 
@@ -30,13 +32,14 @@ var stageOpeners = map[string]string{
 type LaunchOrigin struct {
 	RunID  string
 	TaskID string // the task whose tree it ran in; a lane's tasks share their first task's tree, which this names
-	Role   string // jarvis.UsageRole_PlanReviewer, _Verifier or _LandResolver for a stage session, else ""
+	Role   string // jarvis.UsageRole_PlanReviewer, _Verifier, _EndReviewer or _LandResolver for a stage session, else ""
 }
 
 // LaunchOriginOf places a session the engine launched from its working directory and first prompt, for when the store
 // holds no record of the run (another app's store, cleared data, a deleted run). A session that ran in one of the
 // engine's worktrees is that run's: a task's tree names the task, the final tree the verifier. A stage session opens
-// with its stage's line, which names the run and the role. ok is false for any other session.
+// with its stage's line, which names the run and the role, and wins over the tree's guess: the end reviewer works in the
+// final tree too. ok is false for any other session.
 func LaunchOriginOf(cwd, firstPrompt string) (LaunchOrigin, bool) {
 	var o LaunchOrigin
 	if runID, rest, ok := runOfWorktree(cwd); ok {

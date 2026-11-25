@@ -40,8 +40,7 @@ func tendVerifier(ctx, spawnCtx context.Context, g *waveobj.TaskGroup, owner *wa
 	if f.State == FinalState_Checking {
 		return
 	}
-	finishFinal(ctx, g, false, afterCommit)
-	releaseFinalTree(g, owner, afterCommit)
+	finishAndRelease(ctx, g, owner, false, afterCommit)
 }
 
 // unverifiedGuidance bounds --unverified: it downgrades the whole stage, so it names a behavior of this change that
@@ -61,16 +60,7 @@ func verifierPrompt(ctx context.Context, g *waveobj.TaskGroup, owner *waveobj.Ru
 	if g.PlanPath != "" {
 		fmt.Fprintf(&b, "The plan is at %s.\n", DocPath(g, f.Tree, g.PlanPath))
 	}
-	// a fix round's plan is not the dag's PlanPath: only its tasks' descriptions name it
-	if f.Round > 1 {
-		fmt.Fprintf(&b, "This is fix round %d: the last round's final stage failed, and these tasks fixed it:\n", f.Round)
-		for _, t := range g.Tasks {
-			if strings.HasPrefix(t.Description, fixRoundPrefix) {
-				first, _, _ := strings.Cut(t.Description, ";")
-				fmt.Fprintf(&b, "- %s %s: %s\n", t.ID, t.Label, first)
-			}
-		}
-	}
+	writeFixRoundTasks(&b, g)
 	head := f.Commit
 	if head == "" {
 		head = "HEAD"
@@ -107,9 +97,14 @@ func verifierPrompt(ctx context.Context, g *waveobj.TaskGroup, owner *waveobj.Ru
 			b.WriteString("- " + n + "\n")
 		}
 	}
-	// the human went on past these findings: a gap one named is a decision already made, not news for --unverified
 	if pr := g.PlanReview; pr != nil && pr.State == PlanReviewState_Accepted && pr.Findings != "" {
-		fmt.Fprintf(&b, "The plan review failed and the human proceeded on the plan with these findings:\n%s\nCheck each against the tree. A finding still open that names something no check exercised goes in your pass summary as accepted at plan review, not in `--unverified`.\n", pr.Findings)
+		if g.FastTrack && pr.Amended {
+			// the lead amended the plan from these: nobody decided to leave one open
+			fmt.Fprintf(&b, "The light plan review found these, and the lead amended the plan before any task started:\n%s\nCheck each against the tree. A finding still open is a gap like any other.\n", pr.Findings)
+		} else {
+			// the human went on past these findings: a gap one named is a decision already made, not news for --unverified
+			fmt.Fprintf(&b, "The plan review failed and the human proceeded on the plan with these findings:\n%s\nCheck each against the tree. A finding still open that names something no check exercised goes in your pass summary as accepted at plan review, not in `--unverified`.\n", pr.Findings)
+		}
 	}
 	b.WriteString("Check that:\n")
 	b.WriteString("- the combined change does what the spec asks;\n")
@@ -122,6 +117,22 @@ func verifierPrompt(ctx context.Context, g *waveobj.TaskGroup, owner *waveobj.Ru
 	b.WriteString(unverifiedGuidance + "\n")
 	fmt.Fprintf(&b, "Keep each text within %d characters; a longer one is refused.", MaxReviewNoteLen)
 	return b.String()
+}
+
+// writeFixRoundTasks names a fix round's tasks and the line naming their fix plan, which is not the dag's PlanPath:
+// only the tasks' descriptions name it. A first round writes nothing.
+func writeFixRoundTasks(b *strings.Builder, g *waveobj.TaskGroup) {
+	f := g.Final
+	if f.Round <= 1 {
+		return
+	}
+	fmt.Fprintf(b, "This is fix round %d: the last round's final stage failed, and these tasks fixed it:\n", f.Round)
+	for _, t := range g.Tasks {
+		if strings.HasPrefix(t.Description, fixRoundPrefix) {
+			first, _, _ := strings.Cut(t.Description, ";")
+			fmt.Fprintf(b, "- %s %s: %s\n", t.ID, t.Label, first)
+		}
+	}
 }
 
 // joinAnd lists items as English: "A", "A and B", "A, B and C".
@@ -152,7 +163,8 @@ func timesWord(n int) string {
 }
 
 // RecordFinalVerdict applies the verifier's verdict and ends the final stage. A verdict given while Check and
-// Verify still run waits for them, and a failure of theirs outweighs it. It does not schedule: the caller does,
+// Verify still run waits for them, and a failure of theirs outweighs it. A caller that is the round's end reviewer
+// gives the end review's verdict instead (recordEndReviewVerdictLocked). It does not schedule: the caller does,
 // off the verifier's RPC, and that tick announces a done dag.
 func RecordFinalVerdict(ctx context.Context, dagID, verifierRunID, verdict, text, unverified string) error {
 	text, unverified = strings.TrimSpace(text), strings.TrimSpace(unverified)
@@ -177,7 +189,11 @@ func RecordFinalVerdict(ctx context.Context, dagID, verifierRunID, verdict, text
 			return fmt.Errorf("loading dag: %w", err)
 		}
 		f := g.Final
-		if g.Status == DagStatus_Cancelled || f == nil || (f.State != FinalState_Verifying && f.State != FinalState_Checking) || f.VerifierRunID != verifierRunID {
+		if g.Status != DagStatus_Cancelled && f != nil && f.EndReview != nil && verifierRunID != "" && f.EndReview.RunID == verifierRunID {
+			return recordEndReviewVerdictLocked(ctx, g, verifierRunID, verdict, text, unverified, &afterCommit)
+		}
+		// a stage waiting on its end review already took the verifier's say
+		if g.Status == DagStatus_Cancelled || f == nil || (f.State != FinalState_Verifying && f.State != FinalState_Checking) || f.VerifierRunID != verifierRunID || endReviewWaiting(f) {
 			return fmt.Errorf("run %s is not verifying this dag's result", verifierRunID)
 		}
 		if _, held := heldFinalVerdict(dagID, f, false); held {

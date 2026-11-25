@@ -44,6 +44,11 @@ export function StepsPart({ partKey, children }: { partKey: string; children: Re
     return <StepsPartContext.Provider value={partKey}>{children}</StepsPartContext.Provider>;
 }
 
+/** The prose part a block is drawn in (stepsPartKey), null outside one: Chat's pair cards find their place by it too. */
+export function useChatPartKey(): string | null {
+    return useContext(StepsPartContext);
+}
+
 // a ```arc-steps block: the turn's list where the model draws it, nothing for a later block of the turn, and code where
 // there is no host or the block lists no step
 export function StepsBlock({ raw }: { raw: string }) {

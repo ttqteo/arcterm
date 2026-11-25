@@ -858,6 +858,12 @@ export function approvalsWord(autonomous: boolean): string {
     return autonomous ? "autonomous" : "asks you";
 }
 
+// The chip after the approvals word for a run on the fast track, else null. It reads the dag's stored flag (the engine
+// sets it once, at submit), never the task count, so a run past the fast track's size that took it still says so.
+export function fastTrackWord(group: TaskGroup | null): string | null {
+    return group?.fasttrack ? "fast track" : null;
+}
+
 const AUTONOMOUS_FROM_HERE = "It answers everything from here on; each call it makes goes in its report.";
 
 // The note that replaces a waiting lead question the human handed back by turning Approvals on. Its first

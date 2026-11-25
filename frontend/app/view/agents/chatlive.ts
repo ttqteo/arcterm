@@ -15,6 +15,7 @@ import type { AgentPart, ChatItem } from "./chatmodel";
 import type { PendingMessage } from "./chatpending";
 import { REVIEW_LANG, splitReviewBlocks } from "./chatverdict";
 import { VISUAL_LANG } from "./chatvisual";
+import { JUDGE_LANG, PAIR_LANG } from "./pairblocks";
 
 /** A done reply stays this long for the transcript's copy of it to land (the append read waits up to 3 s). */
 export const LIVE_LINGER_MS = 8000;
@@ -157,27 +158,29 @@ export function nextWorkingHold(
 }
 
 const FENCE = /^\s*(`{3,}|~{3,})\s*([^\s`]*)/;
-const VISUAL_INFO = new RegExp(`^${VISUAL_LANG}$`);
+// the fences that draw as a card (an arc-visual page, a pair's list, a judge's marks): left out until they close, so a
+// half-written one never shows as code first
+const HELD_LANGS: ReadonlySet<string> = new Set([VISUAL_LANG, PAIR_LANG, JUDGE_LANG]);
 
-/** Pure: text cut mid-stream made safe to draw. An open fence is closed, or, for an arc-visual one, left out; an open
- *  `==` mark on the last line is dropped. */
+/** Pure: text cut mid-stream made safe to draw. An open fence is closed, or, for an arc-visual, arc-pair or arc-judge
+ *  one, left out; an open `==` mark on the last line is dropped. */
 export function tidyLiveText(text: string): string {
     const lines = text.split("\n");
-    let open: { at: number; fence: string; visual: boolean } | null = null;
+    let open: { at: number; fence: string; held: boolean } | null = null;
     lines.forEach((line, i) => {
         const m = FENCE.exec(line);
         if (m == null) {
             return;
         }
         if (open == null) {
-            open = { at: i, fence: m[1], visual: VISUAL_INFO.test(m[2]) };
+            open = { at: i, fence: m[1], held: HELD_LANGS.has(m[2]) };
         } else if (m[1][0] === open.fence[0] && m[1].length >= open.fence.length && m[2] === "") {
             open = null;
         }
     });
-    const fence = open as { at: number; fence: string; visual: boolean } | null;
+    const fence = open as { at: number; fence: string; held: boolean } | null;
     if (fence != null) {
-        if (fence.visual) {
+        if (fence.held) {
             return lines.slice(0, fence.at).join("\n").trimEnd();
         }
         return `${text}${text.endsWith("\n") ? "" : "\n"}${fence.fence}`;

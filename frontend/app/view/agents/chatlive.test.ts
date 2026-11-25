@@ -148,6 +148,13 @@ describe("tidyLiveText", () => {
         expect(tidyLiveText("Here it is:\n\n```arc-visual\n/Users/me/.arc/vis")).toBe("Here it is:");
     });
 
+    it("leaves out an arc-pair or arc-judge block until it closes, and keeps a closed one", () => {
+        expect(tidyLiveText("Checked.\n\n```arc-pair\nD1 lock it\nO2 the spl")).toBe("Checked.");
+        expect(tidyLiveText("Looked.\n\n```arc-judge\nreopen D2: no")).toBe("Looked.");
+        const closed = "Checked.\n\n```arc-pair\nD1 lock it\n```";
+        expect(tidyLiveText(closed)).toBe(closed);
+    });
+
     it("drops a mark still open on the last line, keeping its text", () => {
         expect(tidyLiveText("Done. ==The fix is in")).toBe("Done. The fix is in");
         expect(tidyLiveText("==a== and ==b")).toBe("==a== and b");

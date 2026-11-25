@@ -235,8 +235,9 @@ type SubagentFileInfo struct {
 	AgentId        string `json:"agentid"`
 	TranscriptPath string `json:"transcriptpath"`
 	FirstPrompt    string `json:"firstprompt"`
-	StartedAtMs    int64  `json:"startedatms"`
-	Done           bool   `json:"done"`            // finished: its own last record ends it, or EndStatus does
+	StartedAtMs    int64  `json:"startedatms"` // its first record's time, else its file's last write
+	LastWriteMs    int64  `json:"lastwritems"` // its file's last write: for a finished child, about when it ended
+	Done           bool   `json:"done"`        // finished: its own last record ends it, or EndStatus does
 	Model          string `json:"model,omitempty"` // the model of the child's latest assistant turn; "" before its first
 	// how the parent's <task-notification> for this child (task id = AgentId) says it ended: completed, failed, killed
 	// or stopped; "" when the child ended on its own record first, or no notification ends it

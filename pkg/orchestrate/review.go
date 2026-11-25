@@ -362,6 +362,17 @@ func unfinishedDescendants(g *waveobj.TaskGroup, id string) []string {
 	return out
 }
 
+// forLaterHasReader reports a descendant of id that reads its For later tasks at dispatch: one not started yet, or one
+// already dispatched, as a lane mate that finished before the lane merged was.
+func forLaterHasReader(g *waveobj.TaskGroup, id string) bool {
+	for _, d := range descendants(g, id) {
+		if t := taskByID(g, d); amendable(t.State) || t.RunID != "" {
+			return true
+		}
+	}
+	return false
+}
+
 func unionIDs(a, b []string) []string {
 	out := append([]string{}, a...)
 	for _, id := range b {

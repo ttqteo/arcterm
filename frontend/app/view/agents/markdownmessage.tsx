@@ -10,9 +10,11 @@ import { cn } from "@/util/util";
 import { Lightbulb } from "lucide-react";
 import {
     Children,
+    createContext,
     Fragment,
     isValidElement,
     memo,
+    useContext,
     useEffect,
     useRef,
     type ComponentProps,
@@ -29,14 +31,17 @@ import { INITIATIVE_LANG } from "./chatinitiative";
 import { InitiativeBlockView } from "./chatinitiativecard";
 import { copyableHref } from "./chatlink";
 import { CodePicture, ImageNamed, ReplyImage } from "./chatlocalimage";
+import { JudgeBlock, PairBlock } from "./chatpairblock";
 import { CodeRefBadge, RefBadge } from "./chatrefbadge";
 import { STEPS_LANG } from "./chatsteplist";
 import { StepsBlock } from "./chatsteplistview";
 import { VISUAL_LANG } from "./chatvisual";
 import { VisualBlock } from "./chatvisualview";
 import { CodeBlock } from "./codeblock";
+import { isInlineCommand } from "./coderun";
 import { splitInsightBlocks } from "./insightblocks";
 import { guardDollars } from "./mathdollars";
+import { JUDGE_LANG, PAIR_LANG } from "./pairblocks";
 import { PathLink } from "./pathlinkcontext";
 import { inlinePathOf } from "./pathlinks";
 import { MathToken } from "./prosetokens";
@@ -181,11 +186,19 @@ const MD_COMPONENTS: Components = {
     code: ({ className, children }) => <InlineCode className={className}>{children}</InlineCode>,
 };
 
+// set where the caller opted into `commands` (Chat), read by every inline code span whichever components map drew it
+const CommandsContext = createContext(false);
+
 function InlineCode({ className, children }: { className?: string; children?: ReactNode }) {
     const text = typeof children === "string" ? children : null;
+    const commands = useContext(CommandsContext);
     // remark-math's `$…$`: a formula in the line
     if (text != null && className?.includes("math-inline")) {
         return <MathToken tex={text} />;
+    }
+    // a `! cmd` to type draws in the mark's tint over the code's own colours (tailwindsetup.css data-command-mark)
+    if (commands && className == null && text != null && isInlineCommand(text)) {
+        return <code data-command-mark>{children}</code>;
     }
     const found = className == null && text != null ? inlinePathOf(text) : null;
     if (found == null) {
@@ -214,7 +227,8 @@ function InlineCode({ className, children }: { className?: string; children?: Re
 // skim highlight in, `diagrams` draws a ```mermaid block as its diagram instead of its code and an ```arc-visual block
 // as the page it names where a visual host provides one (Chat's, chatvisualview.tsx), as code elsewhere (an ```arc-initiative
 // block the same way: the card an agent proposes where Chat's initiative host provides one, chatinitiativecard.tsx, and an
-// ```arc-steps block as its turn's checklist where Chat's steps host provides one, chatsteplistview.tsx), and `mentions`
+// ```arc-steps block as its turn's checklist where Chat's steps host provides one, chatsteplistview.tsx, and an
+// ```arc-pair or ```arc-judge block as a pair card where Chat's pair host provides one, chatpairblock.tsx), and `mentions`
 // draws an `@path` (remarkfilemention.ts) as a file pill (chatfilepill.tsx) and an `agent:`, `run:` or `council:`
 // reference (remarkrefmention.ts) as a badge (chatrefbadge.tsx; plain text where Chat provides nothing to resolve it
 // against). They combine: each adds its plugin and its component to the same map. A council's messages take marks and
@@ -222,7 +236,8 @@ function InlineCode({ className, children }: { className?: string; children?: Re
 // references alone, for an agent's reply in Chat (no `@path` pills: an agent's `@` is not a pick): an `agent:`… token as
 // a badge, and a code span that is an id (`4e6ea128`, refbadge.ts codeRef) as the badge of what it names, the code as
 // written when it names nothing. `mentions` includes `refs`. `commands` fences a bare `! cmd` line (bashlines.ts), so a
-// command an agent forgot to put in code draws as the command row it meant, not as prose Markdown rewrote.
+// command an agent forgot to put in code draws as the command row it meant, not as prose Markdown rewrote, and draws a
+// `! cmd` code span in the mark's tint (coderun.ts isInlineCommand).
 export interface MarkdownExtras {
     marks?: boolean;
     diagrams?: boolean;
@@ -257,6 +272,13 @@ function diagramOf(lang: string | undefined, raw: string): ReactNode {
     // the card an agent proposes (chatinitiativecard.tsx); outside Chat's host it is the code block
     if (lang === INITIATIVE_LANG) {
         return <InitiativeBlockView raw={raw} />;
+    }
+    // a pair's list and a judge's marks as cards (chatpairblock.tsx); outside Chat's host they are the code block
+    if (lang === PAIR_LANG) {
+        return <PairBlock raw={raw} />;
+    }
+    if (lang === JUDGE_LANG) {
+        return <JudgeBlock raw={raw} />;
     }
     if (lang === "math") {
         return <DisplayMath tex={raw} />;
@@ -339,13 +361,15 @@ function componentsFor(extras: MarkdownExtras): Components {
 
 function renderMd(text: string, extras: MarkdownExtras = {}) {
     return (
-        <ReactMarkdown
-            remarkPlugins={pluginsFor(extras)}
-            components={componentsFor(extras)}
-            urlTransform={urlTransform}
-        >
-            {guardDollars(extras.commands ? fenceBangLines(text) : text)}
-        </ReactMarkdown>
+        <CommandsContext.Provider value={extras.commands === true}>
+            <ReactMarkdown
+                remarkPlugins={pluginsFor(extras)}
+                components={componentsFor(extras)}
+                urlTransform={urlTransform}
+            >
+                {guardDollars(extras.commands ? fenceBangLines(text) : text)}
+            </ReactMarkdown>
+        </CommandsContext.Provider>
     );
 }
 

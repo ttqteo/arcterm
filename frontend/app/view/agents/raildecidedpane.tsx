@@ -23,7 +23,7 @@ import { clockTime } from "./councilsummarymodel";
 import { pairScrollToAtom } from "./pairstore";
 import { answerChip, linkedMessage, openReason } from "./raildecided";
 
-const CHIP =
+export const CHIP =
     "h-[26px] max-w-full cursor-pointer truncate rounded-full border bg-surface px-[10px] text-[12px] outline-none transition-colors hover:bg-surface-hover focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-default disabled:opacity-60 disabled:hover:bg-surface";
 
 type Row = { key: string; node: ReactNode };
@@ -61,13 +61,39 @@ function Section({ id, label, children }: { id: "asks" | "agreed" | "open"; labe
     );
 }
 
+/** A chip's answer to a pair's A item, sent to both sides (raildecided.ts answerChip); `sending` is the item whose answer
+ *  is on its way, so its chips wait and a second press cannot send it twice. A failure toasts `Answer not sent`. Chat's
+ *  pair card (chatpairblock.tsx) answers through this too. */
+export function useChipAnswer(pairId: string | null): {
+    sending: number | null;
+    answer: (item: PairItem, chip: string) => void;
+} {
+    const [sending, setSending] = useState<number | null>(null);
+    const answer = (item: PairItem, chip: string) => {
+        if (pairId == null) {
+            return;
+        }
+        setSending(item.num);
+        RpcApi.PairSayCommand(TabRpcClient, answerChip(pairId, item, chip))
+            .catch((err) => {
+                console.error(`answering item ${item.num} of pair ${pairId} failed`, err);
+                pushToast({
+                    title: "Answer not sent",
+                    message: err instanceof Error ? err.message : String(err),
+                    level: "error",
+                });
+            })
+            .finally(() => setSending(null));
+    };
+    return { sending, answer };
+}
+
 // readOnly is Library's read view (pairreadpane.tsx), which reads like `wsh read`'s agentpair.Document: Agreed first, then
 // Your answers (the asks the person answered; one nobody answered is left out, as Document leaves it out), then Still
 // open. Nothing waits on anyone there, and Agreed's links scroll the thread beside it instead of opening the Agent
 // surface's
 export function RailDecidedPane({ view, readOnly = false }: { view: PairView | null; readOnly?: boolean }) {
-    // the item whose answer is on its way: its chips wait, so a second press cannot send it twice
-    const [sending, setSending] = useState<number | null>(null);
+    const { sending, answer } = useChipAnswer(view?.id ?? null);
     if (view == null) {
         return (
             <div data-rail-decided-state="reading" className="px-[12px] pt-[12px] text-[12px] text-muted">
@@ -82,19 +108,6 @@ export function RailDecidedPane({ view, readOnly = false }: { view: PairView | n
     const open = view.decided?.open ?? [];
     const judges = (view.judges ?? []).length;
 
-    const answer = (item: PairItem, chip: string) => {
-        setSending(item.num);
-        RpcApi.PairSayCommand(TabRpcClient, answerChip(view.id, item, chip))
-            .catch((err) => {
-                console.error(`answering item ${item.num} of pair ${view.id} failed`, err);
-                pushToast({
-                    title: "Answer not sent",
-                    message: err instanceof Error ? err.message : String(err),
-                    level: "error",
-                });
-            })
-            .finally(() => setSending(null));
-    };
     // the agreed item's link: the conversation, scrolled to the message where it was settled (the pane scrolls and clears)
     const goTo = (msgid: string) => {
         if (!readOnly) {

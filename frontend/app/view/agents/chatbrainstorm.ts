@@ -406,11 +406,12 @@ export type RunCard = { kind: "run"; state: "waiting" | "static"; runId: string 
 
 export type ChatCard = QuestionCard | ConfirmCard | CheckCard | RunCard;
 
-/** What a run card (and its ✓ row) says of the run: its name, which kind of run it is, its stage (null while Arc does not
- *  know the run), and whether it is over: landed, complete or cancelled. */
+/** What a run card (and its ✓ row) says of the run: its name, which kind of run it is (the card's head: an orchestrator
+ *  run on the fast track says so), its stage (null while Arc does not know the run), and whether it is over: landed,
+ *  complete or cancelled. */
 export type RunCardView = {
     name: string;
-    kind: "Orchestrator run" | "Quick run";
+    kind: "Orchestrator run" | "Orchestrator run · fast track" | "Quick run";
     stage: RunStageView | null;
     done: boolean;
 };
@@ -424,7 +425,13 @@ export function runCardView(info: RunInfo | undefined): RunCardView {
     const stage = runStage(info);
     return {
         name: info.title,
-        kind: info.mode === "quick" ? "Quick run" : "Orchestrator run",
+        // the dag's stored flag, never its task count: the engine sets it once, at submit
+        kind:
+            info.mode === "quick"
+                ? "Quick run"
+                : info.dag?.fasttrack
+                  ? "Orchestrator run · fast track"
+                  : "Orchestrator run",
         stage,
         done: RUN_DONE_STAGES.has(stage.key),
     };

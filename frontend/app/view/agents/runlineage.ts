@@ -59,6 +59,9 @@ export interface RunInfo {
 export interface Lineage {
     roles: Record<string, RunRole>; // by agent id
     runs: Record<string, RunInfo>; // by lead run id
+    // by agent id: the tab of the session that started a plain agent's run with `wsh runs start` (Run.origintabid),
+    // which the Agent tree nests it under (buildAgentTree)
+    origins?: Record<string, string>;
 }
 
 export const NO_LINEAGE: Lineage = { roles: {}, runs: {} };
@@ -193,13 +196,20 @@ export function lineageOf(agents: Pick<AgentVM, "id" | "runId" | "blockId">[], r
         runs[leadRunId] = { ...info, channelId: info.channelId || run.channeloid || "" };
     }
     // after the loop, so a tab is placed whichever side of its lead it sits in the roster
+    const origins: Record<string, string> = {};
     for (const a of unplaced) {
         const role = dagTaskRoleOf(a.runId, runs);
         if (role != null) {
             roles[a.id] = role;
+            continue;
+        }
+        // a plain agent's run (a quick run) started from an agent's session: the tree nests it under that agent
+        const origin = reads.run(a.runId)?.origintabid;
+        if (origin) {
+            origins[a.id] = origin;
         }
     }
-    return { roles: { ...roles, ...endedRoles(runs), ...finalStageRoles(runs) }, runs };
+    return { roles: { ...roles, ...endedRoles(runs), ...finalStageRoles(runs) }, runs, origins };
 }
 
 // holdsTask reports whether agent's run is the one taskId currently points at, its worker or its reviewer, rather
@@ -616,6 +626,7 @@ export const BRAINSTORM_JUDGE_ROLE = "brainstorm-judge";
 const STAGE_LABELS: Record<string, string> = {
     "plan-reviewer": "Plan review",
     verifier: "Final verification",
+    "end-reviewer": "End review",
     "land-resolver": "Conflict resolver",
     [BUILDER_CHECK_ROLE]: "Builder check",
     [BRAINSTORM_JUDGE_ROLE]: "Judge",

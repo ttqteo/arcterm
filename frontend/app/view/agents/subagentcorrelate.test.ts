@@ -15,6 +15,7 @@ const file = (over: Partial<SubagentFileInfo>): SubagentFileInfo => ({
     transcriptpath: "/p/agent-a1.jsonl",
     firstprompt: "look at X",
     startedatms: 1,
+    lastwritems: 0,
     done: false,
     ...over,
 });
@@ -55,7 +56,12 @@ describe("correlateSubagents", () => {
         expect(correlateSubagents([], [file({})])[0].async).toBeUndefined();
     });
 
-    it("starts at the spawn's timestamp, else at the file's time on disk", () => {
+    it("carries the file's last write, and none when the server gave none", () => {
+        expect(correlateSubagents([], [file({ lastwritems: 700 })])[0].lastWriteMs).toBe(700);
+        expect(correlateSubagents([], [file({})])[0]).not.toHaveProperty("lastWriteMs");
+    });
+
+    it("starts at the spawn's timestamp, else at the file's own start", () => {
         expect(correlateSubagents([spawn({ startMs: 500 })], [file({ startedatms: 900 })])[0].startedAtMs).toBe(500);
         expect(correlateSubagents([], [file({ startedatms: 900 })])[0].startedAtMs).toBe(900);
         expect(correlateSubagents([], [file({ startedatms: 0 })])[0].startedAtMs).toBeUndefined();

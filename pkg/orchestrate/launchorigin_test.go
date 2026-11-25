@@ -73,6 +73,7 @@ func TestLaunchOriginReadsAStagePromptBack(t *testing.T) {
 	}{
 		{jarvis.UsageRole_PlanReviewer, planReviewPrompt(g, "tree")},
 		{jarvis.UsageRole_Verifier, verifierPrompt(context.Background(), g, &waveobj.Run{})},
+		{jarvis.UsageRole_EndReviewer, endReviewPrompt(context.Background(), g, &waveobj.Run{})},
 		{jarvis.UsageRole_LandResolver, landResolverPrompt(&waveobj.Run{ID: originRun, BaseBranch: "main", LandPath: "/tree"}, []string{"a.txt"})},
 	}
 	for _, c := range cases {
@@ -85,11 +86,37 @@ func TestLaunchOriginReadsAStagePromptBack(t *testing.T) {
 	}
 	for _, prompt := range []string{
 		"You are the plan reviewer for run banana. Judge it.",
+		"You are the end reviewer for run banana. Judge it.",
 		"Please act as if You are the plan reviewer for run " + originRun + ".",
+		"Please act as if You are the end reviewer for run " + originRun + ".",
 		"how to build this",
 	} {
 		if got, ok := LaunchOriginOf("", prompt); ok {
 			t.Errorf("LaunchOriginOf on %q = %+v, want no origin", prompt, got)
+		}
+	}
+}
+
+// The end reviewer works in the final tree beside the verifier, whose tree the engine reads as the verifier's alone:
+// the opening line of its prompt says which of the two a session in that tree is.
+func TestLaunchOriginPlacesAnEndReviewerInTheFinalTree(t *testing.T) {
+	project := filepath.Join("D:", "projects", "arcterm")
+	tree, err := claimWorktreeDir(project, FinalWorktreeKey(originRun))
+	if err != nil {
+		t.Fatal(err)
+	}
+	g := &waveobj.TaskGroup{RunID: originRun, PlanPath: "p.md", Final: &waveobj.FinalStage{Round: 1, Tree: tree}}
+	cases := []struct {
+		name, prompt string
+		want         LaunchOrigin
+	}{
+		{"the end reviewer", endReviewPrompt(context.Background(), g, &waveobj.Run{}), LaunchOrigin{RunID: originRun, Role: jarvis.UsageRole_EndReviewer}},
+		{"the verifier", verifierPrompt(context.Background(), g, &waveobj.Run{}), LaunchOrigin{RunID: originRun, Role: jarvis.UsageRole_Verifier}},
+		{"a session with no opening line", "Your instructions are in the file C:\\prompts\\x.md", LaunchOrigin{RunID: originRun, Role: jarvis.UsageRole_Verifier}},
+	}
+	for _, c := range cases {
+		if got, ok := LaunchOriginOf(tree, c.prompt); !ok || got != c.want {
+			t.Errorf("%s: LaunchOriginOf(%q, ...) = %+v, %v; want %+v", c.name, tree, got, ok, c.want)
 		}
 	}
 }

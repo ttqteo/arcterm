@@ -8,6 +8,7 @@ import (
 	"log"
 	"strings"
 
+	"github.com/wavetermdev/waveterm/pkg/jarvis"
 	"github.com/wavetermdev/waveterm/pkg/orchestrate"
 	"github.com/wavetermdev/waveterm/pkg/resmon"
 	"github.com/wavetermdev/waveterm/pkg/util/jobobject"
@@ -20,6 +21,8 @@ const (
 	resMonClosedTab   = "Closed tab"
 	resMonRunFallback = "Orchestrator run" // runTitle's fallback in frontend/app/view/agents/runlineage.ts
 	resMonLabelSep    = " · "
+
+	resMonRoleEndReviewer = "End reviewer"
 )
 
 func (ws *WshServer) ResMonSnapshotCommand(ctx context.Context, data wshrpc.CommandResMonSnapshotData) (*wshrpc.ResMonSnapshotData, error) {
@@ -125,6 +128,8 @@ func resMonWorkerLabel(ctx context.Context, run *waveobj.Run) string {
 		return title + resMonLabelSep + "lead"
 	case link.Role == sessionRole_Review:
 		return title + resMonLabelSep + "reviewer"
+	case link.Role == jarvis.UsageRole_EndReviewer:
+		return title + resMonLabelSep + resMonRoleEndReviewer
 	case link.Role != sessionRole_Worker:
 		return title + resMonLabelSep + link.Role // a stage session: plan-reviewer, verifier or land-resolver
 	case link.TaskId != "":

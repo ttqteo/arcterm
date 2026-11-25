@@ -2,8 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // Pure view-model logic for the Agent surface's left tree. No React, no Wave runtime imports.
-// Produces group headers, agent rows, each orchestrator run's workers nested under its lead, and a brainstorm's
-// builder-check reviewer and judge nested under the brainstorming agent; subagent
+// Produces group headers, agent rows, each orchestrator run's workers nested under its lead, a brainstorm's
+// builder-check reviewer and judge nested under the brainstorming agent, and each quick run nested under the agent
+// that started it; subagent
 // children are read from per-block atoms in the component (they're ephemeral and keyed by block ORef), so
 // they stay out of this pure helper.
 
@@ -47,12 +48,14 @@ export type AgentTreeRow =
     | { kind: "group"; project: string; count: number; attn: number; running: number }
     // a plain agent. `nested`: it waits on the plain agent of its folder just above it, and sits under it; `waitsFor`:
     // the name of the agent it waits on where it cannot nest (another folder, a lead, one that nests itself); `checks`:
-    // the builder check and judge sessions it started, which its row folds (their `check` rows follow it while `open`)
+    // the builder check and judge sessions it started, which its row folds (their `check` rows follow it while `open`);
+    // `depth`: a quick run's agent nested under the agent that started it, how many levels in (rowDepth)
     | {
           kind: "parent";
           agent: AgentVM;
           project: string;
           nested?: boolean;
+          depth?: number;
           waitsFor?: string;
           checks?: ChecksFold;
           // which side of a pair it is, as a row under its pair's row
@@ -98,6 +101,12 @@ export type AgentTreeRow =
     // the fold of what finished: `count` done tasks and `stages` stages with a verdict, the passed final stage included
     | { kind: "done"; project: string; run: RunInfo; count: number; stages: number; failed: number; open: boolean }
     | { kind: "queued"; project: string; run: RunInfo; count: number; open: boolean };
+
+/** Pure: how many tree levels in an agent's row sits: a run nested under the agent that started it says so (`depth`),
+ *  any other nested row (an agent waiting on the one above it, a pair's side) is one level in, the rest are at the top. */
+export function rowDepth(row: { nested?: boolean; depth?: number }): number {
+    return row.depth ?? (row.nested ? 1 : 0);
+}
 
 // TreeFolds is what the human folded: runs whose workers are hidden, runs whose done or queued tasks are listed,
 // and tasks (by taskFoldKey) whose other tabs are listed. A done fold is keyed to how many tasks were done when it
@@ -238,9 +247,27 @@ const DROPPED = new Set(["skipped", "cancelled"]);
 
 export type StageAgent = { agent: AgentVM; stageRole: string };
 
-export type StageOutcome = "passed" | "accepted" | "failed" | "unverified";
+// amended: the lead answered a light review's findings by amending the plan, which the human never decided; every
+// reviewer of that round reads as that, ahead of its own verdict
+export type StageOutcome = "passed" | "accepted" | "failed" | "unverified" | "amended";
+
+// the words a stage row's second line gives an outcome whose name is not them
+const STAGE_OUTCOME_TEXT: Partial<Record<StageOutcome, string>> = { amended: "amended by the lead" };
+
+/** Pure: the words a stage row's second line gives its outcome. */
+export function stageOutcomeText(outcome: StageOutcome | undefined): string | undefined {
+    return outcome == null ? undefined : (STAGE_OUTCOME_TEXT[outcome] ?? outcome);
+}
 
 const FINAL_OUTCOMES: Record<string, StageOutcome> = { passed: "passed", unverified: "unverified", failed: "failed" };
+const END_REVIEWER_ROLE = "end-reviewer";
+// FinalEndReview.state: lost twice reads as failed, and one a human stopped as unverified
+const END_REVIEW_OUTCOMES: Record<string, StageOutcome> = {
+    passed: "passed",
+    failed: "failed",
+    lost: "failed",
+    stopped: "unverified",
+};
 
 // a land resolver gives no verdict: its land says how it went. Only the resolving land names it (`resolver` is
 // cleared when the land moves on), so a finished one is read from where the land went: held for a human is failed,
@@ -257,9 +284,10 @@ function landResolverOutcome(land: RunLand | undefined, agentRunId: string | und
 }
 
 /** Pure: a stage session's verdict, or undefined while it is still judging. A plan reviewer reads its own verdict
- *  from the round's reviewers, a final verifier its stage's. The dag keeps only the current round, so a session
- *  from an earlier round reads as failed: a stage gets another round only after one fails. A session the engine
- *  replaced within a round is stopped with its tab, so it has no row to misread. */
+ *  from the round's reviewers, unless the lead amended the plan after its light review: that outranks it. A final
+ *  verifier reads its stage's verdict, an end reviewer its stage's end review. The dag keeps only the current round,
+ *  so a session from an earlier round reads as failed: a stage gets another round only after one fails. A session
+ *  the engine replaced within a round is stopped with its tab, so it has no row to misread. */
 export function stageOutcome(
     run: RunInfo,
     stageRole: string,
@@ -273,9 +301,16 @@ export function stageOutcome(
         return undefined;
     }
     if (stageRole === "plan-reviewer") {
-        const reviewer = planReviewerOf(run.dag.planreview, agentRunId);
+        const review = run.dag.planreview;
+        const reviewer = planReviewerOf(review, agentRunId);
         if (reviewer != null) {
-            return reviewer.verdict;
+            return review.state === "accepted" && review.amended ? "amended" : reviewer.verdict;
+        }
+    } else if (stageRole === END_REVIEWER_ROLE) {
+        const er = run.dag.final.endreview;
+        if (er?.runid === agentRunId) {
+            // a pass that could not verify everything, as its step reads
+            return er.state === "passed" && er.unverified ? "unverified" : END_REVIEW_OUTCOMES[er.state];
         }
     } else if (run.dag.final.verifierrunid === agentRunId) {
         return FINAL_OUTCOMES[run.dag.final.state];
@@ -547,7 +582,13 @@ const NO_WAITS: ReadonlyMap<string, string> = new Map();
  *
  *  An active pair whose working agent has a plain row of its own (no run, waiting on no one) is a `pair` row in that
  *  agent's place, its judges leaving their own places; while it shows (pairShown) the working agent and the judges follow
- *  it as nested rows. All of them count in the working agent's folder. */
+ *  it as nested rows. All of them count in the working agent's folder.
+ *
+ *  A quick run started from an agent's session (`lineage.origins`) nests under that agent's row, its run's agent one
+ *  level in (`depth`), after the agent's check rows and before the agents waiting on it; a run its agent started nests
+ *  one level further, with no limit. Both must have a plain row of their own (no run role, no brainstorm check, in no
+ *  active pair); an origin gone from the roster, or a chain of origins that loops, leaves the run's agent a top-level
+ *  row. A nested run sits in its origin's folder, whatever its own project, and counts there. */
 export function buildAgentTree(
     agents: AgentVM[],
     order: string[],
@@ -610,6 +651,32 @@ export function buildAgentTree(
         judges.forEach((j) => pairedJudges.add(j.id));
         pairOfWorker.set(worker.id, { pairId: p.id, judges });
     }
+    // a quick run's agent nests under the agent whose session started it, while both have a row of their own; a chain
+    // of origins that comes back to itself nests no one on it
+    const ownRow = (a: AgentVM | undefined): a is AgentVM =>
+        plainAgent(a) && !pairOfWorker.has(a.id) && !pairedJudges.has(a.id);
+    const originOf = (a: AgentVM): AgentVM | undefined => {
+        const origin = byTab.get(lineage.origins?.[a.id] ?? "");
+        return ownRow(origin) && origin.id !== a.id ? origin : undefined;
+    };
+    const startedUnder = new Set<string>();
+    const startedBy = new Map<string, AgentVM[]>(); // by the origin's id, in roster order
+    for (const a of sorted) {
+        const origin = ownRow(a) ? originOf(a) : undefined;
+        if (origin == null) {
+            continue;
+        }
+        const seen = new Set([a.id]);
+        let up: AgentVM | undefined = origin;
+        while (up != null && !seen.has(up.id)) {
+            seen.add(up.id);
+            up = originOf(up);
+        }
+        if (up == null) {
+            startedUnder.add(a.id);
+            startedBy.set(origin.id, [...(startedBy.get(origin.id) ?? []), a]);
+        }
+    }
 
     type Nested = { agent: AgentVM; stageRole: string; state: BuilderCheckRecord["state"] };
     const checks = new Map<string, Nested[]>(); // by the brainstorming agent's id
@@ -649,7 +716,8 @@ export function buildAgentTree(
         } else if (a.runId != null && checkOwners.has(a.runId)) {
             const { owner, stageRole, state } = checkOwners.get(a.runId);
             checks.set(owner.id, [...(checks.get(owner.id) ?? []), { agent: a, stageRole, state }]);
-        } else {
+        } else if (!startedUnder.has(a.id)) {
+            // a run started from an agent's session is placed under that agent's row (startedBy)
             push({ kind: "parent", agent: a, project: projectOf(a) || UNGROUPED_PROJECT });
         }
     }
@@ -697,14 +765,36 @@ export function buildAgentTree(
                 ...(open ? nested.map((n): AgentTreeRow => ({ kind: "check", project: g.project, ...n })) : []),
             ];
         };
+        const tally = (members: readonly AgentVM[]) => {
+            count += members.length;
+            attn += members.filter((a) => a.state === "asking").length;
+            running += members.filter((a) => a.state === "working").length;
+        };
+        const checksOf = (id: string) => (superseded.has(id) ? [] : (checks.get(id) ?? [])).map((n) => n.agent);
+        // the runs an agent's session started, under its row at `depth`, each followed by the runs its own agent
+        // started; each counts in this folder with its checks
+        const pushStarted = (originId: string, depth: number) => {
+            for (const agent of startedBy.get(originId) ?? []) {
+                tally([agent, ...checksOf(agent.id)]);
+                const target = waits.get(agent.id);
+                const waitsFor = target != null ? byId.get(target)?.name : undefined;
+                body.push(
+                    ...withChecks({
+                        kind: "parent",
+                        agent,
+                        project: g.project,
+                        nested: true,
+                        depth,
+                        ...(waitsFor != null ? { waitsFor } : {}),
+                    })
+                );
+                pushStarted(agent.id, depth + 1);
+            }
+        };
         for (const item of g.items) {
             if (item.kind === "parent") {
-                const nested = superseded.has(item.agent.id) ? [] : (checks.get(item.agent.id) ?? []);
                 const pairing = pairOfWorker.get(item.agent.id);
-                const members = [item.agent, ...nested.map((n) => n.agent), ...(pairing?.judges ?? [])];
-                count += members.length;
-                attn += members.filter((a) => a.state === "asking").length;
-                running += members.filter((a) => a.state === "working").length;
+                tally([item.agent, ...checksOf(item.agent.id), ...(pairing?.judges ?? [])]);
                 if (nestsUnder(item.agent.id) != null) {
                     continue;
                 }
@@ -735,9 +825,11 @@ export function buildAgentTree(
                     }
                 } else {
                     body.push(...withChecks(waitsFor != null ? { ...item, waitsFor } : item));
+                    pushStarted(item.agent.id, 1);
                 }
                 for (const agent of waiters.get(item.agent.id) ?? []) {
                     body.push(...withChecks({ kind: "parent", agent, project: item.project, nested: true }));
+                    pushStarted(agent.id, 2);
                 }
                 continue;
             }

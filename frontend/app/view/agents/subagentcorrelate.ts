@@ -6,7 +6,8 @@
 // (spawn not in the tailed parent window, or a fallback) gets a prompt-derived label, and its state from the file
 // (finished, or ended by a parent notification) — see resolveState.
 // The model comes from the file itself (its latest assistant turn), matched or not. Whether it runs in the background
-// (async) and when it started come from the spawn; an unmatched file's start is its time on disk. A matched file also
+// (async) and when it started come from the spawn; an unmatched file's start is its first record's time (else its last
+// write), and every file carries its last write, about when a finished child ended. A matched file also
 // carries its spawn's toolUseId, the link from an Agent / Task call to the subagent it started.
 // No React, no runtime imports. SubagentFileInfo is a generated global type (gotypes.d.ts).
 //
@@ -68,6 +69,7 @@ export function correlateSubagents(spawns: SubagentSpawn[], files: SubagentFileI
             transcriptPath: f.transcriptpath,
             ...(spawn?.async ? { async: true as const } : {}),
             ...(spawn?.startMs != null || f.startedatms > 0 ? { startedAtMs: spawn?.startMs ?? f.startedatms } : {}),
+            ...(f.lastwritems > 0 ? { lastWriteMs: f.lastwritems } : {}),
         };
         // the call that started it, which a reviewer card finds its subagent by; an unmatched file has none
         if (spawn != null) {

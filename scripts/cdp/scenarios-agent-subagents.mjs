@@ -5,7 +5,8 @@
 // Plan one by neither the text nor isAsync, only toolUseResult.status "async_launched", so it is a launch only because the
 // ack is read from the record. Each child's own file ends on a tool result, so it reads as still working until its
 // handback lands. The Explore agent ends with a completed notification (success, where its finished file alone read the
-// neutral "done"), the Plan agent with a failed one. The roster is a page fixture over a real tab with no controller (a fake
+// neutral "done"), the Plan agent with a failed one. Its failed row stays until the parent starts a retry after it, which
+// takes it out with no press; the retry fails too, and its ✕ dismisses it (kept in localStorage). The roster is a page fixture over a real tab with no controller (a fake
 // block id would fail its terminal's resync and read "failed to start"); every transcript lives in a temp dir teardown
 // removes. kit is scenarios.mjs's RT_KIT (waveService, polishWaitFor).
 
@@ -49,6 +50,23 @@ const PLAN = {
     prompt: "plan the cleanup of the stale rows",
     read: "cleanup-plan.md",
 };
+// the parent's retry of the failed Plan agent, started after it ended: its start moves the parent past that failure
+const RETRY = {
+    spawnId: "toolu_bg_plan_retry",
+    childId: "bgplanretry",
+    type: "Plan",
+    prompt: "plan the cleanup of the stale rows, again",
+    read: "cleanup-plan-2.md",
+};
+
+// a subagent's row in the Agent tree by its id: whether it is drawn, its state, and its dismiss button's opacity
+const rowById = (id) => `(() => {
+    const row = document.querySelector('[data-agent-tree] [data-subagent-row="${id}"]');
+    if (!row) return { row: false };
+    const x = row.querySelector("[data-subagent-dismiss]");
+    return { row: true, state: row.getAttribute("data-subagent-state"), dismiss: x ? getComputedStyle(x).opacity : null };
+})()`;
+const DISMISSED_KEY = "agent.subagents.dismissed";
 
 const RAIL_SELECTOR = 'aside[aria-label="Agent details"]';
 const flatOf = (expr) => `((${expr})?.textContent ?? "").replace(/\\s+/g, " ").trim()`;
@@ -125,6 +143,27 @@ function writeFixture(dir) {
             toolResult(`toolu_${s.childId}_read`, "export function Row() {}", o),
         ]);
     return { parentPath, childPaths: { [EXPLORE.childId]: child(EXPLORE), [PLAN.childId]: child(PLAN) } };
+}
+
+// the parent starts subagent `s` in the background now: its child file first, then the spawn and its launch ack in the
+// parent, whose write is what makes the tree read its subagents again
+function startSubagent(ctx, s) {
+    const o = { cwd: ctx.dir };
+    ctx.childPaths[s.childId] = writeSubagent(ctx.dir, SESSION, s.childId, [
+        userText(s.prompt, o),
+        toolUse(`toolu_${s.childId}_read`, "Read", { file_path: join(ctx.dir, s.read) }, o),
+        toolResult(`toolu_${s.childId}_read`, "export function Row() {}", o),
+    ]);
+    appendFileSync(
+        ctx.parentPath,
+        [
+            toolUse(s.spawnId, "Agent", { subagent_type: s.type, description: "retry the plan", prompt: s.prompt, run_in_background: true }, o),
+            toolResult(s.spawnId, "Async agent launched successfully", {
+                toolUseResult: { isAsync: true, status: "async_launched", agentId: s.childId },
+                ...o,
+            }),
+        ].join("\n") + "\n"
+    );
 }
 
 // a child ends: it hands its report back, and its parent is told in a <task-notification>. The parent's record goes first, so
@@ -239,6 +278,49 @@ export default function (kit) {
                         JSON.stringify({ plan: rail3, explore: exploreRail3 })
                     );
 
+                    // 3b. a failed subagent nothing came after stays in the tree, failed, with its dismiss button hidden
+                    // until the row is hovered
+                    await polishWaitFor(h, `${rowById(PLAN.childId)}.state === "failure"`, POLL_WAIT_MS);
+                    const plan3b = await h.ev(rowById(PLAN.childId));
+                    rec(
+                        "3b. the failed Plan subagent stays in the tree as failed, its dismiss button at opacity 0 until hovered",
+                        plan3b.row && plan3b.state === "failure" && plan3b.dismiss === "0",
+                        JSON.stringify(plan3b)
+                    );
+
+                    // 3c. the parent retries it: the retry's start, after the failure ended, takes the failed row out
+                    // of the tree on its own, and the retry is drawn working
+                    startSubagent(ctx, RETRY);
+                    await polishWaitFor(
+                        h,
+                        `(() => { const p = ${rowById(PLAN.childId)}, r = ${rowById(RETRY.childId)}; return !p.row && r.row && r.state === "working"; })()`,
+                        POLL_WAIT_MS
+                    );
+                    const plan3c = await h.ev(rowById(PLAN.childId));
+                    const retry3c = await h.ev(rowById(RETRY.childId));
+                    await h.shot("cdp-shots/agent-subagents-background-3c-superseded.png");
+                    rec(
+                        "3c. once the parent starts a retry after the Plan subagent failed, the failed row leaves the tree with no press, and the retry is drawn working",
+                        !plan3c.row && retry3c.row && retry3c.state === "working",
+                        JSON.stringify({ plan: plan3c, retry: retry3c })
+                    );
+
+                    // 3d. the retry fails too and nothing comes after it: its ✕ dismisses it, and the dismissal is kept
+                    endSubagent(ctx, RETRY, "failed", 'Agent "retry the plan" failed');
+                    await polishWaitFor(h, `${rowById(RETRY.childId)}.state === "failure"`, POLL_WAIT_MS);
+                    await h.ev(
+                        `(() => { document.querySelector('[data-subagent-dismiss="${RETRY.childId}"]').click(); return true; })()`
+                    );
+                    await polishWaitFor(h, `!${rowById(RETRY.childId)}.row`, LOAD_WAIT_MS);
+                    const retry3d = await h.ev(rowById(RETRY.childId));
+                    const kept = await h.ev(`JSON.parse(localStorage.getItem(${JSON.stringify(DISMISSED_KEY)}) ?? "[]")`);
+                    await h.shot("cdp-shots/agent-subagents-background-3d-dismissed.png");
+                    rec(
+                        "3d. the ✕ on the failed retry takes its row out of the tree, and its id is kept in localStorage so a restart does not bring it back",
+                        !retry3d.row && Array.isArray(kept) && kept.includes(RETRY.childId),
+                        JSON.stringify({ retry: retry3d, kept })
+                    );
+
                     // 4. a child's interior leaves out its SubagentHandback call, and the rail has no Tools row (removed)
                     await agentPage(
                         h,
@@ -286,6 +368,14 @@ export default function (kit) {
                         h,
                         `const S = await mod("app/view/agents/subagentsstore.ts");
                         globalStore.set(S.focusSubagentAtom, null);
+                        return true;`
+                    )
+                );
+                await step("forget the fixture's dismissal", () =>
+                    agentPage(
+                        h,
+                        `const S = await mod("app/view/agents/subagentsstore.ts");
+                        globalStore.set(S.dismissedSubagentsAtom, globalStore.get(S.dismissedSubagentsAtom).filter((id) => id !== ${JSON.stringify(RETRY.childId)}));
                         return true;`
                     )
                 );

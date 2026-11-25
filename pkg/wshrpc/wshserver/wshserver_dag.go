@@ -361,8 +361,10 @@ func (ws *WshServer) DagSubmitCommand(ctx context.Context, data wshrpc.CommandDa
 	proposed.ReviewerPicks, proposed.ReviewerRoute = run.ReviewerPicks, run.ReviewerRoute
 	proposed.LightReviewerRoute = run.LightReviewerRoute
 	proposed.Autonomous = run.Autonomous
-	// a plan file is reviewed before any worker starts; a JSON dag has no plan to review
+	// a plan file is reviewed before any worker starts; a JSON dag has no plan to review. A small plan takes the fast
+	// track, decided here once: a resubmit only keeps or clears it (orchestrate.ReplacePlanReviewProposal).
 	if data.PlanPath != "" {
+		proposed.FastTrack = len(proposed.Tasks) <= jarvis.FastTrackMaxTasks
 		proposed.PlanReview = orchestrate.NewPlanReview()
 		orchestrate.RecomputeDagStatus(&proposed)
 	}

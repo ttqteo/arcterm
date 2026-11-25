@@ -54,7 +54,8 @@ export interface SubagentVM {
     transcriptPath?: string; // disk-backed source: the child's own transcript file (undefined for the legacy hook path)
     toolUseId?: string; // the Agent / Task call that started it, once a spawn matched its file (none for an orphan file)
     async?: true; // spawned to run in the background, so it keeps running after its parent's turn
-    startedAtMs?: number; // when it started: its spawn's timestamp, else its file's time on disk
+    startedAtMs?: number; // when it started: its spawn's timestamp, else its file's first record, else its last write
+    lastWriteMs?: number; // its file's last write: for one that ended, about when it ended
 }
 
 /** Pure: whether the subagent `agentId` is working in `subs` (its parent's list). A missing list, a missing entry and
@@ -380,11 +381,42 @@ export function rollUpStatus(parent: SessionStatus, subagents: SubagentVM[]): Se
     return parent;
 }
 
-/** Pure: the subagents the tree still shows — those still working or that failed (need attention).
- *  Children that finished cleanly (success) or terminated with unknown outcome (done) are dropped so
+/** Pure: whether the agent has moved past failed subagent `failed`: it started another subagent after that one ended
+ *  (a retry, or the next piece of work). One started while it still ran, a parallel sibling, does not count. */
+export function failureSuperseded(failed: SubagentVM, subagents: SubagentVM[]): boolean {
+    const ended = failed.lastWriteMs;
+    if (ended == null) {
+        return false;
+    }
+    return subagents.some((s) => s.id !== failed.id && s.startedAtMs != null && s.startedAtMs >= ended);
+}
+
+/** How many dismissed subagent ids are remembered: the oldest go first, long after their rows could come back. */
+export const DISMISSED_SUBAGENTS_KEEP = 200;
+
+/** Pure: the dismissed ids with `id` added at the end, the oldest dropped past DISMISSED_SUBAGENTS_KEEP. An id already
+ *  there leaves the list as it is (the same array). Anything but a list of strings, as storage can hand back, starts
+ *  over. */
+export function withDismissed(list: unknown, id: string): string[] {
+    const ids = Array.isArray(list) ? list.filter((x): x is string => typeof x === "string") : [];
+    if (ids.includes(id)) {
+        return Array.isArray(list) && ids.length === list.length ? (list as string[]) : ids;
+    }
+    return [...ids, id].slice(-DISMISSED_SUBAGENTS_KEEP);
+}
+
+/** Pure: the subagents the tree still shows — those still working, and those that failed while the failure still
+ *  needs the person: not once the agent moved past it (failureSuperseded) or the person dismissed it (`dismissed`,
+ *  subagent ids). Children that finished cleanly (success) or terminated with unknown outcome (done) are dropped so
  *  a completed fan-out doesn't linger. Never mutates input. */
-export function visibleSubagents(subagents: SubagentVM[]): SubagentVM[] {
-    return subagents.filter((s) => s.state === "working" || s.state === "failure");
+export function visibleSubagents(
+    subagents: SubagentVM[],
+    dismissed: ReadonlySet<string> = new Set<string>()
+): SubagentVM[] {
+    return subagents.filter(
+        (s) =>
+            s.state === "working" || (s.state === "failure" && !dismissed.has(s.id) && !failureSuperseded(s, subagents))
+    );
 }
 
 /** From this many subagents on, a row folds them behind a chip; fewer always show and take no chip. */

@@ -47,39 +47,54 @@ export function stepsKey(steps: readonly Step[]): string {
 const FENCE_OPEN = /^ {0,3}(`{3,}|~{3,})\s*([^\s`]*)/;
 const FENCE_CLOSE = /^ {0,3}(`{3,}|~{3,})\s*$/;
 
+/** A top-level fence of a reply: its info string's first word, its body, and whether a closing line ended it. */
+export interface TopFence {
+    lang: string;
+    body: string;
+    closed: boolean;
+}
+
 /**
- * Pure: the bodies of the top-level ```arc-steps fences in a reply, in order. A fence closes on a line of the same
- * character at least as long, so a block quoted inside a longer fence (a skill showing the format) is not one; a fence
- * left open runs to the end, as Markdown draws it, so a block still being written counts.
+ * Pure: the top-level fences of a reply, in order. A fence closes on a line of the same character at least as long, so a
+ * block quoted inside a longer fence (a skill showing the format) is not one; a fence left open runs to the end, as
+ * Markdown draws it. pkg/agentpair/blocks.go fencesOf reads arc-pair and arc-judge with the same rules.
  */
-export function stepBlocksOf(text: string): string[] {
-    if (!text.includes(STEPS_LANG)) {
-        return [];
-    }
-    const out: string[] = [];
-    let open: { fence: string; steps: boolean; body: string[] } | null = null;
+export function topFencesOf(text: string): TopFence[] {
+    const out: TopFence[] = [];
+    let open: { fence: string; lang: string; body: string[] } | null = null;
     for (const line of text.split(/\r?\n/)) {
         if (open == null) {
             const m = FENCE_OPEN.exec(line);
             if (m != null) {
-                open = { fence: m[1], steps: m[2] === STEPS_LANG, body: [] };
+                open = { fence: m[1], lang: m[2], body: [] };
             }
             continue;
         }
         const close = FENCE_CLOSE.exec(line);
         if (close != null && close[1][0] === open.fence[0] && close[1].length >= open.fence.length) {
-            if (open.steps) {
-                out.push(open.body.join("\n"));
-            }
+            out.push({ lang: open.lang, body: open.body.join("\n"), closed: true });
             open = null;
             continue;
         }
         open.body.push(line);
     }
-    if (open?.steps) {
-        out.push(open.body.join("\n"));
+    if (open != null) {
+        out.push({ lang: open.lang, body: open.body.join("\n"), closed: false });
     }
     return out;
+}
+
+/**
+ * Pure: the bodies of the top-level ```arc-steps fences in a reply, in order (topFencesOf); a block still being written
+ * counts.
+ */
+export function stepBlocksOf(text: string): string[] {
+    if (!text.includes(STEPS_LANG)) {
+        return [];
+    }
+    return topFencesOf(text)
+        .filter((f) => f.lang === STEPS_LANG)
+        .map((f) => f.body);
 }
 
 /** Pure: the steps of the last block in a reply that lists any, or null when none does. */
