@@ -411,3 +411,9 @@ are in that file. Tick a line here when it holds, then remove it; a part left em
   agent's terminal, the run in Jarvis, the council's discussion; Ctrl-click peeks; a working agent's badge pulses green
   and an asking one shows an amber ring. A token typed or pasted into the box stays text (badges only in the bubble).
   Checked only with seeded atoms in the `chat-ref-badges` CDP scenario, not against a real project's runs and councils.
+- [ ] (arcterm) **A new agent starts while its terminal is hidden.** New agent while the machine is busy (held) →
+  Start now on the held row, then pick another agent before its terminal shows (or start any agent and switch away at
+  once) → within seconds its row works on the task without being opened; `waveapp.log` has `[termfit] hidden-start`
+  for its block. Open it → the TUI fills the pane, not garbled at the old size. After an app restart, an agent behind
+  the one on screen still starts only when picked. Only the pure rule (`hiddenstart.ts`) is unit tested; the live
+  start in `termwrap.ts` `startIfHiddenLaunch` was not tried in the dev app.

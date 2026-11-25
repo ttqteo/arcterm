@@ -387,11 +387,17 @@ export function visibleSubagents(subagents: SubagentVM[]): SubagentVM[] {
     return subagents.filter((s) => s.state === "working" || s.state === "failure");
 }
 
+/** From this many subagents on, a row folds them behind a chip; fewer always show and take no chip. */
+export const SUBAGENT_FOLD_AT = 2;
+
 /** Pure: auto-expand while a child is working; a manual override (set this turn) wins.
- *  An empty list is never expanded (nothing to show). */
+ *  An empty list is never expanded (nothing to show); fewer than SUBAGENT_FOLD_AT always are (no chip folds them). */
 export function subagentExpanded(subagents: SubagentVM[], manualOverride?: boolean): boolean {
     if (subagents.length === 0) {
         return false;
+    }
+    if (subagents.length < SUBAGENT_FOLD_AT) {
+        return true;
     }
     if (manualOverride != null) {
         return manualOverride;

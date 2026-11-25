@@ -48,6 +48,48 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
   taken once it lands (even if it landed while arcterm was down) and passes to the working agent, nothing is sent twice,
   and a heavy command from the working agent is still held while a judge owes an answer.
 
+- [ ] (arcterm) Agent row fold chips from two on: in the Agents tree, an agent with one subagent or one background
+  task shows it under the row with no chip; from two of either a chip folds them; with both chips on one line they keep
+  their count only and the RAM/tokens/age columns stay inside the row (no overflow). `agenttree.tsx`.
+
+- [ ] (arcterm) **Judge for a choice question, the light mark on real haiku** (the Final's `chat-judge` fakes both
+  judges). Have a Claude agent end a turn on an A-or-B question written as prose ("… Mình nghiêng A. A hay B?"). Under
+  its message a line reads "Gợi ý <one chip>" with "· rê vào để xem lý do"; hovering the name shows a one-sentence reason
+  and "haiku, chỉ đọc reply"; that chip is first in the row with the scale icon. Do it on both paths: an agent whose arc
+  mod makes the call at the turn's end (the mod path), and one whose mod is off (wavesrv's headless call), and check
+  each answer's chips have a pick, a reason and a neutral description (spec "Light mark"; `pkg/chatsuggest`,
+  `claude/arc-mod/hooks/register.ts`). A yes-or-no question or a turn with no question gets no line.
+
+- [ ] (arcterm) **Judge for a choice question, the deep judge on a real project** (nothing in the Final starts sonnet).
+  On the turn above press Judge kỹ (or Alt+J) with the agent's project open: the line reads "Judge đang đọc code, không
+  thấy agent khuyên gì · N s" with the seconds ticking and Dừng; when it ends it reads "Judge chọn <pick>" with
+  `sonnet · N file · N s` at the end and the reason on hover, the judged chip moved first (an option the agent never
+  named is a chip of its own and sends its description and facts). `waveapp.log` holds one `chatjudge: … role=chat-judge
+  state=done model=sonnet …` line, and no arcterm hook fired for the judge session (no row in Active, no session in the
+  project's History). Press Dừng mid-way: the line goes back to the light mark; answering with a chip while it reads
+  stops it too. Quit and reopen arcterm: the line under the old message is still there.
+
+- [ ] (arcterm) **What's new picture for Judge for a choice question.** Run
+  `node scripts/cdp/final-verify.mjs chat-judge` on a dev app, which writes `public/whatsnew/<version>-chat-judge.webp`;
+  commit that file and change the CHANGELOG line's `<!-- shot: none -->` to `<!-- shot: <version>-chat-judge.webp -->`
+  (`whatsnew.test.ts` checks it).
+- [ ] (arcterm) No console window for harness probes (Windows): launch a build with this fix and wait 30 s (the first
+  harness update check) → no Windows Terminal window opens with `agy.exe --version`; pressing Update on a harness
+  opens none either (`harness.HideWindow`, `pkg/harness/catalog.go` `versionCommand`, `pkg/harnessupdate/update.go`).
+- [ ] (arcterm) Brainstorm run starting: approve a brainstorm's builder check and press Start in the launcher; until
+  the run is created, the agent's sidebar row reads "starting run" (not "asking question") and Chat's builder check
+  card reads Working with "The run is starting", not the amber Waiting on you (`withStartingRun`, `checkCard`).
+- [ ] (arcterm) Overview with an agent asleep in its tab: open SIEM-parser's Overview (its one session `Bàn giao
+  SIEM-1759` asleep) → Now lists it under Idle 1 with a moon and `asleep · …`, and the Activity footer reads
+  `Last 7 days: 1 session · 152.7M tokens`, not 0 sessions. Seen in the `project-overview` CDP scenario with a fixture
+  agent; the footer's count of a real live session only in `projectoverviewmodel.test.ts`.
+- [ ] (arcterm) Sidecar Resources: open Sidecar on the wall (and the small form's Resources tab); within a few seconds
+  the band lists Sidecar and arcterm rows and the CPU/RAM charts start drawing, instead of "Measuring…" for good (the
+  `resources` act's `ask` was dropped by `validateAct`, so `resourcesFor` refused every reading).
+- [ ] (arcterm) Sidecar Needs you: an agent whose last message ends `… kiểm lại file \`x.json\` giúp bạn?` shows the whole
+  last sentence, not `json\` giúp bạn?`.
+- [ ] (arcterm) Initiative pane Latest note: a note longer than six lines scrolls inside its box (wheel and scrollbar),
+  the rest of the pane still scrolls.
 - [ ] (arcterm) Chat bare `! cmd` line: an agent reply holding a line `! python -c "t.replace('**A**','**B**')"` outside
   code draws it as a compact command row with Run and Copy, its `**` kept, no bold word. `task verify:ui --
   chat-code-box` step 1b2 checks it; it did not run (the dev app was stopped for low memory). Unit-tested only

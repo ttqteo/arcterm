@@ -49,6 +49,7 @@ import {
 } from "@/app/view/agents/canvasstore";
 import { activeChannelRunsAtom } from "@/app/view/agents/channelsstore";
 import { getChatMode, setChatMode } from "@/app/view/agents/chatmodestore";
+import { liveJudgeAtom, runLiveJudge } from "@/app/view/agents/chatsuggeststore";
 import { registerCommentSend } from "@/app/view/agents/commentsend";
 import { compareRefsAtom, setCompareRefs } from "@/app/view/agents/comparestore";
 import { councilChatNavAtom, type CouncilChatNav } from "@/app/view/agents/councilchatnav";
@@ -232,6 +233,12 @@ vi.mock("@/app/view/term/termwrap", async (orig) => ({
     ...(await orig<typeof import("@/app/view/term/termwrap")>()),
     redrawTerminal: vi.fn(() => true),
     focusedTerminalBlockId: vi.fn(() => undefined),
+}));
+
+// Judge it starts a sonnet session over the wire; the key is only asked which agent's live line it runs
+vi.mock("@/app/view/agents/chatsuggeststore", async (orig) => ({
+    ...(await orig<typeof import("@/app/view/agents/chatsuggeststore")>()),
+    runLiveJudge: vi.fn(),
 }));
 
 // the brainstorm keys send their lines over the wire; the tests only ask which line a key sends
@@ -3246,6 +3253,68 @@ describe("agent:done-close", () => {
         expect(press(doneModel({ state: "working", committed: true }))).toBe(false);
         expect(press(doneModel({ state: "idle" }))).toBe(false);
         expect(confirmCloseSession).not.toHaveBeenCalled();
+    });
+});
+
+describe("agent:chat-judge", () => {
+    // `null`: no agent in focus
+    const judgeModel = (focus: string | null = "a1"): any => ({
+        focusIdAtom: atom<string | undefined>(focus ?? undefined) as PrimitiveAtom<string | undefined>,
+        agentsAtom: atom([]),
+    });
+    const binding = (model: any = judgeModel()) => buildAgentBindings(model).find((b) => b.id === "agent:chat-judge")!;
+    // what the focused agent's pane offers on its live turn (chatpane.tsx writes it)
+    const offers = (action: "judge" | "retry" | "stop" | undefined, agent = "a1") =>
+        globalStore.set(
+            liveJudgeAtom,
+            action == null ? {} : { [agent]: { key: `${agent}:10:abc`, cwd: "/work/proj", action } }
+        );
+
+    beforeEach(() => {
+        globalStore.set(centerModeAtom, "terminal");
+        vi.mocked(runLiveJudge).mockClear();
+    });
+    afterEach(() => globalStore.set(liveJudgeAtom, {}));
+
+    it("is Alt+J on the Agent surface, live from the chat box too", () => {
+        offers("judge");
+        const b = binding();
+        expect(b.keys).toBe("Alt:j");
+        expect(b.group).toBe("Agent");
+        expect(b.when!(ctx("agent"))).toBe(true);
+        expect(b.when!({ ...ctx("agent"), editable: true })).toBe(true);
+        expect(b.when!(ctx("cockpit"))).toBe(false);
+        expect(b.when!({ ...ctx("agent"), modalOpen: true })).toBe(false);
+    });
+
+    it("is live only while the focused agent's live line offers Judge it or Retry", () => {
+        const b = binding();
+        offers("judge");
+        expect(b.when!(ctx("agent"))).toBe(true);
+        offers("retry");
+        expect(b.when!(ctx("agent"))).toBe(true);
+        // the line's own Stop button stops; the key does not
+        offers("stop");
+        expect(b.when!(ctx("agent"))).toBe(false);
+        offers(undefined);
+        expect(b.when!(ctx("agent"))).toBe(false);
+        // another agent's offer is not this one's
+        offers("judge", "a2");
+        expect(b.when!(ctx("agent"))).toBe(false);
+    });
+
+    it("runs the judge for the agent in focus", () => {
+        offers("judge");
+        expect(binding().run(ctx("agent"))).not.toBe(false);
+        expect(runLiveJudge).toHaveBeenCalledWith("a1");
+    });
+
+    it("passes the key on with no agent in focus", () => {
+        offers("judge");
+        const b = binding(judgeModel(null));
+        expect(b.when!(ctx("agent"))).toBe(false);
+        expect(b.run(ctx("agent"))).toBe(false);
+        expect(runLiveJudge).not.toHaveBeenCalled();
     });
 });
 

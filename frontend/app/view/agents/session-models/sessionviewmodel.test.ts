@@ -26,6 +26,7 @@ import {
     visibleSubagents,
     toggleCollapsed,
     type SessionInput,
+    type SubagentVM,
 } from "./sessionviewmodel";
 
 describe("cwdToServiceLabel", () => {
@@ -629,15 +630,23 @@ describe("subagentExpanded", () => {
         expect(subagentExpanded([], undefined)).toBe(false);
         expect(subagentExpanded([], true)).toBe(false);
     });
+    const two = (state: "working" | "success"): SubagentVM[] => [
+        { id: "a", type: "E", state },
+        { id: "b", type: "E", state },
+    ];
+    it("a single subagent always shows: nothing folds it", () => {
+        expect(subagentExpanded([{ id: "a", type: "E", state: "success" }], undefined)).toBe(true);
+        expect(subagentExpanded([{ id: "a", type: "E", state: "working" }], false)).toBe(true);
+    });
     it("auto-expands while a child is working", () => {
-        expect(subagentExpanded([{ id: "a", type: "E", state: "working" }], undefined)).toBe(true);
+        expect(subagentExpanded(two("working"), undefined)).toBe(true);
     });
     it("auto-collapses when all children finished", () => {
-        expect(subagentExpanded([{ id: "a", type: "E", state: "success" }], undefined)).toBe(false);
+        expect(subagentExpanded(two("success"), undefined)).toBe(false);
     });
     it("manual override wins over auto", () => {
-        expect(subagentExpanded([{ id: "a", type: "E", state: "working" }], false)).toBe(false);
-        expect(subagentExpanded([{ id: "a", type: "E", state: "success" }], true)).toBe(true);
+        expect(subagentExpanded(two("working"), false)).toBe(false);
+        expect(subagentExpanded(two("success"), true)).toBe(true);
     });
 });
 

@@ -27,6 +27,7 @@ export interface OverviewRows {
     working: AgentVM[]; // its plain agents at work (no part in a run)
     terminals: AgentVM[]; // its terminals running a command
     runs: RunRow[]; // its runs with a member at work, one row each
+    idle: AgentVM[]; // its plain agents at rest, awake or asleep (no part in a run: the run's own view has those)
 }
 
 // a run's workers and stage sessions have a worktree for their project, so the Agent tree puts a run where its lead
@@ -80,7 +81,25 @@ export function overviewRows(
         working: mine.filter((a) => a.state === "working" && runOf(a) == null),
         terminals: terminals.filter((t) => t.running === true && projectOf(t) === project),
         runs,
+        idle: mine.filter((a) => a.state === "idle" && runOf(a) == null),
     };
+}
+
+// the Now column's Idle block: the project's open agents that neither ask, work nor wait to be read (Finished has
+// those), awake ones first, each kind newest first. Without it an agent asleep in its tab shows nowhere on the page:
+// History lists ended sessions only.
+export function restingRows(rows: OverviewRows, finished: readonly AgentVM[]): AgentVM[] {
+    const read = new Set(finished.map((a) => a.id));
+    const at = (a: AgentVM) => a.sleeping?.since ?? a.idleSince ?? a.stateSince ?? 0;
+    return rows.idle
+        .filter((a) => !read.has(a.id))
+        .sort((x, y) => Number(x.sleeping != null) - Number(y.sleeping != null) || at(y) - at(x));
+}
+
+// an Idle row's line: what the agent was on, after "asleep" when its process is gone
+export function restingLine(a: AgentVM): string {
+    const doing = doingLine(a);
+    return a.sleeping == null ? doing : doing ? `asleep · ${doing}` : "asleep";
 }
 
 // the Running block's agent count: the plain agents at work and every run's members at work, as the tree folder's
@@ -146,7 +165,11 @@ export function finishedRows(
         .sort((x, y) => (y.idleSince ?? y.stateSince ?? 0) - (x.idleSince ?? x.stateSince ?? 0));
 }
 
-// the project's ended sessions in the window, newest first; a run's worker is left to its run, a live one to Now
+// a session of the project active in the window; a run's worker is left to its run
+const inProjectWindow = (s: LiveSession, path: string, now: number) =>
+    !s.runid && samePath(s.projectpath, path) && s.lastactivets >= now - HISTORY_WINDOW_MS;
+
+// the project's ended sessions in the window, newest first; a live one is left to Now
 export function projectSessions(
     sessions: readonly LiveSession[] | null,
     path: string,
@@ -154,15 +177,14 @@ export function projectSessions(
     q: string
 ): LiveSession[] {
     return (sessions ?? [])
-        .filter(
-            (s) =>
-                !s.live &&
-                !s.runid &&
-                samePath(s.projectpath, path) &&
-                s.lastactivets >= now - HISTORY_WINDOW_MS &&
-                hasText(s.task, q)
-        )
+        .filter((s) => !s.live && inProjectWindow(s, path, now) && hasText(s.task, q))
         .sort((a, b) => b.lastactivets - a.lastactivets);
+}
+
+// the Activity footer's "N sessions": every session active in the window, a live one (working, idle or asleep in its
+// tab) included, since the footer's tokens count its days too. History lists only the ended ones.
+export function activeSessionCount(sessions: readonly LiveSession[], path: string, now: number): number {
+    return sessions.filter((s) => inProjectWindow(s, path, now)).length;
 }
 
 // ts orders the list and reads as the row's age; since decides the window (a run by when it was created)

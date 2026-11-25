@@ -571,6 +571,46 @@ declare global {
         uses: number;
     };
 
+    // wshrpc.ChatJudgeAdded
+    type ChatJudgeAdded = {
+        label: string;
+        desc: string;
+        facts?: string[];
+    };
+
+    // wshrpc.ChatJudgeDeep
+    type ChatJudgeDeep = {
+        state: string;
+        startts: number;
+        endts?: number;
+        pick?: string;
+        reason?: string;
+        added?: ChatJudgeAdded;
+        model?: string;
+        tokens?: number;
+        files?: number;
+        error?: string;
+    };
+
+    // wshrpc.ChatJudgeOption
+    type ChatJudgeOption = {
+        text: string;
+        desc?: string;
+    };
+
+    // wshrpc.ChatJudgeRecord
+    type ChatJudgeRecord = {
+        key: string;
+        blockid?: string;
+        ts: number;
+        question: string;
+        recent?: string[];
+        options: ChatJudgeOption[];
+        pick?: string;
+        reason?: string;
+        deep?: ChatJudgeDeep;
+    };
+
     // waveobj.ChunkWorkRef
     type ChunkWorkRef = {
         kind: string;
@@ -1060,6 +1100,28 @@ declare global {
         habits: ChatHabit[];
     };
 
+    // wshrpc.CommandChatJudgeData
+    type CommandChatJudgeData = {
+        key: string;
+        cwd: string;
+        retry?: boolean;
+    };
+
+    // wshrpc.CommandChatJudgeListData
+    type CommandChatJudgeListData = {
+        agentid: string;
+    };
+
+    // wshrpc.CommandChatJudgeListRtnData
+    type CommandChatJudgeListRtnData = {
+        records: ChatJudgeRecord[];
+    };
+
+    // wshrpc.CommandChatJudgeStopData
+    type CommandChatJudgeStopData = {
+        key: string;
+    };
+
     // wshrpc.CommandChatSuggestData
     type CommandChatSuggestData = {
         reply: string;
@@ -1067,6 +1129,8 @@ declare global {
         question?: boolean;
         blockid?: string;
         hook?: boolean;
+        key?: string;
+        choice?: boolean;
     };
 
     // wshrpc.CommandChatSuggestHookBeginData
@@ -1094,6 +1158,7 @@ declare global {
     // wshrpc.CommandChatSuggestRtnData
     type CommandChatSuggestRtnData = {
         replies: string[];
+        judge?: ChatJudgeRecord;
     };
 
     // wshrpc.CommandCheckMemoryHygieneData

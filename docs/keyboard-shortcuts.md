@@ -421,6 +421,7 @@ worker's transcript each show one thing in place of the grid; the grid comes bac
 | `Alt`+`C` | Switch Chat → Terminal → Canvas → Review, skipping the ones the agent doesn't have (Chat is a Claude agent's only; an agent with a brainstorm has Brainstorm in the canvas's place). A sleeping Claude agent's Chat and Terminal are disabled, so the key walks only its Canvas (or Brainstorm) and Review. Works from inside the terminal, where a bare `c` is typed into it; with only one of them, the key goes to the terminal |
 | `Alt`+`W` | Close the agent whose header shows **✓ Close · N tok** (its last turn committed and you have read it). Works from inside the terminal; when the header offers no Close, the key goes to the terminal |
 | `Alt`+`S` | Ship the agent whose header shows **Ship**: it commits its own changes, pulls and resolves conflicts, then pushes. Works from inside the terminal; when the header offers no Ship, the key goes to the terminal |
+| `Alt`+`J` | Judge it: when the agent's last message ends on a choice question (A or B?), Chat shows a suggested answer under it, and this starts a fresh sonnet session that reads the code without seeing the agent's lean (30–90 s; it may name a better option). After a failed judge it is Retry. Works from the chat box too; with no Judge it on the line, the key goes on to the terminal |
 | `[` / `]` or `←` / `→` | Previous / next board |
 | `m` | Mark parts of the board; in mark mode, stop marking |
 | `Mod`+`Enter` | Send the marks to the agent (from mark mode) |

@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import type { AgentVM } from "./agentsviewmodel";
 import { buildAgentTree } from "./agenttreemodel";
 import {
+    activeSessionCount,
     askLine,
     changesLabel,
     councilPeek,
@@ -17,6 +18,8 @@ import {
     isQuiet,
     overviewRows,
     projectSessions,
+    restingLine,
+    restingRows,
     rowsUntil,
     runningCount,
     type HistoryRow,
@@ -59,9 +62,12 @@ describe("overviewRows", () => {
 });
 
 describe("isQuiet", () => {
-    const empty = { asking: [], working: [], terminals: [], runs: [] };
+    const empty = { asking: [], working: [], terminals: [], runs: [], idle: [] };
     it("is quiet with nothing asking, running or waiting", () => {
         expect(isQuiet(empty, 0)).toBe(true);
+    });
+    it("stays quiet with idle or asleep agents: the quiet line sits above the Idle block", () => {
+        expect(isQuiet({ ...empty, idle: [vm("i", { sleeping: { since: 0, freedBytes: 0 } })] }, 0)).toBe(true);
     });
     it("is quiet only when Finished is empty too", () => {
         expect(isQuiet(empty, 0, 1)).toBe(false);
@@ -253,6 +259,48 @@ describe("projectSessions", () => {
     });
     it("is empty while the archive is not loaded", () => {
         expect(projectSessions(null, "D:/p", 10, "")).toEqual([]);
+    });
+    it("counts the window's sessions for the Activity footer, a live one asleep in its tab included", () => {
+        const list = [
+            s({ id: "ended", lastactivets: now - 1000 }),
+            s({ id: "asleep", live: true, lastactivets: now - 2 * 86_400_000 }),
+            s({ id: "worker", runid: "r1", lastactivets: now }),
+            s({ id: "old", lastactivets: now - 8 * 86_400_000 }),
+            s({ id: "other", projectpath: "D:/q", lastactivets: now }),
+        ];
+        expect(activeSessionCount(list, "D:/p", now)).toBe(2);
+        expect(projectSessions(list, "D:/p", now, "")).toHaveLength(1);
+    });
+});
+
+describe("restingRows", () => {
+    const asleep = { since: 0, freedBytes: 0 };
+    it("lists the project's plain idle agents, not the unread ones, awake first and each kind newest first", () => {
+        const agents = [
+            vm("s-old", { project: "arc", sleeping: { ...asleep, since: 10 } }),
+            vm("idle-old", { project: "arc", idleSince: 5 }),
+            vm("s-new", { project: "arc", sleeping: { ...asleep, since: 50 } }),
+            vm("idle-new", { project: "arc", idleSince: 40 }),
+            vm("unread", { project: "arc", idleSince: 99 }),
+            vm("w", { project: "arc", state: "working" }),
+            vm("x", { project: "other" }),
+        ];
+        const rows = overviewRows(agents, [], "arc");
+        const finished = agents.filter((a) => a.id === "unread");
+        expect(restingRows(rows, finished).map((a) => a.id)).toEqual(["idle-new", "idle-old", "s-new", "s-old"]);
+    });
+    it("leaves a run's idle lead to its run", () => {
+        const lineage: Lineage = {
+            roles: { lead: { kind: "lead", runId: "r1" } },
+            runs: { r1: { runId: "r1", channelId: "c", title: "R", project: "arc" } as RunInfo },
+        };
+        const rows = overviewRows([vm("lead", { project: "arc" }), vm("p", { project: "arc" })], [], "arc", lineage);
+        expect(restingRows(rows, []).map((a) => a.id)).toEqual(["p"]);
+    });
+    it("words an asleep agent's line", () => {
+        expect(restingLine(vm("a", { task: "Bàn giao", sleeping: asleep }))).toBe("asleep · Bàn giao");
+        expect(restingLine(vm("a", { sleeping: asleep }))).toBe("asleep");
+        expect(restingLine(vm("a", { task: "Bàn giao" }))).toBe("Bàn giao");
     });
 });
 

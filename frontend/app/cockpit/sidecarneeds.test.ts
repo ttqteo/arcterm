@@ -73,6 +73,15 @@ describe("endsInQuestion", () => {
         expect(endsInQuestion("")).toBeNull();
     });
 
+    // a stop inside a word is no sentence end: the row read "json` giúp bạn?"
+    it("does not cut at a dot inside a file name, a version or a number", () => {
+        expect(endsInQuestion("Probe chạy nền. Bạn muốn mình kiểm lại file `controls_probe.json` giúp bạn?")).toBe(
+            "Bạn muốn mình kiểm lại file `controls_probe.json` giúp bạn?"
+        );
+        expect(endsInQuestion("Built. Ship 1.9.0 or wait for 0.5 more?")).toBe("Ship 1.9.0 or wait for 0.5 more?");
+        expect(endsInQuestion("Done. Is a?b the right key?")).toBe("Is a?b the right key?");
+    });
+
     it("cuts the sentence at the last full stop, bang, question mark, ideographic stop or newline", () => {
         expect(endsInQuestion("First part! Second part?")).toBe("Second part?");
         expect(endsInQuestion("Is it? Really?")).toBe("Really?");

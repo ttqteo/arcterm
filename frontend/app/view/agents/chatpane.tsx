@@ -73,6 +73,7 @@ import { isHandoffAsk } from "./chathandoff";
 import { ChatHandoffCard } from "./chathandoffcard";
 import { holdSwitchLine } from "./chatinitiativestore";
 import { cancelQueuedChat, chatBoxText, focusChatBox, replaceChatBox, submitIntoChatBox } from "./chatinsert";
+import { choiceTurn, judgedChips, judgeLine, judgeReason } from "./chatjudge";
 import { CHAT_JUMP_KEYS, registerChatJump } from "./chatjump";
 import { ChatLimitStrip } from "./chatlimitstripview";
 import {
@@ -120,7 +121,16 @@ import {
     yesNoChips,
     yesNoQuestion,
 } from "./chatsuggest";
-import { markChunkDone, requestModelSuggest, useEffortDetail, useModelSuggest } from "./chatsuggeststore";
+import {
+    loadChatJudges,
+    markChunkDone,
+    requestModelSuggest,
+    setLiveJudge,
+    stopDeepJudge,
+    useChatJudge,
+    useEffortDetail,
+    useModelSuggest,
+} from "./chatsuggeststore";
 import { TaggedPromptText } from "./chattagblock";
 import { mergeTaken, withoutTakenBack } from "./chattakeback";
 import { noteTakenBack, takeBackDropped, useTakenBack } from "./chattakebackstore";
@@ -1044,17 +1054,6 @@ function ChatPaneBody({ model, agent, barred }: { model: AgentsViewModel; agent:
     // a wake under way, from this box or anywhere else: the empty box says so rather than offering to wake it
     const wakingNow = useWaking(agent.id);
 
-    // a message taken from the box: the chat scrolls to the end so its bubble lands in view, and while a question waits the
-    // message is its answer, kept with how many same-text messages the transcript held before it (`entries` is what the
-    // pending bubble counts on too)
-    const onBoxSent = (text: string) => {
-        jumpToBottom();
-        const answer = boxAnswerRecord(card, brainstormTopic, text, entries, Date.now());
-        if (answer != null) {
-            recordBrainstormAnswer(agent.id, answer);
-        }
-    };
-
     // The replies the box suggests once the turn ends (chatsuggest.ts): the rules' at once, from the header's git read of
     // the repo; the model's when its call answers. Only the agent in focus on the Agent surface makes the call, so an
     // agent nobody looks at costs none; its answer is kept by turn, so a look later finds it.
@@ -1083,6 +1082,29 @@ function ChatPaneBody({ model, agent, barred }: { model: AgentsViewModel; agent:
     );
     const turnKey = useMemo(() => (reply != null ? suggestKey(agent.id, reply) : null), [agent.id, reply]);
     const modelSuggest = useModelSuggest(turnKey);
+    // A turn that ends in a choice question has a judge record (chatjudge.ts, pkg/chatjudge): the judge's pick moves to
+    // the row's first place, and the box's Tab line says why. A turn that is not one has none, and its row is as the
+    // rules and the model made it. wavesrv keeps the records, so the agent's are read once per app life.
+    const choice = useMemo(() => reply != null && choiceTurn(reply), [reply]);
+    const judge = useChatJudge(choice ? turnKey : null);
+    useEffect(() => {
+        loadChatJudges(agent.id);
+    }, [agent.id]);
+    // a message taken from the box: the chat scrolls to the end so its bubble lands in view, and while a question waits the
+    // message is its answer, kept with how many same-text messages the transcript held before it (`entries` is what the
+    // pending bubble counts on too). Answering the turn whose deep judge still reads stops it: judging a question that
+    // is answered helps nobody (a chip, Cmd/Ctrl+Enter and typed text all come through here).
+    const onBoxSent = (text: string) => {
+        jumpToBottom();
+        const answer = boxAnswerRecord(card, brainstormTopic, text, entries, Date.now());
+        if (answer != null) {
+            recordBrainstormAnswer(agent.id, answer);
+        }
+        if (turnKey != null) {
+            // does nothing unless the record's deep judge is reading right now
+            stopDeepJudge(turnKey);
+        }
+    };
     // asleep the turn is over too (one read of the transcript holds its reply), so its chips show and a pick wakes it
     const turnOpen = {
         reply,
@@ -1175,24 +1197,42 @@ function ChatPaneBody({ model, agent, barred }: { model: AgentsViewModel; agent:
         useAtomValue(runQueueAtom)
     );
     const chips = wantsModelSuggest({ ...turnOpen, seen: true })
-        ? chatChips({
-              question,
-              rules: question
-                  ? []
-                  : [
-                        ...ruleChips(agent, shipGit, vi),
-                        ...initiativeChips(effort, agent.id, agent.committed === true, vi, turnEnded),
-                    ],
-              model: modelSuggest,
-              close: closeChip(done, vi),
-              // a yes-or-no question gets its yes and no at once; the model's answers that say more follow them
-              yesNo:
-                  question && reply != null && yesNoQuestion(reply)
-                      ? yesNoChips(vi || writesVietnamese([reply.slice(-300)]))
-                      : undefined,
-              reply: reply ?? undefined,
-          })
+        ? judgedChips(
+              chatChips({
+                  question,
+                  rules: question
+                      ? []
+                      : [
+                            ...ruleChips(agent, shipGit, vi),
+                            ...initiativeChips(effort, agent.id, agent.committed === true, vi, turnEnded),
+                        ],
+                  model: modelSuggest,
+                  close: closeChip(done, vi),
+                  // a yes-or-no question gets its yes and no at once; the model's answers that say more follow them
+                  yesNo:
+                      question && reply != null && yesNoQuestion(reply)
+                          ? yesNoChips(vi || writesVietnamese([reply.slice(-300)]))
+                          : undefined,
+                  reply: reply ?? undefined,
+              }),
+              // the judge's pick (the scale) goes first and Cmd/Ctrl+Enter sends it; no record, no change
+              judge
+          )
         : undefined;
+    // The line under the turn's message (chatjudgeline.tsx) is the live one while the chips show: it offers Judge it, Stop
+    // or Retry, and with the project known the pane tells the Alt+J key what that is (liveJudgeAtom, which the binding
+    // reads: it cannot see this pane's state). The offer goes when the turn changes, the line offers nothing or the pane
+    // is gone.
+    const liveJudgeKey = chips != null && judge != null ? turnKey : null;
+    const liveLine = liveJudgeKey != null && cwd != null ? judgeLine(judge, 0, vi, true) : null;
+    const liveAction = liveLine != null && liveLine.state !== "none" ? liveLine.action : undefined;
+    useEffect(() => {
+        if (liveJudgeKey == null || cwd == null || liveAction == null) {
+            return;
+        }
+        setLiveJudge(agent.id, { key: liveJudgeKey, cwd, action: liveAction });
+        return () => setLiveJudge(agent.id, undefined);
+    }, [agent.id, liveJudgeKey, cwd, liveAction]);
 
     return (
         <div
@@ -1261,6 +1301,7 @@ function ChatPaneBody({ model, agent, barred }: { model: AgentsViewModel; agent:
                                     model={model}
                                     agent={agent}
                                     cwd={cwd}
+                                    liveJudgeKey={liveJudgeKey}
                                 />
                             </AgentPathLinks>
                         </ChatVisualHost>
@@ -1467,6 +1508,7 @@ function ChatPaneBody({ model, agent, barred }: { model: AgentsViewModel; agent:
                             onBoxState={setBoxNow}
                             onShowDiff={() => openDiff(model, agentDiffScope(agent.id, agent.name, agent.agent))}
                             chips={chips}
+                            judgeReason={judgeReason(judge)}
                             onMarkDone={markDone}
                             onClose={() => confirmCloseSession(agent, model, "chat chip")}
                             onGoOn={goOn}

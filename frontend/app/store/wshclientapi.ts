@@ -414,6 +414,24 @@ export class RpcApiType {
         return client.wshRpcCall("chathabits", null, opts);
     }
 
+    // command "chatjudge" [call]
+    ChatJudgeCommand(client: WshClient, data: CommandChatJudgeData, opts?: RpcOpts): Promise<ChatJudgeRecord> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "chatjudge", data, opts);
+        return client.wshRpcCall("chatjudge", data, opts);
+    }
+
+    // command "chatjudgelist" [call]
+    ChatJudgeListCommand(client: WshClient, data: CommandChatJudgeListData, opts?: RpcOpts): Promise<CommandChatJudgeListRtnData> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "chatjudgelist", data, opts);
+        return client.wshRpcCall("chatjudgelist", data, opts);
+    }
+
+    // command "chatjudgestop" [call]
+    ChatJudgeStopCommand(client: WshClient, data: CommandChatJudgeStopData, opts?: RpcOpts): Promise<void> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "chatjudgestop", data, opts);
+        return client.wshRpcCall("chatjudgestop", data, opts);
+    }
+
     // command "chatsuggest" [call]
     ChatSuggestCommand(client: WshClient, data: CommandChatSuggestData, opts?: RpcOpts): Promise<CommandChatSuggestRtnData> {
         if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "chatsuggest", data, opts);

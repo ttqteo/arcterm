@@ -55,6 +55,7 @@ import {
     GitCommitHorizontal,
     Hammer,
     Moon,
+    Scale,
     Terminal,
     X,
     type LucideIcon,
@@ -230,6 +231,7 @@ function ComposerBox({
     onBoxState,
     onShowDiff,
     chips,
+    judgeReason,
     onMarkDone,
     onClose,
     onGoOn,
@@ -255,6 +257,9 @@ function ComposerBox({
     /** the replies suggested once the turn ended (chatsuggest.ts chatChips), drawn as chips, typing or not; a
      *  click sends one (asking first over typed text). Left out, none. */
     chips?: ChatChip[];
+    /** why the judge picked the chip it marked (chatjudge.ts judgeReason): the box's line says it when Tab lands on that
+     *  chip. Left out, or null, the line says only what Enter sends. */
+    judgeReason?: string | null;
     /** a chunk's done chip: ticks it on the agent's initiative. Left out, that chip is not drawn. */
     onMarkDone?: (chunk: string) => void;
     /** the close chip (chatsuggest.ts closeChip): closes the agent as the header's ✓ Close does, asking as it does. Left
@@ -724,14 +729,19 @@ function ComposerBox({
         submitNext.current = true;
         setTextAt(t);
     };
-    const sendSuggested = (t: string) => {
-        if (suggestTake(text, armed, t) === "send") {
+    // What a chip sends is its text, except the judge's added chip, whose label does not say what the option is: it sends
+    // the label with the judge's description and facts (chatsuggest.ts ChatChip.send). The chip is picked and armed by its
+    // text, the one the row knows it by. A box that already holds what the chip sends takes it as a send too.
+    const chipBody = (c: ChatChip) => c.send ?? c.text;
+    const takesSend = (c: ChatChip) => text === chipBody(c) || suggestTake(text, armed, c.text) === "send";
+    const sendSuggested = (c: ChatChip) => {
+        if (takesSend(c)) {
             setArmed(null);
-            sendNow(t);
+            sendNow(chipBody(c));
             return;
         }
-        setPicked(t);
-        setArmed(t);
+        setPicked(c.text);
+        setArmed(c.text);
         editorRef.current?.focus();
     };
     // The + menu's Add folder and Slash commands rows: an empty box becomes `t`; a box that already starts with `/` is
@@ -959,7 +969,7 @@ function ComposerBox({
     const logPick = (c: ChatChip, how: "send" | "edit") =>
         getApi().sendLog(chipPickLogLine(agent.blockId, c, rowChips, lastReply(entries ?? []), how));
     const activateChip = (c: ChatChip) => {
-        if (c.kind !== "reply" || suggestTake(text, armed, c.text) === "send") {
+        if (c.kind !== "reply" || takesSend(c)) {
             logPick(c, "send");
         }
         if (c.kind === "close" && onClose != null) {
@@ -969,7 +979,7 @@ function ComposerBox({
         } else if (c.kind === "next" && c.chunk != null && onGoOn != null) {
             onGoOn(c.chunk, c.text);
         } else {
-            sendSuggested(c.text);
+            sendSuggested(c);
         }
     };
     // Shift+Enter on a picked chip whose Enter sends its text (chatsuggest.ts chipEditable) puts that text in the box
@@ -979,7 +989,7 @@ function ComposerBox({
     const editChip = (c: ChatChip) => {
         logPick(c, "edit");
         recalled.current = { at: null, shown: "" };
-        const next = withChipText(text, c.text);
+        const next = withChipText(text, chipBody(c));
         setTextAt(next, next.length);
         editorRef.current?.focus();
     };
@@ -1004,11 +1014,12 @@ function ComposerBox({
     useLayoutEffect(() => {
         onBoxState?.(state);
     }, [state]);
-    // the empty box's line: what Enter does with a picked chip; while chips show, the idle or asleep line names Tab (a
-    // waiting question keeps its own words); else the pane's line
+    // the empty box's line: what Enter does with a picked chip, and why the judge picked it when it is the judge's pick
+    // (the keyboard's way to the reason the line under the message shows on hover); while chips show, the idle or asleep
+    // line names Tab (a waiting question keeps its own words); else the pane's line
     const hint: HintPart[] | string =
         picked != null
-            ? pickedHint(picked, pickedEditable)
+            ? pickedHint(picked, pickedEditable, picked.judged === true ? (judgeReason ?? undefined) : undefined)
             : tabChips.length > 0 && (state === "idle" || state === "asleep") && !questionWaits
               ? boxTabPlaceholder(agent.name, state === "asleep")
               : placeholder;
@@ -1620,6 +1631,8 @@ const SUGGEST_ICONS: Record<ChipIcon, LucideIcon> = {
     next: ArrowRight,
     // the header's ✓ Close, in the chip row's shape
     close: CircleCheck,
+    // the judge's pick (chatjudge.ts judgedChips)
+    judge: Scale,
 };
 
 // A key named in the empty box's line (chatboxstate.ts HintPart), drawn as a keycap.
@@ -1745,6 +1758,8 @@ function SuggestChips({
                         const ticks = c.kind === "done" && c.chunk != null;
                         const goes = c.kind === "next" && c.chunk != null && canGoOn;
                         const mark = chipIcon(c);
+                        // what a click sends: the judge's added chip says more than its label (ChatChip.send)
+                        const sends = c.send ?? c.text;
                         return (
                             <motion.div key={c.text} {...part} className="min-w-0 max-w-[340px] shrink">
                                 <Chip
@@ -1754,21 +1769,26 @@ function SuggestChips({
                                     armed={c.text === armed}
                                     title={
                                         (c.text === armed
-                                            ? `Send “${c.text}” in place of the text in the box · Esc keeps your text`
+                                            ? `Send “${sends}” in place of the text in the box · Esc keeps your text`
                                             : c.kind === "close"
                                               ? "Its work is committed: close this agent, as the header's ✓ Close does"
                                               : ticks
                                                 ? `Mark “${c.chunk}” done and move on to the next chunk`
                                                 : goes
                                                   ? `Move this agent to “${c.chunk}” and send “${c.text}”`
-                                                  : `Send “${c.text}”`) +
+                                                  : `Send “${sends}”`) +
                                         (c.text === quick && c.text !== armed ? ` · ${quickKeyLabel()}` : "")
                                     }
                                     quickKey={c.text === quick ? quickKeyLabel() : undefined}
                                     match={matches.get(c.text) ?? undefined}
                                     faded={anyMatch && matches.get(c.text) == null && c.text !== picked}
                                     onClick={() => onActivate(c)}
-                                    data={{ "data-chat-suggest-chip": c.source, "data-chat-suggest-kind": c.kind }}
+                                    data={{
+                                        "data-chat-suggest-chip": c.source,
+                                        "data-chat-suggest-kind": c.kind,
+                                        // the judge's pick, drawn with the scale and first in the row
+                                        ...(c.judged === true ? { "data-chat-suggest-judged": "" } : {}),
+                                    }}
                                 />
                             </motion.div>
                         );

@@ -1160,6 +1160,9 @@ describe("brainstormCard: the builder check", () => {
         const f = settled({ check: BUILDER_DONE });
         const c = pick(brainstormCard(inp({ file: f, starting: { runId: null } })), "check");
         expect(c.approveBlocker).toBe("The run is starting");
+        // the start is under way, so the card is at work, not waiting on the user
+        expect(c.state).toBe("working");
+        expect(pick(brainstormCard(inp({ file: f })), "check").state).toBe("waiting");
     });
 
     describe("with the run queued", () => {
@@ -1212,6 +1215,7 @@ describe("brainstormCard: the builder check", () => {
         it("keeps Approve off between the entry starting and the file recording its run", () => {
             const c = card({ starting: mark, queue: queued([], { "q-1": "r-9" }) });
             expect(c.approveBlocker).toBe("The run is starting");
+            expect(c.state).toBe("working");
         });
 
         it("turns Approve back on once the entry is gone without a start", () => {

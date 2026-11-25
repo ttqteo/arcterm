@@ -238,8 +238,8 @@ export function TipBody({ title, lines }: { title?: ReactNode; lines?: readonly 
 
 /** The hook a view binds its marks to: `const tip = useChartTip()`, `{...tip.bind(<TipBody …/>)}` on a mark's element
  *  (or its hit target), and `{tip.node}` once in the view. Pointer and keyboard focus both open it, so a point reached
- *  with Tab says what a hover says. */
-export function useChartTip() {
+ *  with Tab says what a hover says. `className` goes to the chip (a wider one, a larger text). */
+export function useChartTip(className?: string) {
     const [tip, setTip] = useState<{ anchor: Element; content: ReactNode } | null>(null);
     const bind = useCallback(
         (content: ReactNode) => ({
@@ -259,7 +259,12 @@ export function useChartTip() {
         }),
         []
     );
-    const node = tip != null ? <ChartTooltip anchor={tip.anchor}>{tip.content}</ChartTooltip> : null;
+    const node =
+        tip != null ? (
+            <ChartTooltip anchor={tip.anchor} className={className}>
+                {tip.content}
+            </ChartTooltip>
+        ) : null;
     return { bind, node };
 }
 

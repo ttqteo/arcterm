@@ -39,6 +39,7 @@ and a picture given to a line that is not big.
   conversation in the centre and only answer what waits on you. The new Decided tab on the rail lists what they agreed,
   what is still open and what waits on you. A heavy command waits until the judge has answered (Run now lets it
   through), the pair pauses when the judge has no new points or both agree, and Unpair ends it. <!-- big --> <!-- shot: 1.10.0-agent-pair.webp -->
+- When an agent ends on a choice question (A or B?), Chat shows under its message a suggested answer and why (hover the name for the reason), and Judge it (Alt+J) starts a fresh sonnet session that reads the code without seeing which option the agent leans to and may name a better one. The judged answer sits first in the chips, so Cmd/Ctrl+Enter sends it. <!-- big --> <!-- shot: none -->
 - A folded Agent sidebar still gets you to any agent: its thin strip shows a dot per agent (green working, amber
   asking, blue for turns you have not read, the open one on a lit tile like the selected row in the tree), and resting the pointer on it, or holding Alt, opens a small card of your agents by project to pick one,
   with their Alt+1..9 numbers while Alt is held. The terminal beside it keeps its size. <!-- big --> <!-- shot: 1.10.0-tree-peek.webp -->
@@ -115,6 +116,18 @@ and a picture given to a line that is not big.
 
 ### Fixed
 
+- An agent's row in the tree no longer runs past its edge when it has subagents and background tasks: a single
+  subagent or background task just shows under the row, a fold chip comes from two on, and two fold chips on one line
+  keep only their counts.
+- A new agent whose terminal was not on screen when it started (Start now on a held agent, or another view over it)
+  starts at once and works on its task, instead of waiting until you open it.
+- On Windows, arcterm no longer pops up a terminal window when it checks your agent CLIs' versions (such as
+  `agy --version`, half a minute after launch and every 6 hours) or updates one.
+- After you approve a brainstorm and start its run, the agent's row reads "starting run" and the builder check card reads Working until the run is created, instead of "asking question" and Waiting on you. A builder check waiting on you names it ("review builder check", "answer 2 builder questions") rather than "asking question" with no number.
+- A project's Overview no longer loses an agent that sits idle or asleep in its tab. The Now column lists them under Idle, asleep ones with a moon, and the Activity footer's "Last 7 days" counts their sessions instead of reading 0 sessions beside their tokens.
+- Sidecar's Resources (the wall's band and the small form's panel) shows its readings again. Since the last build it sat on "Measuring…" with empty charts however long you waited.
+- A question in Sidecar's Needs you reads whole: a dot inside a file name or a version (`results.json`, 1.9.0) no longer cuts it to its last few words.
+- The Latest note in an agent's initiative pane scrolls when it runs past six lines, instead of being cut off with no way to read the rest.
 - Settings → Agents → Compact before the cache goes cold no longer says only Claude Code compacts an agent that stays
   awake: when Claude Code's own compaction is off, arcterm does it.
 - In Chat, a `! command` an agent writes as a bare line, not in code, now draws as a command row with Run and Copy, exactly as written. Before, it read as a paragraph: the `**` inside a quoted string turned into bold and dropped out, so the command you saw and copied was not the one the agent wrote.
