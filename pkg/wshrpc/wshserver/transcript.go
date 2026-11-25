@@ -648,6 +648,21 @@ func firstPromptOf(line string) string {
 	return ""
 }
 
+// recordTimeMs is a transcript record's own timestamp in UnixMilli, or 0 when it has none that parses.
+func recordTimeMs(line string) int64 {
+	var rec struct {
+		Timestamp string `json:"timestamp"`
+	}
+	if json.Unmarshal([]byte(line), &rec) != nil || rec.Timestamp == "" {
+		return 0
+	}
+	t, err := time.Parse(time.RFC3339Nano, rec.Timestamp)
+	if err != nil {
+		return 0
+	}
+	return t.UnixMilli()
+}
+
 // terminalTailLines is how far back subagentTail reads: past the hook attachments claude appends after a
 // child's last message, to the tool_use a final tool_result answers.
 const terminalTailLines = 40
@@ -788,7 +803,11 @@ func listSubagents(parentPath string) ([]wshrpc.SubagentFileInfo, error) {
 			Model:          latestModel(tail),
 		}
 		if st, statErr := os.Stat(path); statErr == nil {
-			info.StartedAtMs = st.ModTime().UnixMilli()
+			info.LastWriteMs = st.ModTime().UnixMilli()
+		}
+		info.StartedAtMs = recordTimeMs(head[0])
+		if info.StartedAtMs == 0 {
+			info.StartedAtMs = info.LastWriteMs
 		}
 		infos = append(infos, info)
 	}
@@ -803,7 +822,7 @@ func listSubagents(parentPath string) ([]wshrpc.SubagentFileInfo, error) {
 				break
 			}
 		}
-		if status := endedByParent(ends, infos[i].AgentId, infos[i].StartedAtMs); status != "" {
+		if status := endedByParent(ends, infos[i].AgentId, infos[i].LastWriteMs); status != "" {
 			infos[i].Done = true
 			infos[i].EndStatus = status
 		}
