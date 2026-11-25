@@ -96,6 +96,8 @@ and a picture given to a line that is not big.
 - A background subagent cut off when its agent's session ended no longer shows as running in the Agent tree forever,
   and no longer keeps its agent from going to sleep: it reads stopped, as the agent was told when it resumed.
   the agent's rail with the Decided tab stays beside the conversation.
+- Expanding a board that then fits whole drops its ‹ N parts › stepper, and collapsing it brings the stepper back. The
+  parts used to stay as they were when the board opened.
 
 ## 1.10.0 — 2026-11-25
 

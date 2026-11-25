@@ -223,6 +223,8 @@ function OpenBoard({ project, boardId, highlightIds, onSelection, part: partProp
     const followingRef = useRef(true);
     const [parts, setParts] = useState<BoardPart[]>([]);
     const partsKeyRef = useRef("");
+    // the canvas size the parts were last computed at: needsParts reads it, so a resize recomputes them (syncView)
+    const partsSizeRef = useRef<{ width: number; height: number } | null>(null);
     const onPartsRef = useRef(onParts);
     onPartsRef.current = onParts;
     // controlled by the split's header; Library's canvas keeps its own
@@ -317,7 +319,8 @@ function OpenBoard({ project, boardId, highlightIds, onSelection, part: partProp
         setShown(found.map((el) => el.id));
     }
 
-    // the parts are read inside the drawing in view; with none in view there are none
+    // the parts are read inside the drawing in view; with none in view there are none. A new list closes the part that
+    // was open, since its index may point past the list (or into an empty one); the view stays where it is.
     function updateParts(): void {
         const api = apiRef.current;
         if (api == null) {
@@ -329,12 +332,14 @@ function OpenBoard({ project, boardId, highlightIds, onSelection, part: partProp
                 ? []
                 : boardParts(drawingShapes(api.getSceneElements(), inView) as unknown as readonly PartElement[]);
         const st = api.getAppState();
+        partsSizeRef.current = { width: st.width, height: st.height };
         const next = needsParts(found, st.width, st.height) ? found : [];
         const key = partsKey(next);
         if (key === partsKeyRef.current) {
             return;
         }
         partsKeyRef.current = key;
+        closePart();
         setParts(next);
         onPartsRef.current?.(next);
     }
@@ -505,9 +510,14 @@ function OpenBoard({ project, boardId, highlightIds, onSelection, part: partProp
         if (next !== prev) {
             globalStore.set(rowAtom, next);
         }
+        const sized = partsSizeRef.current;
         if (drawingChanged) {
             // another drawing in view reads from its own parts; a part open in the one left is closed, the view stays
             closePart();
+            updateParts();
+        } else if (sized?.width !== appState.width || sized?.height !== appState.height) {
+            // the canvas was resized (Expand or Collapse, the grid, the window): whether a drawing needs its parts
+            // depends on the size it is read at
             updateParts();
         }
     }
