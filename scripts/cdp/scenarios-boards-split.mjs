@@ -4,7 +4,7 @@
 // sibling of the agent's `[data-agent-terminal]` cell, never inside it. A board cell is a cell of its own (more than one
 // can be open); these steps open one at a time, openBoardOn closing the others first. Its header, turns and ask box are the steps below, each a screenshot plus
 // a DOM assert. Beside Chat only the latest turn shows, so a step that reads one turn's row puts that turn last; a dense
-// board (B3) reads one part at a time (8b), a small one (B1) reads whole.
+// board (B3) reads one part at a time (8b), a small one (B1) reads whole once expanded and gets its parts back collapsed.
 //
 // Steps 17 and 18 are the drawings (docs/superpowers/specs/2026-11-25-kael-sync-boards-drawings-design.md): a board opens
 // in Excalidraw's view mode with an Edit switch in the strip above it (17), and each drawer answer is a numbered frame, a
@@ -358,16 +358,18 @@ export default function (kit) {
                     return null;
                 };
                 const selected = () => Object.keys(app()?.state.selectedElementIds ?? {}).filter((id) => app().state.selectedElementIds[id]).sort();
-                const centreOf = (id) => {
+                // the point at fx of a shape's width and fy of its height, in client px
+                const pointIn = (id, fx, fy) => {
                     const a = app();
                     const el = a?.scene.getNonDeletedElements().find((e) => e.id === id);
                     if (!el) return null;
                     const s = a.state;
                     return {
-                        x: Math.round((el.x + el.width / 2 + s.scrollX) * s.zoom.value + s.offsetLeft),
-                        y: Math.round((el.y + el.height / 2 + s.scrollY) * s.zoom.value + s.offsetTop),
+                        x: Math.round((el.x + el.width * fx + s.scrollX) * s.zoom.value + s.offsetLeft),
+                        y: Math.round((el.y + el.height * fy + s.scrollY) * s.zoom.value + s.offsetTop),
                     };
                 };
+                const centreOf = (id) => pointIn(id, 0.5, 0.5);
                 // the drawings (steps 17-18): each is a frame, numbered in its customData
                 const frames = () =>
                     (app()?.scene.getNonDeletedElements() ?? [])
@@ -429,14 +431,15 @@ export default function (kit) {
                 return ok;
             };
             // the board's mode as drawn: the canvas's flag, Excalidraw's own, its drawing toolbar and style panel, the Edit
-            // switch and the ask box's line
+            // switch and the ask box's line. The drawing toolbar is probed by .App-toolbar-container, which both layouts
+            // render only while the drawing tools show: the phone layout's bottom footer.App-toolbar stays in view mode
             const readMode = async (id) => {
                 const m = await canvasPage(`
                     const c = document.querySelector('${BOARD} [data-board-canvas="${id}"]');
                     return {
                         attr: c?.dataset.boardViewMode ?? null,
                         viewMode: app()?.state.viewModeEnabled ?? null,
-                        toolbar: !!c?.querySelector(".App-toolbar"),
+                        toolbar: !!c?.querySelector(".App-toolbar-container"),
                         panel: !!c?.querySelector(".selected-shape-actions"),
                         selected: selected(),
                     };`);
@@ -1036,7 +1039,7 @@ export default function (kit) {
             });
 
             // --- 8b. a dense board reads one part at a time ---
-            await run("8b. a dense board: the header counts its parts (inside its Earlier drawings), hovering one offers Read, → and Whole drawing move between them", async (name) => {
+            await run("8b. a dense board: the header counts its parts (inside its Earlier drawings), hovering one offers Read, → and Whole drawing move between them; B1 needs parts in the half cell, reads whole once expanded and gets them back collapsed", async (name) => {
                 const CV = `${SPLIT(B3)} ${CANVAS(B3)}`;
                 const attr = (key) => h.ev(`document.querySelector(${q(CV)})?.dataset.${key} ?? null`);
                 const zoom = () => canvasPage(`return app()?.state.zoom.value ?? null;`);
@@ -1080,13 +1083,26 @@ export default function (kit) {
                 const started = (await click(`${SPLIT(B3)} [data-board-parts-next]`)) && (await until(async () => (await attr("boardPart")) === "0"));
                 await click(`${SPLIT(B3)} [data-board-close]`);
                 await until(async () => (await box(SPLIT(B3))) == null);
-                // a small board reads whole: no parts, no stepper
+                // a small board (B1, 440 wide) needs parts in the half cell, reads whole once expanded and gets them back collapsed
                 await openBoardOn(B1);
-                await canvasReady(B1);
-                const b1Parts = await h.ev(`document.querySelector(${q(`${SPLIT(B1)} ${CANVAS(B1)}`)})?.dataset.boardParts ?? null`);
-                const b1Stepper = await count(`${SPLIT(B1)} [data-board-parts-count]`);
+                const b1Ready = await canvasReady(B1);
+                const B1_CV = `${SPLIT(B1)} ${CANVAS(B1)}`;
+                const b1Parts = () => h.ev(`document.querySelector(${q(B1_CV)})?.dataset.boardParts ?? null`);
+                const b1Stepper = () => count(`${SPLIT(B1)} [data-board-parts-count]`);
+                // the parts are published once the canvas has its size, as B3's header count is
+                const halfCounted = await until(async () => (await b1Parts()) === "3");
+                const half = { parts: await b1Parts(), stepper: await b1Stepper() };
+                const expandClicked = await click(`${SPLIT(B1)} [data-board-expand]`);
+                const expandedGone = await until(async () => (await b1Parts()) === "0" && (await b1Stepper()) === 0);
+                const expanded = { parts: await b1Parts(), stepper: await b1Stepper() };
+                const collapseClicked = await click(`${SPLIT(B1)} [data-board-expand]`);
+                const collapsedBack = await until(async () => (await b1Parts()) === "3");
+                const collapsed = { parts: await b1Parts(), stepper: await b1Stepper() };
                 await click(`${SPLIT(B1)} [data-board-close]`);
                 await until(async () => (await box(SPLIT(B1))) == null);
+                const b1Half = b1Ready && halfCounted && half.parts === "3" && half.stepper === 1;
+                const b1Whole = expandClicked && expandedGone && expanded.parts === "0" && expanded.stepper === 0;
+                const b1Again = collapseClicked && collapsedBack && collapsed.parts === "3";
                 rec(
                     name,
                     ready &&
@@ -1114,10 +1130,46 @@ export default function (kit) {
                         back &&
                         recounted &&
                         started &&
-                        // a small board reads whole: no parts, no stepper
-                        b1Parts === "0" &&
-                        b1Stepper === 0,
-                    { fitZoom, inView, drawing, hoverText, partZoom, partName, index, nextName, wholeLabel, b1Parts, b1Stepper }
+                        // B1 needs parts in the half cell, reads whole once expanded and gets them back collapsed
+                        b1Half &&
+                        b1Whole &&
+                        b1Again,
+                    {
+                        ready,
+                        counted,
+                        fitZoom,
+                        quiet,
+                        hovered,
+                        one,
+                        picked,
+                        inPart,
+                        inView,
+                        drawing,
+                        hoverText,
+                        partZoom,
+                        partName,
+                        index,
+                        stepperGone,
+                        stepped,
+                        nextName,
+                        wholeLabel,
+                        whole,
+                        back,
+                        recounted,
+                        started,
+                        b1Ready,
+                        halfCounted,
+                        half,
+                        expandClicked,
+                        expandedGone,
+                        expanded,
+                        collapseClicked,
+                        collapsedBack,
+                        collapsed,
+                        b1Half,
+                        b1Whole,
+                        b1Again,
+                    }
                 );
             });
 
@@ -1426,16 +1478,24 @@ export default function (kit) {
                 const mode = await readMode(B1);
                 const strip = await box(`${SPLIT(B1)} [data-board-strip]`);
                 const canvasBox = await box(`${SPLIT(B1)} ${CANVAS(B1)}`);
-                // a drag from the middle of "SQLite", as a pointer would
+                // a drag from the lower right of "SQLite" (85 % across, 80 % down), as a pointer would: B1 reads in parts in
+                // the half cell, and the Read label of SQLite's part sits in its top-left corner, over the shape's centre
                 const from = await canvasPage(`
                     const el = app().scene.getNonDeletedElements().find((e) => e.id === "sqlite");
-                    return { ...centreOf("sqlite"), at: [el.x, el.y], view: view() };`);
+                    return { ...pointIn("sqlite", 0.85, 0.8), at: [el.x, el.y], view: view() };`);
+                // the pointer is on the canvas, not on the label: the first move, then what sits under the point
+                await h.cdp("Input.dispatchMouseEvent", { type: "mouseMoved", x: from.x, y: from.y });
+                const hit = await h.ev(`document.elementFromPoint(${from.x}, ${from.y})?.tagName ?? null`);
                 await dragBy(from, DRAG_PX);
                 await polishNap(400);
                 const after = await canvasPage(`
                     const el = app().scene.getNonDeletedElements().find((e) => e.id === "sqlite");
                     return { at: [el.x, el.y], view: view() };`);
                 await shot("17a-view-mode");
+                const stripAbove = strip != null && canvasBox != null && strip.b <= canvasBox.t + 2;
+                const stripAligned = strip != null && canvasBox != null && near(strip.l, canvasBox.l, 3);
+                const unmoved = from.at.join() === after.at.join();
+                const panned = Math.abs(after.view.scrollX - from.view.scrollX) + Math.abs(after.view.scrollY - from.view.scrollY) > 5;
                 rec(
                     name,
                     ready &&
@@ -1445,14 +1505,14 @@ export default function (kit) {
                         mode.edit === "false" &&
                         mode.hint === "Press Edit to ask about shapes" &&
                         // the strip is the canvas column's first row, right above the canvas
-                        strip != null &&
-                        canvasBox != null &&
-                        strip.b <= canvasBox.t + 2 &&
-                        near(strip.l, canvasBox.l, 3) &&
+                        stripAbove &&
+                        stripAligned &&
+                        // the press lands on the canvas, so Excalidraw sees it
+                        hit === "CANVAS" &&
                         // the drag moved the view and not the shape
-                        from.at.join() === after.at.join() &&
-                        Math.abs(after.view.scrollX - from.view.scrollX) + Math.abs(after.view.scrollY - from.view.scrollY) > 5,
-                    { mode, strip, canvasBox, from, after }
+                        unmoved &&
+                        panned,
+                    { ready, mode, strip, canvasBox, stripAbove, stripAligned, from, hit, after, unmoved, panned }
                 );
             });
 

@@ -309,14 +309,16 @@ export default function (kit) {
                 await polishNap(300);
                 return ok;
             };
-            // the board's mode as drawn: the canvas's view mode flag, Excalidraw's drawing toolbar, the Edit switch
+            // the board's mode as drawn: the canvas's view mode flag, Excalidraw's drawing toolbar, the Edit switch. The toolbar
+            // is probed by .App-toolbar-container, which both layouts render only while the drawing tools show: the phone
+            // layout's bottom footer.App-toolbar stays in view mode
             const modeOf = (id) =>
                 h.ev(`(() => {
                     const c = document.querySelector(${q(`${OPEN(id)} [data-board-canvas="${id}"]`)});
                     const e = document.querySelector(${q(`${OPEN(id)} [data-board-edit]`)});
                     return {
                         view: c?.dataset.boardViewMode ?? null,
-                        toolbar: !!c?.querySelector(".App-toolbar"),
+                        toolbar: !!c?.querySelector(".App-toolbar-container"),
                         edit: e?.getAttribute("aria-pressed") ?? null,
                         editLabel: (e?.textContent ?? "").trim(),
                     };

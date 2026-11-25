@@ -356,6 +356,10 @@ export default function (kit) {
                     `// the optimized deps are CommonJS: their exports sit on the module's default
                     const R = (await mod("deps/react.js")).default;
                     const D = (await mod("deps/react-dom_client.js")).default;
+                    // jotai is ESM: Provider is a named export; the app's tree sits in Provider store={globalStore}, and this
+                    // bare canvas reads the same store, where setEditing writes
+                    const J = await mod("deps/jotai.js");
+                    const Provider = J.Provider ?? J.default?.Provider;
                     const { BoardCanvas } = await mod("app/view/boards/boardcanvas.tsx");
                     const host = document.createElement("div");
                     host.setAttribute("data-board-smoke", "");
@@ -368,10 +372,10 @@ export default function (kit) {
                     smoke.observer = new PerformanceObserver((list) => smoke.resources.push(...list.getEntries().map((e) => e.name)));
                     smoke.observer.observe({ type: "resource" });
                     smoke.render = (highlightIds) =>
-                        root.render(R.createElement(BoardCanvas, {
+                        root.render(R.createElement(Provider, { store: globalStore }, R.createElement(BoardCanvas, {
                             project: ${JSON.stringify(PROJECT)}, boardId: ${JSON.stringify(BOARD_ID)}, highlightIds,
                             onSelection: (s) => smoke.selections.push(s),
-                        }));
+                        })));
                     smoke.render(null);
                     return true;`
                 );
