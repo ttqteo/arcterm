@@ -439,7 +439,7 @@ Engine đánh thức lead bằng cách gõ vào terminal của nó một dòng t
 Chi tiết các sự kiện "worker":
 
 - **Treo**: im lặng 15 phút (tính từ lần mới nhất trong ghi transcript, mẫu CPU bận, hay câu hỏi chờ), tiến trình còn sống, không có câu hỏi nào đang chờ. Có hai biến thể: worker thoát mà không báo xong (tiến trình biến mất, báo ngay), và worker kết thúc lượt mà không hoàn tất rồi đứng rảnh 3 phút sau hook Stop (engine **không** tự retry biến thể này).
-- **Có thể đang kẹt**: cây làm việc không đổi 20 phút trong khi worker vẫn "hoạt động" (ghi transcript hoặc CPU bận trong 5 phút qua), hoặc cùng một lệnh thất bại cùng một kiểu 3 lần. Engine kiểm mỗi phút và không tự làm gì; lead quyết.
+- **Có thể đang kẹt**: cây làm việc không đổi 20 phút trong khi worker vẫn "hoạt động" (ghi transcript hoặc CPU bận trong 5 phút qua). Engine kiểm mỗi phút và không tự làm gì; lead quyết.
 - **Không bao giờ bắt đầu**: shell của terminal worker không lên nổi sau 5 phút kể từ lúc spawn (pi, agy và codex còn bị canh bằng "chưa có transcript nào").
 
 `dag status` hiện worker không ghi gì gần đây là `idle Nm`, hoặc `running a command Nm · <tool>` khi tiến trình của nó đang bận (một lần test dài không ghi transcript); worker bị cờ đọc `stuck? <lý do>`. Mỗi task xong có một dòng báo cáo nêu các mục không rỗng và lệnh kéo, ví dụ `t-3 report: differs, not verified, found not fixed (wsh jarvis dag report t-3)`; báo cáo đời cũ đọc `t-3 report: unstructured (…)`.

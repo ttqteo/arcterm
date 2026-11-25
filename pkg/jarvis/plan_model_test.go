@@ -102,13 +102,6 @@ func TestParsePlanModelLine(t *testing.T) {
 			deps:  []string{"t-1"},
 			desc:  "do b\n**Model:** sonnet",
 		},
-		{
-			name:  "a Depends line after Model is task text",
-			task2: "**Model:** sonnet\n**Depends on:** none\ndo b",
-			model: "sonnet", source: waveobj.TaskModelSource_Plan,
-			deps: []string{"t-1"},
-			desc: "**Depends on:** none\ndo b",
-		},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

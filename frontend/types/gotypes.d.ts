@@ -5972,7 +5972,6 @@ declare global {
         progresscheckts?: number;
         suspectts?: number;
         suspectreason?: string;
-        flaggedfailures?: string[];
         stallretries?: number;
         firstactivity?: number;
         toldts?: number;

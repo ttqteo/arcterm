@@ -57,6 +57,8 @@ and a picture given to a line that is not big.
 
 ### Changed
 
+- A run's lead hears "may be stuck" only for a worker whose tree has not changed in 20 minutes; the check for the same
+  command failing the same way three times is gone (it never fired here, and its wakes elsewhere came too late to help).
 - What you are writing to an agent stays in its box when arcterm closes or reloads, attached files too, and the small
   message box on an agent's row shares that one draft with its Chat.
 - Councils moved into Conversations: the Councils tab is gone, `Mod+G o` opens Conversations with the Council chip on,
@@ -95,6 +97,9 @@ and a picture given to a line that is not big.
 
 ### Fixed
 
+- A plan whose `**Depends on:**` line is not the first line under its task heading is refused with the rule, instead
+  of running that task after the one before it while its prompt names another.
+- A run's worker that reports done and then exits with an error is reviewed as done, not counted as a failed attempt.
 - A blocked run's DAG header offers Cancel, so a run stuck on a failed task or Final can be given up from there too.
 - A renamed file's Diff compares it with its old name, instead of drawing the whole file as added, and a comment on its
   removed lines names the old path. The history graph no longer shows a stash as a branch tip.

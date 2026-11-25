@@ -370,16 +370,37 @@ func TestParsePlanEffortRejects(t *testing.T) {
 
 func TestParsePlanChunkLineLaterIsTaskText(t *testing.T) {
 	src := "**Effort:** e1\n\n### Task 1: a\n**Depends on:** none\nsome text\n**Chunk:** late\n\n" +
-		"### Task 2: b\n**Chunk:** early\n**Depends on:** none\nx\n"
+		"### Task 2: b\n**Chunk:** early\nx\n"
 	p := mustParsePlan(t, src)
 	if len(p.Tasks[0].Chunks) != 0 || !strings.Contains(p.Tasks[0].Description, "**Chunk:** late") {
 		t.Fatalf("a Chunk line after task text is task text, got chunks %v, description %q", p.Tasks[0].Chunks, p.Tasks[0].Description)
 	}
-	if got := p.Tasks[1].Chunks; !reflect.DeepEqual(got, []string{"early"}) || !strings.Contains(p.Tasks[1].Description, "**Depends on:** none") {
-		t.Fatalf("a Depends line after a Chunk line is task text, got chunks %v, description %q", got, p.Tasks[1].Description)
+	if got := p.Tasks[1].Chunks; !reflect.DeepEqual(got, []string{"early"}) {
+		t.Fatalf("task 2's Chunk line is read, got chunks %v", got)
 	}
-	if len(p.Tasks[1].Deps) != 1 {
-		t.Fatalf("task 2 keeps its default dependency, got %v", p.Tasks[1].Deps)
+}
+
+// A Depends line anywhere but first under its heading was neither applied nor refused: the task kept its default edge
+// to the task before it, so it could start while the task it named still ran, though its prompt said it waited on it.
+func TestParsePlanRefusesAMisplacedDependsLine(t *testing.T) {
+	head := "**Effort:** e1\n\n### Task 1: a\ndo a\n\n### Task 2: b\ndo b\n\n### Task 3: c\n"
+	for name, task3 := range map[string]string{
+		"after Chunk":  "**Chunk:** early\n**Depends on:** Task 1\nx\n",
+		"after Model":  "**Model:** sonnet\n**Depends on:** Task 1\nx\n",
+		"after Files":  "**Files:** `a.go`\n**Depends on:** Task 1\nx\n",
+		"after prose":  "some text\n**Depends on:** Task 1\nx\n",
+		"twice":        "**Depends on:** Task 1\n**Depends on:** Task 2\nx\n",
+		"in the prose": "some text\n\nmore\n**Depends on:** Task 1 (uses its parser)\n",
+	} {
+		_, err := ParsePlan(head + task3)
+		if err == nil || !strings.Contains(err.Error(), "task 3: **Depends on:** must be the first line under its heading") {
+			t.Errorf("%s: err = %v, want the placement refusal for task 3", name, err)
+		}
+	}
+	// quoted in a fence it is a sample, not the task's own line
+	p := mustParsePlan(t, head+"do c\n```\n**Depends on:** Task 1\n```\n")
+	if !reflect.DeepEqual(p.Tasks[2].Deps, []string{"t-2"}) {
+		t.Fatalf("a fenced Depends line is task text, got deps %v", p.Tasks[2].Deps)
 	}
 }
 
