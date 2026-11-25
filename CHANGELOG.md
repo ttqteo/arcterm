@@ -77,6 +77,8 @@ and a picture given to a line that is not big.
 
 ### Fixed
 
+- Usage's By provider chart draws every day of the picked window, as By work does, instead of starting at the first
+  day with usage: a provider used on two days of the last 7 shows 7 columns.
 - Ctrl+P's hint on Code says Alt+O lists the open file's symbols; it said `@` did, but an `@` typed there searches
   paths (`@scope/pkg`, a Next.js `@slot` folder).
 - A new agent's first message with a long paste in it shows the paste as a folded card, not as raw

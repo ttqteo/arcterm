@@ -37,8 +37,8 @@ import {
 } from "./runlineagestore";
 import { activeNavOrder } from "./activenav";
 import { AGENT_DIGITS } from "./agentsidebarmodel";
-import { usageBucketsAtom } from "./usagestore";
-import { aggregateBuckets, type HarnessFilter } from "./usagestats";
+import { usageBucketsAtom, usageHeldWindowAtom } from "./usagestore";
+import { aggregateBuckets, windowStartDay, type HarnessFilter } from "./usagestats";
 import { landOn } from "@/app/view/jarvis/returnsurface";
 
 export type SurfaceKey =
@@ -132,7 +132,12 @@ export class AgentsViewModel implements ViewModel {
     usageHarnessFilterAtom = atom<HarnessFilter>("all");
     // Usage surface: the harness-filtered derivation over the store's raw buckets. Reads
     // Date.now() at compute time, so it stays fresh when any bucket/filter dependency changes.
-    usageStatsAtom = atom((get) => aggregateBuckets(get(usageBucketsAtom), Date.now(), get(this.usageHarnessFilterAtom)));
+    // Its daily series spans the held window from its first day, so a harness used on two days still draws them all.
+    usageStatsAtom = atom((get) => {
+        const now = Date.now();
+        const fromDay = windowStartDay(get(usageHeldWindowAtom), now);
+        return aggregateBuckets(get(usageBucketsAtom), now, get(this.usageHarnessFilterAtom), fromDay);
+    });
 
     // New Project / the New launcher / New initiative + command-palette visibility (gated overlays rendered from the
     // cockpit root). launcherAtom holds the door that opened the launcher (agent or run), null while it is closed.
