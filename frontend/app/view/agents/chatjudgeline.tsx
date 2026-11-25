@@ -4,8 +4,9 @@
 // The judge's line under the agent's message that ends in a choice question (docs/superpowers/specs/2026-11-25-chat-
 // choice-judge-design.md, board C-under-reply): one muted line under a hairline rule, no box. The scale icon (a spinner
 // while the deep judge reads), the head and the pick's name (the hover target: its tooltip says why), the dim hint, and
-// at the line's end the one action the person can take: Judge kỹ, Dừng or Thử lại. What the line says is chatjudge.ts's
-// judgeLine; this draws it and ticks the reading seconds. The record is chatJudgeAtom's, and every action goes through
+// at the line's end the one action the person can take: Judge kỹ, Dừng or Thử lại. Under the conversation's last
+// message the reason is written out under the head instead ([data-chat-judge-reason]), with no hover and no hint. What
+// the line says is chatjudge.ts's judgeLine; this draws it and ticks the reading seconds. The record is chatJudgeAtom's, and every action goes through
 // runLiveJudge, which acts on what the pane offers for its live turn (liveJudgeAtom, written by chatpane.tsx).
 // Motion: the line opens under its message on the spring and fades in (chatconversation.tsx says when it arrives, `arrive`),
 // and closes the same way when a record leaves it with nothing to show; a state change cross-fades its text on the micro
@@ -47,6 +48,7 @@ const ACTION_TEXT = {
 type ShownLine = Exclude<JudgeLine, { state: "none" }>;
 
 /** The judge's line for one turn's record. `live` is the pane's current turn, the only one whose action still helps;
+ *  `inline` is the conversation's last message, whose line writes the reason out rather than leaving it to the hover;
  *  `cwd` is the agent's project (without it the line shows what was judged and offers nothing); `gap` is the gap of the
  *  column it sits in, which the line takes back to sit close under its message; `arrive` is a line that comes in now,
  *  under a message already drawn, and opens on the spring. Draws nothing when the record has no line to show. */
@@ -54,6 +56,7 @@ export function ChatJudgeLine({
     agentId,
     recKey,
     live,
+    inline,
     cwd,
     gap,
     arrive,
@@ -61,6 +64,7 @@ export function ChatJudgeLine({
     agentId: string;
     recKey: string;
     live: boolean;
+    inline: boolean;
     cwd: string | null;
     gap: number;
     arrive: boolean;
@@ -88,7 +92,7 @@ export function ChatJudgeLine({
         }
     }, [reading, recKey, cwd]);
 
-    const line = judgeLine(rec, now, vi, live && cwd != null);
+    const line = judgeLine(rec, now, vi, live && cwd != null, inline);
     const shown: ShownLine | null = line.state === "none" ? null : line;
     // a line that was not there (an old turn with nothing to show) and now is opens as an arriving one does
     const wasAbsent = useRef(false);
@@ -163,7 +167,7 @@ function JudgeRow({
     const present = useIsPresent();
     const fade = reduce ? { duration: 0 } : { duration: MOTION.durMicro, ease: MOTION.easeFluid };
     const bare = line.head == null && line.name == null && line.note == null;
-    const hasTip = line.reason != null || line.source != null;
+    const hasTip = !line.inline && (line.reason != null || line.source != null);
     const action = line.action;
     const text = action != null ? ACTION_TEXT[action] : null;
     const actionTip =
@@ -196,48 +200,61 @@ function JudgeRow({
                     className="mt-[3px] flex-none"
                 />
             )}
-            {/* a long error stops at three lines; the app's tooltip on the note has all of it */}
-            <span className={cn("min-w-0 [overflow-wrap:anywhere]", line.state === "failed" && "line-clamp-3")}>
-                {line.head}
-                {line.name != null ? (
-                    <>
-                        {line.head != null ? " " : null}
-                        <span
-                            data-chat-judge-name=""
-                            {...(hasTip
-                                ? tip.bind(
-                                      <div data-chat-judge-tip="" className="flex flex-col gap-1">
-                                          {line.reason != null ? <div>{line.reason}</div> : null}
-                                          {line.source != null ? <div className="text-muted">{line.source}</div> : null}
-                                      </div>
-                                  )
-                                : {})}
-                            className="text-primary underline decoration-dotted underline-offset-[3px]"
-                        >
-                            {line.name}
-                        </span>
-                    </>
-                ) : null}
-                {line.note != null ? (
-                    line.state === "done" ? (
-                        <> ({line.note})</>
-                    ) : (
-                        <span title={line.note} className="text-error">
+            <div className="flex min-w-0 flex-col gap-[2px]">
+                {/* a long error stops at three lines; the app's tooltip on the note has all of it */}
+                <span className={cn("min-w-0 [overflow-wrap:anywhere]", line.state === "failed" && "line-clamp-3")}>
+                    {line.head}
+                    {line.name != null ? (
+                        <>
+                            {line.head != null ? " " : null}
+                            <span
+                                data-chat-judge-name=""
+                                {...(hasTip
+                                    ? tip.bind(
+                                          <div data-chat-judge-tip="" className="flex flex-col gap-1">
+                                              {line.reason != null ? <div>{line.reason}</div> : null}
+                                              {line.source != null ? (
+                                                  <div className="text-muted">{line.source}</div>
+                                              ) : null}
+                                          </div>
+                                      )
+                                    : {})}
+                                className={cn(
+                                    "text-primary",
+                                    hasTip && "underline decoration-dotted underline-offset-[3px]"
+                                )}
+                            >
+                                {line.name}
+                            </span>
+                        </>
+                    ) : null}
+                    {line.note != null ? (
+                        line.state === "done" ? (
+                            <> ({line.note})</>
+                        ) : (
+                            <span title={line.note} className="text-error">
+                                {" · "}
+                                {line.note}
+                            </span>
+                        )
+                    ) : null}
+                    {line.hint != null ? <span className="text-ink-faint"> · {line.hint}</span> : null}
+                    {line.state === "reading" && tail != null ? (
+                        <>
                             {" · "}
-                            {line.note}
-                        </span>
-                    )
+                            <span data-chat-judge-tail="" className="tabular-nums">
+                                {tail}
+                            </span>
+                        </>
+                    ) : null}
+                </span>
+                {line.inline && line.reason != null ? (
+                    <span data-chat-judge-reason="" className="min-w-0 text-secondary [overflow-wrap:anywhere]">
+                        {line.reason}
+                        {line.source != null ? <span className="text-ink-faint"> · {line.source}</span> : null}
+                    </span>
                 ) : null}
-                {line.hint != null ? <span className="text-ink-faint"> · {line.hint}</span> : null}
-                {line.state === "reading" && tail != null ? (
-                    <>
-                        {" · "}
-                        <span data-chat-judge-tail="" className="tabular-nums">
-                            {tail}
-                        </span>
-                    </>
-                ) : null}
-            </span>
+            </div>
             <span className="min-w-0 flex-1" />
             {line.state === "done" && tail != null ? (
                 <span data-chat-judge-tail="" className="flex-none whitespace-nowrap tabular-nums">

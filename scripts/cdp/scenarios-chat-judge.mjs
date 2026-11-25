@@ -104,6 +104,8 @@ const LINES = (id) => `(() => {
             state: el.getAttribute("data-state"),
             text: flat(live),
             name: name ? flat(name) : null,
+            // the reason written out under the last message's line, null where it is left to the hover
+            reason: live.querySelector("[data-chat-judge-reason]") ? flat(live.querySelector("[data-chat-judge-reason]")) : null,
             action: action?.getAttribute("data-chat-judge-action") ?? null,
             actionText: action ? flat(action) : null,
             tails: [...live.querySelectorAll("[data-chat-judge-tail]")].map(flat),
@@ -574,8 +576,9 @@ export default function (kit) {
             }
             const leaveName = () => h.cdp("Input.dispatchMouseEvent", { type: "mouseMoved", x: 4, y: 4 });
 
-            // 6. under the question message the light line: "Gợi ý" + the light pick + the hover hint, a hairline rule above, the
-            // scale icon, Judge kỹ at its end, and nothing of it in the composer. Its opening is sampled frame by frame
+            // 6. under the question message the light line: "Gợi ý" + the light pick, the reason written out under it (the
+            // last message's line has no hover hint), a hairline rule above, the scale icon, Judge kỹ at its end, and nothing
+            // of it in the composer. Its opening is sampled frame by frame
             await run("6. light line", async (name) => {
                 await h.ev(SAMPLE);
                 const up = await nextTurn("tiếp tục");
@@ -586,7 +589,7 @@ export default function (kit) {
                 const frames = (await h.ev(`window.__cjSamples?.frames ?? []`)) ?? [];
                 await shot(h, "6-light-line");
                 rec(
-                    `${name}: the line is a row of its own right after the question message's item (${UNDER} px under it, never inside it) and reads "Gợi ý ${PICK} · rê vào để xem lý do": state light, a solid hairline rule above it (one device pixel), the scale icon, 12.5 px text, Judge kỹ as its action; every judge line is in the conversation, none in the composer`,
+                    `${name}: the line is a row of its own right after the question message's item (${UNDER} px under it, never inside it) and reads "Gợi ý ${PICK}" with "${REASON} · haiku, chỉ đọc reply" written under it and no hover hint: state light, a solid hairline rule above it (one device pixel), the scale icon, 12.5 px text, Judge kỹ as its action; every judge line is in the conversation, none in the composer`,
                     up &&
                         sampled &&
                         l != null &&
@@ -596,7 +599,8 @@ export default function (kit) {
                         Math.abs((l.gap ?? 99) - UNDER) <= 1 &&
                         l.text.startsWith(`Gợi ý ${PICK}`) &&
                         l.name === PICK &&
-                        l.text.includes("· rê vào để xem lý do") &&
+                        l.reason === `${REASON} · haiku, chỉ đọc reply` &&
+                        !l.text.includes("rê vào để xem lý do") &&
                         l.ruleWidth > 0.5 &&
                         l.ruleWidth <= 1 &&
                         l.ruleStyle === "solid" &&
@@ -628,19 +632,23 @@ export default function (kit) {
                 );
             });
 
-            // 7. hovering the pick's name opens the app's tooltip: a solid raised chip, the strong edge, at most 420 px wide, the
-            // reason and under it the dim source
+            // 7. an older message's line keeps the reason to the hover: "· rê vào để xem lý do", and hovering the pick's name opens
+            // the app's tooltip: a solid raised chip, the strong edge, at most 420 px wide, the reason and under it the dim source
             await run("7. hover shows the reason", async (name) => {
                 const tk = await liveKey();
-                const hovered = await hoverName(tk);
+                const older = (await lines()).filter((l) => l.key !== tk && l.state === "light" && l.name != null).at(-1) ?? null;
+                const hovered = older != null && (await hoverName(older.key));
                 const shown = await polishWaitFor(h, `(${TIP})?.opacity === "1"`, SHORT_MS);
                 const tip = await h.ev(TIP);
                 await shot(h, "7-tip");
                 await leaveName();
                 const gone = await polishWaitFor(h, `!document.querySelector("[data-chat-judge-tip]")`, SHORT_MS);
                 rec(
-                    `${name}: hovering the name opens a solid raised chip (the surface-raised fill, the strong edge, at most 420 px wide) holding the light reason and then "haiku, chỉ đọc reply" in a dimmer ink, and it is gone once the pointer leaves`,
-                    hovered &&
+                    `${name}: an older message's line reads "· rê vào để xem lý do" with no reason written out, and hovering its name opens a solid raised chip (the surface-raised fill, the strong edge, at most 420 px wide) holding the light reason and then "haiku, chỉ đọc reply" in a dimmer ink, and it is gone once the pointer leaves`,
+                    older != null &&
+                        older.reason == null &&
+                        older.text.includes("· rê vào để xem lý do") &&
+                        hovered &&
                         shown &&
                         tip != null &&
                         tip.reason === REASON &&
@@ -650,7 +658,7 @@ export default function (kit) {
                         tip.border === tip.borderWant &&
                         tip.sourceColor !== tip.reasonColor &&
                         gone,
-                    { hovered, shown, tip, gone }
+                    { older, hovered, shown, tip, gone }
                 );
             });
 
@@ -747,7 +755,7 @@ export default function (kit) {
             });
 
             // 11. the judge on this turn answers with an option the agent never named, and picks it: the line says so, no action is
-            // left, its text cross-fades, and the tooltip holds the deep reason and the cost
+            // left, its text cross-fades, and the deep reason is written out under it (the cost is its tail), with no tooltip
             await run("11. done with an added option", async (name) => {
                 const tk = await liveKey();
                 ctx.doneKey = tk;
@@ -772,13 +780,13 @@ export default function (kit) {
                 const l = await lineFor(tk);
                 const chips = await row();
                 const hovered = await hoverName(tk);
-                const shown = await polishWaitFor(h, `(${TIP})?.opacity === "1"`, SHORT_MS);
+                await polishNap(400);
                 const tip = await h.ev(TIP);
                 await shot(h, "11-done-added");
                 await leaveName();
                 const last = frames.at(-1);
                 rec(
-                    `${name}: the line reads "Judge chọn ${ADDED.label} (agent không nêu)" with ${JSON.stringify(DEEP_COST)} at its end and no action, the scale icon, and the added chip first in the row; its tooltip holds the deep reason and the cost`,
+                    `${name}: the line reads "Judge chọn ${ADDED.label} (agent không nêu)" with ${JSON.stringify(DEEP_COST)} at its end and no action, the scale icon, and the added chip first in the row; the deep reason is written out under it and hovering the name opens no tooltip`,
                     done &&
                         l?.state === "done" &&
                         l.text.startsWith(`Judge chọn ${ADDED.label} (agent không nêu)`) &&
@@ -788,14 +796,10 @@ export default function (kit) {
                         l.action == null &&
                         l.icon === "scale" &&
                         chips[0]?.text === ADDED.label &&
+                        l.reason === DEEP_REASON &&
                         hovered &&
-                        shown &&
-                        tip?.reason === DEEP_REASON &&
-                        tip.source === DEEP_COST &&
-                        // a reason of this length fills the chip to its 420 px (the tooltip's own default is 320)
-                        tip.width > 330 &&
-                        tip.width <= 421,
-                    { done, l, chips: chips.map((c) => c.text), hovered, shown, tip }
+                        tip == null,
+                    { done, l, chips: chips.map((c) => c.text), hovered, tip }
                 );
                 rec(
                     `${name} (cross-fade): while reading turns into done the old text and the new draw together for a few frames (two children in the line's body, one of them part way), and at the end one child at opacity 1 is left`,
@@ -1021,13 +1025,11 @@ export default function (kit) {
                 );
             });
 
-            // 17. the What's new picture: the question message, its line and the tooltip over the pick's name
+            // 17. the What's new picture: the question message and its line, the reason written out under it
             await run("17. the What's new picture", async (name) => {
                 const up = await nextTurn("tiếp");
                 await polishNap(900);
                 const tk = await liveKey();
-                const hovered = await hoverName(tk);
-                const shown = await polishWaitFor(h, `(${TIP})?.opacity === "1"`, SHORT_MS);
                 // the message's row is the item just before the line's wrapper
                 const selector = `[data-chat-item]:has(+ * > [data-chat-judge-line=${JSON.stringify(tk)}])`;
                 let picture = null;
@@ -1037,11 +1039,10 @@ export default function (kit) {
                 } catch (e) {
                     error = String(e?.message ?? e);
                 }
-                await leaveName();
                 rec(
-                    `${name}: the picture of the question message with its line and the reason on hover is written (public/whatsnew/<version>-chat-judge.webp)`,
-                    up && hovered && shown && picture?.file != null,
-                    { up, hovered, shown, picture, error }
+                    `${name}: the picture of the question message with its line and its reason is written (public/whatsnew/<version>-chat-judge.webp)`,
+                    up && picture?.file != null,
+                    { up, picture, error }
                 );
             });
 

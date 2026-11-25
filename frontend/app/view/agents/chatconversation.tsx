@@ -1863,6 +1863,14 @@ export function ChatConversation({
                   ))
             : []),
     ];
+    // the last of the agent's messages: a judge line under it writes its reason out rather than leaving it to the hover
+    // (a marker such as a compaction may come after it)
+    let lastAgentKey: string | null = null;
+    for (const item of visible) {
+        if (item.kind === "agent") {
+            lastAgentKey = item.key;
+        }
+    }
     const rows = visible.flatMap((item, i) => {
         if (hiddenLine(item)) {
             return endedAfter(item.key);
@@ -1931,6 +1939,7 @@ export function ChatConversation({
                           agentId={agent.id}
                           recKey={judgeKey}
                           live={judgeKey === liveJudgeKey}
+                          inline={item.key === lastAgentKey}
                           cwd={cwd ?? null}
                           gap={ITEM_GAP}
                           arrive={!still && drawnBefore.has(item.key) && !lastDrawn.current.judges.has(judgeKey)}

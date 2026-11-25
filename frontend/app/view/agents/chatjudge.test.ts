@@ -219,6 +219,24 @@ describe("judgeLine", () => {
             });
         });
 
+        it("writes the reason out under the last message, with no hover hint", () => {
+            expect(judgeLine(light(), 0, true, true, true)).toEqual({
+                state: "light",
+                head: "Gợi ý",
+                name: A.text,
+                reason: "A sửa đúng gốc",
+                source: "haiku, chỉ đọc reply",
+                inline: true,
+                action: "judge",
+            });
+        });
+
+        it("is not inline when haiku gave no reason, and gives no hint then either", () => {
+            const line = lineOf(rec({ pick: A.text }), 0, true, true, true);
+            expect(line).not.toHaveProperty("inline");
+            expect(line).not.toHaveProperty("hint");
+        });
+
         it("shows no action on an old turn", () => {
             const line = judgeLine(light(), 0, true, false);
             expect(line.state).toBe("light");
@@ -293,6 +311,17 @@ describe("judgeLine", () => {
             });
         });
 
+        it("writes the deep reason out under the last message, leaving the cost to the tail", () => {
+            expect(judgeLine({ ...light(), deep: done() }, 0, true, true, true)).toEqual({
+                state: "done",
+                head: "Judge chọn",
+                name: B.text,
+                tail: "sonnet · 14 file · 41 s",
+                reason: "B nhỏ hơn và conn.go:40 đã có cache",
+                inline: true,
+            });
+        });
+
         it("counts files in English", () => {
             const line = lineOf({ ...light(), deep: done() }, 0, false, true);
             expect(line.head).toBe("Judge picks");
@@ -351,6 +380,11 @@ describe("judgeLine", () => {
                 note: "Judge không xong: hết giờ sau 180 s",
                 action: "retry",
             });
+        });
+
+        it("writes the light reason out under the last message", () => {
+            expect(lineOf(failed(), 0, true, true, true).inline).toBe(true);
+            expect(lineOf(failed({ reason: undefined }), 0, true, true, true)).not.toHaveProperty("inline");
         });
 
         it("speaks English", () => {

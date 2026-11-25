@@ -38,6 +38,11 @@ and a picture given to a line that is not big.
   markdown Preview, or Quote in chat (`Alt`+`Q`, or the right-click menu) in Source. It lands in the agent's chat box as
   a `> ` quote under the file and lines it came from (`docs/plan.md:42-44`), the caret under it for your question.
 
+### Changed
+
+- The suggested answer under an agent's last message shows its reason right in the line, without hovering the name;
+  older messages still keep it in the tooltip.
+
 ### Fixed
 
 - A pair names its agents by their title, as the Agent tree does, not by the project their tab was launched in, and
