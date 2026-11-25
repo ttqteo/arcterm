@@ -238,7 +238,7 @@ const ProseText = memo(function ProseText({ text }: { text: string }) {
     const folded = fold != null && !open;
     return (
         <>
-            <CouncilText text={folded ? fold.short : full} className={PROSE} refs />
+            <CouncilText text={folded ? fold.short : full} className={PROSE} refs commands />
             {fold != null ? (
                 <button
                     type="button"
@@ -262,7 +262,7 @@ function LiveProseText({ text }: { text: string }) {
         const { clean, marks } = parseMarks(text);
         return withMarks(clean, marks);
     }, [text]);
-    return <CouncilText text={full} className={PROSE} refs />;
+    return <CouncilText text={full} className={PROSE} refs commands />;
 }
 
 // the context menu of one bubble: Copy text and Copy conversation, with `initiative` (the text an initiative card opens
