@@ -56,6 +56,10 @@ import {
 import * as agentPageFixtures from "./agent-page-fixtures.mjs";
 import { makeCouncilScenarios } from "./councilscenarios.mjs";
 import agentHeaderScenarios from "./scenarios-agent-header.mjs";
+import pairConversationScenarios from "./scenarios-pair-conversation.mjs";
+import pairDecidedScenarios from "./scenarios-pair-decided.mjs";
+import pairHeaderScenarios from "./scenarios-pair-header.mjs";
+import pairTreeScenarios from "./scenarios-pair-tree.mjs";
 import railVerifyScenarios from "./scenarios-rail-verify.mjs";
 import remoteScenarios from "./scenarios-remote.mjs";
 import agentStartFailedScenarios from "./scenarios-agent-start-failed.mjs";
@@ -75534,6 +75538,10 @@ export const SCENARIOS = [
     ...paletteBrainstormResumeScenarios(BS_KIT),
     ...briefActScenarios(JARVIS_KIT),
     ...agentHeaderScenarios(RT_KIT),
+    ...pairConversationScenarios(RT_KIT),
+    ...pairDecidedScenarios(RT_KIT),
+    ...pairHeaderScenarios(RT_KIT),
+    ...pairTreeScenarios(RT_KIT),
     ...railVerifyScenarios(RT_KIT),
     ...remoteScenarios({ lookEval, polishNap, polishWaitFor }),
     ...agentStartFailedScenarios(RT_KIT),

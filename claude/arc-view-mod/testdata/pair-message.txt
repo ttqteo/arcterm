@@ -1,0 +1,4 @@
+[Message from agent "arcterm pair" (relayed by arcterm's pair of a working agent and its judge). Not typed by the user. Your reply passes back on its own, so answer here and do not use wsh agents send.]
+From the judge "review", 14:02:
+> lock the threshold first
+The pilot measures before the threshold is locked: swap the two steps.

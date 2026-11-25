@@ -12,6 +12,8 @@
 //             which one is heldSelAtom, a parked launch's id (parkedstore.ts)
 //   board     one board alone, over the whole centre (boards/boardsplit.tsx BoardCell): a click on its tree row. Which
 //             board is boardAloneAtom; it still reads its own chat, and is dragged into a split from its bar
+//   pair      one pair's conversation, the working agent and its judge(s) as messages in time order: the header's Paired
+//             button. Which pair is pairSelAtom (a pair id, pairstore.ts)
 // The terminal stack stays mounted, hidden, in the others, so a live xterm is never torn down and re-fitted.
 // Conversation History, the Canvas gallery, the Councils list and an ended session's or run's transcript are not centre
 // modes: they are the Library surface (view/library/librarystore.ts), and a council that is still in the tree opens here.
@@ -38,10 +40,14 @@ import {
     councilViewAtom,
 } from "./councilstore";
 import { reopenView } from "./councilsummarymodel";
+import { markPairSeen } from "./pairstore";
 
-export type CenterMode = "terminal" | "council" | "project" | "held" | "board";
+export type CenterMode = "terminal" | "council" | "project" | "held" | "board" | "pair";
 
 export const centerModeAtom = atom<CenterMode>("terminal") as PrimitiveAtom<CenterMode>;
+
+// the pair the `pair` mode shows, by its id (pairstore.ts)
+export const pairSelAtom = atom<string | null>(null) as PrimitiveAtom<string | null>;
 
 // the project whose Overview the `project` mode shows: a registry name, as the tree's folders name it
 export const overviewProjectAtom = atom("") as PrimitiveAtom<string>;
@@ -63,6 +69,17 @@ export function showBoardAlone(
 ): void {
     globalStore.set(boardAloneAtom, { project: board.project, boardId: board.boardId });
     globalStore.set(centerModeAtom, "board");
+    if (model != null) {
+        landOn(model.surfaceAtom, "agent");
+    }
+}
+
+/** Open one pair's conversation over the Agent surface's centre, and count what it holds as seen. From the Agent surface
+ *  itself (a header button) nothing more is needed; from another surface pass the model, which lands on Agent. */
+export function showPair(pairId: string, model?: Pick<AgentsViewModel, "surfaceAtom">): void {
+    globalStore.set(pairSelAtom, pairId);
+    globalStore.set(centerModeAtom, "pair");
+    markPairSeen(pairId);
     if (model != null) {
         landOn(model.surfaceAtom, "agent");
     }

@@ -50,6 +50,7 @@ var snapshotMustSkip = []string{
 	"jarvisvolunteer.StartLooseEndSweep",
 	"memhygiene.StartSweep",
 	"wshserver.StartCouncilRunner",
+	"wshserver.StartPairManager", // takes the answers members gave while wavesrv was down and sends them to live agents
 	"wshserver.StartRunQueue",
 }
 

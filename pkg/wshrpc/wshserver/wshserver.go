@@ -233,6 +233,8 @@ func publishEvent(ctx context.Context, data wps.WaveEvent) {
 		noteAgentInTurn(ctx, &data)
 		// a question a board forwarded to this agent goes once it is free, and takes its reply at its turn end
 		noteBoardForwardStatus(&data)
+		// a member of a pair that reports idle has ended a turn: its answer passes to the other side
+		notePairStatus(&data)
 		noteRunSleepStatus(ctx, &data)
 		noteUsageLimit(ctx, &data)
 		// a turn whose Stop never reported still ends in its transcript (wshserver_turnend.go)

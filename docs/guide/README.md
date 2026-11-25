@@ -15,6 +15,7 @@ Mới bắt đầu thì đọc [Bắt đầu với arcterm](getting-started.md):
 | [Agent](agent.md) | Terminal thật của từng agent, cây project và Conversations, Overview của project, grid, rail chi tiết (Files, Changes, Transcript), lịch sử hội thoại |
 | [Council](council.md) | Nhóm agent chuyên gia review hay brainstorm một câu hỏi: ghế ngồi, chat, đính kèm, báo cáo, `wsh council` |
 | [Brainstorm](brainstorm.md) | Pane brainstorm cạnh terminal: từng câu hỏi, judge, bản thiết kế, mockup, builder check, Approve |
+| [Agent pair](agent-pair.md) | Ghép một agent làm việc với một judge: hai bên nói chuyện trực tiếp, tab Decided, khối `arc-pair` / `arc-judge`, khi nào dừng, giữ lệnh nặng và Run now, Unpair |
 | [Usage](usage.md) | Quota 5 giờ và tuần, token, chi phí ước tính, hàng đợi lệnh nặng |
 | [Code](code.md) | Duyệt và sửa file của project, xem Markdown |
 | [Diff](diff.md) | Lịch sử git, file đã đổi, diff, đánh dấu đã review, comment từng dòng, commit và sync, so sánh hai ref |

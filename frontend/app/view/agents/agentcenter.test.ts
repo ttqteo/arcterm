@@ -8,9 +8,11 @@ import {
     centerModeAtom,
     leaveCenter,
     overviewProjectAtom,
+    pairSelAtom,
     showCouncil,
     showCouncilSetup,
     showCouncilSetupWithAgents,
+    showPair,
     showProjectOverview,
     showTerminal,
 } from "./agentcenter";
@@ -25,11 +27,20 @@ import {
     councilSetupProjectAtom,
     councilViewAtom,
 } from "./councilstore";
+import { devMockPairsAtom, pairSeenAtom } from "./pairstore";
 
 const stub = () =>
     ({
         surfaceAtom: atom<SurfaceKey>("cockpit"),
     }) as unknown as AgentsViewModel;
+
+// a pair holding `count` messages, as far as the opener reads it
+const pairViewWith = (id: string, count: number): PairView =>
+    ({
+        id,
+        messagecount: count,
+        messages: Array.from({ length: count }, (_, i) => ({ id: `m${i}`, from: "worker" })),
+    }) as unknown as PairView;
 
 beforeEach(() => globalStore.set(centerModeAtom, "terminal"));
 
@@ -81,6 +92,47 @@ describe("showProjectOverview", () => {
         showProjectOverview("arcterm");
         showTerminal();
         expect(globalStore.get(centerModeAtom)).toBe("terminal");
+    });
+});
+
+describe("showPair", () => {
+    beforeEach(() => {
+        globalStore.set(pairSelAtom, null);
+        globalStore.set(devMockPairsAtom, null);
+        globalStore.set(pairSeenAtom("p1"), 0);
+    });
+
+    it("opens the pair's conversation in the centre", () => {
+        showPair("p1");
+        expect(globalStore.get(centerModeAtom)).toBe("pair");
+        expect(globalStore.get(pairSelAtom)).toBe("p1");
+    });
+
+    it("marks the conversation seen: every message it holds", () => {
+        globalStore.set(devMockPairsAtom, [pairViewWith("p1", 5)]);
+        showPair("p1");
+        expect(globalStore.get(pairSeenAtom("p1"))).toBe(5);
+    });
+
+    it("leaves what was seen alone for a pair it holds nothing of", () => {
+        globalStore.set(pairSeenAtom("p1"), 2);
+        showPair("p1");
+        expect(globalStore.get(pairSeenAtom("p1"))).toBe(2);
+    });
+
+    it("lands on the Agent surface when given the model, and leaves the surface alone without one", () => {
+        const model = stub();
+        showPair("p1");
+        expect(globalStore.get(model.surfaceAtom)).toBe("cockpit");
+        showPair("p1", model);
+        expect(globalStore.get(model.surfaceAtom)).toBe("agent");
+    });
+
+    it("leaves the conversation when an agent is chosen, and keeps the pair it showed", () => {
+        showPair("p1");
+        showTerminal();
+        expect(globalStore.get(centerModeAtom)).toBe("terminal");
+        expect(globalStore.get(pairSelAtom)).toBe("p1");
     });
 });
 

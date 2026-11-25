@@ -21,6 +21,7 @@ import {
     LayoutList,
     LayoutTemplate,
     Lightbulb,
+    ListChecks,
     MessagesSquare,
     Monitor,
     Paperclip,
@@ -82,6 +83,7 @@ export function RailTabStrip({
     council,
     brainstormDot,
     initiativeDot,
+    decidedDot,
 }: {
     agentId: string;
     panel: PanelState;
@@ -91,6 +93,8 @@ export function RailTabStrip({
     brainstormDot: string | null;
     // the Initiative tab's dot: asking while the initiative holds a proposed plan waiting for a decision
     initiativeDot: string | null;
+    // the Decided tab's dot: asking while the pair has an item waiting on the person's answer
+    decidedDot: string | null;
 }) {
     const keys = stripKeys(panel, has);
     const shown = shownTab(panel, has);
@@ -179,6 +183,15 @@ export function RailTabStrip({
             >
                 <FileDiff size={16} strokeWidth={1.8} aria-hidden />
             </button>
+            {has.decided ? (
+                <RailDotTab
+                    icon={ListChecks}
+                    label="Decided"
+                    dot={decidedDot}
+                    on={current === "decided"}
+                    tabProps={tabProps("decided")}
+                />
+            ) : null}
             {has.transcript ? (
                 <button
                     type="button"
@@ -246,9 +259,10 @@ function railTabDotClass(on: boolean, color: string): string {
     );
 }
 
-// The Brainstorm and Initiative tabs: an icon, there only while the agent has the thing, and a dot while it holds
-// something the person must answer (Brainstorm: the agent asks through it; Initiative: a proposed plan, both asking) or
-// has not seen (Brainstorm: a new board, accent). They fade in as the Council tab does.
+// The Brainstorm, Initiative and Decided tabs: an icon, there only while the agent has the thing, and a dot while it holds
+// something the person must answer (Brainstorm: the agent asks through it; Initiative: a proposed plan; Decided: an item
+// of the pair waits on them; all asking) or has not seen (Brainstorm: a new board, accent). They fade in as the Council
+// tab does.
 function RailDotTab({
     icon: Icon,
     label,
@@ -282,7 +296,7 @@ function RailDotTab({
     );
 }
 
-// the dot colours of the Brainstorm and Initiative tabs, on the strip and on the folded panel's icons alike
+// the dot colours of the Brainstorm, Initiative and Decided tabs, on the strip and on the folded panel's icons alike
 export const RAIL_DOT = { asking: "bg-asking", new: "bg-accent" } as const;
 
 const COUNCIL_DOT = { working: "bg-working", asking: "bg-asking", error: "bg-error" } as const;

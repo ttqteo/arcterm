@@ -116,6 +116,7 @@ func TestViewModFixtures(t *testing.T) {
 
 	// what the cockpit sends over the mod's stream
 	checkViewModFixture(t, "agent-message", agentmsg.Envelope("design lead", "tab-1234", "rename the helper\nand rerun the tests"))
+	checkViewModFixture(t, "pair-message", agentmsg.PairEnvelope("From the judge \"review\", 14:02:\n> lock the threshold first\nThe pilot measures before the threshold is locked: swap the two steps."))
 	child := &waveobj.Run{ID: "run-77", ParentLeadORef: "tab:t1", Goal: "split the channel blob into per-run records", Status: jarvis.RunStatus_Done,
 		Evidence: &waveobj.RunEvidence{Files: make([]waveobj.EvidenceFile, 3), AddTotal: 40, DelTotal: 2}}
 	childLine, _ := jarvis.ParentNotifyLine(child)

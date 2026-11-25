@@ -111,6 +111,10 @@ import { openLauncher } from "./launcherstore";
 import { rosterSeededAtom } from "./liveagents";
 import { liveTokensAtom } from "./livetokensstore";
 import { machineServersReadingAtom } from "./machineserversstore";
+import { PairHeaderControls } from "./pairjudgemenu";
+import { canPair } from "./pairlaunch";
+import { waitingOnJudge } from "./pairmodel";
+import { usePairOf } from "./pairstore";
 import { planEditChunks } from "./planreviewmodel";
 import { useInitiativeReread, usePlanReview } from "./planreviewstore";
 import { railVisibleAtom, terminalFullscreenAtom } from "./railstore";
@@ -507,6 +511,12 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
     // a plain session can be linked to an initiative from here; a run's worker has its task, a terminal no session
     const canLink =
         agent.blockId != null && agent.kind !== "terminal" && !ended && !stage && lineage?.kind !== "worker";
+    // the pair this agent is in, as the working agent or as a judge (read on every draw, like every hook here); the pair
+    // controls are for a live claude or pi agent
+    const paired = usePairOf(agent.id);
+    const pairable = canPair(agent) && !ended && !stage;
+    // a judge owes an answer to the working agent's newest message: with nothing of its own running, it waits on the judge
+    const waitingJudge = paired?.role === "worker" && waitingOnJudge(paired.pair);
     // its turn ended but background work it started still runs: working, or waiting when that work only watches
     const bgTasks = useAtomValue(backgroundTasksByIdAtom)[agent.id];
     const machineServers = useAtomValue(machineServersReadingAtom).servers;
@@ -526,7 +536,9 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
           ? "failed to start"
           : agent.resuming && shown === "idle"
             ? "resuming"
-            : liveText;
+            : waitingJudge && shown === "idle"
+              ? "waiting on judge"
+              : liveText;
     const stateColor = ended ? "var(--color-success)" : failed ? "var(--color-error)" : STATE_COLOR[shown];
     // a working agent whose heavy command waits its turn in the job queue reads as its place there, not as working
     const queuedJob = queuedJobFor(useAtomValue(jobQueueAtom), blockId);
@@ -1135,6 +1147,16 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
                 ) : null}
                 {blockId != null ? (
                     <>
+                        {pairable ? (
+                            <PairHeaderControls
+                                model={model}
+                                agent={agent}
+                                project={project}
+                                words={words}
+                                paired={paired}
+                                iconClass={ICON_BTN}
+                            />
+                        ) : null}
                         {ship != null ? (
                             <button
                                 type="button"

@@ -27,6 +27,7 @@ import {
     LayoutList,
     LayoutTemplate,
     Lightbulb,
+    ListChecks,
     MessagesSquare,
     Monitor,
     ScrollText,
@@ -103,6 +104,7 @@ import { capFiles, statusColor } from "./gitstatus";
 import { KeyTip } from "./keytip";
 import { machineServersReadingAtom } from "./machineserversstore";
 import { prettyModel } from "./modellabel";
+import { usePairOf, usePairView } from "./pairstore";
 import { useInitiativeReread, usePlanReview } from "./planreviewstore";
 import { artifactsView } from "./railartifacts";
 import { RailBrainstormPane } from "./railbrainstormpane";
@@ -129,6 +131,8 @@ import {
 import { RailCompactionLine, RailCompactionPane } from "./railcompactionline";
 import { RailCouncilPane } from "./railcouncilpane";
 import { useAgentCouncil } from "./railcouncilstore";
+import { waitsOnYou } from "./raildecided";
+import { RailDecidedPane } from "./raildecidedpane";
 import { RAIL_ICON } from "./railicons";
 import { RailInitiativePane } from "./railinitiativepane";
 import { RAIL_ROW, RAIL_ROW_ACTION } from "./railrow";
@@ -819,16 +823,22 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
     );
     const brainstormDotClass = brainstormDot == null ? null : RAIL_DOT[brainstormDot];
     const initiativeDotClass = planReview.proposed > 0 ? RAIL_DOT.asking : null;
+    // the pair this agent is in, as the working agent or as a judge (an agent is in at most one): the Decided tab shows
+    // while it is, and its dot is amber while an item waits on the person's answer
+    const inPair = usePairOf(agent.id);
+    const pairView = usePairView(inPair?.pair.id ?? null);
+    const decidedDotClass = waitsOnYou(pairView?.decided) ? RAIL_DOT.asking : null;
     const has: RailHas = {
         tree: hasTree,
         transcript: hasTranscript,
         council: council != null,
         brainstorm: hasBrainstorm,
         initiative: agent.effortId != null,
+        decided: inPair != null,
     };
     const shown = shownTab(panel, has);
-    // File, Transcript, Council and Summary keep a dragged width (one, shared); Overview, Files, Changes, Brainstorm and
-    // Initiative share one fixed width, so moving between them never resizes the panel
+    // File, Transcript, Council and Summary keep a dragged width (one, shared); Overview, Files, Changes, Decided,
+    // Brainstorm and Initiative share one fixed width, so moving between them never resizes the panel
     const wideTab: ResizableTab = wideTabOf(shown) ?? "file";
     const fixedWidth = wideTabOf(shown) == null;
     const wide = useWideWidth(wideTab);
@@ -1571,6 +1581,7 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
                         council={council}
                         brainstormDot={brainstormDotClass}
                         initiativeDot={initiativeDotClass}
+                        decidedDot={decidedDotClass}
                     />
                     <RailStats
                         stats={planRailStats(railInput)}
@@ -1623,6 +1634,9 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
                             />
                         ) : null}
                     </div>
+                ) : shown === "decided" ? (
+                    // keyed by pair: the pane's pending answer belongs to one pair's item
+                    <RailDecidedPane key={inPair?.pair.id} view={pairView} />
                 ) : shown === "transcript" ? (
                     <RailTranscript agent={agent} surfaceAtom={model.surfaceAtom} />
                 ) : shown === "council" && council != null ? (
@@ -1670,6 +1684,20 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
                         showRail();
                     },
                 },
+                ...(has.decided
+                    ? [
+                          {
+                              key: "decided",
+                              icon: <ListChecks size={17} strokeWidth={1.8} aria-hidden />,
+                              ariaLabel: "Decided",
+                              dot: decidedDotClass ?? undefined,
+                              onClick: () => {
+                                  selectRailTab(agent.id, "decided", has);
+                                  showRail();
+                              },
+                          },
+                      ]
+                    : []),
                 ...(hasTranscript
                     ? [
                           {
