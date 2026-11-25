@@ -437,9 +437,10 @@ function DagGraphInner({ oref, owner, harnesses }: { oref: string; owner: Run; h
                             <span className={`h-[7px] w-[7px] rounded-full border ${STAGE_DOT[s.tone]}`} />
                             {s.text}
                         </span>
-                        {s.reviewers.map((r) => (
+                        {/* a lost light reviewer's replacement shares its lens, so the index keys the chip */}
+                        {s.reviewers.map((r, i) => (
                             <span
-                                key={r.lens}
+                                key={`${r.lens}-${i}`}
                                 data-plan-reviewer={r.lens}
                                 data-plan-reviewer-state={r.state}
                                 className="flex items-center gap-1.5 whitespace-nowrap"

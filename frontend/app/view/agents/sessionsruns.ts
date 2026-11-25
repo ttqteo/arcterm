@@ -23,7 +23,7 @@ import type { LiveSession } from "./sessionsarchivestore";
 export const LEAD_MEMBER = "lead";
 
 // the sessions the engine starts for the whole dag, in the order they run; each is its own member, keyed by its role
-const STAGE_ROLES = ["plan-reviewer", "verifier", "land-resolver"];
+const STAGE_ROLES = ["plan-reviewer", "end-reviewer", "verifier", "land-resolver"];
 
 export interface RunSessions {
     runId: string;
@@ -227,8 +227,28 @@ const STAGE_VERDICTS: Record<string, Status> = {
     failed: { key: "failed", text: "failed" },
     // the review failed and the lead went ahead anyway
     accepted: { key: "muted", text: "accepted" },
+    // the light review failed and the lead amended the plan: nobody decided it, and it outranks the reviewer's verdict
+    amended: { key: "muted", text: "amended by the lead" },
     unverified: { key: "muted", text: "unverified" },
 };
+
+// the end review's state as the tree's stageOutcome reads it: lost twice is failed, one a human stopped is unverified.
+// Kept apart from STAGE_VERDICTS, which the plan review's and the final stage's own states also index
+const END_REVIEW_STATUS: Record<string, Status> = {
+    reviewing: { key: "review", text: "reviewing" },
+    passed: STAGE_VERDICTS.passed,
+    failed: STAGE_VERDICTS.failed,
+    lost: STAGE_VERDICTS.failed,
+    stopped: STAGE_VERDICTS.unverified,
+};
+
+function endReviewStatus(er: FinalEndReview | undefined): Status {
+    // a pass that could not verify everything, as its step reads
+    if (er?.state === "passed" && er.unverified) {
+        return STAGE_VERDICTS.unverified;
+    }
+    return END_REVIEW_STATUS[er?.state] ?? { key: "done", text: "done" };
+}
 
 // resolverStatus reads a land resolver from the run's land, as the tree's stageOutcome does: the dag holds no verdict
 // for it. A session belongs to the owner run, not to the resolver's own run, so it cannot be matched to land.resolver.
@@ -244,7 +264,8 @@ function resolverStatus(session: LiveSession | undefined, land: RunLand | undefi
 }
 
 // stageStatus reads the dag's current round of a stage: the round its newest session judged. A plan reviewer of
-// that round reads its own verdict, since one lens can pass in a round another failed.
+// that round reads its own verdict, since one lens can pass in a round another failed, unless the lead amended the
+// plan after its light review: that outranks the verdict. The end reviewer reads the stage's end review.
 function stageStatus(
     role: string,
     session: LiveSession | undefined,
@@ -256,6 +277,12 @@ function stageStatus(
     }
     if (session?.live) {
         return { key: "review", text: role === "verifier" ? "verifying" : "reviewing" };
+    }
+    if (role === "end-reviewer") {
+        return endReviewStatus(dag?.final?.endreview);
+    }
+    if (role === "plan-reviewer" && dag?.planreview?.state === "accepted" && dag.planreview.amended) {
+        return STAGE_VERDICTS.amended;
     }
     const verdict =
         role === "plan-reviewer" ? planReviewerOf(dag?.planreview, session?.stagerunid)?.verdict : undefined;

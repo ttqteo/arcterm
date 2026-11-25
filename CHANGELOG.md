@@ -37,9 +37,15 @@ and a picture given to a line that is not big.
 - Quote from a file into the chat: select a passage in the agent panel's File tab and press Quote (or `q`) in a
   markdown Preview, or Quote in chat (`Alt`+`Q`, or the right-click menu) in Source. It lands in the agent's chat box as
   a `> ` quote under the file and lines it came from (`docs/plan.md:42-44`), the caret under it for your question.
+- Small runs go on a fast track: a plan of 4 tasks or fewer gets one light plan review instead of two rounds, no review
+  of each task, and one end review of the whole merged diff in the final stage; a plan of 5 tasks or more keeps the
+  full review (from the kaeltran16 fork).
 
 ### Changed
 
+- A fast-track run says so: a `fast track` chip on the run sheet, the same words on `wsh runs show` and Chat's run card.
+  The plan review rows read Light review (and `amended by the lead` when the lead's revised plan went ahead), tasks have
+  no Reviewing state, and the final stage has an End review step (from the kaeltran16 fork).
 - Library's tabs are plain labels with a sliding underline; the 1–4 keys still switch them, named in each tab's tooltip
   rather than beside its label.
 - An agent in a brainstorm opens its panel on the Brainstorm tab, and one linked to an initiative on the Initiative tab,

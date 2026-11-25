@@ -115,6 +115,8 @@ import kael1113DagScenarios from "./scenarios-kael1113-dag.mjs";
 import kael1113FinalScenarios from "./scenarios-kael1113-final.mjs";
 import kael1113PickScenarios from "./scenarios-kael1113-pick.mjs";
 import kael1113TimelineScenarios from "./scenarios-kael1113-timeline.mjs";
+import kael1125LabelScenarios from "./scenarios-kael1125-label.mjs";
+import kael1125ViewsScenarios from "./scenarios-kael1125-views.mjs";
 import modalFocusHomeScenarios from "./scenarios-modal-focus-home.mjs";
 import parkedLaunchScenarios from "./scenarios-parked-launch.mjs";
 import monitorTasksScenarios from "./scenarios-monitor-tasks.mjs";
@@ -32008,10 +32010,17 @@ const cardTagExpr = (id) =>
 const DAG_RAIL_ROUTE = `document.querySelector('${PICKS_PEEK} [data-dag-node-route]')`;
 const peekRouteExpr = (id) => `document.querySelector('[data-dag-modal-kind] [data-dag-task-peek="${id}"] [data-dag-node-route]')`;
 const railExpr = `({ route: ${DAG_RAIL_ROUTE}?.getAttribute('data-dag-node-route') ?? null, text: ${flatText(DAG_RAIL_ROUTE)} })`;
-// Task 1's Model line leaves it off the picks; one sonnet pick and one lead pick make the banner "1 of 3"
+// model-picks and plan-review-rounds read a five-task plan of noops, past the fast track, so the full review runs (a
+// plan of four tasks or fewer gets one light reviewer). Task 1 has a Model line, Tasks 2 to 5 are left to the plan
+// reviewer.
+const MODELS_PLAN_FULL = fileURLToPath(new URL("./fixtures/models-plan-full.md", import.meta.url));
+const FULL_PLAN_TASKS = 5;
+// Task 1's Model line leaves it off the picks; one sonnet pick and the rest lead picks make the banner "1 of 5"
 const MODEL_PICKS = [
     { taskid: "t-2", model: "sonnet", reason: "a noop needs no deep reasoning" },
     { taskid: "t-3", model: "lead", reason: "kept on the lead, so its rail must show no pick" },
+    { taskid: "t-4", model: "lead", reason: "kept on the lead" },
+    { taskid: "t-5", model: "lead", reason: "kept on the lead" },
 ];
 
 async function dagTask(h, ctx, id) {
@@ -32139,12 +32148,12 @@ const modelPicks = {
             ctx.runId = created.run.id;
             await h.rpc(
                 "dagsubmit",
-                { channelid: ctx.channelId, runid: ctx.runId, parallelism: 1, planpath: MODELS_PLAN },
+                { channelid: ctx.channelId, runid: ctx.runId, parallelism: 1, planpath: MODELS_PLAN_FULL },
                 MODELS_RPC
             );
             // the two reviewers are real sessions, spawned after the submit returns: the second pass's pass, then
             // the full reviewer's with the picks
-            const pass = { verdict: "pass", notes: "verify model-picks: three noops" };
+            const pass = { verdict: "pass", notes: "verify model-picks: five noops" };
             await recordPlanReviewRound(h, ctx, 1, {
                 second: pass,
                 full: { ...pass, picks: MODEL_PICKS },
@@ -32176,11 +32185,11 @@ const modelPicks = {
         if (sheet) await h.ev(`${openDag}.click()`);
         const graph = await polishWaitFor(
             h,
-            `!!document.querySelector('[data-dag-modal-kind="live"]') && document.querySelectorAll('[data-dag-modal-kind] [data-dag-node]:not([data-dag-node="final"])').length === 3`,
+            `!!document.querySelector('[data-dag-modal-kind="live"]') && document.querySelectorAll('[data-dag-modal-kind] [data-dag-node]:not([data-dag-node="final"])').length === ${FULL_PLAN_TASKS}`,
             10000
         );
         rec(
-            "0. the run's graph opened with its 3 tasks",
+            `0. the run's graph opened with its ${FULL_PLAN_TASKS} tasks`,
             ctx.opened?.ok === true && sheet && graph,
             JSON.stringify({ runId: ctx.runId, opened: ctx.opened, sheet, graph })
         );
@@ -32189,7 +32198,8 @@ const modelPicks = {
         await polishWaitFor(h, `!!${PICKS_BANNER}`, 5000);
         const banner = await h.ev(flatText(PICKS_BANNER));
         await h.shot("cdp-shots/model-picks-1-banner.png");
-        rec("1. the banner reads `1 of 3 tasks on sonnet`", banner.includes("1 of 3 tasks on sonnet"), `banner=${JSON.stringify(banner)}`);
+        const wantBanner = `1 of ${FULL_PLAN_TASKS} tasks on sonnet`;
+        rec(`1. the banner reads \`${wantBanner}\``, banner.includes(wantBanner), `banner=${JSON.stringify(banner)}`);
 
         await h.ev(`${dagCardExpr("t-3")}?.click()`);
         const leadCard = await polishWaitFor(h, `!!${peekRouteExpr("t-3")}`, 3000);
@@ -32593,28 +32603,28 @@ const ROUNDS_GOAL =
 const PLAN_REVIEW_TITLE = "Plan review · ";
 
 // the agent tree's plan-reviewer rows, with the run's finished reviews unfolded first: a stage with a verdict
-// folds under "N reviews"
-const PLAN_REVIEW_TREE_ROWS = `(async () => {
+// folds under "N reviews". It waits for want rows.
+const planReviewTreeRows = (want) => `(async () => {
     const flat = (el) => (el?.textContent ?? '').replace(/\\s+/g, ' ').trim();
     const tree = () => document.querySelector('[data-agent-tree]');
     const folds = () => [...(tree()?.querySelectorAll('div.cursor-pointer') ?? [])].filter(
-        (d) => /\\d+ reviews?$/.test(flat(d)) && d.querySelector('.lucide-chevron-right')
+        (d) => /\\b\\d+ reviews?\\b/.test(flat(d)) && d.querySelector('.lucide-chevron-right')
     );
     const titles = () => [...(tree()?.querySelectorAll('div') ?? [])].filter(
         (d) => d.children.length === 0 && flat(d).startsWith(${JSON.stringify(PLAN_REVIEW_TITLE)})
     );
-    for (let i = 0; i < 40 && folds().length === 0 && titles().length < ${ROUND_ONE_LENSES.length}; i++) {
+    for (let i = 0; i < 40 && folds().length === 0 && titles().length < ${want}; i++) {
         await new Promise((r) => setTimeout(r, 250));
     }
     folds().forEach((f) => f.click());
-    for (let i = 0; i < 20 && titles().length < ${ROUND_ONE_LENSES.length}; i++) await new Promise((r) => setTimeout(r, 250));
+    for (let i = 0; i < 20 && titles().length < ${want}; i++) await new Promise((r) => setTimeout(r, 250));
     return {
         tree: tree() != null,
         rows: titles().map((t) => ({ title: flat(t), sub: flat(t.nextElementSibling) })),
     };
 })()`;
 
-async function openRunGraph(h, ctx) {
+async function openRunGraph(h, ctx, tasks) {
     await polishReload(h);
     await h.cdp("Emulation.setDeviceMetricsOverride", MODELS_VIEWPORT);
     const opened = await h.ev(`(async () => {
@@ -32629,7 +32639,7 @@ async function openRunGraph(h, ctx) {
     if (sheet) await h.ev(`${openDag}.click()`);
     const graph = await polishWaitFor(
         h,
-        `!!document.querySelector('[data-dag-modal-kind="live"]') && document.querySelectorAll('[data-dag-modal-kind] [data-dag-node]:not([data-dag-node="final"])').length === 3`,
+        `!!document.querySelector('[data-dag-modal-kind="live"]') && document.querySelectorAll('[data-dag-modal-kind] [data-dag-node]:not([data-dag-node="final"])').length === ${tasks}`,
         10000
     );
     return { ok: opened?.ok === true && sheet && graph, opened, sheet, graph };
@@ -32645,7 +32655,7 @@ const planReviewRounds = {
         try {
             // the lead the failed round launches works in cwd, so it reads this copy rather than the repo's fixture
             ctx.planPath = join(cwd, "plan.md");
-            writeFileSync(ctx.planPath, readFileSync(MODELS_PLAN));
+            writeFileSync(ctx.planPath, readFileSync(MODELS_PLAN_FULL));
             const wslist = await h.rpc("workspacelist", null);
             const ch = await h.rpc("createchannel", { name: "verify-plan-review-rounds", projectpath: cwd });
             ctx.channelId = ch.oid;
@@ -32670,12 +32680,12 @@ const planReviewRounds = {
                 { channelid: ctx.channelId, runid: ctx.runId, parallelism: 1, planpath: ctx.planPath },
                 MODELS_RPC
             );
-            const pass = { verdict: "pass", notes: "verify plan-review-rounds: three noops" };
+            const pass = { verdict: "pass", notes: "verify plan-review-rounds: five noops" };
             await recordPlanReviewRound(h, ctx, 1, {
                 second: { verdict: "fail", notes: ROUNDS_FINDING },
                 full: pass,
             });
-            ctx.graph = await openRunGraph(h, ctx);
+            ctx.graph = await openRunGraph(h, ctx, FULL_PLAN_TASKS);
         } catch (e) {
             ctx.arrangeError = String(e?.message ?? e);
         }
@@ -32688,7 +32698,7 @@ const planReviewRounds = {
             rec("0. round 1's two reviewers recorded their verdicts, the second pass failing", false, ctx.arrangeError);
             return steps;
         }
-        rec("0. the run's graph opened with its 3 tasks", ctx.graph.ok, JSON.stringify({ runId: ctx.runId, ...ctx.graph }));
+        rec(`0. the run's graph opened with its ${FULL_PLAN_TASKS} tasks`, ctx.graph.ok, JSON.stringify({ runId: ctx.runId, ...ctx.graph }));
         if (!ctx.graph.ok) return steps;
 
         await polishWaitFor(h, `${PLAN_REVIEWER_CHIPS}.filter((c) => c.state !== 'reviewing').length === ${ROUND_ONE_LENSES.length}`, 5000);
@@ -32728,7 +32738,7 @@ const planReviewRounds = {
         );
 
         await h.goto("agent");
-        const tree = await h.ev(PLAN_REVIEW_TREE_ROWS);
+        const tree = await h.ev(planReviewTreeRows(ROUND_ONE_LENSES.length));
         await h.shot("cdp-shots/plan-review-rounds-4-tree.png");
         const wantRows = ROUND_ONE_LENSES.map((l) => ({
             title: `${PLAN_REVIEW_TITLE}${LENS_TITLE[l]}`,
@@ -32755,7 +32765,7 @@ const planReviewRounds = {
             if (round2?.round === 2 && round2.reviewers?.length === 1 && round2.reviewers[0].runid) break;
             await polishNap(1000);
         }
-        const graph2 = await openRunGraph(h, ctx);
+        const graph2 = await openRunGraph(h, ctx, FULL_PLAN_TASKS);
         await polishWaitFor(h, `${PLAN_REVIEWER_CHIPS}.length === 1`, 5000);
         const reviewing = await h.ev(PLAN_REVIEWER_CHIPS);
         await h.shot("cdp-shots/plan-review-rounds-5-round-2.png");
@@ -75793,6 +75803,8 @@ export const SCENARIOS = [
     ...kael1113TimelineScenarios({ ...KAEL_KITS, run: RUN_KIT }),
     ...kael1113FinalScenarios({ ...KAEL_KITS, run: RUN_KIT }),
     ...kael1113PickScenarios({ ...KAEL_KITS, run: RUN_KIT }),
+    ...kael1125LabelScenarios({ ...KAEL_KITS, run: RUN_KIT }),
+    ...kael1125ViewsScenarios({ ...KAEL_KITS, run: RUN_KIT }),
     ...codeImageZoomScenarios(CODE_KIT),
     ...codeBlameDraftScenarios(CODE_KIT),
     ...diffFileKeysScenarios(FILES_KIT),

@@ -64,6 +64,26 @@ func leadSectionLines(taskID string, run *waveobj.Run) []string {
 	return lines
 }
 
+// landedLines are the lines a fast-track task gives the lead when it lands, the ones a review pass gives on the full
+// track: a quiet line saying how it landed, then a caveat line per section the lead acts on. Its For later tasks
+// joins them only when no later task reads it at dispatch (predecessorHandoff).
+func landedLines(g *waveobj.TaskGroup, taskID string, worker *waveobj.Run, how string) (quiet string, caveats []string) {
+	caveats = leadSectionLines(taskID, worker)
+	if rep, _ := workerReportOf(worker); rep.ForLater != "" && !forLaterHasReader(g, taskID) {
+		caveats = append(caveats, fmt.Sprintf("%s %s: %s", taskID, sectionHeading(jarvis.ReportKeyForLater), capSection(taskID, jarvis.ReportKeyForLater, rep.ForLater)))
+	}
+	return taskID + " " + how, caveats
+}
+
+// postLanded queues landedLines for the lead's next wake. Like a review pass's, they start no wake of their own.
+func postLanded(ctx context.Context, g *waveobj.TaskGroup, quiet string, caveats []string) {
+	PostQuiet(ctx, g.ChannelId, g.RunID, quiet)
+	// the caveats are what the lead must act on, so they travel whole
+	for _, c := range caveats {
+		PostCaveat(ctx, g.ChannelId, g.RunID, flatLine(c))
+	}
+}
+
 func sectionHeading(key string) string {
 	for _, s := range jarvis.WorkerReportSections {
 		if s.Key == key {

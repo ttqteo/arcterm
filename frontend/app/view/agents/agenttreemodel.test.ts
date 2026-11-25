@@ -17,6 +17,7 @@ import {
     selectableRowIds,
     selectOnly,
     stageOutcome,
+    stageOutcomeText,
     stageRowAge,
     stageSubline,
     toggleRow,
@@ -787,6 +788,60 @@ describe("buildAgentTree with run lineage", () => {
                 expect(stageOutcome(r, "plan-reviewer", "rv-followup")).toBeUndefined();
             });
 
+            // a light review the lead answered by amending the plan, which no human decided
+            describe("of a light round the lead amended", () => {
+                const amendedRound = (state: string, amended: boolean) => {
+                    const r = reviewing(1, [
+                        { lens: "light", state: "lost", runid: "rv-lost" },
+                        { lens: "light", state: "failed", runid: "rv-light" },
+                    ]);
+                    r.dag.planreview = { ...r.dag.planreview!, state, amended };
+                    return r;
+                };
+                const outcomes = (r: RunInfo) =>
+                    ["rv-lost", "rv-light"].map((id) => stageOutcome(r, "plan-reviewer", id));
+
+                it("reads every reviewer of the round as amended, ahead of its own verdict", () => {
+                    expect(outcomes(amendedRound("accepted", true))).toEqual(["amended", "amended"]);
+                });
+
+                it("words it 'amended by the lead' on the row's second line, and any other outcome as its own name", () => {
+                    expect(stageOutcomeText("amended")).toBe("amended by the lead");
+                    expect(stageOutcomeText("failed")).toBe("failed");
+                    expect(stageOutcomeText(undefined)).toBeUndefined();
+                });
+
+                it("keeps a human's accept reading each reviewer's own verdict", () => {
+                    expect(outcomes(amendedRound("accepted", false))).toEqual(["failed", "failed"]);
+                });
+
+                it("reads a review that is not accepted by its reviewers' own verdicts, amended or not", () => {
+                    expect(outcomes(amendedRound("failed", true))).toEqual(["failed", "failed"]);
+                });
+
+                it("leaves a session the round does not list reading as an earlier round's", () => {
+                    expect(stageOutcome(amendedRound("accepted", true), "plan-reviewer", "rv-other")).toBeUndefined();
+                });
+
+                it("gives the rows the dag keeps, a lost reviewer's too, the amended outcome", () => {
+                    const rows = buildAgentTree(
+                        [agent("lead", "idle")],
+                        ["lead"],
+                        lineage([amendedRound("accepted", true)], { lead: { kind: "lead", runId: "run-1" } }),
+                        {
+                            collapsed: new Set<string>(),
+                            doneOpen: new Map([["run-1", 0]]),
+                            queuedOpen: new Set<string>(),
+                            extrasOpen: new Set<string>(),
+                        }
+                    );
+                    expect(shape(rows).filter((s) => s.startsWith("stage:"))).toEqual([
+                        `stage:plan-reviewer:${endedReviewerId("run-1", "rv-lost")}@light:amended`,
+                        `stage:plan-reviewer:${endedReviewerId("run-1", "rv-light")}@light:amended`,
+                    ]);
+                });
+            });
+
             it("names its lens on its row", () => {
                 const r = reviewing(1, roundOne);
                 const ids = ["lead", "full", "spec"];
@@ -895,6 +950,59 @@ describe("buildAgentTree with run lineage", () => {
                 "stage:plan-reviewer:rev1",
                 "queued:1:false",
             ]);
+        });
+
+        // a fast-track stage's end reviewer reads the stage's end review, not the verifier's verdict
+        describe("an end reviewer", () => {
+            const withEndReview = (endreview: FinalEndReview, round = 1) => {
+                const r = run("run-1", [task("t-1", "done")]);
+                r.dag.final = { state: "verifying", round, verifierrunid: "ver", endreview };
+                return r;
+            };
+            const outcomeOf = (endreview: FinalEndReview, runId = "er-run") =>
+                stageOutcome(withEndReview({ runid: "er-run", ...endreview }), "end-reviewer", runId);
+
+            it.each([
+                [{ state: "passed" }, "passed"],
+                [{ state: "failed" }, "failed"],
+                // lost twice reads as failed, and one a human stopped as unverified
+                [{ state: "lost" }, "failed"],
+                [{ state: "stopped" }, "unverified"],
+                // a pass that could not verify everything
+                [{ state: "passed", unverified: "no browser" }, "unverified"],
+                [{ state: "reviewing" }, undefined],
+            ] as [FinalEndReview, string | undefined][])("reads end review %j as %s", (endreview, expected) => {
+                expect(outcomeOf(endreview)).toBe(expected);
+            });
+
+            it("reads a session the end review does not name as none in round 1 and failed after", () => {
+                expect(outcomeOf({ state: "passed" }, "other")).toBeUndefined();
+                const later = withEndReview({ state: "passed", runid: "er-run" }, 2);
+                expect(stageOutcome(later, "end-reviewer", "er-old")).toBe("failed");
+            });
+
+            it("is a stage row in the done fold once it has a verdict, and live before", () => {
+                const roles: Lineage["roles"] = {
+                    lead: { kind: "lead", runId: "run-1" },
+                    er: { kind: "stage", leadRunId: "run-1", stageRole: "end-reviewer" },
+                };
+                const tree = (endreview: FinalEndReview) =>
+                    shape(
+                        buildAgentTree(
+                            [agent("lead", "idle"), { ...stageAgent("er", "er-run"), state: "working" }],
+                            ["lead", "er"],
+                            lineage([withEndReview({ runid: "er-run", ...endreview })], roles),
+                            {
+                                collapsed: new Set<string>(),
+                                doneOpen: new Map([["run-1", 1]]),
+                                queuedOpen: new Set<string>(),
+                                extrasOpen: new Set<string>(),
+                            }
+                        )
+                    ).filter((s) => s.startsWith("stage:"));
+                expect(tree({ state: "reviewing" })).toEqual(["stage:end-reviewer:er"]);
+                expect(tree({ state: "failed" })).toEqual(["stage:end-reviewer:er:failed"]);
+            });
         });
     });
 

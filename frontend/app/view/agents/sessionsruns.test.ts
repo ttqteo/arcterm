@@ -277,6 +277,92 @@ describe("stage sessions", () => {
         expect(statusOf("rv-gone", { ...failedRound, state: "passed" })).toEqual({ key: "done", text: "passed" });
     });
 
+    // a light review the lead answered by amending the plan: the amendment outranks the reviewer's own verdict
+    it("reads a plan reviewer of a round the lead amended as amended, and a human's accept as before", () => {
+        const statusOf = (review: PlanReviewStage, over: Partial<LiveSession> = {}) => {
+            const group = groupRunSessions([
+                mk({ id: "lead", runid: "r1", role: "lead" }),
+                mk({ id: "pr", runid: "r1", role: "plan-reviewer", stagerunid: "rv-light", ...over }),
+            ]).runs[0];
+            return runView({ group, dag: { ...dag, planreview: review }, now: 0 }).members.find(
+                (m) => m.key === "plan-reviewer"
+            )?.status;
+        };
+        const round: PlanReviewStage = {
+            state: "accepted",
+            round: 1,
+            reviewers: [{ lens: "light", state: "failed", runid: "rv-light" }],
+        };
+        const amended = { key: "muted", text: "amended by the lead" };
+        expect(statusOf({ ...round, amended: true })).toEqual(amended);
+        // a session the round does not list is the amended review's too
+        expect(statusOf({ ...round, amended: true }, { stagerunid: "rv-gone" })).toEqual(amended);
+        // a human's accept keeps main's reading: the reviewer's own verdict, else the review's state
+        expect(statusOf(round)).toEqual({ key: "failed", text: "failed" });
+        expect(statusOf(round, { stagerunid: "rv-gone" })).toEqual({ key: "muted", text: "accepted" });
+        // a live reviewer is still reviewing
+        expect(statusOf({ ...round, amended: true }, { live: true })).toEqual({ key: "review", text: "reviewing" });
+    });
+
+    describe("an end reviewer", () => {
+        const endSession = (over: Partial<LiveSession> = {}) =>
+            mk({ id: "er", runid: "r1", role: "end-reviewer", lastactivets: 8, tokenstotal: 11, ...over });
+        const viewOf = (endreview: FinalEndReview | undefined, over: Partial<LiveSession> = {}) =>
+            runView({
+                group: groupRunSessions([...sessions, endSession(over)]).runs[0],
+                dag: { ...dag, final: { state: "verifying", round: 1, endreview } },
+                now: 0,
+            });
+        const member = (v: ReturnType<typeof runView>) => v.members.find((m) => m.key === "end-reviewer");
+
+        it("is a stage member between the plan review and the final verification", () => {
+            const v = viewOf({ state: "passed" });
+            expect(v.members.map((m) => m.key)).toEqual([
+                LEAD_MEMBER,
+                "t-1",
+                "plan-reviewer",
+                "end-reviewer",
+                "verifier",
+            ]);
+            expect(member(v)).toMatchObject({ label: "End review", tokens: 11, session: { id: "er" } });
+            // a stage, not a task: the run's counts and needs-you rows stay its tasks'
+            expect(v.total).toBe(1);
+            expect(groupRunSessions([endSession()]).runs[0].lead).toEqual([]);
+        });
+
+        it("places and labels its session by its stage", () => {
+            expect(memberOfSession({ role: "end-reviewer" })).toBe("end-reviewer");
+            expect(sessionLabel(endSession(), { r1: "Port the header" })).toBe("Port the header · end review");
+        });
+
+        it("reads its verdict word from the stage's end review, as the tree does", () => {
+            const word = (endreview: FinalEndReview) => member(viewOf(endreview))?.status;
+            expect(word({ state: "passed" })).toEqual({ key: "done", text: "passed" });
+            expect(word({ state: "failed" })).toEqual({ key: "failed", text: "failed" });
+            // lost twice reads as failed, and one a human stopped as unverified
+            expect(word({ state: "lost" })).toEqual({ key: "failed", text: "failed" });
+            expect(word({ state: "stopped" })).toEqual({ key: "muted", text: "unverified" });
+            // a pass that could not verify everything
+            expect(word({ state: "passed", unverified: "no browser" })).toEqual({ key: "muted", text: "unverified" });
+            expect(word({ state: "reviewing" })).toEqual({ key: "review", text: "reviewing" });
+        });
+
+        it("reads a live one as reviewing, whatever the stage records", () => {
+            expect(member(viewOf({ state: "reviewing" }, { live: true }))?.status).toEqual({
+                key: "review",
+                text: "reviewing",
+            });
+            expect(member(viewOf({ state: "failed" }, { live: true }))?.status).toEqual({
+                key: "review",
+                text: "reviewing",
+            });
+        });
+
+        it("reads one with no end review on the dag as done, not as a verdict", () => {
+            expect(member(viewOf(undefined))?.status).toEqual({ key: "done", text: "done" });
+        });
+    });
+
     it("leaves the run's task counts and needs-you rows to its tasks", () => {
         const v = runView({ group: groupRunSessions(sessions).runs[0], dag, now: 0 });
         expect(v.total).toBe(1);

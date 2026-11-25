@@ -44,6 +44,7 @@ const (
 	PlanReviewLens_Tests    = "tests"
 	PlanReviewLens_Final    = "final"
 	PlanReviewLens_Followup = "followup"
+	PlanReviewLens_Light    = "light" // a fast-track dag's one reviewer
 )
 
 // Plan reviewer states (PlanReviewer.State).
@@ -62,6 +63,7 @@ var planReviewLensTitles = map[string]string{
 	PlanReviewLens_Tests:    "Tests and commands",
 	PlanReviewLens_Final:    "Final coverage",
 	PlanReviewLens_Followup: "Round-2 follow-up",
+	PlanReviewLens_Light:    "Light review",
 }
 
 // PlanReviewLensTitle is a lens's title, or the key itself for one this build does not know.
@@ -78,7 +80,37 @@ var planRoundOneLenses = []string{PlanReviewLens_Full, PlanReviewLens_Second}
 
 // planReviewerPicks reports the reviewer whose verdict carries the model picks and whose loss fails the round.
 func planReviewerPicks(lens string) bool {
-	return lens == PlanReviewLens_Full || lens == PlanReviewLens_Followup
+	return lens == PlanReviewLens_Full || lens == PlanReviewLens_Followup || lens == PlanReviewLens_Light
+}
+
+// MaxLightReviewers caps the light reviewers one round starts. A lost one is replaced, since the light round is the
+// plan's only check, but a broken route must not spawn a session on every tick.
+const MaxLightReviewers = 3
+
+// planReviewRoundLight reports a round of the fast track's light reviewers; the lens is the only record of it.
+func planReviewRoundLight(reviewers []waveobj.PlanReviewer) bool {
+	return len(reviewers) > 0 && reviewers[0].Lens == PlanReviewLens_Light
+}
+
+// PlanReviewRoundLight reports a plan review whose current round is a light one.
+func PlanReviewRoundLight(pr *waveobj.PlanReviewStage) bool {
+	return pr != nil && planReviewRoundLight(pr.Reviewers)
+}
+
+// PlanReviewLastRound reports a round after which the plan review gets no other: a full round that brought the
+// full rounds to MaxPlanReviewRounds. Light rounds do not count. Counting down from Round keeps a dag stored before
+// PastRounds existed on its full count.
+func PlanReviewLastRound(pr *waveobj.PlanReviewStage) bool {
+	if pr == nil || planReviewRoundLight(pr.Reviewers) {
+		return false
+	}
+	full := pr.Round
+	for _, past := range pr.PastRounds {
+		if planReviewRoundLight(past.Reviewers) {
+			full--
+		}
+	}
+	return full >= MaxPlanReviewRounds
 }
 
 // planReviewBoardItem applies only with a Prototype; %s is the canvas path.
@@ -91,16 +123,26 @@ const planReviewManifestItem = "the plan has no Setup, so each tree the engine m
 // run dfba1693's lead linked two tasks only because one scenario's screenshot showed both.
 const planReviewDependsReasonItem = "each reason a Depends line gives in parentheses holds: the dependent task really uses what the reason names from the task it waits on. A reason that does not hold, such as a screenshot or scenario both tasks appear in (that belongs in each task's acceptance as the scenario step), is a finding: the edge only makes one task wait for the other's review, so drop it;"
 
+const planReviewSameFileItem = "no two tasks edit the same file without a Depends between them, since tasks with nothing between them run at the same time. Submit already refused any path two such tasks both list on their Files lines, so look for what those lines leave out: a task with no Files line, and a file a task's text edits that its Files line omits;"
+
+// false plan claims about callers and tests reached workers, who stopped to ask the lead (workflow scan p7, 2026-11-03)
+const planReviewCallersItem = "each claim the plan makes about existing code (what a function calls, who calls it, what a test asserts) holds in the tree: grep the callers of what a task changes or removes; a claim that does not hold is a finding;"
+
+const planReviewScenarioItem = "the Final command checks the running app: every task that adds or changes a rendered view, a visual state (loading, empty, error, gone) or an interaction names in its acceptance the scenario step that shows that view or performs that interaction, and Final runs that scenario. A scenario that only opens the surface or panel the view sits in does not count. A check left to a person has no owner in a run, so a plan that leaves one is a finding."
+
+// planReviewFilesCoverageItem is the light checklist's own: with no per-task review, a file missing from a Files
+// line is caught here or only at the end review.
+const planReviewFilesCoverageItem = "every file a task changes, and every caller of what it changes, is on that task's Files line; each one missing is a finding naming the task and the file;"
+
 // planReviewSpecGap closes the checklist as a sentence of its own, not a bullet.
 const planReviewSpecGap = "Also report gaps in the spec, and places where the spec and the plan contradict each other."
 
 // planReviewChecklist is the one source of the checklist every plan reviewer's brief lists, in this order.
 var planReviewChecklist = []string{
 	"every requirement in the spec has a task;",
-	"no two tasks edit the same file without a Depends between them, since tasks with nothing between them run at the same time. Submit already refused any path two such tasks both list on their Files lines, so look for what those lines leave out: a task with no Files line, and a file a task's text edits that its Files line omits;",
+	planReviewSameFileItem,
 	"types, functions and flags have the same names in every task that mentions them;",
-	// false plan claims about callers and tests reached workers, who stopped to ask the lead (workflow scan p7, 2026-11-03)
-	"each claim the plan makes about existing code (what a function calls, who calls it, what a test asserts) holds in the tree: grep the callers of what a task changes or removes; a claim that does not hold is a finding;",
+	planReviewCallersItem,
 	"no task waits for another's long implementation when it needs only that task's interface (a type, a wire field, a table, a function's signature): the interface can land first as its own small task, so the implementation and the tasks that use it run beside each other;",
 	planReviewDependsReasonItem,
 	"each task states its acceptance criteria and names the tests that prove them;",
@@ -110,15 +152,31 @@ var planReviewChecklist = []string{
 	// SIEM's leads wrapped every vitest call in a fresh worktree plus pnpm install: 109 s a call against vitest's 11 s (run 313fb392)
 	"no Verify, Check or Final command, and no task step, rebuilds the environment on every call (a scratch worktree, or a package install per call): the engine already prepares each tree, with the plan's Setup or, with none, the main checkout's linked `node_modules`;",
 	planReviewManifestItem,
-	"the Final command checks the running app: every task that adds or changes a rendered view, a visual state (loading, empty, error, gone) or an interaction names in its acceptance the scenario step that shows that view or performs that interaction, and Final runs that scenario. A scenario that only opens the surface or panel the view sits in does not count. A check left to a person has no owner in a run, so a plan that leaves one is a finding.",
+	planReviewScenarioItem,
 	// the final verifier judges only screenshots, so a board no scenario renders ends the run unverified
 	planReviewBoardItem,
 }
 
-// writeChecklist writes "Check that:", the items that apply to g, and the spec-gap sentence last.
+// planLightChecklist is the light review's checklist: the four checks small-run plan reviews find most (scenario
+// steps, order and Depends, spec contradictions in the spec-gap sentence, Files coverage), from the full one's items.
+var planLightChecklist = []string{
+	planReviewScenarioItem,
+	planReviewBoardItem,
+	planReviewSameFileItem,
+	planReviewDependsReasonItem,
+	planReviewCallersItem,
+	planReviewFilesCoverageItem,
+}
+
+// writeChecklist writes the full checklist, as writeChecklistItems does.
 func writeChecklist(b *strings.Builder, g *waveobj.TaskGroup, tree string) {
+	writeChecklistItems(b, g, tree, planReviewChecklist)
+}
+
+// writeChecklistItems writes "Check that:", the items that apply to g, and the spec-gap sentence last.
+func writeChecklistItems(b *strings.Builder, g *waveobj.TaskGroup, tree string, items []string) {
 	b.WriteString("Check that:\n")
-	for _, it := range planReviewChecklist {
+	for _, it := range items {
 		switch {
 		case it == planReviewBoardItem:
 			if g.Prototype != "" {
@@ -190,14 +248,18 @@ func advancePlanReview(ctx, spawnCtx context.Context, g *waveobj.TaskGroup, owne
 	if len(pr.Reviewers) == 0 {
 		pr.PlanText, pr.SpecText = readPlanReviewDoc(g, tree, g.PlanPath), readPlanReviewDoc(g, tree, g.SpecPath)
 		lenses := planRoundOneLenses
-		if pr.Prior != nil {
+		switch {
+		case g.FastTrack:
+			lenses = []string{PlanReviewLens_Light}
+		case pr.Prior != nil:
 			lenses = []string{PlanReviewLens_Followup}
 		}
 		for _, lens := range lenses {
 			pr.Reviewers = append(pr.Reviewers, waveobj.PlanReviewer{Lens: lens, State: PlanReviewerState_Reviewing})
 		}
 	}
-	for i := range pr.Reviewers {
+	// by index, as a lost light reviewer's replacement joins the round and starts in this tick
+	for i := 0; i < len(pr.Reviewers); i++ {
 		r := &pr.Reviewers[i]
 		if r.State != PlanReviewerState_Reviewing {
 			continue
@@ -205,9 +267,22 @@ func advancePlanReview(ctx, spawnCtx context.Context, g *waveobj.TaskGroup, owne
 		session := func() (StageSession, error) { return planReviewSession(ctx, g, tree, r.Lens) }
 		if reason := tendStageSession(ctx, spawnCtx, g, owner, session, &r.RunID, &r.StartedTs, &r.Respawns, now, afterCommit); reason != "" {
 			r.State, r.Text = PlanReviewerState_Lost, reason
+			replaceLostLightReviewer(pr)
 		}
 	}
 	settlePlanReviewRound(ctx, g, pr, afterCommit)
+}
+
+// replaceLostLightReviewer adds a fresh light reviewer to a round whose last one was lost, up to MaxLightReviewers:
+// with no second round, the plan never dispatches without a verdict. The lost rows stay for the Agent tree.
+func replaceLostLightReviewer(pr *waveobj.PlanReviewStage) {
+	n := len(pr.Reviewers)
+	if n == 0 || n >= MaxLightReviewers {
+		return
+	}
+	if last := pr.Reviewers[n-1]; last.Lens == PlanReviewLens_Light && last.State == PlanReviewerState_Lost {
+		pr.Reviewers = append(pr.Reviewers, waveobj.PlanReviewer{Lens: PlanReviewLens_Light, State: PlanReviewerState_Reviewing})
+	}
 }
 
 // readPlanReviewDoc is a doc's text as the round's reviewers read it, or "" with no doc. A read error leaves it
@@ -225,7 +300,8 @@ func readPlanReviewDoc(g *waveobj.TaskGroup, tree, p string) string {
 }
 
 // planReviewSession is the session of the reviewer with lens: the full reviewer on the reviewer route, the second
-// pass and the follow-up on the Light reviewers route.
+// pass and the follow-up on the Light reviewers route. The light reviewer runs on the Light reviewers route, or on
+// a Reviewer picks run on the reviewer route, since picking models is that route's call.
 func planReviewSession(ctx context.Context, g *waveobj.TaskGroup, tree, lens string) (StageSession, error) {
 	s := StageSession{Role: jarvis.UsageRole_PlanReviewer, Label: "plan review", Tree: tree, Lens: lens}
 	if lens == PlanReviewLens_Full {
@@ -233,6 +309,13 @@ func planReviewSession(ctx context.Context, g *waveobj.TaskGroup, tree, lens str
 		return s, nil
 	}
 	s.Label += ": " + PlanReviewLensTitle(lens)
+	if lens == PlanReviewLens_Light {
+		if !g.ReviewerPicks {
+			s.Route = lightReviewerRoute(g)
+		}
+		s.Prompt = planLightPrompt(g, tree)
+		return s, nil
+	}
 	s.Route = lightReviewerRoute(g)
 	if lens != PlanReviewLens_Followup {
 		s.Prompt = planSecondPassPrompt(g, tree)
@@ -338,6 +421,105 @@ func planReviewPrompt(g *waveobj.TaskGroup, tree string) string {
 	b.WriteString(planReviewReadOnly)
 	writePlanReviewVerdict(&b, writePlanReviewPicks(&b, g, nil))
 	return b.String()
+}
+
+// The light pack's caps, in lines: a file's, and the whole pack's. They bound the brief without a token count.
+const (
+	lightPackFileLines = 1000
+	lightPackLines     = 5000
+)
+
+// lightPackNewFile marks a Files-line path that is not in the tree yet; lightPackCut, with the lines left out and
+// the path, ends a file the caps cut.
+const (
+	lightPackNewFile = "(new: it does not exist yet)"
+	lightPackCut     = "[%d more lines left out: read the rest of %s from the tree]"
+)
+
+// planLightPrompt is the fast track's one reviewer's brief. Code builds its pack (the plan's commands, each task's
+// text, the parsed edges, the spec and the files the tasks name) and leaves out the plan's path and header, so the
+// lead's reasoning stays out. A reviewer otherwise spends its time reading these same files.
+func planLightPrompt(g *waveobj.TaskGroup, tree string) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "%s%s. Before any worker starts, judge whether the plan can be run as written. It is a small plan: you are its only reviewer, and there is no second round. Below is what the engine packed for you; you can still read the repository in your working directory for anything the pack leaves out.\n\n", planReviewerOpener, g.RunID)
+	b.WriteString("The plan's commands:\n")
+	for _, c := range []struct{ name, value string }{{"Setup", g.Setup}, {"Verify", g.Verify}, {"Check", g.Check}, {"Final", g.FinalCmd}} {
+		if c.value == "" {
+			c.value = "none"
+		}
+		fmt.Fprintf(&b, "- %s: %s\n", c.name, c.value)
+	}
+	b.WriteString("\nThe tasks:\n\n")
+	var files []string
+	for _, t := range g.Tasks {
+		fmt.Fprintf(&b, "### %s: %s\n%s\n\n", t.ID, flatLine(t.Label), strings.TrimSpace(t.Description))
+		for _, f := range jarvis.TaskFiles(t.Description) {
+			if !slices.Contains(files, f) {
+				files = append(files, f)
+			}
+		}
+	}
+	writeDependsEdges(&b, g)
+	writeLightDesign(&b, g, tree)
+	b.WriteString("\nThe files the tasks' Files lines name, as they are in the tree now:\n")
+	writeLightFiles(&b, tree, files, lightPackLines-strings.Count(b.String(), "\n"))
+	b.WriteString("\n")
+	writeChecklistItems(&b, g, tree, planLightChecklist)
+	b.WriteString(planReviewReadOnly)
+	writePlanReviewVerdict(&b, writePlanReviewPicks(&b, g, nil))
+	return b.String()
+}
+
+// writeLightDesign writes the spec inline, or with none the prototype's path, which is the design the plan answers to.
+func writeLightDesign(b *strings.Builder, g *waveobj.TaskGroup, tree string) {
+	switch {
+	case g.SpecPath != "" && g.PlanReview != nil && g.PlanReview.SpecText != "":
+		fmt.Fprintf(b, "\nThe spec:\n\n%s\n", strings.TrimRight(g.PlanReview.SpecText, "\n"))
+	case g.SpecPath != "":
+		b.WriteString("\nThe spec could not be read; report that as a finding.\n")
+	case g.Prototype != "":
+		fmt.Fprintf(b, "\nThere is no spec file: the design canvas at %s is the spec. Read it.\n", DocPath(g, tree, g.Prototype))
+	default:
+		b.WriteString("\nThere is no spec file.\n")
+	}
+}
+
+// writeLightFiles writes each path's content from tree, at most lightPackFileLines lines a file and budget lines in
+// all; past a cap the path is named with how much was left out. A path not in the tree is listed as new, and one
+// that cannot be read says why, so the reviewer reads it itself.
+func writeLightFiles(b *strings.Builder, tree string, paths []string, budget int) {
+	if len(paths) == 0 {
+		b.WriteString("(none)\n")
+		return
+	}
+	for _, p := range paths {
+		full := filepath.Join(tree, filepath.FromSlash(p))
+		data, err := os.ReadFile(full)
+		switch {
+		case errors.Is(err, os.ErrNotExist):
+			fmt.Fprintf(b, "--- %s %s\n", p, lightPackNewFile)
+			continue
+		case err != nil:
+			if info, serr := os.Stat(full); serr == nil && info.IsDir() {
+				fmt.Fprintf(b, "--- %s (a directory: list it in the tree)\n", p)
+				continue
+			}
+			log.Printf("reading %s for the light plan review pack: %v", p, err)
+			fmt.Fprintf(b, "--- %s (could not be read: %v)\n", p, err)
+			continue
+		}
+		lines := strings.Split(strings.TrimRight(string(data), "\n"), "\n")
+		keep := min(len(lines), lightPackFileLines, max(budget, 0))
+		fmt.Fprintf(b, "--- %s\n", p)
+		for _, l := range lines[:keep] {
+			b.WriteString(l)
+			b.WriteByte('\n')
+		}
+		budget -= keep
+		if keep < len(lines) {
+			fmt.Fprintf(b, lightPackCut+"\n", len(lines)-keep, p)
+		}
+	}
 }
 
 // writePlanReviewPicks writes the pick block on a Reviewer picks run and returns the verdict's --pick tail. With
@@ -639,13 +821,15 @@ func settlePlanReviewRound(ctx context.Context, g *waveobj.TaskGroup, pr *waveob
 	if picks := reviewerPicks(g); len(picks) > 0 {
 		detail["picks"] = picks
 	}
-	round, findings, last := pr.Round, pr.Findings, pr.Round >= MaxPlanReviewRounds
+	round, findings, last, light := pr.Round, pr.Findings, PlanReviewLastRound(pr), planReviewRoundLight(pr.Reviewers)
 	*afterCommit = append(*afterCommit, func() {
 		appendRunEvent(ctx, g.ChannelId, g.RunID, waveobj.RunEventKindPlanReviewed, nil, detail)
 		switch {
 		case passed:
 			PostQuiet(ctx, g.ChannelId, g.RunID, "plan review passed; workers are starting: "+flatLine(findings))
 			handOffLead(ctx, g)
+		case failed && light:
+			PostWake(ctx, g.ChannelId, g.RunID, lightReviewFailedWake(findings, g.Autonomous))
 		case failed && last && specDecidesPlanReview(g):
 			PostWake(ctx, g.ChannelId, g.RunID, specPlanReviewFailedWake(round, findings))
 		case failed:
@@ -655,6 +839,10 @@ func settlePlanReviewRound(ctx context.Context, g *waveobj.TaskGroup, pr *waveob
 			why := ""
 			if required != nil {
 				why = required.Text
+			}
+			if light {
+				PostWake(ctx, g.ChannelId, g.RunID, lightReviewLostWake(why))
+				return
 			}
 			PostWake(ctx, g.ChannelId, g.RunID, planReviewLostWake(round, why, last, g.Autonomous))
 		}
@@ -797,7 +985,7 @@ func PlanReviewReplaceable(g *waveobj.TaskGroup) bool {
 // round, asked on its own so a submit can refuse before it touches the landing tree.
 func PlanReviewRoundsSpent(g *waveobj.TaskGroup) error {
 	pr := g.PlanReview
-	if pr == nil || pr.Round < MaxPlanReviewRounds {
+	if !PlanReviewLastRound(pr) {
 		return nil
 	}
 	if g.Autonomous {
@@ -810,13 +998,16 @@ func PlanReviewRoundsSpent(g *waveobj.TaskGroup) error {
 }
 
 // ReplacePlanReviewProposal puts a revised plan in place of one whose review failed, and opens the next
-// review round on it. The run keeps its one dag; only the proposal changes.
+// review round on it. The run keeps its one dag; only the proposal changes. On the fast track there is no second
+// round: a revision of jarvis.FastTrackMaxTasks tasks or fewer after a light reviewer's findings dispatches as the
+// lead's amendment, after a lost light round it gets a fresh light round, and a larger one leaves the fast track
+// for the full review's first round.
 func ReplacePlanReviewProposal(ctx context.Context, dagID string, proposed *waveobj.TaskGroup) (*waveobj.TaskGroup, error) {
 	if proposed.PlanPath == "" {
 		return nil, fmt.Errorf("resubmit the revised plan as a plan file, so it is reviewed again")
 	}
 	var out *waveobj.TaskGroup
-	err := mutatePlanReview(ctx, dagID, func(g *waveobj.TaskGroup, pr *waveobj.PlanReviewStage, _ *[]func()) error {
+	err := mutatePlanReview(ctx, dagID, func(g *waveobj.TaskGroup, pr *waveobj.PlanReviewStage, afterCommit *[]func()) error {
 		if !PlanReviewReplaceable(g) {
 			return fmt.Errorf("dag conflict: run %s's plan review is %s, so its dag can no longer be replaced", g.RunID, pr.State)
 		}
@@ -838,6 +1029,17 @@ func ReplacePlanReviewProposal(ctx context.Context, dagID string, proposed *wave
 		g.Verify, g.Setup, g.Check, g.Preamble = proposed.Verify, proposed.Setup, proposed.Check, proposed.Preamble
 		g.FinalCmd, g.Prototype = proposed.FinalCmd, proposed.Prototype
 		g.EffortOID, g.PlanPath, g.SpecPath = proposed.EffortOID, proposed.PlanPath, proposed.SpecPath
+		wasFast := g.FastTrack
+		g.FastTrack = wasFast && len(proposed.Tasks) <= jarvis.FastTrackMaxTasks
+		if g.FastTrack && planReviewerFailed(pr.Reviewers) {
+			amendPastLightReview(ctx, g, pr, afterCommit)
+			out = g
+			return nil
+		}
+		// a fresh light round, or the full review's first: neither follows up on the light round
+		if wasFast {
+			prior = nil
+		}
 		// the finished round's reviewers stay on the dag for the Agent tree; every one has ended
 		past := append(append([]waveobj.PlanReviewRound(nil), pr.PastRounds...), waveobj.PlanReviewRound{Round: pr.Round, Reviewers: pr.Reviewers})
 		g.PlanReview = &waveobj.PlanReviewStage{State: PlanReviewState_Reviewing, Round: pr.Round + 1, Prior: prior, PastRounds: past}
@@ -845,6 +1047,24 @@ func ReplacePlanReviewProposal(ctx context.Context, dagID string, proposed *wave
 		return nil
 	})
 	return out, err
+}
+
+// planReviewerFailed reports a round in which a reviewer gave findings, as against one whose reviewers were lost.
+func planReviewerFailed(reviewers []waveobj.PlanReviewer) bool {
+	return slices.ContainsFunc(reviewers, func(r waveobj.PlanReviewer) bool { return r.State == PlanReviewerState_Failed })
+}
+
+// amendPastLightReview clears the plan to dispatch on the lead's amendment of a failed light round: the review
+// reads accepted, marked Amended so no surface reads it as the human's word, and the round's reviewers stay.
+func amendPastLightReview(ctx context.Context, g *waveobj.TaskGroup, pr *waveobj.PlanReviewStage, afterCommit *[]func()) {
+	pr.State, pr.Amended = PlanReviewState_Accepted, true
+	// the docs serve only a next round, which the amendment rules out
+	pr.PlanText, pr.SpecText, pr.Prior = "", "", nil
+	round := pr.Round
+	*afterCommit = append(*afterCommit, func() {
+		appendRunEvent(ctx, g.ChannelId, g.RunID, waveobj.RunEventKindPlanReviewed, nil, map[string]any{"state": PlanReviewState_Accepted, "round": round, "amended": true})
+		handOffLead(ctx, g)
+	})
 }
 
 // mutatePlanReview changes a dag's plan review under the dag mutation lock, persists it, and then runs what
