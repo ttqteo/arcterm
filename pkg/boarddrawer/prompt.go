@@ -10,9 +10,12 @@ import (
 )
 
 const (
-	agentRequestLine = "This is the agent's own request: draw it. Never flag it as a question."
+	agentRequestLine = "This is the agent's own request: draw it as a new drawing. Never flag it as a question."
 	drawLine         = "The person sent this line to be drawn: draw it, even if it reads as a question. Never flag it."
 	noAskLine        = "none given: draw what the briefing explains."
+	// drawingInViewHead opens the line naming the drawing in view
+	drawingInViewHead = "The drawing in view: "
+	noDrawingLine     = "No drawing is in view: draw this turn's answer as a new drawing."
 )
 
 //go:embed drawer-prompt.md
@@ -28,6 +31,7 @@ type firstInput struct {
 type turnInput struct {
 	Scene       Scene
 	SelectedIds []string
+	DrawingId   string // the frame of the drawing in view when the line was asked; none unless a live frame
 	On          string
 	Question    string
 	Request     bool   // the agent's request: drawn, never flagged
@@ -80,6 +84,12 @@ func turnPrompt(t turnInput) string {
 		}
 		fmt.Fprintf(&b, "\nSelected: %s (ids %s, marked \"selected\" above). The question is about these shapes.\n",
 			on, strings.Join(t.SelectedIds, ", "))
+	}
+	if title, ok := t.Scene.Frames[t.DrawingId]; ok {
+		fmt.Fprintf(&b, "\n%s%q (id %s). A follow-up that changes it sets `\"edit\": true` and changes only its shapes "+
+			"(marked `\"frame\":\"%s\"`); a new question gets a new drawing.\n", drawingInViewHead, title, t.DrawingId, t.DrawingId)
+	} else {
+		b.WriteString("\n" + noDrawingLine + "\n")
 	}
 	if turns := strings.TrimSpace(t.AgentTurns); turns != "" {
 		fmt.Fprintf(&b, "\n%s, the agent this board belongs to, said this since you last heard from it. Draw from it when "+

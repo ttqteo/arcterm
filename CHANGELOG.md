@@ -38,6 +38,9 @@ and a picture given to a line that is not big.
   every repo under them commits with that account's name and email and pushes with its token, in any terminal or IDE,
   with arcterm open or not. The card also finds repos that keep a token in their remote URL and removes it in one
   reviewed pass. <!-- big --> <!-- shot: 1.11.0-git-accounts.webp -->
+- Open a tool in a split: `Ctrl`+`Enter` (`⌘`+`Enter` on a Mac) in Open a tool (`Ctrl`+`Shift`+`O`) opens it as a cell
+  under the agent you are looking at, beside the Shift+Enter that opens it in the panel. With the split full (4 cells)
+  the tool opens in the centre. <!-- try: open-tool -->
 - Judge pairs stay readable after they end: Library's Conversations lists each pair under the session of the agent that
   worked, read-only with its Decided list, and pairs synced from your other machine read the same. `wsh read <pair id>`
   prints one as text.
@@ -50,21 +53,27 @@ and a picture given to a line that is not big.
 - A run an agent starts with `wsh runs start` sits under that agent in the Agent tree, and a run its own agent starts
   sits one level further; a run started from the cockpit, or whose agent has closed, keeps a row of its own (from the
   kaeltran16 fork).
+- The agent panel's Files tab has a Search button at the top, beside Locate: it opens Code's Search on that folder,
+  with the filter's text, as `Mod`+`Shift`+`F` does there.
+- Each drawer answer on a board is its own titled drawing: the row above the board lists them one click away, and the
+  view moves to a new drawing as it lands unless you went back to an earlier one, which then shows a `new` mark on the
+  new one (from the kaeltran16 fork). <!-- big --> <!-- shot: 1.11.0-board-drawings.webp -->
 
 ### Changed
 
+- A run's lead hears "may be stuck" only for a worker whose tree has not changed in 20 minutes; the check for the same
+  command failing the same way three times is gone (it never fired here, and its wakes elsewhere came too late to help).
 - What you are writing to an agent stays in its box when arcterm closes or reloads, attached files too, and the small
   message box on an agent's row shares that one draft with its Chat.
 - Councils moved into Conversations: the Councils tab is gone, `Mod+G o` opens Conversations with the Council chip on,
   and a council nests under the session that started it.
 - Library's tabs are plain labels with a sliding underline; the 1–3 keys still switch them, named in each tab's tooltip
+  rather than beside its label.
 - In Chat, a pair's list and a judge's marks show as cards instead of code: the newest list with its answer chips,
   an earlier one folded to a row.
 - A fast-track run says so: a `fast track` chip on the run sheet, the same words on `wsh runs show` and Chat's run card.
   The plan review rows read Light review (and `amended by the lead` when the lead's revised plan went ahead), tasks have
   no Reviewing state, and the final stage has an End review step (from the kaeltran16 fork).
-- Library's tabs are plain labels with a sliding underline; the 1–4 keys still switch them, named in each tab's tooltip
-  rather than beside its label.
 - An agent in a brainstorm opens its panel on the Brainstorm tab, and one linked to an initiative on the Initiative tab,
   instead of Overview; once you pick a tab, the panel stays on yours.
 - The green server mark beside an agent or a project lists every port its servers listen on, not two and a `+N`.
@@ -83,9 +92,23 @@ and a picture given to a line that is not big.
 - A Claude agent's turn that asks you nothing no longer starts a background Claude (about 470 MB for several seconds)
   when the agent's own suggestion is late: in a week it found nothing worth a chip. Its suggestion still comes from the
   agent when it is in time.
+- Chat's suggested replies answer a question the agent follows with a short sentence or two ("Want me to run it? It
+  takes 5 minutes."), as they do one it ends on: before, such a turn got a next step at most, and no yes or no.
+- Boards open for viewing, with no drawing toolbar and drags that pan; press Edit above the board to draw, move or
+  select shapes and ask about them (from the kaeltran16 fork).
+- The drawer keeps each drawing short, a few words per box and one idea per drawing; more becomes another drawing (from
+  the kaeltran16 fork).
 
 ### Fixed
 
+- A plan whose `**Depends on:**` line is not the first line under its task heading is refused with the rule, instead
+  of running that task after the one before it while its prompt names another.
+- A run's worker that reports done and then exits with an error is reviewed as done, not counted as a failed attempt.
+- A blocked run's DAG header offers Cancel, so a run stuck on a failed task or Final can be given up from there too.
+- A renamed file's Diff compares it with its old name, instead of drawing the whole file as added, and a comment on its
+  removed lines names the old path. The history graph no longer shows a stash as a branch tip.
+- Enter on a question card's Submit tab sends the answers again: the tab now puts the focus on its Submit button,
+  where before the focus fell off the card when the last answer moved you there and Enter did nothing.
 - In an agent's terminal, a path cut off by an ellipsis (`docs/specs/2026-11-01-c…`, a long command's preview cut at
   the edge) no longer links: it names no file. A path the ellipsis does not touch still links.
 - Blame (`b` or its button) on Code in Preview or Diff switches to Source with the column on, instead of lighting the
@@ -102,7 +125,8 @@ and a picture given to a line that is not big.
   the agent's rail with the Decided tab stays beside the conversation; the way back to Chat reads as a button.
 - A background subagent cut off when its agent's session ended no longer shows as running in the Agent tree forever,
   and no longer keeps its agent from going to sleep: it reads stopped, as the agent was told when it resumed.
-  the agent's rail with the Decided tab stays beside the conversation.
+- Expanding a board that then fits whole drops its ‹ N parts › stepper, and collapsing it brings the stepper back. The
+  parts used to stay as they were when the board opened.
 
 ## 1.10.0 — 2026-11-25
 

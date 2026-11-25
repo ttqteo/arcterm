@@ -19,6 +19,7 @@ import type { AgentsViewModel } from "./agents";
 import { isAppTool } from "./appmodel";
 import { setAppView } from "./appstore";
 import { closeTabLogged } from "./closetab";
+import { openInSplitWhenLive } from "./gridstore";
 import { HOME_NAME, HOME_PICK } from "./launcher";
 import { closeLauncher, type LauncherModel } from "./launcherstore";
 import { dockedTerminalAtom, railCwdsAtom } from "./railstore";
@@ -237,13 +238,14 @@ export function toolContext(model: AgentsViewModel, project?: string): ToolConte
     };
 }
 
-export type OpenToolPlace = "centre" | "panel";
+export type OpenToolPlace = "centre" | "panel" | "split";
 
 export type OpenToolResult = { ok: true; tabId: string } | { ok: false; reason: string };
 
 // Opens a tool as a terminal: a plain shell that types the tool's command line at its first prompt (launch.ts), in the
 // folder toolCwd picks, stamped with the project toolProjectName picks. "centre" takes the Agent surface's focus, as an
-// agent launch does; "panel" keeps the agent focused and docks the terminal under it. A tool whose command was not
+// agent launch does; "panel" keeps the agent focused and docks the terminal under it; "split" gives it a cell of the
+// grid under the agent once it is live (openInSplitWhenLive). A tool whose command was not
 // found is not opened (openToolRefusal): the result carries why, for the caller to show, and nothing is spawned.
 // `folder` stands in for the project's root when it has none of its own: the New dialog's No folder. `home` opens it in
 // Home (No folder), whatever is focused: Home is no registered project, so it is never looked up by its name, which a
@@ -278,6 +280,9 @@ export async function openTool(
         // the panel is under the Agent surface's agent: a tool opened from Setup lands where it can be seen
         globalStore.set(model.surfaceAtom, "agent");
         globalStore.set(dockedTerminalAtom, tabId);
+    } else if (opts.place === "split") {
+        globalStore.set(model.surfaceAtom, "agent");
+        openInSplitWhenLive(model, tabId);
     }
     return { ok: true, tabId };
 }

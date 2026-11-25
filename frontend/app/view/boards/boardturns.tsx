@@ -34,6 +34,8 @@ export interface BoardTurnsProps {
     recent?: number;
     // Send to agent needs a live agent; a board whose agent ended can still be drawn on
     canForward?: boolean;
+    // full mode's line while there is no turn; the cell's, which has an ask box, says how to ask about shapes
+    emptyText?: string;
 }
 
 // a state's word and tone. A forwarded turn has no word of its own: its note ("forwarded · answered in Chat") says it.
@@ -176,7 +178,15 @@ function TurnRow({ turn, now, mode, canForward, agentTitle, ...on }: TurnRowProp
     );
 }
 
-export function BoardTurns({ talk, mode, canForward, onEarlier, recent, ...on }: BoardTurnsProps) {
+export function BoardTurns({
+    talk,
+    mode,
+    canForward,
+    onEarlier,
+    recent,
+    emptyText = "No turns yet.",
+    ...on
+}: BoardTurnsProps) {
     const all = talk?.turns ?? [];
     // answering turns tick: the seconds, and the 45 s that turns one slow
     const now = useNow(all.some((t) => t.state === "answering"));
@@ -184,7 +194,7 @@ export function BoardTurns({ talk, mode, canForward, onEarlier, recent, ...on }:
     if (all.length === 0) {
         return mode === "full" ? (
             <div data-board-turns="full" className="px-[14px] py-[14px] text-[12px] text-muted">
-                No turns yet.
+                {emptyText}
             </div>
         ) : null;
     }

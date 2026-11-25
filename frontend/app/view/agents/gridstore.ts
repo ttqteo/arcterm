@@ -264,17 +264,42 @@ export function canOpenInSplit(model: GridModel, id: string): boolean {
     return !s.ids.includes(id) && s.ids.length < MAX_CELLS;
 }
 
-// "Open in split": the agent becomes a new cell right after the focused one. False when it cannot (it already
+// "Open in split": the agent becomes a new cell split off the focused one, right of it (or below, for `zone`
+// "bottom"; a cell too narrow or too short for that edge splits along the other). False when it cannot (it already
 // has a cell, the grid is full, it is not live, it is another project's); the caller then falls back to plain focus,
 // which for another project's tab shows that project's grid.
-export function openInSplit(model: GridModel, id: string): boolean {
+export function openInSplit(model: GridModel, id: string, zone: "right" | "bottom" = "right"): boolean {
     if (!canOpenInSplit(model, id)) {
         return false;
     }
     const s = currentGrid(model);
     const at = s.focused == null ? 0 : s.ids.indexOf(s.focused);
-    commit(model, addCell(s, id, at, "right"));
+    commit(model, addCell(s, id, at, zone));
     return true;
+}
+
+// A terminal opened "in a split" (the tool picker's Mod+Enter) is launched without focus and has no block yet, so it
+// cannot be a cell; its id waits here until the roster has it live. Session-scoped: one pending at a time, the latest.
+export const pendingSplitAtom = atom<string | null>(null) as PrimitiveAtom<string | null>;
+
+// Ask for `id` to take a cell under the agent in view as soon as it is live (at once when it already is).
+export function openInSplitWhenLive(model: GridModel, id: string): void {
+    globalStore.set(pendingSplitAtom, id);
+    settlePendingSplit(model);
+}
+
+// Run on every roster change (agentsurface.tsx): the pending terminal, once live, gets a cell below the focused one;
+// with no room for it (a full grid, another project's) it takes the centre instead, so it never stays out of sight.
+export function settlePendingSplit(model: GridModel): void {
+    const id = globalStore.get(pendingSplitAtom);
+    if (id == null || !eligibleIds(roster(model)).has(id)) {
+        return;
+    }
+    globalStore.set(pendingSplitAtom, null);
+    if (!openInSplit(model, id, "bottom")) {
+        globalStore.set(model.focusIdAtom, id);
+        showTerminal();
+    }
 }
 
 // A board opened (boardsplitstore.ts's openBoard, once it is open and `beside` is in focus): its cell joins the grid on

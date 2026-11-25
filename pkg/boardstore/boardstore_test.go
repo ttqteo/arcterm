@@ -274,7 +274,7 @@ func TestListTakesTheProjectFromTheTalkWhenNoneIsGiven(t *testing.T) {
 	}
 }
 
-func TestListShapesSkipBoundTextAndDeletedElements(t *testing.T) {
+func TestListShapesSkipBoundTextDeletedElementsAndFrames(t *testing.T) {
 	dir := t.TempDir()
 	info := mustCreate(t, dir, "Shapes", 1)
 	read, err := Read(dir, testProject, info.ID)
@@ -282,21 +282,23 @@ func TestListShapesSkipBoundTextAndDeletedElements(t *testing.T) {
 		t.Fatal(err)
 	}
 	// a labelled box and an arrow, a deleted box, its deleted label, and a free text: bound text is part of its
-	// container, a deleted element is gone
+	// container, a deleted element is gone; a drawing's frame is no shape, live or not
 	data := `{"arc":{"name":"Shapes","createdts":1},"type":"excalidraw","elements":[` +
-		`{"id":"n1","type":"rectangle"},` +
-		`{"id":"n2","type":"text","containerId":"n1","text":"wavesrv"},` +
-		`{"id":"n3","type":"arrow"},` +
+		`{"id":"n1","type":"rectangle","frameId":"n7"},` +
+		`{"id":"n2","type":"text","containerId":"n1","text":"wavesrv","frameId":"n7"},` +
+		`{"id":"n3","type":"arrow","frameId":"n7"},` +
 		`{"id":"n4","type":"rectangle","isDeleted":true},` +
 		`{"id":"n5","type":"text","containerId":"n4","isDeleted":true},` +
 		`{"id":"n6","type":"text","text":"free"},` +
+		`{"id":"n7","type":"frame","name":"Login"},` +
+		`{"id":"n8","type":"frame","name":"Gone","isDeleted":true},` +
 		`{"id":"","type":"rectangle"}]}`
 	if res, err := Save(dir, info.ID, data, read.Rev); err != nil || res.Conflict {
 		t.Fatalf("save: %v %+v", err, res)
 	}
 	list, err := List(dir, testProject, nil)
 	if err != nil || len(list) != 1 || list[0].Shapes != 3 {
-		t.Fatalf("list: %v %+v (want n1, n3 and n6)", err, list)
+		t.Fatalf("list: %v %+v (want n1, n3 and n6, not the frame n7)", err, list)
 	}
 	if again, err := Read(dir, testProject, info.ID); err != nil || again.Info.Shapes != 3 {
 		t.Fatalf("read: %v %+v", err, again.Info)

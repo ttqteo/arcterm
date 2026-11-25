@@ -61,9 +61,10 @@ export const installBoardStubs = (h) =>
             fx.observer = new PerformanceObserver((list) => fx.resources.push(...list.getEntries().map((e) => e.name)));
             fx.observer.observe({ type: "resource" });
         }
+        // a labelled box is one shape and a drawing's frame is not one (the canvas and the wire count the same way)
         const shapeCount = (data) => {
             try {
-                return (JSON.parse(data).elements ?? []).filter((e) => !e.isDeleted && !(e.type === "text" && e.containerId != null)).length;
+                return (JSON.parse(data).elements ?? []).filter((e) => !e.isDeleted && e.type !== "frame" && !(e.type === "text" && e.containerId != null)).length;
             } catch {
                 return 0;
             }
@@ -76,10 +77,12 @@ export const installBoardStubs = (h) =>
             const last = turns.at(-1);
             const drawn = turns.filter((t) => t.state === "answered" && (t.added ?? 0) + (t.changed ?? 0) + (t.removed ?? 0) > 0);
             const drawnts = Math.max(0, ...drawn.map((t) => t.answeredts ?? 0));
+            const shapes = shapeCount(fx.files[b.id].data);
             return {
                 ...b,
                 turns: turns.length,
-                shapes: shapeCount(fx.files[b.id].data),
+                // the wire omits a count of 0 (omitempty): an empty board's row has no shapes at all
+                ...(shapes > 0 ? { shapes } : {}),
                 drawnts: drawnts || undefined,
                 activets: Math.max(b.createdts, ...turns.map((t) => Math.max(t.ts, t.answeredts ?? 0))),
                 state: last?.state === "answering" || last?.state === "waiting" ? "answering" : last?.state === "failed" ? "failed" : undefined,

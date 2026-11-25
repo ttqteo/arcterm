@@ -286,7 +286,9 @@ func (ws *WshServer) BoardAskCommand(ctx context.Context, data wshrpc.CommandBoa
 	if err != nil {
 		return err
 	}
-	_, err = boardDrawer.Ask(b, wshrpc.BoardTurn{Kind: boarddrawer.KindAsk, Question: question, On: data.On, SelectedIds: data.SelectedIds})
+	_, err = boardDrawer.Ask(b, wshrpc.BoardTurn{
+		Kind: boarddrawer.KindAsk, Question: question, On: data.On, SelectedIds: data.SelectedIds, DrawingId: data.DrawingId,
+	})
 	return err
 }
 
@@ -325,7 +327,9 @@ func (ws *WshServer) BoardRerouteCommand(ctx context.Context, data wshrpc.Comman
 		if b, err = boardToRun(ctx, data.Project, data.BoardId, false); err != nil {
 			return err
 		}
-		_, err = boardDrawer.Ask(b, wshrpc.BoardTurn{Kind: boarddrawer.KindAsk, Question: t.Question, On: t.On, SelectedIds: t.SelectedIds, From: t.ID})
+		_, err = boardDrawer.Ask(b, wshrpc.BoardTurn{
+			Kind: boarddrawer.KindAsk, Question: t.Question, On: t.On, SelectedIds: t.SelectedIds, DrawingId: t.DrawingId, From: t.ID,
+		})
 		return err
 	case t.State == boarddrawer.StateAnswered:
 		return rerouteToAgent(b, t)
@@ -338,7 +342,8 @@ func rerouteToAgent(b boarddrawer.Board, t wshrpc.BoardTurn) error {
 	now := time.Now().UnixMilli()
 	sent := wshrpc.BoardTurn{
 		ID: uuid.NewString(), Ts: now, Kind: boarddrawer.KindAsk, Question: t.Question, On: t.On, SelectedIds: t.SelectedIds,
-		State: boarddrawer.StateForwarded, AnsweredTs: now, From: t.ID, Forward: &wshrpc.BoardForward{State: boarddrawer.ForwardWaiting},
+		DrawingId: t.DrawingId, State: boarddrawer.StateForwarded, AnsweredTs: now, From: t.ID,
+		Forward: &wshrpc.BoardForward{State: boarddrawer.ForwardWaiting},
 	}
 	_, err := boardstore.UpdateTalk(boardstore.ProjectDir(b.Project), b.BoardId, func(talk *wshrpc.BoardTalk) error {
 		talk.Turns = append(talk.Turns, sent)

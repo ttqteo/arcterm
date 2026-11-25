@@ -6,8 +6,6 @@ package orchestrate
 import (
 	"context"
 	"errors"
-	"fmt"
-	"os"
 	"strings"
 	"testing"
 	"time"
@@ -73,29 +71,6 @@ func suspectWakes(ctx context.Context, f *fakeLead) int {
 	}
 	f.settle(ctx)
 	return n
-}
-
-// appendPiFailures appends n identical failures of command to the child's own transcript.
-func appendPiFailures(t *testing.T, ctx context.Context, g *waveobj.TaskGroup, command, idPrefix string, n int) {
-	t.Helper()
-	run, err := wstore.GetRun(ctx, g.ChannelId, g.Tasks[0].RunID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	path, _, _ := transcriptForRun(run)
-	if path == "" {
-		t.Fatal("the child has no transcript")
-	}
-	file, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0o644)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer file.Close()
-	for i := 0; i < n; i++ {
-		id := fmt.Sprint(idPrefix, i)
-		fmt.Fprintln(file, piCall(id, command))
-		fmt.Fprintln(file, piResult(id, command+": 1 failed", true))
-	}
 }
 
 // A 20+ min suite with no edits crosses the threshold while busy: it wakes the lead once, and the reason says what
@@ -216,48 +191,6 @@ func TestSuspectProbeErrorSkipsTheCheck(t *testing.T) {
 	}
 }
 
-func TestSuspectRepeatedFailureWakesOncePerKey(t *testing.T) {
-	ctx, g, f, fp := seedSuspectChild(t, "suspect-repeat", 0)
-	appendPiFailures(t, ctx, g, "go test ./pkg/x", "a", 3)
-	task := tick(t, ctx, g)
-	if !strings.Contains(task.SuspectReason, "`go test ./pkg/x` failed the same way 3x") || len(task.FlaggedFailures) != 1 {
-		t.Fatalf("a repeated failure flags, got reason %q keys %d", task.SuspectReason, len(task.FlaggedFailures))
-	}
-	if n := suspectWakes(ctx, f); n != 1 {
-		t.Fatalf("want one stuck wake, got %q", f.sends)
-	}
-	f.sends = nil
-	*fp = "fp-2"
-	tick(t, ctx, g)
-	if n := suspectWakes(ctx, f); n != 0 {
-		t.Fatalf("failures that already woke the lead, still in the tail, wake nothing, got %q", f.sends)
-	}
-	appendPiFailures(t, ctx, g, "go vet ./pkg/x", "b", 3)
-	task = tick(t, ctx, g)
-	if n := suspectWakes(ctx, f); n != 1 || !strings.Contains(f.sends[0], "go vet ./pkg/x") {
-		t.Fatalf("a new failure key wakes again, naming it, got %q", f.sends)
-	}
-	if len(task.FlaggedFailures) != 2 {
-		t.Fatalf("both keys are recorded, got %d", len(task.FlaggedFailures))
-	}
-}
-
-// A worker that edits and then fails the same way each time is caught: the scan runs whether or not the tree changed.
-func TestSuspectEditsBetweenIdenticalFailures(t *testing.T) {
-	ctx, g, f, fp := seedSuspectChild(t, "suspect-edits", 0)
-	for i := 1; i <= 3; i++ {
-		*fp = fmt.Sprint("fp-edit-", i)
-		appendPiFailures(t, ctx, g, "go test ./pkg/x", fmt.Sprint("e", i, "-"), 1)
-		task := tick(t, ctx, g)
-		if flagged := task.SuspectTs != 0; flagged != (i == 3) {
-			t.Fatalf("tick %d: flagged %v, reason %q", i, flagged, task.SuspectReason)
-		}
-	}
-	if n := suspectWakes(ctx, f); n != 1 {
-		t.Fatalf("want one stuck wake, got %q", f.sends)
-	}
-}
-
 // A runtime liveness cannot read still gets the stagnation check; its activity is the busy CPU sample alone.
 func TestSuspectUntrackedRuntimeIsCheckedForStagnation(t *testing.T) {
 	ctx, g, f, _ := seedSuspectChild(t, "suspect-untracked", 21*time.Minute)
@@ -287,14 +220,14 @@ func TestSuspectUntrackedRuntimeIsCheckedForStagnation(t *testing.T) {
 
 func TestSuspectRetryStartsClean(t *testing.T) {
 	g := &waveobj.TaskGroup{Tasks: []waveobj.TaskNode{{
-		ID: "t-0", ProgressHash: "fp", ProgressTs: 1, ProgressCheckTs: 9, SuspectTs: 9, SuspectReason: "x", FlaggedFailures: []string{"k"},
+		ID: "t-0", ProgressHash: "fp", ProgressTs: 1, ProgressCheckTs: 9, SuspectTs: 9, SuspectReason: "x",
 	}}}
 	before := time.Now().UnixMilli()
 	if err := MarkRunning(g, "t-0", "run-2"); err != nil {
 		t.Fatal(err)
 	}
 	n := g.Tasks[0]
-	if n.ProgressHash != "" || n.ProgressCheckTs != 0 || n.SuspectTs != 0 || n.SuspectReason != "" || n.FlaggedFailures != nil {
+	if n.ProgressHash != "" || n.ProgressCheckTs != 0 || n.SuspectTs != 0 || n.SuspectReason != "" {
 		t.Fatalf("a new attempt carries nothing from the last, got %+v", n)
 	}
 	if n.ProgressTs < before {

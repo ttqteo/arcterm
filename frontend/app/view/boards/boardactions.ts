@@ -14,8 +14,14 @@ export interface BoardRef {
     boardId: string;
 }
 
-// your line to the drawer, with the shapes selected on the canvas; it is drawn or forwarded to the agent, wavesrv decides
-export function askBoard(board: BoardRef, question: string, selection: BoardSelection | null): Promise<void> {
+// your line to the drawer, with the shapes selected on the canvas and the drawing the line is about (the one a selection
+// names, else the one in view; null with no drawing); it is drawn or forwarded to the agent, wavesrv decides
+export function askBoard(
+    board: BoardRef,
+    question: string,
+    selection: BoardSelection | null,
+    drawingId: string | null
+): Promise<void> {
     const ids = selection?.ids ?? [];
     return RpcApi.BoardAskCommand(TabRpcClient, {
         project: board.project,
@@ -23,6 +29,7 @@ export function askBoard(board: BoardRef, question: string, selection: BoardSele
         question,
         on: selection?.label ?? undefined,
         selectedids: ids.length > 0 ? ids : undefined,
+        drawingid: drawingId ?? undefined,
     });
 }
 

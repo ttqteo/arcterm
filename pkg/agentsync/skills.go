@@ -655,7 +655,8 @@ func reconcileSkillsDir(p Paths, dir, runtime string, names []string, dryRun boo
 		switch skillStateFor(dir, byName, name, want) {
 		case stateUnmanaged:
 			actions = append(actions, Action{Kind: ActionSkillUnmanaged, Runtime: runtime, Path: target,
-				Detail: "the user's own directory; adopt it to bring it into the vault"})
+				// a plain adopt leaves an own copy of a vault skill where it is: only Setup's Replace swaps it
+				Detail: "the user's own copy of a vault skill, left alone; Setup → Skills can replace it with the vault copy"})
 		case stateLinked:
 			actions = append(actions, Action{Kind: ActionSkillLinked, Runtime: runtime, Path: target,
 				Detail: "a link to another folder; arcterm never writes through one"})

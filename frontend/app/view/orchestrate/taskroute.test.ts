@@ -484,13 +484,14 @@ describe("dagStatusPill", () => {
 });
 
 describe("dagCancellable", () => {
-    it("holds for every status the run is still live in, a paused one included", () => {
-        for (const status of ["running", "awaiting-review", "awaiting-plan", "plan-review", "finalizing", "paused"]) {
+    it("holds for every status the run is still live in, a paused and a blocked one included", () => {
+        const live = ["running", "awaiting-review", "awaiting-plan", "plan-review", "finalizing", "paused", "blocked"];
+        for (const status of live) {
             expect(dagCancellable(status)).toBe(true);
         }
     });
-    it("does not hold for a dag that is over or stuck on the human", () => {
-        for (const status of ["done", "cancelled", "blocked", ""]) {
+    it("does not hold for a dag that is over", () => {
+        for (const status of ["done", "cancelled", ""]) {
             expect(dagCancellable(status)).toBe(false);
         }
     });

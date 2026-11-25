@@ -38,6 +38,10 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
 
 ## 2026-11-25
 
+- [ ] (arcterm) **Open a tool in a split.** With one agent in view, press `Ctrl+Shift+O`, pick a tool and press
+  `Ctrl+Enter`: the picker closes and the tool appears as a cell under the agent (agent top, tool bottom), focused,
+  the cell growing in with the grid's own motion rather than snapping; the footer reads `Ctrl Enter Open in a split`
+  and wraps instead of overflowing in a narrow window. With 4 cells already, the tool opens in the centre instead.
 - [ ] (arcterm) Library pairs: take the What's new shot of a pair nested in Conversations and promote the Added line to
   big. In the dev app seed an ended pair under a session, open Library → Conversations, then
   `node scripts/whatsnew-shot.mjs library-pairs --selector "[data-agent-history]"` and move the Added line in
@@ -59,6 +63,36 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
   chevron turning. Press a chip: the chips crossfade to `You answered <chip>` with the box keeping its height. With
   reduced motion on, all of it lands at once. (`task verify:ui -- chat-pair-blocks` checks the end states.)
 
+- [ ] (arcterm) Kael sync 11-25: **the What's new picture for drawings is committed.** The `boards-split` step 18b
+  writes `public/whatsnew/<next minor>-board-drawings.webp` on a Final run (this run's agents ran no CDP, so the file
+  is not in the tree yet). After the Final run: commit that picture, and in `CHANGELOG.md` replace the
+  `<!-- shot: none -->` on the big "each drawer answer on a board is its own titled drawing" line with
+  `<!-- shot: <that file name> -->`; `npx vitest run frontend/app/cockpit/whatsnew.test.ts` must pass. Plan:
+  `docs/superpowers/plans/2026-11-25-kael-sync-boards-drawings.md`.
+- [ ] (arcterm) Kael sync 11-25: **a new drawing eases into view in the narrow board cell, and reads smooth.** The
+  `boards-split` step 18b samples the scroll once per frame and checks it moved over several frames and ended with the
+  drawing's frame inside the canvas, but nobody has watched it. Open a board beside Chat (not expanded) and have its
+  agent run `wsh board draw` (or ask the drawer for a drawing) → the view glides to the new drawing as it lands: no
+  jump, no stutter, no blur left on the shapes once it stops, and the new chip in the row above enters as it does. With
+  the view on an earlier drawing instead → the view stays still and the new chip reads "new". Pick a chip → the same
+  glide. With reduced motion on in the OS → the view jumps to the drawing instead of gliding.
+- [ ] (arcterm) Kael sync 11-25: **the other moves of the view between drawings.** None of these has been watched (the
+  `boards-split` steps 18c and 18e check where the view ends, 8b checks the part's own moves). On a board whose view is
+  on a drawing: an edit that grows that drawing (ask for a change to it, in Edit) → the view glides out to the grown
+  drawing and does not jump. Open an "Earlier drawings" that reads by parts, read a part, then press Esc or the header's
+  "Whole drawing" → the view glides to the whole drawing in view (not to the whole board). Click one chip and, before it
+  finishes, another → the view turns toward the second from where it is, with no jump back to the first. Land a drawing
+  while the view is easing to a pick → the same.
+- [ ] (arcterm) Kael sync 11-25: **the drawings row's current marker slides, and a new chip enters.** Open a board
+  with two or more drawings and click chips one after another → the grey marker under the current chip slides from one
+  chip to the next (no jump, no second marker, none left behind); a drawing that lands while the row is visible → its
+  chip fades in at the row's end rather than popping. Open the same board in Library and beside Chat at once → each
+  strip's marker slides in its own strip only. Scroll sideways in a row with many chips → the current chip stays in view.
+- [ ] (arcterm) Kael sync 11-25: **Show in view mode outlines the shapes without handles.** Open a board (view mode,
+  no drawing toolbar) and press Show on a drawn turn → the turn's shapes get a selection outline, with no resize or
+  rotate handles and no style panel beside the canvas, and the ask box still says "Press Edit to ask about shapes". Press
+  Edit → the toolbar comes back, the outline gets its handles only when you select the shapes yourself, and Edit again
+  clears the selection. (`boards-split` 17b checks the selection and that no panel is drawn, not how the outline looks.)
 - [ ] (arcterm) Kael sync 11-25: a real agent's quick run nests under it in the Agent tree (the CDP scenario
   `run-nesting` draws a dev-mock roster with seeded runs, and this run's agent ran no CDP, so neither the live nesting
   nor the row's move has been watched). In an agent's tab have it run `wsh runs start --project <dir> "<goal>"` → once
