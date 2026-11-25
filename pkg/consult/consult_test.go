@@ -315,6 +315,38 @@ func TestClaudeArgsAddDirs(t *testing.T) {
 	}
 }
 
+// A call's own extra flags come after --add-dir and before --tools, once; a call with none gets the list it always had.
+func TestClaudeArgsExtraArgs(t *testing.T) {
+	base, _ := SpecFor("claude")
+	extra := []string{"--setting-sources=", "--no-session-persistence", "--disable-slash-commands"}
+	got := ClaudeArgs(CallOpts{Model: "sonnet", Tools: []string{"Read"}, AddDirs: []string{"/x"}, ExtraArgs: extra})
+	want := append(append([]string{}, base.BaseArgs...), "--model", "sonnet", "--add-dir", "/x",
+		"--setting-sources=", "--no-session-persistence", "--disable-slash-commands",
+		"--tools", "Read", "--strict-mcp-config")
+	if !slices.Equal(got, want) {
+		t.Errorf("got %v, want %v", got, want)
+	}
+	for _, e := range extra {
+		n := 0
+		for _, a := range got {
+			if a == e {
+				n++
+			}
+		}
+		if n != 1 {
+			t.Errorf("%q appears %d times in %v, want once", e, n, got)
+		}
+	}
+	// with none, the list is the one every other caller gets
+	for _, ea := range [][]string{nil, {}} {
+		got := ClaudeArgs(CallOpts{Model: "sonnet", Tools: []string{"Read"}, ExtraArgs: ea})
+		want := append(append([]string{}, base.BaseArgs...), "--model", "sonnet", "--tools", "Read", "--strict-mcp-config")
+		if !slices.Equal(got, want) {
+			t.Errorf("ExtraArgs %#v: got %v, want %v", ea, got, want)
+		}
+	}
+}
+
 func TestOpencodeParseLine_extractsText(t *testing.T) {
 	// real `opencode run --format json` events (captured 2026-08-07)
 	skip := []string{
