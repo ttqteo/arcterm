@@ -9,6 +9,7 @@
 import { formatTokens, projectOf, sortAgents, type AgentVM } from "./agentsviewmodel";
 import { groupRunAgents, runningAgents, UNGROUPED_PROJECT } from "./agenttreemodel";
 import { normProjectPath } from "./channelderive";
+import { placeUnderSessions } from "./historyplace";
 import { prettyModel } from "./modellabel";
 import { NO_LINEAGE, roleRunId, type Lineage, type RunInfo } from "./runlineage";
 import { runtimeMeta } from "./runtimemeta";
@@ -321,10 +322,6 @@ function runItem(r: Run): HistoryItem {
     };
 }
 
-// a transcript path as the two sides spell it: a run records the one its origin session was handed, a session the one
-// the archive scanned
-const normPath = (p: string) => p.replace(/\\/g, "/").toLowerCase();
-
 // what the column draws, top to bottom: a session, a run or a council; a nested one sits under its session (parent
 // is that session's row key), the rest are top-level
 export type HistoryRow =
@@ -351,42 +348,26 @@ export function historyRows(
     q: string
 ): HistoryRow[] {
     const listed = projectSessions(sessions, path, now, "");
-    const byTranscript = new Map<string, LiveSession>();
-    const byId = new Map<string, LiveSession>();
-    for (const s of listed) {
-        if (s.transcriptpath) {
-            byTranscript.set(normPath(s.transcriptpath), s);
-        }
-        byId.set(s.id, s);
-    }
-    const children = new Map<string, HistoryItem[]>();
-    const loose: HistoryItem[] = [];
-    const place = (item: HistoryItem, owner: LiveSession | undefined, named: boolean) => {
-        if (owner == null) {
-            loose.push(named ? item : { ...item, line: COCKPIT_PREFIX + item.line });
-            return;
-        }
-        const key = sessionKey(owner);
-        children.set(key, [...(children.get(key) ?? []), item]);
-    };
     const inWindow = (i: HistoryItem) => i.since >= now - HISTORY_WINDOW_MS;
+    const placing: { item: HistoryItem; sessionId?: string; transcript?: string }[] = [];
     for (const c of councils ?? []) {
         const item = councilItem(c);
         if (inWindow(item)) {
-            place(item, c.sessionid ? byId.get(c.sessionid) : undefined, !!c.sessionid);
+            placing.push({ item, sessionId: c.sessionid });
         }
     }
     for (const r of runs ?? []) {
         const item = runItem(r);
         if (!isChildRun(r) && inWindow(item)) {
-            const origin = r.origintranscript ? normPath(r.origintranscript) : "";
-            place(item, origin !== "" ? byTranscript.get(origin) : undefined, origin !== "");
+            placing.push({ item, transcript: r.origintranscript });
         }
     }
+    const { owned, loose: unplaced } = placeUnderSessions(listed, placing);
+    const loose = unplaced.map(({ item, named }) => (named ? item : { ...item, line: COCKPIT_PREFIX + item.line }));
     const top: HistoryRow[] = [];
     for (const s of listed) {
         const key = sessionKey(s);
-        const mine = (children.get(key) ?? []).sort((a, b) => b.ts - a.ts);
+        const mine = (owned.get(key)?.items ?? []).sort((a, b) => b.ts - a.ts);
         if (hasText(s.task, q) || mine.some((i) => hasText(i.title, q))) {
             top.push({ kind: "session", key, session: s, ts: s.lastactivets, nested: false });
             for (const item of mine) {
