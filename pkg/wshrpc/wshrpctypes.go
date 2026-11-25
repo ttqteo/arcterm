@@ -60,6 +60,7 @@ type WshRpcInterface interface {
 	CouncilCommands
 	SecretCommands
 	ClaudeAccountCommands
+	GitAccountCommands
 	AskCommands
 	AgentPermCommands
 	ClaudeCmdsCommands
