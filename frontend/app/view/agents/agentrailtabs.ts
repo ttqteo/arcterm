@@ -115,6 +115,9 @@ export interface PanelState {
     files: FileTab[];
     active: number;
     summary?: boolean; // the Summary tab is open
+    // the tab was picked by what the agent has (contextPanel), not by the person: it follows that until the person
+    // touches the panel, and every store write clears it
+    auto?: boolean;
 }
 
 export const FILE_TABS_MAX = 5;
@@ -129,9 +132,10 @@ export const CHAT_MIN_PX = 420;
 export const TREE_STRIP_PX = 20;
 
 export function panelFor(panels: Record<string, PanelState>, agentId: string, defaultTab: RailTab): PanelState {
-    // File, Files, Transcript, Council, Brainstorm, Initiative and Decided are never defaults: an unseen agent has no file
-    // open, Files needs a cwd it may not have, Transcript a transcript, Council a council, Brainstorm a brainstorm,
-    // Initiative an initiative and Decided a pair
+    // File, Files, Transcript, Council, Brainstorm, Initiative and Decided are never the stored default: an unseen agent
+    // has no file open, Files needs a cwd it may not have, Transcript a transcript, Council a council, Brainstorm a
+    // brainstorm, Initiative an initiative and Decided a pair. An unseen agent that has a brainstorm or an initiative
+    // opens on it through contextPanel
     return (
         panels[agentId] ?? {
             tab:
@@ -150,6 +154,31 @@ export function panelFor(panels: Record<string, PanelState>, agentId: string, de
             active: 0,
         }
     );
+}
+
+// the tab what the agent has asks for: Brainstorm while a brainstorm is attached (the work going on now), else
+// Initiative while it is linked, else none
+function contextTab(has: RailHas): RailTab | null {
+    if (has.brainstorm) {
+        return "brainstorm";
+    }
+    return has.initiative ? "initiative" : null;
+}
+
+// The panel to show and store when what the agent has picks its tab: for a panel the person has not set (none stored,
+// or one this rule stored), Brainstorm or Initiative once the agent has one. null when nothing changes: a panel the
+// person set, an agent with neither, or the panel already there. A panel this rule set keeps its tab when the thing goes
+// (shownTab draws Overview), like a stored tab does.
+export function contextPanel(stored: PanelState | undefined, defaultTab: RailTab, has: RailHas): PanelState | null {
+    if (stored != null && !stored.auto) {
+        return null;
+    }
+    const want = contextTab(has);
+    const base = stored ?? panelFor({}, "", defaultTab);
+    if (want == null || base.tab === want) {
+        return null;
+    }
+    return { ...base, tab: want, prevTab: base.tab, auto: true };
 }
 
 // the file tab File shows, or null while no file is open

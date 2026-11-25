@@ -18,8 +18,11 @@ appears only while the agent has the thing it shows (Council, `railcouncil.ts`).
    - **Initiative** (the ◇ diamond the header chip already uses), while the agent is linked (`agent.effortId != null`).
    They are two tabs, not one tab with two parts: the band only ever had one part open at a time.
 3. **Strip order:** Overview, Files, Changes, Transcript, Council, Brainstorm, Initiative, Summary, then file tabs.
-   Neither new tab is ever a panel's default (`panelFor`); a stored Brainstorm or Initiative tab whose thing is gone falls
+   Neither new tab is ever the stored default (`panelFor`); a stored Brainstorm or Initiative tab whose thing is gone falls
    back to Overview while the stored tab stays (`shownTab`), as Council does.
+   Changed 2026-11-25: an agent whose tab the person has not set opens on Brainstorm while a brainstorm is attached, else
+   on Initiative while it is linked (`contextPanel`), and follows that (an initiative agent that starts a brainstorm moves
+   to Brainstorm) until the person touches the panel. The person's ask: in a brainstorm the rail stayed on Overview.
 4. **Plan to review moves to the Initiative tab.** Overview loses its `plan` section (`agentrailsections.ts`). The
    header's `N to review` chip (`PlanReviewChip`) opens the Initiative tab with Plan to review unfolded, as the
    popover's and the band's "Review on the rail" links did. The rail's section request (`railsection.ts`) stays: the

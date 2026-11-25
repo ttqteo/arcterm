@@ -14,6 +14,7 @@ import {
     backFromInitiative,
     closeFile,
     closeSummary,
+    contextPanel,
     followFile,
     goBack,
     goForward,
@@ -70,10 +71,23 @@ export const railWideDragAtom = atom<number | null>(null) as PrimitiveAtom<numbe
 
 export const railPanelsAtom = atom<Record<string, PanelState>>({}) as PrimitiveAtom<Record<string, PanelState>>;
 
+// every write here is the person's (a tab, a file, a key), so it ends a tab contextPanel picked: from then on the
+// panel stays where they put it
 function update(agentId: string, fn: (p: PanelState) => PanelState): void {
     const panels = globalStore.get(railPanelsAtom);
-    const next = fn(panelFor(panels, agentId, globalStore.get(railTabDefaultAtom)));
+    const { auto: _auto, ...next } = fn(panelFor(panels, agentId, globalStore.get(railTabDefaultAtom)));
     globalStore.set(railPanelsAtom, { ...panels, [agentId]: next });
+}
+
+// Stores the panel contextPanel picked for an agent the person has not set a tab on (the rail draws it at once; this
+// keeps the store, which the keys and the other writes read, the same). Checked again here: the person may have set
+// the panel since the render that asked.
+export function applyContextPanel(agentId: string, has: RailHas): void {
+    const panels = globalStore.get(railPanelsAtom);
+    const next = contextPanel(panels[agentId], globalStore.get(railTabDefaultAtom), has);
+    if (next != null) {
+        globalStore.set(railPanelsAtom, { ...panels, [agentId]: next });
+    }
 }
 
 export function selectRailTab(agentId: string, tab: RailTab, has: RailHas): void {
