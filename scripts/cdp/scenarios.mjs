@@ -57712,9 +57712,9 @@ const settingsVaultSync = {
     },
 };
 
-// --- settings-pages: nine pages of cards, the key pill on hover, a changed row end to end ----------------
+// --- settings-pages: ten pages of cards, the key pill on hover, a changed row end to end ----------------
 // docs/superpowers/specs/2026-10-08-settings-redesign-design.md, regrouped by docs/superpowers/specs/2026-10-18-settings-reorg-design.md.
-// One step per page (the index lists the nine in order, About alone at the foot; the page's card ids in order; a shot),
+// One step per page (the index lists the ten in order, About alone at the foot; the page's card ids in order; a shot),
 // then one detail step per page that draws something the card ids do not show
 // (the Startup surface menu, the theme chips and fonts in their own face, the Claude account and flag tabs, the Runs &
 // limits rows and the Heavy jobs segments, the Folding and Office rows, the runtime
@@ -57725,7 +57725,8 @@ const settingsVaultSync = {
 // app share the vault's settings.json, and a write can lose a rename race with the other's.
 const SP_PAGES = [
     { id: "general", cards: ["startup", "menubar", "notifications"] },
-    { id: "appearance", cards: ["theme", "colors", "fonts", "agentrows", "chat"] },
+    { id: "remote", cards: ["remotemode", "remotesetup"] },
+    { id: "appearance", cards: ["theme", "colors", "fonts", "agentrows", "agentheader", "chat"] },
     { id: "agents", cards: ["claudeaccount", "gitaccounts", "sleep", "flags"] },
     { id: "runs", cards: ["runs", "whilework", "dume", "tokenburn"] },
     { id: "terminal", cards: ["text", "cursor", "behavior"] },
@@ -57858,7 +57859,7 @@ const settingsPages = {
         })();
         await h.shot("cdp-shots/settings-pages-index.png");
         rec(
-            "index: one flat list of nine pages in order, About alone at the foot under a 1px rule and a 10px gap",
+            "index: one flat list of ten pages in order, About alone at the foot under a 1px rule and a 10px gap",
             JSON.stringify(index) === JSON.stringify(SP_PAGES.map((p) => p.id)) &&
                 foot != null &&
                 JSON.stringify(foot.sections) === JSON.stringify(["about"]) &&
@@ -57920,7 +57921,7 @@ const settingsPages = {
             `menu=${JSON.stringify(menu)} closed=${menuGone}`
         );
 
-        // appearance-detail: ten theme chips (themes.ts) with one selected; each font option drawn in its own face
+        // appearance-detail: eleven theme chips (themes.ts) with one selected; each font option drawn in its own face
         await spOpen(h, "appearance");
         await polishWaitFor(h, `${spRow("fonts.mono")} != null`, 5000);
         const chips = await h.ev(`(() => {
@@ -57933,8 +57934,8 @@ const settingsPages = {
         await polishNap(200);
         await h.shot("cdp-shots/settings-pages-appearance-detail.png");
         rec(
-            "appearance-detail: ten theme chips, one selected; Fonts options each in their own face",
-            chips.count === 10 && chips.selected === 1 && spOwnFaces(sansFaces) && spOwnFaces(monoFaces),
+            "appearance-detail: eleven theme chips, one selected; Fonts options each in their own face",
+            chips.count === 11 && chips.selected === 1 && spOwnFaces(sansFaces) && spOwnFaces(monoFaces),
             `chips=${JSON.stringify(chips)} sans=${JSON.stringify(sansFaces)} mono=${JSON.stringify(monoFaces)}`
         );
 
