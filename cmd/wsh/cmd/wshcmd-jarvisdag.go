@@ -170,9 +170,10 @@ func submitOutcomeUnknown(err error) bool {
 }
 
 // dagSubmitLanded compares the run's dag before and after a submit whose reply never came, by what that submit
-// changes: a first submit creates the dag, a resubmit after a failed plan review opens the next review round, and a
-// fix round adds tasks. known is false when the dag already held a plan the submit could not replace, which a resend
-// either matches (and changes nothing) or conflicts with. state says what the dag shows.
+// changes: a first submit creates the dag, a resubmit after a failed plan review opens the next review round, or on
+// the fast track dispatches as the lead's amendment, and a fix round adds tasks. known is false when the dag already
+// held a plan the submit could not replace, which a resend either matches (and changes nothing) or conflicts with.
+// state says what the dag shows.
 func dagSubmitLanded(before, after *waveobj.TaskGroup, round bool) (landed, known bool, state string) {
 	switch {
 	case after == nil:
@@ -182,7 +183,7 @@ func dagSubmitLanded(before, after *waveobj.TaskGroup, round bool) (landed, know
 	case round:
 		return len(after.Tasks) > len(before.Tasks), true, fmt.Sprintf("the dag still has its %d tasks", len(before.Tasks))
 	case orchestrate.PlanReviewReplaceable(before):
-		if after.PlanReview != nil && after.PlanReview.Round > before.PlanReview.Round {
+		if apr := after.PlanReview; apr != nil && (apr.Round > before.PlanReview.Round || apr.Amended) {
 			return true, true, ""
 		}
 		return false, true, fmt.Sprintf("its plan review is still round %d, failed", before.PlanReview.Round)
@@ -383,11 +384,18 @@ func planReviewLine(pr *waveobj.PlanReviewStage, now int64) string {
 		return head + "  the reviewers are at work; the round's verdict wakes the lead"
 	case orchestrate.PlanReviewState_Failed:
 		next := "waiting on the lead's revised submit"
-		if pr.Round >= orchestrate.MaxPlanReviewRounds {
+		switch {
+		case orchestrate.PlanReviewRoundLight(pr) && slices.ContainsFunc(pr.Reviewers, func(r waveobj.PlanReviewer) bool { return r.State == orchestrate.PlanReviewerState_Failed }):
+			// a lost light round has no failed reviewer: its resubmit opens a fresh light review, so it keeps the default
+			next = "the light review; waiting on the lead's amended submit, which dispatches"
+		case orchestrate.PlanReviewLastRound(pr):
 			next = "the last round; waiting on the lead to put it to the human"
 		}
 		return head + "  " + next + ": " + compactText(flatText(pr.Findings), planReviewFindingsRunes)
 	case orchestrate.PlanReviewState_Accepted:
+		if pr.Amended {
+			return head + "  the light review failed, then the lead amended the plan and it dispatched"
+		}
 		// on a spec's run the lead may accept on its own call (jarvis.SpecPastPlanReview); the run's events hold the reason
 		return head + "  failed, then accepted by the lead"
 	}

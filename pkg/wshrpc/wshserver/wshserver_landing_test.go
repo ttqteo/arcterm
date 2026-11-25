@@ -377,7 +377,8 @@ func TestDagSubmitPastTheLastReviewRoundCommitsNothing(t *testing.T) {
 				spec = filepath.Join(projectDir, "docs", "specs", "coupons.md")
 				write(spec, "# spec\n")
 			}
-			write(plan, "# Coupons\n\n### Task 1: input\n")
+			// past the fast track, whose light rounds do not count toward the limit
+			write(plan, planOfTasks(jarvis.FastTrackMaxTasks+1))
 			submit := func() error {
 				_, err := (&WshServer{}).DagSubmitCommand(ctx, wshrpc.CommandDagSubmitData{ChannelId: ch.OID, RunId: run.ID, PlanPath: plan, SpecPath: spec})
 				return err
@@ -398,14 +399,14 @@ func TestDagSubmitPastTheLastReviewRoundCommitsNothing(t *testing.T) {
 			branch := "wave/" + run.ID
 			tip := execGit("rev-parse", branch)
 
-			write(plan, "# Coupons\n\n### Task 1: input\n\n### Task 2: output\n")
+			write(plan, planOfTasks(jarvis.FastTrackMaxTasks+2))
 			if err := submit(); err == nil || !strings.Contains(err.Error(), "the most it gets") {
 				t.Fatalf("resubmit err = %v, want the round limit", err)
 			}
 			if got := execGit("rev-parse", branch); got != tip {
 				t.Fatalf("the refused revision committed on %s: %s -> %s", branch, tip, got)
 			}
-			if g, err := wstore.GetDag(ctx, stored.DagORef); err != nil || len(g.Tasks) != 1 {
+			if g, err := wstore.GetDag(ctx, stored.DagORef); err != nil || len(g.Tasks) != jarvis.FastTrackMaxTasks+1 {
 				t.Fatalf("the refused revision must leave the stored plan alone, got %v, %v", g, err)
 			}
 		})
