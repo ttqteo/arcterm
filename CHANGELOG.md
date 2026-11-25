@@ -58,13 +58,12 @@ and a picture given to a line that is not big.
 - Councils moved into Conversations: the Councils tab is gone, `Mod+G o` opens Conversations with the Council chip on,
   and a council nests under the session that started it.
 - Library's tabs are plain labels with a sliding underline; the 1–3 keys still switch them, named in each tab's tooltip
+  rather than beside its label.
 - In Chat, a pair's list and a judge's marks show as cards instead of code: the newest list with its answer chips,
   an earlier one folded to a row.
 - A fast-track run says so: a `fast track` chip on the run sheet, the same words on `wsh runs show` and Chat's run card.
   The plan review rows read Light review (and `amended by the lead` when the lead's revised plan went ahead), tasks have
   no Reviewing state, and the final stage has an End review step (from the kaeltran16 fork).
-- Library's tabs are plain labels with a sliding underline; the 1–4 keys still switch them, named in each tab's tooltip
-  rather than beside its label.
 - An agent in a brainstorm opens its panel on the Brainstorm tab, and one linked to an initiative on the Initiative tab,
   instead of Overview; once you pick a tab, the panel stays on yours.
 - The green server mark beside an agent or a project lists every port its servers listen on, not two and a `+N`.
@@ -95,7 +94,6 @@ and a picture given to a line that is not big.
   the agent's rail with the Decided tab stays beside the conversation; the way back to Chat reads as a button.
 - A background subagent cut off when its agent's session ended no longer shows as running in the Agent tree forever,
   and no longer keeps its agent from going to sleep: it reads stopped, as the agent was told when it resumed.
-  the agent's rail with the Decided tab stays beside the conversation.
 - Expanding a board that then fits whole drops its ‹ N parts › stepper, and collapsing it brings the stepper back. The
   parts used to stay as they were when the board opened.
 
