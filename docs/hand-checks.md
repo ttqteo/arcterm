@@ -23,6 +23,12 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
 
 ## 2026-11-25
 
+- [ ] (arcterm) **Chat's pair cards move as they should.** In a live pair, open the working agent's Chat while it writes
+  a reply that ends with its ```` ```arc-pair ```` list: no code box shows while the fence is open, and the Pair list card
+  enters on the spring once it closes. Press Agreed and an older list's row: each opens and folds on the spring, its
+  chevron turning. Press a chip: the chips crossfade to `You answered <chip>` with the box keeping its height. With
+  reduced motion on, all of it lands at once. (`task verify:ui -- chat-pair-blocks` checks the end states.)
+
 - [ ] (arcterm) **Your pins move into the workspace.** After installing, open an agent in `D:\work\mit\mit-thesis`
   (or Code on it): its Files tab still lists the 4 files you had pinned, in the same order, and
   `wsh getmeta -b workspace:<oid> code:pins` prints them. Pin or unpin one and run the command again: it follows. On the

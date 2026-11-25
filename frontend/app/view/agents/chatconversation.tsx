@@ -117,6 +117,7 @@ import {
     type ChatItem,
     type ChatMarker,
 } from "./chatmodel";
+import { ChatPairHost } from "./chatpairblock";
 import { btwQuestion } from "./chatpending";
 import { ChatRunCard } from "./chatruncard";
 import {
@@ -144,6 +145,7 @@ import { CommandOutput, ShellCommand } from "./commandtext";
 import { CouncilText } from "./councilchat";
 import { firstExistingFile } from "./filetabload";
 import { CompactionDivider, InterruptedDivider, PromptImages, TaskNotificationRow } from "./narrationtimeline";
+import { placePairLists } from "./pairblocks";
 import { pinnedLabel } from "./pinnedlabel";
 import { PinnedPromptBar, scrollParent, usePinnedPrompt } from "./pinnedpromptbar";
 import { opensRailSummary } from "./railcompaction";
@@ -1025,6 +1027,9 @@ export function ChatConversation({
     // an item kept from an earlier render still redraws its list when a later block of its turn arrives
     const stepsNow: AgentNow = toolsLive ? "working" : active ? "waiting" : "idle";
     const stepLists = useMemo(() => placeStepLists(items, stepsNow), [items, stepsNow]);
+    // which ```arc-pair list is the newest, drawn in full, and the list before each (pairblocks.ts); the blocks read it
+    // and the agent's pair through the host
+    const pairLists = useMemo(() => placePairLists(items), [items]);
     // The runs this conversation started. Each `wsh runs start` call's part is anchored to the run (or queued start) its
     // output names; `placeRunCards` says where every run draws: at its call, else at the end. The brainstorm's run keeps its
     // place at the end (the brainstorm card) and is claimed from the calls. A queued start is told from one that left the
@@ -2059,16 +2064,18 @@ export function ChatConversation({
         </div>
     );
     // the initiative cards read their agent and the initiative list from a host: only a live Claude agent's Chat has one;
-    // every Chat conversation draws its step checklists
+    // every Chat conversation draws its step checklists and its pair cards
     return (
         <ChatStepsHost placed={stepLists}>
-            {canAddInitiative ? (
-                <ChatInitiativeHost agent={agent!} model={model!}>
-                    {body}
-                </ChatInitiativeHost>
-            ) : (
-                body
-            )}
+            <ChatPairHost placed={pairLists} tabId={agent?.id ?? null}>
+                {canAddInitiative ? (
+                    <ChatInitiativeHost agent={agent!} model={model!}>
+                        {body}
+                    </ChatInitiativeHost>
+                ) : (
+                    body
+                )}
+            </ChatPairHost>
         </ChatStepsHost>
     );
 }

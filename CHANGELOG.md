@@ -40,6 +40,8 @@ and a picture given to a line that is not big.
 
 ### Changed
 
+- In Chat, a pair's list and a judge's marks show as cards instead of code: the newest list with its answer chips,
+  an earlier one folded to a row.
 - Library's tabs are plain labels with a sliding underline; the 1–4 keys still switch them, named in each tab's tooltip
   rather than beside its label.
 - An agent in a brainstorm opens its panel on the Brainstorm tab, and one linked to an initiative on the Initiative tab,

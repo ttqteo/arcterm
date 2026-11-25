@@ -101,7 +101,9 @@ export type CardKind =
     | "handoff"
     | "council"
     | "docreview"
-    | "canvaspick";
+    | "canvaspick"
+    | "pair"
+    | "judge";
 
 // true inside a CardSlot once it has drawn its first card (CardShell's enter is then the slot's height spring)
 const SlotSettled = createContext(false);
