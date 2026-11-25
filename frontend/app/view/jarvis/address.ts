@@ -24,6 +24,9 @@ export type OpenTarget =
     // a council, opened on the view it was left on, else its Discussion (openref.ts); `view` "summary" opens its report
     // (Chat's Open report). Only code names a view: an address string never carries one
     | { kind: "council"; councilId: string; view?: "summary" }
+    // a judge pair, live, ended or synced from another machine: Agent's centre while it is live, else Library's read-only
+    // pair view (openref.ts)
+    | { kind: "pair"; pairId: string }
     // a past conversation, by its session id or a unique prefix of one: reopened in a tab of its own, as its
     // Resume does (openref.ts). Not a transcript path: a Windows path holds ":"
     | { kind: "session"; sessionId: string }
@@ -87,6 +90,8 @@ export function parseAddress(address: string, hint?: AddressHint): OpenTarget | 
                 : { kind: "unsupported", message: CANNOT_OPEN };
         case "council":
             return { kind: "council", councilId: id };
+        case "pair":
+            return { kind: "pair", pairId: id };
         case "workflowscan":
             return { kind: "workflowscan", runId: id };
         case "session":

@@ -1,10 +1,11 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// The Overview's History column: the project's ended sessions of the last 7 days as one searchable list, the runs and
-// councils each session started nested under it, and those no listed session started among them by time. The rows are
-// projectoverviewmodel.ts's; what is read, and the query, are projecthistorystore.ts's. The page calls useProjectHistory
-// once and hands the result in, so the Activity card's session count and this column read one list.
+// The Overview's History column: the project's ended sessions of the last 7 days as one searchable list, the runs,
+// councils and judge pairs each session started nested under it, and those no listed session started among them by time.
+// The rows are projectoverviewmodel.ts's; what is read, and the query, are projecthistorystore.ts's (the pairs, pairstore.ts's).
+// The page calls useProjectHistory once and hands the result in, so the Activity card's session count and this column
+// read one list.
 
 import { Skeleton, SkeletonLine } from "@/app/element/skeleton";
 import { ContextMenuModel } from "@/app/store/contextmenu";
@@ -26,6 +27,7 @@ import {
     Pin,
     PinOff,
     Play,
+    Scale,
     Trash2,
 } from "lucide-react";
 import { Fragment, useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
@@ -37,6 +39,7 @@ import { setCouncilPinned } from "./councilstore";
 import { claudeDesktopLink, OPEN_IN_DESKTOP_LABEL } from "./desktoplink";
 import { laterSince, laterTitle } from "./latermodel";
 import { laterMarksAtom, setLater } from "./laterstore";
+import { usePairHistory } from "./pairstore";
 import { historyQueryAtom, loadMoreProjectSessions, type ProjectHistory } from "./projecthistorystore";
 import {
     firstRows,
@@ -44,6 +47,7 @@ import {
     historyCountLabel,
     historyRows,
     historySessionLine,
+    historyTarget,
     isLastChild,
     projectSessions,
     rowsUntil,
@@ -224,21 +228,28 @@ function sessionMenu(
     ContextMenuModel.getInstance().showContextMenu(items, e);
 }
 
-// a run's diamond or a council's dot, beside its kind word; it leads the row's meta line, so the title lines up with a
-// session's. The diamond is clipped, not a rotated square: a rotated square pokes ~1.5px past its box, and the meta
-// line's truncate cut its left tip off.
+// what a row's menu and kind label call each kind
+const KIND_WORD: Record<HistoryItem["kind"], string> = { run: "Run", council: "Council", pair: "Pair" };
+
+// a run's diamond, a council's dot or a pair's scales (the judge's mark on the Agent surface), beside its kind word; it
+// leads the row's meta line, so the title lines up with a session's. The diamond is clipped, not a rotated square: a
+// rotated square pokes ~1.5px past its box, and the meta line's truncate cut its left tip off.
 function KindLabel({ kind }: { kind: HistoryItem["kind"] }) {
     return (
         <span className="inline-flex items-center gap-[5px] font-semibold text-ink-mid">
-            <span
-                aria-hidden="true"
-                className={
-                    kind === "run"
-                        ? "h-[9px] w-[9px] flex-none bg-mark-run [clip-path:polygon(50%_0,100%_50%,50%_100%,0_50%)]"
-                        : "h-[7px] w-[7px] flex-none rounded-full bg-mark-council"
-                }
-            />
-            {kind === "council" ? "Council" : "Run"}
+            {kind === "pair" ? (
+                <Scale size={11} aria-hidden="true" className="flex-none" />
+            ) : (
+                <span
+                    aria-hidden="true"
+                    className={
+                        kind === "run"
+                            ? "h-[9px] w-[9px] flex-none bg-mark-run [clip-path:polygon(50%_0,100%_50%,50%_100%,0_50%)]"
+                            : "h-[7px] w-[7px] flex-none rounded-full bg-mark-council"
+                    }
+                />
+            )}
+            {KIND_WORD[kind]}
         </span>
     );
 }
@@ -373,9 +384,13 @@ export function HistoryColumn({
     const [unfolded, setUnfolded] = useState<string | null>(null);
     // the session read in the Quick look dialog, over the page; Open there takes it to the full pane
     const [peek, setPeek] = useState<{ key: string; session: LiveSession } | null>(null);
+    // the project's pairs in every state, the ended and synced ones too. Not one of the reads the list waits for: a failed
+    // read logs and leaves them null (pairstore.ts), and the list must not load for ever over it, so the pairs join the
+    // rows when they are read
+    const pairs = usePairHistory(path);
     const rows = useMemo(
-        () => rowsUntil(historyRows(h.sessions, h.councils, h.runs.runs, path, now, q), h.frontier),
-        [h.sessions, h.councils, h.runs.runs, path, now, q, h.frontier]
+        () => rowsUntil(historyRows(h.sessions, h.councils, h.runs.runs, path, now, q, pairs), h.frontier),
+        [h.sessions, h.councils, h.runs.runs, path, now, q, pairs, h.frontier]
     );
     const lazy = useLazyLimit(`${path}|${q}`);
     const shown = useMemo(() => firstRows(rows, lazy.limit), [rows, lazy.limit]);
@@ -412,17 +427,7 @@ export function HistoryColumn({
             e.currentTarget.blur();
         }
     };
-    const openItem = (item: HistoryItem) =>
-        fireAndForget(() =>
-            openTarget(
-                model,
-                item.kind === "council"
-                    ? { kind: "council", councilId: item.councilId }
-                    : item.channelId !== ""
-                      ? { kind: "channel", channelId: item.channelId, runId: item.runId }
-                      : { kind: "run", runId: item.runId }
-            )
-        );
+    const openItem = (item: HistoryItem) => fireAndForget(() => openTarget(model, historyTarget(item)));
 
     // the Older row ends every list that is drawn: the window is 7 days, and Conversation History keeps the rest
     const older = (
@@ -512,7 +517,7 @@ export function HistoryColumn({
                             ContextMenuModel.getInstance().showContextMenu(
                                 [
                                     {
-                                        label: isCouncil ? "Open council" : "Open run",
+                                        label: `Open ${KIND_WORD[row.kind].toLowerCase()}`,
                                         icon: <ExternalLink size={15} />,
                                         click: () => openItem(row),
                                     },

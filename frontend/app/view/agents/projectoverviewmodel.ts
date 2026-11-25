@@ -2,15 +2,18 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // A project's Overview (agentcenter.ts' `project` mode), as data: its agents that ask, what in it is at work (its
-// runs grouped, as the Agent tree groups them), what finished unread, and the History rows (ended sessions, councils
-// and runs of the last 7 days, a session's runs and councils nested under it) with the words the header and the rows
-// read. Pure; projectoverview.tsx draws it.
+// runs grouped, as the Agent tree groups them), what finished unread, and the History rows (ended sessions, councils,
+// runs and judge pairs of the last 7 days, a session's runs, councils and pairs nested under it) with the words the
+// header and the rows read. Pure; projectoverview.tsx draws it.
 
+import type { OpenTarget } from "@/app/view/jarvis/address";
+import { shortTabId } from "./agentrowmodel";
 import { formatTokens, projectOf, sortAgents, type AgentVM } from "./agentsviewmodel";
 import { groupRunAgents, runningAgents, UNGROUPED_PROJECT } from "./agenttreemodel";
 import { normProjectPath } from "./channelderive";
 import { placeUnderSessions } from "./historyplace";
 import { prettyModel } from "./modellabel";
+import { pairStateWords } from "./pairreadmodel";
 import { NO_LINEAGE, roleRunId, type Lineage, type RunInfo } from "./runlineage";
 import { runtimeMeta } from "./runtimemeta";
 import type { LiveSession } from "./sessionsarchivestore";
@@ -212,6 +215,16 @@ export type HistoryItem =
           since: number;
           channelId: string;
           runId: string;
+      }
+    | {
+          kind: "pair";
+          key: string;
+          title: string;
+          line: string;
+          warn: string;
+          ts: number;
+          since: number;
+          pairId: string;
       };
 
 const COUNCIL_STATE: Record<string, string> = {
@@ -322,30 +335,67 @@ function runItem(r: Run): HistoryItem {
     };
 }
 
-// what the column draws, top to bottom: a session, a run or a council; a nested one sits under its session (parent
+// A pair's row: titled by its judge (the working agent is the session it sits under, or the row's own line says no
+// session started it), worded by the state words every surface uses (pairreadmodel.ts). It is placed by the session its
+// working agent worked in, and listed by its last save: a pair has no start time of its own in the list read.
+function pairItem(p: PairInfo): HistoryItem {
+    const judges = p.judges ?? [];
+    return {
+        kind: "pair",
+        key: `pair:${p.id}`,
+        title:
+            judges.length === 1 ? `Pair with judge ${shortTabId(judges[0].tab)}` : `Pair with ${judges.length} judges`,
+        line: pairStateWords(p),
+        warn: "",
+        ts: p.updatedts,
+        since: p.updatedts,
+        pairId: p.id,
+    };
+}
+
+// what a row opens through the router (openref.ts): a council by its id (a council's own click unfolds it first, its Open
+// council opens it), a pair by its id (Agent's centre while it is live, else Library's read-only view), a run by its
+// channel's sheet, or by itself when it has no channel
+export function historyTarget(item: HistoryItem): OpenTarget {
+    switch (item.kind) {
+        case "council":
+            return { kind: "council", councilId: item.councilId };
+        case "pair":
+            return { kind: "pair", pairId: item.pairId };
+        case "run":
+            return item.channelId !== ""
+                ? { kind: "channel", channelId: item.channelId, runId: item.runId }
+                : { kind: "run", runId: item.runId };
+    }
+}
+
+// what the column draws, top to bottom: a session, a run, a council or a pair; a nested one sits under its session (parent
 // is that session's row key), the rest are top-level
 export type HistoryRow =
     | { kind: "session"; key: string; session: LiveSession; ts: number; nested: false }
     | (HistoryItem & { nested: boolean; parent?: string });
 
-// the line of a run or council that no session started: the cockpit started it, when it names no origin at all
+// the line of a run, council or pair that no session started: the cockpit started it, when it names no origin at all
 const COCKPIT_PREFIX = "Started from the cockpit, not a session · ";
 
 // a run the engine launched for another run (a worker, a reviewer, a stage session) is that run's, never a row
 const isChildRun = (r: Run) => !!r.taskid || !!r.stagerole || !!r.parentleadoref;
 
-// the project's ended sessions in the window, each followed by the runs and councils it started (newest first), and
-// the runs and councils no listed session started, placed among the sessions by time. A run belongs to the session
-// whose transcript it was started from, a council to the session whose id it carries; one whose session is older than
-// the window, still live or unnamed is top-level. A session stays for a query when its title or a child's matches (its
-// children all show then); a top-level run or council, when its own title does.
+// the project's ended sessions in the window, each followed by the runs, councils and pairs it started (newest first), and
+// the runs, councils and pairs no listed session started, placed among the sessions by time. A run belongs to the session
+// whose transcript it was started from, a council to the session whose id it carries, a pair to the session its working
+// agent worked in (`worker.session`; a pair saved before ids were kept has none); one whose session is older than the
+// window, still live or unnamed is top-level. A session stays for a query when its title or a child's matches (its
+// children all show then); a top-level run, council or pair, when its own title does. `pairs` is the project's pair
+// history in every state (pairstore.ts); null while it is unread, which lists none.
 export function historyRows(
     sessions: readonly LiveSession[] | null,
     councils: readonly Council[] | null,
     runs: readonly Run[] | null,
     path: string,
     now: number,
-    q: string
+    q: string,
+    pairs: readonly PairInfo[] | null = null
 ): HistoryRow[] {
     const listed = projectSessions(sessions, path, now, "");
     const inWindow = (i: HistoryItem) => i.since >= now - HISTORY_WINDOW_MS;
@@ -360,6 +410,12 @@ export function historyRows(
         const item = runItem(r);
         if (!isChildRun(r) && inWindow(item)) {
             placing.push({ item, transcript: r.origintranscript });
+        }
+    }
+    for (const p of pairs ?? []) {
+        const item = pairItem(p);
+        if (inWindow(item)) {
+            placing.push({ item, sessionId: p.worker.session });
         }
     }
     const { owned, loose: unplaced } = placeUnderSessions(listed, placing);
@@ -395,8 +451,8 @@ export function historyRows(
 // History draws this many top-level rows at first, and as many more each time its foot scrolls into view
 export const HISTORY_PAGE = 15;
 
-// the rows down to `frontier`, the oldest session read while older pages are unread (null: all are read): a run or
-// council older than it waits for the sessions of its time, which may own it. A top-level row takes its nested ones along
+// the rows down to `frontier`, the oldest session read while older pages are unread (null: all are read): a run,
+// council or pair older than it waits for the sessions of its time, which may own it. A top-level row takes its nested ones along
 export function rowsUntil(rows: readonly HistoryRow[], frontier: number | null): HistoryRow[] {
     if (frontier == null) {
         return rows as HistoryRow[];
@@ -415,7 +471,7 @@ export function historyCountLabel(count: number, more: boolean, failed: boolean)
 }
 
 // the first `limit` top-level rows, each with the rows nested under it, so a page never ends between a session and its
-// runs and councils
+// runs, councils and pairs
 export function firstRows(rows: readonly HistoryRow[], limit: number): HistoryRow[] {
     let top = 0;
     let end = 0;

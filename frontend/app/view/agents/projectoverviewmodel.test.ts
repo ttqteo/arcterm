@@ -15,6 +15,7 @@ import {
     historyCountLabel,
     historyRows,
     historySessionLine,
+    historyTarget,
     isLastChild,
     isQuiet,
     overviewRows,
@@ -577,6 +578,155 @@ describe("historyRows", () => {
         expect(item(historyRows([], [], [notesOnly], P, now, ""), "run:r").warn).toBe("1 not verified");
         const running = run({ status: "executing", evidence: unverified(["x"]) });
         expect(item(historyRows([], [], [running], P, now, ""), "run:r").warn).toBe("");
+    });
+
+    describe("pairs", () => {
+        const pair = (over: Partial<PairInfo> = {}): PairInfo => ({
+            id: "p1",
+            project: "D:/p",
+            worker: { tab: "6148-worker", name: "Plan oracle", harness: "claude", session: "s1" },
+            judges: [{ tab: "4c6ba858-0d7e", name: "Judge", harness: "claude" }],
+            state: "ended",
+            stopreason: "settled",
+            owed: false,
+            messagecount: 5,
+            lastts: now - 300,
+            updatedts: now - 200,
+            ...over,
+        });
+        const noSession = (id: string, over: Partial<PairInfo> = {}) =>
+            pair({ id, worker: { tab: "6148-worker", name: "Plan oracle", harness: "claude" }, ...over });
+        const prefix = "Started from the cockpit, not a session · ";
+
+        it("nests a pair under the session its working agent worked in, titled by its judge and worded by its state", () => {
+            const rows = historyRows([home], [], [], P, now, "", [pair()]);
+            expect(keys(rows)).toEqual(["claude:s1", "pair:p1"]);
+            expect(item(rows, "pair:p1")).toMatchObject({
+                kind: "pair",
+                pairId: "p1",
+                nested: true,
+                parent: "claude:s1",
+                title: "Pair with judge 4c6ba858",
+                line: "both sides settled",
+                warn: "",
+                ts: now - 200,
+            });
+        });
+
+        it("words a relaying pair and a synced one as the other surfaces do", () => {
+            const rows = historyRows([home], [], [], P, now, "", [
+                pair({ id: "live", state: "relaying", stopreason: "" }),
+                pair({ id: "sync", synced: true, updatedts: now - 400 }),
+            ]);
+            expect(item(rows, "pair:live").line).toBe("still relaying");
+            expect(item(rows, "pair:sync").line).toBe("both sides settled · as of the last sync");
+        });
+
+        it("nests a pair beside the council and run its session started, every child newest first", () => {
+            const rows = historyRows(
+                [home],
+                [council({ id: "c1", sessionid: "s1", updated: now - 500 })],
+                [run({ id: "r1", origintranscript: "/t/s1.jsonl", createdts: now - 50 })],
+                P,
+                now,
+                "",
+                [pair({ updatedts: now - 100 })]
+            );
+            // the run's ts is when it was created (now - 50), the pair's its last save (now - 100), the council's its update
+            expect(keys(rows)).toEqual(["claude:s1", "run:r1", "pair:p1", "council:c1"]);
+        });
+
+        it("puts a pair with no session id top-level, named-less, as a council with none is", () => {
+            const rows = historyRows([home], [council({ id: "c1" })], [], P, now, "", [noSession("p2")]);
+            expect(item(rows, "pair:p2")).toMatchObject({ nested: false, line: `${prefix}both sides settled` });
+            expect(item(rows, "pair:p2").parent).toBeUndefined();
+            expect(item(rows, "council:c1").line.startsWith(prefix)).toBe(true);
+        });
+
+        it("keeps the usual line when its session is older than the window, still live or in no listed session", () => {
+            const rows = historyRows(
+                [sess({ id: "old", lastactivets: now - 9 * day }), sess({ id: "live", live: true })],
+                [],
+                [],
+                P,
+                now,
+                "",
+                [
+                    pair({ id: "a", worker: { tab: "t1", name: "A", harness: "claude", session: "old" } }),
+                    pair({ id: "b", worker: { tab: "t2", name: "B", harness: "claude", session: "live" } }),
+                    pair({ id: "c", worker: { tab: "t3", name: "C", harness: "claude", session: "elsewhere" } }),
+                ]
+            );
+            expect(keys(rows).sort()).toEqual(["pair:a", "pair:b", "pair:c"]);
+            for (const k of keys(rows)) {
+                expect(item(rows, k)).toMatchObject({ nested: false });
+                expect(item(rows, k).line).not.toContain("cockpit");
+            }
+        });
+
+        it("places a top-level pair among the sessions by its time, its session's children behind it", () => {
+            const rows = historyRows(
+                [sess({ id: "new", lastactivets: now - 10 }), home, sess({ id: "old", lastactivets: now - 5000 })],
+                [],
+                [],
+                P,
+                now,
+                "",
+                [noSession("mid", { updatedts: now - 600 }), pair({ id: "kid" })]
+            );
+            expect(keys(rows)).toEqual(["claude:new", "pair:mid", "claude:s1", "pair:kid", "claude:old"]);
+        });
+
+        it("keeps a pair to the window by its updated time, and reads none while the history is unread", () => {
+            const stale = pair({ id: "stale", updatedts: now - 8 * day });
+            expect(historyRows([home], [], [], P, now, "", [stale])).toEqual(historyRows([home], [], [], P, now, ""));
+            expect(keys(historyRows([home], [], [], P, now, "", null))).toEqual(["claude:s1"]);
+        });
+
+        it("keeps a session for a query its pair's title matches, and a top-level pair by its own title", () => {
+            const rows = (q: string) =>
+                historyRows(
+                    [home, sess({ id: "s2", task: "Rail work", lastactivets: now - 2000 })],
+                    [],
+                    [],
+                    P,
+                    now,
+                    q,
+                    [pair(), noSession("p2", { judges: [{ tab: "9e0f1a2b-3c4d", name: "J", harness: "claude" }] })]
+                );
+            expect(keys(rows("4c6ba858"))).toEqual(["claude:s1", "pair:p1"]);
+            expect(keys(rows("9E0F1A2B"))).toEqual(["pair:p2"]);
+            expect(keys(rows("zzz"))).toEqual([]);
+        });
+    });
+
+    it("names what each kind of row opens: a council, a pair, a run by its channel or by itself", () => {
+        const rows = historyRows(
+            [],
+            [council({ id: "c1" })],
+            [run({ id: "r1", channeloid: "ch1" }), run({ id: "r2", channeloid: "" })],
+            P,
+            now,
+            "",
+            [
+                {
+                    id: "p1",
+                    project: "D:/p",
+                    worker: { tab: "t", name: "W", harness: "claude" },
+                    judges: [],
+                    state: "ended",
+                    stopreason: "",
+                    owed: false,
+                    messagecount: 0,
+                    lastts: now - 10,
+                    updatedts: now - 10,
+                },
+            ]
+        );
+        expect(historyTarget(item(rows, "council:c1"))).toEqual({ kind: "council", councilId: "c1" });
+        expect(historyTarget(item(rows, "pair:p1"))).toEqual({ kind: "pair", pairId: "p1" });
+        expect(historyTarget(item(rows, "run:r1"))).toEqual({ kind: "channel", channelId: "ch1", runId: "r1" });
+        expect(historyTarget(item(rows, "run:r2"))).toEqual({ kind: "run", runId: "r2" });
     });
 
     describe("search", () => {

@@ -44,7 +44,7 @@ vi.mock("../boards/boardsplitstore", async (importOriginal) => ({
 import { globalStore } from "@/app/store/jotaiStore";
 import { setPlatform } from "@/util/platformutil";
 import { atom } from "jotai";
-import { boardAloneAtom, centerModeAtom } from "../agents/agentcenter";
+import { boardAloneAtom, centerModeAtom, pairSelAtom } from "../agents/agentcenter";
 import type { AgentsViewModel, SurfaceKey } from "../agents/agents";
 import type { AgentVM } from "../agents/agentsviewmodel";
 import { attachBrainstorm, detachBrainstorm, getBrainstorm } from "../agents/brainstormstore";
@@ -53,12 +53,14 @@ import { activeChannelIdAtom } from "../agents/channelsstore";
 import { councilOpenedAtom } from "../agents/councilopened";
 import { councilAtom, councilLastViewAtom, councilSelAtom, councilViewAtom } from "../agents/councilstore";
 import { memorySelectedChangeAtom, memorySelectedProjectAtom } from "../agents/memorystore";
+import { devMockPairsAtom } from "../agents/pairstore";
 import { setupTabAtom } from "../agents/setupstore";
 import {
     libraryBoardSelAtom,
     libraryConvViewAtom,
     libraryCouncilSelAtom,
     libraryCouncilViewAtom,
+    libraryPairSelAtom,
     libraryTabAtom,
 } from "../library/librarystore";
 import { dagModalStateAtom, dismissDagModal } from "../orchestrate/dagmodalstate";
@@ -588,6 +590,72 @@ describe("council landings", () => {
         expect(await peekTarget(model, target)).toEqual({ ok: true });
         expect(globalStore.get(model.surfaceAtom)).toBe("agent");
         expect(globalStore.get(peekItemAtom)).toBeNull();
+    });
+});
+
+describe("pair landings", () => {
+    // a mocked pair is as much of a PairView as the live list and openPair read: an id, a state and the synced flag
+    const mockPair = (id: string, state: string, synced = false) =>
+        ({ id, state, synced, project: "/work/a" }) as PairView;
+
+    beforeEach(() => {
+        globalStore.set(libraryTabAtom, "conversations");
+        globalStore.set(libraryConvViewAtom, "list");
+        globalStore.set(libraryPairSelAtom, null);
+        globalStore.set(centerModeAtom, "terminal");
+        globalStore.set(pairSelAtom, null);
+    });
+    afterEach(() => {
+        globalStore.set(devMockPairsAtom, null);
+        globalStore.set(centerModeAtom, "terminal");
+    });
+
+    it("opens a live pair on Agent's centre, in its pair mode", async () => {
+        const model = makeModel();
+        globalStore.set(devMockPairsAtom, [mockPair("live1", "relaying")]);
+        expect(await openAddress(model, "pair:live1")).toEqual({ ok: true });
+        expect(globalStore.get(pairSelAtom)).toBe("live1");
+        expect(globalStore.get(centerModeAtom)).toBe("pair");
+        expect(globalStore.get(model.surfaceAtom)).toBe("agent");
+        expect(globalStore.get(libraryPairSelAtom)).toBeNull();
+    });
+
+    it("opens an ended pair, a synced one and one nobody lists in Library's full-width pair view", async () => {
+        for (const [id, mock] of [
+            ["ended1", mockPair("ended1", "ended")],
+            ["synced1", mockPair("synced1", "relaying", true)],
+            ["unknown1", null],
+        ] as const) {
+            const model = makeModel();
+            globalStore.set(devMockPairsAtom, mock == null ? [] : [mock]);
+            globalStore.set(libraryConvViewAtom, "list");
+            expect(await openTarget(model, { kind: "pair", pairId: id })).toEqual({ ok: true });
+            expect(globalStore.get(libraryPairSelAtom)).toBe(id);
+            expect(globalStore.get(libraryTabAtom)).toBe("conversations");
+            expect(globalStore.get(libraryConvViewAtom)).toBe("pair");
+            expect(globalStore.get(model.surfaceAtom)).toBe("library");
+            expect(globalStore.get(centerModeAtom)).toBe("terminal");
+        }
+    });
+
+    it("is not peekable: a peek lands", async () => {
+        const model = makeModel();
+        const target: OpenTarget = { kind: "pair", pairId: "ended1" };
+        expect(isPeekable(target)).toBe(false);
+        expect(isPeekableAddress("pair:ended1")).toBe(false);
+        expect(await peekTarget(model, target)).toEqual({ ok: true });
+        expect(globalStore.get(model.surfaceAtom)).toBe("library");
+        expect(globalStore.get(peekItemAtom)).toBeNull();
+    });
+
+    it("refuses a pair address with no id and lands nowhere", async () => {
+        const model = makeModel();
+        expect(await openAddress(model, "pair:")).toEqual({
+            ok: false,
+            reason: "unsupported",
+            message: "This item can't be opened",
+        });
+        expect(globalStore.get(model.surfaceAtom)).toBe("cockpit");
     });
 });
 

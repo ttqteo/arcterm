@@ -21,6 +21,7 @@ export type PeekTarget = Exclude<
     | { kind: "memhygiene" }
     | { kind: "workflowscan" }
     | { kind: "council" }
+    | { kind: "pair" }
     | { kind: "session" }
     | { kind: "board" }
 >;

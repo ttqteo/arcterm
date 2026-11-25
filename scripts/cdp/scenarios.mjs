@@ -58,6 +58,7 @@ import { makeCouncilScenarios } from "./councilscenarios.mjs";
 import agentHeaderScenarios from "./scenarios-agent-header.mjs";
 import pairConversationScenarios from "./scenarios-pair-conversation.mjs";
 import libraryPairsScenarios from "./scenarios-library-pairs.mjs";
+import { PAIR, pairView, seedPair } from "./pair-fixtures.mjs";
 import pairDecidedScenarios from "./scenarios-pair-decided.mjs";
 import pairHeaderScenarios from "./scenarios-pair-header.mjs";
 import pairTreeScenarios from "./scenarios-pair-tree.mjs";
@@ -73892,7 +73893,8 @@ const projectOverview = {
 // for B). The Activity card's getprojectactivity is answered by the activity mock on top of it (mode ok throughout: the
 // card's own steps are project-overview's). Step 12 gives the Agent roster a run: the fixture agents carry run ids, and the run and its dag are put into the
 // page's object store the way a pushed `waveobj:update` puts them (eventpublish), since lineageAtom reads them there.
-// Teardown puts the mock, the Needs you list and the roster file back.
+// Step 17 gives History two ended pairs through the page's dev mock pairs (pair-fixtures.mjs seedPair), which no command
+// answers, and opens one in Library's pair view. Teardown puts the mock, the pairs, the Needs you list and the roster file back.
 const OVH_A = "verify-ovhistory";
 const OVH_B = "verify-ovhistory-b";
 const OVH_MOCK_KEY = "__arcOverviewHistoryMock";
@@ -73910,6 +73912,10 @@ const OVH_GRAPH_READY = `(${ovHas('[data-graph-card] [data-graph-row="worktree"]
 const OVH_TOP_ROWS = "[data-history-row]:not([data-history-parent])";
 // the keys of the rows, top to bottom
 const OVH_ROW_KEYS =`[...document.querySelectorAll("[data-history-row]")].map((r) => r.getAttribute("data-history-row"))`;
+// step 17's two ended pairs: the first worked in A's first session (which holds the council and the run too), the second in no session
+const OVH_PAIR = "ovh-pair-1";
+const OVH_PAIR_LOOSE = "ovh-pair-2";
+const OVH_PAIR_JUDGE_SESSION = "ovh-pair-judge-session";
 // a nested or top-level run or council row's title and line (the two truncated spans of its text column)
 const ovhRowText = (key) => `(() => {
     const row = document.querySelector(${JSON.stringify(`[data-history-row="${key}"]`)});
@@ -73968,6 +73974,32 @@ function ovhPagedSessions(ctx, now) {
             transcriptpath: join(ctx.base, `${id}.jsonl`),
         };
     });
+}
+
+// step 17's pairs, as pair-fixtures.mjs's R1 exchange after it ended, read through the page's dev mock pairs (devMockPairsAtom:
+// the History column and Library's pair view read it, wavesrv is never asked). Times are relative to `seededAt`, when the
+// sessions were made. The first pair is the newest thing its session started (after the council, 1h ago, and the run) and
+// before the session's own last turn (30 min ago); the second has no session id (a pair saved before ids were kept) and no
+// stop reason, and sits between the two sessions' rows by its time (3h ago)
+function ovhPairViews(ctx, seededAt) {
+    const base = pairView(seededAt, { judges: 1 });
+    const ended = { ...base, project: ctx.dirA, state: "ended", stopreason: "settled", owed: false, holdheavy: false };
+    return [
+        {
+            ...ended,
+            id: OVH_PAIR,
+            updatedts: seededAt - 20 * 60_000,
+            worker: { ...base.worker, session: "ovh-s1" },
+            judges: base.judges.map((j) => ({ ...j, session: OVH_PAIR_JUDGE_SESSION })),
+        },
+        {
+            ...ended,
+            id: OVH_PAIR_LOOSE,
+            stopreason: "",
+            updatedts: seededAt - 3 * 3_600_000,
+            judges: [{ tab: PAIR.other, name: "Pull history and sync", harness: "claude" }],
+        },
+    ];
 }
 
 // Runs IN THE PAGE (ovhInstallMock sends its source). Answers getsessionsactivity (a page with a cursor holds nothing, the
@@ -74203,6 +74235,8 @@ const projectOverviewHistory = {
             ctx.term = await ovTerminalTab(h, ctx, `${OVH_A} terminal`, ctx.dirA);
             ctx.termB = await ovTerminalTab(h, ctx, `${OVH_B} terminal`, ctx.dirB);
             const now = Date.now();
+            // the time every session below is relative to: step 17's pairs are placed against it
+            ctx.seededAt = now;
             const sessions = ovhSessions(ctx, now);
             // the Activity card's tally: this scenario never looks at it, but the real one is not asked
             ctx.today = new Date();
@@ -75014,6 +75048,92 @@ const projectOverviewHistory = {
                     !/\+/.test(last16.count ?? ""),
                 JSON.stringify({ forgot16, opened16, page16a, first16, page16b, last16 })
             );
+
+            // 17. pair nested in History: with two ended pairs in the page's dev mock pairs (no pair command is sent), a pair
+            // nests under the session its working agent worked in, as the newest child of that session (ahead of its council
+            // and run), titled by its judge and worded by why it ended; a pair with no session id stands top-level among the
+            // sessions by its time, with the line that says no session started it. The sessions are read from their first page
+            // again, so step 16's older pages are not in the way
+            const prefix17 = "Started from the cockpit, not a session · ";
+            const forgot17 = await h.ev(
+                `(${ovhForgetSessionsInPage.toString()})(${JSON.stringify(ctx.modules.urls.store)}, ${JSON.stringify([ctx.dirA, ctx.dirB])})`
+            );
+            await seedPair(h, ovhPairViews(ctx, ctx.seededAt));
+            const opened17 = await ovhReopen(h, ctx, OVH_A);
+            const rows17 = await polishWaitFor(h, `${ovhCount("[data-history-row]")} === 7`, 10000);
+            const keys17 = await h.ev(OVH_ROW_KEYS);
+            const parents17 = await h.ev(`[...document.querySelectorAll("[data-history-row]")].map((r) => r.getAttribute("data-history-parent"))`);
+            const pairRows17 = await h.ev(`[...document.querySelectorAll('[data-history-kind="pair"]')].map((r) => r.getAttribute("data-history-row"))`);
+            const pair17 = await h.ev(ovhRowText(`pair:${OVH_PAIR}`));
+            const loose17 = await h.ev(ovhRowText(`pair:${OVH_PAIR_LOOSE}`));
+            const count17 = await h.ev(ovhText("[data-history-count]"));
+            await shot("17");
+            rec(
+                "17. pair nested in History: the ended pair is a `data-history-kind=\"pair\"` row nested first under session Council store review (before its council and run), titled `Pair with judge 4c6ba858` with the line `Pair · both sides settled`; the pair with no session id is top-level between the two sessions by its time, titled `Pair with judge 9e0f1a2b` with the line `Pair · Started from the cockpit, not a session · ended`; the heading still reads `2 sessions`",
+                forgot17 === "ok" &&
+                    opened17 &&
+                    rows17 &&
+                    JSON.stringify(keys17) ===
+                        JSON.stringify([
+                            "claude:ovh-s1",
+                            `pair:${OVH_PAIR}`,
+                            "council:ovh-council-1",
+                            "run:ovh-hist-run",
+                            "claude:ovh-s2",
+                            `pair:${OVH_PAIR_LOOSE}`,
+                            "run:ovh-cockpit-run",
+                        ]) &&
+                    JSON.stringify(parents17) ===
+                        JSON.stringify([null, "claude:ovh-s1", "claude:ovh-s1", "claude:ovh-s1", null, null, null]) &&
+                    JSON.stringify(pairRows17) === JSON.stringify([`pair:${OVH_PAIR}`, `pair:${OVH_PAIR_LOOSE}`]) &&
+                    pair17?.title === "Pair with judge 4c6ba858" &&
+                    pair17?.line === "Pair · both sides settled" &&
+                    pair17?.parent === "claude:ovh-s1" &&
+                    loose17?.title === "Pair with judge 9e0f1a2b" &&
+                    loose17?.line === `Pair · ${prefix17}ended` &&
+                    loose17?.parent === null &&
+                    count17 === "2 sessions",
+                JSON.stringify({ forgot17, opened17, rows17, keys17, parents17, pairRows17, pair17, loose17, count17 })
+            );
+
+            // 17b. pair opens from History: a click on the ended pair's row opens it in Library's full-width pair view (it is not
+            // in the live list, so not on Agent): read-only, its title and both transcript links, no list beside it and no
+            // composer; Back returns to the Overview
+            await h.ev(`document.querySelector('[data-history-row="pair:${OVH_PAIR}"]')?.click()`);
+            const read17 = await polishWaitFor(h, ovHas(`[data-library] [data-pair-read="${OVH_PAIR}"] [data-pair-read-title]`), 8000);
+            const surface17 = await h.activeSurfaceLabel();
+            const view17 = await h.ev(`(() => {
+                const root = document.querySelector("[data-library] [data-pair-read]");
+                const flat = (el) => (el?.textContent ?? "").replace(/\\s+/g, " ").trim();
+                return {
+                    id: root?.getAttribute("data-pair-read") ?? null,
+                    title: flat(root?.querySelector("[data-pair-read-title]")),
+                    back: document.querySelector("[data-library-pair-back]") != null,
+                    list: document.querySelector("[data-agent-history]") != null,
+                    composer: document.querySelector("[data-pair-composer]") != null,
+                    transcripts: [...(root?.querySelectorAll("[data-pair-read-transcript]") ?? [])].map((b) => b.getAttribute("data-pair-read-transcript")),
+                };
+            })()`);
+            await shot("17b");
+            await h.ev(`document.querySelector("[data-library-pair-back]")?.click()`);
+            const back17 = await polishWaitFor(h, `${ovhUp(OVH_A)} && document.querySelector("[data-library] [data-pair-read]") == null`, 5000);
+            const surfaceBack17 = await h.activeSurfaceLabel();
+            rec(
+                "17b. a click on the pair's History row opens Library's full-width pair view (on the Library surface, a Back row, no Conversations list, no composer) titled `Plan oracle-tightening with judge 4c6ba858`, with the transcript links of the worker's session and the judge's; its Back returns to the Agent surface with A's Overview",
+                opened17 &&
+                    read17 &&
+                    surface17 === "Library" &&
+                    view17?.id === OVH_PAIR &&
+                    view17.title === "Plan oracle-tightening with judge 4c6ba858" &&
+                    view17.back === true &&
+                    view17.list === false &&
+                    view17.composer === false &&
+                    JSON.stringify(view17.transcripts) ===
+                        JSON.stringify(["claude:ovh-s1", `claude:${OVH_PAIR_JUDGE_SESSION}`]) &&
+                    back17 &&
+                    surfaceBack17 === "Agent",
+                JSON.stringify({ opened17, read17, surface17, view17, back17, surfaceBack17 })
+            );
         } catch (e) {
             rec("a call failed before the steps finished", false, String(e?.message ?? e));
         }
@@ -75029,6 +75149,7 @@ const projectOverviewHistory = {
             }
         };
         await step("clear the viewport override", () => h.cdp("Emulation.clearDeviceMetricsOverride"));
+        await step("clear the seeded pairs", () => seedPair(h, null));
         await step("put the live Needs you list back", () => h.ev("window.__cockpitOfficeAttention?.(null)"));
         await step("remove the History mock", () => removeOvhMock(h));
         for (const tabId of ctx.tabs ?? []) {

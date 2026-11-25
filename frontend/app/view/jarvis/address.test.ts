@@ -105,6 +105,21 @@ describe("parseAddress", () => {
         });
     });
 
+    describe("pair:", () => {
+        it("reads a pair id, whatever state the pair is in", () => {
+            expect(parseAddress("pair:p-1")).toEqual({ kind: "pair", pairId: "p-1" });
+            expect(parseAddress("pair:3f9a_7C-10")).toEqual({ kind: "pair", pairId: "3f9a_7C-10" });
+        });
+
+        it("refuses an empty id", () => {
+            expect(parseAddress("pair:")).toEqual({ kind: "unsupported", message: CANNOT_OPEN });
+        });
+
+        it("refuses an id holding another colon", () => {
+            expect(parseAddress("pair:a:b")).toEqual({ kind: "unsupported", message: CANNOT_OPEN });
+        });
+    });
+
     describe("workflowscan:", () => {
         it("reads a scan run's id", () => {
             expect(parseAddress("workflowscan:r-1")).toEqual({ kind: "workflowscan", runId: "r-1" });

@@ -34,7 +34,7 @@ import { afterOpen } from "../agents/windowsize";
 import { unhide } from "../boards/boardsplitstore";
 import { loadBoardList } from "../boards/boardstore";
 import { agentAlive } from "../boards/boardtalkmodel";
-import { openCouncil, showLibraryBoard } from "../library/librarystore";
+import { openCouncil, openPair, showLibraryBoard } from "../library/librarystore";
 import { openDagLive, openDagTask } from "../orchestrate/dagmodalstate";
 import { isCanvasSegment, parseAddress, type AddressHint, type OpenTarget } from "./address";
 import { effortDetailAtom, loadEffortDetail } from "./effortstore";
@@ -67,6 +67,7 @@ type NoteTarget = Extract<OpenTarget, { kind: "note" }>;
 type MemHygieneTarget = Extract<OpenTarget, { kind: "memhygiene" }>;
 type WorkflowScanTarget = Extract<OpenTarget, { kind: "workflowscan" }>;
 type CouncilTarget = Extract<OpenTarget, { kind: "council" }>;
+type PairTarget = Extract<OpenTarget, { kind: "pair" }>;
 type SessionTarget = Extract<OpenTarget, { kind: "session" }>;
 type BoardTarget = Extract<OpenTarget, { kind: "board" }>;
 type Caller = AddressHint["caller"];
@@ -112,6 +113,8 @@ function targetName(target: OpenTarget): string {
             return `workflow scan ${target.runId}`;
         case "council":
             return `council ${target.councilId}`;
+        case "pair":
+            return `pair ${target.pairId}`;
         case "session":
             return `conversation ${target.sessionId}`;
         case "board":
@@ -179,6 +182,7 @@ export function isPeekable(target: OpenTarget): boolean {
         target.kind !== "memhygiene" &&
         target.kind !== "workflowscan" &&
         target.kind !== "council" &&
+        target.kind !== "pair" &&
         target.kind !== "session" &&
         target.kind !== "board"
     );
@@ -203,6 +207,7 @@ export async function peekTarget(
         target.kind === "memhygiene" ||
         target.kind === "workflowscan" ||
         target.kind === "council" ||
+        target.kind === "pair" ||
         target.kind === "session" ||
         target.kind === "board"
     ) {
@@ -325,6 +330,8 @@ async function land(
         }
         case "council":
             return selectCouncil(model, target);
+        case "pair":
+            return selectPair(model, target);
         case "session":
             return openSession(model, target, current);
         case "board":
@@ -397,6 +404,7 @@ async function peek(
         | MemHygieneTarget
         | WorkflowScanTarget
         | CouncilTarget
+        | PairTarget
         | SessionTarget
         | BoardTarget
     >,
@@ -813,9 +821,18 @@ function selectMemHygiene(model: AgentsViewModel, project: string): OpenResult {
 }
 
 // A council has no load to prove: the council view reads it by id itself (useCouncil). openCouncil picks the host: Agent's
-// centre for a council the tree still lists (or one not loaded yet), Library's Councils tab for one that has left it.
+// centre for a council the tree still lists (or one not loaded yet), Conversations' full-width council view for one that has
+// left it.
 function selectCouncil(model: AgentsViewModel, target: CouncilTarget): OpenResult {
     openCouncil(model, target.councilId, target.view);
+    return OK;
+}
+
+// A pair has no load to prove either: its view reads it by id (usePairView) and says so when it did not read. openPair picks
+// the host: Agent's centre for a pair the live list holds, where it is driven; Library's full-width pair view for any other
+// (ended, synced, or one nothing lists), read-only.
+function selectPair(model: AgentsViewModel, target: PairTarget): OpenResult {
+    openPair(model, target.pairId);
     return OK;
 }
 
