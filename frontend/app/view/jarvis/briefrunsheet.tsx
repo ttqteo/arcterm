@@ -43,7 +43,7 @@ import {
     type LinkedGroupRead,
     type RunSettingsDraft,
 } from "./runsettings";
-import { approvalsWord, autonomousResolvedNote, configLine, configNote } from "./runsheetmodel";
+import { approvalsWord, autonomousResolvedNote, configLine, configNote, fastTrackWord } from "./runsheetmodel";
 
 const META_ROW = "flex flex-wrap items-center gap-x-3.5 gap-y-1 text-[10.5px] tabular-nums";
 const FIELD = "rounded-[7px] border border-border bg-background px-2 py-1 text-[11.5px] text-ink-hi";
@@ -305,6 +305,8 @@ function LoadedConfig({
     // printed as not saved rather than as the configuration in force
     const notSaved = dirty && (invalid || error != null);
     const shown = notSaved ? draft : baseline;
+    // not part of the draft: the dag carries it from submit, and no dial changes it
+    const fastTrack = fastTrackWord(group);
 
     const submit = (label: string, work: () => Promise<void>, onDone: () => void) => {
         setSaving(label);
@@ -487,6 +489,14 @@ function LoadedConfig({
                     >
                         {approvalsWord(shown.autonomous)}
                     </span>
+                    {fastTrack != null ? (
+                        <span
+                            data-jarvis-brief-sheet-fasttrack
+                            className="rounded-[5px] border border-accent/40 bg-accentbg px-1.5 text-accent-soft"
+                        >
+                            {fastTrack}
+                        </span>
+                    ) : null}
                     {notSaved ? <span className="text-error">not saved</span> : null}
                     <button
                         type="button"

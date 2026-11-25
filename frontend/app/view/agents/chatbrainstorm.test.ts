@@ -490,6 +490,22 @@ describe("runCardView", () => {
         expect(v.stage).toMatchObject({ key: "working", label: "Working" });
     });
 
+    it("says a run on the fast track in its head, from the dag's stored flag", () => {
+        const fast = (n: number) =>
+            ({ ...dag("running"), fasttrack: true, tasks: Array(n).fill({}) }) as unknown as TaskGroup;
+        expect(runCardView(run({ status: "executing", dag: fast(3) })).kind).toBe("Orchestrator run · fast track");
+        // the flag decides, not the task count: a 3-task dag on the full track reads as before
+        expect(runCardView(run({ status: "executing", dag: { ...fast(3), fasttrack: false } as TaskGroup })).kind).toBe(
+            "Orchestrator run"
+        );
+        expect(runCardView(run({ status: "executing", dag: fast(6) })).kind).toBe("Orchestrator run · fast track");
+    });
+
+    it("keeps a quick run a quick run, and reads a run with no dag as the full track", () => {
+        expect(runCardView(run({ mode: "quick", status: "executing" })).kind).toBe("Quick run");
+        expect(runCardView(run({ status: "executing" })).kind).toBe("Orchestrator run");
+    });
+
     it("calls a run whose mode is quick a quick run", () => {
         const v = runCardView(run({ mode: "quick", status: "executing" }));
         expect(v).toMatchObject({ kind: "Quick run", done: false });

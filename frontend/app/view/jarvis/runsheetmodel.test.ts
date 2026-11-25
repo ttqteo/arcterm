@@ -14,6 +14,7 @@ import {
     configNote,
     doneBody,
     doneBodyHasDiff,
+    fastTrackWord,
     finalStageEndable,
     finalStageRerunnable,
     landDock,
@@ -891,6 +892,22 @@ describe("configLine", () => {
         const quick = run({ mode: "quick" });
         expect(configLine(quick, draft({ autonomous: true }), false)).not.toMatch(/autonomous|asks you/);
         expect(configLine(quick, draft(), false)).not.toMatch(/autonomous|asks you/);
+    });
+});
+
+describe("fastTrackWord", () => {
+    it("is the dag's stored flag, never the task count", () => {
+        const dag = (fasttrack: boolean | undefined, tasks: number) =>
+            ({ fasttrack, tasks: Array(tasks).fill({}) }) as unknown as TaskGroup;
+        expect(fastTrackWord(dag(true, 3))).toBe("fast track");
+        // a dag past the fast track's size that carries the flag still says so (the flag is set once, at submit)
+        expect(fastTrackWord(dag(true, 6))).toBe("fast track");
+        expect(fastTrackWord(dag(false, 3))).toBeNull();
+        expect(fastTrackWord(dag(undefined, 3))).toBeNull();
+    });
+
+    it("says nothing for a run with no dag read yet", () => {
+        expect(fastTrackWord(null)).toBeNull();
     });
 });
 
