@@ -481,6 +481,82 @@ export default function (kit) {
                         stillPicked.length === 0,
                     { badCap: badCap && { submit: badCap.submit, capInvalid: badCap.capInvalid, capHint: badCap.capHint }, goodCap: goodCap && goodCap.submit, refused: refused && { error: refused.error, submit: refused.submit, cancel: refused.cancel }, refusedRec, calls, closed, sent, focus, stillPicked }
                 );
+
+                // 5. pair-row: a pair is one row in its working agent's place, folded while another agent is chosen: its line
+                // says how each side stands, the two agents' own rows are gone. Its chevron shows them under it (worker, then
+                // judge, each saying which it is) and folds them again; a click on the row opens the conversation with the
+                // working agent chosen and the rail on Decided, the row the chosen one
+                await stopRec(h);
+                const PAIR_ROW = `[data-pair-row="${PAIR.id}"]`;
+                const readPairRow = `(() => {
+                    const row = document.querySelector('${PAIR_ROW}');
+                    const flat = (el) => (el?.innerText ?? "").replace(/\\s+/g, " ").trim();
+                    const ids = [...document.querySelectorAll("[data-agent-tree] [data-pair-row], [data-agent-tree] [data-agent-row]")].map(
+                        (el) => el.getAttribute("data-pair-row") ?? el.getAttribute("data-agent-row")
+                    );
+                    return row
+                        ? {
+                              open: row.getAttribute("data-pair-row-open"),
+                              name: flat(row.querySelector("[data-pair-row-name]")),
+                              fresh: row.querySelector("[data-pair-row-new]")?.getAttribute("data-pair-row-new") ?? null,
+                              sides: [...row.querySelectorAll("[data-pair-row-side]")].map(flat),
+                              selected: row.className.includes("bg-surface-selected"),
+                              order: ids,
+                              roles: [...document.querySelectorAll("[data-agent-pair-role]")].map((el) => el.getAttribute("data-agent-pair-role")),
+                          }
+                        : null;
+                })()`;
+                await seedPair(h, [pairView(ctx.now, { judges: 1 })]);
+                await AC.focusAgent(h, PAIR.other);
+                await until(h, `document.querySelector('${PAIR_ROW}')?.getAttribute("data-pair-row-open") === "false"`);
+                await polishNap(300);
+                const folded = await h.ev(readPairRow);
+                await shot(h, "5-pair-row-folded");
+                await mouseOn(h, `${PAIR_ROW} [data-pair-row-fold]`);
+                await until(h, `!!document.querySelector('[data-agent-pair-role="judge"]')`);
+                await polishNap(400);
+                const unfolded = await h.ev(readPairRow);
+                await shot(h, "5-pair-row-open");
+                await mouseOn(h, `${PAIR_ROW} [data-pair-row-fold]`);
+                await until(h, `!document.querySelector('[data-agent-pair-role]')`);
+                const refolded = await h.ev(readPairRow);
+                await mouseOn(h, PAIR_ROW);
+                await until(h, `!!document.querySelector("[data-pair-pane]")`);
+                await polishNap(300);
+                const onRow = await h.ev(readPairRow);
+                const shown = await AC.agentPage(
+                    h,
+                    `const { centerModeAtom, pairSelAtom } = await mod("app/view/agents/agentcenter.ts");
+                    const tab = document.querySelector('aside[aria-label="Agent details"] [data-rail-tab="decided"]');
+                    return {
+                        mode: globalStore.get(centerModeAtom),
+                        sel: globalStore.get(pairSelAtom),
+                        focus: globalStore.get(agentsModel().focusIdAtom),
+                        decided: tab?.getAttribute("aria-selected") ?? null,
+                    };`
+                );
+                await shot(h, "5-pair-row-opens");
+                const at = (r, id) => r?.order.indexOf(id) ?? -1;
+                rec(
+                    "pair-row: with another agent chosen the pair is one folded row where its working agent was, named after it, its line saying \"worker idle\" and \"judge working\", neither agent's own row in the tree; its chevron lists the worker then the judge under it, each saying which it is, and folds them away again; a click on the row opens the conversation with the working agent chosen, the rail on Decided and the row selected",
+                    folded?.open === "false" &&
+                        folded.name === "Plan oracle-tightening" &&
+                        JSON.stringify(folded.sides) === JSON.stringify(["worker idle", "judge working"]) &&
+                        at(folded, PAIR.worker) === -1 &&
+                        at(folded, PAIR.judge) === -1 &&
+                        unfolded?.open === "true" &&
+                        at(unfolded, PAIR.worker) === at(unfolded, PAIR.id) + 1 &&
+                        at(unfolded, PAIR.judge) === at(unfolded, PAIR.id) + 2 &&
+                        JSON.stringify(unfolded.roles) === JSON.stringify(["worker", "judge"]) &&
+                        refolded?.open === "false" &&
+                        refolded.roles.length === 0 &&
+                        shown?.mode === "pair" &&
+                        shown.sel === PAIR.id &&
+                        shown.focus === PAIR.worker &&
+                        shown.decided === "true" &&
+                        onRow?.selected === true,
+                    { folded, unfolded, refolded, onRow, shown }
+                );
                 return steps;
             },
             async teardown(h) {

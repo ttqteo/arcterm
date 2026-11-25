@@ -23,7 +23,9 @@ const readPane = `(() => {
     const pane = ${PANE};
     if (!pane) return null;
     const flat = (el) => (el?.textContent ?? "").replace(/\\s+/g, " ").trim();
-    const tl = ${TIMELINE}.getBoundingClientRect();
+    // the messages sit in Chat's 760px column, centred in the timeline: lean and width are read against that column
+    const tl = (pane.querySelector("[data-pair-column]") ?? ${TIMELINE}).getBoundingClientRect();
+    const scroller = ${TIMELINE}.getBoundingClientRect();
     const mid = (tl.left + tl.right) / 2;
     const msgs = [...pane.querySelectorAll("[data-pair-msg]")].map((m) => {
         const art = m.querySelector("article");
@@ -51,12 +53,18 @@ const readPane = `(() => {
     });
     const comp = pane.querySelector("[data-pair-composer]");
     return {
-        back: flat(pane.querySelector("[data-pair-back]")),
+        // the agent header stays over the conversation: its Pair button is lit, and is the way back
+        toggle: (() => {
+            const b = document.querySelector("[data-agent-header] [data-pair-open]");
+            return b ? { pressed: b.getAttribute("aria-pressed"), text: flat(b) } : null;
+        })(),
+        back: !!pane.querySelector("[data-pair-back]"),
         title: flat(pane.querySelector("[data-pair-title]")),
         states: [...pane.querySelectorAll("[data-pair-judge-state]")].map(flat),
         unpair: !!pane.querySelector("[data-pair-unpair]"),
         msgs,
         placeholder: comp?.getAttribute("placeholder") ?? null,
+        column: { width: Math.round(tl.width), centred: Math.abs((tl.left + tl.right) / 2 - (scroller.left + scroller.right) / 2) <= 2 },
         // no round counter anywhere
         rounds: /\\bround\\b/i.test(flat(pane)),
     };
@@ -187,11 +195,13 @@ export default function (kit) {
                 await narrow(h, null);
                 await h.ev(`(() => { const t = ${TIMELINE}; t.scrollTop = t.scrollHeight; })()`);
                 rec(
-                    "conversation: five messages in time order, the working agent's on the left and the judge's on the right (70% wide, each with a head of who and the time), the judge's answers quoting what they answer with the quoted author, the held command as one dashed line with Run now, one composer reading its placeholder, the bar naming the worker, the judge and its state, and no round counter",
+                    "conversation: five messages in time order, in Chat's centred column of at most 760px, the working agent's on the left and the judge's on the right (70% of it, each with a head of who and the time), the judge's answers quoting what they answer with the quoted author, the held command as one dashed line with Run now, one composer reading its placeholder, the agent header kept over it with its Pair button lit (no back button of the pane's own), the pair's line naming the judge and its state, and no round counter",
                     convo != null &&
                         convo.msgs.map((m) => m.id).join() === "pm-opening,pm-three-points,pm-checked,pm-pilot-first,pm-accept" &&
                         convo.msgs.map((m) => `${m.side}/${m.leans}`).join() === "left/left,right/right,left/left,right/right,left/left" &&
                         convo.msgs.every((m) => m.widthPct >= 40 && m.widthPct <= 75) &&
+                        convo.column.width <= 760 &&
+                        convo.column.centred === true &&
                         /^Plan oracle-tightening \d\d:\d\d/.test(byId["pm-opening"].head) &&
                         /^Judge \d\d:\d\d/.test(byId["pm-three-points"].head) &&
                         byId["pm-opening"].quote === null &&
@@ -206,7 +216,9 @@ export default function (kit) {
                         byId["pm-accept"].held[0].dashed === true &&
                         convo.msgs.filter((m) => m.held.length > 0).length === 1 &&
                         convo.placeholder === PLACEHOLDER &&
-                        convo.back === "Plan oracle-tightening" &&
+                        convo.toggle?.pressed === "true" &&
+                        convo.toggle.text === "Pair" &&
+                        convo.back === false &&
                         convo.title === `Paired with judge ${SHORT.judge}` &&
                         convo.states.length === 1 &&
                         convo.states[0] === "judge reading · 12 s" &&
@@ -362,7 +374,7 @@ export default function (kit) {
                     { chipIn, chipOut }
                 );
 
-                // edges: the states nobody opens. No messages says so; a 200-character name, a 400-character command and a
+                // edges: the states nobody opens. No messages says so; a 400-character command and a
                 // 300-character word break nothing, in the pane and in a 520px column
                 const fit = () =>
                     h.ev(`(() => {
@@ -384,11 +396,10 @@ export default function (kit) {
                 await polishWaitFor(h, `!!document.querySelector("[data-pair-empty]")`, WAIT_MS);
                 const emptyText = await h.ev(`document.querySelector("[data-pair-empty]")?.textContent ?? null`);
                 const long = structuredClone(pairView(ctx.now));
-                long.worker.name = "Plan oracle-tightening and the amendment to the preregistration ".repeat(4).trim();
                 long.messages[4].held = [{ command: `python study_pilot.py --tag ${"benigngate_probe_".repeat(24)}`, ts: ctx.now }];
                 long.messages[4].text += ` ${"x".repeat(300)}`;
                 await seedPair(h, [long]);
-                await polishWaitFor(h, `(document.querySelector("[data-pair-back]")?.textContent ?? "").startsWith("Plan oracle-tightening and")`, WAIT_MS);
+                await polishWaitFor(h, `(${MSG("pm-accept")}?.textContent ?? "").includes("xxxxxxxxxx")`, WAIT_MS);
                 await polishNap(300);
                 const wideFit = await fit();
                 await narrow(h, 520);
@@ -397,23 +408,24 @@ export default function (kit) {
                 await shot(h, "6-edges-narrow");
                 await narrow(h, null);
                 await seedPair(h, [pairView(ctx.now)]);
-                await polishWaitFor(h, `document.querySelector("[data-pair-back]")?.textContent === "Plan oracle-tightening"`, WAIT_MS);
+                await polishWaitFor(h, `!!${MSG("pm-accept")} && !${MSG("pm-accept")}.textContent.includes("xxxxxxxxxx")`, WAIT_MS);
                 const okFit = (f) => f.timelineScrollsSideways === false && f.paneScrollsSideways === false && f.unpairInBar && f.heldInBlock && f.blockInTimeline;
                 rec(
-                    "edges: a conversation with no messages reads \"No messages yet.\"; a very long agent name, held command and unbroken word push nothing out of the pane, the bar keeps Unpair, and the same holds in a 520px column",
+                    "edges: a conversation with no messages reads \"No messages yet.\"; a very long held command and unbroken word push nothing out of the pane, the bar keeps Unpair, and the same holds in a 520px column",
                     emptyText === "No messages yet." && okFit(wideFit) && okFit(narrowFit),
                     { emptyText, wideFit, narrowFit }
                 );
 
-                // back-to-chat: the worker's name leaves the pair mode, to its own Chat
+                // pair-toggle: the header's lit Pair button leaves the pair mode, to the agent's own view, and is unlit there
                 const modeIn = await centerMode(h);
-                await click(h, `document.querySelector("[data-pair-back]")`);
+                await click(h, `document.querySelector("[data-agent-header] [data-pair-open]")`);
                 await polishWaitFor(h, `!${PANE}`, WAIT_MS);
                 const modeOut = await centerMode(h);
+                const unlit = await h.ev(`document.querySelector("[data-agent-header] [data-pair-open]")?.getAttribute("aria-pressed") ?? null`);
                 rec(
-                    "back-to-chat: with the pair shown the centre mode is pair; clicking the worker's name makes it terminal and the conversation is gone",
-                    modeIn === "pair" && modeOut === "terminal" && (await h.ev(`!${PANE}`)) === true,
-                    { modeIn, modeOut }
+                    "pair-toggle: with the pair shown the centre mode is pair; the header's Pair button makes it terminal, the conversation is gone and the button is no longer pressed",
+                    modeIn === "pair" && modeOut === "terminal" && (await h.ev(`!${PANE}`)) === true && unlit === "false",
+                    { modeIn, modeOut, unlit }
                 );
 
                 // unpair: Unpair calls PairUnpairCommand for the pair, then the centre is the agent's Chat again

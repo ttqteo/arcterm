@@ -23,6 +23,13 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
 
 ## 2026-11-25
 
+- [ ] (arcterm) **A live pair as one tree row, and the Pair toggle in the Tauri app** (`agenttree.tsx` PairTreeRow,
+  `pairjudgemenu.tsx`, `agentsurface.tsx`). Checked on seeded pairs in `task dev:browser` only (`pair-tree`,
+  `pair-header`, `pair-conversation`): the Tauri dev app's Rust build stalled in `rustc` on the worktree. With two live
+  agents paired: their two rows become one folded row in the working agent's place ("worker … · judge …", the pair's
+  RAM and tokens), the arrow opens the two under it (worker, judge), and one of them asking opens it by itself. A click
+  on the row opens the conversation under the working agent's header, Pair lit and the rail on Decided; Pair, Chat,
+  Terminal or Esc go back. On the judge, Pair has no count and the link icon opens the working agent.
 - [ ] (arcterm) **Quote from a file into the chat box.** On an agent showing Chat, open a markdown file in its panel's
   File tab and select part of a paragraph: a Quote button (key `q`) floats beside Comment. `q` (or the button) puts
   `path:N-M` (the paragraph's lines, the path relative to the agent's folder) and the passage as `> ` lines into the
@@ -38,7 +45,7 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
 - [ ] (arcterm) **Pair two live agents and watch a full exchange end on a stop** (`pkg/agentpair`, the Add judge menu in
   an agent's header, `docs/guide/agent-pair.md`). The pair scenarios run on seeded pairs, so no agent has ever run one.
   With a Claude agent that has a plan open, Add judge → Open a new judge: a judge tab boots on Opus in the same folder,
-  the working agent's header turns to "Paired with judge <id>", and the button opens the conversation. Watch the judge
+  the working agent's header gets a Pair button beside Chat / Terminal, and it opens the conversation. Watch the judge
   answer, its reply (with a `> ` quote line) reach the working agent as a prompt, and the working agent end its reply
   with an `arc-pair` block that fills the rail's Decided tab. Let it run until a
   stop line reads "Paused: …" (no new points, both agree, or the token cap set low on the sheet); after it, nothing is

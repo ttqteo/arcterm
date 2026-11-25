@@ -20,10 +20,15 @@ Menu của nút có:
   working agent, và dặn "đọc code thật trước khi kết luận".
 - Hoặc một agent Claude hay pi đang chạy trong project mà chưa nằm trong pair nào; agent đó nhận brief làm prompt đầu tiên.
 
-Khi pair đã thành, nút đổi thành **Paired with judge `<id>` · N new** (N là số tin nhắn từ lần cuối bạn mở cuộc trò
-chuyện) và mở cuộc trò chuyện của pair. Bên cạnh có nút Add judge nhỏ để thêm judge thứ hai, thứ ba. Dòng trạng thái của
-agent ghi "waiting on judge" khi judge còn nợ một câu trả lời. Header của judge ghi **Judging `<id của working agent>`** và
-mở cùng cuộc trò chuyện đó.
+Khi pair đã thành, header có nút **Pair** ngay cạnh Chat / Terminal, kèm số tin mới (từ lần cuối bạn mở cuộc trò
+chuyện). Pair là nút bật tắt: bấm thì cột giữa thành cuộc trò chuyện của pair và nút sáng lên, bấm lại (hoặc Chat,
+Terminal, Esc) thì về đúng view lúc trước. Bên cạnh có nút **+** để thêm judge thứ hai, thứ ba. Dòng trạng thái của agent
+ghi "waiting on judge" khi judge còn nợ một câu trả lời. Header của judge cũng có nút Pair (không đếm tin mới) mở cùng
+cuộc trò chuyện đó, và ở chỗ dấu + là một icon link sang agent mà nó đang chấm.
+
+Trong cây Agent, một pair là **một dòng** ở chỗ của working agent: bấm vào thì mở cuộc trò chuyện. Mặc định dòng đó gập
+lại, dòng phụ ghi trạng thái từng bên ("worker working · judge idle"), RAM và token là của cả pair. Mũi tên bên trái mở
+ra working agent và các judge bên dưới; khi một agent trong pair đang hỏi bạn, hay đang được chọn, nó tự mở ra.
 
 **Cách thứ hai: cây Agent.** Chọn hai agent (Ctrl hoặc Shift+click), bấm chuột phải, chọn **Pair: worker + judge**, nằm
 trên **Discuss together** (mục này vẫn mở Setup của council). Agent chọn đầu tiên là working agent. Một sheet nhỏ hiện ra:
@@ -38,8 +43,9 @@ Không có lệnh `/judge` và không có `wsh pair`.
 
 ## Cuộc trò chuyện
 
-Bấm nút Paired, cột giữa của working agent thành cuộc trò chuyện của pair. Tên agent ở thanh trên cùng đưa bạn về Chat
-riêng của nó; thanh đó cũng có các judge cùng trạng thái của họ và nút **Unpair**.
+Bấm nút Pair (hay dòng của pair trong cây), cột giữa thành cuộc trò chuyện của pair, header của agent vẫn ở trên, và rail
+chuyển sang tab Decided. Một dòng mảnh dưới header ghi bạn đang ghép với ai (các judge, hay agent mà judge đang chấm),
+trạng thái của bên kia, và nút **Unpair**.
 
 - Đọc như nhắn tin giữa hai người, từ trên xuống theo thời gian: tin của working agent lệch trái, của judge lệch phải.
   Có nhiều judge thì mỗi tin bên phải ghi tên judge của nó.

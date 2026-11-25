@@ -90,6 +90,15 @@ export function toggleChecksOpen(agentId: string, open: boolean, key: string): v
     });
 }
 
+// folds or unfolds a pair's working agent and judges under its row (pairShown)
+export function togglePairOpen(pairId: string, open: boolean): void {
+    globalStore.set(treeFoldsAtom, (f) => {
+        const pairsOpen = new Map(f.pairsOpen ?? []);
+        pairsOpen.set(pairId, !open);
+        return { ...f, pairsOpen };
+    });
+}
+
 // folds or unfolds an agent's running background-task rows (tasksShown)
 export function toggleTasksOpen(agentId: string, open: boolean): void {
     globalStore.set(treeFoldsAtom, (f) => {

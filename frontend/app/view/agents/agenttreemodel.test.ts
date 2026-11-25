@@ -11,6 +11,7 @@ import {
     extendRow,
     NO_ROW_SELECTION,
     pairPickable,
+    pairShown,
     pickedRowIds,
     seatableOf,
     selectableRowIds,
@@ -354,6 +355,84 @@ describe("buildAgentTree with a brainstorm judge", () => {
     });
 });
 
+describe("buildAgentTree with a pair", () => {
+    const NOLIN: Lineage = { roles: {}, runs: {} };
+    const pairInfo = (judges: string[], extra: Partial<PairInfo> = {}): PairInfo => ({
+        id: "p1",
+        project: "waveterm",
+        worker: { tab: "w", name: "w", harness: "claude" },
+        judges: judges.map((tab) => ({ tab, name: tab, harness: "claude" })),
+        state: "relaying",
+        stopreason: "",
+        owed: false,
+        messagecount: 0,
+        lastts: 0,
+        ...extra,
+    });
+    const build = (agents: AgentVM[], list: PairInfo[], folds?: Partial<TreeFolds>, focusId?: string) =>
+        buildAgentTree(
+            agents,
+            agents.map((a) => a.id),
+            NOLIN,
+            { collapsed: new Set(), doneOpen: new Map(), queuedOpen: new Set(), extrasOpen: new Set(), ...folds },
+            undefined,
+            new Map(),
+            { list, focusId }
+        );
+    const shape = (rows: AgentTreeRow[]) =>
+        rows.map((r) =>
+            r.kind === "pair"
+                ? `pair:${r.worker.id}+${r.judges.map((j) => j.id).join(",")}:${r.open ? "open" : "folded"}`
+                : r.kind === "parent"
+                  ? `${r.pairRole ?? "parent"}:${r.agent.id}${r.nested ? ":nested" : ""}`
+                  : r.kind
+        );
+
+    it("folds the working agent and its judge into one row in the working agent's place, counting all of them", () => {
+        const agents = [vm("x", "idle", WAVE), vm("w", "working", WAVE), vm("j", "idle", WAVE), vm("y", "idle", WAVE)];
+        const rows = build(agents, [pairInfo(["j"])]);
+        expect(shape(rows)).toEqual(["group", "parent:x", "pair:w+j:folded", "parent:y"]);
+        expect(rows[0]).toMatchObject({ kind: "group", count: 4, running: 1 });
+    });
+
+    it("lists the working agent then each judge under the row while the person has it open", () => {
+        const agents = [vm("w", "idle", WAVE), vm("j", "idle", WAVE), vm("k", "idle", WAVE)];
+        const rows = build(agents, [pairInfo(["j", "k"])], { pairsOpen: new Map([["p1", true]]) });
+        expect(shape(rows)).toEqual(["group", "pair:w+j,k:open", "worker:w:nested", "judge:j:nested", "judge:k:nested"]);
+    });
+
+    it("opens by itself while one of them asks you, or while one is chosen", () => {
+        const asking = [vm("w", "idle", WAVE), vm("j", "asking", WAVE)];
+        expect(shape(build(asking, [pairInfo(["j"])], { pairsOpen: new Map([["p1", false]]) }))[1]).toBe("pair:w+j:open");
+        const idle = [vm("w", "idle", WAVE), vm("j", "idle", WAVE)];
+        expect(shape(build(idle, [pairInfo(["j"])], {}, "j"))[1]).toBe("pair:w+j:open");
+    });
+
+    it("leaves an ended pair's agents as plain rows", () => {
+        const agents = [vm("w", "idle", WAVE), vm("j", "idle", WAVE)];
+        expect(shape(build(agents, [pairInfo(["j"], { state: "ended" })]))).toEqual(["group", "parent:w", "parent:j"]);
+    });
+
+    it("folds no pair whose working agent is not in the roster, and leaves its judge in place", () => {
+        const agents = [vm("j", "idle", WAVE)];
+        expect(shape(build(agents, [pairInfo(["j"])]))).toEqual(["group", "parent:j"]);
+    });
+});
+
+describe("pairShown", () => {
+    const team = [vm("w", "idle"), vm("j", "idle")];
+
+    it("is folded by default, and follows the person's fold", () => {
+        expect(pairShown(team, undefined, undefined)).toBe(false);
+        expect(pairShown(team, true, undefined)).toBe(true);
+    });
+
+    it("opens over a fold while one of them asks or is chosen", () => {
+        expect(pairShown([vm("w", "idle"), vm("j", "asking")], false, undefined)).toBe(true);
+        expect(pairShown(team, false, "w")).toBe(true);
+    });
+});
+
 describe("buildAgentTree with run lineage", () => {
     const task = (id: string, state: string): TaskNode => ({ id, label: id, state }) as TaskNode;
     const run = (runId: string, tasks: TaskNode[], digest?: DagStatusDigest): RunInfo => ({
@@ -396,6 +475,8 @@ describe("buildAgentTree with run lineage", () => {
                     return `stage:${r.stageRole}:${r.agent.id}${r.lens ? `@${r.lens}` : ""}${r.outcome ? `:${r.outcome}` : ""}`;
                 case "final":
                     return `final:${r.agent?.id ?? "-"}`;
+                case "pair":
+                    return `pair:${r.pairId}`;
                 default:
                     return `${r.kind}:${r.run.runId}:${r.live}`;
             }

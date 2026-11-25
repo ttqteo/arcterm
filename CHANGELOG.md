@@ -38,10 +38,17 @@ and a picture given to a line that is not big.
   markdown Preview, or Quote in chat (`Alt`+`Q`, or the right-click menu) in Source. It lands in the agent's chat box as
   a `> ` quote under the file and lines it came from (`docs/plan.md:42-44`), the caret under it for your question.
 
+### Changed
+
+- A pair is one row in the Agent tree, in its working agent's place: a click opens the conversation, and its arrow
+  shows the working agent and the judges under it. Folded, its line says how each side stands.
+- The agent header stays over a pair's conversation: Pair, beside Chat and Terminal, switches between the two (a + beside
+  it adds another judge; on a judge, a link goes to the agent it judges), and the rail turns to Decided.
+
 ### Fixed
 
 - A pair names its agents by their title, as the Agent tree does, not by the project their tab was launched in, and
-  the agent's rail with the Decided tab stays beside the conversation; the way back to Chat reads as a button.
+  the agent's rail with the Decided tab stays beside the conversation.
 
 ## 1.10.0 — 2026-11-25
 
