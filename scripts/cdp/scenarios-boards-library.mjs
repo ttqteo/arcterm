@@ -531,15 +531,17 @@ export default function (kit) {
                     };`
                 );
                 const ready = await until(() => h.ev(`document.querySelector(${q(`${ALONE} [data-board-canvas="${B_LIVE}"]`)})?.dataset.boardReady === "true"`));
-                // no cell of it in the split: a pick shows alone, only Open in split or a drop reshapes a split
-                const noCell = (await count(`[data-board-cell="${B_LIVE}"]`)) === 0;
+                // no cell of it in the split: a pick shows alone, only Open in split or a drop reshapes a split.
+                // data-board-cell is on BoardCell's root, which the alone view draws too; a cell in the split is wrapped
+                // by BoardGridCell, which carries data-board-cell-of={boardKey} (the key ALONE uses).
+                const noCell = (await count(`[data-board-cell-of="${PROJECT}/${B_LIVE}"]`)) === 0;
                 const libraryOpen = await count(`[data-library-board-open]`);
                 await polishNap(400);
                 await shot("9-live-agent");
                 rec(
                     name,
                     clicked && alone && ready && noCell && st.surface === "agent" && st.open.length === 0 && libraryOpen === 0,
-                    { st, gridBefore, noCell, libraryOpen }
+                    { clicked, alone, ready, st, gridBefore, noCell, libraryOpen }
                 );
                 // back to the agent, as Close on the alone board does
                 await boardPage(h, `(await mod("app/view/agents/agentcenter.ts")).leaveCenter(); return true;`);
@@ -617,10 +619,14 @@ export default function (kit) {
                 const rowsBefore = await count(`[data-library-board]`);
                 const before = await boardCalls(h, "BoardDeleteCommand");
                 const clicked = await click(`[data-library-board-open] [data-library-board-delete="${B_ENDED}"]`);
-                const asked = await until(() => h.ev(`[...document.querySelectorAll("button")].some((b) => b.textContent.trim() === "Delete")`));
+                // the confirm's button is a DialogButton: its label, then a key-hint <kbd> ("DeleteEnter" as textContent),
+                // so match the label alone (firstChild), and only inside the dialog, never the header's text-less trash
+                // or a row's Delete button
+                const CONFIRM_DELETE = `[...document.querySelectorAll('[role="dialog"] button')].find((b) => (b.firstChild?.textContent ?? "").trim() === "Delete")`;
+                const asked = await until(() => h.ev(`${CONFIRM_DELETE} != null`));
                 await shot("9c-delete-confirm");
                 const confirmed = await h.ev(`(() => {
-                    const b = [...document.querySelectorAll("button")].find((x) => x.textContent.trim() === "Delete");
+                    const b = ${CONFIRM_DELETE};
                     b?.click();
                     return b != null;
                 })()`);
@@ -640,7 +646,7 @@ export default function (kit) {
                         calls.at(-1)?.project === PROJECT &&
                         detail === 0 &&
                         rowsAfter === rowsBefore - 1,
-                    { calls: calls.length, detail, rowsBefore, rowsAfter }
+                    { clicked, asked, confirmed, gone, calls: calls.length, detail, rowsBefore, rowsAfter }
                 );
             });
 
