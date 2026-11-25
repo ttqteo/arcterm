@@ -51,7 +51,7 @@ and a picture given to a line that is not big.
   kaeltran16 fork).
 - Each drawer answer on a board is its own titled drawing: the row above the board lists them one click away, and the
   view moves to a new drawing as it lands unless you went back to an earlier one, which then shows a `new` mark on the
-  new one (from the kaeltran16 fork). <!-- big --> <!-- shot: none -->
+  new one (from the kaeltran16 fork). <!-- big --> <!-- shot: 1.11.0-board-drawings.webp -->
 
 ### Changed
 

@@ -696,7 +696,9 @@ export default function (kit) {
                 const none = await text(`${SPLIT(B1)} [data-board-ask-selected]`);
                 // Show scrolled to its shapes with an animation: take the position once the view has settled
                 await polishNap(900);
-                const at = await canvasPage(`return centreOf("auth-key");`);
+                // near the lower-right corner, as step 17a clicks: in a narrow half cell a one-box part's Read label sits
+                // over the box's middle, and a click there opens Read instead of selecting the shape
+                const at = await canvasPage(`return pointIn("auth-key", 0.85, 0.8);`);
                 await clickAt(at);
                 const selectedText = await until(async () => (await text(`${SPLIT(B1)} [data-board-ask-selected]`)) === "Selected auth key");
                 const picked = await canvasPage(`return selected();`);
