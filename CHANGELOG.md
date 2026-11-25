@@ -64,6 +64,8 @@ and a picture given to a line that is not big.
   shows the working agent and the judges under it. Folded, its line says how each side stands.
 - The agent header stays over a pair's conversation: Pair, beside Chat and Terminal, switches between the two (a + beside
   it adds another judge; on a judge, a link goes to the agent it judges), and the rail turns to Decided.
+- In Chat, a `! command` an agent asks you to type inside a sentence is highlighted like the must-read lines, so it no
+  longer reads as just another piece of code.
 
 ### Fixed
 

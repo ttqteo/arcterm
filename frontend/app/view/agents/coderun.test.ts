@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it } from "vitest";
-import { isCompactBlock, isPromptedCommand, isRunnableLang, runnableCommand } from "./coderun";
+import { isCompactBlock, isInlineCommand, isPromptedCommand, isRunnableLang, runnableCommand } from "./coderun";
 
 describe("isRunnableLang", () => {
     it("takes the shell languages, in any case", () => {
@@ -52,6 +52,21 @@ describe("isPromptedCommand", () => {
         expect(isPromptedCommand("$ cd web\nnpm test", undefined)).toBe(false);
         expect(isPromptedCommand("$HOME/bin/x", undefined)).toBe(false);
         expect(isPromptedCommand("! ", undefined)).toBe(false);
+    });
+});
+
+describe("isInlineCommand", () => {
+    it("takes a span that is a `! ` command", () => {
+        expect(isInlineCommand("! task install")).toBe(true);
+        expect(isInlineCommand("! wsh runs land a8e7ce25 --force")).toBe(true);
+    });
+
+    it("refuses `!=`, `!important`, a bare `!` and a `$ ` span", () => {
+        expect(isInlineCommand("!= null")).toBe(false);
+        expect(isInlineCommand("!important")).toBe(false);
+        expect(isInlineCommand("! ")).toBe(false);
+        expect(isInlineCommand("$ npm test")).toBe(false);
+        expect(isInlineCommand("a ! b")).toBe(false);
     });
 });
 

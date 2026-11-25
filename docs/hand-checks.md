@@ -60,6 +60,10 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
   implementing Ta… · failed` row is gone after installing: its agent redid Task 3 after it. On an agent whose subagent
   failed with nothing after it, hover the row: a ✕ fades in beside `failed`; press it and the row folds on the spring
   (no snap, no gap left behind), and stays gone after a restart.
+- [ ] (arcterm) **A `! cmd` inside a sentence is highlighted in Chat.** In an agent's Chat, a reply with a sentence such
+  as "…rồi gõ `! wsh runs land <id> --force`": the code span draws in the same yellow tint as a ==marked== sentence,
+  in the prose's ink rather than the indigo of other code; `!= null` or `$ npm test` in a span stay plain code; a
+  selection over it still shows the band alone. Not tried live: no dev app was up.
 - [ ] (arcterm) **Your pins move into the workspace.** After installing, open an agent in `D:\work\mit\mit-thesis`
   (or Code on it): its Files tab still lists the 4 files you had pinned, in the same order, and
   `wsh getmeta -b workspace:<oid> code:pins` prints them. Pin or unpin one and run the command again: it follows. On the
