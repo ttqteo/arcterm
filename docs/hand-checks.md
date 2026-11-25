@@ -23,6 +23,12 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
 
 ## 2026-11-25
 
+- [ ] (arcterm) **Chat's pair cards move as they should.** In a live pair, open the working agent's Chat while it writes
+  a reply that ends with its ```` ```arc-pair ```` list: no code box shows while the fence is open, and the Pair list card
+  enters on the spring once it closes. Press Agreed and an older list's row: each opens and folds on the spring, its
+  chevron turning. Press a chip: the chips crossfade to `You answered <chip>` with the box keeping its height. With
+  reduced motion on, all of it lands at once. (`task verify:ui -- chat-pair-blocks` checks the end states.)
+
 - [ ] (arcterm) Kael sync 11-25: a real agent's quick run nests under it in the Agent tree (the CDP scenario
   `run-nesting` draws a dev-mock roster with seeded runs, and this run's agent ran no CDP, so neither the live nesting
   nor the row's move has been watched). In an agent's tab have it run `wsh runs start --project <dir> "<goal>"` → once

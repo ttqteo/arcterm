@@ -31,6 +31,7 @@ import { INITIATIVE_LANG } from "./chatinitiative";
 import { InitiativeBlockView } from "./chatinitiativecard";
 import { copyableHref } from "./chatlink";
 import { CodePicture, ImageNamed, ReplyImage } from "./chatlocalimage";
+import { JudgeBlock, PairBlock } from "./chatpairblock";
 import { CodeRefBadge, RefBadge } from "./chatrefbadge";
 import { STEPS_LANG } from "./chatsteplist";
 import { StepsBlock } from "./chatsteplistview";
@@ -40,6 +41,7 @@ import { CodeBlock } from "./codeblock";
 import { isInlineCommand } from "./coderun";
 import { splitInsightBlocks } from "./insightblocks";
 import { guardDollars } from "./mathdollars";
+import { JUDGE_LANG, PAIR_LANG } from "./pairblocks";
 import { PathLink } from "./pathlinkcontext";
 import { inlinePathOf } from "./pathlinks";
 import { MathToken } from "./prosetokens";
@@ -225,7 +227,8 @@ function InlineCode({ className, children }: { className?: string; children?: Re
 // skim highlight in, `diagrams` draws a ```mermaid block as its diagram instead of its code and an ```arc-visual block
 // as the page it names where a visual host provides one (Chat's, chatvisualview.tsx), as code elsewhere (an ```arc-initiative
 // block the same way: the card an agent proposes where Chat's initiative host provides one, chatinitiativecard.tsx, and an
-// ```arc-steps block as its turn's checklist where Chat's steps host provides one, chatsteplistview.tsx), and `mentions`
+// ```arc-steps block as its turn's checklist where Chat's steps host provides one, chatsteplistview.tsx, and an
+// ```arc-pair or ```arc-judge block as a pair card where Chat's pair host provides one, chatpairblock.tsx), and `mentions`
 // draws an `@path` (remarkfilemention.ts) as a file pill (chatfilepill.tsx) and an `agent:`, `run:` or `council:`
 // reference (remarkrefmention.ts) as a badge (chatrefbadge.tsx; plain text where Chat provides nothing to resolve it
 // against). They combine: each adds its plugin and its component to the same map. A council's messages take marks and
@@ -269,6 +272,13 @@ function diagramOf(lang: string | undefined, raw: string): ReactNode {
     // the card an agent proposes (chatinitiativecard.tsx); outside Chat's host it is the code block
     if (lang === INITIATIVE_LANG) {
         return <InitiativeBlockView raw={raw} />;
+    }
+    // a pair's list and a judge's marks as cards (chatpairblock.tsx); outside Chat's host they are the code block
+    if (lang === PAIR_LANG) {
+        return <PairBlock raw={raw} />;
+    }
+    if (lang === JUDGE_LANG) {
+        return <JudgeBlock raw={raw} />;
     }
     if (lang === "math") {
         return <DisplayMath tex={raw} />;

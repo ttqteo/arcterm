@@ -85,6 +85,8 @@ type BlockItem struct {
 	Chips []string // an A item's answer chips: [a | b]
 }
 
+// The line patterns below (itemLine, chipsTail, reopenLine, newLine, noNewLine) are mirrored in
+// frontend/app/view/agents/pairblocks.ts, which draws the blocks as cards in Chat: keep the two sides identical.
 // `D1 text`, `O2: text`, `A3 text`; a Markdown bullet before it is read past, as parseSteps does for arc-steps
 var itemLine = regexp.MustCompile(`^\s*(?:[-*+]\s+)?([DOAdoa])(\d+):?\s+(\S.*?)\s*$`)
 

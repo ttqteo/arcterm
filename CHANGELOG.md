@@ -46,6 +46,8 @@ and a picture given to a line that is not big.
 
 ### Changed
 
+- In Chat, a pair's list and a judge's marks show as cards instead of code: the newest list with its answer chips,
+  an earlier one folded to a row.
 - A fast-track run says so: a `fast track` chip on the run sheet, the same words on `wsh runs show` and Chat's run card.
   The plan review rows read Light review (and `amended by the lead` when the lead's revised plan went ahead), tasks have
   no Reviewing state, and the final stage has an End review step (from the kaeltran16 fork).
