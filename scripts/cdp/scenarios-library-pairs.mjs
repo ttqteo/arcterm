@@ -52,6 +52,8 @@ const UNREADABLE = "lpo-unreadable";
 const WORKER_SESSION = "lpo-worker-session";
 const JUDGE_SESSION = "lpo-judge-session";
 const ANSWER = "50%, go on";
+// the Decided column of a read-only pair, top to bottom, as `wsh read`'s Document prints it (section id:heading)
+const READ_ONLY_SECTIONS = "agreed:Agreed|asks:Your answers|open:Still open";
 
 const ESCAPE = { key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 };
 
@@ -141,6 +143,10 @@ export default function (kit) {
             })),
             agreed: decided?.querySelectorAll('[data-decided-section="agreed"] [data-decided-item]').length ?? 0,
             open: decided?.querySelectorAll('[data-decided-section="open"] [data-decided-item]').length ?? 0,
+            // each section's id and heading, top to bottom: read-only, Agreed comes first and the asks read Your answers
+            sections: [...(decided?.querySelectorAll("[data-decided-section]") ?? [])].map(
+                (s) => s.getAttribute("data-decided-section") + ":" + flat(s.firstElementChild)
+            ),
             foot: flat(foot?.firstElementChild),
             transcripts: [...(foot?.querySelectorAll("[data-pair-read-transcript]") ?? [])].map((b) => ({ sel: b.getAttribute("data-pair-read-transcript"), label: flat(b) })),
             held: has("[data-pair-held]"),
@@ -203,7 +209,7 @@ export default function (kit) {
                     const state1 = await libraryState(h);
                     await shot(h, "1-read-only");
                     rec(
-                        "pair open read-only: an ended pair opened with openPair from the Cockpit reads at Library's full width under a Back row, with its title and line, the five messages, the Decided column (the answered ask, two Agreed, one Still open), the foot line and both transcript links, and no composer, Reply, Run now or Unpair",
+                        "pair open read-only: an ended pair opened with openPair from the Cockpit reads at Library's full width under a Back row, with its title and line, the five messages, the Decided column (two Agreed first, then Your answers with the answered ask, then one Still open), the foot line and both transcript links, and no composer, Reply, Run now or Unpair",
                         ok1 &&
                             (await surface(h)) === "Library" &&
                             state1.tab === "conversations" &&
@@ -221,6 +227,7 @@ export default function (kit) {
                             ended.asks[0].answer.includes(ANSWER) &&
                             ended.agreed === 2 &&
                             ended.open === 1 &&
+                            ended.sections.join("|") === READ_ONLY_SECTIONS &&
                             ended.foot === "This pair is over. Read-only." &&
                             JSON.stringify(ended.transcripts) ===
                                 JSON.stringify([
@@ -587,6 +594,10 @@ function libraryPairs(kit) {
             })),
             agreed: decided?.querySelectorAll('[data-decided-section="agreed"] [data-decided-item]').length ?? 0,
             open: decided?.querySelectorAll('[data-decided-section="open"] [data-decided-item]').length ?? 0,
+            // each section's id and heading, top to bottom: read-only, Agreed comes first and the asks read Your answers
+            sections: [...(decided?.querySelectorAll("[data-decided-section]") ?? [])].map(
+                (s) => s.getAttribute("data-decided-section") + ":" + flat(s.firstElementChild)
+            ),
             foot: flat(foot?.firstElementChild),
             transcripts: [...(foot?.querySelectorAll("[data-pair-read-transcript]") ?? [])].map((b) => ({ sel: b.getAttribute("data-pair-read-transcript"), label: flat(b) })),
             controls: ["[data-pair-bar]", "[data-pair-composer]", "[data-pair-send]", "[data-pair-reply]", "[data-pair-run-now]", "[data-pair-unpair]", "[data-pair-ended]", "[data-decided-chip]", "[data-decided-other]"].filter(has),
@@ -841,7 +852,7 @@ function libraryPairs(kit) {
                 const pane = await h.ev(paneView);
                 await lpShot(h, "8-pair-pane");
                 rec(
-                    "pair in the detail pane: with the chips off the nested list is back with its status filter, and a click on the ended pair's line reads it beside the list, read-only, the line marked as the open one: its header (title and line), the five messages, the Decided column (the answered ask, two Agreed, one Still open) at the rail's width, the foot line and both transcript links, and no composer, Reply, Run now or Unpair and no Back row",
+                    "pair in the detail pane: with the chips off the nested list is back with its status filter, and a click on the ended pair's line reads it beside the list, read-only, the line marked as the open one: its header (title and line), the five messages, the Decided column (two Agreed first, then Your answers with the answered ask, then one Still open) at the rail's width, the foot line and both transcript links, and no composer, Reply, Run now or Unpair and no Back row",
                     nestedBack &&
                         filterBack &&
                         open &&
@@ -859,6 +870,7 @@ function libraryPairs(kit) {
                         pane.asks[0].answer.includes(ANSWER) &&
                         pane.agreed === 2 &&
                         pane.open === 1 &&
+                        pane.sections.join("|") === READ_ONLY_SECTIONS &&
                         pane.foot === "This pair is over. Read-only." &&
                         JSON.stringify(pane.transcripts) ===
                             JSON.stringify([
