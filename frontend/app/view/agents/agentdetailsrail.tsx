@@ -68,9 +68,16 @@ import {
     type AgentRailSectionId,
     type BgTaskLabel,
 } from "./agentrailsections";
-import { openFileInPanel, railPanelsAtom, railTabDefaultAtom, selectRailTab } from "./agentrailstore";
+import {
+    applyContextPanel,
+    openFileInPanel,
+    railPanelsAtom,
+    railTabDefaultAtom,
+    selectRailTab,
+} from "./agentrailstore";
 import {
     activeFile,
+    contextPanel,
     fileTabLabel,
     panelFor,
     RAIL_OVERVIEW_PX,
@@ -791,7 +798,6 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
     const artifacts = artifactsView(useAtomValue(canvasStateAtom(agent.id)));
     const panels = useAtomValue(railPanelsAtom);
     const defaultTab = useAtomValue(railTabDefaultAtom);
-    const panel = panelFor(panels, agent.id, defaultTab);
     // the Files tab lists the agent's worktree: it needs a resolved cwd, and a subagent's interior has no worktree of its
     // own. The cwd is this agent's last resolved one, not railState's, which is empty or another agent's for the moment
     // after a switch: reading that, a switch to an agent left on Files slid to Overview's width and back
@@ -836,6 +842,17 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
         initiative: agent.effortId != null,
         decided: inPair != null,
     };
+    // an agent whose tab the person has not set opens on its brainstorm, else its initiative (contextPanel): drawn from
+    // this render, then stored so the keys and the next write start from it
+    const autoPanel = contextPanel(panels[agent.id], defaultTab, has);
+    const panel = autoPanel ?? panelFor(panels, agent.id, defaultTab);
+    const autoTab = autoPanel?.tab ?? null;
+    useEffect(() => {
+        if (autoTab != null) {
+            applyContextPanel(agent.id, has);
+        }
+        // keyed on autoTab, not `has` (a new object each render): it changes exactly when `has` asks for another tab
+    }, [agent.id, autoTab]);
     const shown = shownTab(panel, has);
     // File, Transcript, Council and Summary keep a dragged width (one, shared); Overview, Files, Changes, Decided,
     // Brainstorm and Initiative share one fixed width, so moving between them never resizes the panel

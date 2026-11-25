@@ -9,6 +9,7 @@ import {
     clampWideWidth,
     closeFile,
     closeSummary,
+    contextPanel,
     currentFileView,
     FILE_TABS_MAX,
     fileKey,
@@ -556,7 +557,8 @@ describe("brainstorm and initiative tabs", () => {
         expect(shownTab(r, has())).toBe("overview");
         expect(shownTab(r, has({ brainstorm: true }))).toBe("brainstorm");
     });
-    it("are never selected while the agent lacks them, and never a panel's default", () => {
+    // an unseen agent with one opens on it through contextPanel, not panelFor's stored default
+    it("are never selected while the agent lacks them, and never a panel's stored default", () => {
         expect(selectTab(p, "initiative", has({ brainstorm: true }))).toBe(p);
         expect(selectTab(p, "brainstorm", has({ initiative: true }))).toBe(p);
         expect(panelFor({}, "a", "brainstorm").tab).toBe("overview");
@@ -589,6 +591,39 @@ describe("brainstorm and initiative tabs", () => {
         expect(backFromInitiative({ ...p, tab: "initiative", prevTab: "initiative" })).toMatchObject({
             tab: "overview",
         });
+    });
+});
+
+describe("contextPanel", () => {
+    const p = panelFor({}, "a", "overview");
+    it("opens an unseen agent on Brainstorm while one is attached, else on Initiative while linked", () => {
+        expect(contextPanel(undefined, "overview", has({ brainstorm: true, initiative: true }))).toMatchObject({
+            tab: "brainstorm",
+            auto: true,
+        });
+        expect(contextPanel(undefined, "overview", has({ initiative: true }))).toMatchObject({
+            tab: "initiative",
+            auto: true,
+        });
+    });
+    it("leaves an agent with neither on its default tab", () => {
+        expect(contextPanel(undefined, "overview", has({ tree: true, transcript: true }))).toBeNull();
+    });
+    it("never moves a panel the person has set", () => {
+        expect(contextPanel(p, "overview", has({ brainstorm: true }))).toBeNull();
+        const onChanges = selectTab(p, "changes", has());
+        expect(contextPanel(onChanges, "overview", has({ initiative: true }))).toBeNull();
+    });
+    it("follows the context on a panel it set: a brainstorm started after the link moves it to Brainstorm", () => {
+        const auto = contextPanel(undefined, "overview", has({ initiative: true }))!;
+        const moved = contextPanel(auto, "overview", has({ brainstorm: true, initiative: true }));
+        expect(moved).toMatchObject({ tab: "brainstorm", prevTab: "initiative", auto: true });
+        expect(contextPanel(moved!, "overview", has({ brainstorm: true, initiative: true }))).toBeNull();
+    });
+    it("keeps a panel it set when the context goes, which then shows Overview", () => {
+        const auto = contextPanel(undefined, "overview", has({ brainstorm: true }))!;
+        expect(contextPanel(auto, "overview", has())).toBeNull();
+        expect(shownTab(auto, has())).toBe("overview");
     });
 });
 

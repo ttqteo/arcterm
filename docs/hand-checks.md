@@ -23,6 +23,11 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
 
 ## 2026-11-25
 
+- [ ] (arcterm) **The rail opens on the brainstorm or the initiative.** Select an agent you have not clicked a rail tab
+  on: with a brainstorm attached the rail shows Brainstorm, with only a linked initiative Initiative, with neither
+  Overview. An initiative agent that then starts a brainstorm moves to Brainstorm. Click Overview (or any tab, or open a
+  file): that agent's rail stays there from then on, even when a brainstorm starts. `i` on an Initiative tab the rail
+  picked goes back to Overview.
 - [ ] (arcterm) **Every port beside the server mark.** On an agent that left 3+ ports listening (e.g. `task dev`:
   vite, WebView2 CDP, wavesrv), its tree row shows every port after the green server glyph (`:5174 :9223 :58458
   :58459`), no `+N`; the agent's name truncates first, the ports stay whole. Also the project header row.
