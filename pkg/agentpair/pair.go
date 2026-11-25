@@ -45,11 +45,22 @@ const (
 // DefaultTokenCap is the token cap of a pair whose start named none.
 const DefaultTokenCap = 3_000_000
 
+// The folders of pair files under the data dir. The Manager reads and writes DirName only; SyncedDirName holds pairs
+// that came from another machine and is read by the history read alone, so a synced pair never enters the index.
+const (
+	DirName       = "pairs"
+	SyncedDirName = "pairs-synced"
+)
+
 // Side is one agent of a pair, by its tab (the cockpit agent id, which survives sleep and an app restart).
 type Side struct {
 	Tab     string `json:"tab"`
 	Name    string `json:"name"` // as the roster named it when it joined
 	Harness string `json:"harness"`
+	// Session is the agent's session id (its transcript file's name without the extension), kept so a pair can be
+	// found again by the session it happened in: a tab id means nothing on another machine. The first one a side gets
+	// is kept for good.
+	Session string `json:"session,omitempty"`
 	Gone    bool   `json:"gone,omitempty"`
 	Briefed bool   `json:"briefed,omitempty"` // a judge launched with the brief as its task, or sent the brief as its first prompt
 	// Tokens is this session's spend since the pair's CapFromTs, as last counted. A gone judge's stays: its session
@@ -81,6 +92,7 @@ type Pair struct {
 	TokenCap   int64  `json:"tokencap"`
 	Note       string `json:"note,omitempty"`
 	CreatedTs  int64  `json:"createdts"`
+	UpdatedTs  int64  `json:"updated"` // the last save, ms; a file saved before it existed has none and reads as its last message's time (Info)
 	State      string `json:"state"`
 	StopReason string `json:"stopreason,omitempty"`
 	CapFromTs  int64  `json:"capfromts"` // tokens count from here: pairing, or the person's message that resumed a token-cap stop

@@ -2648,6 +2648,11 @@ declare global {
         pairid: string;
     };
 
+    // wshrpc.CommandPairHistoryData
+    type CommandPairHistoryData = {
+        project: string;
+    };
+
     // wshrpc.CommandPairListRtnData
     type CommandPairListRtnData = {
         pairs: PairInfo[];
@@ -4875,6 +4880,8 @@ declare global {
         owed: boolean;
         messagecount: number;
         lastts: number;
+        updatedts: number;
+        synced?: boolean;
     };
 
     // wshrpc.PairItem
@@ -4908,6 +4915,7 @@ declare global {
         tab: string;
         name: string;
         harness: string;
+        session?: string;
         gone?: boolean;
     };
 
@@ -4928,6 +4936,8 @@ declare global {
         owed: boolean;
         messagecount: number;
         lastts: number;
+        updatedts: number;
+        synced?: boolean;
         holdheavy: boolean;
         tokencap: number;
         tokens: number;

@@ -86,6 +86,7 @@ const pairInfo = (worker: string, judges: string[]): PairInfo => ({
     owed: false,
     messagecount: 0,
     lastts: 0,
+    updatedts: 0,
 });
 
 describe("judgeLabel and judgeLaunchOpts", () => {

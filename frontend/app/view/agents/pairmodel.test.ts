@@ -39,6 +39,7 @@ function view(extra: Partial<PairView> = {}, judges: string[] = [JUDGE]): PairVi
         owed: false,
         messagecount: 0,
         lastts: 0,
+        updatedts: 0,
         holdheavy: true,
         tokencap: 3_000_000,
         tokens: 0,

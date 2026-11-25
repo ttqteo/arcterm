@@ -9,20 +9,22 @@ import "context"
 // between them (pkg/agentpair; spec docs/superpowers/specs/2026-11-25-agent-pair-judge-design.md). wavesrv owns the
 // pair file, the relay and the hold on heavy commands; the frontend draws the PairView it reads after each pair:update.
 type PairCommands interface {
-	PairListCommand(ctx context.Context) (*CommandPairListRtnData, error)                              // the active pairs
-	PairGetCommand(ctx context.Context, data CommandPairGetData) (*PairView, error)                    // one pair in full
-	PairBriefCommand(ctx context.Context, data CommandPairBriefData) (*CommandPairBriefRtnData, error) // a new judge's launch task
-	PairStartCommand(ctx context.Context, data CommandPairStartData) (*PairView, error)                // pair, or add a judge
-	PairSayCommand(ctx context.Context, data CommandPairSayData) error                                 // the person's message or answer chip
-	PairRunNowCommand(ctx context.Context, data CommandPairRunNowData) error                           // let a held command through
+	PairListCommand(ctx context.Context) (*CommandPairListRtnData, error)                                 // the active pairs
+	PairHistoryCommand(ctx context.Context, data CommandPairHistoryData) (*CommandPairListRtnData, error) // a project's pairs in every state, synced ones too
+	PairGetCommand(ctx context.Context, data CommandPairGetData) (*PairView, error)                       // one pair in full
+	PairBriefCommand(ctx context.Context, data CommandPairBriefData) (*CommandPairBriefRtnData, error)    // a new judge's launch task
+	PairStartCommand(ctx context.Context, data CommandPairStartData) (*PairView, error)                   // pair, or add a judge
+	PairSayCommand(ctx context.Context, data CommandPairSayData) error                                    // the person's message or answer chip
+	PairRunNowCommand(ctx context.Context, data CommandPairRunNowData) error                              // let a held command through
 	PairUnpairCommand(ctx context.Context, data CommandPairGetData) error
 }
 
 // PairSide is one agent of a pair, by its tab (the cockpit agent id, which survives sleep and an app restart).
 type PairSide struct {
 	Tab     string `json:"tab"`
-	Name    string `json:"name"`    // as the roster names it
-	Harness string `json:"harness"` // claude | pi
+	Name    string `json:"name"`              // as the roster names it
+	Harness string `json:"harness"`           // claude | pi
+	Session string `json:"session,omitempty"` // the agent's session id (its transcript's file name); "" until the pair has taken one
 	Gone    bool   `json:"gone,omitempty"`
 }
 
@@ -38,10 +40,17 @@ type PairInfo struct {
 	Owed         bool       `json:"owed"` // a live judge owes an answer to the working agent's newest message
 	MessageCount int        `json:"messagecount"`
 	LastTs       int64      `json:"lastts"`
+	UpdatedTs    int64      `json:"updatedts"`        // the last save (ms); a pair saved before it existed reads its LastTs
+	Synced       bool       `json:"synced,omitempty"` // the pair came from the synced folder: it reads as of the last sync
 }
 
 type CommandPairListRtnData struct {
 	Pairs []PairInfo `json:"pairs"`
+}
+
+// CommandPairHistoryData names the project whose pairs are read; "" is every project.
+type CommandPairHistoryData struct {
+	Project string `json:"project"`
 }
 
 type CommandPairGetData struct {

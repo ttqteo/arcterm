@@ -14,6 +14,7 @@ import (
 	"github.com/wavetermdev/waveterm/pkg/agentsessions"
 	"github.com/wavetermdev/waveterm/pkg/baseds"
 	"github.com/wavetermdev/waveterm/pkg/panichandler"
+	"github.com/wavetermdev/waveterm/pkg/storage"
 	"github.com/wavetermdev/waveterm/pkg/util/utilfn"
 	"github.com/wavetermdev/waveterm/pkg/wavebase"
 	"github.com/wavetermdev/waveterm/pkg/waveobj"
@@ -38,7 +39,7 @@ func getPairManager() *agentpair.Manager {
 	if pairManager == nil {
 		pairManager = &agentpair.Manager{
 			Link:    livePairLink{},
-			Dir:     filepath.Join(wavebase.GetWaveDataDir(), "pairs"),
+			Dir:     filepath.Join(wavebase.GetWaveDataDir(), agentpair.DirName),
 			Publish: publishPairUpdate,
 		}
 	}
@@ -63,6 +64,18 @@ func StartPairManager() {
 
 func (ws *WshServer) PairListCommand(ctx context.Context) (*wshrpc.CommandPairListRtnData, error) {
 	return &wshrpc.CommandPairListRtnData{Pairs: getPairManager().List()}, nil
+}
+
+// PairHistoryCommand is a project's pairs in every state ("" is every project). For now it is the live pairs of the
+// manager; the folders' read replaces it.
+func (ws *WshServer) PairHistoryCommand(ctx context.Context, data wshrpc.CommandPairHistoryData) (*wshrpc.CommandPairListRtnData, error) {
+	pairs := []wshrpc.PairInfo{}
+	for _, p := range getPairManager().List() {
+		if data.Project == "" || storage.SamePath(p.Project, data.Project) {
+			pairs = append(pairs, p)
+		}
+	}
+	return &wshrpc.CommandPairListRtnData{Pairs: pairs}, nil
 }
 
 func (ws *WshServer) PairGetCommand(ctx context.Context, data wshrpc.CommandPairGetData) (*wshrpc.PairView, error) {

@@ -1565,6 +1565,7 @@ describe("pairPickable (Pair: worker + judge)", () => {
         owed: false,
         messagecount: 0,
         lastts: 0,
+        updatedts: 0,
     });
     const agents = [
         live("a"),

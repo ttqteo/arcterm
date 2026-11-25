@@ -5,6 +5,7 @@ package agentpair
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"reflect"
 	"strings"
@@ -443,6 +444,60 @@ func TestInfoCountsAndOwes(t *testing.T) {
 	}
 	if b, _ := json.Marshal(Info(newPair())); strings.Contains(string(b), "null") {
 		t.Fatalf("info holds a null: %s", b)
+	}
+}
+
+func TestInfoCarriesTheSessionsAndTheUpdatedTime(t *testing.T) {
+	p := newPair("j1", "j2")
+	p.Worker.Session = "w-session"
+	p.Judges[0].Session = "j1-session"
+	p.UpdatedTs = 9000
+	worker(p, "a")
+	info := Info(p)
+	if info.Worker.Session != "w-session" || info.Judges[0].Session != "j1-session" || info.Judges[1].Session != "" {
+		t.Fatalf("sessions = %q %q %q", info.Worker.Session, info.Judges[0].Session, info.Judges[1].Session)
+	}
+	if info.UpdatedTs != 9000 {
+		t.Fatalf("UpdatedTs = %d, want the stored 9000 and not the last message's 1000", info.UpdatedTs)
+	}
+	if info.Synced {
+		t.Fatal("a pair of the manager's own folder reads as synced")
+	}
+
+	// the wire names them: a side with no session leaves the key out
+	b, _ := json.Marshal(View(p))
+	if !strings.Contains(string(b), `"session":"w-session"`) || !strings.Contains(string(b), `"updatedts":9000`) {
+		t.Fatalf("the view lacks the session or the updated time: %s", b)
+	}
+	if n := strings.Count(string(b), `"session"`); n != 2 {
+		t.Fatalf("%d session keys in %s, want 2 (the worker's and j1's)", n, b)
+	}
+	if strings.Contains(string(b), `"synced"`) {
+		t.Fatalf("a pair that is not synced carries a synced key: %s", b)
+	}
+}
+
+// a caller tells "no such pair" from a failed read by errors.Is; the message stays what it was
+func TestErrNoPairIsWrappedAndKeepsItsMessage(t *testing.T) {
+	err := errNoPair("p9")
+	if !errors.Is(err, ErrNoPair) || err.Error() != `no pair "p9"` {
+		t.Fatalf("errNoPair = %v", err)
+	}
+}
+
+// a file saved before the updated time existed lists by its last message's time, and an empty pair by its creation
+func TestInfoWithoutUpdatedReadsTheLastMessagesTime(t *testing.T) {
+	p := newPair("j1")
+	if got := Info(p).UpdatedTs; got != 500 {
+		t.Fatalf("a pair with no message and no updated: UpdatedTs = %d, want its CreatedTs 500", got)
+	}
+	worker(p, "a")
+	judge(p, "j1", "b")
+	if got := Info(p).UpdatedTs; got != 2000 {
+		t.Fatalf("UpdatedTs = %d, want the last message's 2000", got)
+	}
+	if got := View(p).UpdatedTs; got != 2000 {
+		t.Fatalf("the view's UpdatedTs = %d, want 2000", got)
 	}
 }
 

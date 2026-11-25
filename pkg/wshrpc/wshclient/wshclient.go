@@ -1555,6 +1555,12 @@ func PairGetCommand(w *wshutil.WshRpc, data wshrpc.CommandPairGetData, opts *wsh
 	return resp, err
 }
 
+// command "pairhistory", wshserver.PairHistoryCommand
+func PairHistoryCommand(w *wshutil.WshRpc, data wshrpc.CommandPairHistoryData, opts *wshrpc.RpcOpts) (*wshrpc.CommandPairListRtnData, error) {
+	resp, err := sendRpcRequestCallHelper[*wshrpc.CommandPairListRtnData](w, "pairhistory", data, opts)
+	return resp, err
+}
+
 // command "pairlist", wshserver.PairListCommand
 func PairListCommand(w *wshutil.WshRpc, opts *wshrpc.RpcOpts) (*wshrpc.CommandPairListRtnData, error) {
 	resp, err := sendRpcRequestCallHelper[*wshrpc.CommandPairListRtnData](w, "pairlist", nil, opts)

@@ -148,7 +148,10 @@ func (m *Manager) change(id string, fn func(p *Pair) bool) bool {
 	return true
 }
 
-func errNoPair(id string) error { return fmt.Errorf("no pair %q", id) }
+// ErrNoPair is what a pair that is not in the index (never made, or ended) answers with.
+var ErrNoPair = errors.New("no pair")
+
+func errNoPair(id string) error { return fmt.Errorf("%w %q", ErrNoPair, id) }
 
 // pairOf is the pair a tab is in, as its working agent (worker true) or as a judge that is not gone. The lock is held.
 func (m *Manager) pairOf(tab string) (p *Pair, worker bool) {
