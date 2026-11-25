@@ -302,14 +302,15 @@ export default function (kit) {
                     buttons: [...row.querySelectorAll("button")].map((b) => b.textContent.trim()),
                 }))`);
 
-            // --- 1. the tab strip shows Boards with 4, and the key 4 opens it ---
-            await run("1. Library's tab row shows Boards with 4, and the key 4 opens the tab", async (name) => {
+            // --- 1. the tab strip names 4 in Boards' tooltip (no digit beside a label), and the key 4 opens it ---
+            await run("1. Library's tab row names 4 in Boards' tooltip, and the key 4 opens the tab", async (name) => {
                 await h.goto("library");
                 await h.ev(`document.querySelector('[data-library-tab="conversations"]')?.click()`);
                 await until(async () => (await active()) === "conversations");
                 const tabs = await h.ev(`[...document.querySelectorAll("[data-library-tab]")].map((t) => ({
                     tab: t.getAttribute("data-library-tab"),
-                    kbd: (t.querySelector("kbd")?.textContent ?? "").trim(),
+                    key: t.getAttribute("aria-keyshortcuts"),
+                    tip: t.getAttribute("title"),
                     label: t.textContent.replace(/\\s+/g, " ").trim(),
                 }))`);
                 await press(KEY_4);
@@ -320,7 +321,9 @@ export default function (kit) {
                 rec(
                     name,
                     tabs.map((t) => t.tab).join() === "conversations,canvases,councils,boards" &&
-                        boards?.kbd === "4" &&
+                        boards?.key === "4" &&
+                        boards.tip === "Boards (4)" &&
+                        tabs.every((t) => !t.label.match(/\d/)) &&
                         boards.label.startsWith("Boards") &&
                         opened &&
                         listed,

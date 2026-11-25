@@ -16,8 +16,10 @@
 // Thin: the views are the ones the Agent surface used to hold as centre modes. The keys are buildLibraryBindings', so this
 // file holds no key handler but the tab strip's arrows.
 
+import { indicatorSlide } from "@/app/element/motiontokens";
 import { buildLibraryBindings } from "@/app/store/keybindings/bindings";
 import { useKeybindings } from "@/app/store/keybindings/store";
+import { formatChordString } from "@/util/keysym";
 import { cn } from "@/util/util";
 import { useAtom, useAtomValue } from "jotai";
 import { ArrowLeft } from "lucide-react";
@@ -51,8 +53,9 @@ const TAB_LABEL: Record<LibraryTab, string> = {
     boards: "Boards",
 };
 
-const KBD = "rounded-[4px] border border-edge-mid px-1 font-mono text-[10px] font-normal text-muted";
-
+// The tab strip: plain labels standing on the header's bottom rule, the open one marked by an accent underline that
+// slides to the next tab picked (indicatorSlide; reduced motion snaps it). Every label keeps one weight, so a switch
+// never shifts the row. The 1–4 keys are named in each tab's tooltip, not drawn beside its label.
 function Tabs() {
     const [tab, setTab] = useAtom(libraryTabAtom);
     const onKey = (e: KeyboardEvent) => {
@@ -66,12 +69,7 @@ function Tabs() {
         document.getElementById(`library-tab-${next}`)?.focus();
     };
     return (
-        <div
-            role="tablist"
-            aria-label="Library"
-            onKeyDown={onKey}
-            className="flex gap-0.5 rounded border border-border bg-surface p-[3px]"
-        >
+        <div role="tablist" aria-label="Library" onKeyDown={onKey} className="flex gap-1 self-stretch">
             {LIBRARY_TABS.map((t, i) => (
                 <button
                     key={t}
@@ -82,19 +80,25 @@ function Tabs() {
                     aria-selected={tab === t}
                     aria-controls="library-tabpanel"
                     aria-keyshortcuts={String(i + 1)}
+                    title={`${TAB_LABEL[t]} (${formatChordString(String(i + 1))})`}
                     tabIndex={tab === t ? 0 : -1}
                     onClick={() => setTab(t)}
                     className={cn(
-                        "flex cursor-pointer items-center gap-1.5 rounded-md border-0 px-3 py-[5px] text-[13px]",
-                        tab === t
-                            ? "bg-surface-selected font-semibold text-primary"
-                            : "bg-transparent font-medium text-ink-mid hover:text-primary"
+                        "relative flex cursor-pointer items-center border-0 bg-transparent px-2.5 text-[13px] font-medium",
+                        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent",
+                        tab === t ? "text-primary" : "text-muted hover:text-secondary"
                     )}
                 >
                     {TAB_LABEL[t]}
-                    <kbd aria-hidden="true" className={KBD}>
-                        {i + 1}
-                    </kbd>
+                    {tab === t ? (
+                        <motion.span
+                            layoutId="library-tab-underline"
+                            data-library-tab-underline
+                            aria-hidden
+                            transition={indicatorSlide}
+                            className="absolute inset-x-2.5 -bottom-px h-0.5 rounded-full bg-accent"
+                        />
+                    ) : null}
                 </button>
             ))}
         </div>
