@@ -161,7 +161,9 @@ func cellOr(s string) string {
 // todoPart is the to-do table: one row per direction in rank order, with the task (at most 15 words), why in one
 // sentence, the project files it touches and its kind. A direction summarized before those fields existed falls back
 // (todoTask, todoWhy), and shows "—" for files and kind. The cockpit's Report draws the same rows
-// (todoRows in frontend/app/view/agents/councilreporttables.ts): change one rule and change the other.
+// (todoRows in frontend/app/view/agents/councilreporttables.ts): change one rule and change the other. The stored order
+// is the rank order: every summary is renumbered 1..n in that order when it is made (ParseSynthesis, fillSummary), so this
+// keeps it, and the cockpit's sort by rank gives the same rows.
 func todoPart(c *Council, w reportWords) string {
 	if c.Summary == nil || len(c.Summary.Directions) == 0 {
 		return ""
