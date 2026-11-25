@@ -107,6 +107,7 @@ import {
     terminalAnswer,
     togglePick,
     treeLine,
+    waitsOnUser,
     treeLineAsks,
     unseenSince,
     withBrainstorm,
@@ -401,6 +402,16 @@ describe("counts and gates", () => {
         expect(checkWaits({ ...c, run: "r1" })).toBe(false);
         expect(checkWaits(file({ parts: [part("a", "yours")] }))).toBe(false);
         expect(withBrainstorm(agent({ state: "idle" }), c, 0).state).toBe("asking");
+    });
+
+    it("does not ask while Approve's run is starting: the start, not the user, is what it waits on", () => {
+        const check = { yours: [{ q: "Which env?", a: "prod" }], calls: [], answered: [] };
+        const c = withStartingRun(file({ done: true, parts: [part("a", "yours")], check }), { runId: null });
+        expect(c.starting).toBe(true);
+        expect(waitsOnUser(c)).toBe(false);
+        const idle = agent({ state: "idle" });
+        expect(withBrainstorm(idle, c, 0)).toBe(idle);
+        expect(treeLine(c, false)).toEqual({ text: "starting run" });
     });
 
     it("reads a design waiting on confirms in the tree and the attention item", () => {
@@ -716,6 +727,12 @@ describe("treeLine", () => {
         const q = { n: 4, text: "?", part: "a" };
         expect(treeLine(file({ question: q }), true)).toEqual({ text: "asking question 4" });
         expect(treeLine(file({ check: { yours: [], calls: [], answered: [] } }), false).text).toBe("builder check");
+        // asking on the builder check names it, never a question with no number
+        expect(treeLine(file({ check: { yours: [], calls: [], answered: [] } }), true).text).toBe(
+            "review builder check"
+        );
+        const open = { yours: [{ q: "a?" }, { q: "b?" }, { q: "c?", a: "x" }], calls: [], answered: [] };
+        expect(treeLine(file({ check: open }), true).text).toBe("answer 2 builder questions");
         expect(treeLine(file({ working: "Writing" }), false).text).toBe("writing up your answer");
         expect(treeLine(file(), false)).toEqual({ text: "in progress" });
     });
@@ -1859,6 +1876,13 @@ describe("withStartingRun", () => {
         expect(withStartingRun(file({}), { runId: null }).run).toBeNull();
         expect(withStartingRun(file({}), null).run).toBeNull();
         expect(withStartingRun(file({ run: "r0" }), { runId: "r1" }).run).toBe("r0");
+    });
+
+    it("marks a launcher start with no id yet as starting, and leaves a queued one to the queue", () => {
+        expect(withStartingRun(file({}), { runId: null }).starting).toBe(true);
+        expect(withStartingRun(file({}), { runId: null, entryId: "q-1" }).starting).toBeUndefined();
+        expect(withStartingRun(file({}), { runId: "r1" }).starting).toBeUndefined();
+        expect(withStartingRun(file({ run: "r0" }), { runId: null }).starting).toBeUndefined();
     });
 });
 
