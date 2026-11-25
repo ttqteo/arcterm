@@ -33,6 +33,7 @@ import { brainstormAtom } from "@/app/view/agents/brainstormstore";
 import { canvasGalleryAtom } from "@/app/view/agents/canvasgallerystore";
 import { canvasStateAtom } from "@/app/view/agents/canvasstore";
 import { chatFocusReadIdsAtom, docFocusReadOnAtom } from "@/app/view/agents/chatfocusreadstore";
+import { liveJudgeAtom } from "@/app/view/agents/chatsuggeststore";
 import { compareOnAtom } from "@/app/view/agents/comparestore";
 import { councilChatNavAtom } from "@/app/view/agents/councilchatnav";
 import { docReviewStateAtom } from "@/app/view/agents/docreviewstore";
@@ -104,6 +105,7 @@ export const PREDICATE_ATOMS: Atom<unknown>[] = [
     usageWorkItemAtom, // usage:back, surface:back-home
     chatFocusReadIdsAtom, // buildAgentBindings: agent:focus-read-*
     docFocusReadOnAtom, // the same, in a markdown Preview
+    liveJudgeAtom, // buildAgentBindings: agent:chat-judge
 ];
 
 function bumpWhenVersion() {
