@@ -107,6 +107,7 @@ import { JarvisRouteBand } from "./jarvisrouteband";
 import { typedIntoAgent } from "./jarvisroutebandmodel";
 import { rosterSeededAtom } from "./liveagents";
 import { agentFocusFallback } from "./modalfocusfallback";
+import { PairPane } from "./pairpane";
 import { NO_PANES, nextPaneMounts } from "./panemounts";
 import { ProjectOverview } from "./projectoverview";
 import { appSurfaceService } from "./railapps";
@@ -1191,7 +1192,8 @@ function seedTerminalName(blockId: string) {
     });
 }
 
-// A council, a project's Overview and a held agent take the centre column; the terminal stack stays mounted beside them
+// A council, a project's Overview, one board, a pair's conversation and a held agent take the centre column; the terminal
+// stack stays mounted beside them
 function AgentCenterPane({ model, mode }: { model: AgentsViewModel; mode: Exclude<CenterMode, "terminal"> }) {
     return (
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
@@ -1201,6 +1203,8 @@ function AgentCenterPane({ model, mode }: { model: AgentsViewModel; mode: Exclud
                 <ProjectOverview model={model} />
             ) : mode === "board" ? (
                 <BoardAlone model={model} />
+            ) : mode === "pair" ? (
+                <PairPane model={model} />
             ) : (
                 <HeldPane model={model} />
             )}

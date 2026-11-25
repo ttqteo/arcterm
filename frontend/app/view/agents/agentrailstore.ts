@@ -83,8 +83,8 @@ export function selectRailTab(agentId: string, tab: RailTab, has: RailHas): void
     }
 }
 
-// a strip key (agentrailtabs.ts stripKeys): Overview, Files, Changes, Transcript, Council, Brainstorm, Initiative, or
-// one open file's tab
+// a strip key (agentrailtabs.ts stripKeys): Overview, Files, Changes, Decided, Transcript, Council, Brainstorm,
+// Initiative, or one open file's tab
 export function selectRailKey(agentId: string, key: string, has: RailHas): void {
     update(agentId, (p) => selectKey(p, key, has));
     if (key === "overview") {

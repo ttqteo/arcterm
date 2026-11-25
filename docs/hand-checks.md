@@ -23,6 +23,31 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
 
 ## 2026-11-25
 
+- [ ] (arcterm) **Pair two live agents and watch a full exchange end on a stop** (`pkg/agentpair`, the Add judge menu in
+  an agent's header, `docs/guide/agent-pair.md`). The pair scenarios run on seeded pairs, so no agent has ever run one.
+  With a Claude agent that has a plan open, Add judge → Open a new judge: a judge tab boots on Opus in the same folder,
+  the working agent's header turns to "Paired with judge <id>", and the button opens the conversation. Watch the judge
+  answer, its reply (with a `> ` quote line) reach the working agent as a prompt, and the working agent end its reply
+  with an `arc-pair` block that fills the rail's Decided tab. Let it run until a
+  stop line reads "Paused: …" (no new points, both agree, or the token cap set low on the sheet); after it, nothing is
+  relayed until you send a message. Repeat with a pi agent as the judge, and with a second judge added.
+
+- [ ] (arcterm) **A heavy command held mid-turn, then Run now** (`JobSlotCommand` in `wshserver`, `pkg/agentpair`). With
+  a pair whose judge has not answered, ask the working agent to run a heavy command (a full test suite) in the middle of
+  a turn: the command is refused with the "Held: …" reason, the agent ends its turn naming the command, the message
+  reaches the judge, and the conversation shows a dashed held line with Run now. Press Run now before the judge answers:
+  the command runs once, the line reads let through, and a message of yours ("Run … now") shows in the timeline. Run the
+  same again and let the judge answer instead: the working agent runs it in its next turn with no Run now.
+
+- [ ] (arcterm) **Unpair with a held command** (`Unpair` in `pkg/agentpair`). With a command held and not let through,
+  press Unpair: the pair leaves the header and the list, the working agent gets one line naming the command and saying
+  it may run it now, and its next heavy command goes through the job queue as usual, with no hold.
+
+- [ ] (arcterm) **A wavesrv restart in the middle of an exchange** (the Manager's boot step in `pkg/agentpair`). While
+  the judge is answering (its row working), close and reopen arcterm: the pair is still listed, the judge's answer is
+  taken once it lands (even if it landed while arcterm was down) and passes to the working agent, nothing is sent twice,
+  and a heavy command from the working agent is still held while a judge owes an answer.
+
 - [ ] (arcterm) Chat bare `! cmd` line: an agent reply holding a line `! python -c "t.replace('**A**','**B**')"` outside
   code draws it as a compact command row with Run and Copy, its `**` kept, no bold word. `task verify:ui --
   chat-code-box` step 1b2 checks it; it did not run (the dev app was stopped for low memory). Unit-tested only

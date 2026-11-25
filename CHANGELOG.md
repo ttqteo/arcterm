@@ -34,6 +34,11 @@ and a picture given to a line that is not big.
 
 ### Added
 
+- Pair an agent with a judge: Add judge in an agent's header (or right-click two agents in the Agent tree, Pair: worker
+  + judge) lets the two talk to each other directly, each reply passing to the other on its own, while you read the
+  conversation in the centre and only answer what waits on you. The new Decided tab on the rail lists what they agreed,
+  what is still open and what waits on you. A heavy command waits until the judge has answered (Run now lets it
+  through), the pair pauses when the judge has no new points or both agree, and Unpair ends it. <!-- big --> <!-- shot: 1.10.0-agent-pair.webp -->
 - A folded Agent sidebar still gets you to any agent: its thin strip shows a dot per agent (green working, amber
   asking, blue for turns you have not read, the open one on a lit tile like the selected row in the tree), and resting the pointer on it, or holding Alt, opens a small card of your agents by project to pick one,
   with their Alt+1..9 numbers while Alt is held. The terminal beside it keeps its size. <!-- big --> <!-- shot: 1.10.0-tree-peek.webp -->
