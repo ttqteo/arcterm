@@ -84,6 +84,8 @@ const (
 	MetaKey_SessionLater                     = "session:later"
 	MetaKey_SessionHelper                    = "session:helper"
 
+	MetaKey_CodePins                         = "code:pins"
+
 	MetaKey_LaunchParked                     = "launch:parked"
 
 	MetaKey_BrainstormCheckState             = "brainstorm:checkstate"

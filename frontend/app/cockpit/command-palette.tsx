@@ -44,13 +44,13 @@ import { parseFinderQuery } from "@/app/view/code/codefinder";
 import { recentPaths } from "@/app/view/code/codehistory";
 import { rankSymbols } from "@/app/view/code/codeoutline";
 import { pinsFor } from "@/app/view/code/codepins";
+import { codePinsAtom } from "@/app/view/code/codepinsstore";
 import {
     codeFileAtom,
     codeHistoryAtom,
     codeIndexAtom,
     codeOutlineAtom,
     codePendingLineAtom,
-    codePinsAtom,
     codeProjectAtom,
     goToLine,
     openInCode,

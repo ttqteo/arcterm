@@ -19,6 +19,8 @@ import {
 
 // the tree's mutations go to wavesrv; here the repo is a list of paths the next ls-files answers with
 const repo = vi.hoisted(() => ({ files: [] as string[] }));
+// the pins live in the workspace's meta (codepinsstore.ts), and vitest boots no workspace
+vi.mock("./codepinsstore", () => ({ updateCodePins: () => {} }));
 vi.mock("@/app/store/wshclientapi", () => ({
     RpcApi: {
         FileDeleteCommand: async () => {},

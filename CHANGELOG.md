@@ -47,6 +47,8 @@ and a picture given to a line that is not big.
   older messages still keep it in the tooltip.
 - A long paste into New agent's Task box folds into a Pasted text chip, as in the chat box, so the task you type around
   it stays in view; the agent still gets the paste whole.
+- Pinned files are kept in the workspace instead of the window's storage, so they survive a reset of the app's web data
+  and a script can read and sync them with `wsh setmeta` (`code:pins`); the pins you have move over on first launch.
 
 ### Fixed
 

@@ -23,6 +23,11 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
 
 ## 2026-11-25
 
+- [ ] (arcterm) **Your pins move into the workspace.** After installing, open an agent in `D:\work\mit\mit-thesis`
+  (or Code on it): its Files tab still lists the 4 files you had pinned, in the same order, and
+  `wsh getmeta -b workspace:<oid> code:pins` prints them. Pin or unpin one and run the command again: it follows. On the
+  Mac the same holds once the sync script writes `code:pins` there.
+
 - [ ] (arcterm) **The rail opens on the brainstorm or the initiative.** Select an agent you have not clicked a rail tab
   on: with a brainstorm attached the rail shows Brainstorm, with only a linked initiative Initiative, with neither
   Overview. An initiative agent that then starts a brainstorm moves to Brainstorm. Click Overview (or any tab, or open a

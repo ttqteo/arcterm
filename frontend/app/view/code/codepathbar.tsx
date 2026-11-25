@@ -19,12 +19,12 @@ import { useState } from "react";
 import { codeBlameOnAtom, toggleBlame } from "./codeblamestore";
 import { resolveViewMode, viewModesFor } from "./codeclassify";
 import { isPinned } from "./codepins";
+import { codePinsAtom } from "./codepinsstore";
 import { isPreviewable } from "./codepreviewable";
 import { closeSide } from "./codeside";
 import {
     codeDraftsAtom,
     codeFileAtom,
-    codePinsAtom,
     codePlainAtom,
     codeProjectAtom,
     codeTexPdfAtom,
