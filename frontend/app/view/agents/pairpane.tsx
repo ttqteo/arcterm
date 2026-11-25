@@ -15,7 +15,7 @@ import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { cn } from "@/util/util";
 import { useAtomValue } from "jotai";
-import { ArrowUp, Reply, X } from "lucide-react";
+import { ArrowLeft, ArrowUp, Reply, X } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import {
     useCallback,
@@ -32,7 +32,7 @@ import { shortTabId } from "./agentrowmodel";
 import type { AgentsViewModel } from "./agents";
 import { CouncilText } from "./councilchat";
 import { useNow } from "./narrationtimeline";
-import { composerTarget, timelineRows, type PairRow } from "./pairmodel";
+import { composerTarget, liveName, timelineRows, type PairRow } from "./pairmodel";
 import { judgeStatus, messageClock, quoteLine } from "./pairpanemodel";
 import { markPairSeen, pairScrollToAtom, usePairView } from "./pairstore";
 
@@ -75,7 +75,10 @@ export function PairPane({ model }: { model: AgentsViewModel }) {
 }
 
 function PairConversation({ model, view }: { model: AgentsViewModel; view: PairView }) {
-    const rows = useMemo(() => timelineRows(view), [view]);
+    const roster = useAtomValue(model.agentsAtom);
+    // a string, so a roster tick that leaves the name alone does not redraw the timeline
+    const workerName = liveName(view.worker, roster);
+    const rows = useMemo(() => timelineRows(view, workerName), [view, workerName]);
     const byId = useMemo(() => new Map(rows.map((r) => [r.id, r])), [rows]);
     const reduced = useReducedMotion();
     const scroller = useRef<HTMLDivElement>(null);
@@ -273,27 +276,28 @@ function PairBar({
     onUnpair: () => void;
 }) {
     const focusId = useAtomValue(model.focusIdAtom);
+    const roster = useAtomValue(model.agentsAtom);
     const judges = view.judges ?? [];
     // back goes to the Chat of the agent in focus: the working agent's when its Paired button opened this, a judge's when
     // the judge's header did, so the name on the button is the one whose Chat it returns to
     const back = [view.worker, ...judges].find((s) => s.tab === focusId) ?? view.worker;
+    const backName = liveName(back, roster);
     return (
         <header
             data-pair-bar
             className="flex h-[44px] flex-none items-center gap-[10px] border-b border-border bg-surface px-4 text-[13px]"
         >
+            {/* the way back reads as a button, not a breadcrumb: it is the toggle the header's Paired button came in by */}
             <button
                 type="button"
                 data-pair-back
-                title={`Back to ${back.name}'s Chat`}
+                title={`Back to ${backName}'s Chat (Esc)`}
                 onClick={showTerminal}
-                className="min-w-0 max-w-[40%] flex-none cursor-pointer truncate rounded-[4px] text-muted outline-none hover:text-primary focus-visible:ring-2 focus-visible:ring-accent"
+                className={cn(GHOST_BUTTON, "flex min-w-0 max-w-[40%] items-center gap-[6px] text-primary")}
             >
-                {back.name}
+                <ArrowLeft size={14} strokeWidth={2} aria-hidden className="flex-none" />
+                <span className="truncate">{backName}</span>
             </button>
-            <span aria-hidden className="text-ink-faint">
-                /
-            </span>
             <span data-pair-title className="min-w-0 truncate font-semibold">
                 {view.state === "ended" ? (
                     "Pair ended"

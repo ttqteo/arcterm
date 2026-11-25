@@ -1100,7 +1100,12 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
                     screen alone. A canvas or a review in the terminal's place keeps it, so swapping never moves the
                     header's controls; a brainstorm keeps the place and fills it with its own rail (Boards, Decided so
                     far, the check's, the run's), which its pane portals into the slot (brainstormrail.tsx RailRow).
-                    With the details rail closed the brainstorm's rail stays in the pane beside the question. */}
+                    With the details rail closed the brainstorm's rail stays in the pane beside the question. A pair's
+                    conversation keeps the focused agent's rail too, Decided beside the talk (board R1); like the tree,
+                    it ignores fullscreen, which is the terminal's. */}
+                {centerMode === "pair"
+                    ? subject!.kind !== "terminal" && <AgentDetailsRail model={model} agent={subject!} />
+                    : null}
                 {!fullscreen && centerMode === "terminal" && subject!.kind !== "terminal" && !dockMax ? (
                     swapped === "brainstorm" ? (
                         railVisible ? (

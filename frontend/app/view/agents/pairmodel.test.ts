@@ -4,6 +4,7 @@
 import { describe, expect, it } from "vitest";
 import {
     composerTarget,
+    liveName,
     newCount,
     pairButtonLabel,
     pairOf,
@@ -85,6 +86,10 @@ describe("timelineRows", () => {
         expect(timelineRows(conversation()).map((r) => r.who)).toEqual(["Plan oracle-tightening", "Judge", "You", ""]);
     });
 
+    it("heads the worker's rows with the name it is given, its name as it shows now", () => {
+        expect(timelineRows(conversation(), "Renamed")[0].who).toBe("Renamed");
+    });
+
     it("names the judge on a right-side message only when there are several judges", () => {
         expect(timelineRows(conversation())[1].judge).toBeNull();
         const two = timelineRows(
@@ -145,6 +150,19 @@ describe("timelineRows", () => {
             messages: [{ ...msg({ id: "n", from: "worker", tab: WORKER }), held: null as unknown as PairHeld[] }],
         });
         expect(timelineRows(bad)[0].held).toEqual([]);
+    });
+});
+
+describe("liveName", () => {
+    const side = { tab: WORKER, name: "mit-thesis", harness: "claude" };
+
+    it("takes the roster's name, the agent's title, over the one stored when it joined", () => {
+        expect(liveName(side, [{ id: WORKER, name: "Plan oracle-tightening" }])).toBe("Plan oracle-tightening");
+    });
+
+    it("keeps the stored name when the agent is not in the roster or has no name there", () => {
+        expect(liveName(side, [])).toBe("mit-thesis");
+        expect(liveName(side, [{ id: WORKER, name: "" }])).toBe("mit-thesis");
     });
 });
 

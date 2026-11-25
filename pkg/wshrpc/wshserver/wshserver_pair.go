@@ -244,7 +244,8 @@ func (l livePairLink) Tokens(ctx context.Context, tab string, sinceMs int64) (in
 	return agentsessions.TokensSince(tpath, row.Harness, sinceMs), nil
 }
 
-// Agent names the tab, as the roster does.
+// Agent names the tab as the cockpit labels it: the session's title, else the tab's name (its launch name, often the
+// project's).
 func (l livePairLink) Agent(ctx context.Context, tab string) (agentpair.AgentFacts, error) {
 	_, row, err := l.find(ctx, tab)
 	if err != nil {
@@ -254,7 +255,15 @@ func (l livePairLink) Agent(ctx context.Context, tab string) (agentpair.AgentFac
 	if err != nil {
 		return agentpair.AgentFacts{}, err
 	}
-	return agentpair.AgentFacts{Name: row.Name, Harness: row.Harness, Project: row.Project, Cwd: row.Cwd, Transcript: tpath}, nil
+	return agentpair.AgentFacts{Name: pairAgentName(row.AgentInfo), Harness: row.Harness, Project: row.Project, Cwd: row.Cwd, Transcript: tpath}, nil
+}
+
+// pairAgentName is the name a pair stores for a side: the session's title, the cockpit's label, over the tab's name.
+func pairAgentName(a wshrpc.AgentInfo) string {
+	if t := strings.TrimSpace(a.Title); t != "" {
+		return t
+	}
+	return a.Name
 }
 
 // RecentTexts is the texts of the agent's last n turns, oldest first. Only a claude session's turns are read.

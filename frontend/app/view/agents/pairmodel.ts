@@ -61,8 +61,15 @@ function toLabel(to: string): string {
     }
 }
 
-/** One row per message, in the order the pair holds them (time order). */
-export function timelineRows(view: PairView): PairRow[] {
+/** The name a side goes by now: the roster's (the agent's title, as the tree and header show it), else the one the pair
+ *  stored when it joined, which an older pair holds as the tab's launch name (often the project's). */
+export function liveName(side: PairSide, roster: readonly Pick<AgentVM, "id" | "name">[]): string {
+    return roster.find((a) => a.id === side.tab)?.name || side.name;
+}
+
+/** One row per message, in the order the pair holds them (time order). `workerName` is the working agent's name as it
+ *  shows now (liveName). */
+export function timelineRows(view: PairView, workerName: string = view.worker.name): PairRow[] {
     const messages = view.messages ?? [];
     const ids = new Set(messages.map((m) => m.id));
     const several = (view.judges ?? []).length > 1;
@@ -75,7 +82,7 @@ export function timelineRows(view: PairView): PairRow[] {
             ts: m.ts,
             who:
                 m.from === "worker"
-                    ? view.worker.name
+                    ? workerName
                     : m.from === "judge"
                       ? "Judge"
                       : m.from === "person"

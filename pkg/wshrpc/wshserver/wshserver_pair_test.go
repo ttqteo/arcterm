@@ -539,3 +539,12 @@ func TestPairLinkReadsTheTranscriptAndSends(t *testing.T) {
 		t.Error("an empty prompt was sent")
 	}
 }
+
+func TestPairAgentNameTakesTheTitle(t *testing.T) {
+	if got := pairAgentName(wshrpc.AgentInfo{Name: "mit-thesis", Title: "Plan oracle-tightening"}); got != "Plan oracle-tightening" {
+		t.Fatalf("with a title: got %q", got)
+	}
+	if got := pairAgentName(wshrpc.AgentInfo{Name: "mit-thesis", Title: "  "}); got != "mit-thesis" {
+		t.Fatalf("with no title: got %q", got)
+	}
+}
