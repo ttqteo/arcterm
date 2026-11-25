@@ -7,6 +7,18 @@
 // what it sends. The state that outlives a view is pairstore.ts.
 
 import { shortTabId } from "./agentrowmodel";
+import type { AgentVM } from "./agentsviewmodel";
+
+/** An agent a pair can take on either side: claude or pi (the harnesses whose reply wavesrv reads), a real tab. The one
+ *  rule: the header's Add judge, its judge menu and the tree's Pair: worker + judge all ask it. */
+export function canPair(agent: Pick<AgentVM, "agent" | "kind" | "blockId">): boolean {
+    return (
+        (agent.agent === "claude" || agent.agent === "pi") &&
+        agent.kind !== "terminal" &&
+        agent.kind !== "background" &&
+        agent.blockId != null
+    );
+}
 
 /** Which side a message leans to: the working agent left, a judge right, the person across the width, a system line
  *  ("Paused: …") alone in the middle. */

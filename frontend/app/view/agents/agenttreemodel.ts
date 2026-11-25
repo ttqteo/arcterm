@@ -21,7 +21,7 @@ import {
     monitorTimeLeft,
     type BackgroundTaskKind,
 } from "./monitortasks";
-import { pairOf } from "./pairmodel";
+import { canPair, pairOf } from "./pairmodel";
 import {
     BRAINSTORM_JUDGE_ROLE,
     BUILDER_CHECK_ROLE,
@@ -793,9 +793,8 @@ export function discussTogetherSeats(
 }
 
 /** Pure: the two agents Pair: worker + judge opens the pairing sheet with, or null (so no menu item): exactly two picked,
- *  each one a council can seat (a claude or pi agent, which a reply can be read from and a prompt sent to: the one seat rule,
- *  `seatableAgents`, without its project-path check, since a pair reads the same code through its tab) and in no active
- *  pair. The first picked works. */
+ *  each one a pair can take (`canPair`: a claude or pi tab, which a reply can be read from and a prompt sent to) and in
+ *  no active pair. The first picked works. */
 export function pairPickable(
     picked: readonly string[],
     agents: readonly AgentVM[],
@@ -809,7 +808,7 @@ export function pairPickable(
     if (worker == null || judge == null) {
         return null;
     }
-    const free = (a: AgentVM) => seatableAgents([a], null, "").length > 0 && pairOf(pairs, a.id) == null;
+    const free = (a: AgentVM) => canPair(a) && pairOf(pairs, a.id) == null;
     return free(worker) && free(judge) ? { worker, judge } : null;
 }
 

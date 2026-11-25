@@ -1547,10 +1547,11 @@ describe("Discuss together", () => {
 });
 
 describe("pairPickable (Pair: worker + judge)", () => {
-    // a live claude agent: no project path is needed, a pair reads the same code through its tab
+    // a live claude agent with a tab of its own: no project path is needed, a pair reads the same code through its tab
     const live = (id: string, over: Partial<AgentVM> = {}): AgentVM => ({
         ...vm(id, "idle"),
         agent: "claude",
+        blockId: `block-${id}`,
         ...over,
     });
     const side = (tab: string): PairSide => ({ tab, name: tab, harness: "claude" });
@@ -1599,6 +1600,8 @@ describe("pairPickable (Pair: worker + judge)", () => {
         expect(pairPickable(["a", "t"], agents, [])).toBeNull();
         expect(pairPickable(["bg", "a"], agents, [])).toBeNull();
         expect(pairPickable(["a", "n"], [...agents, live("n", { agent: undefined })], [])).toBeNull();
+        // the header's Add judge asks the same rule: no tab yet, nothing to send a prompt to
+        expect(pairPickable(["a", "nb"], [...agents, live("nb", { blockId: undefined })], [])).toBeNull();
     });
 
     it("offers nothing when either one is already in a pair, as the working agent or as a judge", () => {

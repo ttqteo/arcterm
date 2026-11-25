@@ -37,7 +37,6 @@ vi.mock("./railstore", async () => {
 import type { AgentsViewModel } from "./agents";
 import type { AgentVM, PendingLaunch } from "./agentsviewmodel";
 import {
-    canPair,
     JUDGE_BOOT_MS,
     judgeBoot,
     judgeChoices,
@@ -48,6 +47,7 @@ import {
     pairStartData,
     pickJudge,
 } from "./pairlaunch";
+import { canPair } from "./pairmodel";
 import { railCwdsAtom } from "./railstore";
 
 const WORKER = "61483cd6-5c1e-4b2a-9d3f-1a2b3c4d5e6f";

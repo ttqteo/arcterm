@@ -21,7 +21,7 @@ import { shortTabId } from "./agentrowmodel";
 import type { AgentsViewModel } from "./agents";
 import { projectOf, type AgentVM, type PendingLaunch } from "./agentsviewmodel";
 import { runtimeStartupCommand } from "./launch";
-import { pairOf } from "./pairmodel";
+import { canPair, pairOf } from "./pairmodel";
 import { railCwdsAtom } from "./railstore";
 
 /** How long a judge arcterm launched has to report in before the pair is given up on. A cold claude start is seconds; this
@@ -60,16 +60,6 @@ export function judgeFolder(
     projectRoot: string | null | undefined
 ): string | null {
     return agentFolder?.trim() || projectRoot?.trim() || null;
-}
-
-/** An agent a pair can take on either side: claude or pi (the harnesses whose reply wavesrv reads), a real tab. */
-export function canPair(agent: Pick<AgentVM, "agent" | "kind" | "blockId">): boolean {
-    return (
-        (agent.agent === "claude" || agent.agent === "pi") &&
-        agent.kind !== "terminal" &&
-        agent.kind !== "background" &&
-        agent.blockId != null
-    );
 }
 
 export type JudgeChoice = { id: string; name: string; short: string; state: string };
