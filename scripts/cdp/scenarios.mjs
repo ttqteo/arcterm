@@ -57714,7 +57714,9 @@ const settingsPages = {
         );
 
         // agents-sleep: the Sleep card's four rows in order, the two Compact rows drawing the config in force (on and
-        // 100k unless the person changed them), each on one line; the threshold dims while compaction is off
+        // 100k unless the person changed them); the threshold dims while compaction is off. The rows carry a
+        // description under the title, so they are taller than the one-line flag rows; the switch's says who compacts
+        // an awake agent, which arcterm itself does when Claude Code's own compaction is off
         const sleepCfg = (await h.rpc("getfullconfig", null))?.settings ?? {};
         const compactOn = sleepCfg["agents:compactidle"] ?? true;
         const compactAtK = sleepCfg["agents:compactatk"] ?? 100;
@@ -57731,6 +57733,7 @@ const settingsPages = {
                 atValue: at?.querySelector(".tabular-nums")?.textContent.trim() ?? null,
                 atUnit: at?.textContent.includes("k tokens") ?? false,
                 atDimmed: at ? at.querySelector(".opacity-50") != null : null,
+                namesArcterm: row("agents.compactidle")?.textContent.includes("by arcterm") ?? false,
                 heights: ["agents.compactidle", "agents.compactatk"].map((id) =>
                     Math.round(row(id)?.getBoundingClientRect().height ?? 0)
                 ),
@@ -57740,7 +57743,7 @@ const settingsPages = {
         await polishNap(200);
         await h.shot("cdp-shots/settings-pages-agents-sleep.png");
         rec(
-            "agents-sleep: Sleep idle agents, minutes, Compact before the cache goes cold, its k-token threshold; both Compact rows show the config, one line each",
+            "agents-sleep: Sleep idle agents, minutes, Compact before the cache goes cold, its k-token threshold; both Compact rows show the config, the switch's text names arcterm",
             agentsSleep != null &&
                 JSON.stringify(agentsSleep.rows) ===
                     JSON.stringify(["agents.sleepidle", "agents.sleepaftermin", "agents.compactidle", "agents.compactatk"]) &&
@@ -57749,7 +57752,8 @@ const settingsPages = {
                 agentsSleep.atValue === String(compactAtK) &&
                 agentsSleep.atUnit &&
                 agentsSleep.atDimmed === !compactOn &&
-                agentsSleep.heights.every((px) => px > 0 && px < 44),
+                agentsSleep.namesArcterm &&
+                agentsSleep.heights.every((px) => px > 0 && px < 160),
             JSON.stringify({ ...agentsSleep, compactOn, compactAtK })
         );
 
