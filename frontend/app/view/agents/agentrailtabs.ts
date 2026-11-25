@@ -16,12 +16,15 @@ import { AGENT_TREE_WIDE_PX } from "./rowfields";
 // council the agent started (railcouncil.ts), there only while it has one (canvas rail-council-chat, board B).
 // "brainstorm" is the timeline of the brainstorm attached to the agent and "initiative" the agent's linked initiative,
 // each there only while the agent has the thing (docs/superpowers/specs/2026-11-20-agent-rail-brainstorm-initiative-tabs-design.md).
+// "decided" is what the agent's pair has settled, there only while the agent is in a pair, as the working agent or as a
+// judge (raildecidedpane.tsx; docs/superpowers/specs/2026-11-25-agent-pair-judge-design.md).
 // "summary" is the summary the agent's last compaction kept, opened from Overview's Compacted line and there until its x
 // closes it (railcompactionline.tsx)
 export type RailTab =
     | "overview"
     | "tree"
     | "changes"
+    | "decided"
     | "transcript"
     | "council"
     | "brainstorm"
@@ -30,13 +33,14 @@ export type RailTab =
     | "summary";
 
 /** What the agent has that a conditional tab needs: a worktree to list (and no subagent interior open), its own
- *  transcript, a council it started, an attached brainstorm, a linked initiative. */
+ *  transcript, a council it started, an attached brainstorm, a linked initiative, a pair it is in. */
 export type RailHas = {
     tree: boolean;
     transcript: boolean;
     council: boolean;
     brainstorm: boolean;
     initiative: boolean;
+    decided: boolean;
 };
 
 export const RAIL_HAS_NONE: RailHas = {
@@ -45,6 +49,7 @@ export const RAIL_HAS_NONE: RailHas = {
     council: false,
     brainstorm: false,
     initiative: false,
+    decided: false,
 };
 
 // a file opened into the panel: its absolute path, the directory it was resolved against, and the line to show
@@ -124,9 +129,9 @@ export const CHAT_MIN_PX = 420;
 export const TREE_STRIP_PX = 20;
 
 export function panelFor(panels: Record<string, PanelState>, agentId: string, defaultTab: RailTab): PanelState {
-    // File, Files, Transcript, Council, Brainstorm and Initiative are never defaults: an unseen agent has no file open,
-    // Files needs a cwd it may not have, Transcript a transcript, Council a council, Brainstorm a brainstorm and
-    // Initiative an initiative
+    // File, Files, Transcript, Council, Brainstorm, Initiative and Decided are never defaults: an unseen agent has no file
+    // open, Files needs a cwd it may not have, Transcript a transcript, Council a council, Brainstorm a brainstorm,
+    // Initiative an initiative and Decided a pair
     return (
         panels[agentId] ?? {
             tab:
@@ -136,6 +141,7 @@ export function panelFor(panels: Record<string, PanelState>, agentId: string, de
                 defaultTab === "council" ||
                 defaultTab === "brainstorm" ||
                 defaultTab === "initiative" ||
+                defaultTab === "decided" ||
                 defaultTab === "summary"
                     ? "overview"
                     : defaultTab,
@@ -153,13 +159,17 @@ export function activeFile(p: PanelState): FileTab | null {
 
 // has.tree: the agent has a cwd to list and is not showing a subagent's interior. has.transcript: the agent itself has a
 // transcript file (its own, so it stays true while a subagent's interior is open). has.council: the agent started a
-// council. has.brainstorm: a brainstorm is attached. has.initiative: the agent is linked to an initiative
+// council. has.brainstorm: a brainstorm is attached. has.initiative: the agent is linked to an initiative. has.decided:
+// the agent is in a pair
 export function visibleTabs(p: PanelState, has: RailHas): RailTab[] {
     const tabs: RailTab[] = ["overview"];
     if (has.tree) {
         tabs.push("tree");
     }
     tabs.push("changes");
+    if (has.decided) {
+        tabs.push("decided");
+    }
     if (has.transcript) {
         tabs.push("transcript");
     }
@@ -183,13 +193,15 @@ export function visibleTabs(p: PanelState, has: RailHas): RailTab[] {
 
 // the tab a panel draws: Files with no worktree to list (the cwd is not resolved yet, or a subagent's interior is open)
 // falls back to Overview, while the stored tab stays Files for when the worktree is back; Transcript does the same
-// with no transcript, Council with no council, Brainstorm with no brainstorm and Initiative with no linked initiative
+// with no transcript, Council with no council, Brainstorm with no brainstorm, Initiative with no linked initiative and
+// Decided with no pair
 export function shownTab(p: PanelState, has: RailHas): RailTab {
     return (p.tab === "tree" && !has.tree) ||
         (p.tab === "transcript" && !has.transcript) ||
         (p.tab === "council" && !has.council) ||
         (p.tab === "brainstorm" && !has.brainstorm) ||
         (p.tab === "initiative" && !has.initiative) ||
+        (p.tab === "decided" && !has.decided) ||
         (p.tab === "summary" && !p.summary)
         ? "overview"
         : p.tab;
@@ -371,7 +383,8 @@ export const RAIL_WIDTHS: Record<ResizableTab, { min: number; def: number }> = {
     transcript: { min: RAIL_WIDE_MIN_PX, def: RAIL_WIDE_DEFAULT_PX },
 };
 
-// the dragged width a shown tab takes, or null for one fixed at Overview's width (Brainstorm and Initiative included).
+// the dragged width a shown tab takes, or null for one fixed at Overview's width (Brainstorm, Initiative and Decided
+// included).
 // Council (a chat), Summary (a long page) and Changes (every file's diff) read long, so they widen with File's grip and
 // width
 export function wideTabOf(tab: RailTab): ResizableTab | null {

@@ -48,6 +48,7 @@ const has = (o: Partial<RailHas> = {}): RailHas => ({
     council: false,
     brainstorm: false,
     initiative: false,
+    decided: false,
     ...o,
 });
 // the three booleans the older tests pass: a worktree, a transcript, a council
@@ -575,6 +576,65 @@ describe("brainstorm and initiative tabs", () => {
         expect(backFromInitiative({ ...p, tab: "initiative", prevTab: "initiative" })).toMatchObject({
             tab: "overview",
         });
+    });
+});
+
+describe("the Decided tab", () => {
+    const p = panelFor({}, "a", "overview");
+    it("lists right after Changes, before Transcript, only while the agent is in a pair", () => {
+        expect(visibleTabs(p, has())).toEqual(["overview", "changes"]);
+        expect(visibleTabs(p, has({ decided: true }))).toEqual(["overview", "changes", "decided"]);
+        expect(visibleTabs(p, has({ tree: true, decided: true }))).toEqual(["overview", "tree", "changes", "decided"]);
+        expect(
+            visibleTabs(
+                openSummary(openFile(p, a)),
+                has({ tree: true, transcript: true, council: true, brainstorm: true, initiative: true, decided: true })
+            )
+        ).toEqual([
+            "overview",
+            "tree",
+            "changes",
+            "decided",
+            "transcript",
+            "council",
+            "brainstorm",
+            "initiative",
+            "summary",
+            "file",
+        ]);
+    });
+    it("is selected only while the agent is in a pair, remembering the tab it came from", () => {
+        expect(selectTab(p, "decided", has())).toBe(p);
+        expect(selectTab(p, "decided", has({ council: true }))).toBe(p);
+        expect(selectTab(p, "decided", has({ decided: true }))).toMatchObject({ tab: "decided", prevTab: "overview" });
+    });
+    it("falls back to Overview when the pair is gone, keeping the stored tab", () => {
+        const q = selectTab(p, "decided", has({ decided: true }));
+        expect(shownTab(q, has({ decided: true }))).toBe("decided");
+        expect(shownTab(q, has())).toBe("overview");
+        expect(q.tab).toBe("decided");
+        expect(shownKey(q, has({ decided: true }))).toBe("decided");
+        expect(shownKey(q, has())).toBe("overview");
+    });
+    it("is never a panel's default", () => {
+        expect(panelFor({}, "a", "decided").tab).toBe("overview");
+    });
+    it("stays at Overview's fixed width", () => {
+        expect(wideTabOf("decided")).toBeNull();
+    });
+    it("sits in the strip's keys after Changes and before an open file", () => {
+        const f = openFile(p, a);
+        const all = has({ transcript: true, decided: true });
+        expect(stripKeys(f, all)).toEqual([
+            "overview",
+            "changes",
+            "decided",
+            "transcript",
+            ...f.files.map((x) => fileKey(x.id)),
+        ]);
+        expect(selectKey(p, "decided", all).tab).toBe("decided");
+        expect(selectKey(p, "decided", has({ transcript: true }))).toBe(p);
+        expect(nextTab(stripKeys(p, all), "changes", "ArrowRight")).toBe("decided");
     });
 });
 
