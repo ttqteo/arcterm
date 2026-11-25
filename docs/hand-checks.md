@@ -23,6 +23,32 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
 
 ## 2026-11-25
 
+- [ ] (arcterm) Kael sync 11-25: a real run of 4 tasks or fewer takes the fast track end to end (the Go tests own each
+  engine claim; the CDP scenarios `kael1125-fast-track-label` and `kael1125-fast-track-views` draw seeded runs, so no
+  real run's agents have been watched). Start a plan-file run of 2 to 4 tasks with a Verify line → the plan review has
+  one **Light review** row (not Full review and Second pass) and the workers start on its pass; no task ever reads
+  **Reviewing**, and the lead's next wake carries a `t-N merged` line per task (with a caveat line for each non-empty
+  Differs from plan, Not verified or Found not fixed) instead of `passed review`; the final stage lists **End review**
+  before the Verifier and the run's row reads `end review alongside` while Check or Verify runs, then
+  `final: end review reviewing` if it is the only one left; the run sheet's settings line has the `fast track` chip,
+  `wsh runs show <run-id>` ends its route line with `  fast track`, and Chat's run card head reads
+  `Orchestrator run · fast track`. A 5-task plan shows none of that. Plan:
+  `docs/superpowers/plans/2026-11-25-kael-sync-fast-track.md`.
+- [ ] (arcterm) Kael sync 11-25: a light review that fails, and the lead's amended resubmit dispatches. Run a plan of 3
+  or 4 tasks with a flaw the reviewer will catch (a task that edits a file its Files line leaves out, or a Depends with
+  a reason that does not hold) → the Light review row fails and the lead wakes with its findings; it revises the plan
+  and runs `wsh jarvis dag submit` again → the workers start with no second review, the review row and the Sessions row
+  read `amended by the lead` (not `failed`), and `wsh jarvis dag status` says `the light review failed, then the lead
+  amended the plan and it dispatched`. Also resubmit a plan grown past 4 tasks after a failed light review → it leaves
+  the fast track and opens Full review and Second pass. A light reviewer you stop twice reads lost and is replaced by a
+  new Light review row, up to three.
+- [ ] (arcterm) Kael sync 11-25: an end review that fails reaches the lead in one fix round. On a fast-track run let a
+  task land a bug a test would not catch (or have the end reviewer's findings name a missing test) → the End review step
+  fails, the stage's failure text holds an `[End review] …` block after any Check or Verify output, and the lead gets
+  one wake with all of it and writes one fix round; the fix's tasks run with no Reviewing state and the next final stage
+  runs an End review again over the whole merged diff. An end review that passes with `--unverified` leaves the run
+  unverified with the reason `end review: …`.
+
 - [ ] (arcterm) **Library's tab underline slides.** Open Library and click Conversations → Boards, then press `1`–`4`
   fast: the accent underline under the open tab slides to the next one (no jump, no second underline, none left
   between two tabs), the labels never shift, and hovering a tab shows its name with the key muted at the right. Tab
