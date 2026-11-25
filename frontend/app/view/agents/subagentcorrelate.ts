@@ -3,7 +3,8 @@
 //
 // Pure: join on-disk subagent files (SubagentFileInfo, from GetSubagentsCommand) to the parent's Task
 // spawns (SubagentSpawn) by prompt-match. type + state come from the matched spawn; an unmatched file
-// (spawn not yet in the tailed parent window, or a fallback) stays "working" with a prompt-derived label.
+// (spawn not in the tailed parent window, or a fallback) gets a prompt-derived label, and its state from the file
+// (finished, or ended by a parent notification) — see resolveState.
 // The model comes from the file itself (its latest assistant turn), matched or not. Whether it runs in the background
 // (async) and when it started come from the spawn; an unmatched file's start is its time on disk. A matched file also
 // carries its spawn's toolUseId, the link from an Agent / Task call to the subagent it started.
@@ -29,15 +30,19 @@ function firstLineLabel(prompt: string): string {
 }
 
 // state resolution: a matched spawn's parent tool_result is authoritative (working/failure/success).
-// An orphan (no matching spawn) has no parent accept/reject signal, so the child file tells us only
-// whether it *finished* — a terminated orphan is the neutral "done", never a green success. A background
-// spawn's parent tool_result was only the launch ack, so it is read the same way until its <task-notification>
-// ends it (done): then the notification is authoritative, a success or a failure like a foreground spawn's result.
-function resolveState(spawn: SubagentSpawn | undefined, fileDone: boolean): SubagentVM["state"] {
+// A background spawn's parent tool_result was only the launch ack, so it ends at its <task-notification>: in the
+// tailed window (spawn.done), or anywhere in the parent, as the file's endstatus (listSubagents reads the whole parent,
+// and joins a notice that names only the task id, such as a resumed session's "didn't finish before the previous
+// session ended"). Either is a success or a failure like a foreground spawn's result. Short of both, the child file
+// tells us only whether it *finished*: a terminated orphan is the neutral "done", never a green success.
+function resolveState(spawn: SubagentSpawn | undefined, f: SubagentFileInfo): SubagentVM["state"] {
     if (spawn != null && (!spawn.async || spawn.done)) {
         return !spawn.done ? "working" : spawn.failed ? "failure" : "success";
     }
-    return fileDone ? "done" : "working";
+    if (f.endstatus) {
+        return f.endstatus === "completed" ? "success" : "failure";
+    }
+    return f.done ? "done" : "working";
 }
 
 export function correlateSubagents(spawns: SubagentSpawn[], files: SubagentFileInfo[]): SubagentVM[] {
@@ -58,7 +63,7 @@ export function correlateSubagents(spawns: SubagentSpawn[], files: SubagentFileI
         const sub: SubagentVM = {
             id: f.agentid,
             type,
-            state: resolveState(spawn, f.done),
+            state: resolveState(spawn, f),
             model: f.model || undefined,
             transcriptPath: f.transcriptpath,
             ...(spawn?.async ? { async: true as const } : {}),

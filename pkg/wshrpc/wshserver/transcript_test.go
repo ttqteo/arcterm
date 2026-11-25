@@ -5,6 +5,7 @@ package wshserver
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -1009,6 +1010,114 @@ func TestSubagentDoneSignalReadsTodaysEndings(t *testing.T) {
 		if byId[id].Done != want {
 			t.Errorf("%s: Done = %v, want %v", id, byId[id].Done, want)
 		}
+	}
+}
+
+// A background child cut off mid-tool, whose parent then wrote a <task-notification> ending it, has finished: the
+// notification says how, whether it carries a tool-use-id or, like a resumed session's "didn't finish before the
+// previous session ended" notice, only the child's id as its task id. It is read from the whole parent transcript
+// (the 2026-11-25 orphan's spawn sat at line 821 of 5059). A child that wrote after its notification was resumed and
+// is live again, and a notification quoted in an assistant turn ends nothing.
+func TestSubagentEndedByParentNotification(t *testing.T) {
+	dir := t.TempDir()
+	parent := filepath.Join(dir, "sess.jsonl")
+	subdir := filepath.Join(dir, "sess", "subagents")
+	if err := os.MkdirAll(subdir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	notice := func(typ, ts, body string) string {
+		b, _ := json.Marshal(body)
+		if typ == "queue-operation" {
+			return `{"type":"queue-operation","operation":"enqueue","timestamp":"` + ts + `","content":` + string(b) + `}`
+		}
+		if typ == "assistant" {
+			return `{"type":"assistant","timestamp":"` + ts + `","message":{"content":[{"type":"text","text":` + string(b) + `}]}}`
+		}
+		return `{"type":"user","timestamp":"` + ts + `","message":{"content":` + string(b) + `}}`
+	}
+	stopped := "<task-notification>\n<task-id>orphan</task-id>\n<status>stopped</status>\n" +
+		"<summary>Background agent \"x\" didn't finish before the previous session ended</summary>\n</task-notification>"
+	resumed := "<task-notification>\n<task-id>resumed</task-id>\n<status>stopped</status>\n</task-notification>"
+	completed := "<task-notification>\n<task-id>finished</task-id>\n<tool-use-id>toolu_1</tool-use-id>\n" +
+		"<status>completed</status>\n</task-notification>"
+	quoted := "<task-notification>\n<task-id>quoted</task-id>\n<status>killed</status>\n</task-notification>"
+	recs := []string{notice("queue-operation", "2026-11-24T18:37:26.000Z", stopped), notice("user", "2026-11-24T18:37:32.944Z", stopped)}
+	for range 2500 {
+		recs = append(recs, `{"type":"user","message":{"content":"padding"}}`)
+	}
+	recs = append(recs,
+		notice("user", "2026-11-24T18:37:40.000Z", resumed),
+		notice("user", "2026-11-24T19:00:00.000Z", completed),
+		notice("assistant", "2026-11-24T19:00:00.000Z", quoted))
+	if err := os.WriteFile(parent, []byte(strings.Join(recs, "\n")+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	midTool := func(id string, mtime time.Time) {
+		path := filepath.Join(subdir, "agent-"+id+".jsonl")
+		body := `{"agentId":"` + id + `","type":"user","message":{"content":"Task"}}` + "\n" +
+			`{"type":"assistant","message":{"content":[{"type":"tool_use","id":"b1","name":"Bash"}]}}` + "\n" +
+			`{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"b1","content":"ok"}]}}` + "\n"
+		if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chtimes(path, mtime, mtime); err != nil {
+			t.Fatal(err)
+		}
+	}
+	at := func(s string) time.Time {
+		tm, err := time.Parse(time.RFC3339, s)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return tm
+	}
+	midTool("orphan", at("2026-11-24T18:36:59Z"))
+	midTool("resumed", at("2026-11-24T18:45:00Z"))
+	midTool("finished", at("2026-11-24T18:59:00Z"))
+	midTool("quoted", at("2026-11-24T18:59:00Z"))
+	midTool("live", at("2026-11-24T18:59:00Z"))
+
+	read := func() map[string]wshrpc.SubagentFileInfo {
+		infos, err := listSubagents(parent)
+		if err != nil {
+			t.Fatal(err)
+		}
+		byId := map[string]wshrpc.SubagentFileInfo{}
+		for _, in := range infos {
+			byId[in.AgentId] = in
+		}
+		return byId
+	}
+	byId := read()
+	want := map[string]struct {
+		done bool
+		end  string
+	}{
+		"orphan":   {true, "stopped"},
+		"resumed":  {false, ""},
+		"finished": {true, "completed"},
+		"quoted":   {false, ""},
+		"live":     {false, ""},
+	}
+	for id, w := range want {
+		if byId[id].Done != w.done || byId[id].EndStatus != w.end {
+			t.Errorf("%s: Done = %v, EndStatus = %q; want %v, %q", id, byId[id].Done, byId[id].EndStatus, w.done, w.end)
+		}
+	}
+
+	// a notification the parent appends later is read on the next listing
+	f, err := os.OpenFile(parent, os.O_APPEND|os.O_WRONLY, 0o644)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = f.WriteString(notice("user", "2026-11-24T19:10:00.000Z",
+		"<task-notification>\n<task-id>live</task-id>\n<status>failed</status>\n</task-notification>") + "\n")
+	f.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := read()["live"]; !got.Done || got.EndStatus != "failed" {
+		t.Errorf("live after the appended notification: Done = %v, EndStatus = %q; want true, \"failed\"", got.Done, got.EndStatus)
 	}
 }
 

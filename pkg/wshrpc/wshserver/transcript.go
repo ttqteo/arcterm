@@ -792,6 +792,22 @@ func listSubagents(parentPath string) ([]wshrpc.SubagentFileInfo, error) {
 		}
 		infos = append(infos, info)
 	}
+	// a child cut off mid-tool never writes its own ending: its parent's notification is the only one it gets
+	var ends map[string]subagentEnd
+	for i := range infos {
+		if infos[i].Done {
+			continue
+		}
+		if ends == nil {
+			if ends = parentSubagentEnds(parentPath); ends == nil {
+				break
+			}
+		}
+		if status := endedByParent(ends, infos[i].AgentId, infos[i].StartedAtMs); status != "" {
+			infos[i].Done = true
+			infos[i].EndStatus = status
+		}
+	}
 	sort.Slice(infos, func(i, j int) bool { return infos[i].StartedAtMs < infos[j].StartedAtMs })
 	return infos, nil
 }

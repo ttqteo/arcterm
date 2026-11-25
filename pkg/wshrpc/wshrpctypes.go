@@ -236,8 +236,11 @@ type SubagentFileInfo struct {
 	TranscriptPath string `json:"transcriptpath"`
 	FirstPrompt    string `json:"firstprompt"`
 	StartedAtMs    int64  `json:"startedatms"`
-	Done           bool   `json:"done"`            // last record is a terminal assistant turn (finished; outcome unknown)
+	Done           bool   `json:"done"`            // finished: its own last record ends it, or EndStatus does
 	Model          string `json:"model,omitempty"` // the model of the child's latest assistant turn; "" before its first
+	// how the parent's <task-notification> for this child (task id = AgentId) says it ended: completed, failed, killed
+	// or stopped; "" when the child ended on its own record first, or no notification ends it
+	EndStatus string `json:"endstatus,omitempty"`
 }
 
 type UsageBucket struct {

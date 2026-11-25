@@ -87,6 +87,22 @@ describe("correlateSubagents", () => {
         expect(correlateSubagents([], [file({ firstprompt: "orphan", done: false })])[0].state).toBe("working");
     });
 
+    it("ends a file at its parent's notification, matched to a background spawn or not: completed is success, any other end failure", () => {
+        for (const spawns of [[], [spawn({ async: true })]]) {
+            const firstprompt = spawns.length > 0 ? "look at X" : "orphan";
+            expect(correlateSubagents(spawns, [file({ firstprompt, done: true, endstatus: "stopped" })])[0].state).toBe(
+                "failure"
+            );
+            expect(
+                correlateSubagents(spawns, [file({ firstprompt, done: true, endstatus: "completed" })])[0].state
+            ).toBe("success");
+        }
+        // a foreground spawn's tool_result stays the authority
+        expect(correlateSubagents([spawn({ done: true })], [file({ done: true, endstatus: "stopped" })])[0].state).toBe(
+            "success"
+        );
+    });
+
     it("maps an unmatched, terminated file to the neutral done state", () => {
         expect(correlateSubagents([], [file({ firstprompt: "orphan", done: true })])[0].state).toBe("done");
     });

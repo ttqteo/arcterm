@@ -5860,6 +5860,7 @@ declare global {
         startedatms: number;
         done: boolean;
         model?: string;
+        endstatus?: string;
     };
 
     // wps.SubscriptionRequest
