@@ -40,6 +40,9 @@ and a picture given to a line that is not big.
 - Small runs go on a fast track: a plan of 4 tasks or fewer gets one light plan review instead of two rounds, no review
   of each task, and one end review of the whole merged diff in the final stage; a plan of 5 tasks or more keeps the
   full review (from the kaeltran16 fork).
+- A run an agent starts with `wsh runs start` sits under that agent in the Agent tree, and a run its own agent starts
+  sits one level further; a run started from the cockpit, or whose agent has closed, keeps a row of its own (from the
+  kaeltran16 fork).
 
 ### Changed
 

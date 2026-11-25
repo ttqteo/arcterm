@@ -90,6 +90,7 @@ import {
     NO_ROW_SELECTION,
     pairPickable,
     pickedRowIds,
+    rowDepth,
     selectableRowIds,
     selectOnly,
     stageOutcomeText,
@@ -577,17 +578,30 @@ function Slot({ children }: { children: React.ReactNode }) {
     return <span className="flex w-[14px] shrink-0 items-center justify-center">{children}</span>;
 }
 
-// A nested row's tree guides: one line per level above it, through that level's leading column.
-const GUIDE_LEFT = ["left-[18px]", "left-[35px]"];
+// A nested row's tree guides: one line per level above it, through that level's leading column. A run nests under the
+// agent that started it with no depth limit, so the columns are computed rather than listed: 18px and 35px at the first
+// two levels, as the run's workers and their extra tabs always had.
+const GUIDE_PX = 18;
+const LEVEL_PX = 17;
 
-function Guides({ depth }: { depth: 1 | 2 }) {
+function Guides({ depth }: { depth: number }) {
     return (
         <>
-            {GUIDE_LEFT.slice(0, depth).map((left) => (
-                <span key={left} className={cn("absolute inset-y-0 w-px bg-edge-strong", left)} />
+            {Array.from({ length: depth }, (_, i) => (
+                <span
+                    key={i}
+                    className="absolute inset-y-0 w-px bg-edge-strong"
+                    style={{ left: GUIDE_PX + LEVEL_PX * i }}
+                />
             ))}
         </>
     );
+}
+
+// the left padding that puts a nested row's leading column `depth` levels in: 28px at the first level, 45px at the
+// second (the pl-[28px] and pl-[45px] of the rows nested a fixed level in)
+function levelPad(depth: number): number {
+    return GUIDE_PX - 7 + LEVEL_PX * depth;
 }
 
 // `word` follows the label only where its @container line has room for it, so a narrow sidebar keeps just the count;
@@ -1268,10 +1282,12 @@ function BackgroundTaskRows({
     model,
     agentId,
     rows,
+    depth,
 }: {
     model: AgentsViewModel;
     agentId: string;
     rows: BackgroundTaskRow[];
+    depth: number; // the agent row's level plus one: they sit one level under it
 }) {
     // a peek the chat box opened is the box's to draw and to clear
     const peekAtom = useAtomValue(monitorPeekAtom);
@@ -1339,12 +1355,13 @@ function BackgroundTaskRows({
                                       }
                                     : {})}
                                 className={cn(
-                                    "relative flex items-center gap-[9px] rounded-[6px] py-[6px] pl-[28px] pr-[11px] outline-none focus-visible:ring-1 focus-visible:ring-accent",
+                                    "relative flex items-center gap-[9px] rounded-[6px] py-[6px] pr-[11px] outline-none focus-visible:ring-1 focus-visible:ring-accent",
                                     peekable && "cursor-pointer",
                                     open ? "bg-accentbg" : peekable && "hover:bg-surface-hover"
                                 )}
+                                style={{ paddingLeft: levelPad(depth) }}
                             >
-                                <Guides depth={1} />
+                                <Guides depth={depth} />
                                 <Slot>
                                     {monitor ? (
                                         <Radio size={12} aria-label="Monitor" className="shrink-0 text-accent" />
@@ -1411,7 +1428,7 @@ function ParentRow({
     tokens,
     lead,
     navDigit,
-    nested,
+    depth = 0,
     waitsFor,
     picks,
     inCouncil,
@@ -1426,7 +1443,9 @@ function ParentRow({
     tokens?: number; // its session's token total (livetokensstore); absent until read
     lead?: { run: RunInfo; open: boolean; live: number };
     navDigit?: number; // its Alt+1..9 digit
-    nested?: boolean; // it waits on the agent just above it, and sits under it on a tree guide
+    // how many levels in it sits on tree guides (rowDepth): under the agent it waits on, its pair's row, or the agent
+    // whose session started its run
+    depth?: number;
     waitsFor?: string; // the name of the agent it waits on where it cannot nest under it
     picks?: RowPicks; // the tree's multi-selection, where this row takes part in it
     inCouncil?: boolean; // it is seated in a council that is running or waiting on you: its state is followed by `in council`
@@ -1734,11 +1753,12 @@ function ParentRow({
                     // over it (.asking-tint, driven by pulsedriver), so one waiting on you is seen from across the tree
                     selected ? "bg-surface-selected" : "hover:bg-surface-hover",
                     asking && "asking-tint",
-                    settling && "animate-[settle_0.5s_ease-out] motion-reduce:animate-none",
-                    nested && "pl-[28px]"
+                    settling && "animate-[settle_0.5s_ease-out] motion-reduce:animate-none"
                 )}
+                style={depth > 0 ? { paddingLeft: levelPad(depth) } : undefined}
+                data-tree-depth={depth}
             >
-                {nested ? <Guides depth={1} /> : null}
+                <Guides depth={depth} />
                 {renaming ? (
                     <RenameBox tabId={agent.id} shown={agent.name} />
                 ) : (
@@ -1863,11 +1883,12 @@ function ParentRow({
                                     });
                                 }}
                                 className={cn(
-                                    "relative flex items-center gap-[9px] rounded-[6px] py-[6px] pl-[28px] pr-[11px] hover:bg-surface-hover",
+                                    "relative flex items-center gap-[9px] rounded-[6px] py-[6px] pr-[11px] hover:bg-surface-hover",
                                     s.transcriptPath && "cursor-pointer"
                                 )}
+                                style={{ paddingLeft: levelPad(depth + 1) }}
                             >
-                                <Guides depth={1} />
+                                <Guides depth={depth + 1} />
                                 <Slot>
                                     <span
                                         className="h-[7px] w-[7px] shrink-0 rounded-full"
@@ -1894,7 +1915,12 @@ function ParentRow({
                 ) : null}
             </AnimatePresence>
             {/* folded, it gets no rows, which also closes a peek one of them held open */}
-            <BackgroundTaskRows model={model} agentId={agent.id} rows={tasksOpenNow ? taskRows : []} />
+            <BackgroundTaskRows
+                model={model}
+                agentId={agent.id}
+                rows={tasksOpenNow ? taskRows : []}
+                depth={depth + 1}
+            />
         </>
     );
 }
@@ -4201,7 +4227,7 @@ export const AgentTree = memo(function AgentTree({ model }: { model: AgentsViewM
                                             branch={branches.get(r.agent.id)}
                                             tokens={tokens.get(r.agent.id)}
                                             navDigit={digits.get(r.agent.id)}
-                                            nested={r.nested}
+                                            depth={rowDepth(r)}
                                             waitsFor={r.waitsFor}
                                             checks={r.checks}
                                             pairRole={r.pairRole}

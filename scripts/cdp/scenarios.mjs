@@ -120,6 +120,7 @@ import kael1125ViewsScenarios from "./scenarios-kael1125-views.mjs";
 import modalFocusHomeScenarios from "./scenarios-modal-focus-home.mjs";
 import parkedLaunchScenarios from "./scenarios-parked-launch.mjs";
 import monitorTasksScenarios from "./scenarios-monitor-tasks.mjs";
+import runNestingScenarios from "./scenarios-run-nesting.mjs";
 import { frostProbe, frostVerdict } from "./overlays-frost/frostcheck.mjs";
 import overlaysFrostScenarios from "./scenarios-overlays-frost.mjs";
 import paletteBrainstormResumeScenarios from "./scenarios-palette-brainstorm-resume.mjs";
@@ -75799,6 +75800,7 @@ export const SCENARIOS = [
     ...railCouncilScenarios(RC_KIT),
     ...xmasTreeScenarios(XMAS_TREE_KIT),
     ...monitorTasksScenarios(RT_KIT),
+    ...runNestingScenarios(RT_KIT),
     ...kael1113DagScenarios({ ...KAEL_KITS, run: RUN_KIT }),
     ...kael1113TimelineScenarios({ ...KAEL_KITS, run: RUN_KIT }),
     ...kael1113FinalScenarios({ ...KAEL_KITS, run: RUN_KIT }),

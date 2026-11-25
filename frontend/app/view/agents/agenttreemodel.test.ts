@@ -13,6 +13,7 @@ import {
     pairPickable,
     pairShown,
     pickedRowIds,
+    rowDepth,
     seatableOf,
     selectableRowIds,
     selectOnly,
@@ -25,6 +26,7 @@ import {
     workerRowTone,
     type AgentTreeRow,
     type TreeFolds,
+    type TreePairs,
 } from "./agenttreemodel";
 import type { BuilderCheckRecord } from "./brainstormmodel";
 import { seatableAgents } from "./councilsetupmodel";
@@ -141,6 +143,162 @@ describe("buildAgentTree with agents that wait on others", () => {
             new Map([["a", "x"]])
         );
         expect(parents(rows)).toEqual(["a"]);
+    });
+});
+
+describe("buildAgentTree with runs started from an agent", () => {
+    // a quick run's agent: its run id, and the tab whose session ran `wsh runs start`
+    const started = (id: string, state: AgentVM["state"], path = WAVE): AgentVM => ({
+        ...vm(id, state, path),
+        runId: `run-${id}`,
+    });
+    const withOrigins = (origins: Record<string, string>, more: Partial<Lineage> = {}): Lineage => ({
+        roles: {},
+        runs: {},
+        origins,
+        ...more,
+    });
+    const build = (
+        agents: AgentVM[],
+        lineage: Lineage,
+        waits: ReadonlyMap<string, string> = new Map(),
+        pairs?: TreePairs
+    ) =>
+        buildAgentTree(
+            agents,
+            agents.map((a) => a.id),
+            lineage,
+            undefined,
+            undefined,
+            waits,
+            pairs
+        );
+    const shape = (rows: AgentTreeRow[]) =>
+        rows.map((r) =>
+            r.kind === "group"
+                ? `${r.project}:${r.count}`
+                : r.kind === "parent"
+                  ? `${r.agent.id}@${rowDepth(r)}${r.waitsFor ? `(waits on ${r.waitsFor})` : ""}`
+                  : `${r.kind}`
+        );
+
+    it("nests a run under the agent that started it and a run its agent started one level further, in roster order", () => {
+        const agents = [
+            started("r2", "working"),
+            vm("other", "idle", WAVE),
+            started("r1", "working"),
+            vm("p", "idle", WAVE),
+            started("r3", "idle"),
+        ];
+        const rows = build(agents, withOrigins({ r1: "p", r2: "r1", r3: "p" }));
+        expect(shape(rows)).toEqual(["waveterm:5", "other@0", "p@0", "r1@1", "r2@2", "r3@1"]);
+        expect(rows.find((r) => r.kind === "parent" && r.agent.id === "r2")).toMatchObject({ nested: true, depth: 2 });
+    });
+
+    it("leaves a run started from the cockpit, or from a tab gone from the roster, a top-level row in its own folder", () => {
+        const agents = [vm("p", "idle", WAVE), started("cockpit", "working"), started("orphan", "working", LOOM)];
+        expect(shape(build(agents, withOrigins({ orphan: "gone" })))).toEqual([
+            "waveterm:2",
+            "p@0",
+            "cockpit@0",
+            "loom:1",
+            "orphan@0",
+        ]);
+    });
+
+    it("nests a run working in another project under its origin, counted in the origin's folder", () => {
+        const agents = [vm("p", "idle", WAVE), started("r", "working", LOOM)];
+        const rows = build(agents, withOrigins({ r: "p" }));
+        expect(shape(rows)).toEqual(["waveterm:2", "p@0", "r@1"]);
+        expect(rows[0]).toMatchObject({ kind: "group", count: 2, running: 1 });
+    });
+
+    it("keeps every agent on a loop of origins a top-level row", () => {
+        const agents = [started("a", "idle"), started("b", "idle"), started("c", "idle")];
+        expect(shape(build(agents, withOrigins({ a: "b", b: "a", c: "a" })))).toEqual([
+            "waveterm:3",
+            "a@0",
+            "b@0",
+            "c@0",
+        ]);
+    });
+
+    it("nests nothing under a run's row: a run's lead started a quick run, which stays a top-level row", () => {
+        const run: RunInfo = {
+            runId: "lead-run",
+            channelId: "ch",
+            title: "t",
+            project: "waveterm",
+            dag: { oid: "dag-1", runid: "lead-run", tasks: [] } as TaskGroup,
+        };
+        const agents = [{ ...vm("lead", "working", WAVE), project: "waveterm" }, started("r", "working")];
+        const lineage = withOrigins(
+            { r: "lead" },
+            {
+                roles: { lead: { kind: "lead", runId: "lead-run" } },
+                runs: { "lead-run": run },
+            }
+        );
+        expect(build(agents, lineage).map((r) => r.kind)).toEqual(["group", "lead", "parent"]);
+        expect(build(agents, lineage).find((r) => r.kind === "parent")).not.toHaveProperty("depth");
+    });
+
+    it("counts a nested run's asking agent in the group's attn and places it in the focus order right after its origin", () => {
+        const agents = [started("r", "asking"), vm("a", "idle", WAVE), vm("p", "idle", WAVE)];
+        const rows = build(agents, withOrigins({ r: "p" }));
+        expect(rows[0]).toMatchObject({ kind: "group", count: 3, attn: 1 });
+        expect(selectableRowIds(rows)).toEqual(["a", "p", "r"]);
+    });
+
+    it("puts the runs an agent started before the agents waiting on it, and nests a waiter's run two levels in", () => {
+        const agents = [
+            vm("p", "idle", WAVE),
+            vm("w", "idle", WAVE),
+            started("r", "working"),
+            started("rw", "working"),
+        ];
+        const rows = build(agents, withOrigins({ r: "p", rw: "w" }), new Map([["w", "p"]]));
+        expect(shape(rows)).toEqual(["waveterm:4", "p@0", "r@1", "w@1", "rw@2"]);
+    });
+
+    it("a nested run that waits on another agent stays under its origin and names whom it waits on", () => {
+        const agents = [vm("p", "idle", WAVE), vm("q", "idle", WAVE), started("r", "working")];
+        expect(shape(build(agents, withOrigins({ r: "p" }), new Map([["r", "q"]])))).toEqual([
+            "waveterm:3",
+            "p@0",
+            "r@1(waits on q)",
+            "q@0",
+        ]);
+    });
+
+    it("nests nothing under an agent in an active pair, and does not take a pair's side out of its pair", () => {
+        const pair: PairInfo = {
+            id: "p1",
+            project: "waveterm",
+            worker: { tab: "w", name: "w", harness: "claude" },
+            judges: [{ tab: "j", name: "j", harness: "claude" }],
+            state: "relaying",
+            stopreason: "",
+            owed: false,
+            messagecount: 0,
+            lastts: 0,
+        };
+        const agents = [vm("p", "idle", WAVE), vm("w", "idle", WAVE), started("j", "idle"), started("r", "working")];
+        const rows = build(agents, withOrigins({ j: "p", r: "w" }), new Map(), { list: [pair] });
+        expect(rows.map((r) => (r.kind === "parent" ? `${r.agent.id}@${rowDepth(r)}` : r.kind))).toEqual([
+            "group",
+            "p@0",
+            "pair",
+            "r@0",
+        ]);
+    });
+});
+
+describe("rowDepth", () => {
+    it("reads a run's depth, else one level for a nested row, else the top", () => {
+        expect(rowDepth({ nested: true, depth: 3 })).toBe(3);
+        expect(rowDepth({ nested: true })).toBe(1);
+        expect(rowDepth({})).toBe(0);
     });
 });
 
