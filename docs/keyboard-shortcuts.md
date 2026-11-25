@@ -285,6 +285,8 @@ A link inside an item view does a full open, even with `Mod` held.
 | `Esc` | In the panel's File tab: cancel the comment being written, else close the find bar, else close the file's tab |
 | `Mod`+`F` | In the File tab: find in the file. In a markdown Preview a find bar opens with the selected words; `Enter` / `Shift`+`Enter` step to the next / previous match and `Esc` closes it. In Source and Diff, the editor's own find |
 | `c` | In the File tab's Preview of a markdown file, comment on the selected text |
+| `q` | In the File tab's Preview of a markdown file, quote the selected text into the agent's chat box under its file and lines (`path:N-M`, the lines of the blocks it touches), the caret under it. Only while the agent shows Chat |
+| `Alt`+`Q` | In the File tab's Source, quote the selection into the agent's chat box under its file and lines, the caret under it; also "Quote in chat" in the editor's right-click menu. Only while the agent shows Chat |
 | `Mod`+`Enter` | In the File tab: add the comment being written; outside a comment box, send the comments to the agent |
 | `Ctrl`+`Shift`+click on a file path in an agent's terminal (`Cmd`+`Shift`+click on a Mac) | Peek at the file: a read-only card unfolds under the line with Preview (markdown), Source, Diff against HEAD and Open in Code. A plain `Ctrl`+click on the same path still opens it (the agent's panel, else Code). Only in an agent's terminal, not a plain one |
 | `Enter` / `Esc` in the Code peek card | Open the file in Code / close the card. The card owns both keys while focus is in it; with focus in the terminal `Esc` still reaches the agent |
