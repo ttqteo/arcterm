@@ -23,6 +23,28 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
 
 ## 2026-11-25
 
+- [ ] (arcterm) **Judge for a choice question, the light mark on real haiku** (the Final's `chat-judge` fakes both
+  judges). Have a Claude agent end a turn on an A-or-B question written as prose ("… Mình nghiêng A. A hay B?"). Under
+  its message a line reads "Gợi ý <one chip>" with "· rê vào để xem lý do"; hovering the name shows a one-sentence reason
+  and "haiku, chỉ đọc reply"; that chip is first in the row with the scale icon. Do it on both paths: an agent whose arc
+  mod makes the call at the turn's end (the mod path), and one whose mod is off (wavesrv's headless call), and check
+  each answer's chips have a pick, a reason and a neutral description (spec "Light mark"; `pkg/chatsuggest`,
+  `claude/arc-mod/hooks/register.ts`). A yes-or-no question or a turn with no question gets no line.
+
+- [ ] (arcterm) **Judge for a choice question, the deep judge on a real project** (nothing in the Final starts sonnet).
+  On the turn above press Judge kỹ (or Alt+J) with the agent's project open: the line reads "Judge đang đọc code, không
+  thấy agent khuyên gì · N s" with the seconds ticking and Dừng; when it ends it reads "Judge chọn <pick>" with
+  `sonnet · N file · N s` at the end and the reason on hover, the judged chip moved first (an option the agent never
+  named is a chip of its own and sends its description and facts). `waveapp.log` holds one `chatjudge: … role=chat-judge
+  state=done model=sonnet …` line, and no arcterm hook fired for the judge session (no row in Active, no session in the
+  project's History). Press Dừng mid-way: the line goes back to the light mark; answering with a chip while it reads
+  stops it too. Quit and reopen arcterm: the line under the old message is still there.
+
+- [ ] (arcterm) **What's new picture for Judge for a choice question.** Run
+  `node scripts/cdp/final-verify.mjs chat-judge` on a dev app, which writes `public/whatsnew/<version>-chat-judge.webp`;
+  commit that file and change the CHANGELOG line's `<!-- shot: none -->` to `<!-- shot: <version>-chat-judge.webp -->`
+  (`whatsnew.test.ts` checks it).
+
 - [ ] (arcterm) Chat table Copy: hover a table in a Claude reply; the copy button sits right of the header row, over no
   cell. Click it, paste in Chat's input: a `| … |` Markdown table arrives; paste in Google Docs: real ruled cells.
   Layout measured in headless Edge only (`markdown.scss`, `markdown-table.ts`; d7ecb89a1).

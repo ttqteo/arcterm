@@ -102,6 +102,8 @@ import { ChatHandoffCard, ChatHandoffDone } from "./chathandoffcard";
 import { ChatInitiativeHost, InitiativeMessageCards } from "./chatinitiativecard";
 import { openMessageCard, useMessageCards } from "./chatinitiativestore";
 import { sameChatItem } from "./chatitemeq";
+import { judgeKeysByItem } from "./chatjudge";
+import { ChatJudgeLine } from "./chatjudgeline";
 import { linkAt } from "./chatlink";
 import { ChatQuoteMenu } from "./chatquotemenu";
 import { liveTexts, withLiveReply, type LiveReply } from "./chatlive";
@@ -131,6 +133,7 @@ import { placeStepLists, stepsPartKey, type AgentNow } from "./chatsteplist";
 import { ChatStepsHost, StepsPart } from "./chatsteplistview";
 import { foreignPathGuesses, turnFileAbs, turnFileDiff, turnFiles } from "./chatsteps";
 import { ChatSteps } from "./chatstepsview";
+import { chatJudgeAtom } from "./chatsuggeststore";
 import { TaggedPromptText } from "./chattagblock";
 import { ChatTurnFiles } from "./chatturnfiles";
 import { turnCanvas } from "./chatcanvaspeek";
@@ -723,6 +726,7 @@ const NO_KEYS: ReadonlySet<string> = new Set();
 const NO_LIVE_REPLY: Atom<LiveReply | null> = atom<LiveReply | null>(null);
 const NO_LOST: readonly LostBash[] = [];
 const NO_ANSWERS: ReadonlyMap<string, PairedAnswer> = new Map();
+const NO_JUDGE_KEYS: ReadonlyMap<string, string> = new Map();
 const NO_ENDED: ReadonlyMap<string, { runId: string; ended: RunEnded }> = new Map();
 // the run queue is read only by a conversation that has a queued start in it (placeRunCards tells an entry still waiting
 // from one that left the queue by it)
@@ -914,6 +918,7 @@ export function ChatConversation({
     model,
     agent,
     cwd,
+    liveJudgeKey,
     className,
 }: {
     entries: AgentEntry[];
@@ -958,6 +963,10 @@ export function ChatConversation({
     agent?: AgentVM;
     // the agent's working directory: the card of a finished turn's files names each one's folder relative to it
     cwd?: string | null;
+    // the key (chatsuggest.ts suggestKey) of the pane's current turn while its suggested replies show, else null: the
+    // judge's line under that turn's message is the live one, which offers Judge it, Stop and Retry (chatjudgeline.tsx).
+    // Every other line shows what was judged and nothing to press
+    liveJudgeKey?: string | null;
     className?: string;
 }) {
     const toolsLive = working ?? !!active;
@@ -966,6 +975,15 @@ export function ChatConversation({
     const items = useMemo(
         () => withLiveReply(stored, liveTexts(reply, !!liveNarrates), entries.length),
         [stored, reply, liveNarrates, entries.length]
+    );
+    // The judge records of the agent's choice turns (chatjudge.ts) and the item each is drawn under: a line after its row,
+    // like the run and council cards (endedAfter), never inside the item's cached element, so a record arriving or the live
+    // key changing redraws the line and leaves the item's cache keys as they are
+    const judges = useAtomValue(chatJudgeAtom);
+    const agentId = agent?.id;
+    const judgeKeys = useMemo(
+        () => (agentId != null ? judgeKeysByItem(agentId, items, judges) : NO_JUDGE_KEYS),
+        [agentId, items, judges]
     );
     // the cards the person opened from messages (Add to initiative…), by the item they were opened after
     const canAddInitiative = !!model && !!agent;
@@ -1206,7 +1224,11 @@ export function ChatConversation({
         animate: { marginTop: 0, transition: rowSpring },
         exit: { marginTop: -ITEM_GAP, transition: rowSpring },
     };
-    const lastDrawn = useRef<{ items: string[]; parts: Set<string> }>({ items: [], parts: new Set() });
+    const lastDrawn = useRef<{ items: string[]; parts: Set<string>; judges: Set<string> }>({
+        items: [],
+        parts: new Set(),
+        judges: new Set(),
+    });
     // nothing opens while a kept window catches up, nor in the render where it stops: the caught-up rows and the end of
     // catching up can land in one batched render
     const wasCatchingUp = useRef(false);
@@ -1223,6 +1245,7 @@ export function ChatConversation({
             parts: new Set(
                 visible.flatMap((item) => (item.kind === "agent" ? item.parts.map((_, p) => `${item.key}#${p}`) : []))
             ),
+            judges: new Set(visible.flatMap((item) => judgeKeys.get(item.key) ?? [])),
         };
     });
     // a fold is kept by its item's key and its part's place in the item, so it stays with its item as entries arrive
@@ -1896,8 +1919,24 @@ export function ChatConversation({
                 {drawn.element}
             </Arriving>
         );
+        // the judge's line for the question this message ends in: its own row after the item's, so a change to the record
+        // redraws the line only. It opens on the spring when it lands under a message that was already drawn
+        const judgeKey = judgeKeys.get(item.key);
         return [
             row,
+            ...(judgeKey != null && agent != null
+                ? [
+                      <ChatJudgeLine
+                          key={`judge:${item.key}`}
+                          agentId={agent.id}
+                          recKey={judgeKey}
+                          live={judgeKey === liveJudgeKey}
+                          cwd={cwd ?? null}
+                          gap={ITEM_GAP}
+                          arrive={!still && drawnBefore.has(item.key) && !lastDrawn.current.judges.has(judgeKey)}
+                      />,
+                  ]
+                : []),
             ...(cardAnchors.has(item.key) && agent != null
                 ? [<InitiativeMessageCards key={`${item.key}:initiative`} agentId={agent.id} anchor={item.key} />]
                 : []),
