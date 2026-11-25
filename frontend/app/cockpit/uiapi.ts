@@ -93,27 +93,36 @@ export function resolveAction(
     return { item };
 }
 
-// Conversation History, the Canvas gallery, Councils and Boards are tabs of the Library surface rather than surfaces, so their
-// addresses name Library and the tab; "sessions" is the old name of the surface History replaced, kept (and left out of the
-// error's list) so a worker following an old instruction still lands somewhere sensible.
+// Conversation History, the Canvas gallery and Boards are tabs of the Library surface rather than surfaces, so their addresses
+// name Library and the tab; "sessions" is the old name of the surface History replaced, kept (and left out of the error's
+// list) so a worker following an old instruction still lands somewhere sensible.
 const LIBRARY_TAB_ADDRESSES: ReadonlyMap<string, LibraryTab> = new Map<string, LibraryTab>([
     ["history", "conversations"],
     ["sessions", "conversations"],
     ["canvases", "canvases"],
-    ["councils", "councils"],
     ["boards", "boards"],
 ]);
-const LIBRARY_TAB_NAMES = ["history", "canvases", "councils", "boards"];
+const LIBRARY_TAB_NAMES = ["history", "canvases", "boards"];
+
+/** A surface address parsed (parseSurfaceAddress). `councils` asks for Conversations with the Council chip on: councils are no
+ *  longer a tab, but `surface:councils` is kept (and left out of the error's list) for a worker that still names it. */
+export interface SurfaceTarget {
+    surface: SurfaceKey;
+    tab?: LibraryTab;
+    councils?: boolean;
+}
 
 // null = not a surface address; the shared router (openAddress) owns every other kind. `surface:library` is a surface like any
-// other (it opens on the tab it was left on); a name in LIBRARY_TAB_ADDRESSES opens Library on that tab.
-export function parseSurfaceAddress(
-    address: string
-): { surface: SurfaceKey; tab?: LibraryTab } | { error: string } | null {
+// other (it opens on the tab it was left on); a name in LIBRARY_TAB_ADDRESSES opens Library on that tab, and `councils` opens
+// Conversations on its Council chip.
+export function parseSurfaceAddress(address: string): SurfaceTarget | { error: string } | null {
     if (!address.startsWith(SURFACE_PREFIX)) {
         return null;
     }
     const key = address.slice(SURFACE_PREFIX.length);
+    if (key === "councils") {
+        return { surface: "library", tab: "conversations", councils: true };
+    }
     const tab = LIBRARY_TAB_ADDRESSES.get(key);
     if (tab != null) {
         return { surface: "library", tab };
@@ -122,6 +131,23 @@ export function parseSurfaceAddress(
         return { error: `unknown surface "${key}"; one of ${[...SURFACES, ...LIBRARY_TAB_NAMES].join(", ")}` };
     }
     return { surface: key as SurfaceKey };
+}
+
+/** What a parsed surface address does: Conversations with the Council chip on, Library on a tab, or any other surface. Said
+ *  apart from the stores it acts on (handle_uireveal) so the dispatch tests without them. */
+export type SurfaceRevealAction =
+    | { kind: "councils" }
+    | { kind: "library"; tab: LibraryTab }
+    | { kind: "surface"; surface: SurfaceKey };
+
+export function surfaceRevealAction(target: SurfaceTarget): SurfaceRevealAction {
+    if (target.councils) {
+        return { kind: "councils" };
+    }
+    if (target.tab != null) {
+        return { kind: "library", tab: target.tab };
+    }
+    return { kind: "surface", surface: target.surface };
 }
 
 // the router's messages are written for a toast at the user; these two need rewording for the worker

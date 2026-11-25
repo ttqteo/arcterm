@@ -33,11 +33,11 @@ import type { AgentsViewModel } from "./agents";
 import { CouncilText } from "./councilchat";
 import { useNow } from "./narrationtimeline";
 import { composerTarget, liveName, timelineRows, type PairRow } from "./pairmodel";
-import { judgeStatus, messageClock, quoteLine } from "./pairpanemodel";
+import { judgeStatus, messageClock, pairControls, quoteLine } from "./pairpanemodel";
 import { markPairSeen, pairScrollToAtom, usePairView } from "./pairstore";
 
 const ROOT = "flex min-h-0 min-w-0 flex-1 flex-col bg-background text-[14px] text-primary";
-const GHOST_BUTTON =
+export const GHOST_BUTTON =
     "h-[26px] flex-none cursor-pointer rounded-[6px] border border-edge-mid bg-surface-raised px-[10px] text-[12.5px] text-secondary outline-none hover:border-edge-strong hover:bg-surface-hover focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-default disabled:opacity-50";
 const PROSE = "text-[13.5px] leading-[1.55] text-ink-hi";
 
@@ -74,7 +74,17 @@ export function PairPane({ model }: { model: AgentsViewModel }) {
     return <PairConversation key={view.id} model={model} view={view} />;
 }
 
-function PairConversation({ model, view }: { model: AgentsViewModel; view: PairView }) {
+// readOnly is Library's read view (pairreadpane.tsx): the thread alone, with none of pairControls' controls, and it marks
+// nothing seen, which stays the live view's
+export function PairConversation({
+    model,
+    view,
+    readOnly = false,
+}: {
+    model: AgentsViewModel;
+    view: PairView;
+    readOnly?: boolean;
+}) {
     const roster = useAtomValue(model.agentsAtom);
     // a string, so a roster tick that leaves the name alone does not redraw the timeline
     const workerName = liveName(view.worker, roster);
@@ -92,15 +102,17 @@ function PairConversation({ model, view }: { model: AgentsViewModel; view: PairV
     const [heldNow, setHeldNow] = useState<ReadonlyMap<string, "pending" | "through">>(new Map());
     const [unpairing, setUnpairing] = useState(false);
     const [error, setError] = useState<string | null>(null);
-    const ended = view.state === "ended";
+    const controls = pairControls({ readOnly, ended: view.state === "ended" });
     // the messages there when the conversation opened are drawn in place; one that arrives after it grows in
     const [openedWith] = useState(() => new Set(rows.map((r) => r.id)));
     const errorPart = usePartMotion(springReveal);
 
     // the person has it in front of them: what it holds counts as seen, and so does each message that arrives while it shows
     useEffect(() => {
-        markPairSeen(view.id);
-    }, [view.id, rows.length]);
+        if (!readOnly) {
+            markPairSeen(view.id);
+        }
+    }, [view.id, rows.length, readOnly]);
 
     // follows the end of the timeline while the person is there: a message that grows in (or a block that draws late) moves
     // the end, so it is the content's size that is watched, not the message count
@@ -208,7 +220,15 @@ function PairConversation({ model, view }: { model: AgentsViewModel; view: PairV
 
     return (
         <section data-pair-pane={view.id} aria-label="Pair conversation" className={ROOT}>
-            <PairBar model={model} view={view} busy={unpairing} onUnpair={() => void unpair()} />
+            {controls.bar ? (
+                <PairBar
+                    model={model}
+                    view={view}
+                    busy={unpairing}
+                    showUnpair={controls.unpair}
+                    onUnpair={() => void unpair()}
+                />
+            ) : null}
             <div
                 ref={scroller}
                 data-pair-timeline
@@ -229,6 +249,8 @@ function PairConversation({ model, view }: { model: AgentsViewModel; view: PairV
                             enters={!openedWith.has(row.id)}
                             flashing={flash === row.id}
                             heldNow={heldNow}
+                            canReply={controls.reply}
+                            canRunNow={controls.runNow}
                             onQuote={jumpTo}
                             onReply={startReply}
                             onRunNow={(command) => void runNow(row, command)}
@@ -245,11 +267,12 @@ function PairConversation({ model, view }: { model: AgentsViewModel; view: PairV
                     </motion.div>
                 ) : null}
             </AnimatePresence>
-            {ended ? (
+            {controls.endedFooter ? (
                 <div data-pair-ended className="flex-none border-t border-border px-5 py-3 text-[13px] text-muted">
                     This pair has ended.
                 </div>
-            ) : (
+            ) : null}
+            {controls.composer ? (
                 <PairComposer
                     view={view}
                     reply={reply}
@@ -257,7 +280,7 @@ function PairConversation({ model, view }: { model: AgentsViewModel; view: PairV
                     onClearReply={() => setReply(null)}
                     onError={setError}
                 />
-            )}
+            ) : null}
         </section>
     );
 }
@@ -268,11 +291,13 @@ function PairBar({
     model,
     view,
     busy,
+    showUnpair,
     onUnpair,
 }: {
     model: AgentsViewModel;
     view: PairView;
     busy: boolean;
+    showUnpair: boolean;
     onUnpair: () => void;
 }) {
     const focusId = useAtomValue(model.focusIdAtom);
@@ -314,11 +339,11 @@ function PairBar({
             </span>
             <div className="flex-1" />
             <JudgeStates model={model} judges={judges} />
-            {view.state === "ended" ? null : (
+            {showUnpair ? (
                 <button type="button" data-pair-unpair disabled={busy} onClick={onUnpair} className={GHOST_BUTTON}>
                     Unpair
                 </button>
-            )}
+            ) : null}
         </header>
     );
 }
@@ -357,6 +382,9 @@ type MessageProps = {
     enters: boolean;
     flashing: boolean;
     heldNow: ReadonlyMap<string, "pending" | "through">;
+    // pairControls: the read-only view has neither Reply on a message nor Run now on a held command
+    canReply: boolean;
+    canRunNow: boolean;
     onQuote: (id: string) => void;
     onReply: (row: PairRow) => void;
     onRunNow: (command: string) => void;
@@ -369,7 +397,18 @@ const BLOCK: Record<Exclude<PairRow["side"], "system">, string> = {
     wide: "w-full border-edge-strong bg-pill",
 };
 
-function PairMessage({ row, quotedWho, enters, flashing, heldNow, onQuote, onReply, onRunNow }: MessageProps) {
+function PairMessage({
+    row,
+    quotedWho,
+    enters,
+    flashing,
+    heldNow,
+    canReply,
+    canRunNow,
+    onQuote,
+    onReply,
+    onRunNow,
+}: MessageProps) {
     const part = usePartMotion(springReveal);
     const arrive = { ...part, initial: enters ? part.initial : (false as const) };
     if (row.side === "system") {
@@ -411,7 +450,7 @@ function PairMessage({ row, quotedWho, enters, flashing, heldNow, onQuote, onRep
                     ) : null}
                     {row.toLabel !== "" ? <span className="flex-none whitespace-nowrap">to {row.toLabel}</span> : null}
                     <span className="flex-none tabular-nums">{messageClock(row.ts)}</span>
-                    {row.side === "wide" ? null : (
+                    {row.side === "wide" || !canReply ? null : (
                         <button
                             type="button"
                             data-pair-reply
@@ -443,7 +482,7 @@ function PairMessage({ row, quotedWho, enters, flashing, heldNow, onQuote, onRep
                                 <span data-pair-through className="flex-none text-muted">
                                     let through
                                 </span>
-                            ) : (
+                            ) : !canRunNow ? null : (
                                 <button
                                     type="button"
                                     data-pair-run-now

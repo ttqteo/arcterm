@@ -204,13 +204,12 @@ import {
 } from "@/app/view/jarvis/reviewstore";
 import { closeRunReview, foldCursorRow, runReviewOpenAtom, tickCursorRow } from "@/app/view/jarvis/runreviewstore";
 import {
-    leaveLibraryCouncil,
     leaveLibraryDetail,
     LIBRARY_TABS,
     libraryConvViewAtom,
-    libraryCouncilSelAtom,
     libraryTabAtom,
     showLibrary,
+    showLibraryCouncils,
     type LibraryTab,
 } from "@/app/view/library/librarystore";
 import { dagModalStateAtom } from "@/app/view/orchestrate/dagmodalstate";
@@ -260,9 +259,10 @@ function focusCodeSearchInput(): void {
     }
 }
 
-// g-leader surface teleports (collision-free letters; see design spec). Conversation History, the Canvas gallery, Councils
-// and Boards are tabs of the Library surface, not surfaces, so each target carries its own id (What's new's Try it links name
-// them) and the opener that shows its tab; `g l` opens Library on the tab it was left on.
+// g-leader surface teleports (collision-free letters; see design spec). Conversation History, the Canvas gallery and Boards are
+// tabs of the Library surface, not surfaces, so each target carries its own id (What's new's Try it links name them) and the
+// opener that shows its tab; `g l` opens Library on the tab it was left on. `g o` keeps its Councils id and opens
+// Conversations with the Council chip on (councils are no longer a tab).
 const GO_TARGETS: {
     letter: string;
     surface: SurfaceKey;
@@ -273,7 +273,7 @@ const GO_TARGETS: {
     { letter: "c", surface: "cockpit", label: "Cockpit (home)" },
     { letter: "a", surface: "agent", label: "Agent" },
     { letter: "j", surface: "jarvis", label: "Jarvis (projects, records, recall)" },
-    { letter: "l", surface: "library", label: "Library (conversations, canvases, councils, boards)" },
+    { letter: "l", surface: "library", label: "Library (conversations, canvases, boards)" },
     {
         letter: "s",
         surface: "library",
@@ -291,9 +291,9 @@ const GO_TARGETS: {
     {
         letter: "o",
         surface: "library",
-        label: "Councils",
+        label: "Councils (in Conversations)",
         id: "go:councils",
-        open: (m) => showLibrary(m, "councils"),
+        open: (m) => showLibraryCouncils(m),
     },
     {
         letter: "d",
@@ -323,22 +323,22 @@ const navigateStrict = (ctx: KeyContext) => !ctx.editable && !ctx.modalOpen;
 
 // Deep (non-home) surfaces whose Escape returns to the Cockpit. Excludes cockpit (already home), agent
 // (owns Escape via buildAgentBindings: exit fullscreen / back), and settings. Library's Escape is its Back while a canvas,
-// a session, a run or a council is open in it (libraryOpen), and navigates only from its lists.
+// a session, a run, a council or a pair is open in it (libraryOpen), and navigates only from its lists.
 const ESC_HOME_SURFACES = new Set<SurfaceKey>(["jarvis", "files", "usage", "code", "library"]);
 
 // What Library has open past its lists, whichever tab shows: a canvas, clean up or the version scan's review in the gallery
-// (its card grid is the gallery at rest), a session or a run on Conversations, a council on Councils. Each says so in its
+// (its card grid is the gallery at rest), and on Conversations a session, a run or a pair (`detail`) or a council (`council`,
+// which keeps the council's own keys, and whose Escape stands down while the council's panel holds it). Each says so in its
 // own atom and only on its own tab. Every atom is read whatever the others hold, so the PREDICATE_ATOMS completeness sweep
 // (whenstate.ts) sees each of them.
 function libraryOpen(): { gallery: boolean; detail: boolean; council: boolean } {
     const tab = globalStore.get(libraryTabAtom);
     const conv = globalStore.get(libraryConvViewAtom);
-    const council = globalStore.get(libraryCouncilSelAtom);
     const gallery = globalStore.get(canvasGalleryAtom).view;
     return {
         gallery: tab === "canvases" && gallery !== "grid",
-        detail: tab === "conversations" && conv !== "list",
-        council: tab === "councils" && council != null,
+        detail: tab === "conversations" && conv !== "list" && conv !== "council",
+        council: tab === "conversations" && conv === "council",
     };
 }
 
@@ -1421,7 +1421,7 @@ const galleryView = () => globalStore.get(canvasGalleryAtom).view;
 const inGalleryGrid = (ctx: KeyContext) => galleryNav(ctx) && galleryView() === "grid";
 const inGalleryViewer = (ctx: KeyContext) => galleryNav(ctx) && galleryView() === "viewer";
 const inGalleryCleanup = (ctx: KeyContext) => galleryNav(ctx) && galleryView() === "cleanup";
-// A council's view is on screen: Agent's centre column on a council, or Library's Councils tab with one open. Both reads
+// A council's view is on screen: Agent's centre column on a council, or Conversations' full-width council view. Both reads
 // happen whatever the surface, so every council predicate depends on both atoms however the rest short-circuits.
 const onCouncil = (ctx: KeyContext): boolean => {
     const centre = globalStore.get(centerModeAtom) === "council";
@@ -2742,7 +2742,7 @@ function chatTakesLetters(bindings: Binding[], focusId: () => string | null | un
 // the channel, Enter opens the focused idea's thread, p Chốts it (pins it as the council's direction), Escape closes
 // the thread. Active only while the chat is on screen and focus is inside its channel or thread (an input is never
 // inside: it stays editable, and its keys are its own), so elsewhere on the Agent surface nothing here is live and the
-// agent keys keep j and k. The council is on screen in Agent's centre column or in Library's Councils tab (onCouncil).
+// agent keys keep j and k. The council is on screen in Agent's centre column or in Conversations' council view (onCouncil).
 // Registered by the chat itself.
 export function buildCouncilBindings(): Binding[] {
     // the nav is read first and unconditionally, so every predicate depends on it however the rest short-circuits
@@ -2850,7 +2850,7 @@ export function buildCouncilBindings(): Binding[] {
 // A council's view keys: r the Report, c the Discussion (its chat), m the Map. Each clicks its tab in the strip the view
 // draws (counciltabs.tsx), so a key on the view already shown does what that click does (the Report glides to its
 // body). Live wherever a council's view is on screen and focus is not in an input; the agent keys that share r, c and m
-// want the terminal at rest, so they never overlap. In Agent's centre column and in Library's Councils tab alike (onCouncil).
+// want the terminal at rest, so they never overlap. In Agent's centre column and in Conversations' council view alike (onCouncil).
 // Registered by the tab strip itself.
 export const COUNCIL_TAB_KEYS = { summary: "r", discussion: "c", map: "m" } as const;
 export function buildCouncilTabBindings(): Binding[] {
@@ -2895,14 +2895,13 @@ function stepListFile(dir: 1 | -1): false | undefined {
 const LIBRARY_TAB_LABEL: Record<LibraryTab, string> = {
     conversations: "Conversations",
     canvases: "Canvases",
-    councils: "Councils",
     boards: "Boards",
 };
 
-// Library's own keys, which LibrarySurface activates with useKeybindings: `1` `2` `3` `4` show its tabs, in the order the strip
-// draws them, and Escape goes back out of what is open in it (the stand-in for the Back the panes draw): a session or a run
-// on Conversations (leaveLibraryDetail), a council on Councils (leaveLibraryCouncil) unless the council's own panel holds
-// the key. The rest of Library's keys are built elsewhere and gated on Library: the gallery's (canvases:*, built with the
+// Library's own keys, which LibrarySurface activates with useKeybindings: `1` `2` `3` show its tabs, in the order the strip
+// draws them, and Escape goes back out of what is open in it (the stand-in for the Back the panes draw): a session, a run, a
+// pair or a council on Conversations (leaveLibraryDetail), the council unless its own panel holds the key. The rest of
+// Library's keys are built elsewhere and gated on Library: the gallery's (canvases:*, built with the
 // Agent surface's), the council's (buildCouncilBindings, buildCouncilTabBindings) and the Conversations list's cursor
 // (buildListNavBindings, the cursor ConversationHistory publishes on `library`). With nothing open Escape is
 // surface:back-home's: back over the jump that brought the person here, else Cockpit.
@@ -2923,7 +2922,7 @@ export function buildLibraryBindings(_model: AgentsViewModel): Binding[] {
             id: "library:back",
             keys: "Escape",
             group: "Library",
-            label: "Back from the session, run or council",
+            label: "Back from the session, run, council or pair",
             // strict like every Escape here. Exclusive with surface:back-home (which stands down while any of these is open,
             // libraryHoldsEscape), with the gallery's Escapes (another tab) and with council:close-thread (the council's open
             // thread or Sources panel takes the press first, and this one stands down while that holds it)
@@ -2935,13 +2934,7 @@ export function buildLibraryBindings(_model: AgentsViewModel): Binding[] {
                     (open.detail || (open.council && !councilHoldsEscape()))
                 );
             },
-            run: () => {
-                if (libraryOpen().detail) {
-                    leaveLibraryDetail();
-                } else {
-                    leaveLibraryCouncil();
-                }
-            },
+            run: leaveLibraryDetail,
         },
     ];
 }

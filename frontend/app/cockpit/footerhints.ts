@@ -75,7 +75,7 @@ export const SURFACE_HINTS: Partial<Record<SurfaceKey, FooterHint[]>> = {
     // cursor, the gallery's grid, viewer and clean up, a council's views), and the Escape of whatever is open. Escape with
     // nothing open is GLOBAL_HINTS' "home".
     library: [
-        { ids: ["library:tab-1", "library:tab-2", "library:tab-3", "library:tab-4"], glyph: "1 2 3 4", label: "tab" },
+        { ids: ["library:tab-1", "library:tab-2", "library:tab-3"], glyph: "1 2 3", label: "tab" },
         { ids: ["list:next-j", "list:prev-k", "list:next", "list:prev"], glyph: "j k", label: "move" },
         {
             ids: ["canvases:left", "canvases:right", "canvases:up", "canvases:down"],

@@ -5,6 +5,7 @@ import { globalStore } from "@/app/store/jotaiStore";
 import { beforeEach, describe, expect, it } from "vitest";
 import {
     LIBRARY_COUNCIL_HOST,
+    libraryConvViewAtom,
     libraryCouncilOnlyAtom,
     libraryCouncilSelAtom,
     libraryCouncilViewAtom,
@@ -22,6 +23,7 @@ beforeEach(() => {
     globalStore.set(libraryCouncilSelAtom, null);
     globalStore.set(libraryCouncilViewAtom, "discussion");
     globalStore.set(libraryTabAtom, "conversations");
+    globalStore.set(libraryConvViewAtom, "list");
 });
 
 describe("LIBRARY_COUNCIL_HOST.open", () => {
@@ -43,9 +45,11 @@ describe("LIBRARY_COUNCIL_HOST.open", () => {
         expect(globalStore.get(centerModeAtom)).toBe("terminal");
     });
 
-    it("keeps the Councils tab showing, with no surface of its own to change", () => {
+    it("keeps Conversations' council view showing, with no surface of its own to change", () => {
+        globalStore.set(libraryTabAtom, "boards");
         LIBRARY_COUNCIL_HOST.open("lib-council", "map");
-        expect(globalStore.get(libraryTabAtom)).toBe("councils");
+        expect(globalStore.get(libraryTabAtom)).toBe("conversations");
+        expect(globalStore.get(libraryConvViewAtom)).toBe("council");
     });
 
     it("has a Discussion show everyone again when the way in names no seat", () => {

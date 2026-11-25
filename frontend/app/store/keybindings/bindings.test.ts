@@ -116,6 +116,7 @@ import { petPeekOpenAtom } from "@/app/view/jarvis/petstore";
 import { forgetOrigin } from "@/app/view/jarvis/returnsurface";
 import { enterReview, exitReview, reviewedAtom, reviewModeAtom, reviewQueueAtom } from "@/app/view/jarvis/reviewstore";
 import {
+    libraryConvKindsAtom,
     libraryConvViewAtom,
     libraryCouncilSelAtom,
     libraryTabAtom,
@@ -2614,6 +2615,7 @@ function resetLibrary() {
     globalStore.set(libraryTabAtom, "conversations");
     globalStore.set(libraryConvViewAtom, "list");
     globalStore.set(libraryCouncilSelAtom, null);
+    globalStore.set(libraryConvKindsAtom, { judge: false, council: false });
 }
 
 describe("g l, g s, g v, g o, g d: Library and its tabs", () => {
@@ -2621,11 +2623,10 @@ describe("g l, g s, g v, g o, g d: Library and its tabs", () => {
     afterEach(resetLibrary);
 
     // each target, from the Cockpit: the id (What's new's Try it links name go:history, go:canvases, go:councils and
-    // go:boards), the letter, and the tab Library opens on
+    // go:boards), the letter, and the tab Library opens on (go:councils is its own test: it opens Conversations on a chip)
     const TARGETS: [id: string, keys: string, tab: LibraryTab][] = [
         ["go:history", "g s", "conversations"],
         ["go:canvases", "g v", "canvases"],
-        ["go:councils", "g o", "councils"],
         ["go:boards", "g d", "boards"],
     ];
 
@@ -2637,12 +2638,27 @@ describe("g l, g s, g v, g o, g d: Library and its tabs", () => {
             const target = bindings.find((b) => b.id === id)!;
             expect(target.keys).toBe(keys);
             expect(bindings.find((b) => b.id === "go:agent")!.keys).toBe("g a");
-            globalStore.set(libraryTabAtom, tab === "canvases" ? "councils" : "canvases"); // not already there
+            globalStore.set(libraryTabAtom, tab === "canvases" ? "boards" : "canvases"); // not already there
             target.run(ctx());
             expect(globalStore.get(model.surfaceAtom)).toBe("library");
             expect(globalStore.get(libraryTabAtom)).toBe(tab);
         }
     );
+
+    it("go:councils (g o) opens Conversations' list with the Council chip alone on, whatever was open", () => {
+        const model = { surfaceAtom: atom<SurfaceKey>("cockpit") } as any;
+        const target = buildGlobalBindings(model).find((b) => b.id === "go:councils")!;
+        expect(target.keys).toBe("g o");
+        expect(target.label).toBe("Councils (in Conversations)");
+        globalStore.set(libraryTabAtom, "boards");
+        globalStore.set(libraryConvViewAtom, "council");
+        globalStore.set(libraryConvKindsAtom, { judge: true, council: false });
+        target.run(ctx());
+        expect(globalStore.get(model.surfaceAtom)).toBe("library");
+        expect(globalStore.get(libraryTabAtom)).toBe("conversations");
+        expect(globalStore.get(libraryConvViewAtom)).toBe("list");
+        expect(globalStore.get(libraryConvKindsAtom)).toEqual({ judge: false, council: true });
+    });
 
     it("keeps the Canvas gallery's label, and names the Boards tab", () => {
         const model = { surfaceAtom: atom<SurfaceKey>("cockpit") } as any;
@@ -2656,10 +2672,11 @@ describe("g l, g s, g v, g o, g d: Library and its tabs", () => {
         expect(library.keys).toBe("g l");
         expect(library.label).toMatch(/^Library/);
         expect(library.label).toMatch(/boards/);
-        globalStore.set(libraryTabAtom, "councils");
+        expect(library.label).not.toMatch(/councils/);
+        globalStore.set(libraryTabAtom, "boards");
         library.run(ctx());
         expect(globalStore.get(model.surfaceAtom)).toBe("library");
-        expect(globalStore.get(libraryTabAtom)).toBe("councils");
+        expect(globalStore.get(libraryTabAtom)).toBe("boards");
     });
 
     it("the Go to letters are each used once", () => {
@@ -2676,7 +2693,7 @@ describe("Library's own keys", () => {
     const typing: KeyContext = { ...libCtx, editable: true };
     const model = { surfaceAtom: atom<SurfaceKey>("library") } as any;
     const find = (id: string) => buildLibraryBindings(model).find((b) => b.id === id)!;
-    const TAB_KEYS = ["library:tab-1", "library:tab-2", "library:tab-3", "library:tab-4"];
+    const TAB_KEYS = ["library:tab-1", "library:tab-2", "library:tab-3"];
     const navNode = (inThread = false) =>
         vi.stubGlobal("document", {
             activeElement: { tagName: "DIV", closest: () => (inThread ? {} : null) },
@@ -2689,16 +2706,12 @@ describe("Library's own keys", () => {
         vi.unstubAllGlobals();
     });
 
-    it("binds 1 2 3 4 to the four tabs, in the order the strip draws them", () => {
-        expect(TAB_KEYS.map((id) => find(id).keys)).toEqual(["1", "2", "3", "4"]);
-        expect(TAB_KEYS.map((id) => find(id).label)).toEqual([
-            "Show Conversations",
-            "Show Canvases",
-            "Show Councils",
-            "Show Boards",
-        ]);
-        for (const [i, tab] of (["conversations", "canvases", "councils", "boards"] as const).entries()) {
-            globalStore.set(libraryTabAtom, tab === "councils" ? "conversations" : "councils");
+    it("binds 1 2 3 to the three tabs, in the order the strip draws them, and has no fourth", () => {
+        expect(TAB_KEYS.map((id) => find(id).keys)).toEqual(["1", "2", "3"]);
+        expect(TAB_KEYS.map((id) => find(id).label)).toEqual(["Show Conversations", "Show Canvases", "Show Boards"]);
+        expect(buildLibraryBindings(model).find((b) => b.id === "library:tab-4")).toBeUndefined();
+        for (const [i, tab] of (["conversations", "canvases", "boards"] as const).entries()) {
+            globalStore.set(libraryTabAtom, tab === "canvases" ? "conversations" : "canvases");
             find(TAB_KEYS[i]).run(libCtx);
             expect(globalStore.get(libraryTabAtom)).toBe(tab);
         }
@@ -2715,12 +2728,12 @@ describe("Library's own keys", () => {
         }
     });
 
-    it("Escape goes back from a session or a run opened in Conversations, and from nowhere else", () => {
+    it("Escape goes back from a session, a run or a pair opened in Conversations, and from nowhere else", () => {
         const back = find("library:back");
         expect(back.keys).toBe("Escape");
         // the list at rest has nothing to go back out of: Escape is surface:back-home's
         expect(back.when!(libCtx)).toBe(false);
-        for (const view of ["session", "run"] as const) {
+        for (const view of ["session", "run", "pair"] as const) {
             globalStore.set(libraryConvViewAtom, view);
             expect(back.when!(libCtx)).toBe(true);
             expect(back.when!(typing)).toBe(false); // a field keeps its Escape
@@ -2740,16 +2753,16 @@ describe("Library's own keys", () => {
         expect(globalStore.get(libraryTabAtom)).toBe("conversations");
     });
 
-    it("Escape goes back from an open council to the Councils list, unless the council's thread or sources hold it", () => {
+    it("Escape goes back from an open council to the Conversations list, unless the council's thread or sources hold it", () => {
         const back = find("library:back");
-        globalStore.set(libraryTabAtom, "councils");
         expect(back.when!(libCtx)).toBe(false); // the list: nothing to leave
+        globalStore.set(libraryConvViewAtom, "council");
         globalStore.set(libraryCouncilSelAtom, "c1");
         expect(back.when!(libCtx)).toBe(true);
         // another tab does not take the council's Escape
         globalStore.set(libraryTabAtom, "canvases");
         expect(back.when!(libCtx)).toBe(false);
-        globalStore.set(libraryTabAtom, "councils");
+        globalStore.set(libraryTabAtom, "conversations");
         // a thread open with focus inside it: council:close-thread takes the press first
         navNode(true);
         globalStore.set(councilChatNavAtom, { openId: "P2", sourcesOpen: false } as CouncilChatNav);
@@ -2759,7 +2772,15 @@ describe("Library's own keys", () => {
         expect(back.when!(libCtx)).toBe(true);
         back.run(libCtx);
         expect(globalStore.get(libraryCouncilSelAtom)).toBeNull();
-        expect(globalStore.get(libraryTabAtom)).toBe("councils");
+        expect(globalStore.get(libraryConvViewAtom)).toBe("list");
+        expect(globalStore.get(libraryTabAtom)).toBe("conversations");
+    });
+
+    it("Escape in an open pair leaves it, and the Conversations list shows again", () => {
+        globalStore.set(libraryConvViewAtom, "pair");
+        find("library:back").run(libCtx);
+        expect(globalStore.get(libraryConvViewAtom)).toBe("list");
+        expect(globalStore.get(libraryTabAtom)).toBe("conversations");
     });
 
     it("Escape in Library has exactly one claimant at each step, none of them two", () => {
@@ -2776,9 +2797,11 @@ describe("Library's own keys", () => {
         navNode(false);
         // Conversations, the list at rest: back over the jump, else Cockpit
         expect(escapes()).toEqual(["surface:back-home"]);
-        // a session or run: Library's Back
-        globalStore.set(libraryConvViewAtom, "run");
-        expect(escapes()).toEqual(["library:back"]);
+        // a session, run or pair: Library's Back
+        for (const view of ["run", "pair"] as const) {
+            globalStore.set(libraryConvViewAtom, view);
+            expect(escapes()).toEqual(["library:back"]);
+        }
         globalStore.set(libraryConvViewAtom, "list");
         // the gallery: at rest navigates; each open view takes its own
         globalStore.set(libraryTabAtom, "canvases");
@@ -2798,9 +2821,9 @@ describe("Library's own keys", () => {
             expect(escapes()).toEqual([id]);
         }
         globalStore.set(canvasGalleryAtom, { view: "grid", dir: null, board: 0, query: "", cursor: 0 });
-        // Councils: the list navigates, an open council is Library's Back, its open thread closes first
-        globalStore.set(libraryTabAtom, "councils");
-        expect(escapes()).toEqual(["surface:back-home"]);
+        // a council open in Conversations: Library's Back, its open thread closes first
+        globalStore.set(libraryTabAtom, "conversations");
+        globalStore.set(libraryConvViewAtom, "council");
         globalStore.set(libraryCouncilSelAtom, "c1");
         expect(escapes()).toEqual(["library:back"]);
         navNode(true);
@@ -2814,7 +2837,7 @@ describe("Library's own keys", () => {
 
     it("no two Library keys share a chord in any posture", () => {
         const all = [...buildGlobalBindings(model), ...buildLibraryBindings(model)];
-        for (const tab of ["conversations", "canvases", "councils"] as const) {
+        for (const tab of ["conversations", "canvases", "boards"] as const) {
             globalStore.set(libraryTabAtom, tab);
             for (const editable of [false, true]) {
                 for (const leader of [null, "g"]) {
@@ -2919,7 +2942,7 @@ describe("Library → Canvases keys", () => {
             expect(right.when!({ ...libCtx, surface: "agent" })).toBe(false);
         }
         // the other tabs
-        for (const tab of ["conversations", "councils"] as const) {
+        for (const tab of ["conversations", "boards"] as const) {
             globalStore.set(libraryTabAtom, tab);
             expect(right.when!(libCtx)).toBe(false);
         }
@@ -4030,8 +4053,9 @@ describe("council chat keys", () => {
     });
 });
 
-// A council open in Library's Councils tab has the keys it has in Agent's centre column: the chat's j k Enter p Tab Escape
-// (buildCouncilBindings) and the views' r c m (buildCouncilTabBindings), live on Library with a council open, never on its lists
+// A council open in Conversations' full-width council view has the keys it has in Agent's centre column: the chat's j k Enter
+// p Tab Escape (buildCouncilBindings) and the views' r c m (buildCouncilTabBindings), live on Library with a council open,
+// never on its lists
 describe("council keys on Library", () => {
     const lib: KeyContext = { surface: "library", editable: false, modalOpen: false, leader: null };
     const agent: KeyContext = { ...lib, surface: "agent" };
@@ -4050,9 +4074,10 @@ describe("council keys on Library", () => {
     });
     const focusIn = (inside: boolean) =>
         vi.stubGlobal("document", { activeElement: { tagName: "DIV", closest: () => (inside ? {} : null) } });
-    // Library on a council: the Councils tab, with one open
+    // Library on a council: Conversations' council view, with one open
     const openCouncilInLibrary = () => {
-        globalStore.set(libraryTabAtom, "councils");
+        globalStore.set(libraryTabAtom, "conversations");
+        globalStore.set(libraryConvViewAtom, "council");
         globalStore.set(libraryCouncilSelAtom, "c1");
     };
 
@@ -4067,11 +4092,10 @@ describe("council keys on Library", () => {
         globalStore.set(councilChatNavAtom, null);
     });
 
-    it("the view keys r c m are live on the Councils tab with a council open, and on no list, tab or other surface", () => {
+    it("the view keys r c m are live in Conversations' council view, and on no list, tab or other surface", () => {
         const tabs = tabKeys();
         expect(tabs.map((b) => b.keys)).toEqual(["r", "c", "m"]);
-        // the Councils list: nothing open
-        globalStore.set(libraryTabAtom, "councils");
+        // the Conversations list: nothing open
         expect(tabs.some((b) => b.when!(lib))).toBe(false);
         openCouncilInLibrary();
         expect(tabs.every((b) => b.when!(lib))).toBe(true);
@@ -4079,10 +4103,14 @@ describe("council keys on Library", () => {
         expect(tabs.some((b) => b.when!({ ...lib, editable: true }))).toBe(false);
         expect(tabs.some((b) => b.when!({ ...lib, modalOpen: true }))).toBe(false);
         // another tab with the council still selected, another surface
-        globalStore.set(libraryTabAtom, "conversations");
+        globalStore.set(libraryTabAtom, "canvases");
         expect(tabs.some((b) => b.when!(lib))).toBe(false);
-        globalStore.set(libraryTabAtom, "councils");
+        globalStore.set(libraryTabAtom, "conversations");
         expect(tabs.some((b) => b.when!({ ...lib, surface: "jarvis" }))).toBe(false);
+        // a pair or a session open in Conversations is not a council
+        globalStore.set(libraryConvViewAtom, "pair");
+        expect(tabs.some((b) => b.when!(lib))).toBe(false);
+        globalStore.set(libraryConvViewAtom, "council");
         // the Agent surface follows its own centre, not Library's council: Library's open one does not light it
         expect(tabs.some((b) => b.when!(agent))).toBe(false);
         globalStore.set(centerModeAtom, "council");
@@ -4109,8 +4137,7 @@ describe("council keys on Library", () => {
         );
         focusIn(true);
         globalStore.set(councilChatNavAtom, nav());
-        // the Councils list, or nothing published: not the chat's
-        globalStore.set(libraryTabAtom, "councils");
+        // the Conversations list, or nothing published: not the chat's
         expect(keys.some((b) => b.when!(lib))).toBe(false);
         openCouncilInLibrary();
         expect(keys.every((b) => b.when!(lib))).toBe(true);

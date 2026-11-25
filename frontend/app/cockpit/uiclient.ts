@@ -20,7 +20,7 @@ import { getCanvas } from "@/app/view/agents/canvasstore";
 import { briefPeekRecordAtom } from "@/app/view/jarvis/jarvisstore";
 import { activeRunIdAtom, activeSubjectAtom } from "@/app/view/jarvis/jarvissubjectstore";
 import { openAddress } from "@/app/view/jarvis/openref";
-import { showLibrary } from "@/app/view/library/librarystore";
+import { showLibrary, showLibraryCouncils } from "@/app/view/library/librarystore";
 import {
     AWAITING_CONFIRMATION,
     brainstormCloseVerdict,
@@ -34,6 +34,7 @@ import {
     revealLeavesTrail,
     revealWaitsForUser,
     selectionFor,
+    surfaceRevealAction,
     toUiActions,
     waitUntilIdle,
     type SelectionSnapshot,
@@ -71,10 +72,13 @@ class CockpitUiClient extends WshClient {
             if ("error" in surfaceTarget) {
                 throw new Error(surfaceTarget.error);
             }
-            if (surfaceTarget.tab != null) {
-                showLibrary(this.model, surfaceTarget.tab);
+            const action = surfaceRevealAction(surfaceTarget);
+            if (action.kind === "councils") {
+                showLibraryCouncils(this.model);
+            } else if (action.kind === "library") {
+                showLibrary(this.model, action.tab);
             } else {
-                globalStore.set(this.model.surfaceAtom, surfaceTarget.surface);
+                globalStore.set(this.model.surfaceAtom, action.surface);
             }
             this.trail(data.callerblockid, data.address);
             return "";

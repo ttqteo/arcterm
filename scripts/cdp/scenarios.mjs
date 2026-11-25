@@ -57,6 +57,7 @@ import * as agentPageFixtures from "./agent-page-fixtures.mjs";
 import { makeCouncilScenarios } from "./councilscenarios.mjs";
 import agentHeaderScenarios from "./scenarios-agent-header.mjs";
 import pairConversationScenarios from "./scenarios-pair-conversation.mjs";
+import libraryPairsScenarios from "./scenarios-library-pairs.mjs";
 import pairDecidedScenarios from "./scenarios-pair-decided.mjs";
 import pairHeaderScenarios from "./scenarios-pair-header.mjs";
 import pairTreeScenarios from "./scenarios-pair-tree.mjs";
@@ -75801,6 +75802,7 @@ export const SCENARIOS = [
     ...agentHeaderScenarios(RT_KIT),
     ...pairConversationScenarios(RT_KIT),
     ...pairDecidedScenarios(RT_KIT),
+    ...libraryPairsScenarios(RT_KIT),
     ...pairHeaderScenarios(RT_KIT),
     ...pairTreeScenarios(RT_KIT),
     ...railVerifyScenarios(RT_KIT),

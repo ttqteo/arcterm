@@ -42,7 +42,7 @@ const T_DRAWN = "t-drawn";
 const T_FWD = "t-forwarded";
 
 const q = JSON.stringify;
-const KEY_4 = { key: "4", code: "Digit4", windowsVirtualKeyCode: 52 };
+const KEY_3 = { key: "3", code: "Digit3", windowsVirtualKeyCode: 51 };
 
 // a filled box, so a click anywhere inside it selects it
 const filled = (elements, background) => elements.map((e) => (e.type === "rectangle" ? { ...e, backgroundColor: background } : e));
@@ -302,25 +302,25 @@ export default function (kit) {
                     buttons: [...row.querySelectorAll("button")].map((b) => b.textContent.trim()),
                 }))`);
 
-            // --- 1. the tab strip shows Boards with 4, and the key 4 opens it ---
-            await run("1. Library's tab row shows Boards with 4, and the key 4 opens the tab", async (name) => {
+            // --- 1. the tab strip shows Boards on 3 (the key is the tab's aria-keyshortcuts), and the key 3 opens it ---
+            await run("1. Library's tab row shows Boards on 3, and the key 3 opens the tab", async (name) => {
                 await h.goto("library");
                 await h.ev(`document.querySelector('[data-library-tab="conversations"]')?.click()`);
                 await until(async () => (await active()) === "conversations");
                 const tabs = await h.ev(`[...document.querySelectorAll("[data-library-tab]")].map((t) => ({
                     tab: t.getAttribute("data-library-tab"),
-                    kbd: (t.querySelector("kbd")?.textContent ?? "").trim(),
+                    key: t.getAttribute("aria-keyshortcuts") ?? "",
                     label: t.textContent.replace(/\\s+/g, " ").trim(),
                 }))`);
-                await press(KEY_4);
+                await press(KEY_3);
                 const opened = await until(async () => (await active()) === "boards");
                 const listed = await until(async () => (await count(`[data-library-boards-list] [data-library-board]`)) >= 3);
                 await shot("1-tab");
                 const boards = tabs.find((t) => t.tab === "boards");
                 rec(
                     name,
-                    tabs.map((t) => t.tab).join() === "conversations,canvases,councils,boards" &&
-                        boards?.kbd === "4" &&
+                    tabs.map((t) => t.tab).join() === "conversations,canvases,boards" &&
+                        boards?.key === "3" &&
                         boards.label.startsWith("Boards") &&
                         opened &&
                         listed,

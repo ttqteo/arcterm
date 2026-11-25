@@ -56,6 +56,7 @@ import { memorySelectedChangeAtom, memorySelectedProjectAtom } from "../agents/m
 import { setupTabAtom } from "../agents/setupstore";
 import {
     libraryBoardSelAtom,
+    libraryConvViewAtom,
     libraryCouncilSelAtom,
     libraryCouncilViewAtom,
     libraryTabAtom,
@@ -539,6 +540,7 @@ describe("council landings", () => {
             globalStore.set(councilSelAtom, null);
             globalStore.set(councilViewAtom, "discussion");
             globalStore.set(libraryTabAtom, "conversations");
+            globalStore.set(libraryConvViewAtom, "list");
             globalStore.set(libraryCouncilSelAtom, null);
             globalStore.set(libraryCouncilViewAtom, "discussion");
             // a council never opened counts as opened now, so a day-old one is read and has left the tree
@@ -561,7 +563,7 @@ describe("council landings", () => {
             expect(globalStore.get(libraryCouncilSelAtom)).toBeNull();
         });
 
-        it("opens a council that left the tree in Library's Councils tab, on the view the target names", async () => {
+        it("opens a council that left the tree in Conversations' council view, on the view the target names", async () => {
             const model = makeModel();
             // with no summary its default view is the Discussion, so landing on the summary is the target's doing
             globalStore.set(councilAtom("c-old"), known("c-old", { summary: undefined }));
@@ -570,7 +572,8 @@ describe("council landings", () => {
             });
             expect(globalStore.get(libraryCouncilSelAtom)).toBe("c-old");
             expect(globalStore.get(libraryCouncilViewAtom)).toBe("summary");
-            expect(globalStore.get(libraryTabAtom)).toBe("councils");
+            expect(globalStore.get(libraryTabAtom)).toBe("conversations");
+            expect(globalStore.get(libraryConvViewAtom)).toBe("council");
             expect(globalStore.get(model.surfaceAtom)).toBe("library");
             // Agent's own selection and centre are left as they were
             expect(globalStore.get(councilSelAtom)).toBeNull();

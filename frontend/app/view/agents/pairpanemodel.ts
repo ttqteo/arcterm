@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // The words the pair's conversation (pairpane.tsx) puts on what pairmodel.ts shapes: how a judge's state reads in the top
-// bar, a message's clock, and the one line a Reply quotes. Pure, so pairpanemodel.test.ts holds them.
+// bar, a message's clock, the one line a Reply quotes, which controls it draws (the read-only view draws none) and the read
+// view's foot line (pairreadpane.tsx). Pure, so pairpanemodel.test.ts holds them.
 
 import type { AgentVM } from "./agentsviewmodel";
 
@@ -52,6 +53,37 @@ export function judgeStatus(agent: JudgeAgent | undefined, side: PairSide, now: 
             : "asking";
     const ms = stateMs(agent, now);
     return ms != null ? `${word} · ${shortSpan(ms)}` : word;
+}
+
+export type PairControls = {
+    bar: boolean;
+    composer: boolean;
+    reply: boolean;
+    runNow: boolean;
+    unpair: boolean;
+    endedFooter: boolean;
+};
+
+/** Which controls the pair's conversation draws. Live, the bar, Reply and Run now always show, the composer and Unpair until
+ *  it ends and the "has ended" footer after. Read-only draws none: the read view carries its own header and foot line. */
+export function pairControls({ readOnly, ended }: { readOnly: boolean; ended: boolean }): PairControls {
+    return {
+        bar: !readOnly,
+        composer: !readOnly && !ended,
+        reply: !readOnly,
+        runNow: !readOnly,
+        unpair: !readOnly && !ended,
+        endedFooter: !readOnly && ended,
+    };
+}
+
+/** The read view's foot line, before its transcript links. A synced pair comes first: it never relays on this machine, so
+ *  "it relays on the Agent surface" would be false of it in any state. */
+export function readFootLine(view: Pick<PairView, "state" | "synced">): string {
+    if (view.synced) {
+        return "Synced from another machine. Read-only.";
+    }
+    return view.state === "ended" ? "This pair is over. Read-only." : "Read-only here; it relays on the Agent surface.";
 }
 
 /** A message's head clock: the local HH:MM. */

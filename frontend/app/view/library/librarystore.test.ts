@@ -4,7 +4,7 @@
 import { globalStore } from "@/app/store/jotaiStore";
 import { atom } from "jotai";
 import { beforeEach, describe, expect, it } from "vitest";
-import { centerModeAtom } from "../agents/agentcenter";
+import { centerModeAtom, pairSelAtom } from "../agents/agentcenter";
 import type { AgentsViewModel, SurfaceKey } from "../agents/agents";
 import { AGENT_COUNCIL_HOST } from "../agents/councilhost";
 import { councilOpenedAtom } from "../agents/councilopened";
@@ -16,24 +16,29 @@ import {
     councilSelAtom,
     councilViewAtom,
 } from "../agents/councilstore";
+import { devMockPairsAtom } from "../agents/pairstore";
 import { backToOrigin, forgetOrigin } from "../jarvis/returnsurface";
 import {
     LIBRARY_COUNCIL_HOST,
     LIBRARY_TABS,
-    leaveLibraryCouncil,
     leaveLibraryDetail,
     libraryBoardSelAtom,
+    libraryConvKindsAtom,
     libraryConvViewAtom,
     libraryCouncilOnlyAtom,
     libraryCouncilSelAtom,
     libraryCouncilViewAtom,
+    libraryPairSelAtom,
     libraryTabAtom,
     openCouncil,
+    openPair,
     setLibraryCouncil,
     showConversationHistory,
     showLibrary,
     showLibraryBoard,
     showLibraryCouncil,
+    showLibraryCouncils,
+    showLibraryPair,
     showLibrarySession,
 } from "./librarystore";
 
@@ -60,12 +65,18 @@ const council = (id: string, extra: Partial<Council> = {}): Council =>
         ...extra,
     }) as Council;
 
+// a mocked pair is as much of a PairView as the lists and openPair read: an id, a state and the synced flag
+const mockPair = (id: string, state: string, synced = false) => ({ id, state, synced, project: "/work/a" }) as PairView;
+
 beforeEach(() => {
     forgetOrigin();
     globalStore.set(libraryTabAtom, "conversations");
     globalStore.set(libraryConvViewAtom, "list");
     globalStore.set(libraryCouncilSelAtom, null);
     globalStore.set(libraryCouncilViewAtom, "discussion");
+    globalStore.set(libraryPairSelAtom, null);
+    globalStore.set(libraryConvKindsAtom, { judge: false, council: false });
+    globalStore.set(devMockPairsAtom, null);
     globalStore.set(libraryBoardSelAtom, null);
     globalStore.set(centerModeAtom, "terminal");
     globalStore.set(councilSelAtom, null);
@@ -76,24 +87,26 @@ beforeEach(() => {
 });
 
 describe("Library's state", () => {
-    it("has the Conversations, Canvases, Councils and Boards tabs, in that order, and opens on Conversations", () => {
-        expect(LIBRARY_TABS).toEqual(["conversations", "canvases", "councils", "boards"]);
+    it("has the Conversations, Canvases and Boards tabs, in that order, and opens on Conversations", () => {
+        expect(LIBRARY_TABS).toEqual(["conversations", "canvases", "boards"]);
         expect(globalStore.get(libraryTabAtom)).toBe("conversations");
         expect(globalStore.get(libraryConvViewAtom)).toBe("list");
         expect(globalStore.get(libraryBoardSelAtom)).toBeNull();
         expect(globalStore.get(libraryCouncilSelAtom)).toBeNull();
+        expect(globalStore.get(libraryPairSelAtom)).toBeNull();
         expect(globalStore.get(libraryCouncilViewAtom)).toBe("discussion");
         expect(globalStore.get(libraryCouncilOnlyAtom("c1"))).toBeNull();
+        expect(globalStore.get(libraryConvKindsAtom)).toEqual({ judge: false, council: false });
     });
 });
 
 describe("showLibrary", () => {
     it("lands on Library and leaves the tab alone when none is named", () => {
         const model = stub();
-        globalStore.set(libraryTabAtom, "councils");
+        globalStore.set(libraryTabAtom, "boards");
         showLibrary(model);
         expect(globalStore.get(model.surfaceAtom)).toBe("library");
-        expect(globalStore.get(libraryTabAtom)).toBe("councils");
+        expect(globalStore.get(libraryTabAtom)).toBe("boards");
     });
 
     it("opens the tab it is given", () => {
@@ -109,7 +122,7 @@ describe("showConversationHistory", () => {
         const model = stub();
         showLibrarySession(model, "claude:abc");
         globalStore.set(model.surfaceAtom, "agent");
-        globalStore.set(libraryTabAtom, "councils");
+        globalStore.set(libraryTabAtom, "boards");
         showConversationHistory(model);
         expect(globalStore.get(libraryTabAtom)).toBe("conversations");
         expect(globalStore.get(libraryConvViewAtom)).toBe("list");
@@ -121,7 +134,7 @@ describe("showConversationHistory", () => {
 describe("showLibraryBoard", () => {
     it("opens Library's Boards tab on the board, from any surface", () => {
         const model = stub("cockpit");
-        globalStore.set(libraryTabAtom, "councils");
+        globalStore.set(libraryTabAtom, "canvases");
         showLibraryBoard(model, "arcterm", "b0a5b001");
         expect(globalStore.get(libraryBoardSelAtom)).toEqual({ project: "arcterm", boardId: "b0a5b001" });
         expect(globalStore.get(libraryTabAtom)).toBe("boards");
@@ -146,7 +159,7 @@ describe("showLibraryBoard", () => {
 describe("showLibrarySession", () => {
     it("opens one session full width on Conversations and leaves the member in view alone", () => {
         const model = stub("cockpit", "t-9");
-        globalStore.set(libraryTabAtom, "councils");
+        globalStore.set(libraryTabAtom, "boards");
         showLibrarySession(model, "claude:abc");
         expect(globalStore.get(model.sessionsSelAtom)).toBe("claude:abc");
         expect(globalStore.get(model.sessionsMemberAtom)).toBe("t-9");
@@ -208,10 +221,13 @@ describe("setLibraryCouncil", () => {
     it("opens the council on its Discussion in Library's atoms and leaves Agent's alone", () => {
         globalStore.set(councilSelAtom, "keep");
         globalStore.set(councilViewAtom, "summary");
+        globalStore.set(libraryTabAtom, "boards");
         setLibraryCouncil("c1");
         expect(globalStore.get(libraryCouncilSelAtom)).toBe("c1");
         expect(globalStore.get(libraryCouncilViewAtom)).toBe("discussion");
-        expect(globalStore.get(libraryTabAtom)).toBe("councils");
+        // the full-width council view of Conversations, not a tab of its own
+        expect(globalStore.get(libraryTabAtom)).toBe("conversations");
+        expect(globalStore.get(libraryConvViewAtom)).toBe("council");
         expect(globalStore.get(councilSelAtom)).toBe("keep");
         expect(globalStore.get(councilViewAtom)).toBe("summary");
         expect(globalStore.get(centerModeAtom)).toBe("terminal");
@@ -260,27 +276,105 @@ describe("showLibraryCouncil", () => {
         showLibraryCouncil(model, "c1", "summary", undefined);
         expect(globalStore.get(libraryCouncilSelAtom)).toBe("c1");
         expect(globalStore.get(libraryCouncilViewAtom)).toBe("summary");
-        expect(globalStore.get(libraryTabAtom)).toBe("councils");
+        expect(globalStore.get(libraryTabAtom)).toBe("conversations");
+        expect(globalStore.get(libraryConvViewAtom)).toBe("council");
         expect(globalStore.get(model.surfaceAtom)).toBe("library");
+    });
+
+    it("keeps the view and the seat it is given", () => {
+        const model = stub();
+        showLibraryCouncil(model, "c2", "discussion", "ux");
+        expect(globalStore.get(libraryCouncilViewAtom)).toBe("discussion");
+        expect(globalStore.get(libraryCouncilOnlyAtom("c2"))).toBe("ux");
+        expect(globalStore.get(libraryConvViewAtom)).toBe("council");
     });
 });
 
-describe("leaveLibraryCouncil", () => {
-    it("returns the Councils tab to its list and goes back to the surface that opened the council", () => {
+describe("leaveLibraryDetail from a council", () => {
+    it("returns Conversations to its list, clears the council and goes back to the surface that opened it", () => {
         const model = stub("cockpit");
         showLibraryCouncil(model, "c1");
-        leaveLibraryCouncil();
+        leaveLibraryDetail();
         expect(globalStore.get(libraryCouncilSelAtom)).toBeNull();
-        expect(globalStore.get(libraryTabAtom)).toBe("councils");
+        expect(globalStore.get(libraryConvViewAtom)).toBe("list");
+        expect(globalStore.get(libraryTabAtom)).toBe("conversations");
         expect(globalStore.get(model.surfaceAtom)).toBe("cockpit");
     });
 
     it("stays on Library when nothing sent the person there", () => {
         const model = stub("library");
+        globalStore.set(libraryConvViewAtom, "council");
         globalStore.set(libraryCouncilSelAtom, "c1");
-        leaveLibraryCouncil();
+        leaveLibraryDetail();
         expect(globalStore.get(libraryCouncilSelAtom)).toBeNull();
+        expect(globalStore.get(libraryConvViewAtom)).toBe("list");
         expect(globalStore.get(model.surfaceAtom)).toBe("library");
+    });
+});
+
+describe("showLibraryCouncils", () => {
+    it("opens Conversations' list with the Council chip alone on, whatever was open", () => {
+        const model = stub();
+        globalStore.set(libraryTabAtom, "boards");
+        globalStore.set(libraryConvViewAtom, "council");
+        globalStore.set(libraryConvKindsAtom, { judge: true, council: false });
+        showLibraryCouncils(model);
+        expect(globalStore.get(libraryConvKindsAtom)).toEqual({ judge: false, council: true });
+        expect(globalStore.get(libraryTabAtom)).toBe("conversations");
+        expect(globalStore.get(libraryConvViewAtom)).toBe("list");
+        expect(globalStore.get(model.surfaceAtom)).toBe("library");
+    });
+
+    it("remembers where the person came from, so Escape returns there", () => {
+        const model = stub("jarvis");
+        showLibraryCouncils(model);
+        backToOrigin();
+        expect(globalStore.get(model.surfaceAtom)).toBe("jarvis");
+    });
+});
+
+describe("showLibraryPair and openPair", () => {
+    it("showLibraryPair opens the pair in Conversations' full-width pair view and remembers the way back", () => {
+        const model = stub("jarvis");
+        globalStore.set(libraryTabAtom, "boards");
+        showLibraryPair(model, "p1");
+        expect(globalStore.get(libraryPairSelAtom)).toBe("p1");
+        expect(globalStore.get(libraryTabAtom)).toBe("conversations");
+        expect(globalStore.get(libraryConvViewAtom)).toBe("pair");
+        expect(globalStore.get(model.surfaceAtom)).toBe("library");
+        leaveLibraryDetail();
+        expect(globalStore.get(libraryConvViewAtom)).toBe("list");
+        expect(globalStore.get(libraryPairSelAtom)).toBeNull();
+        expect(globalStore.get(model.surfaceAtom)).toBe("jarvis");
+    });
+
+    it("openPair sends a pair of the live list to Agent's centre", () => {
+        const model = stub("cockpit");
+        globalStore.set(devMockPairsAtom, [mockPair("live1", "relaying")]);
+        openPair(model, "live1");
+        expect(globalStore.get(pairSelAtom)).toBe("live1");
+        expect(globalStore.get(centerModeAtom)).toBe("pair");
+        expect(globalStore.get(model.surfaceAtom)).toBe("agent");
+        expect(globalStore.get(libraryPairSelAtom)).toBeNull();
+        globalStore.set(centerModeAtom, "terminal");
+    });
+
+    it("openPair sends an ended pair, a synced one and one nobody lists to Library's pair view", () => {
+        for (const [id, mock] of [
+            ["ended1", mockPair("ended1", "ended")],
+            ["synced1", mockPair("synced1", "relaying", true)],
+            ["unknown1", null],
+        ] as const) {
+            const model = stub("cockpit");
+            globalStore.set(devMockPairsAtom, mock == null ? [] : [mock]);
+            globalStore.set(libraryConvViewAtom, "list");
+            openPair(model, id);
+            expect(globalStore.get(libraryPairSelAtom)).toBe(id);
+            expect(globalStore.get(libraryConvViewAtom)).toBe("pair");
+            expect(globalStore.get(libraryTabAtom)).toBe("conversations");
+            expect(globalStore.get(model.surfaceAtom)).toBe("library");
+            expect(globalStore.get(centerModeAtom)).toBe("terminal");
+        }
     });
 });
 
@@ -323,13 +417,14 @@ describe("openCouncil", () => {
         expect(globalStore.get(libraryCouncilSelAtom)).toBeNull();
     });
 
-    it("sends a council that ended a day ago and was read to Library's Councils tab", () => {
+    it("sends a council that ended a day ago and was read to Conversations' full-width council view", () => {
         const model = stub();
         globalStore.set(councilAtom("old"), council("old"));
         openCouncil(model, "old");
         expect(globalStore.get(libraryCouncilSelAtom)).toBe("old");
         expect(globalStore.get(libraryCouncilViewAtom)).toBe("summary");
-        expect(globalStore.get(libraryTabAtom)).toBe("councils");
+        expect(globalStore.get(libraryTabAtom)).toBe("conversations");
+        expect(globalStore.get(libraryConvViewAtom)).toBe("council");
         expect(globalStore.get(model.surfaceAtom)).toBe("library");
         // Agent's own selection is not touched
         expect(globalStore.get(councilSelAtom)).toBeNull();
@@ -372,7 +467,8 @@ describe("the council hosts", () => {
         expect(globalStore.get(libraryCouncilSelAtom)).toBe("c9");
         expect(globalStore.get(libraryCouncilViewAtom)).toBe("map");
         expect(globalStore.get(libraryCouncilOnlyAtom("c9"))).toBe("ux");
-        expect(globalStore.get(libraryTabAtom)).toBe("councils");
+        expect(globalStore.get(libraryTabAtom)).toBe("conversations");
+        expect(globalStore.get(libraryConvViewAtom)).toBe("council");
         expect(globalStore.get(councilSelAtom)).toBeNull();
     });
 

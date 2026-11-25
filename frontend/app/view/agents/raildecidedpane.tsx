@@ -61,7 +61,10 @@ function Section({ id, label, children }: { id: "asks" | "agreed" | "open"; labe
     );
 }
 
-export function RailDecidedPane({ view }: { view: PairView | null }) {
+// readOnly is Library's read view (pairreadpane.tsx): an ask nobody answered has no chips and no "other…" (there is nobody to
+// answer; the Agent surface drives a live pair), an answered one still says what the person answered, and Agreed's links
+// scroll the thread beside it instead of opening the Agent surface's
+export function RailDecidedPane({ view, readOnly = false }: { view: PairView | null; readOnly?: boolean }) {
     // the item whose answer is on its way: its chips wait, so a second press cannot send it twice
     const [sending, setSending] = useState<number | null>(null);
     if (view == null) {
@@ -92,7 +95,9 @@ export function RailDecidedPane({ view }: { view: PairView | null }) {
     };
     // the agreed item's link: the conversation, scrolled to the message where it was settled (the pane scrolls and clears)
     const goTo = (msgid: string) => {
-        showPair(view.id);
+        if (!readOnly) {
+            showPair(view.id);
+        }
         globalStore.set(pairScrollToAtom, msgid);
     };
 
@@ -130,7 +135,7 @@ export function RailDecidedPane({ view }: { view: PairView | null }) {
                                             {item.answer}
                                         </span>
                                     </div>
-                                ) : (
+                                ) : readOnly ? null : (
                                     <div className="flex flex-wrap gap-[6px]">
                                         {(item.chips ?? []).map((chip) => (
                                             <button
