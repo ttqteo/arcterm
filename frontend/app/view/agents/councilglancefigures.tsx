@@ -234,7 +234,6 @@ function GlanceFigure({
                     at={PLOT.bottom}
                     ticks={[0, 1]}
                     format={pct}
-                    lineClassName="stroke-edge-mid"
                 />
                 <LinearAxis
                     orient="y"
@@ -243,7 +242,6 @@ function GlanceFigure({
                     at={PLOT.left}
                     ticks={[0, 1]}
                     format={pct}
-                    lineClassName="stroke-edge-mid"
                 />
                 <g aria-hidden fontSize={11} className="fill-muted">
                     <text x={PLOT.right - 6} y={PLOT.top + 14} textAnchor="end">

@@ -521,7 +521,6 @@ function LanePlot({ c, data, onSeat }: { c: Council; data: LanesData; onSeat: (i
                                 at={2}
                                 ticks={ticks}
                                 format={(v) => `${v} ${unitWord}`}
-                                lineClassName="stroke-edge-mid"
                             />
                         </svg>
                     </div>

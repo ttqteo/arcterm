@@ -11,7 +11,7 @@
 //   - StanceGlyph and STANCE_PILL: the stance's icon and word on its tint. A stance is never a colour alone (Accept
 //     and Oppose are ΔE 2.0 apart for a deuteranope), so the glyph and the word always come with the tint.
 //   - useHoverDim: the hovered or focused id, which the views read to dim everything else.
-//   - LinearAxis and LogAxis: SVG ticks on `edge-faint` with 10px `muted` labels, drawn from the same scales
+//   - LinearAxis and LogAxis: SVG ticks on `edge-mid` with 10px `muted` labels, drawn from the same scales
 //     (councilchartscale.ts) the views place their marks with.
 // Reduced motion: no fade, no transition. Colours are tokens, never a hex (the palette of the benchmark's variants,
 // --color-chart-1..4, is in docs/agents/council-chart-palette.md).
@@ -413,8 +413,8 @@ interface AxisProps {
     format?: (v: number) => string;
     /** the length of a faint gridline from each tick across the plot; 0 or left out draws none */
     grid?: number;
-    /** the ink of the line, ticks and gridlines: `edge-faint` by default, a class like `stroke-edge-mid` for a figure
-     *  whose ground is so near that colour a faint axis would vanish (`edge-faint` is #1a1a1a over a #171717 card) */
+    /** the ink of the line, ticks and gridlines: `edge-mid` by default, since the figures sit on surface cards where
+     *  `edge-faint` all but vanishes (#1a1a1a over a #171717 card); another `stroke-*` class for a different ground */
     lineClassName?: string;
 }
 
@@ -426,7 +426,7 @@ function ChartAxis({
     ticks,
     format,
     grid = 0,
-    lineClassName = "stroke-edge-faint",
+    lineClassName = "stroke-edge-mid",
 }: Omit<AxisProps, "domain"> & { scale: Scale }) {
     const label = format ?? compactNumber;
     const [from, to] = range;

@@ -195,16 +195,8 @@ function BenchPlot({ panel, width, tip }: { panel: BenchPanel; width: number; ti
                     ticks={yTicks}
                     format={percent}
                     grid={plotW}
-                    lineClassName="stroke-edge-mid"
                 />
-                <LogAxis
-                    orient="x"
-                    domain={[lo, hi]}
-                    range={[0, plotW]}
-                    at={PLOT_H}
-                    ticks={ticks}
-                    lineClassName="stroke-edge-mid"
-                />
+                <LogAxis orient="x" domain={[lo, hi]} range={[0, plotW]} at={PLOT_H} ticks={ticks} />
                 <text x={plotW / 2} y={PLOT_H + 34} textAnchor="middle" fontSize={10} className="fill-muted">
                     tokens per run
                 </text>
