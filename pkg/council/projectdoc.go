@@ -51,14 +51,15 @@ func docSettled(c *Council) bool {
 // commitRe is a commit hash with the word that points at it: "merged as 786a11648", "ở 38d789b52", "in 5472f0692".
 // The pointing word must start the text or follow whitespace, so "domain 786a11648" keeps "domain" (Go's \b is
 // ASCII-only, which would not bound ở or tại). A run of 7–40 hex digits counts only when it holds a digit and a
-// letter, so a number or a word is never taken.
-var commitRe = regexp.MustCompile(`(?i),?(?:(?:^|\s+)(?:merged as|fixed in|in|at|as|ở|tại))?\s*\b[0-9a-f]{7,40}\b`)
+// letter, so a number or a word is never taken. A hash quoted as code ("see `5472f0692`") goes with its backticks, so
+// no empty pair is left.
+var commitRe = regexp.MustCompile("(?i),?(?:(?:^|\\s+)(?:merged as|fixed in|in|at|as|ở|tại))?\\s*(?:`[0-9a-f]{7,40}`|\\b[0-9a-f]{7,40}\\b)")
 
 // dropCommits is s with every commit hash, and the word that points at it, taken out, and its whitespace folded: a hash
 // is the history of a decision, not the decision, and the branch it names is gone once it merged.
 func dropCommits(s string) string {
 	s = commitRe.ReplaceAllStringFunc(s, func(m string) string {
-		hex := strings.TrimLeft(m[strings.LastIndexAny(m, " \t\r\n\f")+1:], ",")
+		hex := strings.Trim(strings.TrimLeft(m[strings.LastIndexAny(m, " \t\r\n\f")+1:], ","), "`")
 		if !strings.ContainsAny(hex, "0123456789") || strings.Trim(strings.ToLower(hex), "0123456789") == "" {
 			return m // a number or a word, not a hash
 		}

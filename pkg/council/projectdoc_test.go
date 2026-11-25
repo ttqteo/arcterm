@@ -103,6 +103,9 @@ func TestDropCommits(t *testing.T) {
 		{"a 1234567 count", "a 1234567 count"},
 		{"deadbeef cafe", "deadbeef cafe"},
 		{"no hash here", "no hash here"},
+		{"see `5472f0692` for it", "see for it"},
+		{"fixed in `5472f0692`.", "."},
+		{"keep `deadbeef` and `1234567`", "keep `deadbeef` and `1234567`"},
 	} {
 		if got := dropCommits(tc.in); got != tc.want {
 			t.Errorf("dropCommits(%q) = %q, want %q", tc.in, got, tc.want)
