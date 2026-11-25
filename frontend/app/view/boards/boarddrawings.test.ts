@@ -1,6 +1,7 @@
 import type { ExcalidrawElement } from "@excalidraw/excalidraw/element/types";
 import { describe, expect, it } from "vitest";
 import {
+    afterLanding,
     askedDrawing,
     drawingData,
     drawingInView,
@@ -8,7 +9,10 @@ import {
     drawingShapes,
     drawingViewport,
     drawingsOf,
+    isFollowing,
     isFrame,
+    rowState,
+    type BoardDrawings,
     type Drawing,
     type ViewRect,
 } from "./boarddrawings";
@@ -175,5 +179,112 @@ describe("drawingViewport", () => {
         const vp = drawingViewport(drawing("dot", 1, 5, 5, 5, 5), 800, 600);
         expect(vp.zoom).toBe(1);
         expect(Number.isFinite(vp.scrollX) && Number.isFinite(vp.scrollY)).toBe(true);
+    });
+});
+
+describe("isFollowing", () => {
+    const d1 = drawing("d1", 1, 0, 0, 800, 500);
+    const d2 = drawing("d2", 2, 900, 0, 1500, 400);
+
+    it("isFollowing is true with no drawings, whatever is in view", () => {
+        expect(isFollowing([], null)).toBe(true);
+        expect(isFollowing([], "gone")).toBe(true);
+    });
+
+    it("isFollowing is true when the newest drawing is in view and false on an earlier one or none", () => {
+        expect(isFollowing([d1, d2], "d2")).toBe(true);
+        expect(isFollowing([d1, d2], "d1")).toBe(false);
+        expect(isFollowing([d1, d2], null)).toBe(false);
+        expect(isFollowing([d1], "d1")).toBe(true);
+    });
+});
+
+describe("rowState", () => {
+    const d1 = drawing("d1", 1, 0, 0, 800, 500);
+    const d2 = drawing("d2", 2, 900, 0, 1500, 400);
+    const d3 = drawing("d3", 3, 1600, 0, 2000, 400);
+    const row = (over: Partial<BoardDrawings> = {}): BoardDrawings => ({
+        drawings: [
+            { id: "d1", n: 1, title: "d1" },
+            { id: "d2", n: 2, title: "d2" },
+        ],
+        inView: "d2",
+        fresh: [],
+        selected: null,
+        ...over,
+    });
+
+    it("rowState builds the first row from the drawings, the one in view and the selected", () => {
+        expect(rowState(null, [d1, d2], "d1", "d2")).toEqual(row({ inView: "d1", selected: "d2" }));
+        expect(rowState(null, [], null, null)).toEqual({ drawings: [], inView: null, fresh: [], selected: null });
+    });
+
+    it("rowState returns prev itself when nothing changed", () => {
+        const prev = row({ fresh: ["d1"], inView: "d2" });
+        expect(rowState(prev, [d1, d2], "d2", null)).toBe(prev);
+    });
+
+    it("rowState returns a new row when the drawing in view, a title, the selection or the list changes", () => {
+        const prev = row();
+        expect(rowState(prev, [d1, d2], "d1", null)).not.toBe(prev);
+        expect(rowState(prev, [d1, d2], "d2", "d1")).toMatchObject({ selected: "d1" });
+        expect(rowState(prev, [d1, { ...d2, title: "renamed" }], "d2", null).drawings[1].title).toBe("renamed");
+        expect(rowState(prev, [d1, d2, d3], "d2", null).drawings.map((d) => d.id)).toEqual(["d1", "d2", "d3"]);
+    });
+
+    it("rowState drops the drawing now in view from fresh", () => {
+        const prev = row({ fresh: ["d1", "d2"], inView: "d1" });
+        const next = rowState(prev, [d1, d2], "d2", null);
+        expect(next.fresh).toEqual(["d1"]);
+        expect(next).not.toBe(prev);
+    });
+
+    it("rowState drops gone drawings from fresh and keeps the others in order", () => {
+        const prev = row({ fresh: ["d3", "d2", "gone"], inView: "d1" });
+        expect(rowState(prev, [d1, d2, d3], "d1", null).fresh).toEqual(["d3", "d2"]);
+        expect(rowState(prev, [d1, d2], "d1", null).fresh).toEqual(["d2"]);
+    });
+
+    it("rowState keeps the same fresh array contents when prev had none", () => {
+        const prev = row({ fresh: [] });
+        expect(rowState(prev, [d1, d2], "d2", null)).toBe(prev);
+    });
+});
+
+describe("afterLanding", () => {
+    const d1 = drawing("d1", 1, 0, 0, 800, 500);
+    const d2 = drawing("d2", 2, 900, 0, 1500, 400);
+    const d3 = drawing("d3", 3, 1600, 0, 2000, 400);
+
+    it("afterLanding fits a new drawing while following", () => {
+        expect(afterLanding(["d1", "d2"], true, "d2", [d1, d2, d3], undefined)).toEqual({ fit: "d3", fresh: null });
+    });
+
+    it("afterLanding marks a new drawing fresh while on an earlier one, and fits nothing", () => {
+        expect(afterLanding(["d1", "d2"], false, "d1", [d1, d2, d3], undefined)).toEqual({ fit: null, fresh: "d3" });
+    });
+
+    it("afterLanding fits the first drawing of an empty board, which follows", () => {
+        expect(afterLanding([], true, null, [d1], undefined)).toEqual({ fit: "d1", fresh: null });
+    });
+
+    it("afterLanding refits an edit of the drawing in view", () => {
+        expect(afterLanding(["d1", "d2"], false, "d1", [d1, d2], "d1")).toEqual({ fit: "d1", fresh: null });
+        expect(afterLanding(["d1", "d2"], true, "d2", [d1, d2], "d2")).toEqual({ fit: "d2", fresh: null });
+    });
+
+    it("afterLanding leaves the view alone for an edit of a drawing out of view", () => {
+        expect(afterLanding(["d1", "d2"], true, "d2", [d1, d2], "d1")).toEqual({ fit: null, fresh: null });
+    });
+
+    it("afterLanding does nothing when no drawing was added and none edited", () => {
+        expect(afterLanding(["d1", "d2"], true, "d2", [d1, d2], undefined)).toEqual({ fit: null, fresh: null });
+        expect(afterLanding(["d1", "d2"], false, null, [d1, d2], undefined)).toEqual({ fit: null, fresh: null });
+    });
+
+    it("afterLanding treats a new drawing as new even when the answer names an edited id", () => {
+        // an edit whose frame was gone lands new: the answer names the old id, the drawing is another
+        expect(afterLanding(["d1", "d2"], true, "d2", [d1, d2, d3], "d2")).toEqual({ fit: "d3", fresh: null });
+        expect(afterLanding(["d1", "d2"], false, "d2", [d1, d2, d3], "d2")).toEqual({ fit: null, fresh: "d3" });
     });
 });

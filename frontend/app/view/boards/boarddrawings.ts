@@ -126,6 +126,57 @@ export function drawingShapes(elements: readonly ExcalidrawElement[], drawingId:
     return elements.filter((el) => !el.isDeleted && !isFrame(el) && el.frameId === drawingId);
 }
 
+// The view follows the newest drawing: true with no drawings, or while the newest is the one in view
+export function isFollowing(drawings: readonly Drawing[], inView: string | null): boolean {
+    return drawings.length === 0 || inView === drawings[drawings.length - 1].id;
+}
+
+// The row the canvas publishes next. `fresh` loses the drawing now in view and the ones that are gone. Returns prev
+// itself when nothing the row shows changed, so the canvas sets the atom only on a change.
+export function rowState(
+    prev: BoardDrawings | null,
+    drawings: readonly Drawing[],
+    inView: string | null,
+    selected: string | null
+): BoardDrawings {
+    const ids = new Set(drawings.map((d) => d.id));
+    const fresh = (prev?.fresh ?? []).filter((id) => id !== inView && ids.has(id));
+    if (
+        prev != null &&
+        prev.inView === inView &&
+        prev.selected === selected &&
+        prev.fresh.length === fresh.length &&
+        prev.fresh.every((id, i) => id === fresh[i]) &&
+        prev.drawings.length === drawings.length &&
+        prev.drawings.every((d, i) => d.id === drawings[i].id && d.n === drawings[i].n && d.title === drawings[i].title)
+    ) {
+        return prev;
+    }
+    return { drawings: drawings.map(({ id, n, title }) => ({ id, n, title })), inView, fresh, selected };
+}
+
+// What a landed answer does to the view. A drawing not there before is new: fit it while following, else mark it fresh
+// (the newest of several, though one answer adds one). Otherwise an edit of the drawing in view is fitted again, as it
+// may have grown; an edit of one out of view, or no edit, leaves the view alone.
+export function afterLanding(
+    beforeIds: readonly string[],
+    following: boolean,
+    inView: string | null,
+    after: readonly Drawing[],
+    editedId: string | undefined
+): { fit: string | null; fresh: string | null } {
+    const had = new Set(beforeIds);
+    const added = after.filter((d) => !had.has(d.id));
+    if (added.length > 0) {
+        const id = added[added.length - 1].id;
+        return following ? { fit: id, fresh: null } : { fit: null, fresh: id };
+    }
+    if (editedId != null && editedId === inView && after.some((d) => d.id === editedId)) {
+        return { fit: editedId, fresh: null };
+    }
+    return { fit: null, fresh: null };
+}
+
 // The view that shows one drawing whole: centred, as large as fits the frame in 90% of the view, at most 1:1. Unlike a
 // part's view there is no floor on the zoom: the goal is the whole drawing, narrow cell included. Excalidraw maps a
 // scene point to the view as (point + scroll) * zoom.
