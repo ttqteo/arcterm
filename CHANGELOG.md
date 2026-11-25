@@ -49,6 +49,8 @@ and a picture given to a line that is not big.
 
 ### Changed
 
+- What you are writing to an agent stays in its box when arcterm closes or reloads, attached files too, and the small
+  message box on an agent's row shares that one draft with its Chat.
 - Councils moved into Conversations: the Councils tab is gone, `Mod+G o` opens Conversations with the Council chip on,
   and a council nests under the session that started it.
 - Library's tabs are plain labels with a sliding underline; the 1–3 keys still switch them, named in each tab's tooltip
