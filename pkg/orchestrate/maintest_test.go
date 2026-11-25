@@ -26,6 +26,10 @@ func TestMain(m *testing.M) {
 	if err != nil {
 		panic(err)
 	}
+	// on macOS the temp dir is under /var, a link to /private/var, and git prints a tree's resolved path
+	if dir, err = filepath.EvalSymlinks(dir); err != nil {
+		panic(err)
+	}
 	wavebase.DataHome_VarCache = dir
 	if err := wavebase.EnsureWaveDBDir(); err != nil {
 		panic(err)

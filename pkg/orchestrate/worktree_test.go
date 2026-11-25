@@ -318,7 +318,8 @@ func useTestWorktreeRoot(t *testing.T) {
 	}
 	prev := testRootOwner
 	testRootOwner = t
-	restore := UseWorktreeRootForTest(t.TempDir())
+	// resolved like the repo's own dir: git prints a tree's real path, which a root under /var (a link on macOS) is not
+	restore := UseWorktreeRootForTest(realTempDir(t))
 	t.Cleanup(func() {
 		restore()
 		testRootOwner = prev
