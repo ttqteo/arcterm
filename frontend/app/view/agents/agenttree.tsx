@@ -92,6 +92,7 @@ import {
     pickedRowIds,
     selectableRowIds,
     selectOnly,
+    stageOutcomeText,
     stageRowAge,
     stageSubline,
     tasksShown,
@@ -2068,10 +2069,12 @@ function WorkerRow({
 }
 
 // A session the engine started to judge the whole run, under the run like a task's worker and named by its stage.
-// a finished stage's dot, by verdict: accepted means the review failed and the lead proceeded anyway. passed
-// draws a check instead, like a landed worker
+// a finished stage's dot, by verdict: accepted means the review failed and the lead proceeded anyway, amended that
+// the lead amended the plan after a light review (muted: nobody decided it). passed draws a check instead, like a
+// landed worker
 const STAGE_OUTCOME_DOT: Record<Exclude<StageOutcome, "passed">, string> = {
     accepted: "bg-warning",
+    amended: "bg-muted",
     unverified: "bg-warning",
     failed: "bg-error",
 };
@@ -2140,7 +2143,7 @@ function StageRow({
                     {lens ? `${stageLabel(stageRole)} · ${planReviewLensTitle(lens)}` : stageLabel(stageRole)}
                 </div>
                 <div className="mt-[3px] truncate text-[10.5px] tabular-nums text-muted">
-                    {stageSubline(verdict ?? outcome, stageRowAge(agent, now))}
+                    {stageSubline(verdict ?? stageOutcomeText(outcome), stageRowAge(agent, now))}
                 </div>
             </div>
         </div>

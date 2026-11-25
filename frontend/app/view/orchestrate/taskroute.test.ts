@@ -434,6 +434,29 @@ describe("stageEntries", () => {
         expect(chips(g)).toEqual(["Round-2 follow-up · reviewing · sonnet"]);
     });
 
+    it("puts a light reviewer on the Light reviewers route, or on the reviewer route on Reviewer picks", () => {
+        const light = { state: "reviewing", round: 1, reviewers: [{ lens: "light", state: "reviewing" }] };
+        expect(chips({ tasks: [], planreview: light })).toEqual(["Light review · reviewing · sonnet"]);
+        expect(chips({ tasks: [], planreview: light, reviewerpicks: true })).toEqual([
+            "Light review · reviewing · opus-5-5",
+        ]);
+    });
+
+    it("lists a lost light reviewer and its replacement as two chips on the same model", () => {
+        const round = {
+            state: "reviewing",
+            round: 1,
+            reviewers: [
+                { lens: "light", state: "lost" },
+                { lens: "light", state: "reviewing" },
+            ],
+        };
+        expect(chips({ tasks: [], planreview: round })).toEqual([
+            "Light review · lost · sonnet",
+            "Light review · reviewing · sonnet",
+        ]);
+    });
+
     it("tones a reviewer by its own state, a lost one as failed", () => {
         expect(["passed", "failed", "lost", "reviewing"].map(stageTone)).toEqual(["done", "failed", "failed", "open"]);
     });

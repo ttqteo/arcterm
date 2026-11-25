@@ -149,6 +149,8 @@ export function FinalKeptOutput({ kept, className }: { kept: FinalStep["kept"]; 
 // state. A row whose step kept its output opens it beneath.
 export function FinalStepList({ steps, showCommand }: { steps: FinalStep[]; showCommand?: boolean }) {
     const [open, setOpen] = useState<FinalStepKey | null>(null);
+    // the label column fits "Verifier"; "End review" needs a wider one
+    const labelWidth = steps.some((s) => s.key === "review") ? "w-18" : "w-14";
     return (
         <div className="flex flex-col">
             {steps.map((step) => {
@@ -165,7 +167,7 @@ export function FinalStepList({ steps, showCommand }: { steps: FinalStep[]; show
                             className={cn("flex items-center gap-[9px] py-1.5", opens && "cursor-pointer")}
                         >
                             <StepMark tone={step.tone} />
-                            <StepLabel step={step} className={showCommand ? "w-14 flex-none" : undefined} />
+                            <StepLabel step={step} className={showCommand ? cn(labelWidth, "flex-none") : undefined} />
                             {showCommand ? (
                                 <span
                                     title={step.command}

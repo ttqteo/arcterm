@@ -138,8 +138,14 @@ export function stageTone(state: string): StageEntry["tone"] {
     return STAGE_TONE[state] ?? "open";
 }
 
-// the plan reviewer that runs on the reviewer route; every other lens runs on the Light reviewers route
+// the plan reviewer that runs on the reviewer route; every other lens runs on the Light reviewers route, apart from a
+// fast-track light reviewer on Reviewer picks, which mirrors the engine's planReviewSession
 const FULL_LENS = "full";
+const LIGHT_LENS = "light";
+
+function onReviewerRoute(group: TaskGroup, lens: string): boolean {
+    return lens === FULL_LENS || (lens === LIGHT_LENS && !!group.reviewerpicks);
+}
 
 // lightReviewerRouteOf mirrors the engine's lightReviewerRoute: the group's Light reviewers route, else a Light pick.
 function lightReviewerRouteOf(group: TaskGroup): RoutePin {
@@ -163,7 +169,7 @@ export function stageEntries(group: TaskGroup, owner: Run): StageEntry[] {
                 lens: r.lens,
                 title: planReviewLensTitle(r.lens),
                 state: r.state,
-                model: r.lens === FULL_LENS ? full : light,
+                model: onReviewerRoute(group, r.lens) ? full : light,
             })),
         },
     ];
