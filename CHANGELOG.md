@@ -80,6 +80,8 @@ and a picture given to a line that is not big.
 
 ### Fixed
 
+- In an agent's terminal, a path cut off by an ellipsis (`docs/specs/2026-11-01-c…`, a long command's preview cut at
+  the edge) no longer links: it names no file. A path the ellipsis does not touch still links.
 - Blame (`b` or its button) on Code in Preview or Diff switches to Source with the column on, instead of lighting the
   button with nothing beside it; the button reads pressed only while the column shows.
 - Usage's By provider chart draws every day of the picked window, as By work does, instead of starting at the first
