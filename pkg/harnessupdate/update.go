@@ -18,7 +18,9 @@ const updateTimeout = 5 * time.Minute
 
 // runUpdate is a seam for tests.
 var runUpdate = func(ctx context.Context, bin string, args []string) ([]byte, error) {
-	return exec.CommandContext(ctx, bin, args...).CombinedOutput()
+	cmd := exec.CommandContext(ctx, bin, args...)
+	harness.HideWindow(cmd)
+	return cmd.CombinedOutput()
 }
 
 type UpdateResult struct {

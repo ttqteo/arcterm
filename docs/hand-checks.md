@@ -23,6 +23,9 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
 
 ## 2026-11-25
 
+- [ ] (arcterm) No console window for harness probes (Windows): launch a build with this fix and wait 30 s (the first
+  harness update check) → no Windows Terminal window opens with `agy.exe --version`; pressing Update on a harness
+  opens none either (`harness.HideWindow`, `pkg/harness/catalog.go` `versionCommand`, `pkg/harnessupdate/update.go`).
 - [ ] (arcterm) Brainstorm run starting: approve a brainstorm's builder check and press Start in the launcher; until
   the run is created, the agent's sidebar row reads "starting run" (not "asking question") and Chat's builder check
   card reads Working with "The run is starting", not the amber Waiting on you (`withStartingRun`, `checkCard`).
