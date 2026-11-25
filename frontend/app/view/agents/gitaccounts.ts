@@ -152,6 +152,26 @@ export function leakText(s: GitAccountScanData | null, roots: string[]): string 
     return parts.length === 0 ? "" : `${parts.join("; ")}.`;
 }
 
+// The strip for ~/.git-credentials when it is the only thing to fix.
+export function credentialsText(lines: number): string {
+    return `${CREDENTIALS_PATH} keeps ${lines} github.com ${lines === 1 ? "line" : "lines"} in plain text.`;
+}
+
+// With github.com lines in ~/.git-credentials and no account holding a strip of its own, the credentials fix would have
+// no way in. One account row then carries a credentials-only strip: the default login's account when it is one, else
+// the first account. "" when there are no lines, an account already has a strip, or there is no account.
+export function credentialsStripLogin(list: GitAccountListRtnData | null, scan: GitAccountScanRtnData | null): string {
+    const accounts = list?.accounts ?? [];
+    if ((scan?.credentialslines ?? 0) <= 0 || accounts.length === 0) {
+        return "";
+    }
+    if (accounts.some((a) => leakText(scanFor(scan, a.login), a.roots ?? []) !== "")) {
+        return "";
+    }
+    const def = list?.defaultlogin ?? "";
+    return accounts.some((a) => a.login === def) ? def : accounts[0].login;
+}
+
 // ── fix list ────────────────────────────────────────────────────────────────────────────────────────
 
 export type FixKind = "token" | "identity" | "credentials";

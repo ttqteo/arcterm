@@ -19,6 +19,8 @@ import { Ellipsis, Folder, TriangleAlert } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useRef, useState } from "react";
 import {
+    credentialsStripLogin,
+    credentialsText,
     emailOk,
     fixAllowed,
     fixDisabledReason,
@@ -229,6 +231,8 @@ export function GitAccountsCard() {
     // no account yet: the card is one line, not a Default row beside nothing
     const rows = list == null || empty ? [] : gitRows(list);
     const credentialsLines = scan?.credentialslines ?? 0;
+    // the one account row that carries the strip when ~/.git-credentials is all there is to fix
+    const credentialsLogin = credentialsStripLogin(list, scan);
 
     const openFix = (login: string) => setFix({ login, rows: fixRows(scanFor(scan, login), credentialsLines) });
 
@@ -239,7 +243,9 @@ export function GitAccountsCard() {
         const view = account == null ? null : tokenView(tokens[login]);
         const token = view == null ? null : tokenStateText(view);
         const fixable = fixRows(s, credentialsLines);
-        const strip = account != null && scanStatus === "done" ? leakText(s, account.roots) : "";
+        const leaks = account != null && scanStatus === "done" ? leakText(s, account.roots) : "";
+        const credentialsOnly = leaks === "" && account != null && scanStatus === "done" && login === credentialsLogin;
+        const strip = credentialsOnly ? credentialsText(credentialsLines) : leaks;
         const edit = editing?.id === r.id ? editing.kind : null;
         return (
             <motion.div key={r.id} {...row} className="overflow-hidden">
@@ -361,6 +367,7 @@ export function GitAccountsCard() {
                     {strip !== "" && view != null ? (
                         <div
                             data-git-account-leaks={login}
+                            data-git-account-leaks-kind={credentialsOnly ? "credentials" : undefined}
                             className="flex items-center gap-3 border-t border-edge-mid bg-askingbg px-4 py-2.5"
                         >
                             <TriangleAlert size={14} aria-hidden className="flex-none text-warning" />
@@ -373,7 +380,11 @@ export function GitAccountsCard() {
                                 onClick={() => openFix(login)}
                                 className="flex-none cursor-pointer rounded border border-edge-mid bg-surface-raised px-2.5 py-1 text-[12px] text-secondary transition-colors hover:bg-surface-hover hover:text-primary disabled:cursor-not-allowed disabled:opacity-45"
                             >
-                                {(s?.tokenrepos?.length ?? 0) > 0 ? "Remove tokens from URLs" : "Review repos"}
+                                {credentialsOnly
+                                    ? "Review file"
+                                    : (s?.tokenrepos?.length ?? 0) > 0
+                                      ? "Remove tokens from URLs"
+                                      : "Review repos"}
                             </button>
                         </div>
                     ) : null}

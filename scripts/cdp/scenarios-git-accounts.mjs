@@ -79,6 +79,21 @@ const EMPTY = {
     credentialslines: 0,
 };
 
+// clean repos for every account and two github.com lines in ~/.git-credentials: the credentials-only strip; dave, the
+// default login, has his token saved so Fix is open
+const CREDENTIALS_ONLY = {
+    ...FULL,
+    tokens: { ...FULL.tokens, dave: { state: "saved" } },
+    scan: {
+        alice: { repos: 3, tokenrepos: [], identityrepos: [] },
+        bob: { repos: 2, tokenrepos: [], identityrepos: [] },
+        carol: { repos: 0, tokenrepos: [], identityrepos: [] },
+        dave: { repos: 1, tokenrepos: [], identityrepos: [] },
+    },
+    credentialslines: 2,
+};
+const CREDENTIALS_TEXT = "~/.git-credentials keeps 2 github.com lines in plain text.";
+
 // --- page expressions --------------------------------------------------------------------------------------------------
 
 const q = JSON.stringify;
@@ -913,8 +928,57 @@ export default function (kit) {
                 );
             });
 
+            // 14. ~/.git-credentials is all there is to fix: dave's row, the default login's, carries the only strip
+            await run("14. credentials only", async (name) => {
+                const CRED_KEY = "credentials:~/.git-credentials";
+                await seed(h, CREDENTIALS_ONLY);
+                await openCard(h);
+                const done = await settled(h);
+                await clearCalls(h);
+                const got = await h.ev(`(() => {
+                    const card = ${CARD};
+                    const strips = [...(card?.querySelectorAll("[data-git-account-leaks]") ?? [])];
+                    return {
+                        on: strips.map((e) => e.getAttribute("data-git-account-leaks")),
+                        kinds: strips.map((e) => e.getAttribute("data-git-account-leaks-kind")),
+                    };
+                })()`);
+                const card = await h.ev(READ_CARD(LOGINS));
+                await h.ev(`${CARD}?.scrollIntoView({ block: "center" })`);
+                await shot(h, "14-credentials-only");
+                const opened = await clickSel(h, '[data-git-account-fix="dave"]');
+                const modal = await polishWaitFor(h, `!!${sel('[data-git-fix-modal][data-login="dave"]')}`, SHORT_MS);
+                const list = await h.ev(`(() => {
+                    const m = ${sel("[data-git-fix-modal]")};
+                    return [...(m?.querySelectorAll("[data-git-fix-row]") ?? [])].map((r) => ({ key: r.getAttribute("data-git-fix-row"), ticked: r.querySelector("input")?.checked === true }));
+                })()`);
+                const applied = await clickSel(h, "[data-git-fix-apply]");
+                const result = await polishWaitFor(h, `!!${sel(`[data-git-fix-result=${q(CRED_KEY)}]`)}`, SHORT_MS);
+                const ok = await h.ev(`${sel(`[data-git-fix-result=${q(CRED_KEY)}]`)}?.getAttribute("data-ok") ?? null`);
+                const fixes = await mockCalls(h, "gitaccountfix");
+                await closeFix();
+                rec(
+                    `${name}: with clean repos and 2 github.com lines in ~/.git-credentials only dave's row, the default login's, shows a strip ("${CREDENTIALS_TEXT}", marked data-git-account-leaks-kind="credentials"); Fix opens [data-git-fix-modal] with the one ticked row ${CRED_KEY}, Apply sends gitaccountfix {login: "dave", tokenrepos: [], identityrepos: [], credentials: true} and the row reads ok`,
+                    done &&
+                        same(got.on, ["dave"]) &&
+                        same(got.kinds, ["credentials"]) &&
+                        card?.rows.dave?.leakText.startsWith(CREDENTIALS_TEXT) === true &&
+                        card.rows.dave.fix?.disabled === false &&
+                        LOGINS.filter((l) => l !== "dave").every((l) => card.rows[l]?.leaks === false) &&
+                        opened &&
+                        modal &&
+                        same(list, [{ key: CRED_KEY, ticked: true }]) &&
+                        applied &&
+                        result &&
+                        ok === "true" &&
+                        fixes.length === 1 &&
+                        same(fixes[0], { login: "dave", tokenrepos: [], identityrepos: [], credentials: true }),
+                    { done, got, card, opened, modal, list, applied, result, ok, fixes }
+                );
+            });
+
             // the card's picture for What's new, from the full fixture
-            await run("13. the What's new picture", async (name) => {
+            await run("15. the What's new picture", async (name) => {
                 await seed(h, FULL);
                 await openCard(h);
                 const done = await settled(h);

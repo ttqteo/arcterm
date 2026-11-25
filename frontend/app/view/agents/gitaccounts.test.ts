@@ -9,6 +9,8 @@ import {
     canCheck,
     canSave,
     CREDENTIALS_PATH,
+    credentialsStripLogin,
+    credentialsText,
     defaultTicks,
     emailOk,
     fixAllowed,
@@ -137,6 +139,53 @@ describe("scan reading", () => {
         expect(leakText(scanFor(scan(), "ttqteo"), ["/a", "/b"])).toContain("2 repos keep a token");
         expect(leakText(scanFor(scan(), "acme-dev"), [])).toBe("");
         expect(leakText(null, [])).toBe("");
+    });
+});
+
+describe("credentials-only strip", () => {
+    // clean repos everywhere, github.com lines in ~/.git-credentials
+    const clean = (lines: number): GitAccountScanRtnData => ({
+        credentialslines: lines,
+        accounts: [
+            { login: "ttqteo", repos: 3, tokenrepos: [], identityrepos: [] },
+            { login: "acme-dev", repos: 1, tokenrepos: [], identityrepos: [] },
+        ],
+    });
+
+    it("words the strip, singular for one line", () => {
+        expect(credentialsText(2)).toBe("~/.git-credentials keeps 2 github.com lines in plain text.");
+        expect(credentialsText(1)).toBe("~/.git-credentials keeps 1 github.com line in plain text.");
+    });
+
+    it("carries no strip when ~/.git-credentials has no github.com line", () => {
+        expect(credentialsStripLogin(list(), clean(0))).toBe("");
+    });
+
+    it("carries no strip while the scan has not answered", () => {
+        expect(credentialsStripLogin(list(), null)).toBe("");
+    });
+
+    it("carries no strip when an account already has one", () => {
+        expect(credentialsStripLogin(list(), scan())).toBe("");
+    });
+
+    it("sits on the default login's account", () => {
+        expect(credentialsStripLogin(list({ defaultlogin: "acme-dev" }), clean(2))).toBe("acme-dev");
+    });
+
+    it("sits on the first account when the default login is not an account", () => {
+        expect(credentialsStripLogin(list(), clean(2))).toBe("ttqteo");
+        expect(credentialsStripLogin(list({ defaultlogin: "" }), clean(1))).toBe("ttqteo");
+    });
+
+    it("has no row to sit on without an account", () => {
+        expect(credentialsStripLogin(list({ accounts: [] }), clean(2))).toBe("");
+    });
+
+    it("opens a fix list of the credentials row alone, ticked", () => {
+        const rows = fixRows(scanFor(clean(2), "ttqteo"), 2);
+        expect(rows.map((r) => r.key)).toEqual([`credentials:${CREDENTIALS_PATH}`]);
+        expect([...defaultTicks(rows)]).toEqual([`credentials:${CREDENTIALS_PATH}`]);
     });
 });
 
