@@ -282,6 +282,7 @@ describe("buildAgentTree with runs started from an agent", () => {
             owed: false,
             messagecount: 0,
             lastts: 0,
+            updatedts: 0,
         };
         const agents = [vm("p", "idle", WAVE), vm("w", "idle", WAVE), started("j", "idle"), started("r", "working")];
         const rows = build(agents, withOrigins({ j: "p", r: "w" }), new Map(), { list: [pair] });
@@ -526,6 +527,7 @@ describe("buildAgentTree with a pair", () => {
         owed: false,
         messagecount: 0,
         lastts: 0,
+        updatedts: 0,
         ...extra,
     });
     const build = (agents: AgentVM[], list: PairInfo[], folds?: Partial<TreeFolds>, focusId?: string) =>
@@ -1912,6 +1914,7 @@ describe("pairPickable (Pair: worker + judge)", () => {
         owed: false,
         messagecount: 0,
         lastts: 0,
+        updatedts: 0,
     });
     const agents = [
         live("a"),

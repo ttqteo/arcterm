@@ -23,6 +23,21 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
 
 ## 2026-11-25
 
+- [ ] (arcterm) Library pairs: take the What's new shot of a pair nested in Conversations and promote the Added line to
+  big. In the dev app seed an ended pair under a session, open Library → Conversations, then
+  `node scripts/whatsnew-shot.mjs library-pairs --selector "[data-agent-history]"` and move the Added line in
+  `CHANGELOG.md` ("Judge pairs stay readable after they end…") to `<!-- big -->` with the `<!-- shot: … -->` it prints.
+- [ ] (arcterm) **The Judge and Council chips swap Conversations' list.** In Library → Conversations press Judge, then
+  Council, then both, then each off: the nested list and the flat one of pairs, councils or both trade places with one
+  fade of the cards (no jump, no card drawn twice); the status filter and the All activity row leave and come back with
+  the list under them staying put; the Council chip alone brings the folded benchmark box above the list, and opening
+  it never pushes the list off screen. `conversationhistory.tsx`; `library-pairs` reads the end states, not the motion.
+- [ ] (arcterm) **The detail pane changes between a session, a feed and a pair.** In Conversations click a session, then
+  a pair's `└` line under a card, then the pair's transcript link in its foot, then All activity: the right side
+  cross-fades once each time (never the feed flashing between), the pair reads edge to edge with its Decided column
+  whole, and at a 1000 px wide window the thread stays readable and nothing clips. `conversationhistory.tsx`,
+  `pairreadpane.tsx`; `library-pairs` shows the end states and the shots, not the motion or the narrow window.
+- [ ] (arcterm) **Library's tab underline slides.** Open Library and click Conversations → Boards, then press `1`–`3`
 - [ ] (arcterm) **Chat's pair cards move as they should.** In a live pair, open the working agent's Chat while it writes
   a reply that ends with its ```` ```arc-pair ```` list: no code box shows while the fence is open, and the Pair list card
   enters on the spring once it closes. Press Agreed and an older list's row: each opens and folds on the spring, its
@@ -688,19 +703,19 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
   Scroll up a little: the conversation fades out under the box again, the fade coming in over the first ~70px.
   `chatpane.tsx` (`useDockPadding`); not tried in the app.
 - [ ] (arcterm) **Library's look: the tab strip and the panes at full width.** Open Library (rail, Ctrl+7): the strip
-  reads Conversations, Canvases, Councils with a small 1 2 3 key on each, the selected tab filled, and it is not clipped
+  reads Conversations, Canvases, Boards with a small 1 2 3 key on each, the selected tab filled, and it is not clipped
   or doubled when the window is narrow (rail labels hidden). Open a session from Usage: it fills the page, no list
   beside it, with Back at its top left. Switch tabs and the body fades in once, with nothing jumping. `librarysurface.tsx`;
   `library-tabs` shows the structure and its shots, not whether it looks right.
 - [ ] (arcterm) **Resume from a council read in Library lands on Agent; Run again from its Summary lands on Agent's
-  Setup.** Open a council that left the Agent tree (Library → Councils → a council ended days ago), press Resume on its
+  Setup.** Open a council that left the Agent tree (Library → Conversations, Council chip on → a council ended days ago), press Resume on its
   row or in its Report's menu: the surface becomes Agent, the council is back in the tree and its Discussion is open
   with the box focused. From the same Summary press Run again: Agent's council Setup opens with that council's draft.
   `councilresume.tsx`, `councilsetup.tsx`; no scenario.
 - [ ] (arcterm) **A council that ends while open in Library gives no toast and no dot; removing it returns Library to its
-  list.** With a running council open inside Library (Library → Councils, open one with `wsh ui` or the list) let it
+  list.** With a running council open inside Library (Conversations with the Council chip on, open one with `wsh ui` or the list) let it
   end: no "Council done" toast and no unread dot on its row in the Agent tree. Remove a council (its menu → Remove) while
-  Library shows it: Library goes back to the Councils list. `councilnotifysync.tsx`, `councilremove.ts`; `library-tabs`
+  Library shows it: Library goes back to Conversations' list. `councilnotifysync.tsx`, `councilremove.ts`; `library-tabs`
   step 13 covers the toast and the dot with fixtures, not removal.
 - [ ] (arcterm) **Land anyway lands a run held by a failed final stage.** On a run whose card reads "Land held · The
   final stage failed at …", the button reads Land anyway (peek, Needs you, the Brief's Waiting list, the run sheet's

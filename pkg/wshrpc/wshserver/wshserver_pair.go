@@ -5,6 +5,7 @@ package wshserver
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -32,13 +33,22 @@ var (
 	pairManagerMu sync.Mutex
 )
 
+// pairDirs are the two folders of pair files under the data dir (read when called: main sets the data dir after this
+// package's variables). The own folder is the manager's. The synced one holds pairs another machine's sync put there:
+// only the history read and PairGet open it, and the manager is never given it. A test points both at temp folders.
+var pairDirs = func() (own, synced string) {
+	dataDir := wavebase.GetWaveDataDir()
+	return filepath.Join(dataDir, agentpair.DirName), filepath.Join(dataDir, agentpair.SyncedDirName)
+}
+
 func getPairManager() *agentpair.Manager {
 	pairManagerMu.Lock()
 	defer pairManagerMu.Unlock()
 	if pairManager == nil {
+		own, _ := pairDirs()
 		pairManager = &agentpair.Manager{
 			Link:    livePairLink{},
-			Dir:     filepath.Join(wavebase.GetWaveDataDir(), "pairs"),
+			Dir:     own,
 			Publish: publishPairUpdate,
 		}
 	}
@@ -65,8 +75,26 @@ func (ws *WshServer) PairListCommand(ctx context.Context) (*wshrpc.CommandPairLi
 	return &wshrpc.CommandPairListRtnData{Pairs: getPairManager().List()}, nil
 }
 
+// PairHistoryCommand is a project's pairs in every state, live, ended and synced ("" is every project), newest first.
+// It reads the pair files, not the manager's index, so a synced pair never enters the index.
+func (ws *WshServer) PairHistoryCommand(ctx context.Context, data wshrpc.CommandPairHistoryData) (*wshrpc.CommandPairListRtnData, error) {
+	own, synced := pairDirs()
+	pairs, err := agentpair.History(own, synced, data.Project)
+	if err != nil {
+		return nil, err
+	}
+	return &wshrpc.CommandPairListRtnData{Pairs: pairs}, nil
+}
+
+// PairGetCommand is one pair in full: the manager's, else the pair's file (an ended pair, or one synced from another
+// machine).
 func (ws *WshServer) PairGetCommand(ctx context.Context, data wshrpc.CommandPairGetData) (*wshrpc.PairView, error) {
-	return getPairManager().Get(data.PairId)
+	view, err := getPairManager().Get(data.PairId)
+	if !errors.Is(err, agentpair.ErrNoPair) {
+		return view, err
+	}
+	own, synced := pairDirs()
+	return agentpair.Read(own, synced, data.PairId)
 }
 
 func (ws *WshServer) PairBriefCommand(ctx context.Context, data wshrpc.CommandPairBriefData) (*wshrpc.CommandPairBriefRtnData, error) {

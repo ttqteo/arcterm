@@ -118,10 +118,10 @@ agent's header `…` menu, and Search → Commands → "Open a tool…". The sea
 | `Mod`+`G` `c` | Cockpit (home) |
 | `Mod`+`G` `a` | Agent |
 | `Mod`+`G` `j` | Jarvis — channels, records, recall |
-| `Mod`+`G` `l` | Library — Conversation History, the Canvas gallery, Councils and Boards, on the tab you left it on |
+| `Mod`+`G` `l` | Library — Conversations, the Canvas gallery and Boards, on the tab you left it on |
 | `Mod`+`G` `s` | Conversation History (opens Library on its Conversations tab) |
 | `Mod`+`G` `v` | Canvas gallery — every project's design canvases (opens Library on its Canvases tab) |
-| `Mod`+`G` `o` | Councils — every project's councils, closed ones too (opens Library on its Councils tab) |
+| `Mod`+`G` `o` | Councils — every project's councils, closed ones too (opens Library's Conversations with the Council chip on) |
 | `Mod`+`G` `d` | Boards — the boards agents drew, an ended agent's included (opens Library on its Boards tab) |
 | `Mod`+`G` `f` | Files |
 | `Mod`+`G` `u` | Usage |
@@ -293,18 +293,18 @@ A link inside an item view does a full open, even with `Mod` held.
 
 ### Library
 
-Opened with `Mod`+`7`, `Mod`+`G` `l` or the rail's Library button: the archive of what is over, in four tabs across the top.
-**Conversations** is Conversation History (a past session's transcript, a run's detail), **Canvases** is the Canvas gallery
-and its viewer, **Councils** is every council that has left the Agent tree, with a finished council's Discussion, Report
-and Map, and **Boards** is every board agents drew (see Library: Boards below). Library opens on the tab you left it on;
-`Mod`+`G` `s`, `v`, `o` and `d` open it on Conversations, Canvases, Councils and Boards. It is a surface of its own, so the
-agent keys (`d`, `f`, `r`, `c`…) never reach it. Resume, a live agent, a running council and a live
-agent's board open on the Agent surface instead.
+Opened with `Mod`+`7`, `Mod`+`G` `l` or the rail's Library button: the archive of what is over, in three tabs across the top.
+**Conversations** is Conversation History (a past session's transcript, a run's detail) and holds the councils and judge pairs
+that have left the Agent tree (a council's Discussion, Report and Map, a pair read-only), **Canvases** is the Canvas gallery
+and its viewer, and **Boards** is every board agents drew (see Library: Boards below). Library opens on the tab you left it on;
+`Mod`+`G` `s`, `v` and `d` open it on Conversations, Canvases and Boards, and `Mod`+`G` `o` opens Conversations with the
+Council chip on. It is a surface of its own, so the agent keys (`d`, `f`, `r`, `c`…) never reach it. Resume, a live agent, a
+running council, a live pair and a live agent's board open on the Agent surface instead.
 
 | Keys | Action |
 |---|---|
-| `1` / `2` / `3` / `4` | Show the Conversations / Canvases / Councils / Boards tab. Not while a text field has focus |
-| `Esc` | In a session or a run opened in Conversations: back to the list, and to the surface it was opened from (Usage, the Brief…) when it came from one. In a council opened in Library: back to the Councils list, after closing an open thread or the Sources panel. Anywhere else (a list, the canvas grid): back to the surface you jumped from, else the Cockpit |
+| `1` / `2` / `3` | Show the Conversations / Canvases / Boards tab. Not while a text field has focus |
+| `Esc` | In a session, a run, a council or a pair opened in Conversations at full width: back to the list, and to the surface it was opened from (Usage, the Brief…) when it came from one; in a council, after closing an open thread or the Sources panel. Anywhere else (a list, the canvas grid): back to the surface you jumped from, else the Cockpit |
 
 #### Library: Conversations
 
@@ -330,11 +330,13 @@ The gallery is a grid of cards (Today / Yesterday / Earlier); a card opens in a 
 | `Space` | In Clean up: tick or untick the card under the cursor. A click does the same; **Untick all** and **Move to trash** are in the bar |
 | `Esc` | In Clean up: cancel, back to the grid |
 
-#### Library: Councils
+#### Library: councils in Conversations
 
-A council opened here has the keys of a council on the Agent surface (see Agent: council chat below): the chat's `j` / `k`,
-`Enter`, `p`, `Tab` and `Esc`, and `r` / `c` / `m` for the Report, Discussion and Map. They act on the council in Library, never
-on the one Agent's centre column may be showing. `Esc` with no thread open goes back to the list of councils.
+A council opened from outside Conversations' list (a toast, Jarvis, `wsh ui reveal`) or from one of its council rows reads at
+full width under a Back row, and has the keys of a council on the Agent surface (see Agent: council chat below): the chat's
+`j` / `k`, `Enter`, `p`, `Tab` and `Esc`, and `r` / `c` / `m` for the Report, Discussion and Map. They act on the council in
+Library, never on the one Agent's centre column may be showing. `Esc` with no thread open goes back to the Conversations list.
+A judge pair that is not live opens the same way, read-only, under its own Back row: `Esc` goes back to the list.
 
 #### Library: Boards
 
@@ -358,8 +360,8 @@ Opened from a project folder's menu, Open overview. It covers the terminal, and 
 
 A council's Discussion is a channel with threads: each idea is a message, and its reply chip opens the thread in a panel
 on the right. A council covers the terminal, so the agent keys (`j` / `k`, the arrows, `d`, `f`…) stand
-down there and `Esc` goes back to the terminal. A council opened in Library's Councils tab has the same keys, and its `Esc`
-goes back to the list of councils. These keys are the chat's only while focus is inside its channel or
+down there and `Esc` goes back to the terminal. A council opened in Library's Conversations has the same keys, and its `Esc`
+goes back to the Conversations list. These keys are the chat's only while focus is inside its channel or
 thread (click it, or `Esc` out of a box), not in a text field; elsewhere nothing here is live.
 
 | Keys | Action |

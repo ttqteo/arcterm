@@ -5,8 +5,12 @@ package wshserver
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -113,10 +117,12 @@ func (l *fakePairLink) forgetReads() {
 
 // pairWorld is a pair manager over a temp dir and a scripted link, installed as wavesrv's own for the test.
 type pairWorld struct {
-	t       *testing.T
-	link    *fakePairLink
-	mu      sync.Mutex
-	updates []wshrpc.PairUpdateData
+	t         *testing.T
+	link      *fakePairLink
+	ownDir    string // the manager's folder of pair files
+	syncedDir string // the folder pairs synced from another machine are read from, never the manager
+	mu        sync.Mutex
+	updates   []wshrpc.PairUpdateData
 }
 
 func newPairWorld(t *testing.T) *pairWorld {
@@ -124,9 +130,31 @@ func newPairWorld(t *testing.T) *pairWorld {
 	w := &pairWorld{t: t, link: &fakePairLink{
 		states:  map[string]string{pairWorkerTab: agentpair.LinkIdle, pairJudgeTab: agentpair.LinkIdle},
 		answers: map[string]fakePairAnswer{},
-	}}
-	w.setManager(w.newManager(t.TempDir()))
+	}, ownDir: t.TempDir(), syncedDir: t.TempDir()}
+	w.setManager(w.newManager(w.ownDir))
+	oldDirs := pairDirs
+	pairDirs = func() (string, string) { return w.ownDir, w.syncedDir }
+	t.Cleanup(func() { pairDirs = oldDirs })
 	return w
+}
+
+// syncPair leaves a pair file in the synced folder as the other machine's sync would: the working agent's one reply,
+// each side with its session id.
+func (w *pairWorld) syncPair(id, project, state string, updated int64) {
+	w.t.Helper()
+	data, err := json.Marshal(map[string]any{
+		"id": id, "project": project, "state": state, "stopreason": agentpair.StopSettled,
+		"worker":    map[string]any{"tab": "far-w", "name": "far worker", "harness": "claude", "session": "sess-w"},
+		"judges":    []any{map[string]any{"tab": "far-j", "name": "far judge", "harness": "claude", "session": "sess-j"}},
+		"createdts": updated - 100, "updated": updated,
+		"messages": []any{map[string]any{"id": "m1", "from": agentpair.FromWorker, "tab": "far-w", "ts": updated - 50, "raw": pairWorkerReply}},
+	})
+	if err != nil {
+		w.t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(w.syncedDir, id+".json"), data, 0o600); err != nil {
+		w.t.Fatal(err)
+	}
 }
 
 func (w *pairWorld) newManager(dir string) *agentpair.Manager {
@@ -271,11 +299,122 @@ func TestPairHandlers(t *testing.T) {
 	if list, _ := ws.PairListCommand(ctx); len(list.Pairs) != 0 {
 		t.Errorf("an ended pair is still listed: %+v", list.Pairs)
 	}
-	if _, err := ws.PairGetCommand(ctx, wshrpc.CommandPairGetData{PairId: view.Id}); err == nil {
-		t.Error("an ended pair can still be read")
+	// an ended pair is no longer the manager's, but its file still reads: PairGet serves it from there
+	if ended, err := ws.PairGetCommand(ctx, wshrpc.CommandPairGetData{PairId: view.Id}); err != nil || ended.State != agentpair.StateEnded {
+		t.Errorf("an ended pair reads as %+v, %v, want it from its file, ended", ended, err)
+	}
+	if _, err := ws.PairGetCommand(ctx, wshrpc.CommandPairGetData{PairId: "no-such-pair"}); !errors.Is(err, agentpair.ErrNoPair) {
+		t.Errorf("a pair that never was reads as %v, want ErrNoPair", err)
 	}
 	if err := ws.PairSayCommand(ctx, wshrpc.CommandPairSayData{PairId: "no-such-pair", Text: "hi"}); err == nil {
 		t.Error("a message to no pair was accepted")
+	}
+}
+
+func pairIds(pairs []wshrpc.PairInfo) []string {
+	ids := []string{}
+	for _, p := range pairs {
+		ids = append(ids, p.Id)
+	}
+	return ids
+}
+
+// the history lists a project's pairs of both folders in every state, newest first, and puts none in the manager
+func TestPairHistoryCommandListsBothFolders(t *testing.T) {
+	ctx := context.Background()
+	ws := &WshServer{}
+	w := newPairWorld(t)
+	live := w.start(true) // relaying, in project "thesis"; its time is its last message's (1000), or the clock's once saves stamp it
+	w.syncPair("far1", "thesis", agentpair.StateEnded, 400)
+	w.syncPair("far2", "elsewhere", agentpair.StateRelaying, 500)
+
+	all, err := ws.PairHistoryCommand(ctx, wshrpc.CommandPairHistoryData{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := pairIds(all.Pairs), []string{live.Id, "far2", "far1"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("every project listed %v, want %v (newest first)", got, want)
+	}
+	byId := map[string]wshrpc.PairInfo{}
+	for _, p := range all.Pairs {
+		byId[p.Id] = p
+	}
+	if p := byId[live.Id]; p.Synced || p.State != agentpair.StateRelaying {
+		t.Errorf("the live pair = %+v, want relaying and not synced", p)
+	}
+	if p := byId["far1"]; !p.Synced || p.State != agentpair.StateEnded || p.Worker.Session != "sess-w" || p.Judges[0].Session != "sess-j" {
+		t.Errorf("the synced ended pair = %+v, want synced and ended, with its sides' sessions", p)
+	}
+	if p := byId["far2"]; !p.Synced || p.State != agentpair.StateRelaying {
+		t.Errorf("the synced relaying pair = %+v, want it as the file left it", p)
+	}
+
+	thesis, err := ws.PairHistoryCommand(ctx, wshrpc.CommandPairHistoryData{Project: "thesis"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := pairIds(thesis.Pairs), []string{live.Id, "far1"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("the thesis project listed %v, want %v", got, want)
+	}
+	none, err := ws.PairHistoryCommand(ctx, wshrpc.CommandPairHistoryData{Project: "no-project"})
+	if err != nil || none.Pairs == nil || len(none.Pairs) != 0 {
+		t.Errorf("a project with no pairs = %+v, %v, want a non-nil empty list", none, err)
+	}
+
+	// the live list is the manager's alone: neither a synced pair nor, once it ends, the live one is in it
+	if list, _ := ws.PairListCommand(ctx); !reflect.DeepEqual(pairIds(list.Pairs), []string{live.Id}) || getPairManager().Paired("far-w") {
+		t.Errorf("the live list = %v, want only the live pair", pairIds(list.Pairs))
+	}
+	if err := ws.PairUnpairCommand(ctx, wshrpc.CommandPairGetData{PairId: live.Id}); err != nil {
+		t.Fatal(err)
+	}
+	after, err := ws.PairHistoryCommand(ctx, wshrpc.CommandPairHistoryData{Project: "thesis"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if byId := after.Pairs[0]; byId.Id != live.Id || byId.State != agentpair.StateEnded || byId.Synced {
+		t.Errorf("after Unpair the pair is %+v, want it still listed, ended, not synced", byId)
+	}
+	if list, _ := ws.PairListCommand(ctx); len(list.Pairs) != 0 {
+		t.Errorf("the live list holds %v after Unpair, want none", pairIds(list.Pairs))
+	}
+}
+
+// PairGet serves the manager's pairs as ever, and an ended pair or a synced one from its file
+func TestPairGetFallsBackToTheFiles(t *testing.T) {
+	ctx := context.Background()
+	ws := &WshServer{}
+	w := newPairWorld(t)
+	get := func(id string) (*wshrpc.PairView, error) {
+		return ws.PairGetCommand(ctx, wshrpc.CommandPairGetData{PairId: id})
+	}
+
+	view := w.start(true)
+	if got, err := get(view.Id); err != nil || got.State != agentpair.StateRelaying || got.Synced {
+		t.Fatalf("a live pair = %+v, %v, want the manager's", got, err)
+	}
+	if err := ws.PairUnpairCommand(ctx, wshrpc.CommandPairGetData{PairId: view.Id}); err != nil {
+		t.Fatal(err)
+	}
+	ended, err := get(view.Id)
+	if err != nil || ended.State != agentpair.StateEnded || ended.Synced || len(ended.Messages) != 1 || ended.Worker.Tab != pairWorkerTab {
+		t.Fatalf("an ended pair = %+v, %v, want its file's thread, ended, not synced", ended, err)
+	}
+
+	w.syncPair("far1", "thesis", agentpair.StateEnded, 5000)
+	synced, err := get("far1")
+	if err != nil || !synced.Synced || synced.Worker.Session != "sess-w" || len(synced.Messages) != 1 || len(synced.Decided.Open) != 1 {
+		t.Fatalf("a synced pair = %+v, %v, want the synced folder's, with its thread and Decided list", synced, err)
+	}
+	if getPairManager().Paired("far-w") {
+		t.Error("reading a synced pair put it in the manager's index")
+	}
+
+	if _, err := get("never-was"); !errors.Is(err, agentpair.ErrNoPair) {
+		t.Errorf("an unknown id = %v, want ErrNoPair", err)
+	}
+	if _, err := get("../far1"); err == nil || errors.Is(err, agentpair.ErrNoPair) {
+		t.Errorf("an id that is a path = %v, want it refused", err)
 	}
 }
 

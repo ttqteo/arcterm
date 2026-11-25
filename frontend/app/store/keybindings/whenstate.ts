@@ -58,7 +58,7 @@ import {
 import { petPeekOpenAtom } from "@/app/view/jarvis/petstore";
 import { reviewModeAtom } from "@/app/view/jarvis/reviewstore";
 import { runReviewOpenAtom } from "@/app/view/jarvis/runreviewstore";
-import { libraryConvViewAtom, libraryCouncilSelAtom, libraryTabAtom } from "@/app/view/library/librarystore";
+import { libraryConvViewAtom, libraryTabAtom } from "@/app/view/library/librarystore";
 import { dagModalStateAtom } from "@/app/view/orchestrate/dagmodalstate";
 import { atom, type Atom, type PrimitiveAtom } from "jotai";
 import { listNavAtom } from "./listnav";
@@ -91,8 +91,7 @@ export const PREDICATE_ATOMS: Atom<unknown>[] = [
     centerModeAtom, // buildAgentBindings: agentNav / agentNavStrict (every Agent key), agent:back, agent:leave-center; the council keys (onCouncil)
     canvasGalleryAtom, // buildAgentBindings: the canvases:* keys; libraryOpen (surface:back-home, library:back); buildGlobalBindings: surface:next / prev
     libraryTabAtom, // the canvases:* keys (onGallery), libraryOpen, library:tab-*, surface:next / prev
-    libraryConvViewAtom, // libraryOpen: surface:back-home, library:back
-    libraryCouncilSelAtom, // libraryOpen: surface:back-home, library:back, the council keys (onCouncil)
+    libraryConvViewAtom, // libraryOpen: surface:back-home, library:back, the council keys (onCouncil)
     tabSwitcherAtom, // buildGlobalBindings: switcher:cancel, and switcher:next / prev under the open switcher
     dockedTerminalAtom, // buildAgentBindings: agent:terminal-panel
     changesShownAtom, // buildAgentBindings: agent:changes-next / -prev / -whitespace

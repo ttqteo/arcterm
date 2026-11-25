@@ -18,7 +18,7 @@ import { attachBrainstorm, detachBrainstorm, openBrainstormBoard } from "@/app/v
 import { canvasGalleryAtom } from "@/app/view/agents/canvasgallerystore";
 import { attachCanvas, detachCanvas, setCanvasMode, setMarking, updateCanvas } from "@/app/view/agents/canvasstore";
 import type { OpenTarget } from "@/app/view/jarvis/address";
-import { libraryConvViewAtom, libraryCouncilSelAtom, libraryTabAtom } from "@/app/view/library/librarystore";
+import { libraryConvViewAtom, libraryTabAtom } from "@/app/view/library/librarystore";
 import { setPlatform } from "@/util/platformutil";
 import { atom, type PrimitiveAtom } from "jotai";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -276,49 +276,48 @@ describe("Library chips", () => {
     afterEach(() => {
         globalStore.set(libraryTabAtom, "conversations");
         globalStore.set(libraryConvViewAtom, "list");
-        globalStore.set(libraryCouncilSelAtom, null);
         globalStore.set(listNavAtom, null);
         gallery("grid");
     });
 
     it("Conversations: the tab keys, and the list's j k and Enter once its cursor is published", () => {
-        expect(chips()).toEqual(["1 2 3 4 tab"]);
+        expect(chips()).toEqual(["1 2 3 tab"]);
         globalStore.set(listNavAtom, { surface: "library", navigableIds: ["a"], cursorId: "a", setCursor() {} });
-        expect(chips()).toEqual(["1 2 3 4 tab", "j k move", "Enter open"]);
+        expect(chips()).toEqual(["1 2 3 tab", "j k move", "Enter open"]);
     });
 
     it("a session or a run open in Conversations offers Escape back", () => {
         globalStore.set(libraryConvViewAtom, "session");
-        expect(chips()).toEqual(["1 2 3 4 tab", "Escape back"]);
+        expect(chips()).toEqual(["1 2 3 tab", "Escape back"]);
     });
 
     it("Canvases: the grid's move, open and search; the viewer's boards and back; clean up's move, tick and cancel", () => {
         globalStore.set(libraryTabAtom, "canvases");
         gallery("grid");
-        expect(chips()).toEqual(["1 2 3 4 tab", "↑↓←→ move", "Enter open", "/ search"]);
+        expect(chips()).toEqual(["1 2 3 tab", "↑↓←→ move", "Enter open", "/ search"]);
         gallery("viewer");
-        expect(chips()).toEqual(["1 2 3 4 tab", "← → board", "Escape back"]);
+        expect(chips()).toEqual(["1 2 3 tab", "← → board", "Escape back"]);
         gallery("cleanup");
-        expect(chips()).toEqual(["1 2 3 4 tab", "↑↓←→ move", "Space tick", "Escape cancel"]);
+        expect(chips()).toEqual(["1 2 3 tab", "↑↓←→ move", "Space tick", "Escape cancel"]);
         gallery("scan");
-        expect(chips()).toEqual(["1 2 3 4 tab", "Escape cancel"]);
+        expect(chips()).toEqual(["1 2 3 tab", "Escape cancel"]);
     });
 
-    it("Councils: the list shows the tab keys alone; an open council adds r c m and Escape back", () => {
-        globalStore.set(libraryTabAtom, "councils");
-        expect(chips()).toEqual(["1 2 3 4 tab"]);
-        globalStore.set(libraryCouncilSelAtom, "c1");
-        expect(chips()).toEqual(["1 2 3 4 tab", "r c m view", "Escape back"]);
+    it("a council open in Conversations adds r c m and Escape back; a pair adds Escape back alone", () => {
+        expect(chips()).toEqual(["1 2 3 tab"]);
+        globalStore.set(libraryConvViewAtom, "council");
+        expect(chips()).toEqual(["1 2 3 tab", "r c m view", "Escape back"]);
+        globalStore.set(libraryConvViewAtom, "pair");
+        expect(chips()).toEqual(["1 2 3 tab", "Escape back"]);
     });
 
     it("Boards: with nothing open the tab keys stand alone, as no Boards binding is live yet", () => {
         globalStore.set(libraryTabAtom, "boards");
-        expect(chips()).toEqual(["1 2 3 4 tab"]);
+        expect(chips()).toEqual(["1 2 3 tab"]);
     });
 
     it("in a text field the single keys drop out, and Escape stays the field's", () => {
-        globalStore.set(libraryTabAtom, "councils");
-        globalStore.set(libraryCouncilSelAtom, "c1");
+        globalStore.set(libraryConvViewAtom, "council");
         expect(chips({ ...lib, editable: true })).toEqual([]);
     });
 

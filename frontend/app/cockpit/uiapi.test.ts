@@ -17,6 +17,7 @@ import {
     revealLeavesTrail,
     revealWaitsForUser,
     selectionFor,
+    surfaceRevealAction,
     toUiActions,
     USER_IDLE_MS,
     waitUntilIdle,
@@ -139,17 +140,50 @@ describe("parseSurfaceAddress", () => {
         expect(parseSurfaceAddress("surface:sessions")).toEqual({ surface: "library", tab: "conversations" });
     });
 
-    it("takes surface:canvases, surface:councils and surface:boards to their Library tabs", () => {
+    it("takes surface:canvases and surface:boards to their Library tabs", () => {
         expect(parseSurfaceAddress("surface:canvases")).toEqual({ surface: "library", tab: "canvases" });
-        expect(parseSurfaceAddress("surface:councils")).toEqual({ surface: "library", tab: "councils" });
         expect(parseSurfaceAddress("surface:boards")).toEqual({ surface: "library", tab: "boards" });
     });
 
-    it("lists the names that open a Library tab among the valid surfaces in its error", () => {
+    it("takes surface:councils to Conversations, with the Council chip asked for", () => {
+        expect(parseSurfaceAddress("surface:councils")).toEqual({
+            surface: "library",
+            tab: "conversations",
+            councils: true,
+        });
+    });
+
+    it("lists the names that open a Library tab among the valid surfaces in its error, councils no longer a tab", () => {
         const r = parseSurfaceAddress("surface:nope");
         expect(r != null && "error" in r && r.error).toMatch(
-            /, files, library, setup, settings, history, canvases, councils, boards$/
+            /, files, library, setup, settings, history, canvases, boards$/
         );
+    });
+});
+
+describe("surfaceRevealAction", () => {
+    // what handle_uireveal does with a parsed surface address, said apart from the stores it acts on
+    const action = (address: string) => {
+        const target = parseSurfaceAddress(address);
+        if (target == null || "error" in target) {
+            throw new Error(`${address} is not a surface address`);
+        }
+        return surfaceRevealAction(target);
+    };
+
+    it("opens Conversations with the Council chip for surface:councils", () => {
+        expect(action("surface:councils")).toEqual({ kind: "councils" });
+    });
+
+    it("opens Library on the tab for a tab address", () => {
+        expect(action("surface:boards")).toEqual({ kind: "library", tab: "boards" });
+        expect(action("surface:canvases")).toEqual({ kind: "library", tab: "canvases" });
+        expect(action("surface:history")).toEqual({ kind: "library", tab: "conversations" });
+    });
+
+    it("switches the surface for any other surface address", () => {
+        expect(action("surface:library")).toEqual({ kind: "surface", surface: "library" });
+        expect(action("surface:jarvis")).toEqual({ kind: "surface", surface: "jarvis" });
     });
 });
 

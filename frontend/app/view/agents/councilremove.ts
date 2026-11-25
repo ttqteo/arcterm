@@ -8,15 +8,15 @@
 
 import { globalStore } from "@/app/store/jotaiStore";
 import { modalsModel } from "@/app/store/modalmodel";
-import { libraryCouncilSelAtom } from "../library/librarystore";
+import { libraryConvViewAtom, libraryCouncilSelAtom } from "../library/librarystore";
 import { centerModeAtom, showProjectOverview, showTerminal } from "./agentcenter";
 import { councilProjectName } from "./councilmodel";
 import { councilSelAtom, councilViewAtom, deleteCouncil } from "./councilstore";
 import { projectsAtom } from "./projectsstore";
 
 /** Removes an ended council behind a confirm. When it is the one open in Agent's centre, the centre goes to its project's
- *  Overview, or back to the terminal when its folder is no registered project; when Library's Councils tab has it open,
- *  Library goes back to its list of councils (a council that is gone would otherwise sit on "Loading the council…"). A
+ *  Overview, or back to the terminal when its folder is no registered project; when Conversations' council view has it open,
+ *  Library goes back to the Conversations list (a council that is gone would otherwise sit on "Loading the council…"). A
  *  refusal (a council that started again meanwhile) is logged by the store. */
 export function confirmRemoveCouncil(c: Pick<Council, "id" | "feature" | "project">): void {
     modalsModel.pushModal("ConfirmModal", {
@@ -33,9 +33,14 @@ export function confirmRemoveCouncil(c: Pick<Council, "id" | "feature" | "projec
                 if (!r.ok) {
                     return;
                 }
-                // the store lets go of Agent's selection itself (councilstore.ts); Library's is its own atom
+                // the store lets go of Agent's selection itself (councilstore.ts); Library's is its own atom. The view is left
+                // here and not through leaveLibraryDetail: that one also goes back over the jump that opened Library, and
+                // this runs from the Agent tree, where a surface change is not wanted
                 if (globalStore.get(libraryCouncilSelAtom) === c.id) {
                     globalStore.set(libraryCouncilSelAtom, null);
+                    if (globalStore.get(libraryConvViewAtom) === "council") {
+                        globalStore.set(libraryConvViewAtom, "list");
+                    }
                 }
                 if (!open) {
                     return;

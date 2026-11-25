@@ -1560,6 +1560,12 @@ export class RpcApiType {
         return client.wshRpcCall("pairget", data, opts);
     }
 
+    // command "pairhistory" [call]
+    PairHistoryCommand(client: WshClient, data: CommandPairHistoryData, opts?: RpcOpts): Promise<CommandPairListRtnData> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "pairhistory", data, opts);
+        return client.wshRpcCall("pairhistory", data, opts);
+    }
+
     // command "pairlist" [call]
     PairListCommand(client: WshClient, opts?: RpcOpts): Promise<CommandPairListRtnData> {
         if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "pairlist", null, opts);

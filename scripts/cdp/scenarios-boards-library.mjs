@@ -42,7 +42,7 @@ const T_DRAWN = "t-drawn";
 const T_FWD = "t-forwarded";
 
 const q = JSON.stringify;
-const KEY_4 = { key: "4", code: "Digit4", windowsVirtualKeyCode: 52 };
+const KEY_3 = { key: "3", code: "Digit3", windowsVirtualKeyCode: 51 };
 
 // a filled box, so a click anywhere inside it selects it
 const filled = (elements, background) => elements.map((e) => (e.type === "rectangle" ? { ...e, backgroundColor: background } : e));
@@ -302,27 +302,28 @@ export default function (kit) {
                     buttons: [...row.querySelectorAll("button")].map((b) => b.textContent.trim()),
                 }))`);
 
-            // --- 1. the tab strip names 4 in Boards' tooltip (no digit beside a label), and the key 4 opens it ---
-            await run("1. Library's tab row names 4 in Boards' tooltip, and the key 4 opens the tab", async (name) => {
+            // --- 1. the tab strip names 3 in Boards' tooltip (no digit beside a label; the key is the tab's
+            // aria-keyshortcuts), and the key 3 opens it ---
+            await run("1. Library's tab row names 3 in Boards' tooltip, and the key 3 opens the tab", async (name) => {
                 await h.goto("library");
                 await h.ev(`document.querySelector('[data-library-tab="conversations"]')?.click()`);
                 await until(async () => (await active()) === "conversations");
                 const tabs = await h.ev(`[...document.querySelectorAll("[data-library-tab]")].map((t) => ({
                     tab: t.getAttribute("data-library-tab"),
-                    key: t.getAttribute("aria-keyshortcuts"),
+                    key: t.getAttribute("aria-keyshortcuts") ?? "",
                     tip: t.getAttribute("title"),
                     label: t.textContent.replace(/\\s+/g, " ").trim(),
                 }))`);
-                await press(KEY_4);
+                await press(KEY_3);
                 const opened = await until(async () => (await active()) === "boards");
                 const listed = await until(async () => (await count(`[data-library-boards-list] [data-library-board]`)) >= 3);
                 await shot("1-tab");
                 const boards = tabs.find((t) => t.tab === "boards");
                 rec(
                     name,
-                    tabs.map((t) => t.tab).join() === "conversations,canvases,councils,boards" &&
-                        boards?.key === "4" &&
-                        boards.tip === "Boards (4)" &&
+                    tabs.map((t) => t.tab).join() === "conversations,canvases,boards" &&
+                        boards?.key === "3" &&
+                        boards.tip === "Boards (3)" &&
                         tabs.every((t) => !t.label.match(/\d/)) &&
                         boards.label.startsWith("Boards") &&
                         opened &&
@@ -534,15 +535,17 @@ export default function (kit) {
                     };`
                 );
                 const ready = await until(() => h.ev(`document.querySelector(${q(`${ALONE} [data-board-canvas="${B_LIVE}"]`)})?.dataset.boardReady === "true"`));
-                // no cell of it in the split: a pick shows alone, only Open in split or a drop reshapes a split
-                const noCell = (await count(`[data-board-cell="${B_LIVE}"]`)) === 0;
+                // no cell of it in the split: a pick shows alone, only Open in split or a drop reshapes a split.
+                // data-board-cell is on BoardCell's root, which the alone view draws too; a cell in the split is wrapped
+                // by BoardGridCell, which carries data-board-cell-of={boardKey} (the key ALONE uses).
+                const noCell = (await count(`[data-board-cell-of="${PROJECT}/${B_LIVE}"]`)) === 0;
                 const libraryOpen = await count(`[data-library-board-open]`);
                 await polishNap(400);
                 await shot("9-live-agent");
                 rec(
                     name,
                     clicked && alone && ready && noCell && st.surface === "agent" && st.open.length === 0 && libraryOpen === 0,
-                    { st, gridBefore, noCell, libraryOpen }
+                    { clicked, alone, ready, st, gridBefore, noCell, libraryOpen }
                 );
                 // back to the agent, as Close on the alone board does
                 await boardPage(h, `(await mod("app/view/agents/agentcenter.ts")).leaveCenter(); return true;`);
@@ -620,10 +623,14 @@ export default function (kit) {
                 const rowsBefore = await count(`[data-library-board]`);
                 const before = await boardCalls(h, "BoardDeleteCommand");
                 const clicked = await click(`[data-library-board-open] [data-library-board-delete="${B_ENDED}"]`);
-                const asked = await until(() => h.ev(`[...document.querySelectorAll("button")].some((b) => b.textContent.trim() === "Delete")`));
+                // the confirm's button is a DialogButton: its label, then a key-hint <kbd> ("DeleteEnter" as textContent),
+                // so match the label alone (firstChild), and only inside the dialog, never the header's text-less trash
+                // or a row's Delete button
+                const CONFIRM_DELETE = `[...document.querySelectorAll('[role="dialog"] button')].find((b) => (b.firstChild?.textContent ?? "").trim() === "Delete")`;
+                const asked = await until(() => h.ev(`${CONFIRM_DELETE} != null`));
                 await shot("9c-delete-confirm");
                 const confirmed = await h.ev(`(() => {
-                    const b = [...document.querySelectorAll("button")].find((x) => x.textContent.trim() === "Delete");
+                    const b = ${CONFIRM_DELETE};
                     b?.click();
                     return b != null;
                 })()`);
@@ -643,7 +650,7 @@ export default function (kit) {
                         calls.at(-1)?.project === PROJECT &&
                         detail === 0 &&
                         rowsAfter === rowsBefore - 1,
-                    { calls: calls.length, detail, rowsBefore, rowsAfter }
+                    { clicked, asked, confirmed, gone, calls: calls.length, detail, rowsBefore, rowsAfter }
                 );
             });
 

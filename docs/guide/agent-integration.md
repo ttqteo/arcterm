@@ -90,13 +90,15 @@ wsh agents list                                          # các tab agent đang 
 wsh agents send <tab> "…"                                # nhắn cho một agent
 wsh agents read <tab>                                    # đọc câu trả lời của nó
 wsh agents wait <tab>                                    # chờ đến khi nó ngừng làm việc
-wsh read <id>                                            # đọc thứ một id trỏ tới: agent, run, council, phiên cũ, initiative
+wsh read <id>                                            # đọc thứ một id trỏ tới: agent, run, council, cặp judge, phiên cũ, initiative
 ```
 
 **Nhắc tới một id để agent đọc.** Viết "đọc agent 5065bd8c rồi …", "council:0c28170c" hay một uuid trong prompt: hook của
 arc mod đính thêm một dòng bảo agent đọc nó bằng `wsh read <id>` trước khi làm. `wsh read` tự nhận id là gì (hash trần,
-hoặc `agent:` / `run:` / `council:` / `session:` / `effort:`) và in vài lượt cuối của agent, trạng thái run, report và cả
-phần thảo luận của council, hay chunk của initiative; một hash khớp nhiều thứ thì nó liệt kê để chọn bằng `kind:id`. Đọc
+hoặc `agent:` / `run:` / `council:` / `pair:` / `session:` / `effort:`) và in vài lượt cuối của agent, trạng thái run,
+report và cả phần thảo luận của council, toàn bộ cuộc trò chuyện của một cặp agent làm việc và judge cùng phần đã chốt,
+đã hỏi và còn mở (cặp đang chạy, đã kết thúc hay đồng bộ từ máy khác đều đọc được), hay chunk của initiative; một hash khớp
+nhiều thứ thì nó liệt kê để chọn bằng `kind:id`. Đọc
 không gửi gì sang agent hay council đó. Một hash trần đứng một mình (không có chữ agent/run/council… trước nó) không tính,
 vì nó cũng có thể là commit. Trong ô chat, `@` rồi gõ `agent`, `run`, `council` hay vài chữ của tên liệt kê các agent đang
 chạy, run và council của project phía trên danh sách file; chọn một mục thì ô nhập ghi `agent:<id>`. Prompt **bắt đầu**

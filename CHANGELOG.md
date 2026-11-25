@@ -34,6 +34,9 @@ and a picture given to a line that is not big.
 
 ### Added
 
+- Judge pairs stay readable after they end: Library's Conversations lists each pair under the session of the agent that
+  worked, read-only with its Decided list, and pairs synced from your other machine read the same. `wsh read <pair id>`
+  prints one as text.
 - Quote from a file into the chat: select a passage in the agent panel's File tab and press Quote (or `q`) in a
   markdown Preview, or Quote in chat (`Alt`+`Q`, or the right-click menu) in Source. It lands in the agent's chat box as
   a `> ` quote under the file and lines it came from (`docs/plan.md:42-44`), the caret under it for your question.
@@ -46,6 +49,9 @@ and a picture given to a line that is not big.
 
 ### Changed
 
+- Councils moved into Conversations: the Councils tab is gone, `Mod+G o` opens Conversations with the Council chip on,
+  and a council nests under the session that started it.
+- Library's tabs are plain labels with a sliding underline; the 1–3 keys still switch them, named in each tab's tooltip
 - In Chat, a pair's list and a judge's marks show as cards instead of code: the newest list with its answer chips,
   an earlier one folded to a row.
 - A fast-track run says so: a `fast track` chip on the run sheet, the same words on `wsh runs show` and Chat's run card.

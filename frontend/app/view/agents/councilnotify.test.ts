@@ -93,32 +93,36 @@ describe("viewingCouncil", () => {
         expect(viewingCouncil("cockpit", "council", "summary", "c1", "c1")).toBe(false);
     });
 
-    it("is Library's Councils tab with that council open, on any of its views", () => {
-        const councils = { tab: "councils", selected: "c1" };
-        expect(viewingCouncil("library", "terminal", "discussion", null, "c1", councils)).toBe(true);
-        expect(viewingCouncil("library", "terminal", "map", null, "c1", councils)).toBe(true);
+    it("is Conversations' council view on Library with that council open, on any of its views", () => {
+        const council = { tab: "conversations", conv: "council", selected: "c1" };
+        expect(viewingCouncil("library", "terminal", "discussion", null, "c1", council)).toBe(true);
+        expect(viewingCouncil("library", "terminal", "map", null, "c1", council)).toBe(true);
         // Agent's own selection does not make Library's council seen, nor the other way round
-        expect(viewingCouncil("library", "council", "summary", "c1", "c2", councils)).toBe(false);
-        expect(viewingCouncil("agent", "council", "summary", null, "c1", councils)).toBe(false);
+        expect(viewingCouncil("library", "council", "summary", "c1", "c2", council)).toBe(false);
+        expect(viewingCouncil("agent", "council", "summary", null, "c1", council)).toBe(false);
     });
 
-    it("is not Library on another tab, with the list showing, or with no Library state given", () => {
-        expect(
-            viewingCouncil("library", "terminal", "summary", null, "c1", { tab: "conversations", selected: "c1" })
-        ).toBe(false);
-        expect(viewingCouncil("library", "terminal", "summary", null, "c1", { tab: "canvases", selected: "c1" })).toBe(
-            false
-        );
-        expect(viewingCouncil("library", "terminal", "summary", null, "c1", { tab: "councils", selected: null })).toBe(
-            false
-        );
+    it("is not Library on another tab, on the list or another view, or with no Library state given", () => {
+        const at = (tab: string, conv: string, selected: string | null) =>
+            viewingCouncil("library", "terminal", "summary", null, "c1", { tab, conv, selected });
+        expect(at("canvases", "council", "c1")).toBe(false);
+        expect(at("boards", "council", "c1")).toBe(false);
+        // the list, a session, a run or a pair showing, whatever council was left selected
+        for (const conv of ["list", "session", "run", "pair"]) {
+            expect(at("conversations", conv, "c1")).toBe(false);
+        }
+        expect(at("conversations", "council", null)).toBe(false);
         expect(viewingCouncil("library", "terminal", "summary", null, "c1")).toBe(false);
     });
 
     it("is not a council open in Library while another surface shows", () => {
-        expect(viewingCouncil("jarvis", "terminal", "summary", null, "c1", { tab: "councils", selected: "c1" })).toBe(
-            false
-        );
+        expect(
+            viewingCouncil("jarvis", "terminal", "summary", null, "c1", {
+                tab: "conversations",
+                conv: "council",
+                selected: "c1",
+            })
+        ).toBe(false);
     });
 });
 

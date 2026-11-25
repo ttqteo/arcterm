@@ -37,9 +37,41 @@ func (s store) save(p *Pair) error {
 	return nil
 }
 
-// loadActive reads every pair file that is not ended. A file that does not read is logged and skipped: one bad file
-// must not hide the other pairs. A folder that does not exist yet holds no pairs.
-func (s store) loadActive() ([]*Pair, error) {
+// readFile reads one pair file; its error names the file. The pair's queues come back as maps the manager can write to.
+func readFile(path string) (*Pair, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	var p Pair
+	if err := json.Unmarshal(data, &p); err != nil {
+		return nil, fmt.Errorf("%s does not parse: %w", path, err)
+	}
+	if p.Pending == nil {
+		p.Pending = map[string][]string{}
+	}
+	if p.Seen == nil {
+		p.Seen = map[string]int64{}
+	}
+	return &p, nil
+}
+
+// read is the pair of one id, from <dir>/<id>.json. A pair with no file wraps os.ErrNotExist. The id must already be
+// checked: it names a file.
+func (s store) read(id string) (*Pair, error) {
+	p, err := readFile(s.path(id))
+	if err != nil {
+		return nil, err
+	}
+	if p.Id != id {
+		return nil, fmt.Errorf("%s holds pair %q, not %q", s.path(id), p.Id, id)
+	}
+	return p, nil
+}
+
+// readAll reads every pair file of the folder, whatever the pair's state. A file that does not read is logged and
+// skipped: one bad file must not hide the other pairs. A folder that does not exist yet holds no pairs.
+func (s store) readAll() ([]*Pair, error) {
 	entries, err := os.ReadDir(s.dir)
 	if errors.Is(err, os.ErrNotExist) {
 		return nil, nil
@@ -53,26 +85,30 @@ func (s store) loadActive() ([]*Pair, error) {
 			continue
 		}
 		path := filepath.Join(s.dir, e.Name())
-		data, err := os.ReadFile(path)
+		p, err := readFile(path)
 		if err != nil {
-			log.Printf("pairs: reading %s: %v\n", path, err)
+			log.Printf("pairs: %v\n", err) // the error names the file
 			continue
 		}
-		var p Pair
-		if err := json.Unmarshal(data, &p); err != nil {
-			log.Printf("pairs: %s does not parse: %v\n", path, err)
+		if p.Id == "" {
 			continue
 		}
-		if p.Id == "" || p.State == StateEnded {
-			continue
-		}
-		if p.Pending == nil {
-			p.Pending = map[string][]string{}
-		}
-		if p.Seen == nil {
-			p.Seen = map[string]int64{}
-		}
-		pairs = append(pairs, &p)
+		pairs = append(pairs, p)
 	}
 	return pairs, nil
+}
+
+// loadActive reads every pair file that is not ended: the pairs the manager keeps in its index.
+func (s store) loadActive() ([]*Pair, error) {
+	all, err := s.readAll()
+	if err != nil {
+		return nil, err
+	}
+	var active []*Pair
+	for _, p := range all {
+		if p.State != StateEnded {
+			active = append(active, p)
+		}
+	}
+	return active, nil
 }

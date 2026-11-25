@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it } from "vitest";
-import { judgeStatus, messageClock, quoteLine, shortSpan } from "./pairpanemodel";
+import { judgeStatus, messageClock, pairControls, quoteLine, readFootLine, shortSpan } from "./pairpanemodel";
 
 const side = (extra: Partial<PairSide> = {}): PairSide => ({
     tab: "4c6ba858-0d7e",
@@ -55,6 +55,57 @@ describe("judgeStatus", () => {
     it("reads gone for a judge the pair lost or the roster no longer holds", () => {
         expect(judgeStatus({ state: "working" }, side({ gone: true }), NOW)).toBe("gone");
         expect(judgeStatus(undefined, side(), NOW)).toBe("gone");
+    });
+});
+
+describe("pairControls", () => {
+    it("keeps today's set on a live pair: the bar, composer, Reply, Run now and Unpair, and no ended footer", () => {
+        expect(pairControls({ readOnly: false, ended: false })).toEqual({
+            bar: true,
+            composer: true,
+            reply: true,
+            runNow: true,
+            unpair: true,
+            endedFooter: false,
+        });
+    });
+    it("swaps the composer and Unpair for the ended footer when the live pair has ended", () => {
+        expect(pairControls({ readOnly: false, ended: true })).toEqual({
+            bar: true,
+            composer: false,
+            reply: true,
+            runNow: true,
+            unpair: false,
+            endedFooter: true,
+        });
+    });
+    it("drops every control read-only, ended or not (the read view has its own foot line)", () => {
+        const none = {
+            bar: false,
+            composer: false,
+            reply: false,
+            runNow: false,
+            unpair: false,
+            endedFooter: false,
+        };
+        expect(pairControls({ readOnly: true, ended: false })).toEqual(none);
+        expect(pairControls({ readOnly: true, ended: true })).toEqual(none);
+    });
+});
+
+describe("readFootLine", () => {
+    it("says an ended pair is over", () => {
+        expect(readFootLine({ state: "ended" })).toBe("This pair is over. Read-only.");
+    });
+    it("says a relaying or stopped pair is driven on the Agent surface", () => {
+        const words = "Read-only here; it relays on the Agent surface.";
+        expect(readFootLine({ state: "relaying" })).toBe(words);
+        expect(readFootLine({ state: "stopped" })).toBe(words);
+    });
+    it("says a synced pair came from another machine, whatever its state: it cannot relay here", () => {
+        const words = "Synced from another machine. Read-only.";
+        expect(readFootLine({ state: "relaying", synced: true })).toBe(words);
+        expect(readFootLine({ state: "ended", synced: true })).toBe(words);
     });
 });
 

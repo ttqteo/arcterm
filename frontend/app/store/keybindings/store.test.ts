@@ -38,7 +38,7 @@ import { initiativeSheetAtom, initiativeSheetOpenAtom } from "@/app/view/jarvis/
 import { briefSheetOpenAtom } from "@/app/view/jarvis/jarvisstore";
 import { activeSubjectAtom } from "@/app/view/jarvis/jarvissubjectstore";
 import { petPeekOpenAtom } from "@/app/view/jarvis/petstore";
-import { libraryConvViewAtom, libraryCouncilSelAtom, libraryTabAtom } from "@/app/view/library/librarystore";
+import { libraryConvViewAtom, libraryTabAtom } from "@/app/view/library/librarystore";
 import { atom, type PrimitiveAtom } from "jotai";
 import { describe, expect, it, vi } from "vitest";
 import {
@@ -502,8 +502,8 @@ describe("keybinding conflict invariant", () => {
         }
     });
 
-    // a council's r c m switch its views while it covers the terminal, or fills Library's Councils tab; in the terminal the
-    // agent's own r c m keep them
+    // a council's r c m switch its views while it covers the terminal, or fills Conversations' council view; in the terminal
+    // the agent's own r c m keep them
     it("the council view keys are live on a council and stand down in the terminal, without conflicting", () => {
         const model = stubModel();
         const all = () => [
@@ -527,18 +527,18 @@ describe("keybinding conflict invariant", () => {
             globalStore.set(centerModeAtom, "terminal");
             expect(() => assertNoConflicts(all())).not.toThrow();
             expect(tabs.some((b) => b.when!(ctx))).toBe(false);
-            // Library: the Councils tab with a council open takes them, whatever Agent's centre shows
-            globalStore.set(libraryTabAtom, "councils");
-            globalStore.set(libraryCouncilSelAtom, "c1");
+            // Library: Conversations' council view takes them, whatever Agent's centre shows
+            globalStore.set(libraryTabAtom, "conversations");
+            globalStore.set(libraryConvViewAtom, "council");
             expect(() => assertNoConflicts(all())).not.toThrow();
             expect(tabs.every((b) => b.when!(lib))).toBe(true);
             expect(tabs.some((b) => b.when!(ctx))).toBe(false);
-            globalStore.set(libraryCouncilSelAtom, null);
+            globalStore.set(libraryConvViewAtom, "list");
             expect(tabs.some((b) => b.when!(lib))).toBe(false);
         } finally {
             globalStore.set(centerModeAtom, "terminal");
             globalStore.set(libraryTabAtom, "conversations");
-            globalStore.set(libraryCouncilSelAtom, null);
+            globalStore.set(libraryConvViewAtom, "list");
         }
     });
 
@@ -589,7 +589,7 @@ describe("keybinding conflict invariant", () => {
             expect(find("surface:prev").when!(libCtx)).toBe(true);
             // the other tabs: the surface switch's [ ] are live whatever the gallery was left on
             inGallery("viewer", OPEN_DIR);
-            for (const tab of ["conversations", "councils"] as const) {
+            for (const tab of ["conversations", "boards"] as const) {
                 globalStore.set(libraryTabAtom, tab);
                 expect(find("surface:prev").when!(libCtx)).toBe(true);
                 expect(find("canvases:prev-board").when!(libCtx)).toBe(false);
@@ -642,8 +642,8 @@ describe("keybinding conflict invariant", () => {
         }
     });
 
-    // One Escape never means two things on Library: with a session, a run, a council or a canvas open the press goes to
-    // that, and only from a list does it navigate
+    // One Escape never means two things on Library: with a session, a run, a pair, a council or a canvas open the press goes
+    // to that, and only from a list does it navigate
     it("Library's Escape has one claimant in every state the surface can be in", () => {
         const model = stubModel();
         const libCtx = { surface: "library" as const, editable: false, modalOpen: false, leader: null };
@@ -656,23 +656,19 @@ describe("keybinding conflict invariant", () => {
         ];
         const claimants = () => all.filter((b) => b.keys === "Escape" && b.when?.(libCtx) === true).map((b) => b.id);
         try {
-            for (const tab of ["conversations", "canvases", "councils"] as const) {
-                for (const conv of ["list", "session", "run"] as const) {
-                    for (const council of [null, "c1"]) {
-                        for (const view of ["grid", "viewer", "cleanup", "scan"] as const) {
-                            globalStore.set(libraryTabAtom, tab);
-                            globalStore.set(libraryConvViewAtom, conv);
-                            globalStore.set(libraryCouncilSelAtom, council);
-                            inGallery(view, OPEN_DIR);
-                            expect(claimants(), `${tab}/${conv}/${council}/${view}`).toHaveLength(1);
-                        }
+            for (const tab of ["conversations", "canvases", "boards"] as const) {
+                for (const conv of ["list", "session", "run", "council", "pair"] as const) {
+                    for (const view of ["grid", "viewer", "cleanup", "scan"] as const) {
+                        globalStore.set(libraryTabAtom, tab);
+                        globalStore.set(libraryConvViewAtom, conv);
+                        inGallery(view, OPEN_DIR);
+                        expect(claimants(), `${tab}/${conv}/${view}`).toHaveLength(1);
                     }
                 }
             }
         } finally {
             globalStore.set(libraryTabAtom, "conversations");
             globalStore.set(libraryConvViewAtom, "list");
-            globalStore.set(libraryCouncilSelAtom, null);
             globalStore.set(councilChatNavAtom, null);
             inGallery("grid");
         }
@@ -939,15 +935,16 @@ describe("PREDICATE_ATOMS completeness (whenstate.ts)", () => {
         try {
             // the terminal's centre, and a council's: with the centre on a council the agent keys stop at centerAtRest and
             // agent:leave-center reads the council chat's nav. And Library's tabs: the gallery's predicates read the
-            // gallery's atom only on Canvases, the Escape that leaves a council reads the chat's nav only on Councils
-            for (const [centre, tab] of [
-                ["terminal", "conversations"],
-                ["council", "canvases"],
-                ["terminal", "councils"],
+            // gallery's atom only on Canvases, the Escape that leaves a council reads the chat's nav only on Conversations'
+            // council view
+            for (const [centre, tab, conv] of [
+                ["terminal", "conversations", "list"],
+                ["council", "canvases", "list"],
+                ["terminal", "conversations", "council"],
             ] as const) {
                 globalStore.set(centerModeAtom, centre);
                 globalStore.set(libraryTabAtom, tab);
-                globalStore.set(libraryCouncilSelAtom, tab === "councils" ? "c1" : null);
+                globalStore.set(libraryConvViewAtom, conv);
                 for (const ctx of contexts()) {
                     for (const binding of all) {
                         binding.when?.(ctx);
@@ -959,7 +956,6 @@ describe("PREDICATE_ATOMS completeness (whenstate.ts)", () => {
             globalStore.set(centerModeAtom, "terminal");
             globalStore.set(libraryTabAtom, "conversations");
             globalStore.set(libraryConvViewAtom, "list");
-            globalStore.set(libraryCouncilSelAtom, null);
             globalStore.set(diffScopeAtom, null);
             globalStore.set(renamingRowAtom, null);
             detachCanvas("a1");

@@ -231,7 +231,7 @@ func settled(p *Pair, live []Side, w int) bool {
 }
 
 func sideInfo(s Side) wshrpc.PairSide {
-	return wshrpc.PairSide{Tab: s.Tab, Name: s.Name, Harness: s.Harness, Gone: s.Gone}
+	return wshrpc.PairSide{Tab: s.Tab, Name: s.Name, Harness: s.Harness, Session: s.Session, Gone: s.Gone}
 }
 
 // Info is the pair as the list shows it.
@@ -244,6 +244,11 @@ func Info(p *Pair) wshrpc.PairInfo {
 	if n := len(p.Messages); n > 0 {
 		last = p.Messages[n-1].Ts
 	}
+	// a file saved before the updated time existed lists by its last message's time
+	updated := p.UpdatedTs
+	if updated == 0 {
+		updated = last
+	}
 	return wshrpc.PairInfo{
 		Id:           p.Id,
 		Project:      p.Project,
@@ -254,6 +259,7 @@ func Info(p *Pair) wshrpc.PairInfo {
 		Owed:         Owed(p),
 		MessageCount: len(p.Messages),
 		LastTs:       last,
+		UpdatedTs:    updated,
 	}
 }
 

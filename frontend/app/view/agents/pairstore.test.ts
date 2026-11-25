@@ -10,7 +10,9 @@ vi.mock("@/app/store/wps", () => ({
         return () => {};
     },
 }));
-vi.mock("@/app/store/wshclientapi", () => ({ RpcApi: { PairListCommand: vi.fn(), PairGetCommand: vi.fn() } }));
+vi.mock("@/app/store/wshclientapi", () => ({
+    RpcApi: { PairListCommand: vi.fn(), PairGetCommand: vi.fn(), PairHistoryCommand: vi.fn() },
+}));
 vi.mock("@/app/store/wshrpcutil", () => ({ TabRpcClient: {} }));
 
 import { globalStore } from "@/app/store/jotaiStore";
@@ -18,27 +20,34 @@ import { RpcApi } from "@/app/store/wshclientapi";
 import {
     devMockPairsAtom,
     loadPair,
+    loadPairHistory,
     loadPairs,
     markPairSeen,
+    pairHistoryAtom,
     pairListAtom,
     pairSeenAtom,
     pairViewAtom,
+    pairViewErrorAtom,
 } from "./pairstore";
 
 const list = RpcApi.PairListCommand as ReturnType<typeof vi.fn>;
 const get = RpcApi.PairGetCommand as ReturnType<typeof vi.fn>;
+const history = RpcApi.PairHistoryCommand as ReturnType<typeof vi.fn>;
 
-const info = (id: string, messagecount = 0) => ({ id, messagecount }) as unknown as PairInfo;
-const view = (id: string, count = 0) =>
+const info = (id: string, messagecount = 0, over: Partial<PairInfo> = {}) =>
+    ({ id, messagecount, ...over }) as unknown as PairInfo;
+const view = (id: string, count = 0, over: Partial<PairInfo> = {}) =>
     ({
         id,
         messagecount: count,
         messages: Array.from({ length: count }, (_, i) => ({ id: `m${i}` })),
+        ...over,
     }) as unknown as PairView;
 
 beforeEach(() => {
     list.mockReset();
     get.mockReset();
+    history.mockReset();
     globalStore.set(devMockPairsAtom, null);
 });
 
@@ -107,6 +116,121 @@ describe("the dev mock", () => {
         globalStore.set(devMockPairsAtom, []);
         expect(globalStore.get(pairListAtom)).toEqual([]);
     });
+
+    it("leaves an ended and a synced pair out of the live list, as the server's list does, but still reads them by id", () => {
+        const ended = view("ended", 1, { state: "ended" });
+        const synced = view("synced", 1, { state: "stopped", synced: true });
+        globalStore.set(devMockPairsAtom, [view("live", 1, { state: "relaying" }), ended, synced]);
+        expect(globalStore.get(pairListAtom).map((p) => p.id)).toEqual(["live"]);
+        expect(globalStore.get(pairViewAtom("ended"))).toBe(ended);
+        expect(globalStore.get(pairViewAtom("synced"))).toBe(synced);
+    });
+});
+
+describe("the history", () => {
+    it("is null before the first read, then what PairHistoryCommand answered for the project", async () => {
+        expect(globalStore.get(pairHistoryAtom("/repo/one"))).toBeNull();
+        history.mockResolvedValueOnce({ pairs: [info("h1"), info("h2")] });
+        await loadPairHistory("/repo/one");
+        expect(history).toHaveBeenCalledWith({}, { project: "/repo/one" });
+        expect(globalStore.get(pairHistoryAtom("/repo/one"))?.map((p) => p.id)).toEqual(["h1", "h2"]);
+        expect(globalStore.get(pairHistoryAtom("/repo/two"))).toBeNull();
+    });
+
+    it("keeps one list for two spellings of a project path", async () => {
+        history.mockResolvedValueOnce({ pairs: [info("h3")] });
+        await loadPairHistory("D:\\work\\repo");
+        expect(globalStore.get(pairHistoryAtom("d:/work/repo/"))?.map((p) => p.id)).toEqual(["h3"]);
+    });
+
+    it("reads an empty answer as no pairs", async () => {
+        history.mockResolvedValueOnce({ pairs: null });
+        await loadPairHistory("/repo/empty");
+        expect(globalStore.get(pairHistoryAtom("/repo/empty"))).toEqual([]);
+    });
+
+    it("leaves the list as it was when a read fails, and logs", async () => {
+        const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+        history.mockResolvedValueOnce({ pairs: [info("h4")] });
+        await loadPairHistory("/repo/fails");
+        history.mockRejectedValueOnce(new Error("disk"));
+        await loadPairHistory("/repo/fails");
+        expect(globalStore.get(pairHistoryAtom("/repo/fails"))?.map((p) => p.id)).toEqual(["h4"]);
+        expect(logged).toHaveBeenCalled();
+        logged.mockRestore();
+    });
+
+    it("drops the late answer of a read an event overtook", async () => {
+        let late!: (v: CommandPairListRtnData) => void;
+        history.mockReturnValueOnce(new Promise<CommandPairListRtnData>((resolve) => (late = resolve)));
+        history.mockResolvedValueOnce({ pairs: [info("new")] });
+        const slow = loadPairHistory("/repo/late");
+        await loadPairHistory("/repo/late");
+        late({ pairs: [info("old")] });
+        await slow;
+        expect(globalStore.get(pairHistoryAtom("/repo/late"))?.map((p) => p.id)).toEqual(["new"]);
+    });
+
+    it("is the mock's pairs while it is set, of the project asked for, and nothing is read from the server", async () => {
+        globalStore.set(devMockPairsAtom, [
+            view("a", 1, { project: "/repo/m-one", state: "ended" }),
+            view("b", 1, { project: "D:\\repo\\m-two", state: "relaying" }),
+            view("c", 1, { project: "/repo/m-one", state: "stopped", synced: true }),
+        ]);
+        expect(globalStore.get(pairHistoryAtom("/repo/m-one")).map((p) => p.id)).toEqual(["a", "c"]);
+        expect(globalStore.get(pairHistoryAtom("d:/repo/m-two/")).map((p) => p.id)).toEqual(["b"]);
+        expect(globalStore.get(pairHistoryAtom("/repo/m-none"))).toEqual([]);
+        expect(globalStore.get(pairHistoryAtom("")).map((p) => p.id)).toEqual(["a", "b", "c"]);
+        await loadPairHistory("/repo/m-one");
+        expect(history).not.toHaveBeenCalled();
+
+        globalStore.set(devMockPairsAtom, null);
+        expect(globalStore.get(pairHistoryAtom("/repo/m-one"))).toBeNull();
+    });
+});
+
+describe("a pair that did not read", () => {
+    it("keeps why per pair, and a later good read clears it", async () => {
+        const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+        expect(globalStore.get(pairViewErrorAtom("x1"))).toBeNull();
+        get.mockRejectedValueOnce(new Error('no pair "x1"'));
+        await loadPair("x1");
+        expect(globalStore.get(pairViewErrorAtom("x1"))).toBe('no pair "x1"');
+        expect(globalStore.get(pairViewAtom("x1"))).toBeNull();
+        expect(globalStore.get(pairViewErrorAtom("other"))).toBeNull();
+        expect(logged).toHaveBeenCalled();
+
+        get.mockResolvedValueOnce(view("x1", 1));
+        await loadPair("x1");
+        expect(globalStore.get(pairViewErrorAtom("x1"))).toBeNull();
+        expect(globalStore.get(pairViewAtom("x1"))?.messages).toHaveLength(1);
+        logged.mockRestore();
+    });
+
+    it("keeps the pair it had when a later read fails, and says the read failed", async () => {
+        const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+        get.mockResolvedValueOnce(view("x2", 2));
+        await loadPair("x2");
+        get.mockRejectedValueOnce("the server went away");
+        await loadPair("x2");
+        expect(globalStore.get(pairViewAtom("x2"))?.messages).toHaveLength(2);
+        expect(globalStore.get(pairViewErrorAtom("x2"))).toBe("the server went away");
+        logged.mockRestore();
+    });
+
+    it("sets no reason for a failed read an event overtook", async () => {
+        const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+        let fail!: (e: Error) => void;
+        get.mockReturnValueOnce(new Promise<PairView>((_, reject) => (fail = reject)));
+        get.mockResolvedValueOnce(view("x3", 3));
+        const slow = loadPair("x3");
+        await loadPair("x3");
+        fail(new Error("late failure"));
+        await slow;
+        expect(globalStore.get(pairViewErrorAtom("x3"))).toBeNull();
+        expect(globalStore.get(pairViewAtom("x3"))?.messages).toHaveLength(3);
+        logged.mockRestore();
+    });
 });
 
 describe("pair:update", () => {
@@ -132,6 +256,19 @@ describe("pair:update", () => {
         list.mockResolvedValue({ pairs: [] });
         await fire({ pairid: "never-read", workertab: "w" });
         expect(get).not.toHaveBeenCalled();
+    });
+
+    it("reads the history of each project it has read again", async () => {
+        history.mockResolvedValue({ pairs: [info("u1")] });
+        await loadPairHistory("/repo/events");
+        history.mockClear();
+        history.mockResolvedValue({ pairs: [info("u1"), info("u2")] });
+        list.mockResolvedValue({ pairs: [] });
+        await fire({ pairid: "u2", workertab: "w" });
+        await vi.waitFor(() =>
+            expect(globalStore.get(pairHistoryAtom("/repo/events"))?.map((p) => p.id)).toEqual(["u1", "u2"])
+        );
+        expect(history).toHaveBeenCalledWith({}, { project: "/repo/events" });
     });
 });
 

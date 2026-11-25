@@ -1,9 +1,10 @@
-// library-tabs: the Library surface (docs/superpowers/specs/2026-11-19-library-surface-design.md). What is over lives here,
-// off the Agent tree: Conversation History, the Canvas gallery and every council, as tabs of one surface (the fourth, Boards,
-// is walked by boards-library; here only its tab key and button are). The steps
-// walk the rail and the chord into it, the list cursor and the tab keys, the gallery and its viewer, a session opened from
-// outside Library (full width, Back to where it came from, Escape the same), and the councils: a closed one opens inside
-// Library on Library's own selection (Agent's stays put), a live one opened by address lands on Agent.
+// library-tabs: the Library surface (docs/superpowers/specs/2026-11-19-library-surface-design.md, and the three-tab change of
+// docs/superpowers/specs/2026-11-25-ended-pairs-readable-design.md). What is over lives here, off the Agent tree:
+// Conversation History (with its councils and pairs) and the Canvas gallery, as tabs of one surface (the third, Boards, is
+// walked by boards-library; here only its tab key and button are). The steps walk the rail and the chord into it, the list
+// cursor and the tab keys 1-3, the gallery and its viewer, a session opened from outside Library (full width, Back to where it
+// came from, Escape the same), and the councils: a closed one opened from outside reads at Conversations' full width on
+// Library's own selection (Agent's stays put), Back and Escape return to the list, a live one opened by address lands on Agent.
 //
 // Fixtures: three ended sessions answered in-page (the getsessionsactivity mock agent-history uses, with a transcript each
 // on disk), a temp project holding two canvases (lt-alpha has two boards), and the council fixtures (council/fixtures.mjs):
@@ -11,8 +12,8 @@
 // two that end while Library shows one of them. Nothing is written into ~/.claude/projects; teardown puts everything back.
 // kit is scenarios.mjs's LIBRARY_KIT.
 //
-// Also exported: openLibraryTab, which the scenarios that used to click the History, Canvas gallery or Councils row of the
-// Agent tree call instead (the tab is module-level state, so it opens a tab explicitly rather than trusting the last one).
+// Also exported: openLibraryTab, which the scenarios that used to click the History or Canvas gallery row of the Agent tree call
+// instead (the tab is module-level state, so it opens a tab explicitly rather than trusting the last one).
 
 import { mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -30,7 +31,7 @@ import {
 
 const nap = (ms) => new Promise((r) => setTimeout(r, ms));
 
-const LIBRARY_TAB_NAMES = ["conversations", "canvases", "councils", "boards"];
+const LIBRARY_TAB_NAMES = ["conversations", "canvases", "boards"];
 
 /** Opens Library on `tab` (Conversations by default) from wherever the page is, by the rail and then the tab's own button,
  *  and waits for the tab's body. True when the tab is the one selected. */
@@ -257,12 +258,12 @@ export default function (kit) {
                 }))()`);
                 await shot(h, "1-rail");
                 rec(
-                    "1. the rail's Library opens on Conversations: the tab strip reads Conversations, Canvases, Councils, Boards, and Conversation History lists the three seeded sessions",
+                    "1. the rail's Library opens on Conversations: the tab strip reads Conversations, Canvases, Boards, and Conversation History lists the three seeded sessions",
                     (await surface(h)) === "Library" &&
                         listed &&
                         first.active === "conversations" &&
                         first.selected === "true" &&
-                        JSON.stringify(first.tabs) === JSON.stringify(["conversations", "canvases", "councils", "boards"]) &&
+                        JSON.stringify(first.tabs) === JSON.stringify(["conversations", "canvases", "boards"]) &&
                         first.history &&
                         first.cards === 3,
                     JSON.stringify(first)
@@ -294,22 +295,23 @@ export default function (kit) {
                     JSON.stringify({ viaChord, surface: await surface(h), tab: await active(h) })
                 );
 
-                // 4. the keys 1 2 3 4 switch the tabs
+                // 4. the keys 1 2 3 switch the tabs, and there is no fourth: 4 leaves the tab as it was
                 const seen = [];
                 for (const [key, want] of [
                     ["2", "canvases"],
-                    ["4", "boards"],
-                    ["3", "councils"],
+                    ["3", "boards"],
                     ["1", "conversations"],
+                    ["4", "conversations"],
                 ]) {
                     await press(h, key);
                     seen.push(`${key}:${await active(h)}:${want}`);
                 }
                 await shot(h, "4-tab-keys");
                 rec(
-                    "4. the keys 1, 2, 3 and 4 show Conversations, Canvases, Councils and Boards in turn (2, 4, 3, 1 walked here), and the strip marks the one shown",
+                    "4. the keys 1, 2 and 3 show Conversations, Canvases and Boards in turn (2, 3, 1 walked here), 4 does nothing, and the strip marks the one shown",
                     seen.every((s) => s.split(":")[1] === s.split(":")[2]) &&
-                        (await h.ev(`document.querySelector('[data-library-tab="conversations"]')?.getAttribute("aria-selected")`)) === "true",
+                        (await h.ev(`document.querySelector('[data-library-tab="conversations"]')?.getAttribute("aria-selected")`)) === "true" &&
+                        (await h.ev(`document.querySelectorAll("[data-library-tab]").length`)) === 3,
                     JSON.stringify(seen)
                 );
 
@@ -364,15 +366,42 @@ export default function (kit) {
                     JSON.stringify({ viewer, tabs0, tabs1, tabs2, stayed, grid })
                 );
 
-                // 8. the Councils tab shows the list, with the closed council in it
-                await press(h, "3");
-                const row = `[data-council-history-row="${CLOSED}"]`;
-                const councils = await until(h, `document.querySelector(${JSON.stringify(row)}) != null`, 10_000);
-                await shot(h, "8-councils");
+                // 8. a closed council opened from the Cockpit (the route Jarvis, a notification and `wsh ui` take) reads at
+                // Conversations' full width under Back, with no list beside it, and Agent's own selection never moves
+                await h.goto("cockpit");
+                await page(
+                    h,
+                    `globalStore.set(S.councilSelAtom, null);
+                    globalStore.set(L.libraryCouncilSelAtom, null);
+                    return true;`
+                );
+                const agentBefore = await agentState(h);
+                await page(h, `L.showLibraryCouncil(model, ${JSON.stringify(CLOSED)}, "summary"); return true;`);
+                const inside = await until(
+                    h,
+                    `document.querySelector("[data-library] [data-library-council-back]") != null && (document.querySelector("[data-library] [data-council-summary]") != null || document.querySelector("[data-library] [data-council-discussion]") != null)`,
+                    10_000
+                );
+                const afterOpen = { lib: await libraryState(h), agent: await agentState(h), surface: await surface(h) };
+                const width8 = await h.ev(`(() => {
+                    const lib = document.querySelector("[data-library]")?.getBoundingClientRect().width ?? 0;
+                    const back = document.querySelector("[data-library-council-back]")?.parentElement?.getBoundingClientRect().width ?? 0;
+                    return { lib: Math.round(lib), back: Math.round(back), list: document.querySelector("[data-agent-history]") != null };
+                })()`);
+                await shot(h, "8-council-full-width");
                 rec(
-                    "8. the Councils tab lists every council, the done one three days old among them",
-                    councils && (await active(h)) === "councils",
-                    JSON.stringify({ councils, tab: await active(h) })
+                    "8. a closed council opened from the Cockpit reads at Conversations' full width under a Back row, with no list beside it and no Councils tab, and Agent's council selection, view and centre do not move",
+                    inside &&
+                        afterOpen.surface === "Library" &&
+                        afterOpen.lib.tab === "conversations" &&
+                        afterOpen.lib.conv === "council" &&
+                        afterOpen.lib.council === CLOSED &&
+                        afterOpen.lib.councilView === "summary" &&
+                        width8.back > 0 &&
+                        width8.back >= width8.lib * 0.95 &&
+                        !width8.list &&
+                        JSON.stringify(afterOpen.agent) === JSON.stringify(agentBefore),
+                    JSON.stringify({ inside, afterOpen, ...width8, agentBefore })
                 );
 
                 // 9. a session opened from Usage reads full width (no list beside it), and Back returns to Usage
@@ -410,41 +439,50 @@ export default function (kit) {
                     JSON.stringify({ open10, gone10, surface: await surface(h), ...state10 })
                 );
 
-                // 11. a closed council opens inside Library, under Back to the list, and Agent's own selection never moves
-                await page(
-                    h,
-                    `globalStore.set(S.councilSelAtom, null);
-                    globalStore.set(L.libraryCouncilSelAtom, null);
-                    return true;`
-                );
-                const agentBefore = await agentState(h);
-                await openLibraryTab(h, "councils");
-                await until(h, `document.querySelector(${JSON.stringify(row)}) != null`, 10_000);
-                await h.ev(`document.querySelector(${JSON.stringify(row)})?.click()`);
-                const inside = await until(
-                    h,
-                    `document.querySelector("[data-library] [data-library-council-back]") != null && (document.querySelector("[data-library] [data-council-summary]") != null || document.querySelector("[data-library] [data-council-discussion]") != null)`,
-                    10_000
-                );
-                const afterOpen = { lib: await libraryState(h), agent: await agentState(h), surface: await surface(h) };
+                // 11. Back, and Escape, leave a council opened from the Cockpit for the Cockpit, and the Conversations list shows
+                // again when Library is next opened; Agent's own selection never moves
+                const openCouncil11 = async () => {
+                    await h.goto("cockpit");
+                    await page(h, `L.showLibraryCouncil(model, ${JSON.stringify(CLOSED)}, "summary"); return true;`);
+                    return until(h, `document.querySelector("[data-library] [data-library-council-back]") != null`, 10_000);
+                };
+                const open11 = await openCouncil11();
                 await shot(h, "11-council");
                 await h.ev(`document.querySelector("[data-library-council-back]")?.click()`);
-                const listAgain = await until(h, `document.querySelector(${JSON.stringify(row)}) != null && document.querySelector("[data-library-council-back]") == null`, 5000);
-                const afterBack = { lib: await libraryState(h), agent: await agentState(h) };
+                const leftByBack = await until(h, `!document.querySelector("[data-library]")`, 5000);
+                const byBack = { surface: await surface(h), lib: await libraryState(h), agent: await agentState(h) };
+                const open11b = await openCouncil11();
+                await press(h, "Escape");
+                const leftByEsc = await until(h, `!document.querySelector("[data-library]")`, 5000);
+                const byEsc = { surface: await surface(h), lib: await libraryState(h), agent: await agentState(h) };
+                await h.goto("library");
+                const listAgain = await until(
+                    h,
+                    `document.querySelector("[data-agent-history]") != null && document.querySelector("[data-library-council-back]") == null`,
+                    8000
+                );
                 rec(
-                    "11. the done council three days old opens inside Library under Back, Back returns to the Councils list, and Agent's council selection, view and centre are the same throughout",
-                    inside &&
-                        afterOpen.surface === "Library" &&
-                        afterOpen.lib.council === CLOSED &&
-                        JSON.stringify(afterOpen.agent) === JSON.stringify(agentBefore) &&
+                    "11. Back and Escape leave the council opened from the Cockpit for the Cockpit, Conversations' list shows again when Library is next opened, and Agent's council selection, view and centre are the same throughout",
+                    open11 &&
+                        open11b &&
+                        leftByBack &&
+                        leftByEsc &&
                         listAgain &&
-                        afterBack.lib.council === null &&
-                        JSON.stringify(afterBack.agent) === JSON.stringify(agentBefore),
-                    JSON.stringify({ agentBefore, inside, afterOpen, listAgain, afterBack })
+                        [byBack, byEsc].every(
+                            (s) =>
+                                s.surface === "Cockpit" &&
+                                s.lib.tab === "conversations" &&
+                                s.lib.conv === "list" &&
+                                s.lib.council === null &&
+                                JSON.stringify(s.agent) === JSON.stringify(agentBefore)
+                        ),
+                    JSON.stringify({ agentBefore, open11, byBack, open11b, byEsc, listAgain })
                 );
 
-                // 12. its views switch inside Library, by click and by r c m, on Library's own view atom
-                await h.ev(`document.querySelector(${JSON.stringify(row)})?.click()`);
+                // 12. its views switch inside Library, by click and by r c m, on Library's own view atom; opened with Library
+                // already showing there is no surface to go back to, so Escape returns to the Conversations list
+                await h.goto("library");
+                await page(h, `L.showLibraryCouncil(model, ${JSON.stringify(CLOSED)}, "summary"); return true;`);
                 await until(h, `document.querySelector("[data-library] [data-library-council-back]") != null`, 10_000);
                 const root = (view) => `document.querySelector("[data-library] [data-council-${view}]") != null`;
                 const viewNow = async () => (await libraryState(h)).councilView;
@@ -471,7 +509,19 @@ export default function (kit) {
                         (await surface(h)) === "Library",
                     JSON.stringify({ byClickMap, byClickSummary, byKeyC, byKeyM, byKeyR, agent12, agentBefore })
                 );
-                await h.ev(`document.querySelector("[data-library-council-back]")?.click()`);
+                // Escape with no thread open is Library's Back: the list again, and the person stays on Library
+                await press(h, "Escape");
+                const back12 = await until(
+                    h,
+                    `document.querySelector("[data-library-council-back]") == null && document.querySelector("[data-agent-history]") != null`,
+                    5000
+                );
+                const state12 = await libraryState(h);
+                rec(
+                    "12b. Escape in a council opened while Library shows returns to the Conversations list and stays on Library",
+                    back12 && (await surface(h)) === "Library" && state12.conv === "list" && state12.council === null,
+                    JSON.stringify({ back12, surface: await surface(h), ...state12 })
+                );
 
                 // 13. a council that ends while Library shows it counts as seen: no toast and no unread dot, where one that ends
                 // off screen gets its dot. Both start running, so the page's list has each as running before it ends
@@ -557,6 +607,8 @@ export default function (kit) {
                     `globalStore.set(L.libraryTabAtom, "conversations");
                     globalStore.set(L.libraryConvViewAtom, "list");
                     globalStore.set(L.libraryCouncilSelAtom, null);
+                    globalStore.set(L.libraryPairSelAtom, null);
+                    globalStore.set(L.libraryConvKindsAtom, { judge: false, council: false });
                     globalStore.set(model.sessionsSelAtom, "all");
                     return true;`
                 )

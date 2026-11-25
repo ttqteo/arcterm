@@ -88,7 +88,11 @@ export function useChipAnswer(pairId: string | null): {
     return { sending, answer };
 }
 
-export function RailDecidedPane({ view }: { view: PairView | null }) {
+// readOnly is Library's read view (pairreadpane.tsx), which reads like `wsh read`'s agentpair.Document: Agreed first, then
+// Your answers (the asks the person answered; one nobody answered is left out, as Document leaves it out), then Still
+// open. Nothing waits on anyone there, and Agreed's links scroll the thread beside it instead of opening the Agent
+// surface's
+export function RailDecidedPane({ view, readOnly = false }: { view: PairView | null; readOnly?: boolean }) {
     const { sending, answer } = useChipAnswer(view?.id ?? null);
     if (view == null) {
         return (
@@ -98,155 +102,162 @@ export function RailDecidedPane({ view }: { view: PairView | null }) {
         );
     }
     // a nil list comes over the wire as null
-    const asks = view.decided?.asks ?? [];
+    const allAsks = view.decided?.asks ?? [];
+    const asks = readOnly ? allAsks.filter((item) => item.answer !== "") : allAsks;
     const agreed = view.decided?.agreed ?? [];
     const open = view.decided?.open ?? [];
     const judges = (view.judges ?? []).length;
 
     // the agreed item's link: the conversation, scrolled to the message where it was settled (the pane scrolls and clears)
     const goTo = (msgid: string) => {
-        showPair(view.id);
+        if (!readOnly) {
+            showPair(view.id);
+        }
         globalStore.set(pairScrollToAtom, msgid);
     };
+
+    const asksSection = (
+        <Section key="asks" id="asks" label={readOnly ? "Your answers" : "Waits on you"}>
+            <RevealList
+                tag="div"
+                empty={readOnly ? "Nothing answered" : "Nothing waits on you"}
+                rows={asks.map((item) => ({
+                    key: `a${item.num}`,
+                    node: (
+                        <div
+                            data-decided-item={item.num}
+                            data-decided-answered={item.answer !== "" ? "" : undefined}
+                            className="flex flex-col gap-[7px] rounded-[10px] border border-edge-strong bg-surface-raised p-[10px]"
+                        >
+                            <div className="break-words text-[13px] leading-[1.45] text-ink-hi">{item.text}</div>
+                            {item.note !== "" ? (
+                                <div className="break-words text-[11.5px] leading-[1.4] text-muted">{item.note}</div>
+                            ) : null}
+                            {item.answer !== "" ? (
+                                // as tall as the chips row it replaces, so answering never resizes the card
+                                <div
+                                    data-decided-answer
+                                    className="flex min-h-[26px] items-center break-words text-[12px] text-secondary"
+                                >
+                                    <span>
+                                        <span className="text-muted">You answered </span>
+                                        {item.answer}
+                                    </span>
+                                </div>
+                            ) : readOnly ? null : (
+                                <div className="flex flex-wrap gap-[6px]">
+                                    {(item.chips ?? []).map((chip) => (
+                                        <button
+                                            key={chip}
+                                            type="button"
+                                            title={chip}
+                                            data-decided-chip={chip}
+                                            disabled={sending === item.num}
+                                            onClick={() => answer(item, chip)}
+                                            className={cn(CHIP, "border-edge-strong text-primary")}
+                                        >
+                                            {chip}
+                                        </button>
+                                    ))}
+                                    <button
+                                        type="button"
+                                        data-decided-other
+                                        title="Open the conversation to type an answer"
+                                        onClick={() => showPair(view.id)}
+                                        className={cn(CHIP, "border-edge-mid text-secondary")}
+                                    >
+                                        other…
+                                    </button>
+                                </div>
+                            )}
+                        </div>
+                    ),
+                }))}
+            />
+        </Section>
+    );
+    const agreedSection = (
+        <Section key="agreed" id="agreed" label="Agreed">
+            <RevealList
+                tag="ol"
+                empty="Nothing agreed yet"
+                rows={agreed.map((item) => {
+                    const at = linkedMessage(view.messages, item);
+                    return {
+                        key: `d${item.num}`,
+                        node: (
+                            <div
+                                data-decided-item={item.num}
+                                className="grid grid-cols-[18px_minmax(0,1fr)] gap-x-[4px]"
+                            >
+                                <span className="pt-px text-[11.5px] tabular-nums text-muted">{item.num}</span>
+                                <div className="flex min-w-0 flex-col gap-[2px]">
+                                    <div className="break-words text-[13px] leading-[1.45] text-ink-hi">
+                                        {item.text}
+                                        {at != null ? (
+                                            <>
+                                                {" "}
+                                                <button
+                                                    type="button"
+                                                    data-decided-link={at.id}
+                                                    title="Show the message where this was settled"
+                                                    aria-label={`Show the message at ${clockTime(at.ts)} where this was settled`}
+                                                    onClick={() => goTo(at.id)}
+                                                    className="cursor-pointer rounded-[3px] border-0 bg-transparent p-0 text-[11.5px] tabular-nums text-accent outline-none hover:underline focus-visible:ring-2 focus-visible:ring-accent"
+                                                >
+                                                    {clockTime(at.ts)}
+                                                </button>
+                                            </>
+                                        ) : null}
+                                    </div>
+                                    {item.note !== "" ? (
+                                        <div className="break-words text-[11.5px] leading-[1.4] text-muted">
+                                            {item.note}
+                                        </div>
+                                    ) : null}
+                                </div>
+                            </div>
+                        ),
+                    };
+                })}
+            />
+        </Section>
+    );
+    const openSection = (
+        <Section key="open" id="open" label="Still open">
+            <RevealList
+                tag="div"
+                empty="Nothing still open"
+                rows={open.map((item, i) => {
+                    const why = openReason(item, judges);
+                    return {
+                        // a judge's new point has no number of its own (0), so its position keys it
+                        key: item.num > 0 ? `o${item.num}` : `new${i}`,
+                        node: (
+                            <div
+                                data-decided-item={item.num > 0 ? item.num : "new"}
+                                className="flex flex-col gap-[2px]"
+                            >
+                                <div className="break-words text-[13px] leading-[1.45] text-secondary">{item.text}</div>
+                                {why !== "" ? (
+                                    <div data-decided-reason className="text-[11.5px] leading-[1.4] text-muted">
+                                        {why}
+                                    </div>
+                                ) : null}
+                            </div>
+                        ),
+                    };
+                })}
+            />
+        </Section>
+    );
 
     return (
         <div
             data-rail-decided={view.id}
             className="flex min-h-0 flex-1 flex-col gap-[18px] overflow-y-auto px-[12px] pb-[40px] pt-[12px] [scrollbar-gutter:stable]"
         >
-            <Section id="asks" label="Waits on you">
-                <RevealList
-                    tag="div"
-                    empty="Nothing waits on you"
-                    rows={asks.map((item) => ({
-                        key: `a${item.num}`,
-                        node: (
-                            <div
-                                data-decided-item={item.num}
-                                data-decided-answered={item.answer !== "" ? "" : undefined}
-                                className="flex flex-col gap-[7px] rounded-[10px] border border-edge-strong bg-surface-raised p-[10px]"
-                            >
-                                <div className="break-words text-[13px] leading-[1.45] text-ink-hi">{item.text}</div>
-                                {item.note !== "" ? (
-                                    <div className="break-words text-[11.5px] leading-[1.4] text-muted">
-                                        {item.note}
-                                    </div>
-                                ) : null}
-                                {item.answer !== "" ? (
-                                    // as tall as the chips row it replaces, so answering never resizes the card
-                                    <div
-                                        data-decided-answer
-                                        className="flex min-h-[26px] items-center break-words text-[12px] text-secondary"
-                                    >
-                                        <span>
-                                            <span className="text-muted">You answered </span>
-                                            {item.answer}
-                                        </span>
-                                    </div>
-                                ) : (
-                                    <div className="flex flex-wrap gap-[6px]">
-                                        {(item.chips ?? []).map((chip) => (
-                                            <button
-                                                key={chip}
-                                                type="button"
-                                                title={chip}
-                                                data-decided-chip={chip}
-                                                disabled={sending === item.num}
-                                                onClick={() => answer(item, chip)}
-                                                className={cn(CHIP, "border-edge-strong text-primary")}
-                                            >
-                                                {chip}
-                                            </button>
-                                        ))}
-                                        <button
-                                            type="button"
-                                            data-decided-other
-                                            title="Open the conversation to type an answer"
-                                            onClick={() => showPair(view.id)}
-                                            className={cn(CHIP, "border-edge-mid text-secondary")}
-                                        >
-                                            other…
-                                        </button>
-                                    </div>
-                                )}
-                            </div>
-                        ),
-                    }))}
-                />
-            </Section>
-            <Section id="agreed" label="Agreed">
-                <RevealList
-                    tag="ol"
-                    empty="Nothing agreed yet"
-                    rows={agreed.map((item) => {
-                        const at = linkedMessage(view.messages, item);
-                        return {
-                            key: `d${item.num}`,
-                            node: (
-                                <div
-                                    data-decided-item={item.num}
-                                    className="grid grid-cols-[18px_minmax(0,1fr)] gap-x-[4px]"
-                                >
-                                    <span className="pt-px text-[11.5px] tabular-nums text-muted">{item.num}</span>
-                                    <div className="flex min-w-0 flex-col gap-[2px]">
-                                        <div className="break-words text-[13px] leading-[1.45] text-ink-hi">
-                                            {item.text}
-                                            {at != null ? (
-                                                <>
-                                                    {" "}
-                                                    <button
-                                                        type="button"
-                                                        data-decided-link={at.id}
-                                                        title="Show the message where this was settled"
-                                                        aria-label={`Show the message at ${clockTime(at.ts)} where this was settled`}
-                                                        onClick={() => goTo(at.id)}
-                                                        className="cursor-pointer rounded-[3px] border-0 bg-transparent p-0 text-[11.5px] tabular-nums text-accent outline-none hover:underline focus-visible:ring-2 focus-visible:ring-accent"
-                                                    >
-                                                        {clockTime(at.ts)}
-                                                    </button>
-                                                </>
-                                            ) : null}
-                                        </div>
-                                        {item.note !== "" ? (
-                                            <div className="break-words text-[11.5px] leading-[1.4] text-muted">
-                                                {item.note}
-                                            </div>
-                                        ) : null}
-                                    </div>
-                                </div>
-                            ),
-                        };
-                    })}
-                />
-            </Section>
-            <Section id="open" label="Still open">
-                <RevealList
-                    tag="div"
-                    empty="Nothing still open"
-                    rows={open.map((item, i) => {
-                        const why = openReason(item, judges);
-                        return {
-                            // a judge's new point has no number of its own (0), so its position keys it
-                            key: item.num > 0 ? `o${item.num}` : `new${i}`,
-                            node: (
-                                <div
-                                    data-decided-item={item.num > 0 ? item.num : "new"}
-                                    className="flex flex-col gap-[2px]"
-                                >
-                                    <div className="break-words text-[13px] leading-[1.45] text-secondary">
-                                        {item.text}
-                                    </div>
-                                    {why !== "" ? (
-                                        <div data-decided-reason className="text-[11.5px] leading-[1.4] text-muted">
-                                            {why}
-                                        </div>
-                                    ) : null}
-                                </div>
-                            ),
-                        };
-                    })}
-                />
-            </Section>
+            {readOnly ? [agreedSection, asksSection, openSection] : [asksSection, agreedSection, openSection]}
         </div>
     );
 }

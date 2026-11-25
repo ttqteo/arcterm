@@ -5,12 +5,12 @@
 // dialog's Council row and the palette's New council… row. The fixture project holds the round2, awaiting, done and notrun
 // councils and a terminal; a second registered project holds a terminal and no council, and so no council rows. Nothing
 // here starts a council or calls a model: New council only opens Setup, and Remove from queue (a queued council, step 10)
-// and Pin / Unpin (the Report's tab bar and a Councils row, step 11) have their stop and pin commands replaced
-// in the page. Steps 11d to 11f (docs/superpowers/plans/2026-11-03-council-ux.md, Task 6) check the tree rule with two
+// and Pin / Unpin (the Report's tab bar and a council's row in Conversations under the Council chip, step 11) have their stop and
+// pin commands replaced in the page. Steps 11d to 11f (docs/superpowers/plans/2026-11-03-council-ux.md, Task 6) check the tree rule with two
 // councils placed three days back and marked opened: the pinned one drawn at its folder's top, the unpinned one off the
 // tree, and Unpin from the Report taking the pinned one off too. Step 11g
 // (docs/superpowers/plans/2026-11-03-council-ux-fix-1.md) does the same for a pinned, stopped council with no summary,
-// whose ended time is its `updated`: Unpin from its Councils row takes it off the tree. Step 11b checks the tree
+// whose ended time is its `updated`: Unpin from its row under the Council chip takes it off the tree. Step 11b checks the tree
 // offers no Pin and that a pinned council's menu offers Unpin, 11h that Close takes an ended council off the tree, and
 // 11i that Resume (on a council the tree no
 // longer lists) puts it back in the tree and opens its Discussion with the box focused. A project's councils carry no
@@ -21,13 +21,13 @@
 //
 // Steps 1 to 11 expect the four councils and no agent rows. Steps 12 on (docs/superpowers/plans/2026-10-29-council-live-agents.md,
 // Task 10) put the room's two live agents in the tree (the fixture roster, writeRoomRoster, which reloads the page), seat
-// them in the `room` councils and a queued one behind them, check that j and k skip the council rows (step 14b), and
-// drive the tree's multi-select with real clicks: Ctrl+click,
+// them in the `room` councils and a queued one behind them, check that ArrowDown and ArrowUp skip the council rows
+// (step 14b), and drive the tree's multi-select with real clicks: Ctrl+click,
 // Shift+click, a plain click, the right-click menu and its Discuss together, which opens Setup with both agents seated.
 // The second agent works in a second registered project (ROOM_AGENTS), so Discuss together can find its path.
 
+import { agentPage } from "../agent-page-fixtures.mjs";
 import { waitFor } from "../attach.mjs";
-import { openLibraryTab } from "../scenarios-library.mjs";
 import {
     announceCouncil,
     arrangeCouncilProject,
@@ -223,30 +223,47 @@ async function pressEscape(h) {
     }
 }
 
-// Councils (every council, the ones the tree no longer lists too) is Library's tab, opened from the rail. The rail clears
-// Library's jump trail, so Escape there would go home to the Cockpit: the steps return to the Agent tree by its own rail item
-const openCouncilsList = (h) => openLibraryTab(h, "councils");
-const leaveCouncilsList = (h) => h.goto("agent");
+// Councils (every council, the ones the tree no longer lists too) is Library's Conversations with the Council chip on, as `g o`
+// opens it (showLibraryCouncils), reached from the rail. The rail clears Library's jump trail, so Escape there would go home to
+// the Cockpit: the steps return to the Agent tree by its own rail item, with the chip put back off first (it is Library's own
+// state, which outlives the surface)
+const COUNCIL_CHIP = '[data-history-chip="council"]';
+async function openCouncilsList(h) {
+    await h.goto("library");
+    await agentPage(
+        h,
+        `const L = await mod("app/view/library/librarystore.ts");
+        L.showLibraryCouncils(agentsModel());
+        return true;`
+    );
+    return waitFor(
+        (e) => h.ev(e),
+        `document.querySelector(${JSON.stringify(COUNCIL_CHIP)})?.getAttribute("aria-pressed") === "true" && !!document.querySelector("[data-history-list]")`,
+        UI_WAIT_MS
+    );
+}
+async function leaveCouncilsList(h) {
+    await agentPage(
+        h,
+        `const L = await mod("app/view/library/librarystore.ts");
+        globalStore.set(L.libraryConvKindsAtom, { judge: false, council: false });
+        return true;`
+    );
+    await h.goto("agent");
+}
 
-// a bare letter through the real input pipeline (j, k), after taking focus off whatever the last click left it on: the
-// agent keys stand down in a text field and the terminal
-async function pressLetter(h, letter) {
-    const upper = letter.toUpperCase();
-    await h.ev("document.activeElement instanceof HTMLElement && document.activeElement.blur()");
+// ArrowDown or ArrowUp through the real input pipeline. They step agents only while focus is inside the Agent tree (and
+// the centre is at rest), so the caller puts the focus there first: this takes none
+const ARROW_CODES = { ArrowDown: 40, ArrowUp: 38 };
+async function pressArrow(h, key) {
     for (const type of ["keyDown", "keyUp"]) {
-        await h.cdp("Input.dispatchKeyEvent", {
-            type,
-            key: letter,
-            code: `Key${upper}`,
-            windowsVirtualKeyCode: upper.charCodeAt(0),
-            ...(type === "keyDown" ? { text: letter } : {}),
-        });
+        await h.cdp("Input.dispatchKeyEvent", { type, key, code: key, windowsVirtualKeyCode: ARROW_CODES[key] });
     }
 }
 
 // the agent, terminal and council rows of the Active tree in the order drawn, each with its id and, for the first two,
-// whether it reads as selected: the focused row has no data attribute, only the selected fill. j and k step through the
-// first two (treeNavIds); a council row is no focus target.
+// whether it reads as selected: the focused row has no data attribute, only the selected fill. The arrows step through
+// the first two (treeNavIds); a council row is no focus target.
 const NAV_ROWS = `(() => {
     const tree = document.querySelector("[data-agent-active-rows]");
     const rows = tree?.querySelectorAll("[data-agent-row], [data-agent-terminal-row], [data-council-row]") ?? [];
@@ -660,7 +677,7 @@ export const councilTree = {
             JSON.stringify({ stays, pinnedBare, runningBare, noPinInTree, pinnedItems, unpins, closeOnUnpinned })
         );
 
-        // 11c. Councils (Library's tab, opened from the rail) marks the pinned council's row with a pin, and the row's hover
+        // 11c. Councils (Library's Conversations under the Council chip, opened from the rail) marks the pinned council's row with a pin, and the row's hover
         // button reads Unpin there (Pin on an unpinned one) and asks wavesrv to unpin it; once saved, the mark goes
         writeCouncil(ctx, "done", { edit: (c) => (c.pinned = Date.now()) });
         await announceCouncil(h, ctx, doneId);
@@ -1031,33 +1048,84 @@ export const councilTree = {
             JSON.stringify({ waiting, behindRow })
         );
 
-        // 14b. j and k step through the agent and terminal rows and skip the council rows between them (treeNavIds, which
-        // the unit tests cover alone). Witness is the one agent in its folder and the councils are drawn right under it,
-        // so j lands on the next row the tree draws that is not a council, whichever it is, and k comes back. The
-        // expected id is read off the rows the page draws, in document order.
-        await mouseOn(h, rowOf(witness));
+        // 14b. ArrowDown and ArrowUp step through the agent and terminal rows and skip the council rows between them.
+        // The skip is treeNavIds (agentsidebarmodel.ts): it lists the ids of agent, terminal, service and split-cell rows
+        // and has no case for a council row, so activeNavOrder (activenav.ts), the list the arrows' `step` (bindings.ts,
+        // agent:next-down and agent:prev-up) walks with moveCursor, never holds one. The arrows step only with the centre
+        // at rest and focus inside [data-agent-tree] (agentNav, inAgentTree in bindings.ts). An agent row takes no focus of
+        // its own, so after the click selects Witness the focus goes to its project's folder row, the tree's tab stop (a
+        // focus() call selects nothing). j and k no longer step agents (8c547fd79), so they are not pressed.
+        // Witness is the one agent in its folder and the councils are drawn right under it, so ArrowDown lands on the next
+        // row the tree draws that is not a council, whichever it is, and ArrowUp comes back. The expected id is read off the
+        // rows the page draws, in document order.
+        const centerMode = () =>
+            agentPage(
+                h,
+                `const C = await mod("app/view/agents/agentcenter.ts");
+                return globalStore.get(C.centerModeAtom);`
+            );
+        const inTree = `!!document.activeElement?.closest("[data-agent-tree]")`;
+        const focusTree = `(() => {
+            document.querySelector(${JSON.stringify(`[data-agent-tree] [data-project-folder="${ROOM_AGENTS[0].project}"]`)})?.focus();
+            return ${inTree};
+        })()`;
+        const centerBefore = await centerMode();
+        // the row's selection brings its terminal back from a council or an Overview (selectAgentRow); if the centre is
+        // still not at rest after it, leaveCenter (the app's own way back) puts it there
+        const clickedWitness = await mouseOn(h, rowOf(witness));
         const jkStart = await until(selectedNavId(witness));
+        let centerAtRest = (await centerMode()) === "terminal";
+        let leftCenter = false;
+        if (!centerAtRest) {
+            await agentPage(
+                h,
+                `const C = await mod("app/view/agents/agentcenter.ts");
+                C.leaveCenter();
+                return true;`
+            );
+            leftCenter = true;
+            centerAtRest = (await centerMode()) === "terminal";
+        }
         const navRows = await h.ev(NAV_ROWS);
         const witnessAt = navRows.findIndex((r) => r.id === witness);
         const councilNext = navRows[witnessAt + 1]?.kind === "council";
         const skipsTo = navRows.slice(witnessAt + 1).find((r) => r.kind !== "council");
-        await pressLetter(h, "j");
-        const jMoved = skipsTo != null && (await until(selectedNavId(skipsTo.id)));
+        const focusInTree = await h.ev(focusTree);
+        await pressArrow(h, "ArrowDown");
+        const downMoved = skipsTo != null && (await until(selectedNavId(skipsTo.id)));
         await h.shot("cdp-shots/council-tree-jk-skip.png");
-        const afterJ = (await h.ev(NAV_ROWS)).find((r) => r.selected)?.id ?? null;
-        await pressLetter(h, "k");
-        const kBack = await until(selectedNavId(witness));
+        const afterDown = (await h.ev(NAV_ROWS)).find((r) => r.selected)?.id ?? null;
+        // selecting a terminal row may move the focus into that terminal: say whether it did, and put it back in the tree
+        const focusKept = await h.ev(inTree);
+        const focusInTreeUp = await h.ev(focusTree);
+        await pressArrow(h, "ArrowUp");
+        const upBack = await until(selectedNavId(witness));
         rec(
-            "14b. j from the agent whose next row is a council lands on the next agent or terminal row, skipping the councils, and k comes back to the agent",
-            jkStart && witnessAt >= 0 && councilNext && jMoved && kBack,
+            "14b. ArrowDown from the agent whose next row is a council lands on the next agent or terminal row, skipping the councils, and ArrowUp comes back to the agent",
+            clickedWitness &&
+                jkStart &&
+                centerAtRest &&
+                witnessAt >= 0 &&
+                councilNext &&
+                focusInTree &&
+                downMoved &&
+                focusInTreeUp &&
+                upBack,
             JSON.stringify({
+                clickedWitness,
                 jkStart,
+                centerBefore,
+                leftCenter,
+                centerAtRest,
                 order: navRows.map((r) => `${r.kind}:${r.id}`),
                 councilNext,
                 skipsTo,
-                afterJ,
-                jMoved,
-                kBack,
+                focusInTree,
+                afterDown,
+                downMoved,
+                focusKept,
+                focusInTreeUp,
+                upBack,
             })
         );
 

@@ -4,14 +4,14 @@
 // Tells you when a council ends, in the always-mounted shell since that can happen while any surface shows: a toast that
 // opens its Summary (when Settings → In-app toasts is on), and an unread dot on its row in the Agent tree
 // (councilUnreadAtom, whatever that setting says). Nothing for a council you are looking at, in Agent's centre column or
-// open in Library's Councils tab, nor for those already done when the list first loads. councilnotify.ts decides what is
+// open in Library's Conversations, nor for those already done when the list first loads. councilnotify.ts decides what is
 // said; the toast's open goes through openCouncil, which picks the host (Agent for a council the tree keeps).
 
 import { pushToast } from "@/app/cockpit/notificationstore";
 import { getSettingsKeyAtom } from "@/app/store/global";
 import { useAtom, useAtomValue } from "jotai";
 import { useEffect, useRef } from "react";
-import { libraryCouncilSelAtom, libraryTabAtom, openCouncil } from "../library/librarystore";
+import { libraryConvViewAtom, libraryCouncilSelAtom, libraryTabAtom, openCouncil } from "../library/librarystore";
 import { centerModeAtom } from "./agentcenter";
 import type { AgentsViewModel } from "./agents";
 import { endedNotice, markRead, markUnread, noticeRoute, viewingCouncil, type LibraryShown } from "./councilnotify";
@@ -24,12 +24,13 @@ export function CouncilNotifySync({ model }: { model: AgentsViewModel }): null {
     const view = useAtomValue(councilViewAtom);
     const selected = useAtomValue(councilSelAtom);
     const libraryTab = useAtomValue(libraryTabAtom);
+    const libraryConv = useAtomValue(libraryConvViewAtom);
     const librarySelected = useAtomValue(libraryCouncilSelAtom);
     const [unread, setUnread] = useAtom(councilUnreadAtom);
 
     // the shown view at the moment of a change, through a ref so the list effect below runs on the list alone
     const toastsOn = (useAtomValue(getSettingsKeyAtom("notify:toast")) as boolean | undefined) ?? true;
-    const library: LibraryShown = { tab: libraryTab, selected: librarySelected };
+    const library: LibraryShown = { tab: libraryTab, conv: libraryConv, selected: librarySelected };
     const shown = useRef({ surface, center, view, selected, library, toastsOn });
     shown.current = { surface, center, view, selected, library, toastsOn };
 
@@ -76,6 +77,6 @@ export function CouncilNotifySync({ model }: { model: AgentsViewModel }): null {
                 setUnread((set) => markRead(set, id));
             }
         }
-    }, [surface, center, view, selected, libraryTab, librarySelected, unread]);
+    }, [surface, center, view, selected, libraryTab, libraryConv, librarySelected, unread]);
     return null;
 }

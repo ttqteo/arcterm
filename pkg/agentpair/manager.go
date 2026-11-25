@@ -16,6 +16,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/wavetermdev/waveterm/pkg/agentmsg"
+	"github.com/wavetermdev/waveterm/pkg/agentobserve"
 	"github.com/wavetermdev/waveterm/pkg/wshrpc"
 )
 
@@ -44,6 +45,9 @@ type AgentFacts struct {
 	Cwd        string
 	Transcript string
 }
+
+// session is the agent's session id: its transcript's file name without the extension, "" when it has no transcript yet.
+func (f AgentFacts) session() string { return agentobserve.TranscriptSession(f.Transcript) }
 
 // Link is the manager's view of the live agents. It is an interface because the manager is tested without any: wavesrv
 // supplies one over the roster.
@@ -109,7 +113,10 @@ func (m *Manager) lock() {
 	m.loaded = true
 }
 
+// saveLocked stamps the pair's updated time and writes it. Every change saves through here, so the stamp is the last
+// save's; a failed save keeps the stamp in the index and the next save moves it on.
 func (m *Manager) saveLocked(p *Pair) error {
+	p.UpdatedTs = m.nowMs()
 	err := store{dir: m.Dir}.save(p)
 	if err != nil {
 		log.Printf("pairs: %v\n", err)
@@ -148,7 +155,10 @@ func (m *Manager) change(id string, fn func(p *Pair) bool) bool {
 	return true
 }
 
-func errNoPair(id string) error { return fmt.Errorf("no pair %q", id) }
+// ErrNoPair is what a pair that is not in the index (never made, or ended) answers with.
+var ErrNoPair = errors.New("no pair")
+
+func errNoPair(id string) error { return fmt.Errorf("%w %q", ErrNoPair, id) }
 
 // pairOf is the pair a tab is in, as its working agent (worker true) or as a judge that is not gone. The lock is held.
 func (m *Manager) pairOf(tab string) (p *Pair, worker bool) {
@@ -325,7 +335,7 @@ func (m *Manager) Start(ctx context.Context, d wshrpc.CommandPairStartData) (*ws
 		return nil, err
 	}
 	now := m.nowMs()
-	judge := Side{Tab: d.JudgeTab, Name: judgeFacts.Name, Harness: judgeFacts.Harness, Briefed: d.Briefed}
+	judge := Side{Tab: d.JudgeTab, Name: judgeFacts.Name, Harness: judgeFacts.Harness, Session: judgeFacts.session(), Briefed: d.Briefed}
 	var p *Pair
 	if existing == "" {
 		tokenCap := d.TokenCap
@@ -334,7 +344,7 @@ func (m *Manager) Start(ctx context.Context, d wshrpc.CommandPairStartData) (*ws
 		}
 		p = &Pair{
 			Id: uuid.NewString(), Project: workerFacts.Project, HoldHeavy: d.HoldHeavy, TokenCap: tokenCap, Note: d.Note,
-			Worker:    Side{Tab: d.WorkerTab, Name: workerFacts.Name, Harness: workerFacts.Harness},
+			Worker:    Side{Tab: d.WorkerTab, Name: workerFacts.Name, Harness: workerFacts.Harness, Session: workerFacts.session()},
 			Judges:    []Side{judge},
 			CreatedTs: now, CapFromTs: now, State: StateRelaying,
 			Messages: []Message{}, Pending: map[string][]string{}, Seen: map[string]int64{},
@@ -563,13 +573,55 @@ func (m *Manager) TurnEnded(ctx context.Context, tab string) {
 	m.lock()
 	p, _ := m.pairOf(tab)
 	var id string
+	var noSession bool
 	if p != nil {
 		id = p.Id
+		noSession = sideOf(p, tab).Session == ""
 	}
 	m.mu.Unlock()
-	if id != "" {
-		m.catchUp(ctx, id, []string{tab}, true)
+	if id == "" {
+		return
 	}
+	if noSession {
+		m.takeSession(ctx, id, tab)
+	}
+	m.catchUp(ctx, id, []string{tab}, true)
+}
+
+// sideOf is the member of the pair at tab: its working agent, or a judge that is not gone. It points into the pair, so
+// the lock must be held while it is read or written.
+func sideOf(p *Pair, tab string) *Side {
+	if p.Worker.Tab == tab {
+		return &p.Worker
+	}
+	for i := range p.Judges {
+		if p.Judges[i].Tab == tab && !p.Judges[i].Gone {
+			return &p.Judges[i]
+		}
+	}
+	return nil
+}
+
+// takeSession gives the side at tab the session id its agent has now, for a side that joined with none (an agent with no
+// transcript yet). A read that fails is logged and the next turn end asks again; a side that has an id is never read.
+func (m *Manager) takeSession(ctx context.Context, id, tab string) {
+	facts, err := m.Link.Agent(ctx, tab)
+	if err != nil {
+		log.Printf("pair %s: reading the session of %s: %v\n", id, tab, err)
+		return
+	}
+	session := facts.session()
+	if session == "" {
+		return
+	}
+	m.change(id, func(p *Pair) bool {
+		s := sideOf(p, tab)
+		if s == nil || s.Session != "" { // another turn end took it first
+			return false
+		}
+		s.Session = session
+		return true
+	})
 }
 
 // Load reads the pairs now and, for each member the roster knows, takes an answer it gave while wavesrv was down and
