@@ -31,7 +31,8 @@ vi.mock("./agentcenter", () => ({ showPair: mocks.showPair }));
 vi.mock("./agentcwdresolve", () => ({ resolveCwd: mocks.resolveCwd }));
 vi.mock("./railstore", async () => {
     const { atom } = await import("jotai");
-    return { railCwdsAtom: atom<Record<string, string>>({}) };
+    // railVisibleAtom: a judge paired in opens the worker's rail on Decided (agentrailstore.ts openRailDecided)
+    return { railCwdsAtom: atom<Record<string, string>>({}), railVisibleAtom: atom(false) };
 });
 
 import type { AgentsViewModel } from "./agents";
