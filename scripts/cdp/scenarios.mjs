@@ -30334,6 +30334,73 @@ const launcherImages = {
             await h.ev(setTaskExpr(""));
             await polishNap(200);
         }
+
+        // 9. a long text paste folds into a Pasted text chip under the box, as in Chat's; the box keeps what was typed,
+        // the chip opens the paste, and its × drops it
+        await h.ev(setTaskExpr("verify: read this log"));
+        await polishNap(200);
+        const longPaste = Array.from({ length: 20 }, (_, i) => `verify paste line ${i + 1}`).join("\n");
+        await h.ev(`(() => {
+            const box = document.querySelector('#launcher-task');
+            box?.focus();
+            const sel = window.getSelection();
+            sel?.selectAllChildren(box);
+            sel?.collapseToEnd();
+            const dt = new DataTransfer();
+            dt.setData('text/plain', ${JSON.stringify(longPaste)});
+            box?.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }));
+            return true;
+        })()`);
+        const folded = await polishWaitFor(h, `!!${LAUNCHER}?.querySelector('[data-launcher-pastes] [data-chat-paste-chip]')`, 3000);
+        await polishNap(300);
+        const pasteState = () =>
+            h.ev(`(async () => {
+                ${agentPageFixtures.PAGE_LIB}
+                const L = await mod("app/view/agents/launcherstore.ts");
+                const d = ${LAUNCHER};
+                return {
+                    chips: [...(d?.querySelectorAll('[data-launcher-pastes] [data-chat-paste-chip]') ?? [])].map(flat),
+                    boxText: flat(d?.querySelector('#launcher-task')),
+                    full: globalStore.get(L.launcherTaskAtom),
+                    panel: flat(document.querySelector('[data-chat-paste-panel]')),
+                };
+            })()`);
+        let p = await pasteState();
+        await h.shot("cdp-shots/launcher-images-7-paste-chip.png");
+        rec(
+            "9. a 20-line paste folds into one Pasted text chip; the box keeps only the typed text, the draft keeps the paste",
+            folded &&
+                p.chips.length === 1 &&
+                p.chips[0].includes("Pasted text") &&
+                p.chips[0].includes("20 lines") &&
+                p.boxText.includes("verify: read this log") &&
+                !p.boxText.includes("verify paste line") &&
+                p.full.includes("verify paste line 20"),
+            JSON.stringify(p)
+        );
+        await h.ev(`${LAUNCHER}?.querySelector('[data-launcher-pastes] [data-chat-paste-chip] button[title="Show the pasted text"]')?.click()`);
+        const panelOpen = await polishWaitFor(h, `!!document.querySelector('[data-chat-paste-panel]')`, 3000);
+        await polishNap(350);
+        p = await pasteState();
+        await h.shot("cdp-shots/launcher-images-8-paste-panel.png");
+        rec(
+            "9b. the chip opens the paste over the box, whole",
+            panelOpen && p.panel.includes("verify paste line 1") && p.panel.includes("verify paste line 20"),
+            JSON.stringify({ panelOpen, panel: p.panel.slice(0, 120) })
+        );
+        await h.ev(`document.querySelector('[data-chat-paste-panel]')?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))`);
+        await polishWaitFor(h, `!document.querySelector('[data-chat-paste-panel]')`, 2000);
+        const dialogStays = await h.ev(`!!${LAUNCHER}`);
+        await h.ev(`${LAUNCHER}?.querySelector('[data-launcher-pastes] button[title="Remove pasted text"]')?.click()`);
+        await polishNap(300);
+        p = await pasteState();
+        rec(
+            "9c. Esc closes the paste and keeps the dialog; the chip's × drops the paste and keeps the typed text",
+            dialogStays && p.chips.length === 0 && p.full === "verify: read this log",
+            JSON.stringify({ dialogStays, p })
+        );
+        await h.ev(setTaskExpr(""));
+        await polishNap(200);
         return steps;
     },
     async teardown(h, ctx) {

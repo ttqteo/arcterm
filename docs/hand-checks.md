@@ -23,6 +23,10 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
 
 ## 2026-11-25
 
+- [ ] (arcterm) **A pasted text chip goes to the new agent whole.** In New agent, type a line in Task and paste 20+ lines
+  (a Pasted text chip shows under the box), then Launch on Claude Code → the agent's first bubble shows your line and a
+  folded "Pasted" card holding all of it. Hold it instead (machine busy) → the held pane shows the paste written out
+  as text. Checked in the browser build only, launch not tried (branch `launcher-paste-chips`).
 - [ ] (arcterm) **Every port beside the server mark.** On an agent that left 3+ ports listening (e.g. `task dev`:
   vite, WebView2 CDP, wavesrv), its tree row shows every port after the green server glyph (`:5174 :9223 :58458
   :58459`), no `+N`; the agent's name truncates first, the ports stay whole. Also the project header row.

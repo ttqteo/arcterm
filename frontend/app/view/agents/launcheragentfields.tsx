@@ -12,7 +12,8 @@
 // The task field is the editor Chat's box draws its text in (chateditor.tsx), with the core they share (promptbox.ts): an
 // `@` lists the project's files and the agents, runs, councils, conversations and initiatives it can name, a `/` (for
 // claude) Claude Code's commands, and a file pasted, dropped or picked (the paperclip, or Ctrl+U / Cmd+U) is a chip in the
-// tray under the field, the same chips Chat's box shows (composerattachments.ts, kept under LAUNCHER_DRAFT).
+// tray under the field, the same chips Chat's box shows (composerattachments.ts, kept under LAUNCHER_DRAFT). A long
+// paste folds into a "Pasted text" chip under it, as in Chat's box (chatpastes.ts, chatpastechips.tsx).
 
 import { composerReveal } from "@/app/element/motiontokens";
 import { PopoverReveal } from "@/app/element/popoverreveal";
@@ -25,9 +26,11 @@ import { cn } from "@/util/util";
 import { useAtomValue } from "jotai";
 import { ChevronDown, ChevronRight, Flag, GitBranch, Paperclip, SquareTerminal, TriangleAlert, X } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
-import { useEffect, useState, type RefObject } from "react";
+import { useEffect, useRef, useState, type RefObject } from "react";
 import { AttachmentTray } from "./attachmenttray";
 import { ChatEditor, type EditorLike } from "./chateditor";
+import { PasteChips } from "./chatpastechips";
+import { joinPastes, splitPastes, unfoldPaste, withoutPaste, withPaste } from "./chatpastes";
 import { useComposerAttachments } from "./composerattachments";
 import {
     RUNTIME_FLAGS,
@@ -138,14 +141,19 @@ export function AgentFields({
     projectName,
     taskRef,
 }: AgentFieldsProps) {
-    const task = useAtomValue(launcherTaskAtom);
+    // a long paste folds out of the text into a chip over the box, as in Chat's (chatpastes.ts): the atom holds the whole
+    // draft, the editor its typed text, and the launch writes the pastes out (launchermodal.tsx)
+    const fullTask = useAtomValue(launcherTaskAtom);
+    const { body: task, pastes } = splitPastes(fullTask);
+    const setTask = (t: string) => globalStore.set(launcherTaskAtom, (cur) => joinPastes(t, splitPastes(cur).pastes));
+    const rowRef = useRef<HTMLDivElement>(null);
     // the chips are a draft under LAUNCHER_DRAFT: a close keeps them, and the launch reads them (launchermodal.tsx)
     const att = useComposerAttachments({ keep: true, draftKey: LAUNCHER_DRAFT });
     // the core Chat's box shares (promptbox.ts): `@` for files and the agents, runs, councils, conversations and
     // initiatives, `/` for Claude Code's commands, and the attachments' paste, drop and file dialog
     const box = usePromptBox({
         text: task,
-        setText: (t) => globalStore.set(launcherTaskAtom, t),
+        setText: setTask,
         name: "launcher",
         editorRef: taskRef,
         att,
@@ -203,6 +211,7 @@ export function AgentFields({
             {showTask ? (
                 // a drag of files over the row makes it the drop zone: its border says so
                 <div
+                    ref={rowRef}
                     data-launcher-task-row
                     data-launcher-dragging={box.dragging ? "" : undefined}
                     {...box.dropProps}
@@ -237,7 +246,7 @@ export function AgentFields({
                                 onChange={(t) => {
                                     if (t !== box.told.current) {
                                         box.told.current = t;
-                                        globalStore.set(launcherTaskAtom, t);
+                                        setTask(t);
                                     }
                                     const ed = taskRef.current;
                                     if (ed != null) {
@@ -245,6 +254,7 @@ export function AgentFields({
                                     }
                                 }}
                                 onPasteFiles={box.onPasteFiles}
+                                onLongPaste={(p) => globalStore.set(launcherTaskAtom, (cur) => withPaste(cur, p))}
                                 onKeyDown={(e) => {
                                     box.menuKeys(e);
                                     if (e.defaultPrevented || e.nativeEvent.isComposing) {
@@ -383,6 +393,19 @@ export function AgentFields({
                     {att.attachments.length > 0 ? (
                         <div className="pb-2 pr-2">
                             <AttachmentTray items={att.attachments} onRemove={att.remove} onRetry={att.retry} />
+                        </div>
+                    ) : null}
+                    {pastes.length > 0 ? (
+                        <div data-launcher-pastes className="pb-2 pr-2">
+                            <PasteChips
+                                pastes={pastes}
+                                frame={rowRef}
+                                onRemove={(i) => globalStore.set(launcherTaskAtom, (cur) => withoutPaste(cur, i))}
+                                onUnfold={(i) => {
+                                    globalStore.set(launcherTaskAtom, (cur) => unfoldPaste(cur, i));
+                                    taskRef.current?.focus();
+                                }}
+                            />
                         </div>
                     ) : null}
                 </div>
