@@ -298,6 +298,29 @@ func planReviewLostWake(round int, reason string, last, autonomous bool) string 
 	return fmt.Sprintf("wake: the plan reviewer did not finish in round %d (%s). Run `wsh jarvis dag submit` again to review the plan once more.", round, reason)
 }
 
+// lightResubmitRule is what the lead's next submit does after a light round's findings, as a wake and a replacement
+// lead's first message both say it.
+func lightResubmitRule() string {
+	return fmt.Sprintf("with %d tasks or fewer it dispatches with no second review, and with more it gets the full review. To run the plan unchanged instead, because no finding holds, run `wsh jarvis dag planreview accept \"<why>\"`", jarvis.FastTrackMaxTasks)
+}
+
+// lightReviewFailedWake is a failed light round's wake. The fast track has no second round: the lead's revised
+// submit dispatches, and accept runs the plan unchanged.
+func lightReviewFailedWake(findings string, autonomous bool) string {
+	findings = capText(findings, reportSectionMaxLen, planReviewFindingsCmd)
+	spec := "put spec changes to the human"
+	if autonomous {
+		spec = "make any spec change yourself and record it in your report"
+	}
+	return fmt.Sprintf("wake: the light plan review failed: %s. Revise the plan file to answer each finding (%s) and run `wsh jarvis dag submit` again: %s.", flatLine(findings), spec, lightResubmitRule())
+}
+
+// lightReviewLostWake is for a light round whose every reviewer ended without a verdict: there are no findings,
+// and the same plan submitted again opens a fresh light round.
+func lightReviewLostWake(reason string) string {
+	return fmt.Sprintf("wake: the light plan reviewer did not finish, %d times (%s). Run `wsh jarvis dag submit` again with the same plan: it opens a fresh light review, since the plan never dispatches without a verdict. If the reviewer's route keeps failing, put it to the human; `wsh jarvis dag planreview accept \"<the human's reason>\"` dispatches the plan unreviewed.", MaxLightReviewers, reason)
+}
+
 // downstreamWake carries what a passed task's reviewer said later tasks must know. A wake is typed as one
 // line, so the note is flattened.
 func downstreamWake(taskID, note string) string {
