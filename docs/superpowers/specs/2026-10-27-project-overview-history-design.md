@@ -39,8 +39,13 @@ History. A count of 0 is left out; with all three 0 the line is left out.
 - **Finished, not read yet** — the project's agents in `unreadAgentsAtom` (`unreadagentsstore.ts`, the source of the
   Agent nav badge) that are not asking or working: a hollow dot, the name, their last activity line, the age. A click
   selects the agent (`selectAgentRow`), which marks it read.
-- An empty block is not drawn; with all three empty one line says "Nothing needs you and nothing is running in
-  <project>."
+- **Idle** (added 2026-11-25) — the project's other open agents (plain, no part in a run): idle and read, or asleep
+  (`agent:sleeping`). Awake ones first, each kind newest first; an asleep row has a moon, "asleep · <task>" and how long
+  it has slept. Without it an agent asleep in its tab showed nowhere: History lists ended sessions only.
+- An empty block is not drawn; with Needs you, Running and Finished empty one line says "Nothing needs you and nothing
+  is running in <project>." (Idle may still be drawn under it).
+- The Activity footer's "Last 7 days: N sessions" counts every session of the window History has read, live ones
+  included (2026-11-25), so a session whose tokens fill the week no longer reads as 0 sessions.
 
 **History** (right)
 - A search box (`/` focuses it while the Overview has focus) and two tabs with counts: **Sessions** (the default) and

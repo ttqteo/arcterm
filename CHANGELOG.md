@@ -111,6 +111,7 @@ and a picture given to a line that is not big.
 ### Fixed
 
 - After you approve a brainstorm and start its run, the agent's row reads "starting run" and the builder check card reads Working until the run is created, instead of "asking question" and Waiting on you. A builder check waiting on you names it ("review builder check", "answer 2 builder questions") rather than "asking question" with no number.
+- A project's Overview no longer loses an agent that sits idle or asleep in its tab. The Now column lists them under Idle, asleep ones with a moon, and the Activity footer's "Last 7 days" counts their sessions instead of reading 0 sessions beside their tokens.
 - Sidecar's Resources (the wall's band and the small form's panel) shows its readings again. Since the last build it sat on "Measuring…" with empty charts however long you waited.
 - A question in Sidecar's Needs you reads whole: a dot inside a file name or a version (`results.json`, 1.9.0) no longer cuts it to its last few words.
 - The Latest note in an agent's initiative pane scrolls when it runs past six lines, instead of being cut off with no way to read the rest.

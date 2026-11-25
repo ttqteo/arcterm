@@ -31,7 +31,7 @@ import { GraphCard } from "./projectgraphcard";
 import { HistoryColumn } from "./projecthistory";
 import { useProjectHistory } from "./projecthistorystore";
 import { NowColumn } from "./projectnow";
-import { changesLabel, projectSessions } from "./projectoverviewmodel";
+import { activeSessionCount, changesLabel } from "./projectoverviewmodel";
 import { projectsAtom } from "./projectsstore";
 
 type ProjectGit = { branch: string; files: number; adds: number; dels: number };
@@ -71,9 +71,9 @@ export function ProjectOverview({ model }: { model: AgentsViewModel }) {
     const ny = useNeedsYou(model, (id) => selectAgentRow(model, id), project);
     const history = useProjectHistory(model, path ?? "");
     const now = useAtomValue(model.nowAtom);
-    // the footer's session count is the one History lists, without the search; null until its sessions load
+    // the footer's session count: History's sessions read, the live ones it leaves to Now included; null until they load
     const sessionCount = useMemo(
-        () => (history.sessions == null ? null : projectSessions(history.sessions, path ?? "", now, "").length),
+        () => (history.sessions == null ? null : activeSessionCount(history.sessions, path ?? "", now)),
         [history.sessions, path, now]
     );
     if (project === "") {

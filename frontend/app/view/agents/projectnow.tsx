@@ -3,13 +3,16 @@
 //
 // The Overview's Now column: what in the project waits on you (its asking agents and the Cockpit's items for it), what
 // runs in it (its agents, terminals and runs, a run's members counted as the Agent tree counts them), and its agents
-// that finished a turn you have not read. Rows are projectoverviewmodel.ts's.
+// that finished a turn you have not read, then the rest of its open agents, idle or asleep. Rows are
+// projectoverviewmodel.ts's.
 
 import { openTarget } from "@/app/view/jarvis/openref";
-import { fireAndForget } from "@/util/util";
+import { cn, fireAndForget } from "@/util/util";
 import { useAtomValue } from "jotai";
+import { Moon } from "lucide-react";
 import { useMemo } from "react";
 import type { AgentsViewModel } from "./agents";
+import { sleepingAge } from "./agentsleep";
 import { displayAgeMs, formatAge, type AgentVM } from "./agentsviewmodel";
 import { selectAgentRow } from "./agenttree";
 import type { NeedsYou } from "./needsyou";
@@ -20,6 +23,8 @@ import {
     finishedRows,
     isQuiet,
     overviewRows,
+    restingLine,
+    restingRows,
     runningCount,
     type RunRow,
 } from "./projectoverviewmodel";
@@ -58,6 +63,7 @@ export function NowColumn({ model, project, ny }: { model: AgentsViewModel; proj
         [agents, terminals, project, lineage]
     );
     const finished = useMemo(() => finishedRows(agents, project, unread), [agents, project, unread]);
+    const resting = useMemo(() => restingRows(rows, finished), [rows, finished]);
     // the age the Agent tree shows: the field the agent's state populates; "" when it has none, never "just now"
     const since = (a: AgentVM) => {
         const ms = displayAgeMs(a, now);
@@ -184,6 +190,40 @@ export function NowColumn({ model, project, ny }: { model: AgentsViewModel; proj
                                 <span className="min-w-0 flex-1 truncate text-[12px] text-muted">{doingLine(a)}</span>
                                 <span className="w-[48px] flex-none text-right text-[11px] tabular-nums text-ink-faint">
                                     {since(a)}
+                                </span>
+                            </button>
+                        ))}
+                    </div>
+                </section>
+            ) : null}
+
+            {resting.length > 0 ? (
+                <section data-overview-idle aria-label="Idle" className="flex flex-col gap-2">
+                    <SectionHead label="Idle" count={resting.length} />
+                    <div className={PANEL}>
+                        {resting.map((a) => (
+                            <button
+                                key={a.id}
+                                type="button"
+                                data-overview-idle-row={a.id}
+                                data-asleep={a.sleeping != null ? "" : undefined}
+                                onClick={() => selectAgentRow(model, a.id)}
+                                className={`${ROW} cursor-pointer hover:bg-surface-hover`}
+                            >
+                                {a.sleeping != null ? (
+                                    <span className="flex w-[7px] flex-none justify-center text-muted">
+                                        <Moon size={11} strokeWidth={2} aria-label="asleep" className="flex-none" />
+                                    </span>
+                                ) : (
+                                    <span
+                                        aria-hidden="true"
+                                        className="h-[7px] w-[7px] flex-none rounded-full bg-ink-faint"
+                                    />
+                                )}
+                                <span className={cn(NAME, a.sleeping != null && "text-secondary")}>{a.name}</span>
+                                <span className="min-w-0 flex-1 truncate text-[12px] text-muted">{restingLine(a)}</span>
+                                <span className="w-[48px] flex-none text-right text-[11px] tabular-nums text-ink-faint">
+                                    {a.sleeping != null ? sleepingAge(a, now) : since(a)}
                                 </span>
                             </button>
                         ))}
