@@ -23,6 +23,14 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
 
 ## 2026-11-25
 
+- [ ] (arcterm) **Quote from a file into the chat box.** On an agent showing Chat, open a markdown file in its panel's
+  File tab and select part of a paragraph: a Quote button (key `q`) floats beside Comment. `q` (or the button) puts
+  `path:N-M` (the paragraph's lines, the path relative to the agent's folder) and the passage as `> ` lines into the
+  chat box, the caret on the blank line under it, after what was typed and before any folded paste. In Source,
+  select lines and press `Alt`+`Q` (or right-click → Quote in chat): the same, with the selection's lines. Switch the
+  agent to Terminal: no Quote button, `q` and `Alt`+`Q` do nothing, the right-click item is disabled. Scenario
+  `file-quote` covers it with a stub chat box; never run against a dev app.
+
 - [ ] (arcterm) **Show more / Show less on a long message of yours springs open and shut.** In Chat, send a message
   longer than six lines: its bubble shows six lines fading out. Show more grows the bubble onto the whole text (no jump);
   Show less shrinks it back to six lines and the fade comes back as it lands. Click Show less mid-open: it turns back

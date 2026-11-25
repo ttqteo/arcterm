@@ -39725,6 +39725,143 @@ const mdOutlineRail = {
     teardown: (h, ctx) => mdComments.teardown(h, ctx),
 };
 
+// file-quote: Quote from a file into the chat box (docs/superpowers/specs/2026-11-25-file-quote-design.md), on
+// md-comments' fixture. A stub chat box is registered for the fixture agent (chatinsert.ts registerChatBox), so the
+// steps read exactly what lands in the box whatever the agent's cell shows; unregistering it is the agent with no chat
+// box (its cell showing Terminal).
+const FQ_BOX = `(window.__fqBox ?? { text: null, replaced: 0 })`;
+
+async function fqRegisterBox(h) {
+    return agentPageFixtures.agentPage(
+        h,
+        `const I = await mod("app/view/agents/chatinsert.ts");
+        const st = { text: "", replaced: 0 };
+        window.__fqBox = st;
+        const box = {
+            text: () => st.text,
+            submit: () => false,
+            append: (t) => ((st.text += t), true),
+            replace: (t) => ((st.text = t), (st.replaced += 1), true),
+            write: (t) => ((st.text = t), true),
+            focus: () => true,
+            interrupt: () => false,
+            cancelQueued: () => false,
+        };
+        window.__fqUnregister = I.registerChatBox(${JSON.stringify(MDC_AGENT)}, box);
+        return I.hasChatBox(${JSON.stringify(MDC_AGENT)});`
+    );
+}
+
+async function fqUnregisterBox(h) {
+    return agentPageFixtures.agentPage(
+        h,
+        `const I = await mod("app/view/agents/chatinsert.ts");
+        window.__fqUnregister?.();
+        delete window.__fqUnregister;
+        return !I.hasChatBox(${JSON.stringify(MDC_AGENT)});`
+    );
+}
+
+// selects `range` ([startLine, startCol, endLine, endCol]) in the File tab's Source editor and focuses it; the monaco
+// namespace comes from the url monaco-react.tsx imports, as the code-viewer scenario reads it
+async function fqSourceSelect(h, range) {
+    return lookEval(
+        h,
+        `
+        const wrapper = await lookResolve("app/monaco/monaco-react.tsx");
+        if (wrapper == null) return { error: "monaco-react.tsx is not in the import graph" };
+        const source = await (await fetch(wrapper)).text();
+        const dep = source.match(/from\\s*["']([^"']*monaco-editor[^"']*)["']/)?.[1];
+        if (dep == null) return { error: "monaco-react.tsx imports no monaco-editor url" };
+        const monaco = await import(new URL(dep, wrapper).href);
+        const ed = monaco.editor.getEditors().find((e) => /file\\/.*guide\\.md$/.test(e.getModel()?.uri.path ?? ""));
+        if (ed == null) return { error: "no Source editor on guide.md" };
+        ed.focus();
+        ed.setSelection(new monaco.Selection(...${JSON.stringify(range)}));
+        return { ok: true, menu: ed.getAction("arc.file.quoteInChat")?.label ?? null };
+    `
+    ).catch((e) => ({ error: String(e?.message ?? e) }));
+}
+
+const fileQuote = {
+    name: "file-quote",
+    surface: "agent",
+    arrange: (h) => mdComments.arrange(h),
+    async assert(h, ctx) {
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok: ok === true, detail });
+        if (ctx.arrangeError != null || ctx.inRoster !== true) {
+            rec("0. the fixture agent is in the roster", false, ctx.arrangeError ?? "not in the roster");
+            return steps;
+        }
+        const quoteBtn = `${MDC_DOC}?.querySelector("[data-md-quote]")`;
+
+        // 1. a selection in Preview floats Quote beside Comment
+        const opened = await mdcOpenGuide(h);
+        const boxed = await fqRegisterBox(h);
+        await mdcSelect(h, "the one the link names");
+        const floated = await polishWaitFor(h, `!!${quoteBtn} && !!${MDC_DOC}?.querySelector("[data-md-comment]")`, 5000);
+        const side = await h.ev(`(() => {
+            const q = ${quoteBtn}?.getBoundingClientRect(), c = ${MDC_DOC}?.querySelector("[data-md-comment]")?.getBoundingClientRect();
+            return q && c ? { beside: Math.abs(q.top - c.top) <= 1 && q.left >= c.right, kbd: ${quoteBtn}.innerText } : null;
+        })()`);
+        await h.shot("cdp-shots/file-quote-preview.png");
+        rec("1. a Preview selection floats Quote (with its q key) beside Comment", opened && boxed && floated && side?.beside === true && /q/i.test(side?.kbd ?? ""), JSON.stringify({ opened, boxed, floated, side }));
+
+        // 2. q puts the location line and the quote into the box, the caret line under it, and clears the selection
+        await railTabsKey(h, "q", "KeyQ", 81);
+        const box2 = await h.ev(FQ_BOX);
+        const cleared2 = await h.ev(`getSelection().isCollapsed && !${quoteBtn}`);
+        const want2 = "docs/guide.md:9\n> the one the link names\n\n";
+        rec("2. q quotes it as docs/guide.md:9 then > lines, a blank line under it, the selection cleared", box2.text === want2 && box2.replaced === 1 && cleared2, JSON.stringify({ box2, cleared2 }));
+
+        // 3. the Quote button on a two-line paragraph names its lines, under the first quote
+        await mdcSelect(h, "still the first paragraph.");
+        await polishWaitFor(h, `!!${quoteBtn}`, 5000);
+        const at = await mdcCenter(h, quoteBtn);
+        if (at != null) {
+            await railTabsMouse(h, "mouseMoved", at.x, at.y, { button: "none" });
+            await railTabsMouse(h, "mousePressed", at.x, at.y);
+            await railTabsMouse(h, "mouseReleased", at.x, at.y);
+            await railTabsNap(300);
+        }
+        const box3 = await h.ev(FQ_BOX);
+        const want3 = want2 + "docs/guide.md:6-7\n> still the first paragraph.\n\n";
+        rec("3. the Quote button quotes a paragraph's span (:6-7) under the first quote", box3.text === want3, JSON.stringify({ box3 }));
+
+        // 4. Source: Alt+Q on a selection quotes its lines and text; the action is in the editor's menu
+        await h.ev(`${MDC_ASIDE}?.querySelector('[data-md-mode="source"]')?.click()`);
+        const mounted = await polishWaitFor(h, `!!${MDC_ASIDE}?.querySelector(".monaco-editor")`, 8000);
+        await railTabsNap(500);
+        const picked = await fqSourceSelect(h, [9, 1, 9, 7]);
+        await railTabsKey(h, "q", "KeyQ", 81, 1);
+        const box4 = await h.ev(FQ_BOX);
+        await h.shot("cdp-shots/file-quote-source.png");
+        const want4 = want3 + "docs/guide.md:9\n> Second\n\n";
+        rec("4. Source's Alt+Q (Quote in chat) quotes the selection as docs/guide.md:9", mounted && picked?.ok === true && picked.menu === "Quote in chat" && box4.text === want4, JSON.stringify({ mounted, picked, box4 }));
+
+        // 5. with no chat box (the agent showing Terminal): no Quote in Preview, q and Alt+Q leave the box alone
+        const gone = await fqUnregisterBox(h);
+        await fqSourceSelect(h, [6, 1, 6, 6]);
+        await railTabsKey(h, "q", "KeyQ", 81, 1);
+        await h.ev(`${MDC_ASIDE}?.querySelector('[data-md-mode="preview"]')?.click()`);
+        await polishWaitFor(h, `!!${MDC_DOC}`, 8000);
+        await mdcSelect(h, "the one the link names");
+        const commentOnly = await polishWaitFor(h, `!!${MDC_DOC}?.querySelector("[data-md-comment]") && !${quoteBtn}`, 5000);
+        await railTabsKey(h, "q", "KeyQ", 81);
+        const box5 = await h.ev(FQ_BOX);
+        await h.shot("cdp-shots/file-quote-no-box.png");
+        await h.ev(`getSelection().removeAllRanges()`);
+        rec("5. with no chat box, a selection floats Comment only, and q / Alt+Q quote nothing", gone && commentOnly && box5.text === want4, JSON.stringify({ gone, commentOnly, box5 }));
+        return steps;
+    },
+    async teardown(h, ctx) {
+        await fqUnregisterBox(h).catch((e) => console.error(`file-quote teardown: unregister the stub box failed: ${e?.message ?? e}`));
+        await h.ev(`(delete window.__fqBox, true)`).catch(() => {});
+        await mdComments.teardown(h, ctx);
+    },
+};
+
 const docFind = {
     name: "doc-find",
     surface: "agent",
@@ -75590,6 +75727,7 @@ export const SCENARIOS = [
     agentRailChangesHunks,
     agentRailCommitMode,
     mdComments,
+    fileQuote,
     mdOutlineRail,
     docFind,
     workerCapacity,

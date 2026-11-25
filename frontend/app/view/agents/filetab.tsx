@@ -5,6 +5,7 @@
 // A markdown file renders as a document that takes comments (docs/superpowers/specs/2026-10-06-md-comments-design.md);
 // Source is the Monaco view. A file opened from Files changed also has Diff, against the base that list is measured from.
 // Editing is the Code surface's job, one click away; the one edit here is ticking a task box in a markdown Preview.
+// A selection in Preview or Source quotes into the agent's chat box under its file and lines (chatquote.ts).
 
 import { SkeletonLine } from "@/app/element/skeleton";
 import { ContextMenuModel } from "@/app/store/contextmenu";
@@ -30,9 +31,19 @@ import {
     railFileForward,
     railMdModeAtom,
 } from "./agentrailstore";
-import { currentFileView, fileLabel, filePinTarget, fileRel, fileViews, type FileHistory } from "./agentrailtabs";
+import {
+    currentFileView,
+    fileLabel,
+    filePinTarget,
+    fileRel,
+    fileViews,
+    quotePath,
+    type FileHistory,
+} from "./agentrailtabs";
 import type { AgentsViewModel } from "./agents";
 import type { AgentVM } from "./agentsviewmodel";
+import { hasChatBox } from "./chatinsert";
+import { quoteFileInChat } from "./chatquote";
 import { DocFindBar } from "./docfindbar";
 import { savedScroll, saveScroll } from "./filescroll";
 import { FileTabDiff } from "./filetabdiff";
@@ -71,6 +82,53 @@ const ICON_ON = "text-accent-soft hover:text-accent-soft";
 const BTN =
     "flex h-6 shrink-0 cursor-pointer items-center gap-1 rounded-[6px] border border-edge-mid bg-transparent px-2 text-[11.5px] font-medium text-secondary hover:border-edge-strong";
 
+// Source's "Quote in chat" (Alt+Q, and the right-click menu): the selection into the agent's chat box under its file and
+// lines, while the agent has a chat box and the selection holds text. The chat box comes and goes with the agent's cell
+// (Chat or Terminal), so whether it has one is read again whenever the editor is pressed, focused or selected in.
+// `to`: the agent and the path the quote names, read when it runs.
+function addQuoteAction(
+    editor: MonacoTypes.editor.IStandaloneCodeEditor,
+    monacoApi: typeof MonacoTypes,
+    to: () => { agentId: string; path: string } | null
+): MonacoTypes.IDisposable[] {
+    const hasBox = () => {
+        const t = to();
+        return t != null && hasChatBox(t.agentId);
+    };
+    const canQuote = editor.createContextKey<boolean>("arcFileHasChatBox", hasBox());
+    const sync = () => canQuote.set(hasBox());
+    return [
+        editor.onMouseDown(sync),
+        editor.onDidFocusEditorText(sync),
+        editor.onDidChangeCursorSelection(sync),
+        editor.addAction({
+            id: "arc.file.quoteInChat",
+            label: "Quote in chat",
+            keybindings: [monacoApi.KeyMod.Alt | monacoApi.KeyCode.KeyQ],
+            precondition: "editorHasSelection && arcFileHasChatBox",
+            contextMenuGroupId: "9_cutcopypaste",
+            contextMenuOrder: 0.5,
+            run: (ed) => {
+                const t = to();
+                const model = ed.getModel();
+                const sel = ed.getSelection();
+                if (t == null || model == null || sel == null || sel.isEmpty()) {
+                    return;
+                }
+                // whole lines selected down to the next line's start end on the line before it
+                const end =
+                    sel.endColumn === 1 && sel.endLineNumber > sel.startLineNumber
+                        ? sel.endLineNumber - 1
+                        : sel.endLineNumber;
+                const from = { path: t.path, startLine: sel.startLineNumber, endLine: end };
+                if (quoteFileInChat(t.agentId, model.getValueInRange(sel), from)) {
+                    ed.setSelection(monacoApi.Selection.fromPositions(sel.getEndPosition()));
+                }
+            },
+        }),
+    ];
+}
+
 // `cwd`: the agent's folder, whose pins (Code's, codepins.ts) the Pin toggle sets, as the Files tab beside it lists them
 export function FileTab({
     model,
@@ -105,6 +163,10 @@ export function FileTab({
     // the ref open now: reopening the file on screen keeps its editor, whose scroll is then that open's to keep
     const refNow = useRef(ref);
     refNow.current = ref;
+    // whose chat box Source's Quote goes into, and the folder its path is relative to: read when it runs, as the
+    // editor (and its action) outlives a render
+    const quoteTo = useRef({ agentId, cwd });
+    quoteTo.current = { agentId, cwd };
     const stickRef = useRef(true); // the view sits at the end, so new output keeps it there
     const bodyRef = useRef<HTMLDivElement>(null);
     const wrap = useWrap(ref?.abs ?? "");
@@ -318,7 +380,7 @@ export function FileTab({
                     setState(next);
                 }
             });
-        body = <MdDoc model={model} agent={agent} fileRef={ref} text={state.text} onFileChanged={reread} />;
+        body = <MdDoc model={model} agent={agent} fileRef={ref} cwd={cwd} text={state.text} onFileChanged={reread} />;
     } else if (liveText && state.kind === "text") {
         body = <LiveOutput fileRef={ref} text={state.text} wrap={wrap} following={following} stickRef={stickRef} />;
     } else if (state.kind === "text") {
@@ -355,9 +417,15 @@ export function FileTab({
                                 toEnd();
                             }
                         });
+                        const quote = addQuoteAction(editor, monacoApi, () => {
+                            const { agentId: to, cwd: folder } = quoteTo.current;
+                            const shown = refNow.current;
+                            return shown == null ? null : { agentId: to, path: quotePath(shown, folder) };
+                        });
                         const unmount = () => {
                             scrolled.dispose();
                             grew.dispose();
+                            quote.forEach((d) => d.dispose());
                             editorRef.current = null;
                         };
                         if (place != null) {

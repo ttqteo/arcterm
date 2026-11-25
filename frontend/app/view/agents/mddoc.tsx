@@ -5,7 +5,8 @@
 // (docs/superpowers/specs/2026-10-06-md-comments-design.md): a selection's floating Comment (or c), the gutter + with
 // Shift+click for a range, and an image's Comment. It reads the rendered blocks' line stamps (rehype-srclines.ts),
 // measures them for the marks and buttons, and hosts cards through MdDocContext; which lines a gesture means and
-// which block a card hangs after is mdcomments.ts.
+// which block a card hangs after is mdcomments.ts. Beside Comment, Quote (or q) puts the selection into the agent's chat
+// box under its file and lines (chatquote.ts quoteFileInChat), while the agent has a chat box.
 
 import { Markdown } from "@/app/element/markdown";
 import { globalStore } from "@/app/store/jotaiStore";
@@ -14,7 +15,7 @@ import { FrontmatterCard } from "@/app/view/code/frontmattercard";
 import { formatChordString } from "@/util/keysym";
 import { cn, fireAndForget } from "@/util/util";
 import { useAtomValue } from "jotai";
-import { MessageSquarePlus, Plus } from "lucide-react";
+import { MessageSquarePlus, Plus, TextQuote } from "lucide-react";
 import {
     useCallback,
     useEffect,
@@ -26,11 +27,13 @@ import {
     type MouseEvent,
 } from "react";
 import { openFileInPanel, openRefInCode, railMdModeAtom } from "./agentrailstore";
-import type { FileRef } from "./agentrailtabs";
+import { quotePath, type FileRef } from "./agentrailtabs";
 import type { AgentsViewModel } from "./agents";
 import type { AgentVM } from "./agentsviewmodel";
 import { chatFocusReadSizeAtom, DOC_READER_PREFIX, docFocusReadOnAtom, setDocFocusReadOn } from "./chatfocusreadstore";
 import { FOCUS_LINE_CLASS, FOCUS_LINE_TITLE, useFocusRead } from "./chatfocusreadview";
+import { hasChatBox } from "./chatinsert";
+import { quoteFileInChat } from "./chatquote";
 import { OUTLINE_SELECTOR, OutlineRail } from "./docoutlineview";
 import { savedScroll, saveScroll } from "./filescroll";
 import { toggleTaskInFile } from "./filetabload";
@@ -56,8 +59,9 @@ import { mdCommentAtom, openBox, setBoxRange } from "./mdcommentstore";
 
 // the text column's left inset: room for the gutter +
 const GUTTER = 30;
-const FLOAT_BTN =
-    "absolute z-10 flex cursor-pointer items-center gap-[6px] whitespace-nowrap rounded-[7px] border-0 bg-accent px-[10px] py-[5px] text-[12.5px] font-semibold leading-[1.2] text-background shadow-popover-sm hover:bg-accenthover";
+const FLOAT_BTN_BASE =
+    "flex cursor-pointer items-center gap-[6px] whitespace-nowrap rounded-[7px] border-0 bg-accent px-[10px] py-[5px] text-[12.5px] font-semibold leading-[1.2] text-background shadow-popover-sm hover:bg-accenthover";
+const FLOAT_BTN = "absolute z-10 " + FLOAT_BTN_BASE;
 const KBD = "rounded-[4px] bg-background/20 px-[5px] font-mono text-[10.5px]";
 // the floating Comment button's height (FLOAT_BTN's padding and line), to set it above the selection
 const SEL_BTN_H = 26;
@@ -98,12 +102,15 @@ export function MdDoc({
     model,
     agent,
     fileRef,
+    cwd,
     text,
     onFileChanged,
 }: {
     model: AgentsViewModel;
     agent: AgentVM;
     fileRef: FileRef;
+    // the agent's folder: a quote names the file relative to it (agentrailtabs.ts quotePath)
+    cwd: string | null;
     text: string;
     // a task box was ticked here and the file written: read it again
     onFileChanged?: () => void;
@@ -132,7 +139,14 @@ export function MdDoc({
     const blocks = useMemo(() => els.map(toBlock), [els]);
     const [hover, setHover] = useState<{ index: number; top: number } | null>(null);
     const [hoverImg, setHoverImg] = useState<number | null>(null);
-    const [sel, setSel] = useState<{ target: MdTarget; top: number; left: number } | null>(null);
+    // `text`: exactly what was selected, for a quote; `quotable`: the agent has a chat box to take it
+    const [sel, setSel] = useState<{
+        target: MdTarget;
+        text: string;
+        quotable: boolean;
+        top: number;
+        left: number;
+    } | null>(null);
     const [geo, setGeo] = useState<{
         marks: (Overlay & { kind: string })[];
         bars: Overlay[];
@@ -285,7 +299,8 @@ export function MdDoc({
                 return;
             }
             const touched = els.flatMap((el, i) => (range.intersectsNode(el) ? [i] : []));
-            const target = selectionTarget(blocks, touched, s.toString());
+            const selected = s.toString();
+            const target = selectionTarget(blocks, touched, selected);
             if (target == null) {
                 setSel(null);
                 return;
@@ -296,15 +311,18 @@ export function MdDoc({
             const first = Array.from(range.getClientRects()).find((x) => x.width > 0) ?? r;
             const base = root.getBoundingClientRect();
             const above = first.top - base.top - SEL_BTN_H - 6;
+            const quotable = hasChatBox(agentId);
             setSel({
                 target,
+                text: selected,
+                quotable,
                 top: above >= 0 ? above : r.bottom - base.top + 6,
-                left: Math.min(Math.max(first.left - base.left, 8), base.width - 150),
+                left: Math.min(Math.max(first.left - base.left, 8), base.width - (quotable ? 240 : 150)),
             });
         };
         document.addEventListener("selectionchange", update);
         return () => document.removeEventListener("selectionchange", update);
-    }, [els, blocks]);
+    }, [els, blocks, agentId]);
 
     // a box that holds text was kept: the caret goes to it, in its own file when that is not this one
     const focusBox = useCallback(() => revealMdBox(model, agentId, fileRef.abs), [model, agentId, fileRef.abs]);
@@ -323,6 +341,18 @@ export function MdDoc({
         opened(openBox(agentId, { ...at, ...sel.target }));
         window.getSelection()?.removeAllRanges();
         setSel(null);
+    };
+
+    // the lines are the touched blocks' span (half a paragraph names the paragraph), the text exactly what was selected
+    const quoteSelection = () => {
+        if (sel == null || !sel.quotable) {
+            return;
+        }
+        const from = { path: quotePath(fileRef, cwd), startLine: sel.target.startLine, endLine: sel.target.endLine };
+        if (quoteFileInChat(agentId, sel.text, from)) {
+            window.getSelection()?.removeAllRanges();
+            setSel(null);
+        }
     };
 
     const plus = (index: number, shift: boolean) => {
@@ -372,17 +402,17 @@ export function MdDoc({
     };
 
     const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
-        if (
-            e.key === "c" &&
-            !e.ctrlKey &&
-            !e.metaKey &&
-            !e.altKey &&
-            sel != null &&
-            !(e.target instanceof HTMLTextAreaElement)
-        ) {
+        if (e.ctrlKey || e.metaKey || e.altKey || sel == null || e.target instanceof HTMLTextAreaElement) {
+            return;
+        }
+        if (e.key === "c") {
             e.preventDefault();
             e.stopPropagation();
             commentSelection();
+        } else if (e.key === "q" && sel.quotable) {
+            e.preventDefault();
+            e.stopPropagation();
+            quoteSelection();
         }
     };
 
@@ -537,21 +567,38 @@ export function MdDoc({
                         </button>
                     ))}
                     {sel != null ? (
-                        <button
-                            type="button"
+                        <div
                             data-md-overlay
-                            data-md-comment
-                            title={`Comment on the selection (${formatChordString("c")})`}
+                            className="absolute z-10 flex gap-1.5"
+                            style={{ top: sel.top, left: sel.left }}
                             // keep the selection: a press would otherwise collapse it before the click
                             onMouseDown={(e) => e.preventDefault()}
-                            onClick={commentSelection}
-                            className={FLOAT_BTN}
-                            style={{ top: sel.top, left: sel.left }}
                         >
-                            <MessageSquarePlus size={13} strokeWidth={2.2} aria-hidden />
-                            Comment
-                            <span className={KBD}>{formatChordString("c")}</span>
-                        </button>
+                            <button
+                                type="button"
+                                data-md-comment
+                                title={`Comment on the selection (${formatChordString("c")})`}
+                                onClick={commentSelection}
+                                className={FLOAT_BTN_BASE}
+                            >
+                                <MessageSquarePlus size={13} strokeWidth={2.2} aria-hidden />
+                                Comment
+                                <span className={KBD}>{formatChordString("c")}</span>
+                            </button>
+                            {sel.quotable ? (
+                                <button
+                                    type="button"
+                                    data-md-quote
+                                    title={`Quote the selection in the chat box (${formatChordString("q")})`}
+                                    onClick={quoteSelection}
+                                    className={FLOAT_BTN_BASE}
+                                >
+                                    <TextQuote size={13} strokeWidth={2.2} aria-hidden />
+                                    Quote
+                                    <span className={KBD}>{formatChordString("q")}</span>
+                                </button>
+                            ) : null}
+                        </div>
                     ) : null}
                 </div>
             </div>

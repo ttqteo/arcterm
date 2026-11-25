@@ -24,6 +24,7 @@ import {
     openFile,
     openSummary,
     panelFor,
+    quotePath,
     RAIL_WIDE_DEFAULT_PX,
     RAIL_WIDE_MIN_PX,
     RAIL_WIDTHS,
@@ -307,6 +308,18 @@ describe("filePinTarget", () => {
     it("has nowhere to pin a file under neither, or a background task's output", () => {
         expect(filePinTarget({ abs: "C:/elsewhere/x.go", root: "D:/repo" }, "D:/repo")).toBeNull();
         expect(filePinTarget({ abs: "D:/repo/out.log", root: "D:/repo", live: true }, "D:/repo")).toBeNull();
+    });
+});
+
+describe("quotePath", () => {
+    it("names the file relative to the agent's folder first, then to the folder it was opened against", () => {
+        expect(quotePath({ abs: "D:/repo/sub/x.md", root: "D:/repo/sub" }, "D:/repo")).toBe("sub/x.md");
+        expect(quotePath({ abs: "D:\\repo\\src\\a.ts", root: "D:\\repo" }, "D:/other")).toBe("src/a.ts");
+    });
+
+    it("names a file under neither, or a background task's output, by its path with / separators", () => {
+        expect(quotePath({ abs: "C:\\elsewhere\\x.go", root: "D:/repo" }, "D:/repo")).toBe("C:/elsewhere/x.go");
+        expect(quotePath({ abs: "D:/repo/out.log", root: "D:/repo", live: true }, "D:/repo")).toBe("out.log");
     });
 });
 

@@ -449,6 +449,18 @@ export function filePinTarget(ref: FileRef, cwd: string | null): { folder: strin
     return null;
 }
 
+// How a quote from the File tab names its file (chatquote.ts quoteLocation): the path the agent can open, resolved the
+// way Pin resolves it, relative to the agent's folder first, then to the folder the file was opened against, else the
+// absolute path; "/" separators either way.
+export function quotePath(ref: FileRef, cwd: string | null): string {
+    for (const root of [cwd, ref.root]) {
+        if (root != null && isUnderRoot(root, ref.abs)) {
+            return toRel(root, ref.abs);
+        }
+    }
+    return ref.abs.replace(/\\/g, "/");
+}
+
 // how the File tab names what it holds: the title it was opened with, else the file's name
 export function fileTabLabel(ref: FileRef): string {
     return ref.title || fileLabel(ref).name;

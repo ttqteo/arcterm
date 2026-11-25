@@ -34,6 +34,9 @@ and a picture given to a line that is not big.
 
 ### Added
 
+- Quote from a file into the chat: select a passage in the agent panel's File tab and press Quote (or `q`) in a
+  markdown Preview, or Quote in chat (`Alt`+`Q`, or the right-click menu) in Source. It lands in the agent's chat box as
+  a `> ` quote under the file and lines it came from (`docs/plan.md:42-44`), the caret under it for your question.
 - Pair an agent with a judge: Add judge in an agent's header (or right-click two agents in the Agent tree, Pair: worker
   + judge) lets the two talk to each other directly, each reply passing to the other on its own, while you read the
   conversation in the centre and only answer what waits on you. The new Decided tab on the rail lists what they agreed,
