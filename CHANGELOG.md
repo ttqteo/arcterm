@@ -58,6 +58,8 @@ and a picture given to a line that is not big.
 
 ### Fixed
 
+- A new agent's first message with a long paste in it shows the paste as a folded card, not as raw
+  `<\pasted_content>` text.
 - A pair names its agents by their title, as the Agent tree does, not by the project their tab was launched in, and
   the agent's rail with the Decided tab stays beside the conversation; the way back to Chat reads as a button.
 - A background subagent cut off when its agent's session ended no longer shows as running in the Agent tree forever,

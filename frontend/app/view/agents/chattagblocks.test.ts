@@ -165,6 +165,17 @@ describe("unwrapWholePaste", () => {
             tag("pasted_content", "line one\nline two", { from: "chat" }),
         ]);
     });
+
+    it("turns escaped paste tags back in a message Claude Code did not wrap", () => {
+        // a new agent's first prompt with a folded paste, as it reached the transcript (2026-11-25): escaped, no wrap
+        const sent = '<\\pasted_content from="chat">\nline one\nline two\n<\\/pasted_content>';
+        const body = unwrapWholePaste(sent);
+        expect(body).toBe('<pasted_content from="chat">\nline one\nline two\n</pasted_content>');
+        expect(splitTagged(body)).toEqual([tag("pasted_content", "line one\nline two", { from: "chat" })]);
+        expect(unwrapWholePaste('read this\n\n<\\pasted_content from="chat">\nlog\n<\\/pasted_content>')).toBe(
+            'read this\n\n<pasted_content from="chat">\nlog\n</pasted_content>'
+        );
+    });
 });
 
 describe("tagLabel", () => {

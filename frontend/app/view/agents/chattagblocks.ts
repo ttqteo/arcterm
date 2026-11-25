@@ -86,22 +86,21 @@ function readBlock(lines: string[], at: number): { end: number; part: TagPart } 
     return null;
 }
 
-// a paste tag Claude Code escaped inside the paste it wraps (`<\pasted_content …>`, `<\/pasted_content>`), so it cannot
-// close the wrap: what it was
+// a paste tag Claude Code escaped in a message you sent (`<\pasted_content …>`, `<\/pasted_content>`), inside a paste it
+// wraps or in a prompt it did not wrap (a new agent's first): what it was
 const ESCAPED_PASTE_TAG = /<\\(\/?pasted_content\b)/g;
 
 /** Pure: a message that is nothing but one paste block the harness wrapped, read as the paste itself. Claude Code wraps
  *  a whole multi-line message it is handed as one paste (a Chat message queued while the agent worked arrives so): that
  *  is the message you wrote, not a paste inside it, and its attachment lists sit at the end of the body. The paste tags
- *  it escaped inside (a paste Chat folded, chatpastes.ts) come back as they were sent, so the bubble folds them. Any
- *  other message comes back as it was. */
+ *  Claude Code escaped (a paste Chat folded, chatpastes.ts) come back as they were sent, wrapped or not, so the bubble
+ *  folds them. Any other message comes back as it was. */
 export function unwrapWholePaste(text: string): string {
     const parts = splitTagged(text.trim());
     const only = parts.length === 1 ? parts[0] : null;
     // a paste Chat folded out of the box (chatpastes.ts, from="chat") is a paste, even sent alone
-    return only?.kind === "tag" && only.tag === "pasted_content" && only.attrs.from !== "chat"
-        ? only.body.replace(ESCAPED_PASTE_TAG, "<$1")
-        : text;
+    const whole = only?.kind === "tag" && only.tag === "pasted_content" && only.attrs.from !== "chat";
+    return (whole ? only.body : text).replace(ESCAPED_PASTE_TAG, "<$1");
 }
 
 /** Pure: a message cut into its text and its tagged blocks, in order. A message with no block is one text part, as it
