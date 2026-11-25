@@ -5,9 +5,14 @@
 // (library/librarysurface.tsx). A recency-grouped list with a pinned "All activity" entry. An orchestrator run is one entry, with
 // a row under it only for the members that need you; its detail lists the lead and every task and reads the one in
 // view. Every other session is its own entry. Live agents are overlaid (matched by transcript path) so the primary
-// action is Jump (live) or Resume (ended). A search box under the title finds a conversation by what was said in it
-// (SearchSessions, every project): while it holds a query the list shows the results as solo cards, and the sessions
-// they name that no loaded page holds join the ones History groups and resolves against, so a click can open them.
+// action is Jump (live) or Resume (ended). Judge pairs and councils are in it too (conversationrows.ts is their model): one
+// nests as a tree line under the session that started it, one no loaded session started is a card of its own placed by its
+// own time, and the Judge and Council chips over the list swap it for a flat list of pairs, councils or both, each naming
+// its session (the status filter hides then, and the Council chip brings the benchmark over the list). A pair row selects
+// `pair:<id>` and the detail pane reads it, read-only (PairReadView); a council row opens it (openCouncil). A search box
+// under the title finds a conversation by what was said in it (SearchSessions, every project): while it holds a query the
+// list shows the results as solo cards, under the councils and pairs the query matches, and the sessions they name that no
+// loaded page holds join the ones History groups and resolves against, so a click can open them.
 // @theme tokens only — no hardcoded colors.
 
 import { cardVariants, MOTION } from "@/app/element/motiontokens";
@@ -16,12 +21,33 @@ import { useSurfaceListNav, type ListNavController } from "@/app/store/keybindin
 import { REGION_LABEL } from "@/app/view/jarvis/briefstyle";
 import { cn, fireAndForget } from "@/util/util";
 import { useAtom, useAtomValue } from "jotai";
-import { Activity, Check, Search, Workflow } from "lucide-react";
+import { Activity, Check, Scale, Search, Workflow } from "lucide-react";
 import { AnimatePresence, motion, MotionConfig } from "motion/react";
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import { libraryConvKindsAtom } from "../library/librarystore";
 import type { AgentsViewModel } from "./agents";
 import { formatAge, formatAgeShort, formatTokens } from "./agentsviewmodel";
+import {
+    councilSources,
+    flatRows,
+    nestedRows,
+    navIds as rowNavIds,
+    searchRows,
+    type ConversationRow,
+    type FlatRow,
+    type ItemRow,
+    type PairRow,
+} from "./conversationrows";
+import { CouncilBenchChart } from "./councilbenchchart";
+import { councilHistoryRows } from "./councilhistory";
+import { CouncilHistoryRowView, CouncilNestedLine } from "./councilhistoryview";
+import { councilOpenedAtom } from "./councilopened";
+import { councilUnreadAtom, useCouncils } from "./councilstore";
+import { openLauncher } from "./launcherstore";
 import { nearListEnd } from "./listend";
+import { PairReadView } from "./pairreadpane";
+import { usePairHistory } from "./pairstore";
+import { projectsAtom } from "./projectsstore";
 import type { RunInfo } from "./runlineage";
 import { runDigestsAtom, useRunDigests } from "./runlineagestore";
 import { useRunObjects } from "./runobjects";
@@ -64,7 +90,6 @@ import {
     type Status,
 } from "./sessionsruns";
 import { SurfaceEmptyState, SurfaceError } from "./surfacescaffold";
-import { openLauncher } from "./launcherstore";
 
 const FILTERS: { key: SessionStatusFilter; label: string }[] = [
     { key: "all", label: "All" },
@@ -73,14 +98,30 @@ const FILTERS: { key: SessionStatusFilter; label: string }[] = [
     { key: "done", label: "Done" },
 ];
 
-// one entry of the left list: an orchestrator run or a session on its own
+// one entry of the left list: an orchestrator run or a session on its own. `sessions` are the ones it holds (a run's every
+// member), which is what the pairs and councils nested under it are placed by.
 interface Row {
     key: string;
     live: boolean;
     lastactivets: number;
+    sessions: readonly LiveSession[];
     run?: { group: RunSessions; view: RunView };
     session?: LiveSession;
 }
+
+// a pair is selected as `pair:<id>` on the model's sessions selection, as a run is `run:<id>`
+const PAIR_SEL = "pair:";
+const pairIdOfSel = (sel: string): string | null => (sel.startsWith(PAIR_SEL) ? sel.slice(PAIR_SEL.length) : null);
+
+// what the Judge and Council chips show: `startedFrom` is set on a row of the flat list alone
+const startedFromOf = (r: ConversationRow<Row>): string | undefined => (r as Partial<FlatRow>).startedFrom;
+
+const NO_PAIRS: readonly PairInfo[] = [];
+
+const CHIPS: { key: "judge" | "council"; label: string }[] = [
+    { key: "judge", label: "Judge" },
+    { key: "council", label: "Council" },
+];
 
 function keepRow(r: Row, f: SessionStatusFilter): boolean {
     if (f === "all") {
@@ -128,6 +169,9 @@ export function ConversationHistory({ model }: { model: AgentsViewModel }) {
     const [member, setMember] = useAtom(model.sessionsMemberAtom);
     const [filter, setFilter] = useAtom(model.sessionsStatusFilterAtom);
     const digests = useAtomValue(runDigestsAtom);
+    // the Judge and Council chips: with one on the list is the flat one of pairs, councils or both, not sessions
+    const [kinds, setKinds] = useAtom(libraryConvKindsAtom);
+    const flat = kinds.judge || kinds.council;
     // the search box: a query with terms replaces the paged list with the SearchSessions results (every project)
     const [query, setQuery] = useState("");
     const search = useSessionSearch(query, {});
@@ -143,15 +187,42 @@ export function ConversationHistory({ model }: { model: AgentsViewModel }) {
     // A hidden History measures 0 high, which would read as "at the end" and load
     // every page: it checks only while it has a height, and again when its surface comes back. While the search box
     // holds a query it loads none: a short results list fills no scroll and would page through the whole archive, and
-    // the cursor it leaves is where the paged list picks up again when the box is cleared
+    // the cursor it leaves is where the paged list picks up again when the box is cleared. A chip's flat list loads none
+    // either: it is not the sessions' list, and a short one would page through the archive for nothing (a session it names
+    // that is on a page not loaded reads as its short id)
     const listRef = useRef<HTMLDivElement>(null);
+    const paging = !searching && !flat;
     const loadIfAtEnd = useCallback(() => {
         const el = listRef.current;
-        if (!searching && el != null && el.clientHeight > 0 && nearListEnd(el)) {
+        if (paging && el != null && el.clientHeight > 0 && nearListEnd(el)) {
             fireAndForget(loadMoreSessionsArchive);
         }
-    }, [searching]);
+    }, [paging]);
     useEffect(loadIfAtEnd, [loadIfAtEnd, base, cursor, filter, onSurface]);
+
+    // every council and every pair, of every project: nested under the session that started them, or a row of their own
+    const councils = useCouncils("");
+    const pairInfos = usePairHistory("");
+    const pairs = pairInfos ?? NO_PAIRS;
+    const unread = useAtomValue(councilUnreadAtom);
+    const registered = useAtomValue(projectsAtom);
+    const opened = useAtomValue(councilOpenedAtom);
+    // Resume reads the tree rule on the minute, as the tree does, so the rows are not rebuilt every second
+    const minute = Math.floor(now / 60_000);
+    // project name -> root path, as the tree builds it, so a council reads its folder's name
+    const roots = useMemo(() => {
+        const out = new Map<string, string>();
+        for (const [name, project] of Object.entries(registered ?? {})) {
+            if (project?.path) {
+                out.set(name, project.path);
+            }
+        }
+        return out;
+    }, [registered]);
+    const councilSrc = useMemo(
+        () => councilSources(councils, councilHistoryRows(councils, roots, unread, { opened, now: minute * 60_000 })),
+        [councils, roots, unread, opened, minute]
+    );
 
     // the loaded sessions plus the results' that no loaded page holds (older ones), so a result opens in the detail;
     // the live overlay applies to both. Everything History groups and resolves below reads this list.
@@ -183,6 +254,7 @@ export function ConversationHistory({ model }: { model: AgentsViewModel }) {
                     key: runSelKey(group.runId),
                     live: group.live,
                     lastactivets: group.lastactivets,
+                    sessions: group.sessions,
                     run: { group, view },
                 };
             }),
@@ -209,18 +281,25 @@ export function ConversationHistory({ model }: { model: AgentsViewModel }) {
         key: sessionKey(s),
         live: s.live,
         lastactivets: s.lastactivets,
+        sessions: [s],
         session: s,
     }));
     // every project, from the oldest scanned session on: the app bar's project switcher narrows the sidebar's
     // Conversations, not History, which is where a conversation from any folder can still be found
     const scoped = [...runRows, ...soloRows];
-    const groups = groupByRecency(
-        scoped.filter((r) => keepRow(r, filter)),
-        now
-    );
-    const scopedSessions = scoped.flatMap((r) => (r.run ? r.run.group.sessions : [r.session!]));
+    const scopedSessions = scoped.flatMap((r) => r.sessions);
     const liveCount = scopedSessions.filter((s) => s.live).length;
     const needsCount = scoped.filter(needsRow).length;
+    const runTitles = Object.fromEntries(runRows.map((r) => [r.run!.group.runId, r.run!.view.title]));
+    // the list as drawn: each entry that stays under the status filter with the pairs and councils nested under it, and
+    // the ones no loaded session started as rows of their own; or, with a chip on, the flat list of what the chip names
+    const rows: ConversationRow<Row>[] = flat
+        ? flatRows(kinds, live, councilSrc, pairs, runTitles)
+        : nestedRows(scoped, councilSrc, pairs, { filter, keep: keepRow, more: cursor !== "" });
+    const groups = groupByRecency(rows, now);
+    // the list waits for what it is made of (the sessions, or what the chips name): one not read yet is not an empty one
+    const loaded = flat ? !((kinds.judge && pairInfos == null) || (kinds.council && councils == null)) : base != null;
+    const listState = !loaded ? "loading" : rows.length === 0 ? "empty" : "rows";
 
     // detail resolves against every row so project and status filters never blank an explicit selection
     const selSession = selRunId ? undefined : resolveSelectedSession(live, sel);
@@ -261,12 +340,19 @@ export function ConversationHistory({ model }: { model: AgentsViewModel }) {
         if (s == null) {
             return [];
         }
-        const row: Row = { key: sessionKey(s), live: s.live, lastactivets: s.lastactivets, session: s };
+        const row: Row = { key: sessionKey(s), live: s.live, lastactivets: s.lastactivets, sessions: [s], session: s };
         return keepRow(row, filter) ? [{ row, result }] : [];
     });
+    // the councils and pairs the query matches (each of every project, whatever the chips say): a section of their own
+    // above the sessions' results
+    const found: ItemRow[] = searching ? searchRows(query, councilSrc, pairs) : [];
     // a click selects the session as History does (a run's session selects its run and member) and opens it at the hit
     const openResult = (result: SessionSearchResult) => openSessionHit(model, result, query.trim(), search.terms);
     const selectResult = (key: string) => {
+        if (pairIdOfSel(key) != null) {
+            select(key);
+            return;
+        }
         const hit = resultRows.find((r) => r.row.key === key);
         if (hit != null) {
             openResult(hit.result);
@@ -291,11 +377,15 @@ export function ConversationHistory({ model }: { model: AgentsViewModel }) {
         }
     };
 
-    // publish the "All activity" + row order for global j/k list-nav (the results' keys while searching).
-    // cursor==selection. Refs keep the controller stable while reading this render's rows, so it isn't re-registered
-    // on every roster tick; the ids are keyed by content, since groupByRecency hands back fresh arrays every render.
+    // publish the "All activity" + row order for global j/k list-nav (the matched pairs' keys, then the results' keys while
+    // searching; no "All activity" under a chip, whose list has none). A pair's row is in it and a council's is not:
+    // selecting a council leaves the list (rowNavIds). cursor==selection. Refs keep the controller stable while reading this
+    // render's rows, so it isn't re-registered on every roster tick; the ids are keyed by content, since groupByRecency hands
+    // back fresh arrays every render.
     const navIdsKey = (
-        searching ? resultRows.map((r) => r.row.key) : ["all", ...groups.flatMap((g) => g.items.map((r) => r.key))]
+        searching
+            ? [...rowNavIds(found), ...resultRows.map((r) => r.row.key)]
+            : [...(flat ? [] : ["all"]), ...rowNavIds(groups.flatMap((g) => g.items))]
     ).join("\n");
     const navIds = useMemo(() => (navIdsKey === "" ? [] : navIdsKey.split("\n")), [navIdsKey]);
     const selectRef = useRef(select);
@@ -306,8 +396,11 @@ export function ConversationHistory({ model }: { model: AgentsViewModel }) {
             runSessionPrimary(model, primary);
         }
     };
+    const selPairId = pairIdOfSel(sel);
     const cursorId = searching
-        ? (resultRows.find((r) => resultActive(r.result))?.row.key ?? sel)
+        ? selPairId != null
+            ? sel
+            : (resultRows.find((r) => resultActive(r.result))?.row.key ?? sel)
         : viewRunId
           ? runSelKey(viewRunId)
           : sel;
@@ -325,8 +418,68 @@ export function ConversationHistory({ model }: { model: AgentsViewModel }) {
     // take listNavAtom from that surface's own list (Usage, Diff, Brief), whose j/k then go dead.
     useSurfaceListNav(onSurface ? listNav : null);
 
-    const runTitles = Object.fromEntries(runRows.map((r) => [r.run!.group.runId, r.run!.view.title]));
-    const detailKind = selRun ? "run" : selSession ? "solo" : "feed";
+    const detailKind = selPairId != null ? "pair" : selRun ? "run" : selSession ? "solo" : "feed";
+
+    // the nested lines under an entry's card: a pair selects `pair:<id>` (the detail pane reads it), a council opens
+    const nestedLines = (items: readonly ItemRow[]) =>
+        items.map((n) =>
+            n.kind === "pair" ? (
+                <NestedPairLine key={n.key} row={n} active={sel === n.key} onSelect={() => select(n.key)} />
+            ) : (
+                <CouncilNestedLine key={n.key} row={n.row} line={n.nestedLine} model={model} />
+            )
+        );
+    // a pair or a council as a card of its own: standing by its own time, in the flat list (`startedFrom`), or found by a search
+    const itemCard = (r: ItemRow, startedFrom?: string) =>
+        r.kind === "pair" ? (
+            <PairCard
+                key={r.key}
+                row={r}
+                active={sel === r.key}
+                now={now}
+                startedFrom={startedFrom}
+                onSelect={() => select(r.key)}
+            />
+        ) : (
+            <CouncilHistoryRowView key={r.key} row={r.row} now={now} model={model} startedFrom={startedFrom} />
+        );
+    const renderRow = (r: ConversationRow<Row>) => {
+        if (r.kind !== "entry") {
+            return itemCard(r, startedFromOf(r));
+        }
+        const e = r.entry;
+        const card = e.run ? (
+            <RunCard
+                key={r.key}
+                view={e.run.view}
+                active={viewRunId === e.run.group.runId}
+                member={member}
+                now={now}
+                onSelect={() => select(r.key)}
+                onMember={(key) => selectMember(e.run!.group.runId, key)}
+            />
+        ) : (
+            <SoloCard
+                key={r.key}
+                session={e.session!}
+                active={sel === r.key}
+                now={now}
+                onSelect={() => setSel(r.key)}
+            />
+        );
+        if (r.nested.length === 0) {
+            return card;
+        }
+        // the card as it is, with a tree line under it for each pair and council its sessions started
+        return (
+            <div key={r.key} className="flex flex-col">
+                {card}
+                <motion.div layout data-history-nested-group className="flex flex-col gap-px pb-0.5 pl-3 pr-1 pt-1">
+                    {nestedLines(r.nested)}
+                </motion.div>
+            </div>
+        );
+    };
 
     return (
         <MotionConfig reducedMotion="user">
@@ -369,32 +522,67 @@ export function ConversationHistory({ model }: { model: AgentsViewModel }) {
                                     className="min-w-0 flex-1 bg-transparent text-[12.5px] text-primary outline-none placeholder:text-muted"
                                 />
                             </label>
-                            <div
-                                role="group"
-                                aria-label="Status filter"
-                                className="flex gap-0.5 rounded-lg border border-border bg-surface p-0.5"
-                            >
-                                {FILTERS.map((f) => (
+                            <div role="group" aria-label="Show only" className="flex gap-1.5">
+                                {CHIPS.map((c) => (
                                     <button
-                                        key={f.key}
+                                        key={c.key}
                                         type="button"
-                                        aria-pressed={filter === f.key}
-                                        onClick={() => setFilter(f.key)}
+                                        data-history-chip={c.key}
+                                        aria-pressed={kinds[c.key]}
+                                        onClick={() => setKinds((k) => ({ ...k, [c.key]: !k[c.key] }))}
                                         className={cn(
-                                            "flex flex-auto cursor-pointer items-center justify-center gap-1.5 whitespace-nowrap rounded-[6px] px-2 py-[5px] text-[11.5px] font-semibold",
-                                            filter === f.key
-                                                ? "bg-accentbg text-primary"
-                                                : "text-ink-mid hover:text-primary"
+                                            "flex h-6 cursor-pointer items-center whitespace-nowrap rounded-full border px-2.5 text-[11.5px] font-semibold",
+                                            kinds[c.key]
+                                                ? "border-accent bg-accentbg text-primary"
+                                                : "border-border bg-surface text-ink-mid hover:border-edge-strong hover:text-primary"
                                         )}
                                     >
-                                        {f.label}
-                                        {f.key === "needs" && needsCount > 0 ? (
-                                            <span className="text-[10.5px] tabular-nums text-asking">{needsCount}</span>
-                                        ) : null}
+                                        {c.label}
                                     </button>
                                 ))}
                             </div>
+                            {/* a chip's list is not sessions, so the filter by a session's status has nothing to filter */}
+                            {!flat ? (
+                                <div
+                                    role="group"
+                                    aria-label="Status filter"
+                                    className="flex gap-0.5 rounded-lg border border-border bg-surface p-0.5"
+                                >
+                                    {FILTERS.map((f) => (
+                                        <button
+                                            key={f.key}
+                                            type="button"
+                                            aria-pressed={filter === f.key}
+                                            onClick={() => setFilter(f.key)}
+                                            className={cn(
+                                                "flex flex-auto cursor-pointer items-center justify-center gap-1.5 whitespace-nowrap rounded-[6px] px-2 py-[5px] text-[11.5px] font-semibold",
+                                                filter === f.key
+                                                    ? "bg-accentbg text-primary"
+                                                    : "text-ink-mid hover:text-primary"
+                                            )}
+                                        >
+                                            {f.label}
+                                            {f.key === "needs" && needsCount > 0 ? (
+                                                <span className="text-[10.5px] tabular-nums text-asking">
+                                                    {needsCount}
+                                                </span>
+                                            ) : null}
+                                        </button>
+                                    ))}
+                                </div>
+                            ) : null}
                         </div>
+                        {kinds.council ? (
+                            // the benchmark, folded to one line until opened, over the list; it draws nothing (and
+                            // `empty:hidden` takes this box with it) until the bench has a scored row. Its box scrolls when
+                            // the open chart is taller than the pane lets it be, so the list under it keeps a place.
+                            <div
+                                data-library-bench
+                                className="max-h-[60vh] flex-none overflow-y-auto border-b border-edge-faint px-3 py-2 empty:hidden"
+                            >
+                                <CouncilBenchChart />
+                            </div>
+                        ) : null}
                         <div
                             ref={listRef}
                             data-history-list
@@ -403,6 +591,23 @@ export function ConversationHistory({ model }: { model: AgentsViewModel }) {
                         >
                             {searching ? (
                                 <>
+                                    {found.length > 0 ? (
+                                        <>
+                                            <div className="flex items-center gap-2.5 px-1 pb-0.5 pt-1">
+                                                <span
+                                                    data-history-items-head
+                                                    className={cn(REGION_LABEL, "text-muted")}
+                                                >
+                                                    Councils and pairs
+                                                </span>
+                                                <div className="h-px flex-1 bg-edge-faint" />
+                                                <span className="text-[10.5px] tabular-nums text-muted">
+                                                    {found.length}
+                                                </span>
+                                            </div>
+                                            {found.map((r) => itemCard(r))}
+                                        </>
+                                    ) : null}
                                     {search.error != null ? (
                                         <div data-history-search-error className="px-1 pt-3 text-[12px] text-muted">
                                             Search failed: {search.error}
@@ -410,11 +615,14 @@ export function ConversationHistory({ model }: { model: AgentsViewModel }) {
                                     ) : search.results == null ? (
                                         <div className="px-1 pt-3 text-[12px] text-muted">Searching…</div>
                                     ) : resultRows.length === 0 ? (
-                                        <div data-history-search-empty className="px-1 pt-3 text-[12px] text-muted">
-                                            {search.incomplete
-                                                ? "No conversations match yet · indexing…"
-                                                : "No conversations match"}
-                                        </div>
+                                        // the councils and pairs above are a match too: this says there is no session to add
+                                        found.length === 0 ? (
+                                            <div data-history-search-empty className="px-1 pt-3 text-[12px] text-muted">
+                                                {search.incomplete
+                                                    ? "No conversations match yet · indexing…"
+                                                    : "No conversations match"}
+                                            </div>
+                                        ) : null
                                     ) : (
                                         <>
                                             <div className="flex items-center gap-2.5 px-1 pb-0.5 pt-1">
@@ -446,48 +654,73 @@ export function ConversationHistory({ model }: { model: AgentsViewModel }) {
                                 </>
                             ) : (
                                 <>
-                                    <button
-                                        type="button"
-                                        onClick={() => setSel("all")}
-                                        className={cn(
-                                            "flex w-full cursor-pointer items-center gap-2.5 rounded-lg border px-3 py-[9px] text-left",
-                                            sel === "all"
-                                                ? "border-accent bg-surface-selected"
-                                                : "border-border bg-surface hover:bg-surface-hover"
-                                        )}
-                                    >
-                                        <Activity
-                                            size={14}
-                                            strokeWidth={1.8}
-                                            className="flex-none text-ink-mid"
-                                            aria-hidden
-                                        />
-                                        <span className="flex-1 text-[12.5px] font-semibold text-secondary">
-                                            All activity
-                                        </span>
-                                        <span className="text-[10.5px] tabular-nums text-muted">
-                                            {totalEvents(scopedSessions)} events
-                                        </span>
-                                    </button>
+                                    {!flat ? (
+                                        <button
+                                            type="button"
+                                            onClick={() => setSel("all")}
+                                            className={cn(
+                                                "flex w-full cursor-pointer items-center gap-2.5 rounded-lg border px-3 py-[9px] text-left",
+                                                sel === "all"
+                                                    ? "border-accent bg-surface-selected"
+                                                    : "border-border bg-surface hover:bg-surface-hover"
+                                            )}
+                                        >
+                                            <Activity
+                                                size={14}
+                                                strokeWidth={1.8}
+                                                className="flex-none text-ink-mid"
+                                                aria-hidden
+                                            />
+                                            <span className="flex-1 text-[12.5px] font-semibold text-secondary">
+                                                All activity
+                                            </span>
+                                            <span className="text-[10.5px] tabular-nums text-muted">
+                                                {totalEvents(scopedSessions)} events
+                                            </span>
+                                        </button>
+                                    ) : null}
 
-                                    {base == null ? (
+                                    {listState === "loading" ? (
                                         <SkeletonRows className="mt-3 min-h-0 flex-1 space-y-[7px]">
                                             {(i) => <SkeletonLine key={i} className="h-[58px] rounded-[10px]" />}
                                         </SkeletonRows>
-                                    ) : groups.length === 0 ? (
-                                        <div className="mt-6">
-                                            <SurfaceEmptyState
-                                                title="No sessions found"
-                                                body="Sessions appear here as agents run. Start one to begin."
-                                                action={{
-                                                    label: "New agent",
-                                                    onClick: () => openLauncher(model, "agent"),
-                                                }}
-                                            />
-                                        </div>
+                                    ) : listState === "empty" ? (
+                                        flat ? (
+                                            <div data-history-flat-empty className="mt-6">
+                                                <SurfaceEmptyState
+                                                    title={
+                                                        kinds.judge && kinds.council
+                                                            ? "No pairs or councils yet"
+                                                            : kinds.judge
+                                                              ? "No judge pairs yet"
+                                                              : "No councils yet"
+                                                    }
+                                                    body={
+                                                        kinds.council
+                                                            ? "Start a council from New → Council, or ask an agent for one. Every council shows up here, a judge pair too once you pair an agent."
+                                                            : "A pair shows up here once you pair an agent with a judge, and stays after it ends."
+                                                    }
+                                                />
+                                            </div>
+                                        ) : (
+                                            <div className="mt-6">
+                                                <SurfaceEmptyState
+                                                    title="No sessions found"
+                                                    body="Sessions appear here as agents run. Start one to begin."
+                                                    action={{
+                                                        label: "New agent",
+                                                        onClick: () => openLauncher(model, "agent"),
+                                                    }}
+                                                />
+                                            </div>
+                                        )
                                     ) : (
                                         groups.map((g) => (
-                                            <div key={g.key} className="flex flex-col gap-1.5">
+                                            <div
+                                                key={g.key}
+                                                data-history-group={g.key}
+                                                className="flex flex-col gap-1.5"
+                                            >
                                                 <div className="flex items-center gap-2.5 px-1 pb-0.5 pt-3">
                                                     <span className={cn(REGION_LABEL, "text-muted")}>{g.label}</span>
                                                     <div className="h-px flex-1 bg-edge-faint" />
@@ -496,29 +729,7 @@ export function ConversationHistory({ model }: { model: AgentsViewModel }) {
                                                     </span>
                                                 </div>
                                                 <AnimatePresence initial={false} mode="popLayout">
-                                                    {g.items.map((r) =>
-                                                        r.run ? (
-                                                            <RunCard
-                                                                key={r.key}
-                                                                view={r.run.view}
-                                                                active={viewRunId === r.run.group.runId}
-                                                                member={member}
-                                                                now={now}
-                                                                onSelect={() => select(r.key)}
-                                                                onMember={(key) =>
-                                                                    selectMember(r.run!.group.runId, key)
-                                                                }
-                                                            />
-                                                        ) : (
-                                                            <SoloCard
-                                                                key={r.key}
-                                                                session={r.session!}
-                                                                active={sel === r.key}
-                                                                now={now}
-                                                                onSelect={() => setSel(r.key)}
-                                                            />
-                                                        )
-                                                    )}
+                                                    {g.items.map(renderRow)}
                                                 </AnimatePresence>
                                             </div>
                                         ))
@@ -533,7 +744,16 @@ export function ConversationHistory({ model }: { model: AgentsViewModel }) {
                         </div>
                     </div>
 
-                    <div data-history-detail className="flex min-w-0 flex-1 flex-col px-8 pb-[22px] pt-[18px]">
+                    {/* a pair reads edge to edge, as its own view does at full width (its header and its Decided column
+                        carry their own borders), and never narrower than the Decided column plus a thread that reads: a
+                        narrow window scrolls the pane sideways. A session, a run and the feed sit in the page's padding */}
+                    <div
+                        data-history-detail
+                        className={cn(
+                            "flex min-w-0 flex-1 flex-col",
+                            selPairId != null ? "overflow-x-auto" : "px-8 pb-[22px] pt-[18px]"
+                        )}
+                    >
                         <AnimatePresence mode="wait" initial={false}>
                             <motion.div
                                 key={detailKind}
@@ -543,7 +763,16 @@ export function ConversationHistory({ model }: { model: AgentsViewModel }) {
                                 exit={{ opacity: 0 }}
                                 transition={{ duration: MOTION.durMicro, ease: MOTION.easeFluid }}
                             >
-                                {selRun && selMember ? (
+                                {selPairId != null ? (
+                                    <div className="flex min-h-0 min-w-[720px] flex-1 flex-col">
+                                        <PairReadView
+                                            key={selPairId}
+                                            model={model}
+                                            pairId={selPairId}
+                                            openSession={openSession}
+                                        />
+                                    </div>
+                                ) : selRun && selMember ? (
                                     <RunDetail
                                         model={model}
                                         view={selRun.view}
@@ -567,6 +796,86 @@ export function ConversationHistory({ model }: { model: AgentsViewModel }) {
                 </div>
             </div>
         </MotionConfig>
+    );
+}
+
+// a pair under the session its working agent ran in: one tree line, `└ Pair with judge 4c6ba858 · both sides settled`. The one
+// open in the detail pane reads as selected.
+function NestedPairLine({ row, active, onSelect }: { row: PairRow; active: boolean; onSelect: () => void }) {
+    return (
+        <button
+            type="button"
+            data-history-nested="pair"
+            data-history-item={row.key}
+            aria-current={active ? "true" : undefined}
+            title={row.nestedLine}
+            onClick={onSelect}
+            className={cn(
+                "flex w-full cursor-pointer items-center gap-2 rounded-[6px] py-[5px] pl-1.5 pr-2 text-left text-[12.5px]",
+                active ? "bg-surface-selected text-primary" : "text-secondary hover:bg-surface-hover"
+            )}
+        >
+            <span aria-hidden className="flex-none text-muted">
+                └
+            </span>
+            <span className="min-w-0 flex-1 truncate">{row.nestedLine}</span>
+        </button>
+    );
+}
+
+// a pair no listed session started, or any pair in the flat list the Judge chip shows (`startedFrom` names the session that
+// started it there): its working agent's name, then its judge and why it stopped or that it still relays
+function PairCard({
+    row,
+    active,
+    now,
+    onSelect,
+    startedFrom,
+}: {
+    row: PairRow;
+    active: boolean;
+    now: number;
+    onSelect: () => void;
+    startedFrom?: string;
+}) {
+    return (
+        <motion.button
+            layout
+            variants={cardVariants}
+            initial="initial"
+            animate="animate"
+            exit="exit"
+            type="button"
+            data-history-pair={row.id}
+            data-history-item={row.key}
+            onClick={onSelect}
+            className={cn(
+                // cardVariants animates opacity per frame: the base button transition must not ease it too
+                "flex w-full cursor-pointer flex-col gap-1.5 rounded-[10px] border px-3 py-2.5 text-left transition-[border-color,background-color]",
+                active ? "border-accent bg-surface-selected" : "border-border bg-surface hover:border-edge-strong"
+            )}
+        >
+            <span className="flex w-full items-center gap-2">
+                <Scale size={13} strokeWidth={1.8} className="flex-none text-ink-mid" aria-hidden />
+                <span
+                    data-history-pair-title
+                    className="min-w-0 flex-1 truncate text-[13px] font-semibold text-primary"
+                >
+                    {row.title}
+                </span>
+                <span className="flex-none whitespace-nowrap text-[10.5px] tabular-nums text-muted">
+                    {formatAgeShort(now - row.lastactivets)}
+                </span>
+            </span>
+            <span data-history-pair-line className="min-w-0 truncate text-[11.5px] text-secondary">
+                {row.line}
+            </span>
+            {startedFrom != null ? (
+                <span data-history-pair-from title={startedFrom} className="min-w-0 truncate text-[10.5px] text-muted">
+                    {startedFrom}
+                </span>
+            ) : null}
+        </motion.button>
     );
 }
 

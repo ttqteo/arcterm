@@ -5,12 +5,12 @@
 // dialog's Council row and the palette's New council… row. The fixture project holds the round2, awaiting, done and notrun
 // councils and a terminal; a second registered project holds a terminal and no council, and so no council rows. Nothing
 // here starts a council or calls a model: New council only opens Setup, and Remove from queue (a queued council, step 10)
-// and Pin / Unpin (the Report's tab bar and a Councils row, step 11) have their stop and pin commands replaced
-// in the page. Steps 11d to 11f (docs/superpowers/plans/2026-11-03-council-ux.md, Task 6) check the tree rule with two
+// and Pin / Unpin (the Report's tab bar and a council's row in Conversations under the Council chip, step 11) have their stop and
+// pin commands replaced in the page. Steps 11d to 11f (docs/superpowers/plans/2026-11-03-council-ux.md, Task 6) check the tree rule with two
 // councils placed three days back and marked opened: the pinned one drawn at its folder's top, the unpinned one off the
 // tree, and Unpin from the Report taking the pinned one off too. Step 11g
 // (docs/superpowers/plans/2026-11-03-council-ux-fix-1.md) does the same for a pinned, stopped council with no summary,
-// whose ended time is its `updated`: Unpin from its Councils row takes it off the tree. Step 11b checks the tree
+// whose ended time is its `updated`: Unpin from its row under the Council chip takes it off the tree. Step 11b checks the tree
 // offers no Pin and that a pinned council's menu offers Unpin, 11h that Close takes an ended council off the tree, and
 // 11i that Resume (on a council the tree no
 // longer lists) puts it back in the tree and opens its Discussion with the box focused. A project's councils carry no
@@ -26,8 +26,8 @@
 // Shift+click, a plain click, the right-click menu and its Discuss together, which opens Setup with both agents seated.
 // The second agent works in a second registered project (ROOM_AGENTS), so Discuss together can find its path.
 
+import { agentPage } from "../agent-page-fixtures.mjs";
 import { waitFor } from "../attach.mjs";
-import { openLibraryTab } from "../scenarios-library.mjs";
 import {
     announceCouncil,
     arrangeCouncilProject,
@@ -223,10 +223,34 @@ async function pressEscape(h) {
     }
 }
 
-// Councils (every council, the ones the tree no longer lists too) is Library's tab, opened from the rail. The rail clears
-// Library's jump trail, so Escape there would go home to the Cockpit: the steps return to the Agent tree by its own rail item
-const openCouncilsList = (h) => openLibraryTab(h, "councils");
-const leaveCouncilsList = (h) => h.goto("agent");
+// Councils (every council, the ones the tree no longer lists too) is Library's Conversations with the Council chip on, as `g o`
+// opens it (showLibraryCouncils), reached from the rail. The rail clears Library's jump trail, so Escape there would go home to
+// the Cockpit: the steps return to the Agent tree by its own rail item, with the chip put back off first (it is Library's own
+// state, which outlives the surface)
+const COUNCIL_CHIP = '[data-history-chip="council"]';
+async function openCouncilsList(h) {
+    await h.goto("library");
+    await agentPage(
+        h,
+        `const L = await mod("app/view/library/librarystore.ts");
+        L.showLibraryCouncils(agentsModel());
+        return true;`
+    );
+    return waitFor(
+        (e) => h.ev(e),
+        `document.querySelector(${JSON.stringify(COUNCIL_CHIP)})?.getAttribute("aria-pressed") === "true" && !!document.querySelector("[data-history-list]")`,
+        UI_WAIT_MS
+    );
+}
+async function leaveCouncilsList(h) {
+    await agentPage(
+        h,
+        `const L = await mod("app/view/library/librarystore.ts");
+        globalStore.set(L.libraryConvKindsAtom, { judge: false, council: false });
+        return true;`
+    );
+    await h.goto("agent");
+}
 
 // a bare letter through the real input pipeline (j, k), after taking focus off whatever the last click left it on: the
 // agent keys stand down in a text field and the terminal
@@ -660,7 +684,7 @@ export const councilTree = {
             JSON.stringify({ stays, pinnedBare, runningBare, noPinInTree, pinnedItems, unpins, closeOnUnpinned })
         );
 
-        // 11c. Councils (Library's tab, opened from the rail) marks the pinned council's row with a pin, and the row's hover
+        // 11c. Councils (Library's Conversations under the Council chip, opened from the rail) marks the pinned council's row with a pin, and the row's hover
         // button reads Unpin there (Pin on an unpinned one) and asks wavesrv to unpin it; once saved, the mark goes
         writeCouncil(ctx, "done", { edit: (c) => (c.pinned = Date.now()) });
         await announceCouncil(h, ctx, doneId);

@@ -11,7 +11,7 @@
 //                          read twice), the hovers and clicks of each, the Table views and the narrow pane
 //   council-figures-graph  the Map of the same council: the Matrix | Graph switch, the argument map, the hover that dims
 //                          every edge but an idea's, and the click that comes back to the matrix with that row open
-//   council-bench-chart    Library → Councils: the folded Benchmark section over the list, opened (and kept open across a
+//   council-bench-chart    Library → Conversations, Council chip on: the folded Benchmark section over the list, opened (and kept open across a
 //                          reload), a point's tooltip and the Table view
 //
 // Nothing here calls a model or spends a token. The councils are written into the data dir (fixtures.mjs `seedCouncil`),
@@ -21,6 +21,7 @@
 // (public/whatsnew/<next minor>-council-figures.webp, `h.whatsnewShot`), and its shots are the Prototype's boards (Main,
 // Glance-narrow, Spend and Lanes), `council-figures-graph`'s is Graph and `council-bench-chart`'s is Bench.
 
+import { agentPage } from "../agent-page-fixtures.mjs";
 import { waitFor } from "../attach.mjs";
 import {
     announceCouncil,
@@ -618,12 +619,18 @@ const BENCH_RESULTS = { harness: "2026-11-12.1", runs: BENCH_ROWS, results: [], 
 const BENCH_STUB = { CouncilBenchResultsCommand: { value: BENCH_RESULTS } };
 const POINT = (id) => `[data-bench-point="${id}"]`;
 
-// Library → Councils, the Councils tab clicked
+// Library → Conversations with the Council chip on, as `g o` opens it (showLibraryCouncils: the list, even when a council was
+// left open full width, with the Council chip alone on), whose chip brings the Benchmark over the list
 async function openLibraryCouncils(h) {
     await h.goto("library");
-    await click(h, '[data-library-tab="councils"]');
-    if (!(await until(h, `!!document.querySelector('[data-council-figure="bench"]')`))) {
-        throw new Error("the Benchmark section did not draw over Library's Councils list");
+    await agentPage(
+        h,
+        `const L = await mod("app/view/library/librarystore.ts");
+        L.showLibraryCouncils(agentsModel());
+        return true;`
+    );
+    if (!(await until(h, `!!document.querySelector('[data-library-bench] [data-council-figure="bench"]')`))) {
+        throw new Error("the Benchmark section did not draw over Conversations' list under the Council chip");
     }
     await sleep(500);
 }
@@ -647,7 +654,7 @@ export const councilBenchChart = {
         const steps = [];
         const step = stepper(steps);
 
-        await step("Library's Councils tab folds the Benchmark to one header and its takeaway over the list, and opening it draws a small multiple for each mode", async () => {
+        await step("Conversations with the Council chip on folds the Benchmark to one header and its takeaway over the list, and opening it draws a small multiple for each mode", async () => {
             await openLibraryCouncils(h);
             const folded = await h.ev(`(() => {
                 const fig = document.querySelector('[data-council-figure="bench"]');
@@ -658,7 +665,8 @@ export const councilBenchChart = {
                     expanded: fig.querySelector("[data-bench-toggle]")?.getAttribute("aria-expanded"),
                     panels: fig.querySelectorAll("[data-bench-panel]").length,
                     toggle: !!fig.querySelector("[data-figure-table-toggle]"),
-                    overList: !!document.querySelector("[data-library-bench] ~ [data-council-history]"),
+                    overList: !!document.querySelector("[data-library-bench] ~ [data-history-list]"),
+                    chip: document.querySelector('[data-history-chip="council"]')?.getAttribute("aria-pressed"),
                 };
             })()`);
             await h.shot("cdp-shots/council-bench-folded.png");
@@ -685,6 +693,9 @@ export const councilBenchChart = {
                 folded.expanded === "false" &&
                 folded.panels === 0 &&
                 !folded.toggle &&
+                // the box is drawn over Conversations' list, under the Council chip
+                folded.overList &&
+                folded.chip === "true" &&
                 clicked &&
                 open &&
                 facts.expanded === "true" &&

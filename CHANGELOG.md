@@ -34,13 +34,18 @@ and a picture given to a line that is not big.
 
 ### Added
 
+- Judge pairs stay readable after they end: Library's Conversations lists each pair under the session of the agent that
+  worked, read-only with its Decided list, and pairs synced from your other machine read the same. `wsh read <pair id>`
+  prints one as text.
 - Quote from a file into the chat: select a passage in the agent panel's File tab and press Quote (or `q`) in a
   markdown Preview, or Quote in chat (`Alt`+`Q`, or the right-click menu) in Source. It lands in the agent's chat box as
   a `> ` quote under the file and lines it came from (`docs/plan.md:42-44`), the caret under it for your question.
 
 ### Changed
 
-- Library's tabs are plain labels with a sliding underline; the 1–4 keys still switch them, named in each tab's tooltip
+- Councils moved into Conversations: the Councils tab is gone, `Mod+G o` opens Conversations with the Council chip on,
+  and a council nests under the session that started it.
+- Library's tabs are plain labels with a sliding underline; the 1–3 keys still switch them, named in each tab's tooltip
   rather than beside its label.
 - An agent in a brainstorm opens its panel on the Brainstorm tab, and one linked to an initiative on the Initiative tab,
   instead of Overview; once you pick a tab, the panel stays on yours.
