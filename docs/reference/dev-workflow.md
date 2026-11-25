@@ -27,7 +27,9 @@ The upstream Electron-era docs were deleted on 2026-07-31 (`BUILD.md`, `CONTRIBU
 (`scripts/release-build.mjs`): it checks HEAD out into `.worktrees/release-build` (junctioning `node_modules`,
 `src-tauri/target`, `dist/bin`), so edits other agents make in the checkout meanwhile stay out; syncs the version,
 builds the backend, then `cargo tauri build`, and copies the installer (`.exe`, or `.dmg` on a Mac) into the gitignored
-`releases/` with the commit in its name (`arcterm_0.15.11_5900060a2_x64-setup.exe`). Commit what you want in the build
+`releases/` with the commit in its name (`arcterm_0.15.11_5900060a2_x64-setup.exe`). `releases/` keeps the newest 3
+installers: each build deletes the older ones (`scripts/release-prune.mjs`, `KEEP_RELEASES`), since each is 30-50 MB
+and `task install` installs from `src-tauri/target`, not from there. Commit what you want in the build
 first. `FROM=<commit>` builds another commit; `FROM=tree` builds the checkout with its uncommitted edits (named
 `<commit>-dirty`).
 

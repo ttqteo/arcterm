@@ -24,6 +24,7 @@ import { spawnSync } from "node:child_process";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { MAX_BIG_LINES, MIN_RELEASE_LINES, bumpTooSmall, describeCounts, suggestBump } from "./release-bump.mjs";
+import { KEEP_RELEASES, pruneReleases } from "./release-prune.mjs";
 import { linkShared, unlinkShared } from "./worktree-junctions.mjs";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url)).replace(/[\\/]$/, "");
@@ -190,6 +191,12 @@ try {
 if (!dryRun) {
     const out = copyInstaller(version, stamp);
     console.log(`\nbuilt arcterm ${version} from ${stamp} (${subject})${out ? `\n  -> ${out}` : ""}`);
+    if (out) {
+        const dropped = pruneReleases(join(ROOT, "releases"), out.slice("releases/".length));
+        if (dropped.length > 0) {
+            console.log(`\nreleases/ keeps the newest ${KEEP_RELEASES}: deleted ${dropped.join(", ")}`);
+        }
+    }
     if (bump !== "none") {
         if (fromTree) {
             console.log(`\nnot tagged: --from tree builds uncommitted edits no commit holds`);

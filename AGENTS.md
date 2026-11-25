@@ -33,7 +33,7 @@ Builds run through [Task](https://taskfile.dev) (`Taskfile.yml`), chaining Go, R
 | `npm test` / `npx vitest run <file>` / `-t "<name>"` | Frontend unit tests. |
 | `go test ./pkg/x -run '^TestName$'` | One Go test. A whole package: `ARC_VERIFY_CHANGED=<file of changed paths> node scripts/verify.mjs ./pkg/x` (batches; needed for `pkg/orchestrate`). On Windows prefix with `CGO_ENABLED=1 CC="zig cc -target x86_64-windows-gnu"`. |
 | `cargo test --manifest-path src-tauri/Cargo.toml` | Rust tests. |
-| `task tauri:build` | Production build of a **commit** (not the working tree) into `releases/`. Commit first. **An agent that builds for the person to install passes `BUMP=auto` unasked** and commits the bump; never a patch, major only by hand. Bump rules and the 120-line changelog split: dev-workflow "Release builds". |
+| `task tauri:build` | Production build of a **commit** (not the working tree) into `releases/`, which keeps the newest 3 installers. Commit first. **An agent that builds for the person to install passes `BUMP=auto` unasked** and commits the bump; never a patch, major only by hand. Bump rules and the 120-line changelog split: dev-workflow "Release builds". |
 | `task install` | Installs the last build over the running arcterm, closing it and **every agent in it**: an agent never runs it. Build, check the installer landed in `releases/`, finish the rest, then end the turn with the installer path and `! task install` for the person to type. |
 | `task check:version` | Fail if `package.json`'s version drifted from the Tauri sites (`package.json` is the source of truth). |
 
