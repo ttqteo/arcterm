@@ -45,6 +45,8 @@ and a picture given to a line that is not big.
 - The green server mark beside an agent or a project lists every port its servers listen on, not two and a `+N`.
 - The suggested answer under an agent's last message shows its reason right in the line, without hovering the name;
   older messages still keep it in the tooltip.
+- A long paste into New agent's Task box folds into a Pasted text chip, as in the chat box, so the task you type around
+  it stays in view; the agent still gets the paste whole.
 
 ### Fixed
 

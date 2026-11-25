@@ -51,6 +51,7 @@ import { centerModeAtom, overviewProjectAtom, showCouncilSetup } from "./agentce
 import type { AgentsViewModel } from "./agents";
 import { channelsAtom, primeChannels } from "./channelsstore";
 import type { EditorLike } from "./chateditor";
+import { expandPastes } from "./chatpastes";
 import { RailSantaHat } from "./christmashat";
 import {
     accountLaunchMeta,
@@ -950,11 +951,12 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
             return;
         }
         // the task with its attachments: files as the "read these files" block; images as codex starting fresh takes
-        // them (--image after the prompt), else as the "Attached images:" block. A terminal sends none of it.
+        // them (--image after the prompt), else as the "Attached images:" block. A terminal sends none of it. A long paste
+        // folded into a chip goes written out in a <pasted_content> block, which the first bubble folds, as Chat's does.
         const riding = runtimeShowsTask(runtime) ? readyPaths(attachments) : { images: [], files: [] };
         const { task: fullTask, extraArgs } = composeLaunchTask(
             runtime,
-            runtimeShowsTask(runtime) ? task : "",
+            runtimeShowsTask(runtime) ? expandPastes(task, true) : "",
             riding.images,
             riding.files,
             resume != null
@@ -1041,7 +1043,8 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
                           resumeTitle: sessionTitle(resume),
                       }
                     : {}),
-                task,
+                // the pastes written out plain, so the held pane and Edit in New read them as text
+                task: expandPastes(task),
                 ...readyPaths(attachments),
                 reason: machineBusy,
             });
