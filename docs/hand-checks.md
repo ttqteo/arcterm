@@ -23,6 +23,9 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
 
 ## 2026-11-25
 
+- [ ] (arcterm) Brainstorm run starting: approve a brainstorm's builder check and press Start in the launcher; until
+  the run is created, the agent's sidebar row reads "starting run" (not "asking question") and Chat's builder check
+  card reads Working with "The run is starting", not the amber Waiting on you (`withStartingRun`, `checkCard`).
 - [ ] (arcterm) Sidecar Resources: open Sidecar on the wall (and the small form's Resources tab); within a few seconds
   the band lists Sidecar and arcterm rows and the CPU/RAM charts start drawing, instead of "Measuring…" for good (the
   `resources` act's `ask` was dropped by `validateAct`, so `resourcesFor` refused every reading).
