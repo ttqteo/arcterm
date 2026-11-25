@@ -1748,7 +1748,7 @@ export function CommandPalette({ model }: { model: AgentsViewModel }) {
 
     const placeholder =
         atTop && nav.scope === "files" && fileTarget != null
-            ? `Open a file in #${fileTarget.name}, path:line jumps${surface === "code" ? ", @ lists symbols" : ""}…`
+            ? `Open a file in #${fileTarget.name}, path:line jumps${surface === "code" ? ", Alt+O lists symbols" : ""}…`
             : placeholderFor(nav);
     // a narrowed scope names itself in the box; in All, a lone letter that starts a prefix says where it leads
     const token = atTop && nav.scope !== "all" ? scopeDef(nav.scope).label : null;

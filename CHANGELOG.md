@@ -77,6 +77,8 @@ and a picture given to a line that is not big.
 
 ### Fixed
 
+- Ctrl+P's hint on Code says Alt+O lists the open file's symbols; it said `@` did, but an `@` typed there searches
+  paths (`@scope/pkg`, a Next.js `@slot` folder).
 - A new agent's first message with a long paste in it shows the paste as a folded card, not as raw
   `<\pasted_content>` text.
 - A failed subagent no longer stays in the Agent tree forever: it leaves once its agent starts another subagent after
