@@ -51,6 +51,14 @@ func devMode(t *testing.T, on bool) {
 	t.Cleanup(func() { wavebase.Dev_VarCache = prev })
 }
 
+// devApp sets whether wavesrv was told it runs in a dev app (ARC_DEV_APP), and puts the cache back after the test.
+func devApp(t *testing.T, on bool) {
+	t.Helper()
+	prev := wavebase.DevApp_VarCache
+	wavebase.DevApp_VarCache = on
+	t.Cleanup(func() { wavebase.DevApp_VarCache = prev })
+}
+
 func seedIdeas(t *testing.T, store *sessionideas.Store, ideas ...wshrpc.SessionIdea) {
 	t.Helper()
 	if err := store.Update(func(d *wshrpc.SessionIdeasData) error {
@@ -479,12 +487,12 @@ func TestSessionIdeasUnscannedHook(t *testing.T) {
 	swap(t, &storageMarks.paths, map[string]bool(nil)) // the marks are read afresh
 	dir := t.TempDir()
 	day := 24 * time.Hour
-	never, _, _ := ideasTranscript(t, dir, "never", 40*day)
-	young, _, _ := ideasTranscript(t, dir, "young", time.Hour)
+	never, neverSize, neverMtime := ideasTranscript(t, dir, "never", 40*day)
+	young, youngSize, youngMtime := ideasTranscript(t, dir, "young", time.Hour)
 	read, readSize, readMtime := ideasTranscript(t, dir, "read", 40*day)
 	passed, passedSize, passedMtime := ideasTranscript(t, dir, "passed", 40*day)
-	grown, _, grownMtime := ideasTranscript(t, dir, "grown", 40*day)
-	archived, _, _ := ideasTranscript(t, filepath.Join(sessionarchive.Dir(), "-p-proj"), "archived", 40*day)
+	grown, grownSize, grownMtime := ideasTranscript(t, dir, "grown", 40*day)
+	archived, archivedSize, archivedMtime := ideasTranscript(t, filepath.Join(sessionarchive.Dir(), "-p-proj"), "archived", 40*day)
 	if err := store.Update(func(d *wshrpc.SessionIdeasData) error {
 		d.Marks = []wshrpc.SessionIdeaMark{
 			{TranscriptPath: read, Size: readSize, MtimeMs: readMtime.UnixMilli(), Outcome: wshrpc.SessionIdeaOutcome_Nothing},
@@ -496,19 +504,20 @@ func TestSessionIdeasUnscannedHook(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, c := range []struct {
-		name string
-		path string
-		want bool
+		name  string
+		path  string
+		size  int64
+		mtime time.Time
+		want  bool
 	}{
-		{"a quiet session no scan marked", never, true},
-		{"one still being written is left to a later scan", young, false},
-		{"one a scan read", read, false},
-		{"one a scan passed over (it is scanned for good)", passed, false},
-		{"one that grew since its scan has been scanned, so it is not never scanned", grown, false},
-		{"one in arcterm's archive, which a scan leaves alone", archived, false},
-		{"one that is gone", filepath.Join(dir, "gone.jsonl"), false},
+		{"a quiet session no scan marked", never, neverSize, neverMtime, true},
+		{"one still being written is left to a later scan", young, youngSize, youngMtime, false},
+		{"one a scan read", read, readSize, readMtime, false},
+		{"one a scan passed over (it is scanned for good)", passed, passedSize, passedMtime, false},
+		{"one that grew since its scan has been scanned, so it is not never scanned", grown, grownSize, grownMtime, false},
+		{"one in arcterm's archive, which a scan leaves alone", archived, archivedSize, archivedMtime, false},
 	} {
-		if got := sessionIdeasUnscanned(c.path); got != c.want {
+		if got := sessionIdeasUnscanned(c.path, c.size, c.mtime); got != c.want {
 			t.Errorf("%s: unscanned = %v, want %v", c.name, got, c.want)
 		}
 	}
@@ -517,7 +526,7 @@ func TestSessionIdeasUnscannedHook(t *testing.T) {
 func TestSessionIdeasUnscannedHookClaimsNothingWhenTheStoreCannotBeRead(t *testing.T) {
 	store := emptySessionIdeas(t)
 	swap(t, &storageMarks.paths, map[string]bool(nil))
-	path, _, _ := ideasTranscript(t, t.TempDir(), "old", 40*24*time.Hour)
+	path, size, mtime := ideasTranscript(t, t.TempDir(), "old", 40*24*time.Hour)
 	if err := os.MkdirAll(store.Root, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -531,7 +540,7 @@ func TestSessionIdeasUnscannedHookClaimsNothingWhenTheStoreCannotBeRead(t *testi
 	}
 	t.Cleanup(func() { os.WriteFile(statePath, good, 0o644) })
 	buf := captureLog(t)
-	if sessionIdeasUnscanned(path) {
+	if sessionIdeasUnscanned(path, size, mtime) {
 		t.Fatal("with the marks unreadable no session may read as never scanned")
 	}
 	if !strings.Contains(buf.String(), "reading the marks") {
@@ -553,6 +562,7 @@ func ideasSessionRow(t *testing.T, rows []wshrpc.SessionIdeasSession, id string)
 func TestSessionIdeasSeedRefusedOutsideDevMode(t *testing.T) {
 	store := emptySessionIdeas(t)
 	devMode(t, false)
+	devApp(t, false)
 	err := (&WshServer{}).SessionIdeasSeedCommand(context.Background(), wshrpc.CommandSessionIdeasSeedData{
 		Data:    wshrpc.SessionIdeasData{SeenTs: 5, Ideas: []wshrpc.SessionIdea{{ID: "x"}}},
 		Fixture: true,
@@ -568,6 +578,27 @@ func TestSessionIdeasSeedRefusedOutsideDevMode(t *testing.T) {
 	}
 	if err := (&WshServer{}).SessionIdeasSeedCommand(context.Background(), wshrpc.CommandSessionIdeasSeedData{Clear: true}); err == nil {
 		t.Fatal("clear outside dev mode must be refused too")
+	}
+}
+
+// the Tauri host and the browser app tell wavesrv it is a dev app with ARC_DEV_APP; neither sets WAVETERM_DEV, so that
+// flag alone is what the seed must accept
+func TestSessionIdeasSeedAcceptedInADevApp(t *testing.T) {
+	store := emptySessionIdeas(t)
+	devMode(t, false)
+	devApp(t, true)
+	err := (&WshServer{}).SessionIdeasSeedCommand(context.Background(), wshrpc.CommandSessionIdeasSeedData{
+		Data:    wshrpc.SessionIdeasData{SeenTs: 5},
+		Fixture: true,
+	})
+	if err != nil {
+		t.Fatalf("a dev app must accept the seed, got %v", err)
+	}
+	if d, _ := store.Load(); d.SeenTs != 5 {
+		t.Fatalf("an accepted seed writes its data, got %+v", d)
+	}
+	if _, on := sessionIdeasFixture(); !on {
+		t.Fatal("an accepted seed with Fixture turns fixture mode on")
 	}
 }
 

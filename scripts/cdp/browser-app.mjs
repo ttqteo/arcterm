@@ -76,7 +76,8 @@ export function chromeArgs({ cdpPort, url, profile, headed }) {
     ];
 }
 
-// what spawn_wavesrv (src-tauri/src/main.rs) gives it, and ARC_DEV_NO_GLOBAL_INSTALL, which keeps its vault in
+// what spawn_wavesrv (src-tauri/src/main.rs) gives it, ARC_DEV_APP, which a debug build sets too so the dev-only RPCs
+// (the scenario fixtures) accept it (pkg/wavebase IsDevApp), and ARC_DEV_NO_GLOBAL_INSTALL, which keeps its vault in
 // the store and its agent sync out of the user's ~/.claude (pkg/wavebase NoGlobalInstall)
 export function wavesrvEnv({ authKey, root, store, env = process.env }) {
     return {
@@ -85,6 +86,7 @@ export function wavesrvEnv({ authKey, root, store, env = process.env }) {
         WAVETERM_APP_PATH: join(root, "dist"),
         WAVETERM_DATA_HOME: join(store, "data"),
         WAVETERM_CONFIG_HOME: join(store, "config"),
+        ARC_DEV_APP: "1",
         ARC_DEV_NO_GLOBAL_INSTALL: "1",
     };
 }

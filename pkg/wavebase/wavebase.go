@@ -36,6 +36,10 @@ const (
 	WaveNoConfirmQuitVarName    = "WAVETERM_NOCONFIRMQUIT"
 	// set on a dev app beside the user's own (the final stage's, task dev:browser): it touches nothing outside its store
 	NoGlobalInstallVarName = "ARC_DEV_NO_GLOBAL_INSTALL"
+	// set on wavesrv by a debug Tauri build and by scripts/cdp/browser-app.mjs: it lets dev-only RPCs (the scenario
+	// fixtures) tell a dev app from a packaged one. Narrower than WAVETERM_DEV, which also turns on the Electron-era dev
+	// paths (IsDevMode), and unlike NoGlobalInstall the person's own `task dev` has it
+	DevAppVarName = "ARC_DEV_APP"
 	// marks a wavesrv running on a copy of the user's packaged store (scripts/cdp/snapshot-dev.mjs). The copy holds live
 	// runs and agents whose cwds are real checkouts, so nothing it does may reach them, the vault remote or the harness homes
 	ArcSnapshotVarName = "ARC_SNAPSHOT"
@@ -61,6 +65,7 @@ var AppPath_VarCache string          // caches WAVETERM_APP_PATH
 var AppResourcesPath_VarCache string // caches WAVETERM_RESOURCES_PATH
 var Dev_VarCache string              // caches WAVETERM_DEV
 var NoGlobalInstall_VarCache bool    // caches ARC_DEV_NO_GLOBAL_INSTALL
+var DevApp_VarCache bool             // caches ARC_DEV_APP
 var Snapshot_VarCache bool           // caches ARC_SNAPSHOT
 
 const WaveLockFile = "wave.lock"
@@ -115,6 +120,9 @@ func CacheAndRemoveEnvVars() error {
 	os.Unsetenv(WaveNoConfirmQuitVarName)
 	NoGlobalInstall_VarCache = os.Getenv(NoGlobalInstallVarName) != ""
 	os.Unsetenv(NoGlobalInstallVarName)
+	// removed too, so a shell or agent started from the dev app does not carry it into a packaged app of its own
+	DevApp_VarCache = os.Getenv(DevAppVarName) != ""
+	os.Unsetenv(DevAppVarName)
 	// removed like the rest, so a shell or agent started from a snapshot app does not carry it into a dev app of its own
 	Snapshot_VarCache = os.Getenv(ArcSnapshotVarName) == "1"
 	os.Unsetenv(ArcSnapshotVarName)
@@ -123,6 +131,12 @@ func CacheAndRemoveEnvVars() error {
 
 func IsDevMode() bool {
 	return Dev_VarCache != ""
+}
+
+// IsDevApp is whether the host told this wavesrv it runs in a dev app (ARC_DEV_APP): a debug Tauri build, or the
+// browser app the final stage starts. A packaged build never sets it.
+func IsDevApp() bool {
+	return DevApp_VarCache
 }
 
 // NoGlobalInstall is a dev app that leaves the user's global state alone: it keeps its vault in its own data dir

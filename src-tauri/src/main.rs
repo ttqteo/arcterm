@@ -113,6 +113,10 @@ fn spawn_wavesrv(
         // fill and deadlock it.
         .stdout(Stdio::null())
         .stderr(Stdio::piped());
+    // a dev app tells wavesrv so, for the RPCs that only a dev app accepts (the scenario fixtures); never a packaged build
+    if cfg!(debug_assertions) {
+        cmd.env(paths::DEV_APP_ENV, "1");
+    }
     // wavesrv is a console-subsystem exe. A GUI (no-console) parent spawning it without this
     // flag makes Windows pop a separate console window for it — and closing that window sends
     // CTRL_CLOSE_EVENT, killing wavesrv and the whole backend. Run it with no console.

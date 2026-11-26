@@ -34,6 +34,11 @@ pub const DEV_DATA_DIR_ENV: &str = "ARC_DEV_DATA_DIR";
 // dir, and its agent sync writes no harness (pkg/wavebase NoGlobalInstall).
 pub const DEV_NO_GLOBAL_INSTALL_ENV: &str = "ARC_DEV_NO_GLOBAL_INSTALL";
 
+// a debug build sets this on wavesrv so dev-only RPCs (the scenario fixtures) can tell a dev app from a packaged one
+// (pkg/wavebase IsDevApp). A packaged build never sets it. Not WAVETERM_DEV, which also switches on the Electron-era
+// dev paths in wavesrv.
+pub const DEV_APP_ENV: &str = "ARC_DEV_APP";
+
 pub fn dev_data_base(default: PathBuf, is_dev: bool, override_dir: Option<OsString>) -> PathBuf {
     match override_dir {
         Some(dir) if is_dev && !dir.is_empty() => PathBuf::from(dir),

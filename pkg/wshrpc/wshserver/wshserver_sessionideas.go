@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -95,18 +94,15 @@ func underDir(path, dir string) bool {
 
 // sessionIdeasUnscanned is storage.SessionUnscanned: a transcript is unscanned when no scan marked it, of any outcome
 // (a skipped session is scanned for good), and a scan would read it (it is not in the archive, and has been quiet for 2
-// days). Nothing scans inside a clean: Storage's Scan them first starts one.
-func sessionIdeasUnscanned(path string) bool {
+// days). Nothing scans inside a clean: Storage's Scan them first starts one. The transcript's size and mtime are the
+// ones the measure just read when it listed the session.
+func sessionIdeasUnscanned(path string, size int64, mtime time.Time) bool {
 	marks, paths, ok := storageMarkIndex()
 	if !ok || paths[storagePathKey(path)] {
 		return false
 	}
-	info, err := os.Stat(path)
-	if err != nil {
-		return false // it went since the card listed it
-	}
 	return sessionideas.Eligible(agentsessions.DigestSession{
-		Path: path, Size: info.Size(), Mtime: info.ModTime(), Archived: underDir(path, sessionarchive.Dir()),
+		Path: path, Size: size, Mtime: mtime, Archived: underDir(path, sessionarchive.Dir()),
 	}, marks, time.Now())
 }
 
@@ -253,7 +249,7 @@ func (ws *WshServer) SessionIdeasScanCommand(ctx context.Context, data wshrpc.Co
 // SessionIdeasSeedCommand is the dev app's fixture door: it writes Data to the store, turns fixture mode on when Fixture
 // is set (a Seed without it leaves the mode as it was), or, with Clear, empties the store and turns the mode off.
 func (ws *WshServer) SessionIdeasSeedCommand(ctx context.Context, data wshrpc.CommandSessionIdeasSeedData) error {
-	if !wavebase.IsDevMode() {
+	if !wavebase.IsDevMode() && !wavebase.IsDevApp() {
 		return errors.New("sessionideasseed is for the dev app only")
 	}
 	store := sessionideas.Default()

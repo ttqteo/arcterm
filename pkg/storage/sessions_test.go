@@ -54,8 +54,11 @@ func TestOldSessionsUnscannedAsksTheHookPerTranscript(t *testing.T) {
 	read := session(t, root, "already-scanned", 10, 40*day)
 	var asked []string
 	prev := SessionUnscanned
-	SessionUnscanned = func(path string) bool {
+	SessionUnscanned = func(path string, size int64, mtime time.Time) bool {
 		asked = append(asked, path)
+		if size != 10 || time.Since(mtime) < 39*day {
+			t.Errorf("the hook is handed the transcript's own size and mtime, not what the card sums: %s is %d bytes, changed %s", path, size, mtime)
+		}
 		return path == never
 	}
 	t.Cleanup(func() { SessionUnscanned = prev })
@@ -91,7 +94,7 @@ func TestOldSessionsUnscannedIsAskedOnlyOfSessionsTheCardLists(t *testing.T) {
 	session(t, root, "young", 10, 2*day) // under a week old: the card does not list it
 	asked := 0
 	prev := SessionUnscanned
-	SessionUnscanned = func(string) bool { asked++; return true }
+	SessionUnscanned = func(string, int64, time.Time) bool { asked++; return true }
 	t.Cleanup(func() { SessionUnscanned = prev })
 	if rep := (oldSessions{}).measure(context.Background(), sessionEnv(t, root)); len(rep.Items) != 0 || asked != 0 {
 		t.Fatalf("a session the card does not list is never looked up: %+v, asked %d", rep.Items, asked)

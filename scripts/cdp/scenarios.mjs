@@ -61233,15 +61233,27 @@ const settingsStorage = {
                 else ctx.recentSession = name;
             }
 
+            // The scan that saw the fixtures ends the wait. A Rescan asked while the auto-clean's scan runs is followed by
+            // a second scan at once, so the wait covers the rest of the first and all of the second. A scan walks the
+            // build output of every folder an agent worked in (also the real ones: this app reads ~/.claude): about 15 s
+            // on an idle machine, 7 to 40 minutes on a loaded one ("storage scan took" in waveapp.log). So it waits while
+            // a scan runs, for up to 180 s, and says how long it waited.
             ctx.scanFrom = Date.now();
             await h.rpc("rescanstorage", null);
-            const scanBy = Date.now() + 60_000;
+            const askedAt = Date.now();
+            let started = false;
             for (;;) {
                 const r = await h.rpc("getstorage", null);
+                started = started || r?.scanning === true;
                 if (r?.scannedts >= ctx.scanFrom && !r.scanning) break;
-                if (Date.now() > scanBy) throw new Error("no scan of the fixtures within 60 s");
+                const waited = Math.round((Date.now() - askedAt) / 1000);
+                if (!started && waited > 30) {
+                    throw new Error(`no scan started within ${waited} s of rescanstorage (last scan ${r?.scannedts}, asked at ${ctx.scanFrom})`);
+                }
+                if (waited > 180) throw new Error(`the scan of the fixtures was still running after ${waited} s`);
                 await polishNap(500);
             }
+            ctx.scanSecs = Math.round((Date.now() - askedAt) / 1000);
         } catch (e) {
             ctx.arrangeError = String(e?.message ?? e);
         }
@@ -61254,6 +61266,7 @@ const settingsStorage = {
             rec("0. the fixtures were made and a scan saw them (and, with auto-clean on, its first pass ran)", false, ctx.arrangeError);
             return steps;
         }
+        rec("0. the fixtures were made and a scan saw them (and, with auto-clean on, its first pass ran)", true, `the scan of the fixtures took ${ctx.scanSecs} s`);
         const repoName = ctx.repo.split(/[\\/]/).pop();
 
         // 1. the page in the index, its cards, which cards have a clean button

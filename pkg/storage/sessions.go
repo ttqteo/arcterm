@@ -25,9 +25,10 @@ const (
 
 // SessionUnscanned is the server's answer to whether no Session ideas scan has read a transcript: it has no mark of any
 // outcome, and a scan would read it. The measure asks it of each session it lists, for the confirm's "were never
-// scanned for ideas" and its Scan them first. A hook so this package does not import pkg/sessionideas; the server sets
-// it, and while it is nil (a snapshot store, a test) no session reads as unscanned.
-var SessionUnscanned func(path string) bool
+// scanned for ideas" and its Scan them first, and hands it the transcript's size and mtime it just read (the hook would
+// stat each of thousands of sessions otherwise). A hook so this package does not import pkg/sessionideas; the server
+// sets it, and while it is nil (a snapshot store, a test) no session reads as unscanned.
+var SessionUnscanned func(path string, size int64, mtime time.Time) bool
 
 // oldSessions lists Claude transcripts untouched for at least a week and moves the chosen ones to the session
 // trash through pkg/sessiontrash, whose rules hold: never a session a tab has open or wrote to in the last two
@@ -80,7 +81,7 @@ func (oldSessions) measure(ctx context.Context, env *Env) StorageCategoryReport 
 					it.Cleanable = false
 					it.Reason = "open in a tab"
 				}
-				it.Unscanned = SessionUnscanned != nil && SessionUnscanned(path)
+				it.Unscanned = SessionUnscanned != nil && SessionUnscanned(path, info.Size(), info.ModTime())
 				items = append(items, it)
 			}
 		}
