@@ -140,6 +140,7 @@ import { TaggedPromptText } from "./chattagblock";
 import { ChatTurnFiles } from "./chatturnfiles";
 import { turnCanvas } from "./chatcanvaspeek";
 import { ChatCanvasPeekCard } from "./chatcanvaspeekcard";
+import { useUnreadReading, type ChatUnread } from "./chatunread";
 import { VERDICT_TOPIC, verdictMode, type VerdictMode } from "./chatverdict";
 import { ChatVerdictCard } from "./chatverdictcard";
 import { CommandOutput, ShellCommand } from "./commandtext";
@@ -154,7 +155,9 @@ import { railVisibleAtom } from "./railstore";
 import { useConversationRuns } from "./runoriginstore";
 import { runQueueAtom, runQueueStartedAtom, useRunQueueFeed } from "./runqueuestore";
 import { compactionsByIdAtom } from "./subagentsstore";
+import { RELEASE_TAIL_EVENT } from "./sticktobottom";
 import { firstItemBelow, keepTranscriptPlace, transcriptPlace } from "./transcriptplace";
+import { chatTurns, unreadRuleLabel, unreadTurns } from "./unreadturns";
 
 /** A sent card shows this many of its lines until it is opened. */
 const SENT_FOLD_LINES = 3;
@@ -861,6 +864,24 @@ function ChunkDivider({ n, label }: { n: number; label: string }) {
 }
 
 // what stands for the message the Initiative tab sent to tell the agent of a switch: arcterm's words, on your side of the column
+// The rule over the first of the turns that were unread when the agent came on screen, "N new turns" (unreadturns.ts):
+// where Chat opens. It keeps the count it had then, and goes once the agent leaves the screen. No data-chat-item, so the
+// place kept and restored never counts it
+function UnreadRule({ n, vi }: { n: number; vi: boolean }) {
+    return (
+        <div data-chat-unread-rule={n} className="flex items-center gap-2.5 self-stretch">
+            <span className="h-px flex-1 bg-unread/50" />
+            <span className="flex-none text-[11.5px] font-medium leading-[1.6] text-unread">
+                {unreadRuleLabel(n, vi)}
+            </span>
+            <span className="h-px flex-1 bg-unread/50" />
+        </div>
+    );
+}
+
+// how far below the view's top the rule sits once Chat jumps to it (px): the column's own top padding
+const UNREAD_JUMP_MARGIN = 16;
+
 function SwitchNoteRow({ n }: { n: number }) {
     return (
         <div data-chat-switch-note={n} className="flex items-center gap-1.5 text-[12px] text-muted">
@@ -922,6 +943,7 @@ export function ChatConversation({
     agent,
     cwd,
     liveJudgeKey,
+    unread,
     className,
 }: {
     entries: AgentEntry[];
@@ -970,6 +992,9 @@ export function ChatConversation({
     // judge's line under that turn's message is the live one, which offers Read the code and pick, Stop and Retry
     // (chatjudgeline.tsx). Every other line shows what was judged and nothing to press
     liveJudgeKey?: string | null;
+    // the agent's unread turns (chatunread.ts): opened on screen with some, the conversation opens at the first under the
+    // rule, over a kept place; each turn read drops the count. Left out where there is no live agent
+    unread?: ChatUnread;
     className?: string;
 }) {
     const toolsLive = working ?? !!active;
@@ -1195,6 +1220,21 @@ export function ChatConversation({
     }
     const visible = shownItems(items, Math.max(win.shown, Math.min(CHAT_RENDER_STEP, items.length)));
     const hidden = items.length - visible.length;
+    // The rule over the first unread turn, fixed the first time the conversation holds its items after the agent came on
+    // screen with unread turns (not while a kept window still reads what was written meanwhile: those are the newest
+    // turns), and gone once it leaves. `key` is the item it stands over, "" when no turn was found to stand over
+    const unreadOpen = unread?.open ?? null;
+    const [rule, setRule] = useState<{ seq: number; key: string; n: number } | null>(null);
+    if (unreadOpen == null) {
+        if (rule != null) {
+            setRule(null);
+        }
+    } else if (rule?.seq !== unreadOpen.seq && items.length > 0 && !catchingUp) {
+        const first = unreadTurns(chatTurns(items), unreadOpen.count);
+        setRule({ seq: unreadOpen.seq, key: first[0]?.start ?? "", n: first.length });
+    }
+    // the open the conversation jumped for: the turns are read only once it has (useUnreadReading's `armed`)
+    const [jumpedSeq, setJumpedSeq] = useState<number | null>(null);
     // A line Arc sent can draw nothing at all (an action line, the Fix or Skip line of a verdict card, a run-ended message,
     // or the line that started a run while the run is live): such an item gets no wrapper, so it leaves no empty slot in
     // the column's gap. `drawnVisible` is what has an element, in order, which is what the place kept and restored below
@@ -1316,7 +1356,8 @@ export function ChatConversation({
 
     // opened again under a kept place: draw back to the item holding it and scroll it to the top, at the same depth
     useLayoutEffect(() => {
-        if (placeId == null || placedFor.current === placeId || items.length === 0) {
+        // unread turns on open: the jump to the first of them wins over the kept place
+        if (placeId == null || placedFor.current === placeId || items.length === 0 || unreadOpen != null) {
             return;
         }
         const kept = transcriptPlace(placeId);
@@ -1351,7 +1392,35 @@ export function ChatConversation({
         if (el != null && scroller != null) {
             scroller.scrollTop += el.getBoundingClientRect().top - scroller.getBoundingClientRect().top + place.offset;
         }
-    }, [placeId, items.length, visible.length, keyOffset]);
+    }, [placeId, items.length, visible.length, keyOffset, unreadOpen]);
+
+    // Opened on screen with unread turns: draw back to the first of them and scroll its rule to the top of the view, then
+    // let go of the tail (useStickToBottom), so what arrives at the end no longer pulls the view down. With none found to
+    // stand over, the conversation goes to its end, as it opens with nothing unread
+    useLayoutEffect(() => {
+        const root = rootRef.current;
+        const scroller = scrollParent(root);
+        if (rule == null || jumpedSeq === rule.seq || root == null || scroller == null) {
+            return;
+        }
+        const at = rule.key === "" ? -1 : items.findIndex((it) => it.key === rule.key);
+        const need = items.length - at;
+        if (at >= 0 && need > visible.length) {
+            setWin((w) => ({ ...w, shown: need })); // drawn on the next render, when this runs again
+            return;
+        }
+        placedFor.current = placeId;
+        setJumpedSeq(rule.seq);
+        const el = at >= 0 ? root.querySelector<HTMLElement>(":scope > [data-chat-unread-rule]") : null;
+        if (el == null) {
+            scroller.scrollTop = scroller.scrollHeight;
+            return;
+        }
+        scroller.scrollTop +=
+            el.getBoundingClientRect().top - scroller.getBoundingClientRect().top - UNREAD_JUMP_MARGIN;
+        root.dispatchEvent(new Event(RELEASE_TAIL_EVENT, { bubbles: true }));
+    }, [rule, jumpedSeq, items, visible.length, placeId]);
+    useUnreadReading(rootRef, items, unread, unreadOpen == null || (rule != null && jumpedSeq === rule.seq));
 
     // keeps where the reader is, at most once a frame while they scroll: the item at the top of the view and how far
     // into it, or nothing once they are at the end. Not before the kept place was restored, nor while the view has no size
@@ -1887,9 +1956,14 @@ export function ChatConversation({
             lastAgentKey = item.key;
         }
     }
+    // the rule stands over the first unread turn's item, even one that draws nothing
+    const ruleBefore = (key: string): ReactNode[] =>
+        rule != null && rule.n > 0 && key === rule.key
+            ? [<UnreadRule key="unread-rule" n={rule.n} vi={unread?.vi === true} />]
+            : [];
     const rows = visible.flatMap((item, i) => {
         if (hiddenLine(item)) {
-            return endedAfter(item.key);
+            return [...ruleBefore(item.key), ...endedAfter(item.key)];
         }
         const paired = pairedOf(item);
         const last = i === visible.length - 1;
@@ -1947,6 +2021,7 @@ export function ChatConversation({
         // redraws the line only. It opens on the spring when it lands under a message that was already drawn
         const judgeKey = judgeKeys.get(item.key);
         return [
+            ...ruleBefore(item.key),
             row,
             ...(judgeKey != null && agent != null
                 ? [

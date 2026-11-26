@@ -7,14 +7,14 @@
 // through selectCellView, so Chat and Terminal stay the one "terminal" slot of agentview.ts.
 
 import { globalStore } from "@/app/store/jotaiStore";
-import { atom, useAtomValue } from "jotai";
+import { atom, useAtomValue, type Atom } from "jotai";
 import { atomFamily } from "jotai/utils";
 import type { AgentVM } from "./agentsviewmodel";
 import { setAgentView } from "./agentview";
 import {
-    chatCapable,
     parseChatModes,
     shownChatMode,
+    showsChat,
     withChatMode,
     type CellView,
     type ChatMode,
@@ -33,6 +33,9 @@ function readModes(): ChatModes {
 
 const modesAtom = atom<ChatModes>(readModes());
 
+// every agent's stored mode, for a reader that walks the roster (the unread count: unreadagentsstore.ts)
+export const chatModesAtom: Atom<ChatModes> = modesAtom;
+
 // the stored mode of one agent: "terminal", or undefined for the default
 export const chatModeAtom = atomFamily((agentId: string) =>
     atom<ChatMode | undefined>((get) => get(modesAtom)[agentId])
@@ -45,11 +48,9 @@ export function useChatMode(agent: ChatAgent): ChatMode {
     return shownChatMode(agent, useAtomValue(chatModeAtom(agent.id)));
 }
 
-// Whether the agent's cell shows Chat: its chat mode, or a Claude agent asleep (its terminal holds only the kill, so the
-// conversation is what the cell shows, whatever its stored chat mode). The chat layer and the board split beside it ask
-// the same.
+// Whether the agent's cell shows Chat (chatmode.ts showsChat). The chat layer and the board split beside it ask the same.
 export function useChatShown(agent: ChatAgent & Pick<AgentVM, "sleeping">): boolean {
-    return useChatMode(agent) === "chat" || (agent.sleeping != null && chatCapable(agent));
+    return showsChat(agent, useAtomValue(chatModeAtom(agent.id)));
 }
 
 export function getChatMode(agent: ChatAgent): ChatMode {
