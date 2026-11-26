@@ -31,7 +31,7 @@ import (
 
 const (
 	// DigestWindowDays is how far back search reaches, for every runtime it covers.
-	DigestWindowDays = 30
+	DigestWindowDays = 90
 
 	// digestVersion is the version of a digest file's format and of what a build derives into it. Bump it when Turn or
 	// SessionInfo change shape, or when the session, events or turns a build derives change meaning (a title rule, a
