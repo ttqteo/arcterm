@@ -144,6 +144,8 @@ and a picture given to a line that is not big.
 
 ### Fixed
 
+- An idle agent whose process ends slowly as it goes to sleep (a machine short on memory) now sleeps, and wakes with
+  Wake or the next message you send it. Before, its tab was left exited with no Wake, and a message sent to it failed.
 - A PowerShell terminal reads as running when you run the same command twice in a row. Before, the repeat ran
   unmarked: the terminal stayed idle in the sidebar and the Overview's Running list while it worked.
 - A council report's Figures name each source file once with its lines ("audit.html:713, 714, 715") instead of
