@@ -63,6 +63,13 @@ func startSessionIdeasScan(opts sessionideas.ScanOpts) error {
 	return nil
 }
 
+// sessionIdeasScanRunning says whether a scan holds the guard.
+func sessionIdeasScanRunning() bool {
+	sessionIdeasScanMu.Lock()
+	defer sessionIdeasScanMu.Unlock()
+	return sessionIdeasScanCancel != nil
+}
+
 // stopSessionIdeasScan cancels the scan that runs; with none running it does nothing.
 func stopSessionIdeasScan() {
 	sessionIdeasScanMu.Lock()
@@ -116,9 +123,44 @@ var realSessionIdeasDeps = func() sessionideas.Deps {
 		Candidates: func() []agentsessions.DigestSession {
 			return agentsessions.ClaudeDigestCandidates(agentsessions.DigestWindowDays)
 		},
-		Read: agentsessions.ReadDigestFor,
-		Now:  time.Now,
+		Read:        agentsessions.ReadDigestFor,
+		CleanupDays: func() int { return sessionideas.CleanupPeriodDays(sessionideas.ClaudeSettingsPath()) },
+		Now:         time.Now,
 	}
+}
+
+// fixtureCleanupDays is the cleanupPeriodDays fixture mode assumes: arcterm's own 90, so a scenario does not depend on
+// the settings of the machine it runs on.
+const fixtureCleanupDays = 90
+
+// sessionIdeasOnDisk is the transcripts and the cleanupPeriodDays the session list and the schedule read: the real ones,
+// or the seeded sessions while fixture mode is on. A seeded session carries its title, as a digest would, so its row has
+// one.
+func sessionIdeasOnDisk() ([]agentsessions.DigestSession, int) {
+	if fx, on := sessionIdeasFixture(); on {
+		return fixtureCandidates(fx, true), fixtureCleanupDays
+	}
+	deps := sessionIdeasScanDeps()
+	return deps.Candidates(), deps.CleanupPeriod()
+}
+
+// fixtureSession is a seeded session as a transcript on disk: the file's own fields, and with named its session too.
+func fixtureSession(s wshrpc.SessionIdeasSession, named bool) agentsessions.DigestSession {
+	d := agentsessions.DigestSession{Path: s.TranscriptPath, Stem: s.SessionID, Mtime: time.UnixMilli(s.LastWriteTs), Size: s.Size}
+	if named {
+		d.Session = &agentsessions.SessionInfo{ID: s.SessionID, Task: s.Title, ProjectName: s.Project, ProjectPath: s.Project}
+	}
+	return d
+}
+
+// fixtureCandidates is the seeded sessions as the walk of ~/.claude would list them (named: with their sessions, which
+// the walk does not read).
+func fixtureCandidates(fx *wshrpc.CommandSessionIdeasSeedData, named bool) []agentsessions.DigestSession {
+	out := make([]agentsessions.DigestSession, len(fx.Sessions))
+	for i, s := range fx.Sessions {
+		out[i] = fixtureSession(s, named)
+	}
+	return out
 }
 
 // runSessionIdeasModel is one haiku call on a session's digest, with no tools, no settings and nothing kept of the
@@ -139,34 +181,25 @@ func fixtureSessionIdeasDeps(fx *wshrpc.CommandSessionIdeasSeedData) sessionidea
 	if reply == "" {
 		reply = "[]"
 	}
-	candidate := func(s wshrpc.SessionIdeasSession) agentsessions.DigestSession {
-		return agentsessions.DigestSession{Path: s.TranscriptPath, Stem: s.SessionID, Mtime: time.UnixMilli(s.LastWriteTs), Size: s.Size}
-	}
 	return sessionideas.Deps{
 		Run: func(context.Context, string) (string, int64, error) { return reply, 1000, nil },
 		ProjectContext: func(context.Context, string) (sessionideas.ProjectContext, error) {
 			return sessionideas.ProjectContext{}, nil
 		},
-		Candidates: func() []agentsessions.DigestSession {
-			out := make([]agentsessions.DigestSession, len(fx.Sessions))
-			for i, s := range fx.Sessions {
-				out[i] = candidate(s)
-			}
-			return out
-		},
+		Candidates: func() []agentsessions.DigestSession { return fixtureCandidates(fx, false) },
 		Read: func(path string) (agentsessions.DigestSession, error) {
 			d := agentsessions.DigestSession{Path: path, Stem: path}
 			for _, s := range fx.Sessions {
 				if s.TranscriptPath == path {
-					d = candidate(s)
-					d.Session = &agentsessions.SessionInfo{ID: s.SessionID, Task: s.Title, ProjectName: s.Project, ProjectPath: s.Project}
+					d = fixtureSession(s, true)
 					break
 				}
 			}
 			d.Turns = []agentsessions.Turn{{Speaker: "user", Text: "A canned prompt from a fixture session.", Ts: d.Mtime.UnixMilli()}}
 			return d, nil
 		},
-		Now: time.Now,
+		CleanupDays: func() int { return fixtureCleanupDays },
+		Now:         time.Now,
 	}
 }
 

@@ -32,10 +32,11 @@ type world struct {
 	runs    int
 	pc      ProjectContext
 	reply   func(call int, prompt string) (string, int64, error)
+	days    int // Claude Code's cleanupPeriodDays, as the scan reads it
 }
 
 func newWorld() *world {
-	return &world{digests: map[string]agentsessions.DigestSession{}, reply: func(int, string) (string, int64, error) { return "[]", 100, nil }}
+	return &world{digests: map[string]agentsessions.DigestSession{}, days: 45, reply: func(int, string) (string, int64, error) { return "[]", 100, nil }}
 }
 
 func userTurn(text string, ts int64) agentsessions.Turn {
@@ -74,7 +75,8 @@ func (w *world) deps() Deps {
 			}
 			return d, nil
 		},
-		Now: func() time.Time { return scanNow },
+		CleanupDays: func() int { return w.days },
+		Now:         func() time.Time { return scanNow },
 	}
 }
 
@@ -191,7 +193,7 @@ func TestScanNowStoresTheIdeasAndTheMark(t *testing.T) {
 	if want := []wshrpc.SessionIdeaQuote{{Who: "you", Text: "we could add a dark mode"}, {Who: "agent", Text: "maybe later"}, {Who: "you", Text: "c"}}; !reflect.DeepEqual(a.Quotes, want) {
 		t.Errorf("quotes are cleaned and cut at three: got %+v, want %+v", a.Quotes, want)
 	}
-	if a.SaidTs != 100 || a.Why != "never decided" || a.FoundTs != scanNow.UnixMilli() || a.DeletesTs != c.Mtime.Add(90*24*time.Hour).UnixMilli() || a.ID == "" {
+	if a.SaidTs != 100 || a.Why != "never decided" || a.FoundTs != scanNow.UnixMilli() || a.DeletesTs != DeletesAt(c.Mtime, w.days).UnixMilli() || a.ID == "" {
 		t.Errorf("first idea's times and why: %+v", a)
 	}
 	if b.EffortOID != "" || b.EffortTitle != "" || len(b.Quotes) != 0 || b.SaidTs != 200 || a.ID == b.ID {

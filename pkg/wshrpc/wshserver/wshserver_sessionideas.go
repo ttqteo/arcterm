@@ -8,10 +8,17 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"os"
+	"path/filepath"
+	"runtime"
+	"strings"
+	"sync"
 	"time"
 
+	"github.com/wavetermdev/waveterm/pkg/agentsessions"
 	"github.com/wavetermdev/waveterm/pkg/effortstore"
 	"github.com/wavetermdev/waveterm/pkg/jarvis"
+	"github.com/wavetermdev/waveterm/pkg/sessionarchive"
 	"github.com/wavetermdev/waveterm/pkg/sessionideas"
 	"github.com/wavetermdev/waveterm/pkg/wavebase"
 	"github.com/wavetermdev/waveterm/pkg/waveobj"
@@ -26,16 +33,81 @@ var _ wshrpc.SessionIdeasCommands = (*WshServer)(nil)
 // snoozeFor is how long Snooze puts the nudges off.
 const snoozeFor = 7 * 24 * time.Hour
 
-// SessionIdeasGetCommand is the store with the session list and the counts the marks give. The list and the counts are
-// computed on each read, never stored.
+// SessionIdeasGetCommand is the store with the session list and the counts of the transcripts on disk (or the seeded
+// sessions in fixture mode) against the marks. The list and the counts are computed on each read, never stored.
 func (ws *WshServer) SessionIdeasGetCommand(ctx context.Context) (*wshrpc.SessionIdeasData, error) {
 	store := sessionideas.Default()
 	d, err := store.Load()
 	if err != nil {
 		return nil, err
 	}
-	d.Sessions, d.Scanned, d.NotYet, d.LeavingSoon = sessionideas.Sessions(d, store.Clock())
+	cands, days := sessionIdeasOnDisk()
+	d.Sessions, d.Scanned, d.NotYet, d.LeavingSoon = sessionideas.Sessions(d, cands, days, store.Clock())
 	return &d, nil
+}
+
+// storageMarksTTL is how long the marks Storage's card asks about are kept: its scan asks once for each of thousands of
+// sessions, and parsing state.json for each would take minutes.
+const storageMarksTTL = 10 * time.Second
+
+var storageMarks struct {
+	sync.Mutex
+	readAt time.Time
+	ok     bool // the store could be read
+	marks  []wshrpc.SessionIdeaMark
+	paths  map[string]bool // the transcripts with a mark of any outcome
+}
+
+// storagePathKey makes two spellings of one transcript path equal: cleaned, and without case on Windows.
+func storagePathKey(p string) string {
+	p = filepath.Clean(p)
+	if runtime.GOOS == "windows" {
+		return strings.ToLower(p)
+	}
+	return p
+}
+
+// storageMarkIndex is the marks, read at most once every storageMarksTTL. A store that cannot be read is logged once per
+// read, and answers ok false: the card then claims nothing about any session.
+func storageMarkIndex() (marks []wshrpc.SessionIdeaMark, paths map[string]bool, ok bool) {
+	storageMarks.Lock()
+	defer storageMarks.Unlock()
+	if storageMarks.paths != nil && time.Since(storageMarks.readAt) < storageMarksTTL {
+		return storageMarks.marks, storageMarks.paths, storageMarks.ok
+	}
+	d, err := sessionideas.Default().Load()
+	if err != nil {
+		log.Printf("sessionideas: storage: reading the marks, so no session reads as unscanned: %v", err)
+	}
+	storageMarks.readAt, storageMarks.ok, storageMarks.marks = time.Now(), err == nil, d.Marks
+	storageMarks.paths = map[string]bool{}
+	for _, m := range d.Marks {
+		storageMarks.paths[storagePathKey(m.TranscriptPath)] = true
+	}
+	return storageMarks.marks, storageMarks.paths, storageMarks.ok
+}
+
+// underDir says path lies inside dir.
+func underDir(path, dir string) bool {
+	rel, err := filepath.Rel(dir, path)
+	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
+}
+
+// sessionIdeasUnscanned is storage.SessionUnscanned: a transcript is unscanned when no scan marked it, of any outcome
+// (a skipped session is scanned for good), and a scan would read it (it is not in the archive, and has been quiet for 2
+// days). Nothing scans inside a clean: Storage's Scan them first starts one.
+func sessionIdeasUnscanned(path string) bool {
+	marks, paths, ok := storageMarkIndex()
+	if !ok || paths[storagePathKey(path)] {
+		return false
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		return false // it went since the card listed it
+	}
+	return sessionideas.Eligible(agentsessions.DigestSession{
+		Path: path, Size: info.Size(), Mtime: info.ModTime(), Archived: underDir(path, sessionarchive.Dir()),
+	}, marks, time.Now())
 }
 
 // SessionIdeasResolveCommand keeps or drops an idea that waits for review.

@@ -48,6 +48,56 @@ func TestSessionsListsOnlyWeekOldTranscriptsWithTheirDirectory(t *testing.T) {
 	}
 }
 
+func TestOldSessionsUnscannedAsksTheHookPerTranscript(t *testing.T) {
+	root := t.TempDir()
+	never := session(t, root, "never-scanned", 10, 40*day)
+	read := session(t, root, "already-scanned", 10, 40*day)
+	var asked []string
+	prev := SessionUnscanned
+	SessionUnscanned = func(path string) bool {
+		asked = append(asked, path)
+		return path == never
+	}
+	t.Cleanup(func() { SessionUnscanned = prev })
+
+	rep := oldSessions{}.measure(context.Background(), sessionEnv(t, root))
+	if len(rep.Items) != 2 {
+		t.Fatalf("got %+v, want both old sessions", rep.Items)
+	}
+	for _, it := range rep.Items {
+		if want := it.ID == never; it.Unscanned != want {
+			t.Errorf("session %s: unscanned = %v, want %v", it.ID, it.Unscanned, want)
+		}
+	}
+	if len(asked) != 2 || (asked[0] != never && asked[1] != never) || (asked[0] != read && asked[1] != read) {
+		t.Errorf("the hook is asked once for each session listed, with its transcript path: %v", asked)
+	}
+}
+
+func TestOldSessionsUnscannedIsFalseWithoutAHook(t *testing.T) {
+	root := t.TempDir()
+	session(t, root, "old-session", 10, 40*day)
+	prev := SessionUnscanned
+	SessionUnscanned = nil
+	t.Cleanup(func() { SessionUnscanned = prev })
+	rep := oldSessions{}.measure(context.Background(), sessionEnv(t, root))
+	if len(rep.Items) != 1 || rep.Items[0].Unscanned {
+		t.Fatalf("with no hook set nothing is unscanned: %+v", rep.Items)
+	}
+}
+
+func TestOldSessionsUnscannedIsAskedOnlyOfSessionsTheCardLists(t *testing.T) {
+	root := t.TempDir()
+	session(t, root, "young", 10, 2*day) // under a week old: the card does not list it
+	asked := 0
+	prev := SessionUnscanned
+	SessionUnscanned = func(string) bool { asked++; return true }
+	t.Cleanup(func() { SessionUnscanned = prev })
+	if rep := (oldSessions{}).measure(context.Background(), sessionEnv(t, root)); len(rep.Items) != 0 || asked != 0 {
+		t.Fatalf("a session the card does not list is never looked up: %+v, asked %d", rep.Items, asked)
+	}
+}
+
 func TestSessionOpenInATabIsNotCleanable(t *testing.T) {
 	root := t.TempDir()
 	old := session(t, root, "open-session", 10, 40*day)

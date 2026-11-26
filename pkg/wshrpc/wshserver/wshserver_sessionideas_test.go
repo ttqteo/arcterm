@@ -8,12 +8,15 @@ import (
 	"context"
 	"log"
 	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/wavetermdev/waveterm/pkg/agentsessions"
 	"github.com/wavetermdev/waveterm/pkg/effortstore"
+	"github.com/wavetermdev/waveterm/pkg/sessionarchive"
 	"github.com/wavetermdev/waveterm/pkg/sessionideas"
 	"github.com/wavetermdev/waveterm/pkg/wavebase"
 	"github.com/wavetermdev/waveterm/pkg/waveobj"
@@ -375,10 +378,24 @@ func TestSessionIdeasMarkSnooze(t *testing.T) {
 
 func TestSessionIdeasGetComputesTheSessionList(t *testing.T) {
 	store := emptySessionIdeas(t)
+	now := time.Now()
+	onDisk := []agentsessions.DigestSession{
+		{Path: "/claude/s1.jsonl", Stem: "s1", Size: 10, Mtime: now.Add(-20 * 24 * time.Hour)},
+		{Path: "/claude/s2.jsonl", Stem: "s2", Size: 10, Mtime: now.Add(-21 * 24 * time.Hour)},
+		{Path: "/claude/s3.jsonl", Stem: "s3", Size: 10, Mtime: now.Add(-84 * 24 * time.Hour)}, // 6 days from deletion
+		{Path: "/claude/s4.jsonl", Stem: "s4", Size: 10, Mtime: now.Add(-time.Hour)},
+	}
+	swap(t, &realSessionIdeasDeps, func() sessionideas.Deps {
+		return sessionideas.Deps{
+			Candidates:  func() []agentsessions.DigestSession { return onDisk },
+			CleanupDays: func() int { return 90 },
+		}
+	})
 	if err := store.Update(func(d *wshrpc.SessionIdeasData) error {
 		d.Marks = []wshrpc.SessionIdeaMark{
-			{SessionID: "s1", SessionTitle: "one", Outcome: wshrpc.SessionIdeaOutcome_Ideas, Ideas: 1, MtimeMs: 10},
-			{SessionID: "s2", Outcome: wshrpc.SessionIdeaOutcome_Skipped, MtimeMs: 20},
+			{TranscriptPath: "/claude/s1.jsonl", SessionID: "s1", SessionTitle: "one", Outcome: wshrpc.SessionIdeaOutcome_Ideas, Ideas: 1, Size: 10, MtimeMs: onDisk[0].Mtime.UnixMilli()},
+			{TranscriptPath: "/claude/s2.jsonl", SessionID: "s2", Outcome: wshrpc.SessionIdeaOutcome_Skipped, Size: 10, MtimeMs: onDisk[1].Mtime.UnixMilli()},
+			{TranscriptPath: "/claude/gone.jsonl", SessionID: "gone", Outcome: wshrpc.SessionIdeaOutcome_Nothing, Size: 10, MtimeMs: 1},
 		}
 		d.Ideas = []wshrpc.SessionIdea{{ID: "i1", SessionID: "s1", State: wshrpc.SessionIdeaState_Review}}
 		return nil
@@ -389,13 +406,148 @@ func TestSessionIdeasGetComputesTheSessionList(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.Scanned != 1 || len(got.Sessions) != 1 || got.Sessions[0].SessionID != "s1" ||
-		got.Sessions[0].Outcome != wshrpc.SessionIdeasSession_Ideas || got.Sessions[0].Ideas != 1 {
-		t.Fatalf("Get lists the session of each mark that was read, got %+v", got)
+	if got.Scanned != 1 || got.NotYet != 2 || got.LeavingSoon != 1 || len(got.Sessions) != 3 {
+		t.Fatalf("Get counts the transcripts on disk against the marks (a skipped one and a transcript that is gone have no row), got %+v", got)
 	}
-	if len(got.Ideas) != 1 || len(got.Marks) != 2 {
+	s1 := ideasSessionRow(t, got.Sessions, "s1")
+	if s1.Outcome != wshrpc.SessionIdeasSession_Ideas || s1.Ideas != 1 || s1.Title != "one" ||
+		s1.DeletesTs != onDisk[0].Mtime.Add(90*24*time.Hour).UnixMilli() {
+		t.Fatalf("a scanned session's row says what is left and when its transcript goes, got %+v", s1)
+	}
+	if len(got.Ideas) != 1 || len(got.Marks) != 3 {
 		t.Fatalf("Get carries the ideas and the marks, got %+v", got)
 	}
+}
+
+func TestSessionIdeasGetListsTheFixtureSessionsInFixtureMode(t *testing.T) {
+	store := emptySessionIdeas(t)
+	touched := failingRealDeps(t)
+	now := time.Now()
+	sessions := fixtureSessions(now)
+	setSessionIdeasFixture(&wshrpc.CommandSessionIdeasSeedData{Fixture: true, Sessions: sessions})
+	if err := store.Update(func(d *wshrpc.SessionIdeasData) error {
+		d.Marks = []wshrpc.SessionIdeaMark{{
+			TranscriptPath: "/fixture/f-new.jsonl", SessionID: "f-new", SessionTitle: "Newer fixture", Project: "arc",
+			Outcome: wshrpc.SessionIdeaOutcome_Nothing, Size: 400, MtimeMs: sessions[1].LastWriteTs,
+		}}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	got, err := (&WshServer{}).SessionIdeasGetCommand(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if *touched != 0 {
+		t.Fatalf("fixture mode never reaches the real transcripts: %d reads", *touched)
+	}
+	if got.Scanned != 1 || got.NotYet != 2 || len(got.Sessions) != 3 {
+		t.Fatalf("the seeded sessions are the list: %+v", got)
+	}
+	old := ideasSessionRow(t, got.Sessions, "f-old")
+	if old.Outcome != wshrpc.SessionIdeasSession_NotScanned || old.Title != "Older fixture" || old.Project != "arc" ||
+		old.DeletesTs != time.UnixMilli(sessions[0].LastWriteTs).Add(90*24*time.Hour).UnixMilli() {
+		t.Fatalf("a seeded session is named, and its transcript goes 90 days after its last write whatever the machine's setting: %+v", old)
+	}
+	if live := ideasSessionRow(t, got.Sessions, "f-live"); live.Outcome != wshrpc.SessionIdeasSession_Waiting {
+		t.Fatalf("a seeded session written an hour ago is waiting: %+v", live)
+	}
+	if done := ideasSessionRow(t, got.Sessions, "f-new"); done.Outcome != wshrpc.SessionIdeasSession_Nothing {
+		t.Fatalf("a seeded session with a mark of its file as it stands is scanned: %+v", done)
+	}
+}
+
+// writeTranscript is a session file last written age ago.
+func ideasTranscript(t *testing.T, dir, name string, age time.Duration) (path string, size int64, mtime time.Time) {
+	t.Helper()
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	path = filepath.Join(dir, name+".jsonl")
+	if err := os.WriteFile(path, []byte("{\"type\":\"user\"}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	mtime = time.Now().Add(-age).Truncate(time.Millisecond)
+	if err := os.Chtimes(path, mtime, mtime); err != nil {
+		t.Fatal(err)
+	}
+	return path, int64(len("{\"type\":\"user\"}\n")), mtime
+}
+
+func TestSessionIdeasUnscannedHook(t *testing.T) {
+	store := emptySessionIdeas(t)
+	swap(t, &storageMarks.paths, map[string]bool(nil)) // the marks are read afresh
+	dir := t.TempDir()
+	day := 24 * time.Hour
+	never, _, _ := ideasTranscript(t, dir, "never", 40*day)
+	young, _, _ := ideasTranscript(t, dir, "young", time.Hour)
+	read, readSize, readMtime := ideasTranscript(t, dir, "read", 40*day)
+	passed, passedSize, passedMtime := ideasTranscript(t, dir, "passed", 40*day)
+	grown, _, grownMtime := ideasTranscript(t, dir, "grown", 40*day)
+	archived, _, _ := ideasTranscript(t, filepath.Join(sessionarchive.Dir(), "-p-proj"), "archived", 40*day)
+	if err := store.Update(func(d *wshrpc.SessionIdeasData) error {
+		d.Marks = []wshrpc.SessionIdeaMark{
+			{TranscriptPath: read, Size: readSize, MtimeMs: readMtime.UnixMilli(), Outcome: wshrpc.SessionIdeaOutcome_Nothing},
+			{TranscriptPath: passed, Size: passedSize, MtimeMs: passedMtime.UnixMilli(), Outcome: wshrpc.SessionIdeaOutcome_Skipped},
+			{TranscriptPath: grown, Size: 3, MtimeMs: grownMtime.UnixMilli() - 5000, Outcome: wshrpc.SessionIdeaOutcome_Ideas},
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range []struct {
+		name string
+		path string
+		want bool
+	}{
+		{"a quiet session no scan marked", never, true},
+		{"one still being written is left to a later scan", young, false},
+		{"one a scan read", read, false},
+		{"one a scan passed over (it is scanned for good)", passed, false},
+		{"one that grew since its scan has been scanned, so it is not never scanned", grown, false},
+		{"one in arcterm's archive, which a scan leaves alone", archived, false},
+		{"one that is gone", filepath.Join(dir, "gone.jsonl"), false},
+	} {
+		if got := sessionIdeasUnscanned(c.path); got != c.want {
+			t.Errorf("%s: unscanned = %v, want %v", c.name, got, c.want)
+		}
+	}
+}
+
+func TestSessionIdeasUnscannedHookClaimsNothingWhenTheStoreCannotBeRead(t *testing.T) {
+	store := emptySessionIdeas(t)
+	swap(t, &storageMarks.paths, map[string]bool(nil))
+	path, _, _ := ideasTranscript(t, t.TempDir(), "old", 40*24*time.Hour)
+	if err := os.MkdirAll(store.Root, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	statePath := filepath.Join(store.Root, "state.json")
+	good, err := os.ReadFile(statePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(statePath, []byte("{not json"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.WriteFile(statePath, good, 0o644) })
+	buf := captureLog(t)
+	if sessionIdeasUnscanned(path) {
+		t.Fatal("with the marks unreadable no session may read as never scanned")
+	}
+	if !strings.Contains(buf.String(), "reading the marks") {
+		t.Fatalf("a store that cannot be read is logged: %q", buf.String())
+	}
+}
+
+func ideasSessionRow(t *testing.T, rows []wshrpc.SessionIdeasSession, id string) wshrpc.SessionIdeasSession {
+	t.Helper()
+	for _, r := range rows {
+		if r.SessionID == id {
+			return r
+		}
+	}
+	t.Fatalf("no row %s in %+v", id, rows)
+	return wshrpc.SessionIdeasSession{}
 }
 
 func TestSessionIdeasSeedRefusedOutsideDevMode(t *testing.T) {

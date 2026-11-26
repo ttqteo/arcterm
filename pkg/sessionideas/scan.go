@@ -27,10 +27,6 @@ const (
 	// quietFor is how long a transcript must stand unwritten before a scan reads it: a younger one is still being written.
 	quietFor = 48 * time.Hour
 
-	// transcriptKeptFor is how long Claude keeps a transcript after its last write, until the schedule reads the real
-	// cleanupPeriodDays from ~/.claude/settings.json.
-	transcriptKeptFor = 90 * 24 * time.Hour
-
 	maxQuotes   = 3
 	maxErrorLen = 200
 )
@@ -47,8 +43,19 @@ type Deps struct {
 	Candidates func() []agentsessions.DigestSession
 	// Read is one transcript's digest, with its session and turns.
 	Read func(path string) (agentsessions.DigestSession, error)
+	// CleanupDays is Claude Code's cleanupPeriodDays, read once when a scan starts; the deletion day of an idea is its
+	// session's last write plus this (nil is Claude Code's default of 30).
+	CleanupDays func() int
 	// Now is the clock (nil is time.Now).
 	Now func() time.Time
+}
+
+// CleanupPeriod is the cleanupPeriodDays the deps read: Claude Code's default when they read none.
+func (d Deps) CleanupPeriod() int {
+	if d.CleanupDays != nil {
+		return d.CleanupDays()
+	}
+	return DefaultCleanupDays
 }
 
 func (d Deps) now() time.Time {
@@ -68,15 +75,25 @@ type ScanOpts struct {
 // Eligible says whether a scan may read a transcript, from what a candidate carries: it is not in the archive (arcterm's
 // own folder), it has not been written for 2 days, and no mark holds its size and mtime.
 func Eligible(s agentsessions.DigestSession, marks []wshrpc.SessionIdeaMark, now time.Time) bool {
-	if s.Archived || now.Sub(s.Mtime) < quietFor {
+	if s.Archived || !quiet(s, now) {
 		return false
 	}
 	for _, m := range marks {
-		if m.TranscriptPath == s.Path && m.Size == s.Size && m.MtimeMs == s.Mtime.UnixMilli() {
+		if markMatches(m, s) {
 			return false
 		}
 	}
 	return true
+}
+
+// quiet says a transcript has not been written for 2 days: a younger one is still being written.
+func quiet(s agentsessions.DigestSession, now time.Time) bool {
+	return now.Sub(s.Mtime) >= quietFor
+}
+
+// markMatches says a mark holds the transcript as it stands: its size and mtime are the mark's.
+func markMatches(m wshrpc.SessionIdeaMark, s agentsessions.DigestSession) bool {
+	return m.TranscriptPath == s.Path && m.Size == s.Size && m.MtimeMs == s.Mtime.UnixMilli()
 }
 
 // SkipContent says whether a digest is passed over without a model call, and why: its first prompt carries Marker (an
@@ -125,13 +142,14 @@ func ScanNow(ctx context.Context, s *Store, deps Deps, opts ScanOpts) error {
 		return err
 	}
 
+	days := deps.CleanupPeriod()
 	projects := map[string]ProjectContext{}
 	var stop error
 	for _, c := range work {
 		if stop = ctx.Err(); stop != nil {
 			break
 		}
-		res, err := scanSession(ctx, s, deps, c, marks, projects)
+		res, err := scanSession(ctx, s, deps, c, days, marks, projects)
 		scan.Tokens += res.tokens
 		if err != nil {
 			stop = err
@@ -232,7 +250,7 @@ type sessionResult struct {
 // scanSession reads one session. The error it returns stops the scan: a model error, a cancelled ctx or a store that
 // cannot be read. A session that cannot be read, or whose reply is not a list, is logged and left unmarked instead, so
 // one bad transcript does not hold up the rest.
-func scanSession(ctx context.Context, s *Store, deps Deps, c agentsessions.DigestSession, marks map[string]wshrpc.SessionIdeaMark, projects map[string]ProjectContext) (sessionResult, error) {
+func scanSession(ctx context.Context, s *Store, deps Deps, c agentsessions.DigestSession, days int, marks map[string]wshrpc.SessionIdeaMark, projects map[string]ProjectContext) (sessionResult, error) {
 	dg, err := deps.Read(c.Path)
 	if err != nil {
 		log.Printf("sessionideas: reading %s: %v; not scanned", c.Path, err)
@@ -303,7 +321,7 @@ func scanSession(ctx context.Context, s *Store, deps Deps, c agentsessions.Diges
 		idea := wshrpc.SessionIdea{
 			ID: uuid.NewString(), Gist: gist, Project: project, ProjectPath: projectPath, Quotes: quotes, Why: oneLine(r.Why),
 			SessionID: mark.SessionID, SessionTitle: mark.SessionTitle, TranscriptPath: c.Path,
-			SaidTs: saidTs(quotes, turns), DeletesTs: c.Mtime.Add(transcriptKeptFor).UnixMilli(), FoundTs: now.UnixMilli(),
+			SaidTs: saidTs(quotes, turns), DeletesTs: DeletesAt(c.Mtime, days).UnixMilli(), FoundTs: now.UnixMilli(),
 			State: wshrpc.SessionIdeaState_Review,
 		}
 		for _, in := range pc.Initiatives {

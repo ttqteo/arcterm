@@ -7,17 +7,26 @@ import (
 	"sort"
 	"time"
 
+	"github.com/wavetermdev/waveterm/pkg/agentsessions"
 	"github.com/wavetermdev/waveterm/pkg/wshrpc"
 )
 
-// Sessions is the list the Sessions scanned fold draws and the counts above it, from the marks alone: one row per session
-// a scan has read. A session passed over without a model call (a skipped mark) is left out of the rows and the counts.
-// What a row says is what is left of it: ideas while any of its ideas waits for review, kept when none waits and one was
-// kept, nothing when it gave nothing or all its ideas were dropped.
+// Sessions is the list the Sessions scanned fold draws and the counts above it: one row per transcript on disk (the
+// candidates), newest write first. Each row says what the scan made of the session as it stands now:
 //
-// The marks hold no deletion day and know of no session that was never read, so the rows carry none and notYet and
-// leavingSoon are 0; the clock is passed for the callers that will add them.
-func Sessions(d wshrpc.SessionIdeasData, _ time.Time) (sessions []wshrpc.SessionIdeasSession, scanned, notYet, leavingSoon int) {
+//   - a mark of the file as it stands: what is left of its ideas (ideas while any waits for review, kept when none waits
+//     and one was kept, nothing when it gave nothing or all were dropped). A session passed over without a model call
+//     (a skipped mark) is left out of the rows and the counts.
+//   - no mark, or a mark of an older file (it grew): not-scanned when it is quiet, so the next scan reads it, or waiting
+//     while it is still being written.
+//
+// An archived transcript is left out, as the scan leaves it alone. A mark whose transcript is gone has no row. Every row
+// carries the day its transcript is deleted (its last write plus days). scanned counts the rows a scan has read, notYet
+// the rows it has not (not-scanned and waiting), and leavingSoon those of them 7 days or fewer from deletion.
+//
+// A candidate from the walk carries no session, so an unscanned row has no title or project of its own; a mark of an
+// older file lends its own, and a candidate that does carry a session (the dev app's fixtures) names its row.
+func Sessions(d wshrpc.SessionIdeasData, candidates []agentsessions.DigestSession, days int, now time.Time) (sessions []wshrpc.SessionIdeasSession, scanned, notYet, leavingSoon int) {
 	type tally struct{ review, kept int }
 	bySession := map[string]*tally{}
 	for _, i := range d.Ideas {
@@ -33,26 +42,53 @@ func Sessions(d wshrpc.SessionIdeasData, _ time.Time) (sessions []wshrpc.Session
 			t.kept++
 		}
 	}
-	sessions = []wshrpc.SessionIdeasSession{}
+	marks := map[string]wshrpc.SessionIdeaMark{}
 	for _, m := range d.Marks {
-		if m.Outcome == wshrpc.SessionIdeaOutcome_Skipped {
+		marks[m.TranscriptPath] = m
+	}
+
+	sessions = []wshrpc.SessionIdeasSession{}
+	for _, c := range candidates {
+		if c.Archived {
 			continue
 		}
 		row := wshrpc.SessionIdeasSession{
-			SessionID:      m.SessionID,
-			Title:          m.SessionTitle,
-			Project:        m.Project,
-			TranscriptPath: m.TranscriptPath,
-			Size:           m.Size,
-			LastWriteTs:    m.MtimeMs,
-			Outcome:        wshrpc.SessionIdeasSession_Nothing,
+			SessionID:      c.Stem,
+			TranscriptPath: c.Path,
+			Size:           c.Size,
+			LastWriteTs:    c.Mtime.UnixMilli(),
+			DeletesTs:      DeletesAt(c.Mtime, days).UnixMilli(),
 		}
-		if t := bySession[m.SessionID]; t != nil {
-			switch {
-			case t.review > 0:
-				row.Outcome, row.Ideas = wshrpc.SessionIdeasSession_Ideas, t.review
-			case t.kept > 0:
-				row.Outcome, row.Ideas = wshrpc.SessionIdeasSession_Kept, t.kept
+		m, marked := marks[c.Path]
+		if marked {
+			row.SessionID, row.Title, row.Project = firstNonEmpty(m.SessionID, row.SessionID), m.SessionTitle, m.Project
+		}
+		if c.Session != nil {
+			row.SessionID, row.Title, row.Project = firstNonEmpty(c.Session.ID, row.SessionID), firstNonEmpty(c.Session.Task, row.Title), firstNonEmpty(c.Session.ProjectName, row.Project)
+		}
+		if marked && markMatches(m, c) {
+			if m.Outcome == wshrpc.SessionIdeaOutcome_Skipped {
+				continue
+			}
+			row.SessionID = firstNonEmpty(m.SessionID, c.Stem) // the id its ideas were stored under
+			row.Outcome = wshrpc.SessionIdeasSession_Nothing
+			if t := bySession[row.SessionID]; t != nil {
+				switch {
+				case t.review > 0:
+					row.Outcome, row.Ideas = wshrpc.SessionIdeasSession_Ideas, t.review
+				case t.kept > 0:
+					row.Outcome, row.Ideas = wshrpc.SessionIdeasSession_Kept, t.kept
+				}
+			}
+			scanned++
+		} else {
+			row.Outcome = wshrpc.SessionIdeasSession_NotScanned
+			if !quiet(c, now) {
+				row.Outcome = wshrpc.SessionIdeasSession_Waiting
+			}
+			notYet++
+			if leavesSoon(c.Mtime, days, now) {
+				leavingSoon++
 			}
 		}
 		sessions = append(sessions, row)
@@ -64,5 +100,5 @@ func Sessions(d wshrpc.SessionIdeasData, _ time.Time) (sessions []wshrpc.Session
 		}
 		return sessions[a].SessionID < sessions[b].SessionID
 	})
-	return sessions, len(sessions), 0, 0
+	return sessions, scanned, notYet, leavingSoon
 }

@@ -6090,6 +6090,7 @@ declare global {
         cleanable: boolean;
         guarded?: boolean;
         reason?: string;
+        unscanned?: boolean;
     };
 
     // storage.StorageReport

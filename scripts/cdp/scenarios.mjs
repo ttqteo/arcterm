@@ -61083,8 +61083,9 @@ const jarvisModes = {
 // .waveterm/worktrees (an engine-named tree with no run and no changes, one with an uncommitted file, and `scratch`,
 // a name the engine never makes), and SS_BROKEN, whose .waveterm/worktrees is a file, so the run worktrees scan
 // fails there. It writes seven Claude transcripts under ~/.claude/projects (six 40 days old, one 10), and rescans.
-// No step presses a category's own clean button (it would take the developer's real sessions and trash): fixtures
-// are cleaned through their rows. Teardown removes every fixture and puts storage:autoclean, storage:nudgegb and the
+// No step confirms a category's own clean (it would take the developer's real sessions and trash): fixtures are
+// cleaned through their rows. Step 5b opens the sessions confirm and only presses Cancel or Scan them first, under
+// Session ideas' fixture mode (no model call); teardown seeds its store empty. Teardown removes every fixture and puts storage:autoclean, storage:nudgegb and the
 // nudge's day back; settings.json is the vault's, shared with the packaged app.
 const SS_PROJECT = "verify-storage";
 const SS_BROKEN = "verify-storage-broken";
@@ -61371,6 +61372,73 @@ const settingsStorage = {
             JSON.stringify({ at30, at7, at90 })
         );
 
+        // 5b. the sessions confirm says how many of the sessions it would move were never scanned for ideas; after the
+        // first scan it offers Scan them first, which starts a scan and moves nothing. Fixture mode is on from the first
+        // seed, so no step reads a transcript for ideas or calls a model; the six transcripts are real files, not fixture
+        // candidates, so the scan reads none of them: the step checks that it starts and ends (LastScanTs moves), that
+        // the card rescans after it, and that no session left the folder.
+        await sessionsAt(30);
+        const cutoff30 = Date.now() - 30 * SS_DAY_MS;
+        const sessionItems =
+            ((await h.rpc("getstorage", null))?.categories ?? []).find((c) => c.category === "sessions")?.items ?? [];
+        const fixturesUnscanned = ctx.oldSessions.every((name) =>
+            sessionItems.some((i) => i.id.endsWith(name) && i.unscanned === true)
+        );
+        const neverCount = sessionItems.filter(
+            (i) => i.cleanable && !i.guarded && i.unscanned && (i.modts ?? 0) <= cutoff30
+        ).length;
+        const neverText = `${neverCount} of them ${neverCount === 1 ? "was" : "were"} never scanned for ideas`;
+        const openSessionsConfirm = async () => {
+            await ssDismissToasts(h);
+            await h.ev(`${ssCard("sessions")}?.querySelector('[data-storage-clean="sessions"]')?.click()`);
+            const up = await polishWaitFor(h, `document.querySelector('[role="dialog"]') != null`, 3000);
+            if (!up) return null;
+            return h.ev(`(() => {
+                const d = document.querySelector('[role="dialog"]');
+                return { text: d.textContent, buttons: [...d.querySelectorAll('button')].map((b) => b.textContent) };
+            })()`);
+        };
+        const pressInDialog = async (label) => {
+            await h.ev(
+                `[...document.querySelectorAll('[role="dialog"] button')].find((b) => b.textContent.includes(${JSON.stringify(label)}))?.click()`
+            );
+            await polishWaitFor(h, `document.querySelector('[role="dialog"]') == null`, 3000);
+        };
+        ctx.ideasSeeded = true; // teardown empties the store and turns fixture mode off
+        await h.rpc("sessionideasseed", { data: {}, fixture: true });
+        const beforeScan = await openSessionsConfirm();
+        await h.shot("cdp-shots/settings-storage-5b-never-scanned.png");
+        await pressInDialog("Cancel");
+        await h.rpc("sessionideasseed", { data: { firstscandone: true }, fixture: true });
+        const afterScan = await openSessionsConfirm();
+        await h.shot("cdp-shots/settings-storage-5b-scan-first.png");
+        const pressedAt = Date.now();
+        await pressInDialog("Scan them first");
+        let lastScan = 0;
+        for (let waited = 0; waited < 20000 && lastScan < pressedAt; waited += 250) {
+            lastScan = (await h.rpc("sessionideasget", null))?.lastscants ?? 0;
+            if (lastScan < pressedAt) await polishNap(250);
+        }
+        const rescannedAfterIdeas = await ssWaitScan(h, pressedAt);
+        const stillThere = [...ctx.oldSessions, ctx.recentSession].every((name) => existsSync(join(ctx.sessionDir, name)));
+        const idsAfter = await h.ev(ssRowIds("sessions"));
+        rec(
+            "5b. the sessions confirm names how many of its sessions were never scanned for ideas (the six 40-day fixtures among them) and, before the first scan, offers nothing more; after it, it offers Scan them first: pressing it ends a scan under fixture mode, the card rescans, and no session was moved",
+            fixturesUnscanned &&
+                neverCount >= 6 &&
+                beforeScan != null &&
+                beforeScan.text.includes(neverText) &&
+                !beforeScan.buttons.some((b) => b.includes("Scan them first")) &&
+                afterScan != null &&
+                afterScan.text.includes(neverText) &&
+                afterScan.buttons.some((b) => b.includes("Scan them first")) &&
+                lastScan >= pressedAt &&
+                rescannedAfterIdeas &&
+                stillThere &&
+                ctx.oldSessions.every((name) => idsAfter.some((id) => id.endsWith(name))),
+            JSON.stringify({ fixturesUnscanned, neverCount, neverText, beforeScan, afterScan, lastScan, pressedAt, rescannedAfterIdeas, stillThere })
+        );
+
         // 6. Show all and Show fewer, on the sessions card at 7 days (seven fixtures or more)
         const more = `${ssCard("sessions")}?.querySelector('[data-storage-more]')`;
         const clickMore = async () => {
@@ -61563,6 +61631,11 @@ const settingsStorage = {
         if (ctx.prevAuto !== undefined) {
             await step("restore the storage settings", () =>
                 ssSetConfig(h, { "storage:autoclean": ctx.prevAuto, "storage:nudgegb": ctx.prevNudge })
+            );
+        }
+        if (ctx.ideasSeeded) {
+            await step("empty the Session ideas store and turn fixture mode off", () =>
+                h.rpc("sessionideasseed", { clear: true })
             );
         }
         if (ctx.prevNudgeDay !== undefined) {

@@ -56,10 +56,11 @@ type StorageItem struct {
 	Detail    string `json:"detail,omitempty"`
 	Path      string `json:"path,omitempty"`
 	Bytes     int64  `json:"bytes"`
-	ModTs     int64  `json:"modts,omitempty"`   // unix ms of its last change, which the sessions card filters by; for build output, when an agent last worked in its project
-	Cleanable bool   `json:"cleanable"`         // a clean may remove it now
-	Guarded   bool   `json:"guarded,omitempty"` // only its own button removes it, after a confirm that says what is lost
-	Reason    string `json:"reason,omitempty"`  // why it stays, or what removing it costs
+	ModTs     int64  `json:"modts,omitempty"`     // unix ms of its last change, which the sessions card filters by; for build output, when an agent last worked in its project
+	Cleanable bool   `json:"cleanable"`           // a clean may remove it now
+	Guarded   bool   `json:"guarded,omitempty"`   // only its own button removes it, after a confirm that says what is lost
+	Reason    string `json:"reason,omitempty"`    // why it stays, or what removing it costs
+	Unscanned bool   `json:"unscanned,omitempty"` // a session no Session ideas scan has read, which one could still read
 }
 
 type StorageCategoryReport struct {

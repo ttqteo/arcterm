@@ -221,21 +221,73 @@ describe("clean results", () => {
 describe("confirmFor", () => {
     it("names what goes and what it costs", () => {
         const cards = storageCards(report, "30", NOW, {});
-        const wt = confirmFor(cards[0], [cards[0].rows[0]], "30", false);
+        const wt = confirmFor(cards[0], [cards[0].rows[0]], "30", false, false);
         expect(wt.message).toContain("1 run worktree");
         expect(wt.message).toContain("branches stay");
-        const guarded = confirmFor(cards[0], [cards[0].rows[1]], "30", true);
+        const guarded = confirmFor(cards[0], [cards[0].rows[1]], "30", true, false);
         expect(guarded.message).toContain("uncommitted changes");
         const sessions = cards[1];
-        expect(confirmFor(sessions, sessions.rows, "30", false).message).toContain("older than 30 days");
-        const build = confirmFor(cards[3], cards[3].rows, "30", false).message;
+        expect(confirmFor(sessions, sessions.rows, "30", false, false).message).toContain("older than 30 days");
+        const build = confirmFor(cards[3], cards[3].rows, "30", false, false).message;
         expect(build).toContain("build output of p");
         expect(build).toContain("target");
         expect(build).toContain("recreates it");
         const cache = { ...cards[0], category: "packagecaches" };
         const goBuild = item("go-build", { kind: "cache", label: "Go build cache", bytes: 4 * GB });
-        expect(confirmFor(cache, [goBuild], "30", false).message).toContain("Remove the Go build cache (4 GB)?");
-        expect(confirmFor(cache, [goBuild], "30", false).message).toContain("fetches or rebuilds");
+        expect(confirmFor(cache, [goBuild], "30", false, false).message).toContain("Remove the Go build cache (4 GB)?");
+        expect(confirmFor(cache, [goBuild], "30", false, false).message).toContain("fetches or rebuilds");
+    });
+
+    describe("sessions never scanned for ideas", () => {
+        const session = (id: string, unscanned: boolean) =>
+            item(id, { kind: "session", modts: NOW - 40 * DAY, unscanned: unscanned || undefined });
+        const card = (rows: StorageItem[]) => ({
+            ...storageCards(report, "30", NOW, {})[1],
+            rows,
+        });
+
+        it("says how many of them were never scanned, and offers nothing before the first scan", () => {
+            const rows = [session("a", true), session("b", false), session("c", true)];
+            const c = confirmFor(card(rows), rows, "30", false, false);
+            expect(c.message).toContain("2 of them were never scanned for ideas");
+            expect(c.altLabel).toBeUndefined();
+            expect(c.scanFirstIds).toBeUndefined();
+        });
+
+        it("after the first scan offers to scan exactly those, which moves nothing", () => {
+            const rows = [session("a", true), session("b", false), session("c", true)];
+            const c = confirmFor(card(rows), rows, "30", false, true);
+            expect(c.message).toContain("2 of them were never scanned for ideas");
+            expect(c.altLabel).toBe("Scan them first");
+            expect(c.scanFirstIds).toEqual(["a", "c"]);
+            expect(c.confirmLabel).toBe("Move to trash");
+        });
+
+        it("says was for one, and says nothing when every session was scanned", () => {
+            const one = [session("a", true), session("b", false)];
+            expect(confirmFor(card(one), one, "30", false, true).message).toContain(
+                "1 of them was never scanned for ideas"
+            );
+            const none = [session("a", false), session("b", false)];
+            const c = confirmFor(card(none), none, "30", false, true);
+            expect(c.message).not.toContain("never scanned");
+            expect(c.altLabel).toBeUndefined();
+            expect(c.scanFirstIds).toBeUndefined();
+        });
+
+        it("counts only the sessions the clean would move", () => {
+            const all = [session("a", true), session("b", true), session("c", true)];
+            const c = confirmFor(card(all), [all[0]], "30", false, true);
+            expect(c.message).toContain("1 of them was never scanned for ideas");
+            expect(c.scanFirstIds).toEqual(["a"]);
+        });
+
+        it("is the sessions card's alone", () => {
+            const cards = storageCards(report, "30", NOW, {});
+            const wt = confirmFor(cards[0], [{ ...cards[0].rows[0], unscanned: true }], "30", false, true);
+            expect(wt.message).not.toContain("never scanned");
+            expect(wt.altLabel).toBeUndefined();
+        });
     });
 });
 
