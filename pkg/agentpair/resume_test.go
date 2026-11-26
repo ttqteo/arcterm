@@ -221,8 +221,8 @@ func TestResumeRefusals(t *testing.T) {
 		}
 		pubs := r.published()
 		err := r.m.Resume(ctx, v.Id)
-		if err == nil || !strings.Contains(err.Error(), "Add judge") {
-			t.Fatalf("Resume = %v, want a refusal that points to Add judge", err)
+		if err == nil || !strings.Contains(err.Error(), "use ⚖ under a reply to pair a new one") || strings.Contains(err.Error(), "Add judge") {
+			t.Fatalf("Resume = %v, want a refusal that points to ⚖ under a reply, not to the Add judge button that is gone", err)
 		}
 		if view := r.view(v.Id); view.State != StateStopped || view.StopReason != StopJudgesGone {
 			t.Fatalf("state %s / %s: a refused Resume changed the pair", view.State, view.StopReason)

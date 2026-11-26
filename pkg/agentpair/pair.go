@@ -123,4 +123,8 @@ type Pair struct {
 	// Passes are the commands Run now let through; the next JobSlotCommand for one consumes it.
 	Passes        []string `json:"passes,omitempty"`
 	WorkerBriefed bool     `json:"workerbriefed,omitempty"` // the working agent has had the worker brief
+	// Later says the pair started from a reply the working agent had gone on from: its first message is that reply, and
+	// the working agent's first relayed prompt says so (OlderReplyNote). It is kept because that prompt is built when the
+	// judge first answers, by when Seen[worker] has moved on and the fact can no longer be read from the pair.
+	Later bool `json:"later,omitempty"`
 }

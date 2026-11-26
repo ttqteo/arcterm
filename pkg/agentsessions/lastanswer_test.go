@@ -70,6 +70,59 @@ func TestLastAnswerHasNoneBeforeTheFirstAnswerOrForAnotherRuntime(t *testing.T) 
 	}
 }
 
+// a reply is found by the uuid of its record, with its text and time; the latest and an older one read the same way
+func TestAnswerAtFindsAMainChainReplyByItsUuid(t *testing.T) {
+	path := writeTranscript(t, []string{
+		`{"type":"user","uuid":"u1","timestamp":"2026-09-17T06:02:05.000Z","message":{"role":"user","content":"review the diff"}}`,
+		`{"type":"assistant","uuid":"a1","parentUuid":"u1","timestamp":"2026-09-17T06:02:06.000Z","message":{"content":[{"type":"thinking","thinking":"hm"},{"type":"text","text":"an earlier answer"}]}}`,
+		`{"type":"assistant","uuid":"a2","parentUuid":"a1","timestamp":"2026-09-17T06:02:15.000Z","message":{"content":[{"type":"tool_use","id":"toolu_1","name":"Bash","input":{"command":"ls"}}]}}`,
+		`{"type":"assistant","uuid":"a3","parentUuid":"a2","timestamp":"2026-09-17T06:02:17.000Z","isSidechain":true,"message":{"content":[{"type":"text","text":"a subagent's answer"}]}}`,
+		`{"type":"assistant","uuid":"a4","parentUuid":"a2","timestamp":"2026-09-17T06:02:20.000Z","message":{"content":[{"type":"text","text":"the latest answer"},{"type":"text","text":"  "},{"type":"text","text":"second block"}]}}`,
+		`not json`,
+	})
+	text, ts, found := AnswerAt(path, "claude", "a1")
+	if !found || text != "an earlier answer" || ts != 1789624926000 {
+		t.Fatalf("AnswerAt(a1) = %q, %d, %v; want %q, 1789624926000, true", text, ts, found, "an earlier answer")
+	}
+	text, ts, found = AnswerAt(path, "claude", "a4")
+	if !found || text != "the latest answer\nsecond block" || ts != 1789624940000 {
+		t.Fatalf("AnswerAt(a4) = %q, %d, %v; want the latest answer's blocks, 1789624940000, true", text, ts, found)
+	}
+	// the latest reply is what LastAnswer says of it
+	lastText, lastTs := LastAnswer(path, "claude")
+	if text != lastText || ts != lastTs {
+		t.Fatalf("AnswerAt(a4) = %q, %d; LastAnswer = %q, %d: the same reply must read the same", text, ts, lastText, lastTs)
+	}
+}
+
+// a record that is not a reply of the session itself is not found, and neither is a uuid that no record has
+func TestAnswerAtDoesNotFindWhatIsNotAReply(t *testing.T) {
+	claude := writeTranscript(t, []string{
+		`{"type":"user","uuid":"u1","timestamp":"2026-09-17T06:02:05.000Z","message":{"role":"user","content":"review the diff"}}`,
+		`{"type":"assistant","uuid":"a1","parentUuid":"u1","timestamp":"2026-09-17T06:02:06.000Z","message":{"content":[{"type":"text","text":"an answer"}]}}`,
+		`{"type":"assistant","uuid":"a2","parentUuid":"a1","timestamp":"2026-09-17T06:02:15.000Z","message":{"content":[{"type":"tool_use","id":"toolu_1","name":"Bash","input":{"command":"ls"}}]}}`,
+		`{"type":"assistant","uuid":"a3","parentUuid":"a2","timestamp":"2026-09-17T06:02:17.000Z","isSidechain":true,"message":{"content":[{"type":"text","text":"a subagent's answer"}]}}`,
+	})
+	pi := writeTranscript(t, []string{
+		`{"type":"session","version":3,"id":"s1","timestamp":"2026-09-17T06:00:00Z","cwd":"C:\\repo"}`,
+		`{"type":"message","id":"a1","parentId":null,"timestamp":"2026-09-17T06:00:02Z","message":{"role":"assistant","content":[{"type":"text","text":"the diff is fine"}]}}`,
+	})
+	for _, c := range []struct{ name, path, runtime, uuid string }{
+		{"a sidechain record", claude, "claude", "a3"},
+		{"a tool-only record", claude, "claude", "a2"},
+		{"a user record", claude, "claude", "u1"},
+		{"a uuid no record has", claude, "claude", "nope"},
+		{"an empty uuid", claude, "claude", ""},
+		{"a pi path", pi, "pi", "a1"},
+		{"a codex path", claude, "codex", "a1"},
+		{"a missing file", "does-not-exist.jsonl", "claude", "a1"},
+	} {
+		if text, ts, found := AnswerAt(c.path, c.runtime, c.uuid); found || text != "" || ts != 0 {
+			t.Errorf("%s: AnswerAt = %q, %d, %v; want not found", c.name, text, ts, found)
+		}
+	}
+}
+
 // a dead route leaves the session idle with only its transcript saying why; an error it recovered from is not it
 func TestLastErrorIsTheLastAssistantMessageWhenItFailed(t *testing.T) {
 	piHead := []string{

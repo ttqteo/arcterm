@@ -172,6 +172,7 @@ type SessionInfo struct {
 // its replies (claudeReplyText) and the tail messages are derived from.
 type claudeLine struct {
 	Type             string           `json:"type"`
+	UUID             string           `json:"uuid"`             // the record's id: a Chat part carries it, and AnswerAt finds a reply by it
 	AiTitle          string           `json:"aiTitle"`          // an ai-title record: Claude Code's running name for the session
 	IsMeta           bool             `json:"isMeta"`           // a companion Claude Code writes beside a prompt (an image's size), no prompt itself
 	IsSidechain      bool             `json:"isSidechain"`      // with Origin, whether a person sent the record (sentByPerson)

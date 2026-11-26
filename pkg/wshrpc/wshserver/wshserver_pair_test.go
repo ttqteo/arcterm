@@ -74,6 +74,11 @@ func (l *fakePairLink) LastAnswer(_ context.Context, tab string) (string, int64,
 	return a.text, a.ts, nil
 }
 
+// AnswerAt knows no older replies: these tests start every pair from the latest.
+func (l *fakePairLink) AnswerAt(_ context.Context, tab, uuid string) (string, int64, error) {
+	return "", 0, fmt.Errorf("no reply %s in the transcript of %s", uuid, tab)
+}
+
 func (l *fakePairLink) Tokens(_ context.Context, tab string, _ int64) (int64, error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -792,6 +797,7 @@ func TestPairLinkTabOffTheRoster(t *testing.T) {
 	checks := map[string]error{}
 	checks["Send"] = link.Send(ctx, agentsTabA, "hello")
 	_, _, checks["LastAnswer"] = link.LastAnswer(ctx, agentsTabA)
+	_, _, checks["AnswerAt"] = link.AnswerAt(ctx, agentsTabA, "a1")
 	_, checks["Tokens"] = link.Tokens(ctx, agentsTabA, 0)
 	_, checks["Agent"] = link.Agent(ctx, agentsTabA)
 	_, checks["RecentTexts"] = link.RecentTexts(ctx, agentsTabA, 3)
@@ -906,6 +912,44 @@ func TestPairLinkReadsTheTranscriptAndSends(t *testing.T) {
 	}
 	if err := link.Send(ctx, agentsTabB, " \n"); err == nil {
 		t.Error("an empty prompt was sent")
+	}
+}
+
+// a reply of a claude agent is read by the uuid of its transcript record: its text and time, never the latest reply in
+// the place of one that is not there; a pi agent's replies, and a record that says nothing, are errors
+func TestPairLinkAnswerAtReadsAClaudeTranscript(t *testing.T) {
+	transcript := writeTranscript(t, "pair-link-answer-at",
+		`{"type":"user","uuid":"u1","timestamp":"2026-11-25T10:00:00.000Z","message":{"content":"write the plan"}}`,
+		`{"type":"assistant","uuid":"a1","parentUuid":"u1","timestamp":"2026-11-25T10:00:05.000Z","message":{"id":"m1","content":[{"type":"text","text":"Plan v1."}]}}`,
+		`{"type":"assistant","uuid":"a2","parentUuid":"a1","timestamp":"2026-11-25T10:00:09.000Z","message":{"id":"m2","content":[{"type":"tool_use","id":"toolu_1","name":"Bash","input":{"command":"ls"}}]}}`,
+		`{"type":"assistant","uuid":"a3","parentUuid":"a2","timestamp":"2026-11-25T10:00:20.000Z","message":{"id":"m3","content":[{"type":"text","text":"Plan v2."}]}}`,
+	)
+	claude := agentFacts(agentsTabB, "design", agentsBlockB, "claude", baseds.AgentState_Idle)
+	claude.Status.TranscriptPath = transcript
+	pi := agentFacts(agentsTabC, "pi worker", agentsBlockC, "pi", baseds.AgentState_Idle)
+	pi.Status.TranscriptPath = transcript
+	scriptAgents(t, &agentRosterFacts{Tabs: []agentTabFacts{claude, pi}})
+	ctx := context.Background()
+	link := livePairLink{}
+
+	text, ts, err := link.AnswerAt(ctx, agentsTabB, "a1")
+	if err != nil || text != "Plan v1." || ts != 1795600805000 {
+		t.Errorf("AnswerAt(a1) = %q, %d, %v; want Plan v1. at 1795600805000", text, ts, err)
+	}
+	text, ts, err = link.AnswerAt(ctx, agentsTabB, "a3")
+	latest, latestTs, _ := link.LastAnswer(ctx, agentsTabB)
+	if err != nil || text != "Plan v2." || text != latest || ts != latestTs {
+		t.Errorf("AnswerAt(a3) = %q, %d, %v; want the latest reply, %q at %d", text, ts, err, latest, latestTs)
+	}
+	for name, c := range map[string]struct{ tab, uuid string }{
+		"a record with no text":   {agentsTabB, "a2"},
+		"a uuid no record has":    {agentsTabB, "a9"},
+		"a user record":           {agentsTabB, "u1"},
+		"a pi agent's transcript": {agentsTabC, "a1"},
+	} {
+		if text, ts, err := link.AnswerAt(ctx, c.tab, c.uuid); err == nil || text != "" || ts != 0 || !strings.Contains(err.Error(), c.uuid) {
+			t.Errorf("%s: AnswerAt = %q, %d, %v; want an error that names the uuid", name, text, ts, err)
+		}
 	}
 }
 
