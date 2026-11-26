@@ -672,6 +672,10 @@ describe("processGone", () => {
         expect(processGone(sendFailure(new Error("no controller found for block 6022bf5d")))).toBe(true);
         expect(processGone(sendFailure(new SubmitError("type", "no shell input chan")))).toBe(true);
     });
+    it("reads an Enter with no controller as one too: the paste before it was refused without an error", () => {
+        const f = sendFailure(new SubmitError("enter", "no controller found for block 6b03660c-2ea3"));
+        expect(processGone(f)).toBe(true);
+    });
     it("leaves every other failure to its toast", () => {
         expect(processGone(sendFailure(new SubmitError("type", "shell input buffer full")))).toBe(false);
         expect(processGone(sendFailure(new SubmitError("enter", "no shell input chan")))).toBe(false);

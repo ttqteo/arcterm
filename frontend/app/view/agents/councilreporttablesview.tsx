@@ -181,30 +181,28 @@ export function FiguresTable({ c }: { c: Council }) {
 // a figure's places: its ref, then the other places that hold it
 const placesOf = (r: FigureRow) => [r.ref, ...r.refs].filter((p) => p !== "");
 
-/** The lines figures come from: one entry per file, its path (the folder fainter) and its lines, "notes/audit.html:713,
- *  714, 715", so a chart that cites one long file three times shows the path once. A path wider than the pane wraps. */
+/** The lines figures come from: a chip per file, as a council message's cites are (DESIGN.md `link`), its name in the
+ *  link blue and its lines muted after it, "audit.html 713, 714, 715", so a chart that cites one long file three times
+ *  shows it once. The folder is in the chip's title; a name wider than the pane is cut short. */
 function Sources({ rows, className }: { rows: FigureRow[]; className?: string }) {
     const groups = citeGroups(rows.flatMap(placesOf));
     if (groups.length === 0) {
         return null;
     }
     return (
-        <span
-            data-council-figure-sources
-            className={cn("flex min-w-0 flex-wrap gap-x-3 gap-y-[2px] font-mono text-[11.5px] text-muted", className)}
-        >
+        <span data-council-figure-sources className={cn("flex min-w-0 flex-wrap gap-[6px] text-[12px]", className)}>
             {groups.map((g) => (
                 <span
                     key={g.path}
+                    data-council-figure-source={g.path}
                     title={g.lines.length > 0 ? `${g.path}:${g.lines.join(", ")}` : g.path}
-                    className="inline-flex min-w-0 max-w-full items-baseline gap-[5px] [overflow-wrap:anywhere]"
+                    className="inline-flex h-[22px] min-w-0 max-w-full items-center gap-[5px] rounded-[6px] border border-edge-mid bg-surface px-[7px]"
                 >
-                    <FileText size={11} aria-hidden className="flex-none self-center opacity-70" />
-                    <span className="min-w-0">
-                        {g.dir !== "" ? <span className="opacity-60">{g.dir}</span> : null}
-                        {g.name}
-                        {g.lines.length > 0 ? <span className="text-secondary">:{g.lines.join(", ")}</span> : null}
-                    </span>
+                    <FileText size={12} aria-hidden className="flex-none text-muted" />
+                    <span className="min-w-0 truncate font-medium text-link">{g.name}</span>
+                    {g.lines.length > 0 ? (
+                        <span className="flex-none tabular-nums text-muted">{g.lines.join(", ")}</span>
+                    ) : null}
                 </span>
             ))}
         </span>
@@ -602,11 +600,7 @@ function FigureRowsTable({ rows, words }: { rows: FigureRow[]; words: ReportWord
                         <td data-council-figure-cell="measures" className={cn(TD, "text-secondary")}>
                             {r.measures !== "" ? r.measures : <Dash />}
                         </td>
-                        {/* a cite is a code reference to read character by character: the one mono cell */}
-                        <td
-                            data-council-figure-cell="source"
-                            className={cn(TD, "pr-0 font-mono text-[12px] text-muted")}
-                        >
+                        <td data-council-figure-cell="source" className={cn(TD, "pr-0")}>
                             {r.ref !== "" ? <Sources rows={[r]} /> : <Dash />}
                         </td>
                     </tr>

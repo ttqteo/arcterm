@@ -42,6 +42,16 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
   opacity as it opens under a drawn reply, the bar's colour easing from the accent to grey, the ended line's words
   cross-fading, and the reduced-motion end states. It does not sample the rows above the line, and it goes from
   reading straight to ended, so the live state's cross-fade is not seen. (`chatpairmark.tsx`, `chatconversation.tsx`)
+- [ ] (arcterm) **A slow-ending sleep still sleeps.** Next time waveapp.log shows `agent sleep: … is asleep, but pids …
+  had not ended`, that agent's row reads asleep (not exited), and Wake or a Chat message brings it back on its
+  conversation, the log showing `agent wake: block …: ending pids … left from its sleep` first when they still ran. A
+  Chat message to an agent whose terminal has no process wakes it (`[chat-send] restart block=…`) instead of a toast
+  saying to press Enter. (`wshserver_agentsleep.go` endLeftovers, `chatpending.ts` processGone)
+- [ ] (arcterm) **Council Figures: each source is a chip.** Open a council Report whose Số liệu cites a file: under
+  each chart and in the Nguồn column the source is a small bordered chip, the file's name in link blue (sans, not mono)
+  and its lines muted after it; hovering shows the full `path:lines`; a very long name is cut short with `…` at a
+  narrow pane, never pushing the chip past it. (`councilreporttablesview.tsx` Sources)
+
 - [ ] (arcterm) **A Chat visual has no border.** In an agent's Chat, a reply with an `arc-visual` block: the page sits
   flush with the reply's text, no box around it and no line under the small Shapes icon; a tall one still shows its
   expand button at the right of that row. (`chatvisualview.tsx`)
@@ -1955,3 +1965,10 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
   `.md`) groups X.js 947 → 135 → 94 + 41 and the replay rates (70,6% of 170, from 79,5% of 151). Check the Liên hệ
   column for a link haiku guessed (a preview on a copy also said "151 of 170"). Tried on a copy of the record with haiku
   only, not through wavesrv. Commit: feat(council) wsh council refigure
+- [ ] (arcterm) Unread turns read one by one in Chat: let an agent in Chat finish 3 turns with long replies while you
+  look at another agent, then click it → Chat opens at the oldest of the 3 under a blue "3 new turns" rule (no slide,
+  no flash of the end first, the pinned prompt bar not over the rule); scroll slowly → the row's blue count drops 3 → 2
+  → 1 → 0 as each reply's last line comes into view, the rule keeping its 3. Again in a 2-cell grid (each cell counts its
+  own), and with a Vietnamese conversation ("3 lượt mới"). Scrolled up reading while the agent finishes a turn → +1,
+  gone again once you scroll to it; at the bottom it never shows. In Terminal the count still clears at once. Not run
+  live (scenario `chat-unread-turns`, written for the run's Final). Commit: feat(agents) unread turns read one by one

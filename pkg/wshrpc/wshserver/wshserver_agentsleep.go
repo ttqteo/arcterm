@@ -101,6 +101,19 @@ var (
 			}
 		}
 	}
+	// pidStarted is when a running pid's process started (ms since the epoch), false when none runs under it. A pid
+	// with another start time is another process that took the number after the first one ended.
+	pidStarted = func(pid int32) (int64, bool) {
+		p, err := process.NewProcess(pid)
+		if err != nil {
+			return 0, false
+		}
+		at, err := p.CreateTime()
+		if err != nil {
+			return 0, false
+		}
+		return at, true
+	}
 )
 
 // how long sleep waits for a destroyed tree to be gone, how long for the pids it killed, and how often it looks;
@@ -117,6 +130,66 @@ var (
 
 // sleepMu keeps two sleeps (the loop's, a person's Sleep) from racing on one block.
 var sleepMu sync.Mutex
+
+// An agent asleep while pids of its old tree still run: they outlived its controller and a kill, most often a process
+// still ending on a machine that pages hard (2026-11-26: two pids of a Claude tree took longer than the 5s, and undoing
+// the sleep left the tab with no process and no Wake). Each pid is kept with its start time, so a wake ends only the
+// process that slept and never one that took its number since.
+var (
+	leftoverMu sync.Mutex
+	leftovers  = map[string]map[int32]int64{} // block id -> pid -> start time
+)
+
+// noteLeftovers records the pids of blockId's slept tree that still run, with their start times.
+func noteLeftovers(blockId string, pids []int32) {
+	started := map[int32]int64{}
+	for _, pid := range pids {
+		if at, ok := pidStarted(pid); ok {
+			started[pid] = at
+		}
+	}
+	leftoverMu.Lock()
+	defer leftoverMu.Unlock()
+	if len(started) == 0 {
+		delete(leftovers, blockId)
+		return
+	}
+	leftovers[blockId] = started
+}
+
+// liveLeftovers is the pids of blockId's slept tree that still run as the same processes, forgetting the block once
+// none does.
+func liveLeftovers(blockId string) []int32 {
+	leftoverMu.Lock()
+	defer leftoverMu.Unlock()
+	var live []int32
+	for pid, at := range leftovers[blockId] {
+		if now, ok := pidStarted(pid); ok && now == at {
+			live = append(live, pid)
+		}
+	}
+	if len(live) == 0 {
+		delete(leftovers, blockId)
+	}
+	slices.Sort(live)
+	return live
+}
+
+// endLeftovers ends what still runs of blockId's slept tree before a wake starts a new process on its conversation, so
+// two never write one transcript. An error names the pids that would not end.
+func endLeftovers(blockId string) error {
+	left := liveLeftovers(blockId)
+	if len(left) == 0 {
+		return nil
+	}
+	log.Printf("agent wake: block %s: ending pids %v left from its sleep\n", blockId, left)
+	killPids(left)
+	if left = pidsGone(left, sleepKillWait); len(left) > 0 {
+		return fmt.Errorf("its old process (pids %v) is still ending; wake it again in a moment", left)
+	}
+	liveLeftovers(blockId)
+	return nil
+}
 
 // sessionKey is what a harness's resume flag takes to reopen a conversation: Claude's session id is its
 // transcript's file stem, pi takes the transcript path whole, and agy names its own conversation (its
@@ -215,8 +288,8 @@ func sleepRefusal(row *agentRow) error {
 
 // sleepAgent puts an idle agent to sleep: its process ends and its RAM is freed, and its tab and conversation
 // stay. Unless force is set, an agent with background work running is not slept; the work is returned in
-// Background instead, for the person to confirm. A tree that will not die is an error and the agent is left
-// as it was, except that its process is gone.
+// Background instead, for the person to confirm. A tree that has not ended once destroyed and killed still leaves the
+// agent asleep, with its pids remembered for the wake to end (endLeftovers).
 func sleepAgent(ctx context.Context, row *agentRow, force bool) (*wshrpc.CommandAgentsSleepRtnData, error) {
 	// read the session before the controller goes: the exit publishes a bare idle with no transcript path
 	tpath, err := agentTranscriptPath(ctx, row)
@@ -254,7 +327,6 @@ func sleepAgent(ctx context.Context, row *agentRow, force bool) (*wshrpc.Command
 
 	pids := treePids(row.blockId)
 	freed := treeBytes(pids)
-	oldArgs := meta[waveobj.MetaKey_CmdArgs]
 	err = updateBlockMeta(ctx, row.blockId, waveobj.MetaMapType{
 		waveobj.MetaKey_CmdArgs:         args,
 		waveobj.MetaKey_AgentSleeping:   time.Now().UnixMilli(),
@@ -272,19 +344,21 @@ func sleepAgent(ctx context.Context, row *agentRow, force bool) (*wshrpc.Command
 		left = pidsGone(left, sleepKillWait)
 	}
 	if len(left) > 0 {
-		log.Printf("agent sleep: %q (block %s) did not stop, pids %v still run\n", row.Name, row.blockId, left)
-		// the controller is gone and cannot be brought back: undo the sleep marks so the row is not a sleeping
-		// agent holding a process
-		undo, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
-		defer cancel()
-		if uerr := updateBlockMeta(undo, row.blockId, waveobj.MetaMapType{
-			waveobj.MetaKey_CmdArgs:         oldArgs, // nil when it had none: a delete
-			waveobj.MetaKey_AgentSleeping:   nil,
-			waveobj.MetaKey_AgentSleepFreed: nil,
-		}); uerr != nil {
-			log.Printf("agent sleep: restoring block %s after a failed sleep: %v\n", row.blockId, uerr)
+		// the controller is gone and cannot be brought back, so the agent stays asleep: undoing the marks left a tab with
+		// no process and no Wake. What still runs is remembered, and the wake ends it before it starts a new process.
+		log.Printf("agent sleep: %q (block %s) is asleep, but pids %v had not ended %s after its stop; its wake ends them\n",
+			row.Name, row.blockId, left, sleepStopWait+sleepKillWait)
+		noteLeftovers(row.blockId, left)
+		if held := treeBytes(left); held < freed {
+			freed -= held
+		} else {
+			freed = 0
 		}
-		return nil, fmt.Errorf("agent %q did not stop (pids %v); it was not put to sleep", row.Name, left)
+		mctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+		defer cancel()
+		if err := updateBlockMeta(mctx, row.blockId, waveobj.MetaMapType{waveobj.MetaKey_AgentSleepFreed: int64(freed)}); err != nil {
+			log.Printf("agent sleep: block %s: recording what its sleep freed: %v\n", row.blockId, err)
+		}
 	}
 	return &wshrpc.CommandAgentsSleepRtnData{FreedBytes: freed}, nil
 }
@@ -461,6 +535,9 @@ func runWake(ctx context.Context, row *agentRow, message string, fresh bool) err
 		}
 	}
 
+	if err := endLeftovers(row.blockId); err != nil {
+		return failed(err.Error())
+	}
 	if err := resyncBlock(ctx, row.TabId, row.blockId); err != nil {
 		return failed(fmt.Sprintf("it could not start: %v", err))
 	}

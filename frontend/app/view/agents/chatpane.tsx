@@ -155,7 +155,7 @@ import { useStickToBottom } from "./sticktobottom";
 import { backgroundTasksByIdAtom } from "./subagentsstore";
 import { runningBackgroundTasks, turnStats, type TurnStats } from "./transcriptprojection";
 import { TranscriptSkeleton } from "./transcriptskeleton";
-import { unreadAgentsAtom } from "./unreadagentsstore";
+import { unreadAgentsAtom, useAgentOnScreen } from "./unreadagentsstore";
 import { useWaking } from "./wakingstore";
 import { WorkingGlyph } from "./workingglyph";
 
@@ -800,7 +800,25 @@ function ChatPaneBody({ model, agent, barred }: { model: AgentsViewModel; agent:
     }, [shown.next]);
     // where the reader left the conversation, kept while the cell shows the terminal or another agent
     const placeId = `chat:${agent.id}:${path}`;
-    const { scrollRef, onScroll, atBottom, jumpToBottom } = useStickToBottom(entries, placeId);
+    // The turns the agent finished while you were not looking (unreadagentsstore.ts), and each time it came on screen:
+    // with some unread then, the conversation opens at the first of them (ChatConversation's rule), not at the end nor
+    // at a kept place, and counts them down as you read (chatunread.ts). Off screen, the snapshot is gone, and the rule
+    // with it
+    const screen = useAgentOnScreen(model, agent.id);
+    const unreadCount = useAtomValue(unreadAgentsAtom).get(agent.id) ?? 0;
+    const [onScreen, setOnScreen] = useState(() => ({
+        shown: screen.shown,
+        count: screen.shown ? unreadCount : 0,
+        seq: 0,
+    }));
+    if (onScreen.shown !== screen.shown) {
+        setOnScreen({ shown: screen.shown, count: screen.shown ? unreadCount : 0, seq: onScreen.seq + 1 });
+    }
+    const unreadOpen = useMemo(
+        () => (onScreen.count > 0 ? { count: onScreen.count, seq: onScreen.seq } : null),
+        [onScreen]
+    );
+    const { scrollRef, onScroll, atBottom, jumpToBottom } = useStickToBottom(entries, placeId, unreadOpen != null);
     // ⌘↓ on a Mac draws the pill's own ↓ again; Ctrl+End elsewhere says something the arrow does not
     const jumpKeyIsArrow = formatChordString(CHAT_JUMP_KEYS).includes("↓");
     // the jump-to-latest key (agent:chat-jump-latest) presses the ↓ below, and passes while the ↓ is not drawn
@@ -1191,7 +1209,7 @@ function ChatPaneBody({ model, agent, barred }: { model: AgentsViewModel; agent:
     // offers to close it too, last
     const done = doneSuggestion(
         agent,
-        useAtomValue(unreadAgentsAtom).get(agent.id) ?? 0,
+        unreadCount,
         useAtomValue(model.lineageAtom).runs,
         runningBackgroundTasks(useAtomValue(backgroundTasksByIdAtom)[agent.id]).length,
         useAtomValue(runQueueAtom)
@@ -1225,6 +1243,11 @@ function ChatPaneBody({ model, agent, barred }: { model: AgentsViewModel; agent:
     // or the pane is gone.
     const liveJudgeKey = chips != null && judge != null ? turnKey : null;
     const liveLine = liveJudgeKey != null && cwd != null ? judgeLine(judge, 0, vi, true) : null;
+    const canRead = screen.shown && screen.focused;
+    const unread = useMemo(
+        () => ({ agentId: agent.id, open: unreadOpen, count: unreadCount, canRead, vi }),
+        [agent.id, unreadOpen, unreadCount, canRead, vi]
+    );
     const liveAction = liveLine != null && liveLine.state !== "none" ? liveLine.action : undefined;
     useEffect(() => {
         if (liveJudgeKey == null || cwd == null || liveAction == null) {
@@ -1303,6 +1326,7 @@ function ChatPaneBody({ model, agent, barred }: { model: AgentsViewModel; agent:
                                     ownTranscript={!readsFork}
                                     cwd={cwd}
                                     liveJudgeKey={liveJudgeKey}
+                                    unread={unread}
                                 />
                             </AgentPathLinks>
                         </ChatVisualHost>

@@ -83,6 +83,11 @@ and a picture given to a line that is not big.
   pairs a judge, and an older reply can be judged, not only the latest. The judge reads that reply and, where it is
   older, is told where the agent's transcript is to see what it did since; the agent is told which reply is being
   judged. The header keeps Pair and + once a pair exists.
+- Opening an agent in Chat with unread turns takes you to the oldest of them, under an "N new turns" rule, and its
+  blue count drops by one for each turn you scroll to the end of, instead of going to 0 at once. In Terminal it still
+  clears at once.
+- A council Report's Figures show each source as a small chip, the file's name and its lines, as a council message's
+  cites do; hover it for the full path.
 - A visual in Chat no longer sits in a bordered box: it lines up with the reply's text around it.
 - The word "draft" on an agent's row also shows on the row you have open, as soon as its box holds a message you have
   not sent.
@@ -147,6 +152,8 @@ and a picture given to a line that is not big.
 
 ### Fixed
 
+- An idle agent whose process ends slowly as it goes to sleep (a machine short on memory) now sleeps, and wakes with
+  Wake or the next message you send it. Before, its tab was left exited with no Wake, and a message sent to it failed.
 - A PowerShell terminal reads as running when you run the same command twice in a row. Before, the repeat ran
   unmarked: the terminal stayed idle in the sidebar and the Overview's Running list while it worked.
 - A council report's Figures name each source file once with its lines ("audit.html:713, 714, 715") instead of
