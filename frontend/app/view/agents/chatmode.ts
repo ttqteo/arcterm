@@ -43,6 +43,15 @@ export function shownChatMode(agent: ChatAgent | null | undefined, stored: ChatM
     return chatCapable(agent) ? (stored ?? "chat") : "terminal";
 }
 
+// Whether the agent's cell shows Chat: its chat mode, or a Claude agent asleep (its terminal holds only the kill, so the
+// conversation is what the cell shows, whatever its stored chat mode)
+export function showsChat(
+    agent: (ChatAgent & Pick<AgentVM, "sleeping">) | null | undefined,
+    stored: ChatMode | undefined
+): boolean {
+    return shownChatMode(agent, stored) === "chat" || (agent?.sleeping != null && chatCapable(agent));
+}
+
 // the header's value: Chat when the terminal slot is on screen and the mode is chat
 export function cellView(agentView: AgentView, chatMode: ChatMode): CellView {
     return agentView === "terminal" && chatMode === "chat" ? "chat" : agentView;

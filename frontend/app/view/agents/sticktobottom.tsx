@@ -15,18 +15,22 @@ import { transcriptPlace } from "./transcriptplace";
 // instead of the view following the tail to its end
 export const RELEASE_TAIL_EVENT = "sticktobottom:release";
 
-// a transcript its reader left above the end opens there (CompactTranscript's placeId restores it), not stuck
-const opensAtEnd = (placeId: string | undefined) => placeId == null || transcriptPlace(placeId) == null;
+// a transcript its reader left above the end opens there (CompactTranscript's placeId restores it), not stuck; nor does
+// one the caller opens elsewhere (`released`: Chat at an agent's first unread turn)
+const opensAtEnd = (placeId: string | undefined, released: boolean) =>
+    !released && (placeId == null || transcriptPlace(placeId) == null);
 
 // A scroll region that sticks to the tail while the user is at the bottom, releases when they scroll
 // up to read history, and re-sticks on jumpToBottom. `entries` is the dependency that triggers the
 // re-pin: pass the same array the feed renders. layout-effect (not effect) so the pin lands before
 // paint — otherwise a taller feed paints at the old scrollTop then snaps down a frame later. A pinned prompt's scroll
 // back (PROMPT_JUMP_EVENT) releases it as scrolling up does. `placeId`: the id the feed's CompactTranscript keeps its
-// reader's place under; with a place kept, the region starts released, and again whenever the id changes.
-export function useStickToBottom(entries: unknown[], placeId?: string) {
+// reader's place under; with a place kept, the region starts released, and again whenever the id changes. `released`:
+// the caller opens the region elsewhere than the end, read with placeId (a region already open lets go of the tail on
+// RELEASE_TAIL_EVENT).
+export function useStickToBottom(entries: unknown[], placeId?: string, released = false) {
     const scrollRef = useRef<HTMLDivElement>(null);
-    const stickRef = useRef(opensAtEnd(placeId));
+    const stickRef = useRef(opensAtEnd(placeId, released));
     // a pinned prompt's jump released the tail and its smooth scroll has not yet left the bottom zone, where the first
     // frames still read as near the bottom and would re-stick
     const leavingRef = useRef(false);
@@ -44,7 +48,7 @@ export function useStickToBottom(entries: unknown[], placeId?: string) {
         }
         if (stuckFor.current !== placeId) {
             stuckFor.current = placeId;
-            stickRef.current = opensAtEnd(placeId);
+            stickRef.current = opensAtEnd(placeId, released);
             leavingRef.current = false;
             arrivingRef.current = false;
             setAtBottom(stickRef.current);

@@ -75,6 +75,9 @@ and a picture given to a line that is not big.
 
 ### Changed
 
+- Opening an agent in Chat with unread turns takes you to the oldest of them, under an "N new turns" rule, and its
+  blue count drops by one for each turn you scroll to the end of, instead of going to 0 at once. In Terminal it still
+  clears at once.
 - A council Report's Figures show each source as a small chip, the file's name and its lines, as a council message's
   cites do; hover it for the full path.
 - A visual in Chat no longer sits in a bordered box: it lines up with the reply's text around it.

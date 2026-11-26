@@ -1940,3 +1940,10 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
   `.md`) groups X.js 947 → 135 → 94 + 41 and the replay rates (70,6% of 170, from 79,5% of 151). Check the Liên hệ
   column for a link haiku guessed (a preview on a copy also said "151 of 170"). Tried on a copy of the record with haiku
   only, not through wavesrv. Commit: feat(council) wsh council refigure
+- [ ] (arcterm) Unread turns read one by one in Chat: let an agent in Chat finish 3 turns with long replies while you
+  look at another agent, then click it → Chat opens at the oldest of the 3 under a blue "3 new turns" rule (no slide,
+  no flash of the end first, the pinned prompt bar not over the rule); scroll slowly → the row's blue count drops 3 → 2
+  → 1 → 0 as each reply's last line comes into view, the rule keeping its 3. Again in a 2-cell grid (each cell counts its
+  own), and with a Vietnamese conversation ("3 lượt mới"). Scrolled up reading while the agent finishes a turn → +1,
+  gone again once you scroll to it; at the bottom it never shows. In Terminal the count still clears at once. Not run
+  live (scenario `chat-unread-turns`, written for the run's Final). Commit: feat(agents) unread turns read one by one

@@ -70,6 +70,7 @@ import agentStartFailedScenarios from "./scenarios-agent-start-failed.mjs";
 import sidebarColumnsScenarios from "./scenarios-sidebar-columns.mjs";
 import agentStreamsScenarios from "./scenarios-agent-streams.mjs";
 import chatBgTasksScenarios from "./scenarios-chat-bg-tasks.mjs";
+import chatUnreadTurnsScenarios from "./scenarios-chat-unread-turns.mjs";
 import chatStepsScenarios from "./scenarios-chat-steps.mjs";
 import chatPairBlocksScenarios from "./scenarios-chat-pair-blocks.mjs";
 import chatPairRelayScenarios from "./scenarios-chat-pair-relay.mjs";
@@ -76019,6 +76020,7 @@ export const SCENARIOS = [
     ...agentStartFailedScenarios(RT_KIT),
     ...agentStreamsScenarios(RT_KIT),
     ...chatBgTasksScenarios(RT_KIT),
+    ...chatUnreadTurnsScenarios(RT_KIT),
     ...chatStepsScenarios(RT_KIT),
     ...chatPairBlocksScenarios(RT_KIT),
     ...chatPairRelayScenarios(RT_KIT),
