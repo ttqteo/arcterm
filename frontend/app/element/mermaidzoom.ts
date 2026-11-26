@@ -62,6 +62,43 @@ export function wheelZoomFactor(e: WheelInput): number {
     return wheelFactor(e.deltaMode === 1 ? e.deltaY * LINE_PX : e.deltaY);
 }
 
+export type WheelEventInput = WheelInput & {
+    deltaX: number;
+    metaKey: boolean;
+    wheelDeltaX?: number;
+    wheelDeltaY?: number;
+};
+
+export type WheelAction = { kind: "pan"; dx: number; dy: number } | { kind: "zoom"; factor: number; instant: boolean };
+
+// a trackpad (or Magic Mouse) swipe scrolls in px, and WebKit and Chromium on a Mac give its legacy wheelDelta as -3
+// times the delta; a mouse notch gives ±120 a notch, or counts lines. A wheel without the legacy fields is a swipe when
+// it moves sideways.
+function isSwipe(e: WheelEventInput): boolean {
+    if (e.deltaMode !== 0) {
+        return false;
+    }
+    const wy = e.wheelDeltaY ?? 0;
+    const wx = e.wheelDeltaX ?? 0;
+    if (wy !== 0 || wx !== 0) {
+        return Math.abs(wy + 3 * e.deltaY) < 1 && Math.abs(wx + 3 * e.deltaX) < 1;
+    }
+    return e.deltaX !== 0;
+}
+
+// what a wheel event does in the viewer, the way a design tool reads it: a two-finger swipe pans and follows the
+// fingers at once, a pinch (ctrl wheel in Chromium) zooms at once, a mouse notch or a cmd + wheel zooms toward the
+// cursor and eases
+export function wheelAction(e: WheelEventInput): WheelAction {
+    if (e.ctrlKey) {
+        return { kind: "zoom", factor: wheelZoomFactor(e), instant: true };
+    }
+    if (!e.metaKey && isSwipe(e)) {
+        return { kind: "pan", dx: -e.deltaX, dy: -e.deltaY };
+    }
+    return { kind: "zoom", factor: wheelZoomFactor(e), instant: false };
+}
+
 // the shown view eases toward the target one: a wheel notch's 16% jump or a fit glides over ~100 ms instead of
 // landing in one frame. Scale and offset move by the same fraction, which keeps the point zoomAt held still. `dt` is
 // the time since the last frame, in ms; it returns the target itself once the rest is below a pixel.

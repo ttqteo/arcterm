@@ -1,8 +1,8 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-// A drawn diagram opened full size: the wheel zooms toward the cursor, a drag pans, a double click or 0 fits it back,
-// + and - step the zoom, and Copy image puts the whole diagram on the clipboard. The diagram's own toolbar (Expand,
+// A drawn diagram opened full size: a trackpad swipe or a drag pans, a pinch, cmd + wheel or a mouse wheel zooms toward
+// the cursor, a double click or 0 fits it back, + and - step the zoom, and Copy image puts the whole diagram on the clipboard. The diagram's own toolbar (Expand,
 // Copy image) sits over it in the chat and shows on hover.
 
 import { ModalShell } from "@/app/modals/modalshell";
@@ -12,7 +12,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, typ
 import { createPortal } from "react-dom";
 import { COPY_HOLD_MS } from "./copyfeedback";
 import { copyDiagramImage } from "./mermaidimage";
-import { easeToward, fitView, panBy, STEP, wheelZoomFactor, zoomAt, type Size, type ZoomView } from "./mermaidzoom";
+import { easeToward, fitView, panBy, STEP, wheelAction, zoomAt, type Size, type ZoomView } from "./mermaidzoom";
 
 const FOCUS_RING = "outline-none focus-visible:ring-2 focus-visible:ring-accent";
 // how long the stage keeps its GPU layer after the last zoom or pan
@@ -237,8 +237,9 @@ function ViewerBody({ html, onClose }: { html: string; onClose: () => void }) {
         setView(fitView(natural, boxSize()), true);
     }, [natural, boxSize, setView]);
 
-    // the wheel has to be a non-passive listener to keep the chat behind from scrolling. A trackpad pinch reaches
-    // Chromium as a ctrl wheel, and WebKit (the Mac app) as gesture events, whose scale counts from the pinch's start.
+    // the wheel has to be a non-passive listener to keep the chat behind from scrolling. A trackpad swipe pans, at once
+    // (wheelAction). A trackpad pinch reaches Chromium as a ctrl wheel, and WebKit (the Mac app) as gesture events, whose
+    // scale counts from the pinch's start.
     useEffect(() => {
         const box = boxRef.current;
         if (box == null) {
@@ -250,8 +251,22 @@ function ViewerBody({ html, onClose }: { html: string; onClose: () => void }) {
         };
         const onWheel = (e: WheelEvent) => {
             e.preventDefault();
+            const legacy = e as WheelEvent & { wheelDeltaX?: number; wheelDeltaY?: number };
+            const a = wheelAction({
+                deltaX: e.deltaX,
+                deltaY: e.deltaY,
+                deltaMode: e.deltaMode,
+                ctrlKey: e.ctrlKey,
+                metaKey: e.metaKey,
+                wheelDeltaX: legacy.wheelDeltaX,
+                wheelDeltaY: legacy.wheelDeltaY,
+            });
+            if (a.kind === "pan") {
+                setView((v) => panBy(v, a.dx, a.dy), true);
+                return;
+            }
             const p = at(e);
-            setView((v) => zoomAt(v, wheelZoomFactor(e), p.x, p.y));
+            setView((v) => zoomAt(v, a.factor, p.x, p.y), a.instant);
         };
         let pinch = 1;
         const onGestureStart = (e: Event) => {

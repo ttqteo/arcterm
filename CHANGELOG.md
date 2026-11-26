@@ -79,6 +79,9 @@ and a picture given to a line that is not big.
 
 ### Changed
 
+- A diagram opened full size moves the way a design tool does on a Mac trackpad: a two-finger swipe pans it and follows
+  the fingers at once, instead of zooming and gliding on after you stop. A pinch, cmd + scroll or a mouse wheel zooms.
+
 - Add judge moved from the agent's header onto each reply: ⚖ under a reply in Chat (beside Copy and Fork, on hover)
   pairs a judge, and an older reply can be judged, not only the latest. The judge reads that reply and, where it is
   older, is told where the agent's transcript is to see what it did since; the agent is told which reply is being

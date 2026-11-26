@@ -9,6 +9,7 @@ import {
     MAX_SCALE,
     MIN_SCALE,
     panBy,
+    wheelAction,
     wheelFactor,
     wheelZoomFactor,
     zoomAt,
@@ -79,6 +80,42 @@ describe("wheelZoomFactor", () => {
 
     it("reads a wheel that counts lines as px", () => {
         expect(wheelZoomFactor({ ...base, deltaY: 3, deltaMode: 1 })).toBeCloseTo(wheelFactor(99));
+    });
+});
+
+describe("wheelAction", () => {
+    const base = { deltaX: 0, deltaY: 0, deltaMode: 0, ctrlKey: false, metaKey: false, wheelDeltaX: 0, wheelDeltaY: 0 };
+    // a Mac trackpad's two-finger scroll: pixel deltas, the legacy wheelDelta three times the delta, sign flipped
+    const swipe = (dx: number, dy: number) => ({
+        ...base,
+        deltaX: dx,
+        deltaY: dy,
+        wheelDeltaX: -3 * dx,
+        wheelDeltaY: -3 * dy,
+    });
+
+    it("pans on a trackpad swipe, at once and both ways, the diagram following the fingers", () => {
+        expect(wheelAction(swipe(0, 12))).toEqual({ kind: "pan", dx: -0, dy: -12 });
+        expect(wheelAction(swipe(8, -5))).toEqual({ kind: "pan", dx: -8, dy: 5 });
+        expect(wheelAction(swipe(6, 0))).toEqual({ kind: "pan", dx: -6, dy: -0 });
+    });
+
+    it("pans a swipe with no legacy deltas when it moves sideways", () => {
+        expect(wheelAction({ ...base, deltaX: 4, deltaY: 2 })).toEqual({ kind: "pan", dx: -4, dy: -2 });
+    });
+
+    it("zooms a mouse notch, eased, as before", () => {
+        const notch = { ...base, deltaY: 100, wheelDeltaY: -120 };
+        expect(wheelAction(notch)).toEqual({ kind: "zoom", factor: wheelZoomFactor(notch), instant: false });
+        const line = { ...base, deltaY: 3, deltaMode: 1 };
+        expect(wheelAction(line)).toEqual({ kind: "zoom", factor: wheelZoomFactor(line), instant: false });
+    });
+
+    it("zooms a pinch (ctrl wheel) at once, and a cmd swipe like a notch", () => {
+        const pinch = { ...swipe(0, -4), ctrlKey: true };
+        expect(wheelAction(pinch)).toEqual({ kind: "zoom", factor: wheelZoomFactor(pinch), instant: true });
+        const cmd = { ...swipe(0, -10), metaKey: true };
+        expect(wheelAction(cmd)).toEqual({ kind: "zoom", factor: wheelFactor(-10), instant: false });
     });
 });
 
