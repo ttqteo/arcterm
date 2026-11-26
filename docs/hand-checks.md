@@ -21,6 +21,14 @@ list (its number is not reused).
 Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) ·
 [part 4](hand-checks-4.md) · [part 3](hand-checks-3.md) · [part 2](hand-checks-2.md) (oldest).
 
+## 2026-11-26
+
+- [ ] (arcterm) **Rail stays put on a switch back.** Open two agents that each have changed files and a session with
+  spend, view each once, then click back and forth between them in the Agent tree: on the Agent details rail's
+  Overview, Files changed, the branch/worktree line, the Session line (spend, model label) and the cache countdown
+  swap to the other agent's at once, with no skeleton and no line dropping out and coming back. A freshly opened agent
+  still shows the skeleton on its first view. (`rail-switch-back` scenario reads it frame by frame.)
+
 ## 2026-11-25
 
 - [ ] (arcterm) **Open a tool in a split.** With one agent in view, press `Ctrl+Shift+O`, pick a tool and press

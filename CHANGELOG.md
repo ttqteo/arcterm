@@ -55,6 +55,9 @@ and a picture given to a line that is not big.
 
 ### Changed
 
+- Switching back to an agent you already viewed keeps its details rail in place: Files changed, the branch, the
+  session's spend and model and the cache countdown show at once and update quietly, instead of flashing through
+  a placeholder.
 - Councils moved into Conversations: the Councils tab is gone, `Mod+G o` opens Conversations with the Council chip on,
   and a council nests under the session that started it.
 - Library's tabs are plain labels with a sliding underline; the 1–3 keys still switch them, named in each tab's tooltip

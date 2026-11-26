@@ -13,6 +13,7 @@ import { globalStore } from "@/app/store/jotaiStore";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { atom, type PrimitiveAtom } from "jotai";
+import { agentMemory } from "./agentmemory";
 import { aggregateSessionUsage, type SessionUsage } from "./sessionusage";
 
 export const UsageUnavailable = "unavailable";
@@ -22,6 +23,9 @@ export const sessionUsageAtom = atom<SessionUsageState>(null) as PrimitiveAtom<S
 
 const current = { id: "" };
 
+// each agent's last usage, so a switch back shows its spend at once while it is read again (agentmemory.ts)
+const usageMemory = agentMemory<SessionUsage>();
+
 export async function loadSessionUsage(
     id: string,
     transcriptPath: string | undefined,
@@ -29,20 +33,26 @@ export async function loadSessionUsage(
 ): Promise<void> {
     current.id = id;
     if (!transcriptPath) {
+        usageMemory.delete(id);
         globalStore.set(sessionUsageAtom, UsageUnavailable);
         return;
     }
+    // an agent read before re-reads the way a silent reload does: its last usage stays on screen, and on a failure too
+    const remembered = opts?.silent ? undefined : usageMemory.get(id);
+    const silent = opts?.silent || remembered != null;
     if (!opts?.silent) {
-        globalStore.set(sessionUsageAtom, null);
+        globalStore.set(sessionUsageAtom, remembered ?? null);
     }
     try {
         const rtn = await RpcApi.GetTranscriptUsageCommand(TabRpcClient, { path: transcriptPath });
         if (current.id === id) {
-            globalStore.set(sessionUsageAtom, aggregateSessionUsage(rtn.buckets ?? []));
+            const usage = aggregateSessionUsage(rtn.buckets ?? []);
+            usageMemory.set(id, usage);
+            globalStore.set(sessionUsageAtom, usage);
         }
     } catch (e) {
         console.warn("session usage load failed", transcriptPath, e);
-        if (current.id === id && !opts?.silent) {
+        if (current.id === id && !silent) {
             globalStore.set(sessionUsageAtom, UsageUnavailable);
         }
     }

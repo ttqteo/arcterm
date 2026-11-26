@@ -309,3 +309,108 @@ describe("loadRailForAgent: whose changes the rail lists", () => {
         expect(state?.ref).toBe("session-start");
     });
 });
+
+describe("loadRailForAgent: a switch back to an agent read before", () => {
+    // fresh modules; each agent's checkout is its own folder, and a read waits until the case lets git answer
+    async function setup() {
+        vi.resetModules();
+        const { resolveCwd } = await import("./agentcwdresolve");
+        vi.mocked(resolveCwd).mockImplementation(async (t?: string) => `/repo${t}`);
+        const { ensureSessionStart } = await import("./agentsessionstore");
+        vi.mocked(ensureSessionStart).mockResolvedValue(555);
+        const gates: { cwd: string; open: (fail?: boolean) => void }[] = [];
+        const { RpcApi } = await import("@/app/store/wshclientapi");
+        Object.assign(RpcApi, {
+            GitChangesCommand: (_c: unknown, d: any) =>
+                d.branchbase
+                    ? Promise.resolve(null)
+                    : new Promise((resolve, reject) =>
+                          gates.push({
+                              cwd: d.cwd,
+                              open: (fail) =>
+                                  fail
+                                      ? reject(new Error("git timed out"))
+                                      : resolve({
+                                            branch: d.cwd,
+                                            statusz: " M f.ts\0",
+                                            numstat: "1\t0\tf.ts\n",
+                                            isrepo: true,
+                                        }),
+                          })
+                      ),
+            GitListWorktreesCommand: async () => ({ worktrees: [] }),
+        });
+        const { globalStore } = await import("@/app/store/jotaiStore");
+        const rail = await import("./railstore");
+        const seen: (string | null)[] = [];
+        globalStore.sub(rail.railStateAtom, () => seen.push(globalStore.get(rail.railStateAtom)?.cwd ?? null));
+        const settle = () => new Promise((r) => setTimeout(r, 0));
+        // read an agent through: focus it, let git answer, wait until the state lands
+        const view = async (id: string, fail?: boolean) => {
+            const load = rail.loadRailForAgent({ id, transcriptPath: `/${id}`, agent: "pi" });
+            await settle();
+            gates.shift()!.open(fail);
+            await load;
+        };
+        return { globalStore, rail, seen, gates, settle, view };
+    }
+
+    it("shows a first view's skeleton, then the agent's list", async () => {
+        const { globalStore, rail, gates, settle, view } = await setup();
+        await view("b");
+        const first = rail.loadRailForAgent({ id: "a", transcriptPath: "/a", agent: "pi" });
+        expect(globalStore.get(rail.railStateAtom)).toBeNull();
+        await settle();
+        gates.shift()!.open();
+        await first;
+        expect(globalStore.get(rail.railStateAtom)?.branch).toBe("/repo/a");
+    });
+
+    it("never passes through null for an agent shown before, and updates it in place when the read lands", async () => {
+        const { globalStore, rail, seen, gates, settle, view } = await setup();
+        await view("a");
+        await view("b");
+        seen.length = 0;
+        const back = rail.loadRailForAgent({ id: "a", transcriptPath: "/a", agent: "pi" });
+        expect(globalStore.get(rail.railStateAtom)?.cwd).toBe("/repo/a");
+        await settle();
+        gates.shift()!.open();
+        await back;
+        expect(seen).not.toContain(null);
+        expect(seen.every((cwd) => cwd === "/repo/a")).toBe(true);
+    });
+
+    it("drops a late read for an agent the focus moved off, and keeps it from another agent's entry", async () => {
+        const { globalStore, rail, gates, settle, view } = await setup();
+        await view("b");
+        const late = rail.loadRailForAgent({ id: "a", transcriptPath: "/a", agent: "pi" });
+        await settle();
+        const lateGate = gates.shift()!;
+        await view("b");
+        lateGate.open();
+        await late;
+        expect(globalStore.get(rail.railStateAtom)?.cwd).toBe("/repo/b");
+        // a never landed, so a's next view is a first view
+        void rail.loadRailForAgent({ id: "a", transcriptPath: "/a", agent: "pi" });
+        expect(globalStore.get(rail.railStateAtom)).toBeNull();
+    });
+
+    it("does not show a remembered failure again: that agent reads as on a first view", async () => {
+        const { globalStore, rail, view } = await setup();
+        await view("a", true);
+        expect(globalStore.get(rail.railStateAtom)?.failure).toBe("git timed out");
+        await view("b");
+        void rail.loadRailForAgent({ id: "a", transcriptPath: "/a", agent: "pi" });
+        expect(globalStore.get(rail.railStateAtom)).toBeNull();
+    });
+
+    it("forgets an agent that left the roster", async () => {
+        const { globalStore, rail, view } = await setup();
+        await view("a");
+        await view("b");
+        const { retainAgentMemories } = await import("./agentmemory");
+        retainAgentMemories(new Set(["b"]));
+        void rail.loadRailForAgent({ id: "a", transcriptPath: "/a", agent: "pi" });
+        expect(globalStore.get(rail.railStateAtom)).toBeNull();
+    });
+});

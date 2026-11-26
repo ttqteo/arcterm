@@ -10,6 +10,7 @@ vi.mock("@/app/store/wshclientapi", () => ({
 vi.mock("@/app/store/wshrpcutil", () => ({ TabRpcClient: {} }));
 
 import { globalStore } from "@/app/store/jotaiStore";
+import { retainAgentMemories } from "./agentmemory";
 import { agentCacheStatusAtom, formatCacheCountdown, loadCacheStatusForAgent } from "./cachestatusstore";
 
 describe("loadCacheStatusForAgent", () => {
@@ -64,6 +65,66 @@ describe("loadCacheStatusForAgent", () => {
         expect(globalStore.get(agentCacheStatusAtom)).toEqual({ lastWriteTs: 3000, oneHour: false });
         rejectFirst(new Error("rpc down"));
         await first;
+        expect(globalStore.get(agentCacheStatusAtom)).toBeNull();
+    });
+
+    test("a switch back shows the agent's last status at once, never null, and updates it in place", async () => {
+        getCacheStatus.mockResolvedValueOnce({ lastwritets: 100, onehour: true });
+        await loadCacheStatusForAgent("ca", "/ca.jsonl");
+        getCacheStatus.mockResolvedValueOnce({ lastwritets: 200, onehour: true });
+        await loadCacheStatusForAgent("cb", "/cb.jsonl");
+        const seen: (number | null)[] = [];
+        const unsub = globalStore.sub(agentCacheStatusAtom, () =>
+            seen.push(globalStore.get(agentCacheStatusAtom)?.lastWriteTs ?? null)
+        );
+        let land!: (v: unknown) => void;
+        getCacheStatus.mockReturnValueOnce(new Promise((r) => (land = r)));
+        const back = loadCacheStatusForAgent("ca", "/ca.jsonl");
+        expect(globalStore.get(agentCacheStatusAtom)?.lastWriteTs).toBe(100);
+        land({ lastwritets: 150, onehour: true });
+        await back;
+        unsub();
+        expect(seen).toEqual([100, 150]);
+    });
+
+    test("a first view still loads through null", async () => {
+        getCacheStatus.mockResolvedValueOnce({ lastwritets: 100, onehour: true });
+        await loadCacheStatusForAgent("cc", "/cc.jsonl");
+        getCacheStatus.mockReturnValueOnce(new Promise(() => {}));
+        void loadCacheStatusForAgent("cd", "/cd.jsonl");
+        expect(globalStore.get(agentCacheStatusAtom)).toBeNull();
+    });
+
+    test("a failed re-read keeps the remembered status, as a silent refresh does", async () => {
+        getCacheStatus.mockResolvedValueOnce({ lastwritets: 100, onehour: false });
+        await loadCacheStatusForAgent("ce", "/ce.jsonl");
+        getCacheStatus.mockResolvedValueOnce({ lastwritets: 200, onehour: false });
+        await loadCacheStatusForAgent("cf", "/cf.jsonl");
+        getCacheStatus.mockRejectedValueOnce(new Error("rpc down"));
+        await loadCacheStatusForAgent("ce", "/ce.jsonl");
+        expect(globalStore.get(agentCacheStatusAtom)).toEqual({ lastWriteTs: 100, oneHour: false });
+    });
+
+    test("a late status for an agent the focus moved off neither lands nor is remembered", async () => {
+        let land!: (v: unknown) => void;
+        getCacheStatus.mockReturnValueOnce(new Promise((r) => (land = r)));
+        const late = loadCacheStatusForAgent("cg", "/cg.jsonl");
+        getCacheStatus.mockResolvedValueOnce({ lastwritets: 200, onehour: true });
+        await loadCacheStatusForAgent("ch", "/ch.jsonl");
+        land({ lastwritets: 900, onehour: true });
+        await late;
+        expect(globalStore.get(agentCacheStatusAtom)?.lastWriteTs).toBe(200);
+        getCacheStatus.mockReturnValueOnce(new Promise(() => {}));
+        void loadCacheStatusForAgent("cg", "/cg.jsonl");
+        expect(globalStore.get(agentCacheStatusAtom)).toBeNull();
+    });
+
+    test("forgets an agent that left the roster", async () => {
+        getCacheStatus.mockResolvedValueOnce({ lastwritets: 100, onehour: true });
+        await loadCacheStatusForAgent("ci", "/ci.jsonl");
+        retainAgentMemories(new Set(["other"]));
+        getCacheStatus.mockReturnValueOnce(new Promise(() => {}));
+        void loadCacheStatusForAgent("ci", "/ci.jsonl");
         expect(globalStore.get(agentCacheStatusAtom)).toBeNull();
     });
 

@@ -12,6 +12,7 @@ import { LibrarySurface } from "@/app/view/library/librarysurface";
 import { cn, fireAndForget } from "@/util/util";
 import { useAtomValue, type PrimitiveAtom } from "jotai";
 import { useEffect, useRef } from "react";
+import { retainAgentMemories } from "./agentmemory";
 import type { AgentsViewModel } from "./agents";
 import { useViewingSync } from "./agentsleep";
 import { AgentSurface } from "./agentsurface";
@@ -123,6 +124,16 @@ function usePruneDocNotes(model: AgentsViewModel) {
     }, [askIds.join(",")]);
 }
 
+// Drops the rail's remembered per-agent state (agentmemory.ts) of every agent that left the roster. Here, in the
+// always-mounted shell, so an agent closed while the Agent surface is not on screen is dropped too.
+function usePruneAgentMemories(model: AgentsViewModel) {
+    const agents = useAtomValue(model.agentsAtom);
+    const ids = agents.map((a) => a.id).join(",");
+    useEffect(() => {
+        retainAgentMemories(new Set(agents.map((a) => a.id)));
+    }, [ids]);
+}
+
 // The one owner of the transcript streams, git tracking and subagent / background-task tracking. The stream registry
 // is a per-id singleton (a second driver's unmount would stop the first's streams), and the shell is always mounted,
 // so the Agent surface keeps its rail's live entries, Subagents and Background tasks whichever surface was visited.
@@ -151,6 +162,7 @@ export function CockpitShell({ model, tabId }: { model: AgentsViewModel; tabId: 
     // after the sync, so a new .tex review's state exists: its PDF compiles in the background, on any surface
     useDocCompileSync(model);
     usePruneDocNotes(model);
+    usePruneAgentMemories(model);
     useHarnessPreference();
     // prime the channel snapshot at boot so the nav-rail needs-you badge + Cockpit counters dedup
     // correctly even before the Channels surface is first opened.

@@ -9,6 +9,7 @@ import { globalStore } from "@/app/store/jotaiStore";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { atom, type PrimitiveAtom } from "jotai";
+import { agentMemory } from "./agentmemory";
 
 export interface CacheStatus {
     lastWriteTs: number; // epoch seconds
@@ -19,29 +20,47 @@ export const agentCacheStatusAtom = atom<CacheStatus | null>(null) as PrimitiveA
 
 const current = { id: "" };
 
+// each agent's last status, so a switch back shows its countdown at once while it is read again (agentmemory.ts)
+const cacheMemory = agentMemory<CacheStatus>();
+
+function showCacheStatus(id: string, status: CacheStatus | null): void {
+    if (status == null) {
+        cacheMemory.delete(id);
+    } else {
+        cacheMemory.set(id, status);
+    }
+    globalStore.set(agentCacheStatusAtom, status);
+}
+
 // silent: a periodic refresh of the same agent — keep the last status on screen while in flight and on
-// failure, so the countdown doesn't blink out every poll.
+// failure, so the countdown doesn't blink out every poll. A switch to an agent read before does the same with its
+// remembered status.
 export async function loadCacheStatusForAgent(
     id: string,
     transcriptPath: string | undefined,
     opts?: { silent?: boolean }
 ): Promise<void> {
     current.id = id;
-    if (!opts?.silent) {
-        globalStore.set(agentCacheStatusAtom, null);
-    }
     if (!transcriptPath) {
+        if (!opts?.silent) {
+            showCacheStatus(id, null);
+        }
         return;
+    }
+    const remembered = opts?.silent ? undefined : cacheMemory.get(id);
+    const silent = opts?.silent || remembered != null;
+    if (!opts?.silent) {
+        globalStore.set(agentCacheStatusAtom, remembered ?? null);
     }
     try {
         const rtn = await RpcApi.GetCacheStatusCommand(TabRpcClient, { path: transcriptPath });
         if (current.id !== id) {
             return;
         }
-        globalStore.set(agentCacheStatusAtom, rtn.lastwritets ? { lastWriteTs: rtn.lastwritets, oneHour: !!rtn.onehour } : null);
+        showCacheStatus(id, rtn.lastwritets ? { lastWriteTs: rtn.lastwritets, oneHour: !!rtn.onehour } : null);
     } catch {
-        if (current.id === id && !opts?.silent) {
-            globalStore.set(agentCacheStatusAtom, null);
+        if (current.id === id && !silent) {
+            showCacheStatus(id, null);
         }
     }
 }
