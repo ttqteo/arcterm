@@ -32,7 +32,9 @@ export type OpenTarget =
     | { kind: "session"; sessionId: string }
     // a board an agent drew, by its project and id: beside its agent's Chat while that agent is in the roster, else in
     // Library → Boards (openref.ts)
-    | { kind: "board"; project: string; boardId: string };
+    | { kind: "board"; project: string; boardId: string }
+    // the Brief's From your sessions region (openref.ts); the one kind with no id, so its ref is the word alone
+    | { kind: "sessionideas" };
 
 export type Unsupported = { kind: "unsupported"; message: string };
 
@@ -45,8 +47,13 @@ export const CANNOT_LOCATE_RECORD = "This citation can't locate its record";
 
 const MEMHYGIENE_PREFIX = "memhygiene:";
 const BOARD_PREFIX = "board:";
+// the ref of the kind that names no item: the Brief's region of ideas found in past sessions
+export const SESSION_IDEAS_REF = "sessionideas";
 
 export function parseAddress(address: string, hint?: AddressHint): OpenTarget | Unsupported {
+    if (address === SESSION_IDEAS_REF) {
+        return { kind: "sessionideas" };
+    }
     // a project name may hold ":", so this kind alone splits at the first one
     if (address?.startsWith(MEMHYGIENE_PREFIX)) {
         const project = address.slice(MEMHYGIENE_PREFIX.length);

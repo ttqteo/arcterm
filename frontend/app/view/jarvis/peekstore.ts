@@ -24,6 +24,7 @@ export type PeekTarget = Exclude<
     | { kind: "pair" }
     | { kind: "session" }
     | { kind: "board" }
+    | { kind: "sessionideas" }
 >;
 
 export type PeekItem = { target: PeekTarget; status: "loading" | "ready" };

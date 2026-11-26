@@ -39,7 +39,7 @@ import { openDagLive, openDagTask } from "../orchestrate/dagmodalstate";
 import { isCanvasSegment, parseAddress, type AddressHint, type OpenTarget } from "./address";
 import { effortDetailAtom, loadEffortDetail } from "./effortstore";
 import { openInitiativeSheet } from "./initiativesheetstore";
-import { briefPeekRecordAtom, briefSheetOpenAtom } from "./jarvisstore";
+import { briefPeekRecordAtom, briefSheetOpenAtom, sessionIdeasFocusAtom } from "./jarvisstore";
 import { clearSubject, loadRecordDetail, selectSubject, setActiveRunId } from "./jarvissubjectstore";
 import { clearLoadingPeek, settlePeek, startPeek, type PeekTarget } from "./peekstore";
 import { pendingDecisionAnchorAtom } from "./petstore";
@@ -70,6 +70,7 @@ type CouncilTarget = Extract<OpenTarget, { kind: "council" }>;
 type PairTarget = Extract<OpenTarget, { kind: "pair" }>;
 type SessionTarget = Extract<OpenTarget, { kind: "session" }>;
 type BoardTarget = Extract<OpenTarget, { kind: "board" }>;
+type SessionIdeasTarget = Extract<OpenTarget, { kind: "sessionideas" }>;
 type Caller = AddressHint["caller"];
 
 const OK: OpenResult = { ok: true };
@@ -119,6 +120,8 @@ function targetName(target: OpenTarget): string {
             return `conversation ${target.sessionId}`;
         case "board":
             return `board ${target.boardId}`;
+        case "sessionideas":
+            return "ideas from your sessions";
     }
 }
 
@@ -184,7 +187,8 @@ export function isPeekable(target: OpenTarget): boolean {
         target.kind !== "council" &&
         target.kind !== "pair" &&
         target.kind !== "session" &&
-        target.kind !== "board"
+        target.kind !== "board" &&
+        target.kind !== "sessionideas"
     );
 }
 
@@ -209,7 +213,8 @@ export async function peekTarget(
         target.kind === "council" ||
         target.kind === "pair" ||
         target.kind === "session" ||
-        target.kind === "board"
+        target.kind === "board" ||
+        target.kind === "sessionideas"
     ) {
         return openTarget(model, target, report);
     }
@@ -336,7 +341,19 @@ async function land(
             return openSession(model, target, current);
         case "board":
             return select(await loadBoard(model, target, current), (facts) => selectBoard(model, target, facts));
+        case "sessionideas":
+            return selectSessionIdeas(model);
     }
+}
+
+// The Brief's From your sessions region has nothing to load: the feed (sessionideasstore.ts) already reads the ideas, and
+// the region draws what it holds, or its first-scan offer. The request is written before the surface switches, so a Brief
+// that mounts on the switch finds it on its first frame and scrolls; the region clears it. No closer: Escape or Back
+// returns, as the Memory tab's landing does.
+function selectSessionIdeas(model: AgentsViewModel): OpenResult {
+    globalStore.set(sessionIdeasFocusAtom, true);
+    landOn(model.surfaceAtom, "jarvis");
+    return OK;
 }
 
 // A board opens where its agent is: alone over the Agent surface's centre while the agent's tab is in the roster (asleep
@@ -407,6 +424,7 @@ async function peek(
         | PairTarget
         | SessionTarget
         | BoardTarget
+        | SessionIdeasTarget
     >,
     current: () => boolean
 ): Promise<OpenResult> {
