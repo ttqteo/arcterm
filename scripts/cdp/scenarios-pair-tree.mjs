@@ -28,7 +28,7 @@
 // [data-pair-error], [data-pair-cancel] and [data-pair-submit]. The ⚖ line is [data-pair-judge-line="<pair id>"] inside the
 // working agent's row ([data-pair-judge-tone] "normal" or "warning"), holding the button that opens it [data-pair-judge-open],
 // [data-pair-judge-words], [data-pair-judge-tokens] and [data-pair-judge-new]; on a stopped pair of this machine its floating
-// buttons are [data-pair-judge-resume] and [data-pair-judge-again] (faded in by the row's hover or the focus inside them), and
+// buttons are [data-pair-judge-resume] and [data-pair-judge-rerun] (faded in by the row's hover or the focus inside them), and
 // under it a live region [aria-live] holds [data-pair-judge-error] after a failed Resume.
 //
 // kit is scenarios.mjs's RT_KIT.
@@ -556,7 +556,7 @@ export default function (kit) {
                 const OPEN = `${LINE} [data-pair-judge-open]`;
                 const WORDS = `${LINE} [data-pair-judge-words]`;
                 const BTN_RESUME = `${LINE} [data-pair-judge-resume]`;
-                const BTN_AGAIN = `${LINE} [data-pair-judge-again]`;
+                const BTN_AGAIN = `${LINE} [data-pair-judge-rerun]`;
                 // the line as a step reads it: its words, tokens, tone and new-message count, whether the button that opens it reads as
                 // selected and whether the working agent's row does, how many lines the tree draws, and the agent rows in the order drawn
                 // (the judge has none of its own while the line speaks for it)
@@ -688,7 +688,7 @@ export default function (kit) {
                         const err = line.querySelector("[data-pair-judge-error]");
                         return {
                             resume: btn("[data-pair-judge-resume]"),
-                            judgeAgain: btn("[data-pair-judge-again]"),
+                            judgeAgain: btn("[data-pair-judge-rerun]"),
                             live: line.querySelector("[aria-live]")?.getAttribute("aria-live") ?? null,
                             error: err ? { text: flat(err), inLive: err.closest("[aria-live]") != null } : null,
                             selected: document.querySelector('${WORKER_ROW}').className.includes("bg-surface-selected"),

@@ -175,7 +175,7 @@ function PairJudgeLine({
                         {actions.judgeAgain != null ? (
                             <button
                                 type="button"
-                                data-pair-judge-again={pair.pairId}
+                                data-pair-judge-rerun={pair.pairId}
                                 title="Open the conversation with @judge in the composer"
                                 aria-label={`${actions.judgeAgain}, ${workerName}`}
                                 onClick={(e) => {
