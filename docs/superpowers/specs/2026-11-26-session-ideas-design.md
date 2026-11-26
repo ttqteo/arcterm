@@ -56,12 +56,16 @@ looks (the Jarvis Brief, Sprout, a brainstorm on its topic), not in a store of i
 
 - A transcript's deletion day is its last write plus `cleanupPeriodDays`, read from `~/.claude/settings.json` (never
   hard-coded 90). Its scan is due 10 days before that.
-- wavesrv checks once a day. A due session is scanned in a leftover 5-hour window, through DUM-E's gate (window near
-  reset with quota left, no run of the person's, no memory pressure), nearest deletion first.
+- wavesrv checks every 5 minutes, on DUM-E's cadence: the leftover window opens only in the last stretch before a
+  5-hour reset, which a daily or hourly check would miss. A check reads file times and the marks, nothing more. A due
+  session is scanned in a leftover 5-hour window, through DUM-E's gate (window near reset with quota left, no live run,
+  DUM-E's included, no memory pressure), nearest deletion first.
 - A session 7 days from deletion and still unscanned is scanned at once, outside a leftover window. The Brief says so
   (Scan-States board 4).
-- Storage's Sessions card scans the unscanned sessions it is about to move to the trash first, or says how many it would
-  move unscanned and lets the person choose.
+- Storage's Sessions card: its Move to trash confirm says how many of the sessions it would move were never scanned for
+  ideas. After the first scan it also offers **Scan them first**, which starts a scan of those sessions and moves
+  nothing; Move to trash moves them unscanned. Before the first scan the count is all it says (nothing scans before Scan
+  my sessions).
 
 ### Where the person sees it: the Brief's From your sessions region
 
@@ -111,8 +115,10 @@ Board `Nudges`.
 
 ## Cost
 
-- The scan is one haiku call per session, on its digest. Real numbers ([N] sessions, tokens per call) are measured on
-  the first scan and written here before the daily schedule is turned on.
+- The scan is one haiku call per session, on its digest. Each scan records its tokens (input, cache and output, as Run
+  facts count them, `pkg/consult/consult.go:150`), and the region's scanned line shows them. The first scan is the one
+  the person starts, after the offer card's estimate; the schedule's own scans come after it. The first scan's real
+  numbers (sessions, tokens per call) go into `docs/open-issues.md`'s RAM watch.
 - Each Discuss or Go through is one ordinary sonnet session, not a fan-out.
 - The digest store grows if search goes to 90 days (below): measure its RAM and disk and log it in `docs/open-issues.md`'s
   RAM watch.
@@ -121,7 +127,7 @@ Board `Nudges`.
 
 - `DigestWindowDays` 30 → 90, so search reaches as far back as transcripts are kept.
 - Ideas from earlier sessions as a part of the brainstorm panel (`kind: "note"`, from history), so an idea comes back
-  when its topic is brainstormed.
+  when its topic is brainstormed. Not in this plan: a later change, filed as a proposed chunk on the effort.
 
 ## Decided after the first draft (2026-11-26)
 
@@ -132,6 +138,12 @@ Board `Nudges`.
    (Nudges board 3 is not built).
 3. Scan-States boards 2–4 draw the To review strip and sheet that were turned down; the same states (scanning, stopped
    part way, leaving unscanned) are built inside the From your sessions region instead.
+
+4. **Changed while planning** (the run's lead, autonomous, after plan review round 1): the check runs every 5 minutes,
+   not once a day (DUM-E's window is too short for a daily check); the Storage card's choice is the confirm's Scan them
+   first, never a scan inside the clean; the cost numbers are recorded by the scan itself and the schedule follows the
+   person's first scan instead of waiting on a hand-written measurement; the brainstorm panel part is left to a later
+   change.
 
 ## Open questions
 
