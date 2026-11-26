@@ -424,7 +424,8 @@ export function BriefSheet({ model }: { model: AgentsViewModel }) {
     }, [visible, face, title, meta, metaRunId]);
 
     return (
-        <ModalShell open={visible} variant="sheet" onClose={close} className="h-full w-[640px] max-w-[92vw]">
+        // the width is --brief-sheet-w (tailwindsetup.css): the Brief's undo toast keeps clear of the sheet by it
+        <ModalShell open={visible} variant="sheet" onClose={close} className="h-full w-[var(--brief-sheet-w)]">
             {shown == null ? null : shown.face.kind === "effort" ? (
                 // the initiative's own head and body (spec decision 7); the latched face keeps it drawn through the
                 // exit animation

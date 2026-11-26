@@ -116,6 +116,7 @@ func TestSessionUsageToWireCarriesEveryField(t *testing.T) {
 			{Model: "claude-haiku-4-5", Sub: true, Input: 6, Output: 7, CacheRead: 8, CacheCreate: 9, CacheCreate1h: 0},
 		},
 		Turns: 10, SubTurns: 11, AvgCtx: 12, MaxCtx: 13, ColdResumes: 14, ColdTokens: 15, FirstTs: 16, LastTs: 17,
+		BigResults: []usagestats.SessionBigResults{{Tool: "Read", Sub: true, Count: 18, Chars: 19, RereadTokens: 20}},
 	}
 	want := wshrpc.UsageSession{
 		ID: "s1", Title: "Fix the thing", Project: "arcterm",
@@ -124,6 +125,7 @@ func TestSessionUsageToWireCarriesEveryField(t *testing.T) {
 			{Model: "claude-haiku-4-5", Sub: true, Input: 6, Output: 7, CacheRead: 8, CacheCreate: 9, CacheCreate1h: 0},
 		},
 		Turns: 10, SubTurns: 11, AvgCtx: 12, MaxCtx: 13, ColdResumes: 14, ColdTokens: 15, FirstTs: 16, LastTs: 17,
+		BigResults: []wshrpc.UsageBigResults{{Tool: "Read", Sub: true, Count: 18, Chars: 19, RereadTokens: 20}},
 	}
 	if got := sessionUsageToWire(in); !reflect.DeepEqual(got, want) {
 		t.Fatalf("got %+v, want %+v", got, want)

@@ -6,10 +6,9 @@ import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { cn } from "@/util/util";
 import { useState } from "react";
-import { shortModel } from "../agents/modelname";
 import { dagActionError, useDagGroup } from "./dagstore";
 import { leadModelsPayload, pickRows, picksBanner, setModelPayload, type PickModel } from "./modelpicks";
-import { workersRoute } from "./taskroute";
+import { routeFace, workersRoute } from "./taskroute";
 
 function usePicksSource(dagOref: string, runId: string): { group: TaskGroup; owner: Run } | null {
     const [group] = useDagGroup(dagOref);
@@ -20,7 +19,7 @@ function usePicksSource(dagOref: string, runId: string): { group: TaskGroup; own
 // the "lead" choice clears the task's pin, which lands it on the workers route: the lead's own model on a
 // Reviewer picks run, since choosing Reviewer picks clears the workers route
 function leadShort(group: TaskGroup, owner: Run): string {
-    return shortModel(workersRoute(group, owner).model);
+    return routeFace(workersRoute(group, owner));
 }
 
 export function ModelPicksBanner({ dagOref, runId }: { dagOref: string; runId: string }) {

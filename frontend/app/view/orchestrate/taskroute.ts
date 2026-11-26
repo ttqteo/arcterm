@@ -76,7 +76,7 @@ const CARD_TAG: Partial<Record<RouteSource, string>> = {
 
 // routeFace is how a route reads on a card or a chip: its short model, or the harness when it names no model
 // (`codex`, `agy`: a harness's default model has no id to show).
-function routeFace(r: RoutePin): string {
+export function routeFace(r: RoutePin): string {
     return r.model ? shortModel(r.model) : r.runtime;
 }
 
@@ -158,8 +158,8 @@ function lightReviewerRouteOf(group: TaskGroup): RoutePin {
 export function stageEntries(group: TaskGroup, owner: Run): StageEntry[] {
     const review = group.planreview;
     if (review == null) return [];
-    const full = shortModel(reviewerRouteOf(group, owner).route.model);
-    const light = shortModel(lightReviewerRouteOf(group).model);
+    const full = routeFace(reviewerRouteOf(group, owner).route);
+    const light = routeFace(lightReviewerRouteOf(group));
     return [
         {
             key: "planreview",

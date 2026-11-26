@@ -262,23 +262,40 @@ func isOpencodeShadowPath(path string) bool {
 
 // dedupe collapses records sharing an ID to the one with the largest Output (the final
 // streaming snapshot; input/cache are constant across snapshots). Keyless records pass through.
-// Mirrors dedupeUsage in usagestats.ts.
+// A tie (a resumed session's file carrying its parent's messages again) keeps the earliest copy, then the lesser
+// session, so the record kept and the order out do not depend on the order the files were read.
 func dedupe(records []Record) []Record {
 	byKey := map[string]Record{}
+	var keys []string // first-seen order
 	var out []Record
 	for _, r := range records {
 		if r.ID == "" {
 			out = append(out, r)
 			continue
 		}
-		if cur, ok := byKey[r.ID]; !ok || r.Output > cur.Output {
+		cur, ok := byKey[r.ID]
+		if !ok {
+			keys = append(keys, r.ID)
+		}
+		if !ok || keepsOver(r, cur) {
 			byKey[r.ID] = r
 		}
 	}
-	for _, r := range byKey {
-		out = append(out, r)
+	for _, k := range keys {
+		out = append(out, byKey[k])
 	}
 	return out
+}
+
+// keepsOver reports whether r replaces cur as the copy of their ID dedupe keeps.
+func keepsOver(r, cur Record) bool {
+	if r.Output != cur.Output {
+		return r.Output > cur.Output
+	}
+	if !r.TS.Equal(cur.TS) {
+		return r.TS.Before(cur.TS)
+	}
+	return r.Session < cur.Session
 }
 
 // bucket groups deduped records by (harness, provider, model, local day, session), summing token

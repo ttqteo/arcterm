@@ -382,6 +382,16 @@ describe("buildUsageDigest", () => {
             );
         });
 
+        // Claude must not guess what "bigbash" or "cold" means from the name: each lever given says what it counts
+        it("says what each lever given counts, once, before the lever blocks", () => {
+            const digest = digestOf(rows, "last 7 days", [leverOver("cold", [1]), leverOver("bigread", [2])]);
+            const meaning = digest.split("\n").filter((l) => /^- `\w+`: /.test(l));
+            expect(meaning.map((l) => l.slice(0, l.indexOf(":")))).toEqual(["- `cold`", "- `bigread`"]);
+            expect(meaning[0]).toContain("cache");
+            expect(meaning[1]).toContain("Read");
+            expect(digest.indexOf("- `cold`")).toBeLessThan(digest.indexOf("### cold"));
+        });
+
         it("says so when no lever applies", () => {
             expect(section(digestOf(rows), "Levers")).toEqual(["No lever applies in this window."]);
         });

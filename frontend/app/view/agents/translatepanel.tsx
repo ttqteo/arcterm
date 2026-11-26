@@ -8,12 +8,12 @@
 // TranslateFloatPanel its frame over Float's terminal area (cockpit-root.tsx). The state is translatestore.ts, the pure
 // parts translatemodel.ts.
 
-import { MOTION } from "@/app/element/motiontokens";
+import { leftPanelIn } from "@/app/element/motiontokens";
 import { Segmented } from "@/app/element/segmented";
 import { cn } from "@/util/util";
 import { useAtom, useAtomValue } from "jotai";
 import { ArrowLeftRight, Check, CircleAlert, ClipboardPaste, Copy, Star, Volume2, X } from "lucide-react";
-import { motion, type Variants } from "motion/react";
+import { motion } from "motion/react";
 import { Fragment, useEffect, useRef, useState, type KeyboardEvent } from "react";
 import type { AgentsViewModel } from "./agents";
 import { cellInputOf } from "./cellinput";
@@ -422,14 +422,6 @@ export function TranslateBody({ onClose }: { onClose: () => void }) {
     );
 }
 
-// The panel slides out from the rail's edge. Opacity + x on the macro duration: motiontokens.ts' sheetPanel is this
-// move for a drawer on the right edge; this one is pinned to the left. Entrance only, so closing is instant and an Esc
-// or a click outside never leaves a fading panel over the surface.
-const slideOut: Variants = {
-    initial: { opacity: 0, x: -16 },
-    animate: { opacity: 1, x: 0, transition: { duration: MOTION.durMacro, ease: MOTION.easeFluid } },
-};
-
 function RailFrame() {
     const frameRef = useRef<HTMLDivElement>(null);
     // whatever had the keyboard when the panel opened (a terminal, from the chord): Esc gives it back. Read while
@@ -460,7 +452,7 @@ function RailFrame() {
         <motion.div
             ref={frameRef}
             data-translate-rail
-            variants={slideOut}
+            variants={leftPanelIn}
             initial="initial"
             animate="animate"
             className="absolute bottom-3 left-3 z-40 flex max-h-[calc(100%-24px)] w-[340px] max-w-[calc(100%-24px)] flex-col overflow-y-auto rounded-lg border border-edge-mid bg-surface shadow-popover"

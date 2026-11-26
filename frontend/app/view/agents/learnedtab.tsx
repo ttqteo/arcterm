@@ -109,7 +109,10 @@ export function LearnedTab() {
                 {groups.map((g) => (
                     <section key={g.key} aria-label={g.title} className="flex flex-col gap-2">
                         <div className="flex items-baseline gap-2">
-                            <span className={cn(REGION_LABEL, "text-muted")}>{g.title}</span>
+                            {/* a skill's or a folder's name: shown as it is written, not uppercased (MyApp, not MYAPP) */}
+                            <span className={cn(REGION_LABEL, "normal-case tracking-normal text-muted")}>
+                                {g.title}
+                            </span>
                             {g.subtitle != null ? (
                                 <span title={g.subtitle} className="min-w-0 truncate text-[11px] text-muted">
                                     {g.subtitle}
