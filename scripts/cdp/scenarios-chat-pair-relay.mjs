@@ -10,14 +10,16 @@
 //                  reply as a relay
 // Chat draws the judge's reply as the judge's own card (name, time, the line it answers, its text whole, its fence as the
 // Judge marks card), the brief as one folded line, your words as your bubble, and in the judge's Chat the working agent's
-// replies as its cards, the newest list in full. Nothing runs and nothing is written into ~/.claude/projects.
+// replies as its cards, the newest list in full: it is the seeded pair's anchor list (the same items and text as its fence), so
+// its A item keeps the answer chips and a press answers through the pair (the stubbed PairSayCommand records it). Nothing runs
+// and nothing is written into ~/.claude/projects.
 // kit is scenarios.mjs's RT_KIT (polishWaitFor, polishNap, waveService).
 
 import { readFileSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import * as AC from "./agent-page-fixtures.mjs";
-import { restorePairRpc, seedPair, stubPairRpc } from "./pair-fixtures.mjs";
+import { pairRpcCalls, restorePairRpc, seedPair, stubPairRpc } from "./pair-fixtures.mjs";
 
 const NAME = "chat-pair-relay";
 const WORKER_NAME = "thesis-draft";
@@ -90,7 +92,9 @@ function pairOf(workerTab, judgeTab, now) {
         decided: {
             asks: [item(3, "asks", "Keep the 0.8 threshold?", { chips: ["Yes", "No, change it"] })],
             agreed: [item(1, "agreed", "Pilot on 40 transcripts")],
-            open: [item(2, "open", "Lock the 0.8 threshold")],
+            // the anchor of the working agent's relayed list (pair-relay-worker.txt: D1, O2, A3): wavesrv cuts O2's line at its
+            // " — ", so the item's text is the part before it and the note the rest, and isAnchorList (pairblocks.ts) holds
+            open: [item(2, "open", "Lock the threshold from the labelled set", { note: "before the pilot runs" })],
         },
     };
 }
@@ -111,6 +115,15 @@ const seen = (id) => `(() => {
         marks: el.querySelector('[data-chat-judge="marks"]') != null,
         latest: el.querySelector('[data-chat-pair="latest"]') != null,
         older: el.querySelector('[data-chat-pair="older"]') != null,
+        card: (() => {
+            const c = el.querySelector('[data-chat-pair="latest"]');
+            return c == null ? null : {
+                current: c.getAttribute("data-chat-pair-current"),
+                asks: [...c.querySelectorAll('[data-chat-pair-section="asks"] [data-chat-pair-item]')].map((r) => r.getAttribute("data-chat-pair-item")),
+                chips: [...c.querySelectorAll("[data-chat-pair-chip]")].map((x) => x.getAttribute("data-chat-pair-chip")),
+                other: c.querySelector("[data-chat-pair-other]") != null,
+            };
+        })(),
         items: [...el.querySelectorAll("li")].map(flat),
         rawOpen: el.querySelector("[data-chat-relay-raw]") != null,
         raw: flat(el.querySelector("[data-chat-relay-raw]")),
@@ -221,6 +234,7 @@ export default function (kit) {
                 const click = (id, sel) =>
                     h.ev(`(() => { const el = ${layerOf(id)}?.querySelector(${JSON.stringify(sel)}); el?.click(); return !!el; })()`);
                 const msgOf = (r, from, at = 0) => r?.msgs.filter((m) => m.from === from)[at];
+                const eq = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 
                 await run("1. worker: judge's reply", async (name) => {
                     await until(w, `s.relays.length >= 2`);
@@ -301,11 +315,35 @@ export default function (kit) {
                     const workers = s.relays.flatMap((r) => r.msgs).filter((m) => m.from === "worker");
                     const last = workers[workers.length - 1];
                     rec(
-                        `${name}: in the judge's Chat (board G) the brief is one line "arcterm made this agent the judge of ${WORKER_NAME}", and the working agent's replies are cards from ${WORKER_NAME} that open its conversation: the newest holds the Pair list in full, the earlier one (the brief's reply) a folded older list`,
+                        `${name}: in the judge's Chat (board G) the brief is one line "arcterm made this agent the judge of ${WORKER_NAME}", and the working agent's replies are cards from ${WORKER_NAME} that open its conversation: the newest holds the Pair list in full as the pair's current list (A3 waits on you, with the chips Yes and No, change it), the earlier one (the brief's reply) a folded older list`,
                         brief?.brief != null && brief.brief.line.includes(`arcterm made this agent the judge of ${WORKER_NAME}`) &&
                             workers.length === 2 && last.name === WORKER_NAME && last.link && last.latest &&
-                            workers[0].older && !workers[0].latest,
+                            workers[0].older && !workers[0].latest &&
+                            last.card?.current === "true" && eq(last.card.asks, ["A3"]) &&
+                            eq(last.card.chips, ["Yes", "No, change it"]),
                         { brief: brief?.brief?.line, workers }
+                    );
+                });
+
+                await run("5b. judge: a chip answers", async (name) => {
+                    // the stub arrange installed records the call; count before the press so this step reads only its own
+                    const before = (await pairRpcCalls(h, "PairSayCommand")).length;
+                    const chip = '[data-chat-pair="latest"] [data-chat-pair-chip="Yes"]';
+                    await scrollTo(j, chip);
+                    await polishNap(300);
+                    const pressed = await click(j, chip);
+                    let calls = [];
+                    for (let i = 0; i < 20 && calls.length === 0; i++) {
+                        calls = (await pairRpcCalls(h, "PairSayCommand")).slice(before);
+                        if (calls.length === 0) await polishNap(250);
+                    }
+                    await polishNap(500);
+                    await shot(h, "5b-judge-chip");
+                    rec(
+                        `${name}: pressing Yes on the working agent's list in the judge's Chat answers through the pair, both sides, tagged with its A item (PairSayCommand {pairid ${PAIR_ID}, text "Yes", to both, item 3}), once`,
+                        pressed === true && calls.length === 1 && calls[0].pairid === PAIR_ID && calls[0].text === "Yes" &&
+                            calls[0].to === "both" && calls[0].item === 3,
+                        calls
                     );
                 });
 
