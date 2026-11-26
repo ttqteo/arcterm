@@ -24,6 +24,16 @@ Older parts: [part 10](hand-checks-10.md) · [part 9](hand-checks-9.md) · [part
 
 ## 2026-11-27
 
+- [ ] (arcterm) **Brief toast beside the sheet.** Open an initiative in the Brief's sheet, delete a chunk: the "Deleted …"
+  toast and its Undo sit in the part of the page left of the sheet, not over its footer; with the sheet closed it is
+  centred again. Typecheck only (`brieftoast.tsx`, `--brief-sheet-w`).
+- [ ] (arcterm) **Learned headers keep their case.** Settings → Learned with a memory from a folder like `MyApp`: the
+  group header reads MyApp, not MYAPP. Settings → Terminal on a fresh config reads font 14, cursor Bar, blink on. The
+  rail's Translate panel still slides out of the rail's edge (its motion moved to `motiontokens.ts` leftPanelIn).
+  Typecheck only.
+- [ ] (arcterm) **A Codex route reads codex.** A run whose workers route is Codex with no model: the plan review's
+  stage line, New run's "all on …" and the model picks' running model read codex, not default. Unit test only.
+
 - [ ] (arcterm) **Switching Claude account leaves sleeping agents asleep.** Put one Claude agent to sleep, then switch
   the active Claude account (Settings, or the Chat limit strip): the restart list should not offer the sleeping agent,
   and it should stay asleep. Wake it: it starts on the new account. waveapp.log should hold no "is already asleep" line

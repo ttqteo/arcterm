@@ -34,6 +34,10 @@ and a picture given to a line that is not big.
 
 ### Fixed
 
+- A run on Codex or agy with no model picked shows its harness where it read "default": the plan review's stage line,
+  New run's workers and the model picks.
+- The Brief's undo toast no longer covers the bottom of an open initiative (or any Brief sheet).
+- Settings → Learned shows a skill's or folder's name as you wrote it (MyApp), not in capitals.
 - Switching Claude account no longer offers to restart sleeping agents: they stay asleep and wake on the new account.
   An agent a restart had woken that way can sleep again; before, its sleep failed every minute.
 - With Jarvis folded into Sprout, a click beside the open stay or Hide menu closes it instead of falling through to
