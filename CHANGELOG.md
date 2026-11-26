@@ -75,6 +75,8 @@ and a picture given to a line that is not big.
 
 ### Changed
 
+- A council Report's Figures show each source as a small chip, the file's name and its lines, as a council message's
+  cites do; hover it for the full path.
 - A visual in Chat no longer sits in a bordered box: it lines up with the reply's text around it.
 - The word "draft" on an agent's row also shows on the row you have open, as soon as its box holds a message you have
   not sent.

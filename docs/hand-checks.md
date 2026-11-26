@@ -23,6 +23,11 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
 
 ## 2026-11-26
 
+- [ ] (arcterm) **Council Figures: each source is a chip.** Open a council Report whose Số liệu cites a file: under
+  each chart and in the Nguồn column the source is a small bordered chip, the file's name in link blue (sans, not mono)
+  and its lines muted after it; hovering shows the full `path:lines`; a very long name is cut short with `…` at a
+  narrow pane, never pushing the chip past it. (`councilreporttablesview.tsx` Sources)
+
 - [ ] (arcterm) **A Chat visual has no border.** In an agent's Chat, a reply with an `arc-visual` block: the page sits
   flush with the reply's text, no box around it and no line under the small Shapes icon; a tall one still shows its
   expand button at the right of that row. (`chatvisualview.tsx`)
