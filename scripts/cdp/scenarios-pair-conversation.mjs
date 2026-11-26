@@ -1,12 +1,27 @@
 // pair-conversation: board R1's centre, the pair's conversation (docs/superpowers/specs/2026-11-25-agent-pair-judge-design.md;
 // frontend/app/view/agents/pairpane.tsx). No agent runs and wavesrv is never asked: the roster goes in the page's dev mock
-// roster and the pair in its dev mock pairs (pair-fixtures.mjs), and the seven RpcApi.Pair*Command methods are stubs that
-// record what the page calls, so a click that should reach wavesrv is read back from the stub.
+// roster and the pair in its dev mock pairs (pair-fixtures.mjs), and the eight RpcApi.Pair*Command methods are stubs that
+// record what the page calls, so a click that should reach wavesrv is read back from the stub. The pause card (steps 7-9)
+// is the same pair stopped (pausedPairView): its chips, Resume and Judge again, the composer's `@judge ` and the header's
+// state line while the pair is paused.
 // Narrowing the timeline (a fixed max height) is only how quote-jump gets a conversation longer than the window.
 // kit is scenarios.mjs's RT_KIT (polishWaitFor, polishNap).
 
 import { agentPage, focusAgent, restoreRoster, setRoster } from "./agent-page-fixtures.mjs";
-import { HELD_COMMAND, PAIR, pairRoster, pairRpcCalls, pairView, restorePairRpc, seedPair, stubPairRpc } from "./pair-fixtures.mjs";
+import {
+    HELD_COMMAND,
+    PAIR,
+    PAUSE_IDS,
+    pairRoster,
+    pairRpcCalls,
+    pairView,
+    pausedPairView,
+    RESUME_ERROR,
+    restorePairRpc,
+    seedPair,
+    setPairResumeFails,
+    stubPairRpc,
+} from "./pair-fixtures.mjs";
 
 const NAME = "pair-conversation";
 const WAIT_MS = 8_000;
@@ -16,7 +31,8 @@ const PANE = `document.querySelector("[data-pair-pane]")`;
 const TIMELINE = `document.querySelector("[data-pair-timeline]")`;
 const MSG = (id) => `document.querySelector('[data-pair-msg="${id}"]')`;
 const SHORT = { worker: PAIR.worker.slice(0, 8), judge: PAIR.judge.slice(0, 8), other: PAIR.other.slice(0, 8) };
-const PLACEHOLDER = "Talk to both… · @worker or @judge for one";
+const PLACEHOLDER = "To both: the worker answers, then the judge judges it · @judge to ask the judge now";
+const PLACEHOLDER_VI = "Gửi cả hai: worker trả lời trước, judge chấm câu trả lời · @judge để hỏi judge ngay";
 
 // the pane as the steps read it: the bar, and each message's side, head, quote, held lines and where its block sits
 const readPane = `(() => {
@@ -72,6 +88,56 @@ const readPane = `(() => {
         rounds: /\\bround\\b/i.test(flat(pane)),
     };
 })()`;
+
+// the pause card of message `id` as the steps read it: its words, where each part sits (top, to read the order), its chips as
+// buttons or as text, and its buttons
+const CARD = (id) => `document.querySelector('[data-pair-pause="${id}"]')`;
+const readCard = (h, id) =>
+    h.ev(`(() => {
+        const el = ${CARD(id)};
+        if (!el) return null;
+        const flat = (x) => (x?.textContent ?? "").replace(/\\s+/g, " ").trim();
+        const top = (x) => (x ? Math.round(x.getBoundingClientRect().top) : null);
+        const q = (sel) => el.querySelector(sel);
+        const all = (sel) => [...el.querySelectorAll(sel)];
+        const text = (sel) => (q(sel) ? flat(q(sel)) : null);
+        const btn = (sel) => {
+            const b = q(sel);
+            return b ? { text: flat(b), disabled: b.disabled, tag: b.tagName } : null;
+        };
+        return {
+            side: el.getAttribute("data-side"),
+            reason: el.getAttribute("data-pair-pause-reason"),
+            head: text("[data-pair-pause-head]"),
+            headTop: top(q("[data-pair-pause-head]")),
+            summary: text("[data-pair-pause-summary]"),
+            summaryTop: top(q("[data-pair-pause-summary]")),
+            sections: all("[data-pair-pause-section]").map((s) => ({
+                kind: s.getAttribute("data-pair-pause-section"),
+                label: flat(s.firstElementChild),
+                top: top(s),
+                items: [...s.querySelectorAll("[data-pair-pause-item]")].map((i) => i.getAttribute("data-pair-pause-item")),
+            })),
+            chips: all("[data-pair-pause-chip]").map((c) => ({ chip: c.getAttribute("data-pair-pause-chip"), tag: c.tagName })),
+            options: text("[data-pair-pause-options]"),
+            answers: all("[data-pair-pause-answer]").map(flat),
+            note: text("[data-pair-pause-note]"),
+            hint: text("[data-pair-pause-hint]"),
+            hintTop: top(q("[data-pair-pause-hint]")),
+            resume: btn("[data-pair-resume]"),
+            judgeAgain: btn("[data-pair-judge-again]"),
+            judgeAgainTop: top(q("[data-pair-judge-again]")),
+            buttons: all("button").length,
+        };
+    })()`);
+// the header's state line of the focused working agent
+const headerState = (h) => h.ev(`(document.querySelector("[data-agent-header] [data-agent-state-pill]")?.textContent ?? "").replace(/\\s+/g, " ").trim()`);
+// a native set of the composer's text, so React's onChange sees it
+const setComposer = (h, value) =>
+    h.ev(`(() => { const c = document.querySelector("[data-pair-composer]"); const set = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value").set; set.call(c, ${JSON.stringify(value)}); c.dispatchEvent(new Event("input", { bubbles: true })); })()`);
+const draftOf = (h) => agentPage(h, `const { pairDraftAtom } = await mod("app/view/agents/pairstore.ts"); return globalStore.get(pairDraftAtom(${JSON.stringify(PAIR.id)}));`);
+// the pause card grows in on the spring: what is measured waits for it to settle
+const SETTLE_MS = 800;
 
 // a real mouse at the centre of an element (a hover needs a real move; a click goes through the page's own handlers)
 async function mouseAt(h, selectorExpr, type) {
@@ -417,6 +483,249 @@ export default function (kit) {
                     "edges: a conversation with no messages reads \"No messages yet.\"; a very long held command and unbroken word push nothing out of the pane, the bar keeps Unpair, and the same holds in a 520px column",
                     emptyText === "No messages yet." && okFit(wideFit) && okFit(narrowFit),
                     { emptyText, wideFit, narrowFit }
+                );
+
+                // ---- the pause card: the same pair stopped ----
+                const reveal = (expr) => h.ev(`(${expr})?.scrollIntoView({ block: "nearest" })`);
+                const waitCard = (id) => polishWaitFor(h, `!!${CARD(id)}`, WAIT_MS);
+                const seedPaused = async (opts) => {
+                    await seedPair(h, [pausedPairView(ctx.now, opts)]);
+                    await waitCard(PAUSE_IDS.newest);
+                    await polishNap(SETTLE_MS);
+                    await h.ev(`(() => { const t = ${TIMELINE}; t.scrollTop = t.scrollHeight; })()`);
+                    await polishNap(200);
+                };
+                const SUMMARY = "Both sides agree the amendment is ready; only the 50% threshold waits on you.";
+
+                // pause-card: a no-new-points pause draws one card in the place of the "Paused: …" line: the head, the judge's summary
+                // on top, then Waits on you with its chip as a button, Still open, Agreed, and under them the hint and Judge again
+                // (nothing is queued, so no Resume)
+                await seedPaused({ reason: "no-new-points", summary: SUMMARY });
+                const card = await readCard(h, PAUSE_IDS.newest);
+                const lines = await h.ev(`document.querySelectorAll('[data-pair-msg="${PAUSE_IDS.newest}"]').length`);
+                await shot(h, "7-pause-card");
+                const kinds = (card?.sections ?? []).map((s) => s.kind);
+                const sectionTop = (kind) => card?.sections.find((s) => s.kind === kind)?.top ?? null;
+                rec(
+                    "pause-card: a no-new-points pause draws one card (not a Paused line): the head \"Paused: the judge has no new points\", the judge's summary under it and above every section, then Waits on you (item 3, its chip \"50%, go on\" a button), Still open (4) and Agreed (1, 2) in that order, then the hint \"Message to go on\" and a Judge again button, and no Resume",
+                    card != null &&
+                        lines === 1 &&
+                        card.side === "system" &&
+                        card.reason === "no-new-points" &&
+                        card.head === "Paused: the judge has no new points" &&
+                        card.summary === SUMMARY &&
+                        card.headTop < card.summaryTop &&
+                        card.summaryTop < sectionTop("asks") &&
+                        kinds.join() === "asks,open,agreed" &&
+                        card.sections.map((s) => s.label).join() === "Waits on you,Still open,Agreed" &&
+                        card.sections.map((s) => s.items.join("+")).join() === "3,4,1+2" &&
+                        sectionTop("asks") < sectionTop("open") &&
+                        sectionTop("open") < sectionTop("agreed") &&
+                        card.chips.length === 1 &&
+                        card.chips[0].chip === "50%, go on" &&
+                        card.chips[0].tag === "BUTTON" &&
+                        card.options === null &&
+                        card.note === null &&
+                        card.hint === "Message to go on" &&
+                        card.judgeAgain?.text === "Judge again" &&
+                        card.judgeAgain.disabled === false &&
+                        sectionTop("agreed") < card.hintTop &&
+                        card.resume === null,
+                    { card, lines }
+                );
+
+                // judge-again: Judge again puts "@judge " in the composer, focused with the caret after it, and the draft is taken
+                // once (the atom is empty again), so nothing types it a second time
+                await reveal(`document.querySelector("[data-pair-judge-again]")`);
+                await polishNap(150);
+                await click(h, `document.querySelector("[data-pair-judge-again]")`);
+                await polishWaitFor(h, `document.querySelector("[data-pair-composer]").value === "@judge "`, WAIT_MS);
+                await polishNap(200);
+                const typed = await h.ev(`(() => {
+                    const c = document.querySelector("[data-pair-composer]");
+                    return { value: c.value, focused: document.activeElement === c, start: c.selectionStart, end: c.selectionEnd };
+                })()`);
+                const draftLeft = await draftOf(h);
+                await shot(h, "8-judge-again");
+                rec(
+                    "judge-again: a press on Judge again leaves \"@judge \" in the composer, which is focused with the caret at its end, and the pair's draft is empty again",
+                    typed.value === "@judge " && typed.focused === true && typed.start === 7 && typed.end === 7 && draftLeft === null,
+                    { typed, draftLeft }
+                );
+                await setComposer(h, "");
+
+                // chip: a chip on the newest card answers both sides through the A-item path: one PairSayCommand with the chip as the
+                // text, to both, and the item's number
+                const saidBefore = (await pairRpcCalls(h, "PairSayCommand")).length;
+                await reveal(`document.querySelector('[data-pair-pause-chip="50%, go on"]')`);
+                await polishNap(150);
+                await click(h, `document.querySelector('[data-pair-pause-chip="50%, go on"]')`);
+                await polishNap(400);
+                const saidNow = (await pairRpcCalls(h, "PairSayCommand")).slice(saidBefore);
+                await shot(h, "9-pause-chip");
+                rec(
+                    "chip: a press on the chip \"50%, go on\" of the newest card records exactly one PairSayCommand: the chip as its text, to both, no reply, item 3",
+                    saidNow.length === 1 &&
+                        JSON.stringify(saidNow[0]) === JSON.stringify({ pairid: PAIR.id, text: "50%, go on", to: "both", replyto: "", item: 3 }),
+                    { saidNow }
+                );
+
+                // older-pause: with an earlier pause in the conversation only the newest card has controls; the older one has its
+                // chips as text and no Resume, Judge again or hint, and no button at all
+                await seedPaused({ reason: "no-new-points", summary: SUMMARY, olderPause: true });
+                await waitCard(PAUSE_IDS.older);
+                await polishNap(SETTLE_MS);
+                const older = await readCard(h, PAUSE_IDS.older);
+                const newest = await readCard(h, PAUSE_IDS.newest);
+                const cardIds = await h.ev(`[...document.querySelectorAll("[data-pair-pause]")].map((e) => e.getAttribute("data-pair-pause"))`);
+                await h.ev(`${CARD(PAUSE_IDS.older)}?.scrollIntoView({ block: "center" })`);
+                await polishNap(250);
+                await shot(h, "10-older-pause");
+                rec(
+                    "older-pause: with two pauses the older card (in time order, first) has its chip as the text \"50%, go on\", no button of any kind, no hint, no Resume and no Judge again, while the newest still has its chip button and Judge again",
+                    older != null &&
+                        newest != null &&
+                        cardIds.join() === `${PAUSE_IDS.older},${PAUSE_IDS.newest}` &&
+                        older.chips.length === 0 &&
+                        older.options === "50%, go on" &&
+                        older.buttons === 0 &&
+                        older.hint === null &&
+                        older.resume === null &&
+                        older.judgeAgain === null &&
+                        newest.chips.length === 1 &&
+                        newest.chips[0].tag === "BUTTON" &&
+                        newest.judgeAgain?.text === "Judge again",
+                    { cardIds, older, newest }
+                );
+
+                // resume: after a token cap with something queued the card offers "Resume · 3.0M more" (no hint, no Judge again); a
+                // press records one PairResumeCommand, and once the view comes back relaying the button is gone and the card stays
+                const tokenCap = { reason: "token-cap", canresume: true };
+                await seedPaused(tokenCap);
+                const capCard = await readCard(h, PAUSE_IDS.newest);
+                await reveal(`document.querySelector("[data-pair-resume]")`);
+                await polishNap(150);
+                await shot(h, "11-resume");
+                const resumedBefore = (await pairRpcCalls(h, "PairResumeCommand")).length;
+                await click(h, `document.querySelector("[data-pair-resume]")`);
+                const flipped = await polishWaitFor(h, `!document.querySelector("[data-pair-resume]")`, WAIT_MS);
+                await polishNap(300);
+                const resumedCalls = (await pairRpcCalls(h, "PairResumeCommand")).slice(resumedBefore);
+                const afterResume = await readCard(h, PAUSE_IDS.newest);
+                await shot(h, "11-resume-after");
+                rec(
+                    "resume: a token-cap card with canresume reads \"Paused: token cap reached (3.0M)\" and offers \"Resume · 3.0M more\" (no hint, no Judge again); a press records exactly one PairResumeCommand for the pair, and after the flipped view draws the button is gone, with no button left on the card",
+                    capCard?.head === "Paused: token cap reached (3.0M)" &&
+                        capCard.resume?.text === "Resume · 3.0M more" &&
+                        capCard.resume.tag === "BUTTON" &&
+                        capCard.hint === null &&
+                        capCard.judgeAgain === null &&
+                        resumedCalls.length === 1 &&
+                        JSON.stringify(resumedCalls[0]) === JSON.stringify({ pairid: PAIR.id }) &&
+                        flipped === true &&
+                        afterResume != null &&
+                        afterResume.resume === null &&
+                        afterResume.buttons === 0 &&
+                        afterResume.hint === null,
+                    { capCard, resumedCalls, flipped, afterResume }
+                );
+
+                // resume-fails: with the stub failing a press shows the conversation's error line with the server's words, and the
+                // button stays and works again; with the stub working a second press clears the line and the button goes
+                await seedPaused(tokenCap);
+                await setPairResumeFails(h, true);
+                await reveal(`document.querySelector("[data-pair-resume]")`);
+                await polishNap(150);
+                const failBefore = (await pairRpcCalls(h, "PairResumeCommand")).length;
+                await click(h, `document.querySelector("[data-pair-resume]")`);
+                await polishWaitFor(h, `!!document.querySelector("[data-pair-error]")`, WAIT_MS);
+                await polishNap(500);
+                const errorText = await h.ev(`(document.querySelector("[data-pair-error]")?.textContent ?? "").replace(/\\s+/g, " ").trim()`);
+                const stays = await readCard(h, PAUSE_IDS.newest);
+                const failedCalls = (await pairRpcCalls(h, "PairResumeCommand")).length - failBefore;
+                await shot(h, "12-resume-failed");
+                await setPairResumeFails(h, false);
+                await click(h, `document.querySelector("[data-pair-resume]")`);
+                const retried = await polishWaitFor(h, `!document.querySelector("[data-pair-resume]") && !document.querySelector("[data-pair-error]")`, WAIT_MS);
+                rec(
+                    "resume-fails: with the resume stub failing, one press records one PairResumeCommand and shows the error line \"Resume failed: " + RESUME_ERROR + "\" while the card keeps an enabled \"Resume · 3.0M more\" button; once the stub works a second press takes the line and the button away",
+                    failedCalls === 1 &&
+                        errorText === `Resume failed: ${RESUME_ERROR}` &&
+                        stays?.resume?.text === "Resume · 3.0M more" &&
+                        stays.resume.disabled === false &&
+                        retried === true,
+                    { failedCalls, errorText, stays, retried }
+                );
+
+                // judges-gone: a "no judge is left" card says so and where to add one, and offers no Resume, no Judge again and no
+                // hint (resuming would stop the pair again at once); its chip is still the way to answer the worker
+                await seedPaused({ reason: "judges-gone", canresume: true });
+                const gone = await readCard(h, PAUSE_IDS.newest);
+                await shot(h, "13-judges-gone");
+                rec(
+                    "judges-gone: the card reads \"Paused: no judge is left\" with the note \"Add judge in the header pairs one again\", and has no Resume, no Judge again and no hint",
+                    gone != null &&
+                        gone.reason === "judges-gone" &&
+                        gone.head === "Paused: no judge is left" &&
+                        gone.note === "Add judge in the header pairs one again" &&
+                        gone.resume === null &&
+                        gone.judgeAgain === null &&
+                        gone.hint === null,
+                    { gone }
+                );
+
+                // placeholder: the composer says what a message to both does; a pair whose person writes Vietnamese reads it, and the
+                // card's words, in Vietnamese
+                const placeholderEn = await h.ev(`document.querySelector("[data-pair-composer]").getAttribute("placeholder")`);
+                const vi = pausedPairView(ctx.now, { reason: "no-new-points" });
+                vi.messages.splice(1, 0, {
+                    id: "pm-vi", from: "person", tab: "", ts: vi.messages[0].ts + 1000, text: "Tiếp tục nhé, chọn 50%", quote: "", replyto: "", to: "both", held: [],
+                });
+                vi.messagecount = vi.messages.length;
+                await seedPair(h, [vi]);
+                await waitCard(PAUSE_IDS.newest);
+                await polishNap(SETTLE_MS);
+                const placeholderVi = await h.ev(`document.querySelector("[data-pair-composer]").getAttribute("placeholder")`);
+                const viCard = await readCard(h, PAUSE_IDS.newest);
+                await shot(h, "14-placeholder");
+                rec(
+                    "placeholder: the composer reads \"" + PLACEHOLDER + "\" (the Vietnamese \"" + PLACEHOLDER_VI + "\" in a pair whose person writes Vietnamese, whose pause card then speaks Vietnamese too: head, section names, hint and Judge tiếp)",
+                    placeholderEn === PLACEHOLDER &&
+                        placeholderVi === PLACEHOLDER_VI &&
+                        viCard?.head === "Tạm dừng: judge không còn ý mới" &&
+                        viCard.sections.map((s) => s.label).join() === "Chờ bạn,Còn mở,Đã thống nhất" &&
+                        viCard.hint === "Nhắn để bàn tiếp" &&
+                        viCard.judgeAgain?.text === "Judge tiếp",
+                    { placeholderEn, placeholderVi, viCard }
+                );
+
+                // header-paused: while the pair is stopped the working agent's header state line reads the pause words (no cap on
+                // a token cap), never "waiting on judge", though the judge still owes (the view says so); relaying it waits again
+                const states = {};
+                for (const [key, opts] of [
+                    ["no-new-points", { reason: "no-new-points" }],
+                    ["token-cap", { reason: "token-cap", canresume: true }],
+                    ["judges-gone", { reason: "judges-gone" }],
+                ]) {
+                    const view = pausedPairView(ctx.now, opts);
+                    view.owed = true;
+                    await seedPair(h, [view]);
+                    await polishWaitFor(h, `!!${CARD(PAUSE_IDS.newest)}`, WAIT_MS);
+                    await polishNap(300);
+                    states[key] = await headerState(h);
+                    if (key === "no-new-points") await shot(h, "15-header-paused");
+                }
+                await seedPair(h, [pairView(ctx.now)]);
+                await polishWaitFor(h, `!document.querySelector("[data-pair-pause]")`, WAIT_MS);
+                await polishNap(300);
+                states.relaying = await headerState(h);
+                rec(
+                    "header-paused: the working agent's header state line reads \"Paused: the judge has no new points\", \"Paused: token cap reached\" and \"Paused: no judge is left\" on a stopped pair even when the judge owes an answer, and \"waiting on judge\" again once the pair relays",
+                    states["no-new-points"] === "Paused: the judge has no new points" &&
+                        states["token-cap"] === "Paused: token cap reached" &&
+                        states["judges-gone"] === "Paused: no judge is left" &&
+                        states.relaying === "waiting on judge",
+                    states
                 );
 
                 // pair-toggle: the header's lit Pair button leaves the pair mode, to the agent's own view, and is unlit there

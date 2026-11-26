@@ -113,7 +113,7 @@ import { rosterSeededAtom } from "./liveagents";
 import { liveTokensAtom } from "./livetokensstore";
 import { machineServersReadingAtom } from "./machineserversstore";
 import { PairHeaderControls } from "./pairjudgemenu";
-import { canPair, waitingOnJudge } from "./pairmodel";
+import { canPair, pausedStateText, waitingOnJudge } from "./pairmodel";
 import { pairOnScreen } from "./pairopen";
 import { usePairOf } from "./pairstore";
 import { planEditChunks } from "./planreviewmodel";
@@ -522,6 +522,8 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
     const pairHere = paired != null && pairOnScreen(center, pairSel, paired.pair.id);
     // a judge owes an answer to the working agent's newest message: with nothing of its own running, it waits on the judge
     const waitingJudge = paired?.role === "worker" && waitingOnJudge(paired.pair);
+    // its pair is stopped: nothing is waited on, and the line says the pair is paused and why (the pause card's head words)
+    const pausedPair = paired?.role === "worker" ? pausedStateText(paired.pair) : null;
     // its turn ended but background work it started still runs: working, or waiting when that work only watches
     const bgTasks = useAtomValue(backgroundTasksByIdAtom)[agent.id];
     const machineServers = useAtomValue(machineServersReadingAtom).servers;
@@ -543,7 +545,9 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
             ? "resuming"
             : waitingJudge && shown === "idle"
               ? "waiting on judge"
-              : liveText;
+              : pausedPair != null && shown === "idle"
+                ? pausedPair
+                : liveText;
     const stateColor = ended ? "var(--color-success)" : failed ? "var(--color-error)" : STATE_COLOR[shown];
     // a working agent whose heavy command waits its turn in the job queue reads as its place there, not as working
     const queuedJob = queuedJobFor(useAtomValue(jobQueueAtom), blockId);

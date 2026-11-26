@@ -9,8 +9,10 @@ import {
     pairButtonLabel,
     pairOf,
     parseSeen,
+    pausedStateText,
     timelineRows,
     waitingOnJudge,
+    withDraft,
 } from "./pairmodel";
 
 const WORKER = "61483cd6-5c1e-4b2a-9d3f-1a2b3c4d5e6f";
@@ -152,6 +154,28 @@ describe("timelineRows", () => {
         });
         expect(timelineRows(bad)[0].held).toEqual([]);
     });
+
+    it("carries the pause snapshot of a system row that has one, and none on every other row", () => {
+        const pause: PairPause = {
+            reason: "no-new-points",
+            summary: "Both agree on the amendment.",
+            decided: { asks: [], agreed: [], open: [] },
+        };
+        const rows = timelineRows(
+            view({
+                messages: [
+                    msg({ id: "w", from: "worker", tab: WORKER }),
+                    msg({ id: "old", from: "system", text: "Paused: both agree" }),
+                    msg({ id: "new", from: "system", text: "Paused: the judge has no new points", pause }),
+                ],
+            })
+        );
+        expect(rows.map((r) => r.pause)).toEqual([null, null, pause]);
+        // a pause message from before the snapshot stays the system line it was
+        expect(rows[1].side).toBe("system");
+        expect(rows[2].side).toBe("system");
+        expect(rows[2].text).toBe("Paused: the judge has no new points");
+    });
 });
 
 describe("liveName", () => {
@@ -236,15 +260,61 @@ describe("pairButtonLabel", () => {
 describe("waitingOnJudge", () => {
     const info = (extra: Partial<PairInfo>): PairInfo => view(extra);
 
-    it("is true while a judge owes an answer, relaying or stopped (the hold applies to both)", () => {
+    it("is true while a judge owes an answer on a relaying pair", () => {
         expect(waitingOnJudge(info({ owed: true }))).toBe(true);
-        expect(waitingOnJudge(info({ owed: true, state: "stopped", stopreason: "token-cap" }))).toBe(true);
+    });
+
+    it("is false on a stopped pair, whatever the reason: nobody is working on the answer until it resumes", () => {
+        for (const stopreason of ["no-new-points", "settled", "token-cap", "judges-gone"]) {
+            expect(waitingOnJudge(info({ owed: true, state: "stopped", stopreason }))).toBe(false);
+        }
     });
 
     it("is false when no judge owes, or the pair has ended", () => {
         expect(waitingOnJudge(info({ owed: false }))).toBe(false);
         expect(waitingOnJudge(info({ owed: false, state: "stopped", stopreason: "settled" }))).toBe(false);
         expect(waitingOnJudge(info({ owed: true, state: "ended" }))).toBe(false);
+    });
+});
+
+describe("pausedStateText", () => {
+    const info = (extra: Partial<PairInfo>): PairInfo => view(extra);
+
+    it("reads the pause card's head words, in English and with no cap, for each stop reason", () => {
+        const words = (stopreason: string) => pausedStateText(info({ state: "stopped", stopreason }));
+        expect(words("no-new-points")).toBe("Paused: the judge has no new points");
+        expect(words("settled")).toBe("Paused: both agree");
+        expect(words("token-cap")).toBe("Paused: token cap reached");
+        expect(words("judges-gone")).toBe("Paused: no judge is left");
+    });
+
+    it("says only that the pair paused for a reason it does not know", () => {
+        expect(pausedStateText(info({ state: "stopped", stopreason: "" }))).toBe("Paused");
+    });
+
+    it("is null on a pair that is not stopped", () => {
+        expect(pausedStateText(info({ state: "relaying", owed: true }))).toBeNull();
+        expect(pausedStateText(info({ state: "ended" }))).toBeNull();
+    });
+});
+
+describe("withDraft", () => {
+    it("types the draft into an empty composer", () => {
+        expect(withDraft("", "@judge ")).toBe("@judge ");
+        expect(withDraft("  \n", "@judge ")).toBe("@judge ");
+    });
+
+    it("keeps what the person already wrote, after the draft", () => {
+        expect(withDraft("look at §16.8 again", "@judge ")).toBe("@judge look at §16.8 again");
+    });
+
+    it("turns another @ target into the draft's", () => {
+        expect(withDraft("@worker run it", "@judge ")).toBe("@judge run it");
+        expect(withDraft("@worker", "@judge ")).toBe("@judge ");
+    });
+
+    it("leaves a composer that already starts with the draft as it is", () => {
+        expect(withDraft("@judge is 50% safe?", "@judge ")).toBe("@judge is 50% safe?");
     });
 });
 

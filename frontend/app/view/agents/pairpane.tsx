@@ -5,9 +5,11 @@
 // 2026-11-25-agent-pair-judge-design.md): the working agent's messages lean left, a judge's right, the person's run across
 // the width, in time order, every one in full. A message that answers another quotes its line at the top (a click scrolls
 // there), Reply on hover answers that message, and a heavy command the hold refused is the dashed line in the message that
-// held it, with Run now. One composer at the bottom talks to both, or to one with @worker / @judge. There are no rounds
-// here: nothing counts them. The rows are pairmodel.ts's timelineRows; the words are pairpanemodel.ts's. It stands in the
-// place of the focused agent's own view, under that agent's header, whose Pair button toggles it (agentsurface.tsx).
+// held it, with Run now. A pause is a card (pairpausecard.tsx), whose chips, Resume and Judge again this holds the state of.
+// One composer at the bottom talks to both, or to one with @worker / @judge, and takes the `@judge ` Judge again leaves.
+// There are no rounds here: nothing counts them. The rows are pairmodel.ts's timelineRows; the words are pairpanemodel.ts's
+// (the pause's, pairpause.ts's). It stands in the place of the focused agent's own view, under that agent's header, whose
+// Pair button toggles it (agentsurface.tsx).
 
 import { springReveal } from "@/app/element/motiontokens";
 import { usePartMotion } from "@/app/element/springbatch";
@@ -33,9 +35,13 @@ import { shortTabId } from "./agentrowmodel";
 import type { AgentsViewModel } from "./agents";
 import { CouncilText } from "./councilchat";
 import { useNow } from "./narrationtimeline";
-import { composerTarget, liveName, timelineRows, type PairRow } from "./pairmodel";
+import { composerTarget, liveName, timelineRows, withDraft, type PairRow } from "./pairmodel";
+import { JUDGE_AGAIN_DRAFT } from "./pairopen";
 import { judgeStatus, messageClock, pairControls, quoteLine } from "./pairpanemodel";
-import { markPairSeen, pairScrollToAtom, usePairView } from "./pairstore";
+import { composerPlaceholder, newestPauseId, pauseActions } from "./pairpause";
+import { PairPauseCard, type PauseLive } from "./pairpausecard";
+import { markPairSeen, pairDraftAtom, pairScrollToAtom, resumePair, usePairView } from "./pairstore";
+import { useChipAnswer } from "./raildecidedpane";
 
 const ROOT = "flex min-h-0 min-w-0 flex-1 flex-col bg-background text-[14px] text-primary";
 export const GHOST_BUTTON =
@@ -102,8 +108,13 @@ export function PairConversation({
     // arrives with the next pair:update
     const [heldNow, setHeldNow] = useState<ReadonlyMap<string, "pending" | "through">>(new Map());
     const [unpairing, setUnpairing] = useState(false);
+    const [resuming, setResuming] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const controls = pairControls({ readOnly, ended: view.state === "ended" });
+    // the pause card's controls: only the newest pause card of a stopped pair has them, and never the Library's read view
+    const { sending, answer } = useChipAnswer(readOnly ? null : view.id);
+    const newestPause = newestPauseId(view);
+    const actions = useMemo(() => pauseActions(view, { local: true }), [view]);
     // the messages there when the conversation opened are drawn in place; one that arrives after it grows in
     const [openedWith] = useState(() => new Set(rows.map((r) => r.id)));
     const errorPart = usePartMotion(springReveal);
@@ -204,6 +215,34 @@ export function PairConversation({
         }
     };
 
+    // a Resume that worked leaves its button waiting until the flipped view draws it away, so a second press cannot reach the
+    // server while the pair is still read as stopped (it would be refused); a pair that stops again is a new card
+    useEffect(() => {
+        setResuming(false);
+    }, [view.state, newestPause]);
+
+    const resume = async () => {
+        if (resuming) {
+            return;
+        }
+        setResuming(true);
+        try {
+            await resumePair(view.id);
+            setError(null);
+        } catch (err) {
+            setError(`Resume failed: ${errorText(err)}`);
+            setResuming(false);
+        }
+    };
+
+    // Judge again leaves `@judge ` for the composer to take once (its text set, focused, caret at the end)
+    const judgeAgain = () => globalStore.set(pairDraftAtom(view.id), JUDGE_AGAIN_DRAFT);
+
+    const pauseLive: PauseLive | null =
+        !readOnly && view.state === "stopped"
+            ? { actions, sending, resuming, onChip: answer, onResume: () => void resume(), onJudgeAgain: judgeAgain }
+            : null;
+
     const unpair = async () => {
         if (unpairing) {
             return;
@@ -244,21 +283,31 @@ export function PairConversation({
                             No messages yet.
                         </div>
                     ) : null}
-                    {rows.map((row) => (
-                        <PairMessage
-                            key={row.id}
-                            row={row}
-                            quotedWho={row.quoteId != null ? (byId.get(row.quoteId)?.who ?? "") : ""}
-                            enters={!openedWith.has(row.id)}
-                            flashing={flash === row.id}
-                            heldNow={heldNow}
-                            canReply={controls.reply}
-                            canRunNow={controls.runNow}
-                            onQuote={jumpTo}
-                            onReply={startReply}
-                            onRunNow={(command) => void runNow(row, command)}
-                        />
-                    ))}
+                    {rows.map((row) =>
+                        row.pause != null ? (
+                            <PairPauseCard
+                                key={row.id}
+                                row={row}
+                                view={view}
+                                enters={!openedWith.has(row.id)}
+                                live={row.id === newestPause ? pauseLive : null}
+                            />
+                        ) : (
+                            <PairMessage
+                                key={row.id}
+                                row={row}
+                                quotedWho={row.quoteId != null ? (byId.get(row.quoteId)?.who ?? "") : ""}
+                                enters={!openedWith.has(row.id)}
+                                flashing={flash === row.id}
+                                heldNow={heldNow}
+                                canReply={controls.reply}
+                                canRunNow={controls.runNow}
+                                onQuote={jumpTo}
+                                onReply={startReply}
+                                onRunNow={(command) => void runNow(row, command)}
+                            />
+                        )
+                    )}
                 </div>
             </div>
             <AnimatePresence initial={false}>
@@ -562,13 +611,34 @@ function PairComposer({ view, reply, inputRef, onClearReply, onError }: Composer
     const target = composerTarget(text, view);
     const canSend = target.text !== "" && !busy;
 
+    // Judge again's `@judge `, taken once: read, cleared at once so it is never typed twice, put in the box, and the box
+    // focused with the caret at the end (once the text is drawn, which is where the caret has somewhere to go)
+    const draft = useAtomValue(pairDraftAtom(view.id));
+    const focusAtEnd = useRef(false);
+    // a draft the box already holds changes no text, so the take itself asks for the layout effect below to run
+    const [taken, setTaken] = useState(0);
+    useEffect(() => {
+        if (draft == null) {
+            return;
+        }
+        globalStore.set(pairDraftAtom(view.id), null);
+        focusAtEnd.current = true;
+        setText((current) => withDraft(current, draft));
+        setTaken((n) => n + 1);
+    }, [draft, view.id]);
+
     useLayoutEffect(() => {
         const el = inputRef.current;
         if (el != null) {
             el.style.height = "auto";
             el.style.height = `${Math.min(el.scrollHeight, COMPOSER_MAX_PX)}px`;
+            if (focusAtEnd.current) {
+                focusAtEnd.current = false;
+                el.focus();
+                el.setSelectionRange(el.value.length, el.value.length);
+            }
         }
-    }, [text, inputRef]);
+    }, [text, taken, inputRef]);
 
     const send = async () => {
         if (!canSend) {
@@ -647,11 +717,11 @@ function PairComposer({ view, reply, inputRef, onClearReply, onError }: Composer
                         data-pair-composer
                         rows={1}
                         value={text}
-                        placeholder="Talk to both… · @worker or @judge for one"
+                        placeholder={composerPlaceholder(view)}
                         aria-label="Message the pair"
                         onChange={(e) => setText(e.target.value)}
                         onKeyDown={onKeyDown}
-                        className="min-h-[24px] min-w-0 flex-1 resize-none bg-transparent py-[2px] text-[13.5px] leading-[1.5] text-primary outline-none placeholder:text-muted"
+                        className="min-h-[24px] min-w-0 flex-1 resize-none bg-transparent py-[2px] text-[13.5px] leading-[1.5] text-primary outline-none placeholder:truncate placeholder:text-muted"
                     />
                     <button
                         type="button"
