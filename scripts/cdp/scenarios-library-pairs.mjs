@@ -23,9 +23,15 @@
 // [data-council-history-item="<id>"] ([data-council-history-from] in a chip's list, [data-council-history-act="pin"] on hover); the
 // chips are [data-history-chip="judge|council"] (aria-pressed), the benchmark sits in [data-library-bench] over [data-history-list],
 // and a search's councils and pairs are under [data-history-items-head].
+// Steps 12-16 are the pair's pause on Library (docs/superpowers/specs/2026-11-26-pair-judge-ux-design.md; agents/pairreadpane.tsx):
+// pause card read-only, Judge again, Resume, a failed Resume, and the pairs that offer neither. They seed three more pairs over
+// pausedPairView (a no-new-points pause, a token cap with something queued, the same synced from the other machine), open each at
+// Library's full width (showLibraryPair), and press the header's buttons with the Pair*Command stubs recording the calls.
 //
 // DOM contract: the view is [data-pair-read="<pair id>"] under Library's Back row [data-library-pair-back]: its header
-// [data-pair-read-header] ([data-pair-read-title], [data-pair-read-line]), the thread [data-pair-pane] over [data-pair-msg],
+// [data-pair-read-header] ([data-pair-read-title], [data-pair-read-line], and on a stopped pair of this machine the buttons
+// [data-pair-read-resume] and [data-pair-read-judge-again]), under it [data-pair-read-resume-error] when a Resume failed, the thread
+// [data-pair-pane] over [data-pair-msg] (a pause is the card [data-pair-pause], its chips plain text in [data-pair-pause-options]),
 // the Decided column [data-pair-read-decided] > [data-rail-decided] ([data-decided-section], [data-decided-item],
 // [data-decided-answer]), the foot [data-pair-read-foot] with [data-pair-read-transcript="<harness>:<session id>"]; while
 // reading [data-pair-read-loading], and when the read failed [data-pair-read-error] with a Retry button.
@@ -37,7 +43,18 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import * as AC from "./agent-page-fixtures.mjs";
 import { announceCouncil, COUNCIL_ID_PREFIX, seedCouncil, stubRpc, unstubRpc } from "./council/fixtures.mjs";
-import { PAIR, pairRoster, pairView, restorePairRpc, seedPair, stubPairRpc } from "./pair-fixtures.mjs";
+import {
+    PAIR,
+    pairRoster,
+    pairRpcCalls,
+    pairView,
+    pausedPairView,
+    RESUME_ERROR,
+    restorePairRpc,
+    seedPair,
+    setPairResumeFails,
+    stubPairRpc,
+} from "./pair-fixtures.mjs";
 
 const NAME = "library-pair-open";
 const WAIT_MS = 10_000;
@@ -488,12 +505,69 @@ function pairsOf(now) {
     return [relaying, ended, loose, synced];
 }
 
+// ---- the pause on Library (steps 12-16) ----
+
+const LP_NNP = "lp-nnp"; // stopped on no new points, with the judge's summary: Judge again, no Resume
+const LP_CAP = "lp-cap"; // stopped at the token cap with something queued: Resume, no Judge again
+const LP_SYNC_STOP = "lp-sync-stop"; // the token-cap pair as the other machine's sync left it: neither button
+const PAUSE_SUMMARY = "Both sides agree the amendment is ready; only the 50% threshold waits on you.";
+const CHIP_TEXT = "50%, go on";
+const RESUME_LABEL = "Resume · 3.0M more";
+
+// the three stopped pairs: R1's exchange with its pause message last (pausedPairView), each given the time of its last save
+function stoppedPairs(now) {
+    const stopped = (id, opts, extra = {}) => ({ ...pausedPairView(now, opts), id, updatedts: now - 5 * MIN, ...extra });
+    return [
+        stopped(LP_NNP, { reason: "no-new-points", summary: PAUSE_SUMMARY }),
+        stopped(LP_CAP, { reason: "token-cap", canresume: true }),
+        stopped(LP_SYNC_STOP, { reason: "token-cap", canresume: true }, { synced: true }),
+    ];
+}
+
 // text with its whitespace folded, as the page's expressions read an element
 const FLAT = `const flat = (el) => (el?.textContent ?? "").replace(/\\s+/g, " ").trim();`;
+
+// The pair open at Library's full width as the pause steps read it: the header's two buttons (and whether each sits in the
+// header), the failed Resume's line, and the pause card the thread holds: its head and summary, its chips (buttons or the plain
+// text line) and every button or control that would be on it. null when the pair is not on screen.
+const pauseView = (id) => `(() => {
+    ${FLAT}
+    const root = document.querySelector('[data-library] [data-pair-read="${id}"]');
+    if (!root) return null;
+    const header = root.querySelector("[data-pair-read-header]");
+    const btn = (sel) => {
+        const b = root.querySelector(sel);
+        return b ? { text: flat(b), disabled: b.disabled, tag: b.tagName, inHeader: header?.contains(b) === true } : null;
+    };
+    const card = root.querySelector("[data-pair-pause]");
+    const err = root.querySelector("[data-pair-read-resume-error]");
+    return {
+        line: flat(root.querySelector("[data-pair-read-line]")),
+        resume: btn("[data-pair-read-resume]"),
+        judgeAgain: btn("[data-pair-read-judge-again]"),
+        error: err ? { text: flat(err), role: err.getAttribute("role"), belowHeader: header != null && (header.compareDocumentPosition(err) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0 } : null,
+        composer: root.querySelector("[data-pair-composer]") != null,
+        card: card
+            ? {
+                  reason: card.getAttribute("data-pair-pause-reason"),
+                  head: flat(card.querySelector("[data-pair-pause-head]")),
+                  summary: card.querySelector("[data-pair-pause-summary]") ? flat(card.querySelector("[data-pair-pause-summary]")) : null,
+                  sections: [...card.querySelectorAll("[data-pair-pause-section]")].map((s) => s.getAttribute("data-pair-pause-section")),
+                  chipButtons: card.querySelectorAll("[data-pair-pause-chip]").length,
+                  buttons: card.querySelectorAll("button").length,
+                  options: card.querySelector("[data-pair-pause-options]") ? flat(card.querySelector("[data-pair-pause-options]")) : null,
+                  hint: card.querySelector("[data-pair-pause-hint]") != null,
+                  cardResume: card.querySelector("[data-pair-resume]") != null,
+                  cardJudgeAgain: card.querySelector("[data-pair-judge-again]") != null,
+              }
+            : null,
+    };
+})()`;
 
 function libraryPairs(kit) {
     const { polishWaitFor, polishNap } = kit;
     const wait = (h, expr, ms = WAIT_MS) => polishWaitFor(h, expr, ms);
+    const surface = (h) => h.activeSurfaceLabel();
     const click = (h, sel) =>
         h.ev(`(() => { const el = document.querySelector(${q(sel)}); if (el == null) return false; el.click(); return true; })()`);
     // the app's own modules and model, with Library's store at hand as L
@@ -529,6 +603,15 @@ function libraryPairs(kit) {
         await h.goto("library");
         await resetLibrary(h);
         return wait(h, `document.querySelector('[data-history-item="pair:${LP_ENDED}"]') != null`);
+    };
+    // pair `id` open at Library's full width (the route a pair read off the Agent surface takes), its header and thread drawn
+    const openRead = async (h, id) => {
+        await h.goto("library");
+        await page(h, `L.showLibraryPair(model, ${q(id)}); return true;`);
+        return wait(
+            h,
+            `document.querySelector('[data-library] [data-pair-read="${id}"] [data-pair-read-title]') != null && document.querySelector('[data-library] [data-pair-read="${id}"] [data-pair-msg]') != null`
+        );
     };
     // what a nested row, or the card of a pair or council standing alone, sits under: its entry's card, and the kinds of row
     // that card carries
@@ -969,6 +1052,189 @@ function libraryPairs(kit) {
                         restored,
                     { foundCouncil, head, councilHits, foundPair, pairHits, restored }
                 );
+
+                // ---- the pause on Library: three more pairs, stopped, each opened at Library's full width ----
+                const all = () => [...pairsOf(ctx.now), ...stoppedPairs(ctx.now)];
+                const resumeCalls = async () => (await pairRpcCalls(h, "PairResumeCommand")).length;
+
+                // 12. pause card read-only: a pair stopped on no new points reads on Library with the pause card in its thread, the
+                // judge's summary on top and the chip as plain text with no button in the card, and its header offers Judge again
+                // and no Resume
+                await seedPair(h, all());
+                const openNnp = await openRead(h, LP_NNP);
+                await polishNap(500);
+                await h.ev(`document.querySelector("[data-library] [data-pair-pause]")?.scrollIntoView({ block: "center" })`);
+                await polishNap(250);
+                const nnp = await h.ev(pauseView(LP_NNP));
+                await lpShot(h, "12-pause-card");
+                rec(
+                    "pause card read-only: a pair stopped on no new points, read on Library, draws one pause card in its thread (\"Paused: the judge has no new points\", the judge's summary on top, then Waits on you, Still open and Agreed) whose chip is the plain text \"50%, go on\": no chip button, no button of any kind, no hint, no Resume and no Judge again in the card; the thread has no composer",
+                    openNnp &&
+                        nnp?.card?.reason === "no-new-points" &&
+                        nnp.card.head === "Paused: the judge has no new points" &&
+                        nnp.card.summary === PAUSE_SUMMARY &&
+                        nnp.card.sections.join() === "asks,open,agreed" &&
+                        nnp.card.chipButtons === 0 &&
+                        nnp.card.buttons === 0 &&
+                        nnp.card.options === CHIP_TEXT &&
+                        nnp.card.hint === false &&
+                        nnp.card.cardResume === false &&
+                        nnp.card.cardJudgeAgain === false &&
+                        nnp.composer === false,
+                    { openNnp, nnp }
+                );
+
+                // 13. judge again: the header of that pair has Judge again (no Resume: nothing is queued), and a press opens the pair's
+                // conversation on the Agent surface through the router, its composer focused with "@judge " in it and the caret after
+                // it, the draft taken, and nothing sent to wavesrv. The Agent surface needs a roster to draw a conversation under.
+                await AC.setRoster(h, pairRoster(ctx.now));
+                await openRead(h, LP_NNP);
+                const before13 = await pairRpcCalls(h);
+                await click(h, "[data-library] [data-pair-read-judge-again]");
+                const landed = await wait(h, `document.querySelector("[data-pair-pane] [data-pair-composer]")?.value === "@judge "`);
+                await polishNap(300);
+                const typed = await h.ev(`(() => {
+                    const c = document.querySelector("[data-pair-pane] [data-pair-composer]");
+                    return {
+                        value: c?.value ?? null,
+                        focused: c != null && document.activeElement === c,
+                        start: c?.selectionStart ?? null,
+                        end: c?.selectionEnd ?? null,
+                        readView: document.querySelector("[data-pair-read]") != null,
+                    };
+                })()`);
+                const where = await page(
+                    h,
+                    `const C = await mod("app/view/agents/agentcenter.ts");
+                    const S = await mod("app/view/agents/pairstore.ts");
+                    return {
+                        centre: globalStore.get(C.centerModeAtom),
+                        pair: globalStore.get(C.pairSelAtom),
+                        draft: globalStore.get(S.pairDraftAtom(${q(LP_NNP)})),
+                    };`
+                );
+                const after13 = await pairRpcCalls(h);
+                await lpShot(h, "13-judge-again");
+                const count = (calls, name) => (calls[name] ?? []).length;
+                rec(
+                    "judge again: the no-new-points pair's header holds an enabled Judge again button (and no Resume); a press opens the pair's conversation on the Agent surface (its centre in pair mode, not Library's read view) with \"@judge \" in the focused composer and the caret at its end, the pair's draft is empty again, and no PairSayCommand or PairResumeCommand is called",
+                    nnp?.judgeAgain?.text === "Judge again" &&
+                        nnp.judgeAgain.tag === "BUTTON" &&
+                        nnp.judgeAgain.inHeader === true &&
+                        nnp.judgeAgain.disabled === false &&
+                        nnp.resume === null &&
+                        landed &&
+                        (await surface(h)) === "Agent" &&
+                        where.centre === "pair" &&
+                        where.pair === LP_NNP &&
+                        where.draft === null &&
+                        typed.value === "@judge " &&
+                        typed.focused === true &&
+                        typed.start === 7 &&
+                        typed.end === 7 &&
+                        typed.readView === false &&
+                        count(after13, "PairSayCommand") === count(before13, "PairSayCommand") &&
+                        count(after13, "PairResumeCommand") === count(before13, "PairResumeCommand"),
+                    { landed, surface: await surface(h), where, typed }
+                );
+                await page(
+                    h,
+                    `const C = await mod("app/view/agents/agentcenter.ts");
+                    C.showTerminal();
+                    globalStore.set(C.pairSelAtom, null);
+                    return true;`
+                );
+
+                // 14. resume: a pair stopped at the token cap with something queued has "Resume · 3.0M more" in its header (no Judge
+                // again); a press records exactly one PairResumeCommand for the pair, and once the flipped view draws the button is
+                // gone and no error shows
+                await seedPair(h, all());
+                const openCap = await openRead(h, LP_CAP);
+                await polishNap(500);
+                const cap = await h.ev(pauseView(LP_CAP));
+                await lpShot(h, "14-resume");
+                const resumedBefore = await resumeCalls();
+                await click(h, "[data-library] [data-pair-read-resume]");
+                const flipped = await wait(h, `document.querySelector('[data-library] [data-pair-read="${LP_CAP}"] [data-pair-read-resume]') == null`);
+                await polishNap(400);
+                const resumed = (await pairRpcCalls(h, "PairResumeCommand")).slice(resumedBefore);
+                const afterResume = await h.ev(pauseView(LP_CAP));
+                await lpShot(h, "14-resume-after");
+                rec(
+                    "resume: the token-cap pair's header holds an enabled \"Resume · 3.0M more\" button (no Judge again, no error, the card reads \"Paused: token cap reached (3.0M)\" with no button of its own); a press records exactly one PairResumeCommand for the pair, and once the flipped view draws the Resume button is gone, the header line reads Relaying since, and no error shows",
+                    openCap &&
+                        cap?.resume?.text === RESUME_LABEL &&
+                        cap.resume.tag === "BUTTON" &&
+                        cap.resume.inHeader === true &&
+                        cap.resume.disabled === false &&
+                        cap.judgeAgain === null &&
+                        cap.error === null &&
+                        cap.card?.head === "Paused: token cap reached (3.0M)" &&
+                        cap.card.buttons === 0 &&
+                        /^Stopped /.test(cap.line) &&
+                        resumed.length === 1 &&
+                        JSON.stringify(resumed[0]) === JSON.stringify({ pairid: LP_CAP }) &&
+                        flipped &&
+                        afterResume?.resume === null &&
+                        afterResume.judgeAgain === null &&
+                        afterResume.error === null &&
+                        /^Relaying since /.test(afterResume.line),
+                    { openCap, cap, resumed, flipped, afterResume }
+                );
+
+                // 15. resume fails: with the resume stub failing, one press records one PairResumeCommand and shows the line "Resume
+                // failed: <the server's words>" under the header as an alert, the button staying and enabled; with the stub working
+                // again a second press takes the line and the button away
+                await seedPair(h, all());
+                await setPairResumeFails(h, true);
+                await openRead(h, LP_CAP);
+                await polishNap(300);
+                const failBefore = await resumeCalls();
+                await click(h, "[data-library] [data-pair-read-resume]");
+                await wait(h, `document.querySelector("[data-library] [data-pair-read-resume-error]") != null`);
+                await polishNap(500);
+                const failed = await h.ev(pauseView(LP_CAP));
+                const failedCalls = (await resumeCalls()) - failBefore;
+                await lpShot(h, "15-resume-failed");
+                await setPairResumeFails(h, false);
+                await click(h, "[data-library] [data-pair-read-resume]");
+                const retried = await wait(
+                    h,
+                    `document.querySelector("[data-library] [data-pair-read-resume]") == null && document.querySelector("[data-library] [data-pair-read-resume-error]") == null`
+                );
+                rec(
+                    "resume fails: with the stub failing, one press records one PairResumeCommand and the alert \"Resume failed: " + RESUME_ERROR + "\" shows under the header while \"Resume · 3.0M more\" stays, enabled; once the stub works a second press takes the line and the button away",
+                    failedCalls === 1 &&
+                        failed?.error?.text === `Resume failed: ${RESUME_ERROR}` &&
+                        failed.error.role === "alert" &&
+                        failed.error.belowHeader === true &&
+                        failed.resume?.text === RESUME_LABEL &&
+                        failed.resume.disabled === false &&
+                        retried,
+                    { failedCalls, failed, retried }
+                );
+
+                // 16. neither: the pairs this machine cannot resume or ask again show neither button: an ended pair, the same pair
+                // synced from the other machine, a stopped pair synced with something queued, and a pair still relaying
+                const neither = {};
+                for (const [kind, id] of [["ended", LP_ENDED], ["synced", LP_SYNCED], ["synced-stopped", LP_SYNC_STOP], ["relaying", LP_RELAY]]) {
+                    await openRead(h, id);
+                    await polishNap(300);
+                    neither[kind] = await h.ev(pauseView(id));
+                    if (kind === "synced-stopped") await lpShot(h, "16-synced-stopped");
+                }
+                const bare = (v) => v != null && v.resume === null && v.judgeAgain === null && v.error === null;
+                rec(
+                    "neither: an ended pair, the same pair synced from the other machine, a stopped pair synced with something queued (it would offer Resume here) and a relaying pair have no Resume and no Judge again in the header, and no error line",
+                    Object.values(neither).length === 4 &&
+                        Object.values(neither).every(bare) &&
+                        /^Ended /.test(neither.ended.line) &&
+                        /as of the last sync/.test(neither.synced.line) &&
+                        /^Stopped .*as of the last sync/.test(neither["synced-stopped"].line) &&
+                        neither["synced-stopped"].card?.reason === "token-cap" &&
+                        /^Relaying since /.test(neither.relaying.line),
+                    neither
+                );
             } catch (e) {
                 rec("the scenario stopped early: a page call failed", false, String(e?.message ?? e));
             }
@@ -985,6 +1251,21 @@ function libraryPairs(kit) {
             await step("restore the stand-in commands", () => unstubRpc(h));
             await step("restore the pair client", () => restorePairRpc(h));
             await step("clear the seeded pairs", () => seedPair(h, null));
+            await step("restore the roster and Agent's centre", async () => {
+                await AC.restoreRoster(h);
+                await AC.agentPage(
+                    h,
+                    `const C = await mod("app/view/agents/agentcenter.ts");
+                    const S = await mod("app/view/agents/pairstore.ts");
+                    C.showTerminal();
+                    globalStore.set(C.pairSelAtom, null);
+                    for (const id of ${q([LP_NNP, LP_CAP, LP_SYNC_STOP])}) {
+                        globalStore.set(S.pairDraftAtom(id), null);
+                        globalStore.set(S.pairSeenAtom(id), 0);
+                    }
+                    return true;`
+                );
+            });
             await step("remove the councils", async () => {
                 for (const id of Object.keys(ctx.written ?? {})) {
                     rmSync(join(ctx.dataDir, "councils", `${id}.json`), { force: true, maxRetries: 5, retryDelay: 200 });

@@ -12,7 +12,14 @@ import { pushToast } from "@/app/cockpit/notificationstore";
 import { resmonSnapshotAtom } from "@/app/cockpit/resmonstore";
 import { useSettle } from "@/app/element/motionhooks";
 import { Tooltip } from "@/app/element/tooltip";
-import { cardVariants, composerReveal, computeEntrances, initialEntranceState } from "@/app/element/motiontokens";
+import {
+    cardVariants,
+    composerReveal,
+    computeEntrances,
+    initialEntranceState,
+    springReveal,
+} from "@/app/element/motiontokens";
+import { usePartMotion } from "@/app/element/springbatch";
 import { globalStore } from "@/app/store/jotaiStore";
 import { ContextMenuModel } from "@/app/store/contextmenu";
 import * as WOS from "@/app/store/wos";
@@ -315,8 +322,9 @@ import { unreadAgentsAtom } from "./unreadagentsstore";
 import { PairSheet } from "./pairsheet";
 import type { PairSheetPick } from "./pairsheetmodel";
 import { newCount } from "./pairmodel";
-import { openPairOf, pairOnScreen } from "./pairopen";
-import { pairSeenAtom, usePairs, usePairView } from "./pairstore";
+import { judgeAgainOf, openPairOf, pairOnScreen } from "./pairopen";
+import { pauseActions } from "./pairpause";
+import { pairSeenAtom, resumePair, usePairs, usePairView } from "./pairstore";
 import { showServiceMenu } from "./servicemenu";
 import { canRestart, serviceHeaderLine, serviceRowWords, serviceTreeWords, treeServiceInput } from "./servicesmodel";
 import {
@@ -726,6 +734,34 @@ function PairTreeRow({
     const seen = useAtomValue(pairSeenAtom(row.pairId));
     const fresh = view != null && !selected ? newCount(view, seen) : 0;
     const several = row.judges.length > 1;
+    // Resume and Judge again of a stopped pair (pairpause.ts says which, and the rows here are all this machine's)
+    const actions = view != null ? pauseActions(view, { local: true }) : null;
+    // a Resume in flight, or one that worked and waits for the flipped view to draw its button away, and why one failed
+    const [resuming, setResuming] = useState(false);
+    const [resumeError, setResumeError] = useState<string | null>(null);
+    const errorPart = usePartMotion(springReveal);
+    // the pair going on (or stopping again) is a new situation: the wait and the old error are over
+    const stateKey = view != null ? `${view.state}/${view.stopreason ?? ""}` : "";
+    useEffect(() => {
+        setResuming(false);
+        setResumeError(null);
+    }, [stateKey]);
+    const resume = async () => {
+        if (resuming) {
+            return;
+        }
+        setResuming(true);
+        setResumeError(null);
+        try {
+            await resumePair(row.pairId);
+        } catch (err) {
+            // resumePair logged it; the row says it where the button was pressed
+            setResumeError(err instanceof Error ? err.message : String(err));
+            setResuming(false);
+        }
+    };
+    const act =
+        "h-[20px] flex-none cursor-pointer whitespace-nowrap rounded-[5px] border border-edge-mid bg-surface-raised px-[7px] text-[11.5px] text-secondary outline-none hover:border-edge-strong hover:bg-surface-hover hover:text-primary focus-visible:ring-1 focus-visible:ring-accent disabled:cursor-default disabled:opacity-50";
     return (
         <div
             data-pair-row={row.pairId}
@@ -733,7 +769,7 @@ function PairTreeRow({
             onClick={() => openPairOf(model, row.worker.id, row.pairId)}
             title="Open the pair's conversation"
             className={cn(
-                "relative flex min-w-0 cursor-pointer flex-col rounded-[6px] px-[10px] py-[8px] transition-colors duration-[140ms]",
+                "group/pair relative flex min-w-0 cursor-pointer flex-col rounded-[6px] px-[10px] py-[8px] transition-colors duration-[140ms]",
                 selected ? "bg-surface-selected" : "hover:bg-surface-hover"
             )}
         >
@@ -779,6 +815,54 @@ function PairTreeRow({
                     </span>
                 ) : null}
             </div>
+            {/* Resume and Judge again float over the first line's right end on the row's own fill, faded in from the left,
+                so the name reads in full until the pointer or the focus comes; a click on one is its own, not the row's */}
+            {actions != null && (actions.resume != null || actions.judgeAgain != null) ? (
+                <span
+                    className={cn(
+                        "pointer-events-none absolute right-0 top-[6px] flex items-center gap-[4px] rounded-r-[6px] pl-[2px] pr-[8px] opacity-0 transition-opacity duration-100 before:absolute before:inset-y-0 before:right-full before:w-[18px] before:bg-linear-to-r before:from-transparent focus-within:pointer-events-auto focus-within:opacity-100 group-hover/pair:pointer-events-auto group-hover/pair:opacity-100",
+                        selected
+                            ? "bg-surface-selected before:to-surface-selected"
+                            : "bg-surface-hover before:to-surface-hover"
+                    )}
+                >
+                    {actions.resume != null ? (
+                        <button
+                            type="button"
+                            data-pair-row-resume={row.pairId}
+                            disabled={resuming}
+                            title={
+                                resumeError != null
+                                    ? `Resume failed: ${resumeError}`
+                                    : "Put the pair back to relaying and hand over what is still queued"
+                            }
+                            aria-label={`${actions.resume}, ${row.worker.name}`}
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                void resume();
+                            }}
+                            className={act}
+                        >
+                            {actions.resume}
+                        </button>
+                    ) : null}
+                    {actions.judgeAgain != null ? (
+                        <button
+                            type="button"
+                            data-pair-row-judge-again={row.pairId}
+                            title="Open the conversation with @judge in the composer"
+                            aria-label={`${actions.judgeAgain}, ${row.worker.name}`}
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                judgeAgainOf(model, row.worker.id, row.pairId);
+                            }}
+                            className={act}
+                        >
+                            {actions.judgeAgain}
+                        </button>
+                    ) : null}
+                </span>
+            ) : null}
             <div className={cn(CONVERSATION_META, "mt-[3px]")}>
                 <span className="flex min-w-0 flex-1 items-center gap-[8px] overflow-hidden">
                     {team.map((a, i) => {
@@ -807,6 +891,21 @@ function PairTreeRow({
                         title: "RAM the pair's agents and the commands they run hold now",
                     }}
                 />
+            </div>
+            {/* the live region is always there, so a failure that appears in it is read out */}
+            <div aria-live="polite" className="min-w-0">
+                <AnimatePresence initial={false}>
+                    {resumeError != null ? (
+                        <motion.div key="resume-error" {...errorPart} className="overflow-hidden">
+                            <div
+                                data-pair-row-resume-error
+                                className="mt-[3px] break-words text-[11px] leading-[1.35] text-error-soft"
+                            >
+                                Resume failed: {resumeError}
+                            </div>
+                        </motion.div>
+                    ) : null}
+                </AnimatePresence>
             </div>
         </div>
     );

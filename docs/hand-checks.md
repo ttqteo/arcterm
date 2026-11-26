@@ -23,6 +23,15 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
 
 ## 2026-11-26
 
+- [ ] (arcterm) **Resume and Judge again on a stopped pair's row and Library page.** In a real pair stopped at the
+  token cap, hover its row in the Agent tree: "Resume · 3.0M more" fades in over the row's first line (about 100 ms),
+  and it fades in on a Tab to it too. A press leaves the conversation closed, and once the pair relays the button goes.
+  When the server refuses a Resume (the pair already went on from another window), its words grow in as a line under
+  the row's second line, and under the header on Library's pair page, on the spring the pair's messages use; they leave
+  the same way when the next press works. After a no-new-points pause the row and the Library header show Judge again,
+  and a press opens the conversation with `@judge ` in the focused composer. With reduced motion on, the error lines
+  land at once. (`agenttree.tsx` PairTreeRow, `pairreadpane.tsx`; the `pair-tree` and `library-pairs` scenarios read
+  the end states, not the motion.)
 - [ ] (arcterm) **The pause card arrives like a message.** In a live pair with its conversation open, let the pair
   pause (the judge writes `no new points`, or the token cap is reached): the card grows in on the same spring as the
   messages around it, whole from its first frame (head, summary when the judge wrote one, then Waits on you, Still
