@@ -33,16 +33,15 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
   the header), and Escape takes it back the same way into the button's corner; two quick presses end closed, never a
   second copy. With reduced motion on it comes and goes at once. (`pairjudgemenu.tsx` JudgeReplyMenu; the `pair-header`
   scenario's menu-motion step samples the opacity over frames, not where the scale starts.)
-- [ ] (arcterm) **A judge round's mark moves like the judge line, and its bar eases to grey.** Start a pair from ⚖ under
-  a reply of a working agent's Chat: the ⚖ line ("The judge is reading this reply · N s" with a spinner) opens under
-  that reply on the spring, with no shove of the rows above it, and the 2px accent bar shows left of the turns from
-  that reply down; when the judge answers, the line's words cross-fade to "The judge round starts here" in about 140 ms
-  and its height follows on the spring. Send the agent another message while the round lives: the bar reaches the new
-  row once that row has opened (the clip of a row that is arriving hides it until then). Unpair (or go back to the
-  agent after a stop): the bar's colour eases from the accent to grey over about 360 ms, the bar shortens to the round's
-  last worker message, and the line's words cross-fade to "Judge round HH:MM–HH:MM · N agreed, M open". With reduced
-  motion on, each lands at once. The `chat-judge-reply` scenario's `motion` step samples these frames in the Final;
-  an agent in an Arc run did not watch it. (`chatpairmark.tsx`, `chatconversation.tsx`)
+- [ ] (arcterm) **A judge round's mark: the motions the Final does not sample.** Start a pair from ⚖ under a reply of a
+  working agent's Chat: while the ⚖ line ("The judge is reading this reply · N s" with a spinner) opens under that
+  reply, the rows above it do not shove. When the judge answers, the line's words cross-fade to "The judge round
+  starts here" in about 140 ms and its height follows on the spring. Send the agent another message while the round
+  lives: the bar reaches the new row once that row has opened (the clip of a row that is arriving hides it until then).
+  The `chat-judge-reply` scenario's `motion` step samples the rest in the Final, on frames: the line's own height and
+  opacity as it opens under a drawn reply, the bar's colour easing from the accent to grey, the ended line's words
+  cross-fading, and the reduced-motion end states. It does not sample the rows above the line, and it goes from
+  reading straight to ended, so the live state's cross-fade is not seen. (`chatpairmark.tsx`, `chatconversation.tsx`)
 - [ ] (arcterm) **A Chat visual has no border.** In an agent's Chat, a reply with an `arc-visual` block: the page sits
   flush with the reply's text, no box around it and no line under the small Shapes icon; a tall one still shows its
   expand button at the right of that row. (`chatvisualview.tsx`)

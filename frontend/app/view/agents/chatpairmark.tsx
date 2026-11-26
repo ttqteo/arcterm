@@ -142,39 +142,46 @@ export function ChatPairMarkLine({
               opacity: { duration: MOTION.durMicro, ease: MOTION.easeFluid },
           };
     return (
-        <motion.div
-            initial={opens ? closed : false}
-            animate={{ opacity: 1, height: "auto", marginTop: UNDER_MESSAGE - gap, transition: spring }}
-            onAnimationComplete={() => setSettled(true)}
-            // the line is one row under its message, and its focus ring is drawn inside the button, so a row at rest needs
-            // no clip
-            className={cn("min-w-0", settled ? undefined : "overflow-hidden", pairBarClass(bar))}
-            {...pairBarAttrs(bar)}
-        >
-            <div
-                data-chat-pair-mark={line.pairId}
-                data-state={line.state}
-                className="text-[12.5px] leading-[1.5] text-muted"
+        // the line's own presence scope: Chat's layer is an AnimatePresence with initial={false} (chatpane.tsx ChatLayer), and
+        // its presence context reaches every motion element below it that has no scope of its own and makes motion draw that
+        // element at its `animate` values, whatever its `initial` says. Without this a line arriving under a drawn reply was
+        // never closed, so it never opened (ChatJudgeLine's AnimatePresence is the same scope)
+        <AnimatePresence>
+            <motion.div
+                key="line"
+                initial={opens ? closed : false}
+                animate={{ opacity: 1, height: "auto", marginTop: UNDER_MESSAGE - gap, transition: spring }}
+                onAnimationComplete={() => setSettled(true)}
+                // the line is one row under its message, and its focus ring is drawn inside the button, so a row at rest
+                // needs no clip
+                className={cn("min-w-0", settled ? undefined : "overflow-hidden", pairBarClass(bar))}
+                {...pairBarAttrs(bar)}
             >
-                <CardSlot swap={line.state}>
-                    {/* the rule: its colour does not move, its size is the slot's spring */}
-                    <div className="border-t border-edge-mid pt-[6px]">
-                        <div className="relative">
-                            <AnimatePresence mode="popLayout" initial={false}>
-                                <MarkRow
-                                    key={line.state}
-                                    line={line}
-                                    words={words}
-                                    model={model}
-                                    agentId={agentId}
-                                    reduce={!!reduce}
-                                />
-                            </AnimatePresence>
+                <div
+                    data-chat-pair-mark={line.pairId}
+                    data-state={line.state}
+                    className="text-[12.5px] leading-[1.5] text-muted"
+                >
+                    <CardSlot swap={line.state}>
+                        {/* the rule: its colour does not move, its size is the slot's spring */}
+                        <div className="border-t border-edge-mid pt-[6px]">
+                            <div className="relative">
+                                <AnimatePresence mode="popLayout" initial={false}>
+                                    <MarkRow
+                                        key={line.state}
+                                        line={line}
+                                        words={words}
+                                        model={model}
+                                        agentId={agentId}
+                                        reduce={!!reduce}
+                                    />
+                                </AnimatePresence>
+                            </div>
                         </div>
-                    </div>
-                </CardSlot>
-            </div>
-        </motion.div>
+                    </CardSlot>
+                </div>
+            </motion.div>
+        </AnimatePresence>
     );
 }
 

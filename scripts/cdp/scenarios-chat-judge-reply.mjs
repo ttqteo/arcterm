@@ -111,12 +111,17 @@ const readMarks = `(() => {
         probe.remove();
         return color;
     };
-    return { rows, lines, accent: paint("--color-accent"), grey: paint("--color-ink-faint") };
+    return { rows, lines, accent: paint("--color-accent"), grey: paint("--color-ink-faint"), dpr: window.devicePixelRatio };
 })()`;
 
 // The rows a round's bar covers, by their index among the item rows: the first and last, how many, and whether no item between
 // them is missing. `reply(n)` is the index of the item holding reply n (1 is the first), -1 when it is not drawn.
 const replyAt = (m, n) => m.rows.findIndex((r) => r.reply === n);
+// The bar is 2px wide, 12px left of the column and reaches 16px under its row. The measured values are compared numerically
+// (0.5px): the page runs zoomed (cockpit.zoom), and Chromium snaps a zoomed width to its layout grid, so the 2px bar reads
+// back as "1.98864px" while the insets come back exact. A string compare failed on that width alone.
+const near = (value, want) => Math.abs(Number.parseFloat(value) - want) <= 0.5;
+const barDrawn = (b) => b?.position === "absolute" && near(b.width, 2) && near(b.left, -12) && near(b.top, 0) && near(b.bottom, -16);
 function barSpan(m, pairId) {
     const covered = m.rows.flatMap((r, i) => (r.bar === pairId ? [i] : []));
     return {
@@ -126,7 +131,10 @@ function barSpan(m, pairId) {
         contiguous: covered.every((i, k) => i === covered[0] + k),
         states: [...new Set(m.rows.filter((r) => r.bar === pairId).map((r) => r.barState))],
         colors: [...new Set(m.rows.filter((r) => r.bar === pairId).map((r) => r.before?.color))],
-        drawn: m.rows.filter((r) => r.bar === pairId).every((r) => r.before?.position === "absolute" && r.before.width === "2px" && r.before.left === "-12px" && r.before.top === "0px" && r.before.bottom === "-16px"),
+        drawn: m.rows.filter((r) => r.bar === pairId).every((r) => barDrawn(r.before)),
+        // the first covered row's measured ::before, for the step's detail
+        first: m.rows.find((r) => r.bar === pairId)?.before ?? null,
+        dpr: m.dpr,
     };
 }
 
@@ -597,6 +605,9 @@ export default function (kit) {
                     await polishNap(300);
                     const reducedEnd = await ending("round-d");
                     const reducedColors = colorsOf(reducedEnd);
+                    // with no transition the bar changes in the commit that seeds the ended round, which a frame sampler may
+                    // never see before it (the old check wanted both colours); what matters is that no colour between was drawn
+                    const reducedLast = reducedEnd.filter((f) => f.color != null).at(-1)?.color;
                     const reducedSwap = reducedEnd.filter((f) => f.texts.some((o) => o > 0 && o < 1));
                     const settledH = reducedOpen.at(-1)?.h ?? 0;
                     await reduceMotion(h, false);
@@ -606,10 +617,12 @@ export default function (kit) {
                             reducedOpen.length >= 1 &&
                             settledH > 10 &&
                             reducedOpen.every((f) => Math.abs(f.h - settledH) <= 1 && f.o === 1) &&
-                            reducedColors.length === 2 &&
+                            reducedColors.length >= 1 &&
+                            reducedColors.every((c) => c === m.accent || c === m.grey) &&
+                            reducedLast === m.grey &&
                             reducedSwap.length === 0 &&
                             reducedEnd.at(-1).texts.length === 1,
-                        { reduced, open: { frames: reducedOpen.length, settledH, heights: [...new Set(reducedOpen.map((f) => f.h))] }, end: { colors: reducedColors, swap: reducedSwap.length } }
+                        { reduced, open: { frames: reducedOpen.length, settledH, heights: [...new Set(reducedOpen.map((f) => f.h))] }, end: { colors: reducedColors, last: reducedLast, accent: m.accent, grey: m.grey, swap: reducedSwap.length } }
                     );
                 });
 
