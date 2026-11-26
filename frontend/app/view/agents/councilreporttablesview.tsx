@@ -24,17 +24,19 @@
 
 import { viewFade } from "@/app/element/motiontokens";
 import { cn } from "@/util/util";
-import { ArrowDownRight, ArrowRight, ArrowUpRight, Check, TriangleAlert } from "lucide-react";
+import { ArrowDownRight, ArrowRight, ArrowUpRight, Check, FileText, TriangleAlert } from "lucide-react";
 import { motion } from "motion/react";
 import { useMemo, type ReactNode } from "react";
 import type { CouncilLang } from "./councillang";
 import {
+    citeGroups,
     figureSections,
     percentText,
     reportLangOf,
     reportWords,
     sectionView,
     seriesLabels,
+    sharedWording,
     todoRows,
     type ChangeView,
     type CompareView,
@@ -176,8 +178,38 @@ export function FiguresTable({ c }: { c: Council }) {
     );
 }
 
-// a figure's places as one mono line: its ref, then the other places that hold it
+// a figure's places: its ref, then the other places that hold it
 const placesOf = (r: FigureRow) => [r.ref, ...r.refs].filter((p) => p !== "");
+
+/** The lines figures come from: one entry per file, its path (the folder fainter) and its lines, "notes/audit.html:713,
+ *  714, 715", so a chart that cites one long file three times shows the path once. A path wider than the pane wraps. */
+function Sources({ rows, className }: { rows: FigureRow[]; className?: string }) {
+    const groups = citeGroups(rows.flatMap(placesOf));
+    if (groups.length === 0) {
+        return null;
+    }
+    return (
+        <span
+            data-council-figure-sources
+            className={cn("flex min-w-0 flex-wrap gap-x-3 gap-y-[2px] font-mono text-[11.5px] text-muted", className)}
+        >
+            {groups.map((g) => (
+                <span
+                    key={g.path}
+                    title={g.lines.length > 0 ? `${g.path}:${g.lines.join(", ")}` : g.path}
+                    className="inline-flex min-w-0 max-w-full items-baseline gap-[5px] [overflow-wrap:anywhere]"
+                >
+                    <FileText size={11} aria-hidden className="flex-none self-center opacity-70" />
+                    <span className="min-w-0">
+                        {g.dir !== "" ? <span className="opacity-60">{g.dir}</span> : null}
+                        {g.name}
+                        {g.lines.length > 0 ? <span className="text-secondary">:{g.lines.join(", ")}</span> : null}
+                    </span>
+                </span>
+            ))}
+        </span>
+    );
+}
 
 // the fills of a bar's parts in order: the parts are different things, so each takes the next slot of the categorical
 // palette (tailwindsetup.css figure-1..6), never cycled. A bar of more parts than slots draws them all in one hue
@@ -245,9 +277,7 @@ function StackBarView({ bar, lang }: { bar: StackBar; lang: CouncilLang }) {
                     </li>
                 ))}
             </ul>
-            <p className="m-0 font-mono text-[11.5px] text-muted [overflow-wrap:anywhere]">
-                {bar.rows.flatMap(placesOf).join(" · ")}
-            </p>
+            <Sources rows={bar.rows} />
         </div>
     );
 }
@@ -279,12 +309,8 @@ function RateBarView({ bar }: { bar: RateBar }) {
                     {bar.pct}
                 </span>
             </div>
-            <p className="m-0 text-[12.5px] text-secondary">
-                {bar.row.measures}
-                <span className="ml-2 font-mono text-[11.5px] text-muted [overflow-wrap:anywhere]">
-                    {placesOf(bar.row).join(" · ")}
-                </span>
-            </p>
+            <p className="m-0 text-[12.5px] text-secondary">{bar.row.measures}</p>
+            <Sources rows={[bar.row]} />
         </div>
     );
 }
@@ -330,15 +356,6 @@ function ChartHead({ value, measures }: { value: string; measures: string }) {
     );
 }
 
-// the lines a chart's figures come from, as one mono line
-function ChartSources({ rows }: { rows: FigureRow[] }) {
-    return (
-        <p className="m-0 font-mono text-[11.5px] text-muted [overflow-wrap:anywhere]">
-            {rows.flatMap(placesOf).join(" · ")}
-        </p>
-    );
-}
-
 // a bar's width as a share of a scale, never below a sliver so a small value still shows
 const widthOf = (level: number, scale: number) => `${Math.max(0.6, Math.min(1, Math.abs(level) / scale) * 100)}%`;
 
@@ -379,7 +396,7 @@ function ChangeChart({ chart, lang }: { chart: ChangeView; lang: CouncilLang }) 
                 {bar(chart.from, words.before, "bg-ink-faint", "from")}
                 {bar(chart.to, words.after, "bg-accent", "to")}
             </div>
-            <ChartSources rows={[chart.from, chart.to]} />
+            <Sources rows={[chart.from, chart.to]} />
         </div>
     );
 }
@@ -429,7 +446,7 @@ function LimitChart({ chart, lang }: { chart: LimitView; lang: CouncilLang }) {
                 )}
                 {chart.text}
             </p>
-            <ChartSources rows={[chart.row, chart.limit]} />
+            <Sources rows={[chart.row, chart.limit]} />
         </div>
     );
 }
@@ -508,26 +525,36 @@ function SeriesChart({ chart }: { chart: SeriesView }) {
                     ) : null
                 )}
             </div>
-            <ChartSources rows={chart.rows} />
+            <Sources rows={chart.rows} />
         </div>
     );
 }
 
 /** Figures of one unit side by side, largest first: a row each with what it measures, a bar to its share of the largest,
- *  and its value. */
+ *  and its value. The words every label shares are said once over the bars ("submit secbench đậu tier-1 trên ca …"),
+ *  so each label is only what tells it apart and none is cut short. The rows share one grid, so the bars start in line. */
 function CompareChart({ chart }: { chart: CompareView }) {
+    const shared = useMemo(() => sharedWording(chart.rows.map((r) => r.measures)), [chart.rows]);
+    const head = [shared.prefix, shared.prefix !== "" || shared.suffix !== "" ? "…" : "", shared.suffix]
+        .filter((w) => w !== "")
+        .join(" ");
     return (
         <div data-council-figure-bar="compare" className="flex min-w-0 flex-col gap-2">
-            <div className="flex min-w-0 flex-col gap-[7px]">
+            {head !== "" ? (
+                <p data-council-figure-compare-head className="m-0 text-[13px] text-secondary">
+                    {head}
+                </p>
+            ) : null}
+            <div className="grid min-w-0 grid-cols-[fit-content(16rem)_minmax(0,1fr)_auto] items-center gap-x-3 gap-y-[7px]">
                 {chart.rows.map((r, i) => (
                     <div
                         key={`${r.ref}:${r.value}:${i}`}
                         data-council-figure-compare={r.value}
                         title={`${r.value} · ${r.measures}`}
-                        className="grid min-w-0 grid-cols-[minmax(0,14rem)_minmax(0,1fr)_auto] items-center gap-3"
+                        className="contents"
                     >
-                        <span className="truncate text-[12.5px] text-secondary" title={r.measures}>
-                            {r.measures !== "" ? r.measures : r.value}
+                        <span className="min-w-0 text-[12.5px] text-primary [overflow-wrap:anywhere]">
+                            {r.measures !== "" ? shared.rest[i] : r.value}
                         </span>
                         <div className="h-[12px] min-w-0">
                             <div
@@ -541,7 +568,7 @@ function CompareChart({ chart }: { chart: CompareView }) {
                     </div>
                 ))}
             </div>
-            <ChartSources rows={chart.rows} />
+            <Sources rows={chart.rows} />
         </div>
     );
 }
@@ -580,7 +607,7 @@ function FigureRowsTable({ rows, words }: { rows: FigureRow[]; words: ReportWord
                             data-council-figure-cell="source"
                             className={cn(TD, "pr-0 font-mono text-[12px] text-muted")}
                         >
-                            {r.ref !== "" ? placesOf(r).join(", ") : <Dash />}
+                            {r.ref !== "" ? <Sources rows={[r]} /> : <Dash />}
                         </td>
                     </tr>
                 ))}

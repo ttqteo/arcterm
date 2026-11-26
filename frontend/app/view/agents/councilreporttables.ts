@@ -577,3 +577,75 @@ export function droppedRelationRows(c: Council): FailedFigureRow[] {
             note: oneLine(f.relnote),
         }));
 }
+
+export interface CiteGroup {
+    path: string; // the file, as the refs wrote it
+    dir: string; // its folder with the trailing slash ("obsidian_harness/"), drawn fainter; "" for none
+    name: string; // the file's own name
+    lines: string[]; // its lines, each once, in order ("713", "714", "720-724"); empty for a ref with no line
+}
+
+const REF_LINE = /^(.*?):(\d+(?:-\d+)?)$/;
+
+/** Pure: a chart's `path:line` refs as one entry per file, each line once and in order, so three refs into one long
+ *  file read as "file.html:713, 714, 715" and not the path three times. Files come in the order first cited. */
+export function citeGroups(refs: string[]): CiteGroup[] {
+    const byPath = new Map<string, Set<string>>();
+    for (const ref of refs) {
+        const r = ref.trim();
+        if (r === "") {
+            continue;
+        }
+        const m = REF_LINE.exec(r);
+        const path = m ? m[1] : r;
+        const lines = byPath.get(path) ?? new Set<string>();
+        if (m) {
+            lines.add(m[2]);
+        }
+        byPath.set(path, lines);
+    }
+    const start = (l: string) => Number(l.split("-")[0]);
+    return [...byPath].map(([path, lines]) => ({
+        path,
+        dir: path.slice(0, Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\")) + 1),
+        name: path.slice(Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\")) + 1),
+        lines: [...lines].sort((a, b) => start(a) - start(b) || a.localeCompare(b)),
+    }));
+}
+
+export interface SharedWording {
+    prefix: string; // the words every label opens with; "" for none
+    suffix: string; // the words every label ends with; "" for none
+    rest: string[]; // each label without them, never empty
+}
+
+// fewer shared characters than this is not worth a line of its own ("ca " alone)
+const SHARED_MIN = 12;
+
+/** Pure: the words a comparison's labels all share at their start and their end, so the chart says them once over the
+ *  bars and each bar keeps the words that tell it apart: "submit secbench đậu tier-1 trên ca blocked_clean" and "… ca
+ *  crash_before_sink" become the prefix "submit secbench đậu tier-1 trên ca" over "blocked_clean" and "crash_before_sink".
+ *  Each label keeps at least one word; under 12 shared characters, or with fewer than two labels, nothing is split off. */
+export function sharedWording(labels: string[]): SharedWording {
+    const none = { prefix: "", suffix: "", rest: labels };
+    if (labels.length < 2) {
+        return none;
+    }
+    const words = labels.map((l) => l.split(" ").filter((w) => w !== ""));
+    const shortest = Math.min(...words.map((w) => w.length));
+    let p = 0;
+    while (p < shortest - 1 && words.every((w) => w[p] === words[0][p])) {
+        p++;
+    }
+    let s = 0;
+    const atEnd = (w: string[], k: number) => w[w.length - 1 - k];
+    while (p + s < shortest - 1 && words.every((w) => atEnd(w, s) === atEnd(words[0], s))) {
+        s++;
+    }
+    const prefix = words[0].slice(0, p).join(" ");
+    const suffix = s > 0 ? words[0].slice(-s).join(" ") : "";
+    if (prefix.length + suffix.length < SHARED_MIN) {
+        return none;
+    }
+    return { prefix, suffix, rest: words.map((w) => w.slice(p, w.length - s).join(" ")) };
+}

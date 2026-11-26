@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
     byTime,
     changeText,
+    citeGroups,
     countText,
     droppedRelationRows,
     failedFigureRows,
@@ -13,6 +14,7 @@ import {
     reportWords,
     sectionView,
     seriesLabels,
+    sharedWording,
     todoRows,
     type ChangeView,
     type CompareView,
@@ -504,5 +506,52 @@ describe("seriesLabels", () => {
         expect(twelve.filter(Boolean).length).toBeLessThanOrEqual(7);
         // no two kept labels side by side
         expect(twelve.some((on, i) => on && twelve[i + 1])).toBe(false);
+    });
+});
+
+describe("citeGroups", () => {
+    const f = "obsidian_harness/20261123_audit.html";
+    it("draws one long file once with its lines in order, each once", () => {
+        expect(citeGroups([`${f}:715`, `${f}:713`, `${f}:714`, `${f}:713`])).toEqual([
+            { path: f, dir: "obsidian_harness/", name: "20261123_audit.html", lines: ["713", "714", "715"] },
+        ]);
+    });
+    it("keeps files in the order first cited, and a ref with no line or a range", () => {
+        expect(citeGroups(["b/x.go:20-24", "README.md", "b/x.go:3", ""])).toEqual([
+            { path: "b/x.go", dir: "b/", name: "x.go", lines: ["3", "20-24"] },
+            { path: "README.md", dir: "", name: "README.md", lines: [] },
+        ]);
+    });
+    it("keeps two files of one name apart by their folders", () => {
+        expect(citeGroups(["a/x.go:1", "b/x.go:2"]).map((g) => g.dir + g.name)).toEqual(["a/x.go", "b/x.go"]);
+    });
+});
+
+describe("sharedWording", () => {
+    it("says the shared opening once and keeps what tells the labels apart", () => {
+        expect(
+            sharedWording([
+                "submit secbench đậu tier-1 trên ca blocked_clean",
+                "submit secbench đậu tier-1 trên ca crash_before_sink",
+                "submit secbench đậu tier-1 trên ca no_sink",
+            ])
+        ).toEqual({
+            prefix: "submit secbench đậu tier-1 trên ca",
+            suffix: "",
+            rest: ["blocked_clean", "crash_before_sink", "no_sink"],
+        });
+    });
+    it("splits off a shared ending too", () => {
+        expect(sharedWording(["ca direct đậu sạch ở 64k, §16", "ca harness đậu sạch ở 64k, §16"])).toEqual({
+            prefix: "ca",
+            suffix: "đậu sạch ở 64k, §16",
+            rest: ["direct", "harness"],
+        });
+    });
+    it("leaves labels whole when little is shared, there is one, or one label is all shared words", () => {
+        expect(sharedWording(["ca a", "ca b"]).rest).toEqual(["ca a", "ca b"]);
+        expect(sharedWording(["only one label here"]).prefix).toBe("");
+        const r = sharedWording(["submit secbench tier-1", "submit secbench tier-1 extra"]);
+        expect(r.rest.every((x) => x !== "")).toBe(true);
     });
 });

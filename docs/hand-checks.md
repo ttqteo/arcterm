@@ -23,6 +23,13 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
 
 ## 2026-11-26
 
+- [ ] (arcterm) **Council Figures: sources once per file, labels not repeated.** Open a council report whose Số liệu has
+  a comparison with labels sharing their opening words (e.g. the secbench audit one, "submit secbench đậu tier-1 trên
+  ca …"): the shared words sit once above the bars and each row shows only `blocked_clean`, `crash_before_sink`, …
+  whole, not cut with "…"; under each chart the source reads `obsidian_harness/…bilingual.html:713, 714, 715` once
+  (the folder fainter), with no exact duplicate like `:795 · :795`. Narrow the pane: labels and paths wrap, nothing
+  pushes the value column out. `councilreporttablesview.tsx`; `task verify:ui -- council-report-tables` for the end
+  state.
 - [ ] (arcterm) **A pair's relayed reply in Chat: the two disclosures, and the name that opens the sender.** In a live
   pair, open the working agent's Chat at its first relay: the brief is one muted line on the right ("arcterm paired
   this agent with … · Brief"). Press Brief: the brief opens under the line on the spring (no bounce, about the speed of
