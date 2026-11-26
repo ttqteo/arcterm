@@ -137,6 +137,7 @@ import {
     type WalkerState,
     type WalkerStep,
 } from "./petwalk";
+import { ensureSessionIdeasFeed } from "./sessionideasstore";
 import { petTeleportAtom, type TeleportRun } from "./teleportstore";
 import { WorkingDots } from "./workingdots";
 
@@ -335,6 +336,11 @@ export function PetView({ model }: { model: AgentsViewModel }) {
     const waiting = useWaitingCount(model);
     const working = useWorkingCount(model);
     const reduce = useReducedMotion() === true;
+    // Session ideas are read here because the pet is always mounted: the scan's end toasts on any surface, and Sprout's popup
+    // reads what the feed holds (sessionideasstore.ts). Idempotent.
+    useEffect(() => {
+        ensureSessionIdeasFeed(model);
+    }, [model]);
     // state, not a ref: the bubble and the peek re-position when it lands
     const [anchor, setAnchor] = useState<HTMLDivElement | null>(null);
     // A creature lets go of the anchor only while it is still the anchor. Float gives the hologram a new size, so a new

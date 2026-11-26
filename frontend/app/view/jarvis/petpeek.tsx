@@ -75,6 +75,7 @@ import { conditionLine, type PetExpression, type PetSignals } from "./petconditi
 import { PetErrand } from "./peterrand";
 import { resolveDestination } from "./peterrandmodel";
 import { PetHideButton } from "./pethidemenu";
+import { PetIdeas } from "./petideas";
 import type { PetCorner } from "./petledge";
 import {
     dedupeUpdates,
@@ -103,6 +104,8 @@ import { eventLabel, type PetEvent } from "./petvoice";
 import { ageLabel } from "./recallderive";
 import { reviewCards, reviewQueue, reviewSummary, reviewSummaryLine } from "./reviewmodel";
 import { enterReview, reviewedAtom } from "./reviewstore";
+import { reviewRows } from "./sessionideasmodel";
+import { sessionIdeasAtom } from "./sessionideasstore";
 
 // Where the peek opens from: the walking creature's corner, the float bar's top right (petfloatmark.tsx), where it
 // drops down, or Sprout folded out of the float (cockpit/sprout-mini.tsx), whose placement prop says which way.
@@ -160,6 +163,8 @@ const ROW_DOT: Record<string, string> = {
     "run-queue-blocked": "bg-warning",
     // waiting bug reports hold nothing up: a reminder's quiet dot
     "bug-reports": "bg-muted",
+    // so do ideas waiting for a decision
+    "session-ideas": "bg-muted",
 };
 
 const FOCUS_RING = "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent";
@@ -844,6 +849,7 @@ export function PetPeek({
     const said = useAtomValue(petSaidAtom);
     const items = useAtomValue(attentionAtom);
     const agents = useAtomValue(model.agentsAtom);
+    const sessionIdeas = useAtomValue(sessionIdeasAtom);
     // The initiatives to review, read off the briefing the Brief last loaded (nothing to say until it has): the same
     // queue the Brief's Review · N holds, so "Review in Jarvis" lands on the pass the line counts. It never adds to the
     // badge: review is not urgent.
@@ -971,6 +977,9 @@ export function PetPeek({
     const rows = queueRows(items, agents, channelMessages);
     const updates = dedupeUpdates(said, items);
     const quiet = rows.length === 0;
+    // the ideas line and its chips want the busy card's width even when nothing else waits: at the quiet card's 332px the four
+    // chips would stack on four lines. Read here (not only in PetIdeas) because the panel's width is this component's.
+    const ideasWaiting = reviewRows(sessionIdeas).length > 0;
     const focusedRow = rows[Math.min(cursor, Math.max(0, rows.length - 1))];
     const formAgent = focusedRow?.form != null ? agents.find((agent) => agent.id === focusedRow.form) : undefined;
     const formOpen = formAgent != null && focusedRow?.key === formRow;
@@ -1243,7 +1252,11 @@ export function PetPeek({
                                     // quiet: 300px, the width its title once had beside Full view and close, plus the stay
                                     // pin's 28px and the 4px gap before it (332px), so "Nothing waiting on you" reads whole
                                     // docked and folded (Terminal and the fold chevron take the place of Full view and close)
-                                    item != null ? "max-w-[560px]" : quiet ? "max-w-[332px]" : "max-w-[420px]"
+                                    item != null
+                                        ? "max-w-[560px]"
+                                        : quiet && !ideasWaiting
+                                          ? "max-w-[332px]"
+                                          : "max-w-[420px]"
                                 )}
                             >
                                 {/* mark the dialog as the focus-managed element: without it FloatingFocusManager
@@ -1506,6 +1519,8 @@ export function PetPeek({
                                                     ))}
                                                 </UpdatesDrawer>
                                             ) : null}
+
+                                            <PetIdeas model={model} now={now} folded={folded} onLeave={leavePeek} />
 
                                             <PetErrand
                                                 model={model}

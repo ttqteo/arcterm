@@ -34,6 +34,7 @@ import {
     splitRouteReply,
     type RouteAction,
     type RouteChoice,
+    type RouteIdea,
     type RouteProject,
     type RouteWorld,
 } from "./jarvisroute";
@@ -41,6 +42,9 @@ import { openTarget } from "./openref";
 import { closePeek } from "./peekstore";
 import { streamConsult } from "./petactrun";
 import { petErrandAtom, petPeekOpenAtom, petRouteCardAtom } from "./petstore";
+import { discussIdea, goThroughIdeas } from "./sessionideaslaunch";
+import { reviewRows } from "./sessionideasmodel";
+import { sessionIdeasAtom } from "./sessionideasstore";
 
 // What a hand-off came to: the caller places a failure (the errand, a card row, the band).
 export type RouteOutcome = { ok: true } | { ok: false; message: string };
@@ -106,10 +110,22 @@ export function forgetNoFolder(): void {
     noFolderCache = null;
 }
 
-// Everything a decision needs, read fresh: the registered projects (those with a path), No folder, and the agents a job
-// may go to. `excludeTab` is a tab that has just been closed or is being left, which never counts as open. The council
-// seats are read only after the councils loaded (D4): the list is null until then, and a null read as "no seats" would let
-// every council agent through; loadCouncils swallows its errors, so a list still null after it is an error here.
+// The ideas from past sessions that wait for a decision, as the routing prompt lists them (the one deleted soonest first,
+// as the popup and the Brief do). Empty until the feed (sessionideasstore.ts) has read once.
+function waitingIdeas(): RouteIdea[] {
+    return reviewRows(globalStore.get(sessionIdeasAtom)).map((i) => ({
+        id: i.id,
+        gist: i.gist,
+        project: i.project,
+        initiative: i.efforttitle,
+    }));
+}
+
+// Everything a decision needs, read fresh: the registered projects (those with a path), No folder, the agents a job
+// may go to, and the ideas waiting. `excludeTab` is a tab that has just been closed or is being left, which never counts
+// as open. The council seats are read only after the councils loaded (D4): the list is null until then, and a null read
+// as "no seats" would let every council agent through; loadCouncils swallows its errors, so a list still null after it
+// is an error here.
 export async function routeWorld(model: AgentsViewModel, excludeTab?: string): Promise<RouteWorldFull> {
     const noFolder = await noFolderInfo();
     await loadCouncils("");
@@ -133,6 +149,7 @@ export async function routeWorld(model: AgentsViewModel, excludeTab?: string): P
     return {
         projects,
         agents: openAgentsForRouting(agents, seats, projects),
+        ideas: waitingIdeas(),
         noFolderPath: noFolder.path,
         noFolderChannelId: noFolder.channelid,
     };
@@ -245,9 +262,39 @@ async function applyLaunch(
     }
 }
 
+// A go-through or discuss job (jarvisroute.ts decideIdeas): one sonnet agent of its own, carrying the [arc:session-ideas]
+// marker (sessionideaslaunch.ts), never applyLaunch, which would open a project's agent without it. The ideas are read
+// again here, not taken from the world the rule decided over, which can be two minutes old: an idea decided since is not
+// one to open an agent for. The agent's own launch focuses its tab, so the peek leaves as a launch's does. A failure is the
+// outcome for the errand to show; a launch that did not start has toasted its reason already. `hook` is the DEV hook's
+// terms: the action is recorded (lastApplied) and no agent opens, as applyLaunch's hook does.
+async function applyIdeas(
+    model: AgentsViewModel,
+    action: Extract<RouteAction, { kind: "ideas" }>,
+    hook: boolean
+): Promise<RouteOutcome> {
+    const waiting = reviewRows(globalStore.get(sessionIdeasAtom));
+    const ideas = action.op === "discuss" ? waiting.filter((i) => i.id === action.ideaId) : waiting;
+    if (ideas.length === 0) {
+        return fail(
+            action.op === "discuss"
+                ? "That idea has been decided since, or is gone"
+                : "No ideas from your sessions are waiting for a decision"
+        );
+    }
+    if (!hook) {
+        const tab = action.op === "discuss" ? await discussIdea(model, ideas[0]) : await goThroughIdeas(model, ideas);
+        if (tab == null) {
+            return fail("No agent was opened for the ideas");
+        }
+    }
+    closePeek();
+    return OK;
+}
+
 // Carries a decision out. Never throws: the outcome says how it went. An answer has nothing to do; a choose puts the
-// chooser card up; a send hands the job to the agent as the person's own prompt; a launch opens an agent for it.
-// `hook` is the DEV hook's terms (see the hook below).
+// chooser card up; a send hands the job to the agent as the person's own prompt; a launch opens an agent for it; an ideas
+// job opens the ideas agent. `hook` is the DEV hook's terms (see the hook below).
 export async function applyRouteAction(
     model: AgentsViewModel,
     action: RouteAction,
@@ -266,6 +313,8 @@ export async function applyRouteAction(
             return applySend(model, action, hook);
         case "launch":
             return applyLaunch(model, action, hook);
+        case "ideas":
+            return applyIdeas(model, action, hook);
     }
 }
 
@@ -291,7 +340,9 @@ async function settleReply(
         return;
     }
     if (action.kind === "answer") {
-        errand(split.visible, "done");
+        // a question the rule asked itself (an idea it could not tell) is shown instead of the model's own sentence, which
+        // said it was opening something
+        errand(action.text ?? split.visible, "done");
         return;
     }
     errand(split.visible, "streaming");
@@ -425,7 +476,8 @@ export async function rerouteAgent(model: AgentsViewModel, tabId: string, projec
 //   setDryRun(on)           skips AgentsAssignCommand; the escort, the peek, the band and the card still happen. Off by
 //                           default: a hand-off to a fixture agent then reaches the real command and its refusal. With
 //                           it on, a "Wrong project?" pick (rerouteAgent) takes the same terms, and closes no tab.
-//   lastAction()            the action the rule last chose, or null.
+//   lastAction()            the action the last finish applied, or null: an answer applies nothing, and finish forgets the
+//                           one before it, so a step never reads an earlier reply's action as this one's.
 // finish never calls the real launchAgent or closeTabLogged, whatever the dry run says: it records a launch, sets no
 // band for it (no tab exists), and a card it made keeps these terms. A reroute with the dry run off is the real thing.
 if (import.meta.env.DEV) {
@@ -435,6 +487,7 @@ if (import.meta.env.DEV) {
                 throw new Error("route model not set: open the pet peek first");
             }
             hookCard = false;
+            lastApplied = null;
             globalStore.set(petRouteCardAtom, null);
             await settleReply(routeModel, "claude", request, replyText, true);
             hookCard = globalStore.get(petRouteCardAtom) != null;
