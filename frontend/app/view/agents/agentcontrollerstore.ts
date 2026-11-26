@@ -57,6 +57,16 @@ export function getStartErrorAtom(blockId: string): PrimitiveAtom<string | undef
 let fixtureRoster = false;
 export function setFixtureRoster(on: boolean) {
     fixtureRoster = on;
+    if (!on) {
+        return;
+    }
+    // A refusal recorded before the flag went on (an earlier scenario set the same made-up blocks without it) is the
+    // fixture's too, and nothing else clears it: a made-up block never sends the controllerstatus "running" that would.
+    for (const errAtom of startErrorAtoms.values()) {
+        if (fixtureBlockMissing(true, globalStore.get(errAtom) ?? "")) {
+            globalStore.set(errAtom, undefined);
+        }
+    }
 }
 
 // Pure: whether a refused start is a fixture's made-up block rather than an agent that failed. The surface starts the
@@ -74,6 +84,7 @@ export async function resyncController(data: CommandControllerResyncData): Promi
     } catch (e) {
         const message = e instanceof Error ? e.message : String(e);
         if (fixtureBlockMissing(fixtureRoster, message)) {
+            globalStore.set(errAtom, undefined);
             return;
         }
         globalStore.set(errAtom, message);
