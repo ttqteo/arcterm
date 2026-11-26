@@ -159,18 +159,34 @@ The documented rules stay: a new worker answer resumes every kind of stop except
    message when an earlier message from the same tab already has it as `ReplyTo`. m16 and m17 would carry no `ReplyTo`
    and draw no quote line; the quote fallback (`view.go`, the first line of the answered message) draws nothing when
    `ReplyTo` is empty.
-2. **After a token-cap stop the pair stops following the worker.** While `State == StateStopped && StopReason ==
-   StopTokenCap`, `takeAnswer` neither records nor enqueues a worker answer, and leaves `p.Held` alone; it still
-   advances `Seen[tab]` (and persists it), so the turn is not taken later as new. The pair follows again once it
-   resumes: Resume, Judge again, or a message from the person. Other stops keep today's rule: the worker's answer is
-   recorded and resumes the pair.
+2. **After a token-cap stop the pair stops following the worker, but keeps the reply that was under way.** While
+   `State == StateStopped && StopReason == StopTokenCap`:
+   - A worker answer for which `answeredBy(p, tab)` (with item 1's rule) names a message is a reply that was already
+     under way when the cap stopped the pair. It is recorded with that `ReplyTo`, takes `p.Held` as any recorded worker
+     message does, and is enqueued as usual, but it does not resume the pair.
+   - A worker answer for which `answeredBy` returns "" (nothing left to answer: the turns the person started in the
+     worker's own Chat, m16 and m17 of df763872) is neither recorded nor enqueued, and leaves `p.Held` alone; it still
+     advances `Seen[tab]` (and persists it), so the turn is not taken later as new.
+
+   The pair follows again once it resumes: Resume, Judge again, or a message from the person. Other stops keep today's
+   rule: the worker's answer is recorded and resumes the pair. (Corrected 2026-11-26 after Task 3 landed, the person's
+   call: in pair e801794d the judge sent fixes at 10:59, the cap stopped the pair at 11:03 while the worker was still on
+   that turn, and its full answer arrived after the stop; the first version, which recorded nothing after a token cap,
+   would have lost it.)
+
+   Known gap, not fixed here: in e801794d the worker's 11:03 turn was taken twice, first the text before a tool call
+   ("Final residual + structure check:", recorded while the pair was still relaying, in the same catch-up that then
+   stopped it at the cap), then the full answer. An idle status reached `TurnEnded` mid-turn. With items 1 and 2 the
+   full answer then finds nothing left to answer and is dropped. The fix belongs to whatever fires the mid-turn idle,
+   and is filed as an open issue.
 3. **Header.** While the pair is stopped, the working agent's state line does not say "waiting on judge"
    (`waitingOnJudge` is false on a stopped pair). It says the pair is paused, with the reason, in the pause card's
    head words.
 
 CHANGELOG `Fixed`: "A paired agent's replies after a pause no longer show under the last question you asked in the
 pair, and after a token cap they no longer pile up for the judge." The guide's "Khi nào pair dừng" says that after a
-token cap, turns started in the worker's Chat are not passed to the judge until you resume.
+token cap, turns started in the worker's Chat are not passed to the judge until you resume, while the worker's answer
+to a message it was already working on is still kept and passed on.
 
 ## Left to the builder
 
