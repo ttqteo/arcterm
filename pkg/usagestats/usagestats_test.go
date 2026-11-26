@@ -254,6 +254,19 @@ func TestDedupe(t *testing.T) {
 	}
 }
 
+// a resumed session's file carries the parent's messages again: the same id in two sessions, at the same Output. The
+// one kept must not depend on the order the files were read, or a message's tokens move between sessions per scan.
+func TestDedupeKeepsTheSameCopyWhateverTheOrder(t *testing.T) {
+	at := time.Date(2026, 11, 20, 9, 0, 0, 0, time.UTC)
+	parent := Record{ID: "m1", Session: "parent", TS: at, Output: 40}
+	resumed := Record{ID: "m1", Session: "resumed", TS: at.Add(time.Hour), Output: 40}
+	a := dedupe([]Record{parent, resumed})
+	b := dedupe([]Record{resumed, parent})
+	if len(a) != 1 || len(b) != 1 || a[0].Session != "parent" || b[0].Session != "parent" {
+		t.Fatalf("dedupe kept %+v and %+v, want the earliest copy (parent) both times", a, b)
+	}
+}
+
 func TestBucketDropsSyntheticAndGroups(t *testing.T) {
 	day := time.Date(2026, 6, 26, 10, 0, 0, 0, time.Local)
 	recs := []Record{
