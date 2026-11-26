@@ -13,6 +13,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -115,10 +116,8 @@ func runForWorker(runs []*waveobj.Run, workerORef string) *waveobj.Run {
 	}
 	for _, r := range runs {
 		for _, p := range r.Phases {
-			for _, wo := range p.WorkerOrefs {
-				if wo == workerORef {
-					return r
-				}
+			if slices.Contains(p.WorkerOrefs, workerORef) {
+				return r
 			}
 		}
 	}
@@ -172,10 +171,8 @@ func doneTasks(g *waveobj.TaskGroup) int {
 
 // firstLine is the first line of a multi-line message, for a row that carries one short sentence.
 func firstLine(s string) string {
-	if i := strings.IndexByte(s, '\n'); i >= 0 {
-		return s[:i]
-	}
-	return s
+	line, _, _ := strings.Cut(s, "\n")
+	return line
 }
 
 // attentionSourceMaxLen bounds a row's source line. A run's goal can be kilobytes; the row's text is the
