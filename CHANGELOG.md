@@ -75,6 +75,7 @@ and a picture given to a line that is not big.
 
 ### Changed
 
+- A visual in Chat no longer sits in a bordered box: it lines up with the reply's text around it.
 - The word "draft" on an agent's row also shows on the row you have open, as soon as its box holds a message you have
   not sent.
 - A run's Final that fails on its screen checks says how many: "1 of 51 failed" on its Final step, "Final: 1 of 51 steps

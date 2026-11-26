@@ -23,6 +23,10 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
 
 ## 2026-11-26
 
+- [ ] (arcterm) **A Chat visual has no border.** In an agent's Chat, a reply with an `arc-visual` block: the page sits
+  flush with the reply's text, no box around it and no line under the small Shapes icon; a tall one still shows its
+  expand button at the right of that row. (`chatvisualview.tsx`)
+
 - [ ] (arcterm) **"draft" on the open row.** After a build, type a few letters in the Chat box of the agent you have
   open → its row in the Agent tree reads *draft* on its second line at once (a split cell: after the name); clear the
   box → the word goes. (`agenttree.tsx` drafted, fix/draft-word-on-open-row)

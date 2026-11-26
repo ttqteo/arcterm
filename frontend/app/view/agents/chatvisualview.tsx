@@ -268,12 +268,8 @@ function ChatVisual({ path, agentId }: { path: string; agentId: string }) {
     const height = frameHeight(reported, expanded);
     const tall = reported !== undefined && reported > FRAME_MAX;
     return (
-        <figure
-            ref={figureRef}
-            data-chat-visual={path}
-            className="my-2 overflow-hidden rounded-[10px] border border-edge-mid bg-surface"
-        >
-            <div className="flex h-8 items-center gap-2 border-b border-edge-faint px-3 text-[11.5px] text-muted">
+        <figure ref={figureRef} data-chat-visual={path} className="my-2 overflow-hidden">
+            <div className="flex h-7 items-center gap-2 text-[11.5px] text-muted">
                 <Shapes size={12} strokeWidth={1.8} aria-label="Visual" />
                 <span className="flex-1" />
                 {tall ? (
@@ -294,7 +290,7 @@ function ChatVisual({ path, agentId }: { path: string; agentId: string }) {
                 ) : null}
             </div>
             {missing ? (
-                <div data-chat-visual-missing className="px-3 py-2.5 text-[12.5px] text-muted">
+                <div data-chat-visual-missing className="py-2.5 text-[12.5px] text-muted">
                     Visual not found: <code>{path}</code>
                 </div>
             ) : src == null ? (
