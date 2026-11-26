@@ -51,6 +51,7 @@ import {
     type Verdict,
 } from "./chatverdict";
 import { groupCompact, workOf, type CompactItem, type WorkItem } from "./compacttimeline";
+import { pairEnvelopeText, parsePairRelay, type PairRelay } from "./pairrelay";
 import { opensPanel } from "./slashcommands";
 import type { TurnStats } from "./transcriptprojection";
 
@@ -120,7 +121,17 @@ export type ChatItem =
     // a prompt arcterm typed: `header` names it, `lines` are its fields as "label value" and its body (at most SENT_LINES);
     // `tabId` the tab of the agent that sent it with `wsh agents send`, which the card opens. Such a message also carries
     // `markdown`, its whole text as the agent wrote it, which the card draws in place of `lines` (the tab is the head's link)
-    | { kind: "sent"; key: string; from: SentFrom; header: string; lines: string[]; tabId?: string; markdown?: string }
+    // a pair's prompt (pairrelay.ts) carries `relay`, what it holds, which the card draws in place of `lines`
+    | {
+          kind: "sent";
+          key: string;
+          from: SentFrom;
+          header: string;
+          lines: string[];
+          tabId?: string;
+          markdown?: string;
+          relay?: PairRelay;
+      }
     // everything the agent said and did between two of the items around it
     | { kind: "agent"; key: string; parts: AgentPart[] }
     | { kind: "marker"; key: string; item: ChatMarker };
@@ -130,6 +141,9 @@ export const SENT_LINES = 6;
 
 /** Header of the card for a launch prompt too long for a command line, which reached the session as a pointer to a file. */
 const POINTER_HEADER = "run prompt · from a file";
+
+/** Header of the card for a pair's prompt, kept for one the pair's parser cannot read. */
+const PAIR_HEADER = "message · from arcterm pair";
 
 // a key is the first entry's index (entries are append-only, so it never changes as the transcript grows), prefixed by
 // the item's kind so a glance at a key says what it is
@@ -150,7 +164,14 @@ function wakeLines(wake: Wake): string[] {
     ].slice(0, SENT_LINES);
 }
 
-type Sent = { from: SentFrom; header: string; lines: string[]; tabId?: string; markdown?: string };
+type Sent = {
+    from: SentFrom;
+    header: string;
+    lines: string[];
+    tabId?: string;
+    markdown?: string;
+    relay?: PairRelay;
+};
 
 // the tab of the agent a `wsh agents send` message came from, or undefined for any other prompt
 function senderTab(card: Card): string | undefined {
@@ -179,6 +200,14 @@ function readSent(text: string): Sent | null {
     const wake = parseWake(t);
     if (wake != null) {
         return { from: "cockpit", header: wakeSummary(wake), lines: wakeLines(wake) };
+    }
+    // what arcterm's pair relays: the sender's turn whole (pairrelay.ts), or, for a text it cannot read, the text whole
+    const pair = pairEnvelopeText(t);
+    if (pair != null) {
+        const relay = parsePairRelay(pair);
+        return relay != null
+            ? { from: "cockpit", header: PAIR_HEADER, lines: [], relay }
+            : { from: "cockpit", header: PAIR_HEADER, lines: [], markdown: pair.trim() };
     }
     const sent = parseStreamPrompt(t);
     if (sent != null && !isBrainstormLineOfYours(sent)) {

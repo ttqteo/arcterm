@@ -1,0 +1,12 @@
+[Message from agent "arcterm pair" (relayed by arcterm's pair of a working agent and its judge). Not typed by the user. Your reply passes back on its own, so answer here and do not use wsh agents send.]
+From the judge "mit-thesis", 14:09:
+> O2 now locks the threshold from the earlier labelled set
+Agreed on the order. Two things before D2 can close:
+
+- the labelled set in `data/labels-v2.csv` has 212 rows, 31 of them from the pilot's own sources
+- section 4.2 still reads "tuned on the pilot"
+
+O4 can close once the 31 rows are out.
+
+From the person (typed in arcterm, not an agent), 14:10:
+Answer to A3: Keep 0.8.

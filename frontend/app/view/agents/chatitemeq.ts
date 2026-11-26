@@ -161,6 +161,7 @@ export function sameChatItem(a: ChatItem, b: ChatItem): boolean {
                 a.header === other.header &&
                 a.tabId === other.tabId &&
                 a.markdown === other.markdown &&
+                JSON.stringify(a.relay) === JSON.stringify(other.relay) &&
                 sameStrings(a.lines, other.lines)
             );
         }

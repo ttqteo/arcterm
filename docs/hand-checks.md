@@ -23,6 +23,16 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
 
 ## 2026-11-26
 
+- [ ] (arcterm) **A pair's relayed reply in Chat: the two disclosures, and the name that opens the sender.** In a live
+  pair, open the working agent's Chat at its first relay: the brief is one muted line on the right ("arcterm paired
+  this agent with … · Brief"). Press Brief: the brief opens under the line on the spring (no bounce, about the speed of
+  the Pair list's Agreed fold) while the chevron turns a quarter in about 140 ms; press again and it folds the same
+  way; press twice fast and it ends open or folded as a slow press would, never stuck half-open. Do the same with
+  Text as relayed at the foot of the judge's card. With reduced motion on, both open and fold at once. Then press the
+  judge's name in its card: the judge's conversation opens (ctrl-click peeks it), and in the judge's own Chat the same
+  goes for the working agent's card. A reply whose sender is not in the live pair shows its name with no arrow.
+  Seen only as end states by the `chat-pair-relay` scenario's Final (its step 6 samples the brief's fold); an agent in
+  an Arc run does not watch it. (`chatpairrelay.tsx`)
 - [ ] (arcterm) **The judge card's reading → done cross-fade.** On the last message's judge card (a choice question
   turn), press "Đọc code rồi chọn" and let the deep judge finish (or Stop and press it again): the reading text fades
   out while the done text fades in, in about 140 ms, and the card eases from its reading height to its done height on

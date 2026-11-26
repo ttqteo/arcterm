@@ -19,6 +19,7 @@ import {
     waitingLabel,
     type PairBlockItem,
 } from "./pairblocks";
+import { relayPartKey } from "./pairrelay";
 
 const pairBlock = (...lines: string[]) => ["```arc-pair", ...lines, "```"].join("\n");
 
@@ -177,6 +178,35 @@ describe("placePairLists", () => {
         ];
         const out = placePairLists(items);
         expect([...out.values()]).toEqual([{ latest: true, previous: null }]);
+    });
+
+    it("places the working agent's list a pair relayed into the judge's Chat, as the newest after the agent's own", () => {
+        const relayed = pairBlock("D1 a", "A2 b [Yes | No]");
+        const sent: ChatItem = {
+            kind: "sent",
+            key: "sent:3",
+            from: "cockpit",
+            header: "pair",
+            lines: [],
+            relay: {
+                kind: "relay",
+                brief: null,
+                messages: [
+                    {
+                        from: "worker",
+                        name: "w",
+                        time: "14:05",
+                        quote: null,
+                        answers: null,
+                        text: `Swapped.\n\n${relayed}`,
+                        raw: "",
+                    },
+                ],
+            },
+        };
+        const out = placePairLists([agent(0, pairBlock("D1 a")), sent]);
+        const key = pairBlockKey(relayPartKey("sent:3", 0), parsePairItems("D1 a\nA2 b [Yes | No]"));
+        expect(out.get(key)).toEqual({ latest: true, previous: parsePairItems("D1 a") });
     });
 });
 

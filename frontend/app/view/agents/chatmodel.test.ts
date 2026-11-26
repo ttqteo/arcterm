@@ -392,11 +392,33 @@ describe("what arcterm typed", () => {
         }
     });
 
-    it("reads a message the pair relays as a sent card from the cockpit, not as the person's own text", () => {
+    it("reads a message the pair relays as a sent item carrying the relay, not as the person's own text", () => {
         const [item] = chatItems([you(fixture("pair-message"))]);
-        expect(item).toMatchObject({ kind: "sent", from: "cockpit", header: "message · from arcterm pair" });
-        // it comes from the pair, not from an agent's tab, so the card has no sender to open
+        expect(item).toMatchObject({ kind: "sent", from: "cockpit" });
+        const relay = (item as Extract<ChatItem, { kind: "sent" }>).relay;
+        expect(relay).toMatchObject({ kind: "relay", messages: [{ from: "judge", name: "review", time: "14:02" }] });
+        // it comes from the pair, not from an agent's tab: no tab on the item, the card finds the sender in the pair
         expect(item).not.toHaveProperty("tabId");
+    });
+
+    it("keeps the whole relay, past the six lines a sent card is cut to", () => {
+        const [item] = chatItems([you(fixture("pair-relay-first"))]);
+        const relay = (item as Extract<ChatItem, { kind: "sent" }>).relay;
+        expect(relay?.kind === "relay" && relay.messages[0]?.text).toContain("```arc-judge");
+    });
+
+    it("reads the judge's brief and the end notice as relays too", () => {
+        const kinds = ["pair-judge-brief", "pair-ended"].map(
+            (name) => (chatItems([you(fixture(name))])[0] as Extract<ChatItem, { kind: "sent" }>).relay?.kind
+        );
+        expect(kinds).toEqual(["judgeBrief", "ended"]);
+    });
+
+    it("shows a pair text it cannot read whole, as Markdown", () => {
+        const text = `[Message from agent "arcterm pair" (relayed by arcterm's pair of a working agent and its judge). Not typed by the user.]\nsomething new\n\nwith ${"a line ".repeat(3)}`;
+        const [item] = chatItems([you(text)]);
+        expect(item).toMatchObject({ kind: "sent", markdown: "something new\n\nwith a line a line a line" });
+        expect(item).not.toHaveProperty("relay");
     });
 
     it("keeps a sent card to six lines", () => {
