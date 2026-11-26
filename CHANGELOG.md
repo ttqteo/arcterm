@@ -72,6 +72,8 @@ and a picture given to a line that is not big.
 
 ### Changed
 
+- The word "draft" on an agent's row also shows on the row you have open, as soon as its box holds a message you have
+  not sent.
 - A run's Final that fails on its screen checks says how many: "1 of 51 failed" on its Final step, "Final: 1 of 51 steps
   failed" on the run's row and on earlier rounds, and the failed step's name in the stage's header and on the DAG.
 - A pair's relayed reply now reads in Chat as the sender's own turn, whole: the judge's in the working agent's Chat and
