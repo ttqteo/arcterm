@@ -220,6 +220,15 @@ export async function loadPair(id: string): Promise<void> {
     }
 }
 
+/** Reads a pair in full the first time anything asks for it, and never again from here: a pair that was read is kept right
+ *  by `pair:update`. For a place that wants the views of many pairs by id (the marks in Chat) and would otherwise read
+ *  them again on every render. */
+export function ensurePair(id: string): void {
+    if (id !== "" && !knownPairs.has(id)) {
+        void loadPair(id);
+    }
+}
+
 const noView = atom<PairView | null>(null);
 
 /** The active pairs, kept read while the caller shows. */
