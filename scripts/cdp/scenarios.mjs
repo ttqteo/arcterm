@@ -72992,19 +72992,31 @@ async function ovShellReady(h, blockId) {
     return false;
 }
 
-// Types `command` after a different one. The page reports a command on the start mark the shell integration writes, and
-// PowerShell's PSReadLine does not give its history handler (where that mark is written) a line equal to the previous line
-// of its history, which is a file every shell of every earlier run shares: the same `sleep 30` typed a second time ran
-// unmarked, and its terminal never read as running. An echo of its own goes first, so the line that follows is never a
-// repeat. True once the echo's output is in, and the command is sent either way.
+// the shell's state as the page last read it from the shell integration's marks, once it reads `state`
+async function ovShellState(h, blockId, state, ms) {
+    for (let waited = 0; waited < ms; waited += 300) {
+        if ((await ovRtInfo(h, blockId))?.["shell:state"] === state) return true;
+        await polishNap(300);
+    }
+    return false;
+}
+
+// Types `command` twice, the second time as a repeat of the line before it: run, read as running, stopped with Ctrl+C, the
+// prompt back, then typed again and left running. PowerShell's PSReadLine skips its history handler for a line equal to the
+// previous one, so while the start mark was written there a repeated command ran unmarked and never read as running; the
+// second run checks it is marked now. Facts of the first run; the second is the caller's to check.
 async function ovTypeCommand(h, blockId, command) {
     const send = (text) =>
         h.rpc("controllerinput", { blockid: blockId, inputdata64: Buffer.from(text).toString("base64") });
-    await send("echo ov-warm\r");
-    const warmed = (await uploadsTermHas(h, blockId, "echo ov-warm\nov-warm")).seen;
+    await send(`${command}\r`);
+    const firstRunning = await ovShellState(h, blockId, "running-command", 8000);
+    await send("\x03");
+    const firstStopped = await ovShellState(h, blockId, "ready", 8000);
+    // what the shell printed, only when the stop was not read: whether Ctrl+C arrived and a prompt mark followed
+    const stopTail = firstStopped ? undefined : await ovTermTail(h, blockId, 400);
     await polishNap(300);
     await send(`${command}\r`);
-    return warmed;
+    return { firstRunning, firstStopped, stopTail };
 }
 
 // the last `n` characters the shell printed, raw, with each escape written as ␛: where its marks (OSC 16162) are visible
@@ -73704,8 +73716,9 @@ const projectOverview = {
             // at step 5b, so its xterm is mounted and reports the shell's marks
             const shellUp = await uploadsShellUp(h, ctx.term.blockId);
             const shellReady = shellUp && (await ovShellReady(h, ctx.term.blockId));
-            const warmed = shellReady && (await ovTypeCommand(h, ctx.term.blockId, "sleep 30"));
+            const first = shellReady ? await ovTypeCommand(h, ctx.term.blockId, "sleep 30") : null;
             const runRow = `[data-overview-running] [data-overview-running-row="${tabId}"]`;
+            const repeatRunning = shellReady && (await ovShellState(h, ctx.term.blockId, "running-command", 8000));
             const running = shellReady && (await polishWaitFor(h, ovHas(runRow), 10000));
             const quietGone = await polishWaitFor(h, `!${ovHas("[data-overview-quiet]")}`, 3000);
             const row7 = await h.ev(`document.querySelector(${JSON.stringify(runRow)})?.textContent.replace(/\\s+/g, " ").trim() ?? null`);
@@ -73714,12 +73727,20 @@ const projectOverview = {
             await h.ev(`document.querySelector(${JSON.stringify(runRow)})?.click()`);
             const leftTerm = await polishWaitFor(h, ovDown, 3000);
             rec(
-                "7. a command running in the project's terminal puts a Running row for it, reading `terminal`, with the quiet line gone, and a click on the row puts the centre back on the terminal",
-                shellReady && running && quietGone && /terminal/.test(row7 ?? "") && leftTerm,
+                "7. a command running in the project's terminal puts a Running row for it, reading `terminal`, with the quiet line gone, and a click on the row puts the centre back on the terminal; `sleep 30` typed again right after the first was stopped (a repeat of the previous history line) reads as running too",
+                shellReady &&
+                    first?.firstRunning &&
+                    first?.firstStopped &&
+                    repeatRunning &&
+                    running &&
+                    quietGone &&
+                    /terminal/.test(row7 ?? "") &&
+                    leftTerm,
                 JSON.stringify({
                     shellUp,
                     shellReady,
-                    warmed,
+                    ...first,
+                    repeatRunning,
                     running,
                     quietGone,
                     row7,
