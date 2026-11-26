@@ -55,7 +55,7 @@ import {
     GitCommitHorizontal,
     Hammer,
     Moon,
-    Scale,
+    Search,
     Terminal,
     X,
     type LucideIcon,
@@ -1632,7 +1632,7 @@ const SUGGEST_ICONS: Record<ChipIcon, LucideIcon> = {
     // the header's ✓ Close, in the chip row's shape
     close: CircleCheck,
     // the judge's pick (chatjudge.ts judgedChips)
-    judge: Scale,
+    judge: Search,
 };
 
 // A key named in the empty box's line (chatboxstate.ts HintPart), drawn as a keycap.

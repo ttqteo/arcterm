@@ -2,14 +2,14 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // The judge's line under the agent's message that ends in a choice question (docs/superpowers/specs/2026-11-25-chat-
-// choice-judge-design.md, board C-under-reply): one muted line under a hairline rule, no box. The scale icon (a spinner
-// while the deep judge reads), the head and the pick's name (the hover target: its tooltip says why), the dim hint, and
-// at the line's end the one action the person can take: Judge kỹ, Dừng or Thử lại. Under the conversation's last
-// message it is a card instead (data-look="card"): a small head with where the pick comes from, the pick's name, the
-// reason written out ([data-chat-judge-reason]) and the action as a button, with no hover; the action alone (no pick)
-// stays a line there too. What it says is chatjudge.ts's judgeLine; this draws it and ticks the reading seconds. The
-// record is chatJudgeAtom's, and every action goes through
-// runLiveJudge, which acts on what the pane offers for its live turn (liveJudgeAtom, written by chatpane.tsx).
+// choice-judge-design.md, board C-under-reply): one muted line under a hairline rule, no box. The magnifier icon (a
+// spinner while the deep judge reads), the head and the pick's name (the hover target: its tooltip says why), the dim
+// hint, and at the line's end the one action the person can take: Đọc code rồi chọn (Read the code and pick), Dừng or
+// Thử lại. Under the conversation's last message it is a card instead (data-look="card"): a small head with where the
+// pick comes from, the pick's name, the reason written out ([data-chat-judge-reason]) and the action as a button, with
+// no hover; the action alone (no pick) stays a line there too. What it says is chatjudge.ts's judgeLine; this draws it
+// and ticks the reading seconds. The record is chatJudgeAtom's, and every action goes through runLiveJudge, which acts
+// on what the pane offers for its live turn (liveJudgeAtom, written by chatpane.tsx).
 // Motion: the line opens under its message on the spring and fades in (chatconversation.tsx says when it arrives, `arrive`),
 // and closes the same way when a record leaves it with nothing to show; a state change cross-fades its text on the micro
 // ease and a line that grows or shrinks for it rides the spring (CardSlot). Under reduced motion it mounts at its end
@@ -22,7 +22,7 @@
 import { MOTION } from "@/app/element/motiontokens";
 import { formatChordString } from "@/util/keysym";
 import { cn } from "@/util/util";
-import { Loader2, Scale } from "lucide-react";
+import { Loader2, Search } from "lucide-react";
 import { AnimatePresence, motion, useIsPresent, useReducedMotion } from "motion/react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { CardSlot, FOCUS_RING } from "./chatbrainstormparts";
@@ -37,11 +37,12 @@ const UNDER_MESSAGE = 8;
 /** the tooltip's chip: the line's own text size, and room for a reason of a sentence or two */
 const TIP_CHIP = "max-w-[420px] px-[10px] py-2 text-[12.5px] leading-[1.5] text-primary";
 
-/** the action's label and, where there is one, its tip: the key is Alt+J while the line offers Judge it or Retry */
+/** the action's label and, where there is one, its tip: the key is Alt+J while the line offers Read the code and pick
+ *  or Retry */
 const ACTION_TEXT = {
     judge: {
-        vi: "Judge kỹ",
-        en: "Judge it",
+        vi: "Đọc code rồi chọn",
+        en: "Read the code and pick",
         tipVi: "Một phiên sonnet mới đọc code, không thấy agent khuyên gì",
         tipEn: "A fresh sonnet session reads the code and does not see what the agent recommends",
     },
@@ -385,7 +386,7 @@ function rowFade(reduce: boolean) {
     } as const;
 }
 
-/** the scale, or the spinner while the deep judge reads */
+/** the magnifier, or the spinner while the deep judge reads */
 function JudgeIcon({ reading, className }: { reading: boolean; className: string }) {
     return reading ? (
         <Loader2
@@ -396,8 +397,8 @@ function JudgeIcon({ reading, className }: { reading: boolean; className: string
             className={cn("flex-none animate-spin motion-reduce:animate-none", className)}
         />
     ) : (
-        <Scale
-            data-chat-judge-icon="scale"
+        <Search
+            data-chat-judge-icon="search"
             size={13}
             strokeWidth={1.8}
             aria-hidden
@@ -410,7 +411,7 @@ function actionLabel(action: NonNullable<ShownLine["action"]>, vi: boolean): str
     return vi ? ACTION_TEXT[action].vi : ACTION_TEXT[action].en;
 }
 
-/** the action's tip, with its key: Judge it and Retry only */
+/** the action's tip, with its key: Read the code and pick, and Retry, only */
 function actionTip(action: NonNullable<ShownLine["action"]>, vi: boolean): string | undefined {
     if (action !== "judge" && action !== "retry") {
         return undefined;

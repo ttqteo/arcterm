@@ -966,8 +966,8 @@ export function ChatConversation({
     // the agent's working directory: the card of a finished turn's files names each one's folder relative to it
     cwd?: string | null;
     // the key (chatsuggest.ts suggestKey) of the pane's current turn while its suggested replies show, else null: the
-    // judge's line under that turn's message is the live one, which offers Judge it, Stop and Retry (chatjudgeline.tsx).
-    // Every other line shows what was judged and nothing to press
+    // judge's line under that turn's message is the live one, which offers Read the code and pick, Stop and Retry
+    // (chatjudgeline.tsx). Every other line shows what was judged and nothing to press
     liveJudgeKey?: string | null;
     className?: string;
 }) {

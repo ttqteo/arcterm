@@ -34,6 +34,12 @@ and a picture given to a line that is not big.
 
 ### Added
 
+- A pair that pauses leaves a card in its conversation: why it paused, the judge's summary when it wrote one, then what
+  waits on you (with its answer buttons), what is still open and what is agreed. The pair's page in Library draws the
+  same card.
+- Resume on a pair that stopped at its token cap: a button on the pause card, on the pair's row in the Agent tree and on
+  its page in Library, labelled with the tokens it gives back (Resume · 3.0M more). Where the pair paused with nothing
+  queued, the card offers Judge again, which opens the composer with `@judge ` typed.
 - Open a tool in a split: `Ctrl`+`Enter` (`⌘`+`Enter` on a Mac) in Open a tool (`Ctrl`+`Shift`+`O`) opens it as a cell
   under the agent you are looking at, beside the Shift+Enter that opens it in the panel. With the split full (4 cells)
   the tool opens in the centre. <!-- try: open-tool -->
@@ -55,6 +61,11 @@ and a picture given to a line that is not big.
 
 ### Changed
 
+- Chat's Judge it button under a suggested answer is now Read the code and pick (Đọc code rồi chọn), with a magnifier
+  in place of the scales, so it no longer looks like a pair's judge; Alt+J is the same, and the answer it gives reads
+  Read the code: picks.
+- A message you send to both agents of a pair is answered by the working agent first, and the judge then judges that
+  answer, instead of the judge answering you in parallel; `@judge` still asks the judge at once.
 - Switching back to an agent you already viewed keeps its details rail in place: Files changed, the branch, the
   session's spend and model and the cache countdown show at once and update quietly, instead of flashing through
   a placeholder.
@@ -70,8 +81,9 @@ and a picture given to a line that is not big.
 - An agent in a brainstorm opens its panel on the Brainstorm tab, and one linked to an initiative on the Initiative tab,
   instead of Overview; once you pick a tab, the panel stays on yours.
 - The green server mark beside an agent or a project lists every port its servers listen on, not two and a `+N`.
-- The suggested answer under an agent's last message is a card: the pick, its reason written out and Judge it as a
-  button, with no hovering; once you answer, it folds back to a thin line that keeps the reason in the tooltip.
+- The suggested answer under an agent's last message is a card: the pick, its reason written out and Read the code and
+  pick as a button, with no hovering; once you answer, it folds back to a thin line that keeps the reason in the
+  tooltip.
 - A long paste into New agent's Task box folds into a Pasted text chip, as in the chat box, so the task you type around
   it stays in view; the agent still gets the paste whole.
 - Pinned files are kept in the workspace instead of the window's storage, so they survive a reset of the app's web data
@@ -89,6 +101,8 @@ and a picture given to a line that is not big.
 
 ### Fixed
 
+- A paired agent's replies after a pause no longer show under the last question you asked in the pair, and after a token
+  cap they no longer pile up for the judge.
 - A new agent's first message with a long paste in it shows the paste as a folded card, not as raw
   `<\pasted_content>` text.
 - A failed subagent no longer stays in the Agent tree forever: it leaves once its agent starts another subagent after

@@ -2,7 +2,7 @@
 //
 //   chat-judge: a fixture Claude agent whose last reply ends as board C's does ("... A sửa đúng gốc nhưng đụng ba nơi gọi
 //   parseFrame; B nhỏ hơn. Mình nghiêng A. A hay B?"), so Chat holds a judge record for the turn. The steps cover the
-//   chips (this file's first five): the judge's pick is first in the row with the scale and [data-chat-suggest-judged],
+//   chips (this file's first five): the judge's pick is first in the row with the magnifier and [data-chat-suggest-judged],
 //   Ctrl/Cmd+Enter sends it, Tab to it puts the reason in the empty box's line, the option the deep judge added is a chip
 //   whose click sends its description and facts too, and answering while the deep judge reads stops it. Then the line under
 //   the message (chatjudgeline.tsx, steps 6 to 17): the light line and how it opens, the hover tooltip, the action alone
@@ -78,7 +78,7 @@ const ROW = (id) => `(() => {
         text: flat(b.querySelector("span.truncate") ?? b),
         source: b.getAttribute("data-chat-suggest-chip"),
         judged: b.hasAttribute("data-chat-suggest-judged"),
-        scale: !!b.querySelector("svg.lucide-scale"),
+        search: !!b.querySelector("svg.lucide-search"),
         picked: b.hasAttribute("data-chat-suggest-picked"),
         title: b.title,
     }));
@@ -119,7 +119,7 @@ const LINES = (id) => `(() => {
             radius: parseFloat(cs.borderTopLeftRadius),
             tails: [...live.querySelectorAll("[data-chat-judge-tail]")].map(flat),
             icon: live.querySelector("[data-chat-judge-icon]")?.getAttribute("data-chat-judge-icon") ?? null,
-            scale: !!live.querySelector("svg.lucide-scale"),
+            search: !!live.querySelector("svg.lucide-search"),
             ruleWidth: parseFloat(cs.borderTopWidth),
             ruleStyle: cs.borderTopStyle,
             fontSize: cs.fontSize,
@@ -417,20 +417,20 @@ export default function (kit) {
             const first = await polishWaitFor(h, `(${ROW(A)}).length >= 3 && (${ROW(A)})[0]?.judged === true`, WAIT_MS);
             await polishNap(500);
 
-            // 1. the light pick's chip is the row's first, with the scale icon and data-chat-suggest-judged: the model's
+            // 1. the light pick's chip is the row's first, with the magnifier icon and data-chat-suggest-judged: the model's
             // order was B, A, cả hai, so it moved
             await run("1. judged chip first", async (name) => {
                 const got = await row();
                 const ask = (await asked()).at(-1);
                 await shot(h, "1-judged-first");
                 rec(
-                    `${name}: the row reads ${ORDER.join(" · ")} (the model said B first), only ${PICK} is [data-chat-suggest-judged] with the scale icon, the others have neither, and the model was asked with its turn's key and choice true`,
+                    `${name}: the row reads ${ORDER.join(" · ")} (the model said B first), only ${PICK} is [data-chat-suggest-judged] with the magnifier icon, the others have neither, and the model was asked with its turn's key and choice true`,
                     first &&
                         got.map((c) => c.text).join(" · ") === ORDER.join(" · ") &&
                         got[0].judged &&
-                        got[0].scale &&
+                        got[0].search &&
                         got.filter((c) => c.judged).length === 1 &&
-                        got.filter((c) => c.scale).length === 1 &&
+                        got.filter((c) => c.search).length === 1 &&
                         got.every((c) => c.source === "model") &&
                         ask?.choice === true &&
                         typeof ask?.key === "string" &&
@@ -484,8 +484,8 @@ export default function (kit) {
                 );
             });
 
-            // 4. the deep judge finishes with an option the agent never named, and picks it: its chip is first (the scale
-            // moves to it from the light pick's), and a click sends its label with the description and facts
+            // 4. the deep judge finishes with an option the agent never named, and picks it: its chip is first (the
+            // magnifier moves to it from the light pick's), and a click sends its label with the description and facts
             await run("4. added chip sends its full text", async (name) => {
                 const up = await nextTurn(null);
                 await polishNap(300);
@@ -502,15 +502,15 @@ export default function (kit) {
                 const sent = await polishWaitFor(h, `(window.${MOCK_KEY}?.inputs ?? []).some((s) => s.includes(${JSON.stringify(ADDED.label)}))`, SHORT_MS);
                 const texts = (await sentTexts(h)).slice(before);
                 rec(
-                    `${name}: once the deep judge is done the first chip is ${JSON.stringify(ADDED.label)} ([data-chat-suggest-chip="judge"], judged, with the scale) and ${PICK} has lost its mark; a click types ${JSON.stringify(ADDED_SEND)}`,
+                    `${name}: once the deep judge is done the first chip is ${JSON.stringify(ADDED.label)} ([data-chat-suggest-chip="judge"], judged, with the magnifier) and ${PICK} has lost its mark; a click types ${JSON.stringify(ADDED_SEND)}`,
                     up &&
                         typeof key4 === "string" &&
                         shown &&
                         got[0].source === "judge" &&
                         got[0].judged &&
-                        got[0].scale &&
+                        got[0].search &&
                         got.filter((c) => c.judged).length === 1 &&
-                        got.filter((c) => c.scale).length === 1 &&
+                        got.filter((c) => c.search).length === 1 &&
                         got.find((c) => c.text === PICK)?.judged !== true &&
                         got[0].title.includes(ADDED_SEND) &&
                         sent &&
@@ -586,9 +586,9 @@ export default function (kit) {
             const leaveName = () => h.cdp("Input.dispatchMouseEvent", { type: "mouseMoved", x: 4, y: 4 });
 
             // 6. under the question message (the last one) the light mark is a card: a small head "Gợi ý · haiku, chỉ đọc
-            // reply" with the scale icon, the light pick, the reason written out (no hover hint), Judge kỹ as its button, boxed
-            // in a one-device-pixel edge on the raised fill, and nothing of it in the composer. Its opening is sampled frame by
-            // frame
+            // reply" with the magnifier icon, the light pick, the reason written out (no hover hint), Đọc code rồi chọn as its
+            // button, boxed in a one-device-pixel edge on the raised fill, and nothing of it in the composer. Its opening is
+            // sampled frame by frame
             await run("6. light line", async (name) => {
                 await h.ev(SAMPLE);
                 const up = await nextTurn("tiếp tục");
@@ -599,7 +599,7 @@ export default function (kit) {
                 const frames = (await h.ev(`window.__cjSamples?.frames ?? []`)) ?? [];
                 await shot(h, "6-light-line");
                 rec(
-                    `${name}: the judge is a row of its own right after the question message's item (${UNDER} px under it, never inside it), a card: its head reads "Gợi ý · haiku, chỉ đọc reply", then the name ${PICK} and the reason "${REASON}" written out, no hover hint: state light, boxed (an edge all round, one device pixel, solid, rounded, the raised fill), the scale icon, 12.5 px text, Judge kỹ as its button; every judge line is in the conversation, none in the composer`,
+                    `${name}: the judge is a row of its own right after the question message's item (${UNDER} px under it, never inside it), a card: its head reads "Gợi ý · haiku, chỉ đọc reply", then the name ${PICK} and the reason "${REASON}" written out, no hover hint: state light, boxed (an edge all round, one device pixel, solid, rounded, the raised fill), the magnifier icon, 12.5 px text, Đọc code rồi chọn as its button; every judge line is in the conversation, none in the composer`,
                     up &&
                         sampled &&
                         l != null &&
@@ -618,10 +618,10 @@ export default function (kit) {
                         l.ruleWidth <= 1 &&
                         l.ruleStyle === "solid" &&
                         l.fontSize === "12.5px" &&
-                        l.icon === "scale" &&
-                        l.scale &&
+                        l.icon === "search" &&
+                        l.search &&
                         l.action === "judge" &&
-                        l.actionText === "Judge kỹ" &&
+                        l.actionText === "Đọc code rồi chọn" &&
                         all.every((x) => x.inChat),
                     { up, sampled, l, lines: all.length, inChat: all.map((x) => x.inChat) }
                 );
@@ -678,7 +678,7 @@ export default function (kit) {
             });
 
             // 8. a record with no light pick, on the live turn: the deep judge stays reachable, as the action alone
-            await run("8. no pick still offers Judge kỹ", async (name) => {
+            await run("8. no pick still offers Đọc code rồi chọn", async (name) => {
                 await h.ev(`window.${FAKE_KEY}.bare = true`);
                 const up = await nextTurn("tiếp", false);
                 await polishNap(900);
@@ -688,12 +688,12 @@ export default function (kit) {
                 const chips = await row();
                 await shot(h, "8-no-pick");
                 rec(
-                    `${name}: a record with no light pick on the live turn draws the action alone, as a line even under the last message: its text is exactly "Judge kỹ", with no name, no icon and no hint, and no chip is marked judged`,
+                    `${name}: a record with no light pick on the live turn draws the action alone, as a line even under the last message: its text is exactly "Đọc code rồi chọn", with no name, no icon and no hint, and no chip is marked judged`,
                     up &&
                         l != null &&
                         l.state === "light" &&
                         l.look === "line" &&
-                        l.text === "Judge kỹ" &&
+                        l.text === "Đọc code rồi chọn" &&
                         l.name == null &&
                         l.icon == null &&
                         l.action === "judge" &&
@@ -702,7 +702,8 @@ export default function (kit) {
                 );
             });
 
-            // 9. Judge kỹ: the line reads while the deep judge works, the spinner in place of the scale, its seconds ticking, and Dừng
+            // 9. Đọc code rồi chọn: the line reads while the deep judge works, the spinner in place of the magnifier, its
+            // seconds ticking, and Dừng
             await run("9. reading ticks", async (name) => {
                 const up = await nextTurn("tiếp");
                 await polishNap(900);
@@ -718,13 +719,13 @@ export default function (kit) {
                 const calls = await judgeCalls();
                 const seconds = (l) => Number(/^(\d+) s$/.exec(l?.tails?.[0] ?? "")?.[1] ?? NaN);
                 rec(
-                    `${name}: pressing Judge kỹ makes the line read "Judge đang đọc code, không thấy agent khuyên gì · N s": the spinner replaces the scale, the seconds go up between two reads 1.3 s apart, the action is Dừng, and the judge was asked once`,
+                    `${name}: pressing Đọc code rồi chọn makes the line read "Judge đang đọc code, không thấy agent khuyên gì · N s": the spinner replaces the magnifier, the seconds go up between two reads 1.3 s apart, the action is Dừng, and the judge was asked once`,
                     up &&
                         pressed &&
                         reading &&
                         first?.state === "reading" &&
                         first.icon === "spin" &&
-                        first.scale === false &&
+                        first.search === false &&
                         first.text.startsWith("Judge đang đọc code, không thấy agent khuyên gì · ") &&
                         second?.icon === "spin" &&
                         seconds(first) >= 0 &&
@@ -736,7 +737,8 @@ export default function (kit) {
                 );
             });
 
-            // 10. Dừng stops the judge and the line goes back to the light mark; Judge kỹ again runs it again, with retry
+            // 10. Dừng stops the judge and the line goes back to the light mark; Đọc code rồi chọn again runs it again, with
+            // retry
             await run("10. Stop returns to light", async (name) => {
                 const tk = await liveKey();
                 const stopsBefore = await h.ev(`window.${FAKE_KEY}.stops.length`);
@@ -751,7 +753,7 @@ export default function (kit) {
                 const judges = await h.ev(`window.${FAKE_KEY}.judges`);
                 await shot(h, "10-stop-retry");
                 rec(
-                    `${name}: Dừng calls the judge's stop once with this turn's key and the line is the light mark again (state light, "Gợi ý ${PICK}", Judge kỹ back); pressing Judge kỹ again asks the judge once more with retry true`,
+                    `${name}: Dừng calls the judge's stop once with this turn's key and the line is the light mark again (state light, "Gợi ý ${PICK}", Đọc code rồi chọn back); pressing Đọc code rồi chọn again asks the judge once more with retry true`,
                     pressedStop &&
                         light &&
                         stops.length === stopsBefore + 1 &&
@@ -760,7 +762,7 @@ export default function (kit) {
                         l?.state === "light" &&
                         l.name === PICK &&
                         l.action === "judge" &&
-                        l.actionText === "Judge kỹ" &&
+                        l.actionText === "Đọc code rồi chọn" &&
                         pressedAgain &&
                         again &&
                         judges.length === callsBefore + 1 &&
@@ -802,17 +804,17 @@ export default function (kit) {
                 await leaveName();
                 const last = frames.at(-1);
                 rec(
-                    `${name}: the card's head reads "Judge chọn · ${DEEP_COST}" (the cost its tail), then "${ADDED.label} (agent không nêu)" and the deep reason written out, with no action, the scale icon, and the added chip first in the row; hovering the name opens no tooltip`,
+                    `${name}: the card's head reads "Đã đọc code: chọn · ${DEEP_COST}" (the cost its tail), then "${ADDED.label} (agent không nêu)" and the deep reason written out, with no action, the magnifier icon, and the added chip first in the row; hovering the name opens no tooltip`,
                     done &&
                         l?.state === "done" &&
                         l.look === "card" &&
-                        l.head === `Judge chọn · ${DEEP_COST}` &&
+                        l.head === `Đã đọc code: chọn · ${DEEP_COST}` &&
                         l.text.includes(`${ADDED.label} (agent không nêu)`) &&
                         l.name === ADDED.label &&
                         l.tails.length === 1 &&
                         l.tails[0] === DEEP_COST &&
                         l.action == null &&
-                        l.icon === "scale" &&
+                        l.icon === "search" &&
                         chips[0]?.text === ADDED.label &&
                         l.reason === DEEP_REASON &&
                         hovered &&
@@ -860,7 +862,7 @@ export default function (kit) {
                         l.name === PICK &&
                         l.reason === REASON &&
                         l.text.includes(`Judge không xong: ${JUDGE_ERROR}`) &&
-                        l.icon === "scale" &&
+                        l.icon === "search" &&
                         l.action === "retry" &&
                         l.actionText === "Thử lại" &&
                         chips[0]?.judged === true &&
@@ -924,7 +926,7 @@ export default function (kit) {
                 const live = await lineFor(await liveKey());
                 await shot(h, "14-history");
                 rec(
-                    `${name}: once a chip answered, the old message's card is a line again ("Gợi ý ${PICK}", under its own message) with no action, the older deep result still reads "Judge chọn ${ADDED.label}", and only the new turn's card offers Judge kỹ`,
+                    `${name}: once a chip answered, the old message's card is a line again ("Gợi ý ${PICK}", under its own message) with no action, the older deep result still reads "Đã đọc code: chọn ${ADDED.label}", and only the new turn's card offers Đọc code rồi chọn`,
                     clicked &&
                         sent &&
                         up &&
@@ -935,7 +937,7 @@ export default function (kit) {
                         old.under.includes(oldReply) &&
                         old.action == null &&
                         doneOld?.state === "done" &&
-                        doneOld.text.startsWith(`Judge chọn ${ADDED.label}`) &&
+                        doneOld.text.startsWith(`Đã đọc code: chọn ${ADDED.label}`) &&
                         doneOld.action == null &&
                         live?.look === "card" &&
                         live.action === "judge",
@@ -964,7 +966,7 @@ export default function (kit) {
                 const chips = await row();
                 await shot(h, "15-restart");
                 rec(
-                    `${name}: after the records are lost and the pane mounts again (the layer is a new element), the list command is asked once more for this agent and the line under the question message is back ("Gợi ý ${PICK}", Judge kỹ), so is the older "Judge chọn ${ADDED.label}" line, and the judged chip is first`,
+                    `${name}: after the records are lost and the pane mounts again (the layer is a new element), the list command is asked once more for this agent and the line under the question message is back ("Gợi ý ${PICK}", Đọc code rồi chọn), so is the older "Đã đọc code: chọn ${ADDED.label}" line, and the judged chip is first`,
                     had >= 2 &&
                         emptied &&
                         remounted &&
@@ -976,7 +978,7 @@ export default function (kit) {
                         l.name === PICK &&
                         l.action === "judge" &&
                         doneOld?.state === "done" &&
-                        doneOld.text.startsWith(`Judge chọn ${ADDED.label}`) &&
+                        doneOld.text.startsWith(`Đã đọc code: chọn ${ADDED.label}`) &&
                         chips[0]?.judged === true,
                     { had, emptied, remounted, back, lists: lists.length, listsBefore, l, doneOld, chips: chips.map((c) => c.judged) }
                 );
@@ -1035,7 +1037,7 @@ export default function (kit) {
                 }
                 const last = frames.at(-1);
                 rec(
-                    `${name}: with reduced motion emulated the line's first frame is already its end state (opacity 1, ${UNDER} px under the message, its final height, and no frame in between), and Judge kỹ turns it to reading within two frames with one child in its body at opacity 1`,
+                    `${name}: with reduced motion emulated the line's first frame is already its end state (opacity 1, ${UNDER} px under the message, its final height, and no frame in between), and Đọc code rồi chọn turns it to reading within two frames with one child in its body at opacity 1`,
                     emulated &&
                         up &&
                         sampled &&
