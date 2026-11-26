@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/wavetermdev/waveterm/pkg/baseds"
@@ -31,6 +32,7 @@ type originWorld struct {
 	stampErr error
 	stamps   []string
 	sent     *[]agentsDelivery
+	now      time.Time // the clock the holds read
 }
 
 // useOriginWorld scripts the roster over facts and returns the world. Like the store, the world's list holds only the
@@ -82,8 +84,22 @@ func useOriginWorld(t *testing.T, facts *agentRosterFacts) *originWorld {
 	// one test's holds on a run id must not reach the next
 	originHeldMu.Lock()
 	clear(originHeld)
+	clear(originAbsences)
 	originHeldMu.Unlock()
+	w.now = time.Now()
+	swap(t, &originNow, func() time.Time {
+		w.mu.Lock()
+		defer w.mu.Unlock()
+		return w.now
+	})
 	return w
+}
+
+// advance moves the clock the holds read.
+func (w *originWorld) advance(d time.Duration) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.now = w.now.Add(d)
 }
 
 func (w *originWorld) add(runs ...*waveobj.Run) {
@@ -253,12 +269,52 @@ func TestNotifyOriginsWaitsForATabWhoseAgentIsNotRunning(t *testing.T) {
 	}
 
 	setShell(true)
+	w.advance(originAbsentHoldMax)
 	notifyOrigins(context.Background())
 	if len(*w.sent) != 1 || (*w.sent)[0].blockId != agentsBlockB || !strings.Contains((*w.sent)[0].text, "landed") {
 		t.Fatalf("deliveries = %+v, want the landed text once the agent shows idle", *w.sent)
 	}
 	if run.OriginNotifiedTs == 0 {
 		t.Errorf("run not stamped after the send")
+	}
+}
+
+// a tab whose agent never comes back is asked about less and less often, up to originAbsentHoldMax between passes, and
+// its message is never dropped: the roster is not read every 15 s for good
+func TestNotifyOriginsBacksOffATabWithNoAgent(t *testing.T) {
+	facts := threeAgents()
+	for i := range facts.Tabs {
+		if facts.Tabs[i].Tab.OID == agentsTabB {
+			facts.Tabs[i].ShellRunning = false
+		}
+	}
+	w := useOriginWorld(t, facts)
+	reads := 0
+	real := loadAgentRosterFacts
+	swap(t, &loadAgentRosterFacts, func(ctx context.Context) (*agentRosterFacts, error) { reads++; return real(ctx) })
+	run := originRun("Brainstorm ideas")
+	w.add(run)
+
+	notifyOrigins(context.Background())
+	notifyOrigins(context.Background()) // the next tick, at once: held
+	if reads != 1 {
+		t.Fatalf("the roster was read %d times in two passes, want once", reads)
+	}
+	// each absence doubles the hold, up to its cap
+	for i, hold := range []time.Duration{originAbsentHold, 2 * originAbsentHold, 4 * originAbsentHold, originAbsentHoldMax, originAbsentHoldMax} {
+		w.advance(hold - time.Second)
+		notifyOrigins(context.Background())
+		if reads != i+1 {
+			t.Fatalf("pass inside hold %d (%s) read the roster: %d reads", i, hold, reads)
+		}
+		w.advance(time.Second)
+		notifyOrigins(context.Background())
+		if reads != i+2 {
+			t.Fatalf("pass after hold %d (%s): %d reads, want %d", i, hold, reads, i+2)
+		}
+	}
+	if run.OriginNotifiedTs != 0 || len(w.stamped()) != 0 {
+		t.Fatalf("a run whose tab still exists was stamped: %v", w.stamped())
 	}
 }
 
