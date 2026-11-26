@@ -34,6 +34,8 @@ and a picture given to a line that is not big.
 
 ### Fixed
 
+- A pair no longer passes the judge a line the working agent wrote halfway through its turn (such as "Final check:")
+  in place of its finished reply. It now waits until the reply is saved before it reads it.
 - A diagram opened full size no longer stutters when you scroll it: a two-finger swipe or a mouse wheel scrolls it the
   way a page scrolls, smooth even while agents are busy. Zoom with a pinch, cmd + wheel, or + and -.
 - Closing an agent now closes the judges arcterm opened for it, awake or asleep, and ends its pair. Before, a judge that
