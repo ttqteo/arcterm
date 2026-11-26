@@ -94,6 +94,26 @@ describe("a dev fixture roster's made-up blocks", () => {
         expect(globalStore.get(getStartErrorAtom("blk-1"))).toBeUndefined();
     });
 
+    it("a missing-block refusal recorded before the fixture roster stood in is cleared when it does", async () => {
+        // a scenario that set the same made-up roster without the flag left the refusal on the block
+        resync.mockRejectedValue(new Error("error getting block: not found"));
+        await expect(resyncController(data)).rejects.toThrow();
+        globalStore.set(getStartErrorAtom("blk-2"), "remote connections are not supported");
+        setFixtureRoster(true);
+        expect(globalStore.get(getStartErrorAtom("blk-1"))).toBeUndefined();
+        expect(globalStore.get(getStartErrorAtom("blk-2"))).toBe("remote connections are not supported");
+        globalStore.set(getStartErrorAtom("blk-2"), undefined);
+    });
+
+    it("a missing-block start under a fixture roster clears an earlier refusal of that block", async () => {
+        globalStore.set(getStartErrorAtom("blk-1"), "error getting block: not found");
+        setFixtureRoster(true);
+        globalStore.set(getStartErrorAtom("blk-1"), "error getting block: not found");
+        resync.mockRejectedValue(new Error("error getting block: not found"));
+        await expect(resyncController(data)).resolves.toBeUndefined();
+        expect(globalStore.get(getStartErrorAtom("blk-1"))).toBeUndefined();
+    });
+
     it("any other refusal under a fixture roster is still the agent failing to start", async () => {
         setFixtureRoster(true);
         resync.mockRejectedValue(new Error("remote connections are not supported"));
