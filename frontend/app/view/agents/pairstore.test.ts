@@ -28,6 +28,7 @@ import type { AgentsViewModel } from "./agents";
 import { judgeAgainOf } from "./pairopen";
 import {
     devMockPairsAtom,
+    devMockRestingAtom,
     loadPair,
     loadPairHistory,
     loadPairs,
@@ -38,6 +39,7 @@ import {
     pairSeenAtom,
     pairViewAtom,
     pairViewErrorAtom,
+    restingJudgesAtom,
     resumePair,
 } from "./pairstore";
 
@@ -62,6 +64,15 @@ beforeEach(() => {
     history.mockReset();
     resume.mockReset();
     globalStore.set(devMockPairsAtom, null);
+    globalStore.set(devMockRestingAtom, null);
+});
+
+const resting = (tab: string, over: Partial<PairResting> = {}): PairResting => ({
+    tab,
+    name: `Judge: ${tab}`,
+    workertab: `worker-of-${tab}`,
+    pairid: `pair-of-${tab}`,
+    ...over,
 });
 
 describe("reading pairs", () => {
@@ -137,6 +148,60 @@ describe("the dev mock", () => {
         expect(globalStore.get(pairListAtom).map((p) => p.id)).toEqual(["live"]);
         expect(globalStore.get(pairViewAtom("ended"))).toBe(ended);
         expect(globalStore.get(pairViewAtom("synced"))).toBe(synced);
+    });
+});
+
+describe("the resting judges", () => {
+    it("is empty before the first read, then the `resting` of the list answer", async () => {
+        expect(globalStore.get(restingJudgesAtom)).toEqual([]);
+        list.mockResolvedValueOnce({ pairs: [info("a")], resting: [resting("j1"), resting("j2")] });
+        await loadPairs();
+        expect(globalStore.get(restingJudgesAtom)).toEqual([resting("j1"), resting("j2")]);
+    });
+
+    it("reads an answer with no `resting` (the server omits an empty list) as none, and a later list replaces the old", async () => {
+        list.mockResolvedValueOnce({ pairs: [], resting: [resting("j3")] });
+        await loadPairs();
+        expect(globalStore.get(restingJudgesAtom).map((r) => r.tab)).toEqual(["j3"]);
+        list.mockResolvedValueOnce({ pairs: [] });
+        await loadPairs();
+        expect(globalStore.get(restingJudgesAtom)).toEqual([]);
+    });
+
+    it("keeps the list it had when a read fails, and logs", async () => {
+        const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+        list.mockResolvedValueOnce({ pairs: [], resting: [resting("j4")] });
+        await loadPairs();
+        list.mockRejectedValueOnce(new Error("down"));
+        await loadPairs();
+        expect(globalStore.get(restingJudgesAtom).map((r) => r.tab)).toEqual(["j4"]);
+        expect(logged).toHaveBeenCalled();
+        logged.mockRestore();
+    });
+
+    it("is the mock's list while it is set, [] included, and the server's again when it is cleared", async () => {
+        list.mockResolvedValue({ pairs: [], resting: [resting("server")] });
+        await loadPairs();
+
+        globalStore.set(devMockRestingAtom, [resting("mock")]);
+        expect(globalStore.get(restingJudgesAtom).map((r) => r.tab)).toEqual(["mock"]);
+        globalStore.set(devMockRestingAtom, []);
+        expect(globalStore.get(restingJudgesAtom)).toEqual([]);
+
+        globalStore.set(devMockRestingAtom, null);
+        expect(globalStore.get(restingJudgesAtom).map((r) => r.tab)).toEqual(["server"]);
+    });
+
+    it("is not read from the server while the pairs are mocked, and its own mock still shows", async () => {
+        // the pairs mock stops loadPairs reading anything, as it does for the pair list
+        list.mockResolvedValue({ pairs: [], resting: [resting("server2")] });
+        await loadPairs();
+        globalStore.set(devMockPairsAtom, [view("p", 1)]);
+        list.mockClear();
+        await loadPairs();
+        expect(list).not.toHaveBeenCalled();
+        globalStore.set(devMockRestingAtom, [resting("mock2")]);
+        expect(globalStore.get(restingJudgesAtom).map((r) => r.tab)).toEqual(["mock2"]);
     });
 });
 

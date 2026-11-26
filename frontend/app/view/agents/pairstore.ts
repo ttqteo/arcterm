@@ -7,8 +7,12 @@
 // list per project, read the same way. What outlives a view is here too: which message the conversation scrolls to, and
 // how many messages of each pair the person has seen (the header button's "N new"). Pure rules are in pairmodel.ts.
 //
+// The resting judges come with the same list answer (`resting` on PairListCommand): judges arcterm launched whose newest pair
+// has ended. The tree hides one under its worker's row, Add judge wakes one, and closing a worker closes the ones asleep.
+//
 // The dev mock (devMockPairsAtom) is how a CDP scenario seeds pairs with no agent running: while it is set it replaces the
-// server's answer whole, as devmock.ts's devMockAgentsAtom does the roster, and nothing is read from wavesrv.
+// server's answer whole, as devmock.ts's devMockAgentsAtom does the roster, and nothing is read from wavesrv. The resting
+// list has its own mock (devMockRestingAtom), which replaces the server's list the same way.
 
 import { globalStore } from "@/app/store/jotaiStore";
 import { waveEventSubscribeSingle } from "@/app/store/wps";
@@ -28,7 +32,11 @@ const sameProject = (a: string, b: string) => councilProjectKey(a) === councilPr
 /** null = no mock: the server's pairs. A non-null array (INCLUDING []) replaces them whole. */
 export const devMockPairsAtom = atom<PairView[] | null>(null) as PrimitiveAtom<PairView[] | null>;
 
+/** null = no mock: the server's resting judges. A non-null array (INCLUDING []) replaces them whole. */
+export const devMockRestingAtom = atom<PairResting[] | null>(null) as PrimitiveAtom<PairResting[] | null>;
+
 const serverPairsAtom = atom<PairInfo[] | null>(null) as PrimitiveAtom<PairInfo[] | null>;
+const serverRestingAtom = atom<PairResting[]>([]) as PrimitiveAtom<PairResting[]>;
 const serverViewAtom = atomFamily((_id: string) => atom<PairView | null>(null) as PrimitiveAtom<PairView | null>);
 const serverHistoryAtom = atomFamily(
     (_project: string) => atom<PairInfo[] | null>(null) as PrimitiveAtom<PairInfo[] | null>,
@@ -41,6 +49,10 @@ export const pairListAtom: Atom<PairInfo[]> = atom((get) => {
     const mock = get(devMockPairsAtom);
     return mock != null ? mock.filter((p) => p.state !== "ended" && !p.synced) : (get(serverPairsAtom) ?? []);
 });
+
+/** The resting judges: launched judges whose newest pair has ended, each with the working agent it last judged. Empty
+ *  before the first read. The server's list, or the mock's while devMockRestingAtom is set. */
+export const restingJudgesAtom: Atom<PairResting[]> = atom((get) => get(devMockRestingAtom) ?? get(serverRestingAtom));
 
 /** A project's pairs in every state, ended and synced ones too ("" is every project), or null before the first read. The
  *  server lists them newest first; a mocked list keeps the mock's order. */
@@ -127,7 +139,8 @@ function subscribePairUpdate() {
     });
 }
 
-/** Reads the active pairs into the list atom. A failure leaves the list as it was and logs. */
+/** Reads the active pairs into the list atom, and the resting judges that come with them into theirs. A failure leaves
+ *  both as they were and logs. */
 export async function loadPairs(): Promise<void> {
     subscribePairUpdate();
     if (mocked()) {
@@ -138,6 +151,8 @@ export async function loadPairs(): Promise<void> {
         const rtn = await RpcApi.PairListCommand(TabRpcClient);
         if (seq === listSeq) {
             globalStore.set(serverPairsAtom, rtn?.pairs ?? []);
+            // the server leaves `resting` out when it is empty
+            globalStore.set(serverRestingAtom, rtn?.resting ?? []);
         }
     } catch (err) {
         console.error("loading the pairs failed", err);
@@ -214,6 +229,15 @@ export function usePairs(): PairInfo[] {
         void ensurePairs();
     }, []);
     return pairs;
+}
+
+/** The resting judges, kept read while the caller shows (they come with the active pairs' list). */
+export function useRestingJudges(): PairResting[] {
+    const resting = useAtomValue(restingJudgesAtom);
+    useEffect(() => {
+        void ensurePairs();
+    }, []);
+    return resting;
 }
 
 /** The pair a tab is in, as the working agent or as a judge, with its role; null when it is in none. */

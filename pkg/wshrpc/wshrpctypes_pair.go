@@ -45,8 +45,18 @@ type PairInfo struct {
 	Synced       bool       `json:"synced,omitempty"` // the pair came from the synced folder: it reads as of the last sync
 }
 
+// PairResting is a judge arcterm launched for a job whose newest pair has ended: it rests (asleep, or about to be) and
+// is hidden under its worker's row while that worker is on the roster, until Add judge wakes it for a new round.
+type PairResting struct {
+	Tab       string `json:"tab"`       // the judge's tab
+	Name      string `json:"name"`      // as the roster names it ("Judge: <worker>")
+	WorkerTab string `json:"workertab"` // the working agent of the pair it last judged
+	PairId    string `json:"pairid"`    // that pair
+}
+
 type CommandPairListRtnData struct {
-	Pairs []PairInfo `json:"pairs"`
+	Pairs   []PairInfo    `json:"pairs"`
+	Resting []PairResting `json:"resting,omitempty"` // PairListCommand only; PairHistoryCommand leaves it out
 }
 
 // CommandPairHistoryData names the project whose pairs are read; "" is every project.
@@ -139,7 +149,8 @@ type CommandPairStartData struct {
 	HoldHeavy bool   `json:"holdheavy"`
 	TokenCap  int64  `json:"tokencap"` // 0: 3,000,000
 	Note      string `json:"note"`
-	Briefed   bool   `json:"briefed"` // the judge was launched with PairBrief's text as its task
+	Briefed   bool   `json:"briefed"`            // the judge was launched with PairBrief's text as its task
+	Launched  bool   `json:"launched,omitempty"` // the judge is a tab arcterm launched for the job: a new "Judge: <worker>" tab, or a resting judge woken
 }
 
 // CommandPairSayData is the person's message. To: both | worker | judge | a judge's tab ("" is both). ReplyTo names the

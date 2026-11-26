@@ -2703,6 +2703,7 @@ declare global {
     // wshrpc.CommandPairListRtnData
     type CommandPairListRtnData = {
         pairs: PairInfo[];
+        resting?: PairResting[];
     };
 
     // wshrpc.CommandPairRunNowData
@@ -2729,6 +2730,7 @@ declare global {
         tokencap: number;
         note: string;
         briefed: boolean;
+        launched?: boolean;
     };
 
     // wshrpc.CommandPauseRunData
@@ -5048,6 +5050,14 @@ declare global {
         reason: string;
         summary: string;
         decided: PairDecided;
+    };
+
+    // wshrpc.PairResting
+    type PairResting = {
+        tab: string;
+        name: string;
+        workertab: string;
+        pairid: string;
     };
 
     // wshrpc.PairSide

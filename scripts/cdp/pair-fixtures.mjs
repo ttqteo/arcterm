@@ -1,7 +1,8 @@
 // Fixtures for the pair scenarios (pair-conversation, pair-decided, pair-header, pair-tree; docs/superpowers/specs/
 // 2026-11-25-agent-pair-judge-design.md). No agent runs and wavesrv is never asked: the roster goes in the page's dev mock
 // roster (setRoster in agent-page-fixtures.mjs), the pair in the page's dev mock pairs (devMockPairsAtom, pairstore.ts),
-// and the eight RpcApi.Pair*Command methods are replaced by stubs that record what the page calls.
+// the resting judges (launched judges whose newest pair has ended) in the page's dev mock resting list
+// (devMockRestingAtom), and the eight RpcApi.Pair*Command methods are replaced by stubs that record what the page calls.
 //
 //   PAIR            the ids: the worker, the judge, and `other`, a live agent in no pair (the second judge of a two-judge view)
 //   PAUSE_IDS       the ids of the pause messages pausedPairView writes: the newest and, with olderPause, the earlier one
@@ -10,7 +11,10 @@
 //   pairView        the R1 board's exchange in English, as the PairView wavesrv would send it
 //   pausedPairView  the same pair stopped: its last message is a pause that carries the R1 Decided list
 //   seedPair        set the page's dev mock pairs (null clears them, and the server's answer shows again)
-//   stubPairRpc     replace the eight commands in the page; restorePairRpc puts the generated client's own back
+//   seedResting     set the page's dev mock resting judges, [{ tab, name, workertab, pairid }] (null clears them; [] is
+//                   a mock of no resting judge at all)
+//   stubPairRpc     replace the eight commands in the page; restorePairRpc puts the generated client's own back.
+//                   PairListCommand answers { pairs, resting } from the two mocks
 //   setPairResumeFails  make the resume stub fail (or work again) from now on
 //   pairRpcCalls    what the page called through the stubs: one command's calls, or every command's
 //
@@ -306,16 +310,27 @@ export const seedPair = (h, views) =>
         return true;`
     );
 
+// the page's dev mock resting judges: what restingJudgesAtom reads instead of wavesrv's `resting`. null clears them; [] is
+// a mock of none, so a scenario can show the tree with no resting judge while the server might hold some.
+export const seedResting = (h, list) =>
+    agentPage(
+        h,
+        `const { devMockRestingAtom } = await mod("app/view/agents/pairstore.ts");
+        globalStore.set(devMockRestingAtom, ${q(list ?? null)});
+        return true;`
+    );
+
 // Replaces the page's RpcApi.Pair*Command methods and records each call (its data, as the page passed it). The seeded views
-// (devMockPairsAtom) are what the stubs answer from: PairList their infos, PairGet the one named, PairStart the pair whose
-// working agent is `workertab`, else the first. PairBrief answers a fixed text. PairResume throws RESUME_ERROR while the
-// page's failResume flag is set (setPairResumeFails), and otherwise flips the pair it names to relaying (state, stopreason
-// and canresume in the seeded view), as the server does, so the next read of it draws no Resume; the rest answer nothing.
+// (devMockPairsAtom) are what the stubs answer from: PairList their infos, with the resting mock (devMockRestingAtom, [] when
+// none is set) as `resting`; PairGet the one named, PairStart the pair whose working agent is `workertab`, else the first.
+// PairBrief answers a fixed text. PairResume throws RESUME_ERROR while the page's failResume flag is set
+// (setPairResumeFails), and otherwise flips the pair it names to relaying (state, stopreason and canresume in the seeded
+// view), as the server does, so the next read of it draws no Resume; the rest answer nothing.
 export const stubPairRpc = (h) =>
     agentPage(
         h,
         `const { RpcApi } = await mod("app/store/wshclientapi.ts");
-        const { devMockPairsAtom } = await mod("app/view/agents/pairstore.ts");
+        const { devMockPairsAtom, devMockRestingAtom } = await mod("app/view/agents/pairstore.ts");
         const fx = (window.__pairFx ??= {});
         const calls = (fx.calls ??= {});
         const record = (name, data) => (calls[name] ??= []).push(structuredClone(data ?? null));
@@ -326,7 +341,7 @@ export const stubPairRpc = (h) =>
         });
         RpcApi.PairListCommand = async () => {
             record("PairListCommand", null);
-            return structuredClone({ pairs: views().map(info) });
+            return structuredClone({ pairs: views().map(info), resting: globalStore.get(devMockRestingAtom) ?? [] });
         };
         RpcApi.PairGetCommand = async (_c, d) => {
             record("PairGetCommand", d);
