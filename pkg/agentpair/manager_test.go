@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -36,6 +37,7 @@ type fakeAgent struct {
 	lastSince              int64    // the sinceMs of the last Tokens call
 	transcript             string   // the transcript path Agent reports; add sets "/t/<tab>", so the session id is the tab
 	agentReads             int      // how many times Agent was asked for it
+	slept                  int      // how many times the pair put it to sleep
 }
 
 // fakeLink is a Link over a map of agents. A send starts a turn, as it does on the real roster.
@@ -45,6 +47,7 @@ type fakeLink struct {
 	clock    int64
 	sendErr  error
 	agentErr error // when set, Agent fails with it
+	sleepErr error // when set, Sleep refuses with it
 }
 
 func newFakeLink() *fakeLink { return &fakeLink{agents: map[string]*fakeAgent{}, clock: 1_000_000} }
@@ -120,6 +123,32 @@ func (l *fakeLink) Agent(_ context.Context, tab string) (AgentFacts, error) {
 		return AgentFacts{}, l.agentErr
 	}
 	return AgentFacts{Name: a.name, Harness: a.harness, Project: a.project, Cwd: "/work/" + tab, Transcript: a.transcript}, nil
+}
+
+// Sleep puts an idle agent to sleep, as the roster's sleep does: an agent that is working, asking or asleep is refused.
+func (l *fakeLink) Sleep(_ context.Context, tab string) error {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.sleepErr != nil {
+		return l.sleepErr
+	}
+	a := l.agents[tab]
+	if a == nil {
+		return fmt.Errorf("no agent %s", tab)
+	}
+	if a.state != "idle" {
+		return fmt.Errorf("agent %s is not idle (%s); only an idle agent can sleep", tab, a.state)
+	}
+	a.state = "sleeping"
+	a.slept++
+	return nil
+}
+
+// slept is how many times the pair put the agent at tab to sleep.
+func (l *fakeLink) slept(tab string) int {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.agents[tab].slept
 }
 
 // agentReads is how many times the pair asked the roster who the agent at tab is.
@@ -647,22 +676,309 @@ func TestManagerResumeByThePerson(t *testing.T) {
 	contains(t, "the judge's prompt", j[1], "From the person", "Carry on with the pilot.", `From the working agent "Plan oracle"`, "On it.")
 }
 
-func TestManagerResumeByAWorkerReply(t *testing.T) {
-	r := newRig(t)
-	v := r.paired(workerPlan)
-	r.reply("j1", "> Plan v1.\nNothing to add.\n"+judgeBlock("no new points"))
-
-	r.reply("w", "The person asked me for one more thing.\n"+pairBlock("O1 more"))
-	view := r.view(v.Id)
-	if view.State != StateRelaying || view.StopReason != "" {
-		t.Fatalf("state %s / %s after the worker's reply", view.State, view.StopReason)
+// stored is the pair's file as it is saved now: an ended pair is no longer the manager's, so this is the one place to read it.
+func (r *rig) stored(id string) *Pair {
+	r.t.Helper()
+	p, err := store{dir: r.dir}.read(id)
+	if err != nil {
+		r.t.Fatalf("reading the file of pair %s: %v", id, err)
 	}
+	return p
+}
+
+// stoppedFor pairs "w" with the judge "j1" (launched for the job when launched) and stops the pair for reason, both agents
+// idle, as the person finds a pair that paused. After a no-new-points or settled stop nothing is queued; after the token
+// cap the judge's finding still is, for the worker, which has not been sent it.
+func (r *rig) stoppedFor(reason string, launched bool) *wshrpc.PairView {
+	r.t.Helper()
+	d := wshrpc.CommandPairStartData{Launched: launched}
+	switch reason {
+	case StopNoNewPoints:
+		r.link.give("w", workerPlan)
+		v := r.start(d)
+		r.link.setState("j1", "idle")
+		r.reply("j1", "> Plan v1.\nNothing to add.\n"+judgeBlock("no new points"))
+		return v
+	case StopSettled:
+		r.link.give("w", "Settled.\n"+pairBlock("D1 a"))
+		v := r.start(d)
+		r.link.setState("j1", "idle")
+		r.reply("j1", "> Settled.\nAgreed.\n```arc-judge\n```")
+		return v
+	case StopTokenCap:
+		r.link.give("w", workerPlan)
+		v := r.start(d)
+		r.link.setState("j1", "idle")
+		r.link.agent("j1").tokens = 3_500_000
+		r.reply("j1", "> Plan v1.\nA finding.\n"+judgeBlock("new: a")) // the cap stops the pair with the finding still queued for the worker
+		return v
+	}
+	r.t.Fatalf("no way to stop a pair for %q", reason)
+	return nil
+}
+
+// the person goes back to the working agent: on a stopped pair, whatever the stop, a worker turn that answers nothing
+// ends the round. The pair ends with a line that says why, the turn is not recorded and moves no judge's queue, and the
+// judge the pair launched sleeps.
+func TestRoundEndsWhenTheWorkerTurnAnswersNothing(t *testing.T) {
+	for _, reason := range []string{StopNoNewPoints, StopSettled, StopTokenCap} {
+		t.Run(reason, func(t *testing.T) {
+			r := newRig(t)
+			v := r.stoppedFor(reason, true)
+			before := r.internal(v.Id)
+			judgeSent := len(r.link.sent("j1"))
+			messages := len(before.Messages)
+
+			r.reply("w", "The person asked me for one more thing.\n"+pairBlock("O1 more"))
+
+			if r.m.Paired("w") || r.m.Paired("j1") || len(r.m.List()) != 0 {
+				t.Fatal("the pair is still the manager's")
+			}
+			if _, err := r.m.Get(v.Id); !errors.Is(err, ErrNoPair) {
+				t.Fatalf("Get = %v, want ErrNoPair: an ended pair is not the manager's", err)
+			}
+			got := r.stored(v.Id)
+			if got.State != StateEnded || got.StopReason != reason {
+				t.Fatalf("stored state %s / %s, want ended, with the reason it stopped for (%s)", got.State, got.StopReason, reason)
+			}
+			if len(got.Messages) != messages+1 {
+				t.Fatalf("%d messages, had %d: the turn is not recorded, the round's end is the one line added", len(got.Messages), messages)
+			}
+			if last := got.Messages[len(got.Messages)-1]; last.From != FromSystem || last.Raw != "Round ended: you went back to the working agent" {
+				t.Fatalf("last message = %+v, want the line that says the round ended", last)
+			}
+			if hasRaw(got, "one more thing") {
+				t.Fatal("the worker's turn after the stop is in the conversation")
+			}
+			if got.Seen["w"] != r.link.agent("w").answerTs {
+				t.Fatalf("seen mark %d, want the turn's time %d: it is marked seen", got.Seen["w"], r.link.agent("w").answerTs)
+			}
+			if len(got.Pending["j1"]) != 0 || len(r.link.sent("j1")) != judgeSent {
+				t.Fatalf("judge queue %v, judge sent %d prompts (had %d): the turn moves no judge's queue", got.Pending["j1"], len(r.link.sent("j1")), judgeSent)
+			}
+			if r.link.slept("j1") != 1 || r.link.agent("j1").state != "sleeping" {
+				t.Fatalf("the launched judge slept %d times, state %s: want it asleep", r.link.slept("j1"), r.link.agent("j1").state)
+			}
+			if r.m.Watches("j1") {
+				t.Fatal("the judge slept already, and the manager still waits for its turn end")
+			}
+			if r.published() == 0 {
+				t.Fatal("nothing was published")
+			}
+		})
+	}
+}
+
+func hasRaw(p *Pair, text string) bool {
+	return slices.ContainsFunc(p.Messages, func(m Message) bool { return strings.Contains(m.Raw, text) })
+}
+
+// a judge the person picked from the live list is not the pair's to put to sleep: it goes back to the tree as it was
+func TestRoundEndDoesNotSleepAPickedJudge(t *testing.T) {
+	r := newRig(t)
+	v := r.stoppedFor(StopNoNewPoints, false)
+	r.reply("w", "One more thing the person asked me.\n"+pairBlock("O1 more"))
+	if got := r.stored(v.Id); got.State != StateEnded {
+		t.Fatalf("stored state %s: the round ends all the same", got.State)
+	}
+	if r.link.slept("j1") != 0 || r.link.agent("j1").state != "idle" {
+		t.Fatalf("a picked judge slept %d times, state %s", r.link.slept("j1"), r.link.agent("j1").state)
+	}
+	if r.m.Watches("j1") {
+		t.Fatal("a picked judge is waited on for a sleep")
+	}
+}
+
+// a worker reply to a message the judge sent before the stop is the pair's: it is recorded and queued for the judge, and
+// the pair stays stopped. Two judges: the first one's reply was sent to the working agent, and the second's "no new
+// points" stopped the pair while the working agent was still answering the first.
+func TestRoundKeepsAnAnswerToAJudgeReplySentBeforeTheStop(t *testing.T) {
+	r := newRig(t)
+	r.link.add("j2", "Judge two")
+	r.link.give("w", workerPlan)
+	v := r.start(wshrpc.CommandPairStartData{Launched: true})
+	r.start(wshrpc.CommandPairStartData{JudgeTab: "j2", Launched: true})
+	r.link.setState("j1", "idle")
+	r.link.setState("j2", "idle")
+
+	r.reply("j1", "> Plan v1.\nFine by me.\n"+judgeBlock("no new points")) // the pair goes on: judge two has not answered
+	first := lastLine(r.view(v.Id))
+	if first.From != FromJudge || len(r.link.sent("w")) != 1 {
+		t.Fatalf("last line %+v, the worker was sent %d prompts: want judge one's reply sent on", first, len(r.link.sent("w")))
+	}
+	r.reply("j2", "> Plan v1.\nNothing to add.\n"+judgeBlock("no new points"))
+	if view := r.view(v.Id); view.State != StateStopped || view.StopReason != StopNoNewPoints {
+		t.Fatalf("state %s / %s, want the pair stopped at no new points", view.State, view.StopReason)
+	}
+	in := r.internal(v.Id)
+	if !in.Messages[len(in.Messages)-2].Withheld || in.Messages[len(in.Messages)-3].Withheld {
+		t.Fatalf("withheld marks: judge one's %v, judge two's %v: only the reply the stop took out of the queue is withheld",
+			in.Messages[len(in.Messages)-3].Withheld, in.Messages[len(in.Messages)-2].Withheld)
+	}
+
+	r.reply("w", "Thanks, answered.\n"+pairBlock("O1 a"))
+	view := r.view(v.Id)
+	if view.State != StateStopped || view.StopReason != StopNoNewPoints {
+		t.Fatalf("state %s / %s: an answer to a sent message does not resume the pair", view.State, view.StopReason)
+	}
+	answer := lastWorkerMsg(view)
+	if !strings.HasPrefix(answer.Text, "Thanks, answered.") || answer.ReplyTo != first.Id {
+		t.Fatalf("the worker's answer = %+v, want it recorded as the answer to judge one's reply %s", answer, first.Id)
+	}
+	if in := r.internal(v.Id); !slices.Contains(in.Pending["j1"], answer.Id) || !slices.Contains(in.Pending["j2"], answer.Id) {
+		t.Fatalf("pending = %v: the answer is queued for both judges", in.Pending)
+	}
+	if r.link.slept("j1")+r.link.slept("j2") != 0 {
+		t.Fatal("a judge slept although the round did not end")
+	}
+
+	// the next turn of its own owes nothing: the round ends
+	r.reply("w", "Something else the person wanted.\n"+pairBlock("O1 a"))
+	if got := r.stored(v.Id); got.State != StateEnded || hasRaw(got, "Something else") {
+		t.Fatalf("stored state %s: want the round ended by the turn, with the turn not recorded", got.State)
+	}
+	if r.link.slept("j1") != 1 || r.link.slept("j2") != 1 {
+		t.Fatalf("slept %d / %d times: want both launched judges asleep", r.link.slept("j1"), r.link.slept("j2"))
+	}
+}
+
+// while the pair relays, every worker turn belongs to the round: it is recorded and passed to the judge, as ever
+func TestRelayingPairRecordsAndRelaysEveryWorkerTurn(t *testing.T) {
+	r := newRig(t)
+	v := r.start(wshrpc.CommandPairStartData{Launched: true})
+	r.link.setState("j1", "working") // the judge is on the brief, so what the worker says waits in its queue
+
+	r.reply("w", "First thing.\n"+pairBlock("O1 a"))
+	r.reply("w", "Second thing, nobody asked.\n"+pairBlock("O1 a", "O2 b"))
+	view := r.view(v.Id)
+	if view.State != StateRelaying {
+		t.Fatalf("state %s", view.State)
+	}
+	if !hasMessage(view, FromWorker, "First thing.") || !hasMessage(view, FromWorker, "Second thing, nobody asked.") {
+		t.Fatalf("messages = %+v: want both turns recorded", view.Messages)
+	}
+	second := lastWorkerMsg(view)
+	if in := r.internal(v.Id); !slices.Contains(in.Pending["j1"], second.Id) {
+		t.Fatalf("pending = %v: want the second turn queued for the judge", in.Pending)
+	}
+	r.reply("j1", "> First\nOne point.\n"+judgeBlock("new: a")) // the judge's turn ends and the queue goes out
 	j := r.link.sent("j1")
 	if len(j) != 2 {
-		t.Fatalf("the judge was sent %d prompts: the worker's new reply passes on", len(j))
+		t.Fatalf("the judge was sent %d prompts: want its brief and then both turns in one", len(j))
 	}
-	if got := r.link.sent("w"); len(got) != 0 {
-		t.Fatalf("the worker was sent %q: the stopped judge's reply is not delivered now either", got)
+	contains(t, "the judge's prompt", j[1], "First thing.", "Second thing, nobody asked.")
+	if r.link.slept("j1") != 0 {
+		t.Fatal("a relaying pair put its judge to sleep")
+	}
+}
+
+// a launched judge that is working or asking when the round ends sleeps at its next turn end, not before; one that is
+// asleep already is left alone
+func TestRoundEndSleepsAWorkingJudgeAtItsNextTurnEnd(t *testing.T) {
+	for _, state := range []string{"working", "asking"} {
+		t.Run(state, func(t *testing.T) {
+			r := newRig(t)
+			v := r.stoppedFor(StopNoNewPoints, true)
+			r.link.setState("j1", state) // a turn of its own, started after the stop
+
+			r.reply("w", "One more thing the person asked me.\n"+pairBlock("O1 more"))
+			if got := r.stored(v.Id); got.State != StateEnded {
+				t.Fatalf("stored state %s: the pair ends at once, with the judge still busy", got.State)
+			}
+			if r.link.slept("j1") != 0 {
+				t.Fatalf("the %s judge slept at the round's end", state)
+			}
+			if r.m.Paired("j1") || !r.m.Watches("j1") {
+				t.Fatalf("paired %v, watched %v: the judge is in no pair, and its turn end is still the manager's", r.m.Paired("j1"), r.m.Watches("j1"))
+			}
+
+			r.link.setState("j1", "idle")
+			r.m.TurnEnded(ctx, "j1")
+			if r.link.slept("j1") != 1 || r.link.agent("j1").state != "sleeping" {
+				t.Fatalf("slept %d times, state %s at its turn end: want it asleep", r.link.slept("j1"), r.link.agent("j1").state)
+			}
+			if r.m.Watches("j1") {
+				t.Fatal("the judge slept, and the manager still waits for its turn end")
+			}
+			r.link.setState("j1", "idle")
+			r.m.TurnEnded(ctx, "j1")
+			if r.link.slept("j1") != 1 {
+				t.Fatal("a second turn end slept the judge again")
+			}
+		})
+	}
+
+	t.Run("asleep already", func(t *testing.T) {
+		r := newRig(t)
+		r.stoppedFor(StopNoNewPoints, true)
+		r.link.setState("j1", "sleeping")
+		r.reply("w", "One more thing the person asked me.\n"+pairBlock("O1 more"))
+		if r.link.slept("j1") != 0 || r.m.Watches("j1") {
+			t.Fatalf("slept %d times, watched %v: a judge asleep is left alone", r.link.slept("j1"), r.m.Watches("j1"))
+		}
+	})
+}
+
+// a judge that a new round has taken back before its turn ended stays awake: the request to sleep it is dropped
+func TestRoundEndSleepIsDroppedWhenTheJudgeJoinsANewRound(t *testing.T) {
+	r := newRig(t)
+	r.stoppedFor(StopNoNewPoints, true)
+	r.link.setState("j1", "working")
+	r.reply("w", "One more thing the person asked me.\n"+pairBlock("O1 more"))
+	if !r.m.Watches("j1") {
+		t.Fatal("the busy judge is not waited on")
+	}
+
+	r.link.give("w", workerPlan)
+	v := r.start(wshrpc.CommandPairStartData{Launched: true}) // Add judge wakes it for the next round: PairStart, not briefed
+	r.link.setState("j1", "idle")
+	r.m.TurnEnded(ctx, "j1")
+	if r.link.slept("j1") != 0 || r.link.agent("j1").state != "idle" {
+		t.Fatalf("the judge slept %d times, state %s: it is in a new pair", r.link.slept("j1"), r.link.agent("j1").state)
+	}
+	if !r.m.Paired("j1") || r.view(v.Id).State != StateRelaying {
+		t.Fatal("the new round is not running")
+	}
+}
+
+// a refused or failed sleep is logged, and the judge stays awake
+func TestRoundEndLogsASleepThatFailed(t *testing.T) {
+	r := newRig(t)
+	v := r.stoppedFor(StopNoNewPoints, true)
+	r.link.sleepErr = errors.New(`agent "Judge one" still runs background work (dev server); it was not put to sleep`)
+	var logs bytes.Buffer
+	log.SetOutput(&logs)
+	t.Cleanup(func() { log.SetOutput(os.Stderr) })
+
+	r.reply("w", "One more thing the person asked me.\n"+pairBlock("O1 more"))
+	if got := r.stored(v.Id); got.State != StateEnded {
+		t.Fatalf("stored state %s: a judge that cannot sleep does not keep the round open", got.State)
+	}
+	contains(t, "the log", logs.String(), "was not put to sleep", "dev server", "j1")
+	if r.link.slept("j1") != 0 || r.link.agent("j1").state != "idle" {
+		t.Fatalf("slept %d times, state %s: the judge stays awake", r.link.slept("j1"), r.link.agent("j1").state)
+	}
+}
+
+// Start marks a judge the cockpit launched; a judge the person picked has no mark
+func TestStartMarksALaunchedJudge(t *testing.T) {
+	r := newRig(t)
+	r.link.add("j2", "Judge two")
+	r.link.give("w", workerPlan)
+	v := r.start(wshrpc.CommandPairStartData{Launched: true})
+	r.start(wshrpc.CommandPairStartData{JudgeTab: "j2"})
+	in := r.internal(v.Id)
+	if !in.Judges[0].Launched || in.Judges[1].Launched {
+		t.Fatalf("launched = %v / %v, want the launched judge marked and the picked one not", in.Judges[0].Launched, in.Judges[1].Launched)
+	}
+	if !in.JudgeTokens {
+		t.Fatal("a new pair does not say its tokens are the judges'")
+	}
+	if got := r.manager().mustGet(t, v.Id); got.Judges[0].Tab != "j1" {
+		t.Fatalf("reloaded %+v", got.Judges)
+	}
+	if saved := r.stored(v.Id); !saved.Judges[0].Launched || saved.Judges[1].Launched || !saved.JudgeTokens {
+		t.Fatalf("the file holds launched %v / %v, judgetokens %v", saved.Judges[0].Launched, saved.Judges[1].Launched, saved.JudgeTokens)
 	}
 }
 
@@ -879,7 +1195,11 @@ func TestPauseSnapshot(t *testing.T) {
 			t.Fatalf("the file holds %+v, want %+v", lastLine(back).Pause, got)
 		}
 
-		// a later list does not move an older pause's snapshot
+		// a later list does not move an older pause's snapshot (the person goes on in the conversation: a worker turn of its
+		// own would end the round instead)
+		if err := r.m.Say(ctx, wshrpc.CommandPairSayData{PairId: v.Id, Text: "Carry on.", To: ToWorker}); err != nil {
+			t.Fatal(err)
+		}
 		r.reply("w", "More.\n"+pairBlock("D1 threshold first", "D2 pilot split", "A3 Is 50% fine? [Yes | No]", "O4 new thing"))
 		later := r.view(v.Id)
 		if len(later.Decided.Agreed) != 2 {
@@ -912,10 +1232,10 @@ func TestPauseSnapshot(t *testing.T) {
 		v := r.start(wshrpc.CommandPairStartData{TokenCap: 2_000_000})
 		r.link.setState("j1", "idle")
 		r.reply("j1", "> Plan v1.\nOne finding.\n"+judgeBlock("summary: an older summary", "new: a"))
-		r.link.agent("w").tokens = 1_500_000
+		r.link.agent("j1").tokens = 2_000_000
 		r.reply("w", "More.\n"+pairBlock("O1 a"))
 		line := lastLine(r.view(v.Id))
-		if line.Text != "Paused: token cap reached (2.0M)" || line.Pause == nil || line.Pause.Reason != StopTokenCap || line.Pause.Summary != "" {
+		if line.Text != "Paused: judge token cap reached (2.0M)" || line.Pause == nil || line.Pause.Reason != StopTokenCap || line.Pause.Summary != "" {
 			t.Fatalf("last line = %+v / %+v", line, line.Pause)
 		}
 		if len(line.Pause.Decided.Open) != 1 {
@@ -930,7 +1250,7 @@ func TestPauseSnapshot(t *testing.T) {
 		r.link.give("w", workerPlan)
 		v := r.start(wshrpc.CommandPairStartData{})
 		r.link.setState("j1", "idle")
-		r.link.agent("w").tokens = 3_500_000 // over the default cap by the time the judge's reply is counted
+		r.link.agent("j1").tokens = 3_500_000 // over the default cap by the time the judge's reply is counted
 		r.reply("j1", "> Plan v1.\nA finding.\n"+judgeBlock("summary: the budget is spent", "new: a"))
 		line := lastLine(r.view(v.Id))
 		if line.Pause == nil || line.Pause.Reason != StopTokenCap || line.Pause.Summary != "the budget is spent" {
@@ -966,20 +1286,20 @@ func TestManagerTokenCapStopsTheExchange(t *testing.T) {
 	r.link.setState("j1", "idle")
 
 	r.reply("j1", "> Plan v1.\nOne finding.\n"+judgeBlock("new: a"))
-	if view := r.view(v.Id); view.State != StateRelaying || view.Tokens != 1_100_000 {
-		t.Fatalf("state %s, tokens %d: below the cap", view.State, view.Tokens)
+	if view := r.view(v.Id); view.State != StateRelaying || view.Tokens != 500_000 {
+		t.Fatalf("state %s, tokens %d: below the cap, and the judge's 500k alone", view.State, view.Tokens)
 	}
 	if r.link.agent("w").lastSince != r.internal(v.Id).CapFromTs || r.internal(v.Id).CapFromTs == 0 {
 		t.Fatalf("tokens counted since %d, the cap counts from %d", r.link.agent("w").lastSince, r.internal(v.Id).CapFromTs)
 	}
 
-	r.link.agent("w").tokens = 1_500_000
+	r.link.agent("j1").tokens = 2_000_000
 	r.reply("w", "More.\n"+pairBlock("O1 a"))
 	view := r.view(v.Id)
 	if view.State != StateStopped || view.StopReason != StopTokenCap || view.Tokens != 2_000_000 {
 		t.Fatalf("state %s / %s, tokens %d: want a stop at the cap", view.State, view.StopReason, view.Tokens)
 	}
-	if line := lastLine(view); line.From != FromSystem || line.Text != "Paused: token cap reached (2.0M)" {
+	if line := lastLine(view); line.From != FromSystem || line.Text != "Paused: judge token cap reached (2.0M)" {
 		t.Fatalf("last line = %+v", line)
 	}
 	if got := r.link.sent("j1"); len(got) != 1 {
@@ -987,45 +1307,101 @@ func TestManagerTokenCapStopsTheExchange(t *testing.T) {
 	}
 }
 
-func TestManagerResumeNotByAWorkerReplyAfterTheTokenCap(t *testing.T) {
+// the cap counts the judges' tokens only: a working agent far over the cap with a judge well under it does not stop the
+// pair, and its own count is still read and stored
+func TestTokenCapCountsJudgesOnly(t *testing.T) {
 	r := newRig(t)
-	r.link.agent("w").tokens = 3_500_000
+	r.link.add("j2", "Judge two")
+	r.link.agent("w").tokens, r.link.agent("j1").tokens, r.link.agent("j2").tokens = 4_000_000, 100_000, 250_000
+	r.link.give("w", workerPlan)
+	v := r.start(wshrpc.CommandPairStartData{})
+	r.start(wshrpc.CommandPairStartData{JudgeTab: "j2"})
+	r.link.setState("j1", "idle")
+	r.link.setState("j2", "idle")
+
+	r.reply("j1", "> Plan v1.\nOne finding.\n"+judgeBlock("new: a"))
+	r.reply("w", "More.\n"+pairBlock("O1 a"))
+	view := r.view(v.Id)
+	if view.State != StateRelaying || view.Tokens != 350_000 || !view.JudgeTokens {
+		t.Fatalf("state %s, tokens %d, judgetokens %v: want the two judges' 350k and no stop, the worker being at 4M", view.State, view.Tokens, view.JudgeTokens)
+	}
+	if in := r.internal(v.Id); in.Worker.Tokens != 4_000_000 || in.Judges[0].Tokens != 100_000 || in.Judges[1].Tokens != 250_000 {
+		t.Fatalf("stored counts: worker %d, judges %d / %d, want the worker's read and kept too", in.Worker.Tokens, in.Judges[0].Tokens, in.Judges[1].Tokens)
+	}
+	if saved := r.stored(v.Id); saved.Worker.Tokens != 4_000_000 || saved.Tokens != 350_000 {
+		t.Fatalf("the file holds worker %d, total %d: a change of the worker's count alone is saved", saved.Worker.Tokens, saved.Tokens)
+	}
+
+	// the judges reach the cap together
+	r.link.agent("j1").tokens, r.link.agent("j2").tokens = 1_900_000, 1_200_000
+	r.reply("j2", "> More.\nAnother finding.\n"+judgeBlock("new: b"))
+	view = r.view(v.Id)
+	if view.State != StateStopped || view.StopReason != StopTokenCap || view.Tokens != 3_100_000 {
+		t.Fatalf("state %s / %s, tokens %d: want a stop at the judges' 3.1M", view.State, view.StopReason, view.Tokens)
+	}
+	if line := lastLine(view); line.Text != "Paused: judge token cap reached (3.0M)" {
+		t.Fatalf("last line = %+v, want the paused line to name the judge's cap", line)
+	}
+}
+
+// a pair saved before the cap counted judges only keeps its saved count, which includes the working agent, until its first
+// recount, which moves it onto the judges and sets the flag; a stored ended pair is never recounted
+func TestFirstRecountMovesAnOldPairOntoJudgeTokens(t *testing.T) {
+	r := newRig(t)
+	v := r.paired(workerPlan)
+	r.m.mu.Lock()
+	old := r.m.pairs[v.Id]
+	old.JudgeTokens, old.Tokens = false, 2_500_000 // as an older build saved it: the worker's spend is in the total
+	r.m.mu.Unlock()
+	if view := r.view(v.Id); view.JudgeTokens || view.Tokens != 2_500_000 {
+		t.Fatalf("judgetokens %v, tokens %d: an old pair says what it saved until it is recounted", view.JudgeTokens, view.Tokens)
+	}
+
+	r.link.agent("w").tokens, r.link.agent("j1").tokens = 1_700_000, 300_000
+	r.m.TurnEnded(ctx, "j1")
+	view := r.view(v.Id)
+	if !view.JudgeTokens || view.Tokens != 300_000 {
+		t.Fatalf("judgetokens %v, tokens %d: want the recount to count the judge's 300k alone, and say so", view.JudgeTokens, view.Tokens)
+	}
+	if saved := r.stored(v.Id); !saved.JudgeTokens || saved.Tokens != 300_000 {
+		t.Fatalf("the file holds judgetokens %v, tokens %d", saved.JudgeTokens, saved.Tokens)
+	}
+
+	// an ended pair of the old build keeps both as it saved them, whatever the agents spend now
+	r.link.give("w", workerPlan)
+	oldEnded := &Pair{Id: "old-ended", Project: "proj", State: StateEnded, Tokens: 4_000_000, TokenCap: DefaultTokenCap, CreatedTs: 1,
+		Worker: Side{Tab: "w"}, Judges: []Side{{Tab: "j1"}}, Pending: map[string][]string{}, Seen: map[string]int64{}}
+	if err := (store{dir: r.dir}).save(oldEnded); err != nil {
+		t.Fatal(err)
+	}
+	fresh := r.manager()
+	fresh.TurnEnded(ctx, "j1")
+	if got := r.stored("old-ended"); got.JudgeTokens || got.Tokens != 4_000_000 {
+		t.Fatalf("an ended pair was rewritten: judgetokens %v, tokens %d", got.JudgeTokens, got.Tokens)
+	}
+}
+
+// the person resumes a pair stopped at the cap by speaking in the conversation; the cap counts again from then
+func TestManagerResumeByThePersonAfterTheTokenCap(t *testing.T) {
+	r := newRig(t)
+	r.link.agent("j1").tokens = 3_500_000
 	r.link.give("w", workerPlan)
 	v := r.start(wshrpc.CommandPairStartData{})
 	r.link.setState("j1", "idle")
 	r.reply("j1", "> Plan v1.\nA finding.\n"+judgeBlock("new: a"))
 	if view := r.view(v.Id); view.StopReason != StopTokenCap {
-		t.Fatalf("stop = %q: the worker's tokens are over the default cap", view.StopReason)
+		t.Fatalf("stop = %q: the judge's tokens are over the default cap", view.StopReason)
 	}
-	pubs := r.published()
-
-	r.reply("w", "Another reply.\n"+pairBlock("O1 a"))
-	view := r.view(v.Id)
-	if view.State != StateStopped || view.StopReason != StopTokenCap {
-		t.Fatalf("state %s / %s: a worker's reply resumes no token-cap stop", view.State, view.StopReason)
-	}
-	if n := countSystem(view, "Paused: token cap reached (3.0M)"); n != 1 {
+	if n := countSystem(r.view(v.Id), "Paused: judge token cap reached (3.0M)"); n != 1 {
 		t.Fatalf("the stop was written %d times", n)
-	}
-	if got := r.link.sent("j1"); len(got) != 1 {
-		t.Fatalf("the judge was sent %d prompts", len(got))
-	}
-	// the pair does not follow the worker while it is stopped at the cap: the reply is not in the conversation
-	for _, m := range view.Messages {
-		if strings.Contains(m.Text, "Another reply.") {
-			t.Fatalf("the worker's reply after the cap is in the conversation: %+v", m)
-		}
-	}
-	if r.published() == pubs {
-		t.Fatal("the worker's reply moved the seen mark and published nothing")
 	}
 
 	// the person resumes it; the cap counts again from now
-	r.link.agent("w").tokens = 0
+	r.link.agent("j1").tokens = 0
 	if err := r.m.Say(ctx, wshrpc.CommandPairSayData{PairId: v.Id, Text: "Spend a bit more."}); err != nil {
 		t.Fatal(err)
 	}
-	view = r.view(v.Id)
+	view := r.view(v.Id)
 	if view.State != StateRelaying || view.StopReason != "" || view.Tokens != 0 {
 		t.Fatalf("state %s / %s, tokens %d after the person's message", view.State, view.StopReason, view.Tokens)
 	}
@@ -1039,9 +1415,6 @@ func TestManagerResumeNotByAWorkerReplyAfterTheTokenCap(t *testing.T) {
 		t.Fatalf("the worker was sent %d prompts: want the judge's finding and the person's message in one", len(w))
 	} else {
 		contains(t, "the worker's prompt", w[0], "A finding.", "Spend a bit more.")
-		if strings.Contains(w[0], "Another reply.") {
-			t.Fatal("the worker was sent its own reply")
-		}
 	}
 	if got := r.link.sent("j1"); len(got) != 1 {
 		t.Fatalf("the judge was sent %d prompts: the person's message waits for the worker's answer", len(got))
@@ -1054,9 +1427,6 @@ func TestManagerResumeNotByAWorkerReplyAfterTheTokenCap(t *testing.T) {
 		t.Fatalf("the judge was sent %d prompts: want the person's message and the worker's answer", len(j))
 	}
 	contains(t, "the judge's prompt", j[1], "Spend a bit more.", "Noted, spending more.")
-	if strings.Contains(j[1], "Another reply.") {
-		t.Fatal("the reply after the cap reached the judge")
-	}
 	if got := r.view(v.Id); !hasMessage(got, FromWorker, "Noted, spending more.") || lastWorkerMsg(got).ReplyTo != person.Id {
 		t.Fatalf("the worker's answer = %+v, want it to answer the person's message %s", lastWorkerMsg(got), person.Id)
 	}
@@ -1072,83 +1442,14 @@ func hasMessage(v *wshrpc.PairView, from, text string) bool {
 	return false
 }
 
-// a pair stopped at the token cap does not follow the worker: its turns are not recorded, not queued for the judge and do not
-// take the held commands, but the pair marks them seen so they are not taken as new once it resumes
-func TestWorkerAfterTokenCapNotFollowed(t *testing.T) {
-	r := newRig(t)
-	r.link.agent("w").tokens = 3_500_000
-	r.link.give("w", workerPlan)
-	v := r.start(wshrpc.CommandPairStartData{})
-	r.link.setState("j1", "idle")
-	r.reply("j1", "> Plan v1.\nA finding.\n"+judgeBlock("new: a"))
-	if view := r.view(v.Id); view.StopReason != StopTokenCap {
-		t.Fatalf("stop = %q", view.StopReason)
-	}
-	r.m.mu.Lock()
-	r.m.pairs[v.Id].Held = []wshrpc.PairHeld{{Command: "go test ./...", Ts: 1}}
-	r.m.mu.Unlock()
-	before := r.internal(v.Id)
-	count, seenBefore := len(before.Messages), before.Seen["w"]
-	pendingBefore := map[string][]string{}
-	for tab, ids := range before.Pending { // internal copies the struct, not its maps
-		pendingBefore[tab] = slices.Clone(ids)
-	}
-
-	// two turns the person started in the worker's own Chat
-	r.reply("w", "Off-topic one.\n"+pairBlock("O1 a"))
-	r.reply("w", "Off-topic two.\n"+pairBlock("O1 a"))
-
-	after := r.internal(v.Id)
-	if len(after.Messages) != count {
-		t.Fatalf("the conversation holds %d messages, had %d: a worker turn after the cap is not recorded", len(after.Messages), count)
-	}
-	if !reflect.DeepEqual(after.Pending, pendingBefore) {
-		t.Fatalf("pending = %v, was %v: the turns are not queued for the judge", after.Pending, pendingBefore)
-	}
-	if !reflect.DeepEqual(after.Held, before.Held) || len(after.Held) != 1 {
-		t.Fatalf("held = %+v, was %+v: the held commands wait for a message that is recorded", after.Held, before.Held)
-	}
-	if after.State != StateStopped || after.StopReason != StopTokenCap {
-		t.Fatalf("state %s / %s", after.State, after.StopReason)
-	}
-	if after.Seen["w"] <= seenBefore {
-		t.Fatalf("seen mark %d, was %d: the turns are marked seen", after.Seen["w"], seenBefore)
-	}
-	if got := r.link.sent("j1"); len(got) != 1 {
-		t.Fatalf("the judge was sent %d prompts", len(got))
-	}
-	// the mark is saved: the file a fresh manager reads holds it
-	fresh := r.manager()
-	fresh.mustGet(t, v.Id)
-	fresh.mu.Lock()
-	savedSeen := fresh.pairs[v.Id].Seen["w"]
-	fresh.mu.Unlock()
-	if savedSeen != after.Seen["w"] {
-		t.Fatalf("the file holds seen mark %d, want %d", savedSeen, after.Seen["w"])
-	}
-
-	// the pair follows again once it resumes, and the turns it passed are not taken then
-	r.link.agent("w").tokens = 0
-	if err := r.m.Say(ctx, wshrpc.CommandPairSayData{PairId: v.Id, Text: "Go on.", To: ToWorker}); err != nil {
-		t.Fatal(err)
-	}
-	r.m.TurnEnded(ctx, "w")
-	if view := r.view(v.Id); hasMessage(view, FromWorker, "Off-topic") {
-		t.Fatalf("a turn passed during the stop was taken after the resume: %+v", view.Messages)
-	}
-	r.reply("w", "Back on topic.\n"+pairBlock("O1 a"))
-	if view := r.view(v.Id); !hasMessage(view, FromWorker, "Back on topic.") {
-		t.Fatalf("the worker's first turn after the resume is not recorded: %+v", view.Messages)
-	}
-}
-
 // the judge's fixes were sent to the worker and the cap stopped the pair while the worker was still on that turn: its answer
 // arrives after the stop and is kept, as the answer to the judge's message and queued for the judge, but it does not resume
-// the pair. A turn after it has nothing left to answer and is passed over as any turn after the cap.
+// the pair or end the round. The person's Resume then delivers it. (A turn after it has nothing left to answer and ends the
+// round: TestRoundKeepsAnAnswerToAJudgeReplySentBeforeTheStop.)
 func TestWorkerAnswerUnderWayAtTokenCapKept(t *testing.T) {
 	r := newRig(t)
 	r.link.give("w", workerPlan)
-	v := r.start(wshrpc.CommandPairStartData{})
+	v := r.start(wshrpc.CommandPairStartData{Launched: true})
 	r.link.setState("j1", "idle")
 	// the worker is under the cap and idle, so the judge's fixes are delivered at once and it starts the turn
 	r.reply("j1", "> Plan v1.\nA finding.\n"+judgeBlock("new: a"))
@@ -1164,7 +1465,7 @@ func TestWorkerAnswerUnderWayAtTokenCapKept(t *testing.T) {
 	}
 
 	// the cap is reached while the worker is on that turn: a turn end of the judge settles it
-	r.link.agent("w").tokens = 3_500_000
+	r.link.agent("j1").tokens = 3_500_000
 	r.m.TurnEnded(ctx, "j1")
 	if view := r.view(v.Id); view.State != StateStopped || view.StopReason != StopTokenCap {
 		t.Fatalf("state %s / %s: want a stop at the cap", view.State, view.StopReason)
@@ -1183,7 +1484,7 @@ func TestWorkerAnswerUnderWayAtTokenCapKept(t *testing.T) {
 	if !strings.HasPrefix(answer.Text, "Fixed it.") || answer.ReplyTo != fixes.Id {
 		t.Fatalf("the worker's answer = %+v, want it recorded as the answer to the judge's fixes %s", answer, fixes.Id)
 	}
-	if n := countSystem(view, "Paused: token cap reached (3.0M)"); n != 1 {
+	if n := countSystem(view, "Paused: judge token cap reached (3.0M)"); n != 1 {
 		t.Fatalf("the stop was written %d times", n)
 	}
 	in := r.internal(v.Id)
@@ -1196,29 +1497,12 @@ func TestWorkerAnswerUnderWayAtTokenCapKept(t *testing.T) {
 	if got := r.link.sent("j1"); len(got) != 1 {
 		t.Fatalf("the judge was sent %d prompts: a stopped pair delivers nothing", len(got))
 	}
-
-	// a second turn of its own: nothing it was sent is left to answer, so it is not recorded and only moves the seen mark
-	count, seenBefore, pubs := len(in.Messages), in.Seen["w"], r.published()
-	r.reply("w", "An aside.\n"+pairBlock("O1 a"))
-	after := r.internal(v.Id)
-	if len(after.Messages) != count {
-		t.Fatalf("the conversation holds %d messages, had %d: a turn with nothing to answer is not recorded", len(after.Messages), count)
-	}
-	if !reflect.DeepEqual(after.Pending["j1"], in.Pending["j1"]) {
-		t.Fatalf("pending for the judge = %v, was %v", after.Pending["j1"], in.Pending["j1"])
-	}
-	if after.State != StateStopped || after.StopReason != StopTokenCap {
-		t.Fatalf("state %s / %s", after.State, after.StopReason)
-	}
-	if after.Seen["w"] <= seenBefore {
-		t.Fatalf("seen mark %d, was %d: the turn is marked seen", after.Seen["w"], seenBefore)
-	}
-	if r.published() == pubs {
-		t.Fatal("the seen mark moved and nothing was published")
+	if r.link.slept("j1") != 0 || r.link.agent("j1").state != "idle" {
+		t.Fatalf("the judge slept %d times, state %s: the round did not end", r.link.slept("j1"), r.link.agent("j1").state)
 	}
 
-	// the person resumes: the judge gets the kept answer and not the aside
-	r.link.agent("w").tokens = 0
+	// the person resumes: the judge gets the kept answer
+	r.link.agent("j1").tokens = 0
 	if err := r.m.Resume(ctx, v.Id); err != nil {
 		t.Fatalf("Resume: %v", err)
 	}
@@ -1227,9 +1511,6 @@ func TestWorkerAnswerUnderWayAtTokenCapKept(t *testing.T) {
 		t.Fatalf("the judge was sent %d prompts: want the kept answer delivered", len(j))
 	}
 	contains(t, "the judge's prompt", j[1], "Fixed it.")
-	if strings.Contains(j[1], "An aside.") {
-		t.Fatal("the aside reached the judge")
-	}
 }
 
 // a reply never quotes a message its author has already answered: a second turn of the worker after one that answered the
@@ -1270,40 +1551,6 @@ func TestReplyNeverQuotesAnAnsweredMessage(t *testing.T) {
 	r.reply("j1", "One more thought of mine.")
 	if got := lastLine(r.view(v.Id)); got.From != FromJudge || got.ReplyTo != "" || got.Quote != "" {
 		t.Fatalf("the judge's own turn = %+v, want no ReplyTo and no quote", got)
-	}
-}
-
-// after a stop that is not the cap, a worker's answer still resumes the pair and is recorded and passed to the judge
-func TestWorkerAnswerResumesNoNewPoints(t *testing.T) {
-	cases := map[string]struct {
-		worker, judge, reason string
-	}{
-		"no new points": {workerPlan, judgeBlock("no new points"), StopNoNewPoints},
-		"both agree":    {"Settled.\n" + pairBlock("D1 a"), "```arc-judge\n```", StopSettled},
-	}
-	for name, c := range cases {
-		t.Run(name, func(t *testing.T) {
-			r := newRig(t)
-			v := r.paired(c.worker)
-			r.reply("j1", "> Plan v1.\nNothing to add.\n"+c.judge)
-			if view := r.view(v.Id); view.State != StateStopped || view.StopReason != c.reason {
-				t.Fatalf("state %s / %s, want a %s stop", view.State, view.StopReason, c.reason)
-			}
-
-			r.reply("w", "One more thing the person asked me.\n"+pairBlock("O1 more"))
-			view := r.view(v.Id)
-			if view.State != StateRelaying || view.StopReason != "" {
-				t.Fatalf("state %s / %s after the worker's answer", view.State, view.StopReason)
-			}
-			if !hasMessage(view, FromWorker, "One more thing the person asked me.") {
-				t.Fatalf("the worker's answer is not recorded: %+v", view.Messages)
-			}
-			j := r.link.sent("j1")
-			if len(j) != 2 {
-				t.Fatalf("the judge was sent %d prompts: the worker's new answer passes on", len(j))
-			}
-			contains(t, "the judge's prompt", j[1], "One more thing the person asked me.")
-		})
 	}
 }
 
@@ -1373,13 +1620,13 @@ func TestManagerGoneJudgeTokensStillCount(t *testing.T) {
 	r.link.setState("j1", "idle")
 	r.link.setState("j2", "idle")
 	r.reply("j1", "> Plan v1.\nOne finding.\n"+judgeBlock("new: a"))
-	if view := r.view(v.Id); view.Tokens != 1_500_000 {
-		t.Fatalf("tokens %d: want the worker's and judge one's", view.Tokens)
+	if view := r.view(v.Id); view.Tokens != 900_000 {
+		t.Fatalf("tokens %d: want judge one's alone", view.Tokens)
 	}
 
 	delete(r.link.agents, "j1")
 	r.m.memberGone(v.Id, "j1")
-	r.link.agent("w").tokens = 1_100_000
+	r.link.agent("j2").tokens = 1_100_000
 	r.reply("w", "Again.\n"+pairBlock("O1 a"))
 	view := r.view(v.Id)
 	if !view.Judges[0].Gone {
@@ -1390,7 +1637,7 @@ func TestManagerGoneJudgeTokensStillCount(t *testing.T) {
 	}
 
 	// the person's message resumes the stop, and the cap counts again from it: the gone judge's spend is behind it
-	r.link.agent("w").tokens = 0
+	r.link.agent("j2").tokens = 0
 	if err := r.m.Say(ctx, wshrpc.CommandPairSayData{PairId: v.Id, Text: "Go on."}); err != nil {
 		t.Fatal(err)
 	}

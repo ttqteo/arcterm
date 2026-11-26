@@ -239,6 +239,54 @@ func TestUnpairAfterTheJudgeAnsweredTellsNoOneToRunAFreedCommand(t *testing.T) {
 	}
 }
 
+// the end of a round lifts the hold as Unpair does: the working agent is told, in one message, which held commands it may
+// run now, and a command Run now let through is not among them
+func TestRoundEndTellsTheWorkerWhatItMayRun(t *testing.T) {
+	r := newRig(t)
+	v := r.paired(workerPlan)
+	r.m.Hold("w", "make a")
+	r.reply("w", "Next.\n"+pairBlock("O1 x")) // "make a" is on this message
+	msg := lastWorkerMsg(r.view(v.Id))
+	if err := r.m.RunNow(ctx, wshrpc.CommandPairRunNowData{PairId: v.Id, MsgId: msg.Id, Command: "make a"}); err != nil {
+		t.Fatal(err)
+	}
+	r.reply("w", "Running make a.\n"+pairBlock("O1 x")) // the working agent answers the Run now message, as it was sent
+	r.m.Hold("w", "make b")                             // the judge still owes: held, and on no message yet
+	r.reply("j1", "> Next.\nNothing to add.\n"+judgeBlock("no new points"))
+	if view := r.view(v.Id); view.State != StateStopped {
+		t.Fatalf("state %s, want the pair stopped", view.State)
+	}
+	r.link.setState("w", "idle")
+	before := len(r.link.sent("w"))
+
+	r.reply("w", "The person asked me for something else.\n"+pairBlock("O1 x"))
+	if got := r.stored(v.Id); got.State != StateEnded {
+		t.Fatalf("stored state %s: want the round ended", got.State)
+	}
+	w := r.link.sent("w")
+	if len(w) != before+1 {
+		t.Fatalf("the worker was sent %d prompts: want one line about what it may run", len(w)-before)
+	}
+	contains(t, "the worker's prompt", w[len(w)-1], "The pair has ended", "make b")
+	if strings.Contains(w[len(w)-1], "make a") {
+		t.Fatalf("the prompt names a command that was already let through: %q", w[len(w)-1])
+	}
+	if _, held := r.m.Hold("w", "make c"); held {
+		t.Fatal("held after the round ended")
+	}
+}
+
+// a round that ends with nothing held says nothing to the working agent
+func TestRoundEndWithNothingHeldTellsNoOne(t *testing.T) {
+	r := newRig(t)
+	r.stoppedFor(StopNoNewPoints, true)
+	before := len(r.link.sent("w"))
+	r.reply("w", "The person asked me for something else.\n"+pairBlock("O1 x"))
+	if got := r.link.sent("w"); len(got) != before {
+		t.Fatalf("the worker was sent %q: nothing was held", got[before:])
+	}
+}
+
 func TestUnpairWithNothingHeldTellsNoOne(t *testing.T) {
 	r := newRig(t)
 	v := r.paired(workerPlan)

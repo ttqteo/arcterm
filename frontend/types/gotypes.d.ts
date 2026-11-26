@@ -5096,6 +5096,7 @@ declare global {
         messages: PairMessage[];
         decided: PairDecided;
         canresume?: boolean;
+        judgetokens?: boolean;
     };
 
     // waveobj.ParkedLaunch

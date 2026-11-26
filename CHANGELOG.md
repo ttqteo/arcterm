@@ -72,6 +72,10 @@ and a picture given to a line that is not big.
   Read the code: picks.
 - A message you send to both agents of a pair is answered by the working agent first, and the judge then judges that
   answer, instead of the judge answering you in parallel; `@judge` still asks the judge at once.
+- A pair is a review round on the working agent, which stays your main agent: the judge is a line inside its row, not a
+  row of its own. Going back to the working agent after the pair has paused ends the round (the pair goes to Library, and
+  the judge arcterm launched goes to sleep until you wake it with Add judge), and the token cap counts the judge's
+  tokens only, not the working agent's.
 - Switching back to an agent you already viewed keeps its details rail in place: Files changed, the branch, the
   session's spend and model and the cache countdown show at once and update quietly, instead of flashing through
   a placeholder.

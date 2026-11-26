@@ -39,7 +39,12 @@ func Document(v *wshrpc.PairView, loc *time.Location) string {
 	if len(judgeShorts) > 0 {
 		fmt.Fprintf(&b, " · judge %s", strings.Join(judgeShorts, ", "))
 	}
-	fmt.Fprintf(&b, "\nProject: %s · %s · %s of %s tokens\n", v.Project, stateWords(v.State, v.StopReason), tokenCount(v.Tokens), tokenCount(v.TokenCap))
+	// a pair saved before the cap stopped counting the working agent saved a count that includes it: it says "tokens"
+	tokens := "tokens"
+	if v.JudgeTokens {
+		tokens = "judge tokens"
+	}
+	fmt.Fprintf(&b, "\nProject: %s · %s · %s of %s %s\n", v.Project, stateWords(v.State, v.StopReason), tokenCount(v.Tokens), tokenCount(v.TokenCap), tokens)
 	if v.Synced {
 		fmt.Fprintf(&b, "Synced from another machine; as of %s\n", at(v.UpdatedTs, "2006-01-02 15:04"))
 	}

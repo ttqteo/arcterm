@@ -9,7 +9,7 @@ import "context"
 // between them (pkg/agentpair; spec docs/superpowers/specs/2026-11-25-agent-pair-judge-design.md). wavesrv owns the
 // pair file, the relay and the hold on heavy commands; the frontend draws the PairView it reads after each pair:update.
 type PairCommands interface {
-	PairListCommand(ctx context.Context) (*CommandPairListRtnData, error)                                 // the active pairs
+	PairListCommand(ctx context.Context) (*CommandPairListRtnData, error)                                 // the active pairs, and the judges that rest between rounds
 	PairHistoryCommand(ctx context.Context, data CommandPairHistoryData) (*CommandPairListRtnData, error) // a project's pairs in every state, synced ones too
 	PairGetCommand(ctx context.Context, data CommandPairGetData) (*PairView, error)                       // one pair in full
 	PairBriefCommand(ctx context.Context, data CommandPairBriefData) (*CommandPairBriefRtnData, error)    // a new judge's launch task
@@ -133,6 +133,9 @@ type PairView struct {
 	Messages  []PairMessage `json:"messages"`
 	Decided   PairDecided   `json:"decided"`
 	CanResume bool          `json:"canresume,omitempty"`
+	// JudgeTokens says Tokens counts the judges only (every pair made or recounted since the cap stopped counting the
+	// working agent); a pair saved before that counted both sides, and its words say "tokens".
+	JudgeTokens bool `json:"judgetokens,omitempty"`
 }
 
 type CommandPairBriefData struct {

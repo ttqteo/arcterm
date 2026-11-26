@@ -164,6 +164,39 @@ func TestDocumentSyncedEndedPairWithNothingDecided(t *testing.T) {
 	}
 }
 
+// the header counts "judge tokens" for a pair whose count is the judges' (JudgeTokens), and plain "tokens" for an older pair,
+// whose saved count includes the working agent
+func TestDocumentHeaderNamesJudgeTokens(t *testing.T) {
+	loc := time.UTC
+	for _, c := range []struct {
+		name        string
+		judgeTokens bool
+		want        string
+	}{
+		{"a pair that counts judge tokens", true, "Project: D:/proj · stopped: token cap reached · 3.1M of 3.0M judge tokens\n"},
+		{"a pair saved before it", false, "Project: D:/proj · stopped: token cap reached · 3.1M of 3.0M tokens\n"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			v := &wshrpc.PairView{
+				PairInfo: wshrpc.PairInfo{Id: "aabbccdd-1", Project: "D:/proj", Worker: wshrpc.PairSide{Tab: docWorkerTab}, State: StateStopped, StopReason: StopTokenCap},
+				TokenCap: 3_000_000, Tokens: 3_100_000, JudgeTokens: c.judgeTokens,
+			}
+			if got := Document(v, loc); !strings.Contains(got, "\n"+c.want) {
+				t.Fatalf("Document =\n%s\nwant a line %q", got, c.want)
+			}
+		})
+	}
+	// the view carries the flag from the pair
+	p := newPair("j1")
+	p.JudgeTokens = true
+	if !View(p).JudgeTokens {
+		t.Fatal("the view does not carry the pair's judge-tokens flag")
+	}
+	if View(newPair("j1")).JudgeTokens {
+		t.Fatal("a pair saved before the flag reads as one that counts judge tokens")
+	}
+}
+
 func TestDocumentStateWords(t *testing.T) {
 	loc := time.UTC
 	cases := []struct {
