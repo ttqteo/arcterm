@@ -11,7 +11,7 @@ import { CLAUDE_ACCOUNT_META, defaultAccountName } from "./claudeaccount";
 import { agentQuotaKey, type ClaudeIdentity } from "./ratelimitstore";
 
 export interface AccountBadge {
-    text: string; // the short word: a label, or an email's part before the @
+    text: string; // the account as named: its label, or the /login email in full; a long one truncates where drawn
     title: string; // the tooltip: the account in full
 }
 
@@ -22,12 +22,6 @@ export interface AccountBadgeAgent {
     usage?: { account?: string } | null;
     accountPick?: string; // the block's agent:claudeaccount, the account its launch picked
     loginEmail?: string;
-}
-
-// An email reads as its part before the @; a label someone typed stays as it is.
-export function shortAccountText(label: string): string {
-    const at = label.indexOf("@");
-    return at > 0 ? label.slice(0, at) : label;
 }
 
 // The badge of each claude agent, by agent id: empty while they all run on one account (or none is claude).
@@ -54,7 +48,7 @@ export function agentAccountBadges(
     }
     const out: Record<string, AccountBadge> = {};
     for (const [id, s] of seen) {
-        out[id] = { text: shortAccountText(s.label), title: `Claude account: ${s.label}` };
+        out[id] = { text: s.label, title: `Claude account: ${s.label}` };
     }
     return out;
 }

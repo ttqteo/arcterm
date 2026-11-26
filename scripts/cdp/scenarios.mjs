@@ -94,6 +94,7 @@ import chatCodeBoxScenarios from "./scenarios-chat-code-box.mjs";
 import chatVerdictHandoffScenarios from "./scenarios-chat-verdict-handoff.mjs";
 import chatCouncilScenarios from "./scenarios-chat-council.mjs";
 import chatSuggestCardScenarios from "./scenarios-chat-suggest-card.mjs";
+import agentAccountScenarios from "./scenarios-agent-account.mjs";
 import gitAccountsScenarios from "./scenarios-git-accounts.mjs";
 import chatJudgeScenarios from "./scenarios-chat-judge.mjs";
 import boardsChatScenarios from "./scenarios-boards-chat.mjs";
@@ -76123,6 +76124,7 @@ export const SCENARIOS = [
     ...chatVerdictHandoffScenarios(CBR_KIT),
     ...chatCouncilScenarios(CR_KIT),
     ...chatSuggestCardScenarios(CR_KIT),
+    ...agentAccountScenarios(CR_KIT),
     ...gitAccountsScenarios(CR_KIT),
     ...chatJudgeScenarios(CR_KIT),
     ...boardsSplitScenarios(CR_KIT),

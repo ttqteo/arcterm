@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it } from "vitest";
-import { agentAccountBadges, shortAccountText } from "./agentaccountbadge";
+import { agentAccountBadges } from "./agentaccountbadge";
 import type { ClaudeIdentity } from "./ratelimitstore";
 
 const identity: ClaudeIdentity = {
@@ -13,14 +13,6 @@ const identity: ClaudeIdentity = {
         { id: "a3", label: "Same as login", email: "me@home.dev" },
     ],
 };
-
-describe("shortAccountText", () => {
-    it("cuts an email at its @ and keeps a typed label", () => {
-        expect(shortAccountText("me@home.dev")).toBe("me");
-        expect(shortAccountText("Work")).toBe("Work");
-        expect(shortAccountText("@odd")).toBe("@odd");
-    });
-});
 
 describe("agentAccountBadges", () => {
     it("shows nothing while every claude agent runs on one account", () => {
@@ -39,7 +31,7 @@ describe("agentAccountBadges", () => {
         ];
         expect(agentAccountBadges(agents, identity, "")).toEqual({
             t1: { text: "Work", title: "Claude account: Work" },
-            t2: { text: "me", title: "Claude account: me@home.dev" },
+            t2: { text: "me@home.dev", title: "Claude account: me@home.dev" },
         });
     });
 
@@ -49,7 +41,7 @@ describe("agentAccountBadges", () => {
             { id: "t2", agent: "claude" },
         ];
         const out = agentAccountBadges(agents, identity, "a2");
-        expect(out.t1.text).toBe("me");
+        expect(out.t1.text).toBe("me@home.dev");
         expect(out.t2.text).toBe("Spare");
     });
 
@@ -67,7 +59,7 @@ describe("agentAccountBadges", () => {
             { id: "t2", agent: "claude", usage: {}, loginEmail: "old@home.dev" },
         ];
         const out = agentAccountBadges(agents, identity, "");
-        expect(out.t1.text).toBe("me");
-        expect(out.t2.text).toBe("old");
+        expect(out.t1.text).toBe("me@home.dev");
+        expect(out.t2.text).toBe("old@home.dev");
     });
 });
