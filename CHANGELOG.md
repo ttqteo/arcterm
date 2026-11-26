@@ -116,6 +116,8 @@ and a picture given to a line that is not big.
 
 ### Fixed
 
+- A decision changed since you confirmed it shows the sentences it gained (or lost) in a row as one block, not a box
+  per sentence, and a `!` or `.` inside parentheses or before a lowercase word no longer cuts a sentence in two.
 - A paired agent's replies after a pause no longer show under the last question you asked in the pair, and after a token
   cap they no longer pile up for the judge.
 - A run you start or queue from the command line for a brainstorm now shows on its card, instead of the card still

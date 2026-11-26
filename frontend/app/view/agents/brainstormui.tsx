@@ -1183,8 +1183,8 @@ export function SaidLine({ said, open }: { said: PartAnswer; open: boolean }) {
     );
 }
 
-/** The sentences a rewritten decision changed (`changedSentences`), one line each: − removed, + added, and ~ for a
- *  sentence edited in a few words, its old words struck right before the new ones. The Brainstorm tab's review
+/** The sentences a rewritten decision changed (`changedSentences`): − removed, + added (a run of them one block), and ~
+ *  for a sentence edited in a few words, its old words struck right before the new ones. The Brainstorm tab's review
  *  (`ChangeDiff`) and Chat's Confirm and check cards draw their changes with this one component. */
 export function SentenceDiffLines({ lines }: { lines: ChangedSentence[] }) {
     return (

@@ -23,6 +23,9 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
 
 ## 2026-11-26
 
+- [ ] (arcterm) **A changed decision's added sentences read as one block.** On a brainstorm whose decision changed after
+  you confirmed it (the Builder check card in Chat, and the Brainstorm tab's review), the sentences it gained after the
+  edited `~` line show as one `+` block, not a box each, and "(/compact, ! lệnh, /btw)" stays whole inside its sentence.
 - [ ] (arcterm) **The judge card's reading → done cross-fade.** On the last message's judge card (a choice question
   turn), press "Đọc code rồi chọn" and let the deep judge finish (or Stop and press it again): the reading text fades
   out while the done text fades in, in about 140 ms, and the card eases from its reading height to its done height on

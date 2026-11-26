@@ -1408,8 +1408,38 @@ export function leftPanel(f: BrainstormFile): "ready" | "left" | "none" {
 
 export type SentenceDiff = { kind: "same" | "added" | "removed"; text: string }[];
 
-function sentences(text: string): string[] {
-    return text.split(/(?<=[.!?])\s+/).filter((s) => s !== "");
+// a sentence ends at . ! or ? followed by a space and a word that does not start in lowercase, outside parentheses;
+// a line break always ends one. "(/compact, ! lệnh, /btw)" and "v.v. còn" stay inside their sentence
+export function sentences(text: string): string[] {
+    const out: string[] = [];
+    let start = 0;
+    let depth = 0;
+    const cut = (end: number, next: number) => {
+        const s = text.slice(start, end).trim();
+        if (s !== "") {
+            out.push(s);
+        }
+        start = next;
+    };
+    for (let i = 0; i < text.length; i++) {
+        const c = text[i];
+        if (c === "(" || c === "[") {
+            depth++;
+        } else if ((c === ")" || c === "]") && depth > 0) {
+            depth--;
+        } else if (c === "\n") {
+            depth = 0;
+            cut(i, i + 1);
+        } else if (".!?".includes(c) && depth === 0 && i > start) {
+            const gap = /^[ \t]+/.exec(text.slice(i + 1));
+            const next = gap == null ? "" : (text[i + 1 + gap[0].length] ?? "");
+            if (gap != null && next !== "" && next !== "\n" && !/\p{Ll}/u.test(next)) {
+                cut(i + 1, i + 1 + gap[0].length);
+            }
+        }
+    }
+    cut(text.length, text.length);
+    return out;
 }
 
 export function sentenceDiff(was: string, now: string): SentenceDiff {
@@ -1455,9 +1485,23 @@ export const REWORD_SIMILARITY = 0.5;
 /** What a rewritten decision changed: `sentenceDiff` without the sentences both sides share. Between two shared
  *  sentences, a removed sentence and an added one that share most of their words are one sentence edited: one
  *  `edited` line with the old words struck beside the new ones, so the eye reads the difference at once instead of
- *  matching two lines far apart. The Brainstorm tab's review and Chat's Confirm and check cards draw exactly these
- *  lines. */
+ *  matching two lines far apart. Sentences that came in (or left) whole one after another are one line, read as the
+ *  paragraph they make, not a box per sentence. The Brainstorm tab's review and Chat's Confirm and check cards draw
+ *  exactly these lines. */
 export function changedSentences(was: string, body: string): ChangedSentence[] {
+    const out: ChangedSentence[] = [];
+    for (const d of changedSentenceRuns(was, body)) {
+        const last = out[out.length - 1];
+        if (last != null && last.kind !== "edited" && last.kind === d.kind) {
+            last.text = `${last.text} ${d.text}`;
+        } else {
+            out.push({ ...d });
+        }
+    }
+    return out;
+}
+
+function changedSentenceRuns(was: string, body: string): ChangedSentence[] {
     const out: ChangedSentence[] = [];
     let removed: string[] = [];
     let added: string[] = [];
