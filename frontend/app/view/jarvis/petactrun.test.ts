@@ -14,6 +14,7 @@ const landRun = vi.fn();
 const getAttention = vi.fn();
 const answerAgent = vi.fn();
 const startNow = vi.fn();
+const sessionIdeasMark = vi.fn();
 
 vi.mock("./openref", async (orig) => ({
     ...(await orig<typeof import("./openref")>()),
@@ -29,6 +30,7 @@ vi.mock("@/app/store/wshclientapi", () => ({
         GetAttentionCommand: (...a: any[]) => getAttention(...a),
         AnswerAgentCommand: (...a: any[]) => answerAgent(...a),
         RunQueueStartNowCommand: (...a: any[]) => startNow(...a),
+        SessionIdeasMarkCommand: (...a: any[]) => sessionIdeasMark(...a),
     },
 }));
 vi.mock("@/app/store/wshrpcutil", () => ({ TabRpcClient: {} }));
@@ -192,6 +194,40 @@ describe("runAct — Start now on a blocked queue entry", () => {
         expect(globalStore.get(petActStateAtom)[act.id]).toEqual({
             status: "error",
             text: "another queued run is starting; try again in a moment",
+        });
+        expect(globalStore.get(attentionAtom)).toEqual([row]);
+    });
+
+    it("does not navigate, so the peek keeps focus", () => {
+        expect(actNavigates(act)).toBe(false);
+    });
+});
+
+describe("runAct — Next week on the session ideas' line", () => {
+    const row = { key: "session-ideas" } as AttentionItem;
+    const act: PetAct = { id: "session-ideas:snooze", verb: "snooze-ideas", label: "Next week" };
+
+    afterEach(() => globalStore.set(attentionAtom, []));
+
+    it("snoozes the ideas, drops the row at once, and leaves the peek open", async () => {
+        globalStore.set(petPeekOpenAtom, true);
+        globalStore.set(attentionAtom, [row]);
+        sessionIdeasMark.mockResolvedValue(undefined);
+        getAttention.mockResolvedValue({ items: [] });
+        await runAct(model, act);
+        expect(sessionIdeasMark).toHaveBeenCalledWith(expect.anything(), { op: "snooze" });
+        expect(globalStore.get(attentionAtom)).toEqual([]);
+        expect(globalStore.get(petPeekOpenAtom)).toBe(true);
+        expect(globalStore.get(petActStateAtom)[act.id]).toEqual({ status: "done" });
+    });
+
+    it("reports a refusal on the act and keeps the row", async () => {
+        globalStore.set(attentionAtom, [row]);
+        sessionIdeasMark.mockRejectedValue(new Error("there is no data directory to keep session ideas in"));
+        await runAct(model, act);
+        expect(globalStore.get(petActStateAtom)[act.id]).toEqual({
+            status: "error",
+            text: "there is no data directory to keep session ideas in",
         });
         expect(globalStore.get(attentionAtom)).toEqual([row]);
     });

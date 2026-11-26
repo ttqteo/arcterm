@@ -3,7 +3,7 @@
 //
 // How a waiting item's in-place button runs (the button attentionact.ts chose): Approve and Retry act on the
 // exact task the server named, Accept, Land again and Land anyway on the run, Start now and Remove on a blocked
-// queue entry.
+// queue entry, Next week on the session ideas' line.
 // The Brief's Waiting list and the Cockpit's Needs-you strip both call this, so the two cannot drift apart; each
 // brings its own feedback, because the Brief answers in its undo bar and the Cockpit has none. The creature's peek
 // has its own runner (petactrun.ts), which keeps its failures on the act that caused them.
@@ -50,6 +50,8 @@ export function attentionDoneText(
             return `Started · ${what}`;
         case "remove-queued":
             return `Removed · ${what}`;
+        case "snooze-ideas":
+            return "Ideas put off for a week";
         default:
             return "";
     }
@@ -87,6 +89,10 @@ async function call(act: AttentionAct, row: AttentionRunRow): Promise<string | v
             return;
         case "remove-queued":
             await RpcApi.RunQueueRemoveCommand(TabRpcClient, { id: row.queueId! });
+            return;
+        case "snooze-ideas":
+            // a refusal is thrown to the feedback as the server worded it, like the acts above: the line stays
+            await RpcApi.SessionIdeasMarkCommand(TabRpcClient, { op: "snooze" });
             return;
         default:
             return;

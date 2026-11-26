@@ -6,7 +6,8 @@
 // here; React components do not reinterpret wire kinds inline.
 
 import { formatAge, type AgentVM } from "@/app/view/agents/agentsviewmodel";
-import { attentionAct, type AttentionAct } from "./attentionact";
+import { SESSION_IDEAS_REF } from "./address";
+import { attentionAct, attentionSecondAct, type AttentionAct } from "./attentionact";
 import { buildEffortCards, type EffortCardModel } from "./effortmodel";
 import { openAgentFor } from "./initiativework";
 import { planReviewORef } from "./planreviewtarget";
@@ -133,7 +134,9 @@ export type QueueNav =
     // a plan to review whose agent is still open: the agent's rail is where it is decided (planreviewtarget.ts)
     | { kind: "agent"; oref: string }
     // a council paused for the person: its Discussion is where Continue is pressed
-    | { kind: "council"; oref: string };
+    | { kind: "council"; oref: string }
+    // the ideas a scan found in the sessions: the Brief's From your sessions region (the `sessionideas` address)
+    | { kind: "ideas"; oref: string };
 export interface QueueRow {
     key: string;
     kind: string;
@@ -209,6 +212,7 @@ const QUEUE_KIND_LABEL: Record<string, string> = {
     "learn-proposal": "Learned rule",
     council: "Council",
     "bug-reports": "Báo lỗi",
+    "session-ideas": "ideas",
 };
 
 export function buildAttentionQueue(input: {
@@ -243,6 +247,9 @@ export function buildAttentionQueue(input: {
         const bugs = a.kind === "bug-reports";
         const bugNav: QueueNav | null =
             bugs && (a.oref ?? "").startsWith("agent:") ? { kind: "agent", oref: a.oref! } : null;
+        // the ideas a scan found in the sessions name no channel or oref: the kind is the address
+        const ideasNav: QueueNav | null =
+            a.kind === "session-ideas" ? { kind: "ideas", oref: SESSION_IDEAS_REF } : null;
         return {
             key: a.key,
             kind: QUEUE_KIND_LABEL[a.kind] ?? a.kind,
@@ -255,7 +262,14 @@ export function buildAttentionQueue(input: {
             // a standalone item names no channel, so there is no run body to land on; it renders as
             // static info rather than a button that would navigate nowhere (NeedsRow's rule, kept).
             action:
-                channelId !== "" || dueORef != null || planNav != null || councilORef != null || bugs ? a.action : null,
+                channelId !== "" ||
+                dueORef != null ||
+                planNav != null ||
+                councilORef != null ||
+                ideasNav != null ||
+                bugs
+                    ? a.action
+                    : null,
             nav:
                 dueORef != null
                     ? { kind: "effort", oref: dueORef }
@@ -263,15 +277,17 @@ export function buildAttentionQueue(input: {
                       ? planNav
                       : councilORef != null
                         ? { kind: "council", oref: councilORef }
-                        : bugNav != null
-                          ? bugNav
-                          : channelId !== ""
-                            ? {
-                                  kind: "channel",
-                                  channelId,
-                                  runId: a.runid != null && a.runid !== "" ? a.runid : null,
-                              }
-                            : null,
+                        : ideasNav != null
+                          ? ideasNav
+                          : bugNav != null
+                            ? bugNav
+                            : channelId !== ""
+                              ? {
+                                    kind: "channel",
+                                    channelId,
+                                    runId: a.runid != null && a.runid !== "" ? a.runid : null,
+                                }
+                              : null,
             tone: a.kind === "dag-blocked" ? "error" : "asking",
             // a due chunk IS the initiative's row (detail carries the title), as a blocked chunk is below; so is
             // a plan to review, whose source is the initiative's title
@@ -377,6 +393,7 @@ export type KindWord =
     | "not started"
     | "rule"
     | "council"
+    | "ideas"
     | "báo lỗi";
 
 // the same word from a wire kind alone, for a surface that holds no QueueRow (the tray popover's waits)
@@ -403,6 +420,8 @@ export function kindWord(wireKind: string, retry = false): KindWord {
             return "rule";
         case "council":
             return "council";
+        case "session-ideas":
+            return "ideas";
         case "bug-reports":
             return "báo lỗi";
         default:
@@ -433,7 +452,12 @@ const CHUNK_ACTS: ChunkAct[] = [
 
 // every button a row carries, in order
 export function queueActions(row: QueueRow): QueueAct[] {
-    return row.chunk != null ? CHUNK_ACTS : [queueAction(row)];
+    if (row.chunk != null) {
+        return CHUNK_ACTS;
+    }
+    // the ideas' line draws Next week beside Review: the way to put it off without deciding any idea
+    const next = row.wireKind === "session-ideas" ? attentionSecondAct(row) : null;
+    return next != null ? [queueAction(row), next] : [queueAction(row)];
 }
 
 export type ChunkActDeps = {
@@ -489,6 +513,7 @@ const KIND_PLURAL: Record<KindWord, string> = {
     "not started": "not started",
     rule: "rules",
     council: "councils",
+    ideas: "ideas",
     // Vietnamese has no plural: the row is one, so the count is a count of one row anyway
     "báo lỗi": "báo lỗi",
 };

@@ -656,8 +656,8 @@ export function SidecarBridge({ model }: { model: AgentsViewModel }) {
 
         // A Jarvis row's button: a learned rule's Accept or Dismiss (the Needs you strip's LearnDecideCommand), else the
         // tray peek's own act for the item, run as the peek runs it. An act that leaves for the main window (Open, Work
-        // on) raises it; one that settles in place (Accept, Approve, Retry, Land again) reloads the attention, which
-        // drops the row, or puts its error on the row.
+        // on) raises it; one that settles in place (Accept, Approve, Retry, Land again, Next week) reloads the attention,
+        // which drops the row, or puts its error on the row.
         const runNeedAct = async (key: string, actId: string): Promise<void> => {
             const learn = learnActOf(actId);
             if (learn != null) {

@@ -399,8 +399,24 @@ describe("needActsOf", () => {
         expect(needActsOf(peek({}), undefined)).toEqual([]);
     });
 
+    // the ideas' line: Review reads the row and Next week puts it off, so neither is drawn as the act that settles it
+    it("draws Review and Next week on the ideas' line quiet", () => {
+        const review = { id: "session-ideas:open", verb: "open" as const, label: "Review", target: open.target };
+        const nextWeek = { id: "session-ideas:snooze", verb: "snooze-ideas" as const, label: "Next week" };
+        expect(
+            needActsOf(
+                peek({ key: "session-ideas", kind: "session-ideas", primary: review, links: [nextWeek] }),
+                undefined
+            )
+        ).toEqual([
+            { id: "session-ideas:open", label: "Review" },
+            { id: "session-ideas:snooze", label: "Next week" },
+        ]);
+    });
+
     it("names an unknown kind plainly", () => {
         expect(needLabel("learn-proposal")).toBe("Rule to approve");
+        expect(needLabel("session-ideas")).toBe("Ideas");
         expect(needLabel("something-new")).toBe("Waiting");
     });
 });

@@ -278,3 +278,30 @@ describe("actsForAttention: the waiting bug reports", () => {
         ]);
     });
 });
+
+// the ideas a scan found in the sessions: no run to open, so Review lands on the sessionideas address, and Next week
+// settles in place
+describe("actsForAttention: the session ideas' line", () => {
+    const ideas = {
+        kind: "session-ideas",
+        key: "session-ideas",
+        source: "Session ideas",
+        text: "3 ideas from your sessions, waiting 8 days",
+        action: "Review",
+        phaseidx: 0,
+        waitingsince: 1000,
+        why: "one · two · three",
+    } as AttentionItem;
+
+    it("offers Review on the sessionideas address, then Next week", () => {
+        expect(actsForAttention(ideas)).toEqual([
+            {
+                id: "session-ideas:open",
+                verb: "open",
+                label: "Review",
+                target: { kind: "oref", ref: "sessionideas" },
+            },
+            { id: "session-ideas:snooze", verb: "snooze-ideas", label: "Next week" },
+        ]);
+    });
+});

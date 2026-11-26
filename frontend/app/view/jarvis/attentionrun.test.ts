@@ -11,10 +11,12 @@ const loadAttention = vi.fn();
 const startNow = vi.fn();
 const removeQueued = vi.fn();
 const pushModal = vi.fn();
+const sessionIdeasMark = vi.fn();
 
 vi.mock("@/app/store/wshclientapi", () => ({
     RpcApi: {
         DagActionCommand: (...a: any[]) => dagAction(...a),
+        SessionIdeasMarkCommand: (...a: any[]) => sessionIdeasMark(...a),
         AckRunCommand: (...a: any[]) => ackRun(...a),
         RunQueueStartNowCommand: (...a: any[]) => startNow(...a),
         RunQueueRemoveCommand: (...a: any[]) => removeQueued(...a),
@@ -221,6 +223,49 @@ describe("runAttentionAct", () => {
             await runAttentionAct(attentionSecondAct(r)!, r, fb);
             pushModal.mock.calls[0][1].onConfirm();
             await vi.waitFor(() => expect(fb.fail).toHaveBeenCalledWith("no such queued entry: q-1a2b"));
+            expect(fb.done).not.toHaveBeenCalled();
+            expect(loadAttention).not.toHaveBeenCalled();
+        });
+    });
+
+    describe("the session ideas' line", () => {
+        const ideas = (over: Partial<AttentionRunRow> = {}) =>
+            row({
+                wireKind: "session-ideas",
+                channelId: "",
+                runId: null,
+                taskId: "",
+                source: "Session ideas",
+                ...over,
+            });
+
+        // Review is the caller's: it opens the sessionideas address
+        it("leaves Review to the caller", async () => {
+            const fb = feedback();
+            const r = ideas();
+            expect(attentionAct(r)).toEqual({ label: "Review", kind: "open" });
+            await expect(runAttentionAct(attentionAct(r), r, fb)).resolves.toBe(false);
+            expect(sessionIdeasMark).not.toHaveBeenCalled();
+            expect(fb.done).not.toHaveBeenCalled();
+        });
+
+        it("puts the ideas off for a week, then reloads the list so the line leaves, and says so", async () => {
+            const fb = feedback();
+            const r = ideas();
+            const second = attentionSecondAct(r)!;
+            expect(second).toEqual({ label: "Next week", kind: "snooze-ideas" });
+            await expect(runAttentionAct(second, r, fb)).resolves.toBe(true);
+            expect(sessionIdeasMark).toHaveBeenCalledWith(expect.anything(), { op: "snooze" });
+            expect(loadAttention).toHaveBeenCalledTimes(1);
+            expect(fb.done).toHaveBeenCalledWith("Ideas put off for a week");
+        });
+
+        it("shows a refused snooze as the error and leaves the line", async () => {
+            sessionIdeasMark.mockRejectedValue(new Error("there is no data directory to keep session ideas in"));
+            const fb = feedback();
+            const r = ideas();
+            await expect(runAttentionAct(attentionSecondAct(r)!, r, fb)).resolves.toBe(false);
+            expect(fb.fail).toHaveBeenCalledWith("there is no data directory to keep session ideas in");
             expect(fb.done).not.toHaveBeenCalled();
             expect(loadAttention).not.toHaveBeenCalled();
         });

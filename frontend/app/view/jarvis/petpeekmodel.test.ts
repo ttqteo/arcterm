@@ -534,3 +534,29 @@ describe("queueRows — a plan to review", () => {
         expect(rowKindLabel("plan-review")).toBe("Plan to review");
     });
 });
+
+describe("queueRows — the ideas from your sessions", () => {
+    const IDEAS = item({
+        kind: "session-ideas",
+        key: "session-ideas",
+        source: "Session ideas",
+        text: "3 ideas from your sessions, waiting 8 days",
+        action: "Review",
+        channelid: "",
+        runid: "",
+    } as Partial<AttentionItem> & Pick<AttentionItem, "kind" | "key">);
+
+    it("is a row with no run: its count and wait are the detail, Review opens the region and Next week settles in place", () => {
+        const [row] = queueRows([IDEAS]);
+        expect(row.detail).toBe("3 ideas from your sessions, waiting 8 days");
+        expect(row.primary).toMatchObject({ verb: "open", label: "Review", target: { ref: "sessionideas" } });
+        expect(row.links).toEqual([{ id: "session-ideas:snooze", verb: "snooze-ideas", label: "Next week" }]);
+        expect(row.answers).toEqual([]);
+        expect(row.form).toBeNull();
+        expect(rowPeekTarget(row)).toEqual({ kind: "oref", ref: "sessionideas" });
+    });
+
+    it("is named Ideas", () => {
+        expect(rowKindLabel("session-ideas")).toBe("Ideas");
+    });
+});

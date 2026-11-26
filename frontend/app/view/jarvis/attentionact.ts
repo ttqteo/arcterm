@@ -40,6 +40,8 @@ export type AttentionAct = {
         | "Start now"
         | "Remove"
         | "Open"
+        | "Review"
+        | "Next week"
         | "Xử lý"
         | "Mở agent"
         | "Chọn thư mục…";
@@ -53,9 +55,13 @@ export type AttentionAct = {
         | "start-queued"
         | "remove-queued"
         | "open"
+        | "snooze-ideas"
         | "process-reports"
         | "pick-repo";
 };
+
+// Next week on the session ideas' line: the Waiting line stays away for 7 days (SessionIdeasMark snooze, attentionrun.ts)
+const NEXT_WEEK: AttentionAct = { label: "Next week", kind: "snooze-ideas" };
 
 // Approve and Retry need the exact task the server named; without it, and for anything that needs a
 // judgment rather than a button (a failed final stage, a review or merge failure, a question), the item
@@ -102,15 +108,24 @@ export function attentionAct(x: AttentionActInput): AttentionAct {
         }
         return { label: "Xử lý", kind: "process-reports" };
     }
+    // the ideas a scan found in the sessions wait in the Brief's From your sessions region: Review opens it (the
+    // `sessionideas` address, which the callers route), and Next week is its second act (attentionSecondAct)
+    if (x.wireKind === "session-ideas") {
+        return { label: "Review", kind: "open" };
+    }
     return { label: "Open", kind: "open" };
 }
 
 // The second button an item gets where there is room for one (the Needs you strip): the way out that is not the
-// first act. Only a blocked queue entry has one, so the Brief and the creature's peek, which draw one button, show
-// attentionAct alone.
+// first act. A blocked queue entry has Remove, and the session ideas' line has Next week; the Brief and the creature's
+// peek, which draw one button, show attentionAct alone, except that the Brief and the peek also draw Next week on the
+// session ideas' line (briefingmodel.ts queueActions, petacts.ts).
 export function attentionSecondAct(x: AttentionActInput): AttentionAct | null {
     if (x.wireKind === "run-queue-blocked" && (x.queueId ?? "") !== "") {
         return { label: "Remove", kind: "remove-queued" };
+    }
+    if (x.wireKind === "session-ideas") {
+        return NEXT_WEEK;
     }
     return null;
 }

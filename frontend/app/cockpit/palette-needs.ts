@@ -31,6 +31,8 @@ const KIND_GROUP: Record<string, NeedsGroup> = {
     "plan-review": "plan",
     "learn-proposal": "reviews",
     council: "reviews",
+    // the ideas a scan found in the sessions wait on a look and a Keep or Drop, like a learned rule's accept
+    "session-ideas": "reviews",
     "chunk-due": "due",
     "bug-reports": "bugs",
 };
@@ -101,6 +103,7 @@ export type NeedsTarget =
     | { kind: "channel"; channelId: string }
     | { kind: "effort"; effortId: string } // a due chunk's initiative, or a plan to review whose agent is gone
     | { kind: "council"; councilId: string } // a council paused after step 1, on its Discussion
+    | { kind: "sessionideas" } // the ideas a scan found in the sessions: the Brief's From your sessions region
     | { kind: "cockpit" }; // a learned rule: the Cockpit's Needs you, where it is accepted, edited or dismissed
 
 // Where Enter on a Needs you row lands. A dag item's key names its dag ("dag-gate:<dag>[:<task>]",
@@ -124,6 +127,10 @@ export function needsTarget(row: NeedsRow): NeedsTarget | null {
     if (kind === "bug-reports") {
         const agentId = oref?.startsWith("agent:") ? oref.slice("agent:".length) : "";
         return agentId !== "" ? { kind: "agent", agentId } : { kind: "cockpit" };
+    }
+    // the ideas from your sessions name no channel or oref: the kind is the address (`sessionideas`)
+    if (kind === "session-ideas") {
+        return { kind: "sessionideas" };
     }
     if ((kind === "chunk-due" || kind === "plan-review") && oref?.startsWith("effort:")) {
         return { kind: "effort", effortId: oref.slice("effort:".length) };
