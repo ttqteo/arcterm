@@ -40,12 +40,13 @@ type sleepWorld struct {
 	events    []string            // meta / destroy / kill / resync / deliver, in order
 	delivered []agentsDelivery
 
-	pids              []int32        // the agent's process tree
-	alive             map[int32]bool // which of them run
-	survivesStop      map[int32]bool // destroy does not end these
-	unkillable        map[int32]bool // killPids does not end these either
-	killed            []int32        // what killPids was handed
-	sleepingAtDestroy bool           // agent:sleeping was already written when the controller was destroyed
+	pids              []int32         // the agent's process tree
+	alive             map[int32]bool  // which of them run
+	survivesStop      map[int32]bool  // destroy does not end these
+	unkillable        map[int32]bool  // killPids does not end these either
+	started           map[int32]int64 // a pid's start time, when not its default (pid*10): another process took it
+	killed            []int32         // what killPids was handed
+	sleepingAtDestroy bool            // agent:sleeping was already written when the controller was destroyed
 
 	statusCalls  int
 	status       func(call int) baseds.AgentStatusData // latestStatus
@@ -65,6 +66,7 @@ func newSleepWorld(t *testing.T, meta waveobj.MetaMapType) *sleepWorld {
 		alive:        map[int32]bool{},
 		survivesStop: map[int32]bool{},
 		unkillable:   map[int32]bool{},
+		started:      map[int32]int64{},
 		status:       func(int) baseds.AgentStatusData { return baseds.AgentStatusData{} },
 		exited:       func() (bool, int) { return false, 0 },
 	}
@@ -143,6 +145,18 @@ func newSleepWorld(t *testing.T, meta waveobj.MetaMapType) *sleepWorld {
 			}
 		}
 	})
+	swap(t, &pidStarted, func(pid int32) (int64, bool) {
+		w.mu.Lock()
+		defer w.mu.Unlock()
+		if !w.alive[pid] {
+			return 0, false
+		}
+		if at, ok := w.started[pid]; ok {
+			return at, true
+		}
+		return int64(pid) * 10, true
+	})
+	swap(t, &leftovers, map[string]map[int32]int64{})
 	swap(t, &consumerSampler, func() memusage.Sampler {
 		return memusage.Sampler{Footprint: func(pid int32) (uint64, bool) { return uint64(pid) * 1000, true }}
 	})
@@ -379,12 +393,27 @@ func TestSleepRefusesWithoutASession(t *testing.T) {
 
 func TestSleepRefusesAnAgentThatIsAlreadyAsleep(t *testing.T) {
 	w := newSleepWorld(t, sleepingMeta(time.Now()))
+	w.exited = func() (bool, int) { return true, -1 } // asleep: its controller is gone
 	_, err := sleepAgent(context.Background(), rowOf(t, idleClaude(writeTranscript(t, "abc"))), false)
 	if err == nil || !strings.Contains(err.Error(), "already asleep") {
 		t.Fatalf("err = %v, want already asleep", err)
 	}
 	if got := w.eventLog(); len(got) != 0 {
 		t.Errorf("events = %v, want nothing touched", got)
+	}
+}
+
+// a block whose process runs while its agent:sleeping mark stayed (a forced restart that was no wake, 2026-11-26: a
+// Claude account switch restarted sleeping agents) is awake: the mark is stale, and the sleep goes ahead instead of
+// failing "already asleep" every minute
+func TestSleepGoesAheadOverAStaleSleepingMark(t *testing.T) {
+	w := newSleepWorld(t, sleepingMeta(time.Now().Add(-time.Hour)))
+	w.exited = func() (bool, int) { return false, 0 } // its process runs
+	if _, err := sleepAgent(context.Background(), rowOf(t, idleClaude(writeTranscript(t, "abc"))), false); err != nil {
+		t.Fatalf("err = %v, want the awake agent slept", err)
+	}
+	if got := w.eventLog(); !slices.Contains(got, "destroy") {
+		t.Fatalf("events = %v, want its process stopped", got)
 	}
 }
 
@@ -438,25 +467,96 @@ func TestSleepReportsARunningSubagent(t *testing.T) {
 	}
 }
 
-func TestSleepFailsWhenTheTreeSurvives(t *testing.T) {
+// a tree still ending after the destroy and the kill (a machine paging hard): the controller is gone either way, so the
+// agent stays asleep with its Wake, rather than a tab with no process and no Wake, and the survivor is remembered
+func TestSleepKeepsTheAgentAsleepWhenTheTreeOutlivesTheKill(t *testing.T) {
 	w := newSleepWorld(t, claudeMeta())
 	w.survivesStop[11], w.unkillable[11] = true, true
 	row := rowOf(t, idleClaude(writeTranscript(t, "abc")))
 
-	_, err := sleepAgent(context.Background(), row, false)
-	if err == nil || !strings.Contains(err.Error(), "did not stop") || !strings.Contains(err.Error(), "11") || !strings.Contains(err.Error(), "design") {
-		t.Fatalf("err = %v, want it to name the agent and the pids that did not stop", err)
+	rtn, err := sleepAgent(context.Background(), row, false)
+	if err != nil {
+		t.Fatalf("err = %v, want the agent asleep though pid 11 still runs", err)
 	}
 	if !slices.Equal(w.killed, []int32{11}) {
-		t.Errorf("killed = %v, want the survivor killed before giving up", w.killed)
+		t.Errorf("killed = %v, want the survivor killed", w.killed)
 	}
-	if got, _ := w.metaValue(waveobj.MetaKey_CmdArgs).([]any); !reflect.DeepEqual(got, []any{"fix the bug"}) {
-		t.Errorf("cmd:args = %#v, want the old args back", w.metaValue(waveobj.MetaKey_CmdArgs))
+	if rtn.FreedBytes != 10000 {
+		t.Errorf("freed = %d, want 10000: only pid 10 ended", rtn.FreedBytes)
 	}
-	for _, key := range []string{waveobj.MetaKey_AgentSleeping, waveobj.MetaKey_AgentSleepFreed} {
-		if v := w.metaValue(key); v != nil {
-			t.Errorf("%s = %v, want it deleted", key, v)
-		}
+	if freed, _ := w.metaValue(waveobj.MetaKey_AgentSleepFreed).(int64); freed != 10000 {
+		t.Errorf("agent:sleepfreed = %v, want 10000", w.metaValue(waveobj.MetaKey_AgentSleepFreed))
+	}
+	if w.metaValue(waveobj.MetaKey_AgentSleeping) == nil {
+		t.Error("agent:sleeping was cleared")
+	}
+	if got, _ := w.metaValue(waveobj.MetaKey_CmdArgs).([]string); !slices.Equal(got, []string{"--resume", "abc", "--model", "opus"}) {
+		t.Errorf("cmd:args = %v, want the resume args kept for the wake", w.metaValue(waveobj.MetaKey_CmdArgs))
+	}
+	if got := liveLeftovers(agentsBlockA); !slices.Equal(got, []int32{11}) {
+		t.Errorf("leftovers = %v, want pid 11 remembered", got)
+	}
+}
+
+// the wake ends what the sleep left running before it starts a process on the same conversation
+func TestWakeEndsWhatTheSleepLeftBeforeItRestarts(t *testing.T) {
+	w := newSleepWorld(t, sleepingMeta(time.Now()))
+	installSleeping(w)
+	w.status = func(int) baseds.AgentStatusData { return readyStatus() }
+	noteLeftovers(agentsBlockA, []int32{11})
+
+	if err := (&WshServer{}).AgentsWakeCommand(context.Background(), wshrpc.CommandAgentsWakeData{Tab: agentsTabA}); err != nil {
+		t.Fatal(err)
+	}
+	if got := w.eventLog(); !slices.Equal(got, []string{"meta", "kill", "resync", "meta"}) {
+		t.Errorf("events = %v, want the leftover killed before the restart", got)
+	}
+	if got := liveLeftovers(agentsBlockA); len(got) != 0 {
+		t.Errorf("leftovers = %v, want none once they ended", got)
+	}
+}
+
+// a leftover that will not end keeps the agent asleep with the reason: a restart would run two processes on one
+// transcript
+func TestWakeRefusesWhileWhatTheSleepLeftStillRuns(t *testing.T) {
+	w := newSleepWorld(t, sleepingMeta(time.Now()))
+	installSleeping(w)
+	w.unkillable[11] = true
+	noteLeftovers(agentsBlockA, []int32{11})
+
+	err := (&WshServer{}).AgentsWakeCommand(context.Background(), wshrpc.CommandAgentsWakeData{Tab: agentsTabA})
+	if err == nil || !strings.Contains(err.Error(), "11") {
+		t.Fatalf("err = %v, want the wake refused naming pid 11", err)
+	}
+	if w.resyncs != 0 {
+		t.Errorf("restarts = %d, want none while the old process runs", w.resyncs)
+	}
+	if w.metaValue(waveobj.MetaKey_AgentSleeping) == nil {
+		t.Error("agent:sleeping was cleared though nothing started")
+	}
+	if reason, _ := w.metaValue(waveobj.MetaKey_AgentWakeFailed).(string); !strings.Contains(reason, "still ending") {
+		t.Errorf("agent:wakefailed = %q, want the reason for the card", reason)
+	}
+}
+
+// a pid number another process took after the slept one ended is not the agent's: the wake leaves it alone
+func TestWakeLeavesAPidAnotherProcessTookAlone(t *testing.T) {
+	w := newSleepWorld(t, sleepingMeta(time.Now()))
+	installSleeping(w)
+	w.status = func(int) baseds.AgentStatusData { return readyStatus() }
+	noteLeftovers(agentsBlockA, []int32{11})
+	w.mu.Lock()
+	w.started[11] = 999 // pid 11 now runs a process that started later
+	w.mu.Unlock()
+
+	if err := (&WshServer{}).AgentsWakeCommand(context.Background(), wshrpc.CommandAgentsWakeData{Tab: agentsTabA}); err != nil {
+		t.Fatal(err)
+	}
+	if len(w.killed) != 0 {
+		t.Errorf("killed = %v, want nothing: pid 11 is another process now", w.killed)
+	}
+	if w.resyncs != 1 {
+		t.Errorf("restarts = %d, want 1", w.resyncs)
 	}
 }
 

@@ -4,7 +4,15 @@
 import { describe, expect, it } from "vitest";
 import type { AgentState } from "./agentsviewmodel";
 import type { RunInfo } from "./runlineage";
-import { latestUnreadId, nestedIds, nextUnread, sameCounts, unreadLabel, viewingIds } from "./unreadagents";
+import {
+    latestUnreadId,
+    nestedIds,
+    nextUnread,
+    sameCounts,
+    seenAtSight,
+    unreadLabel,
+    viewingIds,
+} from "./unreadagents";
 
 const states = (o: Record<string, AgentState>) => new Map(Object.entries(o));
 const roster = (o: Record<string, AgentState>) => Object.entries(o).map(([id, state]) => ({ id, state }));
@@ -128,6 +136,21 @@ describe("viewingIds", () => {
 
     it("sees nothing while the window is not focused", () => {
         expect(viewingIds(false, true, "terminal", "a", grid).size).toBe(0);
+    });
+});
+
+describe("seenAtSight", () => {
+    it("is the agents in view that show their terminal: one showing Chat counts down as its Chat reads", () => {
+        const viewing = new Set(["a", "b", "c"]);
+        expect([...seenAtSight(viewing, new Set(["b", "x"]))].sort()).toEqual(["a", "c"]);
+        expect(seenAtSight(new Set(), new Set(["b"])).size).toBe(0);
+    });
+
+    it("keeps the count of a Chat agent in view and adds a turn that ends there", () => {
+        // what nextUnread then does with it: in view in Chat is not seen at sight
+        const seen = seenAtSight(new Set(["a"]), new Set(["a"]));
+        const counts = nextUnread(new Map([["a", 2]]), new Map([["a", "working"]]), [{ id: "a", state: "idle" }], seen);
+        expect(counts.get("a")).toBe(3);
     });
 });
 

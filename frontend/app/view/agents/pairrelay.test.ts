@@ -63,6 +63,20 @@ describe("parsePairRelay", () => {
         expect(r.messages[0]!.text).toContain("```arc-pair\nD1 Pilot on 40 transcripts");
     });
 
+    it("folds the first relay of a pair that started from an older reply into one brief, which holds the note", () => {
+        const r = read("pair-relay-first-older");
+        if (r?.kind !== "relay") throw new Error(`not a relay: ${JSON.stringify(r)}`);
+        expect(r.brief).toMatch(/^arcterm has paired you with a judge, "mit-thesis"\./);
+        expect(r.brief).toContain("```arc-pair");
+        expect(r.brief).toMatch(
+            /\n\nThe judge is judging your reply from 13:40; weigh its judgement against what you have done since\.$/
+        );
+        expect(briefJudges(r.brief ?? "")).toEqual(["mit-thesis"]);
+        // the note is not a message: the judge's reply is still the one card after it
+        expect(r.messages).toHaveLength(1);
+        expect(r.messages[0]).toMatchObject({ from: "judge", name: "mit-thesis", time: "14:02" });
+    });
+
     it("reads a judge's brief: the working agent, its tab, and the reply it holds as that agent's message", () => {
         const r = read("pair-judge-brief");
         if (r?.kind !== "judgeBrief") throw new Error("not a judge brief");
@@ -73,6 +87,26 @@ describe("parsePairRelay", () => {
         expect(r.reply).toMatchObject({ from: "worker", name: "thesis-draft", time: null });
         expect(r.reply?.quote).toMatch(/^reopen D2:/);
         expect(r.reply?.text).toContain("```arc-pair");
+    });
+
+    it("reads the brief of an older reply: the paragraph stays in the brief, the pasted reply is the working agent's message", () => {
+        const r = read("pair-judge-brief-older");
+        if (r?.kind !== "judgeBrief") throw new Error("not a judge brief");
+        expect(r.workerName).toBe("thesis-draft");
+        expect(r.workerTab).toBe("tab-worker");
+        expect(r.brief).toMatch(/^You are the judge of another agent's work\./);
+        expect(r.brief).toContain(
+            "The agent has gone on since this reply. Its transcript is C:/Users/me/.claude/projects/"
+        );
+        expect(r.brief).toContain("9c1d7e52-4b0a-4f6e-8a31-2d5c7e90b4a1");
+        expect(r.brief).not.toContain("--- the agent's reply ---");
+        expect(r.brief).not.toContain("--- end of the reply ---");
+        expect(r.reply).toMatchObject({ from: "worker", name: "thesis-draft", time: null });
+        expect(r.reply?.quote).toMatch(/^reopen D2:/);
+        expect(r.reply?.text).toContain("```arc-pair");
+        // the same reply as the latest one's brief holds: only the delimiters and the paragraph differ
+        const latest = read("pair-judge-brief");
+        expect(latest?.kind === "judgeBrief" ? latest.reply?.text : null).toBe(r.reply?.text);
     });
 
     it("reads the end notice's commands", () => {

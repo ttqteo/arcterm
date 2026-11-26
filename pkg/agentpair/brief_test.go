@@ -42,6 +42,68 @@ func TestJudgeBriefHoldsWhatTheSpecSays(t *testing.T) {
 	}
 }
 
+// a reply the agent has gone on from: one paragraph before the paste names the transcript and the record, and the paste
+// is "the agent's reply", not "the latest"
+func TestJudgeBriefOfAnOlderReplyNamesTheTranscript(t *testing.T) {
+	in := JudgeBriefInput{
+		WorkerName: "w", WorkerTab: "t", Reply: "An older reply.",
+		Transcript: `C:\Users\me\.claude\projects\p\s1.jsonl`, Record: "a1b2-c3", Later: true,
+	}
+	got := JudgeBrief(in)
+	paragraph := `The agent has gone on since this reply. Its transcript is C:\Users\me\.claude\projects\p\s1.jsonl and the reply is the record a1b2-c3 in it: ` +
+		"read what it did after it there if it bears on your judgement, and judge the code as it is now."
+	paste := "\n--- the agent's reply ---\nAn older reply.\n--- end of the reply ---"
+	for _, want := range []string{paragraph, paste} {
+		if !strings.Contains(got, want) {
+			t.Errorf("the brief does not hold %q:\n%s", want, got)
+		}
+	}
+	if strings.Index(got, paragraph) > strings.Index(got, paste) {
+		t.Errorf("the paragraph comes after the paste:\n%s", got)
+	}
+	if strings.Contains(got, "latest reply") {
+		t.Errorf("a brief of an older reply says it is the latest:\n%s", got)
+	}
+	// the rest of the brief is today's
+	today := JudgeBrief(JudgeBriefInput{WorkerName: "w", WorkerTab: "t", Reply: "An older reply."})
+	if head := strings.SplitN(today, "\n--- the agent's latest reply ---", 2)[0]; !strings.HasPrefix(got, head) {
+		t.Errorf("the brief of an older reply does not open as today's does")
+	}
+}
+
+// with no Later the brief is byte for byte the one it was: the transcript and the record are not mentioned
+func TestJudgeBriefWithoutLaterIsTodays(t *testing.T) {
+	plain := JudgeBriefInput{WorkerName: "w", WorkerTab: "t", Reply: "The latest.", Docs: []string{"docs/plans/a.md"}, Note: "mind it"}
+	withFacts := plain
+	withFacts.Transcript, withFacts.Record = "/t/s1.jsonl", "a1"
+	if JudgeBrief(plain) != JudgeBrief(withFacts) {
+		t.Errorf("a transcript and a record with no Later change the brief:\n%s\n---\n%s", JudgeBrief(plain), JudgeBrief(withFacts))
+	}
+	if !strings.Contains(JudgeBrief(plain), "\n--- the agent's latest reply ---\nThe latest.\n--- end of the reply ---\n") {
+		t.Errorf("today's brief lost its delimiters:\n%s", JudgeBrief(plain))
+	}
+	// no reply, no paragraph: it points at the reply that is pasted
+	empty := JudgeBrief(JudgeBriefInput{WorkerName: "w", WorkerTab: "t", Later: true, Transcript: "/t/s1.jsonl", Record: "a1"})
+	if strings.Contains(empty, "gone on since") || strings.Contains(empty, "--- the agent's") {
+		t.Errorf("a brief with no reply holds the paragraph or the paste:\n%s", empty)
+	}
+}
+
+// the working agent is told, in its first prompt, which of its replies the judge is judging
+func TestOlderReplyNoteSaysFromWhenAndToWeighIt(t *testing.T) {
+	ts := time.Date(2026, 11, 26, 15, 4, 0, 0, time.Local).UnixMilli()
+	got := OlderReplyNote(ts)
+	for _, want := range []string{"judging your reply from 15:04", "weigh its judgement against what you have done since"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("the note does not hold %q: %s", want, got)
+		}
+	}
+	// no time known: it still says the reply is an older one, and shows no time
+	if none := OlderReplyNote(0); !strings.Contains(none, "an earlier reply of yours") || strings.Contains(none, "from") {
+		t.Errorf("a note with no time reads %q", none)
+	}
+}
+
 // at no new points the judge first sums the pair up for the person, in a summary line of the same block; a message of the
 // person that arrives with the agent's answer is judged through that answer
 func TestJudgeBriefAsksForASummaryAtNoNewPoints(t *testing.T) {

@@ -124,19 +124,24 @@ export const councilReportTables = {
             return { ok, detail: JSON.stringify({ table, facts }) };
         });
 
-        await step("Số liệu lists only the figures Go verified, each with its path:line in mono", async () => {
+        await step("Số liệu lists only the figures Go verified, each with a chip of its file (sans, the full path:line in its title)", async () => {
             const table = await h.ev(tableOf(FIGURES));
             const facts = await h.ev(`(() => {
                 const root = document.querySelector(${q(SUMMARY)});
                 const after = (a, b) => !!a && !!b && !!(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
                 const figures = root.querySelector(${q(FIGURES)});
-                const src = figures?.querySelector('[data-council-figure-cell="source"]');
+                const chip = figures?.querySelector('[data-council-figure-cell="source"] [data-council-figure-source]');
                 return {
                     afterTodo: after(root.querySelector(${q(TODO)}), figures),
                     beforeDirections: after(figures, root.querySelector("[data-council-direction]")),
                     rowMarks: figures?.querySelectorAll("[data-council-figure-row]").length ?? 0,
-                    mono: src == null ? null : /mono/i.test(getComputedStyle(src).fontFamily),
-                    wrong: root.innerText.includes("pkg/services/model.go:99"),
+                    mono: chip == null ? null : /mono/i.test(getComputedStyle(chip).fontFamily),
+                    chipTitle: chip?.getAttribute("title") ?? null,
+                    wrong:
+                        root.innerText.includes("pkg/services/model.go:99") ||
+                        [...root.querySelectorAll("[data-council-figure-source]")].some((e) =>
+                            e.title.includes("pkg/services/model.go:99")
+                        ),
                 };
             })()`);
             await h.ev(`document.querySelector(${q(FIGURES)})?.scrollIntoView({ block: "start" })`);
@@ -149,13 +154,14 @@ export const councilReportTables = {
                 table.heads.join("|") === "Giá trị|Đo gì|Nguồn" &&
                 rows.join("\n") ===
                     [
-                        "3|số ứng dụng tối đa ghim trên rail|frontend/app/view/agents/railapps.ts:10",
-                        "1,248 ms|thời gian mở lại một ứng dụng nguội|pkg/services/model.go:38",
+                        "3|số ứng dụng tối đa ghim trên rail|railapps.ts 10",
+                        "1,248 ms|thời gian mở lại một ứng dụng nguội|model.go 38",
                     ].join("\n") &&
                 facts.rowMarks === 2 &&
                 facts.afterTodo &&
                 facts.beforeDirections &&
-                facts.mono === true &&
+                facts.mono === false &&
+                facts.chipTitle === "frontend/app/view/agents/railapps.ts:10" &&
                 // the figure that did not check out is About the council's, which is folded
                 !facts.wrong;
             return { ok, detail: JSON.stringify({ table, facts }) };

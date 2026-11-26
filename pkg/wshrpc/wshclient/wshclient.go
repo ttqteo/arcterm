@@ -1621,6 +1621,12 @@ func PairBriefCommand(w *wshutil.WshRpc, data wshrpc.CommandPairBriefData, opts 
 	return resp, err
 }
 
+// command "paircloseworker", wshserver.PairCloseWorkerCommand
+func PairCloseWorkerCommand(w *wshutil.WshRpc, data wshrpc.CommandPairCloseWorkerData, opts *wshrpc.RpcOpts) (*wshrpc.CommandPairCloseWorkerRtnData, error) {
+	resp, err := sendRpcRequestCallHelper[*wshrpc.CommandPairCloseWorkerRtnData](w, "paircloseworker", data, opts)
+	return resp, err
+}
+
 // command "pairget", wshserver.PairGetCommand
 func PairGetCommand(w *wshutil.WshRpc, data wshrpc.CommandPairGetData, opts *wshrpc.RpcOpts) (*wshrpc.PairView, error) {
 	resp, err := sendRpcRequestCallHelper[*wshrpc.PairView](w, "pairget", data, opts)

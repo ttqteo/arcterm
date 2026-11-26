@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -101,7 +102,7 @@ func (ws *WshServer) PairGetCommand(ctx context.Context, data wshrpc.CommandPair
 }
 
 func (ws *WshServer) PairBriefCommand(ctx context.Context, data wshrpc.CommandPairBriefData) (*wshrpc.CommandPairBriefRtnData, error) {
-	text, err := getPairManager().Brief(ctx, data.WorkerTab)
+	text, err := getPairManager().Brief(ctx, data.WorkerTab, data.From)
 	if err != nil {
 		return nil, err
 	}
@@ -122,6 +123,11 @@ func (ws *WshServer) PairRunNowCommand(ctx context.Context, data wshrpc.CommandP
 
 func (ws *WshServer) PairUnpairCommand(ctx context.Context, data wshrpc.CommandPairGetData) error {
 	return getPairManager().Unpair(ctx, data.PairId)
+}
+
+// PairCloseWorkerCommand ends the pair of a working agent whose tab is closing and names the judges to close with it.
+func (ws *WshServer) PairCloseWorkerCommand(ctx context.Context, data wshrpc.CommandPairCloseWorkerData) (*wshrpc.CommandPairCloseWorkerRtnData, error) {
+	return &wshrpc.CommandPairCloseWorkerRtnData{Judges: getPairManager().CloseWorker(data.WorkerTab)}, nil
 }
 
 // PairResumeCommand puts a stopped pair back to relaying and delivers what is still queued; it adds no message.
@@ -166,9 +172,15 @@ func notePairStatus(ev *wps.WaveEvent) {
 			panichandler.PanicHandler("notePairStatus", recover())
 		}()
 		ctx := context.Background()
-		if tab := statusTabId(ctx, data.ORef); tab != "" && getPairManager().Watches(tab) {
-			getPairManager().TurnEnded(ctx, tab)
+		tab := statusTabId(ctx, data.ORef)
+		if tab == "" || !getPairManager().Watches(tab) {
+			return
 		}
+		// a Stop's idle can come before the turn's last reply is in the transcript (wshserver_turnend.go)
+		if !awaitStopFlush(data) {
+			log.Printf("pair: %s's turn end did not reach its transcript in %s, reading its answer anyway\n", tab, stopFlushWait)
+		}
+		getPairManager().TurnEnded(ctx, tab)
 	})
 }
 
@@ -266,6 +278,25 @@ func (l livePairLink) LastAnswer(ctx context.Context, tab string) (string, int64
 	}
 	text, ts := agentsessions.LastAnswer(tpath, row.Harness)
 	return text, ts, nil
+}
+
+// AnswerAt is the agent's reply in the transcript record uuid, and its time. Only a claude transcript is read: a uuid that
+// is no reply of it (no such record, a record with no text, a pi agent) is an error, never the latest reply in its place.
+func (l livePairLink) AnswerAt(ctx context.Context, tab, uuid string) (string, int64, error) {
+	_, row, err := l.find(ctx, tab)
+	if err != nil {
+		return "", 0, err
+	}
+	tpath, err := agentTranscriptPath(ctx, row)
+	if err != nil {
+		return "", 0, err
+	}
+	if tpath != "" {
+		if text, ts, found := agentsessions.AnswerAt(tpath, row.Harness, uuid); found {
+			return text, ts, nil
+		}
+	}
+	return "", 0, fmt.Errorf("no reply %s in the transcript of %s (only a claude agent's replies can be chosen)", uuid, tab)
 }
 
 // Tokens is what the agent's session spent since sinceMs, counted from its transcript.

@@ -144,7 +144,7 @@ function HeldBody({ model, p }: { model: AgentsViewModel; p: ParkedLaunch }) {
                     {/* the task as your message, not sent yet: dimmed as a queued message is */}
                     <div data-held-task className="flex max-w-[75%] flex-col items-end gap-2 self-end opacity-55">
                         {p.task.trim() !== "" || images.length > 0 ? (
-                            <div className={youBubbleBox(false)}>
+                            <div className={youBubbleBox()}>
                                 {p.task.trim() !== "" ? (
                                     <div className="whitespace-pre-wrap">{p.task.trim()}</div>
                                 ) : null}

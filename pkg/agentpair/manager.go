@@ -59,6 +59,9 @@ type Link interface {
 	// LastAnswer is the agent's latest reply and when it ended (ms). An agent that has not answered yet gives "", 0 and
 	// no error: an error means the answer could not be read.
 	LastAnswer(ctx context.Context, tab string) (text string, ts int64, err error)
+	// AnswerAt is the agent's reply in the transcript record uuid, and when it ended (ms). A uuid that is not a reply in
+	// the agent's transcript is an error that says so: it never falls back to the latest reply.
+	AnswerAt(ctx context.Context, tab, uuid string) (text string, ts int64, err error)
 	// Tokens is Input + CacheRead + CacheCreation + Output of the agent's session since sinceMs.
 	Tokens(ctx context.Context, tab string, sinceMs int64) (int64, error)
 	// Agent names the tab; an error for a tab that is not an agent.
@@ -256,29 +259,69 @@ func (m *Manager) Paired(tab string) bool {
 	return p != nil
 }
 
-// Brief is the launch task of a new judge for the working agent at workerTab.
-func (m *Manager) Brief(ctx context.Context, workerTab string) (string, error) {
+// chosenReply is the reply a pair starts from: the working agent's latest, or the older one a transcript record uuid names.
+type chosenReply struct {
+	text     string
+	ts       int64  // the chosen reply's time
+	latestTs int64  // the agent's latest answer's time: the relay takes what the agent says after it
+	record   string // the record uuid the person chose; "" for the latest
+	// later says the agent has gone on since the chosen reply: its time is not the latest answer's. The newest reply
+	// chosen by its uuid is the latest, so it is no older reply and gives today's brief.
+	later bool
+}
+
+// readChosen reads the reply from names at tab ("" is the latest). The latest is read too, for the time the relay starts
+// after. A uuid that is not a reply of the agent's transcript is an error: nothing falls back to the latest.
+func (m *Manager) readChosen(ctx context.Context, tab, from string) (chosenReply, error) {
+	text, ts, err := m.Link.LastAnswer(ctx, tab)
+	if err != nil {
+		return chosenReply{}, fmt.Errorf("reading the latest reply of %s: %w", tab, err)
+	}
+	c := chosenReply{text: text, ts: ts, latestTs: ts}
+	if from == "" {
+		return c, nil
+	}
+	if c.text, c.ts, err = m.Link.AnswerAt(ctx, tab, from); err != nil {
+		return chosenReply{}, fmt.Errorf("reading reply %s of %s: %w", from, tab, err)
+	}
+	c.record, c.later = from, c.ts != c.latestTs
+	return c, nil
+}
+
+// Brief is the launch task of a new judge for the working agent at workerTab, for its latest reply, or for the older one
+// the transcript record uuid from names.
+func (m *Manager) Brief(ctx context.Context, workerTab, from string) (string, error) {
 	facts, err := m.Link.Agent(ctx, workerTab)
 	if err != nil {
 		return "", err
 	}
-	reply, _, err := m.Link.LastAnswer(ctx, workerTab)
-	if err != nil {
-		return "", fmt.Errorf("reading the latest reply of %s: %w", workerTab, err)
+	m.lock()
+	p, isWorker := m.pairOf(workerTab)
+	m.mu.Unlock()
+	if p != nil && isWorker {
+		from = "" // the judge joins that pair, which has its first message already (as Start reads it)
 	}
-	return m.briefText(ctx, workerTab, facts.Name, reply, ""), nil
+	c, err := m.readChosen(ctx, workerTab, from)
+	if err != nil {
+		return "", err
+	}
+	return m.briefText(ctx, workerTab, JudgeBriefInput{
+		WorkerName: facts.Name, Reply: c.text, Later: c.later, Transcript: facts.Transcript, Record: c.record,
+	}), nil
 }
 
-// briefText is JudgeBrief with the plan and spec paths the working agent's recent turns name.
-func (m *Manager) briefText(ctx context.Context, workerTab, workerName, reply, note string) string {
+// briefText is JudgeBrief for in, with the plan and spec paths the working agent's recent turns name. in.WorkerTab and
+// in.Docs are set here.
+func (m *Manager) briefText(ctx context.Context, workerTab string, in JudgeBriefInput) string {
 	texts, err := m.Link.RecentTexts(ctx, workerTab, briefTurns)
 	if err != nil {
 		log.Printf("pair brief: reading the recent turns of %s: %v\n", workerTab, err) // the brief goes without paths
 	}
-	if strings.TrimSpace(reply) != "" {
-		texts = append(texts, reply)
+	if strings.TrimSpace(in.Reply) != "" {
+		texts = append(texts, in.Reply)
 	}
-	return JudgeBrief(JudgeBriefInput{WorkerName: workerName, WorkerTab: workerTab, Reply: reply, Docs: DocsAtHand(texts), Note: note})
+	in.WorkerTab, in.Docs = workerTab, DocsAtHand(texts)
+	return JudgeBrief(in)
 }
 
 // startPlan says what Start does for d: make a new pair (existing is "") or add a judge to the working agent's pair.
@@ -331,11 +374,13 @@ func (m *Manager) Start(ctx context.Context, d wshrpc.CommandPairStartData) (*ws
 	if err != nil {
 		return nil, err
 	}
-	var workerText string
-	var workerTs, judgeSeen int64
+	// the reply a new pair starts from: the latest, or the older one d.From names. A judge that joins a pair finds its
+	// first message made, so From is not read for it.
+	var chosen chosenReply
+	var judgeSeen int64
 	if existing == "" {
-		if workerText, workerTs, err = m.Link.LastAnswer(ctx, d.WorkerTab); err != nil {
-			return nil, fmt.Errorf("reading the latest reply of %s: %w", d.WorkerTab, err)
+		if chosen, err = m.readChosen(ctx, d.WorkerTab, d.From); err != nil {
+			return nil, err
 		}
 	}
 	if !d.Briefed {
@@ -370,14 +415,17 @@ func (m *Manager) Start(ctx context.Context, d wshrpc.CommandPairStartData) (*ws
 			CreatedTs: now, CapFromTs: now, State: StateRelaying, JudgeTokens: true,
 			Messages: []Message{}, Pending: map[string][]string{}, Seen: map[string]int64{},
 		}
-		if strings.TrimSpace(workerText) != "" {
-			// the working agent's latest reply is the conversation's first message; the judge owes an answer to it
-			ts := workerTs
+		if strings.TrimSpace(chosen.text) != "" {
+			// the chosen reply is the conversation's first message, with its own time; the judge owes an answer to it. The
+			// agent is seen up to its latest answer, so the relay starts with its next turn and the turns between the
+			// chosen reply and now are not taken
+			ts := chosen.ts
 			if ts == 0 {
 				ts = now
 			}
-			p.Messages = append(p.Messages, Message{Id: nextId(p), From: FromWorker, Tab: d.WorkerTab, Ts: ts, Raw: workerText})
-			p.Seen[d.WorkerTab] = workerTs
+			p.Messages = append(p.Messages, Message{Id: nextId(p), From: FromWorker, Tab: d.WorkerTab, Ts: ts, Raw: chosen.text})
+			p.Seen[d.WorkerTab] = chosen.latestTs
+			p.Later = chosen.later
 		}
 		m.pairs[p.Id] = p
 	} else {
@@ -403,7 +451,9 @@ func (m *Manager) Start(ctx context.Context, d wshrpc.CommandPairStartData) (*ws
 	m.publish(u)
 
 	if !d.Briefed {
-		brief := m.briefText(ctx, d.WorkerTab, workerName, reply, d.Note)
+		brief := m.briefText(ctx, d.WorkerTab, JudgeBriefInput{
+			WorkerName: workerName, Reply: reply, Note: d.Note, Later: chosen.later, Transcript: workerFacts.Transcript, Record: chosen.record,
+		})
 		if err := m.Link.Send(ctx, d.JudgeTab, agentmsg.PairEnvelope(brief)); err != nil {
 			m.undoStart(id, d.JudgeTab, existing == "", priorRest, hadRest)
 			return nil, fmt.Errorf("briefing the judge: %w", err)
@@ -1027,8 +1077,20 @@ func (m *Manager) buildPrompt(id, tab string) (prompt string, ids []string, brie
 			names = append(names, j.Name)
 		}
 		first, briefed = WorkerBrief(names), true
+		if p.Later {
+			first += "\n\n" + OlderReplyNote(firstWorkerTs(p))
+		}
 	}
 	return RelayPrompt(items, first), ids, briefed
+}
+
+// firstWorkerTs is the time of the working agent's first message in the pair: the reply the judge was started on. 0 when
+// there is none.
+func firstWorkerTs(p *Pair) int64 {
+	if i := slices.IndexFunc(p.Messages, func(m Message) bool { return m.From == FromWorker }); i >= 0 {
+		return p.Messages[i].Ts
+	}
+	return 0
 }
 
 func relayItem(p *Pair, msg Message) RelayItem {

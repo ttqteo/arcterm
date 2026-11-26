@@ -6,6 +6,7 @@
 // setting it is still shown, struck through, rather than hidden: the plan says it and the run will not.
 
 import { shortModel } from "../agents/modelname";
+import { routeFace } from "../orchestrate/taskroute";
 
 export type PlanModelTone = "plan-live" | "plan-ignored" | "at-review" | "workers";
 
@@ -52,5 +53,5 @@ export function planMixLine(tasks: DagPlanPreviewTask[], workers: WorkersSetting
 // "lead" only while the lead's route is still being resolved: the workers then run on whatever it becomes.
 export function workersModelName(workerRoute: RoutePin | null, leadRoute: RoutePin | null): string {
     const route = workerRoute ?? leadRoute;
-    return route != null ? shortModel(route.model) : "lead";
+    return route != null ? routeFace(route) : "lead";
 }

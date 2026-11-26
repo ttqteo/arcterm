@@ -63,8 +63,8 @@ type Side struct {
 	Session string `json:"session,omitempty"`
 	Gone    bool   `json:"gone,omitempty"`
 	Briefed bool   `json:"briefed,omitempty"` // a judge launched with the brief as its task, or sent the brief as its first prompt
-	// Launched marks a judge arcterm launched for the job (a "Judge: <worker>" tab started by Add judge, or a resting one
-	// woken by it), as against an agent the person picked from the live list. Only a launched judge sleeps when the round
+	// Launched marks a judge arcterm launched for the job (a "Judge: <worker>" tab started by ⚖ under a reply, or a resting
+	// one woken by it), as against an agent the person picked from the live list. Only a launched judge sleeps when the round
 	// ends and rests until the next one.
 	Launched bool `json:"launched,omitempty"`
 	// Tokens is this session's spend since the pair's CapFromTs, as last counted. A gone judge's stays: its session
@@ -123,4 +123,8 @@ type Pair struct {
 	// Passes are the commands Run now let through; the next JobSlotCommand for one consumes it.
 	Passes        []string `json:"passes,omitempty"`
 	WorkerBriefed bool     `json:"workerbriefed,omitempty"` // the working agent has had the worker brief
+	// Later says the pair started from a reply the working agent had gone on from: its first message is that reply, and
+	// the working agent's first relayed prompt says so (OlderReplyNote). It is kept because that prompt is built when the
+	// judge first answers, by when Seen[worker] has moved on and the fact can no longer be read from the pair.
+	Later bool `json:"later,omitempty"`
 }

@@ -2683,11 +2683,22 @@ declare global {
     // wshrpc.CommandPairBriefData
     type CommandPairBriefData = {
         workertab: string;
+        from?: string;
     };
 
     // wshrpc.CommandPairBriefRtnData
     type CommandPairBriefRtnData = {
         text: string;
+    };
+
+    // wshrpc.CommandPairCloseWorkerData
+    type CommandPairCloseWorkerData = {
+        workertab: string;
+    };
+
+    // wshrpc.CommandPairCloseWorkerRtnData
+    type CommandPairCloseWorkerRtnData = {
+        judges: string[];
     };
 
     // wshrpc.CommandPairGetData
@@ -2731,6 +2742,7 @@ declare global {
         note: string;
         briefed: boolean;
         launched?: boolean;
+        from?: string;
     };
 
     // wshrpc.CommandPauseRunData
@@ -5085,6 +5097,9 @@ declare global {
         name: string;
         workertab: string;
         pairid: string;
+        ts?: number;
+        session?: string;
+        workersession?: string;
     };
 
     // wshrpc.PairSide

@@ -3,8 +3,9 @@
 //
 // Pure: how many turns each agent finished while you were not looking, for the Agent surface's nav badge and the
 // count on a sidebar row. Each move from working to idle out of view adds one, so an agent that goes back to work
-// unseen keeps its count and the next finish adds to it. It is read once it is in view (viewingIds), or once it asks,
-// which the Cockpit's attention badge already counts. An agent that left the roster is dropped. A run's workers and
+// unseen keeps its count and the next finish adds to it. It is read once it asks, which the Cockpit's attention badge
+// already counts, or as you look: an agent showing its terminal at once when it comes into view (viewingIds,
+// seenAtSight), one showing Chat turn by turn as its Chat reads them (unreadturns.ts, chatunread.ts). An agent that left the roster is dropped. A run's workers and
 // stage sessions never count: they report to their lead, so their turns are the lead's business, not yours. Nor does
 // a lead once its plan is running: the engine wakes it, and those turns are the engine's business. Nor does an agent
 // whose launch failed (startError): it folds from booting to idle without ever finishing a turn.
@@ -116,6 +117,13 @@ export function viewingIds(
         return new Set();
     }
     return grid.ids.includes(focusId) ? new Set(grid.ids) : new Set([focusId]);
+}
+
+/** Pure: the agents in view whose count goes to 0 at sight, those showing their terminal. One showing Chat is left out
+ *  of it (`chatShown`): its Chat counts its turns down as it reads them, and a turn that ends while you read further up
+ *  still adds one. */
+export function seenAtSight(viewing: ReadonlySet<string>, chatShown: ReadonlySet<string>): Set<string> {
+    return new Set([...viewing].filter((id) => !chatShown.has(id)));
 }
 
 /** Pure: two unread maps hold the same ids with the same counts. */

@@ -70,9 +70,11 @@ import agentStartFailedScenarios from "./scenarios-agent-start-failed.mjs";
 import sidebarColumnsScenarios from "./scenarios-sidebar-columns.mjs";
 import agentStreamsScenarios from "./scenarios-agent-streams.mjs";
 import chatBgTasksScenarios from "./scenarios-chat-bg-tasks.mjs";
+import chatUnreadTurnsScenarios from "./scenarios-chat-unread-turns.mjs";
 import chatStepsScenarios from "./scenarios-chat-steps.mjs";
 import chatPairBlocksScenarios from "./scenarios-chat-pair-blocks.mjs";
 import chatPairRelayScenarios from "./scenarios-chat-pair-relay.mjs";
+import chatJudgeReplyScenarios from "./scenarios-chat-judge-reply.mjs";
 import chatReadPictureScenarios from "./scenarios-chat-read-picture.mjs";
 import agentSubagentsScenarios from "./scenarios-agent-subagents.mjs";
 import brainstormBoardPickScenarios from "./scenarios-brainstorm-board-pick.mjs";
@@ -45438,23 +45440,37 @@ const AC_TAGS_KEY = "Look at this";
 // One of your bubbles in a chat, found by a word of its text: the wrapper that holds the text and the cards under it
 const acYouWith = (id, text) =>
     `[...(${acLayer(id)}?.querySelectorAll("[data-chat-you]") ?? [])].find((e) => e.textContent.includes(${JSON.stringify(text)}))`;
-// What a bubble shows of its files: its text, its cards (path, the icon's tag, name, the line under it, whether it reads as
-// missing) and the "+N more" chip. Null while the bubble is not there.
+// What a bubble shows of its files: its text; the pile two or more files fold into (its count, the front card's name, the
+// cards behind, the line under the front name), null while open; and the rows of the open list (path, the icon's tag,
+// name, the size or Not found after it, whether it reads as missing), with the list's header. Null while the bubble is
+// not there.
 const acFileCards = (h, id, text) =>
     h.ev(`(() => {
         const you = ${acYouWith(id, text)};
         if (!you) return null;
+        const pile = you.querySelector("[data-chat-file-pile]");
+        const list = you.querySelector("[data-chat-file-list]");
         return {
             text: you.textContent,
-            cards: [...you.querySelectorAll("[data-chat-file-card]")].map((c) => ({
+            pile: pile
+                ? {
+                      count: pile.getAttribute("data-chat-file-pile"),
+                      front: pile.querySelector("[data-chat-file-front]")?.getAttribute("data-chat-file-front") ?? null,
+                      backs: [...pile.querySelectorAll("[data-chat-file-back]")].map((b) => b.textContent.trim()),
+                      line: pile.querySelector("[data-chat-file-line]")?.textContent.trim() ?? null,
+                  }
+                : null,
+            head: list
+                ? [...list.firstElementChild.children].filter((e) => e.tagName !== "BUTTON").map((e) => e.textContent.trim()).filter((t) => t !== "").join(" ")
+                : null,
+            cards: [...(list ?? you).querySelectorAll("[data-chat-file-card]")].map((c) => ({
                 path: c.getAttribute("data-chat-file-card"),
-                tag: c.firstElementChild?.textContent.trim() ?? null,
-                name: c.lastElementChild?.firstElementChild?.textContent.trim() ?? null,
-                sub: c.lastElementChild?.children[1]?.textContent.trim() ?? null,
+                tag: c.children[0]?.textContent.trim() ?? null,
+                name: c.children[1]?.textContent.trim() ?? null,
+                sub: c.children[2]?.textContent.trim() ?? null,
                 missing: c.hasAttribute("data-chat-file-missing"),
                 text: c.textContent.trim(),
             })),
-            more: you.querySelector("[data-chat-file-more]")?.textContent.trim() ?? null,
         };
     })()`);
 // A computed 1px border or hairline, as the window draws it: at a fractional display scale Chromium snaps it to whole device
@@ -47745,9 +47761,9 @@ const agentChat = {
             );
 
             // 60. "Sent": a message with an @mention and a files block (the text the composer sends) draws without the block. The
-            // block's three files are cards under the bubble (the icon's tag, the name, the folder and size under it once
-            // FileInfoCommand answered) and the mention is a pill in the text that reads the file's short name and sits on the
-            // text's line. The agent got the same words: the transcript holds them as sent. The messages of steps 60-62 are
+            // block's three files are a pile over the bubble (notes.md in front, the other two tilted behind, the folder, the
+            // count and the total under it once FileInfoCommand answered); a click opens it into rows (the icon's tag, the name,
+            // the size), and the mention is a pill in the text that reads the file's short name and sits on the text's line. The agent got the same words: the transcript holds them as sent. The messages of steps 60-62 are
             // appended together: the files of three (one gone), then eight (seven there, one gone)
             const notes60 = join(ctx.dir, "notes.md");
             const paper60 = join(ctx.dir, "paper.pdf");
@@ -47765,14 +47781,19 @@ const agentChat = {
             await showAgent(A);
             await h.ev(`window.__arcChatMode.set(${JSON.stringify(A)}, "chat")`);
             const bubble60 = await polishWaitFor(h, `!!(${acYouWith(A, AC_FILES_KEY)}) && !!(${acYouWith(A, AC_MANY_KEY)})`, 15000);
-            // the sizes come from one FileInfoCommand a card
+            // the sizes come from one FileInfoCommand a file; the pile's line shows their total once all have answered
             const sized60 = await polishWaitFor(
                 h,
-                `(${acYouWith(A, AC_FILES_KEY)})?.querySelector('[data-chat-file-card$="paper.pdf"]')?.textContent.includes(" B") === true`,
+                `(${acYouWith(A, AC_FILES_KEY)})?.querySelector("[data-chat-file-line]")?.textContent.endsWith(" B") === true`,
                 8000
             );
             await acScrollTo(h, acYouWith(A, AC_FILES_KEY));
             await polishNap(250);
+            const pile60 = await acFileCards(h, A, AC_FILES_KEY);
+            await h.shot("cdp-shots/agent-chat-60-file-pile.png");
+            await h.ev(`(${acYouWith(A, AC_FILES_KEY)})?.querySelector("[data-chat-file-pile]")?.click()`);
+            const opened60 = await polishWaitFor(h, `!!(${acYouWith(A, AC_FILES_KEY)})?.querySelector("[data-chat-file-list]")`, 3000);
+            await polishNap(450);
             const cards60 = await acFileCards(h, A, AC_FILES_KEY);
             // the pill and the words around it, on one line: the vertical centre of the pill against that of each text node
             const pill60 = await h.ev(`(() => {
@@ -47800,17 +47821,20 @@ const agentChat = {
             await h.shot("cdp-shots/agent-chat-60-file-cards.png");
             const dirName60 = basename(ctx.dir);
             rec(
-                "60. a sent message with an @mention and a files block draws without the block (no Attachments (read these files) in the bubble); @src/app.ts is a pill reading app.ts, its vertical centre within 1 px of the text line's, and the three files are cards tagged MD, PDF, MD whose lines under the names hold the folder and the size (notes.md 8 B, paper.pdf 9 B)",
-                bubble60 && sized60 && cards60 != null && pill60 != null &&
+                "60. a sent message with an @mention and a files block draws without the block (no Attachments (read these files) in the bubble); @src/app.ts is a pill reading app.ts, its vertical centre within 1 px of the text line's; the three files are a pile with notes.md in front, paper.pdf and gone.md behind and the line <folder> · 3 files · 17 B; a click opens rows tagged MD, PDF, MD with the sizes 8 B and 9 B, under a header of 3 files · <folder> · 17 B",
+                bubble60 && sized60 && pile60?.pile != null && opened60 && cards60 != null && pill60 != null &&
+                    pile60.pile.count === "3" && pile60.pile.front?.endsWith("notes.md") &&
+                    JSON.stringify(pile60.pile.backs) === JSON.stringify(["PDFpaper.pdf", "MDgone.md"]) &&
+                    pile60.pile.line === `${dirName60} · 3 files · 17 B` &&
+                    cards60.pile === null && cards60.head === `3 files · ${dirName60} · 17 B` &&
                     !cards60.text.includes("Attachments (read these files)") && !cards60.text.includes("@src/app.ts") &&
                     pill60.label === "app.ts" && pill60.title === "src/app.ts" &&
                     pill60.lines.length === 2 && pill60.off.every((d) => d <= 1) &&
                     cards60.cards.length === 3 &&
                     JSON.stringify(cards60.cards.map((c) => c.tag)) === JSON.stringify(["MD", "PDF", "MD"]) &&
                     JSON.stringify(cards60.cards.map((c) => c.name)) === JSON.stringify(["notes.md", "paper.pdf", "gone.md"]) &&
-                    cards60.cards[0].sub === `${dirName60} · 8 B` && cards60.cards[1].sub === `${dirName60} · 9 B` &&
-                    cards60.more === null,
-                { bubble60, sized60, cards60, pill60 }
+                    cards60.cards[0].sub === "8 B" && cards60.cards[1].sub === "9 B",
+                { bubble60, sized60, pile60, opened60, cards60, pill60 }
             );
 
             // 61. "Not found": the card of a file that is gone reads Not found, is marked missing and has no size line; the
@@ -47832,16 +47856,16 @@ const agentChat = {
                 { missing61, cards61 }
             );
 
-            // 62. "+N more": eight files show five cards and a "+3 more" chip; a click unfolds the other three in place (the
-            // chip goes) and the eighth, which was never written, reads Not found
+            // 62. "Pile": eight files fold into one pile, f1 in front and f2, f3 behind, reading 8 files; a click opens all eight
+            // rows (the pile goes), the eighth, which was never written, reads Not found, and Collapse folds them back
             await acScrollTo(h, acYouWith(A, AC_MANY_KEY));
             await polishNap(250);
             const folded62 = await acFileCards(h, A, AC_MANY_KEY);
-            await h.shot("cdp-shots/agent-chat-62-file-more.png");
-            await h.ev(`(${acYouWith(A, AC_MANY_KEY)})?.querySelector("[data-chat-file-more]")?.click()`);
+            await h.shot("cdp-shots/agent-chat-62-file-pile.png");
+            await h.ev(`(${acYouWith(A, AC_MANY_KEY)})?.querySelector("[data-chat-file-pile]")?.click()`);
             const unfolded62 = await polishWaitFor(
                 h,
-                `(${acYouWith(A, AC_MANY_KEY)})?.querySelectorAll("[data-chat-file-card]").length === 8 && !(${acYouWith(A, AC_MANY_KEY)})?.querySelector("[data-chat-file-more]")`,
+                `(${acYouWith(A, AC_MANY_KEY)})?.querySelectorAll("[data-chat-file-list] [data-chat-file-card]").length === 8 && !(${acYouWith(A, AC_MANY_KEY)})?.querySelector("[data-chat-file-pile]")`,
                 3000
             );
             const lastGone62 = await polishWaitFor(
@@ -47852,16 +47876,23 @@ const agentChat = {
             await acScrollTo(h, acYouWith(A, AC_MANY_KEY));
             await polishNap(250);
             const open62 = await acFileCards(h, A, AC_MANY_KEY);
-            await h.shot("cdp-shots/agent-chat-62-file-more-open.png");
+            await h.shot("cdp-shots/agent-chat-62-file-list.png");
+            await h.ev(`(${acYouWith(A, AC_MANY_KEY)})?.querySelector("[data-chat-file-collapse]")?.click()`);
+            const refolded62 = await polishWaitFor(
+                h,
+                `!!(${acYouWith(A, AC_MANY_KEY)})?.querySelector("[data-chat-file-pile]") && !(${acYouWith(A, AC_MANY_KEY)})?.querySelector("[data-chat-file-list]")`,
+                3000
+            );
             rec(
-                "62. a message of eight files shows five cards and a +3 more chip; a click on the chip shows all eight in place, the chip gone, f1 to f7 found and f8 (never written) reading Not found",
-                folded62 != null && folded62.cards.length === 5 && folded62.more === "+3 more" &&
-                    JSON.stringify(folded62.cards.map((c) => c.name)) === JSON.stringify(["f1.txt", "f2.txt", "f3.txt", "f4.txt", "f5.txt"]) &&
-                    unfolded62 && lastGone62 && open62 != null && open62.cards.length === 8 && open62.more === null &&
+                "62. a message of eight files is one pile reading 8 files, f1.txt in front and f2.txt, f3.txt behind; a click shows all eight rows, the pile gone, f1 to f7 found and f8 (never written) reading Not found; Collapse folds them back into the pile",
+                folded62?.pile != null && folded62.pile.count === "8" && folded62.pile.front?.endsWith("f1.txt") &&
+                    JSON.stringify(folded62.pile.backs) === JSON.stringify(["TXTf2.txt", "TXTf3.txt"]) &&
+                    / · 8 files/.test(folded62.pile.line ?? "") && folded62.cards.length === 0 &&
+                    unfolded62 && lastGone62 && open62 != null && open62.cards.length === 8 && open62.pile === null && refolded62 &&
                     JSON.stringify(open62.cards.map((c) => c.name)) === JSON.stringify(many60.map((p) => basename(p))) &&
                     JSON.stringify(open62.cards.map((c) => c.missing)) === JSON.stringify([false, false, false, false, false, false, false, true]) &&
                     open62.cards.every((c) => c.tag === "TXT"),
-                { folded62, unfolded62, lastGone62, open62 }
+                { folded62, unfolded62, lastGone62, open62, refolded62 }
             );
 
             // 63. "Tagged content": a paste Claude Code wrapped in <pasted_content> and a <system-reminder> block draw as folded
@@ -50418,6 +50449,210 @@ const chatQuote = {
     },
 };
 
+// --- agent-tree-pinned-folder: Pin folder in a project folder's menu (agenttree.tsx openFolderMenu, projectfoldstore.ts
+// pinnedProjectsAtom, projectTree's `pinned`). A pinned folder ends on a small pin and stays in the tree when nothing is
+// left in it, its name faint; its menu reads Unpin folder, which lets it go. A long name truncates and keeps the pin in
+// the row.
+
+const APF_AGENT = "pinned folder source";
+const APF_PROJECT = "arcterm";
+const APF_EMPTY = "pin-fixture-empty";
+const APF_LONG = "pin-fixture-" + "a-very-long-project-folder-name-".repeat(4);
+const apfFolderSel = (name) => `[data-agent-folder-section="active"][data-agent-folder=${JSON.stringify(name)}]`;
+
+const agentTreePinnedFolder = {
+    name: "agent-tree-pinned-folder",
+    surface: "agent",
+    async arrange(h) {
+        const ctx = {
+            dir: mkdtempSync(join(tmpdir(), "verify-agent-tree-pinned-folder-")),
+            prevGrid: await h.ev(`localStorage.getItem(${JSON.stringify(GRID_KEY)})`),
+        };
+        let at = "resetting the grid";
+        try {
+            await h.ev(`localStorage.setItem(${JSON.stringify(GRID_KEY)}, ${JSON.stringify(JSON.stringify(GRID_EMPTY))})`);
+            if (!(await ahReload(h))) throw new Error("the page did not come back after the reload");
+            await h.goto("agent");
+            at = "making the tab";
+            ctx.tabs = { main: await acMakeTab(h, ctx, { label: APF_AGENT }) };
+            at = "setting the roster";
+            await AC.setRoster(h, [
+                {
+                    project: APF_PROJECT,
+                    state: "idle",
+                    idleSince: Date.now() - 60_000,
+                    task: "",
+                    agent: "claude",
+                    model: "opus",
+                    id: ctx.tabs.main.tabId,
+                    name: APF_AGENT,
+                    blockId: ctx.tabs.main.blockId,
+                },
+            ]);
+            at = "clearing the pins and folds";
+            ctx.prev = await AC.agentPage(
+                h,
+                `const F = await mod("app/view/agents/projectfoldstore.ts");
+                const prev = { pinned: globalStore.get(F.pinnedProjectsAtom), collapsed: globalStore.get(F.collapsedProjectsAtom) };
+                globalStore.set(F.pinnedProjectsAtom, []);
+                globalStore.set(F.collapsedProjectsAtom, prev.collapsed.filter((p) => p !== ${JSON.stringify(APF_PROJECT)}));
+                return prev;`
+            );
+        } catch (e) {
+            ctx.arrangeError = `${at}: ${String(e?.message ?? e)}`;
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok: ok === true, detail: typeof detail === "string" ? detail : JSON.stringify(detail) });
+        if (ctx.arrangeError != null) {
+            rec("0. the fixture agent", false, ctx.arrangeError);
+            return steps;
+        }
+        // a folder row as the tree draws it: there, pinned, its name's colour against the faint and the plain tokens,
+        // and whether the pin sits inside the row
+        const read = (name) =>
+            AC.agentPage(
+                h,
+                `await nap(250);
+                const row = document.querySelector(${JSON.stringify(apfFolderSel(name))});
+                if (!row) return { shown: false };
+                const pin = row.querySelector("[data-folder-pinned]");
+                const label = [...row.children].find((c) => c.tagName === "SPAN" && c.classList.contains("truncate"));
+                const r = row.getBoundingClientRect();
+                const p = pin?.getBoundingClientRect();
+                const probe = (cls) => {
+                    const d = document.createElement("span");
+                    d.className = cls;
+                    row.append(d);
+                    const c = getComputedStyle(d).color;
+                    d.remove();
+                    return c;
+                };
+                return {
+                    shown: true,
+                    pinned: pin != null,
+                    faint: label != null && getComputedStyle(label).color === probe("text-ink-faint"),
+                    plain: label != null && getComputedStyle(label).color === probe("text-secondary"),
+                    truncated: label != null && label.scrollWidth > label.clientWidth,
+                    pinInside: p == null ? null : p.left >= r.left && p.right <= r.right + 0.5,
+                    overflow: row.scrollWidth > row.clientWidth + 1,
+                };`
+            );
+        // the folder's right-click menu, as the menu draws it: its labels; `pick` clicks one of them
+        const menu = (name, pick) =>
+            AC.agentPage(
+                h,
+                `const { contextMenuAtom, closeContextMenu } = await mod("app/store/contextmenu.ts");
+                closeContextMenu();
+                await nap(100);
+                const row = document.querySelector(${JSON.stringify(apfFolderSel(name))});
+                if (!row) return { opened: false };
+                const r = row.getBoundingClientRect();
+                row.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: r.left + 40, clientY: r.top + r.height / 2 }));
+                await until(() => globalStore.get(contextMenuAtom) != null, 2000);
+                const labels = (globalStore.get(contextMenuAtom)?.items ?? []).flatMap((i) => (i.label ? [i.label] : []));
+                const rowOf = (label) => [...document.querySelectorAll("[data-menu-item]")].find((r) => r.getAttribute("data-menu-item") === label);
+                await until(() => labels.length === 0 || rowOf(labels[0]) != null, 2000);
+                const drawn = labels.filter((l) => rowOf(l) != null);
+                ${pick == null ? "closeContextMenu();" : `rowOf(${JSON.stringify(pick)})?.click(); await nap(600);`}
+                return { opened: true, labels, drawn };`
+            );
+        const setPins = (list) =>
+            AC.agentPage(
+                h,
+                `const F = await mod("app/view/agents/projectfoldstore.ts");
+                globalStore.set(F.pinnedProjectsAtom, ${JSON.stringify(list)});
+                await nap(600);
+                return globalStore.get(F.pinnedProjectsAtom);`
+            );
+        const pins = () =>
+            AC.agentPage(h, `const F = await mod("app/view/agents/projectfoldstore.ts"); return globalStore.get(F.pinnedProjectsAtom);`);
+        try {
+            await polishWaitFor(h, `!!document.querySelector(${JSON.stringify(apfFolderSel(APF_PROJECT))})`, 15000);
+
+            // 1. an unpinned folder: no pin, and its menu offers Pin folder
+            const s1 = await read(APF_PROJECT);
+            const m1 = await menu(APF_PROJECT);
+            rec("1. an unpinned folder has no pin, and its menu offers Pin folder, drawn", s1.shown && !s1.pinned && m1.drawn?.includes("Pin folder") && !m1.labels.includes("Unpin folder"), { s1, m1 });
+
+            // 2. Pin folder from the menu: the pin is drawn at once, the name stays plain (the folder holds an agent)
+            await menu(APF_PROJECT, "Pin folder");
+            const s2 = await read(APF_PROJECT);
+            const p2 = await pins();
+            await h.shot("cdp-shots/agent-tree-pinned-folder-2-pinned.png");
+            rec("2. Pin folder pins it: the pin at the row's end, the name not faint, and the list holds it", s2.pinned && s2.pinInside === true && s2.plain && !s2.faint && p2.includes(APF_PROJECT), { s2, p2 });
+
+            // 3. a pinned project with nothing in it keeps a folder, its name faint, its pin drawn
+            await setPins([APF_PROJECT, APF_EMPTY]);
+            await polishWaitFor(h, `!!document.querySelector(${JSON.stringify(apfFolderSel(APF_EMPTY))})`, 5000);
+            const s3 = await read(APF_EMPTY);
+            await h.shot("cdp-shots/agent-tree-pinned-folder-3-empty.png");
+            rec("3. an empty pinned project keeps its folder: faint, pinned", s3.shown && s3.pinned && s3.faint, s3);
+
+            // 4. its menu reads Unpin folder and still starts an agent there
+            const m4 = await menu(APF_EMPTY);
+            rec("4. the empty folder's menu has New agent… and Unpin folder, not Pin folder", m4.drawn?.includes("New agent…") && m4.drawn.includes("Unpin folder") && !m4.labels.includes("Pin folder"), m4);
+
+            // 5. Unpin folder lets the empty folder go, and leaves the other pin
+            await menu(APF_EMPTY, "Unpin folder");
+            await polishWaitFor(h, `!document.querySelector(${JSON.stringify(apfFolderSel(APF_EMPTY))})`, 5000);
+            const s5 = await read(APF_EMPTY);
+            const p5 = await pins();
+            rec("5. Unpin folder takes the empty folder out of the tree and the list, the other pin stays", !s5.shown && !p5.includes(APF_EMPTY) && p5.includes(APF_PROJECT), { s5, p5 });
+
+            // 6. a long name truncates; the pin stays inside the row, which does not overflow
+            await setPins([APF_PROJECT, APF_LONG]);
+            await polishWaitFor(h, `!!document.querySelector(${JSON.stringify(apfFolderSel(APF_LONG))})`, 5000);
+            const s6 = await read(APF_LONG);
+            await h.shot("cdp-shots/agent-tree-pinned-folder-6-long.png");
+            rec("6. a long pinned name truncates, the pin stays inside the row, nothing overflows", s6.shown && s6.truncated && s6.pinInside === true && !s6.overflow, s6);
+
+            // 7. unpin the folder that holds the agent: the pin goes, the folder stays (its agent keeps it)
+            await setPins([APF_PROJECT]);
+            await menu(APF_PROJECT, "Unpin folder");
+            const s7 = await read(APF_PROJECT);
+            rec("7. unpinning a folder that holds an agent drops the pin and keeps the folder", s7.shown && !s7.pinned, s7);
+        } catch (e) {
+            rec("x. the scenario ran to the end", false, String(e?.stack ?? e));
+        }
+        return steps;
+    },
+    async teardown(h, ctx) {
+        const step = async (what, fn) => {
+            try {
+                await fn();
+            } catch (e) {
+                console.error(`agent-tree-pinned-folder teardown: ${what} failed: ${e?.message ?? e}`);
+            }
+        };
+        await step("restore the pins and folds", () =>
+            ctx.prev == null
+                ? null
+                : AC.agentPage(
+                      h,
+                      `const F = await mod("app/view/agents/projectfoldstore.ts");
+                      globalStore.set(F.pinnedProjectsAtom, ${JSON.stringify(ctx.prev.pinned)});
+                      globalStore.set(F.collapsedProjectsAtom, ${JSON.stringify(ctx.prev.collapsed)});
+                      return true;`
+                  )
+        );
+        await step("restore the roster", () => AC.restoreRoster(h));
+        await step("close the fixture tab", () => acCloseTabs(h, ctx));
+        await step("restore the grid", () =>
+            h.ev(
+                ctx.prevGrid == null
+                    ? `localStorage.removeItem(${JSON.stringify(GRID_KEY)})`
+                    : `localStorage.setItem(${JSON.stringify(GRID_KEY)}, ${JSON.stringify(ctx.prevGrid)})`
+            )
+        );
+        await step("remove the fixture dir", () => rmSync(ctx.dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 500 }));
+        await step("reload onto the live roster", () => ahReload(h));
+        await step("go home", () => h.goto("cockpit"));
+    },
+};
+
 // --- chat-bubble-fold: a long message of yours in Chat (narrationtimeline.tsx PromptText). Folded behind Show more, a
 // click anywhere on its bubble (its padding too, away from the button) opens it; open, a click on its text leaves it
 // open, and only Show less folds it again.
@@ -51225,8 +51460,9 @@ const chatMath = {
 
 // --- chat-diagram: a mermaid diagram in Chat (mermaid.tsx, mermaidviewer.tsx, mermaidzoom.ts). A Claude reply holds a
 // flowchart with Vietnamese labels; every label's text stays inside its node's shape (a label was clipped to the width
-// mermaid measured, cutting its last letter). A click opens the viewer fitted; one wheel notch eases to its zoom over a
-// few frames instead of landing in one, the stage holds will-change only while it moves, and a pinch (ctrl wheel) zooms.
+// mermaid measured, cutting its last letter). A click opens the viewer fitted; one cmd + wheel notch eases to its zoom over a
+// few frames instead of landing in one, a pinch (ctrl wheel) zooms, and zoomed in the diagram is its box's own scroll,
+// which a plain wheel and a drag move.
 
 const CD_NAME = "diagram source";
 const CD_QUESTION = "draw the repair loop";
@@ -51264,19 +51500,20 @@ function cdRoster(ctx) {
     ];
 }
 
-// the stage's scale and will-change on every frame for `ms` after the call, read back by cdReadFrames
+// the viewer's scale on every frame for `ms` after the call, read back by cdReadFrames
 const CD_RECORD_FRAMES = (ms) => `(() => {
-    const stage = document.querySelector("[data-mermaid-viewer] > div");
+    const box = document.querySelector("[data-mermaid-viewer]");
     window.__cdFrames = [];
     const end = performance.now() + ${ms};
     const tick = () => {
-        const m = /scale\\(([0-9.]+)\\)/.exec(stage?.style.transform ?? "");
-        window.__cdFrames.push({ scale: m ? Number(m[1]) : null, wc: stage?.style.willChange ?? "" });
+        const s = Number(box?.dataset.scale);
+        window.__cdFrames.push({ scale: Number.isFinite(s) && s > 0 ? s : null });
         if (performance.now() < end) requestAnimationFrame(tick);
     };
     requestAnimationFrame(tick);
-    return !!stage;
+    return !!box;
 })()`;
+const CD_SCALE = `Number(document.querySelector("[data-mermaid-viewer]").dataset.scale)`;
 
 const chatDiagram = {
     name: "chat-diagram",
@@ -51360,29 +51597,51 @@ const chatDiagram = {
             rec("2. a click opens the viewer, the labels still inside their nodes", opened && inViewer?.bad.length === 0, { opened, inViewer });
 
             await h.ev(CD_RECORD_FRAMES(700));
-            await h.cdp("Input.dispatchMouseEvent", { type: "mouseWheel", x: box.x, y: box.y, deltaX: 0, deltaY: -100 });
+            await h.cdp("Input.dispatchMouseEvent", { type: "mouseWheel", x: box.x, y: box.y, deltaX: 0, deltaY: -100, modifiers: 4 });
             await polishNap(800);
             const frames = (await h.ev(`window.__cdFrames`)) ?? [];
             const scales = frames.map((f) => f.scale).filter((s) => s != null);
             const first = scales[0];
             const last = scales[scales.length - 1];
             const between = scales.filter((s) => s > first + 0.001 && s < last - 0.001).length;
-            const movingLayer = frames.some((f) => f.wc === "transform");
-            const restLayer = await h.ev(`document.querySelector("[data-mermaid-viewer] > div")?.style.willChange ?? ""`);
             rec(
-                "3. one wheel notch zooms in by about 16%, easing over several frames, on a GPU layer only while it moves",
-                first > 0 && Math.abs(last / first - Math.exp(0.15)) < 0.01 && between >= 3 && movingLayer && restLayer === "",
-                { first, last, between, frames: frames.length, movingLayer, restLayer }
+                "3. one cmd + wheel notch zooms in by about 16%, easing over several frames",
+                first > 0 && Math.abs(last / first - Math.exp(0.15)) < 0.01 && between >= 3,
+                { first, last, between, frames: frames.length }
             );
 
-            const before = await h.ev(`Number(/scale\\(([0-9.]+)\\)/.exec(document.querySelector("[data-mermaid-viewer] > div").style.transform)[1])`);
+            const before = await h.ev(CD_SCALE);
             for (let i = 0; i < 5; i++) {
                 await h.cdp("Input.dispatchMouseEvent", { type: "mouseWheel", x: box.x, y: box.y, deltaX: 0, deltaY: -6, modifiers: 2 });
             }
             await polishNap(500);
-            const after = await h.ev(`Number(/scale\\(([0-9.]+)\\)/.exec(document.querySelector("[data-mermaid-viewer] > div").style.transform)[1])`);
+            const after = await h.ev(CD_SCALE);
             await h.shot("cdp-shots/chat-diagram-zoomed.png");
             rec("4. a pinch (ctrl wheel, small deltas) zooms in by about a third", after / before > 1.25 && after / before < 1.45, { before, after });
+
+            // zoomed past the box, the diagram is the box's own scroll (a trackpad swipe scrolls it natively), and a drag
+            // moves that scroll
+            for (let i = 0; i < 5; i++) {
+                await h.ev(`window.dispatchEvent(new KeyboardEvent("keydown", { key: "+" }))`);
+            }
+            await polishNap(400);
+            const scroll = () => h.ev(`(() => { const b = document.querySelector("[data-mermaid-viewer]"); return { l: b.scrollLeft, t: b.scrollTop, sw: b.scrollWidth, cw: b.clientWidth, sh: b.scrollHeight, ch: b.clientHeight }; })()`);
+            const s0 = await scroll();
+            await h.cdp("Input.dispatchMouseEvent", { type: "mousePressed", x: box.x, y: box.y, button: "left", buttons: 1, clickCount: 1 });
+            await h.cdp("Input.dispatchMouseEvent", { type: "mouseMoved", x: box.x - 60, y: box.y - 40, button: "left", buttons: 1 });
+            await h.cdp("Input.dispatchMouseEvent", { type: "mouseReleased", x: box.x - 60, y: box.y - 40, button: "left", buttons: 0, clickCount: 1 });
+            await polishNap(200);
+            const s1 = await scroll();
+            const scaleBefore = await h.ev(CD_SCALE);
+            await h.cdp("Input.dispatchMouseEvent", { type: "mouseWheel", x: box.x, y: box.y, deltaX: 0, deltaY: 120 });
+            await polishNap(400);
+            const s2 = await scroll();
+            const scaleAfter = await h.ev(CD_SCALE);
+            rec(
+                "5. zoomed in, the diagram scrolls in its box: a drag moves the scroll with the pointer, a plain wheel scrolls it without zooming",
+                s0.sw > s0.cw && s0.sh > s0.ch && Math.abs(s1.l - s0.l - 60) <= 1 && Math.abs(s1.t - s0.t - 40) <= 1 && s2.t > s1.t && scaleAfter === scaleBefore,
+                { s0, s1, s2, scaleBefore, scaleAfter }
+            );
         } catch (e) {
             rec("the scenario threw", false, String(e?.stack ?? e));
         }
@@ -76109,9 +76368,11 @@ export const SCENARIOS = [
     ...agentStartFailedScenarios(RT_KIT),
     ...agentStreamsScenarios(RT_KIT),
     ...chatBgTasksScenarios(RT_KIT),
+    ...chatUnreadTurnsScenarios(RT_KIT),
     ...chatStepsScenarios(RT_KIT),
     ...chatPairBlocksScenarios(RT_KIT),
     ...chatPairRelayScenarios(RT_KIT),
+    ...chatJudgeReplyScenarios(RT_KIT),
     ...chatReadPictureScenarios(RT_KIT),
     ...agentSubagentsScenarios(RT_KIT),
     ...modalFocusHomeScenarios(RT_KIT),
@@ -76144,6 +76405,7 @@ export const SCENARIOS = [
     chatQuote,
     chatFocusRead,
     chatBubbleFold,
+    agentTreePinnedFolder,
     chatMath,
     chatDiagram,
     chatRefBadges,

@@ -335,7 +335,8 @@ export function councilRowsByProject(
 
 export type ProjectTreeRow =
     // a project's folder: the agents it holds (done workers aside), the terminals and the held services it lists, the
-    // agents among them waiting on you, and those working now
+    // agents among them waiting on you, and those working now. A pinned folder says so, and `empty` when it holds no
+    // row at all (projectTree's `pinned`); both are left out on the others.
     | {
           kind: "group";
           project: string;
@@ -345,6 +346,8 @@ export type ProjectTreeRow =
           attn: number;
           running: number;
           open: boolean;
+          pinned?: true;
+          empty?: true;
       }
     // the thin line between a project's agents and its terminals
     | { kind: "divider"; project: string }
@@ -577,6 +580,10 @@ export function newCouncilRoot(focus: AgentVM | undefined, projects: ProjectRegi
  *  rows was; the cells' own rows go. `roster` is every live agent and terminal, read for a cell the tree draws no row
  *  for.
  *
+ *  `pinned` (pinnedProjectsAtom) names folders the tree keeps with nothing in them: a pinned project with no row gets a
+ *  folder of its own, `empty`, after the others and ahead of Home; one that holds rows stays where it is. Both say
+ *  `pinned`. Home is never pinned.
+ *
  *  Filtered to a project (the app bar's switcher), no folder and no fold: that project's agent rows, its queued plans, a
  *  divider and its terminals together with those that name no project, as the Terminals section filtered before. */
 export function projectTree(input: {
@@ -599,8 +606,10 @@ export function projectTree(input: {
     boards?: readonly TreeBoard[];
     roster?: readonly AgentVM[];
     councils?: ReadonlyMap<string, CouncilRowVM[]>; // by project name
+    pinned?: readonly string[];
 }): ProjectTreeRow[] {
     const { tree, filter, roots } = input;
+    const pinned = new Set((input.pinned ?? []).filter((p) => p !== "" && p !== HOME_PROJECT));
     const services = input.services ?? [];
     const serviceTabs = input.serviceTabs ?? new Set(services.flatMap((s) => (s.tabId ? [s.tabId] : [])));
     const terminals = input.terminals.filter((t) => !serviceTabs.has(t.id));
@@ -752,6 +761,7 @@ export function projectTree(input: {
             ...parked.map(parkedFolder),
             ...services.map(serviceFolder),
             ...councilFolders,
+            ...pinned,
         ]),
     ]
         .filter((p) => !seen.has(p))
@@ -765,19 +775,6 @@ export function projectTree(input: {
         const folder = bodies.get(project);
         const list = byProject.get(project) ?? [];
         const open = !collapsed.has(project);
-        out.push({
-            kind: "group",
-            project,
-            agents: folder?.group.count ?? 0,
-            terminals: list.length,
-            services: services.filter((s) => serviceFolder(s) === project).length,
-            attn: folder?.group.attn ?? 0,
-            running: folder?.group.running ?? 0,
-            open,
-        });
-        if (!open) {
-            continue;
-        }
         const agentRows = folder?.body ?? [];
         const waiting = queuedRowsOf(project);
         const held = serviceRowsOf(project);
@@ -793,7 +790,22 @@ export function projectTree(input: {
             body.push({ kind: "divider", project });
         }
         body.push(...held, ...termRows(project, list));
-        out.push(...fold(project, body));
+        const pin = pinned.has(project);
+        out.push({
+            kind: "group",
+            project,
+            agents: folder?.group.count ?? 0,
+            terminals: list.length,
+            services: held.length,
+            attn: folder?.group.attn ?? 0,
+            running: folder?.group.running ?? 0,
+            open,
+            ...(pin ? { pinned: true as const } : {}),
+            ...(pin && folder == null && body.length === 0 ? { empty: true as const } : {}),
+        });
+        if (open) {
+            out.push(...fold(project, body));
+        }
     }
     return out;
 }

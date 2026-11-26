@@ -29,8 +29,10 @@ export interface RestartCandidate {
 
 // Claude agents a switch to `newActive` can move: ones with a block to respawn and a session to resume,
 // not already on that account. Background agents have no block and keep the old account until they end;
-// terminals are not agents. Only idle ones start checked — a restart cuts a working turn short and drops
-// an asking agent's pending question. `lineage` files each one under its project and run.
+// terminals are not agents. A sleeping agent is left out: it has no process to move, its wake starts it on the active
+// account, and a forced restart would run it with its sleep mark still set. Only idle ones start checked — a restart
+// cuts a working turn short and drops an asking agent's pending question. `lineage` files each one under its project
+// and run.
 export function restartCandidates(
     agents: AgentVM[],
     newActive: string,
@@ -38,7 +40,7 @@ export function restartCandidates(
 ): RestartCandidate[] {
     const out: RestartCandidate[] = [];
     for (const a of agents) {
-        if ((a.agent || "claude") !== "claude" || (a.kind != null && a.kind !== "agent")) {
+        if ((a.agent || "claude") !== "claude" || (a.kind != null && a.kind !== "agent") || a.sleeping != null) {
             continue;
         }
         const sessionId = sessionIdFromTranscript(a.transcriptPath);

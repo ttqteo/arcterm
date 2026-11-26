@@ -1,9 +1,10 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-// A drawn diagram opened full size: the wheel zooms toward the cursor, a drag pans, a double click or 0 fits it back,
-// + and - step the zoom, and Copy image puts the whole diagram on the clipboard. The diagram's own toolbar (Expand,
-// Copy image) sits over it in the chat and shows on hover.
+// A drawn diagram opened full size: a trackpad swipe or a mouse wheel scrolls it (natively, so it stays smooth while the
+// page is busy), a drag pans, a pinch or cmd + wheel zooms toward the cursor, a double click or 0 fits it back, + and -
+// step the zoom, and Copy image puts the whole diagram on the clipboard. The diagram's own toolbar (Expand, Copy image)
+// sits over it in the chat and shows on hover.
 
 import { ModalShell } from "@/app/modals/modalshell";
 import { cn } from "@/util/util";
@@ -12,11 +13,19 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, typ
 import { createPortal } from "react-dom";
 import { COPY_HOLD_MS } from "./copyfeedback";
 import { copyDiagramImage } from "./mermaidimage";
-import { easeToward, fitView, panBy, STEP, wheelZoomFactor, zoomAt, type Size, type ZoomView } from "./mermaidzoom";
+import {
+    easeScale,
+    fitScroll,
+    layoutAt,
+    resizeScroll,
+    STEP,
+    wheelAction,
+    zoomScroll,
+    type ScrollView,
+    type Size,
+} from "./mermaidzoom";
 
 const FOCUS_RING = "outline-none focus-visible:ring-2 focus-visible:ring-accent";
-// how long the stage keeps its GPU layer after the last zoom or pan
-const SETTLE_MS = 180;
 
 type CopyState = "idle" | "busy" | "copied" | "failed";
 
@@ -145,38 +154,65 @@ function sizedSvg(html: string): { html: string; size: Size } {
 
 function ViewerBody({ html, onClose }: { html: string; onClose: () => void }) {
     const boxRef = useRef<HTMLDivElement>(null);
+    const canvasRef = useRef<HTMLDivElement>(null);
     const stageRef = useRef<HTMLDivElement>(null);
     const { html: sized, size: natural } = useMemo(() => sizedSvg(html), [html]);
-    // `view` is what is drawn; it eases toward `target`, which every zoom, pan and fit writes (setView). A drag sets
-    // both at once, so the diagram stays under the pointer.
-    const [view, setShown] = useState<ZoomView>({ scale: 1, x: 0, y: 0 });
-    const shown = useRef(view);
-    const target = useRef(view);
+    // the zoom is written straight to the DOM (apply), never through a render, so a pinch or a zoom's ease costs no
+    // React work per frame; a trackpad swipe is the box's own scroll and runs no script at all. `scale` is what is
+    // drawn, `target` where an eased zoom (a wheel notch, + or -) is going, about the box point `anchor`.
+    const scale = useRef(1);
+    const target = useRef(1);
+    const anchor = useRef({ x: 0, y: 0 });
     const frame = useRef<number | null>(null);
     const lastT = useRef(0);
-    // the stage sits on its own GPU layer while it moves, so a zoom scales the layer instead of repainting the svg at
-    // every step; dropped once it rests, so the diagram is repainted sharp at its new scale
-    const [moving, setMoving] = useState(false);
-    const settle = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const lastBox = useRef<Size>({ w: 0, h: 0 });
     const drag = useRef<{ x: number; y: number } | null>(null);
+    const [zoomPct, setZoomPct] = useState(100);
 
-    const show = useCallback((v: ZoomView) => {
-        shown.current = v;
-        setShown(v);
+    const boxSize = useCallback((): Size => {
+        // client size, not the bounding box: the panel opens on a scale animation, which the bounding box would include
+        const el = boxRef.current;
+        return el == null ? { w: 0, h: 0 } : { w: el.clientWidth, h: el.clientHeight };
     }, []);
-    const markMoving = useCallback(() => {
-        setMoving(true);
-        if (settle.current != null) {
-            clearTimeout(settle.current);
+    const current = useCallback((): ScrollView => {
+        const el = boxRef.current;
+        return { scale: scale.current, left: el?.scrollLeft ?? 0, top: el?.scrollTop ?? 0 };
+    }, []);
+    // the canvas first, so the scroll it is given is not clamped to the old size
+    const apply = useCallback(
+        (v: ScrollView) => {
+            const box = boxRef.current;
+            const canvas = canvasRef.current;
+            const stage = stageRef.current;
+            if (box == null || canvas == null || stage == null) {
+                return;
+            }
+            const b = boxSize();
+            const l = layoutAt(natural, b, v.scale);
+            canvas.style.width = `${l.w}px`;
+            canvas.style.height = `${l.h}px`;
+            stage.style.transform = `translate(${l.x}px, ${l.y}px) scale(${v.scale})`;
+            box.scrollLeft = v.left;
+            box.scrollTop = v.top;
+            box.dataset.scale = String(v.scale);
+            scale.current = v.scale;
+            lastBox.current = b;
+        },
+        [natural, boxSize]
+    );
+    const stopEase = useCallback(() => {
+        if (frame.current != null) {
+            cancelAnimationFrame(frame.current);
+            frame.current = null;
         }
-        settle.current = setTimeout(() => setMoving(false), SETTLE_MS);
+        lastT.current = 0;
     }, []);
     const tick = useCallback(
         (t: number) => {
             const dt = lastT.current === 0 ? 16 : t - lastT.current;
             lastT.current = t;
-            const next = easeToward(shown.current, target.current, dt);
-            show(next);
+            const next = easeScale(scale.current, target.current, dt);
+            apply(zoomScroll(natural, boxSize(), current(), next, anchor.current.x, anchor.current.y));
             if (next === target.current) {
                 frame.current = null;
                 lastT.current = 0;
@@ -184,61 +220,71 @@ function ViewerBody({ html, onClose }: { html: string; onClose: () => void }) {
             }
             frame.current = requestAnimationFrame(tick);
         },
-        [show]
+        [apply, boxSize, current, natural]
     );
-    const setView = useCallback(
-        (next: ZoomView | ((v: ZoomView) => ZoomView), instant = false) => {
-            target.current = typeof next === "function" ? next(target.current) : next;
-            markMoving();
+    // zoom to `next` about the box point (px, py): at once for a pinch, eased for a notch or a button
+    const zoomTo = useCallback(
+        (next: number, px: number, py: number, instant: boolean) => {
+            anchor.current = { x: px, y: py };
             if (instant) {
-                if (frame.current != null) {
-                    cancelAnimationFrame(frame.current);
-                    frame.current = null;
-                    lastT.current = 0;
+                stopEase();
+                const v = zoomScroll(natural, boxSize(), current(), next, px, py);
+                target.current = v.scale;
+                apply(v);
+            } else {
+                target.current = zoomScroll(natural, boxSize(), current(), next, px, py).scale;
+                if (frame.current == null) {
+                    frame.current = requestAnimationFrame(tick);
                 }
-                show(target.current);
-                return;
             }
-            if (frame.current == null) {
-                frame.current = requestAnimationFrame(tick);
-            }
+            setZoomPct(Math.round(target.current * 100));
         },
-        [markMoving, show, tick]
+        [apply, boxSize, current, natural, stopEase, tick]
     );
-    useEffect(
-        () => () => {
-            if (frame.current != null) {
-                cancelAnimationFrame(frame.current);
-            }
-            if (settle.current != null) {
-                clearTimeout(settle.current);
-            }
-        },
-        []
-    );
+    useEffect(() => stopEase, [stopEase]);
 
     const svgEl = useCallback(() => stageRef.current?.querySelector("svg") ?? null, []);
-    const boxSize = useCallback((): Size => {
-        // client size, not the bounding box: the panel opens on a scale animation, which the bounding box would include
-        const el = boxRef.current;
-        return el == null ? { w: 0, h: 0 } : { w: el.clientWidth, h: el.clientHeight };
-    }, []);
-    const fit = useCallback(() => setView(fitView(natural, boxSize())), [natural, boxSize, setView]);
+    const fit = useCallback(() => {
+        stopEase();
+        const v = fitScroll(natural, boxSize());
+        target.current = v.scale;
+        apply(v);
+        setZoomPct(Math.round(v.scale * 100));
+    }, [apply, boxSize, natural, stopEase]);
     const zoomCentre = useCallback(
         (factor: number) => {
             const b = boxSize();
-            setView((v) => zoomAt(v, factor, b.w / 2, b.h / 2));
+            zoomTo(target.current * factor, b.w / 2, b.h / 2, false);
         },
-        [boxSize, setView]
+        [boxSize, zoomTo]
     );
 
     // fit once the box has its size; the stage's transform scales the svg, drawn at its natural size, so it stays sharp
     useLayoutEffect(() => {
-        setView(fitView(natural, boxSize()), true);
-    }, [natural, boxSize, setView]);
+        fit();
+    }, [fit]);
 
-    // the wheel has to be a non-passive listener to keep the chat behind from scrolling. A trackpad pinch reaches
-    // Chromium as a ctrl wheel, and WebKit (the Mac app) as gesture events, whose scale counts from the pinch's start.
+    // the window resized: the same point stays at the centre
+    useEffect(() => {
+        const box = boxRef.current;
+        if (box == null) {
+            return;
+        }
+        const ro = new ResizeObserver(() => {
+            const from = lastBox.current;
+            const to = boxSize();
+            if (from.w > 0 && (from.w !== to.w || from.h !== to.h)) {
+                apply(resizeScroll(natural, from, to, current()));
+            }
+        });
+        ro.observe(box);
+        return () => ro.disconnect();
+    }, [apply, boxSize, current, natural]);
+
+    // a plain wheel is left alone, so the box scrolls it natively (WebKit asks the page only about a gesture's first
+    // event). A zoom wheel needs a non-passive listener to keep the chat behind from scrolling. A trackpad pinch
+    // reaches Chromium as a ctrl wheel, and WebKit (the Mac app) as gesture events, whose scale counts from the
+    // pinch's start.
     useEffect(() => {
         const box = boxRef.current;
         if (box == null) {
@@ -249,9 +295,15 @@ function ViewerBody({ html, onClose }: { html: string; onClose: () => void }) {
             return { x: e.clientX - r.left, y: e.clientY - r.top };
         };
         const onWheel = (e: WheelEvent) => {
+            const a = wheelAction(e);
+            if (a.kind === "scroll") {
+                stopEase();
+                return;
+            }
             e.preventDefault();
             const p = at(e);
-            setView((v) => zoomAt(v, wheelZoomFactor(e), p.x, p.y));
+            const from = a.instant ? scale.current : target.current;
+            zoomTo(from * a.factor, p.x, p.y, a.instant);
         };
         let pinch = 1;
         const onGestureStart = (e: Event) => {
@@ -267,7 +319,7 @@ function ViewerBody({ html, onClose }: { html: string; onClose: () => void }) {
             const p = at(g);
             const factor = g.scale / pinch;
             pinch = g.scale;
-            setView((v) => zoomAt(v, factor, p.x, p.y), true);
+            zoomTo(scale.current * factor, p.x, p.y, true);
         };
         box.addEventListener("wheel", onWheel, { passive: false });
         box.addEventListener("gesturestart", onGestureStart);
@@ -277,7 +329,7 @@ function ViewerBody({ html, onClose }: { html: string; onClose: () => void }) {
             box.removeEventListener("gesturestart", onGestureStart);
             box.removeEventListener("gesturechange", onGestureChange);
         };
-    }, [setView]);
+    }, [stopEase, zoomTo]);
 
     useEffect(() => {
         const onKey = (e: KeyboardEvent) => {
@@ -298,8 +350,6 @@ function ViewerBody({ html, onClose }: { html: string; onClose: () => void }) {
         window.addEventListener("keydown", onKey);
         return () => window.removeEventListener("keydown", onKey);
     }, [fit, zoomCentre]);
-
-    const zoomPct = Math.round(target.current.scale * 100);
 
     return (
         <>
@@ -323,12 +373,13 @@ function ViewerBody({ html, onClose }: { html: string; onClose: () => void }) {
             <div
                 ref={boxRef}
                 data-mermaid-viewer=""
-                className="relative h-[78vh] cursor-grab touch-none overflow-hidden bg-surface-code active:cursor-grabbing"
+                className="relative h-[78vh] cursor-grab touch-none overflow-auto overscroll-contain bg-surface-code [scrollbar-width:none] active:cursor-grabbing [&::-webkit-scrollbar]:hidden"
                 onDoubleClick={fit}
                 onPointerDown={(e) => {
                     if (e.button !== 0) {
                         return;
                     }
+                    stopEase();
                     drag.current = { x: e.clientX, y: e.clientY };
                     e.currentTarget.setPointerCapture(e.pointerId);
                 }}
@@ -338,20 +389,19 @@ function ViewerBody({ html, onClose }: { html: string; onClose: () => void }) {
                         return;
                     }
                     drag.current = { x: e.clientX, y: e.clientY };
-                    setView((v) => panBy(v, e.clientX - d.x, e.clientY - d.y), true);
+                    e.currentTarget.scrollLeft -= e.clientX - d.x;
+                    e.currentTarget.scrollTop -= e.clientY - d.y;
                 }}
                 onPointerUp={() => (drag.current = null)}
                 onPointerCancel={() => (drag.current = null)}
             >
-                <div
-                    ref={stageRef}
-                    className="absolute left-0 top-0 origin-top-left select-none"
-                    style={{
-                        transform: `translate(${view.x}px, ${view.y}px) scale(${view.scale})`,
-                        willChange: moving ? "transform" : undefined,
-                    }}
-                    dangerouslySetInnerHTML={{ __html: sized }}
-                />
+                <div ref={canvasRef} className="relative">
+                    <div
+                        ref={stageRef}
+                        className="absolute left-0 top-0 origin-top-left select-none"
+                        dangerouslySetInnerHTML={{ __html: sized }}
+                    />
+                </div>
             </div>
         </>
     );

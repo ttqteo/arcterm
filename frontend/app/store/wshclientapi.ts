@@ -1626,6 +1626,12 @@ export class RpcApiType {
         return client.wshRpcCall("pairbrief", data, opts);
     }
 
+    // command "paircloseworker" [call]
+    PairCloseWorkerCommand(client: WshClient, data: CommandPairCloseWorkerData, opts?: RpcOpts): Promise<CommandPairCloseWorkerRtnData> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "paircloseworker", data, opts);
+        return client.wshRpcCall("paircloseworker", data, opts);
+    }
+
     // command "pairget" [call]
     PairGetCommand(client: WshClient, data: CommandPairGetData, opts?: RpcOpts): Promise<PairView> {
         if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "pairget", data, opts);

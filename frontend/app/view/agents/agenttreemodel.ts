@@ -22,7 +22,7 @@ import {
     monitorTimeLeft,
     type BackgroundTaskKind,
 } from "./monitortasks";
-import { canPair, pairOf } from "./pairmodel";
+import { canPair, pairOf, restsUnder } from "./pairmodel";
 import {
     BRAINSTORM_JUDGE_ROLE,
     BUILDER_CHECK_ROLE,
@@ -643,11 +643,14 @@ export function buildAgentTree(
         judges.forEach((j) => pairedJudges.add(j.id));
         pairOfWorker.set(worker.id, { pairId: p.id, judges });
     }
-    // a resting judge asleep, whose working agent is still in the roster: nothing of it shows or counts until it wakes
+    // a resting judge asleep, whose working agent is still in the roster (by its tab, or resumed in a new tab with the same
+    // session): nothing of it shows or counts until it wakes
     const hidden = new Set<string>();
+    const onRoster = [...byTab.values()];
     for (const r of pairs.resting) {
         const judge = byTab.get(r.tab);
-        if (plainAgent(judge) && judge.sleeping != null && byTab.has(r.workertab) && !pairedJudges.has(judge.id)) {
+        const workerHere = byTab.has(r.workertab) || onRoster.some((w) => restsUnder(r, w));
+        if (plainAgent(judge) && judge.sleeping != null && workerHere && !pairedJudges.has(judge.id)) {
             hidden.add(judge.id);
         }
     }

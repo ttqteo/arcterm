@@ -37,6 +37,7 @@ import { agentAlive } from "../boards/boardtalkmodel";
 import { openCouncil, openPair, showLibraryBoard } from "../library/librarystore";
 import { openDagLive, openDagTask } from "../orchestrate/dagmodalstate";
 import { isCanvasSegment, parseAddress, type AddressHint, type OpenTarget } from "./address";
+import { briefQueueSheetAtom } from "./briefqueuestore";
 import { effortDetailAtom, loadEffortDetail } from "./effortstore";
 import { openInitiativeSheet } from "./initiativesheetstore";
 import { briefPeekRecordAtom, briefSheetOpenAtom, sessionIdeasFocusAtom } from "./jarvisstore";
@@ -568,6 +569,7 @@ async function selectDag(
     // the sheet was only the way in: left open, it would greet the user's next visit to Jarvis
     returnWhenClosed("dag", () => {
         globalStore.set(briefSheetOpenAtom, false);
+        globalStore.set(briefQueueSheetAtom, null);
         clearSubject();
     });
     return OK;

@@ -32,6 +32,25 @@ and a picture given to a line that is not big.
 
 ## Unreleased
 
+### Fixed
+
+- A run on Codex or agy with no model picked shows its harness where it read "default": the plan review's stage line,
+  New run's workers and the model picks.
+- The Brief's undo toast no longer covers the bottom of an open initiative (or any Brief sheet).
+- Settings → Learned shows a skill's or folder's name as you wrote it (MyApp), not in capitals.
+- Switching Claude account no longer offers to restart sleeping agents: they stay asleep and wake on the new account.
+  An agent a restart had woken that way can sleep again; before, its sleep failed every minute.
+- With Jarvis folded into Sprout, a click beside the open stay or Hide menu closes it instead of falling through to
+  the app behind.
+- A queued run's sheet on the Brief spaces the dot in "queued just now · from <session>" again.
+- A pair no longer passes the judge a line the working agent wrote halfway through its turn (such as "Final check:")
+  in place of its finished reply. It now waits until the reply is saved before it reads it.
+- A diagram opened full size no longer stutters when you scroll it: a two-finger swipe or a mouse wheel scrolls it the
+  way a page scrolls, smooth even while agents are busy. Zoom with a pinch, cmd + wheel, or + and -.
+- Closing an agent now closes the judges arcterm opened for it, awake or asleep, and ends its pair. Before, a judge that
+  was still awake stayed behind as a stray row with nobody to judge. A live agent you picked as a judge stays open.
+- When you resume a conversation that had a judge, ⚖ under a reply offers "Resume Judge: …" first. It reopens that same
+  judge with what it read in the earlier rounds, so you don't have to brief a new one.
 ### Added
 
 - From your sessions: Jarvis's Brief has a region for ideas that were floated in an earlier session and never decided.
@@ -43,6 +62,17 @@ and a picture given to a line that is not big.
   them, and the Brief's Since you looked, a toast and a Waiting on you line after 7 days say when there is something to
   review. Storage's Sessions confirm says how many of the sessions it would move were never scanned, and offers Scan them
   first. `wsh sessionideas` lists, keeps and drops them. <!-- big --> <!-- shot: 1.11.0-session-ideas.webp -->
+- Pin a project folder in the Agent tree (right-click it → Pin folder): it stays in the tree after its last agent and
+  terminal close, faint and marked with a pin, so you can start the next agent there from its menu. Unpin folder lets it go.
+
+## 1.11.0 — 2026-11-26
+
+### Added
+
+- A judge round's mark in the working agent's Chat: a ⚖ line under the reply the round started from ("The judge is
+  reading this reply · 12 s", then "The judge round starts here" with Open pair) and a bar along the turns it covers,
+  accent while the round lives and grey once it ended, when the line reads the round's times and what it settled and
+  opens its page in Library. A reply that started two rounds carries both. <!-- big --> <!-- shot: none -->
 - A finished council's Discussion ends on a closing card: the council's answer in one sentence, what it settled
   (agreed, still open, ruled out) and Open Report.
 - Tidy on a board: the button beside Edit lays the drawing in view out again, its boxes in rows along the way its arrows
@@ -85,6 +115,18 @@ and a picture given to a line that is not big.
 ### Changed
 
 - Conversation History search reaches back 90 days, as far as Claude Code keeps transcripts, instead of 30.
+- A diagram opened full size moves the way a design tool does on a Mac trackpad: a two-finger swipe pans it and follows
+  the fingers at once, instead of zooming and gliding on after you stop. A pinch, cmd + scroll or a mouse wheel zooms.
+
+- Add judge moved from the agent's header onto each reply: ⚖ under a reply in Chat (beside Copy and Fork, on hover)
+  pairs a judge, and an older reply can be judged, not only the latest. The judge reads that reply and, where it is
+  older, is told where the agent's transcript is to see what it did since; the agent is told which reply is being
+  judged. The header keeps Pair and + once a pair exists.
+- Opening an agent in Chat with unread turns takes you to the oldest of them, under an "N new turns" rule, and its
+  blue count drops by one for each turn you scroll to the end of, instead of going to 0 at once. In Terminal it still
+  clears at once.
+- A council Report's Figures show each source as a small chip, the file's name and its lines, as a council message's
+  cites do; hover it for the full path.
 - A visual in Chat no longer sits in a bordered box: it lines up with the reply's text around it.
 - The word "draft" on an agent's row also shows on the row you have open, as soon as its box holds a message you have
   not sent.
@@ -107,6 +149,8 @@ and a picture given to a line that is not big.
 - Switching back to an agent you already viewed keeps its details rail in place: Files changed, the branch, the
   session's spend and model and the cache countdown show at once and update quietly, instead of flashing through
   a placeholder.
+- Files you send with a Chat message sit over your bubble, and two or more fold into one tilted pile showing the first
+  names, the folder, the count and the total size; hover fans it, a click opens it into a list, one file a row.
 - A run's lead hears "may be stuck" only for a worker whose tree has not changed in 20 minutes; the check for the same
   command failing the same way three times is gone (it never fired here, and its wakes elsewhere came too late to help).
 - What you are writing to an agent stays in its box when arcterm closes or reloads, attached files too, and the small
@@ -149,6 +193,8 @@ and a picture given to a line that is not big.
 
 ### Fixed
 
+- An idle agent whose process ends slowly as it goes to sleep (a machine short on memory) now sleeps, and wakes with
+  Wake or the next message you send it. Before, its tab was left exited with no Wake, and a message sent to it failed.
 - A PowerShell terminal reads as running when you run the same command twice in a row. Before, the repeat ran
   unmarked: the terminal stayed idle in the sidebar and the Overview's Running list while it worked.
 - A council report's Figures name each source file once with its lines ("audit.html:713, 714, 715") instead of

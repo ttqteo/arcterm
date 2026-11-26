@@ -74,6 +74,11 @@ func (l *fakePairLink) LastAnswer(_ context.Context, tab string) (string, int64,
 	return a.text, a.ts, nil
 }
 
+// AnswerAt knows no older replies: these tests start every pair from the latest.
+func (l *fakePairLink) AnswerAt(_ context.Context, tab, uuid string) (string, int64, error) {
+	return "", 0, fmt.Errorf("no reply %s in the transcript of %s", uuid, tab)
+}
+
 func (l *fakePairLink) Tokens(_ context.Context, tab string, _ int64) (int64, error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -428,7 +433,7 @@ func TestPairListCarriesTheRestingJudges(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []wshrpc.PairResting{{Tab: pairJudgeTab, Name: "judge", WorkerTab: pairWorkerTab, PairId: view.Id}}
+	want := []wshrpc.PairResting{{Tab: pairJudgeTab, Name: "judge", WorkerTab: pairWorkerTab, PairId: view.Id, Ts: view.CreatedTs}}
 	if len(list.Pairs) != 0 || !reflect.DeepEqual(list.Resting, want) {
 		t.Fatalf("list = %+v, want no pair and %+v resting", list, want)
 	}
@@ -792,6 +797,7 @@ func TestPairLinkTabOffTheRoster(t *testing.T) {
 	checks := map[string]error{}
 	checks["Send"] = link.Send(ctx, agentsTabA, "hello")
 	_, _, checks["LastAnswer"] = link.LastAnswer(ctx, agentsTabA)
+	_, _, checks["AnswerAt"] = link.AnswerAt(ctx, agentsTabA, "a1")
 	_, checks["Tokens"] = link.Tokens(ctx, agentsTabA, 0)
 	_, checks["Agent"] = link.Agent(ctx, agentsTabA)
 	_, checks["RecentTexts"] = link.RecentTexts(ctx, agentsTabA, 3)
@@ -909,11 +915,151 @@ func TestPairLinkReadsTheTranscriptAndSends(t *testing.T) {
 	}
 }
 
+// a reply of a claude agent is read by the uuid of its transcript record: its text and time, never the latest reply in
+// the place of one that is not there; a pi agent's replies, and a record that says nothing, are errors
+func TestPairLinkAnswerAtReadsAClaudeTranscript(t *testing.T) {
+	transcript := writeTranscript(t, "pair-link-answer-at",
+		`{"type":"user","uuid":"u1","timestamp":"2026-11-25T10:00:00.000Z","message":{"content":"write the plan"}}`,
+		`{"type":"assistant","uuid":"a1","parentUuid":"u1","timestamp":"2026-11-25T10:00:05.000Z","message":{"id":"m1","content":[{"type":"text","text":"Plan v1."}]}}`,
+		`{"type":"assistant","uuid":"a2","parentUuid":"a1","timestamp":"2026-11-25T10:00:09.000Z","message":{"id":"m2","content":[{"type":"tool_use","id":"toolu_1","name":"Bash","input":{"command":"ls"}}]}}`,
+		`{"type":"assistant","uuid":"a3","parentUuid":"a2","timestamp":"2026-11-25T10:00:20.000Z","message":{"id":"m3","content":[{"type":"text","text":"Plan v2."}]}}`,
+	)
+	claude := agentFacts(agentsTabB, "design", agentsBlockB, "claude", baseds.AgentState_Idle)
+	claude.Status.TranscriptPath = transcript
+	pi := agentFacts(agentsTabC, "pi worker", agentsBlockC, "pi", baseds.AgentState_Idle)
+	pi.Status.TranscriptPath = transcript
+	scriptAgents(t, &agentRosterFacts{Tabs: []agentTabFacts{claude, pi}})
+	ctx := context.Background()
+	link := livePairLink{}
+
+	text, ts, err := link.AnswerAt(ctx, agentsTabB, "a1")
+	if err != nil || text != "Plan v1." || ts != 1795600805000 {
+		t.Errorf("AnswerAt(a1) = %q, %d, %v; want Plan v1. at 1795600805000", text, ts, err)
+	}
+	text, ts, err = link.AnswerAt(ctx, agentsTabB, "a3")
+	latest, latestTs, _ := link.LastAnswer(ctx, agentsTabB)
+	if err != nil || text != "Plan v2." || text != latest || ts != latestTs {
+		t.Errorf("AnswerAt(a3) = %q, %d, %v; want the latest reply, %q at %d", text, ts, err, latest, latestTs)
+	}
+	for name, c := range map[string]struct{ tab, uuid string }{
+		"a record with no text":   {agentsTabB, "a2"},
+		"a uuid no record has":    {agentsTabB, "a9"},
+		"a user record":           {agentsTabB, "u1"},
+		"a pi agent's transcript": {agentsTabC, "a1"},
+	} {
+		if text, ts, err := link.AnswerAt(ctx, c.tab, c.uuid); err == nil || text != "" || ts != 0 || !strings.Contains(err.Error(), c.uuid) {
+			t.Errorf("%s: AnswerAt = %q, %d, %v; want an error that names the uuid", name, text, ts, err)
+		}
+	}
+}
+
 func TestPairAgentNameTakesTheTitle(t *testing.T) {
 	if got := pairAgentName(wshrpc.AgentInfo{Name: "mit-thesis", Title: "Plan oracle-tightening"}); got != "Plan oracle-tightening" {
 		t.Fatalf("with a title: got %q", got)
 	}
 	if got := pairAgentName(wshrpc.AgentInfo{Name: "mit-thesis", Title: "  "}); got != "mit-thesis" {
 		t.Fatalf("with no title: got %q", got)
+	}
+}
+
+// claudeRecord is one transcript line of a Claude session, at the time given.
+func claudeRecord(kind, subtype, text string, at time.Time) string {
+	rec := map[string]any{"type": kind, "timestamp": at.UTC().Format(time.RFC3339Nano)}
+	if subtype != "" {
+		rec["subtype"] = subtype
+	}
+	if text != "" {
+		rec["message"] = map[string]any{"content": []any{map[string]any{"type": "text", "text": text}}}
+	}
+	data, _ := json.Marshal(rec)
+	return string(data) + "\n"
+}
+
+// stopIdle is the idle a Claude Stop hook reports for the transcript at path, the hook started at hookTs.
+func stopIdle(tab, path string, hookTs int64) *wps.WaveEvent {
+	return &wps.WaveEvent{Event: wps.Event_AgentStatus, Data: baseds.AgentStatusData{
+		ORef: tabORef(tab), State: baseds.AgentState_Idle, Agent: "claude", Hook: baseds.AgentHook_Stop,
+		TranscriptPath: path, Ts: hookTs,
+	}}
+}
+
+// Claude Code runs its Stop hook before the turn's last reply is always on disk (pair e801794d, 2026-11-26 11:03:
+// the pair took 'Final residual + structure check:', a line written before a tool call, and the reply that followed
+// it landed 50 ms later). The pair waits for the turn's end in the transcript before it reads the answer.
+func TestPairStopIdleWaitsForTheTurnEndInTheTranscript(t *testing.T) {
+	w := newPairWorld(t)
+	view := w.start(false)
+	swap(t, &stopFlushPoll, time.Millisecond)
+
+	hook := time.Now()
+	path := filepath.Join(t.TempDir(), "worker.jsonl")
+	early := "Final residual + structure check:"
+	final := "Verified clean: tags balanced, no residual of the problem strings."
+	if err := os.WriteFile(path, []byte(claudeRecord("assistant", "", early, hook.Add(-50*time.Second))), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	w.link.answer(pairWorkerTab, early, hook.Add(-50*time.Second).UnixMilli())
+
+	// the reply and the turn's end reach the file after the hook reported, between two reads of its tail
+	real, reads := readTranscriptEnd, 0
+	swap(t, &readTranscriptEnd, func(p string, max int64) ([]string, error) {
+		lines, err := real(p, max)
+		if reads++; reads == 1 {
+			w.link.answer(pairWorkerTab, final, hook.Add(-30*time.Millisecond).UnixMilli())
+			f, ferr := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0)
+			if ferr != nil {
+				t.Fatal(ferr)
+			}
+			f.WriteString(claudeRecord("assistant", "", final, hook.Add(-30*time.Millisecond)) +
+				claudeRecord("system", "stop_hook_summary", "", hook.Add(300*time.Millisecond)) +
+				claudeRecord("system", "turn_duration", "", hook.Add(310*time.Millisecond)))
+			f.Close()
+		}
+		return lines, err
+	})
+
+	notePairStatus(stopIdle(pairWorkerTab, path, hook.UnixMilli()))
+	pairWork.Wait()
+	msgs := w.view(view.Id).Messages
+	if got := msgs[len(msgs)-1]; got.From != agentpair.FromWorker || !strings.Contains(got.Text, final) {
+		t.Fatalf("the pair took %q from the working agent, want the turn's last reply %q", got.Text, final)
+	}
+	if reads < 2 {
+		t.Fatalf("the transcript's tail was read %d times, want it read until the turn's end shows", reads)
+	}
+}
+
+// a turn end that never reaches the transcript (a Claude Code that writes none, a Stop hook that keeps the turn going)
+// holds the pair only for stopFlushWait, and an idle that is not a Claude Stop never waits
+func TestPairStopIdleWaitIsBounded(t *testing.T) {
+	w := newPairWorld(t)
+	view := w.start(false)
+	swap(t, &stopFlushPoll, time.Millisecond)
+	swap(t, &stopFlushWait, 20*time.Millisecond)
+
+	hook := time.Now()
+	path := filepath.Join(t.TempDir(), "worker.jsonl")
+	if err := os.WriteFile(path, []byte(claudeRecord("assistant", "", "second reply", hook)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	real, reads := readTranscriptEnd, 0
+	swap(t, &readTranscriptEnd, func(p string, max int64) ([]string, error) { reads++; return real(p, max) })
+
+	w.link.answer(pairWorkerTab, "second reply", 2000)
+	notePairStatus(stopIdle(pairWorkerTab, path, hook.UnixMilli()))
+	pairWork.Wait()
+	if n := w.view(view.Id).MessageCount; n != 2 || reads == 0 {
+		t.Fatalf("after the wait ran out the pair holds %d messages (want 2) and read the tail %d times", n, reads)
+	}
+
+	reads = 0
+	w.link.answer(pairWorkerTab, "third reply", 3000)
+	ev := stopIdle(pairWorkerTab, path, hook.UnixMilli())
+	ev.Data = baseds.AgentStatusData{ORef: tabORef(pairWorkerTab), State: baseds.AgentState_Idle, Agent: "claude",
+		Hook: baseds.AgentHook_Notification, TranscriptPath: path, Ts: hook.UnixMilli()}
+	notePairStatus(ev)
+	pairWork.Wait()
+	if n := w.view(view.Id).MessageCount; n != 3 || reads != 0 {
+		t.Fatalf("an idle_prompt idle: %d messages (want 3), tail read %d times (want 0)", n, reads)
 	}
 }

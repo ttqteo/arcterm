@@ -8,10 +8,11 @@
 
 import { shortTabId } from "./agentrowmodel";
 import type { AgentVM } from "./agentsviewmodel";
+import { sessionIdFromTranscript } from "./launch";
 import { pauseHead } from "./pairpause";
 
 /** An agent a pair can take on either side: claude or pi (the harnesses whose reply wavesrv reads), a real tab. The one
- *  rule: the header's Add judge, its judge menu and the tree's Pair: worker + judge all ask it. */
+ *  rule: ⚖ Judge this reply under a reply in Chat, the judge menu and the tree's Pair: worker + judge all ask it. */
 export function canPair(agent: Pick<AgentVM, "agent" | "kind" | "blockId">): boolean {
     return (
         (agent.agent === "claude" || agent.agent === "pi") &&
@@ -200,14 +201,55 @@ export function pairOf(pairs: readonly PairInfo[], tabId: string | null): { pair
     return null;
 }
 
-/** The resting judges of `workerTab` that are hidden: on the roster and asleep, in the list's order (the server lists the
- *  newest first). A resting judge that something woke is a plain row the person can see, and one off the roster has no tab
- *  left, so neither is here. The one rule behind Add judge's "Wake" entry (restingJudgeOf) and the close of a worker, which
- *  closes these with it (closetab.ts). */
+/** Whether a resting judge rests under `worker`: the worker of the pair it last judged, by its tab, or by its session when
+ *  that worker was resumed in another tab (a resume keeps the session id, and the old tab is gone). */
+export function restsUnder(r: PairResting, worker: Pick<AgentVM, "id" | "transcriptPath">): boolean {
+    if (r.workertab === worker.id) {
+        return true;
+    }
+    const session = sessionIdFromTranscript(worker.transcriptPath);
+    return session != null && r.workersession === session;
+}
+
+/** The resting judges of `workerTab` that are hidden: on the roster and asleep, newest round first. A resting judge that
+ *  something woke is a plain row the person can see, and one off the roster has no tab left, so neither is here. The one
+ *  rule behind the "Wake" entry of the ⚖ menu under a reply (restingJudgeOf); the tree hides the same ones. */
 export function hiddenJudgesOf(
     workerTab: string,
     resting: readonly PairResting[],
-    roster: readonly Pick<AgentVM, "id" | "sleeping">[]
+    roster: readonly Pick<AgentVM, "id" | "sleeping" | "transcriptPath">[]
 ): PairResting[] {
-    return resting.filter((r) => r.workertab === workerTab && roster.some((a) => a.id === r.tab && a.sleeping != null));
+    const worker = roster.find((a) => a.id === workerTab) ?? { id: workerTab, transcriptPath: undefined };
+    return resting
+        .filter((r) => restsUnder(r, worker) && roster.some((a) => a.id === r.tab && a.sleeping != null))
+        .sort((a, b) => (b.ts ?? 0) - (a.ts ?? 0));
+}
+
+/** The judge ⚖ resumes for a worker resumed in a new tab: the newest resting judge of the same session whose own tab is
+ *  gone (closed with its worker), with a session of its own to resume, and no live tab holding that session already (the
+ *  live list offers that one). A judge the person closed while its worker stayed is not offered again: its worker tab is
+ *  this one. Null when there is none. */
+export function resumableJudgeOf(
+    resting: readonly PairResting[],
+    roster: readonly Pick<AgentVM, "id" | "transcriptPath">[],
+    workerTab: string
+): PairResting | null {
+    const worker = roster.find((a) => a.id === workerTab);
+    const session = sessionIdFromTranscript(worker?.transcriptPath);
+    if (session == null) {
+        return null;
+    }
+    const live = new Set(roster.map((a) => sessionIdFromTranscript(a.transcriptPath)));
+    return (
+        resting
+            .filter(
+                (r) =>
+                    r.workertab !== workerTab &&
+                    r.workersession === session &&
+                    !!r.session &&
+                    !live.has(r.session) &&
+                    !roster.some((a) => a.id === r.tab)
+            )
+            .sort((a, b) => (b.ts ?? 0) - (a.ts ?? 0))[0] ?? null
+    );
 }

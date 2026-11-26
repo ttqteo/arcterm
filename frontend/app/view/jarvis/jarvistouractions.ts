@@ -8,6 +8,7 @@
 import { globalStore } from "@/app/store/jotaiStore";
 import type { AgentsViewModel } from "@/app/view/agents/agents";
 import { fireAndForget } from "@/util/util";
+import { briefQueueSheetAtom } from "./briefqueuestore";
 import { initiativeSheetOpenAtom } from "./initiativesheetstore";
 import { briefProfileAtom, briefRunListAtom, briefSheetOpenAtom } from "./jarvisstore";
 import type { TourPrepare, TourStep } from "./jarvistour";
@@ -58,6 +59,7 @@ export function closePrepare(p: TourPrepare): void {
         case "newestRun":
         case "firstInitiative":
             globalStore.set(briefSheetOpenAtom, false);
+            globalStore.set(briefQueueSheetAtom, null);
             return;
     }
 }

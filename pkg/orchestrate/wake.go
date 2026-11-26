@@ -138,9 +138,12 @@ type runWake struct {
 	told    map[string]bool
 	// handoff is a handoff compaction not yet typed.
 	handoff bool
-	// launching is a first lead still starting; launchLines are the events it was started with.
-	launching   bool
-	launchLines []string
+	// launching is a first lead still starting; launchLines, launchQuiet and launchCaveats are what it was started
+	// with, put back on the queue when the launch fails.
+	launching     bool
+	launchLines   []string
+	launchQuiet   []string
+	launchCaveats []string
 	// launchedAt is the UnixMilli its first lead's spawn returned, 0 for a lead the run started with.
 	launchedAt int64
 	// missed is the judgment a dead lead left unread, kept so a relaunched lead can be told what it missed.
@@ -614,7 +617,7 @@ func (w *waker) launchLocked(ctx context.Context, runId string, rw *runWake, ask
 		questions = questionsLine(asks)
 	}
 	text := composeWake(rw.lines, questions, rw.caveats, rw.quiet)
-	rw.quiet, rw.caveats = nil, nil
+	rw.launchQuiet, rw.launchCaveats, rw.quiet, rw.caveats = rw.quiet, rw.caveats, nil, nil
 	rw.launching, rw.launchLines, rw.lines = true, rw.lines, nil
 	for _, p := range asks {
 		rw.told[askTold(p)] = true
@@ -646,6 +649,8 @@ func leadLaunched(ctx context.Context, channelId, runId string, err error) {
 	rw.launching = false
 	if err != nil {
 		rw.lines = append(rw.launchLines, rw.lines...)
+		rw.quiet = append(rw.launchQuiet, rw.quiet...)
+		rw.caveats = append(rw.launchCaveats, rw.caveats...)
 		if leadPaused(ctx, channelId, runId) {
 			for _, p := range leadAsks(runId) {
 				delete(rw.told, askTold(p))
@@ -657,7 +662,7 @@ func leadLaunched(ctx context.Context, channelId, runId string, err error) {
 	} else {
 		rw.launchedAt = wakeNow()
 	}
-	rw.launchLines = nil
+	rw.launchLines, rw.launchQuiet, rw.launchCaveats = nil, nil, nil
 }
 
 // startLead builds a plan-input lead's launch prompt from its run and dag and hands it to the spawner.

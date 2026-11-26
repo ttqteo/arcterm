@@ -683,11 +683,11 @@ export default function (kit) {
                 const gone = await readCard(h, PAUSE_IDS.newest);
                 await shot(h, "13-judges-gone");
                 rec(
-                    "judges-gone: the card reads \"Paused: no judge is left\" with the note \"Add judge in the header pairs one again\", and has no Resume, no Judge again and no hint",
+                    "judges-gone: the card reads \"Paused: no judge is left\" with the note \"⚖ under a reply pairs one again\", and has no Resume, no Judge again and no hint",
                     gone != null &&
                         gone.reason === "judges-gone" &&
                         gone.head === "Paused: no judge is left" &&
-                        gone.note === "Add judge in the header pairs one again" &&
+                        gone.note === "⚖ under a reply pairs one again" &&
                         gone.resume === null &&
                         gone.judgeAgain === null &&
                         gone.hint === null,

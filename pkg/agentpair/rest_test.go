@@ -6,6 +6,7 @@ package agentpair
 import (
 	"errors"
 	"reflect"
+	"slices"
 	"testing"
 
 	"github.com/wavetermdev/waveterm/pkg/wshrpc"
@@ -18,6 +19,14 @@ func sameAfterReload(t *testing.T, r *rig) {
 	live, fresh := r.m.Resting(), r.manager().Resting()
 	if !reflect.DeepEqual(live, fresh) {
 		t.Fatalf("Resting() = %+v, and %+v after a reload from the files", live, fresh)
+	}
+}
+
+// restingFrom is the entry of a judge resting from the pair v: the fake link names each agent's transcript after its tab,
+// so its session id is the tab
+func restingFrom(v *wshrpc.PairView, tab, name string) wshrpc.PairResting {
+	return wshrpc.PairResting{
+		Tab: tab, Name: name, WorkerTab: v.Worker.Tab, PairId: v.Id, Ts: v.CreatedTs, Session: tab, WorkerSession: v.Worker.Tab,
 	}
 }
 
@@ -38,13 +47,13 @@ func TestRestingLaunchedJudgeComesAndGoesWithItsPairs(t *testing.T) {
 	if err := r.m.Unpair(ctx, first.Id); err != nil {
 		t.Fatal(err)
 	}
-	want := []wshrpc.PairResting{{Tab: "j1", Name: "Judge one", WorkerTab: "w", PairId: first.Id}}
+	want := []wshrpc.PairResting{restingFrom(first, "j1", "Judge one")}
 	if got := r.m.Resting(); !reflect.DeepEqual(got, want) {
 		t.Fatalf("Resting() = %+v, want %+v after the pair ended", got, want)
 	}
 	sameAfterReload(t, r)
 
-	// Add judge wakes it: PairStart, not briefed, launched. It is in a pair again, so it rests no more
+	// ⚖ under a reply wakes it: PairStart, not briefed, launched. It is in a pair again, so it rests no more
 	r.link.give("w", workerPlan)
 	second := r.start(wshrpc.CommandPairStartData{Launched: true})
 	if got := r.m.Resting(); len(got) != 0 {
@@ -56,7 +65,7 @@ func TestRestingLaunchedJudgeComesAndGoesWithItsPairs(t *testing.T) {
 	if err := r.m.Unpair(ctx, second.Id); err != nil {
 		t.Fatal(err)
 	}
-	want = []wshrpc.PairResting{{Tab: "j1", Name: "Judge one", WorkerTab: "w", PairId: second.Id}}
+	want = []wshrpc.PairResting{restingFrom(second, "j1", "Judge one")}
 	if got := r.m.Resting(); !reflect.DeepEqual(got, want) {
 		t.Fatalf("Resting() = %+v, want %+v: the newest pair is the one it rests from", got, want)
 	}
@@ -64,7 +73,7 @@ func TestRestingLaunchedJudgeComesAndGoesWithItsPairs(t *testing.T) {
 }
 
 // a worker's resting judges are listed newest first, by the pair each rests from and not by their tab ids (random in
-// life): the frontend takes the first of a worker's entries as the judge Add judge wakes
+// life): the frontend takes the first of a worker's entries as the judge ⚖ under a reply wakes
 func TestRestingListsAWorkersJudgesNewestFirst(t *testing.T) {
 	t.Run("the newer pair's judge has the tab that sorts after", func(t *testing.T) {
 		r := newRig(t)
@@ -80,8 +89,8 @@ func TestRestingListsAWorkersJudgesNewestFirst(t *testing.T) {
 			t.Fatal(err)
 		}
 		want := []wshrpc.PairResting{
-			{Tab: "j2", Name: "Judge two", WorkerTab: "w", PairId: newer.Id},
-			{Tab: "j1", Name: "Judge one", WorkerTab: "w", PairId: older.Id},
+			restingFrom(newer, "j2", "Judge two"),
+			restingFrom(older, "j1", "Judge one"),
 		}
 		if got := r.m.Resting(); !reflect.DeepEqual(got, want) {
 			t.Fatalf("Resting() = %+v, want %+v: the judge of the newer pair first, though its tab sorts after", got, want)
@@ -101,8 +110,8 @@ func TestRestingListsAWorkersJudgesNewestFirst(t *testing.T) {
 			t.Fatal(err)
 		}
 		want := []wshrpc.PairResting{
-			{Tab: "j1", Name: "Judge one", WorkerTab: "w", PairId: v.Id},
-			{Tab: "j2", Name: "Judge two", WorkerTab: "w", PairId: v.Id},
+			restingFrom(v, "j1", "Judge one"),
+			restingFrom(v, "j2", "Judge two"),
 		}
 		for range 20 { // the index is a map: a missing tie-break shows as a changing order
 			if got := r.manager().Resting(); !reflect.DeepEqual(got, want) {
@@ -159,7 +168,7 @@ func TestRestingAfterARoundEnds(t *testing.T) {
 	}
 
 	r.reply("w", "One more thing the person asked me.\n"+pairBlock("O1 more"))
-	want := []wshrpc.PairResting{{Tab: "j1", Name: "Judge one", WorkerTab: "w", PairId: v.Id}}
+	want := []wshrpc.PairResting{restingFrom(v, "j1", "Judge one")}
 	if got := r.m.Resting(); !reflect.DeepEqual(got, want) {
 		t.Fatalf("Resting() = %+v, want only the launched judge %+v", got, want)
 	}
@@ -185,7 +194,7 @@ func TestRestingReadsEndedPairsAtTheFirstLoadAndTheNewestWins(t *testing.T) {
 	if err := fresh.Unpair(ctx, live.Id); err != nil {
 		t.Fatal(err)
 	}
-	want := []wshrpc.PairResting{{Tab: "j1", Name: "Judge one", WorkerTab: "w", PairId: live.Id}}
+	want := []wshrpc.PairResting{restingFrom(live, "j1", "Judge one")}
 	if got := fresh.Resting(); !reflect.DeepEqual(got, want) {
 		t.Fatalf("Resting() = %+v, want %+v", got, want)
 	}
@@ -235,7 +244,7 @@ func TestRestingAfterAStartThatFailed(t *testing.T) {
 			t.Fatalf("judges = %+v: the judge that could not be reached left the pair", view.Judges)
 		}
 		sameAfterReload(t, r)
-		want := []wshrpc.PairResting{{Tab: "j2", Name: "Judge two", WorkerTab: "w", PairId: first.Id}}
+		want := []wshrpc.PairResting{restingFrom(first, "j2", "Judge two")}
 		if got := r.m.Resting(); !reflect.DeepEqual(got, want) {
 			t.Fatalf("Resting() = %+v, want %+v: the judge rests from the pair it left", got, want)
 		}
@@ -251,9 +260,59 @@ func TestRestingWhenTheWorkerIsGone(t *testing.T) {
 	r.m.mu.Unlock()
 	delete(r.link.agents, "w")
 	r.reply("j1", "> Plan v1.\nA finding.\n"+judgeBlock("new: a"))
-	want := []wshrpc.PairResting{{Tab: "j1", Name: "Judge one", WorkerTab: "w", PairId: v.Id}}
+	want := []wshrpc.PairResting{restingFrom(v, "j1", "Judge one")}
 	if got := r.m.Resting(); !reflect.DeepEqual(got, want) {
 		t.Fatalf("Resting() = %+v, want %+v", got, want)
 	}
 	sameAfterReload(t, r)
+}
+
+// closing the working agent's tab ends its live pair without a word to it, and names every judge arcterm launched for it
+// (those of that pair and those resting from its ended rounds), never one the person picked; the ended pair keeps each
+// side's session, so a resume of the worker finds its judges again
+func TestCloseWorkerEndsItsPairAndNamesItsLaunchedJudges(t *testing.T) {
+	r := newRig(t)
+	r.link.add("j2", "Judge two")
+	r.link.add("j3", "Judge three")
+	r.link.give("w", workerPlan)
+	old := r.start(wshrpc.CommandPairStartData{JudgeTab: "j2", Launched: true})
+	if err := r.m.Unpair(ctx, old.Id); err != nil {
+		t.Fatal(err)
+	}
+	r.link.give("w", workerPlan)
+	live := r.start(wshrpc.CommandPairStartData{Launched: true}) // j1
+	r.start(wshrpc.CommandPairStartData{JudgeTab: "j3"})         // picked from the live list
+	sent := len(r.link.sent("w"))
+
+	got := r.m.CloseWorker("w")
+	slices.Sort(got)
+	if want := []string{"j1", "j2"}; !slices.Equal(got, want) {
+		t.Fatalf("CloseWorker = %v, want the launched judges %v", got, want)
+	}
+	view, err := Read(r.m.Dir, "", live.Id) // ended: it has left the index, and its file says how it ended
+	if err != nil {
+		t.Fatal(err)
+	}
+	if view.State != StateEnded {
+		t.Fatalf("state %s, want the pair ended", view.State)
+	}
+	if last := view.Messages[len(view.Messages)-1]; last.From != FromSystem || last.Text != WorkerClosedLine {
+		t.Fatalf("last message %+v, want the line %q", last, WorkerClosedLine)
+	}
+	if n := len(r.link.sent("w")); n != sent {
+		t.Fatalf("the closing worker was sent %d message(s)", n-sent)
+	}
+	want := []wshrpc.PairResting{restingFrom(live, "j1", "Judge one"), restingFrom(old, "j2", "Judge two")}
+	if got := r.m.Resting(); !reflect.DeepEqual(got, want) {
+		t.Fatalf("Resting() = %+v, want %+v", got, want)
+	}
+	sameAfterReload(t, r)
+
+	// a tab that is no worker closes nothing, and a second close of the same worker names the same judges
+	if got := r.m.CloseWorker("j3"); len(got) != 0 {
+		t.Fatalf("CloseWorker(a picked judge) = %v, want none", got)
+	}
+	if got := r.m.CloseWorker("w"); len(got) != 2 {
+		t.Fatalf("CloseWorker again = %v, want the same two judges", got)
+	}
 }

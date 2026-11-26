@@ -14,13 +14,20 @@ import (
 type JudgeBriefInput struct {
 	WorkerName string
 	WorkerTab  string
-	Reply      string   // the working agent's latest reply, as it wrote it (its arc-pair block included)
+	Reply      string   // the working agent's reply the pair starts from, as it wrote it (its arc-pair block included)
 	Docs       []string // the plan and spec paths at hand: the judge reads them itself, they are not pasted
 	Note       string   // the person's note to the judge
+	// Later says Reply is a reply the working agent has gone on from. The brief then names the agent's Transcript path and
+	// the Record (the transcript record's uuid) the reply is, so the judge can read what came after. A brief that is not
+	// Later is today's: Transcript and Record are not read.
+	Later      bool
+	Transcript string
+	Record     string
 }
 
 // JudgeBrief is a new judge's launch task, or a live agent's first prompt: whose work it judges, the plan or spec at
-// hand, the working agent's latest reply, how to judge, and how to mark the working agent's block.
+// hand, the working agent's reply (its latest, or an older one the person chose), how to judge, and how to mark the
+// working agent's block.
 func JudgeBrief(in JudgeBriefInput) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "You are the judge of another agent's work. arcterm pairs the two of you: the agent is %q (tab %s). "+
@@ -53,9 +60,26 @@ func JudgeBrief(in JudgeBriefInput) string {
 		"check it against what the person asked, and do not answer the person yourself. A message that reaches you with no answer of the agent's is yours to answer.\n\n" +
 		"Start your reply with `> ` and the line you answer, so the conversation can quote it.\n")
 	if reply := strings.TrimSpace(in.Reply); reply != "" {
-		b.WriteString("\n--- the agent's latest reply ---\n" + reply + "\n--- end of the reply ---\n")
+		which := "latest reply"
+		if in.Later {
+			// the agent has gone on since: the transcript holds what it did after this reply, and the code is as it is now
+			fmt.Fprintf(&b, "\nThe agent has gone on since this reply. Its transcript is %s and the reply is the record %s in it: "+
+				"read what it did after it there if it bears on your judgement, and judge the code as it is now.\n", in.Transcript, in.Record)
+			which = "reply"
+		}
+		b.WriteString("\n--- the agent's " + which + " ---\n" + reply + "\n--- end of the reply ---\n")
 	}
 	return b.String()
+}
+
+// OlderReplyNote is what the working agent's first relayed prompt adds, after WorkerBrief, when the pair started from a
+// reply it had gone on from: which of its replies the judge is judging (ts is that reply's time, ms; 0 shows none).
+func OlderReplyNote(ts int64) string {
+	which := "an earlier reply of yours"
+	if ts != 0 {
+		which = "your reply from " + time.UnixMilli(ts).Format("15:04")
+	}
+	return "The judge is judging " + which + "; weigh its judgement against what you have done since."
 }
 
 // a path of a plan or a spec: a Markdown file in a plans/ or specs/ folder, under any prefix, with / or \ separators

@@ -151,6 +151,10 @@ func TestViewModFixtures(t *testing.T) {
 	checkViewModFixture(t, "pair-relay-first", agentmsg.PairEnvelope(agentpair.RelayPrompt([]agentpair.RelayItem{
 		{From: agentpair.FromJudge, Name: "mit-thesis", Tab: "tab-judge", Ts: at(14, 2), Text: judgeReply},
 	}, agentpair.WorkerBrief([]string{"mit-thesis"}))))
+	// a pair started from a reply the working agent had gone on from: its first prompt carries the note after the brief
+	checkViewModFixture(t, "pair-relay-first-older", agentmsg.PairEnvelope(agentpair.RelayPrompt([]agentpair.RelayItem{
+		{From: agentpair.FromJudge, Name: "mit-thesis", Tab: "tab-judge", Ts: at(14, 2), Text: judgeReply},
+	}, agentpair.WorkerBrief([]string{"mit-thesis"})+"\n\n"+agentpair.OlderReplyNote(at(13, 40)))))
 	checkViewModFixture(t, "pair-relay-batch", agentmsg.PairEnvelope(agentpair.RelayPrompt([]agentpair.RelayItem{
 		{From: agentpair.FromJudge, Name: "mit-thesis", Tab: "tab-judge", Ts: at(14, 9), Text: "> O2 now locks the threshold from the earlier labelled set\n" +
 			"Agreed on the order. Two things before D2 can close:\n\n" +
@@ -165,6 +169,12 @@ func TestViewModFixtures(t *testing.T) {
 	checkViewModFixture(t, "pair-judge-brief", agentmsg.PairEnvelope(agentpair.JudgeBrief(agentpair.JudgeBriefInput{
 		WorkerName: "thesis-draft", WorkerTab: "tab-worker", Reply: workerReply,
 		Docs: []string{"docs/superpowers/plans/2026-11-26-pilot.md"},
+	})))
+	// the brief of an older reply: the paragraph naming the transcript and the record, and the paste as "the agent's reply"
+	checkViewModFixture(t, "pair-judge-brief-older", agentmsg.PairEnvelope(agentpair.JudgeBrief(agentpair.JudgeBriefInput{
+		WorkerName: "thesis-draft", WorkerTab: "tab-worker", Reply: workerReply,
+		Docs:  []string{"docs/superpowers/plans/2026-11-26-pilot.md"},
+		Later: true, Transcript: "C:/Users/me/.claude/projects/thesis-draft/3f2a91c0.jsonl", Record: "9c1d7e52-4b0a-4f6e-8a31-2d5c7e90b4a1",
 	})))
 	checkViewModFixture(t, "pair-ended", agentmsg.PairEnvelope(agentpair.EndedNotice([]string{"task build:backend", "npm test"})))
 	child := &waveobj.Run{ID: "run-77", ParentLeadORef: "tab:t1", Goal: "split the channel blob into per-run records", Status: jarvis.RunStatus_Done,

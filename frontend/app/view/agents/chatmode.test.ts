@@ -11,6 +11,7 @@ import {
     nextCellView,
     parseChatModes,
     shownChatMode,
+    showsChat,
     withChatMode,
 } from "./chatmode";
 
@@ -51,6 +52,21 @@ describe("shownChatMode", () => {
     it("is Terminal for an agent that is not chat-capable, whatever is stored", () => {
         expect(shownChatMode({ ...claude, agent: "codex" }, undefined)).toBe("terminal");
         expect(shownChatMode({ ...claude, agent: "codex" }, "chat")).toBe("terminal");
+    });
+});
+
+describe("showsChat", () => {
+    const asleep = { since: 1, freedBytes: 0 };
+
+    it("is the shown mode, or Chat for a Claude agent asleep whatever is stored", () => {
+        expect(showsChat(claude, undefined)).toBe(true);
+        expect(showsChat(claude, "terminal")).toBe(false);
+        expect(showsChat({ ...claude, sleeping: asleep }, "terminal")).toBe(true);
+    });
+
+    it("is never Chat for an agent that is not chat-capable, asleep or not", () => {
+        expect(showsChat({ ...claude, agent: "codex", sleeping: asleep }, undefined)).toBe(false);
+        expect(showsChat(undefined, undefined)).toBe(false);
     });
 });
 

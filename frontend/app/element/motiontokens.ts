@@ -47,6 +47,14 @@ export const sheetPanel: Variants = {
     exit: { opacity: 0, x: 24, transition: { duration: MOTION.durExit, ease: MOTION.easeFluid } },
 };
 
+// Left panel: sheetPanel's move for a panel pinned to the left (the rail's Translate panel slides out of the rail's
+// edge). Entrance only, so closing is instant and an Esc or a click outside never leaves a fading panel over the
+// surface.
+export const leftPanelIn: Variants = {
+    initial: { opacity: 0, x: -16 },
+    animate: { opacity: 1, x: 0, transition: { duration: MOTION.durMacro, ease: MOTION.easeFluid } },
+};
+
 // Spring sheet: sheetPanel's slide with x on MOTION.spring and opacity on the Fluid ease (durMicro in, durExit out; a
 // spring on opacity overshoots 1). A sheet that opens again mid-close picks up its velocity instead of restarting.
 // sheetPanel stays for the council rail, which keeps its tween.

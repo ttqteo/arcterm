@@ -10,10 +10,12 @@ import { DEFAULT_TERM_FONT, MONO_FONTS, monoFontOf, stackOf } from "../fonts";
 import { Segmented, SettingCard, SettingRow, Stepper, Toggle, writeConfig } from "../settingsui";
 
 export function TerminalPage() {
-    const fontSize = (useAtomValue(getSettingsKeyAtom("term:fontsize")) as number) ?? 12;
+    // the fallbacks are the shipped defaults (pkg/wconfig/defaultconfig/settings.json), what a missing key reads as
+    // once the config has loaded
+    const fontSize = (useAtomValue(getSettingsKeyAtom("term:fontsize")) as number) ?? 14;
     const scrollback = (useAtomValue(getSettingsKeyAtom("term:scrollback")) as number) ?? 1000;
-    const cursorRaw = (useAtomValue(getSettingsKeyAtom("term:cursor")) as string) ?? "block";
-    const cursorBlink = (useAtomValue(getSettingsKeyAtom("term:cursorblink")) as boolean) ?? false;
+    const cursorRaw = (useAtomValue(getSettingsKeyAtom("term:cursor")) as string) ?? "bar";
+    const cursorBlink = (useAtomValue(getSettingsKeyAtom("term:cursorblink")) as boolean) ?? true;
     const copyOnSelect = (useAtomValue(getSettingsKeyAtom("term:copyonselect")) as boolean) ?? true;
     const rightClickPaste = (useAtomValue(getSettingsKeyAtom("term:rightclickpaste")) as boolean) ?? true;
     // the terminal face is stored as the full stack string; match it back to a catalog id for the control

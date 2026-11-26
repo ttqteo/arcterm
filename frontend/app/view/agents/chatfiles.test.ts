@@ -1,5 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { CARD_LIMIT, fileTag, foldCards, splitAttachments } from "./chatfiles";
+import {
+    commonFolder,
+    fileTag,
+    filesShape,
+    parentName,
+    pileBacks,
+    pileLine,
+    splitAttachments,
+    totalBytes,
+} from "./chatfiles";
 import { FILES_HEADER, messageWithAttachments, type Attachment } from "./composerattachments";
 
 const att = (name: string, kind: Attachment["kind"], path: string): Attachment => ({
@@ -127,27 +136,68 @@ describe("fileTag", () => {
     });
 });
 
-describe("foldCards", () => {
-    const items = (n: number) => Array.from({ length: n }, (_, i) => i);
-
-    it("shows every card under the limit", () => {
-        expect(foldCards(items(3), false)).toEqual({ shown: [0, 1, 2], more: 0 });
+describe("parentName", () => {
+    it("names the folder a file sits in, on either slash", () => {
+        expect(parentName("/Users/me/IT2019_HCI/00.pdf")).toBe("IT2019_HCI");
+        expect(parentName("C:\\notes\\a.md")).toBe("notes");
     });
 
-    it("shows every card at the limit", () => {
-        expect(foldCards(items(CARD_LIMIT), false)).toEqual({ shown: items(CARD_LIMIT), more: 0 });
+    it("is empty for a file at the root", () => {
+        expect(parentName("/a.md")).toBe("");
+    });
+});
+
+describe("commonFolder", () => {
+    it("names the folder all the files share", () => {
+        expect(commonFolder(["/u/slides/00.pdf", "/u/slides/01.pdf"])).toBe("slides");
     });
 
-    it("folds the cards past the limit into a count while closed", () => {
-        expect(CARD_LIMIT).toBe(5);
-        expect(foldCards(items(8), false)).toEqual({ shown: [0, 1, 2, 3, 4], more: 3 });
+    it("is null when they sit in different folders, even ones of the same name", () => {
+        expect(commonFolder(["/u/slides/00.pdf", "/u/notes/a.md"])).toBeNull();
+        expect(commonFolder(["/a/slides/00.pdf", "/b/slides/01.pdf"])).toBeNull();
     });
 
-    it("shows every card once open", () => {
-        expect(foldCards(items(8), true)).toEqual({ shown: items(8), more: 0 });
+    it("is null for no files", () => {
+        expect(commonFolder([])).toBeNull();
+    });
+});
+
+describe("totalBytes", () => {
+    it("adds the sizes of the files that are there, a missing one and a folder adding nothing", () => {
+        expect(
+            totalBytes([
+                { status: "found", size: 100 },
+                { status: "missing" },
+                { status: "found" },
+                { status: "found", size: 5 },
+            ])
+        ).toBe(105);
     });
 
-    it("shows nothing for nothing", () => {
-        expect(foldCards([], false)).toEqual({ shown: [], more: 0 });
+    it("is null while any file is still loading", () => {
+        expect(totalBytes([{ status: "found", size: 100 }, { status: "loading" }])).toBeNull();
+    });
+});
+
+describe("pileLine", () => {
+    it("reads the shared folder, the count and the total", () => {
+        expect(pileLine(8, "IT2019_HCI", "46.0 MB")).toBe("IT2019_HCI · 8 files · 46.0 MB");
+    });
+
+    it("leaves out a folder the files do not share and a total not known yet", () => {
+        expect(pileLine(3, null, null)).toBe("3 files");
+    });
+});
+
+describe("filesShape", () => {
+    it("draws one file as a card and two or more as a pile", () => {
+        expect([0, 1, 2, 8].map(filesShape)).toEqual(["none", "card", "pile", "pile"]);
+    });
+});
+
+describe("pileBacks", () => {
+    it("puts the second and third file behind the front card", () => {
+        expect(pileBacks(["a", "b"])).toEqual(["b"]);
+        expect(pileBacks(["a", "b", "c", "d"])).toEqual(["b", "c"]);
     });
 });

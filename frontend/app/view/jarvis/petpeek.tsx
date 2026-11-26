@@ -772,7 +772,15 @@ function PetStayPin({ folded }: { folded: boolean }) {
                 <Pin aria-hidden="true" size={14} strokeWidth={2} className={staying ? undefined : "rotate-45"} />
             </button>
             <FloatingPortal>
-                {open ? <div data-pet-stay-backdrop className="fixed inset-0 z-[80]" onClick={() => close()} /> : null}
+                {/* the backdrop is hit too: folded, a click outside the menu would otherwise fall through the window */}
+                {open ? (
+                    <div
+                        data-pet-stay-backdrop
+                        data-mini-hit="chat"
+                        className="fixed inset-0 z-[80]"
+                        onClick={() => close()}
+                    />
+                ) : null}
                 {/* above the peek's z-[65]; rendered always and driven by `open` so PopoverReveal's exit plays */}
                 <div
                     ref={refs.setFloating}

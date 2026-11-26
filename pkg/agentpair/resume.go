@@ -37,7 +37,7 @@ func checkResume(p *Pair) error {
 	case p.State != StateStopped:
 		return errors.New("the pair is not stopped, so there is nothing to resume")
 	case p.StopReason == StopJudgesGone:
-		return errors.New("no judge is left, so resuming would stop the pair again: use Add judge to pair a new one")
+		return errors.New("no judge is left, so resuming would stop the pair again: use ⚖ under a reply to pair a new one")
 	case !canResume(p):
 		return errors.New("nothing is queued to deliver, so resuming would leave nobody working: send a message to go on")
 	}

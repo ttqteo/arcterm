@@ -55,9 +55,21 @@ import {
     Flag,
     GitFork,
     Link,
+    Scale,
 } from "lucide-react";
 import { AnimatePresence, animate, motion, useReducedMotion } from "motion/react";
-import { memo, useCallback, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import {
+    createContext,
+    memo,
+    useCallback,
+    useContext,
+    useEffect,
+    useLayoutEffect,
+    useMemo,
+    useRef,
+    useState,
+    type ReactNode,
+} from "react";
 import { parseMarks } from "../../../../claude/skim-mod/hooks/highlight-core";
 import { getProcExitAtom } from "./agentcontrollerstore";
 import { agentDiffScope, openDiff } from "./agentdiffnav";
@@ -104,6 +116,7 @@ import { openMessageCard, useMessageCards } from "./chatinitiativestore";
 import { sameChatItem } from "./chatitemeq";
 import { judgeKeysByItem } from "./chatjudge";
 import { ChatJudgeLine } from "./chatjudgeline";
+import { judgeReplyParts } from "./chatjudgereply";
 import { linkAt } from "./chatlink";
 import { ChatQuoteMenu } from "./chatquotemenu";
 import { liveTexts, withLiveReply, type LiveReply } from "./chatlive";
@@ -118,6 +131,7 @@ import {
     type ChatMarker,
 } from "./chatmodel";
 import { ChatPairHost } from "./chatpairblock";
+import { ChatPairMarkLine, pairBarAttrs, pairBarClass, useAgentPairViews } from "./chatpairmark";
 import { PairRelayView } from "./chatpairrelay";
 import { btwQuestion } from "./chatpending";
 import { ChatRunCard } from "./chatruncard";
@@ -135,11 +149,13 @@ import { placeStepLists, stepsPartKey, type AgentNow } from "./chatsteplist";
 import { ChatStepsHost, StepsPart } from "./chatsteplistview";
 import { foreignPathGuesses, turnFileAbs, turnFileDiff, turnFiles } from "./chatsteps";
 import { ChatSteps } from "./chatstepsview";
+import { recentPrompts, writesVietnamese } from "./chatsuggest";
 import { chatJudgeAtom } from "./chatsuggeststore";
 import { TaggedPromptText } from "./chattagblock";
 import { ChatTurnFiles } from "./chatturnfiles";
 import { turnCanvas } from "./chatcanvaspeek";
 import { ChatCanvasPeekCard } from "./chatcanvaspeekcard";
+import { useUnreadReading, type ChatUnread } from "./chatunread";
 import { VERDICT_TOPIC, verdictMode, type VerdictMode } from "./chatverdict";
 import { ChatVerdictCard } from "./chatverdictcard";
 import { CommandOutput, ShellCommand } from "./commandtext";
@@ -147,14 +163,22 @@ import { CouncilText } from "./councilchat";
 import { firstExistingFile } from "./filetabload";
 import { CompactionDivider, InterruptedDivider, PromptImages, TaskNotificationRow } from "./narrationtimeline";
 import { placePairLists } from "./pairblocks";
+import { JudgeReplyMenu } from "./pairjudgemenu";
+import { pairMarks } from "./pairmark";
+import { canPair } from "./pairmodel";
+import { usePairOf } from "./pairstore";
 import { pinnedLabel } from "./pinnedlabel";
 import { PinnedPromptBar, scrollParent, usePinnedPrompt } from "./pinnedpromptbar";
+import { projectsAtom } from "./projectsstore";
 import { opensRailSummary } from "./railcompaction";
 import { railVisibleAtom } from "./railstore";
+import { agentProject } from "./runlineage";
 import { useConversationRuns } from "./runoriginstore";
 import { runQueueAtom, runQueueStartedAtom, useRunQueueFeed } from "./runqueuestore";
 import { compactionsByIdAtom } from "./subagentsstore";
+import { RELEASE_TAIL_EVENT } from "./sticktobottom";
 import { firstItemBelow, keepTranscriptPlace, transcriptPlace } from "./transcriptplace";
+import { chatTurns, unreadRuleLabel, unreadTurns } from "./unreadturns";
 
 /** A sent card shows this many of its lines until it is opened. */
 const SENT_FOLD_LINES = 3;
@@ -182,23 +206,27 @@ function Caret({ open }: { open: boolean }) {
 // Copy in the gap under a bubble's bottom edge (the bubble keeps a margin that holds it), shown while the bubble is hovered or the button has focus (the bubble is `group`).
 // Beside it, Add to initiative… (`onAddInitiative`, given only in a live Claude agent's Chat: opens an initiative card
 // from this message, chatinitiativecard.tsx) and Fork from here (`onFork`, given only where the item points at a
-// transcript record of a forkable session).
+// transcript record of a forkable session), and under a reply ⚖ Judge this reply (`judgeFrom`: the record uuid the pair
+// starts from, "" for the agent's latest; given only on the parts chatjudgereply.ts names). The row stays drawn while the
+// menu of its ⚖ is open.
 function BubbleCopy({
     text,
     align,
     onFork,
     onAddInitiative,
+    judgeFrom,
 }: {
     text: string;
     align: "left" | "right";
     onFork?: () => void;
     onAddInitiative?: () => void;
+    judgeFrom?: string;
 }) {
     return (
         <div
             data-chat-copy
             className={cn(
-                "absolute top-full z-10 mt-0 flex items-center rounded-md bg-surface opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100 motion-reduce:transition-none",
+                "absolute top-full z-10 mt-0 flex items-center rounded-md bg-surface opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100 has-[[data-chat-judge-reply][aria-expanded=true]]:opacity-100 motion-reduce:transition-none",
                 align === "left" ? "left-1" : "right-1"
             )}
         >
@@ -227,7 +255,103 @@ function BubbleCopy({
                     <GitFork size={12} strokeWidth={2} aria-hidden />
                 </button>
             ) : null}
+            {judgeFrom !== undefined ? <JudgeReplyButton from={judgeFrom} /> : null}
         </div>
+    );
+}
+
+// What ⚖ Judge this reply reads from the conversation's host (JudgeReplyHost): whether the agent is in a pair that has not
+// ended, which button's menu is open, and the press. It comes through a context, not through the item's props, because an
+// item's element is kept while the item is unchanged (DrawnItem): a pair starting or ending, or a menu opening, must reach
+// the buttons in elements that are not drawn again.
+type JudgeReplyCtl = {
+    paired: boolean;
+    expanded: HTMLElement | null;
+    press: (anchor: HTMLElement, from: string) => void;
+};
+const JudgeReplyContext = createContext<JudgeReplyCtl | null>(null);
+
+// ⚖ Judge this reply, in the row under a reply after Fork (a hover or focus away, like the buttons beside it). It opens the
+// judge menu at itself, and the pair that menu starts is from this reply. While the agent is in a pair that has not ended it
+// is dimmed and does nothing (an agent is in at most one pair, and a second judge is the header's +): aria-disabled, not
+// disabled, so the keys still reach it and its tooltip says why.
+function JudgeReplyButton({ from }: { from: string }) {
+    const judge = useContext(JudgeReplyContext);
+    const [button, setButton] = useState<HTMLButtonElement | null>(null);
+    if (judge == null) {
+        return null;
+    }
+    const running = judge.paired;
+    const open = button != null && judge.expanded === button;
+    return (
+        <button
+            ref={setButton}
+            type="button"
+            data-chat-judge-reply
+            aria-label="Judge this reply"
+            aria-haspopup={running ? undefined : "menu"}
+            aria-expanded={running ? undefined : open}
+            aria-disabled={running ? true : undefined}
+            title={
+                running
+                    ? "A judge round is running: Unpair or let the round end"
+                    : "Judge this reply: another agent reads it and answers it"
+            }
+            onClick={(e) => {
+                if (!running) {
+                    judge.press(e.currentTarget, from);
+                }
+            }}
+            className={cn(
+                "rounded p-1 text-[12px] text-muted",
+                running ? "cursor-default opacity-40" : "cursor-pointer hover:bg-hover hover:text-ink-mid",
+                open && "bg-hover text-ink-mid"
+            )}
+        >
+            <Scale size={12} strokeWidth={2} aria-hidden />
+        </button>
+    );
+}
+
+// The conversation's one judge menu, and what the ⚖ buttons read. The menu is drawn here, once, and anchored at the
+// pressed button (JudgeReplyMenu keeps the last anchor while it leaves); a menu left open belongs to neither the next agent
+// nor a pair that has just started, so both close it.
+function JudgeReplyHost({ model, agent, children }: { model: AgentsViewModel; agent: AgentVM; children: ReactNode }) {
+    const paired = usePairOf(agent.id) != null;
+    const project = agentProject(useAtomValue(model.lineageAtom), useAtomValue(model.agentsAtom), agent);
+    const [menu, setMenu] = useState<{ anchor: HTMLElement | null; from: string; open: boolean }>({
+        anchor: null,
+        from: "",
+        open: false,
+    });
+    useEffect(() => setMenu((m) => (m.open ? { ...m, open: false } : m)), [agent.id, paired]);
+    const press = useCallback(
+        (anchor: HTMLElement, from: string) =>
+            setMenu((m) => (m.open && m.anchor === anchor ? { ...m, open: false } : { anchor, from, open: true })),
+        []
+    );
+    const ctl = useMemo(
+        () => ({ paired, expanded: menu.open ? menu.anchor : null, press }),
+        [paired, menu.open, menu.anchor, press]
+    );
+    return (
+        <JudgeReplyContext.Provider value={ctl}>
+            {children}
+            <JudgeReplyMenu
+                model={model}
+                worker={agent}
+                project={project}
+                from={menu.from}
+                open={menu.open}
+                anchor={menu.anchor}
+                onClose={(refocus) => {
+                    setMenu((m) => (m.open ? { ...m, open: false } : m));
+                    if (refocus) {
+                        menu.anchor?.focus({ preventScroll: true });
+                    }
+                }}
+            />
+        </JudgeReplyContext.Provider>
     );
 }
 
@@ -452,13 +576,10 @@ export function BtwCard({
 }
 
 // your bubble's box, shared with the bubble that stands in for a message on its way (chatpane.tsx PendingBubble), so the
-// transcript's copy taking its place draws nothing new. The copy button hangs in the gap under the bubble: it leaves that
-// button room above the cards
-export function youBubbleBox(hasFiles: boolean): string {
-    return cn(
-        "max-w-full rounded-[16px] bg-surface-raised px-[14px] py-[9px] text-[13.5px] leading-[1.55] text-primary",
-        hasFiles ? "mb-3" : "mb-1"
-    );
+// transcript's copy taking its place draws nothing new. The copy button hangs in the gap under the bubble; the files ride
+// over it, so nothing sits in that gap
+export function youBubbleBox(): string {
+    return "mb-1 max-w-full rounded-[16px] bg-surface-raised px-[14px] py-[9px] text-[13.5px] leading-[1.55] text-primary";
 }
 
 // your message: a bubble on the right, long ones clamped (PromptText, as userNeedsClamp says), what you pasted under it
@@ -526,7 +647,7 @@ function YouBubble({
     const forward = parseBoardForward(item.text);
     const words = forward != null ? forward.question : item.text;
     // the files and images you sent ride the message as trailing blocks of paths (chatfiles.ts); images show as pictures in
-    // the bubble and files as cards under it, not as the blocks that name them. The wrapper is the prompt the pinned bar and
+    // the bubble and files as cards over it (a pile from two on), not as the blocks that name them. The wrapper is the prompt the pinned bar and
     // the scenarios find, when the message says something (pinnedLabel): one of only pictures or files is no pin, so the
     // bar keeps the message before it rather than a "(picture)"
     const said = splitAttachments(words);
@@ -543,8 +664,9 @@ function YouBubble({
             onContextMenu={onContextMenu(words, fork, initiative)}
             className="flex max-w-[75%] flex-col items-end gap-2 self-end"
         >
+            {hasFiles ? <ChatFileCards paths={said.files} /> : null}
             {text !== "" || hasPictures ? (
-                <div className={cn("group relative", youBubbleBox(hasFiles))}>
+                <div className={cn("group relative", youBubbleBox())}>
                     {text !== "" ? <TaggedPromptText text={text} /> : null}
                     {hasPictures ? <PromptImages images={item.images} paths={said.images} /> : null}
                     {/* the whole message, files and all, as the context menu copies it */}
@@ -558,7 +680,6 @@ function YouBubble({
                     ) : null}
                 </div>
             ) : null}
-            {hasFiles ? <ChatFileCards paths={said.files} /> : null}
         </div>
     );
     return forward != null ? (
@@ -668,12 +789,15 @@ function Arriving({
     gap,
     itemKey,
     className,
+    attrs,
     children,
 }: {
     arrive: boolean;
     gap: number;
     itemKey?: string;
     className?: string;
+    // data attributes of the row: the marker of the judge round's bar it carries (pairBarAttrs)
+    attrs?: Record<string, string>;
     children: ReactNode;
 }) {
     const ref = useRef<HTMLDivElement>(null);
@@ -719,7 +843,7 @@ function Arriving({
         };
     }, [gap]);
     return (
-        <div ref={ref} data-chat-item={itemKey} className={className}>
+        <div ref={ref} data-chat-item={itemKey} className={className} {...attrs}>
             {children}
         </div>
     );
@@ -730,6 +854,7 @@ const NO_LIVE_REPLY: Atom<LiveReply | null> = atom<LiveReply | null>(null);
 const NO_LOST: readonly LostBash[] = [];
 const NO_ANSWERS: ReadonlyMap<string, PairedAnswer> = new Map();
 const NO_JUDGE_KEYS: ReadonlyMap<string, string> = new Map();
+const NO_JUDGE_PARTS: ReadonlyMap<string, string> = new Map();
 const NO_ENDED: ReadonlyMap<string, { runId: string; ended: RunEnded }> = new Map();
 // the run queue is read only by a conversation that has a queued start in it (placeRunCards tells an entry still waiting
 // from one that left the queue by it)
@@ -822,6 +947,8 @@ interface DrawnItem {
     terminal: boolean;
     fork: boolean;
     initiative: boolean;
+    // the parts of the item that carry ⚖ and the `from` of each (ChatConversation's judgeByItem), "" for none
+    judge: string;
     folds: string;
     answer: string;
     // what its verdict, handoff, Doc review, run and council cards draw from (ChatConversation's cardsOf)
@@ -861,6 +988,24 @@ function ChunkDivider({ n, label }: { n: number; label: string }) {
 }
 
 // what stands for the message the Initiative tab sent to tell the agent of a switch: arcterm's words, on your side of the column
+// The rule over the first of the turns that were unread when the agent came on screen, "N new turns" (unreadturns.ts):
+// where Chat opens. It keeps the count it had then, and goes once the agent leaves the screen. No data-chat-item, so the
+// place kept and restored never counts it
+function UnreadRule({ n, vi }: { n: number; vi: boolean }) {
+    return (
+        <div data-chat-unread-rule={n} className="flex items-center gap-2.5 self-stretch">
+            <span className="h-px flex-1 bg-unread/50" />
+            <span className="flex-none text-[11.5px] font-medium leading-[1.6] text-unread">
+                {unreadRuleLabel(n, vi)}
+            </span>
+            <span className="h-px flex-1 bg-unread/50" />
+        </div>
+    );
+}
+
+// how far below the view's top the rule sits once Chat jumps to it (px): the column's own top padding
+const UNREAD_JUMP_MARGIN = 16;
+
 function SwitchNoteRow({ n }: { n: number }) {
     return (
         <div data-chat-switch-note={n} className="flex items-center gap-1.5 text-[12px] text-muted">
@@ -920,8 +1065,10 @@ export function ChatConversation({
     brainstorm,
     model,
     agent,
+    ownTranscript,
     cwd,
     liveJudgeKey,
+    unread,
     className,
 }: {
     entries: AgentEntry[];
@@ -964,12 +1111,19 @@ export function ChatConversation({
     // there is no live agent to fork (an ended session, a subagent's interior), and then no item offers a fork
     model?: AgentsViewModel;
     agent?: AgentVM;
+    // these entries are the agent's own transcript, not the one a fork resumes while its own holds no message
+    // (chatfork.ts forkShowsSource): only then do its replies carry ⚖ Judge this reply, whose uuid wavesrv looks for in the
+    // agent's transcript. Left out, no reply does
+    ownTranscript?: boolean;
     // the agent's working directory: the card of a finished turn's files names each one's folder relative to it
     cwd?: string | null;
     // the key (chatsuggest.ts suggestKey) of the pane's current turn while its suggested replies show, else null: the
     // judge's line under that turn's message is the live one, which offers Read the code and pick, Stop and Retry
     // (chatjudgeline.tsx). Every other line shows what was judged and nothing to press
     liveJudgeKey?: string | null;
+    // the agent's unread turns (chatunread.ts): opened on screen with some, the conversation opens at the first under the
+    // rule, over a kept place; each turn read drops the count. Left out where there is no live agent
+    unread?: ChatUnread;
     className?: string;
 }) {
     const toolsLive = working ?? !!active;
@@ -988,8 +1142,33 @@ export function ChatConversation({
         () => (agentId != null ? judgeKeysByItem(agentId, items, judges) : NO_JUDGE_KEYS),
         [agentId, items, judges]
     );
+    // The judge rounds this agent started (pairmark.ts): a ⚖ line under the reply each began from, as rows of their own
+    // after the item's row (like the judge line above, never inside the item's cached element), and the bar on the left of
+    // the rows each round covers. The pairs are the agent's own, live ones and the project's ended ones; the words are
+    // Vietnamese when the person writes it, as the pair's other words choose
+    const projects = useAtomValue(projectsAtom);
+    const pairViews = useAgentPairViews(agent, projects[agent?.project ?? ""]?.path ?? "");
+    const marks = useMemo(() => pairMarks(items, pairViews), [items, pairViews]);
+    const markVi = useMemo(() => writesVietnamese(recentPrompts(entries)), [entries]);
     // the cards the person opened from messages (Add to initiative…), by the item they were opened after
     const canAddInitiative = !!model && !!agent;
+    // ⚖ Judge this reply (chatjudgereply.ts): in a live claude or pi agent's Chat where a pair is possible, under the
+    // replies judgeReplyParts names, by part key. An item's element is kept, so the part keys with their `from` of each item
+    // go into the keep (DrawnItem.judge); whether the agent is paired is the buttons' own, through JudgeReplyContext
+    const canJudge = canAddInitiative && ownTranscript === true && canPair(agent!);
+    const judgeHarness = agent?.agent === "pi" ? "pi" : "claude";
+    const judgeParts = useMemo(
+        () => (canJudge ? judgeReplyParts(items, { harness: judgeHarness, ownTranscript: true }) : NO_JUDGE_PARTS),
+        [canJudge, judgeHarness, items]
+    );
+    const judgeByItem = useMemo(() => {
+        const byItem = new Map<string, string>();
+        for (const [partKey, from] of judgeParts) {
+            const itemKey = partKey.slice(0, partKey.lastIndexOf("#"));
+            byItem.set(itemKey, `${byItem.get(itemKey) ?? ""}${partKey}=${from}\n`);
+        }
+        return byItem;
+    }, [judgeParts]);
     const messageCards = useMessageCards(canAddInitiative ? agent!.id : "");
     const cardAnchors = useMemo(() => new Set(messageCards.map((card) => card.anchor)), [messageCards]);
     // which of your messages answered a question, by row key: every answered question of the conversation, not only the
@@ -1195,6 +1374,21 @@ export function ChatConversation({
     }
     const visible = shownItems(items, Math.max(win.shown, Math.min(CHAT_RENDER_STEP, items.length)));
     const hidden = items.length - visible.length;
+    // The rule over the first unread turn, fixed the first time the conversation holds its items after the agent came on
+    // screen with unread turns (not while a kept window still reads what was written meanwhile: those are the newest
+    // turns), and gone once it leaves. `key` is the item it stands over, "" when no turn was found to stand over
+    const unreadOpen = unread?.open ?? null;
+    const [rule, setRule] = useState<{ seq: number; key: string; n: number } | null>(null);
+    if (unreadOpen == null) {
+        if (rule != null) {
+            setRule(null);
+        }
+    } else if (rule?.seq !== unreadOpen.seq && items.length > 0 && !catchingUp) {
+        const first = unreadTurns(chatTurns(items), unreadOpen.count);
+        setRule({ seq: unreadOpen.seq, key: first[0]?.start ?? "", n: first.length });
+    }
+    // the open the conversation jumped for: the turns are read only once it has (useUnreadReading's `armed`)
+    const [jumpedSeq, setJumpedSeq] = useState<number | null>(null);
     // A line Arc sent can draw nothing at all (an action line, the Fix or Skip line of a verdict card, a run-ended message,
     // or the line that started a run while the run is live): such an item gets no wrapper, so it leaves no empty slot in
     // the column's gap. `drawnVisible` is what has an element, in order, which is what the place kept and restored below
@@ -1230,10 +1424,11 @@ export function ChatConversation({
         animate: { marginTop: 0, transition: rowSpring },
         exit: { marginTop: -ITEM_GAP, transition: rowSpring },
     };
-    const lastDrawn = useRef<{ items: string[]; parts: Set<string>; judges: Set<string> }>({
+    const lastDrawn = useRef<{ items: string[]; parts: Set<string>; judges: Set<string>; marks: Set<string> }>({
         items: [],
         parts: new Set(),
         judges: new Set(),
+        marks: new Set(),
     });
     // nothing opens while a kept window catches up, nor in the render where it stops: the caught-up rows and the end of
     // catching up can land in one batched render
@@ -1252,6 +1447,8 @@ export function ChatConversation({
                 visible.flatMap((item) => (item.kind === "agent" ? item.parts.map((_, p) => `${item.key}#${p}`) : []))
             ),
             judges: new Set(visible.flatMap((item) => judgeKeys.get(item.key) ?? [])),
+            // the rounds whose line was drawn: a round's line opens on the spring the first time it is
+            marks: new Set(visible.flatMap((item) => (marks.lines.get(item.key) ?? []).map((line) => line.pairId))),
         };
     });
     // a fold is kept by its item's key and its part's place in the item, so it stays with its item as entries arrive
@@ -1316,7 +1513,8 @@ export function ChatConversation({
 
     // opened again under a kept place: draw back to the item holding it and scroll it to the top, at the same depth
     useLayoutEffect(() => {
-        if (placeId == null || placedFor.current === placeId || items.length === 0) {
+        // unread turns on open: the jump to the first of them wins over the kept place
+        if (placeId == null || placedFor.current === placeId || items.length === 0 || unreadOpen != null) {
             return;
         }
         const kept = transcriptPlace(placeId);
@@ -1351,7 +1549,35 @@ export function ChatConversation({
         if (el != null && scroller != null) {
             scroller.scrollTop += el.getBoundingClientRect().top - scroller.getBoundingClientRect().top + place.offset;
         }
-    }, [placeId, items.length, visible.length, keyOffset]);
+    }, [placeId, items.length, visible.length, keyOffset, unreadOpen]);
+
+    // Opened on screen with unread turns: draw back to the first of them and scroll its rule to the top of the view, then
+    // let go of the tail (useStickToBottom), so what arrives at the end no longer pulls the view down. With none found to
+    // stand over, the conversation goes to its end, as it opens with nothing unread
+    useLayoutEffect(() => {
+        const root = rootRef.current;
+        const scroller = scrollParent(root);
+        if (rule == null || jumpedSeq === rule.seq || root == null || scroller == null) {
+            return;
+        }
+        const at = rule.key === "" ? -1 : items.findIndex((it) => it.key === rule.key);
+        const need = items.length - at;
+        if (at >= 0 && need > visible.length) {
+            setWin((w) => ({ ...w, shown: need })); // drawn on the next render, when this runs again
+            return;
+        }
+        placedFor.current = placeId;
+        setJumpedSeq(rule.seq);
+        const el = at >= 0 ? root.querySelector<HTMLElement>(":scope > [data-chat-unread-rule]") : null;
+        if (el == null) {
+            scroller.scrollTop = scroller.scrollHeight;
+            return;
+        }
+        scroller.scrollTop +=
+            el.getBoundingClientRect().top - scroller.getBoundingClientRect().top - UNREAD_JUMP_MARGIN;
+        root.dispatchEvent(new Event(RELEASE_TAIL_EVENT, { bubbles: true }));
+    }, [rule, jumpedSeq, items, visible.length, placeId]);
+    useUnreadReading(rootRef, items, unread, unreadOpen == null || (rule != null && jumpedSeq === rule.seq));
 
     // keeps where the reader is, at most once a frame while they scroll: the item at the top of the view and how far
     // into it, or nothing once they are at the end. Not before the kept place was restored, nor while the view has no size
@@ -1628,6 +1854,7 @@ export function ChatConversation({
                             align="left"
                             onFork={fork != null ? () => forkRef.current?.(fork) : undefined}
                             onAddInitiative={canAddInitiative ? () => addToInitiative(part.text) : undefined}
+                            judgeFrom={judgeParts.get(key)}
                         />
                     </div>
                 );
@@ -1839,7 +2066,9 @@ export function ChatConversation({
     // (chat-redesign step 16 reads that cost as frame time). The keep is by what the item draws from: its content
     // (sameChatItem), whether it is the last, whether the session is live, the folds opened inside it, whether there is
     // a terminal to open, whether it can fork (the transcript path arrives after the first rows are drawn), whether it
-    // offers Add to initiative…, the brainstorm answer it stands for, if any, and what its cards draw from (cardsOf, below).
+    // offers Add to initiative…, which of its parts carry ⚖ Judge this reply and with what `from` (DrawnItem.judge; that
+    // the agent is paired reaches the buttons through JudgeReplyContext), the brainstorm answer it stands for, if any, and
+    // what its cards draw from (cardsOf, below).
     // Everything else it draws from is state of
     // its own components or read through a ref. The initiative cards the person opened from messages are rows of their
     // own after the row of the item they were opened after (InitiativeMessageCards: no data-chat-item, so the place kept
@@ -1887,9 +2116,14 @@ export function ChatConversation({
             lastAgentKey = item.key;
         }
     }
+    // the rule stands over the first unread turn's item, even one that draws nothing
+    const ruleBefore = (key: string): ReactNode[] =>
+        rule != null && rule.n > 0 && key === rule.key
+            ? [<UnreadRule key="unread-rule" n={rule.n} vi={unread?.vi === true} />]
+            : [];
     const rows = visible.flatMap((item, i) => {
         if (hiddenLine(item)) {
-            return endedAfter(item.key);
+            return [...ruleBefore(item.key), ...endedAfter(item.key)];
         }
         const paired = pairedOf(item);
         const last = i === visible.length - 1;
@@ -1900,6 +2134,7 @@ export function ChatConversation({
             nextIsYou: next?.kind === "you" && pairedOf(next) == null,
         };
         const folds = openedFor(opened, item.key);
+        const judge = judgeByItem.get(item.key) ?? "";
         const answer = answerKey(paired, endedOf(paired));
         const cards = cardsOf(item, ctx);
         const kept = drawnItems.current.get(item.key);
@@ -1911,6 +2146,7 @@ export function ChatConversation({
             kept.terminal === (onOpenTerminal != null) &&
             kept.fork === canFork &&
             kept.initiative === canAddInitiative &&
+            kept.judge === judge &&
             kept.folds === folds &&
             kept.answer === answer &&
             kept.cards === cards &&
@@ -1925,6 +2161,7 @@ export function ChatConversation({
                   terminal: onOpenTerminal != null,
                   fork: canFork,
                   initiative: canAddInitiative,
+                  judge,
                   folds,
                   answer,
                   cards,
@@ -1932,13 +2169,22 @@ export function ChatConversation({
               };
         drawnNow.set(item.key, drawn);
         drawnKeys.add(item.key);
+        // the judge round whose bar this row carries, and the lines of the rounds that began at this item: the bar is the
+        // row's own class and markers (never part of the kept element), so a round ending only recolours it
+        const bar = marks.bars.get(item.key);
+        const markLines = marks.lines.get(item.key);
         const row = (
             <Arriving
                 key={item.key}
                 itemKey={item.key}
                 gap={ITEM_GAP}
                 arrive={(item.kind !== "you" || ownArrives === true) && arrived.has(item.key)}
-                className={cn("flex flex-col", item.kind === "you" || item.kind === "sent" ? "items-end" : undefined)}
+                className={cn(
+                    "flex flex-col",
+                    item.kind === "you" || item.kind === "sent" ? "items-end" : undefined,
+                    pairBarClass(bar)
+                )}
+                attrs={pairBarAttrs(bar)}
             >
                 {drawn.element}
             </Arriving>
@@ -1947,6 +2193,7 @@ export function ChatConversation({
         // redraws the line only. It opens on the spring when it lands under a message that was already drawn
         const judgeKey = judgeKeys.get(item.key);
         return [
+            ...ruleBefore(item.key),
             row,
             ...(judgeKey != null && agent != null
                 ? [
@@ -1961,6 +2208,22 @@ export function ChatConversation({
                           arrive={!still && drawnBefore.has(item.key) && !lastDrawn.current.judges.has(judgeKey)}
                       />,
                   ]
+                : []),
+            // the judge rounds that began at this reply, the older round first: each line opens on the spring when its round
+            // starts under a reply that was already drawn, and carries the bar of the item it sits under
+            ...(markLines != null && agent != null && model != null
+                ? markLines.map((line) => (
+                      <ChatPairMarkLine
+                          key={`pairmark:${item.key}:${line.pairId}`}
+                          line={line}
+                          vi={markVi}
+                          model={model}
+                          agentId={agent.id}
+                          gap={ITEM_GAP}
+                          arrive={!still && drawnBefore.has(item.key) && !lastDrawn.current.marks.has(line.pairId)}
+                          bar={bar}
+                      />
+                  ))
                 : []),
             ...(cardAnchors.has(item.key) && agent != null
                 ? [<InitiativeMessageCards key={`${item.key}:initiative`} agentId={agent.id} anchor={item.key} />]
@@ -2075,14 +2338,17 @@ export function ChatConversation({
         </div>
     );
     // the initiative cards read their agent and the initiative list from a host: only a live Claude agent's Chat has one;
-    // every Chat conversation draws its step checklists and its pair cards
+    // every Chat conversation draws its step checklists and its pair cards. The judge menu of ⚖ is drawn by a host of its
+    // own beside it, in the same Chats (a live agent's: the buttons are drawn only where judgeParts names a reply)
     return (
         <ChatStepsHost placed={stepLists}>
             <ChatPairHost placed={pairLists} tabId={agent?.id ?? null}>
                 {canAddInitiative ? (
-                    <ChatInitiativeHost agent={agent!} model={model!}>
-                        {body}
-                    </ChatInitiativeHost>
+                    <JudgeReplyHost model={model!} agent={agent!}>
+                        <ChatInitiativeHost agent={agent!} model={model!}>
+                            {body}
+                        </ChatInitiativeHost>
+                    </JudgeReplyHost>
                 ) : (
                     body
                 )}

@@ -44,6 +44,7 @@ import {
     judgeFolder,
     judgeLabel,
     judgeLaunchOpts,
+    judgeResumeOpts,
     openNewJudge,
     pairStartData,
     pickJudge,
@@ -90,6 +91,21 @@ const pairInfo = (worker: string, judges: string[]): PairInfo => ({
     messagecount: 0,
     lastts: 0,
     updatedts: 0,
+});
+
+describe("judgeResumeOpts", () => {
+    it("resumes the judge's own session on opus in the worker's folder, with no task and the judge's label", () => {
+        expect(
+            judgeResumeOpts({ workerName: "Plan oracle", project: "arcterm", folder: "/w/arcterm", session: "abc-123" })
+        ).toStrictEqual({
+            runtime: "claude",
+            startupCommand: "claude --resume abc-123 --model opus",
+            task: "",
+            projectPath: "/w/arcterm",
+            projectName: "arcterm",
+            label: "Judge: Plan oracle",
+        });
+    });
 });
 
 describe("judgeLabel and judgeLaunchOpts", () => {
@@ -290,6 +306,22 @@ describe("pairStartData", () => {
         });
         expect(pairStartData(WORKER, JUDGE, false, false).launched).toBe(false);
     });
+
+    it("carries the reply the pair starts from, and sends no from at all for the latest reply", () => {
+        expect(pairStartData(WORKER, JUDGE, false, false, "uuid-older")).toStrictEqual({
+            workertab: WORKER,
+            judgetab: JUDGE,
+            holdheavy: true,
+            tokencap: 0,
+            note: "",
+            briefed: false,
+            launched: false,
+            from: "uuid-older",
+        });
+        // "" is the agent's latest reply: the request is what it was before ⚖ existed
+        expect("from" in pairStartData(WORKER, JUDGE, false, false, "")).toBe(false);
+        expect("from" in pairStartData(WORKER, JUDGE, false, false)).toBe(false);
+    });
 });
 
 describe("judgeBoot", () => {
@@ -383,6 +415,46 @@ describe("openNewJudge", () => {
         expect(focused(model)).toBe(WORKER);
         expect(mocks.showPair).toHaveBeenCalledWith(PAIR_ID);
         expect(mocks.toast).not.toHaveBeenCalled();
+    });
+
+    it("starts from the chosen reply: its uuid goes on the brief and on the pair, and the latest sends none", async () => {
+        const model = fakeModel();
+        const done = openNewJudge(model, WORKER_VM, "mit-thesis", "uuid-older");
+        await vi.waitFor(() => expect(mocks.launchAgent).toHaveBeenCalled());
+        reportIn(model);
+        await done;
+
+        expect(mocks.brief).toHaveBeenCalledTimes(1);
+        expect(mocks.brief).toHaveBeenCalledWith({}, { workertab: WORKER, from: "uuid-older" });
+        expect(mocks.start).toHaveBeenCalledTimes(1);
+        expect(mocks.start).toHaveBeenCalledWith({}, pairStartData(WORKER, JUDGE, true, true, "uuid-older"));
+        expect(mocks.start.mock.calls[0][1]).toMatchObject({ from: "uuid-older", briefed: true, launched: true });
+        expect(mocks.toast).not.toHaveBeenCalled();
+
+        mocks.brief.mockClear();
+        mocks.start.mockClear();
+        mocks.launchAgent.mockClear();
+        const second = fakeModel();
+        const again = openNewJudge(second, WORKER_VM, "mit-thesis");
+        await vi.waitFor(() => expect(mocks.launchAgent).toHaveBeenCalled());
+        reportIn(second);
+        await again;
+        expect(mocks.brief.mock.calls[0][1]).toStrictEqual({ workertab: WORKER });
+        expect("from" in mocks.start.mock.calls[0][1]).toBe(false);
+    });
+
+    it("shows the unknown-reply error as the add-a-judge toast and pairs nothing when the brief of a chosen reply fails", async () => {
+        mocks.brief.mockReset().mockRejectedValue(new Error("no reply uuid-gone in the transcript"));
+        await openNewJudge(fakeModel(), WORKER_VM, "mit-thesis", "uuid-gone");
+        expect(mocks.launchAgent).not.toHaveBeenCalled();
+        expect(mocks.start).not.toHaveBeenCalled();
+        expect(mocks.toast).toHaveBeenCalledWith(
+            expect.objectContaining({
+                level: "error",
+                title: "Couldn't add a judge to Plan oracle-tightening",
+                message: "no reply uuid-gone in the transcript",
+            })
+        );
     });
 
     it("falls back to the folder the worker's block or transcript names, then the project's root", async () => {
@@ -544,6 +616,32 @@ describe("pickJudge", () => {
         expect(mocks.showPair).toHaveBeenCalledWith(PAIR_ID);
     });
 
+    it("starts from the chosen reply: PairStart carries its uuid, and the latest sends none", async () => {
+        await pickJudge(WORKER_VM, JUDGE, "uuid-older");
+        expect(mocks.start).toHaveBeenCalledTimes(1);
+        expect(mocks.start).toHaveBeenCalledWith({}, pairStartData(WORKER, JUDGE, false, false, "uuid-older"));
+        expect(mocks.start.mock.calls[0][1]).toMatchObject({ from: "uuid-older", briefed: false, launched: false });
+        expect(mocks.showPair).toHaveBeenCalledWith(PAIR_ID);
+
+        mocks.start.mockClear();
+        await pickJudge(WORKER_VM, JUDGE);
+        expect("from" in mocks.start.mock.calls[0][1]).toBe(false);
+    });
+
+    it("shows the error as the add-a-judge toast and opens nothing when the chosen reply is not in the transcript", async () => {
+        mocks.start.mockReset().mockRejectedValue(new Error("no reply uuid-gone in the transcript"));
+        await pickJudge(WORKER_VM, JUDGE, "uuid-gone");
+        expect(mocks.showPair).not.toHaveBeenCalled();
+        expect(mocks.toast).toHaveBeenCalledTimes(1);
+        expect(mocks.toast).toHaveBeenCalledWith(
+            expect.objectContaining({
+                level: "error",
+                title: "Couldn't add a judge to Plan oracle-tightening",
+                message: "no reply uuid-gone in the transcript",
+            })
+        );
+    });
+
     it("shows the error and opens nothing when PairStart refuses", async () => {
         mocks.start.mockReset().mockRejectedValue(new Error("an agent is in at most one pair"));
         await pickJudge(WORKER_VM, JUDGE);
@@ -577,6 +675,14 @@ describe("wakeJudge", () => {
         });
         expect(mocks.showPair).toHaveBeenCalledWith(PAIR_ID);
         expect(mocks.toast).not.toHaveBeenCalled();
+    });
+
+    it("starts from the chosen reply: PairStart carries its uuid, still unbriefed and launched", async () => {
+        await wakeJudge(WORKER_VM, JUDGE, "uuid-older");
+        expect(mocks.start).toHaveBeenCalledTimes(1);
+        expect(mocks.start).toHaveBeenCalledWith({}, pairStartData(WORKER, JUDGE, false, true, "uuid-older"));
+        expect(mocks.start.mock.calls[0][1]).toMatchObject({ from: "uuid-older", briefed: false, launched: true });
+        expect(mocks.showPair).toHaveBeenCalledWith(PAIR_ID);
     });
 
     it("shows the error and opens nothing when PairStart refuses", async () => {
