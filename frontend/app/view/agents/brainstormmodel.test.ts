@@ -99,6 +99,7 @@ import {
     sendPickedLabel,
     sentKind,
     sentenceDiff,
+    sentences,
     settleSent,
     shownFile,
     spikeUrl,
@@ -1313,12 +1314,45 @@ describe("changedSentences", () => {
         expect(changedSentences("One. Two.", "One. Two.")).toEqual([]);
     });
 
-    it("keeps a whole side when the other is empty", () => {
-        expect(changedSentences("", "A. B.")).toEqual([
-            { kind: "added", text: "A." },
-            { kind: "added", text: "B." },
-        ]);
+    it("keeps a whole side when the other is empty, as one line", () => {
+        expect(changedSentences("", "A. B.")).toEqual([{ kind: "added", text: "A. B." }]);
         expect(changedSentences("A?", "")).toEqual([{ kind: "removed", text: "A?" }]);
+    });
+
+    it("reads sentences that came in one after another as one line after the edited one", () => {
+        const was =
+            "Khi pair đã dừng và bạn gửi một tin trong Chat của worker, vòng judge kết thúc: dòng ⚖ rời khỏi worker.";
+        const now = [
+            "Khi pair đã dừng mà worker có một lượt mới, vòng judge kết thúc: dòng ⚖ rời khỏi worker.",
+            "Câu trả lời đang dở vẫn được ghi vào pair.",
+            "Lệnh không tạo câu trả lời của worker (/compact, ! lệnh, /btw) không kết thúc vòng.",
+            "Muốn chạy tiếp thì bấm Chạy tiếp.",
+        ].join(" ");
+        expect(changedSentences(was, now).map((d) => [d.kind, d.text])).toEqual([
+            ["edited", "Khi pair đã dừng mà worker có một lượt mới, vòng judge kết thúc: dòng ⚖ rời khỏi worker."],
+            [
+                "added",
+                "Câu trả lời đang dở vẫn được ghi vào pair. Lệnh không tạo câu trả lời của worker (/compact, ! lệnh, /btw) không kết thúc vòng. Muốn chạy tiếp thì bấm Chạy tiếp.",
+            ],
+        ]);
+    });
+});
+
+describe("sentences", () => {
+    it("cuts at . ! ? before a word that does not start in lowercase", () => {
+        expect(sentences("One. Two! Three? Four")).toEqual(["One.", "Two!", "Three?", "Four"]);
+    });
+
+    it("keeps punctuation inside parentheses and before a lowercase word in its sentence", () => {
+        expect(sentences("Lệnh (/compact, ! lệnh, /btw) không. Xong.")).toEqual([
+            "Lệnh (/compact, ! lệnh, /btw) không.",
+            "Xong.",
+        ]);
+        expect(sentences("Có a, b, v.v. còn nữa. Hết.")).toEqual(["Có a, b, v.v. còn nữa.", "Hết."]);
+    });
+
+    it("ends a sentence at a line break", () => {
+        expect(sentences("- first item\n- second item\n\nThird.")).toEqual(["- first item", "- second item", "Third."]);
     });
 
     it("draws a sentence edited in a few words as one line, its old words struck before the new ones", () => {
