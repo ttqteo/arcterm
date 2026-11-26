@@ -81,6 +81,8 @@ and a picture given to a line that is not big.
   row of its own. Going back to the working agent after the pair has paused ends the round (the pair goes to Library, and
   the judge arcterm launched goes to sleep until you wake it with Add judge), and the token cap counts the judge's
   tokens only, not the working agent's.
+- Jarvis's All initiatives opens to twice its height on "+N more" and scrolls inside the box, instead of stretching
+  the whole Brief.
 - Switching back to an agent you already viewed keeps its details rail in place: Files changed, the branch, the
   session's spend and model and the cache countdown show at once and update quietly, instead of flashing through
   a placeholder.
@@ -88,6 +90,8 @@ and a picture given to a line that is not big.
   command failing the same way three times is gone (it never fired here, and its wakes elsewhere came too late to help).
 - What you are writing to an agent stays in its box when arcterm closes or reloads, attached files too, and the small
   message box on an agent's row shares that one draft with its Chat.
+- In Chat, a paste in your message folds to a small chip as wide as its label ("Pasted · 20 lines"); it widens to the
+  bubble only when you open it.
 - Councils moved into Conversations: the Councils tab is gone, `Mod+G o` opens Conversations with the Council chip on,
   and a council nests under the session that started it.
 - Library's tabs are plain labels with a sliding underline; the 1–3 keys still switch them, named in each tab's tooltip

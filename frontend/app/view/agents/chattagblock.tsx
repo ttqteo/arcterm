@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // A tagged block of your message as a folded card in your bubble (chattagblocks.ts says which): a paste the harness
-// wrapped, a system reminder, a slash command's blocks, command output, or any other <tag>…</tag>. Closed it is one line
-// ("Pasted · 12 lines"); open it shows the body in mono, scrolling past 320 px, with a copy button. TaggedPromptText is the
+// wrapped, a system reminder, a slash command's blocks, command output, or any other <tag>…</tag>. Closed it is a chip as wide
+// as its label ("Pasted · 12 lines"); open it takes the bubble's width and shows the body in mono, scrolling past 320 px, with a copy button. TaggedPromptText is the
 // whole message: its text as the bubble draws it, its blocks as these cards, so your bubble and its pending copy split a
 // message the same way.
 
@@ -30,19 +30,23 @@ export function ChatTagBlock({ tag, attrs, body, label }: Omit<TagPart, "kind">)
     const canOpen = body !== "";
     const heading = tagHeading({ kind: "tag", tag, attrs, body, label });
     const Chevron = open ? ChevronDown : ChevronRight;
+    // closed it is a chip as wide as its label; open it takes the bubble's width for the body
     const header = (
         <>
             <TagIcon tag={tag} />
             <span className="min-w-0 truncate">{heading}</span>
-            <span className="flex-1" />
+            {open ? <span className="flex-1" /> : null}
             {canOpen ? <Chevron size={12} strokeWidth={2.2} aria-hidden className="flex-none" /> : null}
         </>
     );
-    const headerClass = "flex h-8 w-full items-center gap-2 px-3 text-[12px] text-muted";
+    const headerClass = "flex h-7 w-full items-center gap-1.5 px-2.5 text-[12px] text-muted";
     return (
         <div
             data-chat-tag={tag}
-            className="w-full min-w-[220px] rounded-[8px] border border-edge-mid bg-surface text-left"
+            className={cn(
+                "rounded-[6px] border border-edge-mid bg-surface text-left",
+                open ? "w-full min-w-[220px]" : "w-fit max-w-full"
+            )}
         >
             {canOpen ? (
                 <button

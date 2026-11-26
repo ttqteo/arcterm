@@ -159,20 +159,27 @@ export function InitiativeList({
             </div>
             {hasRows ? (
                 <div className="flex min-w-0 flex-col rounded-[8px] border border-edge-faint p-1">
-                    <RevealRows
-                        rows={faces}
-                        rowKey={(f) => f.oref}
-                        keys={keys}
-                        filter={filter}
-                        render={(f) => (
-                            <InitiativeListRow
-                                face={f}
-                                focused={cursor === f.oref}
-                                opened={opened === f.oref}
-                                actions={actions}
-                            />
-                        )}
-                    />
+                    {/* "+N more" opens the box to twice its folded height (12 rows of 36px), and the rows past that
+                        scroll inside it rather than lengthening the Brief; p-px keeps the opened row's outer ring */}
+                    <div
+                        data-jarvis-initiative-rows
+                        className="flex max-h-[434px] min-w-0 flex-col overflow-y-auto overscroll-contain p-px"
+                    >
+                        <RevealRows
+                            rows={faces}
+                            rowKey={(f) => f.oref}
+                            keys={keys}
+                            filter={filter}
+                            render={(f) => (
+                                <InitiativeListRow
+                                    face={f}
+                                    focused={cursor === f.oref}
+                                    opened={opened === f.oref}
+                                    actions={actions}
+                                />
+                            )}
+                        />
+                    </div>
                     {more > 0 || expanded || footer != null ? (
                         <div className="flex flex-wrap items-center gap-2 px-1.5 pb-0.5 pt-1 empty:hidden">
                             {more > 0 || expanded ? (

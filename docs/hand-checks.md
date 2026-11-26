@@ -77,6 +77,15 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
   messages around it, whole from its first frame (head, summary when the judge wrote one, then Waits on you, Still
   open and Agreed), with no flash of a bare "Paused: …" line before it. Close and reopen the conversation: the card is
   already in place, with no entrance. With reduced motion on, it lands at once. (`pairpausecard.tsx`; the `pair-conversation` scenario reads the end states, not the motion.)
+- [ ] (arcterm) **A run queued from the command line shows on its brainstorm's card.** After installing a build with
+  c3db2a0b5, `wsh runs dequeue q-a7fa`, then from the pair-judge-round brainstorm's tab queue it again with
+  `wsh runs start "Build Vòng judge treo dưới worker as specified in …2026-11-26-pair-judge-round-design.md…" --after
+  247706be`. `wsh runs start` prints that it linked the brainstorm. The card in Chat says "Queued after …" in place of
+  Approve, and the header no longer says asking. When the entry starts, the agent receives `brainstorm: run <id>`.
+- [ ] (arcterm) **All initiatives scrolls inside its box.** In Jarvis with more than 12 initiatives, press "+N more":
+  the box grows to 12 rows and the rest scroll inside it (the wheel stops at its ends rather than moving the Brief),
+  the opened row's accent ring is not cut at the edges, and moving the keyboard cursor past row 12 scrolls the box to
+  keep it in view. "Show less" folds back to 6.
 - [ ] (arcterm) **Rail stays put on a switch back.** Open two agents that each have changed files and a session with
   spend, view each once, then click back and forth between them in the Agent tree: on the Agent details rail's
   Overview, Files changed, the branch/worktree line, the Session line (spend, model label) and the cache countdown
@@ -94,6 +103,12 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
 - [ ] (arcterm) **GitHub accounts: motion.** In Settings → Agents → GitHub accounts watch + Add account: the new row
   should spring open (`springReveal`) rather than jump in, and the add dialog and the fix list should open and close
   with the usual modal motion (no flash, no stuck backdrop).
+
+## 2026-11-26
+
+- [ ] (arcterm) Compact paste chip in Chat: send a message with a multi-line paste → in your bubble the paste is a small
+  chip as wide as "Pasted · N lines" (not a full-width card); click it → it widens to the bubble and shows the body
+  with a copy button; click again → back to the chip. `chattagblock.tsx`, uncommitted on main.
 
 ## 2026-11-25
 
