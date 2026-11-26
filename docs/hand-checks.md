@@ -193,7 +193,9 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
   as text. Checked in the browser build only, launch not tried (branch `launcher-paste-chips`).
 - [ ] (arcterm) **Every port beside the server mark.** On an agent that left 3+ ports listening (e.g. `task dev`:
   vite, WebView2 CDP, wavesrv), its tree row shows every port after the green server glyph (`:5174 :9223 :58458
-  :58459`), no `+N`; the agent's name truncates first, the ports stay whole. Also the project header row.
+  :58459`), no `+N`; the agent's name truncates first, the ports stay whole. Also the project header row. With the
+  sidebar narrow, the ports that no longer fit fold into `+N` (whole ports, none cut mid-number) and the RAM, tokens
+  and age stay inside the row; widening it brings them back.
 
 - [ ] (arcterm) **A live pair as one tree row, and the Pair toggle in the Tauri app** (`agenttree.tsx` PairTreeRow,
   `pairjudgemenu.tsx`, `agentsurface.tsx`). Checked on seeded pairs in `task dev:browser` only (`pair-tree`,

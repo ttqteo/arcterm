@@ -93,7 +93,8 @@ and a picture given to a line that is not big.
   no Reviewing state, and the final stage has an End review step (from the kaeltran16 fork).
 - An agent in a brainstorm opens its panel on the Brainstorm tab, and one linked to an initiative on the Initiative tab,
   instead of Overview; once you pick a tab, the panel stays on yours.
-- The green server mark beside an agent or a project lists every port its servers listen on, not two and a `+N`.
+- The green server mark beside an agent or a project lists every port its servers listen on that fits on the row, not
+  two and a `+N`; only the ports with no room left fold into `+N`, so the RAM, tokens and age stay on the row.
 - The suggested answer under an agent's last message is a card: the pick, its reason written out and Read the code and
   pick as a button, with no hovering; once you answer, it folds back to a thin line that keeps the reason in the
   tooltip.
