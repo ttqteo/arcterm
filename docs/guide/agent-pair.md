@@ -195,8 +195,10 @@ tiêu thêm là quyết định của bạn. Chạy tiếp sau token cap thì m�
 
 Vì vậy, sau một lần dừng ở token cap, các lượt bạn bắt đầu trong Chat của working agent không được chuyển cho judge cho
 tới khi bạn chạy tiếp (Resume, Judge again hay một tin của bạn): chúng ở lại trong Chat của agent, không vào cuộc trò
-chuyện của pair và không chất đống trong hàng đợi của judge. Ở các kiểu dừng khác, một lượt mới của working agent vẫn
-được ghi lại và chạy tiếp pair, và nó không bao giờ hiện dưới câu hỏi mà agent đó đã trả lời rồi.
+chuyện của pair và không chất đống trong hàng đợi của judge. Ngoại lệ là câu trả lời của working agent cho một tin mà nó
+đang làm dở khi pair dừng (ví dụ phần sửa judge vừa gửi): câu trả lời đó vẫn được ghi vào cuộc trò chuyện của pair và xếp
+hàng cho judge, nhưng không chạy tiếp pair; judge đọc nó khi bạn chạy tiếp. Ở các kiểu dừng khác, một lượt mới của
+working agent vẫn được ghi lại và chạy tiếp pair, và nó không bao giờ hiện dưới câu hỏi mà agent đó đã trả lời rồi.
 
 ## Giữ lệnh nặng và Run now
 

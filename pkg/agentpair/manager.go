@@ -724,8 +724,11 @@ func (m *Manager) catchUp(ctx context.Context, id string, tabs []string, trustGo
 // takeAnswer adds the agent's latest answer to the conversation when the pair has not taken it yet, and says whose it
 // was (FromWorker, FromJudge, or "" when there was nothing new). It resumes a stopped pair when the working agent's
 // reply is the new one, except after a token-cap stop: spending more is the person's call, so the pair does not follow
-// the working agent then. Its turn is neither recorded nor queued for the judge and leaves the held commands alone, but
-// it is marked seen (and saved), so it is not taken as new once the pair resumes.
+// the working agent then. A reply that answers a message the working agent was already working on when the cap stopped the
+// pair (answeredBy names one) is still recorded, as any worker message, and queued for the judge: it was owed, and the
+// judge reads it once the person resumes. It does not resume the pair. Any other turn after the cap is neither recorded
+// nor queued for the judge and leaves the held commands alone, but it is marked seen (and saved), so it is not taken as
+// new once the pair resumes.
 func (m *Manager) takeAnswer(ctx context.Context, id, tab string) string {
 	text, ts, err := m.Link.LastAnswer(ctx, tab)
 	if err != nil {
@@ -747,18 +750,20 @@ func (m *Manager) takeAnswer(ctx context.Context, id, tab string) string {
 		case !isJudge(p, tab):
 			return false
 		}
-		if from == FromWorker && p.State == StateStopped && p.StopReason == StopTokenCap {
+		atCap := from == FromWorker && p.State == StateStopped && p.StopReason == StopTokenCap
+		replyTo := answeredBy(p, tab)
+		if atCap && replyTo == "" {
 			p.Seen[tab] = ts
 			return true
 		}
-		msg := Message{Id: nextId(p), From: from, Tab: tab, Ts: ts, Raw: text, ReplyTo: answeredBy(p, tab)}
+		msg := Message{Id: nextId(p), From: from, Tab: tab, Ts: ts, Raw: text, ReplyTo: replyTo}
 		if from == FromWorker {
 			msg.Held, p.Held = p.Held, nil // the heavy commands refused since its last message hang on this one
 		}
 		p.Seen[tab] = ts
 		p.Messages = append(p.Messages, msg)
 		enqueue(p, msg)
-		if from == FromWorker && p.State == StateStopped {
+		if from == FromWorker && p.State == StateStopped && !atCap {
 			resume(p, m.nowMs())
 		}
 		took = from

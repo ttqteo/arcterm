@@ -1142,6 +1142,96 @@ func TestWorkerAfterTokenCapNotFollowed(t *testing.T) {
 	}
 }
 
+// the judge's fixes were sent to the worker and the cap stopped the pair while the worker was still on that turn: its answer
+// arrives after the stop and is kept, as the answer to the judge's message and queued for the judge, but it does not resume
+// the pair. A turn after it has nothing left to answer and is passed over as any turn after the cap.
+func TestWorkerAnswerUnderWayAtTokenCapKept(t *testing.T) {
+	r := newRig(t)
+	r.link.give("w", workerPlan)
+	v := r.start(wshrpc.CommandPairStartData{})
+	r.link.setState("j1", "idle")
+	// the worker is under the cap and idle, so the judge's fixes are delivered at once and it starts the turn
+	r.reply("j1", "> Plan v1.\nA finding.\n"+judgeBlock("new: a"))
+	fixes := lastLine(r.view(v.Id))
+	if fixes.From != FromJudge {
+		t.Fatalf("the last line = %+v, want the judge's fixes", fixes)
+	}
+	if w := r.link.sent("w"); len(w) != 1 {
+		t.Fatalf("the worker was sent %d prompts: want the judge's fixes", len(w))
+	}
+	if in := r.internal(v.Id); slices.Contains(in.Pending["w"], fixes.Id) {
+		t.Fatalf("pending = %v: the fixes were delivered, so they are not queued for the worker", in.Pending)
+	}
+
+	// the cap is reached while the worker is on that turn: a turn end of the judge settles it
+	r.link.agent("w").tokens = 3_500_000
+	r.m.TurnEnded(ctx, "j1")
+	if view := r.view(v.Id); view.State != StateStopped || view.StopReason != StopTokenCap {
+		t.Fatalf("state %s / %s: want a stop at the cap", view.State, view.StopReason)
+	}
+	r.m.mu.Lock()
+	r.m.pairs[v.Id].Held = []wshrpc.PairHeld{{Command: "go test ./...", Ts: 1}}
+	r.m.mu.Unlock()
+
+	// its answer to the fixes arrives after the stop
+	r.reply("w", "Fixed it.\n"+pairBlock("O1 a"))
+	view := r.view(v.Id)
+	if view.State != StateStopped || view.StopReason != StopTokenCap {
+		t.Fatalf("state %s / %s: the answer resumes no token-cap stop", view.State, view.StopReason)
+	}
+	answer := lastWorkerMsg(view)
+	if !strings.HasPrefix(answer.Text, "Fixed it.") || answer.ReplyTo != fixes.Id {
+		t.Fatalf("the worker's answer = %+v, want it recorded as the answer to the judge's fixes %s", answer, fixes.Id)
+	}
+	if n := countSystem(view, "Paused: token cap reached (3.0M)"); n != 1 {
+		t.Fatalf("the stop was written %d times", n)
+	}
+	in := r.internal(v.Id)
+	if !slices.Contains(in.Pending["j1"], answer.Id) {
+		t.Fatalf("pending = %v: the answer is queued for the judge", in.Pending)
+	}
+	if len(in.Held) != 0 {
+		t.Fatalf("held = %+v: a recorded worker message takes the held commands", in.Held)
+	}
+	if got := r.link.sent("j1"); len(got) != 1 {
+		t.Fatalf("the judge was sent %d prompts: a stopped pair delivers nothing", len(got))
+	}
+
+	// a second turn of its own: nothing it was sent is left to answer, so it is not recorded and only moves the seen mark
+	count, seenBefore, pubs := len(in.Messages), in.Seen["w"], r.published()
+	r.reply("w", "An aside.\n"+pairBlock("O1 a"))
+	after := r.internal(v.Id)
+	if len(after.Messages) != count {
+		t.Fatalf("the conversation holds %d messages, had %d: a turn with nothing to answer is not recorded", len(after.Messages), count)
+	}
+	if !reflect.DeepEqual(after.Pending["j1"], in.Pending["j1"]) {
+		t.Fatalf("pending for the judge = %v, was %v", after.Pending["j1"], in.Pending["j1"])
+	}
+	if after.State != StateStopped || after.StopReason != StopTokenCap {
+		t.Fatalf("state %s / %s", after.State, after.StopReason)
+	}
+	if after.Seen["w"] <= seenBefore {
+		t.Fatalf("seen mark %d, was %d: the turn is marked seen", after.Seen["w"], seenBefore)
+	}
+	if r.published() == pubs {
+		t.Fatal("the seen mark moved and nothing was published")
+	}
+
+	// the person resumes: the judge gets the kept answer and not the aside
+	r.link.agent("w").tokens = 0
+	if err := r.m.Resume(ctx, v.Id); err != nil {
+		t.Fatalf("Resume: %v", err)
+	}
+	j := r.link.sent("j1")
+	if len(j) != 2 {
+		t.Fatalf("the judge was sent %d prompts: want the kept answer delivered", len(j))
+	}
+	contains(t, "the judge's prompt", j[1], "Fixed it.")
+	if strings.Contains(j[1], "An aside.") {
+		t.Fatal("the aside reached the judge")
+	}
+}
+
 // a reply never quotes a message its author has already answered: a second turn of the worker after one that answered the
 // person's message has no ReplyTo, and the view draws no quote for it
 func TestReplyNeverQuotesAnAnsweredMessage(t *testing.T) {
