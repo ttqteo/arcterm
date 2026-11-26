@@ -132,6 +132,24 @@ const readCard = (h, id) =>
     })()`);
 // the header's state line of the focused working agent
 const headerState = (h) => h.ev(`(document.querySelector("[data-agent-header] [data-agent-state-pill]")?.textContent ?? "").replace(/\\s+/g, " ").trim()`);
+// The fixture's blocks are not real ones, so the surface's controller start for the focused worker is refused and the header
+// would read "failed to start" over its state line. The roster is marked a fixture's (setFixtureRoster, agentcontrollerstore.ts)
+// before it is set, so that refusal is dropped; put back to what a fixture loaded at boot says (devmock.loadDevMockRoster).
+// scenarios-pair-header.mjs does the same.
+const markFixture = (h, on) =>
+    agentPage(
+        h,
+        `const { setFixtureRoster } = await mod("app/view/agents/agentcontrollerstore.ts");
+        const { devMockAgentsAtom } = await mod("app/view/agents/devmock.ts");
+        setFixtureRoster(${on ? "true" : "globalStore.get(devMockAgentsAtom) != null"});
+        return true;`
+    );
+// the header holds its state line, not a start error: no refusal text beside the name and a pill that is not "failed to start"
+const HEADER_STATE_READY = `(() => {
+    const hd = document.querySelector("[data-agent-header]");
+    const pill = hd?.querySelector("[data-agent-state-pill]");
+    return !!pill && !hd.querySelector("[data-agent-start-error]") && pill.textContent.trim() !== "" && !/failed to start/i.test(pill.textContent);
+})()`;
 // a native set of the composer's text, so React's onChange sees it
 const setComposer = (h, value) =>
     h.ev(`(() => { const c = document.querySelector("[data-pair-composer]"); const set = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value").set; set.call(c, ${JSON.stringify(value)}); c.dispatchEvent(new Event("input", { bubbles: true })); })()`);
@@ -232,6 +250,8 @@ export default function (kit) {
                 const ctx = { now: Date.now() };
                 try {
                     await h.goto("agent");
+                    // the flag goes first: a pane starts as soon as the roster names its block
+                    await markFixture(h, true);
                     await setRoster(h, pairRoster(ctx.now));
                     await stubPairRpc(h);
                     await seedPair(h, [pairView(ctx.now)]);
@@ -711,12 +731,14 @@ export default function (kit) {
                     view.owed = true;
                     await seedPair(h, [view]);
                     await polishWaitFor(h, `!!${CARD(PAUSE_IDS.newest)}`, WAIT_MS);
+                    await polishWaitFor(h, HEADER_STATE_READY, WAIT_MS);
                     await polishNap(300);
                     states[key] = await headerState(h);
                     if (key === "no-new-points") await shot(h, "15-header-paused");
                 }
                 await seedPair(h, [pairView(ctx.now)]);
                 await polishWaitFor(h, `!document.querySelector("[data-pair-pause]")`, WAIT_MS);
+                await polishWaitFor(h, HEADER_STATE_READY, WAIT_MS);
                 await polishNap(300);
                 states.relaying = await headerState(h);
                 rec(
@@ -768,6 +790,7 @@ export default function (kit) {
                 await attempt("restore the pair RPCs", () => restorePairRpc(h));
                 await attempt("drop the seeded pairs", () => seedPair(h, null));
                 await attempt("drop the fixture roster", () => restoreRoster(h));
+                await attempt("put the fixture flag back", () => markFixture(h, false));
                 if (failures.length > 0) throw new Error(failures.join("; "));
             },
         },
