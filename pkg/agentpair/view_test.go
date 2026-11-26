@@ -593,6 +593,33 @@ func TestViewCarriesAMessagePause(t *testing.T) {
 	}
 }
 
+// a pair synced from another machine has its agents elsewhere: its view never offers Resume, whatever its queues hold
+func TestViewCanResumeIsFalseOnASyncedRead(t *testing.T) {
+	own, synced := historyDirs(t)
+	held := func(id string) *Pair {
+		p := stoppedPair(StopTokenCap, "j1")
+		p.Id = id
+		p.Pending["j1"] = []string{"m1"}
+		return p
+	}
+	savePair(t, own, held("mine"))
+	savePair(t, synced, held("far"))
+
+	if v, err := Read(own, synced, "mine"); err != nil || !v.CanResume || v.Synced {
+		t.Fatalf("a stopped pair of this machine = canresume %v, synced %v, %v: want it resumable", v != nil && v.CanResume, v != nil && v.Synced, err)
+	}
+	v, err := Read(own, synced, "far")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !v.Synced || v.CanResume {
+		t.Fatalf("a synced pair = synced %v, canresume %v: want synced and not resumable", v.Synced, v.CanResume)
+	}
+	if b, _ := json.Marshal(v); strings.Contains(string(b), `"canresume"`) {
+		t.Fatalf("a synced view carries a canresume key: %s", b)
+	}
+}
+
 func TestViewKeepsATargetedPersonMessageTo(t *testing.T) {
 	p := newPair("j1")
 	say(p, FromPerson, "", "for the judge")
