@@ -231,12 +231,10 @@ describe("pauseCardOf", () => {
         expect(card?.sections.flatMap((s) => s.items.map((i) => i.answer))).toEqual(["", ""]);
     });
 
-    it("has a note only on a judges-gone pause, saying Add judge pairs one again", () => {
-        expect(pauseCardOf(view(), pauseMsg("m9", "judges-gone"))?.note).toBe(
-            "Add judge in the header pairs one again"
-        );
+    it("has a note only on a judges-gone pause, saying ⚖ under a reply pairs one again", () => {
+        expect(pauseCardOf(view(), pauseMsg("m9", "judges-gone"))?.note).toBe("⚖ under a reply pairs one again");
         const vi = view({ messages: [person("m1", "thêm đi")] });
-        expect(pauseCardOf(vi, pauseMsg("m9", "judges-gone"))?.note).toBe("Bấm Add judge ở đầu trang để thêm judge");
+        expect(pauseCardOf(vi, pauseMsg("m9", "judges-gone"))?.note).toBe("Bấm ⚖ dưới một reply để thêm judge");
         for (const reason of ["no-new-points", "settled", "token-cap"]) {
             expect(pauseCardOf(view(), pauseMsg("m9", reason))?.note).toBe("");
         }

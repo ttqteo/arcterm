@@ -1,12 +1,14 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// How a pair starts from the agent header (board K2; spec docs/superpowers/specs/2026-11-25-agent-pair-judge-design.md):
-// which live agents the Add judge menu offers, and the three ways a pair begins. Picking a live agent pairs at once.
-// Waking the resting judge (the judge arcterm launched in an earlier round, asleep and hidden) pairs at once too, with
-// `launched` so it rests again after this round. Opening a new judge briefs it (PairBrief), launches a claude tab on opus
-// in the worker's folder, waits for that tab's row to report in, and only then pairs (PairStart with `briefed` and
-// `launched`): a launch that never reports in leaves no pair.
+// How a pair starts from ⚖ under a reply in Chat (board K2; specs docs/superpowers/specs/2026-11-25-agent-pair-judge-design.md
+// and 2026-11-26-judge-on-reply-design.md): which live agents the judge menu offers, and the three ways a pair begins.
+// Picking a live agent pairs at once. Waking the resting judge (the judge arcterm launched in an earlier round, asleep
+// and hidden) pairs at once too, with `launched` so it rests again after this round. Opening a new judge briefs it
+// (PairBrief), launches a claude tab on opus in the worker's folder, waits for that tab's row to report in, and only then
+// pairs (PairStart with `briefed` and `launched`): a launch that never reports in leaves no pair. Each takes the `from` of
+// the reply the pair starts from (the transcript record uuid ⚖ sits under); "" is the agent's latest reply, and then
+// neither command carries a `from`, as before ⚖ existed.
 // The choices (the launch's arguments, the folder, the label, who is offered, whether the judge is up) are pure functions
 // tested in pairlaunch.test.ts; the openers below only run them in order.
 
@@ -110,14 +112,25 @@ export function judgeChoices(
 /** PairStart's data: the default way to pair (heavy commands held until the judge answers; tokencap 0 is wavesrv's default
  *  of 3,000,000). `briefed` says the judge was launched with PairBrief's text as its task. `launched` says the judge is a tab
  *  arcterm launched for the job (a new judge, or a resting one woken): it sleeps and leaves the tree when the round ends,
- *  and an agent the person picked from the live list is not. */
+ *  and an agent the person picked from the live list is not. `from` is the transcript record uuid of the reply the pair
+ *  starts from; "" (the default) is the agent's latest reply, and the field is then left off. */
 export function pairStartData(
     workerTab: string,
     judgeTab: string,
     briefed: boolean,
-    launched: boolean
+    launched: boolean,
+    from: string = ""
 ): CommandPairStartData {
-    return { workertab: workerTab, judgetab: judgeTab, holdheavy: true, tokencap: 0, note: "", briefed, launched };
+    return {
+        workertab: workerTab,
+        judgetab: judgeTab,
+        holdheavy: true,
+        tokencap: 0,
+        note: "",
+        briefed,
+        launched,
+        ...(from !== "" ? { from } : {}),
+    };
 }
 
 /** Where a launched judge is. Its launch is pending until its tab's first status reports in (the roster lists a tab only
@@ -166,8 +179,14 @@ function addFailed(worker: Pick<AgentVM, "name">, e: unknown): void {
 /** Open a new judge for `worker` (board K2's first row): brief it, launch it, and pair once it has reported in. The launch
  *  takes the focus (its process starts when its terminal mounts), so the judge's tab shows while it boots; once paired the
  *  focus goes back to the worker and the conversation opens. A person who went elsewhere while it booted is left there.
- *  Every failure is a toast, and nothing is paired. */
-export async function openNewJudge(model: AgentsViewModel, worker: AgentVM, project: string): Promise<void> {
+ *  `from` names the reply to judge (the brief and the pair both carry it). Every failure is a toast, and nothing is
+ *  paired: a `from` the transcript does not hold fails the brief, before anything is launched. */
+export async function openNewJudge(
+    model: AgentsViewModel,
+    worker: AgentVM,
+    project: string,
+    from: string = ""
+): Promise<void> {
     try {
         const folder = judgeFolder(
             globalStore.get(railCwdsAtom)[worker.id] || (await resolveCwd(worker.transcriptPath, worker.blockId)),
@@ -176,7 +195,10 @@ export async function openNewJudge(model: AgentsViewModel, worker: AgentVM, proj
         if (folder == null) {
             throw new Error(`no folder found for ${worker.name}`);
         }
-        const brief = await RpcApi.PairBriefCommand(TabRpcClient, { workertab: worker.id });
+        const brief = await RpcApi.PairBriefCommand(TabRpcClient, {
+            workertab: worker.id,
+            ...(from !== "" ? { from } : {}),
+        });
         const judgeTab = await launchAgent(
             model,
             judgeLaunchOpts({ workerName: worker.name, project, folder, brief: brief.text })
@@ -193,7 +215,7 @@ export async function openNewJudge(model: AgentsViewModel, worker: AgentVM, proj
             });
             return;
         }
-        const view = await RpcApi.PairStartCommand(TabRpcClient, pairStartData(worker.id, judgeTab, true, true));
+        const view = await RpcApi.PairStartCommand(TabRpcClient, pairStartData(worker.id, judgeTab, true, true, from));
         const at = globalStore.get(model.focusIdAtom);
         if (at === judgeTab || at === worker.id) {
             globalStore.set(model.focusIdAtom, worker.id);
@@ -206,9 +228,12 @@ export async function openNewJudge(model: AgentsViewModel, worker: AgentVM, proj
 }
 
 // pairs `worker` with an agent that is already up and opens the conversation; a toast on failure
-async function pairWith(worker: AgentVM, judgeTab: string, launched: boolean): Promise<void> {
+async function pairWith(worker: AgentVM, judgeTab: string, launched: boolean, from: string): Promise<void> {
     try {
-        const view = await RpcApi.PairStartCommand(TabRpcClient, pairStartData(worker.id, judgeTab, false, launched));
+        const view = await RpcApi.PairStartCommand(
+            TabRpcClient,
+            pairStartData(worker.id, judgeTab, false, launched, from)
+        );
         showPair(view.id);
         openRailDecided(worker.id);
     } catch (e) {
@@ -217,14 +242,14 @@ async function pairWith(worker: AgentVM, judgeTab: string, launched: boolean): P
 }
 
 /** Pair `worker` with a live agent the person picked (board K2's list), and open the conversation. A toast on failure. The
- *  agent is not `launched`: it goes back to the tree as a plain agent when the round ends. */
-export function pickJudge(worker: AgentVM, judgeTab: string): Promise<void> {
-    return pairWith(worker, judgeTab, false);
+ *  agent is not `launched`: it goes back to the tree as a plain agent when the round ends. `from` is the reply to judge. */
+export function pickJudge(worker: AgentVM, judgeTab: string, from: string = ""): Promise<void> {
+    return pairWith(worker, judgeTab, false, from);
 }
 
-/** Wake the resting judge of `worker` (Add judge's first entry) and open the conversation, as pickJudge does. It is not
- *  briefed again: the send of the pair's brief is what wakes it, and it keeps what it read in the earlier rounds. It is
- *  `launched`, so it rests again when this round ends. A toast on failure. */
-export function wakeJudge(worker: AgentVM, judgeTab: string): Promise<void> {
-    return pairWith(worker, judgeTab, true);
+/** Wake the resting judge of `worker` (the judge menu's first entry) and open the conversation, as pickJudge does. It is
+ *  not briefed again: the send of the pair's brief is what wakes it, and it keeps what it read in the earlier rounds. It
+ *  is `launched`, so it rests again when this round ends. `from` is the reply to judge. A toast on failure. */
+export function wakeJudge(worker: AgentVM, judgeTab: string, from: string = ""): Promise<void> {
+    return pairWith(worker, judgeTab, true, from);
 }

@@ -1,11 +1,14 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// The agent header's pair controls (board K2, and board C of the tree-and-toggle follow-up): an unpaired agent's Add judge
-// button and its menu (Wake the judge of the earlier rounds when one rests asleep, Open a new judge, then the project's
-// live agents that are in no pair), a paired worker's Pair button beside a small + (another judge for the same pair), and
-// a judge's Pair button beside a link to the agent it judges. Pair toggles the centre into the conversation and back. What
-// picking an entry does is pairlaunch.ts; what the labels say is pairmodel.ts.
+// The judge menu (board K2) and the agent header's pair controls (board C of the tree-and-toggle follow-up). The menu is
+// Wake the judge of the earlier rounds when one rests asleep, Open a new judge, then the project's live agents that are in
+// no pair. It opens from ⚖ Judge this reply under a reply in Chat (JudgeReplyMenu, which the conversation draws once and
+// anchors at the pressed button; spec docs/superpowers/specs/2026-11-26-judge-on-reply-design.md) and starts the pair from
+// that reply, and from the small + of a paired worker's header (another judge for the same pair, which joins the pair as
+// it is). The header carries no pair control for an agent in no pair: ⚖ is the way in. A paired worker's header has its Pair
+// button beside the +, and a judge's has its Pair button beside a link to the agent it judges. Pair toggles the centre into
+// the conversation and back. What picking an entry does is pairlaunch.ts; what the labels say is pairmodel.ts.
 
 import { PopoverReveal } from "@/app/element/popoverreveal";
 import { globalStore } from "@/app/store/jotaiStore";
@@ -41,6 +44,8 @@ function MenuBody({
     model,
     worker,
     project,
+    label,
+    thisReply,
     onNew,
     onPick,
     onWake,
@@ -49,6 +54,10 @@ function MenuBody({
     model: AgentsViewModel;
     worker: AgentVM;
     project: string;
+    /** the menu's accessible name */
+    label: string;
+    /** the menu is for a reply the person chose (a `from`), not the agent's latest: the new judge reads that one */
+    thisReply: boolean;
     onNew: () => void;
     onPick: (judgeTab: string) => void;
     onWake: (judgeTab: string) => void;
@@ -91,7 +100,7 @@ function MenuBody({
         <div
             ref={rootRef}
             role="menu"
-            aria-label="Add judge"
+            aria-label={label}
             data-pair-judge-menu
             data-owns-keys
             onKeyDown={onKeyDown}
@@ -121,7 +130,7 @@ function MenuBody({
             >
                 Open a new judge
                 <span className="text-[11.5px] text-muted">
-                    new tab in the same project, reads the plan and the latest reply · opus
+                    new tab in the same project, reads the plan and {thisReply ? "this" : "the latest"} reply · opus
                 </span>
             </button>
             <div className="px-[9px] pb-[4px] pt-[8px] text-[11.5px] text-muted">Or pick a live agent</div>
@@ -151,12 +160,21 @@ function MenuBody({
     );
 }
 
-// the menu, anchored under its button and aligned to its right edge (the buttons sit at the header's right)
+// the menu, anchored under its button: aligned to the button's right edge for the header's + (the buttons sit at the
+// header's right), to its left edge for ⚖ under a reply (the button sits at the reply's left)
 function PairJudgeMenu({
     open,
     anchor,
+    placement,
+    origin,
     ...body
-}: { open: boolean; anchor: HTMLElement | null } & React.ComponentProps<typeof MenuBody>) {
+}: {
+    open: boolean;
+    anchor: HTMLElement | null;
+    placement: "bottom-end" | "bottom-start";
+    /** the panel scales from this corner of its anchor (PopoverReveal) */
+    origin: "top right" | "top left";
+} & React.ComponentProps<typeof MenuBody>) {
     const { refs, floatingStyles, context } = useFloating({
         open,
         onOpenChange: (next) => {
@@ -164,7 +182,7 @@ function PairJudgeMenu({
                 body.onClose();
             }
         },
-        placement: "bottom-end",
+        placement,
         strategy: "fixed",
         elements: { reference: anchor },
         middleware: [offset(6), flip({ padding: 8 }), shift({ padding: 8 })],
@@ -180,7 +198,7 @@ function PairJudgeMenu({
     return (
         <FloatingPortal>
             <div ref={refs.setFloating} style={floatingStyles} {...getFloatingProps(contained)} className="z-[80]">
-                <PopoverReveal open={open} origin="top right">
+                <PopoverReveal open={open} origin={origin}>
                     <MenuBody {...body} />
                 </PopoverReveal>
             </div>
@@ -188,21 +206,67 @@ function PairJudgeMenu({
     );
 }
 
-// The Add judge button and its menu. `compact` is a paired worker's small icon beside its Paired button: the same menu, to
-// add another judge.
-function AddJudgeButton({
+/** The menu of ⚖ Judge this reply, anchored at the pressed button and opening to its right (`placement` bottom-start). The
+ *  conversation draws one for all its replies and drives `open` (it stays drawn so the menu can leave on the same motion it
+ *  arrived on); `anchor` and `from` stay what the last press set while it leaves. Every entry starts the pair from the
+ *  reply `from` names ("" is the agent's latest, pi's only choice). `onClose(refocus)`: a dismissal (Escape, a press
+ *  outside) hands the keys back to the button, a pick leaves them where the launch or the conversation put them. */
+export function JudgeReplyMenu({
+    model,
+    worker,
+    project,
+    from,
+    open,
+    anchor,
+    onClose,
+}: {
+    model: AgentsViewModel;
+    worker: AgentVM;
+    project: string;
+    from: string;
+    open: boolean;
+    anchor: HTMLElement | null;
+    onClose: (refocus: boolean) => void;
+}) {
+    return (
+        <PairJudgeMenu
+            open={open}
+            anchor={anchor}
+            placement="bottom-start"
+            origin="top left"
+            model={model}
+            worker={worker}
+            project={project}
+            label="Judge this reply"
+            thisReply={from !== ""}
+            onNew={() => {
+                onClose(false);
+                fireAndForget(() => openNewJudge(model, worker, project, from));
+            }}
+            onPick={(judgeTab) => {
+                onClose(false);
+                fireAndForget(() => pickJudge(worker, judgeTab, from));
+            }}
+            onWake={(judgeTab) => {
+                onClose(false);
+                fireAndForget(() => wakeJudge(worker, judgeTab, from));
+            }}
+            onClose={() => onClose(true)}
+        />
+    );
+}
+
+// The small + beside a paired worker's Pair button: the same menu, to add another judge to the pair it is in. The new judge
+// joins that pair as it is, so no reply is chosen (pairlaunch's `from` is left empty and wavesrv ignores it there).
+function AddAnotherJudgeButton({
     model,
     agent,
     project,
-    words,
-    compact,
     iconClass,
 }: {
     model: AgentsViewModel;
     agent: AgentVM;
     project: string;
-    words: boolean;
-    compact: boolean;
     iconClass: string;
 }) {
     const [open, setOpen] = useState(false);
@@ -216,7 +280,6 @@ function AddJudgeButton({
             anchor?.focus({ preventScroll: true });
         }
     };
-    const label = compact ? "Add another judge" : "Add judge";
     return (
         <>
             <button
@@ -225,37 +288,24 @@ function AddJudgeButton({
                 data-pair-add-judge
                 aria-haspopup="menu"
                 aria-expanded={open}
-                aria-label={label}
+                aria-label="Add another judge"
                 onClick={() => setOpen(!open)}
-                title={
-                    compact
-                        ? "Add another judge to this pair"
-                        : "Add judge: another agent reads this one's replies and answers them"
-                }
-                className={
-                    compact
-                        ? cn(iconClass, FOCUS_RING, open && "bg-surface-hover text-primary")
-                        : cn(
-                              "flex cursor-pointer items-center gap-[6px] whitespace-nowrap rounded-[7px] border border-edge-strong px-[9px] py-[5px] text-[12px] font-semibold text-ink-hi hover:bg-surface-hover",
-                              FOCUS_RING,
-                              open && "bg-surface-hover"
-                          )
-                }
+                title="Add another judge to this pair"
+                className={cn(iconClass, FOCUS_RING, open && "bg-surface-hover text-primary")}
             >
                 {/* beside the Pair button, which has the scales, adding another judge is a plus */}
-                {compact ? (
-                    <Plus size={15} strokeWidth={1.8} aria-hidden />
-                ) : (
-                    <Scale size={14} strokeWidth={1.8} aria-hidden />
-                )}
-                {!compact && words ? "Add judge" : null}
+                <Plus size={15} strokeWidth={1.8} aria-hidden />
             </button>
             <PairJudgeMenu
                 open={open}
                 anchor={anchor}
+                placement="bottom-end"
+                origin="top right"
                 model={model}
                 worker={agent}
                 project={project}
+                label="Add another judge"
+                thisReply={false}
                 onNew={() => {
                     close(false);
                     fireAndForget(() => openNewJudge(model, agent, project));
@@ -334,7 +384,7 @@ function PairToggle({
     );
 }
 
-// A judge's way to the agent it judges, where the working agent's header has its Add judge icon: that agent's own view.
+// A judge's way to the agent it judges, where the working agent's header has its + icon: that agent's own view.
 function JudgedAgentLink({
     model,
     worker,
@@ -363,9 +413,9 @@ function JudgedAgentLink({
     );
 }
 
-/** What the header carries for pairs, by what the agent is in (`paired`, from usePairOf): no pair, an Add judge button; the
- *  working agent of one, its Pair button and a small Add judge icon (`iconClass` is the header's own icon button); a
- *  judge, its Pair button and a link to the agent it judges. */
+/** What the header carries for pairs, by what the agent is in (`paired`, from usePairOf): no pair, nothing (⚖ under a reply
+ *  in Chat starts one); the working agent of one, its Pair button and a small + for another judge (`iconClass` is the
+ *  header's own icon button); a judge, its Pair button and a link to the agent it judges. */
 export function PairHeaderControls({
     model,
     agent,
@@ -381,7 +431,10 @@ export function PairHeaderControls({
     paired: { pair: PairInfo; role: PairRole } | null;
     iconClass: string;
 }) {
-    if (paired?.role === "judge") {
+    if (paired == null) {
+        return null;
+    }
+    if (paired.role === "judge") {
         return (
             <>
                 <PairToggle model={model} agent={agent} pair={paired.pair} role="judge" words={words} />
@@ -391,17 +444,8 @@ export function PairHeaderControls({
     }
     return (
         <>
-            {paired != null ? (
-                <PairToggle model={model} agent={agent} pair={paired.pair} role="worker" words={words} />
-            ) : null}
-            <AddJudgeButton
-                model={model}
-                agent={agent}
-                project={project}
-                words={words}
-                compact={paired != null}
-                iconClass={iconClass}
-            />
+            <PairToggle model={model} agent={agent} pair={paired.pair} role="worker" words={words} />
+            <AddAnotherJudgeButton model={model} agent={agent} project={project} iconClass={iconClass} />
         </>
     );
 }

@@ -11,7 +11,7 @@ import type { AgentVM } from "./agentsviewmodel";
 import { pauseHead } from "./pairpause";
 
 /** An agent a pair can take on either side: claude or pi (the harnesses whose reply wavesrv reads), a real tab. The one
- *  rule: the header's Add judge, its judge menu and the tree's Pair: worker + judge all ask it. */
+ *  rule: ⚖ Judge this reply under a reply in Chat, the judge menu and the tree's Pair: worker + judge all ask it. */
 export function canPair(agent: Pick<AgentVM, "agent" | "kind" | "blockId">): boolean {
     return (
         (agent.agent === "claude" || agent.agent === "pi") &&

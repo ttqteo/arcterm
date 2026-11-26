@@ -1,15 +1,22 @@
-// pair-header: board K2, Add judge in the agent's header and the header once paired
-// (docs/superpowers/specs/2026-11-25-agent-pair-judge-design.md; frontend/app/view/agents/pairjudgemenu.tsx, pairlaunch.ts).
+// pair-header: board K2, ⚖ Judge this reply under each reply of the working agent's Chat, and the header once paired
+// (docs/superpowers/specs/2026-11-25-agent-pair-judge-design.md and 2026-11-26-judge-on-reply-design.md;
+// frontend/app/view/agents/chatconversation.tsx, pairjudgemenu.tsx, pairlaunch.ts). The header of an agent in no pair has no
+// pair control: ⚖ is the way in, and its menu starts the pair from the reply it sits under (`from`, the record's uuid).
 // No agent runs and wavesrv's pair commands are never called: the roster is pair-fixtures.mjs's, set into the page's dev
-// mock roster; the pairs are its views, set into the page's dev mock pairs; the seven RpcApi.Pair*Command methods are the
-// fixtures' recording stubs. Open a new judge (a real launch of a claude tab) is not run: pairlaunch.test.ts covers its
-// order and its gate over mocks; here a live agent is picked, which is PairStart and the conversation. Waking the resting
-// judge (a launched judge asleep after its round, seeded with seedResting) is the menu's first entry: wake-judge.
+// mock roster, its worker reading a fixture transcript of two turns whose replies carry uuids (writeWorkerTranscript); the
+// pairs are its views, set into the page's dev mock pairs; the seven RpcApi.Pair*Command methods are the fixtures'
+// recording stubs. Open a new judge (a real launch of a claude tab) is not run: pairlaunch.test.ts covers its order and its
+// gate over mocks; here a live agent is picked, which is PairStart and the conversation. Waking the resting judge (a
+// launched judge asleep after its round, seeded with seedResting) is the menu's first entry: wake-judge.
 // kit is scenarios.mjs's RT_KIT (polishWaitFor, polishNap).
 
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { agentPage, focusAgent, restoreRoster, setRoster } from "./agent-page-fixtures.mjs";
 import {
     PAIR,
+    WORKER_REPLIES,
     pairRoster,
     pairRpcCalls,
     pairView,
@@ -17,6 +24,7 @@ import {
     seedPair,
     seedResting,
     stubPairRpc,
+    writeWorkerTranscript,
 } from "./pair-fixtures.mjs";
 
 const NAME = "pair-header";
@@ -28,6 +36,60 @@ const shot = (h, step) => h.shot(`cdp-shots/${NAME}-${step}.png`);
 const HEADER = `document.querySelector("[data-agent-header]")`;
 const MENU = `document.querySelector("[data-pair-judge-menu]")`;
 
+// The replies of the worker's Chat the steps work on, each found by the words it opens with (the text of a reply is its
+// prose part's textContent): `older` is the first turn's reply, which has an earlier prose part (`early`) split from it by a
+// tool call, and `latest` the second turn's.
+const NEEDLE = {
+    early: WORKER_REPLIES.early.text.slice(0, 24),
+    older: WORKER_REPLIES.older.text.slice(0, 24),
+    latest: WORKER_REPLIES.latest.text.slice(0, 24),
+};
+// the worker's own Chat layer (the Agent surface keeps one per agent), and the prose part of one reply in it
+const LAYER = `document.querySelector('[data-agent-chat="${PAIR.worker}"]:not([data-chat-leaving])')`;
+const proseOf = (needle) =>
+    `[...((${LAYER})?.querySelectorAll("[data-chat-prose]") ?? [])].find((p) => (p.textContent ?? "").includes(${q(needle)}))`;
+
+// a reply as the steps read it: the row under it (its opacity: hover or focus reveals it), the order of its buttons, and its
+// ⚖ (null when it has none)
+const readReply = (needle) => `(() => {
+    const p = ${proseOf(needle)};
+    if (!p) return null;
+    const row = p.querySelector("[data-chat-copy]");
+    const b = row?.querySelector("[data-chat-judge-reply]");
+    const kids = [...(row?.children ?? [])].map((c) =>
+        c.hasAttribute("data-chat-judge-reply") ? "judge" : c.hasAttribute("data-chat-fork") ? "fork" : c.hasAttribute("data-chat-add-initiative") ? "initiative" : "copy"
+    );
+    return {
+        row: row != null,
+        rowOpacity: row ? Number(getComputedStyle(row).opacity) : null,
+        kids,
+        judge: b
+            ? {
+                  label: b.getAttribute("aria-label"),
+                  title: b.getAttribute("title"),
+                  disabled: b.getAttribute("aria-disabled"),
+                  expanded: b.getAttribute("aria-expanded"),
+                  opacity: Number(getComputedStyle(b).opacity),
+              }
+            : null,
+    };
+})()`;
+
+// where the ⚖ under a reply and the open menu are, and whether the menu stands at the button: its left edge on the button's
+// (placement bottom-start) and below it
+const readAnchor = (needle) => `(() => {
+    const b = ${proseOf(needle)}?.querySelector("[data-chat-judge-reply]");
+    const m = ${MENU};
+    if (!b || !m) return null;
+    const rb = b.getBoundingClientRect();
+    const rm = m.getBoundingClientRect();
+    return {
+        button: { left: Math.round(rb.left), bottom: Math.round(rb.bottom) },
+        menu: { left: Math.round(rm.left), top: Math.round(rm.top) },
+        atButton: Math.abs(rm.left - rb.left) <= 3 && rm.top >= rb.bottom,
+    };
+})()`;
+
 // the header as the steps read it: its words level, its name and state, and the pair controls it carries
 const readHeader = `(() => {
     const hd = ${HEADER};
@@ -37,6 +99,8 @@ const readHeader = `(() => {
     const add = hd.querySelector("[data-pair-add-judge]");
     const link = hd.querySelector("[data-pair-worker-link]");
     return {
+        // an agent in no pair has no Add judge, as a button or as words
+        addJudgeWords: /Add judge/i.test(hd.textContent ?? "") || [...hd.querySelectorAll("[aria-label],[title]")].some((e) => /Add judge/i.test((e.getAttribute("aria-label") ?? "") + (e.getAttribute("title") ?? ""))),
         labels: hd.getAttribute("data-header-labels"),
         name: flat(hd.querySelector("[data-header-name] .font-semibold")),
         state: flat(hd.querySelector("[data-agent-state-pill]")),
@@ -193,6 +257,50 @@ export default function (kit) {
         return true;
     }
 
+    // a real mouse press at a point: the move first, so what the pointer is over (a reply's row) reveals before the press
+    async function tapAt(h, box) {
+        await h.cdp("Input.dispatchMouseEvent", { type: "mouseMoved", x: box.x, y: box.y });
+        for (const type of ["mousePressed", "mouseReleased"]) {
+            await h.cdp("Input.dispatchMouseEvent", { type, x: box.x, y: box.y, button: "left", clickCount: 1 });
+        }
+    }
+
+    // the pointer over a reply (its prose part, scrolled to the middle of Chat): the row of buttons under it fades in. False
+    // when the reply is not drawn
+    async function hoverReply(h, needle) {
+        const box = await h.ev(`(() => {
+            const p = ${proseOf(needle)};
+            if (!p) return null;
+            p.scrollIntoView({ block: "center" });
+            const r = p.getBoundingClientRect();
+            return { x: Math.round(r.x + Math.min(r.width / 2, 160)), y: Math.round(r.y + r.height / 2) };
+        })()`);
+        if (box == null) return false;
+        await polishNap(250);
+        // the scroll may have moved the part: its middle again, then the pointer there
+        const again = await h.ev(`(() => { const r = ${proseOf(needle)}?.getBoundingClientRect(); return r ? { x: Math.round(r.x + Math.min(r.width / 2, 160)), y: Math.round(r.y + r.height / 2) } : null; })()`);
+        await h.cdp("Input.dispatchMouseEvent", { type: "mouseMoved", x: (again ?? box).x, y: (again ?? box).y });
+        return true;
+    }
+
+    // where the ⚖ under a reply has its middle now, or null when the reply has none
+    const judgeBox = (h, needle) =>
+        h.ev(`(() => {
+            const r = ${proseOf(needle)}?.querySelector("[data-chat-judge-reply]")?.getBoundingClientRect();
+            return r && r.width > 0 && r.height > 0 ? { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) } : null;
+        })()`);
+
+    // a real press on the ⚖ under a reply: the pointer over the reply first (the row is hidden until then), then on the
+    // button. False when the reply is not drawn or has no ⚖
+    async function pressJudge(h, needle) {
+        if (!(await hoverReply(h, needle))) return false;
+        await polishNap(300);
+        const box = await judgeBox(h, needle);
+        if (box == null) return false;
+        await tapAt(h, box);
+        return true;
+    }
+
     // a click once the element has stopped moving (a menu springs into its place)
     async function click(h, selector) {
         let box = await centreOf(h, selector);
@@ -238,7 +346,8 @@ export default function (kit) {
             name: NAME,
             surface: "agent",
             async arrange(h) {
-                const ctx = { worker: "Plan oracle-tightening" };
+                // the worker's transcript is a file of the scenario's own, so nothing is written into ~/.claude/projects
+                const ctx = { worker: "Plan oracle-tightening", dir: mkdtempSync(join(tmpdir(), "verify-pair-header-")) };
                 try {
                     await h.goto("agent");
                     // a window wide enough for the header's words (a narrower one turns every label into its icon:
@@ -250,7 +359,8 @@ export default function (kit) {
                     ctx.now = Date.now();
                     // the flag goes first: a pane starts as soon as the roster names its block
                     await markFixture(h, true);
-                    await setRoster(h, pairRoster(ctx.now));
+                    ctx.transcript = writeWorkerTranscript(ctx.dir, ctx.now);
+                    await setRoster(h, pairRoster(ctx.now, { workerTranscript: ctx.transcript }));
                     await stubPairRpc(h);
                     await seedPair(h, []);
                     ctx.ready = await polishWaitFor(h, `!!document.querySelector('[data-agent-row="${PAIR.worker}"]')`, WAIT_MS);
@@ -274,85 +384,76 @@ export default function (kit) {
                 if (ctx.arrangeError != null) return steps;
 
                 const view = pairView(ctx.now);
+                // the roster with the worker reading its fixture transcript (every step that sets the roster sets this one)
+                const workerRoster = () => pairRoster(ctx.now, { workerTranscript: ctx.transcript });
 
-                await run("add-judge-menu", async () => {
-                    // an agent in no pair: the Add judge button, and under it K2's menu
+                await run("reply-judge-hover", async () => {
+                    // an agent in no pair: no Add judge in its header. Under each reply of its Chat, on hover, ⚖ sits in the
+                    // row with Copy, Add to initiative and Fork; a part of the same turn that a tool call split from the reply
+                    // has none
                     await show(h, PAIR.worker);
-                    await waitHeader(h, ctx.worker, `!!${HEADER}.querySelector("[data-pair-add-judge]")`);
+                    await waitHeader(h, ctx.worker);
+                    const drawn = await polishWaitFor(
+                        h,
+                        `!!(${proseOf(NEEDLE.older)}) && !!(${proseOf(NEEDLE.early)}) && !!(${proseOf(NEEDLE.latest)})`,
+                        WAIT_MS
+                    );
                     const header = await h.ev(readHeader);
-                    await click(h, "[data-agent-header] [data-pair-add-judge]");
+                    const hovered = await hoverReply(h, NEEDLE.older);
+                    await polishNap(400);
+                    const older = await h.ev(readReply(NEEDLE.older));
+                    await shot(h, "reply-judge-hover");
+                    await hoverReply(h, NEEDLE.early);
+                    await polishNap(300);
+                    const early = await h.ev(readReply(NEEDLE.early));
+                    await hoverReply(h, NEEDLE.latest);
+                    await polishNap(300);
+                    const latest = await h.ev(readReply(NEEDLE.latest));
+                    rec(
+                        "reply-judge-hover: the header of an agent in no pair has no Add judge (no button, no words); hovering an older reply shows ⚖ \"Judge this reply\" in its row after Copy and Fork; the earlier prose part of the same turn (split by a tool call) has no ⚖, and the newest reply has one",
+                        drawn === true &&
+                            header?.labels === "words" &&
+                            header.add == null &&
+                            header.open == null &&
+                            header.addJudgeWords === false &&
+                            hovered === true &&
+                            older?.rowOpacity === 1 &&
+                            older.judge?.label === "Judge this reply" &&
+                            older.kids[0] === "copy" &&
+                            older.kids.at(-2) === "fork" &&
+                            older.kids.at(-1) === "judge" &&
+                            early?.row === true &&
+                            early.judge === null &&
+                            latest?.judge?.label === "Judge this reply",
+                        { drawn, header, older, early, latest }
+                    );
+                });
+
+                await run("reply-judge-menu", async () => {
+                    // pressing ⚖ opens the menu at the button: Open a new judge (this reply), then the project's live agents
+                    // that are in no pair, the keys in it from the first row, inside the window; Escape closes it and the keys
+                    // go back to ⚖. Picking a live agent is PairStart (hold on, the default cap, not briefed) with `from` the
+                    // uuid of that reply's record, and the conversation
+                    await pressJudge(h, NEEDLE.older);
                     await waitMenu(h);
                     await polishNap(400);
                     const menu = await h.ev(readMenu);
-                    const opened = await h.ev(readHeader);
-                    await shot(h, "add-judge-menu");
-                    // Escape closes it and hands the keys back to the button
+                    const anchor = await h.ev(readAnchor(NEEDLE.older));
+                    const opened = await h.ev(readReply(NEEDLE.older));
+                    await shot(h, "reply-judge-menu");
                     await key(h, "Escape", 27);
                     const closed = await menuGone(h);
-                    const back = await h.ev(`document.activeElement?.hasAttribute("data-pair-add-judge") === true`);
-                    rec(
-                        "add-judge-menu: an unpaired agent's header has Add judge; its menu opens on Open a new judge (new tab in the same project, reads the plan and the latest reply · opus), then the project's live agents that are in no pair (name, short id, state), keys in the menu from the first row, inside the window; Escape closes it and the keys return to the button",
-                        header?.labels === "words" &&
-                            header.open == null &&
-                            header.add?.text === "Add judge" &&
-                            header.add.label === "Add judge" &&
-                            opened?.add?.expanded === "true" &&
-                            menu?.newJudge === "Open a new judge new tab in the same project, reads the plan and the latest reply · opus" &&
-                            menu.section === "Or pick a live agent" &&
-                            same(menu.choices, [
-                                { id: PAIR.judge, text: "Judge: Plan oracle-tightening 4c6ba858 · working" },
-                                { id: PAIR.other, text: "Pull history and sync 9e0f1a2b · idle" },
-                            ]) &&
-                            menu.keysInMenu &&
-                            menu.firstFocused &&
-                            menu.inWindow &&
-                            closed === true &&
-                            back === true,
-                        { header, menu, closed, back }
-                    );
-                });
+                    const back = await h.ev(`document.activeElement?.hasAttribute("data-chat-judge-reply") === true`);
 
-                await run("menu-motion", async () => {
-                    // the menu opens and leaves on popoverReveal (opacity and scale over frames, never a snap), and a second press
-                    // 70 ms after the first, mid-motion, ends as a slow press does: closed, and no second copy drawn
-                    const add = "[data-agent-header] [data-pair-add-judge]";
-                    await startMotion(h);
-                    await click(h, add);
-                    await waitMenu(h);
-                    await polishNap(500);
-                    await key(h, "Escape", 27);
-                    await menuGone(h);
-                    await polishNap(100);
-                    const frames = (await stopMotion(h)).filter((f) => f != null);
-                    const full = frames.findIndex((f) => f.o === 1);
-                    const between = (list) => list.filter((f) => f.o > 0 && f.o < 1).length;
-                    const opening = full < 0 ? 0 : between(frames.slice(0, full));
-                    const leaving = full < 0 ? 0 : between(frames.slice(full));
-                    await tap(h, add);
-                    await polishNap(70);
-                    await tap(h, add);
-                    await polishNap(900);
-                    const quick = await h.ev(`({
-                        copies: document.querySelectorAll("[data-pair-judge-menu]").length,
-                        expanded: document.querySelector("[data-pair-add-judge]")?.getAttribute("aria-expanded"),
-                    })`);
-                    rec(
-                        "menu-motion: the menu opens and leaves over frames (opacity between 0 and 1 each way, fully opaque in between), and a second press 70 ms after the first leaves it closed with no copy of it drawn",
-                        full >= 0 && opening >= 1 && leaving >= 1 && frames.at(-1)?.o !== 1 && quick.copies === 0 && quick.expanded === "false",
-                        { frames: frames.length, opening, leaving, quick }
-                    );
-                });
-
-                await run("pick-live-judge", async () => {
-                    // picking a live agent is PairStart (hold on, the default cap, not briefed) and the conversation
                     const picked = { ...view, judges: [{ tab: PAIR.other, name: "Pull history and sync", harness: "claude" }] };
                     await pairOnStart(h, picked);
-                    await click(h, "[data-agent-header] [data-pair-add-judge]");
+                    const before = (await pairRpcCalls(h, "PairStartCommand")).length;
+                    await pressJudge(h, NEEDLE.older);
                     await waitMenu(h);
                     await polishNap(300);
                     await click(h, `[data-pair-judge-choice="${PAIR.other}"]`);
                     await polishWaitFor(h, `!${MENU}`, WAIT_MS);
-                    const calls = await pairRpcCalls(h, "PairStartCommand");
+                    const calls = (await pairRpcCalls(h, "PairStartCommand")).slice(before);
                     // the menu closes at the click and the conversation opens when PairStart answers: wait for it
                     const modes = [];
                     let center;
@@ -364,34 +465,95 @@ export default function (kit) {
                     }
                     center = { ...center, modes };
                     rec(
-                        "pick-live-judge: picking a live agent calls PairStart with the worker and that agent (heavy commands held, tokencap 0 for the default, not briefed), opens the conversation (the pair centre mode on that pair) and closes the menu",
-                        calls.length === 1 &&
-                            same(calls[0], { workertab: PAIR.worker, judgetab: PAIR.other, holdheavy: true, tokencap: 0, note: "", briefed: false, launched: false }) &&
+                        "reply-judge-menu: pressing ⚖ under the older reply opens the menu at the button (its left edge on the button's, below it) on Open a new judge (new tab in the same project, reads the plan and this reply · opus), then the project's live agents that are in no pair (name, short id, state), keys in the menu from the first row, inside the window, ⚖ expanded; Escape closes it and the keys return to ⚖; picking a live agent calls PairStart once with the worker, that agent and from = that reply's uuid (heavy commands held, tokencap 0, not briefed), opens the conversation and closes the menu",
+                        menu?.newJudge === "Open a new judge new tab in the same project, reads the plan and this reply · opus" &&
+                            menu.wake === null &&
+                            menu.section === "Or pick a live agent" &&
+                            same(menu.choices, [
+                                { id: PAIR.judge, text: "Judge: Plan oracle-tightening 4c6ba858 · working" },
+                                { id: PAIR.other, text: "Pull history and sync 9e0f1a2b · idle" },
+                            ]) &&
+                            menu.keysInMenu &&
+                            menu.firstFocused &&
+                            menu.inWindow &&
+                            anchor?.atButton === true &&
+                            opened?.judge?.expanded === "true" &&
+                            closed === true &&
+                            back === true &&
+                            calls.length === 1 &&
+                            same(calls[0], {
+                                workertab: PAIR.worker,
+                                judgetab: PAIR.other,
+                                holdheavy: true,
+                                tokencap: 0,
+                                note: "",
+                                briefed: false,
+                                launched: false,
+                                from: WORKER_REPLIES.older.uuid,
+                            }) &&
                             center.modes.includes("pair") &&
                             center.pair === PAIR.id,
-                        { calls, center }
+                        { menu, anchor, opened, closed, back, calls, center }
                     );
                     await leaveCenter(h);
                     await stubPairRpc(h);
+                    await seedPair(h, []);
+                });
+
+                await run("menu-motion", async () => {
+                    // the menu opens and leaves on popoverReveal (opacity and scale over frames, never a snap), and a second press
+                    // 70 ms after the first, mid-motion, ends as a slow press does: closed, and no second copy drawn
+                    await show(h, PAIR.worker);
+                    await startMotion(h);
+                    await pressJudge(h, NEEDLE.older);
+                    await waitMenu(h);
+                    await polishNap(500);
+                    await key(h, "Escape", 27);
+                    await menuGone(h);
+                    await polishNap(100);
+                    const frames = (await stopMotion(h)).filter((f) => f != null);
+                    const full = frames.findIndex((f) => f.o === 1);
+                    const between = (list) => list.filter((f) => f.o > 0 && f.o < 1).length;
+                    const opening = full < 0 ? 0 : between(frames.slice(0, full));
+                    const leaving = full < 0 ? 0 : between(frames.slice(full));
+                    // the pointer is already over the reply and its button: two presses on the button where it stands
+                    const box = await judgeBox(h, NEEDLE.older);
+                    if (box != null) {
+                        await tapAt(h, box);
+                        await polishNap(70);
+                        await tapAt(h, box);
+                    }
+                    await polishNap(900);
+                    const quick = await h.ev(`({
+                        copies: document.querySelectorAll("[data-pair-judge-menu]").length,
+                        expanded: ${proseOf(NEEDLE.older)}?.querySelector("[data-chat-judge-reply]")?.getAttribute("aria-expanded"),
+                    })`);
+                    rec(
+                        "menu-motion: the menu opens and leaves over frames (opacity between 0 and 1 each way, fully opaque in between), and a second press 70 ms after the first leaves it closed with no copy of it drawn",
+                        box != null && full >= 0 && opening >= 1 && leaving >= 1 && frames.at(-1)?.o !== 1 && quick.copies === 0 && quick.expanded === "false",
+                        { frames: frames.length, opening, leaving, quick }
+                    );
                 });
 
                 await run("wake-judge", async () => {
-                    // A launched judge whose round ended rests: asleep, hidden under its worker's row. Its worker's Add judge
-                    // menu offers it first, as Wake, ahead of Open a new judge; it is not listed again among the live agents.
+                    // A launched judge whose round ended rests: asleep, hidden under its worker's row. The menu of ⚖ under a
+                    // reply offers it first, as Wake, ahead of Open a new judge; it is not listed again among the live agents.
                     // Pressing it is PairStart with launched (so it rests again after this round) and not briefed (the send of
-                    // the brief wakes it), and the conversation opens. The pair exists once PairStart answers (pairOnStart).
+                    // the brief wakes it), with `from` the uuid of the reply the ⚖ sat under, and the conversation opens. The
+                    // pair exists once PairStart answers (pairOnStart).
                     const now = Date.now();
                     const judgeName = "Judge: Plan oracle-tightening";
                     const sleepingJudge = (a) =>
                         a.id === PAIR.judge ? { ...a, state: "idle", sleeping: { since: now - 60_000, freedBytes: 250_000_000 } } : a;
                     await seedPair(h, []);
                     await leaveCenter(h);
-                    await setRoster(h, pairRoster(ctx.now).map(sleepingJudge));
+                    await setRoster(h, workerRoster().map(sleepingJudge));
                     await seedResting(h, [{ tab: PAIR.judge, name: judgeName, workertab: PAIR.worker, pairid: "pair-fx-ended" }]);
                     const before = (await pairRpcCalls(h, "PairStartCommand")).length;
                     await show(h, PAIR.worker);
-                    await waitHeader(h, ctx.worker, `!${HEADER}.querySelector("[data-pair-open]") && !!${HEADER}.querySelector("[data-pair-add-judge]")`);
-                    await click(h, "[data-agent-header] [data-pair-add-judge]");
+                    await waitHeader(h, ctx.worker, `!${HEADER}.querySelector("[data-pair-open]")`);
+                    await polishWaitFor(h, `!!(${proseOf(NEEDLE.older)})`, WAIT_MS);
+                    await pressJudge(h, NEEDLE.older);
                     await waitMenu(h);
                     await polishNap(400);
                     const menu = await h.ev(readMenu);
@@ -411,7 +573,7 @@ export default function (kit) {
                     }
                     center = { ...center, modes };
                     rec(
-                        "wake-judge: with a resting judge asleep on the roster, the worker's Add judge menu opens on Wake <its name> (judge of your earlier rounds, keeps what it read · asleep) as its first item with the keys, then Open a new judge, and the live list does not list that judge again; pressing Wake calls PairStart once with the worker and that judge (heavy commands held, tokencap 0, not briefed, launched), opens the conversation and closes the menu",
+                        "wake-judge: with a resting judge asleep on the roster, the menu of ⚖ under the older reply opens on Wake <its name> (judge of your earlier rounds, keeps what it read · asleep) as its first item with the keys, then Open a new judge, and the live list does not list that judge again; pressing Wake calls PairStart once with the worker, that judge and from = that reply's uuid (heavy commands held, tokencap 0, not briefed, launched), opens the conversation and closes the menu",
                         menu?.wake?.tab === PAIR.judge &&
                             menu.wake.text === `Wake ${judgeName} judge of your earlier rounds, keeps what it read · asleep` &&
                             menu.wakeFirst === true &&
@@ -421,7 +583,16 @@ export default function (kit) {
                             same(menu.choices, [{ id: PAIR.other, text: "Pull history and sync 9e0f1a2b · idle" }]) &&
                             menu.inWindow === true &&
                             calls.length === 1 &&
-                            same(calls[0], { workertab: PAIR.worker, judgetab: PAIR.judge, holdheavy: true, tokencap: 0, note: "", briefed: false, launched: true }) &&
+                            same(calls[0], {
+                                workertab: PAIR.worker,
+                                judgetab: PAIR.judge,
+                                holdheavy: true,
+                                tokencap: 0,
+                                note: "",
+                                briefed: false,
+                                launched: true,
+                                from: WORKER_REPLIES.older.uuid,
+                            }) &&
                             center.modes.includes("pair") &&
                             center.pair === PAIR.id,
                         { menu, calls, center }
@@ -430,7 +601,56 @@ export default function (kit) {
                     await stubPairRpc(h);
                     await seedResting(h, null);
                     await seedPair(h, []);
-                    await setRoster(h, pairRoster(ctx.now));
+                    await setRoster(h, workerRoster());
+                });
+
+                await run("reply-judge-dimmed", async () => {
+                    // While the agent is in a pair that has not ended, ⚖ under every reply is dimmed and does nothing: the
+                    // tooltip says a judge round is running (Unpair or let the round end), a press opens no menu and calls no
+                    // PairStart. When the pair ends, ⚖ under the same reply is live again with no reload
+                    await seedPair(h, [view]);
+                    await show(h, PAIR.worker);
+                    await waitHeader(h, ctx.worker, `!!${HEADER}.querySelector("[data-pair-open]")`);
+                    await polishWaitFor(h, `!!(${proseOf(NEEDLE.older)})`, WAIT_MS);
+                    const before = (await pairRpcCalls(h, "PairStartCommand")).length;
+                    await hoverReply(h, NEEDLE.older);
+                    await polishNap(400);
+                    const dimmed = await h.ev(readReply(NEEDLE.older));
+                    await shot(h, "reply-judge-dimmed");
+                    const box = await judgeBox(h, NEEDLE.older);
+                    if (box != null) await tapAt(h, box);
+                    await polishNap(600);
+                    const pressedMenu = await h.ev(`!!${MENU}`);
+                    const pressedCalls = (await pairRpcCalls(h, "PairStartCommand")).length - before;
+                    // the pair ends (a mocked pair that is ended leaves the active list): the same ⚖ is live again
+                    await seedPair(h, [{ ...view, state: "ended" }]);
+                    await polishWaitFor(
+                        h,
+                        `${proseOf(NEEDLE.older)}?.querySelector("[data-chat-judge-reply]")?.getAttribute("aria-disabled") == null`,
+                        WAIT_MS
+                    );
+                    await hoverReply(h, NEEDLE.older);
+                    await polishNap(400);
+                    const live = await h.ev(readReply(NEEDLE.older));
+                    await pressJudge(h, NEEDLE.older);
+                    const reopened = await waitMenu(h);
+                    await key(h, "Escape", 27);
+                    await menuGone(h);
+                    rec(
+                        "reply-judge-dimmed: with the agent in a live pair ⚖ under the older reply is dimmed (aria-disabled, opacity under 1) with the tooltip \"A judge round is running: Unpair or let the round end\", and a press opens no menu and calls no PairStart; when that pair ends, ⚖ under the same reply is live again (not disabled, full opacity, its own tooltip) without a reload, and a press opens the menu",
+                        dimmed?.judge?.disabled === "true" &&
+                            dimmed.judge.opacity < 1 &&
+                            dimmed.judge.title === "A judge round is running: Unpair or let the round end" &&
+                            pressedMenu === false &&
+                            pressedCalls === 0 &&
+                            live?.judge != null &&
+                            live.judge.disabled === null &&
+                            live.judge.opacity === 1 &&
+                            live.judge.title.startsWith("Judge this reply") &&
+                            reopened === true,
+                        { dimmed, pressedMenu, pressedCalls, live, reopened }
+                    );
+                    await seedPair(h, []);
                 });
 
                 await run("paired-button", async () => {
@@ -557,7 +777,7 @@ export default function (kit) {
                     await shot(h, "narrow-header");
                     await narrowTo(h, null);
                     rec(
-                        "narrow-header: at 560px the paired button is its icon and the count of new messages (1), its aria-label still the whole label, and the Add judge icon has no words",
+                        "narrow-header: at 560px the paired button is its icon and the count of new messages (1), its aria-label still the whole label, and the + icon has no words",
                         header?.labels === "icons" &&
                             header.open?.text === "1" &&
                             header.open.label === "Paired with 2 judges · 1 new" &&
@@ -586,6 +806,9 @@ export default function (kit) {
                 await attempt("clear the resting judges", () => seedResting(h, null));
                 await attempt("drop the pair roster", () => restoreRoster(h));
                 await attempt("put the fixture flag back", () => markFixture(h, false));
+                await attempt("remove the worker's fixture transcript", () =>
+                    rmSync(ctx.dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 500 })
+                );
                 // the seen counts are kept in localStorage: the page's own value goes back
                 await attempt("restore what was seen", () =>
                     h.ev(

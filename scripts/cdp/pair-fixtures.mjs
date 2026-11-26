@@ -7,7 +7,11 @@
 //   PAIR            the ids: the worker, the judge, and `other`, a live agent in no pair (the second judge of a two-judge view)
 //   PAUSE_IDS       the ids of the pause messages pausedPairView writes: the newest and, with olderPause, the earlier one
 //   RESUME_ERROR    the text the resume stub fails with while the page's failResume flag is set
-//   pairRoster      the dev mock roster: the worker "Plan oracle-tightening", its judge, and `other`, all in mit-thesis
+//   pairRoster      the dev mock roster: the worker "Plan oracle-tightening", its judge, and `other`, all in mit-thesis; with
+//                   { workerTranscript } the worker reads that transcript (writeWorkerTranscript)
+//   WORKER_REPLIES, writeWorkerTranscript
+//                   the worker's two-turn fixture transcript (pair-header's ⚖ Judge this reply steps) and the uuids of its
+//                   replies
 //   pairView        the R1 board's exchange in English, as the PairView wavesrv would send it
 //   pausedPairView  the same pair stopped: its last message is a pause that carries the R1 Decided list
 //   seedPair        set the page's dev mock pairs (null clears them, and the server's answer shows again)
@@ -29,7 +33,7 @@
 // the server would say (always false for judges-gone, whose judge is marked gone). `olderPause: true` adds an earlier
 // pause message, in the middle of the exchange, with the same Decided list: a pair that paused and went on.
 
-import { agentPage } from "./agent-page-fixtures.mjs";
+import { agentPage, assistantText, toolResult, toolUse, userText, writeTranscript } from "./agent-page-fixtures.mjs";
 
 export const PAIR = {
     id: "pair-fx-1",
@@ -62,7 +66,10 @@ export const PAUSE_IDS = { newest: "pm-pause", older: "pm-pause-older" };
 
 const MIN = 60_000;
 
-export function pairRoster(now) {
+// pairRoster(now, { workerTranscript }): `workerTranscript` is the path of a .jsonl the worker's Chat reads (workerTranscript
+// below writes one), so its replies are drawn and ⚖ Judge this reply sits under them; left out, the worker has none, as
+// every scenario but pair-header has it.
+export function pairRoster(now, { workerTranscript } = {}) {
     const ctx = (contextpct) => ({ contextpct, contextmax: 200000 });
     const said = (text) => [{ kind: "message", text }];
     return [
@@ -78,6 +85,7 @@ export function pairRoster(now) {
             idleSince: now - 12_000,
             blockId: "fx-blk-pair-worker",
             previousInfo: said("Accepted both points. Drafting amendment §16.8."),
+            ...(workerTranscript != null ? { transcriptPath: workerTranscript } : {}),
         },
         {
             id: PAIR.judge,
@@ -107,6 +115,30 @@ export function pairRoster(now) {
             previousInfo: said("Synced the pull history."),
         },
     ];
+}
+
+// The replies of the worker's fixture transcript (writeWorkerTranscript), each with the uuid of its record, which is what
+// ⚖ Judge this reply pairs from. Two turns: the first is split by a tool call, so its `early` prose is not its reply (⚖ sits
+// under `older` only); the second holds `latest`.
+export const WORKER_REPLIES = {
+    early: { uuid: "fx-reply-early", text: "Reading the pilot harness before I draft anything." },
+    older: { uuid: "fx-reply-older", text: "Drafted amendment §16.8: threshold 50%, known-deviation, denominator 164." },
+    latest: { uuid: "fx-reply-latest", text: "Pilot of 6 cases drawn from the dev split, outside the 305 test split." },
+};
+
+// Writes the worker's transcript under `dir` (a temp dir the scenario owns, so nothing goes into ~/.claude/projects) and
+// returns its path, for pairRoster's `workerTranscript`. Two turns, each ending in a reply with a uuid (WORKER_REPLIES).
+export function writeWorkerTranscript(dir, now) {
+    const at = (agoMs, extra = {}) => ({ cwd: dir, ts: new Date(now - agoMs).toISOString(), ...extra });
+    return writeTranscript(dir, "pair-header-worker", [
+        userText("Plan the oracle tightening.", at(40 * MIN)),
+        assistantText(WORKER_REPLIES.early.text, at(39 * MIN, { uuid: WORKER_REPLIES.early.uuid })),
+        toolUse("toolu_fx_pair_read", "Read", { file_path: `${dir}\\study_pilot.py` }, at(38 * MIN)),
+        toolResult("toolu_fx_pair_read", "def run_pilot(cases): ...", at(37 * MIN)),
+        assistantText(WORKER_REPLIES.older.text, at(36 * MIN, { uuid: WORKER_REPLIES.older.uuid })),
+        userText("Now the pilot cases.", at(20 * MIN)),
+        assistantText(WORKER_REPLIES.latest.text, at(19 * MIN, { uuid: WORKER_REPLIES.latest.uuid })),
+    ]);
 }
 
 const side = (tab, name) => ({ tab, name, harness: "claude" });

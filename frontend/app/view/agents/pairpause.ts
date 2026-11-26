@@ -24,7 +24,7 @@ export type PauseSection = {
 export type PauseCard = {
     /** why the pair paused (pauseHead) */
     head: string;
-    /** the judges-gone pause's line, that Add judge pairs one again; "" on every other pause */
+    /** the judges-gone pause's line, that ⚖ under a reply pairs one again; "" on every other pause */
     note: string;
     /** the judge's few sentences that sum the pair up, "" when it wrote none */
     summary: string;
@@ -109,8 +109,8 @@ export function pauseCardOf(
         note:
             pause.reason === "judges-gone"
                 ? vi
-                    ? "Bấm Add judge ở đầu trang để thêm judge"
-                    : "Add judge in the header pairs one again"
+                    ? "Bấm ⚖ dưới một reply để thêm judge"
+                    : "⚖ under a reply pairs one again"
                 : "",
         summary: (pause.summary ?? "").trim(),
         sections,
