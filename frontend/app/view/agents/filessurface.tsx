@@ -457,7 +457,7 @@ export function FilesSurface({ model }: { model: AgentsViewModel }) {
                       ...(state?.end ? { end: state.end } : {}),
                   }
                 : { kind: "commit", hash: selectedCommit ?? "" };
-        fireAndForget(() => loadDiffPair(cwd, shownPath, sel));
+        fireAndForget(() => loadDiffPair(cwd, shownPath, sel, selectedChange?.from));
     }, [
         state?.cwd,
         state?.ref,
@@ -474,6 +474,7 @@ export function FilesSurface({ model }: { model: AgentsViewModel }) {
         liveTick,
         commitMode,
         commitEntry,
+        selectedChange?.from,
     ]);
 
     // a scope set by a link (a run's evidence) names its own repo, so it shows even with no agent or project

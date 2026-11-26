@@ -307,12 +307,17 @@ func verifSummaryLine(s string) string {
 // counts as 0.
 func parseNumstatStatus(numstat, statusZ string) []waveobj.EvidenceFile {
 	stat := map[string]string{}
-	for _, entry := range strings.Split(statusZ, "\x00") {
+	entries := strings.Split(statusZ, "\x00")
+	for i := 0; i < len(entries); i++ {
+		entry := entries[i]
 		if len(entry) < 3 {
 			continue
 		}
 		xy, path := entry[:2], entry[3:]
 		stat[path] = statusLetter(xy)
+		if xy[0] == 'R' || xy[0] == 'C' {
+			i++ // the rename/copy source path
+		}
 	}
 	var out []waveobj.EvidenceFile
 	for _, row := range strings.Split(numstat, "\n") {

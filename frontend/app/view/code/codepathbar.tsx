@@ -37,6 +37,7 @@ import {
     texPdfFor,
     toggleCodePin,
 } from "./codestore";
+import { showsSourceEditor } from "./codeviewmode";
 import { toggleWrap, useWrap } from "./codewrap";
 import { pathMenuItems } from "./pathmenu";
 
@@ -56,6 +57,7 @@ export function CodePathBar({ sideHidden }: { sideHidden?: string | null }) {
     const wrap = useWrap(shownAbs);
     const hasPdf = texPdfFor(useAtomValue(codeTexPdfAtom), shownAbs) != null;
     const pins = useAtomValue(codePinsAtom);
+    const chosenMode = useAtomValue(codeViewModeAtom);
 
     if (project == null || file.kind === "none") {
         return null;
@@ -63,6 +65,8 @@ export function CodePathBar({ sideHidden }: { sideHidden?: string | null }) {
     const abs = joinRepoPath(project.path, file.path);
     const dirty = file.kind === "text" && drafts.has(draftKey(project, file.path));
     const previewable = file.kind === "text" ? isPreviewable(file.path, drafts.get(abs)?.text ?? file.text) : true;
+    // the blame column draws beside the source editor only, so its toggle reads pressed only while that is up
+    const sourceShown = file.kind === "text" && showsSourceEditor(chosenMode, file.path, { hasPdf, previewable });
 
     return (
         <div className="flex flex-none items-center gap-1.5 border-b border-border px-3 py-1">
@@ -111,7 +115,7 @@ export function CodePathBar({ sideHidden }: { sideHidden?: string | null }) {
                     <span className="truncate">Side: {sideHidden.split("/").pop()}</span>
                 </button>
             ) : null}
-            {file.kind === "text" ? <BlameToggle /> : null}
+            {file.kind === "text" ? <BlameToggle sourceShown={sourceShown} /> : null}
             {file.kind === "text" ? <WrapToggle on={wrap} onToggle={() => toggleWrap(abs)} /> : null}
             <PinToggle on={isPinned(pins, project.path, file.path)} onToggle={() => toggleCodePin(file.path)} />
         </div>
@@ -159,20 +163,22 @@ function ViewModeToggle(p: { path: string; abs: string; hasPdf: boolean; preview
     );
 }
 
-// Blame draws a column beside the source editor (b does the same); in a plain directory there is no history to blame
-function BlameToggle() {
+// Blame draws a column beside the source editor (b does the same), so it reads pressed only while the column shows,
+// and a press in Preview or Diff switches to Source with it on; in a plain directory there is no history to blame
+function BlameToggle({ sourceShown }: { sourceShown: boolean }) {
     const on = useAtomValue(codeBlameOnAtom);
     const plain = useAtomValue(codePlainAtom);
+    const shown = on && !plain && sourceShown;
     return (
         <button
             type="button"
             data-code-blame-toggle
-            aria-pressed={on}
+            aria-pressed={shown}
             aria-label="Blame"
             disabled={plain}
             title={plain ? NOT_TRACKED : "Toggle the blame column (b)"}
             onClick={toggleBlame}
-            className={cn(ICON_BTN, on && !plain && ICON_ON, "disabled:cursor-default disabled:opacity-40")}
+            className={cn(ICON_BTN, shown && ICON_ON, "disabled:cursor-default disabled:opacity-40")}
         >
             <GitCommitHorizontal size={13} aria-hidden />
         </button>

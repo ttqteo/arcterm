@@ -9,7 +9,7 @@ import { wakeAgent, wakeErrorToast } from "./agentsleep";
 import { askBtw, logLine, submitToAgent } from "./agentsubmit";
 import type { AgentState, AgentVM } from "./agentsviewmodel";
 import { withResultLines } from "./chatinitiative";
-import { expandPastes } from "./chatpastes";
+import { expandPastes, joinPastes, splitPastes } from "./chatpastes";
 import { btwQuestion, processGone, repeatsSend, sendFailure, type LastSend, type SendFailure } from "./chatpending";
 import { mergeTaken } from "./chattakeback";
 import { messageWithAttachments, type Attachment } from "./composerattachments";
@@ -266,8 +266,11 @@ export const AgentComposer = forwardRef<
         onEscape?: () => void;
     }
 >(function AgentComposer({ blockId, agent, placeholder, className, onEscape }, ref) {
-    const { text, setText, canSend, waking, send } = useAgentSend(blockId, agent);
-    const draftId = agent?.sleeping ? agent.id : undefined;
+    // the agent's one draft, shared with its Chat box: what is typed here waits there too, and outlives a close
+    const { text, setText, canSend, waking, send } = useAgentSend(blockId, agent, undefined, { keepDraft: true });
+    const draftId = agent?.id;
+    // a long paste Chat folded into a chip stays out of this box's text and rides along when it sends
+    const { body, pastes } = splitPastes(text);
     const taRef = useRef<HTMLTextAreaElement>(null);
     useImperativeHandle(
         ref,
@@ -279,7 +282,7 @@ export const AgentComposer = forwardRef<
         }),
         [draftId]
     );
-    useGrowingTextarea(taRef, text, ComposerMinH, ComposerMaxH);
+    useGrowingTextarea(taRef, body, ComposerMinH, ComposerMaxH);
     return (
         <div
             data-agent-composer
@@ -288,9 +291,9 @@ export const AgentComposer = forwardRef<
             <textarea
                 ref={taRef}
                 rows={1}
-                value={text}
+                value={body}
                 readOnly={waking}
-                onChange={(e) => setText(e.target.value)}
+                onChange={(e) => setText(joinPastes(e.target.value, pastes))}
                 onKeyDown={(e) => {
                     if (e.key === "Enter" && !e.shiftKey) {
                         e.preventDefault();

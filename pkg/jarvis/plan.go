@@ -223,6 +223,11 @@ func (c *codeFence) step(line string) bool {
 // into the task before it.
 var planNearTaskHeadingRe = regexp.MustCompile(`(?i)^\s*#+\s*Task\s*\d+`)
 
+// dependsPlacementError refuses a Depends on line anywhere but first under its task heading (PlanFormat's rule)
+func dependsPlacementError(task int) error {
+	return fmt.Errorf("task %d: **Depends on:** must be the first line under its heading, once, before its Chunk, Model and Files lines", task)
+}
+
 // ParsePlan reads a plan in PlanFormat. Lines inside code fences are task text only, so a plan that
 // quotes a sample plan does not grow the sample's tasks.
 func ParsePlan(src string) (Plan, error) {
@@ -304,7 +309,10 @@ func ParsePlan(src string) (Plan, error) {
 				continue
 			}
 			task := &p.Tasks[len(p.Tasks)-1]
-			if m := planDependsRe.FindStringSubmatch(line); m != nil && dependsAllowed {
+			if m := planDependsRe.FindStringSubmatch(line); m != nil {
+				if !dependsAllowed {
+					return Plan{}, dependsPlacementError(len(p.Tasks))
+				}
 				deps, unexplained, err := parsePlanDepends(m[1], len(p.Tasks))
 				if err != nil {
 					return Plan{}, err
@@ -351,6 +359,11 @@ func ParsePlan(src string) (Plan, error) {
 				continue
 			}
 			inTaskHead = false
+		}
+		// past the task's head a Depends line would be neither applied nor refused: the task would keep its default
+		// edge to the task before it and could start before the task it names
+		if planDependsRe.MatchString(line) {
+			return Plan{}, dependsPlacementError(len(p.Tasks))
 		}
 		body = append(body, line)
 	}

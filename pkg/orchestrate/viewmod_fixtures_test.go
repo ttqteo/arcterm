@@ -7,6 +7,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -27,8 +28,12 @@ const (
 func checkViewModFixture(t *testing.T, name, text string) {
 	t.Helper()
 	// a worker's report path sits under this machine's temp dir: pin it, so the files match on any machine and
-	// carry no local path
-	text = strings.ReplaceAll(text, filepath.ToSlash(os.TempDir()), "C:/tmp")
+	// carry no local path. Cleaned, since macOS's TMPDIR ends in a slash that would take the next one with it.
+	text = strings.ReplaceAll(text, filepath.ToSlash(filepath.Clean(os.TempDir())), "C:/tmp")
+	// the spec and plan are written as this OS's absolute paths and read back as the Windows ones the files hold
+	if fixtureRoot != fixtureFileRoot {
+		text = strings.ReplaceAll(text, fixtureRoot+"/", fixtureFileRoot+"/")
+	}
 	path := filepath.Join(viewModFixtureDir, name+".txt")
 	if os.Getenv(updateFixturesEnv) == "1" {
 		if err := os.MkdirAll(viewModFixtureDir, 0o755); err != nil {
@@ -48,10 +53,23 @@ func checkViewModFixture(t *testing.T, name, text string) {
 	}
 }
 
-// absolute on every OS, so DocPath returns them as written and the files match on any machine
-const (
-	fixtureSpec = "C:/work/app/docs/superpowers/specs/2026-11-04-coach-design.md"
-	fixturePlan = "C:/work/app/docs/superpowers/plans/2026-11-04-coach.md"
+// fixtureFileRoot is the project root the fixture files name. fixtureRoot is the same root as this OS writes an
+// absolute path, so DocPath returns the spec and plan as written: "C:/work/app" is not absolute outside Windows, and
+// a verifier's prompt there read it as relative to its tree. checkViewModFixture maps it back.
+const fixtureFileRoot = "C:/work/app"
+
+var fixtureRoot = func() string {
+	if runtime.GOOS == "windows" {
+		return fixtureFileRoot
+	}
+	// not "/work/app": that is inside "C:/work/app", which other fixtures write as is, and the mapping back would
+	// rewrite it too
+	return "/fixture/app"
+}()
+
+var (
+	fixtureSpec = fixtureRoot + "/docs/superpowers/specs/2026-11-04-coach-design.md"
+	fixturePlan = fixtureRoot + "/docs/superpowers/plans/2026-11-04-coach.md"
 )
 
 var fixturePrinciples = waveobj.PrincipleList{

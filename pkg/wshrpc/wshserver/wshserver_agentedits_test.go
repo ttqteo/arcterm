@@ -37,7 +37,12 @@ func editsGit(t *testing.T, dir string, args ...string) string {
 // editsRepo commits files into a fresh repository and returns its root.
 func editsRepo(t *testing.T, files map[string]string) string {
 	t.Helper()
-	dir := t.TempDir()
+	// git reports the resolved top level (/private/var on a Mac, where the temp dir is under /var), and the
+	// transcript paths below are built from this dir: resolve it so both spell the same root
+	dir, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
 	editsGit(t, dir, "init", "-q", "-b", "main")
 	for p, c := range files {
 		abs := filepath.Join(dir, filepath.FromSlash(p))

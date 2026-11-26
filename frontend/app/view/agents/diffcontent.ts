@@ -16,15 +16,25 @@ export type DiffSelection =
     | { kind: "commit"; hash: string }
     | { kind: "compare"; base: string; head: string; mergeBase: string; form: CompareForm };
 
-// The right side of the working-tree diff is the file on disk, which is not a ref at all.
-export type DiffSide = { kind: "ref"; ref: string } | { kind: "worktree" };
+// The right side of the working-tree diff is the file on disk, which is not a ref at all. A ref side
+// names its own path only when it differs from the pair's: a rename's left side, at the old name.
+export type DiffSide = { kind: "ref"; ref: string; path?: string } | { kind: "worktree" };
 
 export interface DiffPairRefs {
     original: DiffSide;
     modified: DiffSide;
 }
 
-export function pairRefsFor(sel: DiffSelection): DiffPairRefs {
+// from: the open file's rename source, when the change list names one
+export function pairRefsFor(sel: DiffSelection, from?: string): DiffPairRefs {
+    const refs = selectionRefs(sel);
+    if (from && refs.original.kind === "ref") {
+        refs.original = { ...refs.original, path: from };
+    }
+    return refs;
+}
+
+function selectionRefs(sel: DiffSelection): DiffPairRefs {
     switch (sel.kind) {
         // A comment made on this pair stores its refs and names them in the prompt; the symbolic HEAD
         // would name a different commit once the agent commits, so an unanchored tree takes the sha.

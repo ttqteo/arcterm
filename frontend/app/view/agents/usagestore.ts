@@ -33,9 +33,12 @@ export const usageEffortsAtom = atom<UsageEffort[]>([]) as PrimitiveAtom<UsageEf
 // the window days the held buckets were loaded for; null before the first success. Set only on success,
 // so after a failed switch it still names what the buckets cover
 export const usageHeldWindowAtom = atom<number | null>(null) as PrimitiveAtom<number | null>;
-// By provider's (and Chat's usage card's) stats: the daily series starts at the oldest bucket, as ours always did.
-// By work spans the held window itself (usageworkview.tsx), the fork's way.
-export const allUsageStatsAtom = atom((get) => aggregateBuckets(get(usageBucketsAtom), Date.now(), "all"));
+// By provider's (and Chat's usage card's) stats: the daily series spans the held window from its first day, as By
+// work's does (usageworkview.tsx), so a window with usage on two of its days still draws all of its days
+export const allUsageStatsAtom = atom((get) => {
+    const now = Date.now();
+    return aggregateBuckets(get(usageBucketsAtom), now, "all", windowStartDay(get(usageHeldWindowAtom), now));
+});
 export const usageErrorAtom = atom<boolean>(false) as PrimitiveAtom<boolean>;
 export const usageLoadedAtom = atom<boolean>(false) as PrimitiveAtom<boolean>;
 // Claude's daily tokens over the last FORECAST_WINDOW_DAYS; null until the first forecast load lands

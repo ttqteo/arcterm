@@ -28,6 +28,18 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
   Overview, Files changed, the branch/worktree line, the Session line (spend, model label) and the cache countdown
   swap to the other agent's at once, with no skeleton and no line dropping out and coming back. A freshly opened agent
   still shows the skeleton on its first view. (`rail-switch-back` scenario reads it frame by frame.)
+- [ ] (arcterm) **GitHub accounts: a real push under a root uses that account's token.** In Settings → Agents → GitHub
+  accounts add an account with a real token and a folder holding a repo whose remote has no token in its URL, then run
+  `git push` in that repo from a terminal outside arcterm. You should see the push go through as that account (the
+  commit carries its name and email, and the Keychain on the Mac holds the token under its login). A repo outside every
+  root still pushes as the Default account.
+- [ ] (arcterm, Windows) **GitHub accounts: Git Credential Manager stores and serves the token, and gh still serves repos
+  outside the roots.** Add an account, then `git credential fill` for `github.com` with that username from a repo under
+  its root: you should get the token Credential Manager keeps (not a line of `~/.git-credentials`). In a repo outside
+  every root `git push` still works through gh.
+- [ ] (arcterm) **GitHub accounts: motion.** In Settings → Agents → GitHub accounts watch + Add account: the new row
+  should spring open (`springReveal`) rather than jump in, and the add dialog and the fix list should open and close
+  with the usual modal motion (no flash, no stuck backdrop).
 
 ## 2026-11-25
 

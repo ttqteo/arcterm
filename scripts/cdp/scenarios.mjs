@@ -91,6 +91,7 @@ import chatCodeBoxScenarios from "./scenarios-chat-code-box.mjs";
 import chatVerdictHandoffScenarios from "./scenarios-chat-verdict-handoff.mjs";
 import chatCouncilScenarios from "./scenarios-chat-council.mjs";
 import chatSuggestCardScenarios from "./scenarios-chat-suggest-card.mjs";
+import gitAccountsScenarios from "./scenarios-git-accounts.mjs";
 import chatJudgeScenarios from "./scenarios-chat-judge.mjs";
 import boardsChatScenarios from "./scenarios-boards-chat.mjs";
 import chatBoardRefScenarios from "./scenarios-chat-board-ref.mjs";
@@ -13073,6 +13074,18 @@ const codeBlame = {
         await h.ev(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'b', code: 'KeyB', bubbles: true }))`);
         const gone = await polishWaitFor(h, `!document.querySelector('[data-code-blame-column]')`, 5000);
         rec("b with the tree focused hides the column", gone === true, `gone=${gone}`);
+
+        // the column draws beside the source editor only: Blame pressed in Diff switches to Source with it on, and back
+        // in Diff the toggle reads unpressed while its setting stays on
+        const BLAME_PRESSED = `document.querySelector('[data-code-blame-toggle]')?.getAttribute('aria-pressed')`;
+        await h.ev(`document.querySelector('[data-code-view-mode="diff"]')?.click()`);
+        await polishWaitFor(h, `!!document.querySelector('[data-code-diff-target]')`, 5000);
+        await h.ev(`document.querySelector('[data-code-blame-toggle]')?.click()`);
+        const toSource = await polishWaitFor(h, `!!document.querySelector('[data-code-blame-column]') && ${BLAME_PRESSED} === 'true'`, 10000);
+        rec("Blame pressed in Diff switches to Source with the column on", toSource === true, `toSource=${toSource}`);
+        await h.ev(`document.querySelector('[data-code-view-mode="diff"]')?.click()`);
+        const unpressed = await polishWaitFor(h, `!document.querySelector('[data-code-blame-column]') && ${BLAME_PRESSED} === 'false'`, 5000);
+        rec("in Diff the Blame toggle reads unpressed", unpressed === true, `unpressed=${unpressed}`);
         return steps;
     },
     // the run first, which ends its hold on the landing tree, then the project and channel, then the dirs
@@ -57700,9 +57713,9 @@ const settingsVaultSync = {
     },
 };
 
-// --- settings-pages: nine pages of cards, the key pill on hover, a changed row end to end ----------------
+// --- settings-pages: ten pages of cards, the key pill on hover, a changed row end to end ----------------
 // docs/superpowers/specs/2026-10-08-settings-redesign-design.md, regrouped by docs/superpowers/specs/2026-10-18-settings-reorg-design.md.
-// One step per page (the index lists the nine in order, About alone at the foot; the page's card ids in order; a shot),
+// One step per page (the index lists the ten in order, About alone at the foot; the page's card ids in order; a shot),
 // then one detail step per page that draws something the card ids do not show
 // (the Startup surface menu, the theme chips and fonts in their own face, the Claude account and flag tabs, the Runs &
 // limits rows and the Heavy jobs segments, the Folding and Office rows, the runtime
@@ -57713,8 +57726,9 @@ const settingsVaultSync = {
 // app share the vault's settings.json, and a write can lose a rename race with the other's.
 const SP_PAGES = [
     { id: "general", cards: ["startup", "menubar", "notifications"] },
-    { id: "appearance", cards: ["theme", "colors", "fonts", "agentrows", "chat"] },
-    { id: "agents", cards: ["claudeaccount", "sleep", "flags"] },
+    { id: "remote", cards: ["remotemode", "remotesetup"] },
+    { id: "appearance", cards: ["theme", "colors", "fonts", "agentrows", "agentheader", "chat"] },
+    { id: "agents", cards: ["claudeaccount", "gitaccounts", "sleep", "flags"] },
     { id: "runs", cards: ["runs", "whilework", "dume", "tokenburn"] },
     { id: "terminal", cards: ["text", "cursor", "behavior"] },
     { id: "headless", cards: ["runtime", "openrouter"] },
@@ -57846,7 +57860,7 @@ const settingsPages = {
         })();
         await h.shot("cdp-shots/settings-pages-index.png");
         rec(
-            "index: one flat list of nine pages in order, About alone at the foot under a 1px rule and a 10px gap",
+            "index: one flat list of ten pages in order, About alone at the foot under a 1px rule and a 10px gap",
             JSON.stringify(index) === JSON.stringify(SP_PAGES.map((p) => p.id)) &&
                 foot != null &&
                 JSON.stringify(foot.sections) === JSON.stringify(["about"]) &&
@@ -57908,7 +57922,7 @@ const settingsPages = {
             `menu=${JSON.stringify(menu)} closed=${menuGone}`
         );
 
-        // appearance-detail: ten theme chips (themes.ts) with one selected; each font option drawn in its own face
+        // appearance-detail: eleven theme chips (themes.ts) with one selected; each font option drawn in its own face
         await spOpen(h, "appearance");
         await polishWaitFor(h, `${spRow("fonts.mono")} != null`, 5000);
         const chips = await h.ev(`(() => {
@@ -57921,8 +57935,8 @@ const settingsPages = {
         await polishNap(200);
         await h.shot("cdp-shots/settings-pages-appearance-detail.png");
         rec(
-            "appearance-detail: ten theme chips, one selected; Fonts options each in their own face",
-            chips.count === 10 && chips.selected === 1 && spOwnFaces(sansFaces) && spOwnFaces(monoFaces),
+            "appearance-detail: eleven theme chips, one selected; Fonts options each in their own face",
+            chips.count === 11 && chips.selected === 1 && spOwnFaces(sansFaces) && spOwnFaces(monoFaces),
             `chips=${JSON.stringify(chips)} sans=${JSON.stringify(sansFaces)} mono=${JSON.stringify(monoFaces)}`
         );
 
@@ -76023,6 +76037,7 @@ export const SCENARIOS = [
     ...chatVerdictHandoffScenarios(CBR_KIT),
     ...chatCouncilScenarios(CR_KIT),
     ...chatSuggestCardScenarios(CR_KIT),
+    ...gitAccountsScenarios(CR_KIT),
     ...chatJudgeScenarios(CR_KIT),
     ...boardsSplitScenarios(CR_KIT),
     ...boardsChatScenarios(CR_KIT),

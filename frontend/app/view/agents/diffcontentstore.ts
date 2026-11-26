@@ -106,7 +106,7 @@ async function readSide(cwd: string, path: string, side: DiffSide): Promise<Side
     const r = await RpcApi.GitFileAtRefCommand(TabRpcClient, {
         cwd,
         ref: side.ref,
-        path,
+        path: side.path ?? path,
         maxbytes: MAX_DIFF_BYTES,
     });
     // missing is not a failure: the file was added on one side or deleted on the other
@@ -129,8 +129,9 @@ export function retryDiffPair(): Promise<void> {
     return current.args == null ? Promise.resolve() : loadDiffPair(...current.args);
 }
 
-export async function loadDiffPair(cwd: string, path: string, sel: DiffSelection): Promise<void> {
-    const refs = pairRefsFor(sel);
+// from: the file's rename source, read on the left side in place of path
+export async function loadDiffPair(cwd: string, path: string, sel: DiffSelection, from?: string): Promise<void> {
+    const refs = pairRefsFor(sel, from);
     const token = `${cwd}|${path}|${JSON.stringify(refs)}`;
     // Re-reading what is already on screen is a refresh, not a navigation: the change poll replaces
     // the working-tree state every few seconds and the surface re-reads with it, so blanking here
@@ -138,7 +139,7 @@ export async function loadDiffPair(cwd: string, path: string, sel: DiffSelection
     // previous file's text under the new one's header is worse than showing nothing.
     const refresh = current.token === token;
     current.token = token;
-    current.args = [cwd, path, sel];
+    current.args = [cwd, path, sel, from];
     if (!refresh) {
         globalStore.set(diffPairAtom, null);
         globalStore.set(diffPairFailureAtom, null);

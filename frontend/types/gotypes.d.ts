@@ -2158,6 +2158,48 @@ declare global {
         moreworkers: number;
     };
 
+    // wshrpc.CommandGitAccountAddData
+    type CommandGitAccountAddData = {
+        login: string;
+        token: string;
+        name?: string;
+        email?: string;
+        root?: string;
+        defaultlogin?: string;
+    };
+
+    // wshrpc.CommandGitAccountFixData
+    type CommandGitAccountFixData = {
+        login: string;
+        tokenrepos?: string[];
+        identityrepos?: string[];
+        credentials?: boolean;
+    };
+
+    // wshrpc.CommandGitAccountLoginData
+    type CommandGitAccountLoginData = {
+        login: string;
+    };
+
+    // wshrpc.CommandGitAccountRootData
+    type CommandGitAccountRootData = {
+        login: string;
+        root: string;
+    };
+
+    // wshrpc.CommandGitAccountTokenData
+    type CommandGitAccountTokenData = {
+        login: string;
+        token: string;
+    };
+
+    // wshrpc.CommandGitAccountUpdateData
+    type CommandGitAccountUpdateData = {
+        login: string;
+        name?: string;
+        email?: string;
+    };
+
     // wshrpc.CommandGitAgentEditsData
     type CommandGitAgentEditsData = {
         cwd: string;
@@ -4398,6 +4440,49 @@ declare global {
         buildtime: string;
     };
 
+    // wshrpc.GitAccountData
+    type GitAccountData = {
+        login: string;
+        name?: string;
+        email?: string;
+        roots: string[];
+    };
+
+    // wshrpc.GitAccountFixRtnData
+    type GitAccountFixRtnData = {
+        results: GitFixResultData[];
+    };
+
+    // wshrpc.GitAccountListRtnData
+    type GitAccountListRtnData = {
+        accounts: GitAccountData[];
+        defaultlogin?: string;
+        globalname?: string;
+        globalemail?: string;
+        defaulthelper?: string;
+    };
+
+    // wshrpc.GitAccountScanData
+    type GitAccountScanData = {
+        login: string;
+        repos: number;
+        tokenrepos: GitRepoRemoteData[];
+        identityrepos: GitRepoIdentityData[];
+    };
+
+    // wshrpc.GitAccountScanRtnData
+    type GitAccountScanRtnData = {
+        accounts: GitAccountScanData[];
+        credentialslines: number;
+        errors?: string[];
+    };
+
+    // wshrpc.GitAccountTokenStateData
+    type GitAccountTokenStateData = {
+        state: string;
+        detail?: string;
+    };
+
     // wshrpc.GitAgentEditFile
     type GitAgentEditFile = {
         path: string;
@@ -4427,11 +4512,39 @@ declare global {
         stderr: string;
     };
 
+    // wshrpc.GitFixResultData
+    type GitFixResultData = {
+        kind: string;
+        path?: string;
+        error?: string;
+    };
+
     // wshrpc.GitGrepMatch
     type GitGrepMatch = {
         path: string;
         line: number;
         text: string;
+    };
+
+    // wshrpc.GitHubUserData
+    type GitHubUserData = {
+        login: string;
+        name?: string;
+        email?: string;
+    };
+
+    // wshrpc.GitRepoIdentityData
+    type GitRepoIdentityData = {
+        path: string;
+        name?: string;
+        email?: string;
+    };
+
+    // wshrpc.GitRepoRemoteData
+    type GitRepoRemoteData = {
+        path: string;
+        remote: string;
+        maskedurl: string;
     };
 
     // wshrpc.GitWorktree
@@ -5972,7 +6085,6 @@ declare global {
         progresscheckts?: number;
         suspectts?: number;
         suspectreason?: string;
-        flaggedfailures?: string[];
         stallretries?: number;
         firstactivity?: number;
         toldts?: number;

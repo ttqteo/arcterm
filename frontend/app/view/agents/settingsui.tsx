@@ -278,6 +278,71 @@ export function CardWarning({ children }: { children: ReactNode }) {
     );
 }
 
+// A row's in-place field (rename, or the email to tie the account to): Enter commits, Esc cancels, and a blur
+// commits what was typed, or cancels when there is nothing new. Its clicks and keys never reach the row, so
+// they never select it.
+export function RowInlineInput({
+    initial,
+    placeholder,
+    label,
+    attrs,
+    onCommit,
+    onCancel,
+}: {
+    initial: string;
+    placeholder: string;
+    label: string;
+    attrs: Record<string, string>;
+    onCommit: (v: string) => void;
+    onCancel: () => void;
+}) {
+    const ref = useRef<HTMLInputElement>(null);
+    const [draft, setDraft] = useState(initial);
+    const done = useRef(false);
+    useEffect(() => {
+        ref.current?.focus();
+        ref.current?.select();
+    }, []);
+    // the unmount that follows a finish can blur the field once more
+    const finish = (commit: boolean) => {
+        if (done.current) {
+            return;
+        }
+        done.current = true;
+        const next = draft.trim();
+        if (commit && next !== "" && next !== initial) {
+            onCommit(next);
+        } else {
+            onCancel();
+        }
+    };
+    return (
+        <input
+            ref={ref}
+            type="text"
+            {...attrs}
+            value={draft}
+            placeholder={placeholder}
+            aria-label={label}
+            spellCheck={false}
+            onChange={(e) => setDraft(e.target.value)}
+            onBlur={() => finish(true)}
+            onClick={(e) => e.stopPropagation()}
+            onKeyDown={(e) => {
+                e.stopPropagation();
+                if (e.key === "Enter") {
+                    e.preventDefault();
+                    finish(true);
+                } else if (e.key === "Escape") {
+                    e.preventDefault();
+                    finish(false);
+                }
+            }}
+            className="w-[220px] max-w-full rounded border border-edge-mid bg-surface px-2.5 py-[4px] text-[12px] font-normal text-primary outline-none focus:border-accent-700"
+        />
+    );
+}
+
 export function Note({
     tone = "warning",
     testId,

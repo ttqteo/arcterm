@@ -3288,3 +3288,75 @@ func TestLastChange(t *testing.T) {
 		t.Errorf("an uncommitted file named %q %q, want none", hash, subject)
 	}
 }
+
+// the stash is a ref to WIP commits, not history: with --all its commit read as a branch tip and its index commit as
+// a phantom merge
+func TestHistoryLogExcludesStash(t *testing.T) {
+	dir := repoWithChange(t) // a.txt is dirty
+	gitRun(t, dir, "stash", "push", "-m", "wip")
+	stash := gitRun(t, dir, "rev-parse", "refs/stash")
+	h, err := HistoryLog(context.Background(), dir, HistoryOpts{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(h.Commits) != 1 {
+		t.Fatalf("got %d commits, want only the init commit", len(h.Commits))
+	}
+	for _, c := range h.Commits {
+		if c.Hash == stash {
+			t.Error("the stash's WIP commit is in the history")
+		}
+		for _, r := range c.Refs {
+			if strings.Contains(r, "refs/stash") {
+				t.Errorf("commit %s carries %q", c.Hash, r)
+			}
+		}
+	}
+}
+
+// re-emitting a rename without its source would make the TS parser eat the next entry as the source
+func TestGetTrailerCommitsChangesKeepsRenameSource(t *testing.T) {
+	ctx := context.Background()
+	dir := initRepo(t)
+	writeFile(t, dir, "old.txt", "one\ntwo\nthree\n")
+	commitAll(t, dir)
+	base, err := HeadCommit(ctx, dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	git(t, dir, "mv", "old.txt", "new.txt")
+	writeFile(t, dir, "after.txt", "a\n")
+	git(t, dir, "add", "-A")
+	git(t, dir, "commit", "-m", "rename\n\nArc-Run: R")
+	end, err := HeadCommit(ctx, dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ch, err := GetTrailerCommitsChanges(ctx, dir, base, end, "Arc-Run", func(v string) bool { return v == "R" })
+	if err != nil {
+		t.Fatalf("GetTrailerCommitsChanges: %v", err)
+	}
+	if !strings.Contains(ch.StatusZ, "R  new.txt\x00old.txt\x00") || !strings.Contains(ch.StatusZ, "A  after.txt\x00") {
+		t.Errorf("StatusZ = %q, want the rename with its source and the add after it", ch.StatusZ)
+	}
+}
+
+// the Diff pane reads a renamed file's left side at its old path, so the list must still name it
+func TestCommitChangesKeepsRenameSource(t *testing.T) {
+	dir := initRepo(t)
+	writeFile(t, dir, "old.txt", "one\ntwo\nthree\n")
+	commitAll(t, dir)
+	git(t, dir, "mv", "old.txt", "new.txt")
+	git(t, dir, "commit", "-m", "rename")
+	hash, err := HeadCommit(context.Background(), dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ch, err := CommitChanges(context.Background(), dir, hash)
+	if err != nil {
+		t.Fatalf("CommitChanges: %v", err)
+	}
+	if want := "R  new.txt\x00old.txt\x00"; ch.StatusZ != want {
+		t.Errorf("StatusZ = %q, want %q", ch.StatusZ, want)
+	}
+}

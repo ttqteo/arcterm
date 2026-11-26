@@ -93,7 +93,11 @@ function parseSide(v: unknown): DiffSide | null {
     if (v.kind === "worktree") {
         return { kind: "worktree" };
     }
-    return v.kind === "ref" && typeof v.ref === "string" ? { kind: "ref", ref: v.ref } : null;
+    if (v.kind !== "ref" || typeof v.ref !== "string") {
+        return null;
+    }
+    const path = optString(v.path);
+    return path != null ? { kind: "ref", ref: v.ref, path } : { kind: "ref", ref: v.ref };
 }
 
 // rebuilt in pairRefsFor's key order, so pairKey agrees with a pair loaded from git

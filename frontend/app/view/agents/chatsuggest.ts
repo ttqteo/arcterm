@@ -87,19 +87,62 @@ export function lastReply(entries: readonly AgentEntry[]): string | null {
     return null;
 }
 
-/** Pure: the reply's last line of prose ends with a question mark. Fenced code (a card block written after the
- *  question) is not prose, and the emphasis and highlight marks around a sentence do not count. */
-export function endsWithQuestion(reply: string): boolean {
-    const prose = reply.replace(/```[\s\S]*?(```|$)/g, "");
-    const lines = prose.split("\n").map((l) => l.trim());
-    for (let i = lines.length - 1; i >= 0; i--) {
-        if (lines[i] === "") {
-            continue;
-        }
-        const bare = lines[i].replace(/[=*_`"'”’)\]\s]+$/u, "");
-        return bare.endsWith("?") || bare.endsWith("？");
+// a question mark that ends a sentence inside a line, with the marks that may close it and the space after it
+const QUESTION_IN_LINE = /([?？])[=*_`"'”’)\]]*[\s\p{Z}]+/gu;
+// where a sentence ends in a question's tail, the tail's own end included
+const TAIL_SENTENCE = /[.!。:](?:[\s\p{Z}]+|$)/gu;
+// a tail that opens with an answer: the agent answered its own question ("Is it fixed? Yes, it is.")
+const SELF_ANSWER = /^(yes|no|có|không|vâng|đúng)(?:[\s\p{P}]|$)/iu;
+// the tail a question may have after it on its line and still close the reply (pkg/chatsuggest hook.go)
+const QUESTION_TAIL_SENTENCES = 2;
+const QUESTION_TAIL_CHARS = 200;
+
+const endsInQuestionMark = (s: string) => s.endsWith("?") || s.endsWith("？");
+
+/** Pure: the line ending at its question when a short tail follows the question ("Muốn tôi chạy không? Mất khoảng 5
+ *  phút." gives "Muốn tôi chạy không?"), and the line as it is otherwise: one that ends on its question, has none, or
+ *  whose tail is long, asks again, or answers the question itself. wavesrv cuts it the same way (pkg/chatsuggest
+ *  hook.go cutToQuestion); the two must agree, or the mod's answer is set aside for the headless call. */
+function cutToQuestion(line: string): string {
+    if (endsInQuestionMark(line)) {
+        return line;
     }
-    return false;
+    const m = [...line.matchAll(QUESTION_IN_LINE)].at(-1);
+    if (m == null) {
+        return line;
+    }
+    const tail = line.slice(m.index + m[0].length).trim();
+    if (
+        tail === "" ||
+        /[?？]/u.test(tail) ||
+        [...tail].length > QUESTION_TAIL_CHARS ||
+        SELF_ANSWER.test(tail) ||
+        (tail.match(TAIL_SENTENCE) ?? []).length > QUESTION_TAIL_SENTENCES
+    ) {
+        return line;
+    }
+    return line.slice(0, m.index + m[1].length);
+}
+
+/** Pure: the reply's last line of prose with the emphasis and highlight marks closing it taken off, and cut back to its
+ *  question when a short tail follows it (cutToQuestion); null when the reply has none. Fenced code (a card block
+ *  written after the question) is not prose. */
+function lastProseBare(reply: string): string | null {
+    const prose = reply.replace(/```[\s\S]*?(```|$)/g, "");
+    const line = prose
+        .split("\n")
+        .map((l) => l.trim())
+        .filter((l) => l !== "")
+        .at(-1);
+    return line == null ? null : cutToQuestion(line.replace(/[=*_`"'”’)\]\s]+$/u, ""));
+}
+
+/** Pure: the reply's last line of prose ends with a question mark, or with a question and a short tail after it
+ *  (cutToQuestion). Fenced code (a card block written after the question) is not prose, and the emphasis and highlight
+ *  marks around a sentence do not count. */
+export function endsWithQuestion(reply: string): boolean {
+    const bare = lastProseBare(reply);
+    return bare != null && endsInQuestionMark(bare);
 }
 
 // the words that open a question asking yes or no ("Should I build it?", "Want me to commit?")
@@ -135,17 +178,12 @@ export function yesNoQuestion(reply: string): boolean {
 
 /** Pure: the words of the reply's last sentence of prose, lower case, its closing marks and question mark left out. */
 function lastSentenceWords(reply: string): string[] {
-    const prose = reply.replace(/```[\s\S]*?(```|$)/g, "");
-    const line = prose
-        .split("\n")
-        .map((l) => l.trim())
-        .filter((l) => l !== "")
-        .at(-1);
+    const line = lastProseBare(reply);
     if (line == null) {
         return [];
     }
     // the last sentence: what follows the sentence before it, if the line holds two
-    const bare = line.replace(/[=*_`"'”’)\]\s]+$/u, "").replace(/[?？]+$/u, "");
+    const bare = line.replace(/[?？]+$/u, "");
     const sentence = bare.split(/[.!?？。:]\s+/u).at(-1) ?? bare;
     return wordsOf(sentence);
 }

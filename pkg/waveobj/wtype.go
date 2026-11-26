@@ -539,9 +539,6 @@ type TaskNode struct {
 	// armed, so one stuck stretch wakes the lead once; a tree change re-arms it. SuspectReason is the flag's text.
 	SuspectTs     int64  `json:"suspectts,omitempty"`
 	SuspectReason string `json:"suspectreason,omitempty"`
-	// FlaggedFailures are the repeated-failure keys that already woke the lead in this attempt: they stay in the
-	// transcript tail after a re-arm and must not wake it again.
-	FlaggedFailures []string `json:"flaggedfailures,omitempty"`
 	// StallRetries counts the times the engine retried this task itself after it stalled with no live
 	// lead to judge it; MaxAutoStallRetries in orchestrate caps it.
 	StallRetries int `json:"stallretries,omitempty"`

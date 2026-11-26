@@ -1242,6 +1242,78 @@ export class RpcApiType {
         return client.wshRpcCall("getworkercapacity", null, opts);
     }
 
+    // command "gitaccountadd" [call]
+    GitAccountAddCommand(client: WshClient, data: CommandGitAccountAddData, opts?: RpcOpts): Promise<GitAccountData> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "gitaccountadd", data, opts);
+        return client.wshRpcCall("gitaccountadd", data, opts);
+    }
+
+    // command "gitaccountaddroot" [call]
+    GitAccountAddRootCommand(client: WshClient, data: CommandGitAccountRootData, opts?: RpcOpts): Promise<void> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "gitaccountaddroot", data, opts);
+        return client.wshRpcCall("gitaccountaddroot", data, opts);
+    }
+
+    // command "gitaccountchecktoken" [call]
+    GitAccountCheckTokenCommand(client: WshClient, data: CommandGitAccountTokenData, opts?: RpcOpts): Promise<GitHubUserData> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "gitaccountchecktoken", data, opts);
+        return client.wshRpcCall("gitaccountchecktoken", data, opts);
+    }
+
+    // command "gitaccountfix" [call]
+    GitAccountFixCommand(client: WshClient, data: CommandGitAccountFixData, opts?: RpcOpts): Promise<GitAccountFixRtnData> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "gitaccountfix", data, opts);
+        return client.wshRpcCall("gitaccountfix", data, opts);
+    }
+
+    // command "gitaccountlist" [call]
+    GitAccountListCommand(client: WshClient, opts?: RpcOpts): Promise<GitAccountListRtnData> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "gitaccountlist", null, opts);
+        return client.wshRpcCall("gitaccountlist", null, opts);
+    }
+
+    // command "gitaccountremove" [call]
+    GitAccountRemoveCommand(client: WshClient, data: CommandGitAccountLoginData, opts?: RpcOpts): Promise<void> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "gitaccountremove", data, opts);
+        return client.wshRpcCall("gitaccountremove", data, opts);
+    }
+
+    // command "gitaccountremoveroot" [call]
+    GitAccountRemoveRootCommand(client: WshClient, data: CommandGitAccountRootData, opts?: RpcOpts): Promise<void> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "gitaccountremoveroot", data, opts);
+        return client.wshRpcCall("gitaccountremoveroot", data, opts);
+    }
+
+    // command "gitaccountscan" [call]
+    GitAccountScanCommand(client: WshClient, opts?: RpcOpts): Promise<GitAccountScanRtnData> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "gitaccountscan", null, opts);
+        return client.wshRpcCall("gitaccountscan", null, opts);
+    }
+
+    // command "gitaccountsetdefault" [call]
+    GitAccountSetDefaultCommand(client: WshClient, data: CommandGitAccountLoginData, opts?: RpcOpts): Promise<void> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "gitaccountsetdefault", data, opts);
+        return client.wshRpcCall("gitaccountsetdefault", data, opts);
+    }
+
+    // command "gitaccountsettoken" [call]
+    GitAccountSetTokenCommand(client: WshClient, data: CommandGitAccountTokenData, opts?: RpcOpts): Promise<void> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "gitaccountsettoken", data, opts);
+        return client.wshRpcCall("gitaccountsettoken", data, opts);
+    }
+
+    // command "gitaccounttokenstate" [call]
+    GitAccountTokenStateCommand(client: WshClient, data: CommandGitAccountLoginData, opts?: RpcOpts): Promise<GitAccountTokenStateData> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "gitaccounttokenstate", data, opts);
+        return client.wshRpcCall("gitaccounttokenstate", data, opts);
+    }
+
+    // command "gitaccountupdate" [call]
+    GitAccountUpdateCommand(client: WshClient, data: CommandGitAccountUpdateData, opts?: RpcOpts): Promise<void> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "gitaccountupdate", data, opts);
+        return client.wshRpcCall("gitaccountupdate", data, opts);
+    }
+
     // command "gitagentedits" [call]
     GitAgentEditsCommand(client: WshClient, data: CommandGitAgentEditsData, opts?: RpcOpts): Promise<CommandGitAgentEditsRtnData> {
         if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "gitagentedits", data, opts);
