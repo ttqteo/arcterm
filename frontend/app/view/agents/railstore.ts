@@ -15,6 +15,7 @@ import { atomWithStorage } from "jotai/utils";
 import { showTerminal } from "./agentcenter";
 import { readAgentChanges } from "./agentchanges";
 import { resolveCwd } from "./agentcwdresolve";
+import { agentMemory } from "./agentmemory";
 import { linkedWorktree } from "./agentrailmodel";
 import { ensureSessionStart } from "./agentsessionstore";
 import type { AgentState, AgentVM } from "./agentsviewmodel";
@@ -130,9 +131,23 @@ export const terminalDockDragAtom = atom<number | null>(null) as PrimitiveAtom<n
 // global so it holds while the surface unmounts.
 export const usageBreakdownAtom = atom(false);
 
+// the focused agent's git state; null while a first view of an agent reads
 export const railStateAtom = atom<RailGitState | null>(null) as PrimitiveAtom<RailGitState | null>;
 
-// each agent's resolved cwd, kept across focus changes: railStateAtom empties on every switch and fills only after its
+// each agent's last git state, so a switch back to it shows the list at once while it is read again. A failure is not
+// kept: that agent reads as on a first view
+const railMemory = agentMemory<RailGitState>();
+
+function showRailState(id: string, state: RailGitState): void {
+    if (state.failure == null) {
+        railMemory.set(id, state);
+    } else {
+        railMemory.delete(id);
+    }
+    globalStore.set(railStateAtom, state);
+}
+
+// each agent's resolved cwd, kept across focus changes: railStateAtom is empty on a first view and fills only after its
 // git reads, so the panel's Files tab reads the cwd here instead, and an agent left on Files comes back on Files at once
 // rather than through Overview
 export const railCwdsAtom = atom<Record<string, string>>({}) as PrimitiveAtom<Record<string, string>>;
@@ -164,6 +179,7 @@ export function rereadsOnState(prev: AgentState | undefined, next: AgentState): 
 }
 
 // silent: a re-read of the agent already shown keeps its list on screen until the new one lands, rather than a skeleton.
+// A switch to an agent read before shows its remembered state the same way; only a first view shows the skeleton.
 // The agent's runtime (`agent`) picks the list: a Claude agent's own edits, any other's checkout since its session began.
 export async function loadRailForAgent(
     agent: Pick<AgentVM, "id" | "transcriptPath" | "blockId" | "agent">,
@@ -172,7 +188,7 @@ export async function loadRailForAgent(
     const { id, transcriptPath, blockId } = agent;
     current.id = id;
     if (!opts?.silent) {
-        globalStore.set(railStateAtom, null);
+        globalStore.set(railStateAtom, railMemory.get(id) ?? null);
     }
 
     const [cwd, startTs] = await Promise.all([resolveCwd(transcriptPath, blockId), ensureSessionStart(transcriptPath)]);
@@ -181,7 +197,7 @@ export async function loadRailForAgent(
         return;
     }
     if (!cwd) {
-        globalStore.set(railStateAtom, EMPTY);
+        showRailState(id, EMPTY);
         return;
     }
     try {
@@ -199,7 +215,7 @@ export async function loadRailForAgent(
         }
         const changes = ch.isrepo ? parseGitChanges(ch.statusz, ch.numstat) : null;
         const worktree = ch.isrepo ? linkedWorktree(cwd, wts?.worktrees ?? []) : undefined;
-        globalStore.set(railStateAtom, {
+        showRailState(id, {
             cwd,
             branch: ch.branch,
             isRepo: ch.isrepo,
@@ -211,7 +227,7 @@ export async function loadRailForAgent(
         });
     } catch (e) {
         if (current.id === id) {
-            globalStore.set(railStateAtom, { ...EMPTY, cwd, failure: e instanceof Error ? e.message : String(e) });
+            showRailState(id, { ...EMPTY, cwd, failure: e instanceof Error ? e.message : String(e) });
         }
     }
 }

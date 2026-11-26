@@ -64,6 +64,7 @@ import pairDecidedScenarios from "./scenarios-pair-decided.mjs";
 import pairHeaderScenarios from "./scenarios-pair-header.mjs";
 import pairTreeScenarios from "./scenarios-pair-tree.mjs";
 import railVerifyScenarios from "./scenarios-rail-verify.mjs";
+import railSwitchBackScenarios from "./scenarios-rail-switch-back.mjs";
 import remoteScenarios from "./scenarios-remote.mjs";
 import agentStartFailedScenarios from "./scenarios-agent-start-failed.mjs";
 import sidebarColumnsScenarios from "./scenarios-sidebar-columns.mjs";
@@ -75971,6 +75972,7 @@ export const SCENARIOS = [
     ...pairHeaderScenarios(RT_KIT),
     ...pairTreeScenarios(RT_KIT),
     ...railVerifyScenarios(RT_KIT),
+    ...railSwitchBackScenarios(RT_KIT),
     ...remoteScenarios({ lookEval, polishNap, polishWaitFor }),
     ...agentStartFailedScenarios(RT_KIT),
     ...agentStreamsScenarios(RT_KIT),

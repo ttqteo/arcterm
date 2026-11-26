@@ -10,6 +10,7 @@ vi.mock("@/app/store/wshclientapi", () => ({
 vi.mock("@/app/store/wshrpcutil", () => ({ TabRpcClient: {} }));
 
 import { globalStore } from "@/app/store/jotaiStore";
+import { retainAgentMemories } from "./agentmemory";
 import { loadSessionUsage, sessionUsageAtom } from "./transcriptusagestore";
 
 describe("loadSessionUsage", () => {
@@ -97,5 +98,72 @@ describe("loadSessionUsage", () => {
         await stale;
         expect(globalStore.get(sessionUsageAtom)).toBeNull();
         warn.mockRestore();
+    });
+
+    describe("a switch back to an agent read before", () => {
+        const total = () => {
+            const u = globalStore.get(sessionUsageAtom);
+            return u == null ? null : typeof u === "object" ? u.totalTokens : u;
+        };
+
+        test("shows its last usage at once, never passing through null, and updates it in place", async () => {
+            getTranscriptUsage.mockResolvedValueOnce({ buckets: [bucket(10, 0)] });
+            await loadSessionUsage("sa", "/sa.jsonl");
+            getTranscriptUsage.mockResolvedValueOnce({ buckets: [bucket(20, 0)] });
+            await loadSessionUsage("sb", "/sb.jsonl");
+            const seen: (number | string | null)[] = [];
+            const unsub = globalStore.sub(sessionUsageAtom, () => seen.push(total()));
+            let land: (v: { buckets: UsageBucket[] }) => void = () => {};
+            getTranscriptUsage.mockReturnValueOnce(new Promise((r) => (land = r)));
+            const back = loadSessionUsage("sa", "/sa.jsonl");
+            expect(total()).toBe(10);
+            land({ buckets: [bucket(15, 0)] });
+            await back;
+            unsub();
+            expect(seen).toEqual([10, 15]);
+        });
+
+        test("a first view still loads through null", async () => {
+            getTranscriptUsage.mockResolvedValueOnce({ buckets: [bucket(10, 0)] });
+            await loadSessionUsage("sc", "/sc.jsonl");
+            getTranscriptUsage.mockReturnValueOnce(new Promise(() => {}));
+            void loadSessionUsage("sd", "/sd.jsonl");
+            expect(globalStore.get(sessionUsageAtom)).toBeNull();
+        });
+
+        test("a failed re-read keeps the remembered usage, as a silent reload does", async () => {
+            getTranscriptUsage.mockResolvedValueOnce({ buckets: [bucket(10, 0)] });
+            await loadSessionUsage("se", "/se.jsonl");
+            getTranscriptUsage.mockResolvedValueOnce({ buckets: [bucket(20, 0)] });
+            await loadSessionUsage("sf", "/sf.jsonl");
+            const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+            getTranscriptUsage.mockRejectedValueOnce(new Error("rpc down"));
+            await loadSessionUsage("se", "/se.jsonl");
+            expect(total()).toBe(10);
+            warn.mockRestore();
+        });
+
+        test("a late load for an agent the focus moved off neither lands nor is remembered", async () => {
+            let land: (v: { buckets: UsageBucket[] }) => void = () => {};
+            getTranscriptUsage.mockReturnValueOnce(new Promise((r) => (land = r)));
+            const late = loadSessionUsage("sg", "/sg.jsonl");
+            getTranscriptUsage.mockResolvedValueOnce({ buckets: [bucket(20, 0)] });
+            await loadSessionUsage("sh", "/sh.jsonl");
+            land({ buckets: [bucket(900, 0)] });
+            await late;
+            expect(total()).toBe(20);
+            getTranscriptUsage.mockReturnValueOnce(new Promise(() => {}));
+            void loadSessionUsage("sg", "/sg.jsonl");
+            expect(globalStore.get(sessionUsageAtom)).toBeNull();
+        });
+
+        test("forgets an agent that left the roster", async () => {
+            getTranscriptUsage.mockResolvedValueOnce({ buckets: [bucket(10, 0)] });
+            await loadSessionUsage("si", "/si.jsonl");
+            retainAgentMemories(new Set(["other"]));
+            getTranscriptUsage.mockReturnValueOnce(new Promise(() => {}));
+            void loadSessionUsage("si", "/si.jsonl");
+            expect(globalStore.get(sessionUsageAtom)).toBeNull();
+        });
     });
 });
