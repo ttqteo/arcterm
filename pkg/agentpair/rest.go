@@ -123,12 +123,18 @@ func (m *Manager) sleepJudge(ctx context.Context, tab string) {
 	}
 }
 
-// Resting is the launched judges whose newest pair has ended, in the order of their working agent's tab and then their
-// own. A tab that is in a pair that is not ended is never listed, whatever its records say.
+// Resting is the launched judges whose newest pair has ended, grouped by their working agent's tab; within one worker the
+// judge of the newest ended pair comes first (the frontend takes a worker's first entry as the judge Add judge wakes),
+// and judges of one pair, or of pairs made in the same millisecond, go by their own tab. So the order is the same on
+// every call and after a restart. A tab that is in a pair that is not ended is never listed, whatever its records say.
 func (m *Manager) Resting() []wshrpc.PairResting {
 	m.lock()
 	defer m.mu.Unlock()
-	rest := []wshrpc.PairResting{}
+	type entry struct {
+		wshrpc.PairResting
+		createdTs int64 // of the pair it rests from: the wire type does not carry it
+	}
+	entries := []entry{}
 	for tab, l := range m.last {
 		if !l.ended || !l.resting {
 			continue
@@ -136,13 +142,24 @@ func (m *Manager) Resting() []wshrpc.PairResting {
 		if p, _ := m.pairOf(tab); p != nil {
 			continue
 		}
-		rest = append(rest, wshrpc.PairResting{Tab: tab, Name: l.name, WorkerTab: l.workerTab, PairId: l.pairId})
+		entries = append(entries, entry{
+			PairResting: wshrpc.PairResting{Tab: tab, Name: l.name, WorkerTab: l.workerTab, PairId: l.pairId},
+			createdTs:   l.createdTs,
+		})
 	}
-	sort.Slice(rest, func(i, j int) bool {
-		if rest[i].WorkerTab != rest[j].WorkerTab {
-			return rest[i].WorkerTab < rest[j].WorkerTab
+	sort.Slice(entries, func(i, j int) bool {
+		a, b := entries[i], entries[j]
+		if a.WorkerTab != b.WorkerTab {
+			return a.WorkerTab < b.WorkerTab
 		}
-		return rest[i].Tab < rest[j].Tab
+		if a.createdTs != b.createdTs {
+			return a.createdTs > b.createdTs
+		}
+		return a.Tab < b.Tab
 	})
+	rest := make([]wshrpc.PairResting, len(entries))
+	for i, e := range entries {
+		rest[i] = e.PairResting
+	}
 	return rest
 }

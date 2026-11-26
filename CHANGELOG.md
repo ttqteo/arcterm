@@ -37,9 +37,9 @@ and a picture given to a line that is not big.
 - A pair that pauses leaves a card in its conversation: why it paused, the judge's summary when it wrote one, then what
   waits on you (with its answer buttons), what is still open and what is agreed. The pair's page in Library draws the
   same card.
-- Resume on a pair that stopped at its token cap: a button on the pause card, on the pair's row in the Agent tree and on
-  its page in Library, labelled with the tokens it gives back (Resume · 3.0M more). Where the pair paused with nothing
-  queued, the card offers Judge again, which opens the composer with `@judge ` typed.
+- Resume on a pair that stopped at its token cap: a button on the pause card, on the judge's line in the working agent's
+  row and on its page in Library, labelled with the judge tokens it gives back (Resume · judge +3.0M). Where the pair
+  paused with nothing queued, the card offers Judge again, which opens the composer with `@judge ` typed.
 - GitHub accounts, one per folder: in Settings → Agents, tie each GitHub account to the folders its repos live in, and
   every repo under them commits with that account's name and email and pushes with its token, in any terminal or IDE,
   with arcterm open or not. The card also finds repos that keep a token in their remote URL and removes it in one
@@ -102,8 +102,6 @@ and a picture given to a line that is not big.
   it stays in view; the agent still gets the paste whole.
 - Pinned files are kept in the workspace instead of the window's storage, so they survive a reset of the app's web data
   and a script can read and sync them with `wsh setmeta` (`code:pins`); the pins you have move over on first launch.
-- A pair is one row in the Agent tree, in its working agent's place: a click opens the conversation, and its arrow
-  shows the working agent and the judges under it. Folded, its line says how each side stands.
 - The agent header stays over a pair's conversation: Pair, beside Chat and Terminal, switches between the two (a + beside
   it adds another judge; on a judge, a link goes to the agent it judges), and the rail turns to Decided.
 - In Chat, a `! command` an agent asks you to type inside a sentence is highlighted like the must-read lines, so it no

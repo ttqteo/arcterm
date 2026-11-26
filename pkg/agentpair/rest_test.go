@@ -63,6 +63,55 @@ func TestRestingLaunchedJudgeComesAndGoesWithItsPairs(t *testing.T) {
 	sameAfterReload(t, r)
 }
 
+// a worker's resting judges are listed newest first, by the pair each rests from and not by their tab ids (random in
+// life): the frontend takes the first of a worker's entries as the judge Add judge wakes
+func TestRestingListsAWorkersJudgesNewestFirst(t *testing.T) {
+	t.Run("the newer pair's judge has the tab that sorts after", func(t *testing.T) {
+		r := newRig(t)
+		r.link.add("j2", "Judge two")
+		r.link.give("w", workerPlan)
+		older := r.start(wshrpc.CommandPairStartData{Launched: true}) // j1
+		if err := r.m.Unpair(ctx, older.Id); err != nil {
+			t.Fatal(err)
+		}
+		r.link.give("w", workerPlan)
+		newer := r.start(wshrpc.CommandPairStartData{JudgeTab: "j2", Launched: true})
+		if err := r.m.Unpair(ctx, newer.Id); err != nil {
+			t.Fatal(err)
+		}
+		want := []wshrpc.PairResting{
+			{Tab: "j2", Name: "Judge two", WorkerTab: "w", PairId: newer.Id},
+			{Tab: "j1", Name: "Judge one", WorkerTab: "w", PairId: older.Id},
+		}
+		if got := r.m.Resting(); !reflect.DeepEqual(got, want) {
+			t.Fatalf("Resting() = %+v, want %+v: the judge of the newer pair first, though its tab sorts after", got, want)
+		}
+		if got := r.manager().Resting(); !reflect.DeepEqual(got, want) {
+			t.Fatalf("Resting() = %+v after a restart, want %+v", got, want)
+		}
+	})
+
+	t.Run("two judges of one pair tie, and the tab breaks it", func(t *testing.T) {
+		r := newRig(t)
+		r.link.add("j2", "Judge two")
+		r.link.give("w", workerPlan)
+		v := r.start(wshrpc.CommandPairStartData{JudgeTab: "j2", Launched: true})
+		r.start(wshrpc.CommandPairStartData{Launched: true}) // j1, added to the live pair
+		if err := r.m.Unpair(ctx, v.Id); err != nil {
+			t.Fatal(err)
+		}
+		want := []wshrpc.PairResting{
+			{Tab: "j1", Name: "Judge one", WorkerTab: "w", PairId: v.Id},
+			{Tab: "j2", Name: "Judge two", WorkerTab: "w", PairId: v.Id},
+		}
+		for range 20 { // the index is a map: a missing tie-break shows as a changing order
+			if got := r.manager().Resting(); !reflect.DeepEqual(got, want) {
+				t.Fatalf("Resting() = %+v after a restart, want %+v: the same pair, so the tab decides", got, want)
+			}
+		}
+	})
+}
+
 // a judge the person picked is no launched judge: when its pair ends it is a plain agent again, and so is one that is gone
 func TestRestingLeavesOutAPickedJudgeAndAGoneOne(t *testing.T) {
 	r := newRig(t)
