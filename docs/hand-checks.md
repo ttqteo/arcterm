@@ -24,6 +24,12 @@ Older parts: [part 10](hand-checks-10.md) · [part 9](hand-checks-9.md) · [part
 
 ## 2026-11-27
 
+- [ ] (arcterm) **Switching Claude account leaves sleeping agents asleep.** Put one Claude agent to sleep, then switch
+  the active Claude account (Settings, or the Chat limit strip): the restart list should not offer the sleeping agent,
+  and it should stay asleep. Wake it: it starts on the new account. waveapp.log should hold no "is already asleep" line
+  for it afterwards. Unit tests only (`claudeaccount.test.ts`, `TestSleepGoesAheadOverAStaleSleepingMark`).
+- [ ] (arcterm) **Overview names the tree's lead.** Only reachable with a run that has two lead tabs (a relaunched lead
+  whose old tab stayed): the Overview's run row and the Agent tree name the same lead. Unit test only.
 - [ ] (arcterm) **A pair takes the worker's finished reply, not its last mid-turn line.** In a pair, have the working
   agent end a turn with a short line, a tool call, then its real reply (ask it to "say 'Final check:' then run `ls`,
   then answer"). The judge should get the reply after the tool call, never "Final check:"; waveapp.log should hold no
