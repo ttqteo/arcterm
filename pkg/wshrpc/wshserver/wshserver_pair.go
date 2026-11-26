@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -171,9 +172,15 @@ func notePairStatus(ev *wps.WaveEvent) {
 			panichandler.PanicHandler("notePairStatus", recover())
 		}()
 		ctx := context.Background()
-		if tab := statusTabId(ctx, data.ORef); tab != "" && getPairManager().Watches(tab) {
-			getPairManager().TurnEnded(ctx, tab)
+		tab := statusTabId(ctx, data.ORef)
+		if tab == "" || !getPairManager().Watches(tab) {
+			return
 		}
+		// a Stop's idle can come before the turn's last reply is in the transcript (wshserver_turnend.go)
+		if !awaitStopFlush(data) {
+			log.Printf("pair: %s's turn end did not reach its transcript in %s, reading its answer anyway\n", tab, stopFlushWait)
+		}
+		getPairManager().TurnEnded(ctx, tab)
 	})
 }
 

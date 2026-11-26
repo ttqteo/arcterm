@@ -116,6 +116,38 @@ func turnEndIdle(working baseds.AgentStatusData, now int64) baseds.AgentStatusDa
 	}
 }
 
+// Claude Code runs its Stop hook before the turn's last reply is always in the transcript: its session writer flushes
+// on a 100 ms timer, the hook starts 30-190 ms after the reply's record, and on a loaded machine the flush lands after
+// the hook's idle has been read. A pair then took the line the agent wrote before its last tool call ("Final residual +
+// structure check:", pair e801794d 2026-11-26 11:03) for its answer. The turn_duration record comes after the Stop
+// hooks, so once it is in the file the reply before it is too.
+
+// stopFlushWait bounds how long a reader of a Claude Stop's idle waits for the turn's end to reach the transcript: past
+// a Stop hook's 10 s timeout, a turn end that never shows (a Stop hook that keeps the turn going) is not waited on.
+var stopFlushWait = 12 * time.Second
+
+// stopFlushPoll is how often the transcript's tail is read while waiting.
+var stopFlushPoll = 100 * time.Millisecond
+
+// awaitStopFlush waits, for the idle of a Claude Stop hook, until the transcript shows the turn ended, so the turn's
+// last reply is in it. Any other idle returns at once (an idle_prompt, a compaction, the transcript's own turn end
+// come after the turn's records are written). It reports whether the end was seen.
+func awaitStopFlush(data baseds.AgentStatusData) bool {
+	if data.Agent != "claude" || data.Hook != baseds.AgentHook_Stop || data.TranscriptPath == "" || data.Ts == 0 {
+		return true
+	}
+	deadline := time.Now().Add(stopFlushWait)
+	for {
+		if lines, err := readTranscriptEnd(data.TranscriptPath, turnEndTailBytes); err == nil && turnEndedAfter(lines, data.Ts) {
+			return true
+		}
+		if !time.Now().Before(deadline) {
+			return false
+		}
+		time.Sleep(stopFlushPoll)
+	}
+}
+
 // turnEndedAfter reports whether a Claude transcript's tail ends on a finished turn: its last prompt, message or system
 // record is the turn_duration Claude Code writes when a turn ends, at sinceMs or later (an older one ended the turn
 // before the working report). Pure.
