@@ -8,8 +8,9 @@ import { globalStore } from "@/app/store/jotaiStore";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { atom, type PrimitiveAtom } from "jotai";
-import { blameEntries, blameIsCurrent, type BlameState } from "./codeblame";
-import { codeProjectAtom, draftKey } from "./codestore";
+import { blameEntries, blameIsCurrent, blamePress, type BlameState } from "./codeblame";
+import { codeProjectAtom, codeViewModeAtom, draftKey } from "./codestore";
+import { sourceEditorShowing } from "./codeviewmodestore";
 
 // past GitBlameCommand's own 30s budget: the client's timeout binds the server's context, and the first
 // blame after launch reads every landed run's commits to credit them
@@ -64,8 +65,11 @@ export async function loadBlame(rel: string, modtime: number, lineCount: number)
     }
 }
 
-// Flips the column's setting only, wherever the view is (ours: Preview and Diff stay put). The fork switched to Source
-// first; that was reverted, initiative "Kael sync: reverted to ours".
+// In Source it flips the column; in Preview or Diff it switches to Source with the column on (blamePress)
 export function toggleBlame(): void {
-    globalStore.set(codeBlameOnAtom, (on) => !on);
+    const next = blamePress(globalStore.get(codeBlameOnAtom), sourceEditorShowing());
+    if (next.toSource) {
+        globalStore.set(codeViewModeAtom, "source");
+    }
+    globalStore.set(codeBlameOnAtom, next.on);
 }

@@ -258,10 +258,15 @@ describe("findPathCandidates: a path shortened with an ellipsis", () => {
         expect(names("Read …/deep/a.ts")).toEqual([]);
     });
 
+    it("leaves a path cut off at its end unlinked: a TUI cuts a long line there, mid-name", () => {
+        // 583 of 586 paths that ran into an ellipsis in stored agent terminals (2026-11-26) were such a cut
+        expect(names("⏺ Running sed -n 39,60p docs/superpowers/specs/2026-11-01-c…")).toEqual([]);
+        expect(names("spec  /Users/x/Library/Caches/arc-wt…cs/")).toEqual([]);
+        expect(names("Editing src/foo.ts…")).toEqual([]);
+    });
+
     it("keeps a path elsewhere on the line, and an ellipsis set apart from one", () => {
-        // ours: a path that just ends in an ellipsis is still a path
-        expect(names("Read src/a.ts … and src/b.ts…")).toEqual(["src/a.ts", "src/b.ts"]);
-        expect(names("Editing src/foo.ts…")).toEqual(["src/foo.ts"]);
+        expect(names("Read src/a.ts … and src/b.ts…")).toEqual(["src/a.ts"]);
         expect(names("… +12 lines (ctrl+o to expand) src/a.ts")).toEqual(["src/a.ts"]);
     });
 });

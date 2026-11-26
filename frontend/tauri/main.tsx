@@ -6,6 +6,7 @@ import { CockpitRoot } from "@/app/cockpit/cockpit-root";
 import { BUILD_COMMIT, deriveVersionInfo, versionInfoAtom } from "@/app/cockpit/versioninfo";
 import { globalStore } from "@/app/store/jotaiStore";
 import { installVaultSyncTriggers } from "@/app/store/vaultsync";
+import { installChatDrafts } from "@/app/view/agents/chatdraftsstore";
 import { hlog, installTauriApi, type InitData } from "./api";
 import { installChromeListeners } from "./chrome";
 import { resolveBootIds } from "./bootids";
@@ -81,6 +82,8 @@ async function boot() {
 
         installVaultSyncTriggers();
         installStallWatch(hlog);
+        // the drafts being written to agents, kept across a close or reload: back in place before the first render
+        installChatDrafts();
         createRoot(document.getElementById("main")).render(<CockpitRoot />);
         hlog("cockpit rendered");
         markBoot("rendered");

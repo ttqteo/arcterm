@@ -5,12 +5,14 @@ package agentsync
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
+	"syscall"
 
 	"github.com/wavetermdev/waveterm/pkg/harness"
 	"gopkg.in/yaml.v3"
@@ -510,7 +512,9 @@ func observeSkills(dir string) ([]ObservedEntry, error) {
 func canonicalSkills(skillsRoot string) ([]string, error) {
 	entries, err := os.ReadDir(skillsRoot)
 	if err != nil {
-		if os.IsNotExist(err) {
+		// a file where a parent folder should be is "no vault yet" on every OS (Windows says not found, a Mac
+		// says not a directory): the plan stands, and the apply reports the folder it cannot create
+		if os.IsNotExist(err) || errors.Is(err, syscall.ENOTDIR) {
 			return nil, nil
 		}
 		return nil, fmt.Errorf("reading canonical skills: %w", err)
@@ -651,7 +655,8 @@ func reconcileSkillsDir(p Paths, dir, runtime string, names []string, dryRun boo
 		switch skillStateFor(dir, byName, name, want) {
 		case stateUnmanaged:
 			actions = append(actions, Action{Kind: ActionSkillUnmanaged, Runtime: runtime, Path: target,
-				Detail: "the user's own directory; adopt it to bring it into the vault"})
+				// a plain adopt leaves an own copy of a vault skill where it is: only Setup's Replace swaps it
+				Detail: "the user's own copy of a vault skill, left alone; Setup → Skills can replace it with the vault copy"})
 		case stateLinked:
 			actions = append(actions, Action{Kind: ActionSkillLinked, Runtime: runtime, Path: target,
 				Detail: "a link to another folder; arcterm never writes through one"})

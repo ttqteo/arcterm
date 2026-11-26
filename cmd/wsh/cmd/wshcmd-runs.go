@@ -73,7 +73,12 @@ the runs:maxactive setting (default 3) top-level runs are active. The plan is re
 taken when the run starts, not when it is queued; the route is fixed now. --after <run-id or q-id> also
 waits for that run to land (a unique prefix of either id works) and implies --queue. Repeat --after or give
 a comma list (--after r1,r2 --after q-3f2a) to wait for all of them: it starts once every one has landed,
-and is blocked if any one ends held or cancelled.`,
+and is blocked if any one ends held or cancelled.
+
+--brainstorm <brainstorm.json> links the run to that brainstorm, as its Approve does: the brainstorm's card shows
+the run (or its queued entry) instead of offering Approve, and its agent is told the run's id once the run exists.
+From a brainstorm agent's tab, a start whose goal or plan names that brainstorm's spec is linked on its own,
+unless the brainstorm already records a run.`,
 	Args:    cobra.MaximumNArgs(1),
 	PreRunE: preRunSetupRpcClient,
 	RunE:    runsStartRun,
@@ -251,6 +256,7 @@ func init() {
 	f.String("chunk", "", "the initiative's chunk: its label or 1-based number")
 	f.Bool("queue", false, "queue the start: arcterm starts it when fewer than runs:maxactive runs are active")
 	f.StringSlice("after", nil, "run id or queue entry id (a unique prefix of either) to wait for: starts once that run has landed; repeat it or give a comma list to wait for several; implies --queue")
+	f.String("brainstorm", "", "the brainstorm.json this run builds: its card follows the run and its agent is told the run's id (default: this tab's brainstorm, when the goal or plan names its spec)")
 	f.Bool("json", false, "JSON output")
 	for _, c := range []*cobra.Command{runsStartCmd, runsListCmd, runsShowCmd, runsAnswerCmd, runsCancelCmd, runsPauseCmd, runsResumeCmd, runsEndFinalCmd, runsRerunFinalCmd, runsRelaunchLeadCmd, runsLandCmd, runsAckCmd} {
 		c.Flags().String("project", "", "project directory (default: the current directory)")
@@ -324,21 +330,43 @@ func runsStartRun(cmd *cobra.Command, args []string) error {
 	}
 	data.ChannelId = ch.OID
 	data.OriginTabId = getTabIdFromEnv()
+	brainstorm, err := runsLinkBrainstorm(&data, flag("brainstorm"))
+	if err != nil {
+		return err
+	}
 	queue, _ := cmd.Flags().GetBool("queue")
 	rawAfter, _ := cmd.Flags().GetStringSlice("after")
 	if after := runsAfterIds(rawAfter); runsWantsQueue(queue, after) {
-		return runsQueueStart(cmd, data, after)
+		if err := runsQueueStart(cmd, runsQueueAddData(data, after)); err != nil {
+			return err
+		}
+		runsLinkedLine(cmd, brainstorm)
+		return nil
 	}
 	rtn, err := wshclient.CreateRunCommand(RpcClient, data, &wshrpc.RpcOpts{Timeout: runsStartTimeoutMs})
 	if err != nil {
 		return runsStartErr(err)
 	}
 	if isJSON(cmd) {
+		runsLinkedLine(cmd, brainstorm)
 		return jsonOut(rtn.Run)
 	}
 	fmt.Printf("started run %s (%s, %s) in %s\n", rtn.Run.ID, runsMode(rtn.Run), rtn.Run.Status, ch.Name)
 	fmt.Printf("follow it with: wsh runs show %s\n", rtn.Run.ID)
+	runsLinkedLine(cmd, brainstorm)
 	return nil
+}
+
+// runsLinkedLine says which brainstorm a start was linked to, if any: on stderr under --json, which owns stdout.
+func runsLinkedLine(cmd *cobra.Command, title string) {
+	if title == "" {
+		return
+	}
+	out := os.Stdout
+	if isJSON(cmd) {
+		out = os.Stderr
+	}
+	fmt.Fprintf(out, "linked to the brainstorm %q: its card follows this run\n", title)
 }
 
 type runsStartOpts struct {
@@ -452,8 +480,8 @@ func runsAfterIds(values []string) []string {
 
 // runsQueueStart queues the start the flags built: the same data a start would have sent, so the route and the
 // origin session are fixed now, and the server checks the plan before it accepts the entry.
-func runsQueueStart(cmd *cobra.Command, data wshrpc.CommandCreateRunData, after []string) error {
-	entry, err := wshclient.RunQueueAddCommand(RpcClient, wshrpc.CommandRunQueueAddData{Data: data, After: after}, &wshrpc.RpcOpts{Timeout: runsReadTimeoutMs})
+func runsQueueStart(cmd *cobra.Command, add wshrpc.CommandRunQueueAddData) error {
+	entry, err := wshclient.RunQueueAddCommand(RpcClient, add, &wshrpc.RpcOpts{Timeout: runsReadTimeoutMs})
 	if err != nil {
 		return err
 	}

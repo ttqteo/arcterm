@@ -150,7 +150,7 @@ func MarkRunning(g *waveobj.TaskGroup, taskID, runID string) error {
 			// an earlier attempt's readings must never describe the new worker
 			g.Tasks[i].CPUSample, g.Tasks[i].CPUSampleTs, g.Tasks[i].BusyTs, g.Tasks[i].AskTs, g.Tasks[i].LatestTool = 0, 0, 0, 0, ""
 			g.Tasks[i].ProgressHash, g.Tasks[i].ProgressCheckTs = "", 0
-			g.Tasks[i].SuspectTs, g.Tasks[i].SuspectReason, g.Tasks[i].FlaggedFailures = 0, "", nil
+			g.Tasks[i].SuspectTs, g.Tasks[i].SuspectReason = 0, ""
 			g.Tasks[i].ProgressTs = now
 			return nil
 		}

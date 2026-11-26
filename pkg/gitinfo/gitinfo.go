@@ -295,6 +295,8 @@ func GetTrailerCommitsChanges(ctx context.Context, cwd, from, to, trailerKey str
 	var order []string
 	counts := map[string]*count{}
 	status := map[string]byte{}
+	// a rename's or copy's source path, re-emitted after its entry
+	source := map[string]string{}
 	for _, rec := range strings.Split(out, "\x1e") {
 		fields := strings.Split(strings.TrimSpace(rec), "\x00")
 		if len(fields) != 3 || !anyLineMatches(fields[2], match) {
@@ -308,9 +310,18 @@ func GetTrailerCommitsChanges(ctx context.Context, cwd, from, to, trailerKey str
 		if err != nil {
 			return nil, err
 		}
-		for _, entry := range strings.Split(nameStatusToStatusZ(nameStatus), "\x00") {
-			if len(entry) > 3 {
-				status[entry[3:]] = entry[0]
+		entries := strings.Split(nameStatusToStatusZ(nameStatus), "\x00")
+		for j := 0; j < len(entries); j++ {
+			entry := entries[j]
+			if len(entry) <= 3 {
+				continue
+			}
+			path := entry[3:]
+			status[path] = entry[0]
+			delete(source, path)
+			if (entry[0] == 'R' || entry[0] == 'C') && j+1 < len(entries) {
+				j++
+				source[path] = entries[j]
 			}
 		}
 		toks := strings.Split(numstat, "\x00")
@@ -343,6 +354,9 @@ func GetTrailerCommitsChanges(ctx context.Context, cwd, from, to, trailerKey str
 	for _, path := range order {
 		if letter, ok := status[path]; ok {
 			fmt.Fprintf(&statusZ, "%c  %s\x00", letter, path)
+			if from, ok := source[path]; ok {
+				fmt.Fprintf(&statusZ, "%s\x00", from)
+			}
 		}
 		fmt.Fprintf(&numstat, "%d\t%d\t%s\n", counts[path].add, counts[path].del, path)
 	}
@@ -407,9 +421,9 @@ func RangeLog(ctx context.Context, cwd, base, end string) ([]RangeCommit, error)
 }
 
 // nameStatusToStatusZ converts `git diff --name-status -z` output into the porcelain -z entries
-// ("X  path\0") that parseStatusZ (TS) and parseNumstatStatus (Go) already consume. Rename/copy
-// (R/C) collapse to "M" on the new path, so no extra source-path field is emitted (the parsers only
-// consume a source field when the status letter is R/C).
+// ("X  path\0") that parseStatusZ (TS) and parseNumstatStatus (Go) already consume. A rename or copy
+// keeps its letter and is followed by its source path ("R  new\0old\0", porcelain's own -z order),
+// because the Diff pane reads a renamed file's left side at the old path.
 func nameStatusToStatusZ(nameStatus string) string {
 	toks := strings.Split(nameStatus, "\x00")
 	var b strings.Builder
@@ -419,21 +433,22 @@ func nameStatusToStatusZ(nameStatus string) string {
 			continue
 		}
 		letter := st[0]
-		var path string
 		if letter == 'R' || letter == 'C' {
 			if i+2 >= len(toks) { // Rxxx \0 old \0 new
 				break
 			}
-			path = toks[i+2]
+			from, path := toks[i+1], toks[i+2]
 			i += 2
-			letter = 'M'
-		} else {
-			if i+1 >= len(toks) {
-				break
+			if path != "" {
+				fmt.Fprintf(&b, "%c  %s\x00%s\x00", letter, path, from)
 			}
-			path = toks[i+1]
-			i++
+			continue
 		}
+		if i+1 >= len(toks) {
+			break
+		}
+		path := toks[i+1]
+		i++
 		if path != "" {
 			fmt.Fprintf(&b, "%c  %s\x00", letter, path)
 		}
@@ -1118,7 +1133,9 @@ func HistoryLog(ctx context.Context, cwd string, opts HistoryOpts) (*History, er
 	if opts.Ref != "" {
 		args = append(args, opts.Ref)
 	} else {
-		args = append(args, "--all")
+		// the stash is a ref to WIP commits, not history: with --all it shows as a branch tip, and its
+		// index/untracked commits as phantom merges. --exclude only applies to the --all that follows it.
+		args = append(args, "--exclude=refs/stash", "--all")
 	}
 	// a pathspec must come last, after the revision
 	if opts.Path != "" {

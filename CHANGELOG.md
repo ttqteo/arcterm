@@ -40,6 +40,10 @@ and a picture given to a line that is not big.
 - Resume on a pair that stopped at its token cap: a button on the pause card, on the pair's row in the Agent tree and on
   its page in Library, labelled with the tokens it gives back (Resume · 3.0M more). Where the pair paused with nothing
   queued, the card offers Judge again, which opens the composer with `@judge ` typed.
+- GitHub accounts, one per folder: in Settings → Agents, tie each GitHub account to the folders its repos live in, and
+  every repo under them commits with that account's name and email and pushes with its token, in any terminal or IDE,
+  with arcterm open or not. The card also finds repos that keep a token in their remote URL and removes it in one
+  reviewed pass. <!-- big --> <!-- shot: 1.11.0-git-accounts.webp -->
 - Open a tool in a split: `Ctrl`+`Enter` (`⌘`+`Enter` on a Mac) in Open a tool (`Ctrl`+`Shift`+`O`) opens it as a cell
   under the agent you are looking at, beside the Shift+Enter that opens it in the panel. With the split full (4 cells)
   the tool opens in the centre. <!-- try: open-tool -->
@@ -55,6 +59,8 @@ and a picture given to a line that is not big.
 - A run an agent starts with `wsh runs start` sits under that agent in the Agent tree, and a run its own agent starts
   sits one level further; a run started from the cockpit, or whose agent has closed, keeps a row of its own (from the
   kaeltran16 fork).
+- The agent panel's Files tab has a Search button at the top, beside Locate: it opens Code's Search on that folder,
+  with the filter's text, as `Mod`+`Shift`+`F` does there.
 - Each drawer answer on a board is its own titled drawing: the row above the board lists them one click away, and the
   view moves to a new drawing as it lands unless you went back to an earlier one, which then shows a `new` mark on the
   new one (from the kaeltran16 fork). <!-- big --> <!-- shot: 1.11.0-board-drawings.webp -->
@@ -69,6 +75,10 @@ and a picture given to a line that is not big.
 - Switching back to an agent you already viewed keeps its details rail in place: Files changed, the branch, the
   session's spend and model and the cache countdown show at once and update quietly, instead of flashing through
   a placeholder.
+- A run's lead hears "may be stuck" only for a worker whose tree has not changed in 20 minutes; the check for the same
+  command failing the same way three times is gone (it never fired here, and its wakes elsewhere came too late to help).
+- What you are writing to an agent stays in its box when arcterm closes or reloads, attached files too, and the small
+  message box on an agent's row shares that one draft with its Chat.
 - Councils moved into Conversations: the Councils tab is gone, `Mod+G o` opens Conversations with the Council chip on,
   and a council nests under the session that started it.
 - Library's tabs are plain labels with a sliding underline; the 1–3 keys still switch them, named in each tab's tooltip
@@ -94,6 +104,11 @@ and a picture given to a line that is not big.
   it adds another judge; on a judge, a link goes to the agent it judges), and the rail turns to Decided.
 - In Chat, a `! command` an agent asks you to type inside a sentence is highlighted like the must-read lines, so it no
   longer reads as just another piece of code.
+- A Claude agent's turn that asks you nothing no longer starts a background Claude (about 470 MB for several seconds)
+  when the agent's own suggestion is late: in a week it found nothing worth a chip. Its suggestion still comes from the
+  agent when it is in time.
+- Chat's suggested replies answer a question the agent follows with a short sentence or two ("Want me to run it? It
+  takes 5 minutes."), as they do one it ends on: before, such a turn got a next step at most, and no yes or no.
 - Boards open for viewing, with no drawing toolbar and drags that pan; press Edit above the board to draw, move or
   select shapes and ask about them (from the kaeltran16 fork).
 - The drawer keeps each drawing short, a few words per box and one idea per drawing; more becomes another drawing (from
@@ -103,6 +118,24 @@ and a picture given to a line that is not big.
 
 - A paired agent's replies after a pause no longer show under the last question you asked in the pair, and after a token
   cap they no longer pile up for the judge.
+- A run you start or queue from the command line for a brainstorm now shows on its card, instead of the card still
+  offering Approve.
+- A plan whose `**Depends on:**` line is not the first line under its task heading is refused with the rule, instead
+  of running that task after the one before it while its prompt names another.
+- A run's worker that reports done and then exits with an error is reviewed as done, not counted as a failed attempt.
+- A blocked run's DAG header offers Cancel, so a run stuck on a failed task or Final can be given up from there too.
+- A renamed file's Diff compares it with its old name, instead of drawing the whole file as added, and a comment on its
+  removed lines names the old path. The history graph no longer shows a stash as a branch tip.
+- Enter on a question card's Submit tab sends the answers again: the tab now puts the focus on its Submit button,
+  where before the focus fell off the card when the last answer moved you there and Enter did nothing.
+- In an agent's terminal, a path cut off by an ellipsis (`docs/specs/2026-11-01-c…`, a long command's preview cut at
+  the edge) no longer links: it names no file. A path the ellipsis does not touch still links.
+- Blame (`b` or its button) on Code in Preview or Diff switches to Source with the column on, instead of lighting the
+  button with nothing beside it; the button reads pressed only while the column shows.
+- Usage's By provider chart draws every day of the picked window, as By work does, instead of starting at the first
+  day with usage: a provider used on two days of the last 7 shows 7 columns.
+- Ctrl+P's hint on Code says Alt+O lists the open file's symbols; it said `@` did, but an `@` typed there searches
+  paths (`@scope/pkg`, a Next.js `@slot` folder).
 - A new agent's first message with a long paste in it shows the paste as a folded card, not as raw
   `<\pasted_content>` text.
 - A failed subagent no longer stays in the Agent tree forever: it leaves once its agent starts another subagent after

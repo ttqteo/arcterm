@@ -67,7 +67,11 @@ func (ws *WshServer) ChatSuggestCommand(ctx context.Context, data wshrpc.Command
 	}
 	log.Printf("chatsuggest: block=%s mod not taken after %dms: %s", shortBlock(data.BlockId), time.Since(start).Milliseconds(), why)
 	if !headless {
-		log.Printf("chatsuggest: block=%s no headless call: the mod is on another reply", shortBlock(data.BlockId))
+		reason := "the mod is on another reply"
+		if data.Hook && !data.Question {
+			reason = "the reply asks nothing, the mod alone answers it"
+		}
+		log.Printf("chatsuggest: block=%s no headless call: %s", shortBlock(data.BlockId), reason)
 		return &wshrpc.CommandChatSuggestRtnData{}, nil
 	}
 	answer, err := chatSuggester().Suggest(ctx, chatsuggest.Request{

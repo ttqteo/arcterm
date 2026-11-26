@@ -116,7 +116,7 @@ func BuildPrompt(req Request) string {
 	b.WriteString(tail(strings.TrimSpace(req.Reply), replyTailRunes))
 	b.WriteString("\n</reply>\n\n")
 	if req.Question {
-		b.WriteString("The reply ends with a question: give up to 5 replies that answer it.")
+		b.WriteString("The reply ends with a question, perhaps with a sentence or two after it: give up to 5 replies that answer it.")
 	} else {
 		b.WriteString("The reply does not end with a question: give at most 1 reply, or NONE.")
 	}

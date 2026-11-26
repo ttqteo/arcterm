@@ -399,7 +399,7 @@ export function settingsSections(flagRuntime: Runtime): SettingSectionDef[] {
         {
             id: "agents",
             name: "Agents",
-            blurb: "The Claude subscription new agents run on, when an idle agent sleeps, and the flags every launch starts with.",
+            blurb: "The Claude account agents run on, the git account they commit with, sleep and launch flags.",
             cards: [
                 // The account list lives behind its own RPCs, not in settings, so the card has no rows for the
                 // index to count or search; ClaudeAccountSection renders it whole, and a search finds it by its
@@ -409,6 +409,13 @@ export function settingsSections(flagRuntime: Runtime): SettingSectionDef[] {
                     label: "Claude account",
                     rows: [],
                     keywords: ["subscription", "login", "sign in", "switch account", "setup-token", "oauth"],
+                },
+                // Like the Claude account card: the list lives behind the gitaccount RPCs, so no rows.
+                {
+                    id: "gitaccounts",
+                    label: "GitHub accounts",
+                    rows: [],
+                    keywords: ["github", "git", "push", "commit email", "token", "credential", "identity"],
                 },
                 {
                     id: "sleep",

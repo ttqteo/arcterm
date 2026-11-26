@@ -7,6 +7,7 @@ import {
     blameClick,
     blameEntries,
     blameIsCurrent,
+    blamePress,
     mapBlameLines,
     placeBlame,
     unsavedRuns,
@@ -206,5 +207,17 @@ describe("unsavedRuns", () => {
 
     it("a delete leaves nothing to mark", () => {
         expect(unsavedRuns(mapBlameLines("one\ntwo\nthree", "one\nthree"))).toEqual([]);
+    });
+});
+
+describe("blamePress", () => {
+    it("flips the column while the source editor shows", () => {
+        expect(blamePress(false, true)).toEqual({ on: true, toSource: false });
+        expect(blamePress(true, true)).toEqual({ on: false, toSource: false });
+    });
+
+    it("outside Source brings the editor up with the column on, even when it was already on", () => {
+        expect(blamePress(false, false)).toEqual({ on: true, toSource: true });
+        expect(blamePress(true, false)).toEqual({ on: true, toSource: true });
     });
 });

@@ -549,3 +549,27 @@ func TestWorkerExitRecordsAFailingWorkersOutputOnItsRun(t *testing.T) {
 		})
 	}
 }
+
+// a worker that ran `wsh jarvis complete` and then exited non-zero: the run is done and the tick reviews its commit,
+// so the exit must not mark the task failed (and count an attempt, or retry it) over the worker's own report
+func TestHandleChildOutcomeIgnoresAFailedExitAfterComplete(t *testing.T) {
+	for _, status := range []string{jarvis.RunStatus_Done, jarvis.RunStatus_Blocked} {
+		t.Run(status, func(t *testing.T) {
+			h := newChildOutcomeHarness(t, 1)
+			runID := h.loadDag(t).Tasks[0].RunID
+			if err := wstore.UpdateRun(h.ctx, h.channel, runID, func(r *waveobj.Run) error {
+				r.Status = status
+				return nil
+			}); err != nil {
+				t.Fatal(err)
+			}
+			if err := HandleChildOutcome(h.ctx, h.workers[0], jarvis.OutcomeData{Status: "failed", Summary: "exited 1", ExitCode: 1}); err != nil {
+				t.Fatal(err)
+			}
+			task := h.loadDag(t).Tasks[0]
+			if task.State != TaskState_Running || task.RunID != runID || task.Attempts != 0 || len(h.workers) != 1 {
+				t.Fatalf("an exit after complete is accounted for, got state=%s attempts=%d workers=%d", task.State, task.Attempts, len(h.workers))
+			}
+		})
+	}
+}

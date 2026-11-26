@@ -73,18 +73,15 @@ func HandleChildOutcome(ctx context.Context, workerORef string, data jarvis.Outc
 		if ferr != nil {
 			return fmt.Errorf("re-loading child run %s: %w", run.ID, ferr)
 		}
-		// a skip or retry cancels the run, then stops its worker outside this lock: the exit that stop causes is
-		// the action's to record, not a failure to retry
-		if fresh.Status == jarvis.RunStatus_Cancelled {
+		// Anything but a still-active run means the exit was accounted for, whatever the exit says: a skip or retry
+		// cancelled the run and stops its worker outside this lock, so that exit is the action's to record; the
+		// worker's own `wsh jarvis complete` set it done (the tick reviews the commit) or blocked. A failed exit after
+		// a complete must not mark the task failed: the tick then read it done, unreviewed.
+		if fresh.Status != jarvis.RunStatus_Executing && fresh.Status != jarvis.RunStatus_Planning {
 			return nil
 		}
 		kind := classifyFailure(data.Summary, data.ExitCode)
 		if data.Status == "done" {
-			// Anything but a still-active run means the exit was accounted for (completed, already blocked) and
-			// there is nothing to record.
-			if fresh.Status != jarvis.RunStatus_Executing && fresh.Status != jarvis.RunStatus_Planning {
-				return nil
-			}
 			// the summary of a clean exit describes the work, not a fault — never classify it
 			kind = FailureKindWorkerExit
 		}

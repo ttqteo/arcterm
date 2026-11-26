@@ -163,6 +163,13 @@ func TestEndsWithQuestion(t *testing.T) {
 		{"Which one?\n\n```unclosed\ncode", true},
 		{"Done. Tests pass.", false},
 		{"Is it fixed? Yes, it is.", false},
+		{"Muốn tôi chạy không? Mất khoảng 5 phút.", true},
+		{"**Ship it?** Tests pass, and the build is green.", true},
+		{"Run it? One. Two. Three.", false},
+		{"Run it? " + strings.Repeat("a", 201), false},
+		{"oracle có đáng tin không?'\"}},{\"type\":\"rectangle\"", false},
+		{"Đã sửa chưa? Có, sửa rồi.", false},
+		{"Sửa chưa? Không. Mai sửa.", false},
 		{"", false},
 	}
 	for _, c := range cases {
@@ -190,7 +197,10 @@ func TestQuestionSentence(t *testing.T) {
 		{"emphasis marks around it", "**Hướng nào, A hay B?**", "Hướng nào, A hay B?"},
 		{"the last line of prose only", "Hai hướng:\n1. A\n2. B\n\nChọn A hay B?\n", "Chọn A hay B?"},
 		{"marks inside the sentence stay", "Dùng **A** hay **B**?", "Dùng **A** hay **B**?"},
-		{"the reply does not end in a question", "Hỏi A hay B? Mình chọn A.", ""},
+		{"a short tail after the question: the agent's lean", "Hỏi A hay B? Mình chọn A.", "Hỏi A hay B?"},
+		{"a short tail after a marked question", "Mình nghiêng A. **A hay B?** Trả lời xong mình làm luôn.", "A hay B?"},
+		{"the agent answers its own question", "Is it fixed? Yes, it is.", ""},
+		{"a tail of three sentences", "A hay B? Một. Hai. Ba.", ""},
 		{"a question on an earlier line", "A hay B?\nMình nghiêng A.", ""},
 		{"only code after a statement", "Xong rồi.\n```go\nx := 1\n```", ""},
 		{"empty", "", ""},
@@ -245,9 +255,18 @@ func TestHooksAwaitWhySaysWhyItTookNoAnswer(t *testing.T) {
 		wantWhy(t, why, "no begin within")
 		wantHeadless(t, headless, true)
 	})
+	t.Run("no begin for a reply that asks nothing: no headless call", func(t *testing.T) {
+		_, _, why, headless := fastHooks().AwaitWhy(ctx, "b1", "Done, the rail shows it.", false, true)
+		wantWhy(t, why, "no begin within")
+		wantHeadless(t, headless, false)
+	})
 	t.Run("not a Claude agent", func(t *testing.T) {
 		_, _, why, headless := fastHooks().AwaitWhy(ctx, "b1", askReply, true, false)
 		wantWhy(t, why, "not a Claude agent")
+		wantHeadless(t, headless, true)
+	})
+	t.Run("not a Claude agent, a reply that asks nothing: still the headless call", func(t *testing.T) {
+		_, _, _, headless := fastHooks().AwaitWhy(ctx, "b1", "Done, the rail shows it.", false, false)
 		wantHeadless(t, headless, true)
 	})
 	t.Run("another reply begun: both ends shown, no headless call", func(t *testing.T) {
@@ -275,6 +294,12 @@ func TestHooksAwaitWhySaysWhyItTookNoAnswer(t *testing.T) {
 		h := fastHooks()
 		h.Begin("b1", Request{Reply: askReply})
 		_, _, why, headless := h.AwaitWhy(ctx, "b1", askReply, false, true)
+		wantWhy(t, why, "question differs")
+		// Chat reads no question: the mod alone answers such a reply
+		wantHeadless(t, headless, false)
+		h = fastHooks()
+		h.Begin("b1", Request{Reply: "Done, the rail shows it."})
+		_, _, why, headless = h.AwaitWhy(ctx, "b1", "Done, the rail shows it.", true, true)
 		wantWhy(t, why, "question differs")
 		wantHeadless(t, headless, true)
 	})

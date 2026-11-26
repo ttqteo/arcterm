@@ -518,6 +518,12 @@ the run instead of starting it (the launcher's After run… or Queue, which Jarv
 spec shares files with a live run or the run cap is full): Arc then sends `brainstorm: queued <id>`
 at once. Record nothing for it, and wait; `brainstorm: run <id>` comes when the queue starts the run.
 
+A run you start or queue yourself from the command line for this brainstorm (`wsh runs start`) passes
+`--brainstorm <absolute path of brainstorm.json>`, so its card shows that run instead of offering Approve, and Arc
+sends you `brainstorm: run <id>` once the run exists. When the goal or the plan names the spec, it is linked on its
+own and `wsh runs start` prints a line saying so. Never hand-write `run` with a queue id: write it only from
+`brainstorm: run <id>`.
+
 **Resuming.** Asked to resume a brainstorm from a `brainstorm.json` path (a new agent after the old
 one exited): read the file, carry on from its `question` or its next step, and keep writing the
 same file.

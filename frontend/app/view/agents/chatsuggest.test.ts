@@ -93,6 +93,30 @@ describe("endsWithQuestion", () => {
         expect(endsWithQuestion("**Which one?**")).toBe(true);
         expect(endsWithQuestion('Add it?\n\n```arc-initiative\n{"kind": "note"}\n```\n')).toBe(true);
     });
+
+    // the same cases as pkg/chatsuggest hook_test.go TestEndsWithQuestion: the two must agree
+    it("counts a question with a short tail after it on its line", () => {
+        const cases: [string, boolean][] = [
+            ["Muốn tôi chạy không? Mất khoảng 5 phút.", true],
+            ["**Ship it?** Tests pass, and the build is green.", true],
+            ["Hỏi A hay B? Mình chọn A.", true],
+            ["Is it fixed? Yes, it is.", false],
+            ["Đã sửa chưa? Có, sửa rồi.", false],
+            ["Sửa chưa? Không. Mai sửa.", false],
+            ["Run it? One. Two. Three.", false],
+            ["Run it? " + "a".repeat(201), false],
+            ['oracle có đáng tin không?\'"}},{"type":"rectangle"', false],
+            ["A hay B?\nMình nghiêng A.", false],
+        ];
+        for (const [reply, want] of cases) {
+            expect(endsWithQuestion(reply), reply).toBe(want);
+        }
+    });
+
+    it("reads a yes-or-no question by its own words, not its tail's", () => {
+        expect(yesNoQuestion("Muốn tôi chạy không? Mất khoảng 5 phút.")).toBe(true);
+        expect(yesNoQuestion("Bạn chọn A hay B? Mình nghiêng A.")).toBe(false);
+    });
 });
 
 describe("recentPrompts and writesVietnamese", () => {
