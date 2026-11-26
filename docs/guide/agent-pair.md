@@ -66,7 +66,8 @@ trạng thái của bên kia, và nút **Unpair**.
 - Lệnh nặng bị giữ hiện thành một dòng nét đứt trong tin của working agent, kèm **Run now** (xem [Giữ lệnh nặng](#giữ-lệnh-nặng-và-run-now)).
 
 Khi pair đang bật, **mọi lượt** của working agent đều chuyển sang judge, kể cả lượt bạn bắt đầu ngay trong Chat của agent
-(trừ khi pair đang dừng ở token cap, xem [Khi nào pair dừng](#khi-nào-pair-dừng)). Muốn làm việc với agent mà không có
+(trừ lượt bạn bắt đầu khi pair đang dừng ở token cap; câu trả lời cho tin agent đang làm dở vẫn được giữ, xem
+[Khi nào pair dừng](#khi-nào-pair-dừng)). Muốn làm việc với agent mà không có
 judge thì **Unpair**.
 
 ## Tab Decided
