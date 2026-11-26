@@ -34,6 +34,7 @@ and a picture given to a line that is not big.
 
 ### Fixed
 
+- A queued run's sheet on the Brief spaces the dot in "queued just now · from <session>" again.
 - A pair no longer passes the judge a line the working agent wrote halfway through its turn (such as "Final check:")
   in place of its finished reply. It now waits until the reply is saved before it reads it.
 - A diagram opened full size no longer stutters when you scroll it: a two-finger swipe or a mouse wheel scrolls it the

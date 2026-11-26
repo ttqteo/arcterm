@@ -220,7 +220,10 @@ function QueueSheetBody({ model, row }: { model: AgentsViewModel; row: QueuedRow
                     <span>{m.queued}</span>
                     {m.queuedBy != null ? (
                         <>
-                            <span aria-hidden> · </span>
+                            {/* a flex item drops its own edge spaces, so the gap is a margin */}
+                            <span aria-hidden className="mx-1">
+                                ·
+                            </span>
                             <button
                                 type="button"
                                 data-queue-sheet-origin={m.queuedBy.tabId}
