@@ -8,10 +8,10 @@
 //
 // Pure: no React.
 
-import { formatAge } from "@/app/view/agents/agentsviewmodel";
+import { formatAge, formatTokens } from "@/app/view/agents/agentsviewmodel";
 import { leadPhaseFailed } from "@/app/view/agents/runlineage";
 import { runStage, type StageTone } from "@/app/view/agents/runstage";
-import { parseAddress, type OpenTarget } from "./address";
+import { parseAddress, SESSION_IDEAS_REF, type OpenTarget } from "./address";
 import {
     ACTIVE_CAP,
     capRegion,
@@ -117,8 +117,8 @@ const joined = (parts: (string | undefined)[]) => parts.filter((p) => p != null 
 // The kind chip's colour says who is held up: amber where an agent or a run waits on your answer, grey for a
 // reminder or a pile to sort, red for anything stuck. One amber for every row made the column say nothing.
 const ANSWER_KINDS = new Set(["dag-gate", "ask", "escalation", "plan-review", "council"]);
-// the waiting bug reports are one too: nothing is held up while they wait
-const REMINDER_KINDS = new Set(["chunk-due", "run-unverified", "learn-proposal", "bug-reports"]);
+// the waiting bug reports are one too: nothing is held up while they wait; so are the ideas waiting from your sessions
+const REMINDER_KINDS = new Set(["chunk-due", "run-unverified", "learn-proposal", "bug-reports", "session-ideas"]);
 
 function queueTone(q: QueueRow): LineTone {
     if (q.tone === "error") {
@@ -699,12 +699,14 @@ function deltaLine(row: DeltaRow, now: number, project: string): BriefLine {
 export type BehindContext = {
     efforts?: EffortIndex;
     projects?: Record<string, { path?: string }> | null;
+    // the ideas the scans found: what the Sessions row reads, against the time the person last looked
+    sessionIdeas?: { data: SessionIdeasData | null | undefined; sinceTs: number };
 };
 
-// Since you looked, by kind: the runs that moved, one row per initiative, then the records. Runs and initiatives
-// open SINCE_CAP rows at a time; the records fold into one summary row, because a record's update says only its
-// current status, and twenty of them saying "active" were the region's whole first screen.
-export type SinceKind = "runs" | "initiatives" | "records";
+// Since you looked, by kind: the runs that moved, one row per initiative, the scan of your sessions, then the records.
+// Runs and initiatives open SINCE_CAP rows at a time; the records fold into one summary row, because a record's update
+// says only its current status, and twenty of them saying "active" were the region's whole first screen.
+export type SinceKind = "runs" | "initiatives" | "sessions" | "records";
 export type SinceSection = {
     kind: SinceKind;
     label: string;
@@ -796,6 +798,10 @@ export function sinceSections(delta: DeltaRow[], now: number, ctx: BehindContext
     }
     if (initiatives.length > 0) {
         out.push({ kind: "initiatives", label: "Initiatives", lines: initiatives });
+    }
+    const scanned = sessionsSinceLine(ctx.sessionIdeas?.data, ctx.sessionIdeas?.sinceTs ?? 0, now);
+    if (scanned != null) {
+        out.push({ kind: "sessions", label: "Sessions", lines: [scanned] });
     }
     if (records.length > 0) {
         out.push({
@@ -893,4 +899,213 @@ export function sinceLabel(cursorTs: number, nowTs: number, firstVisit: boolean)
         return `since yesterday ${hhmm(d)}`;
     }
     return `since ${MONTHS[d.getMonth()]} ${d.getDate()}`;
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// From your sessions (docs/superpowers/specs/2026-11-26-session-ideas-design.md): what the Brief's region and Since you
+// looked say of the ideas the scans found, over the SessionIdeasData wavesrv sends. The rows' order and the coverage are
+// sessionideasmodel.ts's; this is the words and the states.
+
+const dayName = (ts: number): string => {
+    const d = new Date(ts);
+    return `${MONTHS[d.getMonth()]} ${d.getDate()}`;
+};
+
+export const SESSION_IDEAS_EMPTY = "Nothing left open in the sessions scanned so far.";
+export const SESSIONS_SINCE_ID = "behind:sessions";
+
+/** A scan the store holds is running while it has no end time. */
+export function scanRunning(scan: SessionIdeasScan | null | undefined): boolean {
+    return scan != null && scan.endedts <= 0;
+}
+
+export type SessionIdeasPhase = "loading" | "offer" | "region";
+
+/** What the Brief shows: nothing before the first read; the offer card (under the Ideas column) until a scan has run or is
+ *  running and no idea was ever found; then the region. Nothing scans before the person presses Scan my sessions. */
+export function sessionIdeasPhase(data: SessionIdeasData | null | undefined): SessionIdeasPhase {
+    if (data == null) {
+        return "loading";
+    }
+    return data.firstscandone || data.ideas.length > 0 || data.scan != null ? "region" : "offer";
+}
+
+/** The region header's meta: "scanned Nov 24 · 210k tokens · next by Dec 1". The tokens are the last scan's; a scan that
+ *  runs says so and counts what it has spent so far instead. */
+export function sessionScanMeta(data: SessionIdeasData): string {
+    const scan = data.scan;
+    if (scan != null && scanRunning(scan)) {
+        return joined(["scanning", scan.tokens > 0 ? `${formatTokens(scan.tokens)} tokens so far` : ""]);
+    }
+    return joined([
+        data.lastscants > 0 ? `scanned ${dayName(data.lastscants)}` : "not scanned yet",
+        scan != null && scan.tokens > 0 ? `${formatTokens(scan.tokens)} tokens` : "",
+        data.nextscants > 0 ? `next by ${dayName(data.nextscants)}` : "",
+    ]);
+}
+
+/** The progress of a scan that runs: the session being read (done + 1, never past the total) and the bar's percent. */
+export function scanProgress(scan: SessionIdeasScan): { text: string; pct: number } {
+    if (scan.total <= 0) {
+        return { text: "Looking for sessions to read", pct: 0 };
+    }
+    const reading = Math.min(scan.done + 1, scan.total);
+    return {
+        text: `Reading session ${reading} of ${scan.total}`,
+        pct: Math.min(100, Math.round((scan.done / scan.total) * 100)),
+    };
+}
+
+/** The lines of a scan that stopped part way (an error, or the person's Stop): where, why, and what Retry does. Null for a
+ *  scan that ran through, or one still running. What it found stays in the list. */
+export function scanStopLine(scan: SessionIdeasScan | null | undefined): { text: string; hint: string } | null {
+    if (scan == null || scan.endedts <= 0 || scan.error === "") {
+        return null;
+    }
+    const at = Math.min(scan.stoppedat + 1, Math.max(scan.total, 1));
+    const where = `session ${at} of ${scan.total}`;
+    return {
+        text:
+            scan.error === "stopped"
+                ? `You stopped the scan at ${where}.`
+                : `The scan stopped at ${where}: ${scan.error.replace(/\.+$/, "")}.`,
+        hint: `What it found is below. Retry goes on from session ${at}.`,
+    };
+}
+
+/** The warning above the rows: sessions about to be deleted that were never scanned, with the day of the first. Null with
+ *  none. The count is wavesrv's (`leavingsoon`); the day is read off the session list. */
+export function leavingLine(data: SessionIdeasData, now: number): string | null {
+    const n = data.leavingsoon;
+    if (n <= 0) {
+        return null;
+    }
+    const days = data.sessions
+        .filter((s) => s.outcome === "not-scanned" && s.deletests > 0 && s.deletests <= now + SEVEN_DAYS_MS)
+        .map((s) => s.deletests);
+    const when = days.length > 0 ? `on ${dayName(Math.min(...days))}` : "within 7 days";
+    return `${plural(n, "session")} ${n === 1 ? "is" : "are"} deleted ${when} and ${n === 1 ? "has" : "have"} not been scanned.`;
+}
+
+// A rough cost of one session's haiku call: its digest (cut at 60,000 characters) and the project's context. Only an
+// estimate for the offer; the first scan records the real numbers (docs/open-issues.md, RAM watch).
+export const SCAN_TOKENS_PER_SESSION = 10_000;
+
+/** The first-scan offer's line: "haiku · about 210k tokens for 21 sessions", M the quiet sessions not yet scanned. */
+export function scanOffer(data: SessionIdeasData): { sessions: number; tokens: number; text: string } {
+    const sessions = data.sessions.filter((s) => s.outcome === "not-scanned").length;
+    const tokens = sessions * SCAN_TOKENS_PER_SESSION;
+    return {
+        sessions,
+        tokens,
+        text:
+            sessions > 0
+                ? `haiku · about ${formatTokens(tokens)} tokens for ${plural(sessions, "session")}`
+                : "haiku · no quiet sessions to read yet",
+    };
+}
+
+/** Where an idea would go: its initiative's title, or "New idea · <project>". */
+export function ideaMeta(i: SessionIdea): string {
+    return i.effortoid !== "" ? i.efforttitle : joined(["New idea", i.project]);
+}
+
+/** What Keep does, for its tooltip and the toast it leaves. */
+export function ideaKeepTip(i: SessionIdea): string {
+    return i.effortoid !== "" ? `Keep as a chunk on ${i.efforttitle}` : "Keep in Ideas";
+}
+export function ideaKeepToast(i: SessionIdea): string {
+    return i.effortoid !== "" ? `Kept on “${i.efforttitle}”` : "Kept in Ideas";
+}
+
+/** Who a quote is from, as a person reads it. */
+export function quoteWho(who: string): string {
+    return who === "you" ? "You" : "Claude";
+}
+
+/** What was said's footer: the session it came from, the day it was said and the day its transcript is deleted. */
+export function ideaSource(i: SessionIdea): string {
+    return joined([
+        i.sessiontitle || i.sessionid.slice(0, 8),
+        i.saidts > 0 ? dayName(i.saidts) : "",
+        i.deletests > 0 ? `transcript leaves ${dayName(i.deletests)}` : "",
+    ]);
+}
+
+export type ScannedTone = "ideas" | "kept" | "nothing" | "none" | "wait";
+export type ScannedRow = { id: string; title: string; meta: string; result: string; tone: ScannedTone };
+
+/** The Sessions scanned fold's rows: the sessions never scanned first, the nearest deletion first (they are the ones that
+ *  can still be lost), then the rest, newest write first, each with what it gave. */
+export function scannedRows(data: SessionIdeasData): ScannedRow[] {
+    const rank = (s: SessionIdeasSession) => (s.outcome === "not-scanned" ? 0 : s.outcome === "waiting" ? 1 : 2);
+    const day = (s: SessionIdeasSession) => (s.deletests > 0 ? s.deletests : Infinity);
+    return [...data.sessions]
+        .sort(
+            (a, b) =>
+                rank(a) - rank(b) ||
+                (rank(a) === 0 && day(a) !== day(b) ? (day(a) < day(b) ? -1 : 1) : 0) ||
+                b.lastwritets - a.lastwritets ||
+                (a.sessionid < b.sessionid ? -1 : a.sessionid > b.sessionid ? 1 : 0)
+        )
+        .map((s) => {
+            const result: Pick<ScannedRow, "result" | "tone"> =
+                s.outcome === "ideas"
+                    ? { result: `${plural(s.ideas, "idea")} · above`, tone: "ideas" }
+                    : s.outcome === "kept"
+                      ? { result: `${plural(s.ideas, "idea")} · kept`, tone: "kept" }
+                      : s.outcome === "not-scanned"
+                        ? { result: "not scanned", tone: "none" }
+                        : s.outcome === "waiting"
+                          ? { result: "still being written", tone: "wait" }
+                          : { result: "nothing left open", tone: "nothing" };
+            return {
+                id: s.sessionid,
+                title: s.title || s.sessionid.slice(0, 8),
+                meta: joined([
+                    s.project,
+                    s.lastwritets > 0 ? dayName(s.lastwritets) : "",
+                    s.outcome === "not-scanned" && s.deletests > 0 ? `deleted ${dayName(s.deletests)}` : "",
+                ]),
+                ...result,
+            };
+        });
+}
+
+/** Since you looked's Sessions row: a scan that ended after the person last looked and left ideas still waiting. N is the
+ *  sessions it read, K the ideas it found that wait for a decision, split into those on an initiative and new ones. Null
+ *  when no scan ended since, or what it found has been decided. Opening it is the `sessionideas` address. */
+export function sessionsSinceLine(
+    data: SessionIdeasData | null | undefined,
+    sinceTs: number,
+    now: number
+): BriefLine | null {
+    const scan = data?.scan;
+    if (data == null || scan == null || scan.endedts <= 0 || scan.endedts <= sinceTs) {
+        return null;
+    }
+    const found = data.ideas.filter((i) => i.state === "review" && i.foundts >= scan.startedts);
+    if (found.length === 0) {
+        return null;
+    }
+    const onInitiatives = found.filter((i) => i.effortoid !== "").length;
+    const fresh = found.length - onInitiatives;
+    return {
+        id: SESSIONS_SINCE_ID,
+        kind: "Sessions",
+        kindTone: "muted",
+        title: `Scanned ${plural(scan.done, "session")}: ${plural(found.length, "idea")} to review`,
+        note: "",
+        meta: "",
+        detail: [onInitiatives > 0 ? `${onInitiatives} on initiatives` : "", fresh > 0 ? plural(fresh, "new idea") : ""]
+            .filter((p) => p !== "")
+            .join(", "),
+        state: age(scan.endedts, now),
+        stateTone: "muted",
+        progress: null,
+        target: { oref: SESSION_IDEAS_REF },
+        why: "",
+        age: "",
+        group: "delta",
+    };
 }

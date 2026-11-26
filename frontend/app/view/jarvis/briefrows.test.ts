@@ -7,10 +7,14 @@ import {
     filterAsMenu,
     filterLines,
     foldOpen,
+    ideaKeepToast,
+    ideaMeta,
+    ideaSource,
     initiativeLine,
     initiativeProjects,
     keepsProject,
     keepsRunKind,
+    leavingLine,
     lineOpenTarget,
     linkedUnder,
     nestInitiatives,
@@ -23,7 +27,15 @@ import {
     runKindCounts,
     runKindLegs,
     runRowFace,
+    scannedRows,
+    scanOffer,
+    scanProgress,
+    scanStopLine,
+    sessionIdeasPhase,
     sessionLine,
+    SESSIONS_SINCE_ID,
+    sessionScanMeta,
+    sessionsSinceLine,
     sessionWindow,
     settleNesting,
     SHIPPED_EMPTY,
@@ -163,7 +175,9 @@ describe("queueLine", () => {
             "asking",
             "asking",
         ]);
-        expect(["chunk-due", "run-unverified", "learn-proposal"].map((k) => tone(k))).toEqual([
+        // the ideas waiting from your sessions are a reminder too, not the red an unknown kind gets
+        expect(["chunk-due", "run-unverified", "learn-proposal", "session-ideas"].map((k) => tone(k))).toEqual([
+            "muted",
             "muted",
             "muted",
             "muted",
@@ -1312,5 +1326,273 @@ describe("plainSummary", () => {
         );
         expect(plainSummary("# only a heading")).toBe("");
         expect(plainSummary("")).toBe("");
+    });
+});
+
+describe("From your sessions", () => {
+    const idea = (over: Partial<SessionIdea> = {}): SessionIdea => ({
+        id: "i1",
+        gist: "Show the deletion day",
+        project: "arcterm",
+        projectpath: "",
+        effortoid: "",
+        efforttitle: "",
+        quotes: [],
+        why: "",
+        sessionid: "abcdef0123",
+        sessiontitle: "",
+        transcriptpath: "",
+        saidts: 0,
+        deletests: 0,
+        foundts: NOW - DAY,
+        state: "review",
+        resolvedts: 0,
+        keptas: "",
+        ...over,
+    });
+    const scan = (over: Partial<SessionIdeasScan> = {}): SessionIdeasScan => ({
+        done: 0,
+        total: 0,
+        startedts: NOW - 2 * DAY,
+        endedts: 0,
+        forced: false,
+        error: "",
+        stoppedat: 0,
+        newideas: 0,
+        tokens: 0,
+        ...over,
+    });
+    const data = (over: Partial<SessionIdeasData> = {}): SessionIdeasData => ({
+        ideas: [],
+        marks: [],
+        sessions: [],
+        scanned: 0,
+        notyet: 0,
+        leavingsoon: 0,
+        lastscants: 0,
+        nextscants: 0,
+        seents: 0,
+        snoozeduntil: 0,
+        firstscandone: false,
+        ...over,
+    });
+    const session = (over: Partial<SessionIdeasSession> = {}): SessionIdeasSession => ({
+        sessionid: "s1",
+        title: "A session",
+        project: "arcterm",
+        transcriptpath: "",
+        size: 1,
+        lastwritets: NOW - 20 * DAY,
+        deletests: 0,
+        outcome: "nothing",
+        ideas: 0,
+        ...over,
+    });
+    const day = (m: number, d: number) => new Date(2026, m, d, 12).getTime();
+
+    it("shows nothing before the first read, the offer until a scan has run or found something, then the region", () => {
+        expect(sessionIdeasPhase(null)).toBe("loading");
+        expect(sessionIdeasPhase(undefined)).toBe("loading");
+        expect(sessionIdeasPhase(data())).toBe("offer");
+        expect(sessionIdeasPhase(data({ firstscandone: true }))).toBe("region");
+        // a first scan that is running, or stopped before it finished, has its own state to show
+        expect(sessionIdeasPhase(data({ scan: scan() }))).toBe("region");
+        expect(sessionIdeasPhase(data({ ideas: [idea()] }))).toBe("region");
+    });
+
+    it("says when it scanned, what that cost and when the next is due; a scan that runs says so instead", () => {
+        expect(
+            sessionScanMeta(
+                data({
+                    lastscants: day(10, 24),
+                    nextscants: day(11, 1),
+                    scan: scan({ endedts: day(10, 24), tokens: 210_400 }),
+                })
+            )
+        ).toBe("scanned Nov 24 · 210k tokens · next by Dec 1");
+        expect(sessionScanMeta(data())).toBe("not scanned yet");
+        expect(sessionScanMeta(data({ lastscants: day(10, 24), scan: scan({ endedts: day(10, 24) }) }))).toBe(
+            "scanned Nov 24"
+        );
+        expect(sessionScanMeta(data({ lastscants: day(10, 24), scan: scan({ tokens: 3000 }) }))).toBe(
+            "scanning · 3k tokens so far"
+        );
+        expect(sessionScanMeta(data({ scan: scan() }))).toBe("scanning");
+    });
+
+    it("reads a running scan as the session being read, never past the total", () => {
+        expect(scanProgress(scan({ done: 2, total: 8 }))).toEqual({ text: "Reading session 3 of 8", pct: 25 });
+        expect(scanProgress(scan({ done: 8, total: 8 }))).toEqual({ text: "Reading session 8 of 8", pct: 100 });
+        expect(scanProgress(scan({ done: 0, total: 0 })).pct).toBe(0);
+    });
+
+    it("tells where a scan stopped and what Retry does; a scan that ran through or still runs says nothing", () => {
+        const stopped = scan({ done: 213, total: 300, endedts: NOW, stoppedat: 213, error: "haiku returned 529." });
+        expect(scanStopLine(stopped)).toEqual({
+            text: "The scan stopped at session 214 of 300: haiku returned 529.",
+            hint: "What it found is below. Retry goes on from session 214.",
+        });
+        expect(scanStopLine({ ...stopped, error: "stopped" })?.text).toBe(
+            "You stopped the scan at session 214 of 300."
+        );
+        expect(scanStopLine(scan({ done: 3, total: 3, endedts: NOW }))).toBeNull();
+        expect(scanStopLine(scan({ done: 1, total: 3 }))).toBeNull();
+        expect(scanStopLine(null)).toBeNull();
+    });
+
+    it("warns of the sessions leaving unscanned with the day of the first, and only then", () => {
+        const sessions = [
+            session({ sessionid: "a", outcome: "not-scanned", deletests: NOW + 5 * DAY }),
+            session({ sessionid: "b", outcome: "not-scanned", deletests: NOW + 2 * DAY }),
+            session({ sessionid: "c", outcome: "nothing", deletests: NOW + DAY }),
+        ];
+        expect(leavingLine(data({ leavingsoon: 2, sessions }), NOW)).toBe(
+            "2 sessions are deleted on Sep 17 and have not been scanned."
+        );
+        expect(leavingLine(data({ leavingsoon: 1, sessions: [] }), NOW)).toBe(
+            "1 session is deleted within 7 days and has not been scanned."
+        );
+        expect(leavingLine(data({ sessions }), NOW)).toBeNull();
+    });
+
+    it("offers a scan of the quiet sessions not yet scanned, with an estimate that grows with their number", () => {
+        const sessions = [
+            session({ sessionid: "a", outcome: "not-scanned" }),
+            session({ sessionid: "b", outcome: "not-scanned" }),
+            session({ sessionid: "c", outcome: "waiting" }),
+            session({ sessionid: "d", outcome: "nothing" }),
+        ];
+        expect(scanOffer(data({ sessions }))).toMatchObject({
+            sessions: 2,
+            tokens: 20_000,
+            text: "haiku · about 20k tokens for 2 sessions",
+        });
+        expect(scanOffer(data({ sessions: [sessions[0]] })).text).toBe("haiku · about 10k tokens for 1 session");
+        expect(scanOffer(data()).text).toBe("haiku · no quiet sessions to read yet");
+    });
+
+    it("names where an idea would go, where it came from and what Keep did", () => {
+        const onInitiative = idea({ effortoid: "e1", efforttitle: "Sidecar" });
+        expect([ideaMeta(onInitiative), ideaMeta(idea()), ideaMeta(idea({ project: "" }))]).toEqual([
+            "Sidecar",
+            "New idea · arcterm",
+            "New idea",
+        ]);
+        expect([ideaKeepToast(onInitiative), ideaKeepToast(idea())]).toEqual(["Kept on “Sidecar”", "Kept in Ideas"]);
+        expect(ideaSource(idea({ sessiontitle: "Retention", saidts: day(9, 5), deletests: day(11, 4) }))).toBe(
+            "Retention · Oct 5 · transcript leaves Dec 4"
+        );
+        // a session with no title is named by the start of its id; no day is printed that is not known
+        expect(ideaSource(idea())).toBe("abcdef01");
+    });
+
+    it("lists the sessions never scanned first, nearest deletion first, then each with what it gave", () => {
+        const rows = scannedRows(
+            data({
+                sessions: [
+                    session({ sessionid: "n1", title: "Newest", lastwritets: NOW - DAY, outcome: "ideas", ideas: 2 }),
+                    session({ sessionid: "n2", title: "Older", lastwritets: NOW - 5 * DAY, outcome: "kept", ideas: 1 }),
+                    session({ sessionid: "n3", title: "Oldest", lastwritets: NOW - 9 * DAY }),
+                    session({
+                        sessionid: "u1",
+                        title: "Leaves later",
+                        lastwritets: NOW - 30 * DAY,
+                        outcome: "not-scanned",
+                        deletests: day(11, 3),
+                    }),
+                    session({
+                        sessionid: "u2",
+                        title: "",
+                        lastwritets: NOW - 31 * DAY,
+                        outcome: "not-scanned",
+                        deletests: day(10, 3),
+                    }),
+                    session({ sessionid: "w1", title: "Open", outcome: "waiting", lastwritets: NOW - 60_000 }),
+                ],
+            })
+        );
+        expect(rows.map((r) => [r.id, r.result, r.tone])).toEqual([
+            ["u2", "not scanned", "none"],
+            ["u1", "not scanned", "none"],
+            ["w1", "still being written", "wait"],
+            ["n1", "2 ideas · above", "ideas"],
+            ["n2", "1 idea · kept", "kept"],
+            ["n3", "nothing left open", "nothing"],
+        ]);
+        expect(rows[0]).toMatchObject({ title: "u2", meta: "arcterm · Aug 15 · deleted Nov 3" });
+    });
+
+    describe("the Sessions row of Since you looked", () => {
+        // found while the scan ran: after it started, before it ended
+        const during = { foundts: NOW - 150 * MIN };
+        const found = [
+            idea({ id: "a", effortoid: "e1", efforttitle: "Sidecar", ...during }),
+            idea({ id: "b", effortoid: "e1", efforttitle: "Sidecar", ...during }),
+            idea({ id: "c", ...during }),
+        ];
+        const ended = scan({ done: 21, total: 21, startedts: NOW - 3 * 60 * MIN, endedts: NOW - 2 * 60 * MIN });
+
+        it("reads the ideas the scan left waiting, split into those on an initiative and new ones", () => {
+            const line = sessionsSinceLine(data({ ideas: found, scan: ended }), NOW - DAY, NOW);
+            expect(line).toMatchObject({
+                id: SESSIONS_SINCE_ID,
+                title: "Scanned 21 sessions: 3 ideas to review",
+                detail: "2 on initiatives, 1 new idea",
+                state: "2h",
+                target: { oref: "sessionideas" },
+            });
+        });
+
+        it("counts the ideas this scan found that still wait, not the ones decided or found before it", () => {
+            const mixed = [
+                found[0],
+                { ...found[1], state: "kept" },
+                { ...found[2], state: "dropped" },
+                idea({ id: "old", foundts: NOW - 20 * DAY }),
+            ];
+            expect(sessionsSinceLine(data({ ideas: mixed, scan: ended }), NOW - DAY, NOW)?.title).toBe(
+                "Scanned 21 sessions: 1 idea to review"
+            );
+            expect(sessionsSinceLine(data({ ideas: mixed.slice(1), scan: ended }), NOW - DAY, NOW)).toBeNull();
+        });
+
+        it("has no row for a scan that ended before the last look, one still running, or none", () => {
+            expect(sessionsSinceLine(data({ ideas: found, scan: ended }), NOW, NOW)).toBeNull();
+            expect(sessionsSinceLine(data({ ideas: found, scan: { ...ended, endedts: 0 } }), 0, NOW)).toBeNull();
+            expect(sessionsSinceLine(data({ ideas: found }), 0, NOW)).toBeNull();
+            expect(sessionsSinceLine(null, 0, NOW)).toBeNull();
+        });
+
+        it("sits in its own section between the initiatives and the records, and not at all without a scan to tell", () => {
+            const delta: DeltaRow[] = [
+                {
+                    key: "1",
+                    ts: NOW - MIN,
+                    kind: "effort-note",
+                    title: "SIEM",
+                    wording: "effort-note",
+                    detail: "A · note",
+                    oref: "effort:e1",
+                },
+                {
+                    key: "d",
+                    ts: NOW - 2 * MIN,
+                    kind: "dossier",
+                    title: "Record",
+                    wording: "",
+                    detail: "status: active",
+                    oref: "task:d",
+                },
+            ];
+            const ctx = { sessionIdeas: { data: data({ ideas: found, scan: ended }), sinceTs: NOW - DAY } };
+            expect(sinceSections(delta, NOW, ctx).map((s) => [s.kind, s.label])).toEqual([
+                ["initiatives", "Initiatives"],
+                ["sessions", "Sessions"],
+                ["records", "Records"],
+            ]);
+            expect(sinceSections(delta, NOW).map((s) => s.kind)).toEqual(["initiatives", "records"]);
+            // a scan alone is a window with something in it
+            expect(sinceSections([], NOW, ctx).map((s) => s.kind)).toEqual(["sessions"]);
+        });
     });
 });
