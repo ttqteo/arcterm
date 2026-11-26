@@ -82,6 +82,20 @@ const DRAWING_2 = { title: "Auth key flow", add: [skBox(0, 0, "Tauri host"), skB
 // the free text is what 18e lengthens
 const DRAWING_3 = { title: "Store layout", add: [skBox(0, 0, "SQLite"), skText(260, 20, "note")] };
 const DRAWING_4 = { title: "Job queue", add: [skBox(0, 0, "queue"), skBox(260, 0, "slot")] };
+// 18h's crossed drawing: left over right, with tidy-a → tidy-d and tidy-b → tidy-c crossing in the middle
+const TIDY_LABELS = ["tidy-a", "tidy-b", "tidy-c", "tidy-d"];
+const skArrow = (id, from, to, x, y) => ({ type: "arrow", id, x, y, start: { id: from }, end: { id: to } });
+const DRAWING_TIDY = {
+    title: "Crossed",
+    add: [
+        { ...skBox(0, 0, "tidy-a"), id: "ta" },
+        { ...skBox(0, 220, "tidy-b"), id: "tb" },
+        { ...skBox(420, 0, "tidy-c"), id: "tc" },
+        { ...skBox(420, 220, "tidy-d"), id: "td" },
+        skArrow("ad", "ta", "td", 180, 35),
+        skArrow("bc", "tb", "tc", 180, 255),
+    ],
+};
 // Vietnamese: letters the hand-drawn faces lack (ớ ỗ ầ ạ), so the whole board turns to Nunito as the edit lands, and a
 // line several times as wide as "note", which ended just inside its drawing's frame
 const LONG_NOTE = "Khóa mới mỗi lần chạy";
@@ -1921,6 +1935,132 @@ export default function (kit) {
                         edit === "Edit",
                     { canvasLine, turnsLine, chips, edit }
                 );
+            });
+
+            // --- 18h-i. Tidy, and the board's cell in the tree's split row ---
+            // the four boxes of the crossed drawing by label: their ids and boxes as the canvas holds them
+            const tidyBoxes = () =>
+                canvasPage(`
+                    const els = app()?.scene.getNonDeletedElements() ?? [];
+                    const out = {};
+                    for (const t of els.filter((e) => e.type === "text" && e.containerId)) {
+                        const c = els.find((e) => e.id === t.containerId);
+                        if (c != null && c.type === "rectangle" && ${q(TIDY_LABELS)}.includes(t.text)) {
+                            out[t.text] = { id: c.id, x: c.x, y: c.y, w: c.width, h: c.height };
+                        }
+                    }
+                    return out;`);
+            const sameBoxes = (a, b) => TIDY_LABELS.every((l) => a?.[l] != null && b?.[l] != null && Math.abs(a[l].x - b[l].x) < 1 && Math.abs(a[l].y - b[l].y) < 1);
+            const overlap = (a, b) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+            const pressTidy = () => click(`${SPLIT(B4)} [data-board-tidy]`);
+            // box tidy-c's place once per animation frame for 1.5 s, from before the press
+            const traceTidy = () =>
+                canvasPage(`
+                    const m = (fx.tidy = { rows: [], done: false });
+                    const t0 = performance.now();
+                    const tick = (now) => {
+                        const els = app()?.scene.getNonDeletedElements() ?? [];
+                        const t = els.find((e) => e.type === "text" && e.text === "tidy-c");
+                        const c = els.find((e) => e.id === t?.containerId);
+                        if (c != null) m.rows.push([Math.round(now - t0), c.x, c.y]);
+                        if (now - t0 < 1500) requestAnimationFrame(tick);
+                        else m.done = true;
+                    };
+                    requestAnimationFrame(tick);
+                    return true;`);
+
+            await run("18h. Tidy lays a crossed drawing out again: the boxes slide over several frames, none overlaps, the arrows stop crossing and the file saves it; one undo takes it back, and a second press mid-slide ends as one press does", async (name) => {
+                await openBoardOn(B4);
+                const ready = await canvasReady(B4);
+                const before = (await rowNow()).length;
+                const landed = await land(B4, "t-b4-tidy", { add: JSON.stringify(DRAWING_TIDY.add), title: DRAWING_TIDY.title });
+                const onIt = await until(async () => {
+                    const r = await rowNow();
+                    return r.length === before + 1 && r[r.length - 1].current;
+                });
+                await polishNap(900);
+                const start = await tidyBoxes();
+                await shot("18h-crossed");
+                const hist = () => canvasPage(`const a = app(); return { undo: a.history.undoStack.length, redo: a.history.redoStack.length };`);
+                const histBefore = await hist();
+                await traceTidy();
+                const pressed = await pressTidy();
+                await until(() => canvasPage(`return fx.tidy.done;`));
+                // the slide is over: the boxes stand still between two reads
+                await until(async () => {
+                    const a1 = await tidyBoxes();
+                    await polishNap(150);
+                    return sameBoxes(a1, await tidyBoxes());
+                });
+                const rows = await canvasPage(`return fx.tidy.rows;`);
+                const xs = [...new Set(rows.map((r) => `${r[1]},${r[2]}`))];
+                const tidied = await tidyBoxes();
+                const histAfter = await hist();
+                await shot("18h-tidied");
+                const [a, b, c, d] = TIDY_LABELS.map((l) => tidied[l]);
+                const boxes = [a, b, c, d].filter(Boolean);
+                const noOverlap = boxes.length === 4 && boxes.every((p, i) => boxes.every((r, j) => i === j || !overlap(p, r)));
+                // a → d and b → c no longer cross: a and b stand in the order d and c do
+                const uncrossed = boxes.length === 4 && a.y < b.y === d.y < c.y;
+                // the file holds the tidy
+                let file = null;
+                const saved = await until(async () => {
+                    file = await boardFile(h, B4);
+                    const el = (file?.elements ?? []).find((e) => e.id === a?.id);
+                    return el != null && Math.abs(el.x - a.x) < 1 && Math.abs(el.y - a.y) < 1;
+                });
+                // one undo goes back to the crossed drawing, a redo forward to the tidy
+                const undone = await canvasPage(`const a = app(); a.actionManager.executeAction(a.actionManager.actions.undo); return true;`);
+                await polishNap(300);
+                const afterUndo = await tidyBoxes();
+                await canvasPage(`const a = app(); a.actionManager.executeAction(a.actionManager.actions.redo); return true;`);
+                await polishNap(300);
+                const afterRedo = await tidyBoxes();
+                // two presses 60 ms apart: the first lands at once, the second tidies the tidy, which stays where it is
+                await pressTidy();
+                await new Promise((r) => setTimeout(r, 60));
+                await pressTidy();
+                await polishNap(900);
+                const afterTwo = await tidyBoxes();
+                const frameOk = await canvasPage(`
+                    const els = app()?.scene.getNonDeletedElements() ?? [];
+                    const f = els.find((e) => e.type === "frame" && e.name === ${q(DRAWING_TIDY.title)});
+                    const kids = els.filter((e) => e.frameId === f?.id);
+                    return f != null && kids.every((k) => k.x >= f.x && k.y >= f.y && k.x + k.width <= f.x + f.width + 1 && k.y + k.height <= f.y + f.height + 1);`);
+                rec(
+                    name,
+                    ready &&
+                        landed.acked &&
+                        onIt &&
+                        pressed &&
+                        // it slid: tidy-a stood in more than two places on the way (a snap shows two)
+                        xs.length > 3 &&
+                        noOverlap &&
+                        uncrossed &&
+                        !sameBoxes(start, tidied) &&
+                        saved &&
+                        undone &&
+                        sameBoxes(afterUndo, start) &&
+                        sameBoxes(afterRedo, tidied) &&
+                        sameBoxes(afterTwo, tidied) &&
+                        frameOk,
+                    { histBefore, histAfter, start, tidied, places: xs.length, frames: rows.length, afterUndo, afterRedo, afterTwo, frameOk }
+                );
+            });
+
+            await run("18i. in the tree's split row, a click on the board's cell expands the board over the grid and marks the cell; a second click collapses it", async (name) => {
+                const cell = `[data-split-board="${B4}"]`;
+                const present = await until(async () => (await count(cell)) === 1);
+                const clicked = await click(cell);
+                const expanded = await until(() => h.ev(`document.querySelector(${q(SPLIT(B4))})?.dataset.boardMax === "true"`));
+                const marked = await h.ev(`document.querySelector(${q(cell)})?.hasAttribute("data-split-board-max") ?? false`);
+                await polishNap(400);
+                await shot("18i-expanded-from-tree");
+                await click(cell);
+                const collapsed = await until(() => h.ev(`document.querySelector(${q(SPLIT(B4))})?.dataset.boardMax !== "true"`));
+                const unmarked = await h.ev(`!(document.querySelector(${q(cell)})?.hasAttribute("data-split-board-max") ?? false)`);
+                await closeBoardOn();
+                rec(name, present && clicked && expanded && marked && collapsed && unmarked, { present, expanded, marked, collapsed, unmarked });
             });
 
             // --- 11. what an open board costs the page ---

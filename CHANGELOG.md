@@ -36,6 +36,9 @@ and a picture given to a line that is not big.
 
 - A finished council's Discussion ends on a closing card: the council's answer in one sentence, what it settled
   (agreed, still open, ruled out) and Open Report.
+- Tidy on a board: the button beside Edit lays the drawing in view out again, its boxes in rows along the way its arrows
+  run and the arrows routed between them, so a drawing whose arrows crossed or bunched reads cleanly. The boxes slide
+  to their new places, and `Ctrl`+`Z` puts them back.
 - A pair that pauses leaves a card in its conversation: why it paused, the judge's summary when it wrote one, then what
   waits on you (with its answer buttons), what is still open and what is agreed. The pair's page in Library draws the
   same card.
@@ -131,6 +134,8 @@ and a picture given to a line that is not big.
 - A council report's Figures name each source file once with its lines ("audit.html:713, 714, 715") instead of
   repeating the whole path per figure, and a comparison whose labels all open with the same words says them once above
   the bars, so each label keeps the part that tells it apart instead of being cut off.
+- A board's cell in the Agent tree's split row does something on a click: with the split on screen it expands the board
+  over the grid (a second click collapses it), and with the split elsewhere it brings that split up.
 - A decision changed since you confirmed it shows the sentences it gained (or lost) in a row as one block, not a box
   per sentence, and a `!` or `.` inside parentheses or before a lowercase word no longer cuts a sentence in two.
 - A paired agent's replies after a pause no longer show under the last question you asked in the pair, and after a token

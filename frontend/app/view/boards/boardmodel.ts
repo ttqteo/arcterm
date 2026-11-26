@@ -90,14 +90,14 @@ function elementText(el: ExcalidrawElement): string {
 
 // --- geometry
 
-interface Bounds {
+export interface Bounds {
     minX: number;
     minY: number;
     maxX: number;
     maxY: number;
 }
 
-function elementBounds(el: ExcalidrawElement): Bounds {
+export function elementBounds(el: ExcalidrawElement): Bounds {
     if ("points" in el && el.points.length > 0) {
         const xs = el.points.map((p) => p[0]);
         const ys = el.points.map((p) => p[1]);
@@ -111,7 +111,7 @@ function elementBounds(el: ExcalidrawElement): Bounds {
     return { minX: el.x, minY: el.y, maxX: el.x + el.width, maxY: el.y + el.height };
 }
 
-function unionBounds(els: readonly ExcalidrawElement[]): Bounds | null {
+export function unionBounds(els: readonly ExcalidrawElement[]): Bounds | null {
     if (els.length === 0) {
         return null;
     }
@@ -234,7 +234,7 @@ function isBoundText(el: ExcalidrawElement): boolean {
     return el.type === "text" && el.containerId != null;
 }
 
-function bump(el: ExcalidrawElement, props: Record<string, unknown>, now: number): ExcalidrawElement {
+export function bump(el: ExcalidrawElement, props: Record<string, unknown>, now: number): ExcalidrawElement {
     return patch(el, { ...props, version: el.version + 1, updated: now });
 }
 
@@ -392,7 +392,7 @@ function labelAnchor(points: readonly Point[]): Point {
 }
 
 // routes els[i] in place, its label with it; an arrow it can't route stays as drawn
-function routeArrow(els: ExcalidrawElement[], i: number, now: number): void {
+export function routeArrow(els: ExcalidrawElement[], i: number, now: number): void {
     const el = els[i];
     if (el.type !== "arrow" || el.points.length < 2) {
         return;
@@ -453,7 +453,7 @@ const DRAWING_GAP = 120; // between a new drawing and everything already on the 
 const FRAME_PADDING = 40; // between a frame and its outermost shape
 const EARLIER_TITLE = "Earlier drawings";
 
-function padded(b: Bounds): Record<string, number> {
+export function padded(b: Bounds): Record<string, number> {
     return {
         x: b.minX - FRAME_PADDING,
         y: b.minY - FRAME_PADDING,
