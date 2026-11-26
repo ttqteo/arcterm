@@ -123,14 +123,19 @@ Board `Nudges`.
 - Ideas from earlier sessions as a part of the brainstorm panel (`kind: "note"`, from history), so an idea comes back
   when its topic is brainstormed.
 
+## Decided after the first draft (2026-11-26)
+
+1. **Nothing scans before the person presses Scan my sessions** (Scan-States board 1), the forced scan of a session near
+   deletion included: it spends tokens the person has not seen estimated. Until then the region shows the offer and the
+   count of sessions leaving soon.
+2. **Nudges:** the toast, Since you looked's Sessions section and the 7-day Waiting line. No dot on the nav rail
+   (Nudges board 3 is not built).
+3. Scan-States boards 2–4 draw the To review strip and sheet that were turned down; the same states (scanning, stopped
+   part way, leaving unscanned) are built inside the From your sessions region instead.
+
 ## Open questions
 
-1. The first scan: wait for **Scan my sessions** (Scan-States board 1, the proposal: it spends tokens the person has
-   not seen estimated) or run in the first leftover window unasked?
-2. The nudges: confirm toast, Since you looked and the 7-day Waiting line, without the rail dot.
-3. Redraw Scan-States boards 2–4 (scanning, stopped part way, leaving unscanned) in the Brief region; they still draw the
-   To review strip and sheet.
-4. Deciding in one sentence to Jarvis ("keep 1 and 2, drop 4") needs a new block the frontend applies. Left out until
+1. Deciding in one sentence to Jarvis ("keep 1 and 2, drop 4") needs a new block the frontend applies. Left out until
    the region and the routed agents are in use.
 
 ## Out of scope
