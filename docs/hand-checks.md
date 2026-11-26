@@ -23,6 +23,13 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
 
 ## 2026-11-26
 
+- [ ] (arcterm) **The judge card's reading → done cross-fade.** On the last message's judge card (a choice question
+  turn), press "Đọc code rồi chọn" and let the deep judge finish (or Stop and press it again): the reading text fades
+  out while the done text fades in, in about 140 ms, and the card eases from its reading height to its done height on
+  the spring, with no frame where it is taller than both (the leaving text no longer stacks above the new one) and no
+  jump when it settles. With reduced motion on it swaps at once. The Final's `chat-judge` step 11 samples the
+  children and their opacities, but not the card's height. (`chatjudgeline.tsx`: `JudgeRow` and `JudgeCard` hand their
+  `ref` to AnimatePresence's popLayout.)
 - [ ] (arcterm) **Resume and Judge again on a stopped pair's row and Library page.** In a real pair stopped at the
   token cap, hover its row in the Agent tree: "Resume · 3.0M more" fades in over the row's first line (about 100 ms),
   and it fades in on a Tab to it too. A press leaves the conversation closed, and once the pair relays the button goes.

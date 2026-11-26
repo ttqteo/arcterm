@@ -12,8 +12,11 @@
 // on what the pane offers for its live turn (liveJudgeAtom, written by chatpane.tsx).
 // Motion: the line opens under its message on the spring and fades in (chatconversation.tsx says when it arrives, `arrive`),
 // and closes the same way when a record leaves it with nothing to show; a state change cross-fades its text on the micro
-// ease and a line that grows or shrinks for it rides the spring (CardSlot). Under reduced motion it mounts at its end
-// state; a line turning into a card or back (the last message changed) cross-fades too, its frame's colours easing.
+// ease and a line that grows or shrinks for it rides the spring (CardSlot). The leaving state is popped out of flow
+// (AnimatePresence popLayout), which only works on a state that hands the `ref` it is given to its motion element
+// (JudgeRow and JudgeCard do): otherwise the old and the new state stack in the body, and the slot springs to the height
+// of both. Under reduced motion it mounts at its end state; a line turning into a card or back (the last message
+// changed) cross-fades too, its frame's colours easing.
 // Markers for the scenarios: [data-chat-judge-line] with data-state and data-look, [data-chat-judge-frame] (the rule or
 // the box), [data-chat-judge-head] (a card's), [data-chat-judge-name], [data-chat-judge-tail], [data-chat-judge-icon],
 // [data-chat-judge-body] (what cross-fades), [data-chat-judge-action] with [data-chat-judge-action-label] on a card's
@@ -24,7 +27,7 @@ import { formatChordString } from "@/util/keysym";
 import { cn } from "@/util/util";
 import { Loader2, Search } from "lucide-react";
 import { AnimatePresence, motion, useIsPresent, useReducedMotion } from "motion/react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type Ref } from "react";
 import { CardSlot, FOCUS_RING } from "./chatbrainstormparts";
 import { judgeLine, type JudgeLine } from "./chatjudge";
 import { writesVietnamese } from "./chatsuggest";
@@ -180,7 +183,8 @@ export function ChatJudgeLine({
 }
 
 /** One state of the line's text, which cross-fades with the next on the micro ease (at once under reduced motion). While
- *  it fades out it takes no presses and is hidden from assistive tech: the line's one live row is the new one. */
+ *  it fades out it takes no presses and is hidden from assistive tech: the line's one live row is the new one. `ref` is
+ *  the element AnimatePresence pops out of flow while the state leaves, so it goes on the motion element. */
 function JudgeRow({
     line,
     agentId,
@@ -188,6 +192,7 @@ function JudgeRow({
     reading,
     tip,
     reduce,
+    ref,
 }: {
     line: ShownLine;
     agentId: string;
@@ -195,6 +200,7 @@ function JudgeRow({
     reading: boolean;
     tip: ReturnType<typeof useChartTip>;
     reduce: boolean;
+    ref?: Ref<HTMLDivElement>;
 }) {
     const present = useIsPresent();
     const bare = bareLine(line);
@@ -203,6 +209,7 @@ function JudgeRow({
     const tail = line.tail != null && line.tail !== "" ? line.tail : null;
     return (
         <motion.div
+            ref={ref}
             {...rowFade(reduce)}
             aria-hidden={present ? undefined : true}
             className={cn("flex items-start gap-2", !present && "pointer-events-none")}
@@ -287,19 +294,22 @@ function JudgeRow({
 
 /** The last message's judge as a card (one state of it, cross-fading as JudgeRow does): a small head with the icon, what
  *  the judge did and where the pick comes from (the source, or the cost or reading seconds as its tail), the pick's name
- *  in high ink, the reason written out, a failed judge's error, and the one action as a button. No hover. */
+ *  in high ink, the reason written out, a failed judge's error, and the one action as a button. No hover. `ref` goes on
+ *  the motion element for the same reason as JudgeRow's. */
 function JudgeCard({
     line,
     agentId,
     vi,
     reading,
     reduce,
+    ref,
 }: {
     line: ShownLine;
     agentId: string;
     vi: boolean;
     reading: boolean;
     reduce: boolean;
+    ref?: Ref<HTMLDivElement>;
 }) {
     const present = useIsPresent();
     const action = line.action;
@@ -307,6 +317,7 @@ function JudgeCard({
     const chord = action === "judge" || action === "retry" ? formatChordString("Alt:j") : null;
     return (
         <motion.div
+            ref={ref}
             {...rowFade(reduce)}
             aria-hidden={present ? undefined : true}
             className={cn("flex flex-col gap-[6px]", !present && "pointer-events-none")}

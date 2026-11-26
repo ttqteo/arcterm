@@ -777,20 +777,27 @@ export default function (kit) {
             await run("11. done with an added option", async (name) => {
                 const tk = await liveKey();
                 ctx.doneKey = tk;
-                // the call stopped in step 10 answers late and is not kept; the one reading now answers with the added option
-                const frames = await h.ev(`new Promise((resolve) => {
+                // the call stopped in step 10 answers late and is not kept; the one reading now answers with the added option.
+                // The reading card has finished its own fade-in first, so the cross-fade starts from a card at opacity 1
+                await waitState(tk, "reading", SHORT_MS);
+                await polishNap(300);
+                const sample = await h.ev(`new Promise((resolve) => {
                     const F = window.${FAKE_KEY};
                     const line = [...document.querySelectorAll("[data-chat-judge-line]")].find((e) => e.getAttribute("data-chat-judge-line") === ${JSON.stringify(tk)});
                     const body = line.querySelector("[data-chat-judge-body]");
                     const done = { ...F.record(${JSON.stringify(tk)}), deep: { state: "done", startts: Date.now() - 41000, endts: Date.now(), pick: ${JSON.stringify(ADDED.label)}, reason: ${JSON.stringify(DEEP_REASON)}, added: ${JSON.stringify(ADDED)}, model: "sonnet", tokens: 52000, files: 14 } };
                     F.records[done.key] = done;
+                    // each frame says the line's state and its body's children (their opacities), so a run that fails says whether
+                    // the done card drew late (state still reading), drew and left within a frame, or was done before the release
+                    const read = () => ({ state: line.getAttribute("data-state"), look: line.getAttribute("data-look"), kids: [...body.children].map((c) => Number(getComputedStyle(c).opacity)) });
+                    const before = read();
                     const out = [];
                     const t0 = performance.now();
                     F.release(done);
                     const tick = () => {
-                        out.push({ t: Math.round(performance.now() - t0), kids: [...body.children].map((c) => Number(getComputedStyle(c).opacity)) });
+                        out.push({ t: Math.round(performance.now() - t0), ...read() });
                         if (performance.now() - t0 < 700) requestAnimationFrame(tick);
-                        else resolve(out);
+                        else resolve({ before, frames: out });
                     };
                     requestAnimationFrame(tick);
                 })`);
@@ -802,7 +809,10 @@ export default function (kit) {
                 const tip = await h.ev(TIP);
                 await shot(h, "11-done-added");
                 await leaveName();
+                const { before, frames } = sample;
                 const last = frames.at(-1);
+                const flip = frames.findIndex((f) => f.state === "done");
+                const from = Math.max(0, flip - 1);
                 rec(
                     `${name}: the card's head reads "Đã đọc code: chọn · ${DEEP_COST}" (the cost its tail), then "${ADDED.label} (agent không nêu)" and the deep reason written out, with no action, the magnifier icon, and the added chip first in the row; hovering the name opens no tooltip`,
                     done &&
@@ -828,7 +838,16 @@ export default function (kit) {
                         frames.some((f) => f.kids.some((o) => o > 0.05 && o < 0.95)) &&
                         last.kids.length === 1 &&
                         last.kids[0] === 1,
-                    { frames: frames.length, two: frames.filter((f) => f.kids.length === 2).length, last }
+                    {
+                        frames: frames.length,
+                        two: frames.filter((f) => f.kids.length === 2).length,
+                        // what a failing run needs to tell a late render from an instant exit: the state just before the release
+                        // and each frame's state and kids around the flip to done
+                        before,
+                        flip,
+                        around: frames.slice(from, from + 9),
+                        last,
+                    }
                 );
             });
 
