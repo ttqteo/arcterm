@@ -78,6 +78,10 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
   line and the Library header show Judge again, and a press opens the conversation with `@judge ` in the focused
   composer. With reduced motion on, the error lines land at once. (`pairjudgelineview.tsx`, `pairreadpane.tsx`; the
   `pair-tree` and `library-pairs` scenarios read the end states, not the motion.)
+- [ ] (arcterm) **A PowerShell command run twice reads as running.** In a plain PowerShell terminal (5.1 and 7), run
+  `sleep 30`, stop it with `Ctrl`+`C`, then run `sleep 30` again: the second run shows as running in the sidebar and in
+  the Overview's Running list until it ends. The prompt still colours by the last command's status, and Up arrow still
+  recalls history. (`pwsh_wavepwsh.sh`; `project-overview` step 7 checks the end state.)
 - [ ] (arcterm) **The pause card arrives like a message.** In a live pair with its conversation open, let the pair
   pause (the judge writes `no new points`, or the token cap is reached): the card grows in on the same spring as the
   messages around it, whole from its first frame (head, summary when the judge wrote one, then Waits on you, Still
