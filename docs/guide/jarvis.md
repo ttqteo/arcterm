@@ -23,11 +23,12 @@ Dưới header, Brief có hai cột. Cột chính, từ trên xuống, mỗi vù
 - **Waiting on you**: câu hỏi, cổng duyệt, task bị chặn, run cần accept. Dòng tóm tắt ở đầu vùng, rồi ba việc gấp nhất hiện sẵn, mỗi hàng có nút hành động ngay tại chỗ (**Approve**, **Answer**, **Open**, **Accept**); **+N more** (N là số việc còn ẩn) mở phần còn lại, **Show less** gập lại. Khi có hơn một run unverified, **Accept K unverified** ở đầu vùng nhận hết một lượt. Ẩn khi không có gì chờ (header ghi **all clear**). Huy hiệu trên nav rail đếm cùng các mục này.
 - **Runs**: các run đang chạy, theo project (mỗi project có một channel). `Shift+J` / `Shift+K` chuyển giữa các run của channel.
 - **Initiatives**: mỗi initiative là một hàng; xem [Initiatives](#initiatives).
+- **From your sessions**: những ý được nêu trong các phiên cũ mà chưa ai quyết; xem [From your sessions](#from-your-sessions-ý-còn-bỏ-ngỏ-trong-các-phiên-cũ). Trước lần quét đầu, vùng này chưa hiện: một thẻ mời nằm dưới cột Ideas.
 - **Ideas** và **For later**, cạnh nhau dưới danh sách initiative. **Ideas**: ý tưởng chưa có chunk. Gõ vào ô **Jot down an idea** rồi `Enter` để ghi nhanh một ý (`Esc` xóa ô); không cần form. **For later**: các phiên bạn đã đánh dấu **Mark for later**, mới đánh dấu trước, với **Resume** và **Done**.
 
 Cột bên cạnh (340px) giữ phần đã qua:
 
-- **Since you looked**: những gì đổi kể từ lần bạn nhìn gần nhất, chia theo loại. **Runs**: run bắt đầu, run xong. **Initiatives**: mỗi initiative một hàng cho cả khoảng thời gian (số note, chunk xong, chunk thêm), mới nhất trước, hiện 5 hàng rồi `+N initiatives`. **Records**: record và quyết định gộp thành một hàng đếm theo trạng thái; bấm (hoặc `Enter`) để mở danh sách. **Mark seen** (hoàn tác được) làm vùng này gọn lại.
+- **Since you looked**: những gì đổi kể từ lần bạn nhìn gần nhất, chia theo loại. **Runs**: run bắt đầu, run xong. **Initiatives**: mỗi initiative một hàng cho cả khoảng thời gian (số note, chunk xong, chunk thêm), mới nhất trước, hiện 5 hàng rồi `+N initiatives`. **Records**: record và quyết định gộp thành một hàng đếm theo trạng thái; bấm (hoặc `Enter`) để mở danh sách. **Sessions**: một hàng khi một lần quét kết thúc sau lần bạn nhìn mà còn ý chờ quyết (`Scanned 21 sessions: 3 ideas to review`), nút **Review** nhảy tới vùng [From your sessions](#from-your-sessions-ý-còn-bỏ-ngỏ-trong-các-phiên-cũ). **Mark seen** (hoàn tác được) làm vùng này gọn lại.
 - **Shipped · 7 days**: những gì đã ship trong bảy ngày qua, hiện ba mục rồi `+N more`.
 
 Brief hẹp hơn 1100px thì cột bên cạnh rớt xuống dưới cột chính. Khi **Runs** hay **Initiatives** trống, vùng đó hiện một khung nét đứt với một câu và nút bắt đầu (**New run**, **New initiative**).
@@ -87,6 +88,68 @@ Bấm một chunk (hoặc `Enter` trên nó) mở panel của chunk. Khi Brief r
 - **Work on this chunk** mở một agent chỉ làm chunk này: đọc ghi chú của nó, làm, ghi kết quả thành một ghi chú của chunk và đánh dấu xong. Khi đã có agent mở trên initiative, nút đọc **Go to agent** và chỉ nhảy tới agent đó.
 
 Run và chunk nối với nhau thế nào, và ai đóng chunk khi run xong: [Orchestrator → Initiative qua nhiều run](orchestrator.md#initiative-qua-nhiều-run).
+
+## From your sessions: ý còn bỏ ngỏ trong các phiên cũ
+
+Điều đã quyết thì nằm trong file (spec, plan, `deferred.md`, commit). Điều được nêu giữa một phiên rồi bỏ ngỏ thì chỉ còn trong transcript, mà Claude Code xóa transcript sau `cleanupPeriodDays` (arcterm đặt 90 ngày khi bạn chưa đặt giá trị riêng). **From your sessions** đọc các phiên cũ, đưa những ý chưa ai quyết trở lại Brief, nơi bạn vốn nhìn, và giữ chúng trước khi transcript mất. Không có tab hay surface riêng.
+
+### Quét gì, khi nào
+
+- **Chỉ phiên Claude Code.** Mỗi phiên là một lượt gọi haiku, không công cụ, đọc bản digest của phiên (cùng file mà tìm kiếm Conversation History đọc), không đọc transcript thô. Lượt gọi nhận kèm initiative đang mở của project, chunk, ý đã có, tên spec và plan, các đề mục của `deferred.md` và tiêu đề commit; một ý đã khớp một trong số đó thì bị bỏ.
+- **Bỏ qua:** phiên của chính máy móc arcterm (worker, reviewer, judge của engine), phiên mới ghi trong 2 ngày qua (còn đang viết; hiện ở **Sessions scanned** là `still being written`), phiên không có prompt nào của bạn, và các agent mà chính tính năng này mở để bàn một ý (prompt đầu của chúng bắt đầu bằng `[arc:session-ideas]`), để lần quét sau không đề xuất lại ý từ cuộc bàn về nó.
+- **Mỗi phiên quét một lần.** Phiên dài thêm sau lần quét thì được đọc lại, chỉ phần lượt mới.
+- **Không có gì được quét trước khi bạn bấm Scan my sessions.** Trước đó Brief chỉ hiện thẻ mời **Ideas you floated and left** dưới cột Ideas, kèm ước lượng (`haiku · about 210k tokens for 21 sessions`; 10.000 token một phiên là con số đoán, lần quét đầu ghi số thật) và **Not now** để cất thẻ đến lần mở app sau. Cả lần quét bắt buộc cho phiên sắp bị xóa cũng chờ bạn bấm: nó tốn token mà bạn chưa thấy ước lượng. Nếu có phiên sắp bị xóa mà chưa quét, thẻ nói rõ ngày.
+- **Sau lần quét đầu, arcterm tự quét.** wavesrv kiểm tra mỗi 5 phút (chỉ đọc giờ ghi của file và dấu đã quét). Ngày xóa của một transcript là lần ghi cuối cộng `cleanupPeriodDays` đọc từ `~/.claude/settings.json`; lượt quét của nó đến hạn 10 ngày trước đó và chờ một **cửa sổ 5 giờ còn dư quota** theo cổng của [DUM-E](dume.md) (cửa sổ gần reset còn quota, không run nào đang sống, máy không thiếu RAM), phiên gần ngày xóa nhất đọc trước. Phiên còn 7 ngày hoặc ít hơn mà chưa quét thì quét ngay, không đợi cửa sổ.
+- **Scan my sessions / Scan now / Retry** là lượt quét bạn tự bắt đầu: nó đọc mọi phiên đã yên mà chưa quét, đến hạn hay chưa.
+- Ý, dấu đã quét và tiến trình nằm trong `sessionideas/state.json` của thư mục data.
+
+### Vùng trên Brief
+
+Vùng nằm giữa **Initiatives** và hàng **Ideas** / **For later**. Header: nhãn, số ý chờ, dòng `scanned Nov 24 · 210k tokens · next by Dec 1` (token của lần quét cuối; khi đang quét thì đếm token đã dùng), **Scan now**, **Go through N with an agent**, **Show only**.
+
+Mỗi ý là một hàng: câu tóm tắt một dòng (tiếng Anh), nơi nó sẽ đặt (tên initiative, hoặc `New idea · <project>`), và:
+
+- **What was said**: mở các câu trích nguyên văn (của bạn hay của Claude), phiên nguồn, ngày nói, và ngày transcript bị xóa (`transcript leaves Dec 1`); **Open session** mở phiên đó trong Library.
+- **Keep**: đặt thành chunk `pending` trên initiative của nó, hoặc thành một ý mới ở cột Ideas khi không initiative nào khớp. Câu trích và id phiên thành ghi chú đầu của chunk, nên ý còn nguồn khi transcript đã mất. Một toast nói nó đã đặt vào đâu. Nếu initiative đã có chunk cùng nhãn, server từ chối (`chunk … already exists`) và ý ở nguyên chỗ; `wsh sessionideas keep <id> --label "…"` đặt nhãn khác.
+- **Drop**: bỏ ý; các lần quét sau không đề xuất lại.
+- **Discuss**: mở một agent sonnet **trong project của ý** (không có project thì No folder), nhận câu tóm tắt, câu trích, initiative và id phiên nguồn. Nó đọc thêm bằng `wsh read session:<id>`, không bao giờ `--resume` (resume một phiên nguội ghi lại toàn bộ cache). Khi agent còn mở, nút đọc **● Go to agent** và nhảy tới nó, không mở agent thứ hai. Agent chỉ ghi quyết định (`wsh sessionideas keep|drop`) sau khi bạn nói.
+- **Go through N with an agent** (header): một agent sonnet **ở No folder** đi qua từng ý với bạn, mỗi lúc một ý, và ghi mỗi quyết định. No folder vì các ý trải nhiều project và một lượt nhanh không cần AGENTS.md hay skill của project nào; ý cần đọc code thì agent để lại cho Discuss. Khi một agent giữ mọi ý đang chờ, nút đọc **● Go to agent**.
+
+Khi hết ý, vùng đọc `Nothing left open in the sessions scanned so far.` Các trạng thái trong vùng:
+
+- **Đang quét**: dải tiến độ `Reading session 3 of 21` với **Stop**.
+- **Dừng giữa chừng** (bạn bấm Stop, hoặc lỗi model): thẻ đỏ `You stopped the scan at session 7 of 21.` hoặc `The scan stopped at session 7 of 21: <lỗi>`; những gì đã tìm vẫn ở dưới, **Retry** đi tiếp từ phiên đó.
+- **Phiên sắp bị xóa mà chưa quét**: thẻ vàng `2 sessions are deleted on Dec 1 and have not been scanned.`
+
+**Sessions scanned** gập ở cuối vùng: thanh phủ sóng của các phiên còn trên đĩa (`scanned`, `not yet`, `leave within 7 days`, mỗi phần kèm số) rồi từng phiên với kết quả của nó: `3 ideas · above`, `1 idea · kept`, `nothing left open`, `not scanned`, `still being written`. Phiên chưa quét xếp đầu, gần ngày xóa nhất trước. Phiên chưa có dấu đã quét không có tên (hàng đọc bằng id ngắn).
+
+### Nghe tin về nó
+
+- Một **toast** khi lần quét kết thúc có ý mới: `Session scan: 2 ideas to review, from 21 sessions`, nút **Review** mở vùng.
+- Hàng **Sessions** của **Since you looked** (ở trên).
+- Sau **7 ngày** có ý chờ mà không ai mở vùng, **Waiting on you** có một hàng `Session ideas`: `3 ideas from your sessions, waiting 8 days`, với **Review** (mở vùng) và **Next week** (hoãn 7 ngày). Hàng này đếm vào huy hiệu như các việc chờ khác. Mở vùng mà chưa quyết cũng tính là đã nhìn: 7 ngày bắt đầu lại. Hết hạn hoãn mà ý còn chờ thì hàng quay lại ngay.
+- Nav rail không có chấm cho tính năng này.
+
+### Sprout
+
+Popup của [con vật Jarvis](#con-vật-jarvis-và-popup-việc-chờ) thêm một dòng dưới các việc chờ: `N ideas from your sessions to review · Review in Jarvis`. Nó không phải một hàng hàng đợi, nên không đếm vào huy hiệu. Dưới dòng là các chip cố định, mỗi chip làm một việc và không chip nào đợi một model trả lời:
+
+- **What's waiting?**: liệt kê các ý ngay trong popup (tóm tắt, initiative, và ngày transcript bị xóa khi gần).
+- **Go through N with an agent**: mở agent No folder như nút ở header vùng.
+- **Discuss: <tóm tắt>**: Discuss cho ý đầu tiên, ý có transcript bị xóa sớm nhất.
+- **Which lose their transcript soon?**: chỉ hiện khi có ý như vậy (xóa trong 7 ngày); danh sách đã lọc.
+
+Chip đã chạy thì hàng của nó thành `Session ideas · No folder · sonnet · started` với **Go to agent**, và bấm không mở agent thứ hai. Mỗi lần bấm một chip ghi một dòng `sessionideas: pick chip=… at=…` vào `waveapp.log`, để chip không ai bấm có thể bỏ theo số liệu. Khi Sprout ở dạng gập (không nổi), popup chỉ giữ dòng ý và **Review**, không có chip.
+
+Câu hỏi gõ là đường phụ: lời nhắc của ô hỏi Jarvis liệt kê cả các ý đang chờ, nên một câu chip không phủ (`ý nào liên quan Sidecar?`) được trả lời từ danh sách đó; `duyệt giúp tôi` hay `bàn ý <x>` đi qua `arc-route` tới đúng hai agent trên (sonnet, prompt bắt đầu bằng `[arc:session-ideas]`).
+
+### Storage và 90 ngày
+
+Hộp xác nhận **Move sessions to the trash** của thẻ Sessions trong **Settings → Storage** nói bao nhiêu phiên trong số sắp chuyển chưa bao giờ được quét (`3 of them were never scanned for ideas.`). Sau lần quét đầu nó thêm **Scan them first**: quét đúng các phiên đó và không chuyển gì; **Move to trash** vẫn chuyển chúng khi chưa quét. Trước lần quét đầu hộp chỉ cho biết con số.
+
+Tìm kiếm Conversation History cũng với tới 90 ngày, bằng thời gian transcript được giữ, thay vì 30. Bản digest của 90 ngày được dựng lần đầu một tìm kiếm cần tới và bởi một lượt khởi động nền.
+
+Mỗi lần quét tốn một lượt haiku mỗi phiên; Discuss và Go through là một phiên sonnet bình thường, không phải một fan-out.
 
 ## Councils
 
@@ -174,6 +237,7 @@ Con vật pixel đi dọc footer trên mọi surface là cách nhìn nhanh Waiti
 - Bấm vào nó, hoặc `Ctrl+G` `w`, mở **popup việc chờ**: duyệt cổng, retry task hỏng, accept kết quả unverified, land lại một run bị giữ (hoặc **Dismiss** nó), và trả lời câu hỏi của agent ngay tại chỗ. Câu hỏi một lựa chọn trả lời bằng `1`–`9`. Câu hỏi nhiều câu hoặc chọn nhiều có nút **Answer** (hoặc `Enter`) mở form trả lời dưới hàng, giống form trên thẻ Cockpit: `1`–`9` chọn, `←` / `→` chuyển câu, `Enter` gửi khi mọi câu đã có đáp án, `Esc` thu form. Doc review vẫn mở bằng **Open**.
 - Bấm vào bong bóng **Needs you** (hoặc mở popup khi bong bóng đang hiện) thì con trỏ nằm sẵn trên câu hỏi đó, form của nó mở sẵn.
 - **Peek**: `Space` trên một hàng, hoặc `Ctrl`+bấm một liên kết, mở run, agent, record hay initiative trong popup mà không đổi lựa chọn ở surface dưới. `Backspace` về màn đầu, `Enter` mở mục đó ở chỗ của nó.
+- Khi có ý chờ từ các phiên cũ, popup có thêm một dòng và vài chip dưới các việc chờ ([Sprout](#sprout)).
 - Nó "nói" khi một run land, khi có bản Claude Code mới (một lần), và khi một việc mới cần bạn.
 - Trang phục đổi ở **Settings → Jarvis & Office**.
 

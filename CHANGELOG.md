@@ -34,6 +34,15 @@ and a picture given to a line that is not big.
 
 ### Added
 
+- From your sessions: Jarvis's Brief has a region for ideas that were floated in an earlier session and never decided.
+  Scan my sessions reads the sessions still on disk (one haiku call each, the first scan's cost estimated before you
+  press it; nothing is scanned before that), and each idea shows what was said, the initiative it would go on and the day
+  its transcript is deleted, with Keep (a pending chunk with the quote as its first note, or a new idea), Drop, Discuss
+  (a sonnet agent on it) and Go through N with an agent. After that, sessions are scanned on their own before their
+  transcripts go. Sprout's popup carries the same ideas as a line and four chips, a typed "duyệt giúp tôi" goes through
+  them, and the Brief's Since you looked, a toast and a Waiting on you line after 7 days say when there is something to
+  review. Storage's Sessions confirm says how many of the sessions it would move were never scanned, and offers Scan them
+  first. `wsh sessionideas` lists, keeps and drops them. <!-- big --> <!-- shot: none -->
 - A finished council's Discussion ends on a closing card: the council's answer in one sentence, what it settled
   (agreed, still open, ruled out) and Open Report.
 - Tidy on a board: the button beside Edit lays the drawing in view out again, its boxes in rows along the way its arrows
@@ -75,6 +84,7 @@ and a picture given to a line that is not big.
 
 ### Changed
 
+- Conversation History search reaches back 90 days, as far as Claude Code keeps transcripts, instead of 30.
 - A visual in Chat no longer sits in a bordered box: it lines up with the reply's text around it.
 - The word "draft" on an agent's row also shows on the row you have open, as soon as its box holds a message you have
   not sent.

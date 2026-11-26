@@ -71,6 +71,7 @@ Agent chạy trong terminal của arcterm có `wsh` và dùng nó để nói chu
 | `wsh ui …` | `reveal <address>` mở một run, terminal agent, record hay surface; `state` đọc người dùng đang nhìn gì; `actions` / `do` chạy một hành động của cockpit |
 | `wsh protect -- <lệnh>` | Chạy một job dài với mọi lệnh nặng khác trong hàng đợi chờ đến khi nó thoát ([Giữ máy cho một job dài](usage.md#giữ-máy-cho-một-job-dài-wsh-protect)) |
 | `wsh effort …` | Tạo và cập nhật initiative và chunk; `wsh effort chunk add … --proposed` đề xuất một chunk để bạn chấp nhận hoặc bỏ ([bên dưới](#đề-xuất-chunk)) |
+| `wsh sessionideas …` | `list` các ý mà lượt quét phiên cũ tìm ra (`--json` để máy đọc), `keep <id> [--label "…"]` đặt một ý thành chunk `pending` trên initiative của nó hoặc thành ý mới, `drop <id>` bỏ nó; xem [Jarvis → From your sessions](jarvis.md#from-your-sessions-ý-còn-bỏ-ngỏ-trong-các-phiên-cũ) |
 | `wsh jarvis dag …`, `wsh jarvis complete` | Trong terminal của lead hoặc worker: điều khiển DAG của run, kết thúc run hay task |
 
 Lệnh run và DAG đầy đủ: [Orchestrator → CLI](orchestrator.md#cli). `wsh <lệnh> --help` in cú pháp của từng lệnh.

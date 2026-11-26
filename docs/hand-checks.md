@@ -23,6 +23,40 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
 
 ## 2026-11-26
 
+- [ ] (arcterm) **Session ideas: a real scan.** No scenario reads a real transcript or calls a model, so this is the one
+  pass over the real path. On the real store with the Brief open and nothing scanned yet, the Ideas column ends in the
+  "Ideas you floated and left" card with its estimate; press Scan my sessions → the region replaces the card, shows
+  `Reading session d of N` with Stop, and the header counts tokens as it goes; at the end a toast says
+  `Session scan: K ideas to review, from N sessions` with Review, and the header reads `scanned <day> · <tokens> tokens
+  · next by <day>`. Then read the numbers into open-issues "First session scan's tokens" (and set
+  `SCAN_TOKENS_PER_SESSION`). Press Keep on one idea → its initiative has a `pending` chunk whose first note holds the
+  quote and the session id. (`sessionideasregion.tsx`, `pkg/sessionideas/scan.go`, f1973dc2a, 0792a18fe)
+- [ ] (arcterm) **Session ideas: What was said opens and folds.** In the region press What was said on a row → the quotes
+  open under the row on a spring (the chevron turns 90°) and press it again → they fold, with no jump or flash and the
+  rows below moving with it. (`sessionideasregion.tsx`, f1973dc2a)
+- [ ] (arcterm) **Session ideas: a row leaves on Keep and Drop.** Press Keep on a row → it slides out on a spring and the
+  rows under it close the gap, a toast says where it went (`Kept on “…”` or `Kept in Ideas`), and for an idea with no
+  initiative the Ideas column gains a row; Drop does the same without a toast. A Keep the server refuses (a chunk with
+  that label already exists) puts the buttons back and the row stays. (`sessionideasregion.tsx`, f1973dc2a)
+- [ ] (arcterm) **Session ideas: the region's panels and fold.** Start a scan → the progress panel opens above the rows
+  and its bar widens on a spring; Stop it → the progress panel gives way to the red stopped card with Retry; Retry goes
+  on from that session. With a session leaving unscanned the yellow card opens, and Sessions scanned unfolds a coverage
+  bar and its rows (scrolling past 320 px). Press Not now on the offer → it folds away. Nothing jumps.
+  (`sessionideasregion.tsx`, f1973dc2a)
+- [ ] (arcterm) **Session ideas: Sprout's ideas line.** With ideas waiting, open Sprout's popup → the line `N ideas
+  from your sessions to review · Review in Jarvis` springs in under the updates and goes when the last idea is decided;
+  Review lands on the region, and the nav rail's badge does not count the line. (`petideas.tsx`, 07192f191)
+- [ ] (arcterm) **Session ideas: the chips' list and started line.** Press What's waiting? → the ideas open as a list in
+  place on a spring, and a second press closes it (Which lose their transcript soon? the same, with only the leaving
+  ones). Press Go through N with an agent or Discuss: … → a started line (`No folder · sonnet · started`) opens under
+  the chips with Go to agent, and pressing the chip again opens no second agent. (`petideas.tsx`, 07192f191)
+- [ ] (arcterm) **Session ideas: the popup's width.** With no ideas waiting the quiet card is 332 px wide; decide the last
+  idea or scan a new one → it widens to 420 px while ideas wait and goes back after, and at 420 px the four chips wrap
+  onto as many lines as they need without being cut at the panel's edge. (`petpeek.tsx`, 07192f191)
+- [ ] (arcterm) **Session ideas: a chip press is logged.** Press any chip, then read the end of `waveapp.log` (the
+  installed app's `%LOCALAPPDATA%\dev.arc.app\data\waveapp.log`) → one line `sessionideas: pick chip=<kind> at=<n>
+  text=…`. Not observed: the line's text is unit-tested, the call through `getApi().sendLog` was only read. (`petideas.tsx`,
+  07192f191)
 - [ ] (arcterm) **A Chat visual has no border.** In an agent's Chat, a reply with an `arc-visual` block: the page sits
   flush with the reply's text, no box around it and no line under the small Shapes icon; a tall one still shows its
   expand button at the right of that row. (`chatvisualview.tsx`)
