@@ -15,6 +15,9 @@ Pair dùng được với agent Claude và pi. Một agent nằm trong nhiều n
 **Cách chính: nút Add judge trong header của working agent.** Dùng khi bạn đọc đến một tin nhắn muốn có người chấm.
 Menu của nút có:
 
+- **Wake <tên>**, mục đầu và chỉ có khi working agent này có một judge đang nghỉ từ vòng trước (xem [Judge nghỉ giữa các
+  vòng](#judge-nghỉ-giữa-các-vòng)): đánh thức judge đó và ghép một pair mới với nó. Judge giữ những gì nó đã đọc ở các
+  vòng trước; nó nhận brief mới làm prompt đầu tiên.
 - **Open a new judge**: mở một tab Claude mới (chạy **Opus**) trong cùng project, ở thư mục của working agent (worktree
   của nó nếu có, để judge đọc đúng code đang sửa). Judge nhận brief gồm plan hay spec đang dùng, câu trả lời mới nhất của
   working agent, và dặn "đọc code thật trước khi kết luận".
@@ -23,15 +26,16 @@ Menu của nút có:
 Khi pair đã thành, header có nút **Pair** ngay cạnh Chat / Terminal, kèm số tin mới (từ lần cuối bạn mở cuộc trò
 chuyện). Pair là nút bật tắt: bấm thì cột giữa thành cuộc trò chuyện của pair và nút sáng lên, bấm lại (hoặc Chat,
 Terminal, Esc) thì về đúng view lúc trước. Bên cạnh có nút **+** để thêm judge thứ hai, thứ ba. Dòng trạng thái của agent
-ghi "waiting on judge" khi judge còn nợ một câu trả lời; khi pair đang dừng thì nó ghi lý do dừng ("Paused: token cap
-reached"), không ghi "waiting on judge". Header của judge cũng có nút Pair (không đếm tin mới) mở cùng cuộc trò chuyện
+ghi "waiting on judge" khi judge còn nợ một câu trả lời; khi pair đang dừng thì nó ghi lý do dừng ("Paused: judge token
+cap reached"), không ghi "waiting on judge". Header của judge cũng có nút Pair (không đếm tin mới) mở cùng cuộc trò chuyện
 đó, và ở chỗ dấu + là một icon link sang agent mà nó đang chấm.
 
-Trong cây Agent, một pair là **một dòng** ở chỗ của working agent: bấm vào thì mở cuộc trò chuyện. Mặc định dòng đó gập
-lại, dòng phụ ghi trạng thái từng bên ("worker working · judge idle"), RAM và token là của cả pair. Mũi tên bên trái mở
-ra working agent và các judge bên dưới; khi một agent trong pair đang hỏi bạn, hay đang được chọn, nó tự mở ra. Một pair
-đang dừng có thêm nút hiện khi rê chuột hay focus vào dòng của nó: **Resume** hoặc **Judge again** (xem
-[Khi nào pair dừng](#khi-nào-pair-dừng)).
+Trong cây Agent, working agent vẫn là **agent chính** với dòng agent bình thường của nó, như khi chưa có judge. Khi một
+vòng đang sống, dòng đó có thêm một dòng nhỏ luôn hiện, không gập: ⚖, trạng thái của judge bằng chữ, số token judge đã
+tiêu và số tin mới. Bấm vào dòng ⚖ thì mở cuộc trò chuyện của pair; bấm chỗ khác trên dòng agent thì mở working agent.
+Judge không có dòng riêng. Có nhiều judge thì dòng ghi "2 judge" và trạng thái của judge cần bạn nhất (đang hỏi, rồi
+đang làm, rồi còn lại). Một pair đang dừng có thêm nút ở cuối dòng ⚖, hiện khi rê chuột hay focus: **Resume** hoặc
+**Judge again** (xem [Khi nào pair dừng](#khi-nào-pair-dừng)).
 
 **Cách thứ hai: cây Agent.** Chọn hai agent (Ctrl hoặc Shift+click), bấm chuột phải, chọn **Pair: worker + judge**, nằm
 trên **Discuss together** (mục này vẫn mở Setup của council). Agent chọn đầu tiên là working agent. Một sheet nhỏ hiện ra:
@@ -65,10 +69,10 @@ trạng thái của bên kia, và nút **Unpair**.
   tiếng Việt).
 - Lệnh nặng bị giữ hiện thành một dòng nét đứt trong tin của working agent, kèm **Run now** (xem [Giữ lệnh nặng](#giữ-lệnh-nặng-và-run-now)).
 
-Khi pair đang bật, **mọi lượt** của working agent đều chuyển sang judge, kể cả lượt bạn bắt đầu ngay trong Chat của agent
-(trừ lượt bạn bắt đầu khi pair đang dừng ở token cap; câu trả lời cho tin agent đang làm dở vẫn được giữ, xem
-[Khi nào pair dừng](#khi-nào-pair-dừng)). Muốn làm việc với agent mà không có
-judge thì **Unpair**.
+Khi pair đang chuyển tin, **mọi lượt** của working agent đều chuyển sang judge, kể cả lượt bạn bắt đầu ngay trong Chat
+của agent. Khi pair đã dừng thì không còn vậy: một lượt mới của working agent mà không trả lời tin nào của pair sẽ kết
+thúc vòng (xem [Một vòng kết thúc thế nào](#một-vòng-kết-thúc-thế-nào)). Muốn làm việc với agent mà không có judge ngay
+giữa chừng thì **Unpair**.
 
 ## Tab Decided
 
@@ -148,8 +152,13 @@ Việc dừng do chính hai agent nói trong tin nhắn của họ, qua các kh�
   `no new points` và không có `reopen` hay `new:`. Có nhiều judge thì pair chỉ dừng khi **tất cả** nói vậy.
 - **Both agree**: khối mới nhất đi cùng tin mới nhất của working agent không có mục `O`, và câu trả lời của mọi judge cho
   nó có fence `arc-judge` không chứa `reopen` hay `new:`.
-- **Token cap**: tổng Input + CacheRead + CacheCreation + Output của mọi session trong pair từ lúc ghép đôi (mặc định
-  3M, đổi được trong sheet), kiểm sau mỗi lượt kết thúc của một thành viên.
+- **Token cap**: tổng Input + CacheRead + CacheCreation + Output của session của các **judge** từ lúc ghép đôi (mặc
+  định 3M, đổi được trong sheet), kiểm sau mỗi lượt kết thúc của một thành viên. Mức trần chỉ tính token của judge: token
+  của working agent vẫn được đọc và hiện ra, nhưng phần lớn là việc nó vẫn làm khi không có judge, nên không tính vào.
+  Một judge đã đi (tab bị xóa) vẫn được tính phần nó đã tiêu. Mức trần chỉ là lưới an toàn cho một judge không bao giờ
+  hết điểm: vòng thường kết thúc trước, khi judge hết điểm mới hay khi bạn quay lại working agent. Một pair lưu trước
+  khi mức trần đổi cách tính giữ con số đã lưu (gồm cả working agent) cho tới lần đếm lại đầu tiên khi nó còn chạy; trang
+  Library ghi "judge tokens" cho pair mới và "tokens" cho pair cũ.
 - **Judges gone**: không còn judge nào sống.
 
 Khi dừng, pair thôi chuyển tin, giữ hàng đợi và đặt một **thẻ tạm dừng** vào dòng thời gian. Pair vẫn ghép: nó **tạm
@@ -160,8 +169,8 @@ working agent, vì chúng không đòi gì ở nó; chuyển đi sẽ mở một
 
 Thẻ có, từ trên xuống:
 
-- **Đầu thẻ** nói vì sao dừng: "Paused: the judge has no new points", "Paused: both agree", "Paused: token cap reached
-  (3.0M)" hay "Paused: no judge is left". Đầu thẻ và tên các phần viết bằng tiếng Việt ("Tạm dừng: judge không còn ý
+- **Đầu thẻ** nói vì sao dừng: "Paused: the judge has no new points", "Paused: both agree", "Paused: judge token cap
+  reached (3.0M)" hay "Paused: no judge is left". Đầu thẻ và tên các phần viết bằng tiếng Việt ("Tạm dừng: judge không còn ý
   mới", "Chờ bạn"…) khi các tin của bạn trong pair viết tiếng Việt, còn lại bằng tiếng Anh.
 - **Phần tóm tắt** của judge, ở trên cùng, khi judge đã viết dòng `summary:` trong câu trả lời gây ra lần dừng (xem
   [`arc-judge`](#arc-judge-dấu-của-judge)). Dừng ở token cap hay khi không còn judge thì thường không có.
@@ -177,9 +186,9 @@ máy này.
 ### Resume và Judge again
 
 - **Resume** ("Chạy tiếp") đưa pair về trạng thái chuyển tin và giao nốt những gì còn trong hàng đợi. Nó **không gửi
-  tin nào** và không thêm dòng nào vào dòng thời gian. Có ở ba nơi: trên thẻ tạm dừng, trên dòng của pair trong cây
-  Agent (hiện khi rê chuột hay focus) và trên trang của pair trong Library. Sau **token cap** nút ghi số token mà nó
-  trả lại, "Resume · 3.0M more" ("Chạy tiếp · thêm 3.0M"): mức trần tính lại từ lúc bấm.
+  tin nào** và không thêm dòng nào vào dòng thời gian. Có ở ba nơi: trên thẻ tạm dừng, trên dòng ⚖ của pair trong cây
+  Agent (hiện khi rê chuột hay focus) và trên trang của pair trong Library. Sau **token cap** nút ghi số token của
+  judge mà nó trả lại, "Resume · judge +3.0M" ("Chạy tiếp · judge thêm 3.0M"): mức trần tính lại từ lúc bấm.
 - Resume **chỉ hiện khi có gì để giao**, nghĩa là hàng đợi của một bên còn một tin đòi câu trả lời. Trên thực tế đó là
   sau token cap. Sau "no new points" hay "both agree" hàng đợi trống, nên chạy tiếp cũng không ai làm gì: thẻ ghi
   "Message to go on" ("Nhắn để bàn tiếp"), vì một tin của bạn đã chạy tiếp pair rồi. Resume cũng không hiện khi không
@@ -190,16 +199,53 @@ máy này.
   nhìn vào rồi gửi, và đường `@judge` gọi judge ngay và chạy tiếp pair. Từ cây Agent hay Library, nút mở cuộc trò
   chuyện của pair trên màn Agent trước, rồi làm như vậy.
 
-**Chạy tiếp:** tin của bạn chạy tiếp mọi kiểu dừng, cũng như Resume và Judge again. Một câu trả lời mới của working agent
-chạy tiếp mọi kiểu dừng **trừ token cap**: sau mức trần, một câu trả lời của working agent sẽ vượt trần ngay lập tức, và
-tiêu thêm là quyết định của bạn. Chạy tiếp sau token cap thì mức trần tính lại từ lúc đó.
+**Chạy tiếp:** tin của bạn trong cuộc trò chuyện chạy tiếp mọi kiểu dừng, cũng như Resume và Judge again. Một lượt mới của
+working agent thì **không** chạy tiếp pair, ở kiểu dừng nào cũng vậy (token cap cũng thế): nó hoặc là câu trả lời cho một
+tin đã gửi (được giữ), hoặc kết thúc vòng. Chạy tiếp sau token cap thì mức trần tính lại từ lúc đó.
 
-Vì vậy, sau một lần dừng ở token cap, các lượt bạn bắt đầu trong Chat của working agent không được chuyển cho judge cho
-tới khi bạn chạy tiếp (Resume, Judge again hay một tin của bạn): chúng ở lại trong Chat của agent, không vào cuộc trò
-chuyện của pair và không chất đống trong hàng đợi của judge. Ngoại lệ là câu trả lời của working agent cho một tin mà nó
-đang làm dở khi pair dừng (ví dụ phần sửa judge vừa gửi): câu trả lời đó vẫn được ghi vào cuộc trò chuyện của pair và xếp
-hàng cho judge, nhưng không chạy tiếp pair; judge đọc nó khi bạn chạy tiếp. Ở các kiểu dừng khác, một lượt mới của
-working agent vẫn được ghi lại và chạy tiếp pair, và nó không bao giờ hiện dưới câu hỏi mà agent đó đã trả lời rồi.
+## Một vòng kết thúc thế nào
+
+Bạn dùng pair như **một vòng soát** trên working agent: nhờ judge chấm câu trả lời cuối của nó, hai bên qua lại cho tới
+khi judge hết điểm mới, rồi bạn quay lại làm tiếp ở chính Chat của working agent. Vòng kết thúc khi bạn quay lại working
+agent, không phải khi bạn bấm gì ở pair.
+
+**Khi pair đang dừng** (no new points, both agree, token cap hay judges gone), xét **lượt mới của working agent**:
+
+- Lượt đó **không trả lời tin nào của pair** (một tin bạn gõ trong Chat hay terminal của agent, `wsh agents send`,
+  Sidecar, đều tính) thì **vòng kết thúc**. Pair thành `ended` và sang Library với dòng "Round ended: you went back to the
+  working agent". Lượt đó không được ghi vào cuộc trò chuyện của pair và không xếp hàng cho judge; judge không được gọi
+  nữa. Lệnh nặng đang bị giữ được gỡ như khi Unpair: working agent nhận một dòng nêu tên lệnh và nói nó chạy được ngay.
+- Lượt đó là **câu trả lời cho một tin mà judge đã gửi trước khi pair dừng** (ví dụ phần sửa judge vừa gửi, working agent
+  đang làm dở) thì **không** kết thúc vòng: nó vẫn được ghi vào cuộc trò chuyện và xếp hàng cho judge, pair vẫn dừng,
+  judge đọc nó khi bạn chạy tiếp. Trả lời của judge đứng sau một lần dừng "no new points" hay "both agree" thì chưa bao
+  giờ được gửi đi, nên lượt kế tiếp của working agent không phải là câu trả lời cho chúng.
+- Một lệnh không tạo câu trả lời nào của working agent (`/compact`, `! cmd`, `/btw`) không kết thúc vòng.
+
+**Khi pair đang chuyển tin**, mọi lượt của working agent vẫn thuộc về vòng như trước: bạn có thể thêm judge ngay lúc
+nghi ngờ một câu trả lời, và cuộc qua lại chạy như thường.
+
+Muốn đi tiếp trong vòng thì viết trong cuộc trò chuyện của pair, bấm Resume hay bấm Judge again, trước khi quay lại
+working agent.
+
+### Judge nghỉ giữa các vòng
+
+Một judge mà arcterm **mở cho việc này** (tab "Judge: <working agent>" do **Open a new judge** tạo, hay một judge đã được
+**Wake**) được cho **ngủ** khi vòng kết thúc: tiến trình dừng, session được giữ, và nó rời cây Agent (nằm ẩn dưới working
+agent của nó, miễn là working agent còn trên danh sách). Lần ngủ này không nén (compact) trước, để judge giữ nguyên những
+gì nó đã biết cho vòng sau, và chạy dù cài đặt tự ngủ đang tắt, vì nó thuộc về vòng.
+
+- Judge đang bận (đang làm hay đang hỏi bạn) thì vòng vẫn kết thúc ngay, và judge ngủ ở lần nó rảnh kế tiếp. Một judge
+  đang hỏi bạn ở lại trong cây cho tới khi bạn trả lời và nó rảnh.
+- Judge có việc chạy nền thì không ngủ được: nó ở lại cây như một agent bình thường, và lý do được ghi vào log.
+- Một agent bạn **chọn từ danh sách agent đang chạy** làm judge không bị cho ngủ: sau vòng nó về cây như agent bình
+  thường, như sau Unpair.
+- Nếu có gì đánh thức judge đang ngủ (một tin gửi tới, Sidecar), nó hiện lại như agent bình thường.
+- Đóng tab của working agent thì các judge đang ngủ của nó đóng theo, nên không còn judge ẩn nào bị bỏ lại. Nếu tab của
+  working agent đã mất, judge ở lại cây như agent bình thường để bạn vẫn với tới nó.
+- Khởi động lại arcterm giữa lúc một judge bận thì lần ngủ chờ đó mất; luật tự ngủ khi rảnh lâu lo cho judge ấy.
+
+**Vòng sau:** mục đầu của Add judge trên working agent đó là **Wake <tên>**: đánh thức judge đã nghỉ và ghép một pair mới
+với nó. Pair mới ghi judge ấy là judge do arcterm mở, nên nó lại nghỉ sau vòng này.
 
 ## Giữ lệnh nặng và Run now
 
@@ -225,6 +271,7 @@ Muốn ghép đôi mà không giữ lệnh thì bỏ tick ô "Hold heavy command
 **Unpair** (ở thanh trên cùng của cuộc trò chuyện) kết thúc pair và gỡ việc giữ lệnh. Pair rời khỏi danh sách; tệp của nó
 vẫn còn với trạng thái `ended`. Một lệnh đang bị giữ mà bạn chưa cho qua sẽ được chạy: working agent nhận một dòng nêu
 tên lệnh và nói nó chạy được ngay. Sau Unpair, hai agent là hai agent bình thường; ghép lại thì bắt đầu một pair mới.
+Unpair không cho judge ngủ: chỉ việc kết thúc một vòng (quay lại working agent sau khi pair dừng) làm vậy.
 
 ## Pair sống ở đâu
 

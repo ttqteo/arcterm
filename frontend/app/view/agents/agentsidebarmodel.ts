@@ -912,9 +912,6 @@ export function treeNavIds(rows: ProjectTreeRow[]): string[] {
         } else if (r.kind === "split") {
             // a board cell is no focus target
             ids.push(...r.cells.flatMap((c) => (isBoardSplitCell(c) ? [] : [c.id])));
-        } else if (r.kind === "pair" && !r.open) {
-            // folded, a pair's row stands for its working agent (open, that agent's own row follows it)
-            ids.push(r.worker.id);
         } else if (
             (r.kind === "parent" ||
                 r.kind === "lead" ||

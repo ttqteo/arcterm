@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -41,6 +42,7 @@ type fakePairLink struct {
 	tokens  map[string]int64 // what each tab spent since the cap started; a tab with none spent 0
 	sent    []agentsDelivery // blockId holds the tab the prompt went to
 	reads   []string         // the tabs whose last answer was read
+	slept   []string         // the tabs the pair put to sleep, in order
 }
 
 type fakePairAnswer struct {
@@ -95,6 +97,24 @@ func (l *fakePairLink) Agent(_ context.Context, tab string) (agentpair.AgentFact
 }
 
 func (l *fakePairLink) RecentTexts(context.Context, string, int) ([]string, error) { return nil, nil }
+
+// Sleep puts an idle agent to sleep and refuses any other, as the roster's sleep does.
+func (l *fakePairLink) Sleep(_ context.Context, tab string) error {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if s := l.states[tab]; s != agentpair.LinkIdle {
+		return fmt.Errorf("agent %s is not idle (%q); only an idle agent can sleep", tab, s)
+	}
+	l.states[tab] = agentpair.LinkSleeping
+	l.slept = append(l.slept, tab)
+	return nil
+}
+
+func (l *fakePairLink) sleeps() []string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return append([]string(nil), l.slept...)
+}
 
 func (l *fakePairLink) answer(tab, text string, ts int64) {
 	l.mu.Lock()
@@ -336,9 +356,10 @@ func TestPairHandlersResume(t *testing.T) {
 		t.Fatalf("Resume of a relaying pair = %v, want a refusal that says it is not stopped", err)
 	}
 
-	// the judge is at work, so the worker's next reply waits in its queue; the worker is over the cap when it ends the turn
+	// the judge is at work, so the worker's next reply waits in its queue; the judge is over the cap when the worker ends the
+	// turn (the cap counts the judge's tokens only)
 	w.link.setState(pairJudgeTab, agentpair.LinkWorking)
-	w.link.setTokens(pairWorkerTab, agentpair.DefaultTokenCap+1)
+	w.link.setTokens(pairJudgeTab, agentpair.DefaultTokenCap+1)
 	w.link.answer(pairWorkerTab, "Held reply.\n```arc-pair\nO1 lock the threshold first\n```", 2000)
 	getPairManager().TurnEnded(ctx, pairWorkerTab)
 	stopped := w.view(view.Id)
@@ -348,7 +369,7 @@ func TestPairHandlersResume(t *testing.T) {
 	sentBefore := len(w.link.deliveries())
 
 	w.link.setState(pairJudgeTab, agentpair.LinkIdle)
-	w.link.setTokens(pairWorkerTab, 0)
+	w.link.setTokens(pairJudgeTab, 0)
 	if err := resume(view.Id); err != nil {
 		t.Fatalf("Resume of a pair stopped at the token cap: %v", err)
 	}
@@ -383,6 +404,84 @@ func TestPairHandlersResume(t *testing.T) {
 	}
 	if err := resume(view.Id); !errors.Is(err, agentpair.ErrNoPair) {
 		t.Fatalf("Resume of an ended pair = %v, want ErrNoPair", err)
+	}
+}
+
+// the live list carries the judges that rest (launched ones whose newest pair ended); the history read leaves them out
+func TestPairListCarriesTheRestingJudges(t *testing.T) {
+	ctx := context.Background()
+	ws := &WshServer{}
+	w := newPairWorld(t)
+
+	w.link.answer(pairWorkerTab, pairWorkerReply, 1000)
+	view, err := ws.PairStartCommand(ctx, wshrpc.CommandPairStartData{WorkerTab: pairWorkerTab, JudgeTab: pairJudgeTab, Launched: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if list, err := ws.PairListCommand(ctx); err != nil || len(list.Resting) != 0 || len(list.Pairs) != 1 {
+		t.Fatalf("list = %+v, %v: want the live pair and nobody resting", list, err)
+	}
+	if err := ws.PairUnpairCommand(ctx, wshrpc.CommandPairGetData{PairId: view.Id}); err != nil {
+		t.Fatal(err)
+	}
+	list, err := ws.PairListCommand(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []wshrpc.PairResting{{Tab: pairJudgeTab, Name: "judge", WorkerTab: pairWorkerTab, PairId: view.Id}}
+	if len(list.Pairs) != 0 || !reflect.DeepEqual(list.Resting, want) {
+		t.Fatalf("list = %+v, want no pair and %+v resting", list, want)
+	}
+	history, err := ws.PairHistoryCommand(ctx, wshrpc.CommandPairHistoryData{})
+	if err != nil || len(history.Pairs) != 1 || len(history.Resting) != 0 {
+		t.Fatalf("history = %+v, %v: want the ended pair, and the resting list left to the live read", history, err)
+	}
+}
+
+// a launched judge that was working when the round ended is in no pair any more, and its later idle still reaches the
+// manager and puts it to sleep, once
+func TestPairStatusHookSleepsAWorkingLaunchedJudgeAtItsNextIdle(t *testing.T) {
+	ctx := context.Background()
+	w := newPairWorld(t)
+	report := func(tab, state string) {
+		notePairStatus(statusOf(tabORef(tab), state))
+		pairWork.Wait()
+	}
+
+	w.link.answer(pairWorkerTab, pairWorkerReply, 1000)
+	view, err := (&WshServer{}).PairStartCommand(ctx, wshrpc.CommandPairStartData{WorkerTab: pairWorkerTab, JudgeTab: pairJudgeTab, Launched: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	w.link.answer(pairJudgeTab, "> Plan\nNothing to add.\n```arc-judge\nno new points\n```", 2000)
+	report(pairJudgeTab, baseds.AgentState_Idle)
+	if stopped := w.view(view.Id); stopped.State != agentpair.StateStopped || stopped.StopReason != agentpair.StopNoNewPoints {
+		t.Fatalf("state %s / %s, want the pair stopped at no new points", stopped.State, stopped.StopReason)
+	}
+
+	// the judge is working again (a turn of its own), and the person goes back to the working agent
+	w.link.setState(pairJudgeTab, agentpair.LinkWorking)
+	w.link.answer(pairWorkerTab, "The person asked me for something else.", 5000)
+	report(pairWorkerTab, baseds.AgentState_Idle)
+	if ended := w.view(view.Id); ended.State != agentpair.StateEnded {
+		t.Fatalf("state %s, want the round ended", ended.State)
+	}
+	if got := w.link.sleeps(); len(got) != 0 {
+		t.Fatalf("slept %v at the round's end, while the judge was working", got)
+	}
+	if getPairManager().Paired(pairJudgeTab) || !getPairManager().Watches(pairJudgeTab) {
+		t.Fatal("the judge is in a pair, or its next idle is not the manager's")
+	}
+
+	w.link.setState(pairJudgeTab, agentpair.LinkIdle)
+	report(pairJudgeTab, baseds.AgentState_Idle)
+	if got := w.link.sleeps(); !reflect.DeepEqual(got, []string{pairJudgeTab}) {
+		t.Fatalf("slept %v at its next idle, want the judge once", got)
+	}
+	w.link.setState(pairJudgeTab, agentpair.LinkIdle)
+	report(pairJudgeTab, baseds.AgentState_Idle)
+	if got := w.link.sleeps(); len(got) != 1 {
+		t.Fatalf("slept %v: the judge was put to sleep again at a later idle", got)
 	}
 }
 
@@ -696,6 +795,7 @@ func TestPairLinkTabOffTheRoster(t *testing.T) {
 	_, checks["Tokens"] = link.Tokens(ctx, agentsTabA, 0)
 	_, checks["Agent"] = link.Agent(ctx, agentsTabA)
 	_, checks["RecentTexts"] = link.RecentTexts(ctx, agentsTabA, 3)
+	checks["Sleep"] = link.Sleep(ctx, agentsTabA)
 	for name, err := range checks {
 		if !errors.Is(err, errNoSeat) {
 			t.Errorf("%s on a tab off the roster = %v, want errNoSeat", name, err)
@@ -703,6 +803,61 @@ func TestPairLinkTabOffTheRoster(t *testing.T) {
 	}
 	if len(*sent) != 0 {
 		t.Errorf("a prompt reached a tab that is not on the roster: %+v", *sent)
+	}
+}
+
+// the pair's Sleep is a person's Sleep without the compaction and without the auto-sleep setting: an idle agent sleeps at
+// once, an agent that runs background work does not (an error that names the work, never a nil that reads as a sleep), and
+// the refusals of a person's Sleep apply
+func TestPairLinkSleep(t *testing.T) {
+	ctx := context.Background()
+	link := livePairLink{}
+
+	t.Run("an idle agent sleeps", func(t *testing.T) {
+		w := newSleepWorld(t, claudeMeta())
+		scriptAgents(t, &agentRosterFacts{Tabs: []agentTabFacts{idleClaude(writeTranscript(t, "abc"))}})
+		if err := link.Sleep(ctx, agentsTabA); err != nil {
+			t.Fatalf("Sleep = %v, want the agent slept", err)
+		}
+		if got := w.eventLog(); !slices.Equal(got, []string{"meta", "destroy"}) {
+			t.Fatalf("events = %v, want the meta write and then the destroy", got)
+		}
+		if w.metaValue(waveobj.MetaKey_AgentSleeping) == nil {
+			t.Error("agent:sleeping was not written")
+		}
+	})
+
+	t.Run("background work stops it", func(t *testing.T) {
+		w := newSleepWorld(t, claudeMeta())
+		scriptAgents(t, &agentRosterFacts{Tabs: []agentTabFacts{idleClaude(writeTranscript(t, "abc", backgroundTaskLine))}})
+		err := link.Sleep(ctx, agentsTabA)
+		if err == nil || !strings.Contains(err.Error(), "dev server") || !strings.Contains(err.Error(), "not put to sleep") {
+			t.Fatalf("Sleep = %v, want an error that names the background work and says nothing slept", err)
+		}
+		if got := w.eventLog(); len(got) != 0 {
+			t.Fatalf("events = %v, want nothing slept", got)
+		}
+	})
+
+	for _, c := range []struct {
+		name string
+		tf   agentTabFacts
+		want string
+	}{
+		{"a working agent", agentFacts(agentsTabA, "design", agentsBlockA, "claude", baseds.AgentState_Working), "not idle"},
+		{"an agent that asks the person", agentFacts(agentsTabA, "design", agentsBlockA, "claude", baseds.AgentState_Asking), "not idle"},
+		{"an agent that is asleep", sleepingClaude(time.Now()), "already asleep"},
+	} {
+		t.Run("refuses "+c.name, func(t *testing.T) {
+			w := newSleepWorld(t, claudeMeta())
+			scriptAgents(t, &agentRosterFacts{Tabs: []agentTabFacts{c.tf}})
+			if err := link.Sleep(ctx, agentsTabA); err == nil || !strings.Contains(err.Error(), c.want) {
+				t.Fatalf("Sleep = %v, want a refusal that says %q", err, c.want)
+			}
+			if got := w.eventLog(); len(got) != 0 {
+				t.Fatalf("events = %v, want nothing touched", got)
+			}
+		})
 	}
 }
 

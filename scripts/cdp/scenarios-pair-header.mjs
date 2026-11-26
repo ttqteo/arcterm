@@ -3,11 +3,21 @@
 // No agent runs and wavesrv's pair commands are never called: the roster is pair-fixtures.mjs's, set into the page's dev
 // mock roster; the pairs are its views, set into the page's dev mock pairs; the seven RpcApi.Pair*Command methods are the
 // fixtures' recording stubs. Open a new judge (a real launch of a claude tab) is not run: pairlaunch.test.ts covers its
-// order and its gate over mocks; here a live agent is picked, which is PairStart and the conversation.
+// order and its gate over mocks; here a live agent is picked, which is PairStart and the conversation. Waking the resting
+// judge (a launched judge asleep after its round, seeded with seedResting) is the menu's first entry: wake-judge.
 // kit is scenarios.mjs's RT_KIT (polishWaitFor, polishNap).
 
 import { agentPage, focusAgent, restoreRoster, setRoster } from "./agent-page-fixtures.mjs";
-import { PAIR, pairRoster, pairRpcCalls, pairView, restorePairRpc, seedPair, stubPairRpc } from "./pair-fixtures.mjs";
+import {
+    PAIR,
+    pairRoster,
+    pairRpcCalls,
+    pairView,
+    restorePairRpc,
+    seedPair,
+    seedResting,
+    stubPairRpc,
+} from "./pair-fixtures.mjs";
 
 const NAME = "pair-header";
 const WAIT_MS = 8_000;
@@ -52,8 +62,13 @@ const readMenu = `(() => {
     if (!m) return null;
     const flat = (el) => (el?.innerText ?? "").replace(/\\s+/g, " ").trim();
     const r = m.getBoundingClientRect();
+    const wake = m.querySelector("[data-pair-wake-judge]");
     return {
         newJudge: flat(m.querySelector("[data-pair-new-judge]")),
+        // the resting judge's entry: its tab, its words, whether it is the menu's first item and holds the opening focus
+        wake: wake ? { tab: wake.getAttribute("data-pair-wake-judge"), text: flat(wake) } : null,
+        wakeFirst: m.querySelector("[role=menuitem]")?.hasAttribute("data-pair-wake-judge") === true,
+        wakeFocused: document.activeElement?.hasAttribute("data-pair-wake-judge") === true,
         section: flat([...m.children].find((c) => c.textContent.startsWith("Or pick"))),
         choices: [...m.querySelectorAll("[data-pair-judge-choice]")].map((b) => ({ id: b.getAttribute("data-pair-judge-choice"), text: flat(b) })),
         empty: !!m.querySelector("[data-pair-no-choices]"),
@@ -351,13 +366,71 @@ export default function (kit) {
                     rec(
                         "pick-live-judge: picking a live agent calls PairStart with the worker and that agent (heavy commands held, tokencap 0 for the default, not briefed), opens the conversation (the pair centre mode on that pair) and closes the menu",
                         calls.length === 1 &&
-                            same(calls[0], { workertab: PAIR.worker, judgetab: PAIR.other, holdheavy: true, tokencap: 0, note: "", briefed: false }) &&
+                            same(calls[0], { workertab: PAIR.worker, judgetab: PAIR.other, holdheavy: true, tokencap: 0, note: "", briefed: false, launched: false }) &&
                             center.modes.includes("pair") &&
                             center.pair === PAIR.id,
                         { calls, center }
                     );
                     await leaveCenter(h);
                     await stubPairRpc(h);
+                });
+
+                await run("wake-judge", async () => {
+                    // A launched judge whose round ended rests: asleep, hidden under its worker's row. Its worker's Add judge
+                    // menu offers it first, as Wake, ahead of Open a new judge; it is not listed again among the live agents.
+                    // Pressing it is PairStart with launched (so it rests again after this round) and not briefed (the send of
+                    // the brief wakes it), and the conversation opens. The pair exists once PairStart answers (pairOnStart).
+                    const now = Date.now();
+                    const judgeName = "Judge: Plan oracle-tightening";
+                    const sleepingJudge = (a) =>
+                        a.id === PAIR.judge ? { ...a, state: "idle", sleeping: { since: now - 60_000, freedBytes: 250_000_000 } } : a;
+                    await seedPair(h, []);
+                    await leaveCenter(h);
+                    await setRoster(h, pairRoster(ctx.now).map(sleepingJudge));
+                    await seedResting(h, [{ tab: PAIR.judge, name: judgeName, workertab: PAIR.worker, pairid: "pair-fx-ended" }]);
+                    const before = (await pairRpcCalls(h, "PairStartCommand")).length;
+                    await show(h, PAIR.worker);
+                    await waitHeader(h, ctx.worker, `!${HEADER}.querySelector("[data-pair-open]") && !!${HEADER}.querySelector("[data-pair-add-judge]")`);
+                    await click(h, "[data-agent-header] [data-pair-add-judge]");
+                    await waitMenu(h);
+                    await polishNap(400);
+                    const menu = await h.ev(readMenu);
+                    await shot(h, "wake-judge");
+                    const picked = { ...view, judges: [{ tab: PAIR.judge, name: judgeName, harness: "claude" }] };
+                    await pairOnStart(h, picked);
+                    await click(h, `[data-pair-wake-judge="${PAIR.judge}"]`);
+                    await polishWaitFor(h, `!${MENU}`, WAIT_MS);
+                    const calls = (await pairRpcCalls(h, "PairStartCommand")).slice(before);
+                    const modes = [];
+                    let center;
+                    for (let i = 0; i < 12; i++) {
+                        center = await readCenter(h);
+                        modes.push(...center.modes);
+                        if (modes.includes("pair")) break;
+                        await polishNap(250);
+                    }
+                    center = { ...center, modes };
+                    rec(
+                        "wake-judge: with a resting judge asleep on the roster, the worker's Add judge menu opens on Wake <its name> (judge of your earlier rounds, keeps what it read · asleep) as its first item with the keys, then Open a new judge, and the live list does not list that judge again; pressing Wake calls PairStart once with the worker and that judge (heavy commands held, tokencap 0, not briefed, launched), opens the conversation and closes the menu",
+                        menu?.wake?.tab === PAIR.judge &&
+                            menu.wake.text === `Wake ${judgeName} judge of your earlier rounds, keeps what it read · asleep` &&
+                            menu.wakeFirst === true &&
+                            menu.wakeFocused === true &&
+                            menu.keysInMenu === true &&
+                            menu.newJudge.startsWith("Open a new judge") &&
+                            same(menu.choices, [{ id: PAIR.other, text: "Pull history and sync 9e0f1a2b · idle" }]) &&
+                            menu.inWindow === true &&
+                            calls.length === 1 &&
+                            same(calls[0], { workertab: PAIR.worker, judgetab: PAIR.judge, holdheavy: true, tokencap: 0, note: "", briefed: false, launched: true }) &&
+                            center.modes.includes("pair") &&
+                            center.pair === PAIR.id,
+                        { menu, calls, center }
+                    );
+                    await leaveCenter(h);
+                    await stubPairRpc(h);
+                    await seedResting(h, null);
+                    await seedPair(h, []);
+                    await setRoster(h, pairRoster(ctx.now));
                 });
 
                 await run("paired-button", async () => {
@@ -510,6 +583,7 @@ export default function (kit) {
                 if (ctx.sized) await attempt("restore the window size", () => h.cdp("Emulation.clearDeviceMetricsOverride", {}));
                 await attempt("put the generated pair commands back", () => restorePairRpc(h));
                 await attempt("clear the pair mocks", () => seedPair(h, null));
+                await attempt("clear the resting judges", () => seedResting(h, null));
                 await attempt("drop the pair roster", () => restoreRoster(h));
                 await attempt("put the fixture flag back", () => markFixture(h, false));
                 // the seen counts are kept in localStorage: the page's own value goes back

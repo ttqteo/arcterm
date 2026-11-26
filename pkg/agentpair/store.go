@@ -98,17 +98,14 @@ func (s store) readAll() ([]*Pair, error) {
 	return pairs, nil
 }
 
-// loadActive reads every pair file that is not ended: the pairs the manager keeps in its index.
-func (s store) loadActive() ([]*Pair, error) {
-	all, err := s.readAll()
-	if err != nil {
-		return nil, err
-	}
-	var active []*Pair
-	for _, p := range all {
-		if p.State != StateEnded {
+// split divides pairs into the ones that are not ended (the pairs the manager keeps in its index) and the ended ones.
+func split(pairs []*Pair) (active, ended []*Pair) {
+	for _, p := range pairs {
+		if p.State == StateEnded {
+			ended = append(ended, p)
+		} else {
 			active = append(active, p)
 		}
 	}
-	return active, nil
+	return active, ended
 }

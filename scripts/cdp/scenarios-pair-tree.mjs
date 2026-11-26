@@ -11,19 +11,25 @@
 // judges, Swap, the hold box, the note, the cap, Cancel and Pair; Escape and Cancel close it and give the focus back), swap
 // (the sides trade, and trade back), pair-sent (a cap out of bounds stops Pair; a refusal reads in the sheet and keeps it open;
 // Pair calls PairStartCommand with the sheet's values, closes the sheet, and opens the pair's conversation with the worker chosen),
-// pair-row (a live pair is one row where its worker was), then the row's buttons of a stopped pair (docs/superpowers/specs/
-// 2026-11-26-pair-judge-ux-design.md; pausedPairView): row-resume (Resume shows on hover on the first line, a press calls
-// PairResumeCommand once and the button leaves, the row stays and the conversation does not open), row-resume-fails (the row's
-// error text and the button's tooltip), row-judge-again (a pair stopped on no new points offers Judge again, a press opens the
-// conversation with `@judge ` in the composer), row-relaying (a relaying row has neither).
+// line-live (a relaying pair is a ⚖ line inside the worker's row: the judge's state in words and its tokens, no row of the
+// judge's own; a click on the line opens the conversation, a click elsewhere on the row the worker), line-stopped (a stopped
+// pair's line says why in the pause card's words, and its Judge again and Resume show on hover; docs/superpowers/specs/
+// 2026-11-26-pair-judge-round-design.md), line-asking (a judge that asks is the line in the warning tone, and a click opens
+// the judge's own view), round-ended (with no active pair a resting judge that sleeps has no row and the worker's row no line,
+// and a woken judge is a plain row again), then the line's buttons in detail (pausedPairView): row-resume (Resume is faded
+// out until the pointer is on the row, a press calls PairResumeCommand once and the button leaves, the line stays and the
+// conversation does not open), row-resume-fails (the line's error text and the button's tooltip), row-judge-again (a pair
+// stopped on no new points offers Judge again, a press opens the conversation with `@judge ` in the composer), row-relaying (a
+// relaying line has neither).
 //
 // DOM contract: the tree is [data-agent-tree], its agent rows [data-agent-row="<tab>"] (picked: [data-agent-picked]); the right-click
 // menu's rows [data-menu-item="<label>"]; the sheet [data-pair-sheet] (a dialog) holding [data-pair-side="worker|judge"]
 // ([data-pair-side-tab]), [data-pair-swap], [data-pair-hold], [data-pair-note], [data-pair-cap] with [data-pair-cap-hint],
-// [data-pair-error], [data-pair-cancel] and [data-pair-submit]. A pair's row is [data-pair-row="<pair id>"] ([data-pair-row-name],
-// [data-pair-row-side], [data-pair-row-fold]); on a stopped pair of this machine its floating buttons are [data-pair-row-resume] and
-// [data-pair-row-judge-again] (faded in by the row's hover or the focus inside them), and under its second line a live region
-// [aria-live] holds [data-pair-row-resume-error] after a failed Resume.
+// [data-pair-error], [data-pair-cancel] and [data-pair-submit]. The ⚖ line is [data-pair-judge-line="<pair id>"] inside the
+// working agent's row ([data-pair-judge-tone] "normal" or "warning"), holding the button that opens it [data-pair-judge-open],
+// [data-pair-judge-words], [data-pair-judge-tokens] and [data-pair-judge-new]; on a stopped pair of this machine its floating
+// buttons are [data-pair-judge-resume] and [data-pair-judge-rerun] (faded in by the row's hover or the focus inside them), and
+// under it a live region [aria-live] holds [data-pair-judge-error] after a failed Resume.
 //
 // kit is scenarios.mjs's RT_KIT.
 
@@ -37,6 +43,7 @@ import {
     RESUME_ERROR,
     restorePairRpc,
     seedPair,
+    seedResting,
     setPairResumeFails,
     stubPairRpc,
 } from "./pair-fixtures.mjs";
@@ -79,6 +86,28 @@ async function mouseOn(h, selector, { button = "left", modifiers = 0 } = {}) {
     }
     return true;
 }
+
+// a real click `dx` px in from the left edge of the first element `selector` matches, at `dy` px below its top (its vertical
+// middle when `dy` is left out): where the line's floating buttons, which cover its right end while the row is hovered, are not
+async function mouseNear(h, selector, { dx = 14, dy = null, button = "left", modifiers = 0 } = {}) {
+    const box = await h.ev(`(() => {
+        const el = document.querySelector(${JSON.stringify(selector)});
+        el?.scrollIntoView({ block: "nearest" });
+        const r = el?.getBoundingClientRect();
+        return r && r.width > 0 ? { x: Math.round(r.x + ${dx}), y: Math.round(r.y + (${dy} ?? r.height / 2)) } : null;
+    })()`);
+    if (box == null) return false;
+    const held = button === "right" ? 2 : 1;
+    await h.cdp("Input.dispatchMouseEvent", { type: "mouseMoved", x: box.x, y: box.y, modifiers });
+    for (const [type, buttons] of [["mousePressed", held], ["mouseReleased", 0]]) {
+        await h.cdp("Input.dispatchMouseEvent", { type, x: box.x, y: box.y, button, buttons, clickCount: 1, modifiers });
+    }
+    return true;
+}
+
+// a click on an agent row's name line, above the ⚖ line a paired working agent's row carries under it (a click there is the line's
+// own and would open the conversation, not select the row)
+const NAME_LINE = { dx: 60, dy: 12 };
 
 // a real pointer moved to the middle of the first element `selector` matches, with no click (a hover needs a real move); false when
 // it is not on screen
@@ -248,14 +277,14 @@ export default function (kit) {
 
     // the picks are the worker's row (plain click) and `second`'s (Ctrl+click): the worker is the first picked
     const pick = async (h, second) => {
-        await mouseOn(h, rowOf(PAIR.worker));
+        await mouseNear(h, rowOf(PAIR.worker), NAME_LINE);
         await clearPicks(h);
-        await mouseOn(h, rowOf(second), { modifiers: TOGGLE_BIT });
+        await mouseNear(h, rowOf(second), { ...NAME_LINE, modifiers: TOGGLE_BIT });
         return until(h, `${PICKED}.length === 2`);
     };
     // the picked row's menu, by a real right click; the items it lists
     const openMenu = async (h, id) => {
-        await mouseOn(h, rowOf(id), { button: "right" });
+        await mouseNear(h, rowOf(id), { ...NAME_LINE, button: "right" });
         await until(h, `${MENU_ITEMS}.length > 0`);
         return h.ev(MENU_ITEMS);
     };
@@ -327,8 +356,9 @@ export default function (kit) {
                 await shot(h, "1-menu");
                 await closeMenu(h);
 
-                await seedPair(h, [pairView(ctx.now, { judges: 1 })]); // the worker and the judge are paired
-                await pick(h, PAIR.judge);
+                // the worker is paired (its judge has no row of its own to pick: the ⚖ line speaks for it)
+                await seedPair(h, [pairView(ctx.now, { judges: 1 })]);
+                await pick(h, PAIR.other);
                 const paired = await openMenu(h, PAIR.worker);
                 await closeMenu(h);
                 await seedPair(h, []);
@@ -343,7 +373,7 @@ export default function (kit) {
                 const withThree = await openMenu(h, PAIR.worker);
                 await closeMenu(h);
                 rec(
-                    "tree-menu: with the worker and another claude agent picked, in no pair, the right-click menu has Pair: worker + judge, its label whole beside the hint \"they talk it through\" and \"the two talk it through, you get what they settled\" as its tooltip, first and right above Discuss together; with either one in a pair, with a codex agent picked or with three picked it has no Pair item",
+                    "tree-menu: with the worker and another claude agent picked, in no pair, the right-click menu has Pair: worker + judge, its label whole beside the hint \"they talk it through\" and \"the two talk it through, you get what they settled\" as its tooltip, first and right above Discuss together; with the worker in a pair, with a codex agent picked or with three picked it has no Pair item",
                     picked &&
                         sameIds(pickedIds, [PAIR.worker, PAIR.other]) &&
                         pairAt === 0 &&
@@ -519,99 +549,128 @@ export default function (kit) {
                     { badCap: badCap && { submit: badCap.submit, capInvalid: badCap.capInvalid, capHint: badCap.capHint }, goodCap: goodCap && goodCap.submit, refused: refused && { error: refused.error, submit: refused.submit, cancel: refused.cancel }, refusedRec, calls, closed, sent, focus, stillPicked }
                 );
 
-                // 5. pair-row: a pair is one row in its working agent's place, folded while another agent is chosen: its line
-                // says how each side stands, the two agents' own rows are gone. Its chevron shows them under it (worker, then
-                // judge, each saying which it is) and folds them again; a click on the row opens the conversation with the
-                // working agent chosen and the rail on Decided, the row the chosen one
+                // ---- the ⚖ line inside the working agent's row (docs/superpowers/specs/2026-11-26-pair-judge-round-design.md) ----
                 await stopRec(h);
-                const PAIR_ROW = `[data-pair-row="${PAIR.id}"]`;
-                const readPairRow = `(() => {
-                    const row = document.querySelector('${PAIR_ROW}');
+                const WORKER_ROW = rowOf(PAIR.worker);
+                const LINE = `${WORKER_ROW} [data-pair-judge-line="${PAIR.id}"]`;
+                const OPEN = `${LINE} [data-pair-judge-open]`;
+                const WORDS = `${LINE} [data-pair-judge-words]`;
+                const BTN_RESUME = `${LINE} [data-pair-judge-resume]`;
+                const BTN_AGAIN = `${LINE} [data-pair-judge-rerun]`;
+                // the line as a step reads it: its words, tokens, tone and new-message count, whether the button that opens it reads as
+                // selected and whether the working agent's row does, how many lines the tree draws, and the agent rows in the order drawn
+                // (the judge has none of its own while the line speaks for it)
+                const readLine = `(() => {
+                    const row = document.querySelector('${WORKER_ROW}');
+                    const line = row?.querySelector("[data-pair-judge-line]");
                     const flat = (el) => (el?.innerText ?? "").replace(/\\s+/g, " ").trim();
-                    const ids = [...document.querySelectorAll("[data-agent-tree] [data-pair-row], [data-agent-tree] [data-agent-row]")].map(
-                        (el) => el.getAttribute("data-pair-row") ?? el.getAttribute("data-agent-row")
-                    );
-                    return row
-                        ? {
-                              open: row.getAttribute("data-pair-row-open"),
-                              name: flat(row.querySelector("[data-pair-row-name]")),
-                              fresh: row.querySelector("[data-pair-row-new]")?.getAttribute("data-pair-row-new") ?? null,
-                              sides: [...row.querySelectorAll("[data-pair-row-side]")].map(flat),
-                              selected: row.className.includes("bg-surface-selected"),
-                              order: ids,
-                              roles: [...document.querySelectorAll("[data-agent-pair-role]")].map((el) => el.getAttribute("data-agent-pair-role")),
-                          }
-                        : null;
-                })()`;
-                await seedPair(h, [pairView(ctx.now, { judges: 1 })]);
-                await AC.focusAgent(h, PAIR.other);
-                await until(h, `document.querySelector('${PAIR_ROW}')?.getAttribute("data-pair-row-open") === "false"`);
-                await polishNap(300);
-                const folded = await h.ev(readPairRow);
-                await shot(h, "5-pair-row-folded");
-                await mouseOn(h, `${PAIR_ROW} [data-pair-row-fold]`);
-                await until(h, `!!document.querySelector('[data-agent-pair-role="judge"]')`);
-                await polishNap(400);
-                const unfolded = await h.ev(readPairRow);
-                await shot(h, "5-pair-row-open");
-                await mouseOn(h, `${PAIR_ROW} [data-pair-row-fold]`);
-                await until(h, `!document.querySelector('[data-agent-pair-role]')`);
-                const refolded = await h.ev(readPairRow);
-                await mouseOn(h, PAIR_ROW);
-                await until(h, `!!document.querySelector("[data-pair-pane]")`);
-                await polishNap(300);
-                const onRow = await h.ev(readPairRow);
-                const shown = await AC.agentPage(
-                    h,
-                    `const { centerModeAtom, pairSelAtom } = await mod("app/view/agents/agentcenter.ts");
-                    const tab = document.querySelector('aside[aria-label="Agent details"] [data-rail-tab="decided"]');
                     return {
-                        mode: globalStore.get(centerModeAtom),
-                        sel: globalStore.get(pairSelAtom),
-                        focus: globalStore.get(agentsModel().focusIdAtom),
-                        decided: tab?.getAttribute("aria-selected") ?? null,
-                    };`
-                );
-                await shot(h, "5-pair-row-opens");
-                const at = (r, id) => r?.order.indexOf(id) ?? -1;
+                        row: row != null,
+                        line: line != null,
+                        words: line ? flat(line.querySelector("[data-pair-judge-words]")) : null,
+                        tokens: line?.querySelector("[data-pair-judge-tokens]") ? flat(line.querySelector("[data-pair-judge-tokens]")) : null,
+                        fresh: line?.querySelector("[data-pair-judge-new]")?.getAttribute("data-pair-judge-new") ?? null,
+                        tone: line?.getAttribute("data-pair-judge-tone") ?? null,
+                        selected: line?.querySelector("[data-pair-judge-open]")?.className.includes("bg-surface-selected") ?? null,
+                        rowSelected: row?.className.includes("bg-surface-selected") ?? null,
+                        lines: document.querySelectorAll("[data-agent-tree] [data-pair-judge-line]").length,
+                        order: [...document.querySelectorAll("[data-agent-tree] [data-agent-row]")].map((el) => el.getAttribute("data-agent-row")),
+                    };
+                })()`;
+                // the centre, the agent chosen and whether the rail is on Decided, as the conversation's opening leaves them
+                const readCentre = () =>
+                    AC.agentPage(
+                        h,
+                        `const { centerModeAtom, pairSelAtom } = await mod("app/view/agents/agentcenter.ts");
+                        const tab = document.querySelector('aside[aria-label="Agent details"] [data-rail-tab="decided"]');
+                        return {
+                            mode: globalStore.get(centerModeAtom),
+                            sel: globalStore.get(pairSelAtom),
+                            focus: globalStore.get(agentsModel().focusIdAtom),
+                            decided: tab?.getAttribute("aria-selected") ?? null,
+                        };`
+                    );
+                const centreNow = () => readCentre().then(({ mode, sel }) => ({ mode, sel }));
+                // what the pause card's words offer a view, worked out in the page by the one function that words them (pairpause.ts), so
+                // no label is written here to drift from the app's
+                const offered = (view) =>
+                    AC.agentPage(
+                        h,
+                        `const { pauseActions } = await mod("app/view/agents/pairpause.ts");
+                        return pauseActions(${JSON.stringify(view)}, { local: true });`
+                    );
+                const forgetSeen = () =>
+                    AC.agentPage(
+                        h,
+                        `const { pairSeenAtom } = await mod("app/view/agents/pairstore.ts");
+                        globalStore.set(pairSeenAtom(${JSON.stringify(PAIR.id)}), 0);
+                        return true;`
+                    );
+                // the roster with the judge changed: asking you (its ask card is the page's), or asleep, or as it was
+                const withJudge = (change) => ctx.roster.map((a) => (a.id === PAIR.judge ? { ...a, ...change } : a));
+
+                // 5. line-live: a relaying pair is a ⚖ line inside its working agent's row, under the name: "judge reviewing" with the
+                // judges' tokens (1.2M) and the 5 messages not read yet; the judge has no row of its own. A click on the line opens the
+                // conversation (the centre on the pair, the working agent chosen, the rail on Decided) and the line reads selected, with
+                // no new count; a click on the row's name line opens the working agent's terminal again
+                await seedPair(h, [pairView(ctx.now, { judges: 1 })]);
+                await forgetSeen();
+                await AC.focusAgent(h, PAIR.other);
+                const there5 = await until(h, `!!document.querySelector('${LINE}')`);
+                await polishNap(500); // the line has grown in
+                const live5 = await h.ev(readLine);
+                await shot(h, "5-line-live");
+                await startRec(h);
+                await mouseNear(h, OPEN);
+                const opened5 = await until(h, `!!document.querySelector("[data-pair-pane]")`);
+                await polishNap(300);
+                const shown5 = await readCentre();
+                const onLine5 = await h.ev(readLine);
+                await shot(h, "5-line-live-opened");
+                await mouseNear(h, WORKER_ROW, NAME_LINE);
+                const back5 = await until(h, `!document.querySelector("[data-pair-pane]")`);
+                const centre5 = await readCentre();
                 rec(
-                    "pair-row: with another agent chosen the pair is one folded row where its working agent was, named after it, its line saying \"worker idle\" and \"judge working\", neither agent's own row in the tree; its chevron lists the worker then the judge under it, each saying which it is, and folds them away again; a click on the row opens the conversation with the working agent chosen, the rail on Decided and the row selected",
-                    folded?.open === "false" &&
-                        folded.name === "Plan oracle-tightening" &&
-                        JSON.stringify(folded.sides) === JSON.stringify(["worker idle", "judge working"]) &&
-                        at(folded, PAIR.worker) === -1 &&
-                        at(folded, PAIR.judge) === -1 &&
-                        unfolded?.open === "true" &&
-                        at(unfolded, PAIR.worker) === at(unfolded, PAIR.id) + 1 &&
-                        at(unfolded, PAIR.judge) === at(unfolded, PAIR.id) + 2 &&
-                        JSON.stringify(unfolded.roles) === JSON.stringify(["worker", "judge"]) &&
-                        refolded?.open === "false" &&
-                        refolded.roles.length === 0 &&
-                        shown?.mode === "pair" &&
-                        shown.sel === PAIR.id &&
-                        shown.focus === PAIR.worker &&
-                        shown.decided === "true" &&
-                        onRow?.selected === true,
-                    { folded, unfolded, refolded, onRow, shown }
+                    "line-live: a relaying pair is one [data-pair-judge-line] inside its working agent's row, saying \"judge reviewing\" with the judges' 1.2M tokens and 5 new messages in the normal tone, and the judge has no agent row of its own; a click on the line opens the conversation (centre on the pair, the working agent chosen, the rail on Decided) and the line reads selected with no new count, and a click on the row's name line opens the working agent's terminal again",
+                    there5 &&
+                        live5.row &&
+                        live5.line &&
+                        live5.lines === 1 &&
+                        live5.words === "judge reviewing" &&
+                        live5.tokens === "1.2M" &&
+                        live5.fresh === "5" &&
+                        live5.tone === "normal" &&
+                        live5.selected === false &&
+                        live5.order.includes(PAIR.worker) &&
+                        !live5.order.includes(PAIR.judge) &&
+                        opened5 &&
+                        shown5.mode === "pair" &&
+                        shown5.sel === PAIR.id &&
+                        shown5.focus === PAIR.worker &&
+                        shown5.decided === "true" &&
+                        onLine5.selected === true &&
+                        onLine5.fresh === null &&
+                        back5 &&
+                        centre5.mode === "terminal" &&
+                        centre5.focus === PAIR.worker,
+                    { there5, live5, shown5, onLine5, back5, centre5 }
                 );
 
-                // ---- the buttons on the row of a stopped pair (the pair of pair-fixtures, stopped by pausedPairView) ----
-                const BTN_RESUME = `${PAIR_ROW} [data-pair-row-resume]`;
-                const BTN_AGAIN = `${PAIR_ROW} [data-pair-row-judge-again]`;
-                const RESUME_LABEL = "Resume · 3.0M more";
-                // the row's buttons as a step reads them: each one's words, state, tooltip and name, whether its floating box is faded
-                // in and takes the pointer, and whether it sits on the row's first line (level with the name); the live region, and the
-                // error text with the region that holds it. The tooltip is read from `title` or, while the pointer is on the button, from
-                // `data-arc-title`: TitleTipHost (titletiphost.tsx) lifts a hovered element's `title` into that attribute while its tip
-                // shows, so `title` alone reads null under the pointer, though the words are the app's
+                // the buttons on the line of a stopped pair (the pair of pair-fixtures, stopped by pausedPairView)
+                const resumeCalls = async () => (await pairRpcCalls(h, "PairResumeCommand")).length;
+                // the line's buttons as a step reads them: each one's words, state, tooltip and name, whether its floating box is faded
+                // in and takes the pointer, and whether it sits level with the line's words; the live region, and the error text with the
+                // region that holds it. The tooltip is read from `title` or, while the pointer is on the button, from `data-arc-title`:
+                // TitleTipHost (titletiphost.tsx) lifts a hovered element's `title` into that attribute while its tip shows, so `title`
+                // alone reads null under the pointer, though the words are the app's
                 const readActions = (h2) =>
                     h2.ev(`(() => {
-                        const row = document.querySelector('${PAIR_ROW}');
-                        if (!row) return null;
+                        const line = document.querySelector('${LINE}');
+                        if (!line) return null;
                         const flat = (el) => (el?.textContent ?? "").replace(/\\s+/g, " ").trim();
-                        const name = row.querySelector("[data-pair-row-name]").getBoundingClientRect();
+                        const words = line.querySelector("[data-pair-judge-words]").getBoundingClientRect();
                         const btn = (sel) => {
-                            const b = row.querySelector(sel);
+                            const b = line.querySelector(sel);
                             if (!b) return null;
                             const box = getComputedStyle(b.parentElement);
                             const r = b.getBoundingClientRect();
@@ -623,144 +682,287 @@ export default function (kit) {
                                 label: b.getAttribute("aria-label"),
                                 opacity: box.opacity,
                                 events: box.pointerEvents,
-                                firstLine: Math.abs((r.top + r.bottom) / 2 - (name.top + name.bottom) / 2) <= 6,
+                                onLine: Math.abs((r.top + r.bottom) / 2 - (words.top + words.bottom) / 2) <= 6,
                             };
                         };
-                        const err = row.querySelector("[data-pair-row-resume-error]");
+                        const err = line.querySelector("[data-pair-judge-error]");
                         return {
-                            resume: btn("[data-pair-row-resume]"),
-                            judgeAgain: btn("[data-pair-row-judge-again]"),
-                            live: row.querySelector("[aria-live]")?.getAttribute("aria-live") ?? null,
+                            resume: btn("[data-pair-judge-resume]"),
+                            judgeAgain: btn("[data-pair-judge-rerun]"),
+                            live: line.querySelector("[aria-live]")?.getAttribute("aria-live") ?? null,
                             error: err ? { text: flat(err), inLive: err.closest("[aria-live]") != null } : null,
-                            selected: row.className.includes("bg-surface-selected"),
+                            selected: document.querySelector('${WORKER_ROW}').className.includes("bg-surface-selected"),
                         };
                     })()`);
-                const resumeCalls = async () => (await pairRpcCalls(h, "PairResumeCommand")).length;
-                const centreNow = () =>
-                    AC.agentPage(
-                        h,
-                        `const { centerModeAtom, pairSelAtom } = await mod("app/view/agents/agentcenter.ts");
-                        return { mode: globalStore.get(centerModeAtom), sel: globalStore.get(pairSelAtom) };`
-                    );
-                // a stopped pair's row, the centre on the terminal of another agent and the pointer off the tree: the pair seeded stopped
-                // for `opts`, and the row's buttons in the page (faded out until the pointer comes)
-                const showStopped = async (opts, buttonSel) => {
+                // a stopped pair's line, the centre on the terminal of another agent and the pointer off the tree: the pair seeded stopped
+                // for `opts`, and the line there once `wait` is true: its words are `wait.words`, or its button `wait.button` is drawn
+                const showStopped = async (opts, wait) => {
                     await stopRec(h);
                     await startRec(h);
-                    await seedPair(h, [pausedPairView(ctx.now, opts)]);
+                    const view = pausedPairView(ctx.now, opts);
+                    await seedPair(h, [view]);
                     await AC.focusAgent(h, PAIR.other);
-                    const there = await until(h, `!!document.querySelector('${buttonSel}')`);
+                    const there = await until(
+                        h,
+                        wait.words != null
+                            ? `document.querySelector('${WORDS}')?.innerText.trim() === ${JSON.stringify(wait.words)}`
+                            : `!!document.querySelector('${wait.button}')`
+                    );
                     await leaveTree(h);
                     await polishNap(300);
-                    return there;
+                    return { there, view };
                 };
-                // the pointer over the row's second line (the buttons float over its first line's right end), then the buttons are in
+                // the pointer over the line's words (the buttons float over the line's right end), then the buttons are in
                 const hoverRow = async (buttonSel) => {
-                    const over = await hoverOn(h, `${PAIR_ROW} [data-pair-row-side]`);
+                    const over = await hoverOn(h, WORDS);
                     await polishNap(300);
                     return over && (await until(h, `getComputedStyle(document.querySelector('${buttonSel}').parentElement).opacity === "1"`));
                 };
 
-                // 6. row-resume: a pair stopped at the token cap with something queued has Resume on its row, on the first line, faded out
-                // until the pointer comes; hovered it reads "Resume · 3.0M more" and takes the pointer. A press on it calls
-                // PairResumeCommand once for the pair, leaves the conversation closed and the row unselected (the click is the button's,
-                // not the row's), and once the flipped view draws the button is gone and the row stays
-                const there6 = await showStopped({ reason: "token-cap", canresume: true }, BTN_RESUME);
-                const idle6 = await readActions(h);
-                const hovered6 = await hoverRow(BTN_RESUME);
-                const hover6 = await readActions(h);
-                await shot(h, "6-row-resume-hover");
-                const resumeBefore = await resumeCalls();
-                await mouseOn(h, BTN_RESUME);
-                const gone6 = await until(h, `!document.querySelector('${BTN_RESUME}')`);
-                await polishNap(300);
-                const resumed6 = (await pairRpcCalls(h, "PairResumeCommand")).slice(resumeBefore);
-                const after6 = await readActions(h);
-                const rec6 = await readRec(h);
-                const centre6 = await centreNow();
-                await shot(h, "6-row-resume-after");
+                // 6. line-stopped: a stopped pair's line says why in the pause card's words (no new points, both agree, token cap, no
+                // judge left) whatever the judge's own state: the roster's judge is at work, yet the pair is stopped. With no new points
+                // the pointer on the row brings Judge again, with the words pauseActions gives; at the token cap with something queued
+                // Resume shows with the words pauseActions gives (worked out in the page), and a press records one PairResumeCommand
+                const STOP_WORDS = {
+                    "no-new-points": "judge paused: no new points",
+                    settled: "judge paused: both agree",
+                    "token-cap": "judge paused: token cap",
+                    "judges-gone": "judge paused: no judge left",
+                };
+                const stopWords = {};
+                for (const reason of Object.keys(STOP_WORDS)) {
+                    await showStopped({ reason, canresume: reason === "token-cap" }, { words: STOP_WORDS[reason] });
+                    stopWords[reason] = (await h.ev(readLine)).words;
+                }
+                const { there: there6a, view: view6a } = await showStopped({ reason: "no-new-points" }, { button: BTN_AGAIN });
+                const want6a = await offered(view6a);
+                const idle6a = await readActions(h);
+                const hovered6a = await hoverRow(BTN_AGAIN);
+                const hover6a = await readActions(h);
+                await shot(h, "6-line-stopped");
+                const { there: there6b, view: view6b } = await showStopped({ reason: "token-cap", canresume: true }, { button: BTN_RESUME });
+                const want6b = await offered(view6b);
+                const words6b = (await h.ev(readLine)).words;
+                const hovered6b = await hoverRow(BTN_RESUME);
+                const hover6b = await readActions(h);
+                const before6b = await resumeCalls();
+                await mouseNear(h, BTN_RESUME);
+                const gone6b = await until(h, `!document.querySelector('${BTN_RESUME}')`);
+                const sent6b = (await pairRpcCalls(h, "PairResumeCommand")).slice(before6b);
                 rec(
-                    "row-resume: a pair stopped at the token cap with something queued has an enabled \"Resume · 3.0M more\" button on its row's first line, faded out (opacity 0, no pointer) until the pointer is over the row and then in (opacity 1); a press records exactly one PairResumeCommand for the pair, opens nothing (the centre stays on the terminal, the row not selected), and once the flipped view draws the button is gone, the row is still there, with no error text",
-                    there6 &&
-                        idle6?.resume?.text === RESUME_LABEL &&
-                        idle6.resume.tag === "BUTTON" &&
-                        idle6.resume.disabled === false &&
-                        idle6.resume.opacity === "0" &&
-                        idle6.resume.events === "none" &&
-                        idle6.resume.firstLine === true &&
-                        idle6.judgeAgain === null &&
-                        hovered6 &&
-                        hover6?.resume?.opacity === "1" &&
-                        hover6.resume.events === "auto" &&
-                        resumed6.length === 1 &&
-                        JSON.stringify(resumed6[0]) === JSON.stringify({ pairid: PAIR.id }) &&
-                        gone6 &&
-                        after6 != null &&
-                        after6.resume === null &&
-                        after6.judgeAgain === null &&
-                        after6.error === null &&
-                        after6.selected === false &&
-                        rec6?.mode.length === 0 &&
-                        centre6.mode === "terminal" &&
-                        centre6.sel === null,
-                    { there6, idle6, hover6, resumed6, gone6, after6, rec6, centre6 }
+                    "line-stopped: a stopped pair's line reads \"judge paused: no new points\", \"…: both agree\", \"…: token cap\" and \"…: no judge left\" for each stop though the roster's judge is at work; with no new points the pointer on the row brings an enabled Judge again with the words pauseActions gives and no Resume; at the token cap with something queued it brings an enabled Resume with the words pauseActions gives, and a press records exactly one PairResumeCommand for the pair and takes the button away",
+                    JSON.stringify(stopWords) === JSON.stringify(STOP_WORDS) &&
+                        there6a &&
+                        want6a.judgeAgain != null &&
+                        want6a.resume === null &&
+                        hovered6a &&
+                        hover6a?.judgeAgain?.text === want6a.judgeAgain &&
+                        hover6a.judgeAgain.disabled === false &&
+                        hover6a.resume === null &&
+                        there6b &&
+                        want6b.resume != null &&
+                        words6b === "judge paused: token cap" &&
+                        hovered6b &&
+                        hover6b?.resume?.text === want6b.resume &&
+                        hover6b.resume.disabled === false &&
+                        sent6b.length === 1 &&
+                        JSON.stringify(sent6b[0]) === JSON.stringify({ pairid: PAIR.id }) &&
+                        gone6b,
+                    { stopWords, there6a, want6a, idle6a, hover6a, there6b, want6b, words6b, hover6b, sent6b, gone6b }
                 );
 
-                // 7. row-resume-fails: with the resume stub failing, one press records one PairResumeCommand and the row says so under its
-                // second line, in a polite live region ("Resume failed: <the server's words>"), the button's tooltip says it too, and the
+                // 7. line-asking: a judge that asks you is the line in the warning tone ("judge is asking you"), and a click on it opens
+                // the judge's own view (the judge chosen, the terminal in the centre), not the conversation
+                await stopRec(h);
+                await startRec(h);
+                await seedPair(h, [pairView(ctx.now, { judges: 1 })]);
+                await AC.setRoster(
+                    h,
+                    withJudge({
+                        state: "asking",
+                        blockedMs: 60_000,
+                        ask: {
+                            askId: "fx-pair-ask-1",
+                            oref: "block:fx-blk-pair-judge",
+                            questions: [
+                                {
+                                    header: "Threshold",
+                                    question: "Is a 50% compliance threshold fine?",
+                                    options: [{ label: "50%" }, { label: "60%" }],
+                                },
+                            ],
+                        },
+                    })
+                );
+                await AC.focusAgent(h, PAIR.other);
+                const there7 = await until(h, `document.querySelector('${LINE}')?.getAttribute("data-pair-judge-tone") === "warning"`);
+                await leaveTree(h);
+                await polishNap(400);
+                const asking7 = await h.ev(readLine);
+                await shot(h, "7-line-asking");
+                await mouseNear(h, OPEN);
+                await polishNap(500);
+                const rec7a = await readRec(h);
+                const centre7 = await readCentre();
+                rec(
+                    "line-asking: with the judge asking you the line is in the warning tone saying \"judge is asking you\", the judge still without an agent row; a click on it chooses the judge (its own view) with the terminal in the centre and never opens the conversation",
+                    there7 &&
+                        asking7.words === "judge is asking you" &&
+                        asking7.tone === "warning" &&
+                        !asking7.order.includes(PAIR.judge) &&
+                        centre7.focus === PAIR.judge &&
+                        centre7.mode === "terminal" &&
+                        centre7.sel === null &&
+                        rec7a?.mode.length === 0,
+                    { there7, asking7, centre7, rec7a }
+                );
+                await AC.setRoster(h, ctx.roster);
+
+                // 8. round-ended: with no active pair the worker's row has no line; the judge, resting (its newest pair ended) and asleep,
+                // has no row of its own while the worker is in the roster; once anything wakes it (the roster's `sleeping` cleared) it is
+                // a plain agent row again, with no line
+                await seedPair(h, [pairView(ctx.now, { judges: 1 })]);
+                await AC.focusAgent(h, PAIR.other);
+                await until(h, `!!document.querySelector('${LINE}')`);
+                const during8 = await h.ev(readLine);
+                const judgeName = ctx.roster.find((a) => a.id === PAIR.judge).name;
+                await seedResting(h, [{ tab: PAIR.judge, name: judgeName, workertab: PAIR.worker, pairid: PAIR.id }]);
+                await AC.setRoster(h, withJudge({ state: "idle", sleeping: { since: ctx.now - 60_000, freedBytes: 250 * 1024 * 1024 } }));
+                await seedPair(h, []);
+                const gone8 = await until(h, `!document.querySelector('[data-agent-tree] [data-pair-judge-line]')`);
+                await leaveTree(h);
+                await polishNap(500); // the line has folded away
+                const ended8 = await h.ev(readLine);
+                await shot(h, "8-round-ended");
+                await AC.setRoster(h, withJudge({ state: "idle" }));
+                const woken8 = await until(h, `!!document.querySelector('${rowOf(PAIR.judge)}')`);
+                await polishNap(500);
+                const after8 = await h.ev(readLine);
+                await shot(h, "8-round-ended-woken");
+                await seedResting(h, null);
+                await AC.setRoster(h, ctx.roster);
+                rec(
+                    "round-ended: while the pair is active the worker's row has the line and the judge no row; with no active pair and the judge resting and asleep the worker's row has no line, the judge has no row either and no agent row is lost but the judge's; once the judge is awake it is a plain agent row again, still with no line",
+                    during8.line === true &&
+                        !during8.order.includes(PAIR.judge) &&
+                        gone8 &&
+                        ended8.row === true &&
+                        ended8.line === false &&
+                        ended8.lines === 0 &&
+                        ended8.order.includes(PAIR.worker) &&
+                        !ended8.order.includes(PAIR.judge) &&
+                        JSON.stringify(ended8.order) === JSON.stringify(during8.order) &&
+                        woken8 &&
+                        after8.line === false &&
+                        after8.order.includes(PAIR.judge),
+                    { during8, gone8, ended8, woken8, after8 }
+                );
+
+                // 9. row-resume: a pair stopped at the token cap with something queued has Resume on its line, level with the words, faded
+                // out until the pointer comes; hovered it reads what pauseActions says (worked out in the page) and takes the pointer. A
+                // press on it calls PairResumeCommand once for the pair, leaves the conversation closed and the row unselected (the
+                // click is the button's, not the row's), and once the flipped view draws the button is gone and the line stays
+                const { there: there9, view: view9 } = await showStopped({ reason: "token-cap", canresume: true }, { button: BTN_RESUME });
+                const label9 = (await offered(view9)).resume;
+                const idle9 = await readActions(h);
+                const hovered9 = await hoverRow(BTN_RESUME);
+                const hover9 = await readActions(h);
+                await shot(h, "9-row-resume-hover");
+                const resumeBefore = await resumeCalls();
+                await mouseNear(h, BTN_RESUME);
+                const gone9 = await until(h, `!document.querySelector('${BTN_RESUME}')`);
+                await polishNap(300);
+                const resumed9 = (await pairRpcCalls(h, "PairResumeCommand")).slice(resumeBefore);
+                const after9 = await readActions(h);
+                const rec9 = await readRec(h);
+                const centre9 = await centreNow();
+                await shot(h, "9-row-resume-after");
+                rec(
+                    "row-resume: a pair stopped at the token cap with something queued has an enabled Resume button (the words pauseActions gives) on its line, level with the words, faded out (opacity 0, no pointer) until the pointer is over the row and then in (opacity 1); a press records exactly one PairResumeCommand for the pair, opens nothing (the centre stays on the terminal, the row not selected), and once the flipped view draws the button is gone, the line is still there, with no error text",
+                    there9 &&
+                        label9 != null &&
+                        idle9?.resume?.text === label9 &&
+                        idle9.resume.tag === "BUTTON" &&
+                        idle9.resume.disabled === false &&
+                        idle9.resume.opacity === "0" &&
+                        idle9.resume.events === "none" &&
+                        idle9.resume.onLine === true &&
+                        idle9.judgeAgain === null &&
+                        hovered9 &&
+                        hover9?.resume?.opacity === "1" &&
+                        hover9.resume.events === "auto" &&
+                        resumed9.length === 1 &&
+                        JSON.stringify(resumed9[0]) === JSON.stringify({ pairid: PAIR.id }) &&
+                        gone9 &&
+                        after9 != null &&
+                        after9.resume === null &&
+                        after9.judgeAgain === null &&
+                        after9.error === null &&
+                        after9.selected === false &&
+                        rec9?.mode.length === 0 &&
+                        centre9.mode === "terminal" &&
+                        centre9.sel === null,
+                    { there9, label9, idle9, hover9, resumed9, gone9, after9, rec9, centre9 }
+                );
+
+                // 10. row-resume-fails: with the resume stub failing, one press records one PairResumeCommand and the line says so under
+                // itself, in a polite live region ("Resume failed: <the server's words>"), the button's tooltip says it too, and the
                 // button stays, enabled; with the stub working a second press takes the text and the button away
-                const there7 = await showStopped({ reason: "token-cap", canresume: true }, BTN_RESUME);
+                const { there: there10, view: view10 } = await showStopped({ reason: "token-cap", canresume: true }, { button: BTN_RESUME });
+                const label10 = (await offered(view10)).resume;
                 await setPairResumeFails(h, true);
                 await hoverRow(BTN_RESUME);
                 const failBefore = await resumeCalls();
-                await mouseOn(h, BTN_RESUME);
-                await until(h, `!!document.querySelector('${PAIR_ROW} [data-pair-row-resume-error]')`);
+                await mouseNear(h, BTN_RESUME);
+                await until(h, `!!document.querySelector('${LINE} [data-pair-judge-error]')`);
                 await polishNap(500);
-                const failed7 = await readActions(h);
+                const failed10 = await readActions(h);
                 const failedCalls = (await resumeCalls()) - failBefore;
-                await shot(h, "7-row-resume-failed");
+                await shot(h, "10-row-resume-failed");
                 await setPairResumeFails(h, false);
                 await hoverRow(BTN_RESUME);
-                await mouseOn(h, BTN_RESUME);
-                const retried7 = await until(
+                await mouseNear(h, BTN_RESUME);
+                const retried10 = await until(
                     h,
-                    `!document.querySelector('${BTN_RESUME}') && !document.querySelector('${PAIR_ROW} [data-pair-row-resume-error]')`
+                    `!document.querySelector('${BTN_RESUME}') && !document.querySelector('${LINE} [data-pair-judge-error]')`
                 );
-                const rec7 = await readRec(h);
+                const rec10 = await readRec(h);
                 rec(
-                    "row-resume-fails: with the stub failing, one press records one PairResumeCommand and the row reads \"Resume failed: " + RESUME_ERROR + "\" in a polite live region while the button's tooltip carries the same words and the button stays, enabled; once the stub works a second press takes the text and the button away, and the conversation never opened",
-                    there7 &&
+                    "row-resume-fails: with the stub failing, one press records one PairResumeCommand and the line reads \"Resume failed: " + RESUME_ERROR + "\" in a polite live region while the button's tooltip carries the same words and the button stays, enabled; once the stub works a second press takes the text and the button away, and the conversation never opened",
+                    there10 &&
+                        label10 != null &&
                         failedCalls === 1 &&
-                        failed7?.live === "polite" &&
-                        failed7.error?.text === `Resume failed: ${RESUME_ERROR}` &&
-                        failed7.error.inLive === true &&
-                        failed7.resume?.text === RESUME_LABEL &&
-                        failed7.resume.disabled === false &&
-                        failed7.resume.title === `Resume failed: ${RESUME_ERROR}` &&
-                        retried7 &&
-                        rec7?.mode.length === 0,
-                    { there7, failedCalls, failed7, retried7, rec7 }
+                        failed10?.live === "polite" &&
+                        failed10.error?.text === `Resume failed: ${RESUME_ERROR}` &&
+                        failed10.error.inLive === true &&
+                        failed10.resume?.text === label10 &&
+                        failed10.resume.disabled === false &&
+                        failed10.resume.title === `Resume failed: ${RESUME_ERROR}` &&
+                        retried10 &&
+                        rec10?.mode.length === 0,
+                    { there10, label10, failedCalls, failed10, retried10, rec10 }
                 );
 
-                // 8. row-judge-again: a pair stopped on no new points has Judge again on its row (nothing is queued, so no Resume); a
+                // 11. row-judge-again: a pair stopped on no new points has Judge again on its line (nothing is queued, so no Resume); a
                 // press opens the pair's conversation under the working agent, the rail on Decided, with "@judge " in the focused
                 // composer, and sends nothing to wavesrv
-                const there8 = await showStopped({ reason: "no-new-points" }, BTN_AGAIN);
-                const idle8 = await readActions(h);
-                const hovered8 = await hoverRow(BTN_AGAIN);
-                const hover8 = await readActions(h);
-                await shot(h, "8-row-judge-again-hover");
+                const { there: there11, view: view11 } = await showStopped({ reason: "no-new-points" }, { button: BTN_AGAIN });
+                const label11 = (await offered(view11)).judgeAgain;
+                const idle11 = await readActions(h);
+                const hovered11 = await hoverRow(BTN_AGAIN);
+                const hover11 = await readActions(h);
+                await shot(h, "11-row-judge-again-hover");
                 const saidBefore = (await pairRpcCalls(h, "PairSayCommand")).length;
-                const resumeBefore8 = await resumeCalls();
+                const resumeBefore11 = await resumeCalls();
                 await startRec(h);
-                await mouseOn(h, BTN_AGAIN);
+                await mouseNear(h, BTN_AGAIN);
                 await until(h, `document.querySelector("[data-pair-pane] [data-pair-composer]")?.value === "@judge "`);
                 await polishNap(300);
-                const typed8 = await h.ev(`(() => {
+                const typed11 = await h.ev(`(() => {
                     const c = document.querySelector("[data-pair-pane] [data-pair-composer]");
                     return { value: c?.value ?? null, focused: c != null && document.activeElement === c, start: c?.selectionStart ?? null, end: c?.selectionEnd ?? null };
                 })()`);
-                const shown8 = await AC.agentPage(
+                const shown11 = await AC.agentPage(
                     h,
                     `const { centerModeAtom, pairSelAtom } = await mod("app/view/agents/agentcenter.ts");
                     const { pairDraftAtom } = await mod("app/view/agents/pairstore.ts");
@@ -773,49 +975,50 @@ export default function (kit) {
                         draft: globalStore.get(pairDraftAtom(${JSON.stringify(PAIR.id)})),
                     };`
                 );
-                const said8 = (await pairRpcCalls(h, "PairSayCommand")).length - saidBefore;
-                const resumed8 = (await resumeCalls()) - resumeBefore8;
-                await shot(h, "8-row-judge-again-opened");
+                const said11 = (await pairRpcCalls(h, "PairSayCommand")).length - saidBefore;
+                const resumed11 = (await resumeCalls()) - resumeBefore11;
+                await shot(h, "11-row-judge-again-opened");
                 rec(
-                    "row-judge-again: a pair stopped on no new points has an enabled \"Judge again\" button on its row's first line, faded out until the pointer is over the row, and no Resume; a press opens the pair's conversation with the working agent chosen and the rail on Decided, \"@judge \" in the focused composer with the caret at its end and the draft taken, and calls neither PairSayCommand nor PairResumeCommand",
-                    there8 &&
-                        idle8?.judgeAgain?.text === "Judge again" &&
-                        idle8.judgeAgain.tag === "BUTTON" &&
-                        idle8.judgeAgain.disabled === false &&
-                        idle8.judgeAgain.opacity === "0" &&
-                        idle8.judgeAgain.firstLine === true &&
-                        idle8.resume === null &&
-                        hovered8 &&
-                        hover8?.judgeAgain?.opacity === "1" &&
-                        shown8.mode === "pair" &&
-                        shown8.sel === PAIR.id &&
-                        shown8.focus === PAIR.worker &&
-                        shown8.decided === "true" &&
-                        shown8.draft === null &&
-                        typed8.value === "@judge " &&
-                        typed8.focused === true &&
-                        typed8.start === 7 &&
-                        typed8.end === 7 &&
-                        said8 === 0 &&
-                        resumed8 === 0,
-                    { there8, idle8, hover8, shown8, typed8, said8, resumed8 }
+                    "row-judge-again: a pair stopped on no new points has an enabled Judge again button (the words pauseActions gives) on its line, level with the words, faded out until the pointer is over the row, and no Resume; a press opens the pair's conversation with the working agent chosen and the rail on Decided, \"@judge \" in the focused composer with the caret at its end and the draft taken, and calls neither PairSayCommand nor PairResumeCommand",
+                    there11 &&
+                        label11 != null &&
+                        idle11?.judgeAgain?.text === label11 &&
+                        idle11.judgeAgain.tag === "BUTTON" &&
+                        idle11.judgeAgain.disabled === false &&
+                        idle11.judgeAgain.opacity === "0" &&
+                        idle11.judgeAgain.onLine === true &&
+                        idle11.resume === null &&
+                        hovered11 &&
+                        hover11?.judgeAgain?.opacity === "1" &&
+                        shown11.mode === "pair" &&
+                        shown11.sel === PAIR.id &&
+                        shown11.focus === PAIR.worker &&
+                        shown11.decided === "true" &&
+                        shown11.draft === null &&
+                        typed11.value === "@judge " &&
+                        typed11.focused === true &&
+                        typed11.start === 7 &&
+                        typed11.end === 7 &&
+                        said11 === 0 &&
+                        resumed11 === 0,
+                    { there11, label11, idle11, hover11, shown11, typed11, said11, resumed11 }
                 );
 
-                // 9. row-relaying: a relaying pair's row has neither button, even with the pointer over it
+                // 12. row-relaying: a relaying pair's line has neither button, even with the pointer over the row
                 await stopRec(h);
                 await seedPair(h, [pairView(ctx.now, { judges: 1 })]);
                 await AC.focusAgent(h, PAIR.other);
-                await until(h, `document.querySelector('${PAIR_ROW}')?.getAttribute("data-pair-row-open") === "false"`);
+                await until(h, `document.querySelector('${WORDS}')?.innerText.trim() === "judge reviewing"`);
                 await leaveTree(h);
                 await polishNap(300);
-                await hoverOn(h, `${PAIR_ROW} [data-pair-row-side]`);
+                await hoverOn(h, WORDS);
                 await polishNap(300);
-                const relaying9 = await readActions(h);
-                await shot(h, "9-row-relaying");
+                const relaying12 = await readActions(h);
+                await shot(h, "12-row-relaying");
                 rec(
-                    "row-relaying: a relaying pair's row, with the pointer over it, has no Resume, no Judge again and no error text",
-                    relaying9 != null && relaying9.resume === null && relaying9.judgeAgain === null && relaying9.error === null,
-                    { relaying9 }
+                    "row-relaying: a relaying pair's line, with the pointer over its row, has no Resume, no Judge again and no error text",
+                    relaying12 != null && relaying12.resume === null && relaying12.judgeAgain === null && relaying12.error === null,
+                    { relaying12 }
                 );
                 return steps;
             },
@@ -840,11 +1043,13 @@ export default function (kit) {
                         h,
                         `const { pairSeenAtom } = await mod("app/view/agents/pairstore.ts");
                         globalStore.set(pairSeenAtom("pair-fx-tree"), 0);
+                        globalStore.set(pairSeenAtom(${JSON.stringify(PAIR.id)}), 0);
                         return true;`
                     )
                 );
                 await attempt("drop the stubbed pair commands", () => restorePairRpc(h));
                 await attempt("drop the fixture pairs", () => seedPair(h, null));
+                await attempt("drop the fixture resting judges", () => seedResting(h, null));
                 await attempt("drop the fixture roster", () => AC.restoreRoster(h));
                 if (failures.length > 0) throw new Error(failures.join("; "));
             },

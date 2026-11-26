@@ -1866,24 +1866,50 @@ describe("treeNavIds", () => {
     it("walks agents and terminals the way the tree reads", () => {
         expect(treeNavIds(tree())).toEqual(["a", "b", "t1", "c", "t2"]);
     });
-    it("reaches a folded pair by its working agent, and an open one by its rows", () => {
-        const [a, b] = [agent("a"), agent("b")];
-        const pair = (open: boolean): ProjectTreeRow => ({
-            kind: "pair",
-            project: "waveterm",
-            pairId: "p1",
-            worker: a,
-            judges: [b],
-            open,
-        });
-        expect(treeNavIds([pair(false)])).toEqual(["a"]);
-        expect(
-            treeNavIds([
-                pair(true),
-                { kind: "parent", agent: a, project: "waveterm", nested: true, pairRole: "worker" },
-                { kind: "parent", agent: b, project: "waveterm", nested: true, pairRole: "judge" },
-            ])
-        ).toEqual(["a", "b"]);
+    it("reaches a pair's working agent by its own row and its judges not at all: they have no row of their own", () => {
+        const [a, b, c] = [agent("a"), agent("b"), agent("c")];
+        const rows: ProjectTreeRow[] = [
+            { kind: "parent", agent: a, project: "waveterm", pair: { pairId: "p1", judges: [b] } },
+            { kind: "parent", agent: c, project: "waveterm" },
+        ];
+        expect(treeNavIds(rows)).toEqual(["a", "c"]);
+    });
+    it("follows the drawn rows: neither a pair's judge nor a resting asleep one takes a digit", () => {
+        const roster = [agent("w"), agent("j"), { ...agent("z"), sleeping: { since: 1, freedBytes: 0 } }, agent("y")];
+        const rows = treeNavIds(
+            projectTree({
+                tree: buildAgentTree(
+                    roster,
+                    roster.map((x) => x.id),
+                    undefined,
+                    undefined,
+                    undefined,
+                    undefined,
+                    {
+                        list: [
+                            {
+                                id: "p1",
+                                project: "waveterm",
+                                worker: { tab: "w", name: "w", harness: "claude" },
+                                judges: [{ tab: "j", name: "j", harness: "claude" }],
+                                state: "relaying",
+                                stopreason: "",
+                                owed: false,
+                                messagecount: 0,
+                                lastts: 0,
+                                updatedts: 0,
+                            },
+                        ],
+                        resting: [{ tab: "z", name: "z", workertab: "w", pairid: "old" }],
+                    }
+                ),
+                terminals: [],
+                filter: ALL_PROJECTS,
+                collapsed: [],
+                roots: new Map(),
+            })
+        );
+        expect(rows).toEqual(["w", "y"]);
     });
     it("reaches a service by its tab id, and skips one with no tab", () => {
         const rows = projectTree({

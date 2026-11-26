@@ -119,7 +119,7 @@ func TestResumeAfterATokenCapDeliversTheKeptQueues(t *testing.T) {
 	v := r.start(wshrpc.CommandPairStartData{TokenCap: 2_000_000})
 	r.link.setState("j1", "idle")
 	r.reply("j1", "> Plan v1.\nOne finding.\n"+judgeBlock("new: a"))
-	r.link.agent("w").tokens = 1_500_000
+	r.link.agent("j1").tokens = 2_000_000
 	r.reply("w", "More.\n"+pairBlock("O1 a"))
 
 	stopped := r.view(v.Id)
@@ -172,13 +172,13 @@ func TestResumeKeepsAQueueForAnAgentAtWork(t *testing.T) {
 	r.link.give("w", workerPlan)
 	v := r.start(wshrpc.CommandPairStartData{})
 	r.link.setState("j1", "working") // the judge is mid-turn, so the worker's message waits for it
-	r.link.agent("w").tokens = 3_500_000 // this turn hits the cap: a reply after a token-cap stop is not recorded
+	r.link.agent("j1").tokens = 3_500_000 // the judge's count is over the cap by the time this turn ends
 	r.reply("w", "More.\n"+pairBlock("O1 a"))
 	if view := r.view(v.Id); view.StopReason != StopTokenCap || !view.CanResume {
 		t.Fatalf("stop %q, canresume %v: want a token cap with the judge's queue held", view.StopReason, view.CanResume)
 	}
 
-	r.link.agent("w").tokens = 0
+	r.link.agent("j1").tokens = 0
 	if err := r.m.Resume(ctx, v.Id); err != nil {
 		t.Fatalf("Resume: %v", err)
 	}

@@ -135,6 +135,13 @@ func (m *Manager) Unpair(ctx context.Context, pairId string) error {
 	}) {
 		return errNoPair(pairId)
 	}
+	return m.tellMayRun(ctx, worker, mayRun)
+}
+
+// tellMayRun is what a pair that ends says to its working agent: one message naming the held commands it may run now
+// that no judge holds them. It says nothing when none was held. Unpair and the end of a round both end the pair this
+// way.
+func (m *Manager) tellMayRun(ctx context.Context, worker string, mayRun []string) error {
 	if len(mayRun) == 0 {
 		return nil
 	}

@@ -26,12 +26,41 @@ func TestStoreSavesAndLoadsAPair(t *testing.T) {
 	if err := s.save(p); err != nil {
 		t.Fatal(err)
 	}
-	got, err := s.loadActive()
+	got, err := s.readAll()
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(got) != 1 || !reflect.DeepEqual(got[0], p) {
 		t.Fatalf("loaded %#v\nwant   %#v", got, p)
+	}
+}
+
+// a judge's launched flag, a message's withheld mark and the pair's judge-tokens flag survive a save and a read
+func TestStoreKeepsTheRoundFlags(t *testing.T) {
+	s := store{dir: t.TempDir()}
+	p := newPair("j1")
+	p.Judges[0].Launched, p.JudgeTokens = true, true
+	worker(p, "Plan.")
+	judge(p, "j1", "Nothing to add.")
+	p.Messages[1].Withheld = true
+	if err := s.save(p); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.read(p.Id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !got.Judges[0].Launched || !got.JudgeTokens || !got.Messages[1].Withheld || got.Messages[0].Withheld {
+		t.Fatalf("read launched %v, judgetokens %v, withheld %v / %v: want them as saved", got.Judges[0].Launched, got.JudgeTokens, got.Messages[0].Withheld, got.Messages[1].Withheld)
+	}
+	// a pair saved without them reads them as false
+	plain := newPair("j1")
+	plain.Id = "plain"
+	if err := s.save(plain); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := s.read("plain"); err != nil || got.Judges[0].Launched || got.JudgeTokens {
+		t.Fatalf("a pair with neither flag read as %+v, %v", got, err)
 	}
 }
 
@@ -44,13 +73,14 @@ func TestStoreOverwritesWithTheLatestState(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	got, err := s.loadActive()
+	got, err := s.readAll()
 	if err != nil || len(got) != 1 || len(got[0].Messages) != 2 {
 		t.Fatalf("loaded %#v, %v: want the one pair holding both messages", got, err)
 	}
 }
 
-func TestStoreLoadsOnlyActivePairs(t *testing.T) {
+// the index splits what readAll read into the pairs it keeps and the ended ones it only learns each tab's newest from
+func TestStoreSplitsActiveFromEnded(t *testing.T) {
 	s := store{dir: t.TempDir()}
 	relaying, stopped, ended := newPair("j1"), newPair("j1"), newPair("j1")
 	relaying.Id, stopped.Id, ended.Id = "a", "b", "c"
@@ -60,56 +90,26 @@ func TestStoreLoadsOnlyActivePairs(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	got, err := s.loadActive()
+	all, err := s.readAll()
 	if err != nil {
 		t.Fatal(err)
 	}
-	ids := map[string]bool{}
-	for _, p := range got {
-		ids[p.Id] = true
+	active, done := split(all)
+	ids := func(pairs []*Pair) map[string]bool {
+		m := map[string]bool{}
+		for _, p := range pairs {
+			m[p.Id] = true
+		}
+		return m
 	}
-	if len(got) != 2 || !ids["a"] || !ids["b"] {
-		t.Fatalf("loaded %v: want the relaying and the stopped pair, not the ended one", ids)
+	if got := ids(active); len(active) != 2 || !got["a"] || !got["b"] {
+		t.Fatalf("active %v: want the relaying and the stopped pair, not the ended one", got)
+	}
+	if got := ids(done); len(done) != 1 || !got["c"] {
+		t.Fatalf("ended %v: want the ended pair alone", got)
 	}
 	if _, err := os.Stat(filepath.Join(s.dir, "c.json")); err != nil {
 		t.Fatalf("an ended pair keeps its file: %v", err)
-	}
-}
-
-func TestStoreSkipsBrokenFilesAndOthers(t *testing.T) {
-	s := store{dir: t.TempDir()}
-	good := newPair("j1")
-	if err := s.save(good); err != nil {
-		t.Fatal(err)
-	}
-	for name, content := range map[string]string{
-		"broken.json":   "{not json",
-		"empty.json":    "{}",
-		"p1.json.tmp":   `{"id":"x","state":"relaying"}`,
-		"notes.txt":     "hello",
-		"nested.d.json": "[]",
-	} {
-		if err := os.WriteFile(filepath.Join(s.dir, name), []byte(content), 0o600); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if err := os.Mkdir(filepath.Join(s.dir, "dir.json"), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	got, err := s.loadActive()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(got) != 1 || got[0].Id != good.Id {
-		t.Fatalf("loaded %#v: want only the good pair", got)
-	}
-}
-
-func TestStoreMissingFolderIsEmpty(t *testing.T) {
-	s := store{dir: filepath.Join(t.TempDir(), "never-made")}
-	got, err := s.loadActive()
-	if err != nil || len(got) != 0 {
-		t.Fatalf("loaded %#v, %v: want nothing and no error", got, err)
 	}
 }
 
@@ -137,40 +137,6 @@ func TestStoreReadAllReadsEveryState(t *testing.T) {
 	}
 }
 
-// loadActive and readAll never disagree on what a file is: the active pairs are the not-ended ones of readAll
-func TestStoreReadAllAndLoadActiveAgree(t *testing.T) {
-	s := store{dir: t.TempDir()}
-	live, done := newPair("j1"), newPair("j1")
-	live.Id, done.Id, done.State = "live", "done", StateEnded
-	for _, p := range []*Pair{live, done} {
-		if err := s.save(p); err != nil {
-			t.Fatal(err)
-		}
-	}
-	for name, content := range map[string]string{"broken.json": "{not json", "empty.json": "{}"} {
-		if err := os.WriteFile(filepath.Join(s.dir, name), []byte(content), 0o600); err != nil {
-			t.Fatal(err)
-		}
-	}
-	all, err := s.readAll()
-	if err != nil {
-		t.Fatal(err)
-	}
-	active, err := s.loadActive()
-	if err != nil {
-		t.Fatal(err)
-	}
-	var notEnded []*Pair
-	for _, p := range all {
-		if p.State != StateEnded {
-			notEnded = append(notEnded, p)
-		}
-	}
-	if len(all) != 2 || !reflect.DeepEqual(active, notEnded) {
-		t.Fatalf("readAll %d pairs, loadActive %#v, want the not-ended of readAll %#v", len(all), active, notEnded)
-	}
-}
-
 func TestStoreReadAllSkipsBrokenFilesAndOthers(t *testing.T) {
 	s := store{dir: t.TempDir()}
 	ended := newPair("j1")
@@ -183,6 +149,8 @@ func TestStoreReadAllSkipsBrokenFilesAndOthers(t *testing.T) {
 		"empty.json":  "{}",
 		"p1.json.tmp": `{"id":"x","state":"relaying"}`,
 		"notes.txt":   "hello",
+		// a JSON file that is no pair (an array): it does not parse as one, and is skipped
+		"nested.d.json": "[]",
 	} {
 		if err := os.WriteFile(filepath.Join(s.dir, name), []byte(content), 0o600); err != nil {
 			t.Fatal(err)
@@ -238,7 +206,7 @@ func TestStoreLoadMakesTheMaps(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(s.dir, "p1.json"), []byte(`{"id":"p1","state":"relaying","worker":{"tab":"w"}}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	got, err := s.loadActive()
+	got, err := s.readAll()
 	if err != nil || len(got) != 1 {
 		t.Fatalf("loaded %#v, %v", got, err)
 	}

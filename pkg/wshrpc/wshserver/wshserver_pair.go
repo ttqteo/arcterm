@@ -71,8 +71,11 @@ func StartPairManager() {
 	}()
 }
 
+// PairListCommand is the active pairs and the judges that rest: launched ones whose newest pair has ended (the history
+// read leaves that list out).
 func (ws *WshServer) PairListCommand(ctx context.Context) (*wshrpc.CommandPairListRtnData, error) {
-	return &wshrpc.CommandPairListRtnData{Pairs: getPairManager().List()}, nil
+	mgr := getPairManager()
+	return &wshrpc.CommandPairListRtnData{Pairs: mgr.List(), Resting: mgr.Resting()}, nil
 }
 
 // PairHistoryCommand is a project's pairs in every state, live, ended and synced ("" is every project), newest first.
@@ -150,7 +153,8 @@ func statusTabId(ctx context.Context, orefStr string) string {
 
 // notePairStatus hands an agent that reports idle to the pairs, off the publishing goroutine: a turn end delivers a
 // prompt, which may wake an agent, and the wake waits on the very events being published. Only idle ends a turn: no
-// status says an agent sleeps, which is a roster state that Link.State reads.
+// status says an agent sleeps, which is a roster state that Link.State reads. An agent outside every pair is passed on
+// too when a finished round left it to sleep at its next turn end (a launched judge that was working then).
 func notePairStatus(ev *wps.WaveEvent) {
 	// events arrive over the RPC wire with Data as a raw JSON map, so decode rather than assert.
 	var data baseds.AgentStatusData
@@ -162,7 +166,7 @@ func notePairStatus(ev *wps.WaveEvent) {
 			panichandler.PanicHandler("notePairStatus", recover())
 		}()
 		ctx := context.Background()
-		if tab := statusTabId(ctx, data.ORef); tab != "" && getPairManager().Paired(tab) {
+		if tab := statusTabId(ctx, data.ORef); tab != "" && getPairManager().Watches(tab) {
 			getPairManager().TurnEnded(ctx, tab)
 		}
 	})
@@ -275,6 +279,28 @@ func (l livePairLink) Tokens(ctx context.Context, tab string, sinceMs int64) (in
 		return 0, err
 	}
 	return agentsessions.TokensSince(tpath, row.Harness, sinceMs), nil
+}
+
+// Sleep puts the agent to sleep now, as a person's Sleep does: the same refusals (not idle, an engine run's, no session),
+// no compaction first, and the auto-sleep setting is not asked, because the sleep belongs to the round and not to the
+// idle rule. sleepAgent answers a sleep that background work stopped with no error and the work in Background: that is
+// an error here, so a refusal is never read as a sleep.
+func (l livePairLink) Sleep(ctx context.Context, tab string) error {
+	_, row, err := l.find(ctx, tab)
+	if err != nil {
+		return err
+	}
+	if err := sleepRefusal(row); err != nil {
+		return err
+	}
+	rtn, err := sleepAgent(ctx, row, false)
+	if err != nil {
+		return err
+	}
+	if rtn != nil && len(rtn.Background) > 0 {
+		return fmt.Errorf("agent %q still runs background work (%s); it was not put to sleep", row.Name, strings.Join(rtn.Background, ", "))
+	}
+	return nil
 }
 
 // Agent names the tab as the cockpit labels it: the session's title, else the tab's name (its launch name, often the

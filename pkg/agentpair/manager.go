@@ -65,10 +65,15 @@ type Link interface {
 	Agent(ctx context.Context, tab string) (AgentFacts, error)
 	// RecentTexts is the texts of the agent's last n turns, oldest first.
 	RecentTexts(ctx context.Context, tab string, n int) ([]string, error)
+	// Sleep puts the idle agent to sleep now, with no compaction first (its session is kept, and a send wakes it). It
+	// refuses an agent that is not idle and one with background work running, with an error that says so: a refusal is
+	// never a sleep.
+	Sleep(ctx context.Context, tab string) error
 }
 
 // Manager owns the pairs: the store, the relay, the stops, the hold. Its pair files are read on the first call of any
-// method (or by Load at boot); from then on the index of the pairs that are not ended is in memory.
+// method (or by Load at boot); from then on the index of the pairs that are not ended is in memory, with the newest pair
+// of each tab (rest.go) so the resting judges are known without reading the ended pairs again.
 type Manager struct {
 	Link    Link
 	Dir     string
@@ -77,8 +82,12 @@ type Manager struct {
 
 	mu      sync.Mutex // the index and every write of a pair
 	loaded  bool
-	pairs   map[string]*Pair // by id
-	sending map[string]bool  // the tabs a delivery is on its way to
+	pairs   map[string]*Pair   // by id
+	last    map[string]tabLast // by tab: the newest pair it took part in
+	sending map[string]bool    // the tabs a delivery is on its way to
+	// sleepOnIdle holds the launched judges whose round ended while they were working or asking: each sleeps at its next
+	// turn end. It is in memory only: a restart drops it, and the idle rule puts such a judge to sleep in the end.
+	sleepOnIdle map[string]bool
 }
 
 func (m *Manager) now() time.Time {
@@ -95,20 +104,27 @@ func (m *Manager) lock() {
 	m.mu.Lock()
 	if m.pairs == nil {
 		m.pairs = map[string]*Pair{}
+		m.last = map[string]tabLast{}
 		m.sending = map[string]bool{}
+		m.sleepOnIdle = map[string]bool{}
 	}
 	if m.loaded {
 		return
 	}
-	active, err := store{dir: m.Dir}.loadActive()
+	all, err := store{dir: m.Dir}.readAll()
 	if err != nil {
 		log.Printf("pairs: %v\n", err) // not loaded: the next call reads again
 		return
+	}
+	active, ended := split(all)
+	for _, p := range ended {
+		m.indexLocked(p) // the ended pairs are not kept: what the index needs of them is each tab's newest
 	}
 	for _, p := range active {
 		if m.pairs[p.Id] == nil {
 			m.pairs[p.Id] = p
 		}
+		m.indexLocked(p)
 	}
 	m.loaded = true
 }
@@ -131,8 +147,8 @@ func (m *Manager) publish(u wshrpc.PairUpdateData) {
 }
 
 // change runs fn on the pair under the lock. When fn says it changed the pair, the pair is saved and published, and an
-// ended one leaves the index. It reports whether there was such a pair. A failed save is logged: the index holds the
-// change and the next one saves the whole pair again.
+// ended one leaves the index (its judges, when launched, now rest). It reports whether there was such a pair. A failed
+// save is logged: the index holds the change and the next one saves the whole pair again.
 func (m *Manager) change(id string, fn func(p *Pair) bool) bool {
 	m.lock()
 	p := m.pairs[id]
@@ -143,6 +159,9 @@ func (m *Manager) change(id string, fn func(p *Pair) bool) bool {
 	changed := fn(p)
 	if changed {
 		m.saveLocked(p)
+	}
+	if changed || p.State == StateEnded {
+		m.indexLocked(p)
 	}
 	if p.State == StateEnded {
 		delete(m.pairs, id)
@@ -335,7 +354,9 @@ func (m *Manager) Start(ctx context.Context, d wshrpc.CommandPairStartData) (*ws
 		return nil, err
 	}
 	now := m.nowMs()
-	judge := Side{Tab: d.JudgeTab, Name: judgeFacts.Name, Harness: judgeFacts.Harness, Session: judgeFacts.session(), Briefed: d.Briefed}
+	judge := Side{Tab: d.JudgeTab, Name: judgeFacts.Name, Harness: judgeFacts.Harness, Session: judgeFacts.session(), Briefed: d.Briefed, Launched: d.Launched}
+	// what the index said of the judge before it joined: a start that has to be undone gives it back
+	priorRest, hadRest := m.last[d.JudgeTab]
 	var p *Pair
 	if existing == "" {
 		tokenCap := d.TokenCap
@@ -346,7 +367,7 @@ func (m *Manager) Start(ctx context.Context, d wshrpc.CommandPairStartData) (*ws
 			Id: uuid.NewString(), Project: workerFacts.Project, HoldHeavy: d.HoldHeavy, TokenCap: tokenCap, Note: d.Note,
 			Worker:    Side{Tab: d.WorkerTab, Name: workerFacts.Name, Harness: workerFacts.Harness, Session: workerFacts.session()},
 			Judges:    []Side{judge},
-			CreatedTs: now, CapFromTs: now, State: StateRelaying,
+			CreatedTs: now, CapFromTs: now, State: StateRelaying, JudgeTokens: true,
 			Messages: []Message{}, Pending: map[string][]string{}, Seen: map[string]int64{},
 		}
 		if strings.TrimSpace(workerText) != "" {
@@ -369,12 +390,14 @@ func (m *Manager) Start(ctx context.Context, d wshrpc.CommandPairStartData) (*ws
 	if !d.Briefed {
 		p.Seen[d.JudgeTab] = judgeSeen
 	}
+	m.indexLocked(p)                  // the judge is in a pair again: it rests no more
+	delete(m.sleepOnIdle, d.JudgeTab) // and the sleep a finished round asked of it is off
 	saveErr := m.saveLocked(p)
 	id, workerName, reply := p.Id, p.Worker.Name, newestWorkerRaw(p)
 	u := wshrpc.PairUpdateData{PairId: p.Id, WorkerTab: p.Worker.Tab}
 	m.mu.Unlock()
 	if saveErr != nil {
-		m.undoStart(id, d.JudgeTab, existing == "")
+		m.undoStart(id, d.JudgeTab, existing == "", priorRest, hadRest)
 		return nil, saveErr
 	}
 	m.publish(u)
@@ -382,7 +405,7 @@ func (m *Manager) Start(ctx context.Context, d wshrpc.CommandPairStartData) (*ws
 	if !d.Briefed {
 		brief := m.briefText(ctx, d.WorkerTab, workerName, reply, d.Note)
 		if err := m.Link.Send(ctx, d.JudgeTab, agentmsg.PairEnvelope(brief)); err != nil {
-			m.undoStart(id, d.JudgeTab, existing == "")
+			m.undoStart(id, d.JudgeTab, existing == "", priorRest, hadRest)
 			return nil, fmt.Errorf("briefing the judge: %w", err)
 		}
 	}
@@ -391,8 +414,9 @@ func (m *Manager) Start(ctx context.Context, d wshrpc.CommandPairStartData) (*ws
 	return m.Get(id)
 }
 
-// undoStart takes back a Start whose judge could not be reached: a new pair ends, a judge added to a pair leaves it.
-func (m *Manager) undoStart(id, judgeTab string, newPair bool) {
+// undoStart takes back a Start whose judge could not be reached: a new pair ends, a judge added to a pair leaves it and
+// the index gives back what it held of that judge (prior, when had).
+func (m *Manager) undoStart(id, judgeTab string, newPair bool, prior tabLast, had bool) {
 	m.change(id, func(p *Pair) bool {
 		if newPair {
 			p.State = StateEnded
@@ -402,6 +426,16 @@ func (m *Manager) undoStart(id, judgeTab string, newPair bool) {
 		delete(p.Seen, judgeTab)
 		return true
 	})
+	if newPair {
+		return // the ended pair is the judge's newest, as a reload reads it
+	}
+	m.mu.Lock()
+	if had {
+		m.last[judgeTab] = prior
+	} else {
+		delete(m.last, judgeTab)
+	}
+	m.mu.Unlock()
 }
 
 func newestWorkerRaw(p *Pair) string {
@@ -605,10 +639,15 @@ func removeIds(p *Pair, tab string, ids []string) {
 
 // answeredBy is the message a reply from tab answers: the newest one that was sent to it and called for an answer. A reply
 // never quotes a message its author has already answered: when the newest one was, the reply answers nothing (a turn of
-// the agent's own), and it does not fall back to an older one, which came in the same batch or was never sent.
+// the agent's own), and it does not fall back to an older one, which came in the same batch or was never sent. A judge's
+// reply a stop withheld from the working agent was never sent either: it is passed over, so a turn of the working agent's
+// own after a no-new-points or settled stop answers nothing, and ends the round.
 func answeredBy(p *Pair, tab string) string {
 	for i := len(p.Messages) - 1; i >= 0; i-- {
 		msg := p.Messages[i]
+		if msg.Withheld {
+			continue
+		}
 		if callsFor(p, tab, msg) && slices.Contains(recipients(p, msg), tab) && !slices.Contains(p.Pending[tab], msg.Id) {
 			if answeredAlready(p, tab, msg.Id) {
 				return ""
@@ -624,18 +663,35 @@ func answeredAlready(p *Pair, tab, id string) bool {
 	return slices.ContainsFunc(p.Messages, func(m Message) bool { return m.Tab == tab && m.ReplyTo == id })
 }
 
-// TurnEnded is a member of a pair reporting idle: take what it answered, count tokens, run the stop rule and deliver
-// the queues that can go.
+// Watches reports whether a turn end of the tab is the manager's business: it is in a pair that is not ended, or it is a
+// launched judge whose round ended while it was working and that sleeps at its next turn end.
+func (m *Manager) Watches(tab string) bool {
+	m.lock()
+	defer m.mu.Unlock()
+	p, _ := m.pairOf(tab)
+	return p != nil || m.sleepOnIdle[tab]
+}
+
+// TurnEnded is an agent reporting idle: when a finished round left it to sleep at its turn end, it sleeps; when it is a
+// member of a pair, take what it answered, count tokens, run the stop rule and deliver the queues that can go.
 func (m *Manager) TurnEnded(ctx context.Context, tab string) {
 	m.lock()
+	// first, before the early return of a tab in no pair: a resting judge is in none. A judge a new round has taken
+	// back keeps awake, and only drops the request.
+	sleepNow := m.sleepOnIdle[tab]
+	delete(m.sleepOnIdle, tab)
 	p, _ := m.pairOf(tab)
 	var id string
 	var noSession bool
 	if p != nil {
 		id = p.Id
 		noSession = sideOf(p, tab).Session == ""
+		sleepNow = false
 	}
 	m.mu.Unlock()
+	if sleepNow {
+		m.sleepJudge(ctx, tab)
+	}
 	if id == "" {
 		return
 	}
@@ -721,14 +777,23 @@ func (m *Manager) catchUp(ctx context.Context, id string, tabs []string, trustGo
 	m.deliverAll(ctx, id, trustGone)
 }
 
+// RoundEndedLine is the system line that says why a pair ended when the person went back to the working agent.
+const RoundEndedLine = "Round ended: you went back to the working agent"
+
 // takeAnswer adds the agent's latest answer to the conversation when the pair has not taken it yet, and says whose it
-// was (FromWorker, FromJudge, or "" when there was nothing new). It resumes a stopped pair when the working agent's
-// reply is the new one, except after a token-cap stop: spending more is the person's call, so the pair does not follow
-// the working agent then. A reply that answers a message the working agent was already working on when the cap stopped the
-// pair (answeredBy names one) is still recorded, as any worker message, and queued for the judge: it was owed, and the
-// judge reads it once the person resumes. It does not resume the pair. Any other turn after the cap is neither recorded
-// nor queued for the judge and leaves the held commands alone, but it is marked seen (and saved), so it is not taken as
-// new once the pair resumes.
+// was (FromWorker, FromJudge, or "" when there was nothing new, or when the working agent's turn ended the round).
+//
+// While the pair relays, every reply of the working agent is the pair's: recorded and queued for the judges. Once it is
+// stopped (whatever the reason, the token cap included) the working agent's reply does not resume it: to go on, the
+// person writes in the conversation, presses Resume or Judge again. What the reply is then depends on whether it owes an
+// answer:
+//   - it answers a message (answeredBy names one: the judge's reply the working agent was already working on when the
+//     pair stopped): it is recorded and queued for the judge as any worker message, and the judge reads it once the
+//     person resumes. The pair stays stopped.
+//   - it answers nothing: the person went back to the working agent (a message in its own Chat or terminal, wsh agents
+//     send, Sidecar), and the round ends. The reply is marked seen and saved but neither recorded nor queued, the pair
+//     ends with a line that says why, the working agent is told what it may run now that no judge holds its commands,
+//     and the launched judges are put to sleep.
 func (m *Manager) takeAnswer(ctx context.Context, id, tab string) string {
 	text, ts, err := m.Link.LastAnswer(ctx, tab)
 	if err != nil {
@@ -739,6 +804,7 @@ func (m *Manager) takeAnswer(ctx context.Context, id, tab string) string {
 		return ""
 	}
 	took := ""
+	var ended *roundEnd
 	m.change(id, func(p *Pair) bool {
 		if ts <= p.Seen[tab] {
 			return false
@@ -750,10 +816,10 @@ func (m *Manager) takeAnswer(ctx context.Context, id, tab string) string {
 		case !isJudge(p, tab):
 			return false
 		}
-		atCap := from == FromWorker && p.State == StateStopped && p.StopReason == StopTokenCap
 		replyTo := answeredBy(p, tab)
-		if atCap && replyTo == "" {
+		if from == FromWorker && p.State == StateStopped && replyTo == "" {
 			p.Seen[tab] = ts
+			ended = m.endRound(p)
 			return true
 		}
 		msg := Message{Id: nextId(p), From: from, Tab: tab, Ts: ts, Raw: text, ReplyTo: replyTo}
@@ -763,18 +829,20 @@ func (m *Manager) takeAnswer(ctx context.Context, id, tab string) string {
 		p.Seen[tab] = ts
 		p.Messages = append(p.Messages, msg)
 		enqueue(p, msg)
-		if from == FromWorker && p.State == StateStopped && !atCap {
-			resume(p, m.nowMs())
-		}
 		took = from
 		return true
 	})
+	if ended != nil {
+		m.afterRound(ctx, ended)
+	}
 	return took
 }
 
-// settle counts the pair's tokens since its cap started and runs the stop rule. The rule reads the judges' replies, so
-// it runs when one was just taken (or no judge is left), not on every turn end: after the person resumes a stop the
-// judge's old reply is still the newest, and a rule run at the working agent's next turn end would stop it again.
+// settle counts the pair's tokens since its cap started and runs the stop rule. The cap counts the judges' tokens only:
+// most of what the working agent spends is work it would do with no judge at all. The working agent's own count is still
+// read and stored, for the view to show. The rule reads the judges' replies, so it runs when one was just taken (or no
+// judge is left), not on every turn end: after the person resumes a stop the judge's old reply is still the newest, and a
+// rule run at the working agent's next turn end would stop it again.
 func (m *Manager) settle(ctx context.Context, id string, tookJudge bool) {
 	m.lock()
 	p := m.pairs[id]
@@ -799,12 +867,16 @@ func (m *Manager) settle(ctx context.Context, id string, tookJudge bool) {
 	m.change(id, func(p *Pair) bool {
 		changed := false
 		if p.CapFromTs == since {
-			total := setSideTokens(&p.Worker, counts)
+			_, changed = setSideTokens(&p.Worker, counts)
+			var total int64
 			for i := range p.Judges {
-				total += setSideTokens(&p.Judges[i], counts)
+				n, c := setSideTokens(&p.Judges[i], counts)
+				total += n
+				changed = changed || c
 			}
-			if p.Tokens != total {
-				p.Tokens, changed = total, true
+			// the first recount of a pair saved before the cap counted judges only moves its saved total onto them
+			if p.Tokens != total || !p.JudgeTokens {
+				p.Tokens, p.JudgeTokens, changed = total, true, true
 			}
 		}
 		if p.State != StateRelaying {
@@ -826,12 +898,12 @@ func (m *Manager) settle(ctx context.Context, id string, tookJudge bool) {
 }
 
 // setSideTokens takes a side's new count when one was read (a gone judge is not read, so it keeps its last) and returns
-// the side's count.
-func setSideTokens(s *Side, counts map[string]int64) int64 {
-	if n, ok := counts[s.Tab]; ok {
-		s.Tokens = n
+// the side's count and whether that moved it.
+func setSideTokens(s *Side, counts map[string]int64) (n int64, changed bool) {
+	if read, ok := counts[s.Tab]; ok && read != s.Tokens {
+		s.Tokens, changed = read, true
 	}
-	return s.Tokens
+	return s.Tokens, changed
 }
 
 // stop pauses the pair and says why in one system message: the "Paused: …" line as its text, and a snapshot of the moment
@@ -846,15 +918,22 @@ func (m *Manager) stop(p *Pair, reason string) {
 	case StopSettled:
 		m.addPause(p, "Paused: both agree", reason)
 	case StopTokenCap:
-		m.addPause(p, fmt.Sprintf("Paused: token cap reached (%.1fM)", float64(p.TokenCap)/1e6), reason)
+		m.addPause(p, fmt.Sprintf("Paused: judge token cap reached (%.1fM)", float64(p.TokenCap)/1e6), reason)
 	case StopJudgesGone:
 		m.addPause(p, "Paused: no judge is left", reason)
 	}
 	if reason == StopNoNewPoints || reason == StopSettled {
 		var behind []string
-		for _, msg := range p.Messages[newestWorker(p)+1:] {
-			if msg.From == FromJudge {
-				behind = append(behind, msg.Id)
+		for i := newestWorker(p) + 1; i < len(p.Messages); i++ {
+			msg := &p.Messages[i]
+			if msg.From != FromJudge {
+				continue
+			}
+			behind = append(behind, msg.Id)
+			// one still in the queue was never sent: the working agent has not read it, so a turn of its own answers it
+			// no more than it answers nothing (answeredBy)
+			if slices.Contains(p.Pending[p.Worker.Tab], msg.Id) {
+				msg.Withheld = true
 			}
 		}
 		removeIds(p, p.Worker.Tab, behind)

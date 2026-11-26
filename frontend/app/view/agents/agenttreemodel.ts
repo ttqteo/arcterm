@@ -49,7 +49,8 @@ export type AgentTreeRow =
     // a plain agent. `nested`: it waits on the plain agent of its folder just above it, and sits under it; `waitsFor`:
     // the name of the agent it waits on where it cannot nest (another folder, a lead, one that nests itself); `checks`:
     // the builder check and judge sessions it started, which its row folds (their `check` rows follow it while `open`);
-    // `depth`: a quick run's agent nested under the agent that started it, how many levels in (rowDepth)
+    // `depth`: a quick run's agent nested under the agent that started it, how many levels in (rowDepth); `pair`: it works
+    // in an active pair (pkg/agentpair), whose judges have no row of their own: its row draws the ⚖ line for them
     | {
           kind: "parent";
           agent: AgentVM;
@@ -58,12 +59,8 @@ export type AgentTreeRow =
           depth?: number;
           waitsFor?: string;
           checks?: ChecksFold;
-          // which side of a pair it is, as a row under its pair's row
-          pairRole?: "worker" | "judge";
+          pair?: TreePair;
       }
-    // a pair (pkg/agentpair) in its working agent's place: the conversation. While `open`, the working agent and its
-    // judges follow it as `nested` parent rows with their `pairRole`
-    | { kind: "pair"; project: string; pairId: string; worker: AgentVM; judges: AgentVM[]; open: boolean }
     // a builder check's reviewer or a judge under the brainstorming agent that started it; `stageRole` is which, and
     // `state` is that agent's record of it
     | { kind: "check"; agent: AgentVM; project: string; stageRole: string; state: BuilderCheckRecord["state"] }
@@ -103,7 +100,7 @@ export type AgentTreeRow =
     | { kind: "queued"; project: string; run: RunInfo; count: number; open: boolean };
 
 /** Pure: how many tree levels in an agent's row sits: a run nested under the agent that started it says so (`depth`),
- *  any other nested row (an agent waiting on the one above it, a pair's side) is one level in, the rest are at the top. */
+ *  any other nested row (an agent waiting on the one above it) is one level in, the rest are at the top. */
 export function rowDepth(row: { nested?: boolean; depth?: number }): number {
     return row.depth ?? (row.nested ? 1 : 0);
 }
@@ -121,32 +118,23 @@ export interface TreeFolds {
     checksOpen?: ReadonlyMap<string, { open: boolean; key: string }>;
     // an agent's fold of its running background-task rows, by its id (tasksShown)
     tasksOpen?: ReadonlyMap<string, boolean>;
-    // a pair's fold of its working agent's and judges' rows, by the pair's id (pairShown)
-    pairsOpen?: ReadonlyMap<string, boolean>;
 }
 
-/** Pure: whether a pair's agents show under its row. One of them asking you, or chosen while the centre shows its own
- *  view (`focusId`), shows them whatever was folded; else the person's fold, folded by default: the pair's row stands for
- *  the conversation, and its line already says how each side stands. */
-export function pairShown(
-    team: readonly Pick<AgentVM, "id" | "state">[],
-    fold: boolean | undefined,
-    focusId: string | undefined
-): boolean {
-    if (team.some((a) => a.state === "asking" || a.id === focusId)) {
-        return true;
-    }
-    return fold ?? false;
+// A working agent's pair as its row carries it: the pair's id and the judges of it that are in the roster, which have no
+// rows of their own while the row draws the line
+export interface TreePair {
+    pairId: string;
+    judges: AgentVM[];
 }
 
-// The pairs the tree folds: the active ones (not ended), and the agent chosen while the centre shows an agent's own view
-// (undefined over the pair's conversation, whose row is then the chosen one)
+// What the tree reads of the pairs: the active ones (not ended), whose working agent's row carries the ⚖ line, and the
+// resting judges (a judge arcterm launched whose newest pair has ended), which leave the tree while they sleep
 export interface TreePairs {
     list: readonly PairInfo[];
-    focusId?: string;
+    resting: readonly PairResting[];
 }
 
-const NO_PAIRS: TreePairs = { list: [] };
+const NO_PAIRS: TreePairs = { list: [], resting: [] };
 
 // What a brainstorming agent's row knows of the check and judge sessions under it: their states in row order, whether
 // their rows show, and `key`, the set they are, which a fold the person makes is kept against.
@@ -580,15 +568,17 @@ const NO_WAITS: ReadonlyMap<string, string> = new Map();
  *  runs) are `check` rows right under its row while they show (checksShown), and count in its folder either way; with
  *  its tab gone they are plain rows.
  *
- *  An active pair whose working agent has a plain row of its own (no run, waiting on no one) is a `pair` row in that
- *  agent's place, its judges leaving their own places; while it shows (pairShown) the working agent and the judges follow
- *  it as nested rows. All of them count in the working agent's folder.
+ *  An active pair whose working agent has a plain row of its own (no run, no brainstorm check) leaves that row as it is,
+ *  with the pair on it (`pair`): the row draws the ⚖ line for its judges, which have no rows of their own and count in
+ *  the working agent's folder. A pair whose working agent has no such row leaves its judges plain rows. A resting judge
+ *  (`pairs.resting`) that sleeps has no row either, while its working agent is in the roster: it comes back as a plain
+ *  row once anything wakes it, and stays one where its working agent is gone, so none is hidden and out of reach.
  *
  *  A quick run started from an agent's session (`lineage.origins`) nests under that agent's row, its run's agent one
  *  level in (`depth`), after the agent's check rows and before the agents waiting on it; a run its agent started nests
- *  one level further, with no limit. Both must have a plain row of their own (no run role, no brainstorm check, in no
- *  active pair); an origin gone from the roster, or a chain of origins that loops, leaves the run's agent a top-level
- *  row. A nested run sits in its origin's folder, whatever its own project, and counts there. */
+ *  one level further, with no limit. Both must have a plain row of their own (no run role, no brainstorm check, not a
+ *  pair's judge or a hidden resting one); an origin gone from the roster, or a chain of origins that loops, leaves the
+ *  run's agent a top-level row. A nested run sits in its origin's folder, whatever its own project, and counts there. */
 export function buildAgentTree(
     agents: AgentVM[],
     order: string[],
@@ -632,16 +622,18 @@ export function buildAgentTree(
             }
         }
     }
-    // the pairs that fold: by the working agent's id, the pair and its judges in the roster (each a plain agent, in no
-    // other pair, no check of a brainstorm's). An agent is in at most one pair, so the first pair to claim one keeps it
+    // the pairs whose working agent's row carries the line: by the working agent's id, the pair and its judges in the roster
+    // (each a plain agent, in no other pair, no check of a brainstorm's). An agent is in at most one pair, so the first
+    // pair to claim one keeps it. The judges have no rows of their own, and a pair whose working agent has no plain row
+    // claims none, so its judges keep theirs
     const byTab = new Map(sorted.map((a) => [a.id, a] as const));
     const plainAgent = (a: AgentVM | undefined): a is AgentVM =>
         a != null && lineage.roles[a.id] == null && !(a.runId != null && checkOwners.has(a.runId));
-    const pairOfWorker = new Map<string, { pairId: string; judges: AgentVM[] }>();
+    const pairOfWorker = new Map<string, TreePair>();
     const pairedJudges = new Set<string>();
     for (const p of pairs.list) {
         const worker = byTab.get(p.worker.tab);
-        if (p.state === "ended" || !plainAgent(worker) || waits.has(worker.id) || pairOfWorker.has(worker.id)) {
+        if (p.state === "ended" || !plainAgent(worker) || pairOfWorker.has(worker.id) || pairedJudges.has(worker.id)) {
             continue;
         }
         const judges = (p.judges ?? []).flatMap((j) => {
@@ -651,10 +643,18 @@ export function buildAgentTree(
         judges.forEach((j) => pairedJudges.add(j.id));
         pairOfWorker.set(worker.id, { pairId: p.id, judges });
     }
+    // a resting judge asleep, whose working agent is still in the roster: nothing of it shows or counts until it wakes
+    const hidden = new Set<string>();
+    for (const r of pairs.resting) {
+        const judge = byTab.get(r.tab);
+        if (plainAgent(judge) && judge.sleeping != null && byTab.has(r.workertab) && !pairedJudges.has(judge.id)) {
+            hidden.add(judge.id);
+        }
+    }
     // a quick run's agent nests under the agent whose session started it, while both have a row of their own; a chain
     // of origins that comes back to itself nests no one on it
     const ownRow = (a: AgentVM | undefined): a is AgentVM =>
-        plainAgent(a) && !pairOfWorker.has(a.id) && !pairedJudges.has(a.id);
+        plainAgent(a) && !pairedJudges.has(a.id) && !hidden.has(a.id);
     const originOf = (a: AgentVM): AgentVM | undefined => {
         const origin = byTab.get(lineage.origins?.[a.id] ?? "");
         return ownRow(origin) && origin.id !== a.id ? origin : undefined;
@@ -710,8 +710,8 @@ export function buildAgentTree(
             placedRuns.add(role.leadRunId);
             const run = lineage.runs[role.leadRunId];
             push({ kind: "run", project: run.project || UNGROUPED_PROJECT, run });
-        } else if (pairedJudges.has(a.id)) {
-            // a pair's judge sits under its pair's row, which its working agent places
+        } else if (pairedJudges.has(a.id) || hidden.has(a.id)) {
+            // a pair's judge is the line on its working agent's row, a resting one's is out of the tree till it wakes
             continue;
         } else if (a.runId != null && checkOwners.has(a.runId)) {
             const { owner, stageRole, state } = checkOwners.get(a.runId);
@@ -751,8 +751,8 @@ export function buildAgentTree(
                 waiters.set(target, [...(waiters.get(target) ?? []), item.agent]);
             }
         }
-        // a plain agent's row, then the check and judge rows under it while they show (counted with the agent in its
-        // own folder either way)
+        // a plain agent's row, with its pair if it works in one, then the check and judge rows under it while they show
+        // (counted with the agent in its own folder either way)
         const withChecks = (row: Extract<AgentTreeRow, { kind: "parent" }>): AgentTreeRow[] => {
             const nested = checks.get(row.agent.id);
             if (nested == null || nested.length === 0 || superseded.has(row.agent.id)) {
@@ -771,11 +771,17 @@ export function buildAgentTree(
             running += members.filter((a) => a.state === "working").length;
         };
         const checksOf = (id: string) => (superseded.has(id) ? [] : (checks.get(id) ?? [])).map((n) => n.agent);
+        // the judges of the pair an agent works in, which count in its folder and have no rows of their own
+        const judgesOf = (id: string) => pairOfWorker.get(id)?.judges ?? [];
+        const pairOn = (id: string) => {
+            const pair = pairOfWorker.get(id);
+            return pair != null ? { pair } : {};
+        };
         // the runs an agent's session started, under its row at `depth`, each followed by the runs its own agent
-        // started; each counts in this folder with its checks
+        // started; each counts in this folder with its checks and its pair's judges
         const pushStarted = (originId: string, depth: number) => {
             for (const agent of startedBy.get(originId) ?? []) {
-                tally([agent, ...checksOf(agent.id)]);
+                tally([agent, ...checksOf(agent.id), ...judgesOf(agent.id)]);
                 const target = waits.get(agent.id);
                 const waitsFor = target != null ? byId.get(target)?.name : undefined;
                 body.push(
@@ -786,6 +792,7 @@ export function buildAgentTree(
                         nested: true,
                         depth,
                         ...(waitsFor != null ? { waitsFor } : {}),
+                        ...pairOn(agent.id),
                     })
                 );
                 pushStarted(agent.id, depth + 1);
@@ -793,42 +800,26 @@ export function buildAgentTree(
         };
         for (const item of g.items) {
             if (item.kind === "parent") {
-                const pairing = pairOfWorker.get(item.agent.id);
-                tally([item.agent, ...checksOf(item.agent.id), ...(pairing?.judges ?? [])]);
+                tally([item.agent, ...checksOf(item.agent.id), ...judgesOf(item.agent.id)]);
                 if (nestsUnder(item.agent.id) != null) {
                     continue;
                 }
                 const target = waits.get(item.agent.id);
                 const waitsFor = target != null ? byId.get(target)?.name : undefined;
-                if (pairing != null) {
-                    const team = [item.agent, ...pairing.judges];
-                    const open = pairShown(team, folds.pairsOpen?.get(pairing.pairId), pairs.focusId);
-                    body.push({
-                        kind: "pair",
-                        project: item.project,
-                        pairId: pairing.pairId,
-                        worker: item.agent,
-                        judges: pairing.judges,
-                        open,
-                    });
-                    if (open) {
-                        body.push(...withChecks({ ...item, nested: true, pairRole: "worker" }));
-                        for (const judge of pairing.judges) {
-                            body.push({
-                                kind: "parent",
-                                agent: judge,
-                                project: item.project,
-                                nested: true,
-                                pairRole: "judge",
-                            });
-                        }
-                    }
-                } else {
-                    body.push(...withChecks(waitsFor != null ? { ...item, waitsFor } : item));
-                    pushStarted(item.agent.id, 1);
-                }
+                body.push(
+                    ...withChecks({ ...item, ...(waitsFor != null ? { waitsFor } : {}), ...pairOn(item.agent.id) })
+                );
+                pushStarted(item.agent.id, 1);
                 for (const agent of waiters.get(item.agent.id) ?? []) {
-                    body.push(...withChecks({ kind: "parent", agent, project: item.project, nested: true }));
+                    body.push(
+                        ...withChecks({
+                            kind: "parent",
+                            agent,
+                            project: item.project,
+                            nested: true,
+                            ...pairOn(agent.id),
+                        })
+                    );
                     pushStarted(agent.id, 2);
                 }
                 continue;

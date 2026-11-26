@@ -312,14 +312,15 @@ func View(p *Pair) *wshrpc.PairView {
 		})
 	}
 	return &wshrpc.PairView{
-		PairInfo:  Info(p),
-		HoldHeavy: p.HoldHeavy,
-		TokenCap:  p.TokenCap,
-		Tokens:    p.Tokens,
-		Note:      p.Note,
-		CreatedTs: p.CreatedTs,
-		Messages:  messages,
-		Decided:   Decided(p),
-		CanResume: canResume(p),
+		PairInfo:    Info(p),
+		HoldHeavy:   p.HoldHeavy,
+		TokenCap:    p.TokenCap,
+		Tokens:      p.Tokens,
+		JudgeTokens: p.JudgeTokens,
+		Note:        p.Note,
+		CreatedTs:   p.CreatedTs,
+		Messages:    messages,
+		Decided:     Decided(p),
+		CanResume:   canResume(p),
 	}
 }

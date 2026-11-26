@@ -63,8 +63,13 @@ type Side struct {
 	Session string `json:"session,omitempty"`
 	Gone    bool   `json:"gone,omitempty"`
 	Briefed bool   `json:"briefed,omitempty"` // a judge launched with the brief as its task, or sent the brief as its first prompt
+	// Launched marks a judge arcterm launched for the job (a "Judge: <worker>" tab started by Add judge, or a resting one
+	// woken by it), as against an agent the person picked from the live list. Only a launched judge sleeps when the round
+	// ends and rests until the next one.
+	Launched bool `json:"launched,omitempty"`
 	// Tokens is this session's spend since the pair's CapFromTs, as last counted. A gone judge's stays: its session
-	// is no longer read, but what it spent still counts toward the cap.
+	// is no longer read, but what it spent still counts toward the cap. The working agent's is read and shown, and
+	// does not count toward it.
 	Tokens int64 `json:"tokens,omitempty"`
 }
 
@@ -83,6 +88,9 @@ type Message struct {
 	// Pause is set on the system message that says the pair paused (its Raw keeps the "Paused: …" line): why, the judge's
 	// summary and the Decided lists at that moment. A message saved before it existed has none and is drawn as a line.
 	Pause *wshrpc.PairPause `json:"pause,omitempty"`
+	// Withheld marks a judge's reply that a no-new-points or settled stop took out of the working agent's queue before it
+	// was sent: the working agent never read it, so a turn of its own is no answer to it.
+	Withheld bool `json:"withheld,omitempty"`
 }
 
 // Pair is the stored record of one pair, a JSON file of its own.
@@ -99,7 +107,11 @@ type Pair struct {
 	State      string `json:"state"`
 	StopReason string `json:"stopreason,omitempty"`
 	CapFromTs  int64  `json:"capfromts"` // tokens count from here: pairing, or the person's message that resumed a token-cap stop
-	Tokens     int64  `json:"tokens"`    // spent since CapFromTs, as of the last turn end: every side's Tokens, gone judges included
+	Tokens     int64  `json:"tokens"`    // spent since CapFromTs, as of the last turn end: every judge's Tokens, gone judges included
+	// JudgeTokens says Tokens counts the judges only. A pair saved before it existed counted the working agent too, and
+	// keeps that count until the first recount of an active pair moves it onto the judges' (a stored ended pair is never
+	// recounted), so only a pair with the flag says "judge tokens".
+	JudgeTokens bool `json:"judgetokens,omitempty"`
 
 	Messages []Message `json:"messages"`
 	// Pending is, per tab, the ids of the messages waiting for that agent, delivered as one prompt.
