@@ -1,5 +1,5 @@
 // sessionideas-pet: Sprout's popup and the Waiting line for session ideas (docs/superpowers/specs/2026-11-26-session-ideas-design.md,
-// plan docs/superpowers/plans/2026-11-26-session-ideas.md, Task 9). The module holds the fixture the popup's steps run against:
+// "Jarvis"). The module holds the fixture the popup's steps run against:
 // fixture mode on (the scan reads the seeded sessions below, never ~/.claude, and its model call returns the seeded
 // reply and spends nothing), two ideas on a real initiative, one new idea, and the fixture sessions they came from. No step
 // calls a model, reads a real transcript or opens a real agent: a press of Discuss or Go through runs under Task 6's launch

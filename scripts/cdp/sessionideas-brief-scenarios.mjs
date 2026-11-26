@@ -1,5 +1,5 @@
 // sessionideas-brief: the Jarvis Brief's From your sessions region (docs/superpowers/specs/2026-11-26-session-ideas-design.md,
-// plan docs/superpowers/plans/2026-11-26-session-ideas.md). The module holds the fixture the region's steps run against:
+// "Where the person sees it"). The module holds the fixture the region's steps run against:
 // fixture mode on (the scan reads the seeded sessions below, never ~/.claude, and its model call returns the seeded
 // reply and spends nothing), two ideas on a real initiative, one new idea, and the fixture sessions they came from.
 // kit is scenarios.mjs's JARVIS_KIT.
