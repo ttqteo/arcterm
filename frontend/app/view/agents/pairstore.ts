@@ -72,6 +72,23 @@ export const pairViewErrorAtom = atomFamily((_id: string) => atom<string | null>
 /** The message the conversation scrolls to and clears: an agreed item's link sets it. */
 export const pairScrollToAtom = atom<string | null>(null) as PrimitiveAtom<string | null>;
 
+/** Text waiting to be put in a pair's composer: Judge again sets `@judge `. The composer takes it once (reads it, clears it
+ *  to null, then types it in, focuses and puts the caret at its end), so it is not typed twice. null = nothing waiting. */
+export const pairDraftAtom = atomFamily((_pairId: string) => atom<string | null>(null) as PrimitiveAtom<string | null>);
+
+/** Resume: puts a stopped pair back to relaying and delivers what is still queued, with no message from the person. The
+ *  server refuses a pair that is not stopped, a judges-gone stop and a pair with nothing to deliver, each with an error that
+ *  says what to do instead. A failure is logged and thrown again, so the place that pressed the button shows it where it
+ *  was pressed. On success nothing is read here: wavesrv's `pair:update` brings the pair's new state. */
+export async function resumePair(pairId: string): Promise<void> {
+    try {
+        await RpcApi.PairResumeCommand(TabRpcClient, { pairid: pairId });
+    } catch (err) {
+        console.error(`resuming pair ${pairId} failed`, err);
+        throw err;
+    }
+}
+
 // ---- loading ----
 
 const mocked = () => globalStore.get(devMockPairsAtom) != null;
