@@ -50447,6 +50447,210 @@ const chatQuote = {
     },
 };
 
+// --- agent-tree-pinned-folder: Pin folder in a project folder's menu (agenttree.tsx openFolderMenu, projectfoldstore.ts
+// pinnedProjectsAtom, projectTree's `pinned`). A pinned folder ends on a small pin and stays in the tree when nothing is
+// left in it, its name faint; its menu reads Unpin folder, which lets it go. A long name truncates and keeps the pin in
+// the row.
+
+const APF_AGENT = "pinned folder source";
+const APF_PROJECT = "arcterm";
+const APF_EMPTY = "pin-fixture-empty";
+const APF_LONG = "pin-fixture-" + "a-very-long-project-folder-name-".repeat(4);
+const apfFolderSel = (name) => `[data-agent-folder-section="active"][data-agent-folder=${JSON.stringify(name)}]`;
+
+const agentTreePinnedFolder = {
+    name: "agent-tree-pinned-folder",
+    surface: "agent",
+    async arrange(h) {
+        const ctx = {
+            dir: mkdtempSync(join(tmpdir(), "verify-agent-tree-pinned-folder-")),
+            prevGrid: await h.ev(`localStorage.getItem(${JSON.stringify(GRID_KEY)})`),
+        };
+        let at = "resetting the grid";
+        try {
+            await h.ev(`localStorage.setItem(${JSON.stringify(GRID_KEY)}, ${JSON.stringify(JSON.stringify(GRID_EMPTY))})`);
+            if (!(await ahReload(h))) throw new Error("the page did not come back after the reload");
+            await h.goto("agent");
+            at = "making the tab";
+            ctx.tabs = { main: await acMakeTab(h, ctx, { label: APF_AGENT }) };
+            at = "setting the roster";
+            await AC.setRoster(h, [
+                {
+                    project: APF_PROJECT,
+                    state: "idle",
+                    idleSince: Date.now() - 60_000,
+                    task: "",
+                    agent: "claude",
+                    model: "opus",
+                    id: ctx.tabs.main.tabId,
+                    name: APF_AGENT,
+                    blockId: ctx.tabs.main.blockId,
+                },
+            ]);
+            at = "clearing the pins and folds";
+            ctx.prev = await AC.agentPage(
+                h,
+                `const F = await mod("app/view/agents/projectfoldstore.ts");
+                const prev = { pinned: globalStore.get(F.pinnedProjectsAtom), collapsed: globalStore.get(F.collapsedProjectsAtom) };
+                globalStore.set(F.pinnedProjectsAtom, []);
+                globalStore.set(F.collapsedProjectsAtom, prev.collapsed.filter((p) => p !== ${JSON.stringify(APF_PROJECT)}));
+                return prev;`
+            );
+        } catch (e) {
+            ctx.arrangeError = `${at}: ${String(e?.message ?? e)}`;
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok: ok === true, detail: typeof detail === "string" ? detail : JSON.stringify(detail) });
+        if (ctx.arrangeError != null) {
+            rec("0. the fixture agent", false, ctx.arrangeError);
+            return steps;
+        }
+        // a folder row as the tree draws it: there, pinned, its name's colour against the faint and the plain tokens,
+        // and whether the pin sits inside the row
+        const read = (name) =>
+            AC.agentPage(
+                h,
+                `await nap(250);
+                const row = document.querySelector(${JSON.stringify(apfFolderSel(name))});
+                if (!row) return { shown: false };
+                const pin = row.querySelector("[data-folder-pinned]");
+                const label = [...row.children].find((c) => c.tagName === "SPAN" && c.classList.contains("truncate"));
+                const r = row.getBoundingClientRect();
+                const p = pin?.getBoundingClientRect();
+                const probe = (cls) => {
+                    const d = document.createElement("span");
+                    d.className = cls;
+                    row.append(d);
+                    const c = getComputedStyle(d).color;
+                    d.remove();
+                    return c;
+                };
+                return {
+                    shown: true,
+                    pinned: pin != null,
+                    faint: label != null && getComputedStyle(label).color === probe("text-ink-faint"),
+                    plain: label != null && getComputedStyle(label).color === probe("text-secondary"),
+                    truncated: label != null && label.scrollWidth > label.clientWidth,
+                    pinInside: p == null ? null : p.left >= r.left && p.right <= r.right + 0.5,
+                    overflow: row.scrollWidth > row.clientWidth + 1,
+                };`
+            );
+        // the folder's right-click menu, as the menu draws it: its labels; `pick` clicks one of them
+        const menu = (name, pick) =>
+            AC.agentPage(
+                h,
+                `const { contextMenuAtom, closeContextMenu } = await mod("app/store/contextmenu.ts");
+                closeContextMenu();
+                await nap(100);
+                const row = document.querySelector(${JSON.stringify(apfFolderSel(name))});
+                if (!row) return { opened: false };
+                const r = row.getBoundingClientRect();
+                row.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: r.left + 40, clientY: r.top + r.height / 2 }));
+                await until(() => globalStore.get(contextMenuAtom) != null, 2000);
+                const labels = (globalStore.get(contextMenuAtom)?.items ?? []).flatMap((i) => (i.label ? [i.label] : []));
+                const rowOf = (label) => [...document.querySelectorAll("[data-menu-item]")].find((r) => r.getAttribute("data-menu-item") === label);
+                await until(() => labels.length === 0 || rowOf(labels[0]) != null, 2000);
+                const drawn = labels.filter((l) => rowOf(l) != null);
+                ${pick == null ? "closeContextMenu();" : `rowOf(${JSON.stringify(pick)})?.click(); await nap(600);`}
+                return { opened: true, labels, drawn };`
+            );
+        const setPins = (list) =>
+            AC.agentPage(
+                h,
+                `const F = await mod("app/view/agents/projectfoldstore.ts");
+                globalStore.set(F.pinnedProjectsAtom, ${JSON.stringify(list)});
+                await nap(600);
+                return globalStore.get(F.pinnedProjectsAtom);`
+            );
+        const pins = () =>
+            AC.agentPage(h, `const F = await mod("app/view/agents/projectfoldstore.ts"); return globalStore.get(F.pinnedProjectsAtom);`);
+        try {
+            await polishWaitFor(h, `!!document.querySelector(${JSON.stringify(apfFolderSel(APF_PROJECT))})`, 15000);
+
+            // 1. an unpinned folder: no pin, and its menu offers Pin folder
+            const s1 = await read(APF_PROJECT);
+            const m1 = await menu(APF_PROJECT);
+            rec("1. an unpinned folder has no pin, and its menu offers Pin folder, drawn", s1.shown && !s1.pinned && m1.drawn?.includes("Pin folder") && !m1.labels.includes("Unpin folder"), { s1, m1 });
+
+            // 2. Pin folder from the menu: the pin is drawn at once, the name stays plain (the folder holds an agent)
+            await menu(APF_PROJECT, "Pin folder");
+            const s2 = await read(APF_PROJECT);
+            const p2 = await pins();
+            await h.shot("cdp-shots/agent-tree-pinned-folder-2-pinned.png");
+            rec("2. Pin folder pins it: the pin at the row's end, the name not faint, and the list holds it", s2.pinned && s2.pinInside === true && s2.plain && !s2.faint && p2.includes(APF_PROJECT), { s2, p2 });
+
+            // 3. a pinned project with nothing in it keeps a folder, its name faint, its pin drawn
+            await setPins([APF_PROJECT, APF_EMPTY]);
+            await polishWaitFor(h, `!!document.querySelector(${JSON.stringify(apfFolderSel(APF_EMPTY))})`, 5000);
+            const s3 = await read(APF_EMPTY);
+            await h.shot("cdp-shots/agent-tree-pinned-folder-3-empty.png");
+            rec("3. an empty pinned project keeps its folder: faint, pinned", s3.shown && s3.pinned && s3.faint, s3);
+
+            // 4. its menu reads Unpin folder and still starts an agent there
+            const m4 = await menu(APF_EMPTY);
+            rec("4. the empty folder's menu has New agent… and Unpin folder, not Pin folder", m4.drawn?.includes("New agent…") && m4.drawn.includes("Unpin folder") && !m4.labels.includes("Pin folder"), m4);
+
+            // 5. Unpin folder lets the empty folder go, and leaves the other pin
+            await menu(APF_EMPTY, "Unpin folder");
+            await polishWaitFor(h, `!document.querySelector(${JSON.stringify(apfFolderSel(APF_EMPTY))})`, 5000);
+            const s5 = await read(APF_EMPTY);
+            const p5 = await pins();
+            rec("5. Unpin folder takes the empty folder out of the tree and the list, the other pin stays", !s5.shown && !p5.includes(APF_EMPTY) && p5.includes(APF_PROJECT), { s5, p5 });
+
+            // 6. a long name truncates; the pin stays inside the row, which does not overflow
+            await setPins([APF_PROJECT, APF_LONG]);
+            await polishWaitFor(h, `!!document.querySelector(${JSON.stringify(apfFolderSel(APF_LONG))})`, 5000);
+            const s6 = await read(APF_LONG);
+            await h.shot("cdp-shots/agent-tree-pinned-folder-6-long.png");
+            rec("6. a long pinned name truncates, the pin stays inside the row, nothing overflows", s6.shown && s6.truncated && s6.pinInside === true && !s6.overflow, s6);
+
+            // 7. unpin the folder that holds the agent: the pin goes, the folder stays (its agent keeps it)
+            await setPins([APF_PROJECT]);
+            await menu(APF_PROJECT, "Unpin folder");
+            const s7 = await read(APF_PROJECT);
+            rec("7. unpinning a folder that holds an agent drops the pin and keeps the folder", s7.shown && !s7.pinned, s7);
+        } catch (e) {
+            rec("x. the scenario ran to the end", false, String(e?.stack ?? e));
+        }
+        return steps;
+    },
+    async teardown(h, ctx) {
+        const step = async (what, fn) => {
+            try {
+                await fn();
+            } catch (e) {
+                console.error(`agent-tree-pinned-folder teardown: ${what} failed: ${e?.message ?? e}`);
+            }
+        };
+        await step("restore the pins and folds", () =>
+            ctx.prev == null
+                ? null
+                : AC.agentPage(
+                      h,
+                      `const F = await mod("app/view/agents/projectfoldstore.ts");
+                      globalStore.set(F.pinnedProjectsAtom, ${JSON.stringify(ctx.prev.pinned)});
+                      globalStore.set(F.collapsedProjectsAtom, ${JSON.stringify(ctx.prev.collapsed)});
+                      return true;`
+                  )
+        );
+        await step("restore the roster", () => AC.restoreRoster(h));
+        await step("close the fixture tab", () => acCloseTabs(h, ctx));
+        await step("restore the grid", () =>
+            h.ev(
+                ctx.prevGrid == null
+                    ? `localStorage.removeItem(${JSON.stringify(GRID_KEY)})`
+                    : `localStorage.setItem(${JSON.stringify(GRID_KEY)}, ${JSON.stringify(ctx.prevGrid)})`
+            )
+        );
+        await step("remove the fixture dir", () => rmSync(ctx.dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 500 }));
+        await step("reload onto the live roster", () => ahReload(h));
+        await step("go home", () => h.goto("cockpit"));
+    },
+};
+
 // --- chat-bubble-fold: a long message of yours in Chat (narrationtimeline.tsx PromptText). Folded behind Show more, a
 // click anywhere on its bubble (its padding too, away from the button) opens it; open, a click on its text leaves it
 // open, and only Show less folds it again.
@@ -76109,6 +76313,7 @@ export const SCENARIOS = [
     chatQuote,
     chatFocusRead,
     chatBubbleFold,
+    agentTreePinnedFolder,
     chatMath,
     chatDiagram,
     chatRefBadges,

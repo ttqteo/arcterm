@@ -23,6 +23,12 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
 
 ## 2026-11-26
 
+- [ ] (arcterm) **A pinned folder comes and goes like any folder.** In the Agent tree, right-click a project folder →
+  Pin folder: a small pin appears at the row's far end. Close its last agent and terminal: the folder stays, its name
+  turns faint (a soft colour change, not a jump). Start an agent there from its menu: the name eases back to the plain
+  colour. Unpin folder on the empty one: the rows below slide up into its place as when any folder empties, nothing left
+  at an in-between height. (`agenttree.tsx` FolderRow, `agentsidebarmodel.ts` projectTree `pinned`; the
+  `agent-tree-pinned-folder` scenario checks the end states, not the motion.)
 - [ ] (arcterm) make the judge mark's What's new shot with `node scripts/whatsnew-shot.mjs judge-mark` and put it on the
   CHANGELOG line: with a dev app showing a judge round's mark in an agent's Chat (a pair started from an older reply: the
   ⚖ line under that reply and the accent bar beside the turns after it), run the command and replace the

@@ -210,6 +210,47 @@ describe("projectTree", () => {
         expect(shape(rows)).toEqual(["group:waveterm:1a:0t", "a:a", "group:ops:0a:2t", "t:t1", "t:t2"]);
     });
 
+    describe("pinned folders", () => {
+        const groups = (rows: ProjectTreeRow[]) =>
+            rows.flatMap((r) => (r.kind === "group" ? [{ project: r.project, pinned: r.pinned, empty: r.empty }] : []));
+
+        it("keeps a pinned project with nothing in it as an empty folder, after the others and ahead of Home", () => {
+            const rows = build([agent("a")], [term("t1", "ops"), term("h", null)], { pinned: ["loom"] });
+            expect(shape(rows)).toEqual([
+                "group:waveterm:1a:0t",
+                "a:a",
+                "group:ops:0a:1t",
+                "t:t1",
+                "group:loom:0a:0t",
+                `group:${HOME_PROJECT}:0a:1t`,
+                "t:h",
+            ]);
+            expect(groups(rows)).toEqual([
+                { project: "waveterm", pinned: undefined, empty: undefined },
+                { project: "ops", pinned: undefined, empty: undefined },
+                { project: "loom", pinned: true, empty: true },
+                { project: HOME_PROJECT, pinned: undefined, empty: undefined },
+            ]);
+        });
+
+        it("leaves a pinned folder that holds rows where it is, pinned and not empty", () => {
+            const rows = build([agent("a"), agent("b", undefined, "loom")], [], { pinned: ["waveterm"] });
+            expect(shape(rows)).toEqual(["group:waveterm:1a:0t", "a:a", "group:loom:1a:0t", "a:b"]);
+            expect(groups(rows)[0]).toEqual({ project: "waveterm", pinned: true, empty: undefined });
+        });
+
+        it("says empty for a folded pinned folder too, and never pins Home or a blank name", () => {
+            const rows = build([], [], { pinned: ["loom", HOME_PROJECT, ""], collapsed: ["loom"] });
+            expect(shape(rows)).toEqual(["group:loom:0a:0t:closed"]);
+            expect(groups(rows)).toEqual([{ project: "loom", pinned: true, empty: true }]);
+        });
+
+        it("adds no folder when filtered to a project", () => {
+            const rows = build([agent("a")], [], { pinned: ["loom"], filter: "waveterm" });
+            expect(rows.some((r) => r.kind === "group")).toBe(false);
+        });
+    });
+
     it("files an agent with no project in Home with the terminals that have none, one folder, last", () => {
         const rows = build([agent("x", undefined, ""), agent("a")], [term("h", null), term("t1", "ops")]);
         expect(shape(rows)).toEqual([

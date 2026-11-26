@@ -60,6 +60,7 @@ import {
     Moon,
     Pencil,
     PenTool,
+    Pin,
     PinOff,
     Play,
     Plus,
@@ -249,7 +250,7 @@ import { finalRowFocusId, type FinalTone } from "./finalstage";
 import { useFinalStageView } from "./finalstageviews";
 import { LEAD_MARK_CLASS, leadMark } from "./leadcardmodel";
 import { rosterSeededAtom } from "./liveagents";
-import { collapsedProjectsAtom, toggleFold } from "./projectfoldstore";
+import { collapsedProjectsAtom, pinnedProjectsAtom, toggleFold } from "./projectfoldstore";
 import {
     endedWorkerId,
     isEndedWorkerId,
@@ -2472,10 +2473,11 @@ function DraftWord({ id }: { id: string }) {
 const UNDER_FOLDER = "pl-[14px]";
 const rowIndent = (filtered: boolean): string | undefined => (filtered ? undefined : UNDER_FOLDER);
 
-// A project folder's right-click menu: a new agent in it (the launcher with the project picked), its Overview, then its
-// path's copy and reveal (the Code tree's items), and last Close project…, which closes every agent and terminal in it
-// after a confirm (projectClose), while it holds any. Home has none: it is no project and has no path. Shift+F10 on the
-// focused row raises the same contextmenu event.
+// A project folder's right-click menu: a new agent in it (the launcher with the project picked), its Overview, Pin
+// folder (kept in the tree with nothing in it, pinnedProjectsAtom) or Unpin folder, then its path's copy and reveal (the
+// Code tree's items), and last Close project…, which closes every agent and terminal in it after a confirm
+// (projectClose), while it holds any. Home has none: it is no project and has no path. Shift+F10 on the focused row
+// raises the same contextmenu event.
 function openFolderMenu(model: AgentsViewModel, project: string, e: React.MouseEvent): void {
     if (project === HOME_PROJECT) {
         return;
@@ -2493,6 +2495,21 @@ function openFolderMenu(model: AgentsViewModel, project: string, e: React.MouseE
             click: () => showProjectOverview(project),
         },
     ];
+    const pinned = globalStore.get(pinnedProjectsAtom);
+    items.push(
+        pinned.includes(project)
+            ? {
+                  label: "Unpin folder",
+                  icon: <PinOff size={13} strokeWidth={1.8} />,
+                  click: () => globalStore.set(pinnedProjectsAtom, toggleFold(pinned, project)),
+              }
+            : {
+                  label: "Pin folder",
+                  sublabel: "keeps it when empty",
+                  icon: <Pin size={13} strokeWidth={1.8} />,
+                  click: () => globalStore.set(pinnedProjectsAtom, toggleFold(pinned, project)),
+              }
+    );
     if (root) {
         items.push({ type: "separator" }, ...pathMenuItems(root, null));
     }
@@ -2526,7 +2543,8 @@ function openFolderMenu(model: AgentsViewModel, project: string, e: React.MouseE
 // (`label` where the folder's key reads otherwise: Home) and, at the far end, `trailing`, which a folded folder keeps
 // (what in it wants you, how much it holds); a click opens its Overview in the centre, which then fills it, and the
 // chevron and the folder icon fold it (Home, which has no Overview, folds from anywhere on the row); a right-click
-// opens its menu (openFolderMenu).
+// opens its menu (openFolderMenu). A pinned folder ends on a small pin, and one kept with nothing in it (`empty`) reads
+// faint so it never competes with a folder that has work.
 function FolderRow({
     model,
     project,
@@ -2536,6 +2554,8 @@ function FolderRow({
     trailing,
     selected,
     jarvis = 0,
+    pinned = false,
+    empty = false,
 }: {
     model: AgentsViewModel;
     project: string;
@@ -2547,6 +2567,8 @@ function FolderRow({
     // the project's share of the nav rail's Jarvis badge (jarvisCountsByProject), drawn on the folder icon as the rail
     // draws its own
     jarvis?: number;
+    pinned?: boolean;
+    empty?: boolean;
 }) {
     const hasOverview = project !== HOME_PROJECT;
     const activate = hasOverview ? () => showProjectOverview(project) : onToggle;
@@ -2603,11 +2625,23 @@ function FolderRow({
             </button>
             {/* the name keeps a few letters however much the far end holds */}
             <span
-                className={cn("min-w-[40px] flex-1 truncate text-[13px]", selected ? "text-primary" : "text-secondary")}
+                className={cn(
+                    "min-w-[40px] flex-1 truncate text-[13px] transition-colors",
+                    selected ? "text-primary" : empty ? "text-ink-faint" : "text-secondary"
+                )}
             >
                 {label ?? project}
             </span>
             {trailing}
+            {pinned ? (
+                <Pin
+                    size={11}
+                    strokeWidth={1.8}
+                    data-folder-pinned={project}
+                    aria-label="Pinned"
+                    className="shrink-0 text-ink-faint"
+                />
+            ) : null}
         </div>
     );
 }
@@ -3793,6 +3827,7 @@ export const AgentTree = memo(function AgentTree({ model }: { model: AgentsViewM
     const folds = useAtomValue(treeFoldsAtom);
     const focusId = useAtomValue(model.focusIdAtom);
     const collapsedList = useAtomValue(collapsedProjectsAtom);
+    const pinnedList = useAtomValue(pinnedProjectsAtom);
     const center = useAtomValue(centerModeAtom);
     const overviewProject = useAtomValue(overviewProjectAtom);
     // 280px while RAM and tokens are both on; either one off and the tree is back to 248px (rowfields.ts)
@@ -3911,6 +3946,7 @@ export const AgentTree = memo(function AgentTree({ model }: { model: AgentsViewM
         boards,
         roster: [...agents, ...terminals],
         councils,
+        pinned: pinnedList,
     });
     // each folder's share of the nav rail's Jarvis badge, on its icon (jarvisCountsByProject)
     const attention = useAtomValue(attentionAtom);
@@ -4081,6 +4117,8 @@ export const AgentTree = memo(function AgentTree({ model }: { model: AgentsViewM
                                                 jarvis={jarvisCounts.get(r.project) ?? 0}
                                                 label={projectLabel(r.project)}
                                                 open={r.open}
+                                                pinned={r.pinned}
+                                                empty={r.empty}
                                                 onToggle={() =>
                                                     globalStore.set(
                                                         collapsedProjectsAtom,

@@ -40,6 +40,10 @@ and a picture given to a line that is not big.
   was still awake stayed behind as a stray row with nobody to judge. A live agent you picked as a judge stays open.
 - When you resume a conversation that had a judge, ⚖ under a reply offers "Resume Judge: …" first. It reopens that same
   judge with what it read in the earlier rounds, so you don't have to brief a new one.
+### Added
+
+- Pin a project folder in the Agent tree (right-click it → Pin folder): it stays in the tree after its last agent and
+  terminal close, faint and marked with a pin, so you can start the next agent there from its menu. Unpin folder lets it go.
 
 ## 1.11.0 — 2026-11-26
 
