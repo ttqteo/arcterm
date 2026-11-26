@@ -601,7 +601,9 @@ export default function (kit) {
                 const RESUME_LABEL = "Resume · 3.0M more";
                 // the row's buttons as a step reads them: each one's words, state, tooltip and name, whether its floating box is faded
                 // in and takes the pointer, and whether it sits on the row's first line (level with the name); the live region, and the
-                // error text with the region that holds it
+                // error text with the region that holds it. The tooltip is read from `title` or, while the pointer is on the button, from
+                // `data-arc-title`: TitleTipHost (titletiphost.tsx) lifts a hovered element's `title` into that attribute while its tip
+                // shows, so `title` alone reads null under the pointer, though the words are the app's
                 const readActions = (h2) =>
                     h2.ev(`(() => {
                         const row = document.querySelector('${PAIR_ROW}');
@@ -617,7 +619,7 @@ export default function (kit) {
                                 text: flat(b),
                                 tag: b.tagName,
                                 disabled: b.disabled,
-                                title: b.getAttribute("title"),
+                                title: b.getAttribute("title") ?? b.getAttribute("data-arc-title"),
                                 label: b.getAttribute("aria-label"),
                                 opacity: box.opacity,
                                 events: box.pointerEvents,
