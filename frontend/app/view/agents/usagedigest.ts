@@ -6,7 +6,7 @@
 // the one price table (usagepricing.ts), and it carries numbers, session titles, project names and tool names only,
 // never conversation text. Same input, same string. No React, no Wave runtime imports.
 
-import { sessionRef } from "./usagelevers";
+import { LONG_CTX_FROM, LONG_CTX_TARGET, sessionRef } from "./usagelevers";
 import { SESSION_ROWS, type SessionRow } from "./usagesessions";
 import { fmt, usd, type UsageStats } from "./usagestats";
 
@@ -97,6 +97,18 @@ function table(header: string[], body: string[][]): string[] {
     ];
 }
 
+// What each lever key counts and what its fix is, one line each (usagelevers.ts HIT holds the rules; 20K characters is
+// pkg/usagestats BigResultChars).
+const LEVER_MEANING: Record<string, string> = {
+    longctx: `sessions whose average context was over ${fmt(LONG_CTX_FROM)} tokens; the saving is their main-conversation spend above an average of ${fmt(LONG_CTX_TARGET)} (compact or start fresh sooner).`,
+    bigread:
+        "Read results over 20K characters, re-read from the cache on every later turn (read a range, or grep, instead of whole files).",
+    bigbash:
+        "Bash results over 20K characters, re-read from the cache on every later turn (filter or cap the command's output).",
+    opus: "sessions run on Opus; the saving is their spend minus what Sonnet would have cost.",
+    cold: "resumes after the prompt cache expired, which write the whole context again at full price (compact before leaving, or come back sooner).",
+};
+
 // One "### <key>" block per lever: what it could recover at most, then its heaviest sessions by ref. Claude copies the
 // keys and refs back, so they print exactly as the request carries them.
 function leverLines(levers: UsageLever[], rows: SessionRow[], rowSpend: number): string[] {
@@ -104,6 +116,14 @@ function leverLines(levers: UsageLever[], rows: SessionRow[], rowSpend: number):
     if (levers.length === 0) {
         out.push("No lever applies in this window.");
         return out;
+    }
+    // what each key counts, so Claude does not read it off the name
+    out.push("");
+    for (const l of levers) {
+        const meaning = LEVER_MEANING[l.key];
+        if (meaning != null) {
+            out.push(`- \`${l.key}\`: ${meaning}`);
+        }
     }
     const byId = new Map(rows.map((r) => [r.id, r]));
     for (const l of levers) {
