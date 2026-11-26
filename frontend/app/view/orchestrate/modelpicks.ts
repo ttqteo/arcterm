@@ -4,8 +4,7 @@
 // The plan reviewer's model picks as the dag modal's banner and the selected task's rail show them, and the dag actions that change
 // them (setmodel, leadmodels in pkg/orchestrate/modelroute.go).
 
-import { shortModel } from "../agents/modelname";
-import { isWaiting, LIGHT_PICK, taskRoute } from "./taskroute";
+import { isWaiting, LIGHT_PICK, routeFace, taskRoute } from "./taskroute";
 
 export type PickModel = "sonnet" | "lead";
 
@@ -41,7 +40,7 @@ export function pickRows(group: TaskGroup, owner: Run): PickRow[] {
             model: light ? "sonnet" : "lead",
             waiting,
             changed,
-            runningModel: waiting ? "" : shortModel(route.model),
+            runningModel: waiting ? "" : routeFace(route),
         });
     }
     return rows;

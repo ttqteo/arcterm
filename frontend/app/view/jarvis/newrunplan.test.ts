@@ -87,4 +87,9 @@ describe("workersModelName", () => {
     it("says lead when neither is known", () => {
         expect(workersModelName(null, null)).toBe("lead");
     });
+
+    // a harness's default model has no id: the route reads as its harness, as cards and chips do (routeFace)
+    it("names the harness of a route with no model, never 'default'", () => {
+        expect(workersModelName({ runtime: "codex" } as RoutePin, opus)).toBe("codex");
+    });
 });
