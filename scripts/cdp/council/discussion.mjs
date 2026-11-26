@@ -1112,6 +1112,34 @@ async function jumps(h, rec) {
     await h.ev(`(() => { const el = document.querySelector(${ch}); el.style.flex = ""; el.style.height = ""; })()`);
 }
 
+// the closing card at the foot of a done council's channel: the last thing in it, the Report's answer in bold, and its
+// Open Report opening the Report; the Discussion tab brings the channel back with the card still at its foot
+async function closing(h, rec) {
+    const card = "[data-council-channel] [data-council-closing]";
+    await h.ev(`(() => { const el = document.querySelector("[data-council-channel]"); el.scrollTop = el.scrollHeight; })()`);
+    const shown = await until(h, `!!document.querySelector(${sel(card)})`);
+    const facts = await h.ev(`(() => {
+        const card = document.querySelector(${sel(card)});
+        const column = card?.parentElement;
+        return {
+            state: card?.getAttribute("data-council-closing") ?? null,
+            last: column?.lastElementChild === card,
+            answer: card?.querySelector("[data-council-closing-answer]")?.textContent ?? "",
+            kicker: card?.querySelector("section")?.getAttribute("aria-label") ?? "",
+        };
+    })()`);
+    await h.shot("cdp-shots/council-discussion-closing.png");
+    await click(h, `${card} [data-council-closing-report]`);
+    const report = await until(h, `!!document.querySelector("[data-council-summary]")`);
+    await click(h, "[data-council-tab='discussion']");
+    const back = await until(h, `!!document.querySelector(${sel(card)})`);
+    rec(
+        "done: the channel ends on a closing card (Council done, the Report's answer in bold), and its Open Report opens the Report",
+        shown && facts.state === "done" && facts.last && facts.answer.length > 0 && facts.kicker === "Council done" && report && back,
+        { shown, ...facts, report, back }
+    );
+}
+
 async function done(h, ctx, rec) {
     const id = await openFixture(h, ctx, "done");
     await settledText(h, "[data-council-chip]", "Done");
@@ -1133,6 +1161,7 @@ async function done(h, ctx, rec) {
     );
     await h.shot("cdp-shots/council-discussion-done.png");
     await jumps(h, rec);
+    await closing(h, rec);
 
     // the report's questions to ask next sit in the channel's message box, under its text, as Chat's suggested replies,
     // none of them in the channel's list; a click puts one in the box, @ seat and all

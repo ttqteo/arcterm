@@ -34,6 +34,8 @@ and a picture given to a line that is not big.
 
 ### Added
 
+- A finished council's Discussion ends on a closing card: the council's answer in one sentence, what it settled
+  (agreed, still open, ruled out) and Open Report.
 - A pair that pauses leaves a card in its conversation: why it paused, the judge's summary when it wrote one, then what
   waits on you (with its answer buttons), what is still open and what is agreed. The pair's page in Library draws the
   same card.

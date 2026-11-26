@@ -146,6 +146,7 @@ import {
     type Who,
 } from "./councilchatmodel";
 import { useCouncilChatNav, type CouncilChatNav } from "./councilchatnav";
+import { closingCard, type ClosingCard as ClosingCardData } from "./councilclosingmodel";
 import { CouncilDetailsFoot } from "./councildetails";
 import { initialOf, isFollowUp, type AvatarTone } from "./councildiscussionmodel";
 import { messageMarkdown } from "./councilfinalmodel";
@@ -1794,6 +1795,51 @@ function DraftCard({ c, item, acts }: { c: Council; item: DraftPost; acts: Actio
                 </div>
             </div>
         </article>
+    );
+}
+
+// the foot of a finished council's channel: its answer, what it settled and the way to the Report, so the reader who
+// ends on the Discussion sees it is over and where its result is. It points at the Report, which keeps the whole of it.
+// Grows in (springReveal) when the council ends while the channel is open; already there when it opens on an ended one.
+function ClosingCard({ c, card }: { c: Council; card: ClosingCardData }) {
+    const host = useCouncilHost();
+    const row = usePartMotion(springReveal);
+    return (
+        <motion.div {...row} data-council-closing={c.state} className="flex-none overflow-hidden">
+            <section
+                aria-label={card.kicker}
+                className="flex flex-col gap-[8px] rounded-[10px] border border-edge-mid bg-surface-raised px-4 py-[12px]"
+            >
+                <span className="flex items-center gap-[6px] text-[12.5px] text-muted">
+                    <Check size={14} strokeWidth={2} aria-hidden className="text-success" />
+                    {card.kicker}
+                </span>
+                {card.answer !== "" && (
+                    <p data-council-closing-answer className="m-0 text-[14.5px] font-semibold leading-[1.5]">
+                        {card.answer}
+                    </p>
+                )}
+                {card.direction !== "" && (
+                    <span className="text-[13px] leading-[1.5] text-secondary">Chosen: {card.direction}</span>
+                )}
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-[6px]">
+                    {card.counts !== "" && (
+                        <span data-council-closing-counts className="text-[12.5px] text-muted">
+                            {card.counts}
+                        </span>
+                    )}
+                    <button
+                        type="button"
+                        data-council-closing-report
+                        onClick={() => host.open(c.id, "summary")}
+                        className="ml-auto flex h-[28px] cursor-pointer items-center gap-[6px] rounded-[6px] border border-edge-mid bg-surface px-[10px] text-[13px] text-primary outline-none hover:border-edge-strong hover:bg-surface-hover focus-visible:ring-2 focus-visible:ring-accent"
+                    >
+                        Open Report
+                        <ArrowRight size={14} strokeWidth={2} aria-hidden />
+                    </button>
+                </div>
+            </section>
+        </motion.div>
     );
 }
 
@@ -3798,6 +3844,8 @@ export function CouncilChat({
     const [only, setOnly] = useAtom(useCouncilHost().onlyAtom(c.id));
     const onlyId = only != null && c.experts.some((e) => e.id === only) ? only : null;
     const all = useMemo(() => councilChannel(c, onlyId ?? undefined), [c, onlyId]);
+    // the closing card belongs to the whole channel: one seat's messages alone are not where the council ends
+    const closing = onlyId == null ? closingCard(c) : null;
     // the rail's rows: New is measured against the time the person last left this council (councilopened.ts)
     const since = openedAt(useAtomValue(councilOpenedAtom), c.id);
     // a thread read in this visit clears its idea's fresh replies up to the newest it showed (councillistmodel.readFrom)
@@ -4087,7 +4135,7 @@ export function CouncilChat({
                         boxRef={channel}
                         councilId={c.id}
                         view={onlyId ?? ""}
-                        count={items.length}
+                        count={items.length + (closing != null ? 1 : 0)}
                         sent={ownPosts(items)}
                     >
                         {items.map((item) => {
@@ -4136,6 +4184,9 @@ export function CouncilChat({
                                     return <TypingLine key={item.id} item={item} />;
                             }
                         })}
+                        <AnimatePresence initial={false}>
+                            {closing != null && <ClosingCard key="closing" c={c} card={closing} />}
+                        </AnimatePresence>
                     </Channel>
                     {/* the channel's column: its px-6, its 8px scrollbar gutter on the right, its 860px centred */}
                     <div className="flex-none pb-4 pl-6 pr-[32px] pt-[10px]">

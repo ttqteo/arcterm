@@ -48,6 +48,11 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
   goes for the working agent's card. A reply whose sender is not in the live pair shows its name with no arrow.
   Seen only as end states by the `chat-pair-relay` scenario's Final (its step 6 samples the brief's fold); an agent in
   an Arc run does not watch it. (`chatpairrelay.tsx`)
+- [ ] (arcterm) **A finished council's Discussion ends on a closing card.** Open a done council's Discussion and scroll
+  to the end: the last thing is a card with "Council done", the Report's answer in bold, the settled counts (`N agreed ·
+  N still open · N ruled out`) and Open Report, which opens the Report. Then watch one end while its Discussion is open:
+  the card grows in under the last message (no snap) and the channel stays at the bottom; Summarize again on it folds
+  the card away while the summary runs. Run `task verify:ui -- council-discussion` (its new "closing card" check).
 - [ ] (arcterm) **A changed decision's added sentences read as one block.** On a brainstorm whose decision changed after
   you confirmed it (the Builder check card in Chat, and the Brainstorm tab's review), the sentences it gained after the
   edited `~` line show as one `+` block, not a box each, and "(/compact, ! lệnh, /btw)" stays whole inside its sentence.
