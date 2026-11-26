@@ -53,26 +53,34 @@ describe("ideaLeavesLabel", () => {
 describe("ideaChipTab", () => {
     const rows = [idea({ id: "a" }), idea({ id: "b" }), idea({ id: "c" })];
     const tabs = (map: Record<string, string>) => (id: string) => map[id];
+    // t1 and t2 are Discuss agents, t9 a Go through
+    const kindOf = (tab: string) => (tab === "t9" ? "go-through" : tab.startsWith("t") ? "discuss" : undefined);
     const go: IdeaChip = { kind: "go-through", text: "Go through 3 with an agent" };
     const discuss: IdeaChip = { kind: "discuss", text: "Discuss: gist of a", ideaId: "a" };
 
     it("finds the Discuss agent of the idea the chip names", () => {
-        expect(ideaChipTab(discuss, rows, tabs({ a: "t1" }))).toBe("t1");
-        expect(ideaChipTab(discuss, rows, tabs({ b: "t1" }))).toBeUndefined();
+        expect(ideaChipTab(discuss, rows, tabs({ a: "t1" }), kindOf)).toBe("t1");
+        expect(ideaChipTab(discuss, rows, tabs({ b: "t1" }), kindOf)).toBeUndefined();
+    });
+
+    it("does not read a Go through holding the idea as its Discuss", () => {
+        expect(ideaChipTab(discuss, rows, tabs({ a: "t9", b: "t9", c: "t9" }), kindOf)).toBeUndefined();
     });
 
     it("finds the Go through agent only while it holds every idea waiting", () => {
-        expect(ideaChipTab(go, rows, tabs({ a: "t9", b: "t9", c: "t9" }))).toBe("t9");
+        expect(ideaChipTab(go, rows, tabs({ a: "t9", b: "t9", c: "t9" }), kindOf)).toBe("t9");
         // an idea that arrived after the agent opened is not in it: the chip is ready again
-        expect(ideaChipTab(go, rows, tabs({ a: "t9", b: "t9" }))).toBeUndefined();
+        expect(ideaChipTab(go, rows, tabs({ a: "t9", b: "t9" }), kindOf)).toBeUndefined();
         // a Discuss opened on one of them since took that idea's tab
-        expect(ideaChipTab(go, rows, tabs({ a: "t9", b: "t2", c: "t9" }))).toBeUndefined();
-        expect(ideaChipTab(go, [], tabs({}))).toBeUndefined();
+        expect(ideaChipTab(go, rows, tabs({ a: "t9", b: "t2", c: "t9" }), kindOf)).toBeUndefined();
+        expect(ideaChipTab(go, [], tabs({}), kindOf)).toBeUndefined();
     });
 
     it("has no agent for the chips that open a list", () => {
-        expect(ideaChipTab({ kind: "waiting", text: "What's waiting?" }, rows, tabs({ a: "t1" }))).toBeUndefined();
-        expect(ideaChipTab({ kind: "leaving", text: "x" }, rows, tabs({ a: "t1" }))).toBeUndefined();
+        expect(
+            ideaChipTab({ kind: "waiting", text: "What's waiting?" }, rows, tabs({ a: "t1" }), kindOf)
+        ).toBeUndefined();
+        expect(ideaChipTab({ kind: "leaving", text: "x" }, rows, tabs({ a: "t1" }), kindOf)).toBeUndefined();
     });
 });
 

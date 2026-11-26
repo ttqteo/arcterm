@@ -119,6 +119,11 @@ function goThroughLabel(n: number): string {
  *  agent is remembered for each idea it was given. Read it through launchedFor, which drops a tab that has closed. */
 export const ideaLaunchesAtom = atom<Record<string, string>>({}) as PrimitiveAtom<Record<string, string>>;
 
+/** tab -> what opened it from here, so the popup's Discuss chip tells its own agent from a Go through holding the idea. */
+export const ideaLaunchKindsAtom = atom<Record<string, IdeaLaunchRecord["kind"]>>({}) as PrimitiveAtom<
+    Record<string, IdeaLaunchRecord["kind"]>
+>;
+
 // fake tabs the DEV hook handed out: they are on no roster, so openTabIds counts them as open itself
 const hookTabs = new Set<string>();
 
@@ -205,6 +210,7 @@ async function start(
             ...prev,
             ...Object.fromEntries(ideaIds.map((id) => [id, tab])),
         }));
+        globalStore.set(ideaLaunchKindsAtom, (prev) => ({ ...prev, [tab]: spec.kind }));
         return tab;
     } catch (e) {
         pushToast({ level: "error", title: "Couldn't open an agent for the ideas", message: errText(e) });

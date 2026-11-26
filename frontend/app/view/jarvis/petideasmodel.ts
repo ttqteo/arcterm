@@ -35,14 +35,17 @@ export function ideaLeavesLabel(idea: SessionIdea, now: number): string | null {
 /** The tab of the agent a chip already opened, while it is open (the popup then shows its started line with Go to agent
  *  instead of opening a second one), else undefined. `tabOf` is launchedFor for one idea. Discuss is its own idea's agent.
  *  Go through is one agent holding every idea waiting, so it counts only while all of them share a tab: an idea that came in
- *  since, or one a Discuss took, makes the chip a new pass. */
+ *  since, or one a Discuss took, makes the chip a new pass. `kindOf` says what opened a tab: a Go through holding the idea is
+ *  not its Discuss (the spec puts a Discuss in the idea's project, apart from Go through's No folder), so the chip opens one. */
 export function ideaChipTab(
     chip: IdeaChip,
     rows: readonly SessionIdea[],
-    tabOf: (ideaId: string) => string | undefined
+    tabOf: (ideaId: string) => string | undefined,
+    kindOf: (tab: string) => "discuss" | "go-through" | undefined
 ): string | undefined {
     if (chip.kind === "discuss") {
-        return chip.ideaId !== undefined ? tabOf(chip.ideaId) : undefined;
+        const tab = chip.ideaId !== undefined ? tabOf(chip.ideaId) : undefined;
+        return tab !== undefined && kindOf(tab) === "discuss" ? tab : undefined;
     }
     if (chip.kind !== "go-through") {
         return undefined;

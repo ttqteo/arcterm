@@ -19,7 +19,14 @@ import { useState } from "react";
 import { openTarget } from "./openref";
 import { closePeek } from "./peekstore";
 import { ideaChipTab, ideaLeavesLabel, ideasLine, ideaWhere, startedLine } from "./petideasmodel";
-import { discussIdea, goThroughIdeas, ideaLaunchesAtom, launchedFor, openTabIds } from "./sessionideaslaunch";
+import {
+    discussIdea,
+    goThroughIdeas,
+    ideaLaunchesAtom,
+    ideaLaunchKindsAtom,
+    launchedFor,
+    openTabIds,
+} from "./sessionideaslaunch";
 import { chipsFor, ideaChipLogLine, leavingSoonRows, reviewRows, type IdeaChip } from "./sessionideasmodel";
 import { openSessionIdeas, sessionIdeasAtom } from "./sessionideasstore";
 
@@ -107,10 +114,12 @@ export function PetIdeas({
     const chips = folded ? [] : chipsFor(data, now);
     const open = openTabIds(agents, pending);
     const tabOf = (ideaId: string) => launchedFor(ideaId, launches, open);
+    const kinds = useAtomValue(ideaLaunchKindsAtom);
+    const kindOf = (tab: string) => kinds[tab];
     // the list a chip opened, while it has rows: the leaving list closes on its own when its last idea is decided
     const listRows = list === "waiting" ? rows : list === "leaving" ? leavingSoonRows(data, now) : [];
     const started = chips.flatMap((chip) => {
-        const tab = ideaChipTab(chip, rows, tabOf);
+        const tab = ideaChipTab(chip, rows, tabOf, kindOf);
         return tab !== undefined ? [{ chip, tab }] : [];
     });
 
@@ -139,7 +148,7 @@ export function PetIdeas({
             return;
         }
         // its agent is open and its started line is on screen: a second press would open a second agent
-        if (ideaChipTab(chip, rows, tabOf) !== undefined) {
+        if (ideaChipTab(chip, rows, tabOf, kindOf) !== undefined) {
             return;
         }
         if (chip.kind === "go-through") {

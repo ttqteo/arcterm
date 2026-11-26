@@ -17,9 +17,10 @@ import { TabRpcClient } from "@/app/store/wshrpcutil";
 import type { AgentsViewModel } from "@/app/view/agents/agents";
 import { atom, type PrimitiveAtom } from "jotai";
 import { SESSION_IDEAS_REF } from "./address";
+import { loadBriefing } from "./briefingstore";
 import { sessionIdeasFocusAtom } from "./jarvisstore";
 import { openAddress, type OpenResult } from "./openref";
-import { scanEndToast } from "./sessionideasmodel";
+import { keptSince, scanEndToast } from "./sessionideasmodel";
 
 /** Set to ask the Brief to scroll to the From your sessions region (the region clears it once it has). It lives in
  *  jarvisstore.ts, which openref.ts reads without a cycle; this is the name the region and the popup import it by. */
@@ -37,6 +38,11 @@ let readQueued = false;
 function apply(data: SessionIdeasData): void {
     const prev = globalStore.get(sessionIdeasAtom);
     globalStore.set(sessionIdeasAtom, data);
+    // a keep wrote an initiative: the Brief's Ideas column and its cards come from the briefing, read again here as the
+    // Brief's own Jot does after it creates one (effortstore.ts createIdea)
+    if (keptSince(prev, data)) {
+        loadBriefing();
+    }
     const title = scanEndToast(prev, data);
     const model = feedModel;
     if (title != null && model != null) {

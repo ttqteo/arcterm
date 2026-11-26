@@ -360,6 +360,9 @@ export function sessionIdeasPetScenarios(kit) {
                 routeReply("Mở Discuss cho ý đó.", ideasVerdict({ ideas: "discuss", idea: "sip-idea-2", task: "bàn ý search" }))
             );
             const discussAction = await h.ev(`globalThis.__waveJarvisRoute.lastAction()`);
+            // the discuss closed the popup: openPeek would take one still on its exit motion as open, and the ask-back below
+            // would land in no popup once it is gone
+            const discussPeekGone = await wait(`document.querySelector('${PEEK}') == null`);
             await openPeek(h, kit);
             const unknownDone = await finishRoute(
                 h,
@@ -383,11 +386,12 @@ export function sessionIdeasPetScenarios(kit) {
                     discussAction?.kind === "ideas" &&
                     discussAction?.op === "discuss" &&
                     discussAction?.ideaId === "sip-idea-2" &&
+                    discussPeekGone === true &&
                     unknownDone === "ok" &&
                     unknownAction == null &&
                     askedBack === true &&
                     after6 === before6,
-                { goDone, goAction, goErrand, peekGone6, discussDone, discussAction, unknownDone, unknownAction, askedBack, before6, after6 }
+                { goDone, goAction, goErrand, peekGone6, discussDone, discussAction, discussPeekGone, unknownDone, unknownAction, askedBack, before6, after6 }
             );
             await closePeek(h);
 

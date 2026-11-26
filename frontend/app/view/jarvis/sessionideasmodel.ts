@@ -95,3 +95,14 @@ export function scanEndToast(prev: SessionIdeasData | null, next: SessionIdeasDa
     }
     return `Session scan: ${plural(scan.newideas, "idea")} to review, from ${plural(scan.done, "session")}`;
 }
+
+/** Whether a read shows an idea kept since the last one: a Keep wrote an initiative (a new idea, or a chunk on one), which the
+ *  Brief only shows once it reads its briefing again. Pressed in the Brief or run by an agent (`wsh sessionideas keep`), the
+ *  keep reaches the feed the same way. The first read (`prev` null) is not news. */
+export function keptSince(prev: SessionIdeasData | null, next: SessionIdeasData | null | undefined): boolean {
+    if (prev == null || next == null) {
+        return false;
+    }
+    const keptBefore = new Set(prev.ideas.filter((i) => i.state === "kept").map((i) => i.id));
+    return next.ideas.some((i) => i.state === "kept" && !keptBefore.has(i.id));
+}

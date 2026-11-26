@@ -6,6 +6,7 @@ import {
     chipsFor,
     coverage,
     ideaChipLogLine,
+    keptSince,
     leavingSoonRows,
     reviewRows,
     scanEndToast,
@@ -245,5 +246,30 @@ describe("scanEndToast", () => {
         expect(
             scanEndToast(running, ended({ done: 4, total: 9, newideas: 3, error: "overloaded", stoppedat: 4 }))
         ).toBe("Session scan: 3 ideas to review, from 4 sessions");
+    });
+});
+
+describe("keptSince", () => {
+    const review = data({ ideas: [idea({ id: "a", state: "review" }), idea({ id: "b", state: "review" })] });
+
+    it("is news when an idea turned kept", () => {
+        const next = data({ ideas: [idea({ id: "a", state: "kept" }), idea({ id: "b", state: "review" })] });
+        expect(keptSince(review, next)).toBe(true);
+    });
+
+    it("is not news when no idea turned kept: a drop, a scan's progress, or a kept idea already kept", () => {
+        expect(
+            keptSince(
+                review,
+                data({ ideas: [idea({ id: "a", state: "dropped" }), idea({ id: "b", state: "review" })] })
+            )
+        ).toBe(false);
+        expect(keptSince(review, data({ ...review, scan: scan({ done: 2 }) }))).toBe(false);
+        const kept = data({ ideas: [idea({ id: "a", state: "kept" })] });
+        expect(keptSince(kept, kept)).toBe(false);
+    });
+
+    it("is not news on the first read", () => {
+        expect(keptSince(null, data({ ideas: [idea({ id: "a", state: "kept" })] }))).toBe(false);
     });
 });
