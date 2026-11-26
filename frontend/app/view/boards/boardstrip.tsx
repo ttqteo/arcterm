@@ -2,28 +2,42 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // The strip above an open board's canvas, the same in the board cell and in Library → Boards: the board's drawings row on
-// its left (one chip per drawing, a click moves the view there) and the Edit switch pinned at its right end. It reads and
+// its left (one chip per drawing, a click moves the view there), then Tidy (the drawing in view laid out again,
+// boardlayout.ts) and the Edit switch pinned at its right end. It reads and
 // writes the board's atoms only (boardstore.ts): the canvas publishes the row and eases to a pick, so nothing is passed
 // through it. A board opens in view mode; Edit is what brings the drawing tools, selection and a selection's ask back.
 
 import { cardVariants, indicatorSlide } from "@/app/element/motiontokens";
 import { cn } from "@/util/util";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
-import { PenLine } from "lucide-react";
+import { PenLine, Workflow } from "lucide-react";
 import { AnimatePresence, motion, MotionConfig } from "motion/react";
 import { useEffect, useId, useRef } from "react";
-import { boardDrawingsAtom, boardEditingAtom, boardPickAtom } from "./boardstore";
+import { boardDrawingsAtom, boardEditingAtom, boardPickAtom, boardTidyAtom } from "./boardstore";
 
 // the current chip keeps this far from the row's edge when the row scrolls to it
 const CHIP_MARGIN_PX = 12;
 
 export function BoardStrip({ boardId }: { boardId: string }) {
     const [editing, setEditing] = useAtom(boardEditingAtom(boardId));
+    const inView = useAtomValue(boardDrawingsAtom(boardId))?.inView ?? null;
+    const tidy = useSetAtom(boardTidyAtom(boardId));
     return (
         <div data-board-strip className="flex h-8 flex-none items-center gap-2 border-b border-edge-mid px-3">
             <div className="min-w-0 flex-1">
                 <DrawingsRow boardId={boardId} />
             </div>
+            <button
+                type="button"
+                data-board-tidy
+                disabled={inView == null}
+                title="Tidy the drawing in view: shapes in rows along its flow, arrows routed around them (Ctrl+Z undoes)"
+                onClick={() => inView != null && tidy({ drawingId: inView, ts: Date.now() })}
+                className="flex h-[22px] flex-none cursor-pointer items-center gap-1.5 rounded-[6px] px-2 text-[12px] text-secondary hover:bg-surface-hover hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-default disabled:opacity-50 disabled:hover:bg-transparent disabled:hover:text-secondary"
+            >
+                <Workflow size={12} strokeWidth={2} aria-hidden />
+                Tidy
+            </button>
             <button
                 type="button"
                 data-board-edit

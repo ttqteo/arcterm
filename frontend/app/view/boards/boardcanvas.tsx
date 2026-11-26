@@ -18,6 +18,7 @@
 // header's stepper) eases the view to that part at a size its text reads at; Esc goes back to the whole drawing. A zoom
 // of your own leaves the part.
 
+import { pushToast } from "@/app/cockpit/notificationstore";
 import { MOTION } from "@/app/element/motiontokens";
 import { cubicBezier } from "@/app/element/pulse";
 import { globalStore } from "@/app/store/jotaiStore";
@@ -67,6 +68,7 @@ import {
     boardEditingAtom,
     boardPickAtom,
     boardThemeAtom,
+    boardTidyAtom,
     boardViewportAtom,
     loadBoardConvert,
     pointExcalidrawAtLocalFonts,
@@ -209,6 +211,9 @@ function OpenBoard({ project, boardId, highlightIds, onSelection, part: partProp
     // a pick in the drawings row; one made before this canvas opened is not for it
     const pick = useAtomValue(boardPickAtom(boardId));
     const seenPickRef = useRef(pick);
+    // a press of Tidy, the same way: one made before this canvas opened is not for it
+    const tidy = useAtomValue(boardTidyAtom(boardId));
+    const seenTidyRef = useRef(tidy);
     // How the board opens, set as the file loads: a board never opened here, or left following its newest drawing, is
     // fitted to that drawing (fitOnOpen, pending until the view has a size); any other returns to the view it was left in.
     const fitOnOpenRef = useRef(false);
@@ -733,6 +738,88 @@ function OpenBoard({ project, boardId, highlightIds, onSelection, part: partProp
         const target = drawingsOf(api.getSceneElements()).find((d) => d.id === pick.drawingId);
         fitDrawing(target, false);
     }, [ready, pick]);
+
+    // the layout module (dagre) loads once the board shows, so a press of Tidy starts at once
+    useEffect(() => {
+        if (ready) {
+            import("./boardlayout").catch((e) => console.warn("boards: the layout module did not load", e));
+        }
+    }, [ready]);
+
+    // A press of the strip's Tidy: the shapes slide to the drawing's new layout over durMacro while the view eases to fit
+    // it (at once under reduced motion), and the last frame lands it as one undo step and saves it. The frames are
+    // captured EVENTUALLY, so that one undo step goes back to where they started.
+    useEffect(() => {
+        const api = apiRef.current;
+        const mod = excalidraw;
+        if (!ready || api == null || mod == null || tidy == null || tidy === seenTidyRef.current) {
+            return;
+        }
+        seenTidyRef.current = tidy;
+        let frame: number | null = null;
+        let land: (() => void) | null = null;
+        (async () => {
+            const { tidyDrawing, tidyFrame } = await import("./boardlayout");
+            if (apiRef.current !== api) {
+                return;
+            }
+            const before = api.getSceneElementsIncludingDeleted();
+            const next = tidyDrawing(before, tidy.drawingId, Date.now());
+            if (next == null) {
+                pushToast({
+                    title: "Nothing to tidy",
+                    message: "This drawing has fewer than two shapes to lay out.",
+                    level: "info",
+                });
+                return;
+            }
+            land = () => {
+                frame = null;
+                land = null;
+                api.updateScene({ elements: next, captureUpdate: mod.CaptureUpdateAction.IMMEDIATELY });
+                updateParts();
+                save().catch((e) => console.warn("boards: saving the tidy failed", boardId, e));
+            };
+            fitDrawing(
+                drawingsOf(next).find((d) => d.id === tidy.drawingId),
+                false
+            );
+            if (reducedMotion()) {
+                land();
+                return;
+            }
+            const start = performance.now();
+            const ms = MOTION.durMacro * 1000;
+            const step = (now: number) => {
+                if (apiRef.current !== api) {
+                    return;
+                }
+                const t = Math.min(1, (now - start) / ms);
+                if (t >= 1) {
+                    land();
+                    return;
+                }
+                api.updateScene({
+                    elements: tidyFrame(before, next, easeFluid(t)),
+                    captureUpdate: mod.CaptureUpdateAction.EVENTUALLY,
+                });
+                frame = requestAnimationFrame(step);
+            };
+            frame = requestAnimationFrame(step);
+        })().catch((e) => console.warn("boards: tidying the drawing failed", boardId, e));
+        // A second press mid-slide lands this one at once, so the next tidy starts from the landed layout and nothing is
+        // left half-way. The canvas closing drops it instead: the load effect's cleanup, which runs first, has let go of
+        // the api, and the file still holds the drawing as it was.
+        return () => {
+            if (frame != null) {
+                cancelAnimationFrame(frame);
+                frame = null;
+                if (apiRef.current === api) {
+                    land?.();
+                }
+            }
+        };
+    }, [ready, tidy]);
 
     // Show
     useEffect(() => {

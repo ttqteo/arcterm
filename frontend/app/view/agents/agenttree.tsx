@@ -228,14 +228,16 @@ import { askingCount, askingLabel, displayAgeMs, formatAgeShort, type AgentVM } 
 import { parseDocReview } from "./docreview";
 import { openReview } from "./docreviewstore";
 import { placementStyle } from "./agentgrid";
-import { openBoardsAtom } from "../boards/boardentries";
+import { boardKey, openBoardsAtom } from "../boards/boardentries";
 import { useBoardList } from "../boards/boardstore";
 import {
+    boardMaxAtom,
     boardOpenAtom,
     closeBoard,
     hiddenBoardsAtom,
     openBoard,
     removeBoardFromList,
+    setBoardMax,
     unhide,
 } from "../boards/boardsplitstore";
 import {
@@ -3037,6 +3039,8 @@ function SplitRow({
     tools: ToolStatus[];
 }) {
     const rows = Math.max(...row.cells.map((c) => c.place.row + c.place.rowSpan - 1));
+    // the agent a board cell's click focuses when this split is off screen, which brings the split up
+    const firstAgent = row.cells.find((c) => !isBoardSplitCell(c))?.id ?? null;
     return (
         <div
             data-split-row={row.project}
@@ -3050,7 +3054,7 @@ function SplitRow({
             {row.cells.map((c) => (
                 <div key={c.id} style={placementStyle(c.place)} className="min-w-0 bg-surface">
                     {isBoardSplitCell(c) ? (
-                        <BoardSplitCellView model={model} cell={c} />
+                        <BoardSplitCellView model={model} cell={c} splitShown={row.shown} agentId={firstAgent} />
                     ) : (
                         <SplitCell model={model} cell={c} navDigit={digits.get(c.id)} tools={tools} />
                     )}
@@ -3729,19 +3733,50 @@ function BoardRow({
     );
 }
 
-// A board's cell in a split row: the board mark and its name. A click opens nothing new (its cell is already in the
-// split); the x takes it out of the split, as an agent's does.
-function BoardSplitCellView({ model, cell }: { model: AgentsViewModel; cell: BoardSplitCell }) {
+// A board's cell in a split row: the board mark and its name. A click brings the split up when it is off screen (by
+// focusing one of its agents); on screen, it expands the board over the grid, or collapses it again, as the board's
+// own Expand does. The x takes it out of the split, as an agent's does.
+function BoardSplitCellView({
+    model,
+    cell,
+    splitShown,
+    agentId,
+}: {
+    model: AgentsViewModel;
+    cell: BoardSplitCell;
+    splitShown: boolean;
+    agentId: string | null;
+}) {
     const { show, onContextMenu, drag } = useBoardActions(model, cell.board, true);
+    const ref = { project: cell.board.boardProject, boardId: cell.board.boardId };
+    const max = useAtomValue(boardMaxAtom(boardKey(ref)));
+    const center = useAtomValue(centerModeAtom);
+    const onScreen = splitShown && center === "terminal";
+    const click = () => {
+        if (onScreen) {
+            setBoardMax(ref, !max);
+        } else if (!splitShown && agentId != null) {
+            selectAgentRow(model, agentId);
+        } else {
+            show();
+        }
+    };
     return (
         <div
             data-split-cell={cell.id}
             data-split-board={cell.board.boardId}
-            title={cell.board.chat !== "" ? `${cell.board.name} · reads ${cell.board.chat}` : cell.board.name}
-            onClick={show}
+            data-split-board-max={onScreen && max ? "" : undefined}
+            title={
+                (cell.board.chat !== "" ? `${cell.board.name} · reads ${cell.board.chat}` : cell.board.name) +
+                (onScreen ? (max ? " · click to collapse" : " · click to expand") : "")
+            }
+            onClick={click}
             onContextMenu={onContextMenu}
             {...drag}
-            className="group/cell flex h-full min-w-0 cursor-pointer items-center gap-[6px] px-[8px] py-[6px] hover:bg-surface-hover"
+            className={cn(
+                "group/cell flex h-full min-w-0 cursor-pointer items-center gap-[6px] px-[8px] py-[6px] transition-colors duration-[140ms]",
+                onScreen && max ? "bg-surface-selected" : "hover:bg-surface-hover"
+            )}
         >
             <PenTool size={12} aria-hidden className="flex-none text-muted" />
             <span className="min-w-0 flex-1 truncate text-[12px] text-secondary">{cell.board.name}</span>
