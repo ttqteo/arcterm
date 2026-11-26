@@ -23,6 +23,14 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
 
 ## 2026-11-26
 
+- [ ] (arcterm) **The ⚖ line grows in with a pair and folds away when its round ends.** In the Agent tree, pair two live
+  agents (Add judge on the working agent): the line under the working agent's name ("judge reviewing · 1.2M", the new
+  count at its end) grows in on the spring (height 0 → auto, the opacity on the micro ease) and the rows below it slide
+  down with it, and the judge never has a row of its own. Let the pair stop, then type in the working agent's own Chat:
+  the line folds away on the same spring, the judge's tab goes to sleep and does not show as a row, and Library lists
+  the ended pair. Wake the judge (a message to its tab, or Add judge → Wake): it is a plain row again, with no line.
+  With reduced motion on, the line comes and goes at once. (`pairjudgelineview.tsx` PairJudgeLineSlot; the `pair-tree`
+  scenario's line-live and round-ended steps read the end states, not the motion.)
 - [ ] (arcterm) **A changed decision's added sentences read as one block.** On a brainstorm whose decision changed after
   you confirmed it (the Builder check card in Chat, and the Brainstorm tab's review), the sentences it gained after the
   edited `~` line show as one `+` block, not a box each, and "(/compact, ! lệnh, /btw)" stays whole inside its sentence.
@@ -33,15 +41,15 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
   jump when it settles. With reduced motion on it swaps at once. The Final's `chat-judge` step 11 samples the
   children and their opacities, but not the card's height. (`chatjudgeline.tsx`: `JudgeRow` and `JudgeCard` hand their
   `ref` to AnimatePresence's popLayout.)
-- [ ] (arcterm) **Resume and Judge again on a stopped pair's row and Library page.** In a real pair stopped at the
-  token cap, hover its row in the Agent tree: "Resume · 3.0M more" fades in over the row's first line (about 100 ms),
-  and it fades in on a Tab to it too. A press leaves the conversation closed, and once the pair relays the button goes.
-  When the server refuses a Resume (the pair already went on from another window), its words grow in as a line under
-  the row's second line, and under the header on Library's pair page, on the spring the pair's messages use; they leave
-  the same way when the next press works. After a no-new-points pause the row and the Library header show Judge again,
-  and a press opens the conversation with `@judge ` in the focused composer. With reduced motion on, the error lines
-  land at once. (`agenttree.tsx` PairTreeRow, `pairreadpane.tsx`; the `pair-tree` and `library-pairs` scenarios read
-  the end states, not the motion.)
+- [ ] (arcterm) **Resume and Judge again on a stopped pair's ⚖ line and Library page.** In a real pair stopped at the
+  token cap, hover the working agent's row in the Agent tree: Resume (named after the judge's cap, "Resume · judge
+  +3.0M") fades in over the right end of the ⚖ line (about 100 ms), and it fades in on a Tab to it too. A press leaves the
+  conversation closed, and once the pair relays the button goes. When the server refuses a Resume (the pair already went
+  on from another window), its words grow in as a line under the ⚖ line, and under the header on Library's pair page, on
+  the spring the pair's messages use; they leave the same way when the next press works. After a no-new-points pause the
+  line and the Library header show Judge again, and a press opens the conversation with `@judge ` in the focused
+  composer. With reduced motion on, the error lines land at once. (`pairjudgelineview.tsx`, `pairreadpane.tsx`; the
+  `pair-tree` and `library-pairs` scenarios read the end states, not the motion.)
 - [ ] (arcterm) **The pause card arrives like a message.** In a live pair with its conversation open, let the pair
   pause (the judge writes `no new points`, or the token cap is reached): the card grows in on the same spring as the
   messages around it, whole from its first frame (head, summary when the judge wrote one, then Waits on you, Still
@@ -185,13 +193,15 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
   vite, WebView2 CDP, wavesrv), its tree row shows every port after the green server glyph (`:5174 :9223 :58458
   :58459`), no `+N`; the agent's name truncates first, the ports stay whole. Also the project header row.
 
-- [ ] (arcterm) **A live pair as one tree row, and the Pair toggle in the Tauri app** (`agenttree.tsx` PairTreeRow,
-  `pairjudgemenu.tsx`, `agentsurface.tsx`). Checked on seeded pairs in `task dev:browser` only (`pair-tree`,
-  `pair-header`, `pair-conversation`): the Tauri dev app's Rust build stalled in `rustc` on the worktree. With two live
-  agents paired: their two rows become one folded row in the working agent's place ("worker … · judge …", the pair's
-  RAM and tokens), the arrow opens the two under it (worker, judge), and one of them asking opens it by itself. A click
-  on the row opens the conversation under the working agent's header, Pair lit and the rail on Decided; Pair, Chat,
-  Terminal or Esc go back. On the judge, Pair has no count and the link icon opens the working agent.
+- [ ] (arcterm) **A live pair as a ⚖ line in the working agent's row, and the Pair toggle in the Tauri app**
+  (`pairjudgelineview.tsx`, `pairjudgemenu.tsx`, `agentsurface.tsx`). Checked on seeded pairs in `task dev:browser`
+  only (`pair-tree`, `pair-header`, `pair-conversation`): the Tauri dev app's Rust build stalled in `rustc` on the
+  worktree. With two live agents paired: the working agent keeps its own row and gets one small line under its name
+  (⚖, the judge's state in words, the judges' tokens, the new-message count), and the judge has no row. One asking
+  shows the line in the warning tone ("judge is asking you"), and a click on it opens the judge's own view. A click on
+  the line opens the conversation under the working agent's header, Pair lit and the rail on Decided; a click elsewhere
+  on the row opens the working agent; Pair, Chat, Terminal or Esc go back. On the judge, Pair has no count and the
+  link icon opens the working agent.
 - [ ] (arcterm) **Quote from a file into the chat box.** On an agent showing Chat, open a markdown file in its panel's
   File tab and select part of a paragraph: a Quote button (key `q`) floats beside Comment. `q` (or the button) puts
   `path:N-M` (the paragraph's lines, the path relative to the agent's folder) and the passage as `> ` lines into the

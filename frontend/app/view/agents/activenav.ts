@@ -12,6 +12,7 @@ import { buildAgentTree } from "./agenttreemodel";
 import { waitMap } from "./agentwaits";
 import { projectGridsAtom, treeSplits } from "./gridstore";
 import { rosterSeededAtom } from "./liveagents";
+import { pairListAtom, restingJudgesAtom } from "./pairstore";
 import { collapsedProjectsAtom } from "./projectfoldstore";
 import { projectsAtom } from "./projectsstore";
 import { dockedTerminalAtom } from "./railstore";
@@ -35,7 +36,9 @@ export function activeNavRows(model: AgentsViewModel): ProjectTreeRow[] {
         globalStore.get(model.lineageAtom),
         globalStore.get(treeFoldsAtom),
         focusId,
-        waitMap(agents, globalStore.get(backgroundTasksByIdAtom))
+        waitMap(agents, globalStore.get(backgroundTasksByIdAtom)),
+        // the pairs and resting judges the tree reads, so a judge that has no row takes no digit
+        { list: globalStore.get(pairListAtom), resting: globalStore.get(restingJudgesAtom) }
     );
     const roots = new Map<string, string>();
     for (const [name, project] of Object.entries(globalStore.get(projectsAtom))) {

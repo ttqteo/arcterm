@@ -11,7 +11,6 @@ import {
     extendRow,
     NO_ROW_SELECTION,
     pairPickable,
-    pairShown,
     pickedRowIds,
     rowDepth,
     seatableOf,
@@ -271,7 +270,7 @@ describe("buildAgentTree with runs started from an agent", () => {
         ]);
     });
 
-    it("nests nothing under an agent in an active pair, and does not take a pair's side out of its pair", () => {
+    it("nests a run under the working agent of an active pair, and does not take a judge out of its pair", () => {
         const pair: PairInfo = {
             id: "p1",
             project: "waveterm",
@@ -285,12 +284,12 @@ describe("buildAgentTree with runs started from an agent", () => {
             updatedts: 0,
         };
         const agents = [vm("p", "idle", WAVE), vm("w", "idle", WAVE), started("j", "idle"), started("r", "working")];
-        const rows = build(agents, withOrigins({ j: "p", r: "w" }), new Map(), { list: [pair] });
+        const rows = build(agents, withOrigins({ j: "p", r: "w" }), new Map(), { list: [pair], resting: [] });
         expect(rows.map((r) => (r.kind === "parent" ? `${r.agent.id}@${rowDepth(r)}` : r.kind))).toEqual([
             "group",
             "p@0",
-            "pair",
-            "r@0",
+            "w@0",
+            "r@1",
         ]);
     });
 });
@@ -530,67 +529,158 @@ describe("buildAgentTree with a pair", () => {
         updatedts: 0,
         ...extra,
     });
-    const build = (agents: AgentVM[], list: PairInfo[], folds?: Partial<TreeFolds>, focusId?: string) =>
+    const resting = (tab: string, workertab = "w"): PairResting => ({ tab, name: tab, workertab, pairid: "old" });
+    const asleep = (a: AgentVM): AgentVM => ({ ...a, sleeping: { since: 1, freedBytes: 0 } });
+    const build = (
+        agents: AgentVM[],
+        list: PairInfo[],
+        rest: PairResting[] = [],
+        opts: { lineage?: Lineage; waits?: ReadonlyMap<string, string> } = {}
+    ) =>
         buildAgentTree(
             agents,
             agents.map((a) => a.id),
-            NOLIN,
-            { collapsed: new Set(), doneOpen: new Map(), queuedOpen: new Set(), extrasOpen: new Set(), ...folds },
+            opts.lineage ?? NOLIN,
             undefined,
-            new Map(),
-            { list, focusId }
+            undefined,
+            opts.waits ?? new Map(),
+            { list, resting: rest }
         );
+    // the worker's row carries its pair's judges in brackets; a judge has a row of its own only where it shows
     const shape = (rows: AgentTreeRow[]) =>
         rows.map((r) =>
-            r.kind === "pair"
-                ? `pair:${r.worker.id}+${r.judges.map((j) => j.id).join(",")}:${r.open ? "open" : "folded"}`
-                : r.kind === "parent"
-                  ? `${r.pairRole ?? "parent"}:${r.agent.id}${r.nested ? ":nested" : ""}`
-                  : r.kind
+            r.kind === "parent"
+                ? `${r.nested ? "  " : ""}${r.agent.id}${r.pair ? `[${r.pair.pairId}:${r.pair.judges.map((j) => j.id).join(",")}]` : ""}`
+                : r.kind
         );
 
-    it("folds the working agent and its judge into one row in the working agent's place, counting all of them", () => {
+    it("keeps the working agent a plain row in its own place with its pair on it, and gives the judge no row", () => {
         const agents = [vm("x", "idle", WAVE), vm("w", "working", WAVE), vm("j", "idle", WAVE), vm("y", "idle", WAVE)];
         const rows = build(agents, [pairInfo(["j"])]);
-        expect(shape(rows)).toEqual(["group", "parent:x", "pair:w+j:folded", "parent:y"]);
-        expect(rows[0]).toMatchObject({ kind: "group", count: 4, running: 1 });
+        expect(shape(rows)).toEqual(["group", "x", "w[p1:j]", "y"]);
     });
 
-    it("lists the working agent then each judge under the row while the person has it open", () => {
-        const agents = [vm("w", "idle", WAVE), vm("j", "idle", WAVE), vm("k", "idle", WAVE)];
-        const rows = build(agents, [pairInfo(["j", "k"])], { pairsOpen: new Map([["p1", true]]) });
-        expect(shape(rows)).toEqual(["group", "pair:w+j,k:open", "worker:w:nested", "judge:j:nested", "judge:k:nested"]);
+    it("counts the judges in the working agent's folder: how many, who asks and who works", () => {
+        const agents = [vm("w", "idle", WAVE), vm("j", "asking", WAVE), vm("k", "working", WAVE)];
+        const rows = build(agents, [pairInfo(["j", "k"])]);
+        expect(shape(rows)).toEqual(["group", "w[p1:j,k]"]);
+        expect(rows[0]).toMatchObject({ kind: "group", count: 3, attn: 1, running: 1 });
     });
 
-    it("opens by itself while one of them asks you, or while one is chosen", () => {
-        const asking = [vm("w", "idle", WAVE), vm("j", "asking", WAVE)];
-        expect(shape(build(asking, [pairInfo(["j"])], { pairsOpen: new Map([["p1", false]]) }))[1]).toBe("pair:w+j:open");
-        const idle = [vm("w", "idle", WAVE), vm("j", "idle", WAVE)];
-        expect(shape(build(idle, [pairInfo(["j"])], {}, "j"))[1]).toBe("pair:w+j:open");
+    it("keeps the runs the working agent started, and the agents waiting on it, nested under its row", () => {
+        const started = (id: string): AgentVM => ({ ...vm(id, "working", WAVE), runId: `run-${id}` });
+        const agents = [vm("w", "working", WAVE), vm("j", "idle", WAVE), started("r"), vm("q", "idle", WAVE)];
+        const rows = build(agents, [pairInfo(["j"])], [], {
+            lineage: { roles: {}, runs: {}, origins: { r: "w" } },
+            waits: new Map([["q", "w"]]),
+        });
+        expect(shape(rows)).toEqual(["group", "w[p1:j]", "  r", "  q"]);
+        expect(rows[0]).toMatchObject({ count: 4, running: 2 });
+        expect(rows.find((r) => r.kind === "parent" && r.agent.id === "r")).toMatchObject({ nested: true, depth: 1 });
     });
 
-    it("leaves an ended pair's agents as plain rows", () => {
+    it("lets the working agent wait on another and say so, its pair on the row all the same", () => {
+        const agents = [vm("w", "idle", WAVE), vm("j", "idle", WAVE), vm("o", "idle", LOOM)];
+        const rows = build(agents, [pairInfo(["j"])], [], { waits: new Map([["w", "o"]]) });
+        expect(rows.find((r) => r.kind === "parent" && r.agent.id === "w")).toMatchObject({
+            waitsFor: "o",
+            pair: { pairId: "p1" },
+        });
+    });
+
+    it("carries the pair on the working agent's row where it nests under the agent that waits on, or started, it", () => {
+        const started: AgentVM = { ...vm("s", "idle", WAVE), runId: "run-s" };
+        const pairOfStarted = pairInfo(["j"], { worker: { tab: "s", name: "s", harness: "claude" } });
+        const rows = build([vm("p", "idle", WAVE), started, vm("j", "idle", WAVE)], [pairOfStarted], [], {
+            lineage: { roles: {}, runs: {}, origins: { s: "p" } },
+        });
+        expect(shape(rows)).toEqual(["group", "p", "  s[p1:j]"]);
+        const waiter = build(
+            [vm("p", "idle", WAVE), vm("w", "idle", WAVE), vm("j", "idle", WAVE)],
+            [pairInfo(["j"])],
+            [],
+            {
+                waits: new Map([["w", "p"]]),
+            }
+        );
+        expect(shape(waiter)).toEqual(["group", "p", "  w[p1:j]"]);
+    });
+
+    it("leaves an ended pair's agents as plain rows with no pair", () => {
         const agents = [vm("w", "idle", WAVE), vm("j", "idle", WAVE)];
-        expect(shape(build(agents, [pairInfo(["j"], { state: "ended" })]))).toEqual(["group", "parent:w", "parent:j"]);
+        expect(shape(build(agents, [pairInfo(["j"], { state: "ended" })]))).toEqual(["group", "w", "j"]);
     });
 
-    it("folds no pair whose working agent is not in the roster, and leaves its judge in place", () => {
-        const agents = [vm("j", "idle", WAVE)];
-        expect(shape(build(agents, [pairInfo(["j"])]))).toEqual(["group", "parent:j"]);
-    });
-});
-
-describe("pairShown", () => {
-    const team = [vm("w", "idle"), vm("j", "idle")];
-
-    it("is folded by default, and follows the person's fold", () => {
-        expect(pairShown(team, undefined, undefined)).toBe(false);
-        expect(pairShown(team, true, undefined)).toBe(true);
+    it("keeps a pair whose judges are all gone from the roster on the working agent's row", () => {
+        expect(shape(build([vm("w", "idle", WAVE)], [pairInfo(["j"])]))).toEqual(["group", "w[p1:]"]);
     });
 
-    it("opens over a fold while one of them asks or is chosen", () => {
-        expect(pairShown([vm("w", "idle"), vm("j", "asking")], false, undefined)).toBe(true);
-        expect(pairShown(team, false, "w")).toBe(true);
+    it("leaves the judge a plain row where the working agent has no plain row of its own", () => {
+        const run = {
+            runId: "run-1",
+            channelId: "ch",
+            title: "Resource linking",
+            project: "waveterm",
+            dag: { oid: "dag-1", runid: "run-1", tasks: [] } as TaskGroup,
+        } as RunInfo;
+        const lineage: Lineage = { roles: { w: { kind: "lead", runId: "run-1" } }, runs: { "run-1": run } };
+        const rows = build([vm("w", "idle", WAVE), vm("j", "idle", WAVE)], [pairInfo(["j"])], [], { lineage });
+        expect(rows.map((r) => r.kind)).toEqual(["group", "lead", "parent"]);
+        expect(rows[2]).toMatchObject({ kind: "parent", agent: { id: "j" } });
+        expect(rows[2]).not.toHaveProperty("pair");
+    });
+
+    it("leaves the judge a plain row where the working agent is not in the roster", () => {
+        expect(shape(build([vm("j", "idle", WAVE)], [pairInfo(["j"])]))).toEqual(["group", "j"]);
+    });
+
+    it("never puts an agent in two pairs: a judge another pair's working agent already claimed stays that pair's", () => {
+        const second = pairInfo(["j"], { id: "p2", worker: { tab: "v", name: "v", harness: "claude" } });
+        const agents = [vm("w", "idle", WAVE), vm("j", "idle", WAVE), vm("v", "idle", WAVE)];
+        expect(shape(build(agents, [pairInfo(["j"]), second]))).toEqual(["group", "w[p1:j]", "v[p2:]"]);
+    });
+
+    describe("a resting judge", () => {
+        const agents = (judge: AgentVM) => [vm("w", "idle", WAVE), judge, vm("y", "idle", WAVE)];
+
+        it("is left out of the tree while it sleeps and its worker is on the roster, and out of the folder's count", () => {
+            const rows = build(agents(asleep(vm("j", "idle", WAVE))), [], [resting("j")]);
+            expect(shape(rows)).toEqual(["group", "w", "y"]);
+            expect(rows[0]).toMatchObject({ count: 2 });
+        });
+
+        it("is a plain row again once it is awake", () => {
+            expect(shape(build(agents(vm("j", "idle", WAVE)), [], [resting("j")]))).toEqual(["group", "w", "j", "y"]);
+            expect(shape(build(agents(vm("j", "working", WAVE)), [], [resting("j")]))).toEqual([
+                "group",
+                "w",
+                "j",
+                "y",
+            ]);
+        });
+
+        it("stays a plain row when its worker is no longer on the roster, so it cannot be hidden and unreachable", () => {
+            const lone = [asleep(vm("j", "idle", WAVE)), vm("y", "idle", WAVE)];
+            expect(shape(build(lone, [], [resting("j")]))).toEqual(["group", "j", "y"]);
+        });
+
+        it("is no one's started run or waiter while it is hidden", () => {
+            const hidden: AgentVM = { ...asleep(vm("j", "idle", WAVE)), runId: "run-j" };
+            const rows = build([vm("w", "idle", WAVE), hidden, vm("y", "idle", WAVE)], [], [resting("j")], {
+                lineage: { roles: {}, runs: {}, origins: { j: "w" } },
+                waits: new Map([["j", "y"]]),
+            });
+            expect(shape(rows)).toEqual(["group", "w", "y"]);
+        });
+
+        it("hides only the agents it names", () => {
+            expect(shape(build(agents(asleep(vm("j", "idle", WAVE))), [], [resting("k")]))).toEqual([
+                "group",
+                "w",
+                "j",
+                "y",
+            ]);
+        });
     });
 });
 
@@ -636,8 +726,6 @@ describe("buildAgentTree with run lineage", () => {
                     return `stage:${r.stageRole}:${r.agent.id}${r.lens ? `@${r.lens}` : ""}${r.outcome ? `:${r.outcome}` : ""}`;
                 case "final":
                     return `final:${r.agent?.id ?? "-"}`;
-                case "pair":
-                    return `pair:${r.pairId}`;
                 default:
                     return `${r.kind}:${r.run.runId}:${r.live}`;
             }
