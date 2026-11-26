@@ -90,6 +90,11 @@ export function useNeedsYou(
             fireAndForget(() => openOrPeek(model, { kind: "council", councilId: to.councilId }, e));
             return;
         }
+        // the ideas from your sessions: the Brief's From your sessions region (the router sets the Brief on it)
+        if (to.kind === "sessionideas") {
+            fireAndForget(() => openOrPeek(model, { kind: "sessionideas" }, e));
+            return;
+        }
         fireAndForget(() =>
             openOrPeek(model, { kind: "channel", channelId: to.channelId, runId: to.runId ?? undefined }, e)
         );

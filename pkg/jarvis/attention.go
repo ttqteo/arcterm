@@ -25,6 +25,7 @@ import (
 	"github.com/wavetermdev/waveterm/pkg/effortstore"
 	"github.com/wavetermdev/waveterm/pkg/learn"
 	"github.com/wavetermdev/waveterm/pkg/runqueue"
+	"github.com/wavetermdev/waveterm/pkg/sessionideas"
 	"github.com/wavetermdev/waveterm/pkg/waveobj"
 	"github.com/wavetermdev/waveterm/pkg/wshrpc"
 	"github.com/wavetermdev/waveterm/pkg/wstore"
@@ -61,6 +62,9 @@ const (
 	// without a wire field, by ORef agent: (open the agent that holds them), else by an empty ProjectPath (pick the
 	// repo), else process (start the agent)
 	AttentionBugReports = "bug-reports"
+	// the ideas a scan found in the person's sessions (pkg/sessionideas), after 7 days with nothing opened: one row for all of
+	// them, which opens the Brief's From your sessions region and offers Next week
+	AttentionSessionIdeas = "session-ideas"
 )
 
 // mirrors orchestrate.TaskState_*, spelled here for the same reason as the dag statuses above.
@@ -107,6 +111,10 @@ type AttentionInput struct {
 	// (not read) and all-zero both make no row. BugReportsSince is when that wait began, unix ms.
 	BugReports      *wshrpc.BugReportStatus
 	BugReportsSince int64
+	// SessionIdeas is the ideas store as Load read it (nil: not read, no row); NowMs is the clock its 7 days are held
+	// against, unix ms. Passed in, not read off the clock, so the builder stays pure.
+	SessionIdeas *wshrpc.SessionIdeasData
+	NowMs        int64
 }
 
 // runForWorker finds the run whose phases claim this worker tab oref.
@@ -439,6 +447,7 @@ func BuildAttention(in AttentionInput) []wshrpc.AttentionItem {
 	learned := learnItems(in.Learn)
 	councils := councilItems(in.Councils)
 	bugReports := bugReportItems(in.BugReports, in.BugReportsSince)
+	ideas := sessionIdeasItems(in.SessionIdeas, in.NowMs)
 	for _, group := range [][]wshrpc.AttentionItem{gates, escalations, asks, queued, plans, unverified, due, learned, councils} {
 		g := group
 		sort.SliceStable(g, func(i, j int) bool {
@@ -449,7 +458,7 @@ func BuildAttention(in AttentionInput) []wshrpc.AttentionItem {
 		})
 	}
 
-	out := make([]wshrpc.AttentionItem, 0, len(gates)+len(escalations)+len(asks)+len(queued)+len(plans)+len(unverified)+len(due)+len(learned)+len(councils)+len(bugReports))
+	out := make([]wshrpc.AttentionItem, 0, len(gates)+len(escalations)+len(asks)+len(queued)+len(plans)+len(unverified)+len(due)+len(learned)+len(councils)+len(bugReports)+len(ideas))
 	out = append(out, gates...)
 	out = append(out, escalations...)
 	out = append(out, asks...)
@@ -468,7 +477,58 @@ func BuildAttention(in AttentionInput) []wshrpc.AttentionItem {
 	out = append(out, councils...)
 	// nothing is stopped while reports wait: nobody reads them until the person presses Process
 	out = append(out, bugReports...)
+	// a reminder of ideas nobody asked about: nothing is stopped or late if they wait
+	out = append(out, ideas...)
 	return out
+}
+
+// sessionIdeasWaitMs is how long the ideas wait in review, unopened, before the Waiting line raises them (and what Next
+// week puts them off for, wshserver SessionIdeasMarkCommand).
+const (
+	sessionIdeasDayMs  = int64(24 * time.Hour / time.Millisecond)
+	sessionIdeasWaitMs = 7 * sessionIdeasDayMs
+)
+
+// sessionIdeasItems is the one row for the ideas that wait in review, or none: raised once the wait has run 7 days and
+// Next week has not put it off. The wait runs from the later of the person's last look (SeenTs) and the oldest idea
+// waiting, so looking at the ideas without deciding them starts the 7 days again. The row's Why lists the gists the scan
+// stored (the scan's words, not a sentence composed from counts like the other rows' Why), so the row says what waits
+// without being opened.
+func sessionIdeasItems(d *wshrpc.SessionIdeasData, nowMs int64) []wshrpc.AttentionItem {
+	if d == nil || nowMs < d.SnoozedUntil {
+		return nil
+	}
+	var gists []string
+	oldest := int64(0)
+	for _, idea := range d.Ideas {
+		if idea.State != wshrpc.SessionIdeaState_Review {
+			continue
+		}
+		gists = append(gists, idea.Gist)
+		if oldest == 0 || idea.FoundTs < oldest {
+			oldest = idea.FoundTs
+		}
+	}
+	if len(gists) == 0 {
+		return nil
+	}
+	since := max(d.SeenTs, oldest)
+	if nowMs-since < sessionIdeasWaitMs {
+		return nil
+	}
+	noun := "ideas"
+	if len(gists) == 1 {
+		noun = "idea"
+	}
+	return []wshrpc.AttentionItem{{
+		Kind:         AttentionSessionIdeas,
+		Key:          "session-ideas",
+		Source:       "Session ideas",
+		Text:         fmt.Sprintf("%d %s from your sessions, waiting %d days", len(gists), noun, (nowMs-since)/sessionIdeasDayMs),
+		Action:       "Review",
+		WaitingSince: since,
+		Why:          strings.Join(gists, " · "),
+	}}
 }
 
 // bugReportItems is the one row for the bug reports, or none. Handling wins over waiting: while an agent holds reports
@@ -1007,6 +1067,12 @@ func GatherAttentionFromLedger(ctx context.Context, chans []*waveobj.Channel, ru
 		log.Printf("jarvis attention: bug reports unreadable, their row omitted: %v", berr)
 	} else {
 		in.BugReports, in.BugReportsSince = &st, since
+	}
+	// and for the session ideas: an unreadable store means no row, logged, as the bug reports above
+	if ideas, ierr := sessionideas.Default().Load(); ierr != nil {
+		log.Printf("jarvis attention: session ideas unreadable, their row omitted: %v", ierr)
+	} else {
+		in.SessionIdeas, in.NowMs = &ideas, time.Now().UnixMilli()
 	}
 	queue, qerr := runqueue.List()
 	if qerr != nil {

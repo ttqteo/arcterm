@@ -81,6 +81,34 @@ export async function cleanStorage(
     }
 }
 
+/** The sessions confirm's Scan them first: starts a Session ideas scan of these transcripts, which moves nothing. The
+ *  Storage report says which sessions were never scanned as of its own scan, so when this one ends the report is
+ *  rescanned and the next confirm's count is current. A start that is refused (a scan already runs) throws, and
+ *  nothing waits for it. */
+export async function scanSessionsForIdeas(paths: string[]): Promise<void> {
+    const startedAt = Date.now();
+    let done = false;
+    const unsubscribe = waveEventSubscribeSingle({
+        eventType: "sessionideas:changed",
+        handler: () =>
+            fireAndForget(async () => {
+                const scan = (await RpcApi.SessionIdeasGetCommand(TabRpcClient)).scan;
+                if (!done && scan != null && scan.startedts >= startedAt && scan.endedts > 0) {
+                    done = true;
+                    unsubscribe();
+                    rescanStorage();
+                }
+            }),
+    });
+    try {
+        await RpcApi.SessionIdeasScanCommand(TabRpcClient, { paths });
+    } catch (e) {
+        done = true;
+        unsubscribe();
+        throw e;
+    }
+}
+
 /** Starts a scan. The head says Scanning… at once, set before the RPC goes out: the server publishes only when a
  *  scan ends, and that event's report replaces this one. A failed ask reads the server's report back. */
 export function rescanStorage(): void {

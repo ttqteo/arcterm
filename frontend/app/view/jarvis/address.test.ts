@@ -185,6 +185,20 @@ describe("parseAddress", () => {
         });
     });
 
+    // the one kind with no id: the ref is the word alone, the Brief's From your sessions region
+    describe("sessionideas", () => {
+        it("reads the bare ref", () => {
+            expect(parseAddress("sessionideas")).toEqual({ kind: "sessionideas" });
+        });
+
+        it.each(["sessionideas:", "sessionideas:abc", "sessionideas:a:b", "SessionIdeas", " sessionideas"])(
+            "refuses %s",
+            (address) => {
+                expect(parseAddress(address)).toEqual({ kind: "unsupported", message: CANNOT_OPEN });
+            }
+        );
+    });
+
     describe("board:", () => {
         it("reads a project and a board id", () => {
             expect(parseAddress("board:arcterm/b0a5b001")).toEqual({

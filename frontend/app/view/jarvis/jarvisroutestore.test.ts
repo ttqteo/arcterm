@@ -14,6 +14,8 @@ const launchAgent = vi.fn();
 const closeTabLogged = vi.fn();
 const openTarget = vi.fn();
 const loadCouncils = vi.fn();
+const discussIdea = vi.fn();
+const goThroughIdeas = vi.fn();
 const councilsAtom = atom<any[] | null>(null) as PrimitiveAtom<any[] | null>;
 
 vi.mock("@/app/store/wshclientapi", () => ({
@@ -50,6 +52,11 @@ vi.mock("@/app/view/agents/projectsstore", async (orig) => ({
     ...(await orig<typeof import("@/app/view/agents/projectsstore")>()),
     projectsAtom: atom<Record<string, { path: string }>>({}),
 }));
+// the two agents the ideas jobs open: launching them for real is sessionideaslaunch.test.ts's
+vi.mock("./sessionideaslaunch", () => ({
+    discussIdea: (...a: any[]) => discussIdea(...a),
+    goThroughIdeas: (...a: any[]) => goThroughIdeas(...a),
+}));
 
 import { emptyHarnessPreference, harnessesAtom, harnessPreferenceAtom } from "@/app/view/agents/harnessstore";
 import { HOME_NAME } from "@/app/view/agents/launcher";
@@ -69,6 +76,7 @@ import {
     setRouteModel,
 } from "./jarvisroutestore";
 import { NO_FOLDER_DEST, petErrandAtom, petPeekOpenAtom, petRouteCardAtom } from "./petstore";
+import { sessionIdeasAtom } from "./sessionideasstore";
 
 const NO_FOLDER_PATH = "C:/Users/me/.arc/no-folder";
 const LOOM = "D:/work/loom";
@@ -144,8 +152,30 @@ beforeEach(() => {
     globalStore.set(launcherRuntimeAtom, null);
     globalStore.set(agentsAtom, []);
     globalStore.set(councilsAtom, null);
+    globalStore.set(sessionIdeasAtom, null);
+    discussIdea.mockResolvedValue("idea-tab");
+    goThroughIdeas.mockResolvedValue("idea-tab");
     setRouteModel(model);
 });
+
+// an idea as the store holds it; reviewRows reads only `ideas`, so the rest of the data stays out
+function ideaRow(id: string, over: Record<string, unknown> = {}) {
+    return {
+        id,
+        gist: `gist of ${id}`,
+        project: "loom",
+        projectpath: LOOM,
+        effortoid: "",
+        efforttitle: "",
+        state: "review",
+        deletests: 0,
+        foundts: 1,
+        ...over,
+    };
+}
+function holdIdeas(...ideas: ReturnType<typeof ideaRow>[]) {
+    globalStore.set(sessionIdeasAtom, { ideas } as any);
+}
 
 afterEach(() => {
     vi.clearAllMocks();
@@ -165,6 +195,23 @@ describe("routeWorld", () => {
             { name: "loom", path: LOOM },
         ]);
         expect(world.agents.map((a) => a.id)).toEqual(["t1"]);
+    });
+
+    it("lists the ideas waiting for a decision, the one deleted soonest first, with their initiative", async () => {
+        holdIdeas(
+            ideaRow("late", { deletests: 0 }),
+            ideaRow("soon", { deletests: 5, efforttitle: "Sidecar" }),
+            ideaRow("done", { state: "kept" })
+        );
+        const world = await routeWorld(model);
+        expect(world.ideas).toEqual([
+            { id: "soon", gist: "gist of soon", project: "loom", initiative: "Sidecar" },
+            { id: "late", gist: "gist of late", project: "loom", initiative: "" },
+        ]);
+    });
+
+    it("lists no ideas before the store has read once", async () => {
+        expect((await routeWorld(model)).ideas).toEqual([]);
     });
 
     it("leaves out the tab it is told to exclude", async () => {
@@ -624,6 +671,73 @@ describe("applyRouteAction", () => {
     it("takes NO_FOLDER_DEST as the No folder sentinel", () => {
         expect(NO_FOLDER_DEST).toBe("no-folder");
     });
+
+    describe("an ideas job", () => {
+        beforeEach(() => {
+            holdIdeas(
+                ideaRow("a", { deletests: 9 }),
+                ideaRow("b", { deletests: 3 }),
+                ideaRow("c", { state: "dropped" })
+            );
+            globalStore.set(petPeekOpenAtom, true);
+        });
+
+        it("goes through every idea waiting with one agent, never through a project launch", async () => {
+            const out = await applyRouteAction(model, { kind: "ideas", op: "go-through", reason: "r" });
+            expect(out).toEqual({ ok: true });
+            expect(goThroughIdeas).toHaveBeenCalledTimes(1);
+            // the one deleted soonest first, and not the dropped one
+            expect(goThroughIdeas.mock.calls[0][0]).toBe(model);
+            expect(goThroughIdeas.mock.calls[0][1].map((i: { id: string }) => i.id)).toEqual(["b", "a"]);
+            expect(discussIdea).not.toHaveBeenCalled();
+            expect(launchAgent).not.toHaveBeenCalled();
+            expect(assign).not.toHaveBeenCalled();
+            expect(globalStore.get(petPeekOpenAtom)).toBe(false);
+            // no routing note: the agent is not a project's, so "Wrong project?" has nothing to move
+            expect(globalStore.get(jarvisRouteBandAtom)).toEqual({});
+        });
+
+        it("discusses the idea named, read again from the store as it is now", async () => {
+            const out = await applyRouteAction(model, { kind: "ideas", op: "discuss", ideaId: "a", reason: "r" });
+            expect(out).toEqual({ ok: true });
+            expect(discussIdea).toHaveBeenCalledTimes(1);
+            expect(discussIdea.mock.calls[0][1]).toMatchObject({ id: "a", gist: "gist of a" });
+            expect(goThroughIdeas).not.toHaveBeenCalled();
+            expect(launchAgent).not.toHaveBeenCalled();
+            expect(globalStore.get(petPeekOpenAtom)).toBe(false);
+        });
+
+        it("fails in words, and opens nothing, for an idea decided since the rule chose it", async () => {
+            const out = await applyRouteAction(model, { kind: "ideas", op: "discuss", ideaId: "c", reason: "r" });
+            expect(out.ok).toBe(false);
+            expect("message" in out && out.message).toMatch(/decided|gone/i);
+            expect(discussIdea).not.toHaveBeenCalled();
+            expect(globalStore.get(petPeekOpenAtom)).toBe(true);
+        });
+
+        it("fails in words when a go-through finds nothing waiting any more", async () => {
+            holdIdeas();
+            const out = await applyRouteAction(model, { kind: "ideas", op: "go-through", reason: "r" });
+            expect(out.ok).toBe(false);
+            expect(goThroughIdeas).not.toHaveBeenCalled();
+        });
+
+        it("fails in words, and keeps the peek, when the agent did not open", async () => {
+            goThroughIdeas.mockResolvedValue(null);
+            const out = await applyRouteAction(model, { kind: "ideas", op: "go-through", reason: "r" });
+            expect(out.ok).toBe(false);
+            expect("message" in out && out.message).toMatch(/agent/i);
+            expect(globalStore.get(petPeekOpenAtom)).toBe(true);
+        });
+
+        it("records and opens nothing under the DEV hook's terms", async () => {
+            const out = await applyRouteAction(model, { kind: "ideas", op: "go-through", reason: "r" }, true);
+            expect(out).toEqual({ ok: true });
+            expect(goThroughIdeas).not.toHaveBeenCalled();
+            expect(discussIdea).not.toHaveBeenCalled();
+            expect(launchAgent).not.toHaveBeenCalled();
+        });
+    });
 });
 
 describe("the DEV hook", () => {
@@ -702,6 +816,35 @@ describe("the DEV hook", () => {
         const bands = globalStore.get(jarvisRouteBandAtom);
         expect(bands["t1"]).toBeUndefined();
         expect(bands["t9"]).toMatchObject({ reason: "you picked it", fresh: false });
+    });
+
+    it("records an ideas job a canned reply names, and opens no agent", async () => {
+        holdIdeas(ideaRow("a"), ideaRow("b"));
+        globalStore.set(petPeekOpenAtom, true);
+        await hook().finish(
+            "duyệt giúp tôi",
+            replyOf(verdictJson({ project: "", ideas: "go-through", task: "duyệt giúp tôi" }), "Opening one agent.")
+        );
+        expect(hook().lastAction()).toMatchObject({ kind: "ideas", op: "go-through" });
+        expect(goThroughIdeas).not.toHaveBeenCalled();
+        expect(launchAgent).not.toHaveBeenCalled();
+        expect(globalStore.get(petErrandAtom)).toMatchObject({ text: "Opening one agent.", status: "done" });
+        expect(globalStore.get(petPeekOpenAtom)).toBe(false);
+    });
+
+    it("answers with the rule's own question when a discuss names no listed idea", async () => {
+        holdIdeas(ideaRow("a"));
+        await hook().finish(
+            "bàn ý x",
+            replyOf(verdictJson({ project: "", ideas: "discuss", idea: "ghost", task: "bàn ý x" }), "Opening it.")
+        );
+        // an answer applies nothing, so no action is recorded: not the one an earlier reply left behind
+        expect(hook().lastAction()).toBeNull();
+        expect(globalStore.get(petErrandAtom)).toMatchObject({
+            text: expect.stringMatching(/which idea/i),
+            status: "done",
+        });
+        expect(discussIdea).not.toHaveBeenCalled();
     });
 
     it("lands a refused hand-off on the errand when dry run is off", async () => {

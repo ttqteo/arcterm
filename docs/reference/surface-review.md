@@ -33,7 +33,7 @@ conversation history and the usage tally read live.
   harness update check, interrupted-scan recovery, trash purge, the Storage scan and auto-clean, the worktree and
   canvas-feedback sweeps, run resume (`MarkInterruptedRuns`, `ResumeInterruptedLeads`, `ResumeAtBoot`), brainstorm
   resume, the watchdog and the RAM regulator, pinned apps' servers, the agent sleep loop, the loose-end and
-  memory-hygiene sweeps, the council runner and the run queue. The list is `snapshotBootSkips` in
+  memory-hygiene sweeps, the Session ideas schedule, the council runner and the run queue. The list is `snapshotBootSkips` in
   `cmd/server/main-server.go`, and the app logs it at boot;
 - start a block's process only when its cwd is inside `arc-snap\scratch` (`pkg/blockcontroller`): every other
   cwd in the copy is a real checkout. This also stops the boot's `RestoreLiveAgents` from relaunching a real one;

@@ -26,6 +26,7 @@ const KIND_LABEL: Record<string, string> = {
     "learn-proposal": "Learned rule",
     council: "Council",
     "bug-reports": "Báo lỗi",
+    "session-ideas": "Ideas",
 };
 
 export type StripOpen =
@@ -36,7 +37,9 @@ export type StripOpen =
     // a chunk that came due, or a plan to review whose agent is gone: its initiative, which names no channel
     | { kind: "effort"; effortId: string }
     // a council paused after its first round: its Discussion, where Continue is pressed
-    | { kind: "council"; councilId: string };
+    | { kind: "council"; councilId: string }
+    // the ideas a scan found in the sessions: the Brief's From your sessions region (the `sessionideas` address)
+    | { kind: "sessionideas" };
 
 export interface StripRow {
     key: string;
@@ -194,9 +197,11 @@ export function buildNeedsYouRows(input: {
                         ? { kind: "effort", effortId }
                         : councilId !== ""
                           ? { kind: "council", councilId }
-                          : channelId !== ""
-                            ? { kind: "channel", channelId, runId: run.runId }
-                            : null,
+                          : a.kind === "session-ideas"
+                            ? { kind: "sessionideas" }
+                            : channelId !== ""
+                              ? { kind: "channel", channelId, runId: run.runId }
+                              : null,
             learnId,
         });
     }

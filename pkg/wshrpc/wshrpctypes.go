@@ -56,6 +56,7 @@ type WshRpcInterface interface {
 	MachineCommands
 	JarvisCommands
 	EffortCommands
+	SessionIdeasCommands
 	NoteCommands
 	CouncilCommands
 	SecretCommands

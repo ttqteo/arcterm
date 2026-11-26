@@ -62,6 +62,10 @@ looks (the Jarvis Brief, Sprout, a brainstorm on its topic), not in a store of i
   DUM-E's included, no memory pressure), nearest deletion first.
 - A session 7 days from deletion and still unscanned is scanned at once, outside a leftover window. The Brief says so
   (Scan-States board 4).
+- A scan the person starts (Scan my sessions, Scan now) reads every quiet session not yet scanned, due or not; the
+  schedule's own scans read only the due and the forced ones.
+- A session read and passed over (a decide agent's, one with no prompt of the person's) is marked as scanned with
+  nothing in it, so it is never counted unscanned, forced or offered again.
 - Storage's Sessions card: its Move to trash confirm says how many of the sessions it would move were never scanned for
   ideas. After the first scan it also offers **Scan them first**, which starts a scan of those sessions and moves
   nothing; Move to trash moves them unscanned. Before the first scan the count is all it says (nothing scans before Scan
@@ -144,6 +148,9 @@ Board `Nudges`.
    first, never a scan inside the clean; the cost numbers are recorded by the scan itself and the schedule follows the
    person's first scan instead of waiting on a hand-written measurement; the brainstorm panel part is left to a later
    change.
+5. **Changed while planning** (run be76cd97's lead, autonomous, after its first plan review): a scan the person starts covers
+   every quiet unscanned session, not only the due ones (otherwise Scan my sessions finds nothing in sessions under
+   about 80 days old); sessions passed over get a scanned mark so they are not forced again every 5 minutes.
 
 ## Open questions
 

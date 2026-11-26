@@ -209,3 +209,14 @@ describe("palette-needs: a learned rule", () => {
         expect(needsTarget(needsRows([learn], [])[0])).toEqual({ kind: "cockpit" });
     });
 });
+
+describe("palette-needs: the ideas from your sessions", () => {
+    const ideas = item("session-ideas", "session-ideas");
+    it("is a review, not a blocked item", () => {
+        const g = needsGroups(needsRows([ideas], []));
+        expect(g.map((x) => [x.group, x.rows.length])).toEqual([["reviews", 1]]);
+    });
+    it("lands on the sessionideas address, which the item names by its kind", () => {
+        expect(needsTarget(needsRows([ideas], [])[0])).toEqual({ kind: "sessionideas" });
+    });
+});

@@ -213,6 +213,7 @@ const NEEDS_STATUS: Record<string, string> = {
     "run-unverified": "unverified",
     "plan-review": "plan",
     "bug-reports": "báo lỗi",
+    "session-ideas": "ideas",
 };
 
 function needsIcon(row: NeedsRow): LucideIcon {
@@ -244,6 +245,8 @@ function needsEcho(row: NeedsRow, t: NeedsTarget | null): string {
             return "Opens the initiative";
         case "council":
             return "Opens the council’s discussion";
+        case "sessionideas":
+            return "Opens the ideas from your sessions in the Brief";
         case "cockpit":
             return "Opens the Cockpit, where the rule is accepted or dismissed";
         case "dag":

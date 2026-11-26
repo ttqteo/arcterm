@@ -681,3 +681,123 @@ func TestBuildAttentionOrdersBlockedQueueEntriesOldestFirstAfterAsks(t *testing.
 		t.Fatalf("keys = %v, want oldest first", keys)
 	}
 }
+
+const ideasDayMs = int64(24 * 60 * 60 * 1000)
+
+// ideasNow is a fixed clock, so the days a test counts do not move with the day it runs.
+const ideasNow = int64(1_800_000_000_000)
+
+func reviewIdea(id, gist string, foundTs int64) wshrpc.SessionIdea {
+	return wshrpc.SessionIdea{ID: id, Gist: gist, FoundTs: foundTs, State: wshrpc.SessionIdeaState_Review}
+}
+
+func ideasLines(d *wshrpc.SessionIdeasData, now int64) []wshrpc.AttentionItem {
+	var out []wshrpc.AttentionItem
+	for _, it := range BuildAttention(AttentionInput{SessionIdeas: d, NowMs: now}) {
+		if it.Kind == AttentionSessionIdeas {
+			out = append(out, it)
+		}
+	}
+	return out
+}
+
+func TestSessionIdeasAttentionNoneUnderSevenDays(t *testing.T) {
+	d := &wshrpc.SessionIdeasData{Ideas: []wshrpc.SessionIdea{
+		reviewIdea("a", "one", ideasNow-7*ideasDayMs+1),
+		reviewIdea("b", "two", ideasNow-1*ideasDayMs),
+	}}
+	if got := ideasLines(d, ideasNow); len(got) != 0 {
+		t.Fatalf("an idea a millisecond short of 7 days makes no line: %+v", got)
+	}
+}
+
+func TestSessionIdeasAttentionAfterSevenDays(t *testing.T) {
+	d := &wshrpc.SessionIdeasData{Ideas: []wshrpc.SessionIdea{
+		reviewIdea("b", "newer idea", ideasNow-2*ideasDayMs),
+		reviewIdea("a", "older idea", ideasNow-9*ideasDayMs-5),
+		{ID: "k", Gist: "kept one", FoundTs: ideasNow - 30*ideasDayMs, State: wshrpc.SessionIdeaState_Kept},
+		{ID: "x", Gist: "dropped one", FoundTs: ideasNow - 30*ideasDayMs, State: wshrpc.SessionIdeaState_Dropped},
+	}}
+	got := ideasLines(d, ideasNow)
+	want := []wshrpc.AttentionItem{{
+		Kind:         AttentionSessionIdeas,
+		Key:          "session-ideas",
+		Source:       "Session ideas",
+		Text:         "2 ideas from your sessions, waiting 9 days",
+		Action:       "Review",
+		WaitingSince: ideasNow - 9*ideasDayMs - 5,
+		Why:          "newer idea · older idea",
+	}}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("got %+v\nwant %+v", got, want)
+	}
+}
+
+func TestSessionIdeasAttentionCountsInTheBadge(t *testing.T) {
+	d := &wshrpc.SessionIdeasData{Ideas: []wshrpc.SessionIdea{reviewIdea("a", "one", ideasNow-8*ideasDayMs)}}
+	items := BuildAttention(AttentionInput{SessionIdeas: d, NowMs: ideasNow})
+	if len(items) != 1 || items[0].Kind != AttentionSessionIdeas || items[0].Text != "1 idea from your sessions, waiting 8 days" {
+		t.Fatalf("the badge counts the items BuildAttention returns, and one idea reads singular: %+v", items)
+	}
+}
+
+func TestSessionIdeasAttentionNoneWhileSnoozed(t *testing.T) {
+	d := &wshrpc.SessionIdeasData{
+		Ideas:        []wshrpc.SessionIdea{reviewIdea("a", "one", ideasNow-20*ideasDayMs)},
+		SnoozedUntil: ideasNow + 1,
+	}
+	if got := ideasLines(d, ideasNow); len(got) != 0 {
+		t.Fatalf("snoozed until after now: %+v", got)
+	}
+	d.SnoozedUntil = ideasNow
+	if got := ideasLines(d, ideasNow); len(got) != 1 {
+		t.Fatalf("the line is back at the moment the snooze ends: %+v", got)
+	}
+}
+
+func TestSessionIdeasAttentionSeenResetsTheClock(t *testing.T) {
+	d := &wshrpc.SessionIdeasData{
+		Ideas:  []wshrpc.SessionIdea{reviewIdea("a", "one", ideasNow-20*ideasDayMs)},
+		SeenTs: ideasNow - 3*ideasDayMs,
+	}
+	if got := ideasLines(d, ideasNow); len(got) != 0 {
+		t.Fatalf("looked at 3 days ago, so the 7 days count from then: %+v", got)
+	}
+	d.SeenTs = ideasNow - 8*ideasDayMs
+	got := ideasLines(d, ideasNow)
+	if len(got) != 1 || got[0].WaitingSince != ideasNow-8*ideasDayMs || !strings.HasSuffix(got[0].Text, "waiting 8 days") {
+		t.Fatalf("seen 8 days ago: the wait runs from the look, not the oldest idea: %+v", got)
+	}
+	// a seen mark older than the oldest idea does not pull the wait back before the idea existed
+	d.SeenTs = ideasNow - 40*ideasDayMs
+	got = ideasLines(d, ideasNow)
+	if len(got) != 1 || got[0].WaitingSince != ideasNow-20*ideasDayMs {
+		t.Fatalf("the wait runs from the later of the look and the oldest idea: %+v", got)
+	}
+}
+
+func TestSessionIdeasAttentionNoneWithoutIdeasInReview(t *testing.T) {
+	kept := wshrpc.SessionIdea{ID: "k", Gist: "kept", FoundTs: ideasNow - 30*ideasDayMs, State: wshrpc.SessionIdeaState_Kept}
+	for name, d := range map[string]*wshrpc.SessionIdeasData{
+		"store not read": nil,
+		"empty":          {},
+		"all resolved":   {Ideas: []wshrpc.SessionIdea{kept}},
+	} {
+		if got := ideasLines(d, ideasNow); len(got) != 0 {
+			t.Errorf("%s: nothing waits, no line: %+v", name, got)
+		}
+	}
+}
+
+func TestSessionIdeasAttentionSortsLast(t *testing.T) {
+	d := &wshrpc.SessionIdeasData{Ideas: []wshrpc.SessionIdea{reviewIdea("a", "one", 1)}}
+	items := BuildAttention(AttentionInput{
+		SessionIdeas:    d,
+		NowMs:           ideasNow,
+		BugReports:      &wshrpc.BugReportStatus{Waiting: 1, RepoPath: "/repo"},
+		BugReportsSince: ideasNow,
+	})
+	if len(items) != 2 || items[0].Kind != AttentionBugReports || items[1].Kind != AttentionSessionIdeas {
+		t.Fatalf("a reminder nothing waits on sorts after everything else: %+v", items)
+	}
+}

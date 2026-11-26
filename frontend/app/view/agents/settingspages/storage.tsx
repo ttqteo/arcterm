@@ -10,6 +10,8 @@
 import { pushToast } from "@/app/cockpit/notificationstore";
 import { getSettingsKeyAtom } from "@/app/store/global";
 import { modalsModel } from "@/app/store/modalmodel";
+import { RpcApi } from "@/app/store/wshclientapi";
+import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { showLibrary } from "@/app/view/library/librarystore";
 import { cn, fireAndForget } from "@/util/util";
 import { useAtomValue } from "jotai";
@@ -41,6 +43,7 @@ import {
 import {
     cleanStorage,
     rescanStorage,
+    scanSessionsForIdeas,
     storageCleaningAtom,
     storageSkippedAtom,
     useStorageReport,
@@ -73,13 +76,50 @@ type Entry = {
     folders?: Entry[];
 };
 
+// whether the person has pressed Scan my sessions once, which the sessions confirm needs for its Scan them first (the
+// Brief's feed is not mounted in Settings). A failed read leaves the offer out and says so in the console.
+async function firstScanDone(): Promise<boolean> {
+    try {
+        return (await RpcApi.SessionIdeasGetCommand(TabRpcClient)).firstscandone;
+    } catch (e) {
+        console.warn("storage: reading whether Session ideas has scanned failed:", e);
+        return false;
+    }
+}
+
 function runClean(card: StorageCard, rows: StorageRow[], days: SessionDays, guarded: boolean) {
-    const c = confirmFor(card, rows, days, guarded);
+    fireAndForget(() => openCleanConfirm(card, rows, days, guarded));
+}
+
+async function openCleanConfirm(card: StorageCard, rows: StorageRow[], days: SessionDays, guarded: boolean) {
+    const c = confirmFor(card, rows, days, guarded, card.category === "sessions" && (await firstScanDone()));
+    const scanFirst = c.scanFirstIds;
     modalsModel.pushModal("ConfirmModal", {
         title: c.title,
         message: c.message,
         confirmLabel: c.confirmLabel,
         destructive: true,
+        altLabel: c.altLabel,
+        onAlt:
+            scanFirst != null
+                ? () =>
+                      fireAndForget(async () => {
+                          try {
+                              await scanSessionsForIdeas(scanFirst);
+                              pushToast({
+                                  title: "Storage",
+                                  message: `Scanning ${scanFirst.length} ${scanFirst.length === 1 ? "session" : "sessions"} for ideas. Nothing moves.`,
+                                  level: "info",
+                              });
+                          } catch (e) {
+                              pushToast({
+                                  title: "Storage",
+                                  message: `Couldn't start the scan: ${String(e)}`,
+                                  level: "error",
+                              });
+                          }
+                      })
+                : undefined,
         onConfirm: () =>
             fireAndForget(async () => {
                 try {

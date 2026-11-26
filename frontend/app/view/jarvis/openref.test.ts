@@ -68,7 +68,7 @@ import { selectedTaskIdAtom } from "../orchestrate/dagstore";
 import type { OpenTarget } from "./address";
 import { effortDetailAtom } from "./effortstore";
 import { initiativeSheetAtom } from "./initiativesheetstore";
-import { briefPeekRecordAtom, briefSheetOpenAtom } from "./jarvisstore";
+import { briefPeekRecordAtom, briefSheetOpenAtom, sessionIdeasFocusAtom } from "./jarvisstore";
 import { activeRunIdAtom, activeSubjectAtom, recordDetailAtom } from "./jarvissubjectstore";
 import {
     isPeekable,
@@ -116,6 +116,7 @@ beforeEach(() => {
     globalStore.set(tasksErrorAtom, null);
     globalStore.set(briefPeekRecordAtom, null);
     globalStore.set(briefSheetOpenAtom, false);
+    globalStore.set(sessionIdeasFocusAtom, false);
     globalStore.set(initiativeSheetAtom, { view: "plan", chunk: null });
     globalStore.set(pendingDecisionAnchorAtom, null);
     globalStore.set(activeSubjectAtom, null);
@@ -829,6 +830,46 @@ describe("workflow scan landings", () => {
 
     it("is not peekable from an address either", () => {
         expect(isPeekableAddress("workflowscan:r-scan")).toBe(false);
+    });
+});
+
+describe("session ideas landing", () => {
+    it("asks the Brief to scroll to the region, then switches to Jarvis, so it shows there on its first frame", async () => {
+        const model = makeModel();
+        let atSwitch: unknown = null;
+        const unsub = globalStore.sub(model.surfaceAtom, () => {
+            atSwitch = globalStore.get(sessionIdeasFocusAtom);
+        });
+        expect(await openAddress(model, "sessionideas")).toEqual({ ok: true });
+        unsub();
+        expect(atSwitch).toBe(true);
+        expect(globalStore.get(model.surfaceAtom)).toBe("jarvis");
+        expect(rpc.ListMemoryHygieneCommand).not.toHaveBeenCalled();
+    });
+
+    it("lands on a target built in code the same way", async () => {
+        const model = makeModel();
+        expect(await openTarget(model, { kind: "sessionideas" })).toEqual({ ok: true });
+        expect(globalStore.get(sessionIdeasFocusAtom)).toBe(true);
+        expect(globalStore.get(model.surfaceAtom)).toBe("jarvis");
+    });
+
+    it("asks again while the Jarvis surface is already showing", async () => {
+        const model = makeModel();
+        globalStore.set(model.surfaceAtom, "jarvis");
+        expect(await openAddress(model, "sessionideas")).toEqual({ ok: true });
+        expect(globalStore.get(sessionIdeasFocusAtom)).toBe(true);
+        expect(globalStore.get(model.surfaceAtom)).toBe("jarvis");
+    });
+
+    it("is not peekable: a peek lands", async () => {
+        const model = makeModel();
+        const target: OpenTarget = { kind: "sessionideas" };
+        expect(isPeekable(target)).toBe(false);
+        expect(isPeekableAddress("sessionideas")).toBe(false);
+        expect(await peekTarget(model, target)).toEqual({ ok: true });
+        expect(globalStore.get(model.surfaceAtom)).toBe("jarvis");
+        expect(globalStore.get(peekItemAtom)).toBeNull();
     });
 });
 

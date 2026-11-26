@@ -367,6 +367,22 @@ func TestDigestWarmupPrunesWhatIsNoLongerInTheWindow(t *testing.T) {
 	}
 }
 
+// search reaches 90 days back: a session of two months ago is found, one of a hundred days is not
+func TestDigestWindowReachesNinetyDays(t *testing.T) {
+	root := t.TempDir()
+	now := time.Now()
+	writeDigestSession(t, root, "two-months", "/p/a", "deploy", "ok", now.AddDate(0, 0, -60))
+	writeDigestSession(t, root, "edge", "/p/a", "deploy", "ok", now.AddDate(0, 0, -89))
+	writeDigestSession(t, root, "too-old", "/p/a", "deploy", "ok", now.AddDate(0, 0, -100))
+	recordReads(t)
+	digestEnv(t, claudeProvider(root))
+
+	got, _ := searchDigest(t, "deploy", DigestSearch{})
+	if want := []string{"two-months", "edge"}; !slices.Equal(digestIDs(got), want) {
+		t.Fatalf("the window holds 60 and 89 days and not 100: got %v, want %v", digestIDs(got), want)
+	}
+}
+
 func TestDigestWarmupIsOneAtATime(t *testing.T) {
 	root := t.TempDir()
 	writeDigestSession(t, root, "a", "/p/a", "deploy", "ok", time.Now().Add(-time.Hour))

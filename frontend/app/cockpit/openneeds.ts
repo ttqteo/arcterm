@@ -49,6 +49,9 @@ export function openNeedsTarget(model: AgentsViewModel, t: NeedsTarget | null): 
         case "council":
             fireAndForget(() => openTarget(model, { kind: "council", councilId: t.councilId }));
             return true;
+        case "sessionideas":
+            fireAndForget(() => openTarget(model, { kind: "sessionideas" }));
+            return true;
         case "cockpit":
             globalStore.set(model.surfaceAtom, "cockpit");
             return true;

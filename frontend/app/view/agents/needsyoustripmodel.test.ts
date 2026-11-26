@@ -631,3 +631,32 @@ describe("buildNeedsYouRows: a council waiting on you", () => {
         expect(buildNeedsYouRows({ ...base, attention: [bare], pathProject })[0].open).toBeNull();
     });
 });
+
+describe("buildNeedsYouRows: the ideas from your sessions", () => {
+    const ideas = item({
+        kind: "session-ideas",
+        key: "session-ideas",
+        channelid: "",
+        runid: "",
+        taskid: "",
+        source: "Session ideas",
+        text: "3 ideas from your sessions, waiting 8 days",
+        why: "one · two · three",
+        action: "Review",
+    });
+    const rowsFor = (filter = "all") => buildNeedsYouRows({ ...base, attention: [ideas], filter });
+
+    it("reads Ideas, opens the sessionideas address, and offers Review with Next week beside it", () => {
+        const [row] = rowsFor();
+        expect(row.kindLabel).toBe("Ideas");
+        expect(row.tone).toBe("asking");
+        expect(row.open).toEqual({ kind: "sessionideas" });
+        expect(row.act).toEqual({ label: "Review", kind: "open" });
+        expect(row.secondAct).toEqual({ label: "Next week", kind: "snooze-ideas" });
+        expect(row.why).toBe("one · two · three");
+    });
+
+    it("is not dropped for being an unknown kind", () => {
+        expect(rowsFor().map((r) => r.key)).toEqual(["session-ideas"]);
+    });
+});

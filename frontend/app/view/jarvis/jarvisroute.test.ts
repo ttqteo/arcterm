@@ -16,6 +16,7 @@ import {
     routeProjectLabel,
     splitRouteReply,
     type RouteAgent,
+    type RouteIdea,
     type RouteVerdict,
     type RouteWorld,
 } from "./jarvisroute";
@@ -28,8 +29,12 @@ function agent(over: Partial<RouteAgent> & { id: string }): RouteAgent {
     return { name: over.id, project: "loom", state: "idle", sleeping: false, task: "", ...over };
 }
 
-function world(agents: RouteAgent[] = []): RouteWorld {
-    return { projects: [LOOM, ATLAS], agents, noFolderPath: NO_FOLDER_PATH };
+function idea(over: Partial<RouteIdea> & { id: string }): RouteIdea {
+    return { gist: `gist of ${over.id}`, project: "loom", initiative: "", ...over };
+}
+
+function world(agents: RouteAgent[] = [], ideas: RouteIdea[] = []): RouteWorld {
+    return { projects: [LOOM, ATLAS], agents, ideas, noFolderPath: NO_FOLDER_PATH };
 }
 
 function verdict(over: Partial<RouteVerdict> = {}): RouteVerdict {
@@ -165,6 +170,23 @@ describe("splitRouteReply", () => {
             considered: ["loom"],
         });
     });
+
+    it("reads the ideas job a verdict names and the idea it points at", () => {
+        const go = splitRouteReply(block('{"ideas": "go-through", "task": "duyệt giúp tôi"}'));
+        expect(go.verdict).toMatchObject({ ideas: "go-through", task: "duyệt giúp tôi" });
+        expect(go.verdict?.idea).toBeUndefined();
+        const discuss = splitRouteReply(block('{"ideas": "discuss", "idea": " idea-2 ", "task": "bàn ý search"}'));
+        expect(discuss.verdict).toMatchObject({ ideas: "discuss", idea: "idea-2" });
+    });
+
+    it("ignores an ideas value that is neither job, and an empty idea", () => {
+        for (const bad of ['"keep"', '""', "3", "null"]) {
+            const split = splitRouteReply(block(`{"project": "loom", "ideas": ${bad}, "idea": "", "task": "t"}`));
+            expect(split.verdict).not.toBeNull();
+            expect(split.verdict?.ideas).toBeUndefined();
+            expect(split.verdict?.idea).toBeUndefined();
+        }
+    });
 });
 
 describe("openAgentsForRouting", () => {
@@ -273,7 +295,7 @@ describe("allProjectChoices", () => {
     });
 
     it("is just the No folder row when no project is registered", () => {
-        const w: RouteWorld = { projects: [], agents: [], noFolderPath: NO_FOLDER_PATH };
+        const w: RouteWorld = { projects: [], agents: [], ideas: [], noFolderPath: NO_FOLDER_PATH };
         expect(allProjectChoices(w).map((c) => c.kind)).toEqual(["launch"]);
     });
 });
@@ -443,6 +465,53 @@ describe("decideRoute", () => {
     });
 });
 
+describe("decideRoute: the ideas jobs", () => {
+    const IDEAS = [idea({ id: "idea-1", gist: "Sidecar card" }), idea({ id: "idea-2", gist: "Search 90 days" })];
+
+    it("turns a go-through verdict into the ideas action, whatever project it also named", () => {
+        const v = verdict({ project: "", ideas: "go-through", reason: "they asked to review" });
+        expect(decideRoute(ok(v), "duyệt giúp tôi", world([], IDEAS))).toEqual({
+            kind: "ideas",
+            op: "go-through",
+            reason: "they asked to review",
+        });
+        // the project and the open agents of that project play no part in it
+        const named = verdict({ project: "loom", agent: "t1", ideas: "go-through" });
+        expect(decideRoute(ok(named), "r", world([agent({ id: "t1" })], IDEAS)).kind).toBe("ideas");
+    });
+
+    it("turns a discuss verdict naming a listed idea into the ideas action with that id", () => {
+        const v = verdict({ project: "", ideas: "discuss", idea: "idea-2", reason: "it names the search idea" });
+        expect(decideRoute(ok(v), "bàn ý search", world([], IDEAS))).toEqual({
+            kind: "ideas",
+            op: "discuss",
+            ideaId: "idea-2",
+            reason: "it names the search idea",
+        });
+    });
+
+    it("asks back instead of discussing an idea that is not listed, or none at all", () => {
+        for (const idea of ["idea-9", undefined]) {
+            const v = verdict({ project: "", ideas: "discuss", idea });
+            const action = decideRoute(ok(v), "bàn ý x", world([], IDEAS));
+            expect(action.kind).toBe("answer");
+            expect(action.kind === "answer" && action.text).toMatch(/which idea/i);
+        }
+    });
+
+    it("says nothing is waiting when there is nothing to go through or discuss", () => {
+        for (const v of [verdict({ ideas: "go-through" }), verdict({ ideas: "discuss", idea: "idea-1" })]) {
+            const action = decideRoute(ok(v), "duyệt giúp tôi", world());
+            expect(action.kind).toBe("answer");
+            expect(action.kind === "answer" && action.text).toMatch(/no ideas/i);
+        }
+    });
+
+    it("leaves a verdict with no ideas job to the project rule", () => {
+        expect(decideRoute(ok(verdict()), "r", world([], IDEAS)).kind).toBe("launch");
+    });
+});
+
 describe("decideForProject", () => {
     it("runs the same rule as a clear verdict", () => {
         expect(decideForProject("atlas", "t", "why", world()).kind).toBe("launch");
@@ -549,10 +618,49 @@ describe("buildRoutePrompt", () => {
     });
 
     it("notes when nothing is registered or open", () => {
-        const empty = buildRoutePrompt("hi", { projects: [], agents: [], noFolderPath: NO_FOLDER_PATH });
+        const empty = buildRoutePrompt("hi", { projects: [], agents: [], ideas: [], noFolderPath: NO_FOLDER_PATH });
         expect(empty).toContain("hi");
         expect(empty).toMatch(/no projects/i);
         expect(empty).toMatch(/no open agents/i);
+        expect(empty).toMatch(/no ideas/i);
+    });
+
+    it("lists the ideas waiting under their own heading, with id, gist, project and initiative", () => {
+        const withIdeas = buildRoutePrompt(
+            "ý nào liên quan Sidecar?",
+            world(
+                [],
+                [
+                    idea({
+                        id: "idea-1",
+                        gist: "A Sidecar card for a council",
+                        project: "loom",
+                        initiative: "Sidecar",
+                    }),
+                    idea({ id: "idea-2", gist: "Search back\n90 days", project: "atlas" }),
+                ]
+            )
+        );
+        const heading = withIdeas.indexOf("Ideas from your sessions, waiting for a decision:");
+        expect(heading).toBeGreaterThan(-1);
+        // before the request, which stays last
+        expect(heading).toBeLessThan(withIdeas.indexOf("The request:"));
+        const first = withIdeas.split("\n").find((l) => l.includes("idea-1")) ?? "";
+        expect(first).toContain("A Sidecar card for a council");
+        expect(first).toContain("loom");
+        expect(first).toContain("Sidecar");
+        const second = withIdeas.split("\n").find((l) => l.includes("idea-2")) ?? "";
+        expect(second).toContain("Search back 90 days");
+        expect(second).toMatch(/new idea/i);
+    });
+
+    it("tells Jarvis to set ideas and idea for a go-through or discuss job, and leave project and agent empty", () => {
+        for (const key of ["ideas", "idea"]) {
+            expect(prompt).toContain(`"${key}"`);
+        }
+        expect(prompt).toContain("go-through");
+        expect(prompt).toContain("discuss");
+        expect(prompt).toMatch(/duyệt giúp tôi/);
     });
 
     it("keeps an agent's multi-line task on one line", () => {

@@ -99,6 +99,7 @@ var snapshotBootSkips = []string{
 	"harnessupdate.StartLoop",
 	"sessiontrash.StartPurgeLoop",
 	"sessionarchive.StartSweepLoop",
+	"wshserver.StartSessionIdeasLoop",
 	"wshserver.StartStorage",
 	"wshserver.SweepCanvasFeedback",
 	"orchestrate.SweepWorktreeRoot",
@@ -656,6 +657,11 @@ func main() {
 			WorktreeRoot: orchestrate.WorktreeRoot(),
 			HeadlessSlug: agentobserve.HeadlessAgentSlug(),
 		})
+	}
+	// Session ideas: every 5 minutes, once the person has pressed Scan my sessions, scan the sessions 7 days from
+	// deletion at once and those 10 days from it in a leftover 5h window
+	if !snapshotSkips("wshserver.StartSessionIdeasLoop") { // it reads the real ~/.claude and calls a model per session
+		wshserver.StartSessionIdeasLoop(context.Background())
 	}
 	// the daily token tally behind a project's Activity card: a scan after a short delay, then every 30 minutes
 	projectactivity.StartLoop(context.Background())

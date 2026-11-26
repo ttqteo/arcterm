@@ -67,6 +67,9 @@ const (
 
 	// pairs (pkg/agentpair): a pair changed (a message, a stop, a judge added, a hold), after every change
 	Event_PairUpdate = "pair:update" // type: wshrpc.PairUpdateData
+
+	// session ideas (pkg/sessionideas): the store was written; it carries no data, the reader re-reads with SessionIdeasGet
+	Event_SessionIdeasChanged = "sessionideas:changed" // type: none
 )
 
 var AllEvents []string = []string{
@@ -105,6 +108,7 @@ var AllEvents []string = []string{
 	Event_RemoteStatus,
 	Event_BoardUpdate,
 	Event_PairUpdate,
+	Event_SessionIdeasChanged,
 }
 
 type WaveEvent struct {

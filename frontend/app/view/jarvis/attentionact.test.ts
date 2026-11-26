@@ -155,7 +155,7 @@ describe("a blocked queue entry", () => {
         expect(attentionSecondAct(blocked({ queueId: "" }))).toBeNull();
     });
 
-    it("is the only kind with a second act, even when it carries a queue id", () => {
+    it("is the only kind of these with a second act, even when it carries a queue id", () => {
         for (const wireKind of [
             "dag-gate",
             "dag-blocked",
@@ -168,5 +168,21 @@ describe("a blocked queue entry", () => {
         ]) {
             expect(attentionSecondAct(a({ wireKind, taskId: "t-1", retry: true, queueId: "q-1a2b" }))).toBeNull();
         }
+    });
+});
+
+describe("attentionAct: the session ideas' line", () => {
+    const ideas = (over: Partial<AttentionActInput> = {}): AttentionActInput =>
+        a({ wireKind: "session-ideas", channelId: "", runId: null, ...over });
+
+    it("opens as Review, with no wire act, and offers Next week beside it", () => {
+        expect(attentionAct(ideas())).toEqual({ label: "Review", kind: "open" });
+        expect(attentionSecondAct(ideas())).toEqual({ label: "Next week", kind: "snooze-ideas" });
+    });
+
+    it("gives the same two acts whatever else the item carries", () => {
+        const extra = ideas({ taskId: "t-1", retry: true, queueId: "q-1", oref: "agent:t1", projectPath: "D:/x" });
+        expect(attentionAct(extra)).toEqual({ label: "Review", kind: "open" });
+        expect(attentionSecondAct(extra)).toEqual({ label: "Next week", kind: "snooze-ideas" });
     });
 });

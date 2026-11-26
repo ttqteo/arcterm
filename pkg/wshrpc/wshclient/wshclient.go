@@ -2010,6 +2010,36 @@ func ServiceStopCommand(w *wshutil.WshRpc, data wshrpc.CommandServiceData, opts 
 	return err
 }
 
+// command "sessionideasget", wshserver.SessionIdeasGetCommand
+func SessionIdeasGetCommand(w *wshutil.WshRpc, opts *wshrpc.RpcOpts) (*wshrpc.SessionIdeasData, error) {
+	resp, err := sendRpcRequestCallHelper[*wshrpc.SessionIdeasData](w, "sessionideasget", nil, opts)
+	return resp, err
+}
+
+// command "sessionideasmark", wshserver.SessionIdeasMarkCommand
+func SessionIdeasMarkCommand(w *wshutil.WshRpc, data wshrpc.CommandSessionIdeasMarkData, opts *wshrpc.RpcOpts) error {
+	_, err := sendRpcRequestCallHelper[any](w, "sessionideasmark", data, opts)
+	return err
+}
+
+// command "sessionideasresolve", wshserver.SessionIdeasResolveCommand
+func SessionIdeasResolveCommand(w *wshutil.WshRpc, data wshrpc.CommandSessionIdeasResolveData, opts *wshrpc.RpcOpts) error {
+	_, err := sendRpcRequestCallHelper[any](w, "sessionideasresolve", data, opts)
+	return err
+}
+
+// command "sessionideasscan", wshserver.SessionIdeasScanCommand
+func SessionIdeasScanCommand(w *wshutil.WshRpc, data wshrpc.CommandSessionIdeasScanData, opts *wshrpc.RpcOpts) error {
+	_, err := sendRpcRequestCallHelper[any](w, "sessionideasscan", data, opts)
+	return err
+}
+
+// command "sessionideasseed", wshserver.SessionIdeasSeedCommand
+func SessionIdeasSeedCommand(w *wshutil.WshRpc, data wshrpc.CommandSessionIdeasSeedData, opts *wshrpc.RpcOpts) error {
+	_, err := sendRpcRequestCallHelper[any](w, "sessionideasseed", data, opts)
+	return err
+}
+
 // command "setcanvaslink", wshserver.SetCanvasLinkCommand
 func SetCanvasLinkCommand(w *wshutil.WshRpc, data wshrpc.CommandSetCanvasLinkData, opts *wshrpc.RpcOpts) error {
 	_, err := sendRpcRequestCallHelper[any](w, "setcanvaslink", data, opts)

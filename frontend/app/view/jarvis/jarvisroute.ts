@@ -22,6 +22,9 @@ export type RouteAgent = {
     sleeping: boolean;
     task: string;
 };
+// The ideas jobs a verdict may name (docs/superpowers/specs/2026-11-26-session-ideas-design.md, "Jarvis"): go through every
+// idea waiting, or discuss one of them. Both open an agent of their own (sessionideaslaunch.ts), never a project's agent.
+export type RouteIdeasJob = "go-through" | "discuss";
 export type RouteVerdict = {
     project: string;
     agent: string;
@@ -29,17 +32,29 @@ export type RouteVerdict = {
     task: string;
     reason: string;
     considered: string[];
+    // set for a go-through or discuss job in place of a project or an agent; `idea` is a listed idea's id (discuss only)
+    ideas?: RouteIdeasJob;
+    idea?: string;
 };
 export type RouteChoice =
     | { kind: "agent"; agentId: string; project: string; label: string }
     | { kind: "project"; project: string; label: string }
     | { kind: "launch"; project: string; path: string; label: string };
 export type RouteAction =
-    | { kind: "answer" }
+    // `text` is what the errand says instead of the model's own words: a question back that the rule, not the model, asked
+    | { kind: "answer"; text?: string }
     | { kind: "send"; agentId: string; project: string; task: string; reason: string }
     | { kind: "launch"; project: string; path: string; task: string; reason: string }
+    | { kind: "ideas"; op: RouteIdeasJob; ideaId?: string; reason: string }
     | { kind: "choose"; why: string; task: string; choices: RouteChoice[] };
-export type RouteWorld = { projects: RouteProject[]; agents: RouteAgent[]; noFolderPath: string };
+// An idea waiting for a decision, as the routing prompt lists it: `initiative` is its initiative's title, empty for a new idea.
+export type RouteIdea = { id: string; gist: string; project: string; initiative: string };
+export type RouteWorld = {
+    projects: RouteProject[];
+    agents: RouteAgent[];
+    ideas: RouteIdea[];
+    noFolderPath: string;
+};
 
 // The harnesses AgentsAssignCommand reaches: it looks a tab up in the agent roster, which lists only these three
 // (`agentHarnesses` in pkg/wshrpc/wshserver/wshserver_agentmsg.go). Keep the two in step: a codex or opencode agent
@@ -50,6 +65,8 @@ export const ROUTABLE_HARNESSES: ReadonlySet<string> = new Set(["claude", "pi", 
 export const PICKED_REASON = "you picked it";
 
 const UNSURE_WHY = "I could not tell where this goes";
+const NO_IDEAS_WAITING = "No ideas from your sessions are waiting for a decision.";
+const WHICH_IDEA = "I could not tell which idea you mean. Name one from What's waiting?, or press its Discuss chip.";
 const ROUTE_FENCE = "```arc-route";
 const TASK_LINE_MAX = 160;
 
@@ -84,6 +101,15 @@ export function buildRoutePrompt(request: string, world: RouteWorld): string {
               })
               .join("\n")
         : "(no open agents)";
+    const ideas = world.ideas.length
+        ? world.ideas
+              .map(
+                  (i) =>
+                      `- ${i.id} · ${oneLine(i.gist, TASK_LINE_MAX)} · project ${i.project} · ` +
+                      (i.initiative ? `initiative ${oneLine(i.initiative, TASK_LINE_MAX)}` : "a new idea")
+              )
+              .join("\n")
+        : "(no ideas are waiting)";
     const template = JSON.stringify({
         project: "<project name | no-folder | empty>",
         agent: "<tab id of an open agent of that project | empty>",
@@ -91,6 +117,8 @@ export function buildRoutePrompt(request: string, world: RouteWorld): string {
         task: "<the job, for the agent>",
         reason: "<one short clause>",
         considered: ["<project name>"],
+        ideas: "<go-through | discuss | empty>",
+        idea: "<id of a listed idea | empty>",
     });
     return [
         "You are Jarvis, the assistant inside arcterm. The person is asking from No folder, so no project is chosen: " +
@@ -102,8 +130,12 @@ export function buildRoutePrompt(request: string, world: RouteWorld): string {
         "Open agents:",
         agents,
         "",
+        "Ideas from your sessions, waiting for a decision:",
+        ideas,
+        "",
         "How to answer:",
-        "- If the request is a question, answer it in plain prose. Add no arc-route block.",
+        "- If the request is a question, answer it in plain prose. Add no arc-route block. A question about the ideas " +
+            "waiting is answered from the list above.",
         "- If the request is a job to do, say in a sentence what you are doing, then end your reply with exactly one " +
             "fenced block, and nothing after it:",
         ROUTE_FENCE,
@@ -116,6 +148,11 @@ export function buildRoutePrompt(request: string, world: RouteWorld): string {
         '- "task": what the agent is to do, in the person\'s own words; you may reword it for clarity but not add to it.',
         '- "reason": one short clause on why this project, or why you are unsure.',
         '- "considered": when ambiguous, the project names you weighed; otherwise leave it empty.',
+        '- "ideas": set it only when the request is to go through the ideas listed above ("duyệt giúp tôi", "go through ' +
+            'them") with "go-through", or to discuss one of them ("bàn ý <x>", "discuss <x>") with "discuss". Such a ' +
+            'job opens an agent of its own, so leave "project" and "agent" empty for it. Otherwise leave "ideas" empty.',
+        '- "idea": for "discuss", the id of the one listed idea the person means, never its words; if you cannot tell ' +
+            "which one, ask in plain prose and add no arc-route block. Otherwise leave it empty.",
         "",
         "The request:",
         request,
@@ -203,7 +240,7 @@ function parseVerdict(body: string): RouteVerdict | null {
     const considered = Array.isArray(o.considered)
         ? o.considered.filter((c): c is string => typeof c === "string" && c.trim() !== "").map((c) => c.trim())
         : [];
-    return {
+    const verdict: RouteVerdict = {
         project: stringField(o, "project"),
         agent: stringField(o, "agent"),
         ambiguous: o.ambiguous === true,
@@ -211,6 +248,16 @@ function parseVerdict(body: string): RouteVerdict | null {
         reason: stringField(o, "reason"),
         considered,
     };
+    // present only when set: a verdict for a project reads exactly as it did before the ideas jobs
+    const ideas = stringField(o, "ideas");
+    if (ideas === "go-through" || ideas === "discuss") {
+        verdict.ideas = ideas;
+        const idea = stringField(o, "idea");
+        if (idea !== "") {
+            verdict.idea = idea;
+        }
+    }
+    return verdict;
 }
 
 // Splits a (possibly still streaming) reply into the text the person reads and the verdict it ends with. Everything
@@ -357,9 +404,26 @@ function consideredChoices(considered: string[], world: RouteWorld): RouteChoice
     return out;
 }
 
-// What to do with a finished reply (D5). No block is an answer; a block that did not read, or named a project that is not
-// registered, offers every project; an unsure verdict offers the projects it weighed (every project when it named none)
-// and a new agent in No folder; a clear project follows the open-agent rule.
+// A go-through or discuss job. It names no project and no agent, so none of the project rule applies: the ideas action opens
+// its own agent. A discuss that names no listed idea (an id Jarvis made up, or one decided since it was listed) is a question
+// back, and so is any job with no idea waiting: the rule asks, since opening an agent for nothing would cost tokens.
+function decideIdeas(v: RouteVerdict & { ideas: RouteIdeasJob }, world: RouteWorld): RouteAction {
+    if (world.ideas.length === 0) {
+        return { kind: "answer", text: NO_IDEAS_WAITING };
+    }
+    if (v.ideas === "go-through") {
+        return { kind: "ideas", op: "go-through", reason: v.reason };
+    }
+    const named = world.ideas.find((i) => i.id === v.idea);
+    if (named == null) {
+        return { kind: "answer", text: WHICH_IDEA };
+    }
+    return { kind: "ideas", op: "discuss", ideaId: named.id, reason: v.reason };
+}
+
+// What to do with a finished reply (D5). No block is an answer; an ideas job opens its own agent (decideIdeas); a block that
+// did not read, or named a project that is not registered, offers every project; an unsure verdict offers the projects it
+// weighed (every project when it named none) and a new agent in No folder; a clear project follows the open-agent rule.
 export function decideRoute(
     split: { verdict: RouteVerdict | null; malformed: boolean },
     request: string,
@@ -371,6 +435,9 @@ export function decideRoute(
     const v = split.verdict;
     if (v == null) {
         return { kind: "answer" };
+    }
+    if (v.ideas != null) {
+        return decideIdeas({ ...v, ideas: v.ideas }, world);
     }
     const key = resolveProject(v.project, world);
     if (v.ambiguous || v.project.trim() === "") {

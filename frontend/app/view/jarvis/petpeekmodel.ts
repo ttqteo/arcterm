@@ -49,6 +49,8 @@ const DETAIL_KINDS = new Set([
     "plan-review",
     // the row's source is just "arcterm": its text ("2 báo lỗi arcterm chờ xử lý") is the count and the state
     "bug-reports",
+    // the source is just "Session ideas": its text ("3 ideas from your sessions, waiting 8 days") is the count and the wait
+    "session-ideas",
 ]);
 
 // A row names its kind in a word beside its dot, so the kind never rides on colour alone.
@@ -62,6 +64,7 @@ const ROW_KIND_LABEL: Record<string, string> = {
     "chunk-due": "Due",
     "plan-review": "Plan to review",
     "bug-reports": "Báo lỗi",
+    "session-ideas": "Ideas",
 };
 
 export function rowKindLabel(kind: string): string {

@@ -32,7 +32,9 @@ const openTitle = (row: StripRow) =>
           ? "Open the initiative"
           : row.open?.kind === "council"
             ? "Open the council's discussion"
-            : "Open the run";
+            : row.open?.kind === "sessionideas"
+              ? "Open the ideas from your sessions"
+              : "Open the run";
 
 // A learned rule's row: the rule, where it would go, and what to do with it. Why folds the user's own words that
 // raised it; Edit swaps the rule for an input (Enter accepts the edited line, Escape cancels). onDecide resolves true

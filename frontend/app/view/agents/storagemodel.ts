@@ -263,13 +263,25 @@ export function skippedOf(result: StorageCleanResult): Record<string, string> {
 
 const plural = (n: number, one: string) => `${n} ${one}${n === 1 ? "" : "s"}`;
 
-/** The confirm a clean opens: what goes, how much, and what it costs. */
+export type StorageConfirm = {
+    title: string;
+    message: string;
+    confirmLabel: string;
+    /** After the first Session ideas scan, the sessions card's second action; it moves nothing. */
+    altLabel?: string;
+    /** The sessions the alt action scans for ideas: the rows of this clean that no scan has read. */
+    scanFirstIds?: string[];
+};
+
+/** The confirm a clean opens: what goes, how much, and what it costs. `firstScanDone` is whether the person has pressed
+ *  Scan my sessions once: before that, the sessions confirm only says how many were never scanned. */
 export function confirmFor(
     card: StorageCard,
     rows: StorageRow[],
     days: SessionDays,
-    guarded: boolean
-): { title: string; message: string; confirmLabel: string } {
+    guarded: boolean,
+    firstScanDone: boolean
+): StorageConfirm {
     const size = formatSize(sum(rows.map((r) => r.bytes)));
     switch (card.category) {
         case "runworktrees":
@@ -284,12 +296,21 @@ export function confirmFor(
                       message: `Remove ${plural(rows.length, "run worktree")} (${size})? Their branches stay.`,
                       confirmLabel: "Remove",
                   };
-        case "sessions":
+        case "sessions": {
+            const unscanned = rows.filter((r) => r.unscanned).map((r) => r.id);
+            const never =
+                unscanned.length > 0
+                    ? ` ${unscanned.length} of them ${unscanned.length === 1 ? "was" : "were"} never scanned for ideas.`
+                    : "";
             return {
                 title: "Move sessions to the trash",
-                message: `Move ${plural(rows.length, "session")} older than ${days} days (${size}) to ~/.arc/trash? They are removed for good after 7 days and no longer resume with claude --resume.`,
+                message: `Move ${plural(rows.length, "session")} older than ${days} days (${size}) to ~/.arc/trash? They are removed for good after 7 days and no longer resume with claude --resume.${never}`,
                 confirmLabel: "Move to trash",
+                ...(firstScanDone && unscanned.length > 0
+                    ? { altLabel: "Scan them first", scanFirstIds: unscanned }
+                    : {}),
             };
+        }
         case "housekeeping":
             return {
                 title: "Clean logs, cache and trash",

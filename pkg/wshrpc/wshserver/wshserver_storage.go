@@ -60,6 +60,7 @@ func StartStorage(ctx context.Context) {
 		PackageCaches:    storage.PackageCacheDirs(runtime.GOOS, wavebase.GetHomeDir(), os.Getenv),
 		BusyCaches:       storageBusyCaches,
 	}
+	storage.SessionUnscanned = sessionIdeasUnscanned
 	storageScanner = storage.NewScanner(env, publishStorageScan)
 	storageScanner.StartLoop(ctx, storageAutoCleanOn, storage.AutoCleanDelay, storage.AutoCleanEvery)
 }

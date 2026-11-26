@@ -1218,8 +1218,60 @@ describe("buildAttentionQueue: the waiting bug reports", () => {
     });
 });
 
+// one row for every idea waiting in review (pkg/jarvis/attention.go): it names no channel or oref, so the kind is its address,
+// and it draws Review with Next week beside it
+describe("buildAttentionQueue: the ideas from your sessions", () => {
+    const ideas = (over: Partial<AttentionItem> = {}): AttentionItem =>
+        ({
+            kind: "session-ideas",
+            key: "session-ideas",
+            source: "Session ideas",
+            text: "3 ideas from your sessions, waiting 8 days",
+            action: "Review",
+            phaseidx: 0,
+            waitingsince: 1000,
+            why: "one · two · three",
+            ...over,
+        }) as AttentionItem;
+
+    it("reads as ideas, shows its gists as the why, and opens the sessionideas address", () => {
+        const [row] = buildAttentionQueue({ attention: [ideas()], efforts: [] });
+        expect(row.kind).toBe("ideas");
+        expect(row.title).toBe("3 ideas from your sessions, waiting 8 days");
+        expect(row.why).toBe("one · two · three");
+        expect(row.action).toBe("Review");
+        expect(row.tone).toBe("asking");
+        expect(row.nav).toEqual({ kind: "ideas", oref: "sessionideas" });
+        expect(queueOpenTarget(row.nav)).toEqual({ kind: "oref", oref: "sessionideas" });
+        expect(queueKindLabel(row)).toBe("ideas");
+    });
+
+    it("draws Review, then Next week", () => {
+        const [row] = buildAttentionQueue({ attention: [ideas()], efforts: [] });
+        expect(queueAction(row)).toEqual({ label: "Review", kind: "open" });
+        expect(queueActions(row)).toEqual([
+            { label: "Review", kind: "open" },
+            { label: "Next week", kind: "snooze-ideas" },
+        ]);
+    });
+
+    it("counts as its own word in the queue's summary", () => {
+        const q = buildAttentionQueue({ attention: [ideas()], efforts: [] });
+        expect(summarizeAttentionQueue(q, 1000 + 5 * 60_000)).toBe("ideas · oldest 5m");
+    });
+
+    it("leaves Next week off every other kind", () => {
+        const [row] = buildAttentionQueue({
+            attention: [ideas({ kind: "council", key: "council:c1", oref: "council:c1", action: "Open" })],
+            efforts: [],
+        });
+        expect(queueActions(row)).toEqual([{ label: "Open", kind: "open" }]);
+    });
+});
+
 describe("kindWord", () => {
     it("is the Brief's short kind for a wire kind", () => {
+        expect(kindWord("session-ideas")).toBe("ideas");
         expect(kindWord("bug-reports")).toBe("báo lỗi");
         expect(kindWord("ask")).toBe("ask");
         expect(kindWord("escalation")).toBe("ask");

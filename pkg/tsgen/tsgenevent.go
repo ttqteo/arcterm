@@ -21,41 +21,42 @@ import (
 var waveEventRType = reflect.TypeOf(wps.WaveEvent{})
 
 var WaveEventDataTypes = map[string]reflect.Type{
-	wps.Event_BlockClose:       reflect.TypeOf(""),
-	wps.Event_ControllerStatus: reflect.TypeOf((*blockcontroller.BlockControllerRuntimeStatus)(nil)),
-	wps.Event_WaveObjUpdate:    reflect.TypeOf(waveobj.WaveObjUpdate{}),
-	wps.Event_StorageScan:      reflect.TypeOf(storage.StorageReport{}),
-	wps.Event_BlockFile:        reflect.TypeOf((*wps.WSFileEventData)(nil)),
-	wps.Event_Config:           reflect.TypeOf(wconfig.WatcherUpdate{}),
-	wps.Event_Badge:            reflect.TypeOf(baseds.BadgeEvent{}),
-	wps.Event_AgentStatus:      reflect.TypeOf(baseds.AgentStatusData{}),
-	wps.Event_Notify:           reflect.TypeOf(wshrpc.NotifyCommandData{}),
-	wps.Event_OpenFile:         reflect.TypeOf(wshrpc.OpenFileData{}),
-	wps.Event_AgentAsk:         reflect.TypeOf(baseds.AgentAskData{}),
-	wps.Event_AgentPermission:  reflect.TypeOf(baseds.AgentPermissionData{}),
-	wps.Event_JarvisVolunteer:  reflect.TypeOf(baseds.VolunteerData{}),
-	wps.Event_Slept:            reflect.TypeOf(baseds.SleptData{}),
-	wps.Event_JobQueue:         reflect.TypeOf(wshrpc.JobQueueData{}),
-	wps.Event_MemoryPressure:   reflect.TypeOf(wshrpc.MemoryPressureData{}),
-	wps.Event_CouncilChanged:   reflect.TypeOf(wshrpc.CouncilChangedData{}),
-	wps.DagEventChildDone:      reflect.TypeOf(""), // detail is the task id
-	wps.DagEventGateOpen:       reflect.TypeOf(""), // detail is the gate task id
-	wps.DagEventBlocked:        reflect.TypeOf(""), // detail is the failure count
-	wps.DagEventComplete:       reflect.TypeOf(""), // detail is "all tasks done"
-	wps.DagEventTaskSpawned:    reflect.TypeOf(""), // detail is the task id
-	wps.DagEventChildAsk:       reflect.TypeOf(""), // detail is JSON {taskid, askid}
-	wps.DagEventTaskStalled:    reflect.TypeOf(""), // detail is the task id
-	wps.DagEventTaskRetried:    reflect.TypeOf(""), // detail is the task id
-	wps.Event_RunEvent:         reflect.TypeOf(wshrpc.RunEventData{}),
-	wps.Event_RunQueueChanged:  reflect.TypeOf(wshrpc.RunQueueChangedData{}),
-	wps.Event_MemHygieneUpdate: nil,
-	wps.Event_ServicesChanged:  reflect.TypeOf(wshrpc.ServicesData{}),
-	wps.Event_VerifyChanged:    reflect.TypeOf(wshrpc.VerifyChangedData{}),
-	wps.Event_DumeChanged:      reflect.TypeOf(wshrpc.DumeStatusData{}),
-	wps.Event_XmasTreeChanged:  reflect.TypeOf(wshrpc.XmasTreeData{}),
-	wps.Event_RemoteStatus:     reflect.TypeOf((*wshrpc.RemoteStatusData)(nil)),
-	wps.Event_BoardUpdate:      reflect.TypeOf(wshrpc.BoardUpdateData{}),
-	wps.Event_PairUpdate:       reflect.TypeOf(wshrpc.PairUpdateData{}),
+	wps.Event_BlockClose:          reflect.TypeOf(""),
+	wps.Event_ControllerStatus:    reflect.TypeOf((*blockcontroller.BlockControllerRuntimeStatus)(nil)),
+	wps.Event_WaveObjUpdate:       reflect.TypeOf(waveobj.WaveObjUpdate{}),
+	wps.Event_StorageScan:         reflect.TypeOf(storage.StorageReport{}),
+	wps.Event_BlockFile:           reflect.TypeOf((*wps.WSFileEventData)(nil)),
+	wps.Event_Config:              reflect.TypeOf(wconfig.WatcherUpdate{}),
+	wps.Event_Badge:               reflect.TypeOf(baseds.BadgeEvent{}),
+	wps.Event_AgentStatus:         reflect.TypeOf(baseds.AgentStatusData{}),
+	wps.Event_Notify:              reflect.TypeOf(wshrpc.NotifyCommandData{}),
+	wps.Event_OpenFile:            reflect.TypeOf(wshrpc.OpenFileData{}),
+	wps.Event_AgentAsk:            reflect.TypeOf(baseds.AgentAskData{}),
+	wps.Event_AgentPermission:     reflect.TypeOf(baseds.AgentPermissionData{}),
+	wps.Event_JarvisVolunteer:     reflect.TypeOf(baseds.VolunteerData{}),
+	wps.Event_Slept:               reflect.TypeOf(baseds.SleptData{}),
+	wps.Event_JobQueue:            reflect.TypeOf(wshrpc.JobQueueData{}),
+	wps.Event_MemoryPressure:      reflect.TypeOf(wshrpc.MemoryPressureData{}),
+	wps.Event_CouncilChanged:      reflect.TypeOf(wshrpc.CouncilChangedData{}),
+	wps.DagEventChildDone:         reflect.TypeOf(""), // detail is the task id
+	wps.DagEventGateOpen:          reflect.TypeOf(""), // detail is the gate task id
+	wps.DagEventBlocked:           reflect.TypeOf(""), // detail is the failure count
+	wps.DagEventComplete:          reflect.TypeOf(""), // detail is "all tasks done"
+	wps.DagEventTaskSpawned:       reflect.TypeOf(""), // detail is the task id
+	wps.DagEventChildAsk:          reflect.TypeOf(""), // detail is JSON {taskid, askid}
+	wps.DagEventTaskStalled:       reflect.TypeOf(""), // detail is the task id
+	wps.DagEventTaskRetried:       reflect.TypeOf(""), // detail is the task id
+	wps.Event_RunEvent:            reflect.TypeOf(wshrpc.RunEventData{}),
+	wps.Event_RunQueueChanged:     reflect.TypeOf(wshrpc.RunQueueChangedData{}),
+	wps.Event_MemHygieneUpdate:    nil,
+	wps.Event_ServicesChanged:     reflect.TypeOf(wshrpc.ServicesData{}),
+	wps.Event_VerifyChanged:       reflect.TypeOf(wshrpc.VerifyChangedData{}),
+	wps.Event_DumeChanged:         reflect.TypeOf(wshrpc.DumeStatusData{}),
+	wps.Event_XmasTreeChanged:     reflect.TypeOf(wshrpc.XmasTreeData{}),
+	wps.Event_RemoteStatus:        reflect.TypeOf((*wshrpc.RemoteStatusData)(nil)),
+	wps.Event_BoardUpdate:         reflect.TypeOf(wshrpc.BoardUpdateData{}),
+	wps.Event_PairUpdate:          reflect.TypeOf(wshrpc.PairUpdateData{}),
+	wps.Event_SessionIdeasChanged: nil,
 }
 
 func getWaveEventDataTSType(eventName string, tsTypesMap map[reflect.Type]string) string {

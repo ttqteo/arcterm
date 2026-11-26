@@ -264,6 +264,8 @@ import {
     setRunReviewCursor,
     useRunReviewSettling,
 } from "./runreviewstore";
+import { SessionIdeasOffer, SessionIdeasRegion, SessionIdeasSinceRow } from "./sessionideasregion";
+import { ensureSessionIdeasFeed, sessionIdeasAtom, sessionIdeasFocusAtom } from "./sessionideasstore";
 import { loadTaskList, taskListAtom } from "./tasksstore";
 import { WaitingStrip } from "./waitingstrip";
 
@@ -272,10 +274,10 @@ const NO_INITIATIVES =
     "No initiative yet. Work bigger than one run lives here as a list of chunks that agents tick off.";
 const ALL_CARDS = "Every initiative is on a card above.";
 
-// The regions that can be read alone: the page's two big ones. Reading one region alone is its own small icon
-// button at the end of its heading: a full-width heading that hid every other region on a misclick was the trap
-// (spec 2026-10-12 decision 11).
-type OnlyId = "initiatives" | "activity";
+// The regions that can be read alone: the page's two big ones, and the ideas found in your sessions. Reading one region
+// alone is its own small icon button at the end of its heading: a full-width heading that hid every other region on a
+// misclick was the trap (spec 2026-10-12 decision 11).
+type OnlyId = "initiatives" | "activity" | "sessions";
 
 function OnlyButton({ label, only, onOnly }: { label: string; only: boolean; onOnly: () => void }) {
     return (
@@ -962,6 +964,18 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
     // never land on a row the filter hid.
     const [only, setOnly] = useState<OnlyId | null>(null);
     const toggleOnly = (id: OnlyId) => setOnly((cur) => (cur === id ? null : id));
+    // What the scans found in your sessions: the Brief mounts the feed too (the pet does, for the toast), and a request to land
+    // on the region (a toast's Review, Since you looked, the address) first brings every region back, so there is one to land on.
+    const sessionIdeas = useAtomValue(sessionIdeasAtom);
+    const sessionFocus = useAtomValue(sessionIdeasFocusAtom);
+    useEffect(() => {
+        ensureSessionIdeasFeed(model);
+    }, [model]);
+    useEffect(() => {
+        if (sessionFocus) {
+            setOnly((cur) => (cur === "sessions" ? cur : null));
+        }
+    }, [sessionFocus]);
     const matches = useCallback(
         (c: EffortCardModel) => !filtering || filterLines([initiativeLine(c)], query).length > 0,
         [filtering, query]
@@ -1171,8 +1185,13 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
     // Since you looked by kind (briefrows.ts sinceSections): the runs, one row per initiative, the records folded into
     // one row. Built from the whole window, then each section opens its own fold; "+N" counts rows, not raw events.
     const sections = useMemo(
-        () => sinceSections(model_?.delta ?? [], Date.now(), { efforts: effortIndex, projects: councilProjects }),
-        [model_, effortIndex, councilProjects]
+        () =>
+            sinceSections(model_?.delta ?? [], Date.now(), {
+                efforts: effortIndex,
+                projects: councilProjects,
+                sessionIdeas: { data: sessionIdeas, sinceTs: cursorTs },
+            }),
+        [model_, effortIndex, councilProjects, sessionIdeas, cursorTs]
     );
     const since = useMemo(
         () =>
@@ -1201,6 +1220,8 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
     const strip = waitingStrip(lines.waiting, foldOpen(waitingOpen, query));
     const mainShown = only !== "activity";
     const sideShown = only == null || only === "activity";
+    // reading the sessions' ideas alone leaves the initiatives out, so j/k has no card or row there to land on
+    const initiativesShown = only !== "sessions";
     // the rows Since you looked draws, in its order: a section's summary row leads its rows
     const behindLines = useMemo(
         () => since.flatMap((w) => [...(w.summary != null ? [w.summary] : []), ...w.lines]),
@@ -1230,8 +1251,8 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
                           ? [strip.head.id]
                           : []
                     : [],
-                cards: mainShown && !reviewing ? cards.map((c) => c.oref) : [],
-                list: mainShown && !reviewing ? listItems.map((c) => c.oref) : [],
+                cards: mainShown && initiativesShown && !reviewing ? cards.map((c) => c.oref) : [],
+                list: mainShown && initiativesShown && !reviewing ? listItems.map((c) => c.oref) : [],
                 activity: sideShown ? activityShown.map((i) => i.line.id) : [],
                 behind: only == null ? behindLines.map((l) => l.id) : [],
                 shipped: only == null ? shippedLines.map((l) => l.id) : [],
@@ -1243,6 +1264,7 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
             reviewNav.keys,
             mainShown,
             sideShown,
+            initiativesShown,
             only,
             strip,
             reviewing,
@@ -2064,7 +2086,8 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
                                         />
                                         <section
                                             data-jarvis-brief-region="initiatives"
-                                            className="flex min-w-0 flex-col gap-4"
+                                            // read alone, the sessions' ideas leave this one out of the page, mounted
+                                            className={cn("flex min-w-0 flex-col gap-4", !initiativesShown && "hidden")}
                                         >
                                             <InitiativeCards
                                                 faces={pass != null ? [] : cardFaces}
@@ -2214,6 +2237,20 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
                                                 </>
                                             )}
                                         </section>
+                                        {/* the ideas the scans found in your sessions: drawn once a scan has run (before
+                                        that the offer card sits under Ideas), and readable alone like the big two */}
+                                        {only == null || only === "sessions" ? (
+                                            <SessionIdeasRegion
+                                                model={model}
+                                                only={
+                                                    <OnlyButton
+                                                        label="From your sessions"
+                                                        only={only === "sessions"}
+                                                        onOnly={() => toggleOnly("sessions")}
+                                                    />
+                                                }
+                                            />
+                                        ) : null}
                                         {/* Ideas and For later sit under the initiatives, side by side, where the main
                                         column ran out long before the side one did */}
                                         {only == null ? (
@@ -2317,6 +2354,9 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
                                                             expanded={ideasOpen}
                                                             onToggle={() => toggleRegion("ideas")}
                                                         />
+                                                        {/* before the first scan of your sessions: what it reads and costs, and
+                                                        the button that starts it (nothing scans before it is pressed) */}
+                                                        <SessionIdeasOffer />
                                                     </section>
                                                 ) : null}
                                                 {laterAll.length > 0 || !filtering ? (
@@ -2459,23 +2499,34 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
                                                         ) : null}
                                                         {since.map((w) => {
                                                             const kind = w.section.kind;
-                                                            const row = (l: BriefLine) => (
-                                                                <DeltaRowView
-                                                                    line={l}
-                                                                    // the section names an initiative or a record;
-                                                                    // a run keeps its started / completed word
-                                                                    bare={kind !== "runs"}
-                                                                    focused={cursor === l.id}
-                                                                    onOpen={
-                                                                        l.target != null
-                                                                            ? (e) => {
-                                                                                  setCursor(l.id);
-                                                                                  openLine(l.target, e);
-                                                                              }
-                                                                            : undefined
-                                                                    }
-                                                                />
-                                                            );
+                                                            const row = (l: BriefLine) =>
+                                                                kind === "sessions" ? (
+                                                                    // a scan's find: Review lands on the region
+                                                                    <SessionIdeasSinceRow
+                                                                        line={l}
+                                                                        focused={cursor === l.id}
+                                                                        onReview={() => {
+                                                                            setCursor(l.id);
+                                                                            openLine(l.target);
+                                                                        }}
+                                                                    />
+                                                                ) : (
+                                                                    <DeltaRowView
+                                                                        line={l}
+                                                                        // the section names an initiative or a record;
+                                                                        // a run keeps its started / completed word
+                                                                        bare={kind !== "runs"}
+                                                                        focused={cursor === l.id}
+                                                                        onOpen={
+                                                                            l.target != null
+                                                                                ? (e) => {
+                                                                                      setCursor(l.id);
+                                                                                      openLine(l.target, e);
+                                                                                  }
+                                                                                : undefined
+                                                                        }
+                                                                    />
+                                                                );
                                                             return (
                                                                 <div
                                                                     key={kind}

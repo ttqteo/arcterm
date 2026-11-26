@@ -11,7 +11,8 @@
 
 // attentionact.ts and planreviewtarget.ts are pure too, and petvoice.ts is type-only, so the purity above holds
 import type { AgentVM } from "@/app/view/agents/agentsviewmodel";
-import { attentionAct } from "./attentionact";
+import { SESSION_IDEAS_REF } from "./address";
+import { attentionAct, attentionSecondAct } from "./attentionact";
 import { openAgentFor } from "./initiativework";
 import type { PetEventSource } from "./petvoice";
 import { planReviewORef } from "./planreviewtarget";
@@ -36,7 +37,9 @@ export type PetAct =
     | { id: string; verb: "work-on"; label: string; effortORef: string; chunk: string }
     // the waiting bug reports, before an agent holds them: the Brief (Jarvis surface), where Xử lý and the folder picker
     // have room to explain themselves. Its row names no address to open, so it is a verb of its own
-    | { id: string; verb: "open-brief"; label: string };
+    | { id: string; verb: "open-brief"; label: string }
+    // Next week on the session ideas' line: the Waiting line stays away for 7 days. It settles in place (petactrun.ts)
+    | { id: string; verb: "snooze-ideas"; label: string };
 
 // An act's transient outcome, keyed by act id in petstore.ts. Transient on purpose: the row's real value
 // comes from its own poll, and letting an act's return value become the row's value would drift from the
@@ -118,6 +121,21 @@ export function actsForAttention(item: AttentionItem, agents: ReadonlyArray<Agen
             act.kind === "open"
                 ? { id: `${item.key}:open`, verb: "open", label: "Open", target: { kind: "oref", ref: oref } }
                 : { id: `${item.key}:open-brief`, verb: "open-brief", label: "Open" },
+        ];
+    }
+    // the ideas a scan found in the sessions have no run either: Review opens the Brief's From your sessions region (the
+    // `sessionideas` address), and Next week, beside it, puts the line off for 7 days
+    if (item?.kind === "session-ideas") {
+        const x = { wireKind: item.kind, channelId: "", runId: null, taskId: "", retry: false };
+        const next = attentionSecondAct(x);
+        return [
+            {
+                id: `${item.key}:open`,
+                verb: "open",
+                label: attentionAct(x).label,
+                target: { kind: "oref", ref: SESSION_IDEAS_REF },
+            },
+            ...(next != null ? [{ id: `${item.key}:snooze`, verb: "snooze-ideas" as const, label: next.label }] : []),
         ];
     }
     if (!item?.runid) {

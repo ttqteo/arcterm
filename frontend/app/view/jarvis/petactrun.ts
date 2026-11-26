@@ -84,6 +84,9 @@ function settleInPlace(act: PetAct): Promise<void> | null {
             return settle(act, () =>
                 RpcApi.RunQueueStartNowCommand(TabRpcClient, { id: act.queueId }, { timeout: START_NOW_TIMEOUT_MS })
             );
+        case "snooze-ideas":
+            // Next week: the line leaves with the reload, and a refusal lands on the button
+            return settle(act, () => RpcApi.SessionIdeasMarkCommand(TabRpcClient, { op: "snooze" }));
         case "approve-task":
         case "retry-task":
             return settle(act, () =>

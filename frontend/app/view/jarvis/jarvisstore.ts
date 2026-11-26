@@ -22,6 +22,12 @@ export const briefProfileAtom = atom<string | null>(null) as PrimitiveAtom<strin
 // sheet clears it — so what reopens on the next launch is the subject that was left open, not this flag.
 export const briefSheetOpenAtom = atom(false);
 
+// A request that the Brief scroll to its From your sessions region: the `sessionideas` address (openref.ts) sets it before it
+// switches to Jarvis, and the region clears it once it has scrolled, so a Brief that mounts after the request still
+// honours it. Here, not in sessionideasstore.ts (which re-exports it): that store opens addresses through openref.ts, so
+// openref.ts reading the atom from it would be an import cycle.
+export const sessionIdeasFocusAtom = atom(false);
+
 // The one open plan-editing menu (a chunk's status menu or a stage's actions), by row id. Here rather than inside
 // the view because it is the innermost Escape layer, and the dispatcher runs on window capture ahead of any
 // listener the menu could register itself.
