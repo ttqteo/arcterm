@@ -169,10 +169,10 @@ func TestResumeAfterATokenCapDeliversTheKeptQueues(t *testing.T) {
 // a judge that is at work takes its queue at its turn end: Resume still puts the pair back and keeps the queue
 func TestResumeKeepsAQueueForAnAgentAtWork(t *testing.T) {
 	r := newRig(t)
-	r.link.agent("w").tokens = 3_500_000
 	r.link.give("w", workerPlan)
 	v := r.start(wshrpc.CommandPairStartData{})
 	r.link.setState("j1", "working") // the judge is mid-turn, so the worker's message waits for it
+	r.link.agent("w").tokens = 3_500_000 // this turn hits the cap: a reply after a token-cap stop is not recorded
 	r.reply("w", "More.\n"+pairBlock("O1 a"))
 	if view := r.view(v.Id); view.StopReason != StopTokenCap || !view.CanResume {
 		t.Fatalf("stop %q, canresume %v: want a token cap with the judge's queue held", view.StopReason, view.CanResume)
