@@ -3,6 +3,183 @@
 Older lines of `docs/hand-checks.md`, moved here when it grew past its size; the rules and the list of parts
 are in that file. Tick a line here when it holds, then remove it; a part left empty is deleted.
 
+## 2026-11-15
+
+- [ ] (arcterm) **A long bash command's ghost stays after its last character.** In Chat type `!` and a command long
+  enough to wrap past the box's max height so it scrolls, with a suggestion showing → the faint suggestion sits right
+  after the last character, on the same wrapped lines as the text (the layer is now padded by the scrollbar's width).
+  Same commit.
+- [ ] (arcterm) **Sixel images draw in a terminal of the installed app.** The dev app applies no CSP, so only a
+  packaged build shows it. In a terminal run
+  `printf 'Pq#0;2;0;0;0#1;2;100;100;0#2;2;0;100;0#1~~@@vv@@~~@@~~$#2??}}GG}}??}}??-#1!14@\'` → a small
+  yellow-and-green "HI" draws, and `waveapp.log` has no new `WebAssembly.instantiate` rejection after a terminal
+  mounts (it had one per mount). Commit: fix(tauri) the CSP lets the terminal's sixel decoder compile its WASM
+- [ ] (arcterm) **Jarvis and initiatives polish batch, in the app.** Unit tests and the typecheck only; no dev app
+  ran. Check each: (1) the initiative link in an agent's header has the tooltip "… Ctrl+click to peek at it in
+  Sprout"; (2) the rail's Initiative tab: Mark done and Add note show their m / n hints as key caps that sit level in the
+  button; (3) a run whose lead process died (kill the lead's claude) reads "Failed · n/m" in red in the Agent tree,
+  "failed" on the Brief and Failed in the run sheet; (4) on a fresh launch, open Sprout before Jarvis: the "N
+  initiatives changed · M idle" line shows once the briefing loads; (5) a plan a run worker proposes
+  (`wsh effort chunk add ... --proposed` from its terminal) opens that worker from Needs you; (6) in the Brief, delete a
+  stage's last chunks, then within 5 s rename the next stage: the stage you clicked is renamed. Commits: branch
+  fix/jarvis-initiatives-polish (c6fa4470b … ffacae754)
+- [ ] (arcterm) **The spring's feel on the Cockpit, Jarvis, Diff and Setup, on a real roster.** The
+  `surfaces-spring-*` scenarios time each motion on fixtures (`task verify:ui -- surfaces-spring-cockpit`
+  …); no packaged build ran them on your own agents and projects. In the packaged app on a real roster: the Cockpit
+  as an agent goes from working to needing you (its card moves to its new place, no card jumps or doubles), a Jarvis
+  brief card and an initiative row open and fold, a Diff file folds in Review, a Setup section folds, and a filter
+  switch or a big update (three or more rows at once) shows at once instead of running the spring on each row.
+  Commit: feat(motion) the batch model, the scenario scaffold and the docs for the surfaces' spring (run d2a699db)
+- [ ] (arcterm) **Council bench team cell cleans up after itself.** Only unit tests cover it; no bench ran a real team.
+  Run `wsh council bench --variant team --case <one case> --runs 1` to the end, then again and end it with
+  `wsh council bench stop` while the lead works → after each, `~/.claude/projects/` has no new folder for the cell, and
+  after the stop no `claude` or `node` process from that cell is left in Task Manager (the stop takes the same kill as a
+  timeout). Commit: fix(council-bench) a team cell removes
+  its transcripts and kills its whole tree on timeout (run e6d14c4f)
+- [ ] (arcterm) **A council change reloads only that council.** With two projects that each have councils, run a council
+  in one → its tree row and the Councils list update as it goes, the other project's councils stay as they were, and a
+  council deleted with `wsh council` leaves both lists. Commit: perf(council) a council change reloads that council,
+  not every council in every list (run e6d14c4f)
+- [ ] (arcterm) **Radar retired, on a store that had it.** The Final ran on a fresh dev store, so migration 000028 never
+  dropped a real `db_radarreport` and no saved Startup surface read `radar`. Install the build over an arcterm that has
+  Radar reports and Settings → General → Startup surface set to Radar → it boots on Cockpit, the rail has no Radar,
+  `Ctrl+G` `r` does nothing, and `waveapp.log` shows no migration error. Commit: refactor: Retire Radar (run c2a6aebb)
+
+## 2026-11-14
+
+- [ ] (arcterm) **Frosted overlays on a Mac, and the folded Sprout window.** The Final's frost scenarios ran only in
+  WebView2 (Windows). On a Mac build, open the command palette, a context menu with a submenu, a Chat footer menu and
+  a toast over a working agent → each panel blurs what is behind it (the palette over its dimmed scrim, a submenu
+  over the chat, not over its parent menu), and muted text stays readable. Then fold Sprout into its own window and
+  open its bubble or peek → it draws a solid panel, not a see-through one. Commit: feat(ui) Overlays in the Chat
+  look: the frosted fill (run 04bd30dc)
+- [ ] (arcterm) **Work on this tells a real agent at once.** The CDP scenario `rail-initiative-tab` (its draft and
+  empty-box steps) passes against fixture agents whose sends go to a mock; no real Claude Code session took one. In a
+  real Claude agent linked to an initiative, with the message box empty, open the rail's Initiative tab (`i`) and press
+  Work on this (`w`) on a free chunk → the agent answers on the new chunk at once, Chat shows the `Chunk N · name`
+  divider and `Moved to chunk N · sent by arcterm` (no bubble reading `Go on with this chunk.`); while the agent works
+  the send waits for its turn to end. With a draft in the box the framed line waits and rides with the draft. Commits:
+  feat(chat) initiative band: Switch to this chunk tells the agent at once, a how-to; moved onto the rail tab by
+  feat(rail) Brainstorm and Initiative rail tabs.
+- [ ] (arcterm) **Agent composer image cap, 3.5 MB.** Unit-tested only (`composerattachments.test.ts`); no scenario
+  attaches to the agent composer. Agent → paste a 4 MB image into the message box → it is refused at once with
+  `over 3.5 MB`, not lost on send; a 3 MB image sends. Commit: fix(council) the Report's summary Retry needs a sent
+  idea, and the composer's image cap is 3.5 MB (run a9774e84)
+- [ ] (arcterm) **Council decisions, 11-14.** Go-tested and typechecked; no dev app ran. (1) Hover a seat's message
+  in a council's chat → its byline shows Pin to Report as a pin and Chốt as a compass; an idea's Chốt and the Memory
+  tab's hover Chốt are compasses too (`council-discussion`, `council-memory`). (2) Pin a chat seat's message, then
+  open the saved report under `docs/council/` → its Final proposal reads `_From <project> · <key>_`, the key the
+  Report's header shows. (3) Quit arcterm while a council runs, reopen → the council reads stopped and its report
+  file is saved (Open report works). Commit: fix(council) Chốt draws a compass, a chat seat's key in the report,
+  a stale council's report
+- [ ] (arcterm) **`wsh agents list` and agents in no project.** Unit-tested; run live from this project (the count
+  line showed), but no agent was open in a scratch folder then. Open a Claude agent in a folder that is no project →
+  `wsh agents list` from an agent in arcterm lists it with `(no project)` after its folder's name. Commit:
+  fix(wsh) agents list shows sessions in no project
+- [ ] (arcterm) **Token burn card inside a run.** Go-tested only; no dev app ran. In an orchestrator run (autonomous
+  too), have a worker start 3+ subagents, or run `wsh council start` → the Token burn card shows at once in Needs you
+  and in the run's question card as yours, the lead gets no wake for it, and `wsh jarvis dag answer` from the lead
+  is refused. Allow there → the spawn runs. Commit: fix(orchestrate) a held card raised in a run is the person's
+- [ ] (arcterm) **Council fixes, 11-14 third batch.** Go- and unit-tested and typechecked; no dev app ran. (1) In a
+  council paused after round 1, Continue with `Check it against @<a file>` → round 2's expert cards show them reading
+  it. (2) In a 3-round council, attach an image to a reply in round 2 → in round 3 an expert shown that thread opens it
+  (its activity names the file). (3) Kill wavesrv while a council runs a verify command, start arcterm again → the
+  `council-<id>` folder under arc-wt is gone (`[council] … removed the verify tree` in waveapp.log). (4) `wsh council
+  start` in a folder that is not a registered project → its row is in Home's folder (`council-tree`, step 11j). Commit:
+  fix(council) Continue's @file, round 3 attachments, crash-left verify trees, councils in Home
+- [ ] (arcterm) **Council fixes, 11-14 second batch.** Go-tested and typechecked; no dev app ran. (1) Paste a 4 MB
+  image into a council's chat → its chip reads `Image too large (over 3.5 MB)` at once (`council-discussion`,
+  attach-oversize). (2) In a done Review report with Also raised, press the header's `Also raised` jump link → the
+  page scrolls there and the ideas are unfolded (`council-summary`). (3) `wsh council summarize <id>` on a council
+  paused after round 1 → it prints `summarizing`, and `wsh council wait <id>` returns its report. Commit:
+  fix(council) one image cap, kept jump unfolds, summarize command, withdrawal round, Draft lookup outside the lock
+- [ ] (arcterm) **Council small fixes, 11-14 batch.** Unit-tested and typechecked only; no dev app ran. (1) Leave a
+  council paused after round 1 in a registered project → the Cockpit's Needs you strip has a `Council` row; under
+  another project's filter it is gone; Open lands on its Discussion (`task verify:ui -- council-needs-you`, step 4b).
+  (2) Ctrl+K → Needs you → Enter on a learned rule → the Cockpit shows, with the rule's Accept and Dismiss. (3) In a
+  council with a waiting suggestion, fold the Ideas rail → the `Ideas · N` button carries the dot (`council-memory`,
+  step 1b). (4) A council whose coordinator failed with no sent idea → its Retry is greyed, and its hover says no idea
+  was sent. (5) Copy a routed message's `Router failed` row → the pasted text reads `Router failed UX`, not
+  `Router failedUX` (`council-routing`). Commit: fix(council) Needs you strip, palette learned rule, folded-rail dot,
+  summary Retry hold
+- [ ] (arcterm) Council and Doc review cards in Chat, with a real agent: in a Claude agent's Chat have it start a
+  council (`/arc:council`, or ask for one) → while it runs a Council card sits at the end of the conversation (the
+  question, a chip per expert, the step, the time, the estimate, Stop; Open council opens the room); a second council
+  started while one runs shows the queued card naming the first; a council that pauses after round 1 reads Waiting on
+  you with Continue and Stop. When one ends its card leaves on the spring and a ✓ row (Open report) stands at the
+  `wsh council start` call, ■ when you Stop it; run a follow-up on a done council from its room → its row reads
+  running again and the card never comes back to the end. Then have the agent ask a Doc review (`/arc:doc-review`) → a
+  Doc review card in the dock above the box with Review and Approve; Approve folds it into "✓ Doc review · approved ·
+  <file>", and Request changes from Review into "↺ … changes requested · N comments". An exited agent shows both cards
+  without Stop, Continue, Review and Approve. The `chat-council` scenario covers these states from fixtures, not the output of a real agent's
+  `wsh council start`. Commit: feat(chat) place the council cards and the Doc review rows in the conversation
+- [ ] (arcterm) **The Brainstorm rail tab on a live agent.** Have a real Claude agent run a brainstorm that draws
+  boards. While it works between two questions, its rail has a Brainstorm tab: the title, `Open` with `b`, the line
+  `<state> · Decided N · M boards`, and the decisions as a numbered timeline with each board's chip under the decision
+  it illustrates. Let it draw another board while the tab is not shown → within a few seconds the tab's icon and the
+  header's Brainstorm switch carry the accent dot, and on the tab the chip reads `new` under its decision, whose number
+  is filled. Click the chip → the board opens in the dialog over the agent's cell (Chat and Terminal), ← / → step through
+  the boards, `b` opens the Brainstorm view, and both dots go. Checked only with fixture agents in the
+  `rail-brainstorm-tab` scenario (`railbrainstormpane.tsx`, `brainstormbandview.tsx`). Commit: feat(rail) Brainstorm
+  and Initiative rail tabs.
+- [ ] (arcterm) Esc in Chat before the reply, on Windows: after a build, in a Claude agent's Chat send a long ask
+  ("write 3000 words on …") and press Esc once its bubble shows as sent, before any reply → the text comes back into the
+  box and the bubble leaves the conversation at the same moment, with no Queued bubble after; send it again → it shows
+  once and gets its answer. Tried on a Mac in the browser dev app with a real Claude (haiku), not in WebView2. Commit:
+  fix(chat) a message Esc takes back leaves the conversation
+
+## 2026-11-13
+
+- [ ] (arcterm) A pasted jobslot wrapper queues once: after a build with the new `wsh` and an arcterm restart, have a
+  Claude agent run `'<home>/.arc/bin/wsh' jobslot --hold-parent -- 'task check:ts'; [ $? -ne 75 ] || exit 75` then a
+  newline and `task check:ts`, in the foreground → the Jobs popover shows one `task check:ts`, running, not a second
+  one waiting "CPU busy, 1 at a time" behind it, and the typecheck finishes on its own. Commit: fix(arc-mod) a pasted
+  jobslot wrapper is not queued twice
+- [ ] (arcterm) Triple-click in Chat on a Mac: after a build, triple-click a short list item, a short paragraph and a
+  heading in an agent's reply → each highlights only its text, with no band on to the column's right edge, and Copy
+  pastes the line with no trailing line break. A drag across several paragraphs still selects them all. Checked only in
+  a WKWebView harness with the same module, not in the app. Commit: fix(chat) a triple-click selects the line's text
+- [ ] (arcterm) Compacting in Chat: after a build with the new `wsh`, type `/compact` in a Claude agent's Chat → under
+  the last message it reads Compacting… with no `(…)` timer, then the line goes away when the summary lands. A
+  compaction Claude starts on its own mid-turn still reads Working…. Commit: fix(chat) a /compact reads Compacting…
+- [ ] (arcterm) Kael sync 11-13: a land refused mid-merge is undone: in a scratch repo, start a run with two tasks, and
+  once the first lane has merged put a `commit-msg` hook in the repo's `.git/hooks` that refuses the engine's own
+  commits and no one else's (`#!/bin/sh`, then `grep -q '^Arc-Run:' "$1" && exit 1`; only the squash and land commits
+  carry that trailer, so the workers' commits still go through). While the second lane merges → its squash is refused,
+  the landing tree has nothing staged afterwards, and the next tick merges it once the hook is gone; before, the
+  squash stayed staged and held every later merge. Put the hook back before the run completes → the land holds with the
+  refusal as its reason, `git status` in the checkout shows no merge in progress (no `.git/MERGE_HEAD`) and nothing
+  staged; remove the hook and run `wsh runs land <run-id>` → it lands. A run started with `--landing checkout` behaves
+  as it did. Unit-tested on Windows only (`/bin/sh` hooks), never on a real run. Commit: f03b9ee67 (`merge.go`
+  `finishMerge` / `undoMerge`, `land.go` `mergeRefusal`).
+- [ ] (arcterm) Kael sync 11-13: a resume that fails in a new tab leaves no extra tab: close the tab of a Quick run's
+  worker while it works → the run reads Blocked "worker's tab was closed…". Make the resume fail (move the worker's
+  session `.jsonl` away) and Resume from the palette → it reports why, and the Agent tree gains no extra terminal for
+  the run; put the file back and Resume again → one new tab opens and the worker continues. Unit-tested only. Commit:
+  5019e90c8 (`interrupted.go` `resumeInNewTab`, `swapPhaseWorker`).
+- [ ] (arcterm) A bug report's picture survives done: in the session that handled a bug report, after `wsh bugreport done`
+  moves its folder to `reports/done/<id>/`, the screen.png thumb on the step row still shows and a click zooms it (not
+  the crossed-out "no longer on disk" frame). Unit-tested only. Commit: 1b016b95d (`localimage.ts` `doneReportPath`).
+- [ ] (arcterm) Council Figures drawn as charts, with real seats: after a build, start a Review council in mit-thesis on
+  a question that leans on numbers (the patch replay, X.js) → the seats' figures carry `group` and some of `of`, `was`,
+  `limit`, `unit`, `at`, and the Report's Số liệu draws groups as bars, a change, a limit, a line or a comparison;
+  any relation Go dropped is listed with why under About the council. Then `wsh council redoc --project <mit-thesis>`
+  → the 2026-11-24 SecBench report (council 5186f93c) lists 94, 947, 170 and 79,5% once each, each with both its
+  places. Checked only in the browser cockpit with a fixture council (`council-report-tables`, 8/8) and a worktree
+  wavesrv, not in WebView2 and not with a model writing the fields. Commit: feat(council) Figures drawn as charts
+- [ ] (arcterm) `wsh council refigure` on an old council: after installing, `wsh council refigure 5186f93c` → it prints
+  each verified figure with its relations and the tokens, and rewrites the SecBench report; the Report's Số liệu (app and
+  `.md`) groups X.js 947 → 135 → 94 + 41 and the replay rates (70,6% of 170, from 79,5% of 151). Check the Liên hệ
+  column for a link haiku guessed (a preview on a copy also said "151 of 170"). Tried on a copy of the record with haiku
+  only, not through wavesrv. Commit: feat(council) wsh council refigure
+- [ ] (arcterm) Unread turns read one by one in Chat: let an agent in Chat finish 3 turns with long replies while you
+  look at another agent, then click it → Chat opens at the oldest of the 3 under a blue "3 new turns" rule (no slide,
+  no flash of the end first, the pinned prompt bar not over the rule); scroll slowly → the row's blue count drops 3 → 2
+  → 1 → 0 as each reply's last line comes into view, the rule keeping its 3. Again in a 2-cell grid (each cell counts its
+  own), and with a Vietnamese conversation ("3 lượt mới"). Scrolled up reading while the agent finishes a turn → +1,
+  gone again once you scroll to it; at the bottom it never shows. In Terminal the count still clears at once. Not run
+  live (scenario `chat-unread-turns`, written for the run's Final). Commit: feat(agents) unread turns read one by one
+
 - [ ] (arcterm) **Sidecar's orbit holds only the Cockpit's agents.** Unit tests and typecheck only; the wall's scenario
   never ran, since it needs the Tauri host (branch `feat/sidecar-button`), and its steps went with the wall: the
   `sidecar-orbit` scenario's "no node for the parked agents" step is the fixture version of this. Run `task verify:ui --
