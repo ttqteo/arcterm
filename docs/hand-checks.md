@@ -23,6 +23,11 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
 
 ## 2026-11-26
 
+- [ ] (arcterm) **Open in split from Library → Boards.** After a build, in Library → Boards hover a running agent's
+  board → a split icon shows beside the trash; click it → the Agent surface opens with the board in a cell right of its
+  agent, and a row for it in the Agent tree that stays after you switch away. Open an ended agent's board → the header's
+  Open in split puts it beside the agent in focus, its header chat shows "(ended)", and picking a live chat there lets
+  you ask. With no agent running the button is greyed with "Start an agent first". Branch `feat/library-board-split`.
 - [ ] (arcterm) **A failed Final counts its failed steps.** After a build, open run 4287b55b's Final verification row
   (or any run whose Final failed on CDP steps) → the Agent tree row reads "Final: 1 of 51 steps failed · round 2", the
   Final step reads "1 of 51 failed · 3m 22s", the stage header and the DAG node read "round 2 · Final: paired-button

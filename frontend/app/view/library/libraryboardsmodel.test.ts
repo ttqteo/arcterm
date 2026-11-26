@@ -9,6 +9,8 @@ import {
     boardsScope,
     boardsSelectionIn,
     noTakeoverText,
+    splitAnchor,
+    splitTitle,
     takeoverAgents,
 } from "./libraryboardsmodel";
 
@@ -102,7 +104,7 @@ describe("boardRows", () => {
             roster: ROSTER,
             now: NOW,
         });
-        expect(row).toMatchObject({ agent: "", alive: false, agentState: "ended", shapes: 0 });
+        expect(row).toMatchObject({ agent: "", agentTabId: "", alive: false, agentState: "ended", shapes: 0 });
         expect(row.summary).toBe("0 turns · empty · created 14:30");
     });
 
@@ -199,6 +201,47 @@ describe("takeoverAgents", () => {
         expect(takeoverAgents([], "mit-thesis")).toEqual([]);
         expect(noTakeoverText("mit-thesis")).toBe(
             "No Claude agent of mit-thesis is running: start one to open this board beside its Chat."
+        );
+    });
+});
+
+describe("splitAnchor", () => {
+    const live = { alive: true, agentTabId: "tab-live" };
+    const ended = { alive: false, agentTabId: "tab-gone" };
+
+    it("puts a live agent's board beside that agent, whoever is in focus", () => {
+        expect(splitAnchor(live, "other", ROSTER)).toBe("tab-live");
+        expect(splitAnchor(live, null, ROSTER)).toBe("tab-live");
+    });
+
+    it("puts an ended agent's board beside the agent in focus, else the roster's first", () => {
+        expect(splitAnchor(ended, "other", ROSTER)).toBe("other");
+        expect(splitAnchor(ended, null, ROSTER)).toBe("tab-live");
+        expect(splitAnchor(ended, "", ROSTER)).toBe("tab-live");
+        expect(splitAnchor({ alive: false, agentTabId: "" }, undefined, ROSTER)).toBe("tab-live");
+    });
+
+    it("has no place for it with no agent at all", () => {
+        expect(splitAnchor(ended, null, [])).toBeNull();
+    });
+});
+
+describe("splitTitle", () => {
+    it("names the live agent the board goes beside", () => {
+        expect(splitTitle({ alive: true, agent: "claude · jobqueue" }, "tab-live")).toBe(
+            "Open in split beside claude · jobqueue"
+        );
+        expect(splitTitle({ alive: true, agent: "" }, "tab-live")).toBe("Open in split beside its agent");
+    });
+
+    it("tells an ended agent's board where it goes and how to ask on it", () => {
+        expect(splitTitle({ alive: false, agent: "claude · startup" }, "other")).toContain("agent in focus");
+        expect(splitTitle({ alive: false, agent: "" }, "other")).toContain("pick a chat");
+    });
+
+    it("says to start an agent when there is none", () => {
+        expect(splitTitle({ alive: false, agent: "" }, null)).toBe(
+            "Start an agent first: the board opens in a split beside it"
         );
     });
 });

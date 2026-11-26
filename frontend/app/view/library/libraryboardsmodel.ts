@@ -18,6 +18,7 @@ export interface BoardRow {
     project: string;
     name: string;
     agent: string; // the agent's title as the roster gave it; "" when the board has none
+    agentTabId: string; // the tab of the agent the board is tied to; "" when it has none
     alive: boolean; // the agent's tab is in the roster (sleeping counts)
     agentState: BoardAgentState;
     shapes: number; // 0 for a board nothing was drawn on: its thumbnail needs no read
@@ -48,6 +49,7 @@ export function boardRows(
                 project: b.project,
                 name: b.name,
                 agent: b.agenttitle ?? "",
+                agentTabId: b.agenttabid ?? "",
                 alive,
                 agentState: alive ? "running" : "ended",
                 shapes: b.shapes ?? 0,
@@ -78,6 +80,34 @@ export function takeoverAgents(roster: readonly AgentVM[], project: string): Boa
     return roster
         .filter((a) => a.agent === "claude" && projectOf(a) === project)
         .map((a) => ({ id: a.id, name: a.name }));
+}
+
+// Open in split, from a row or the open board: the agent whose cell the board's cell goes beside. A live agent's board goes
+// beside that agent; an ended one's beside the agent in focus (as the tree's Open in split does), else the roster's first,
+// where it reads and hand-edits as in Library and its header's chat picker hands it to a chat to ask. null with no agent.
+export function splitAnchor(
+    row: Pick<BoardRow, "alive" | "agentTabId">,
+    focusId: string | null | undefined,
+    roster: readonly { id: string }[]
+): string | null {
+    if (row.alive && row.agentTabId !== "") {
+        return row.agentTabId;
+    }
+    if (focusId != null && focusId !== "") {
+        return focusId;
+    }
+    return roster[0]?.id ?? null;
+}
+
+// the Open in split button's tooltip: beside whom, and for an ended agent's board how to ask on it from there
+export function splitTitle(row: Pick<BoardRow, "alive" | "agent">, anchor: string | null): string {
+    if (anchor == null) {
+        return "Start an agent first: the board opens in a split beside it";
+    }
+    if (row.alive) {
+        return row.agent !== "" ? `Open in split beside ${row.agent}` : "Open in split beside its agent";
+    }
+    return "Open in split beside the agent in focus (pick a chat in the board's header to ask)";
 }
 
 // what Open beside Chat says when no agent can take the board: start one in its project first

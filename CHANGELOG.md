@@ -69,6 +69,9 @@ and a picture given to a line that is not big.
 - Each drawer answer on a board is its own titled drawing: the row above the board lists them one click away, and the
   view moves to a new drawing as it lands unless you went back to an earlier one, which then shows a `new` mark on the
   new one (from the kaeltran16 fork). <!-- big --> <!-- shot: 1.11.0-board-drawings.webp -->
+- Open in split in Library → Boards, on a board's row and in the open board's header: it puts the board in a cell on
+  the Agent surface and in the Agent tree, beside its agent while that agent runs, or beside the agent in focus when its
+  agent has ended (pick a chat in the board's header there to ask on it).
 
 ### Changed
 
