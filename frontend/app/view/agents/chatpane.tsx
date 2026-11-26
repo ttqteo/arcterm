@@ -1219,10 +1219,10 @@ function ChatPaneBody({ model, agent, barred }: { model: AgentsViewModel; agent:
               judge
           )
         : undefined;
-    // The line under the turn's message (chatjudgeline.tsx) is the live one while the chips show: it offers Judge it, Stop
-    // or Retry, and with the project known the pane tells the Alt+J key what that is (liveJudgeAtom, which the binding
-    // reads: it cannot see this pane's state). The offer goes when the turn changes, the line offers nothing or the pane
-    // is gone.
+    // The line under the turn's message (chatjudgeline.tsx) is the live one while the chips show: it offers Read the code
+    // and pick, Stop or Retry, and with the project known the pane tells the Alt+J key what that is (liveJudgeAtom, which
+    // the binding reads: it cannot see this pane's state). The offer goes when the turn changes, the line offers nothing
+    // or the pane is gone.
     const liveJudgeKey = chips != null && judge != null ? turnKey : null;
     const liveLine = liveJudgeKey != null && cwd != null ? judgeLine(judge, 0, vi, true) : null;
     const liveAction = liveLine != null && liveLine.state !== "none" ? liveLine.action : undefined;

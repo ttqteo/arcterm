@@ -11,28 +11,40 @@ vi.mock("@/app/store/wps", () => ({
     },
 }));
 vi.mock("@/app/store/wshclientapi", () => ({
-    RpcApi: { PairListCommand: vi.fn(), PairGetCommand: vi.fn(), PairHistoryCommand: vi.fn() },
+    RpcApi: {
+        PairListCommand: vi.fn(),
+        PairGetCommand: vi.fn(),
+        PairHistoryCommand: vi.fn(),
+        PairResumeCommand: vi.fn(),
+    },
 }));
 vi.mock("@/app/store/wshrpcutil", () => ({ TabRpcClient: {} }));
 
 import { globalStore } from "@/app/store/jotaiStore";
 import { RpcApi } from "@/app/store/wshclientapi";
+import { atom } from "jotai";
+import { centerModeAtom, pairSelAtom, showTerminal } from "./agentcenter";
+import type { AgentsViewModel } from "./agents";
+import { judgeAgainOf } from "./pairopen";
 import {
     devMockPairsAtom,
     loadPair,
     loadPairHistory,
     loadPairs,
     markPairSeen,
+    pairDraftAtom,
     pairHistoryAtom,
     pairListAtom,
     pairSeenAtom,
     pairViewAtom,
     pairViewErrorAtom,
+    resumePair,
 } from "./pairstore";
 
 const list = RpcApi.PairListCommand as ReturnType<typeof vi.fn>;
 const get = RpcApi.PairGetCommand as ReturnType<typeof vi.fn>;
 const history = RpcApi.PairHistoryCommand as ReturnType<typeof vi.fn>;
+const resume = RpcApi.PairResumeCommand as ReturnType<typeof vi.fn>;
 
 const info = (id: string, messagecount = 0, over: Partial<PairInfo> = {}) =>
     ({ id, messagecount, ...over }) as unknown as PairInfo;
@@ -48,6 +60,7 @@ beforeEach(() => {
     list.mockReset();
     get.mockReset();
     history.mockReset();
+    resume.mockReset();
     globalStore.set(devMockPairsAtom, null);
 });
 
@@ -291,5 +304,50 @@ describe("what the person has seen", () => {
 
         markPairSeen("nobody");
         expect(globalStore.get(pairSeenAtom("nobody"))).toBe(0);
+    });
+});
+
+describe("resumePair", () => {
+    it("calls PairResumeCommand with the pair's id", async () => {
+        resume.mockResolvedValueOnce(undefined);
+        await resumePair("r1");
+        expect(resume).toHaveBeenCalledTimes(1);
+        expect(resume).toHaveBeenCalledWith({}, { pairid: "r1" });
+    });
+
+    it("logs a failure and rethrows it, so the place that pressed the button can show it", async () => {
+        const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+        const failure = new Error("resume is not possible: the pair is not stopped");
+        resume.mockRejectedValueOnce(failure);
+        await expect(resumePair("r2")).rejects.toBe(failure);
+        expect(logged).toHaveBeenCalled();
+        logged.mockRestore();
+    });
+});
+
+describe("a pair's composer draft", () => {
+    it("is null until something writes it, and is held per pair", () => {
+        expect(globalStore.get(pairDraftAtom("d1"))).toBeNull();
+        globalStore.set(pairDraftAtom("d1"), "@judge ");
+        expect(globalStore.get(pairDraftAtom("d1"))).toBe("@judge ");
+        expect(globalStore.get(pairDraftAtom("d2"))).toBeNull();
+        globalStore.set(pairDraftAtom("d1"), null);
+        expect(globalStore.get(pairDraftAtom("d1"))).toBeNull();
+    });
+});
+
+describe("judgeAgainOf", () => {
+    it("puts the pair's conversation on screen and leaves @judge in its draft", () => {
+        const model = { focusIdAtom: atom<string | null>(null) } as unknown as Pick<AgentsViewModel, "focusIdAtom">;
+        showTerminal();
+        globalStore.set(pairDraftAtom("j1"), null);
+
+        judgeAgainOf(model, "worker-tab", "j1");
+
+        expect(globalStore.get(model.focusIdAtom)).toBe("worker-tab");
+        expect(globalStore.get(centerModeAtom)).toBe("pair");
+        expect(globalStore.get(pairSelAtom)).toBe("j1");
+        expect(globalStore.get(pairDraftAtom("j1"))).toBe("@judge ");
+        expect(globalStore.get(pairDraftAtom("other"))).toBeNull();
     });
 });

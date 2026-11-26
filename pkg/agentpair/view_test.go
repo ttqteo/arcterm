@@ -554,6 +554,72 @@ func TestViewAppliesBodyAndQuotesWhatAMessageAnswers(t *testing.T) {
 	}
 }
 
+// a pause snapshot on a message reaches the view as it is; a message with none carries no pause key, and a view that
+// cannot be resumed carries no canresume key (the generated TS fields stay optional)
+func TestViewCarriesAMessagePause(t *testing.T) {
+	p := newPair("j1")
+	say(p, FromSystem, "", "Paused: the judge has no new points")
+	pause := &wshrpc.PairPause{
+		Reason:  StopNoNewPoints,
+		Summary: "Both sides agree on the threshold.",
+		Decided: wshrpc.PairDecided{
+			Asks:   []wshrpc.PairItem{{Num: 3, Kind: KindAsks, Text: "Is 50% fine?", Chips: []string{"Yes", "No"}, MsgId: "m1"}},
+			Agreed: []wshrpc.PairItem{},
+			Open:   []wshrpc.PairItem{},
+		},
+	}
+	p.Messages[0].Pause = pause
+	say(p, FromSystem, "", "Paused: both agree")
+
+	v := View(p)
+	if got := v.Messages[0].Pause; !reflect.DeepEqual(got, pause) {
+		t.Fatalf("the pause did not reach the view: %#v", got)
+	}
+	if v.Messages[0].Text != "Paused: the judge has no new points" {
+		t.Fatalf("a pause message's text = %q, want its Raw line", v.Messages[0].Text)
+	}
+	if v.Messages[1].Pause != nil {
+		t.Fatalf("a message with no pause carries one: %#v", v.Messages[1].Pause)
+	}
+	b, _ := json.Marshal(v)
+	if n := strings.Count(string(b), `"pause"`); n != 1 {
+		t.Fatalf("%d pause keys in %s, want 1 (the message that has one)", n, b)
+	}
+	if strings.Contains(string(b), `"canresume"`) {
+		t.Fatalf("a pair that cannot be resumed carries a canresume key: %s", b)
+	}
+	if v.CanResume {
+		t.Fatal("a relaying pair reads canresume")
+	}
+}
+
+// a pair synced from another machine has its agents elsewhere: its view never offers Resume, whatever its queues hold
+func TestViewCanResumeIsFalseOnASyncedRead(t *testing.T) {
+	own, synced := historyDirs(t)
+	held := func(id string) *Pair {
+		p := stoppedPair(StopTokenCap, "j1")
+		p.Id = id
+		p.Pending["j1"] = []string{"m1"}
+		return p
+	}
+	savePair(t, own, held("mine"))
+	savePair(t, synced, held("far"))
+
+	if v, err := Read(own, synced, "mine"); err != nil || !v.CanResume || v.Synced {
+		t.Fatalf("a stopped pair of this machine = canresume %v, synced %v, %v: want it resumable", v != nil && v.CanResume, v != nil && v.Synced, err)
+	}
+	v, err := Read(own, synced, "far")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !v.Synced || v.CanResume {
+		t.Fatalf("a synced pair = synced %v, canresume %v: want synced and not resumable", v.Synced, v.CanResume)
+	}
+	if b, _ := json.Marshal(v); strings.Contains(string(b), `"canresume"`) {
+		t.Fatalf("a synced view carries a canresume key: %s", b)
+	}
+}
+
 func TestViewKeepsATargetedPersonMessageTo(t *testing.T) {
 	p := newPair("j1")
 	say(p, FromPerson, "", "for the judge")

@@ -5040,6 +5040,14 @@ declare global {
         replyto: string;
         to: string;
         held: PairHeld[];
+        pause?: PairPause;
+    };
+
+    // wshrpc.PairPause
+    type PairPause = {
+        reason: string;
+        summary: string;
+        decided: PairDecided;
     };
 
     // wshrpc.PairSide
@@ -5077,6 +5085,7 @@ declare global {
         createdts: number;
         messages: PairMessage[];
         decided: PairDecided;
+        canresume?: boolean;
     };
 
     // waveobj.ParkedLaunch

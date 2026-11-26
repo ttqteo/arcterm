@@ -74,10 +74,10 @@ function shownPick(rec: ChatJudgeRecord): { pick: string | undefined; reason: st
     return deep?.state === "done" ? { pick: deep.pick, reason: deep.reason } : { pick: rec.pick, reason: rec.reason };
 }
 
-/** Pure: the row with the judge's pick first and marked `judged` (the scale), so Cmd/Ctrl+Enter (quickChip) sends it. The
- *  deep judge's pick once it is done, else the light mark's: only one chip is ever judged. An option the deep judge
- *  added becomes a chip of its own: first when it is the pick, else right after the judged chip. A pick that names no
- *  chip (or no record) leaves the row as given. */
+/** Pure: the row with the judge's pick first and marked `judged` (the magnifier), so Cmd/Ctrl+Enter (quickChip) sends
+ *  it. The deep judge's pick once it is done, else the light mark's: only one chip is ever judged. An option the deep
+ *  judge added becomes a chip of its own: first when it is the pick, else right after the judged chip. A pick that
+ *  names no chip (or no record) leaves the row as given. */
 export function judgedChips(chips: ChatChip[], rec: ChatJudgeRecord | undefined): ChatChip[] {
     if (rec == null) {
         return chips;
@@ -182,7 +182,7 @@ export function judgeLine(
             const addedPicked = deep.added != null && deep.pick === deep.added.label;
             return {
                 state: "done",
-                head: vi ? "Judge chọn" : "Judge picks",
+                head: vi ? "Đã đọc code: chọn" : "Read the code: picks",
                 ...(deep.pick ? { name: deep.pick } : {}),
                 ...(addedPicked ? { note: vi ? "agent không nêu" : "the agent did not name it" } : {}),
                 tail: cost,

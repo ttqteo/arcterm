@@ -114,8 +114,30 @@ describe("parseJudgeMarks", () => {
             ],
             new: ["the oracle needs a second seed", "another"],
             noNewPoints: true,
+            summary: "",
         });
-        expect(parseJudgeMarks("")).toEqual({ reopen: [], new: [], noNewPoints: false });
+        expect(parseJudgeMarks("")).toEqual({ reopen: [], new: [], noNewPoints: false, summary: "" });
+    });
+
+    it("reads the last summary line, in any case, as pkg/agentpair's JudgeMarks does", () => {
+        const body = [
+            "summary: the first draft",
+            "- SUMMARY :   Both agree on D1 and D2; A5 waits on you.   ",
+            "no new points",
+        ].join("\n");
+        expect(parseJudgeMarks(body)).toEqual({
+            reopen: [],
+            new: [],
+            noNewPoints: true,
+            summary: "Both agree on D1 and D2; A5 waits on you.",
+        });
+        expect(parseJudgeMarks("a summary line\r\nsummary: with CRLF\r\n").summary).toBe("with CRLF");
+    });
+
+    it("skips a line that is no summary", () => {
+        for (const line of ["summary:", "summary of the pair", "the summary: not at the start", "my summary: x"]) {
+            expect(parseJudgeMarks(line).summary).toBe("");
+        }
     });
 });
 

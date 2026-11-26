@@ -26,14 +26,15 @@ export interface PairBlockItem {
     chips: string[];
 }
 
-// The line rules are pkg/agentpair/blocks.go's (itemLine, chipsTail, reopenLine, newLine, noNewLine): keep the two sides'
-// patterns identical, so the card lists what the server reads.
+// The line rules are pkg/agentpair/blocks.go's (itemLine, chipsTail, reopenLine, newLine, summaryLine, noNewLine): keep
+// the two sides' patterns identical, so the card lists what the server reads.
 // `D1 text`, `O2: text`, `A3 text`; a Markdown bullet before it is read past
 const ITEM_LINE = /^\s*(?:[-*+]\s+)?([DOAdoa])(\d+):?\s+(\S.*?)\s*$/;
 // an A item's answer chips close its line: `[Yes, 50% | No, keep 70%]`
 const CHIPS_TAIL = /\s*\[([^[\]]+)\]\s*$/;
 const REOPEN_LINE = /^\s*(?:[-*+]\s+)?reopen\s+d?(\d+)\s*(?::\s*(.*?))?\s*$/i;
 const NEW_LINE = /^\s*(?:[-*+]\s+)?new\s*:\s*(\S.*?)\s*$/i;
+const SUMMARY_LINE = /^\s*(?:[-*+]\s+)?summary\s*:\s*(\S.*?)\s*$/i;
 const NO_NEW_LINE = /^\s*(?:[-*+]\s+)?no\s+new\s+points?\b/i;
 
 const KIND_OF: Record<string, PairKind> = { D: "agreed", O: "open", A: "asks" };
@@ -89,16 +90,20 @@ export function parsePairItems(body: string): PairBlockItem[] {
     return items;
 }
 
-/** A judge's marks: the agreed items it reopens, the points it raises, and whether it said it has none. */
+/**
+ * A judge's marks: the agreed items it reopens, the points it raises, whether it said it has none, and the few
+ * sentences it sums the pair up with for the person (the last `summary:` line, "" when it wrote none).
+ */
 export interface JudgeMarks {
     reopen: { num: number; why: string }[];
     new: string[];
     noNewPoints: boolean;
+    summary: string;
 }
 
 /** Pure: a judge's marks from an arc-judge fence's body, in any case. A line that does not parse is skipped. */
 export function parseJudgeMarks(body: string): JudgeMarks {
-    const marks: JudgeMarks = { reopen: [], new: [], noNewPoints: false };
+    const marks: JudgeMarks = { reopen: [], new: [], noNewPoints: false, summary: "" };
     for (const line of body.split(/\r?\n/)) {
         const r = REOPEN_LINE.exec(line);
         if (r != null) {
@@ -111,6 +116,11 @@ export function parseJudgeMarks(body: string): JudgeMarks {
         const n = NEW_LINE.exec(line);
         if (n != null) {
             marks.new.push(n[1]);
+            continue;
+        }
+        const s = SUMMARY_LINE.exec(line);
+        if (s != null) {
+            marks.summary = s[1];
         } else if (NO_NEW_LINE.test(line)) {
             marks.noNewPoints = true;
         }

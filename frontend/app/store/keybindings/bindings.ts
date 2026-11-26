@@ -2215,14 +2215,15 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
             },
         },
         {
-            // Judge it on the choice question Chat shows under the focused agent's message (chatjudgeline.tsx), or Retry
-            // after a failed judge, from the box or anywhere else on the surface. The agent's Chat pane writes what its live
-            // line offers into liveJudgeAtom (the key cannot see the pane's state), so the key is live only while the line
-            // offers Judge it or Retry (not Stop: the line's own button stops) and passes on otherwise
+            // Read the code and pick on the choice question Chat shows under the focused agent's message
+            // (chatjudgeline.tsx), or Retry after a failed judge, from the box or anywhere else on the surface. The
+            // agent's Chat pane writes what its live line offers into liveJudgeAtom (the key cannot see the pane's
+            // state), so the key is live only while the line offers Read the code and pick or Retry (not Stop: the
+            // line's own button stops) and passes on otherwise
             id: "agent:chat-judge",
             keys: "Alt:j",
             group: "Agent",
-            label: "Judge the choice question in Chat: a fresh sonnet reads the code (Retry after a failure)",
+            label: "Read the code and pick for the choice question in Chat: a fresh sonnet (Retry after a failure)",
             when: (ctx) => {
                 if (ctx.surface !== "agent" || ctx.modalOpen || !centerAtRest()) {
                     return false;

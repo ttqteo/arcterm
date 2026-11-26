@@ -38,6 +38,7 @@ type fakePairLink struct {
 	mu      sync.Mutex
 	states  map[string]string
 	answers map[string]fakePairAnswer
+	tokens  map[string]int64 // what each tab spent since the cap started; a tab with none spent 0
 	sent    []agentsDelivery // blockId holds the tab the prompt went to
 	reads   []string         // the tabs whose last answer was read
 }
@@ -71,7 +72,17 @@ func (l *fakePairLink) LastAnswer(_ context.Context, tab string) (string, int64,
 	return a.text, a.ts, nil
 }
 
-func (l *fakePairLink) Tokens(context.Context, string, int64) (int64, error) { return 0, nil }
+func (l *fakePairLink) Tokens(_ context.Context, tab string, _ int64) (int64, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.tokens[tab], nil
+}
+
+func (l *fakePairLink) setTokens(tab string, n int64) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.tokens[tab] = n
+}
 
 func (l *fakePairLink) Agent(_ context.Context, tab string) (agentpair.AgentFacts, error) {
 	switch tab {
@@ -130,6 +141,7 @@ func newPairWorld(t *testing.T) *pairWorld {
 	w := &pairWorld{t: t, link: &fakePairLink{
 		states:  map[string]string{pairWorkerTab: agentpair.LinkIdle, pairJudgeTab: agentpair.LinkIdle},
 		answers: map[string]fakePairAnswer{},
+		tokens:  map[string]int64{},
 	}, ownDir: t.TempDir(), syncedDir: t.TempDir()}
 	w.setManager(w.newManager(w.ownDir))
 	oldDirs := pairDirs
@@ -308,6 +320,69 @@ func TestPairHandlers(t *testing.T) {
 	}
 	if err := ws.PairSayCommand(ctx, wshrpc.CommandPairSayData{PairId: "no-such-pair", Text: "hi"}); err == nil {
 		t.Error("a message to no pair was accepted")
+	}
+}
+
+// PairResume puts a pair stopped at its token cap back to relaying and sends the judge what was held, with no message of
+// the person's; each pair it cannot resume gets an error, and none is changed
+func TestPairHandlersResume(t *testing.T) {
+	ctx := context.Background()
+	ws := &WshServer{}
+	w := newPairWorld(t)
+	resume := func(id string) error { return ws.PairResumeCommand(ctx, wshrpc.CommandPairGetData{PairId: id}) }
+
+	view := w.start(true)
+	if err := resume(view.Id); err == nil || !strings.Contains(err.Error(), "not stopped") {
+		t.Fatalf("Resume of a relaying pair = %v, want a refusal that says it is not stopped", err)
+	}
+
+	// the judge is at work, so the worker's next reply waits in its queue; the worker is over the cap when it ends the turn
+	w.link.setState(pairJudgeTab, agentpair.LinkWorking)
+	w.link.setTokens(pairWorkerTab, agentpair.DefaultTokenCap+1)
+	w.link.answer(pairWorkerTab, "Held reply.\n```arc-pair\nO1 lock the threshold first\n```", 2000)
+	getPairManager().TurnEnded(ctx, pairWorkerTab)
+	stopped := w.view(view.Id)
+	if stopped.State != agentpair.StateStopped || stopped.StopReason != agentpair.StopTokenCap || !stopped.CanResume {
+		t.Fatalf("state %s / %s, canresume %v: want a token-cap stop that can resume", stopped.State, stopped.StopReason, stopped.CanResume)
+	}
+	sentBefore := len(w.link.deliveries())
+
+	w.link.setState(pairJudgeTab, agentpair.LinkIdle)
+	w.link.setTokens(pairWorkerTab, 0)
+	if err := resume(view.Id); err != nil {
+		t.Fatalf("Resume of a pair stopped at the token cap: %v", err)
+	}
+	resumed := w.view(view.Id)
+	if resumed.State != agentpair.StateRelaying || resumed.StopReason != "" || resumed.CanResume || resumed.Tokens != 0 {
+		t.Fatalf("state %s / %s, canresume %v, tokens %d after Resume", resumed.State, resumed.StopReason, resumed.CanResume, resumed.Tokens)
+	}
+	if len(resumed.Messages) != len(stopped.Messages) {
+		t.Fatalf("%d messages after Resume, %d before: it writes none", len(resumed.Messages), len(stopped.Messages))
+	}
+	sent := w.link.deliveries()
+	if len(sent) != sentBefore+1 || sent[sentBefore].blockId != pairJudgeTab || !strings.Contains(sent[sentBefore].text, "Held reply.") {
+		t.Fatalf("after Resume the judge was sent %+v, want the held reply", sent[sentBefore:])
+	}
+	if err := resume(view.Id); err == nil || !strings.Contains(err.Error(), "not stopped") {
+		t.Fatalf("a second Resume = %v, want a refusal: the pair already relays", err)
+	}
+
+	// a pair that is not the manager's cannot be resumed: one that never was, one that ended, one synced from another machine
+	if err := resume("no-such-pair"); !errors.Is(err, agentpair.ErrNoPair) {
+		t.Fatalf("Resume of a pair that never was = %v, want ErrNoPair", err)
+	}
+	w.syncPair("far1", "thesis", agentpair.StateStopped, 5000)
+	if err := resume("far1"); !errors.Is(err, agentpair.ErrNoPair) {
+		t.Fatalf("Resume of a synced pair = %v, want ErrNoPair", err)
+	}
+	if far := w.view("far1"); !far.Synced || far.CanResume {
+		t.Fatalf("a synced pair reads synced %v, canresume %v: want synced, not resumable", far.Synced, far.CanResume)
+	}
+	if err := ws.PairUnpairCommand(ctx, wshrpc.CommandPairGetData{PairId: view.Id}); err != nil {
+		t.Fatal(err)
+	}
+	if err := resume(view.Id); !errors.Is(err, agentpair.ErrNoPair) {
+		t.Fatalf("Resume of an ended pair = %v, want ErrNoPair", err)
 	}
 }
 

@@ -209,8 +209,8 @@ const judging = new Map<string, symbol>();
 /** Starts the deep judge on a turn, or joins one wavesrv already runs for it (a record that arrives `reading`: another
  *  window, a pane remounted after a reload, which keeps the start time it was given). The record goes `reading` at once;
  *  the call blocks until the judge ends (200 s at most) and its record is kept, an error setting `failed` with its
- *  message. A stopped or failed judge is sent with `retry`, so Stop and then Judge kỹ runs again. A second call for a turn
- *  whose call is in flight here does nothing. */
+ *  message. A stopped or failed judge is sent with `retry`, so Stop and then Read the code and pick runs again. A second
+ *  call for a turn whose call is in flight here does nothing. */
 export function requestDeepJudge(key: string, cwd: string, retry = false): void {
     const rec = globalStore.get(chatJudgeAtom)[key];
     if (rec == null || judging.has(key)) {

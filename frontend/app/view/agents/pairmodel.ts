@@ -8,6 +8,7 @@
 
 import { shortTabId } from "./agentrowmodel";
 import type { AgentVM } from "./agentsviewmodel";
+import { pauseHead } from "./pairpause";
 
 /** An agent a pair can take on either side: claude or pi (the harnesses whose reply wavesrv reads), a real tab. The one
  *  rule: the header's Add judge, its judge menu and the tree's Pair: worker + judge all ask it. */
@@ -43,6 +44,9 @@ export type PairRow = {
     quoteId: string | null;
     /** the heavy commands the hold refused in this message (the dashed lines); `runts` is set once Run now let one through */
     held: PairHeld[];
+    /** the snapshot a pause message carries (why the pair paused, the judge's summary, the Decided list then): such a system
+     *  row draws as a pause card. null on every other row, a "Paused: …" line from before the snapshot included. */
+    pause: PairPause | null;
 };
 
 const SIDE: Record<string, PairRowSide> = { worker: "left", judge: "right", person: "wide", system: "system" };
@@ -94,6 +98,7 @@ export function timelineRows(view: PairView, workerName: string = view.worker.na
             quote: quoted ? m.quote : null,
             quoteId: quoted && ids.has(m.replyto) ? m.replyto : null,
             held: m.held ?? [],
+            pause: side === "system" ? (m.pause ?? null) : null,
         };
     });
 }
@@ -117,6 +122,19 @@ export function composerTarget(text: string, view: PairView): { to: string; text
     return { to: "both", text: trimmed };
 }
 
+/** What the composer holds once Judge again's draft (`@judge `) is taken: the draft alone in an empty box; otherwise what the
+ *  person had already written, kept, behind the draft, with the @ target it started with (if any) turned into the draft's,
+ *  so a click never throws away a half-written message. A box that already starts with the draft is left as it is. */
+export function withDraft(current: string, draft: string): string {
+    if (current.trim() === "") {
+        return draft;
+    }
+    if (current.startsWith(draft)) {
+        return current;
+    }
+    return draft + current.replace(/^\s*@\S+\s*/, "");
+}
+
 /** How many messages the person has not seen: those past the first `seen`, not counting their own. */
 export function newCount(view: PairView, seen: number): number {
     return (view.messages ?? []).slice(seen).filter((m) => m.from !== "person").length;
@@ -134,9 +152,17 @@ export function pairButtonLabel(view: PairView, role: PairRole, seen: number): s
     return `Paired with ${who}${fresh > 0 ? ` · ${fresh} new` : ""}`;
 }
 
-/** The working agent's state line reads "waiting on judge" while this holds: a judge owes an answer to its newest message. */
+/** The working agent's state line reads "waiting on judge" while this holds: a judge owes an answer to its newest message and
+ *  the pair is relaying. A stopped pair's judge works on nothing until it resumes (pausedStateText says so instead), and an
+ *  ended pair owes nothing. */
 export function waitingOnJudge(info: PairInfo): boolean {
-    return info.owed && info.state !== "ended";
+    return info.owed && info.state === "relaying";
+}
+
+/** The working agent's idle state line while its pair is stopped: the pause card's head words (pauseHead), in English as the
+ *  header's state words are everywhere, and with no cap, since a PairInfo carries none. null on a pair that is not stopped. */
+export function pausedStateText(info: PairInfo): string | null {
+    return info.state === "stopped" ? pauseHead(info.stopreason, false) : null;
 }
 
 /** What localStorage held for the seen counts (parsed): each pair's count where it is a whole number, anything else dropped. */

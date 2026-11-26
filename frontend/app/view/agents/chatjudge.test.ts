@@ -297,7 +297,7 @@ describe("judgeLine", () => {
         it("names the deep pick, its cost and its reason, with no action", () => {
             expect(judgeLine({ ...light(), deep: done() }, 0, true, true)).toEqual({
                 state: "done",
-                head: "Judge chọn",
+                head: "Đã đọc code: chọn",
                 name: B.text,
                 tail: "sonnet · 14 file · 41 s",
                 reason: "B nhỏ hơn và conn.go:40 đã có cache",
@@ -308,7 +308,7 @@ describe("judgeLine", () => {
         it("leaves the last message's card the cost as its tail, with no source", () => {
             expect(judgeLine({ ...light(), deep: done() }, 0, true, true, true)).toEqual({
                 state: "done",
-                head: "Judge chọn",
+                head: "Đã đọc code: chọn",
                 name: B.text,
                 tail: "sonnet · 14 file · 41 s",
                 reason: "B nhỏ hơn và conn.go:40 đã có cache",
@@ -317,7 +317,7 @@ describe("judgeLine", () => {
 
         it("counts files in English", () => {
             const line = lineOf({ ...light(), deep: done() }, 0, false, true);
-            expect(line.head).toBe("Judge picks");
+            expect(line.head).toBe("Read the code: picks");
             expect(line.tail).toBe("sonnet · 14 files · 41 s");
             expect(line.source).toBe("sonnet · 14 files · 41 s");
             expect(lineOf({ ...light(), deep: done({ files: 1 }) }, 0, false, true).tail).toBe(

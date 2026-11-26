@@ -64,8 +64,9 @@ func History(ownDir, syncedDir, project string) ([]wshrpc.PairInfo, error) {
 	return infos, nil
 }
 
-// Read is the pair of one id in full, from the own folder's file, else the synced folder's (Synced is set). An id that
-// is not a pair id is refused before it names a file; an id in neither folder is ErrNoPair.
+// Read is the pair of one id in full, from the own folder's file, else the synced folder's (Synced is set, and CanResume
+// is false: that pair's agents are on the other machine). An id that is not a pair id is refused before it names a
+// file; an id in neither folder is ErrNoPair.
 func Read(ownDir, syncedDir, id string) (*wshrpc.PairView, error) {
 	if !pairIdRe.MatchString(id) {
 		return nil, fmt.Errorf("%q is not a pair id", id)
@@ -80,6 +81,9 @@ func Read(ownDir, syncedDir, id string) (*wshrpc.PairView, error) {
 		}
 		view := View(p)
 		view.Synced = f.synced
+		if f.synced {
+			view.CanResume = false
+		}
 		return view, nil
 	}
 	return nil, errNoPair(id)

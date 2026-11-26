@@ -121,6 +121,11 @@ func (ws *WshServer) PairUnpairCommand(ctx context.Context, data wshrpc.CommandP
 	return getPairManager().Unpair(ctx, data.PairId)
 }
 
+// PairResumeCommand puts a stopped pair back to relaying and delivers what is still queued; it adds no message.
+func (ws *WshServer) PairResumeCommand(ctx context.Context, data wshrpc.CommandPairGetData) error {
+	return getPairManager().Resume(ctx, data.PairId)
+}
+
 // pairWork is the turn ends being handled, so a test can wait for them.
 var pairWork sync.WaitGroup
 

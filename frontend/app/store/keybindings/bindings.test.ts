@@ -236,7 +236,7 @@ vi.mock("@/app/view/term/termwrap", async (orig) => ({
     focusedTerminalBlockId: vi.fn(() => undefined),
 }));
 
-// Judge it starts a sonnet session over the wire; the key is only asked which agent's live line it runs
+// Read the code and pick starts a sonnet session over the wire; the key is only asked which agent's live line it runs
 vi.mock("@/app/view/agents/chatsuggeststore", async (orig) => ({
     ...(await orig<typeof import("@/app/view/agents/chatsuggeststore")>()),
     runLiveJudge: vi.fn(),
@@ -3310,7 +3310,7 @@ describe("agent:chat-judge", () => {
         expect(b.when!({ ...ctx("agent"), modalOpen: true })).toBe(false);
     });
 
-    it("is live only while the focused agent's live line offers Judge it or Retry", () => {
+    it("is live only while the focused agent's live line offers Read the code and pick or Retry", () => {
         const b = binding();
         offers("judge");
         expect(b.when!(ctx("agent"))).toBe(true);

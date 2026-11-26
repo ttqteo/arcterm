@@ -80,6 +80,9 @@ type Message struct {
 	ReplyTo string            `json:"replyto,omitempty"` // the id of the message it answers
 	Item    int               `json:"item,omitempty"`    // a person's message: the A item it answers
 	Held    []wshrpc.PairHeld `json:"held,omitempty"`    // a worker's message: the heavy commands refused since its last one
+	// Pause is set on the system message that says the pair paused (its Raw keeps the "Paused: …" line): why, the judge's
+	// summary and the Decided lists at that moment. A message saved before it existed has none and is drawn as a line.
+	Pause *wshrpc.PairPause `json:"pause,omitempty"`
 }
 
 // Pair is the stored record of one pair, a JSON file of its own.

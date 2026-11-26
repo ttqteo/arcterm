@@ -23,6 +23,27 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
 
 ## 2026-11-26
 
+- [ ] (arcterm) **The judge card's reading → done cross-fade.** On the last message's judge card (a choice question
+  turn), press "Đọc code rồi chọn" and let the deep judge finish (or Stop and press it again): the reading text fades
+  out while the done text fades in, in about 140 ms, and the card eases from its reading height to its done height on
+  the spring, with no frame where it is taller than both (the leaving text no longer stacks above the new one) and no
+  jump when it settles. With reduced motion on it swaps at once. The Final's `chat-judge` step 11 samples the
+  children and their opacities, but not the card's height. (`chatjudgeline.tsx`: `JudgeRow` and `JudgeCard` hand their
+  `ref` to AnimatePresence's popLayout.)
+- [ ] (arcterm) **Resume and Judge again on a stopped pair's row and Library page.** In a real pair stopped at the
+  token cap, hover its row in the Agent tree: "Resume · 3.0M more" fades in over the row's first line (about 100 ms),
+  and it fades in on a Tab to it too. A press leaves the conversation closed, and once the pair relays the button goes.
+  When the server refuses a Resume (the pair already went on from another window), its words grow in as a line under
+  the row's second line, and under the header on Library's pair page, on the spring the pair's messages use; they leave
+  the same way when the next press works. After a no-new-points pause the row and the Library header show Judge again,
+  and a press opens the conversation with `@judge ` in the focused composer. With reduced motion on, the error lines
+  land at once. (`agenttree.tsx` PairTreeRow, `pairreadpane.tsx`; the `pair-tree` and `library-pairs` scenarios read
+  the end states, not the motion.)
+- [ ] (arcterm) **The pause card arrives like a message.** In a live pair with its conversation open, let the pair
+  pause (the judge writes `no new points`, or the token cap is reached): the card grows in on the same spring as the
+  messages around it, whole from its first frame (head, summary when the judge wrote one, then Waits on you, Still
+  open and Agreed), with no flash of a bare "Paused: …" line before it. Close and reopen the conversation: the card is
+  already in place, with no entrance. With reduced motion on, it lands at once. (`pairpausecard.tsx`; the `pair-conversation` scenario reads the end states, not the motion.)
 - [ ] (arcterm) **Rail stays put on a switch back.** Open two agents that each have changed files and a session with
   spend, view each once, then click back and forth between them in the Agent tree: on the Agent details rail's
   Overview, Files changed, the branch/worktree line, the Session line (spend, model label) and the cache countdown
@@ -217,20 +238,21 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
 - [ ] (arcterm) **Judge for a choice question, the light mark on real haiku** (the Final's `chat-judge` fakes both
   judges). Have a Claude agent end a turn on an A-or-B question written as prose ("… Mình nghiêng A. A hay B?"). Under
   its message (the last one) a card reads "Gợi ý · haiku, chỉ đọc reply" over the pick's name and a one-sentence
-  reason, with a Judge kỹ button, no hover needed; once you answer, it folds to a line reading "· rê vào để xem lý do"
-  and hovering its name shows the reason; that chip is first in the row with the scale icon. Do it on both paths: an agent whose arc
-  mod makes the call at the turn's end (the mod path), and one whose mod is off (wavesrv's headless call), and check
-  each answer's chips have a pick, a reason and a neutral description (spec "Light mark"; `pkg/chatsuggest`,
-  `claude/arc-mod/hooks/register.ts`). A yes-or-no question or a turn with no question gets no line.
+  reason, with a "Đọc code rồi chọn" button, no hover needed; once you answer, it folds to a line reading "· rê vào để
+  xem lý do" and hovering its name shows the reason; that chip is first in the row with the magnifier icon. Do it on
+  both paths: an agent whose arc mod makes the call at the turn's end (the mod path), and one whose mod is off
+  (wavesrv's headless call), and check each answer's chips have a pick, a reason and a neutral description (spec
+  "Light mark"; `pkg/chatsuggest`, `claude/arc-mod/hooks/register.ts`). A yes-or-no question or a turn with no question
+  gets no line.
 
 - [ ] (arcterm) **Judge for a choice question, the deep judge on a real project** (nothing in the Final starts sonnet).
-  On the turn above press Judge kỹ (or Alt+J) with the agent's project open: the line reads "Judge đang đọc code, không
-  thấy agent khuyên gì · N s" with the seconds ticking and Dừng; when it ends it reads "Judge chọn <pick>" with
-  `sonnet · N file · N s` at the end and the reason on hover, the judged chip moved first (an option the agent never
-  named is a chip of its own and sends its description and facts). `waveapp.log` holds one `chatjudge: … role=chat-judge
-  state=done model=sonnet …` line, and no arcterm hook fired for the judge session (no row in Active, no session in the
-  project's History). Press Dừng mid-way: the line goes back to the light mark; answering with a chip while it reads
-  stops it too. Quit and reopen arcterm: the line under the old message is still there.
+  On the turn above press "Đọc code rồi chọn" (or Alt+J) with the agent's project open: the line reads "Judge đang đọc
+  code, không thấy agent khuyên gì · N s" with the seconds ticking and Dừng; when it ends it reads "Đã đọc code: chọn
+  <pick>" with `sonnet · N file · N s` at the end and the reason on hover, the judged chip moved first (an option the
+  agent never named is a chip of its own and sends its description and facts). `waveapp.log` holds one `chatjudge: …
+  role=chat-judge state=done model=sonnet …` line, and no arcterm hook fired for the judge session (no row in Active,
+  no session in the project's History). Press Dừng mid-way: the line goes back to the light mark; answering with a chip
+  while it reads stops it too. Quit and reopen arcterm: the line under the old message is still there.
 
 - [ ] (arcterm) **What's new picture for Judge for a choice question.** Run
   `node scripts/cdp/final-verify.mjs chat-judge` on a dev app, which writes `public/whatsnew/<version>-chat-judge.webp`;
