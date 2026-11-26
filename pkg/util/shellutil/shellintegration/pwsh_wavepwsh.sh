@@ -12,32 +12,31 @@ Remove-Item Env:WAVETERM_SWAPTOKEN
 # Load Wave completions
 wsh completion powershell | Out-String | Invoke-Expression
 
-# Report each command line as PSReadLine accepts it (OSC 16162 C), on Windows PowerShell 5.1 as well as 7: the
-# cockpit names a plain terminal for what it last ran. The history handler sees the whole line before it runs; the
-# handler already set (PSReadLine's sensitive-line filter by default) still decides whether it is saved.
-# The host may load PSReadLine only once this script has run, so load it here.
-# PSReadLine also runs the handler on every line it loads from the history file (the whole file on the first prompt,
-# then what other sessions added since), with an empty buffer; only a line the buffer holds was just accepted here.
+# Report each command line the person enters (OSC 16162 C), on Windows PowerShell 5.1 as well as 7: the cockpit names a
+# plain terminal for what it last ran, and shows it running until the next prompt. The mark is written as the line
+# comes back from PSConsoleHostReadLine, the function the host calls for every line it reads: PSReadLine's
+# AddToHistoryHandler is no place for it, since PSReadLine skips the handler for a line equal to the previous history
+# line (HistoryNoDuplicates, on by default), so a command run twice was never marked, and it also runs the handler on
+# every line it loads from the history file.
+# The host may load PSReadLine only once this script has run, so load it here: PSReadLine defines PSConsoleHostReadLine.
 if (-not (Get-Module PSReadLine)) {
     Import-Module PSReadLine -ErrorAction SilentlyContinue
 }
-if (-not ($env:TMUX -or $env:STY) -and (Get-Module PSReadLine)) {
-    $Global:_waveterm_si_historyhandler = (Get-PSReadLineOption).AddToHistoryHandler
-    Set-PSReadLineOption -AddToHistoryHandler {
-        param([string]$line)
-        try {
-            $buffer = $null
-            $cursor = 0
-            [Microsoft.PowerShell.PSConsoleReadLine]::GetBufferState([ref]$buffer, [ref]$cursor)
-            if ($buffer -ceq $line) {
+if (-not ($env:TMUX -or $env:STY) -and (Test-Path Function:\PSConsoleHostReadLine)) {
+    $Global:_waveterm_si_readline = ${function:PSConsoleHostReadLine}
+    function Global:PSConsoleHostReadLine {
+        [System.Diagnostics.DebuggerHidden()]
+        param()
+        # the call comes first: the original reads $? for the last command's status (PSReadLine colours the prompt by it),
+        # and any statement before it would reset $?
+        $line = & $Global:_waveterm_si_readline
+        if (-not [string]::IsNullOrWhiteSpace($line)) {
+            try {
                 $cmd64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($line))
                 [Console]::Write([char]27 + ']16162;C;{"cmd64":"' + $cmd64 + '"}' + [char]7)
-            }
-        } catch {}
-        if ($Global:_waveterm_si_historyhandler) {
-            return $Global:_waveterm_si_historyhandler.Invoke($line)
+            } catch {}
         }
-        return $true
+        $line
     }
 }
 

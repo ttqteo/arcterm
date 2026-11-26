@@ -110,6 +110,7 @@ and a picture given to a line that is not big.
 
 ### Fixed
 
+- A PowerShell terminal now reads as running when you run the same command twice in a row. Before, the repeat ran unmarked: the terminal stayed idle in the sidebar and the Overview's Running list while it worked.
 - A table's Copy button sits beside the table instead of over its last header cell, and the copy pastes into Chat's input, an agent's prompt or an editor as a Markdown table instead of tab-separated text that lost its rows and columns. A doc or spreadsheet still pastes it as real cells.
 - A council report's Figures now draws a rate and the earlier rate it replaced as one before → after chart ("79,5% → 70,6%, −8,9 điểm"), even when each rate has its own denominator. Before, the two stood as separate bars and the drop between them was not drawn.
 - In the New dialog, a long command no longer drops onto a line of its own below the `›` prompt: it stays on the prompt's line and scrolls inside the field.
