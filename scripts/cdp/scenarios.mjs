@@ -115,6 +115,8 @@ import jarvisCardsScenarios from "./scenarios-jarvis-cards.mjs";
 import jarvisLaterScenarios from "./scenarios-jarvis-later.mjs";
 import libraryScenarios, { openLibraryTab } from "./scenarios-library.mjs";
 import jarvisSheetScenarios from "./scenarios-jarvis-sheet.mjs";
+import { sessionIdeasBriefScenarios } from "./sessionideas-brief-scenarios.mjs";
+import { sessionIdeasPetScenarios } from "./sessionideas-pet-scenarios.mjs";
 import kaelAskKeysScenarios from "./scenarios-kael-ask-keys.mjs";
 import kaelKeysScenarios from "./scenarios-kael-keys.mjs";
 import kael1113DagScenarios from "./scenarios-kael1113-dag.mjs";
@@ -76032,6 +76034,8 @@ export const SCENARIOS = [
     ...jarvisActivityScenarios(JARVIS_KIT),
     ...jarvisSheetScenarios(JARVIS_KIT),
     ...jarvisLaterScenarios(JARVIS_KIT),
+    ...sessionIdeasBriefScenarios(JARVIS_KIT),
+    ...sessionIdeasPetScenarios(JARVIS_KIT),
     ...libraryScenarios(LIBRARY_KIT),
     agentRailWorktreeFiles,
     agentRailChangesCommits,

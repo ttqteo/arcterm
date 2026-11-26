@@ -2010,6 +2010,36 @@ export class RpcApiType {
         return client.wshRpcCall("servicestop", data, opts);
     }
 
+    // command "sessionideasget" [call]
+    SessionIdeasGetCommand(client: WshClient, opts?: RpcOpts): Promise<SessionIdeasData> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "sessionideasget", null, opts);
+        return client.wshRpcCall("sessionideasget", null, opts);
+    }
+
+    // command "sessionideasmark" [call]
+    SessionIdeasMarkCommand(client: WshClient, data: CommandSessionIdeasMarkData, opts?: RpcOpts): Promise<void> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "sessionideasmark", data, opts);
+        return client.wshRpcCall("sessionideasmark", data, opts);
+    }
+
+    // command "sessionideasresolve" [call]
+    SessionIdeasResolveCommand(client: WshClient, data: CommandSessionIdeasResolveData, opts?: RpcOpts): Promise<void> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "sessionideasresolve", data, opts);
+        return client.wshRpcCall("sessionideasresolve", data, opts);
+    }
+
+    // command "sessionideasscan" [call]
+    SessionIdeasScanCommand(client: WshClient, data: CommandSessionIdeasScanData, opts?: RpcOpts): Promise<void> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "sessionideasscan", data, opts);
+        return client.wshRpcCall("sessionideasscan", data, opts);
+    }
+
+    // command "sessionideasseed" [call]
+    SessionIdeasSeedCommand(client: WshClient, data: CommandSessionIdeasSeedData, opts?: RpcOpts): Promise<void> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "sessionideasseed", data, opts);
+        return client.wshRpcCall("sessionideasseed", data, opts);
+    }
+
     // command "setcanvaslink" [call]
     SetCanvasLinkCommand(client: WshClient, data: CommandSetCanvasLinkData, opts?: RpcOpts): Promise<void> {
         if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "setcanvaslink", data, opts);

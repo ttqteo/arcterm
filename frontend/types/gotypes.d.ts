@@ -3004,6 +3004,33 @@ declare global {
         ids: string[];
     };
 
+    // wshrpc.CommandSessionIdeasMarkData
+    type CommandSessionIdeasMarkData = {
+        op: string;
+    };
+
+    // wshrpc.CommandSessionIdeasResolveData
+    type CommandSessionIdeasResolveData = {
+        id: string;
+        op: string;
+        label?: string;
+    };
+
+    // wshrpc.CommandSessionIdeasScanData
+    type CommandSessionIdeasScanData = {
+        stop?: boolean;
+        paths?: string[];
+    };
+
+    // wshrpc.CommandSessionIdeasSeedData
+    type CommandSessionIdeasSeedData = {
+        data: SessionIdeasData;
+        fixture?: boolean;
+        sessions?: SessionIdeasSession[];
+        reply?: string;
+        clear?: boolean;
+    };
+
     // wshrpc.CommandSetCanvasLinkData
     type CommandSetCanvasLinkData = {
         dir: string;
@@ -5750,6 +5777,89 @@ declare global {
         ord: number;
         text: string;
         marks: number[][];
+    };
+
+    // wshrpc.SessionIdea
+    type SessionIdea = {
+        id: string;
+        gist: string;
+        project: string;
+        projectpath: string;
+        effortoid: string;
+        efforttitle: string;
+        quotes: SessionIdeaQuote[];
+        why: string;
+        sessionid: string;
+        sessiontitle: string;
+        transcriptpath: string;
+        saidts: number;
+        deletests: number;
+        foundts: number;
+        state: string;
+        resolvedts: number;
+        keptas: string;
+    };
+
+    // wshrpc.SessionIdeaMark
+    type SessionIdeaMark = {
+        transcriptpath: string;
+        sessionid: string;
+        sessiontitle: string;
+        project: string;
+        size: number;
+        mtimems: number;
+        scannedts: number;
+        lastturnts: number;
+        ideas: number;
+        outcome: string;
+    };
+
+    // wshrpc.SessionIdeaQuote
+    type SessionIdeaQuote = {
+        who: string;
+        text: string;
+    };
+
+    // wshrpc.SessionIdeasData
+    type SessionIdeasData = {
+        ideas: SessionIdea[];
+        marks: SessionIdeaMark[];
+        sessions: SessionIdeasSession[];
+        scanned: number;
+        notyet: number;
+        leavingsoon: number;
+        lastscants: number;
+        nextscants: number;
+        seents: number;
+        snoozeduntil: number;
+        firstscandone: boolean;
+        scan?: SessionIdeasScan;
+    };
+
+    // wshrpc.SessionIdeasScan
+    type SessionIdeasScan = {
+        done: number;
+        total: number;
+        startedts: number;
+        endedts: number;
+        forced: boolean;
+        error: string;
+        stoppedat: number;
+        newideas: number;
+        tokens: number;
+    };
+
+    // wshrpc.SessionIdeasSession
+    type SessionIdeasSession = {
+        sessionid: string;
+        title: string;
+        project: string;
+        transcriptpath: string;
+        size: number;
+        lastwritets: number;
+        deletests: number;
+        outcome: string;
+        ideas: number;
     };
 
     // wshrpc.SessionInfo
