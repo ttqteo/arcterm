@@ -14,6 +14,7 @@ import { globalStore } from "@/app/store/jotaiStore";
 import { useAtomValue } from "jotai";
 import type React from "react";
 import { useCallback, useMemo, useState } from "react";
+import { briefQueueSheetAtom } from "./briefqueuestore";
 import { briefUndo, chunkKey, effortKey, pendingDeleteKeysAtom } from "./briefundo";
 import { stageOptions } from "./effortmodel";
 import {
@@ -181,6 +182,7 @@ export function buildTrackerEdits(deps: EditsDeps): TrackerEdits {
 // the Brief's sheet closed, as its × does (without the return to the surface the sheet was opened from)
 function closeSheet(): void {
     globalStore.set(briefSheetOpenAtom, false);
+    globalStore.set(briefQueueSheetAtom, null);
     clearSubject();
 }
 
