@@ -23,6 +23,11 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
 
 ## 2026-11-26
 
+- [ ] (arcterm) **A slow-ending sleep still sleeps.** Next time waveapp.log shows `agent sleep: … is asleep, but pids …
+  had not ended`, that agent's row reads asleep (not exited), and Wake or a Chat message brings it back on its
+  conversation, the log showing `agent wake: block …: ending pids … left from its sleep` first when they still ran. A
+  Chat message to an agent whose terminal has no process wakes it (`[chat-send] restart block=…`) instead of a toast
+  saying to press Enter. (`wshserver_agentsleep.go` endLeftovers, `chatpending.ts` processGone)
 - [ ] (arcterm) **Council Figures: each source is a chip.** Open a council Report whose Số liệu cites a file: under
   each chart and in the Nguồn column the source is a small bordered chip, the file's name in link blue (sans, not mono)
   and its lines muted after it; hovering shows the full `path:lines`; a very long name is cut short with `…` at a
