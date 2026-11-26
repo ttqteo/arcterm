@@ -393,12 +393,27 @@ func TestSleepRefusesWithoutASession(t *testing.T) {
 
 func TestSleepRefusesAnAgentThatIsAlreadyAsleep(t *testing.T) {
 	w := newSleepWorld(t, sleepingMeta(time.Now()))
+	w.exited = func() (bool, int) { return true, -1 } // asleep: its controller is gone
 	_, err := sleepAgent(context.Background(), rowOf(t, idleClaude(writeTranscript(t, "abc"))), false)
 	if err == nil || !strings.Contains(err.Error(), "already asleep") {
 		t.Fatalf("err = %v, want already asleep", err)
 	}
 	if got := w.eventLog(); len(got) != 0 {
 		t.Errorf("events = %v, want nothing touched", got)
+	}
+}
+
+// a block whose process runs while its agent:sleeping mark stayed (a forced restart that was no wake, 2026-11-26: a
+// Claude account switch restarted sleeping agents) is awake: the mark is stale, and the sleep goes ahead instead of
+// failing "already asleep" every minute
+func TestSleepGoesAheadOverAStaleSleepingMark(t *testing.T) {
+	w := newSleepWorld(t, sleepingMeta(time.Now().Add(-time.Hour)))
+	w.exited = func() (bool, int) { return false, 0 } // its process runs
+	if _, err := sleepAgent(context.Background(), rowOf(t, idleClaude(writeTranscript(t, "abc"))), false); err != nil {
+		t.Fatalf("err = %v, want the awake agent slept", err)
+	}
+	if got := w.eventLog(); !slices.Contains(got, "destroy") {
+		t.Fatalf("events = %v, want its process stopped", got)
 	}
 }
 
