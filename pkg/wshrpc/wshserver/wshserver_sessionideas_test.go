@@ -4,14 +4,19 @@
 package wshserver
 
 import (
+	"bytes"
 	"context"
+	"log"
+	"os"
 	"reflect"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/wavetermdev/waveterm/pkg/effortstore"
 	"github.com/wavetermdev/waveterm/pkg/sessionideas"
 	"github.com/wavetermdev/waveterm/pkg/wavebase"
+	"github.com/wavetermdev/waveterm/pkg/waveobj"
 	"github.com/wavetermdev/waveterm/pkg/wshrpc"
 )
 
@@ -116,6 +121,225 @@ func TestSessionIdeasResolveRefusesWhatItDoesNotKnow(t *testing.T) {
 	}
 	if a := ideaByID(t, store, "a"); a.State != wshrpc.SessionIdeaState_Review {
 		t.Fatalf("a refused op must leave the idea alone, got %+v", a)
+	}
+}
+
+// keepFixture gives a test an empty ideas store and an effort vault of its own.
+func keepFixture(t *testing.T) *sessionideas.Store {
+	t.Helper()
+	t.Cleanup(effortstore.UseRootForTest(t.TempDir()))
+	return emptySessionIdeas(t)
+}
+
+// floated is an idea waiting for review, floated in a session on the 24th, for the initiative effortOID ("" is a new idea).
+func floated(id, gist, effortOID string) wshrpc.SessionIdea {
+	return wshrpc.SessionIdea{
+		ID: id, Gist: gist, Project: "arcterm", EffortOID: effortOID, EffortTitle: "Sidecar",
+		Quotes:    []wshrpc.SessionIdeaQuote{{Who: "you", Text: "later, filter the wall by project"}},
+		Why:       "the session moved on to the ask keys",
+		SessionID: "9a842b04", SessionTitle: "Fix the sidecar wall",
+		SaidTs: time.Date(2026, 11, 24, 12, 0, 0, 0, time.Local).UnixMilli(),
+		State:  wshrpc.SessionIdeaState_Review,
+	}
+}
+
+func keepIdea(id, label string) error {
+	return (&WshServer{}).SessionIdeasResolveCommand(context.Background(),
+		wshrpc.CommandSessionIdeasResolveData{ID: id, Op: "keep", Label: label})
+}
+
+func createTestEffort(t *testing.T, title string, labels ...string) string {
+	t.Helper()
+	seeds := make([]wshrpc.CommandEffortChunkSeed, 0, len(labels))
+	for _, l := range labels {
+		seeds = append(seeds, wshrpc.CommandEffortChunkSeed{Label: l})
+	}
+	rtn, err := (&WshServer{}).EffortCreateCommand(context.Background(), wshrpc.CommandEffortCreateData{Title: title, Chunks: seeds})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return rtn.EffortOID
+}
+
+func allEfforts(t *testing.T) []*waveobj.Effort {
+	t.Helper()
+	all, err := effortstore.GetAll(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return all
+}
+
+func TestSessionIdeasKeepOnAnInitiativeAddsOnePendingChunkWithTheNote(t *testing.T) {
+	store := keepFixture(t)
+	oid := createTestEffort(t, "Sidecar", "existing chunk")
+	idea := floated("i1", "Let the wall filter by project", oid)
+	// the oref form is what `wsh effort list` prints
+	seedIdeas(t, store, idea, floated("i2", "Show the ask age on the card", "effort:"+oid))
+
+	before := time.Now().UnixMilli()
+	if err := keepIdea("i1", ""); err != nil {
+		t.Fatalf("keep: %v", err)
+	}
+	e, err := effortstore.Get(context.Background(), oid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(e.Chunks) != 2 || e.Chunks[0].Label != "existing chunk" || len(e.Chunks[0].Notes) != 0 {
+		t.Fatalf("keep adds one chunk after the others and leaves them alone, got %+v", e.Chunks)
+	}
+	c := e.Chunks[1]
+	if c.Label != idea.Gist || c.Status != "pending" {
+		t.Fatalf("the chunk is pending and named by the gist, got %+v", c)
+	}
+	if len(c.Notes) != 1 || c.Notes[0].Text != sessionideas.KeepNote(idea) {
+		t.Fatalf("the chunk's first (only) note is the source, quotes and why, got %+v", c.Notes)
+	}
+	if !strings.Contains(c.Notes[0].Text, "9a842b04") || !strings.Contains(c.Notes[0].Text, "> You: later, filter the wall by project") {
+		t.Fatalf("the note keeps the session id and the quote once the transcript is gone, got %q", c.Notes[0].Text)
+	}
+	got := ideaByID(t, store, "i1")
+	if got.State != wshrpc.SessionIdeaState_Kept || got.KeptAs != "chunk:"+oid+":"+idea.Gist ||
+		got.ResolvedTs < before || got.ResolvedTs > time.Now().UnixMilli() {
+		t.Fatalf("a kept idea says where it went and when, got %+v", got)
+	}
+
+	// a label of the person's own names the chunk instead, and an id in the oref form finds the same initiative
+	if err := keepIdea("i2", " Ask age "); err != nil {
+		t.Fatalf("keep with a label: %v", err)
+	}
+	e, _ = effortstore.Get(context.Background(), oid)
+	if len(e.Chunks) != 3 || e.Chunks[2].Label != "Ask age" || len(e.Chunks[2].Notes) != 1 {
+		t.Fatalf("the label wins over the gist, got %+v", e.Chunks)
+	}
+	if got := ideaByID(t, store, "i2"); got.KeptAs != "chunk:"+oid+":Ask age" {
+		t.Fatalf("KeptAs names the bare id and the label, got %q", got.KeptAs)
+	}
+
+	// pressing Keep again must not add a second chunk
+	if err := keepIdea("i1", ""); err == nil || !strings.Contains(err.Error(), "already kept") {
+		t.Fatalf("a second keep must be refused, got %v", err)
+	}
+	if e, _ = effortstore.Get(context.Background(), oid); len(e.Chunks) != 3 {
+		t.Fatalf("a refused keep adds nothing, got %+v", e.Chunks)
+	}
+}
+
+func TestSessionIdeasKeepWithoutAnInitiativeMakesAnIdea(t *testing.T) {
+	store := keepFixture(t)
+	idea := floated("i1", "Let the wall filter by project", "")
+	seedIdeas(t, store, idea, floated("i2", "Another thing nobody decided", ""))
+
+	if err := keepIdea("i1", ""); err != nil {
+		t.Fatalf("keep: %v", err)
+	}
+	all := allEfforts(t)
+	if len(all) != 1 {
+		t.Fatalf("keep without an initiative makes one, got %d", len(all))
+	}
+	e := all[0]
+	if e.Title != idea.Gist || e.Project != "arcterm" || e.Status != "active" || len(e.Chunks) != 0 {
+		t.Fatalf("an idea is an initiative with no chunk, titled by the gist, in the idea's project, got %+v", e)
+	}
+	if len(e.Notes) == 0 || e.Notes[0].Text != sessionideas.KeepNote(idea) {
+		t.Fatalf("the idea's first note is the source, quotes and why, got %+v", e.Notes)
+	}
+	if len(e.Events) == 0 || e.Events[0].Kind != "effort-created" {
+		t.Fatalf("the idea is stamped as created, as an effort made through `wsh effort create` is, got %+v", e.Events)
+	}
+	got := ideaByID(t, store, "i1")
+	if got.State != wshrpc.SessionIdeaState_Kept || got.KeptAs != "effort:"+e.OID || got.ResolvedTs == 0 {
+		t.Fatalf("a kept idea says where it went, got %+v", got)
+	}
+
+	if err := keepIdea("i2", "Own title"); err != nil {
+		t.Fatalf("keep with a label: %v", err)
+	}
+	var titles []string
+	for _, e := range allEfforts(t) {
+		titles = append(titles, e.Title)
+	}
+	if len(titles) != 2 || !(titles[0] == "Own title" || titles[1] == "Own title") {
+		t.Fatalf("the label titles the new idea, got %v", titles)
+	}
+}
+
+func TestSessionIdeasKeepOfAGoneInitiativeMakesAnIdea(t *testing.T) {
+	store := keepFixture(t)
+	idea := floated("i1", "Let the wall filter by project", "deleted-since-the-scan")
+	seedIdeas(t, store, idea)
+	var logged bytes.Buffer
+	log.SetOutput(&logged)
+	t.Cleanup(func() { log.SetOutput(os.Stderr) })
+
+	if err := keepIdea("i1", ""); err != nil {
+		t.Fatalf("an initiative gone since the scan must not fail the keep: %v", err)
+	}
+	all := allEfforts(t)
+	if len(all) != 1 || all[0].Title != idea.Gist || len(all[0].Chunks) != 0 || all[0].Project != "arcterm" {
+		t.Fatalf("a gone initiative makes a new idea in the idea's project, got %+v", all)
+	}
+	got := ideaByID(t, store, "i1")
+	if got.State != wshrpc.SessionIdeaState_Kept || got.KeptAs != "effort:"+all[0].OID {
+		t.Fatalf("it is kept as the new idea, got %+v", got)
+	}
+	if out := logged.String(); !strings.Contains(out, "deleted-since-the-scan") || !strings.Contains(out, "gone") {
+		t.Fatalf("the log says the initiative was gone, got %q", out)
+	}
+}
+
+func TestSessionIdeasKeepRefusesWhatIsNotInReview(t *testing.T) {
+	store := keepFixture(t)
+	seedIdeas(t, store,
+		wshrpc.SessionIdea{ID: "kept", Gist: "k", State: wshrpc.SessionIdeaState_Kept, KeptAs: "effort:e1"},
+		wshrpc.SessionIdea{ID: "dropped", Gist: "d", State: wshrpc.SessionIdeaState_Dropped},
+		wshrpc.SessionIdea{ID: "nogist", State: wshrpc.SessionIdeaState_Review},
+	)
+	for _, c := range []struct{ name, id, label, want string }{
+		{"unknown", "nope", "", "no idea"},
+		{"already kept", "kept", "", "already kept"},
+		{"already dropped", "dropped", "", "already dropped"},
+		{"no gist and no label", "nogist", "", "label"},
+	} {
+		err := keepIdea(c.id, c.label)
+		if err == nil || !strings.Contains(err.Error(), c.want) {
+			t.Errorf("keep of an idea that is %s: error %v, want one saying %q", c.name, err, c.want)
+		}
+	}
+	if n := len(allEfforts(t)); n != 0 {
+		t.Fatalf("a refused keep makes no initiative, got %d", n)
+	}
+	if k := ideaByID(t, store, "kept"); k.KeptAs != "effort:e1" {
+		t.Fatalf("a refused keep must leave a kept idea as it was, got %+v", k)
+	}
+	if n := ideaByID(t, store, "nogist"); n.State != wshrpc.SessionIdeaState_Review || n.ResolvedTs != 0 {
+		t.Fatalf("a refused keep must leave the idea in review, got %+v", n)
+	}
+	// the label the person gives is enough for an idea with no gist
+	if err := keepIdea("nogist", "Named by hand"); err != nil {
+		t.Fatalf("a label stands in for a missing gist: %v", err)
+	}
+}
+
+func TestSessionIdeasKeepLeavesTheIdeaInReviewWhenTheInitiativeRefusesTheChunk(t *testing.T) {
+	store := keepFixture(t)
+	gist := "Let the wall filter by project"
+	oid := createTestEffort(t, "Sidecar", gist) // a chunk of that name is already there
+	seedIdeas(t, store, floated("i1", gist, oid))
+	err := keepIdea("i1", "")
+	if err == nil || !strings.Contains(err.Error(), "already exists") {
+		t.Fatalf("a chunk label already on the initiative must be refused with the initiative's own error, got %v", err)
+	}
+	if got := ideaByID(t, store, "i1"); got.State != wshrpc.SessionIdeaState_Review || got.KeptAs != "" || got.ResolvedTs != 0 {
+		t.Fatalf("a keep that wrote nothing must leave the idea in review, got %+v", got)
+	}
+	e, _ := effortstore.Get(context.Background(), oid)
+	if len(e.Chunks) != 1 || len(e.Chunks[0].Notes) != 0 {
+		t.Fatalf("a refused keep must leave the initiative as it was, got %+v", e.Chunks)
+	}
+	// the person's own label gets past it
+	if err := keepIdea("i1", "Filter the wall"); err != nil {
+		t.Fatalf("keep under another label: %v", err)
 	}
 }
 

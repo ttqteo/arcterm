@@ -10,9 +10,13 @@ import (
 	"log"
 	"time"
 
+	"github.com/wavetermdev/waveterm/pkg/effortstore"
+	"github.com/wavetermdev/waveterm/pkg/jarvis"
 	"github.com/wavetermdev/waveterm/pkg/sessionideas"
 	"github.com/wavetermdev/waveterm/pkg/wavebase"
+	"github.com/wavetermdev/waveterm/pkg/waveobj"
 	"github.com/wavetermdev/waveterm/pkg/wshrpc"
+	"github.com/wavetermdev/waveterm/pkg/wstore"
 )
 
 // wavesrv finds a command's handler by reflection on its name, so a renamed or re-typed method would drop out of the
@@ -40,27 +44,111 @@ func (ws *WshServer) SessionIdeasResolveCommand(ctx context.Context, data wshrpc
 	case "drop":
 		return dropSessionIdea(sessionideas.Default(), data.ID)
 	case "keep":
-		return errors.New("keep not built yet")
+		return keepSessionIdea(ctx, sessionideas.Default(), data.ID, data.Label)
 	}
 	return fmt.Errorf("unknown op %q: keep or drop", data.Op)
+}
+
+// reviewIdea is the idea with this id, which must still wait for review: keep and drop both settle an idea once.
+func reviewIdea(d *wshrpc.SessionIdeasData, id string) (*wshrpc.SessionIdea, error) {
+	for i := range d.Ideas {
+		if d.Ideas[i].ID != id {
+			continue
+		}
+		if d.Ideas[i].State != wshrpc.SessionIdeaState_Review {
+			return nil, fmt.Errorf("idea %s is already %s", id, d.Ideas[i].State)
+		}
+		return &d.Ideas[i], nil
+	}
+	return nil, fmt.Errorf("no idea %s", id)
 }
 
 // dropSessionIdea is the idea gone from the review list; the scan does not propose it again (its gist stays in the store).
 func dropSessionIdea(store *sessionideas.Store, id string) error {
 	return store.Update(func(d *wshrpc.SessionIdeasData) error {
-		for i := range d.Ideas {
-			if d.Ideas[i].ID != id {
-				continue
-			}
-			if d.Ideas[i].State != wshrpc.SessionIdeaState_Review {
-				return fmt.Errorf("idea %s is already %s", id, d.Ideas[i].State)
-			}
-			d.Ideas[i].State = wshrpc.SessionIdeaState_Dropped
-			d.Ideas[i].ResolvedTs = store.Clock().UnixMilli()
-			return nil
+		i, err := reviewIdea(d, id)
+		if err != nil {
+			return err
 		}
-		return fmt.Errorf("no idea %s", id)
+		i.State = wshrpc.SessionIdeaState_Dropped
+		i.ResolvedTs = store.Clock().UnixMilli()
+		return nil
 	})
+}
+
+// keepSessionIdea puts an idea on its initiative as a pending chunk, or makes it a new idea when it has no initiative
+// (or the initiative is gone), then marks it kept. The initiative is written inside the store's update, so two keeps of
+// one idea cannot both write, and a write the initiative refuses leaves the idea in review.
+func keepSessionIdea(ctx context.Context, store *sessionideas.Store, id, label string) error {
+	d, err := store.Load()
+	if err != nil {
+		return err
+	}
+	first, err := reviewIdea(&d, id)
+	if err != nil {
+		return err
+	}
+	if sessionideas.ChunkLabel(*first, label) == "" {
+		return fmt.Errorf("idea %s has no gist to name it by: pass a label", id)
+	}
+	// the project's HEAD stamps the chunk, and git runs here rather than under the store's lock. Best effort, as
+	// EffortMutateCommand has it: an effort that cannot be read now fails the same way, and says why, in the write below.
+	head := ""
+	if oid := effortstore.BareOID(first.EffortOID); oid != "" {
+		if e, err := effortstore.Get(ctx, oid); err == nil {
+			head = effortHead(ctx, e.Project)
+		}
+	}
+	return store.Update(func(d *wshrpc.SessionIdeasData) error {
+		i, err := reviewIdea(d, id)
+		if err != nil {
+			return err
+		}
+		now := store.Clock().UnixMilli()
+		keptAs, err := writeKeptIdea(ctx, *i, sessionideas.ChunkLabel(*i, label), head, now)
+		if err != nil {
+			return err
+		}
+		i.State = wshrpc.SessionIdeaState_Kept
+		i.KeptAs = keptAs
+		i.ResolvedTs = now
+		return nil
+	})
+}
+
+// writeKeptIdea writes a kept idea to the vault and says where it went (the idea's KeptAs): "chunk:<effort oid>:<label>"
+// for a pending chunk on its initiative, "effort:<oid>" for a new idea.
+func writeKeptIdea(ctx context.Context, i wshrpc.SessionIdea, name, head string, now int64) (string, error) {
+	note := sessionideas.KeepNote(i)
+	if oid := effortstore.BareOID(i.EffortOID); oid != "" {
+		// the chunk, then its first note: one batch cannot do both, since a batch validates every op before applying any
+		err := effortstore.Update(ctx, oid, func(e *waveobj.Effort) error {
+			add := []wshrpc.EffortOp{{Op: "addChunk", Label: name, Base: head}}
+			if err := jarvis.ApplyEffortOpsAs(e, add, "", now, jarvis.NoteAuthor{}); err != nil {
+				return err
+			}
+			// by exact label, so a label of digits is not read as a position
+			text := []wshrpc.EffortOp{{Op: "appendNote", Chunk: jarvis.ExactLabelRef + name, Note: note}}
+			return jarvis.ApplyEffortOpsAs(e, text, "", now, jarvis.NoteAuthor{})
+		})
+		if err == nil {
+			return "chunk:" + oid + ":" + name, nil
+		}
+		if !errors.Is(err, wstore.ErrNotFound) {
+			return "", err
+		}
+		log.Printf("sessionideas: keep %s: initiative %s is gone since the scan, keeping it as a new idea", i.ID, oid)
+	}
+	// an idea: an initiative with no chunk, written as EffortCreateCommand writes one, but with the note as its first
+	e := &waveobj.Effort{
+		Title: name, Project: i.Project, Status: "active",
+		Notes:  []waveobj.EffortNote{{Ts: now, Text: note}},
+		Events: []waveobj.EffortEvent{{Ts: now, Kind: "effort-created"}},
+	}
+	if err := effortstore.Create(ctx, e); err != nil {
+		return "", err
+	}
+	return "effort:" + e.OID, nil
 }
 
 // SessionIdeasMarkCommand records that the person looked (seen) or put the nudges off for a week (snooze).
