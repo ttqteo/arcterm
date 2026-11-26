@@ -314,6 +314,20 @@ func TestDocPath(t *testing.T) {
 	}
 }
 
+// a project opened through a symlink (a junction on Windows): git names its root by the real path, the doc keeps the
+// link's, and the doc still belongs at the same repo-relative path in the run's tree
+func TestTreeTargetPlacesADocReachedThroughALink(t *testing.T) {
+	tree, spec, _ := snapshotFixture(t)
+	repo := filepath.Dir(filepath.Dir(filepath.Dir(spec)))
+	link := filepath.Join(t.TempDir(), "proj-link")
+	linkOutside(t, link, repo)
+	viaLink := filepath.Join(link, "docs", "specs", "s.md")
+	got, err := treeTarget(context.Background(), tree, viaLink)
+	if want := filepath.Join(tree, "docs", "specs", "s.md"); err != nil || got != want {
+		t.Fatalf("treeTarget(%s) = %q, %v; want %q", viaLink, got, err, want)
+	}
+}
+
 func TestTreeTargetExplainsAPlanOutsideAnyRepository(t *testing.T) {
 	tree, _, _ := snapshotFixture(t)
 	outside := filepath.Join(t.TempDir(), "fix-plan.md")

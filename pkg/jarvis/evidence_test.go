@@ -604,7 +604,8 @@ func TestSealEvidenceGitFailureLeavesUnsealed(t *testing.T) {
 
 func TestEvidenceHashStable(t *testing.T) {
 	ev := waveobj.RunEvidence{Summary: "x", AddTotal: 3}
-	if evidenceHash(ev) != evidenceHash(ev) {
+	same := ev // a copy: two hashes of equal evidence must match
+	if evidenceHash(ev) != evidenceHash(same) {
 		t.Error("hash not stable for identical input")
 	}
 }

@@ -823,6 +823,36 @@ func TestQuietLinesAloneLaunchNoLead(t *testing.T) {
 	}
 }
 
+// a launch that fails puts back what it carried: its recaps and caveats ride the next launch, not only its wake lines
+// (run 1631c0ed t-10: launchLocked cleared rw.quiet and rw.caveats, and leadLaunched restored only the lines)
+func TestAFailedLaunchKeepsItsQuietAndCaveatLines(t *testing.T) {
+	f, ctx, dag := seedDeadLeadRun(t, true)
+	f.state = leadState{NoLead: true}
+	launched := stubLaunch(t)
+	stubRelaunch(t, func() error { return nil })
+
+	PostQuiet(ctx, dag.ChannelId, dag.RunID, "t-1 passed review: adds fmtDate")
+	PostCaveat(ctx, dag.ChannelId, dag.RunID, "t-1: the CDP screenshot was not taken")
+	PostWake(ctx, dag.ChannelId, dag.RunID, failedLine)
+	if len(*launched) != 1 {
+		t.Fatalf("the judgment event launches the lead once, got %q", *launched)
+	}
+	setRunPaused(t, ctx, dag, true)
+	leadLaunched(ctx, dag.ChannelId, dag.RunID, errors.New("no route for pi"))
+	waitStages(t)
+	setRunPaused(t, ctx, dag, false)
+	tickWakes(ctx)
+	if len(*launched) != 2 {
+		t.Fatalf("the next flush after the resume launches the lead again, got %q", *launched)
+	}
+	for _, want := range []string{failedLine, "Since your last wake:", "t-1 passed review: adds fmtDate",
+		"Unverified:", "t-1: the CDP screenshot was not taken"} {
+		if !strings.Contains((*launched)[1], want) {
+			t.Fatalf("the new launch carries %q, got:\n%s", want, (*launched)[1])
+		}
+	}
+}
+
 func TestLaunchedLeadGetsTheQuietLines(t *testing.T) {
 	f := newFakeLead(t)
 	f.state = leadState{NoLead: true}

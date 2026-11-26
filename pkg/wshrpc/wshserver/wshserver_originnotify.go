@@ -29,6 +29,12 @@ const (
 	originWakeRetry = 5 * time.Minute
 	// originHoldForever keeps a run out of later passes for the life of the process.
 	originHoldForever = 100 * 365 * 24 * time.Hour
+	// originAbsentHold is how long a run waits after a pass found its origin tab with no agent the roster lists (not
+	// started yet, relaunching, or its shell gone for good); each such pass doubles it, up to originAbsentHoldMax. The
+	// message is never dropped while the tab exists, and the roster is not read every tick for a tab that never comes
+	// back; an agent that does is told at most originAbsentHoldMax later.
+	originAbsentHold    = 15 * time.Second
+	originAbsentHoldMax = 2 * time.Minute
 	// originGoalMax bounds the goal quoted in the message's first line.
 	originGoalMax = 100
 )
@@ -52,21 +58,38 @@ var (
 
 var (
 	// originHeld keeps a run out of a pass until the time: a message that was sent but whose stamp failed (forever,
-	// so it is never sent twice) or a wake that failed (for originWakeRetry).
-	originHeldMu sync.Mutex
-	originHeld   = map[string]time.Time{}
+	// so it is never sent twice), a wake that failed (for originWakeRetry), or an origin tab with no agent
+	// (originAbsentHold, doubled per absence counted in originAbsences).
+	originHeldMu   sync.Mutex
+	originHeld     = map[string]time.Time{}
+	originAbsences = map[string]int{}
+	// originNow is the clock the holds read; a test moves it.
+	originNow = time.Now
 )
 
 func holdOrigin(runId string, d time.Duration) {
 	originHeldMu.Lock()
 	defer originHeldMu.Unlock()
-	originHeld[runId] = time.Now().Add(d)
+	originHeld[runId] = originNow().Add(d)
+}
+
+// holdAbsentOrigin holds a run whose origin tab has no agent, a little longer at each absence in a row.
+func holdAbsentOrigin(runId string) {
+	originHeldMu.Lock()
+	defer originHeldMu.Unlock()
+	n := originAbsences[runId]
+	originAbsences[runId] = n + 1
+	d := originAbsentHoldMax
+	if n < 4 { // 15 s << 4 is already past the cap
+		d = min(originAbsentHold<<n, originAbsentHoldMax)
+	}
+	originHeld[runId] = originNow().Add(d)
 }
 
 func originIsHeld(runId string) bool {
 	originHeldMu.Lock()
 	defer originHeldMu.Unlock()
-	return time.Now().Before(originHeld[runId])
+	return originNow().Before(originHeld[runId])
 }
 
 func stampOriginNotified(ctx context.Context, run *waveobj.Run) error {
@@ -135,6 +158,8 @@ func notifyOrigins(ctx context.Context) {
 			// that is relaunching. Only a tab that no longer exists has nobody to tell.
 			if tabAgentBlock(ctx, run.OriginTabId) == "" {
 				stampOrigin(ctx, run)
+			} else {
+				holdAbsentOrigin(run.ID)
 			}
 			continue
 		}
@@ -161,7 +186,11 @@ func stampOrigin(ctx context.Context, run *waveobj.Run) {
 	if err := originStamp(ctx, run); err != nil {
 		log.Printf("runs: stamping run %s as told to its origin: %v", run.ID, err)
 		holdOrigin(run.ID, originHoldForever)
+		return
 	}
+	originHeldMu.Lock()
+	delete(originAbsences, run.ID)
+	originHeldMu.Unlock()
 }
 
 // originRow finds the live agent whose tab started the run, by its exact id.

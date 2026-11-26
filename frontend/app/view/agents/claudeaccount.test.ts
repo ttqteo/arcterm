@@ -82,6 +82,24 @@ describe("restartCandidates", () => {
         ]);
     });
 
+    // a sleeping agent reads idle, and a restart forced it awake with its agent:sleeping mark still set: the sleep loop then
+    // failed every minute with "already asleep" (2026-11-26). Its wake starts it on the active account anyway.
+    it("leaves out a sleeping agent", () => {
+        const base = { agent: "claude", task: "", state: "idle", usage: {} };
+        const agents = [
+            { ...base, id: "t1", name: "awake", blockId: "b1", transcriptPath: "/p/s1.jsonl" },
+            {
+                ...base,
+                id: "t2",
+                name: "asleep",
+                blockId: "b2",
+                transcriptPath: "/p/s2.jsonl",
+                sleeping: { since: 1000, freedBytes: 0 },
+            },
+        ] as AgentVM[];
+        expect(restartCandidates(agents, "a1").map((c) => c.name)).toEqual(["awake"]);
+    });
+
     it("treats a missing usage.account as Default", () => {
         const a = {
             id: "t1",

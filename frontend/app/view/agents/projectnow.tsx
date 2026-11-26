@@ -56,11 +56,12 @@ export function NowColumn({ model, project, ny }: { model: AgentsViewModel; proj
     const agents = useAtomValue(model.agentsAtom);
     const terminals = useAtomValue(model.terminalsAtom);
     const lineage = useAtomValue(model.lineageAtom);
+    const order = useAtomValue(model.orderAtom);
     const now = useAtomValue(model.nowAtom);
     const unread = useAtomValue(unreadAgentsAtom);
     const rows = useMemo(
-        () => overviewRows(agents, terminals, project, lineage),
-        [agents, terminals, project, lineage]
+        () => overviewRows(agents, terminals, project, lineage, order),
+        [agents, terminals, project, lineage, order]
     );
     const finished = useMemo(() => finishedRows(agents, project, unread), [agents, project, unread]);
     const resting = useMemo(() => restingRows(rows, finished), [rows, finished]);

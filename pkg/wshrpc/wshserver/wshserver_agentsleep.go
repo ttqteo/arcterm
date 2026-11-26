@@ -313,7 +313,12 @@ func sleepAgent(ctx context.Context, row *agentRow, force bool) (*wshrpc.Command
 		return nil, err
 	}
 	if metaMillis(meta, waveobj.MetaKey_AgentSleeping) > 0 {
-		return nil, fmt.Errorf("agent %q is already asleep", row.Name)
+		// a mark with a process still running is stale: a forced restart that was no wake left it (a Claude account
+		// switch restarted sleeping agents, 2026-11-26), and refusing here failed the loop's sleep every minute
+		if exited, _ := controllerExited(row.blockId); exited {
+			return nil, fmt.Errorf("agent %q is already asleep", row.Name)
+		}
+		log.Printf("agent sleep: %q (block %s) runs with a stale sleeping mark; sleeping it over the mark\n", row.Name, row.blockId)
 	}
 	// a service's block holds no agent of its own: a Claude its process ran reported into it before ARC_SERVICE marked
 	// that process, and sleeping it would stop the service (its supervisor sleeps and starts it)
