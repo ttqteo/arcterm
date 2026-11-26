@@ -1,44 +1,92 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-// The zoom and pan of a diagram opened full size (mermaidviewer.tsx), and the pixel size it is copied at
+// The zoom and scroll of a diagram opened full size (mermaidviewer.tsx), and the pixel size it is copied at
 // (mermaidimage.ts). Pure, so the viewer stays a thin shell over it.
+//
+// The viewer is a native scroll box: a trackpad swipe scrolls it on WebKit's scrolling thread, smooth however busy the
+// page's main thread is. Inside it a canvas as big as the zoomed diagram (and never smaller than the box, so a small
+// diagram sits centred) holds the diagram, scaled by a transform. A zoom resizes the canvas and moves the scroll so the
+// point under the cursor stays put.
 
 export type Size = { w: number; h: number };
 
-// the diagram's top-left corner in the viewport, in CSS px, and its scale
-export type ZoomView = { scale: number; x: number; y: number };
+// the zoom and the box's scroll offsets, in CSS px
+export type ScrollView = { scale: number; left: number; top: number };
+
+// the canvas's size, and where the diagram sits in it
+export type Layout = { w: number; h: number; x: number; y: number };
 
 export const MIN_SCALE = 0.1;
 export const MAX_SCALE = 8;
 // one press of + or -
 export const STEP = 1.25;
-// the room fit leaves around the diagram
-const FIT_PAD = 24;
+// the room around the diagram, at fit and at the canvas's edges
+const PAD = 24;
 
 function clampScale(s: number): number {
     return Math.min(MAX_SCALE, Math.max(MIN_SCALE, s));
 }
 
-// the whole diagram in view and centred, never enlarged past its natural size: a small diagram opens as drawn
-export function fitView(content: Size, box: Size): ZoomView {
+function clamp(v: number, lo: number, hi: number): number {
+    return Math.min(hi, Math.max(lo, v));
+}
+
+// the whole diagram in view, never enlarged past its natural size: a small diagram opens as drawn
+export function fitScale(content: Size, box: Size): number {
     if (content.w <= 0 || content.h <= 0 || box.w <= 0 || box.h <= 0) {
-        return { scale: 1, x: 0, y: 0 };
+        return 1;
     }
-    const room = { w: Math.max(1, box.w - 2 * FIT_PAD), h: Math.max(1, box.h - 2 * FIT_PAD) };
-    const scale = clampScale(Math.min(1, room.w / content.w, room.h / content.h));
-    return { scale, x: (box.w - content.w * scale) / 2, y: (box.h - content.h * scale) / 2 };
+    const room = { w: Math.max(1, box.w - 2 * PAD), h: Math.max(1, box.h - 2 * PAD) };
+    return clampScale(Math.min(1, room.w / content.w, room.h / content.h));
 }
 
-// zoom by `factor` keeping the point (px, py) of the viewport still, so the wheel zooms toward the cursor
-export function zoomAt(v: ZoomView, factor: number, px: number, py: number): ZoomView {
-    const scale = clampScale(v.scale * factor);
-    const k = scale / v.scale;
-    return { scale, x: px - (px - v.x) * k, y: py - (py - v.y) * k };
+export function layoutAt(content: Size, box: Size, scale: number): Layout {
+    const cw = content.w * scale;
+    const ch = content.h * scale;
+    const w = Math.max(box.w, cw + 2 * PAD);
+    const h = Math.max(box.h, ch + 2 * PAD);
+    return { w, h, x: (w - cw) / 2, y: (h - ch) / 2 };
 }
 
-export function panBy(v: ZoomView, dx: number, dy: number): ZoomView {
-    return { ...v, x: v.x + dx, y: v.y + dy };
+function clampScroll(content: Size, box: Size, v: ScrollView): ScrollView {
+    const l = layoutAt(content, box, v.scale);
+    return { scale: v.scale, left: clamp(v.left, 0, l.w - box.w), top: clamp(v.top, 0, l.h - box.h) };
+}
+
+// fit, centred
+export function fitScroll(content: Size, box: Size): ScrollView {
+    const scale = fitScale(content, box);
+    const l = layoutAt(content, box, scale);
+    return { scale, left: (l.w - box.w) / 2, top: (l.h - box.h) / 2 };
+}
+
+// zoom to `scale` keeping the point (px, py) of the box still, so the wheel zooms toward the cursor; where the canvas
+// cannot scroll that far (a diagram smaller than the box stays centred) the scroll stops at its edge
+export function zoomScroll(
+    content: Size,
+    box: Size,
+    cur: ScrollView,
+    scale: number,
+    px: number,
+    py: number
+): ScrollView {
+    const next = clampScale(scale);
+    const from = layoutAt(content, box, cur.scale);
+    const to = layoutAt(content, box, next);
+    // the diagram point under (px, py)
+    const ux = (cur.left + px - from.x) / cur.scale;
+    const uy = (cur.top + py - from.y) / cur.scale;
+    return clampScroll(content, box, { scale: next, left: ux * next + to.x - px, top: uy * next + to.y - py });
+}
+
+// the same diagram point at the centre of a box that changed size
+export function resizeScroll(content: Size, from: Size, to: Size, cur: ScrollView): ScrollView {
+    const a = layoutAt(content, from, cur.scale);
+    const b = layoutAt(content, to, cur.scale);
+    const ux = cur.left + from.w / 2 - a.x;
+    const uy = cur.top + from.h / 2 - a.y;
+    return clampScroll(content, to, { scale: cur.scale, left: ux + b.x - to.w / 2, top: uy + b.y - to.h / 2 });
 }
 
 // one wheel notch (deltaY ±100) zooms by about 16%; a trackpad's small deltas zoom smoothly
@@ -69,7 +117,7 @@ export type WheelEventInput = WheelInput & {
     wheelDeltaY?: number;
 };
 
-export type WheelAction = { kind: "pan"; dx: number; dy: number } | { kind: "zoom"; factor: number; instant: boolean };
+export type WheelAction = { kind: "scroll" } | { kind: "zoom"; factor: number; instant: boolean };
 
 // a trackpad (or Magic Mouse) swipe scrolls in px, and WebKit and Chromium on a Mac give its legacy wheelDelta as -3
 // times the delta; a mouse notch gives ±120 a notch, or counts lines. A wheel without the legacy fields is a swipe when
@@ -86,36 +134,26 @@ function isSwipe(e: WheelEventInput): boolean {
     return e.deltaX !== 0;
 }
 
-// what a wheel event does in the viewer, the way a design tool reads it: a two-finger swipe pans and follows the
-// fingers at once, a pinch (ctrl wheel in Chromium) zooms at once, a mouse notch or a cmd + wheel zooms toward the
-// cursor and eases
+// what a wheel event does in the viewer, the way a design tool reads it: a two-finger swipe is left to the box's own
+// scroll, a pinch (ctrl wheel in Chromium) zooms at once, a mouse notch or a cmd + wheel zooms toward the cursor and
+// eases
 export function wheelAction(e: WheelEventInput): WheelAction {
     if (e.ctrlKey) {
         return { kind: "zoom", factor: wheelZoomFactor(e), instant: true };
     }
     if (!e.metaKey && isSwipe(e)) {
-        return { kind: "pan", dx: -e.deltaX, dy: -e.deltaY };
+        return { kind: "scroll" };
     }
     return { kind: "zoom", factor: wheelZoomFactor(e), instant: false };
 }
 
-// the shown view eases toward the target one: a wheel notch's 16% jump or a fit glides over ~100 ms instead of
-// landing in one frame. Scale and offset move by the same fraction, which keeps the point zoomAt held still. `dt` is
-// the time since the last frame, in ms; it returns the target itself once the rest is below a pixel.
+// the shown zoom eases toward the target one: a wheel notch's 16% jump or a + press glides over ~100 ms instead of
+// landing in one frame. `dt` is the time since the last frame, in ms; it returns the target itself once close.
 const EASE_MS = 45;
 
-export function easeToward(cur: ZoomView, target: ZoomView, dt: number): ZoomView {
-    const t = 1 - Math.exp(-Math.max(0, dt) / EASE_MS);
-    const next = {
-        scale: cur.scale + (target.scale - cur.scale) * t,
-        x: cur.x + (target.x - cur.x) * t,
-        y: cur.y + (target.y - cur.y) * t,
-    };
-    const close =
-        Math.abs(next.x - target.x) < 0.5 &&
-        Math.abs(next.y - target.y) < 0.5 &&
-        Math.abs(next.scale - target.scale) < 0.001;
-    return close ? target : next;
+export function easeScale(cur: number, target: number, dt: number): number {
+    const next = cur + (target - cur) * (1 - Math.exp(-Math.max(0, dt) / EASE_MS));
+    return Math.abs(next - target) < 0.001 * target ? target : next;
 }
 
 // the copy is drawn at twice its CSS size for a sharp paste, smaller when that would pass the canvas's safe edge

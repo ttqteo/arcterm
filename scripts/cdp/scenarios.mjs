@@ -51255,7 +51255,8 @@ const chatMath = {
 // --- chat-diagram: a mermaid diagram in Chat (mermaid.tsx, mermaidviewer.tsx, mermaidzoom.ts). A Claude reply holds a
 // flowchart with Vietnamese labels; every label's text stays inside its node's shape (a label was clipped to the width
 // mermaid measured, cutting its last letter). A click opens the viewer fitted; one wheel notch eases to its zoom over a
-// few frames instead of landing in one, the stage holds will-change only while it moves, and a pinch (ctrl wheel) zooms.
+// few frames instead of landing in one, a pinch (ctrl wheel) zooms, and zoomed in the diagram is its box's own scroll,
+// which a drag moves.
 
 const CD_NAME = "diagram source";
 const CD_QUESTION = "draw the repair loop";
@@ -51293,19 +51294,20 @@ function cdRoster(ctx) {
     ];
 }
 
-// the stage's scale and will-change on every frame for `ms` after the call, read back by cdReadFrames
+// the viewer's scale on every frame for `ms` after the call, read back by cdReadFrames
 const CD_RECORD_FRAMES = (ms) => `(() => {
-    const stage = document.querySelector("[data-mermaid-viewer] > div");
+    const box = document.querySelector("[data-mermaid-viewer]");
     window.__cdFrames = [];
     const end = performance.now() + ${ms};
     const tick = () => {
-        const m = /scale\\(([0-9.]+)\\)/.exec(stage?.style.transform ?? "");
-        window.__cdFrames.push({ scale: m ? Number(m[1]) : null, wc: stage?.style.willChange ?? "" });
+        const s = Number(box?.dataset.scale);
+        window.__cdFrames.push({ scale: Number.isFinite(s) && s > 0 ? s : null });
         if (performance.now() < end) requestAnimationFrame(tick);
     };
     requestAnimationFrame(tick);
-    return !!stage;
+    return !!box;
 })()`;
+const CD_SCALE = `Number(document.querySelector("[data-mermaid-viewer]").dataset.scale)`;
 
 const chatDiagram = {
     name: "chat-diagram",
@@ -51396,22 +51398,39 @@ const chatDiagram = {
             const first = scales[0];
             const last = scales[scales.length - 1];
             const between = scales.filter((s) => s > first + 0.001 && s < last - 0.001).length;
-            const movingLayer = frames.some((f) => f.wc === "transform");
-            const restLayer = await h.ev(`document.querySelector("[data-mermaid-viewer] > div")?.style.willChange ?? ""`);
             rec(
-                "3. one wheel notch zooms in by about 16%, easing over several frames, on a GPU layer only while it moves",
-                first > 0 && Math.abs(last / first - Math.exp(0.15)) < 0.01 && between >= 3 && movingLayer && restLayer === "",
-                { first, last, between, frames: frames.length, movingLayer, restLayer }
+                "3. one wheel notch zooms in by about 16%, easing over several frames",
+                first > 0 && Math.abs(last / first - Math.exp(0.15)) < 0.01 && between >= 3,
+                { first, last, between, frames: frames.length }
             );
 
-            const before = await h.ev(`Number(/scale\\(([0-9.]+)\\)/.exec(document.querySelector("[data-mermaid-viewer] > div").style.transform)[1])`);
+            const before = await h.ev(CD_SCALE);
             for (let i = 0; i < 5; i++) {
                 await h.cdp("Input.dispatchMouseEvent", { type: "mouseWheel", x: box.x, y: box.y, deltaX: 0, deltaY: -6, modifiers: 2 });
             }
             await polishNap(500);
-            const after = await h.ev(`Number(/scale\\(([0-9.]+)\\)/.exec(document.querySelector("[data-mermaid-viewer] > div").style.transform)[1])`);
+            const after = await h.ev(CD_SCALE);
             await h.shot("cdp-shots/chat-diagram-zoomed.png");
             rec("4. a pinch (ctrl wheel, small deltas) zooms in by about a third", after / before > 1.25 && after / before < 1.45, { before, after });
+
+            // zoomed past the box, the diagram is the box's own scroll (a trackpad swipe scrolls it natively), and a drag
+            // moves that scroll
+            for (let i = 0; i < 5; i++) {
+                await h.ev(`window.dispatchEvent(new KeyboardEvent("keydown", { key: "+" }))`);
+            }
+            await polishNap(400);
+            const scroll = () => h.ev(`(() => { const b = document.querySelector("[data-mermaid-viewer]"); return { l: b.scrollLeft, t: b.scrollTop, sw: b.scrollWidth, cw: b.clientWidth, sh: b.scrollHeight, ch: b.clientHeight }; })()`);
+            const s0 = await scroll();
+            await h.cdp("Input.dispatchMouseEvent", { type: "mousePressed", x: box.x, y: box.y, button: "left", buttons: 1, clickCount: 1 });
+            await h.cdp("Input.dispatchMouseEvent", { type: "mouseMoved", x: box.x - 60, y: box.y - 40, button: "left", buttons: 1 });
+            await h.cdp("Input.dispatchMouseEvent", { type: "mouseReleased", x: box.x - 60, y: box.y - 40, button: "left", buttons: 0, clickCount: 1 });
+            await polishNap(200);
+            const s1 = await scroll();
+            rec(
+                "5. zoomed in, the diagram scrolls in its box, and a drag moves the scroll with the pointer",
+                s0.sw > s0.cw && s0.sh > s0.ch && Math.abs(s1.l - s0.l - 60) <= 1 && Math.abs(s1.t - s0.t - 40) <= 1,
+                { s0, s1 }
+            );
         } catch (e) {
             rec("the scenario threw", false, String(e?.stack ?? e));
         }

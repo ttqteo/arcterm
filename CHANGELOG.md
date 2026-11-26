@@ -30,6 +30,13 @@ in the dev app: `node scripts/whatsnew-shot.mjs <topic> [--selector <css>]` writ
 `whatsnew.test.ts` fails a big line with neither (in Unreleased and from 1.9.0 on), a missing file, one over 120 KB,
 and a picture given to a line that is not big.
 
+## Unreleased
+
+### Fixed
+
+- A diagram opened full size no longer stutters under a two-finger swipe on a Mac trackpad: the swipe scrolls it the
+  way a page scrolls, smooth even while agents are busy, with the trackpad's momentum.
+
 ## 1.11.0 — 2026-11-26
 
 ### Added
