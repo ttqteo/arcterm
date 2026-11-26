@@ -104,6 +104,8 @@ and a picture given to a line that is not big.
 
 ### Fixed
 
+- A run you start or queue from the command line for a brainstorm now shows on its card, instead of the card still
+  offering Approve.
 - A plan whose `**Depends on:**` line is not the first line under its task heading is refused with the rule, instead
   of running that task after the one before it while its prompt names another.
 - A run's worker that reports done and then exits with an error is reviewed as done, not counted as a failed attempt.

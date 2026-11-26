@@ -2,6 +2,7 @@ package brainstormcheck
 
 import (
 	_ "embed"
+	"fmt"
 	"path/filepath"
 	"strings"
 )
@@ -17,6 +18,17 @@ var promptTemplate string
 // Prompt is the reviewer's prompt for the spec at specPath, which ends with its report written to reportPath.
 func Prompt(specPath, reportPath string) string {
 	return strings.NewReplacer("[DOCUMENT_PATH]", specPath, "[REPORT_PATH]", reportPath).Replace(promptTemplate)
+}
+
+// Project is the project a brainstorm's file belongs to: the directory above the .superpowers it sits under. A
+// brainstorm's relative spec path is relative to it.
+func Project(brainstormFile string) (string, error) {
+	for dir := filepath.Dir(brainstormFile); filepath.Dir(dir) != dir; dir = filepath.Dir(dir) {
+		if filepath.Base(dir) == ".superpowers" {
+			return filepath.Dir(dir), nil
+		}
+	}
+	return "", fmt.Errorf("%s is not under a .superpowers directory", brainstormFile)
 }
 
 // ReportPath is where the reviewer's report is delivered: beside the brainstorm's file.

@@ -1724,3 +1724,81 @@ func TestRunQueueBrainstormANoticeThatPanicsDoesNotEscape(t *testing.T) {
 		t.Fatalf("created %v, want the run started whatever the notice did", got)
 	}
 }
+
+func TestRunQueueBrainstormAStartGivenOnlyTheEntrysBrainstormTellsItOnce(t *testing.T) {
+	w, b := useBrainstormWorld(t)
+	e := brainstormEntry(t, "Build the coupons", agentsTabB)
+	// an entry whose start data also names the brainstorm: the entry's own notice is the only one
+	if err := runqueue.Remove(e.Id); err != nil {
+		t.Fatal(err)
+	}
+	e.Data.Brainstorm = e.Brainstorm
+	if _, err := runqueue.Add(e); err != nil {
+		t.Fatal(err)
+	}
+
+	evaluateRunQueue(context.Background())
+
+	if got := w.created; len(got) != 1 || got[0].Brainstorm != nil {
+		t.Fatalf("created %+v, want one start whose data names no brainstorm", got)
+	}
+	if len(*b.sent) != 1 {
+		t.Errorf("deliveries = %+v, want the one notice the entry sends", *b.sent)
+	}
+}
+
+// ---- telling a brainstorm the run a direct start made ----
+
+func TestCreateRunWithABrainstormTellsItsAgentTheRun(t *testing.T) {
+	ctx := context.Background()
+	ch, err := wstore.CreateChannel(ctx, "createrun-brainstorm", t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	stubRunServer(t, "pi", nil)
+	sent := scriptAgents(t, threeAgents())
+	swap(t, &runQueueGo, func(f func()) { f() })
+	var armed []wshrpc.CommandAgentsSleepAfterRunData
+	swap(t, &armBrainstormSleep, func(_ context.Context, d wshrpc.CommandAgentsSleepAfterRunData) error {
+		armed = append(armed, d)
+		return nil
+	})
+	path := "C:/p/.superpowers/brainstorm/topic/brainstorm.json"
+
+	rtn, err := (&WshServer{}).CreateRunCommand(ctx, wshrpc.CommandCreateRunData{
+		ChannelId: ch.OID, WorkspaceId: "ws", Goal: "Build the coupons", Runtime: "pi",
+		Mode: jarvis.RunMode_Orchestrator, DeferStart: true,
+		Brainstorm: &wshrpc.RunQueueBrainstorm{Tab: agentsTabB, Path: path},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	runId := rtn.Run.ID
+	if len(*sent) != 1 || (*sent)[0].blockId != agentsBlockB || (*sent)[0].text != "brainstorm: run "+runId {
+		t.Fatalf("deliveries = %+v, want `brainstorm: run %s` to the brainstorm agent's block", *sent, runId)
+	}
+	if len(armed) != 1 || armed[0].Tab != agentsTabB || armed[0].RunId != runId || armed[0].Path != path {
+		t.Errorf("armed = %+v, want the agent's sleep armed for the new run", armed)
+	}
+}
+
+func TestCreateRunWithNoBrainstormTellsNobody(t *testing.T) {
+	ctx := context.Background()
+	ch, err := wstore.CreateChannel(ctx, "createrun-nobrainstorm", t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	stubRunServer(t, "pi", nil)
+	sent := scriptAgents(t, threeAgents())
+	swap(t, &runQueueGo, func(f func()) { f() })
+
+	if _, err := (&WshServer{}).CreateRunCommand(ctx, wshrpc.CommandCreateRunData{
+		ChannelId: ch.OID, WorkspaceId: "ws", Goal: "Alpha", Runtime: "pi",
+		Mode: jarvis.RunMode_Orchestrator, DeferStart: true,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if len(*sent) != 0 {
+		t.Errorf("deliveries = %+v, want none for a start that is no brainstorm's", *sent)
+	}
+}

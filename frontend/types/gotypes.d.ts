@@ -1480,6 +1480,7 @@ declare global {
         prototype?: string;
         origintabid?: string;
         specpath?: string;
+        brainstorm?: RunQueueBrainstorm;
         afterrunid?: string;
         autonomous?: boolean;
         worktree?: string;

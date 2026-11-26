@@ -62,6 +62,10 @@ type CommandCreateRunData struct {
 	// SpecPath is the absolute path of the spec this run builds (a brainstorm's Approve sends it), which the run keeps
 	// (Run.SpecPath) so the next launcher's overlap check can read the files it names. Empty for a start with no spec.
 	SpecPath string `json:"specpath,omitempty"`
+	// Brainstorm is the brainstorm a direct `wsh runs start` was for: once the run exists, wavesrv tells that agent
+	// `brainstorm: run <id>` as it does when a brainstorm's queued entry starts. A queued start carries it on
+	// CommandRunQueueAddData.Brainstorm instead. Nil for every other start.
+	Brainstorm *RunQueueBrainstorm `json:"brainstorm,omitempty"`
 	// AfterRunId is the run a queued start waited After, set by the run queue when it starts the entry; the run
 	// keeps it (Run.AfterRunId). Empty for every other start.
 	AfterRunId string `json:"afterrunid,omitempty"`

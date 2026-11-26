@@ -317,7 +317,7 @@ func readBrainstorm(file string) (brainstormSession, []byte, error) {
 	if err := json.Unmarshal(raw, &doc); err != nil {
 		return brainstormSession{}, nil, fmt.Errorf("%s is not valid JSON: %w", file, err)
 	}
-	project, err := brainstormProject(file)
+	project, err := brainstormcheck.Project(file)
 	if err != nil {
 		return brainstormSession{}, nil, err
 	}
@@ -346,15 +346,6 @@ func readBrainstormForCheck(file string) (brainstormSession, error) {
 	}
 	s.Kind = builderCheckKind
 	return s, nil
-}
-
-func brainstormProject(file string) (string, error) {
-	for dir := filepath.Dir(file); filepath.Dir(dir) != dir; dir = filepath.Dir(dir) {
-		if filepath.Base(dir) == ".superpowers" {
-			return filepath.Dir(dir), nil
-		}
-	}
-	return "", fmt.Errorf("%s is not under a .superpowers directory", file)
 }
 
 // judgePrompt builds the judge's prompt from the file as it stands at launch, the list in a fresh random order.

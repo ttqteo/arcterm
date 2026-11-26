@@ -402,7 +402,12 @@ func (ws *WshServer) cancelUnstartedRun(ctx context.Context, channelId string, r
 }
 
 func (ws *WshServer) CreateRunCommand(ctx context.Context, data wshrpc.CommandCreateRunData) (*wshrpc.CommandCreateRunRtnData, error) {
-	return ws.createRun(ctx, data, nil)
+	rtn, err := ws.createRun(ctx, data, nil)
+	if err == nil && data.Brainstorm != nil && rtn != nil && rtn.Run != nil {
+		brainstorm, runId := *data.Brainstorm, rtn.Run.ID
+		runQueueGo(func() { tellBrainstormItsRun(data.ChannelId, runId, brainstorm) })
+	}
+	return rtn, err
 }
 
 // createRun is CreateRunCommand with the run's WorkflowScan, which is on the run from its first write: its

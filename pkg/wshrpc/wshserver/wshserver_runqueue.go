@@ -66,7 +66,7 @@ var (
 	// runQueueRecheck is the check made when an entry's turn comes: the runs it must also wait for, and why. An error
 	// is advice lost, never a gate.
 	runQueueRecheck = recheckQueuedEntry
-	// runQueueGo runs the notice to a brainstorm's agent off the loop, which must not wait on an agent.
+	// runQueueGo runs the notice to a brainstorm's agent off the loop (or a start's reply), which must not wait on an agent.
 	runQueueGo = func(f func()) { go f() }
 	// armBrainstormSleep arms a brainstorm agent's sleep after the run it was told: AgentsSleepAfterRunCommand.
 	armBrainstormSleep = func(ctx context.Context, data wshrpc.CommandAgentsSleepAfterRunData) error {
@@ -313,6 +313,8 @@ func startQueuedEntry(ctx context.Context, e wshrpc.RunQueueEntry) error {
 	sctx, cancel := context.WithTimeout(ctx, runQueueStartTimeout)
 	defer cancel()
 	data := e.Data
+	// the entry's own Brainstorm is told below, once; the start must not tell it a second time
+	data.Brainstorm = nil
 	// a queue entry id is "q-" + hex (RunQueueEntry.Id); an After still naming one (only Start now starts an entry
 	// past its After) is no run to remember. The run keeps one id: the first run the entry waited for.
 	for _, id := range e.After {
@@ -351,7 +353,7 @@ func startQueuedEntry(ctx context.Context, e wshrpc.RunQueueEntry) error {
 }
 
 // tellBrainstormItsRun tells the agent that queued a run (spec 2026-11-16-run-start-choice-design.md) which run its
-// entry became: it arms the agent's sleep after that run, then sends `brainstorm: run <id>` through the path
+// entry became, or the agent a direct `wsh runs start --brainstorm` was for which run it made: it arms the agent's sleep after that run, then sends `brainstorm: run <id>` through the path
 // AgentsAssignCommand takes, so the agent writes the id into its brainstorm.json and the cockpit follows the run. It
 // runs off the queue loop (waking a sleeping agent waits for its session) and is never retried: a failure is logged and
 // recorded as a run event on the new run, where the timeline shows it. A failed arm only costs the sleep, so the notice
