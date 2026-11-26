@@ -107,7 +107,7 @@ the Library page draws the same card from the file.
 
 **Agent's call (builder question 3).** The card's answer chips work only in the pair conversation on the Agent
 surface. The Library page draws them as read-only text for every pair (ended, synced, live), and stays read-only
-otherwise. Its one control is Resume, on a stopped pair of this machine.
+otherwise. Its controls are Resume and Judge again (below), on a stopped pair of this machine.
 
 ### Resume (answer 9)
 
@@ -117,7 +117,8 @@ A stopped pair has a Resume button in three places:
 - on the pair's Library page.
 
 Pressing it puts the pair back to relaying and delivers what is still queued (in the real pair: m13 and m16 for the
-judge, m14 for the worker). It sends no message. After a token cap the cap counts again from that moment, and the
+judge, m14 for the worker; after "Turns after a pause" below, a worker turn after a token cap is no longer queued, so a
+new pair holds only m13 there). It sends no message. After a token cap the cap counts again from that moment, and the
 button says so: "Resume · 3.0M more" (VI "Chạy tiếp · thêm 3.0M").
 
 Resume does not show on an ended pair, or on a pair synced from the other machine: that pair's agents are not on this
@@ -140,6 +141,36 @@ left" pause.
 **Agent's call (builder question 2).** Resume does not show on a "no judge is left" pause either: resuming would stop
 the pair again at once (`manager.go:745-747`). That pause's card says that no judge is left and that Add judge in the
 header pairs one again (`Start` takes up a judges-gone pair, `manager.go:365`). The card has no button for it.
+
+### Turns after a pause (the person's call, added 2026-11-26 after approval)
+
+In pair df763872, after m15 "Paused: token cap reached (3.0M)", m16 and m17 are worker turns the person started in the
+worker's own Chat on other topics. Both are stored with `replyto=m12`, so the conversation draws them under the quote
+of the person's m12 as if they answered it, and the judge's queue became m13, m16, m17: Resume would hand the judge two
+off-topic turns without the questions behind them. The header said "waiting on judge" the whole time the pair was
+stopped. Causes: `takeAnswer` (`manager.go:670-704`) records and enqueues every new worker answer with
+`ReplyTo: answeredBy(p, tab)`; `answeredBy` (`manager.go:560`) takes the newest message relayed to the tab that called
+for an answer even when that tab already answered it; `waitingOnJudge` (`pairmodel.ts:138`) ignores the stop.
+
+The documented rules stay: a new worker answer resumes every kind of stop except the token cap
+(`docs/guide/agent-pair.md`, "Chạy tiếp"), and every worker turn goes to the judge, Chat-started ones included. The fix:
+
+1. **No false quote.** A reply from a tab never quotes a message that tab has already answered: `answeredBy` skips a
+   message when an earlier message from the same tab already has it as `ReplyTo`. m16 and m17 would carry no `ReplyTo`
+   and draw no quote line; the quote fallback (`view.go`, the first line of the answered message) draws nothing when
+   `ReplyTo` is empty.
+2. **After a token-cap stop the pair stops following the worker.** While `State == StateStopped && StopReason ==
+   StopTokenCap`, `takeAnswer` neither records nor enqueues a worker answer, and leaves `p.Held` alone; it still
+   advances `Seen[tab]` (and persists it), so the turn is not taken later as new. The pair follows again once it
+   resumes: Resume, Judge again, or a message from the person. Other stops keep today's rule: the worker's answer is
+   recorded and resumes the pair.
+3. **Header.** While the pair is stopped, the working agent's state line does not say "waiting on judge"
+   (`waitingOnJudge` is false on a stopped pair). It says the pair is paused, with the reason, in the pause card's
+   head words.
+
+CHANGELOG `Fixed`: "A paired agent's replies after a pause no longer show under the last question you asked in the
+pair, and after a token cap they no longer pile up for the judge." The guide's "Khi nào pair dừng" says that after a
+token cap, turns started in the worker's Chat are not passed to the judge until you resume.
 
 ## Left to the builder
 
@@ -215,5 +246,14 @@ Made by the run's lead with nobody at the cockpit; each with why.
 - **CHANGELOG.** The pause card and Resume are `Added` lines but not `<!-- big -->`: they are part of the pair feature,
   shown on their own when a pair pauses, not a new thing to open, and a big line would need a What's new picture the
   run's checks cannot make before its Verify.
+- **The header's pause words.** `pairpause.ts` exports `pauseHead(reason, vietnamese, cap?)`, the one source of the
+  card's head words, and the card uses it. The header's state line calls it in English (the header's state words are
+  English everywhere) with the reason from `PairInfo.stopreason`; `PairInfo` carries no cap, so the token-cap head
+  there drops the number ("Paused: token cap reached"). It shows where "waiting on judge" would: the working agent of
+  a stopped pair, idle. Why: same words as the card, no new wire field.
+- **Turns after a token cap** land in Task 3 (it already owns `manager.go`'s waiting rule and `answeredBy` check), the
+  header in Task 6 (it owns `pairmodel.ts`, after Task 5's words), the CHANGELOG and guide lines in Task 8: no new
+  task. `TestManagerResumeNotByAWorkerReplyAfterTheTokenCap` changes with it: the worker's reply after the cap is no
+  longer recorded, so the person's resume sends the judge their message once the worker answers it.
 - **Whether real judges write the summary** is live-model behaviour no run can check: it is the dated chunk
   "Re-measure: does a real pair judge write a summary: line at no new points" (effort `176a52a5`, due 2026-12-10).
