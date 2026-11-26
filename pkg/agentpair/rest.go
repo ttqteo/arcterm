@@ -12,7 +12,7 @@ import (
 )
 
 // A judge arcterm launched for a job rests once its newest pair has ended: the round is over, the judge sleeps, and it
-// leaves the tree until Add judge wakes it for the next round. Who rests is worked out once, from every pair file, when
+// leaves the tree until ⚖ under a reply wakes it for the next round. Who rests is worked out once, from every pair file, when
 // the manager first loads, and kept up to date as pairs end and judges join: a tab's newest pair is all it needs, so the
 // index holds that and not the ended pairs.
 
@@ -124,7 +124,7 @@ func (m *Manager) sleepJudge(ctx context.Context, tab string) {
 }
 
 // Resting is the launched judges whose newest pair has ended, grouped by their working agent's tab; within one worker the
-// judge of the newest ended pair comes first (the frontend takes a worker's first entry as the judge Add judge wakes),
+// judge of the newest ended pair comes first (the frontend takes a worker's first entry as the judge ⚖ under a reply wakes),
 // and judges of one pair, or of pairs made in the same millisecond, go by their own tab. So the order is the same on
 // every call and after a restart. A tab that is in a pair that is not ended is never listed, whatever its records say.
 func (m *Manager) Resting() []wshrpc.PairResting {

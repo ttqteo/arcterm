@@ -964,7 +964,7 @@ func TestRoundEndSleepIsDroppedWhenTheJudgeJoinsANewRound(t *testing.T) {
 	}
 
 	r.link.give("w", workerPlan)
-	v := r.start(wshrpc.CommandPairStartData{Launched: true}) // Add judge wakes it for the next round: PairStart, not briefed
+	v := r.start(wshrpc.CommandPairStartData{Launched: true}) // ⚖ under a reply wakes it for the next round: PairStart, not briefed
 	r.link.setState("j1", "idle")
 	r.m.TurnEnded(ctx, "j1")
 	if r.link.slept("j1") != 0 || r.link.agent("j1").state != "idle" {

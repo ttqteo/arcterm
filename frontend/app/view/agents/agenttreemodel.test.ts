@@ -2038,7 +2038,7 @@ describe("pairPickable (Pair: worker + judge)", () => {
         expect(pairPickable(["a", "t"], agents, [])).toBeNull();
         expect(pairPickable(["bg", "a"], agents, [])).toBeNull();
         expect(pairPickable(["a", "n"], [...agents, live("n", { agent: undefined })], [])).toBeNull();
-        // the header's Add judge asks the same rule: no tab yet, nothing to send a prompt to
+        // ⚖ under a reply asks the same rule: no tab yet, nothing to send a prompt to
         expect(pairPickable(["a", "nb"], [...agents, live("nb", { blockId: undefined })], [])).toBeNull();
     });
 

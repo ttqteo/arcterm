@@ -46,7 +46,7 @@ type PairInfo struct {
 }
 
 // PairResting is a judge arcterm launched for a job whose newest pair has ended: it rests (asleep, or about to be) and
-// is hidden under its worker's row while that worker is on the roster, until Add judge wakes it for a new round.
+// is hidden under its worker's row while that worker is on the roster, until ⚖ under a reply wakes it for a new round.
 type PairResting struct {
 	Tab       string `json:"tab"`       // the judge's tab
 	Name      string `json:"name"`      // as the roster names it ("Judge: <worker>")

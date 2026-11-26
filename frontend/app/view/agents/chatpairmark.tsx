@@ -31,16 +31,26 @@ import type { AgentVM } from "./agentsviewmodel";
 import { CardSlot, FOCUS_RING } from "./chatbrainstormparts";
 import { agentPairIds, markWords, type PairBar, type PairMarkLine } from "./pairmark";
 import { togglePairOf } from "./pairopen";
-import { ensurePair, pairViewAtom, usePairHistory, usePairs } from "./pairstore";
+import { ensurePair, loadPairHistory, pairHistoryAtom, pairViewAtom, usePairs } from "./pairstore";
 
 /** The views of the pairs `agent` is the working agent of: the active ones (usePairs) and the project's ended ones
- *  (usePairHistory), kept to this agent, each in full (pairViewAtom) and read once by id (ensurePair; `pair:update` keeps
- *  it right after that). A pair whose view is not read yet is left out until it is. */
-export function useAgentPairViews(agent: Pick<AgentVM, "id">, project: string): PairView[] {
+ *  (pairHistoryAtom, read while an agent is given), kept to this agent, each in full (pairViewAtom) and read once by id
+ *  (ensurePair; `pair:update` keeps it right after that). A pair whose view is not read yet is left out until it is. With no
+ *  agent (a conversation that has none: an ended session, a subagent's interior) it reads no history and returns none. */
+export function useAgentPairViews(agent: Pick<AgentVM, "id"> | undefined, project: string): PairView[] {
+    const agentId = agent?.id ?? "";
     const live = usePairs();
-    const history = usePairHistory(project);
+    const history = useAtomValue(pairHistoryAtom(project));
+    useEffect(() => {
+        if (agentId !== "") {
+            void loadPairHistory(project);
+        }
+    }, [agentId, project]);
     // the ids as one string, so a list re-read with the same pairs in it changes nothing below
-    const idsKey = useMemo(() => agentPairIds(agent.id, live, history).join("\n"), [agent.id, live, history]);
+    const idsKey = useMemo(
+        () => (agentId === "" ? "" : agentPairIds(agentId, live, history).join("\n")),
+        [agentId, live, history]
+    );
     const viewsAtom = useMemo(() => {
         const ids = idsKey === "" ? [] : idsKey.split("\n");
         return atom((get) => ids.map((id) => get(pairViewAtom(id))).filter((view): view is PairView => view != null));

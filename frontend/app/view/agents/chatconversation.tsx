@@ -131,6 +131,7 @@ import {
     type ChatMarker,
 } from "./chatmodel";
 import { ChatPairHost } from "./chatpairblock";
+import { ChatPairMarkLine, pairBarAttrs, pairBarClass, useAgentPairViews } from "./chatpairmark";
 import { PairRelayView } from "./chatpairrelay";
 import { btwQuestion } from "./chatpending";
 import { ChatRunCard } from "./chatruncard";
@@ -148,6 +149,7 @@ import { placeStepLists, stepsPartKey, type AgentNow } from "./chatsteplist";
 import { ChatStepsHost, StepsPart } from "./chatsteplistview";
 import { foreignPathGuesses, turnFileAbs, turnFileDiff, turnFiles } from "./chatsteps";
 import { ChatSteps } from "./chatstepsview";
+import { recentPrompts, writesVietnamese } from "./chatsuggest";
 import { chatJudgeAtom } from "./chatsuggeststore";
 import { TaggedPromptText } from "./chattagblock";
 import { ChatTurnFiles } from "./chatturnfiles";
@@ -161,10 +163,12 @@ import { firstExistingFile } from "./filetabload";
 import { CompactionDivider, InterruptedDivider, PromptImages, TaskNotificationRow } from "./narrationtimeline";
 import { placePairLists } from "./pairblocks";
 import { JudgeReplyMenu } from "./pairjudgemenu";
+import { pairMarks } from "./pairmark";
 import { canPair } from "./pairmodel";
 import { usePairOf } from "./pairstore";
 import { pinnedLabel } from "./pinnedlabel";
 import { PinnedPromptBar, scrollParent, usePinnedPrompt } from "./pinnedpromptbar";
+import { projectsAtom } from "./projectsstore";
 import { opensRailSummary } from "./railcompaction";
 import { railVisibleAtom } from "./railstore";
 import { agentProject } from "./runlineage";
@@ -785,12 +789,15 @@ function Arriving({
     gap,
     itemKey,
     className,
+    attrs,
     children,
 }: {
     arrive: boolean;
     gap: number;
     itemKey?: string;
     className?: string;
+    // data attributes of the row: the marker of the judge round's bar it carries (pairBarAttrs)
+    attrs?: Record<string, string>;
     children: ReactNode;
 }) {
     const ref = useRef<HTMLDivElement>(null);
@@ -836,7 +843,7 @@ function Arriving({
         };
     }, [gap]);
     return (
-        <div ref={ref} data-chat-item={itemKey} className={className}>
+        <div ref={ref} data-chat-item={itemKey} className={className} {...attrs}>
             {children}
         </div>
     );
@@ -1113,6 +1120,14 @@ export function ChatConversation({
         () => (agentId != null ? judgeKeysByItem(agentId, items, judges) : NO_JUDGE_KEYS),
         [agentId, items, judges]
     );
+    // The judge rounds this agent started (pairmark.ts): a ⚖ line under the reply each began from, as rows of their own
+    // after the item's row (like the judge line above, never inside the item's cached element), and the bar on the left of
+    // the rows each round covers. The pairs are the agent's own, live ones and the project's ended ones; the words are
+    // Vietnamese when the person writes it, as the pair's other words choose
+    const projects = useAtomValue(projectsAtom);
+    const pairViews = useAgentPairViews(agent, projects[agent?.project ?? ""]?.path ?? "");
+    const marks = useMemo(() => pairMarks(items, pairViews), [items, pairViews]);
+    const markVi = useMemo(() => writesVietnamese(recentPrompts(entries)), [entries]);
     // the cards the person opened from messages (Add to initiative…), by the item they were opened after
     const canAddInitiative = !!model && !!agent;
     // ⚖ Judge this reply (chatjudgereply.ts): in a live claude or pi agent's Chat where a pair is possible, under the
@@ -1372,10 +1387,11 @@ export function ChatConversation({
         animate: { marginTop: 0, transition: rowSpring },
         exit: { marginTop: -ITEM_GAP, transition: rowSpring },
     };
-    const lastDrawn = useRef<{ items: string[]; parts: Set<string>; judges: Set<string> }>({
+    const lastDrawn = useRef<{ items: string[]; parts: Set<string>; judges: Set<string>; marks: Set<string> }>({
         items: [],
         parts: new Set(),
         judges: new Set(),
+        marks: new Set(),
     });
     // nothing opens while a kept window catches up, nor in the render where it stops: the caught-up rows and the end of
     // catching up can land in one batched render
@@ -1394,6 +1410,8 @@ export function ChatConversation({
                 visible.flatMap((item) => (item.kind === "agent" ? item.parts.map((_, p) => `${item.key}#${p}`) : []))
             ),
             judges: new Set(visible.flatMap((item) => judgeKeys.get(item.key) ?? [])),
+            // the rounds whose line was drawn: a round's line opens on the spring the first time it is
+            marks: new Set(visible.flatMap((item) => (marks.lines.get(item.key) ?? []).map((line) => line.pairId))),
         };
     });
     // a fold is kept by its item's key and its part's place in the item, so it stays with its item as entries arrive
@@ -2080,13 +2098,22 @@ export function ChatConversation({
               };
         drawnNow.set(item.key, drawn);
         drawnKeys.add(item.key);
+        // the judge round whose bar this row carries, and the lines of the rounds that began at this item: the bar is the
+        // row's own class and markers (never part of the kept element), so a round ending only recolours it
+        const bar = marks.bars.get(item.key);
+        const markLines = marks.lines.get(item.key);
         const row = (
             <Arriving
                 key={item.key}
                 itemKey={item.key}
                 gap={ITEM_GAP}
                 arrive={(item.kind !== "you" || ownArrives === true) && arrived.has(item.key)}
-                className={cn("flex flex-col", item.kind === "you" || item.kind === "sent" ? "items-end" : undefined)}
+                className={cn(
+                    "flex flex-col",
+                    item.kind === "you" || item.kind === "sent" ? "items-end" : undefined,
+                    pairBarClass(bar)
+                )}
+                attrs={pairBarAttrs(bar)}
             >
                 {drawn.element}
             </Arriving>
@@ -2109,6 +2136,22 @@ export function ChatConversation({
                           arrive={!still && drawnBefore.has(item.key) && !lastDrawn.current.judges.has(judgeKey)}
                       />,
                   ]
+                : []),
+            // the judge rounds that began at this reply, the older round first: each line opens on the spring when its round
+            // starts under a reply that was already drawn, and carries the bar of the item it sits under
+            ...(markLines != null && agent != null && model != null
+                ? markLines.map((line) => (
+                      <ChatPairMarkLine
+                          key={`pairmark:${item.key}:${line.pairId}`}
+                          line={line}
+                          vi={markVi}
+                          model={model}
+                          agentId={agent.id}
+                          gap={ITEM_GAP}
+                          arrive={!still && drawnBefore.has(item.key) && !lastDrawn.current.marks.has(line.pairId)}
+                          bar={bar}
+                      />
+                  ))
                 : []),
             ...(cardAnchors.has(item.key) && agent != null
                 ? [<InitiativeMessageCards key={`${item.key}:initiative`} agentId={agent.id} anchor={item.key} />]

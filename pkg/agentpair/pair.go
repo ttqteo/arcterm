@@ -63,8 +63,8 @@ type Side struct {
 	Session string `json:"session,omitempty"`
 	Gone    bool   `json:"gone,omitempty"`
 	Briefed bool   `json:"briefed,omitempty"` // a judge launched with the brief as its task, or sent the brief as its first prompt
-	// Launched marks a judge arcterm launched for the job (a "Judge: <worker>" tab started by Add judge, or a resting one
-	// woken by it), as against an agent the person picked from the live list. Only a launched judge sleeps when the round
+	// Launched marks a judge arcterm launched for the job (a "Judge: <worker>" tab started by ⚖ under a reply, or a resting
+	// one woken by it), as against an agent the person picked from the live list. Only a launched judge sleeps when the round
 	// ends and rests until the next one.
 	Launched bool `json:"launched,omitempty"`
 	// Tokens is this session's spend since the pair's CapFromTs, as last counted. A gone judge's stays: its session

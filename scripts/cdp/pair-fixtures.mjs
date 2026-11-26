@@ -12,6 +12,10 @@
 //   WORKER_REPLIES, writeWorkerTranscript
 //                   the worker's two-turn fixture transcript (pair-header's ⚖ Judge this reply steps) and the uuids of its
 //                   replies
+//   ROUND_PROJECT, ROUND_REPLIES, writeRoundsTranscript, roundView
+//                   chat-judge-reply's fixtures: the worker's six-reply transcript (ROUND_REPLIES holds each reply's uuid and
+//                   text) and the PairView of one judge round that started from one of those replies (reading, live or
+//                   ended), whose first worker message is that reply's text, so Chat marks it
 //   pairView        the R1 board's exchange in English, as the PairView wavesrv would send it
 //   pausedPairView  the same pair stopped: its last message is a pause that carries the R1 Decided list
 //   seedPair        set the page's dev mock pairs (null clears them, and the server's answer shows again)
@@ -139,6 +143,78 @@ export function writeWorkerTranscript(dir, now) {
         userText("Now the pilot cases.", at(20 * MIN)),
         assistantText(WORKER_REPLIES.latest.text, at(19 * MIN, { uuid: WORKER_REPLIES.latest.uuid })),
     ]);
+}
+
+// ---- the judge round's mark in Chat (chat-judge-reply; frontend/app/view/agents/pairmark.ts, chatpairmark.tsx) ----
+
+// The project of the chat-judge-reply fixtures, one no cockpit has registered: Chat reads the ended pairs of the agent's
+// registered project path, and an unregistered name has none, so it reads every project's (the mock keeps them all)
+export const ROUND_PROJECT = "fx-chat-judge-reply";
+
+// The six turns of the round scenario's worker, each a person's ask and one reply with its record uuid. A pair starts from one
+// reply, and Chat finds it by the pair's first worker message: that message's text is the reply's text, word for word.
+export const ROUND_REPLIES = [
+    { uuid: "fx-round-1", ask: "Read the pilot harness first.", text: "Read the pilot harness: the gate runs before the first case." },
+    { uuid: "fx-round-2", ask: "Write the threshold down.", text: "Drafted amendment §16.8: threshold 50%, known-deviation, denominator 164." },
+    { uuid: "fx-round-3", ask: "Pick the pilot cases.", text: "Picked 6 pilot cases from the dev split, outside the 305 test split." },
+    { uuid: "fx-round-4", ask: "Run the pilot.", text: "Ran the pilot: 6 of 6 cases passed the gate, token compliance 83%." },
+    { uuid: "fx-round-5", ask: "Put the results in the plan.", text: "Wrote the pilot table into §16.9 and linked it from the summary." },
+    { uuid: "fx-round-6", ask: "Open the pull request.", text: "Opened the pull request with the amendment and the pilot results." },
+];
+
+// Writes the round scenario's worker transcript under `dir` (a temp dir the scenario owns) and returns its path, for
+// pairRoster's `workerTranscript`: ROUND_REPLIES as six turns, ten minutes apart, the last ten minutes before `now`.
+export function writeRoundsTranscript(dir, now) {
+    const lines = ROUND_REPLIES.flatMap((reply, n) => {
+        const ago = (ROUND_REPLIES.length - n) * 10 * MIN;
+        const at = (agoMs, extra = {}) => ({ cwd: dir, ts: new Date(now - agoMs).toISOString(), ...extra });
+        return [userText(reply.ask, at(ago + 2 * MIN)), assistantText(reply.text, at(ago, { uuid: reply.uuid }))];
+    });
+    return writeTranscript(dir, "chat-judge-reply-worker", lines);
+}
+
+// One judge round of the worker as wavesrv would send it, for the marks in Chat. `from` is the index in ROUND_REPLIES of the
+// reply the round started from: the pair's first message is that reply's text. With `judged` the judge has answered (a
+// message after the first); `last` (an index) adds the worker's reply the round ended at, after the judge's; `ended` is
+// the state "ended" (the grey static mark), else the pair relays. The round began `startedAgo` ms before `now`; `agreed` and
+// `open` are the counts of its Decided list.
+export function roundView(now, { id, from, judged = false, last = null, ended = false, startedAgo, agreed = 0, open = 0 }) {
+    const base = pairView(now, { judges: 1 });
+    const began = now - startedAgo;
+    const msg = (suffix, who, tab, ts, text) => ({
+        id: `${id}-${suffix}`,
+        from: who,
+        tab,
+        ts,
+        text,
+        quote: "",
+        replyto: "",
+        to: "",
+        held: [],
+    });
+    const messages = [msg("first", "worker", PAIR.worker, began + 1_000, ROUND_REPLIES[from].text)];
+    if (judged || last != null) {
+        messages.push(
+            msg("judge", "judge", PAIR.judge, began + 30_000, "Two points on this reply: the order of the gate and the denominator.")
+        );
+    }
+    if (last != null) {
+        messages.push(msg("last", "worker", PAIR.worker, began + 90_000, ROUND_REPLIES[last].text));
+    }
+    const list = (kind, n) => Array.from({ length: n }, (_, i) => item(i + 1, kind, `A ${kind} point (${i + 1})`));
+    return {
+        ...base,
+        id,
+        project: ROUND_PROJECT,
+        state: ended ? "ended" : "relaying",
+        stopreason: ended ? "settled" : "",
+        owed: !ended && messages.at(-1).from === "worker",
+        messagecount: messages.length,
+        lastts: messages.at(-1).ts,
+        createdts: began,
+        messages,
+        decided: { asks: [], agreed: list("agreed", agreed), open: list("open", open) },
+    };
 }
 
 const side = (tab, name) => ({ tab, name, harness: "claude" });

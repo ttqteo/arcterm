@@ -8,7 +8,7 @@
 // how many messages of each pair the person has seen (the header button's "N new"). Pure rules are in pairmodel.ts.
 //
 // The resting judges come with the same list answer (`resting` on PairListCommand): judges arcterm launched whose newest pair
-// has ended. The tree hides one under its worker's row, Add judge wakes one, and closing a worker closes the ones asleep.
+// has ended. The tree hides one under its worker's row, ⚖ under a reply wakes one, and closing a worker closes the ones asleep.
 //
 // The dev mock (devMockPairsAtom) is how a CDP scenario seeds pairs with no agent running: while it is set it replaces the
 // server's answer whole, as devmock.ts's devMockAgentsAtom does the roster, and nothing is read from wavesrv. The resting

@@ -44,7 +44,7 @@ func TestRestingLaunchedJudgeComesAndGoesWithItsPairs(t *testing.T) {
 	}
 	sameAfterReload(t, r)
 
-	// Add judge wakes it: PairStart, not briefed, launched. It is in a pair again, so it rests no more
+	// ⚖ under a reply wakes it: PairStart, not briefed, launched. It is in a pair again, so it rests no more
 	r.link.give("w", workerPlan)
 	second := r.start(wshrpc.CommandPairStartData{Launched: true})
 	if got := r.m.Resting(); len(got) != 0 {
@@ -64,7 +64,7 @@ func TestRestingLaunchedJudgeComesAndGoesWithItsPairs(t *testing.T) {
 }
 
 // a worker's resting judges are listed newest first, by the pair each rests from and not by their tab ids (random in
-// life): the frontend takes the first of a worker's entries as the judge Add judge wakes
+// life): the frontend takes the first of a worker's entries as the judge ⚖ under a reply wakes
 func TestRestingListsAWorkersJudgesNewestFirst(t *testing.T) {
 	t.Run("the newer pair's judge has the tab that sorts after", func(t *testing.T) {
 		r := newRig(t)
