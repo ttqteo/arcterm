@@ -301,7 +301,7 @@ function PendingCommand({
 }
 
 // A message sent and not in the transcript yet: your bubble, drawn as the transcript will draw it and where
-// (chatconversation.tsx YouBubble's box, spacing and letter spacing; @mentions as pills, files as cards under it), so the
+// (chatconversation.tsx YouBubble's box, spacing and letter spacing; @mentions as pills, files as cards over it), so the
 // transcript's copy taking its place draws nothing new. What it waits on is PendingLine's, under the last of them. A
 // Queued one (sent while Claude works) is dimmed until Claude Code takes it: it waits for minutes, and the full-strength
 // transcript row taking its place is the news that it was read. One sent to an idle agent stays full strength, since the
@@ -327,13 +327,13 @@ function PendingBubble({ pending, first }: { pending: PendingMessage; first: boo
                 data-chat-pending-queued={pending.queued === true ? "" : undefined}
                 className={cn("flex max-w-[75%] flex-col items-end gap-2", pending.queued === true && "opacity-55")}
             >
+                {said.files.length > 0 ? <ChatFileCards paths={said.files} /> : null}
                 {body !== "" || said.images.length > 0 ? (
-                    <div className={cn("relative", youBubbleBox(said.files.length > 0))}>
+                    <div className={cn("relative", youBubbleBox())}>
                         {body !== "" ? <TaggedPromptText text={body} /> : null}
                         {said.images.length > 0 ? <PromptImages paths={said.images} /> : null}
                     </div>
                 ) : null}
-                {said.files.length > 0 ? <ChatFileCards paths={said.files} /> : null}
             </div>
         </motion.div>
     );

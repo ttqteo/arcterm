@@ -110,6 +110,8 @@ and a picture given to a line that is not big.
 - Switching back to an agent you already viewed keeps its details rail in place: Files changed, the branch, the
   session's spend and model and the cache countdown show at once and update quietly, instead of flashing through
   a placeholder.
+- Files you send with a Chat message sit over your bubble, and two or more fold into one tilted pile showing the first
+  names, the folder, the count and the total size; hover fans it, a click opens it into a list, one file a row.
 - A run's lead hears "may be stuck" only for a worker whose tree has not changed in 20 minutes; the check for the same
   command failing the same way three times is gone (it never fired here, and its wakes elsewhere came too late to help).
 - What you are writing to an agent stays in its box when arcterm closes or reloads, attached files too, and the small

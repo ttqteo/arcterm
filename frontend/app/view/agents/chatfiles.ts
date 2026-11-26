@@ -50,12 +50,59 @@ export function fileTag(name: string): { tag: string; tone: FileTone } {
     return { tag: ext.slice(0, 4).toUpperCase(), tone: TONES.get(ext) ?? "other" };
 }
 
-export const CARD_LIMIT = 5;
+/** What FileInfoCommand said of a sent file: still asking, its size (none for a folder), or that it is not there (not
+ *  found, or the ask failed). */
+export type FileSeen = { status: "loading" } | { status: "found"; size?: number } | { status: "missing" };
 
-/** Pure: the cards a bubble shows, and how many the "+N more" chip folds away. Open shows them all. */
-export function foldCards<T>(items: T[], open: boolean): { shown: T[]; more: number } {
-    if (open || items.length <= CARD_LIMIT) {
-        return { shown: items, more: 0 };
+// the folder a path sits in, as a path with forward slashes ("" for a file at the root)
+function parentPath(path: string): string {
+    const p = path.replace(/\\/g, "/").replace(/\/+$/, "");
+    const cut = p.lastIndexOf("/");
+    return cut > 0 ? p.slice(0, cut) : "";
+}
+
+/** Pure: the name of the folder a path sits in ("" for a file at the root). */
+export function parentName(path: string): string {
+    const parent = parentPath(path);
+    return parent.slice(parent.lastIndexOf("/") + 1);
+}
+
+/** Pure: the name of the folder every path sits in, or null when they sit in different folders. Whole parent paths are
+ *  compared, so two folders that share a name are still two. */
+export function commonFolder(paths: string[]): string | null {
+    if (paths.length === 0) {
+        return null;
     }
-    return { shown: items.slice(0, CARD_LIMIT), more: items.length - CARD_LIMIT };
+    const first = parentPath(paths[0]);
+    return paths.every((p) => parentPath(p) === first) ? parentName(paths[0]) : null;
+}
+
+/** Pure: the bytes of all the files once every one has answered (a missing file or a folder adds nothing), null while
+ *  any is still loading. */
+export function totalBytes(seen: FileSeen[]): number | null {
+    let sum = 0;
+    for (const s of seen) {
+        if (s.status === "loading") {
+            return null;
+        }
+        if (s.status === "found") {
+            sum += s.size ?? 0;
+        }
+    }
+    return sum;
+}
+
+/** Pure: the line under a pile's front card: the folder they share, how many files, and their total once known. */
+export function pileLine(count: number, folder: string | null, total: string | null): string {
+    return [folder ?? "", `${count} files`, total ?? ""].filter((s) => s !== "").join(" · ");
+}
+
+/** Pure: a message's files draw as one card when it carries one, and as a pile that opens into a list from two on. */
+export function filesShape(count: number): "none" | "card" | "pile" {
+    return count === 0 ? "none" : count === 1 ? "card" : "pile";
+}
+
+/** Pure: the files drawn behind a pile's front card: the second and the third, at most. */
+export function pileBacks<T>(items: T[]): T[] {
+    return items.slice(1, 3);
 }

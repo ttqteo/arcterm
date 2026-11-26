@@ -576,13 +576,10 @@ export function BtwCard({
 }
 
 // your bubble's box, shared with the bubble that stands in for a message on its way (chatpane.tsx PendingBubble), so the
-// transcript's copy taking its place draws nothing new. The copy button hangs in the gap under the bubble: it leaves that
-// button room above the cards
-export function youBubbleBox(hasFiles: boolean): string {
-    return cn(
-        "max-w-full rounded-[16px] bg-surface-raised px-[14px] py-[9px] text-[13.5px] leading-[1.55] text-primary",
-        hasFiles ? "mb-3" : "mb-1"
-    );
+// transcript's copy taking its place draws nothing new. The copy button hangs in the gap under the bubble; the files ride
+// over it, so nothing sits in that gap
+export function youBubbleBox(): string {
+    return "mb-1 max-w-full rounded-[16px] bg-surface-raised px-[14px] py-[9px] text-[13.5px] leading-[1.55] text-primary";
 }
 
 // your message: a bubble on the right, long ones clamped (PromptText, as userNeedsClamp says), what you pasted under it
@@ -650,7 +647,7 @@ function YouBubble({
     const forward = parseBoardForward(item.text);
     const words = forward != null ? forward.question : item.text;
     // the files and images you sent ride the message as trailing blocks of paths (chatfiles.ts); images show as pictures in
-    // the bubble and files as cards under it, not as the blocks that name them. The wrapper is the prompt the pinned bar and
+    // the bubble and files as cards over it (a pile from two on), not as the blocks that name them. The wrapper is the prompt the pinned bar and
     // the scenarios find, when the message says something (pinnedLabel): one of only pictures or files is no pin, so the
     // bar keeps the message before it rather than a "(picture)"
     const said = splitAttachments(words);
@@ -667,8 +664,9 @@ function YouBubble({
             onContextMenu={onContextMenu(words, fork, initiative)}
             className="flex max-w-[75%] flex-col items-end gap-2 self-end"
         >
+            {hasFiles ? <ChatFileCards paths={said.files} /> : null}
             {text !== "" || hasPictures ? (
-                <div className={cn("group relative", youBubbleBox(hasFiles))}>
+                <div className={cn("group relative", youBubbleBox())}>
                     {text !== "" ? <TaggedPromptText text={text} /> : null}
                     {hasPictures ? <PromptImages images={item.images} paths={said.images} /> : null}
                     {/* the whole message, files and all, as the context menu copies it */}
@@ -682,7 +680,6 @@ function YouBubble({
                     ) : null}
                 </div>
             ) : null}
-            {hasFiles ? <ChatFileCards paths={said.files} /> : null}
         </div>
     );
     return forward != null ? (
