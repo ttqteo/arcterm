@@ -117,7 +117,10 @@ const seen = (id) => `(() => {
     const latest = layer?.querySelector('[data-chat-pair="latest"]');
     const older = layer?.querySelector('[data-chat-pair="older"]');
     const judge = layer?.querySelector('[data-chat-judge="marks"]');
-    const labels = (id) => [...(latest?.querySelector('[data-chat-pair-section="' + id + '"]')?.querySelectorAll("[data-chat-pair-item]") ?? [])].map((r) => r.getAttribute("data-chat-pair-item"));
+    const labels = (id) => [...(latest?.querySelector('[data-chat-pair-section="' + id + '"]')?.querySelectorAll("[data-chat-pair-item]") ?? [])]
+        // An A item's AskBox and the NumberedRow inside it both carry the hook: count the outer one.
+        .filter((r) => r.parentElement?.closest("[data-chat-pair-item]") == null)
+        .map((r) => r.getAttribute("data-chat-pair-item"));
     const agreed = latest?.querySelector('[data-chat-pair-section="agreed"]');
     return {
         latest: latest == null ? null : {

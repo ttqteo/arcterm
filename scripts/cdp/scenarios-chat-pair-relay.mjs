@@ -119,7 +119,10 @@ const seen = (id) => `(() => {
             const c = el.querySelector('[data-chat-pair="latest"]');
             return c == null ? null : {
                 current: c.getAttribute("data-chat-pair-current"),
-                asks: [...c.querySelectorAll('[data-chat-pair-section="asks"] [data-chat-pair-item]')].map((r) => r.getAttribute("data-chat-pair-item")),
+                // An A item's AskBox and the NumberedRow inside it both carry the hook: count the outer one.
+                asks: [...c.querySelectorAll('[data-chat-pair-section="asks"] [data-chat-pair-item]')]
+                    .filter((r) => r.parentElement?.closest("[data-chat-pair-item]") == null)
+                    .map((r) => r.getAttribute("data-chat-pair-item")),
                 chips: [...c.querySelectorAll("[data-chat-pair-chip]")].map((x) => x.getAttribute("data-chat-pair-chip")),
                 other: c.querySelector("[data-chat-pair-other]") != null,
             };
