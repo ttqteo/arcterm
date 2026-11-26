@@ -90,7 +90,7 @@ describe("wheelFactor", () => {
 describe("wheelZoomFactor", () => {
     const base = { deltaY: 0, deltaMode: 0, ctrlKey: false };
 
-    it("zooms a plain wheel as before", () => {
+    it("zooms a cmd wheel by its px", () => {
         expect(wheelZoomFactor({ ...base, deltaY: 100 })).toBeCloseTo(wheelFactor(100));
     });
 
@@ -106,34 +106,21 @@ describe("wheelZoomFactor", () => {
 });
 
 describe("wheelAction", () => {
-    const base = { deltaX: 0, deltaY: 0, deltaMode: 0, ctrlKey: false, metaKey: false, wheelDeltaX: 0, wheelDeltaY: 0 };
-    // a Mac trackpad's two-finger scroll: pixel deltas, the legacy wheelDelta three times the delta, sign flipped
-    const swipe = (dx: number, dy: number) => ({
-        ...base,
-        deltaX: dx,
-        deltaY: dy,
-        wheelDeltaX: -3 * dx,
-        wheelDeltaY: -3 * dy,
+    const base = { deltaY: 0, deltaMode: 0, ctrlKey: false, metaKey: false };
+
+    it("leaves a plain wheel, a trackpad swipe or a mouse notch, to the box's own scroll", () => {
+        expect(wheelAction({ ...base, deltaY: 12 })).toEqual({ kind: "scroll" });
+        expect(wheelAction({ ...base, deltaY: 100 })).toEqual({ kind: "scroll" });
+        expect(wheelAction({ ...base, deltaY: 3, deltaMode: 1 })).toEqual({ kind: "scroll" });
     });
 
-    it("leaves a trackpad swipe to the box's own scroll, either way", () => {
-        expect(wheelAction(swipe(0, 12))).toEqual({ kind: "scroll" });
-        expect(wheelAction(swipe(8, -5))).toEqual({ kind: "scroll" });
-        expect(wheelAction({ ...base, deltaX: 4, deltaY: 2 })).toEqual({ kind: "scroll" });
-    });
-
-    it("zooms a mouse notch, eased, as before", () => {
-        const notch = { ...base, deltaY: 100, wheelDeltaY: -120 };
-        expect(wheelAction(notch)).toEqual({ kind: "zoom", factor: wheelZoomFactor(notch), instant: false });
-        const line = { ...base, deltaY: 3, deltaMode: 1 };
-        expect(wheelAction(line)).toEqual({ kind: "zoom", factor: wheelZoomFactor(line), instant: false });
-    });
-
-    it("zooms a pinch (ctrl wheel) at once, and a cmd swipe like a notch", () => {
-        const pinch = { ...swipe(0, -4), ctrlKey: true };
+    it("zooms a pinch (ctrl wheel) at once, and a cmd wheel eased toward the cursor", () => {
+        const pinch = { ...base, deltaY: -4, ctrlKey: true };
         expect(wheelAction(pinch)).toEqual({ kind: "zoom", factor: wheelZoomFactor(pinch), instant: true });
-        const cmd = { ...swipe(0, -10), metaKey: true };
-        expect(wheelAction(cmd)).toEqual({ kind: "zoom", factor: wheelFactor(-10), instant: false });
+        const cmd = { ...base, deltaY: -100, metaKey: true };
+        expect(wheelAction(cmd)).toEqual({ kind: "zoom", factor: wheelFactor(-100), instant: false });
+        const cmdLines = { ...base, deltaY: 3, deltaMode: 1, metaKey: true };
+        expect(wheelAction(cmdLines)).toEqual({ kind: "zoom", factor: wheelFactor(99), instant: false });
     });
 });
 

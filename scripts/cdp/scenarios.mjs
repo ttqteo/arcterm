@@ -51254,9 +51254,9 @@ const chatMath = {
 
 // --- chat-diagram: a mermaid diagram in Chat (mermaid.tsx, mermaidviewer.tsx, mermaidzoom.ts). A Claude reply holds a
 // flowchart with Vietnamese labels; every label's text stays inside its node's shape (a label was clipped to the width
-// mermaid measured, cutting its last letter). A click opens the viewer fitted; one wheel notch eases to its zoom over a
+// mermaid measured, cutting its last letter). A click opens the viewer fitted; one cmd + wheel notch eases to its zoom over a
 // few frames instead of landing in one, a pinch (ctrl wheel) zooms, and zoomed in the diagram is its box's own scroll,
-// which a drag moves.
+// which a plain wheel and a drag move.
 
 const CD_NAME = "diagram source";
 const CD_QUESTION = "draw the repair loop";
@@ -51391,7 +51391,7 @@ const chatDiagram = {
             rec("2. a click opens the viewer, the labels still inside their nodes", opened && inViewer?.bad.length === 0, { opened, inViewer });
 
             await h.ev(CD_RECORD_FRAMES(700));
-            await h.cdp("Input.dispatchMouseEvent", { type: "mouseWheel", x: box.x, y: box.y, deltaX: 0, deltaY: -100 });
+            await h.cdp("Input.dispatchMouseEvent", { type: "mouseWheel", x: box.x, y: box.y, deltaX: 0, deltaY: -100, modifiers: 4 });
             await polishNap(800);
             const frames = (await h.ev(`window.__cdFrames`)) ?? [];
             const scales = frames.map((f) => f.scale).filter((s) => s != null);
@@ -51399,7 +51399,7 @@ const chatDiagram = {
             const last = scales[scales.length - 1];
             const between = scales.filter((s) => s > first + 0.001 && s < last - 0.001).length;
             rec(
-                "3. one wheel notch zooms in by about 16%, easing over several frames",
+                "3. one cmd + wheel notch zooms in by about 16%, easing over several frames",
                 first > 0 && Math.abs(last / first - Math.exp(0.15)) < 0.01 && between >= 3,
                 { first, last, between, frames: frames.length }
             );
@@ -51426,10 +51426,15 @@ const chatDiagram = {
             await h.cdp("Input.dispatchMouseEvent", { type: "mouseReleased", x: box.x - 60, y: box.y - 40, button: "left", buttons: 0, clickCount: 1 });
             await polishNap(200);
             const s1 = await scroll();
+            const scaleBefore = await h.ev(CD_SCALE);
+            await h.cdp("Input.dispatchMouseEvent", { type: "mouseWheel", x: box.x, y: box.y, deltaX: 0, deltaY: 120 });
+            await polishNap(400);
+            const s2 = await scroll();
+            const scaleAfter = await h.ev(CD_SCALE);
             rec(
-                "5. zoomed in, the diagram scrolls in its box, and a drag moves the scroll with the pointer",
-                s0.sw > s0.cw && s0.sh > s0.ch && Math.abs(s1.l - s0.l - 60) <= 1 && Math.abs(s1.t - s0.t - 40) <= 1,
-                { s0, s1 }
+                "5. zoomed in, the diagram scrolls in its box: a drag moves the scroll with the pointer, a plain wheel scrolls it without zooming",
+                s0.sw > s0.cw && s0.sh > s0.ch && Math.abs(s1.l - s0.l - 60) <= 1 && Math.abs(s1.t - s0.t - 40) <= 1 && s2.t > s1.t && scaleAfter === scaleBefore,
+                { s0, s1, s2, scaleBefore, scaleAfter }
             );
         } catch (e) {
             rec("the scenario threw", false, String(e?.stack ?? e));

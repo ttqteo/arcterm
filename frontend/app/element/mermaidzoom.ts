@@ -4,8 +4,8 @@
 // The zoom and scroll of a diagram opened full size (mermaidviewer.tsx), and the pixel size it is copied at
 // (mermaidimage.ts). Pure, so the viewer stays a thin shell over it.
 //
-// The viewer is a native scroll box: a trackpad swipe scrolls it on WebKit's scrolling thread, smooth however busy the
-// page's main thread is. Inside it a canvas as big as the zoomed diagram (and never smaller than the box, so a small
+// The viewer is a native scroll box: a trackpad swipe or a mouse wheel scrolls it on WebKit's scrolling thread, smooth
+// however busy the page's main thread is. Inside it a canvas as big as the zoomed diagram (and never smaller than the box, so a small
 // diagram sits centred) holds the diagram, scaled by a transform. A zoom resizes the canvas and moves the scroll so the
 // point under the cursor stays put.
 
@@ -110,41 +110,21 @@ export function wheelZoomFactor(e: WheelInput): number {
     return wheelFactor(e.deltaMode === 1 ? e.deltaY * LINE_PX : e.deltaY);
 }
 
-export type WheelEventInput = WheelInput & {
-    deltaX: number;
-    metaKey: boolean;
-    wheelDeltaX?: number;
-    wheelDeltaY?: number;
-};
+export type WheelEventInput = WheelInput & { metaKey: boolean };
 
 export type WheelAction = { kind: "scroll" } | { kind: "zoom"; factor: number; instant: boolean };
 
-// a trackpad (or Magic Mouse) swipe scrolls in px, and WebKit and Chromium on a Mac give its legacy wheelDelta as -3
-// times the delta; a mouse notch gives ±120 a notch, or counts lines. A wheel without the legacy fields is a swipe when
-// it moves sideways.
-function isSwipe(e: WheelEventInput): boolean {
-    if (e.deltaMode !== 0) {
-        return false;
-    }
-    const wy = e.wheelDeltaY ?? 0;
-    const wx = e.wheelDeltaX ?? 0;
-    if (wy !== 0 || wx !== 0) {
-        return Math.abs(wy + 3 * e.deltaY) < 1 && Math.abs(wx + 3 * e.deltaX) < 1;
-    }
-    return e.deltaX !== 0;
-}
-
-// what a wheel event does in the viewer, the way a design tool reads it: a two-finger swipe is left to the box's own
-// scroll, a pinch (ctrl wheel in Chromium) zooms at once, a mouse notch or a cmd + wheel zooms toward the cursor and
-// eases
+// what a wheel event does in the viewer, the way a design tool or a browser reads it: a plain wheel (a trackpad swipe,
+// a mouse wheel, shift + wheel sideways) is left to the box's own scroll, which runs off the main thread; a pinch (ctrl
+// wheel in Chromium, or a ctrl + mouse wheel) zooms at once; a cmd + wheel zooms toward the cursor and eases
 export function wheelAction(e: WheelEventInput): WheelAction {
     if (e.ctrlKey) {
         return { kind: "zoom", factor: wheelZoomFactor(e), instant: true };
     }
-    if (!e.metaKey && isSwipe(e)) {
-        return { kind: "scroll" };
+    if (e.metaKey) {
+        return { kind: "zoom", factor: wheelZoomFactor(e), instant: false };
     }
-    return { kind: "zoom", factor: wheelZoomFactor(e), instant: false };
+    return { kind: "scroll" };
 }
 
 // the shown zoom eases toward the target one: a wheel notch's 16% jump or a + press glides over ~100 ms instead of

@@ -34,8 +34,8 @@ and a picture given to a line that is not big.
 
 ### Fixed
 
-- A diagram opened full size no longer stutters under a two-finger swipe on a Mac trackpad: the swipe scrolls it the
-  way a page scrolls, smooth even while agents are busy, with the trackpad's momentum.
+- A diagram opened full size no longer stutters when you scroll it: a two-finger swipe or a mouse wheel scrolls it the
+  way a page scrolls, smooth even while agents are busy. Zoom with a pinch, cmd + wheel, or + and -.
 
 ## 1.11.0 — 2026-11-26
 

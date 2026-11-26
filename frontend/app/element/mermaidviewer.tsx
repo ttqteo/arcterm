@@ -1,8 +1,8 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-// A drawn diagram opened full size: a trackpad swipe scrolls it (natively, so it stays smooth while the page is busy), a
-// drag pans, a pinch, cmd + wheel or a mouse wheel zooms toward the cursor, a double click or 0 fits it back, + and -
+// A drawn diagram opened full size: a trackpad swipe or a mouse wheel scrolls it (natively, so it stays smooth while the
+// page is busy), a drag pans, a pinch or cmd + wheel zooms toward the cursor, a double click or 0 fits it back, + and -
 // step the zoom, and Copy image puts the whole diagram on the clipboard. The diagram's own toolbar (Expand, Copy image)
 // sits over it in the chat and shows on hover.
 
@@ -281,7 +281,7 @@ function ViewerBody({ html, onClose }: { html: string; onClose: () => void }) {
         return () => ro.disconnect();
     }, [apply, boxSize, current, natural]);
 
-    // a trackpad swipe is left alone, so the box scrolls it natively (WebKit asks the page only about a gesture's first
+    // a plain wheel is left alone, so the box scrolls it natively (WebKit asks the page only about a gesture's first
     // event). A zoom wheel needs a non-passive listener to keep the chat behind from scrolling. A trackpad pinch
     // reaches Chromium as a ctrl wheel, and WebKit (the Mac app) as gesture events, whose scale counts from the
     // pinch's start.
@@ -295,16 +295,7 @@ function ViewerBody({ html, onClose }: { html: string; onClose: () => void }) {
             return { x: e.clientX - r.left, y: e.clientY - r.top };
         };
         const onWheel = (e: WheelEvent) => {
-            const legacy = e as WheelEvent & { wheelDeltaX?: number; wheelDeltaY?: number };
-            const a = wheelAction({
-                deltaX: e.deltaX,
-                deltaY: e.deltaY,
-                deltaMode: e.deltaMode,
-                ctrlKey: e.ctrlKey,
-                metaKey: e.metaKey,
-                wheelDeltaX: legacy.wheelDeltaX,
-                wheelDeltaY: legacy.wheelDeltaY,
-            });
+            const a = wheelAction(e);
             if (a.kind === "scroll") {
                 stopEase();
                 return;
