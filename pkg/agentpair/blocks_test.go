@@ -192,6 +192,48 @@ func TestJudgeMarksFenceOptions(t *testing.T) {
 	}
 }
 
+func TestJudgeMarksSummary(t *testing.T) {
+	// the last summary line wins; case, a bullet and spaces around the text do not matter
+	raw := "Nothing more.\n\n" + judgeBlock(
+		"summary: the first draft",
+		"- SUMMARY :   Both agree on D1 and D2; A5 waits on you.   ",
+		"no new points",
+	)
+	m, ok := JudgeMarks(raw)
+	if !ok || m.Summary != "Both agree on D1 and D2; A5 waits on you." || !m.NoNewPoints {
+		t.Fatalf("marks = %#v, ok %v", m, ok)
+	}
+	// a summary raises nothing, so it never keeps the exchange going
+	if m.raises() {
+		t.Fatalf("a summary line raises %#v", m)
+	}
+
+	// a line that is no summary: no text, no colon, prose that only starts with the word
+	for name, line := range map[string]string{
+		"no text":      "summary:",
+		"no colon":     "summary of the pair",
+		"prose":        "the summary: not at the start",
+		"not at start": "my summary: x",
+	} {
+		if got, _ := JudgeMarks(judgeBlock(line)); got.Summary != "" {
+			t.Errorf("%s: summary = %q", name, got.Summary)
+		}
+	}
+
+	// outside the arc-judge fence it is prose, and a fence with no summary line has none
+	if got, ok := JudgeMarks("summary: prose\n" + pairBlock("D1 x")); ok || got.Summary != "" {
+		t.Fatalf("read a summary %#v outside a fence", got)
+	}
+	if got, ok := JudgeMarks(judgeBlock("no new points")); !ok || got.Summary != "" {
+		t.Fatalf("marks = %#v, ok %v", got, ok)
+	}
+
+	// the display strips the fence, summary line included
+	if text, _ := Body("Short answer.\n\n" + judgeBlock("summary: for the person", "no new points")); text != "Short answer." {
+		t.Fatalf("body = %q", text)
+	}
+}
+
 func TestBodyTakesOutTheFencesAndTheQuoteLine(t *testing.T) {
 	cases := []struct {
 		name, raw, text, quote string

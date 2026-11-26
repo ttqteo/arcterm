@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -629,9 +630,21 @@ func TestManagerResumeByThePerson(t *testing.T) {
 	if strings.Contains(w[0], "Nothing to add.") {
 		t.Fatal("the judge's reply behind the stop was delivered with the person's message")
 	}
-	if got := r.link.sent("j1"); len(got) != 2 {
-		t.Fatalf("the judge was sent %d prompts: it gets the person's message too", len(got))
+	// the person's message goes to both, but the judge only reads it with the worker's answer: it stays queued
+	if got := r.link.sent("j1"); len(got) != 1 {
+		t.Fatalf("the judge was sent %d prompts: want its brief alone, the person's message waits for the worker's answer", len(got))
 	}
+	if in := r.internal(v.Id); !reflect.DeepEqual(in.Pending["j1"], []string{p.Id}) {
+		t.Fatalf("the judge's queue = %v, want the person's message %s kept", in.Pending["j1"], p.Id)
+	}
+
+	// the worker answers it, and the judge gets the message and the answer in one prompt
+	r.reply("w", "On it.\n"+pairBlock("O1 pilot"))
+	j := r.link.sent("j1")
+	if len(j) != 2 {
+		t.Fatalf("the judge was sent %d prompts: want the person's message with the worker's answer", len(j))
+	}
+	contains(t, "the judge's prompt", j[1], "From the person", "Carry on with the pilot.", `From the working agent "Plan oracle"`, "On it.")
 }
 
 func TestManagerResumeByAWorkerReply(t *testing.T) {
@@ -651,6 +664,298 @@ func TestManagerResumeByAWorkerReply(t *testing.T) {
 	if got := r.link.sent("w"); len(got) != 0 {
 		t.Fatalf("the worker was sent %q: the stopped judge's reply is not delivered now either", got)
 	}
+}
+
+// pausedByNoNewPoints is a pair whose judge said no new points: both agents are idle and nothing waits in either queue
+// (the plan reached the judge inside its brief). It is the state the person speaks into in pair df763872.
+func pausedByNoNewPoints(t *testing.T, r *rig) *wshrpc.PairView {
+	t.Helper()
+	v := r.paired(workerPlan)
+	r.reply("j1", "> Plan v1.\nNothing to add.\n"+judgeBlock("no new points"))
+	view := r.view(v.Id)
+	if view.State != StateStopped || view.StopReason != StopNoNewPoints {
+		t.Fatalf("state %s / %s", view.State, view.StopReason)
+	}
+	if in := r.internal(v.Id); len(in.Pending["w"])+len(in.Pending["j1"]) != 0 {
+		t.Fatalf("pending = %v: want empty queues", in.Pending)
+	}
+	if got := r.link.sent("j1"); len(got) != 1 {
+		t.Fatalf("the judge was sent %d prompts: want its brief alone", len(got))
+	}
+	return view
+}
+
+// the shape of pair df763872: the person's message to both went to the worker and the judge at once, so the judge answered
+// the person instead of judging the worker. Now the judge gets it with the worker's answer, in one prompt.
+func TestPersonToBothWaitsForWorker(t *testing.T) {
+	r := newRig(t)
+	v := pausedByNoNewPoints(t, r)
+
+	if err := r.m.Say(ctx, wshrpc.CommandPairSayData{PairId: v.Id, Text: "Why is the threshold 50%?"}); err != nil {
+		t.Fatal(err)
+	}
+	person := lastLine(r.view(v.Id))
+	if person.From != FromPerson || person.To != ToBoth {
+		t.Fatalf("the person's message = %+v", person)
+	}
+	if w := r.link.sent("w"); len(w) != 1 {
+		t.Fatalf("the worker was sent %q: the message goes to it at once", w)
+	} else {
+		contains(t, "the worker's prompt", w[0], "Why is the threshold 50%?")
+	}
+	if got := r.link.sent("j1"); len(got) != 1 {
+		t.Fatalf("the judge was sent %d prompts: the person's message is only context until the worker answers it", len(got))
+	}
+	if in := r.internal(v.Id); !reflect.DeepEqual(in.Pending["j1"], []string{person.Id}) {
+		t.Fatalf("the judge's queue = %v, want the message kept as context", in.Pending["j1"])
+	}
+
+	// the worker answers the person: the judge now gets the question and the answer in one prompt
+	r.reply("w", "Because the pilot says so.\n"+pairBlock("O1 pilot threshold"))
+	answer := lastWorkerMsg(r.view(v.Id))
+	if answer.ReplyTo != person.Id {
+		t.Fatalf("the worker's answer replies to %q, want %s", answer.ReplyTo, person.Id)
+	}
+	j := r.link.sent("j1")
+	if len(j) != 2 {
+		t.Fatalf("the judge was sent %d prompts: want the person's message with the worker's answer in one", len(j))
+	}
+	contains(t, "the judge's prompt", j[1], "From the person", "Why is the threshold 50%?", `From the working agent "Plan oracle"`, "Because the pilot says so.")
+	if strings.Index(j[1], "Why is the threshold 50%?") > strings.Index(j[1], "Because the pilot says so.") {
+		t.Fatal("the answer comes before the question")
+	}
+	if in := r.internal(v.Id); len(in.Pending["j1"]) != 0 {
+		t.Fatalf("the judge's queue = %v: both were delivered", in.Pending["j1"])
+	}
+
+	// the judge's reply answers the worker's answer, not the person
+	r.reply("j1", "> Because the pilot says so.\nThe pilot was never checked.\n"+judgeBlock("new: the pilot was never checked"))
+	if reply := lastLine(r.view(v.Id)); reply.From != FromJudge || reply.ReplyTo != answer.Id {
+		t.Fatalf("the judge's reply = %+v, want it to answer the worker's message %s", reply, answer.Id)
+	}
+}
+
+// a judge's queue that holds a message that calls (the worker's reply) and a person's message to both that does not call
+// yet sends the first alone: the person's message would otherwise go out ahead of the worker's answer to it
+func TestPersonToBothNotSentWithACallingMessage(t *testing.T) {
+	r := newRig(t)
+	v := r.paired(workerPlan)
+	r.link.setState("j1", "working") // the judge is still on the plan: what comes now waits in its queue
+
+	r.reply("w", "Second thought.\n"+pairBlock("O1 changed")) // m2: calls the judge
+	if err := r.m.Say(ctx, wshrpc.CommandPairSayData{PairId: v.Id, Text: "Why 50%?"}); err != nil {
+		t.Fatal(err)
+	}
+	person := lastLine(r.view(v.Id)) // m3: to both, and the worker has it and has not answered
+	if in := r.internal(v.Id); !reflect.DeepEqual(in.Pending["j1"], []string{"m2", person.Id}) {
+		t.Fatalf("the judge's queue = %v, want the worker's reply and the person's message", in.Pending["j1"])
+	}
+	if got := r.link.sent("j1"); len(got) != 1 {
+		t.Fatalf("the judge was sent %d prompts while it was working", len(got))
+	}
+
+	// its turn ends: the worker's reply goes alone, and the person's message is not among the ids removed
+	r.reply("j1", "> Plan v1.\nFine.")
+	j := r.link.sent("j1")
+	if len(j) != 2 {
+		t.Fatalf("the judge was sent %d prompts: want the worker's reply at its turn end", len(j))
+	}
+	contains(t, "the judge's prompt", j[1], "Second thought.")
+	if strings.Contains(j[1], "Why 50%?") {
+		t.Fatalf("the person's message went out ahead of the worker's answer to it:\n%s", j[1])
+	}
+	if in := r.internal(v.Id); !reflect.DeepEqual(in.Pending["j1"], []string{person.Id}) {
+		t.Fatalf("the judge's queue = %v, want only %s left", in.Pending["j1"], person.Id)
+	}
+
+	// the worker answers the person while the judge works; the next turn end takes the question and the answer in one
+	r.reply("w", "Because.\n"+pairBlock("O1 x"))
+	if got := r.link.sent("j1"); len(got) != 2 {
+		t.Fatalf("the judge was sent %d prompts while it was working", len(got))
+	}
+	r.reply("j1", "> Second thought.\nOk.")
+	j = r.link.sent("j1")
+	if len(j) != 3 {
+		t.Fatalf("the judge was sent %d prompts: want the question and the answer at its turn end", len(j))
+	}
+	contains(t, "the judge's prompt", j[2], "Why 50%?", "Because.")
+	if in := r.internal(v.Id); len(in.Pending["j1"]) != 0 {
+		t.Fatalf("the judge's queue = %v: both were delivered", in.Pending["j1"])
+	}
+}
+
+// @judge and a judge's own tab call the judge at once, with no waiting for the worker
+func TestPersonToJudgeCallsAtOnce(t *testing.T) {
+	for _, to := range []string{ToJudge, "j1"} {
+		t.Run(to, func(t *testing.T) {
+			r := newRig(t)
+			v := pausedByNoNewPoints(t, r)
+			if err := r.m.Say(ctx, wshrpc.CommandPairSayData{PairId: v.Id, Text: "Judge, is 50% right?", To: to}); err != nil {
+				t.Fatal(err)
+			}
+			j := r.link.sent("j1")
+			if len(j) != 2 {
+				t.Fatalf("the judge was sent %d prompts: want the message at once", len(j))
+			}
+			contains(t, "the judge's prompt", j[1], "From the person", "Judge, is 50% right?")
+			if got := r.link.sent("w"); len(got) != 0 {
+				t.Fatalf("the worker was sent %q: the message was not for it", got)
+			}
+			if view := r.view(v.Id); view.State != StateRelaying {
+				t.Fatalf("state %s: a message to the judge resumes the pair", view.State)
+			}
+		})
+	}
+}
+
+// callsFor is the waiting rule alone: on a judge's side a person's message to both (a To of "" reads as both) calls only
+// once the worker has answered it
+func TestCallsForThePersonsMessage(t *testing.T) {
+	p := &Pair{
+		Worker: Side{Tab: "w"},
+		Judges: []Side{{Tab: "j1"}},
+		Messages: []Message{
+			{Id: "m1", From: FromWorker, Tab: "w"},
+			{Id: "m2", From: FromPerson, To: ToBoth},
+		},
+		Pending: map[string][]string{"w": {"m2"}, "j1": {"m2"}},
+	}
+	for _, to := range []string{ToBoth, ""} {
+		p.Messages[1].To = to
+		person := p.Messages[1]
+		if !callsFor(p, "w", person) {
+			t.Errorf("to %q: the worker is not called by the person's message", to)
+		}
+		if callsFor(p, "j1", person) {
+			t.Errorf("to %q: the judge is called while the message waits in the worker's queue", to)
+		}
+		p.Pending["w"] = nil // delivered: the worker has it and has not answered
+		if callsFor(p, "j1", person) {
+			t.Errorf("to %q: the judge is called before any worker message follows it", to)
+		}
+		p.Messages = append(p.Messages, Message{Id: "m3", From: FromWorker, Tab: "w"})
+		if !callsFor(p, "j1", person) {
+			t.Errorf("to %q: the judge is not called once the worker answered", to)
+		}
+		p.Messages, p.Pending["w"] = p.Messages[:2], []string{"m2"} // back to the start
+	}
+
+	// the same message to the judge alone, or to a judge's tab, calls at once; so does the worker's reply
+	for _, to := range []string{ToJudge, "j1"} {
+		if !callsFor(p, "j1", Message{Id: "m2", From: FromPerson, To: to}) {
+			t.Errorf("to %q: the judge is not called at once", to)
+		}
+	}
+	if !callsFor(p, "j1", p.Messages[0]) {
+		t.Error("the worker's message does not call the judge")
+	}
+	if callsFor(p, "j1", Message{Id: "mj", From: FromJudge, Tab: "j2"}) {
+		t.Error("another judge's message calls the judge")
+	}
+}
+
+func TestPauseSnapshot(t *testing.T) {
+	// the pause message keeps today's line as its text, and the lists and the judge's summary as they were
+	t.Run("no new points", func(t *testing.T) {
+		r := newRig(t)
+		v := r.paired("Checked.\n" + pairBlock("D1 threshold first", "O2 pilot split", "A3 Is 50% fine? [Yes | No]"))
+		r.reply("j1", "> Checked.\nNothing to add.\n"+judgeBlock("summary: D1 is agreed, O2 is open, A3 waits on you.", "no new points"))
+		view := r.view(v.Id)
+		line := lastLine(view)
+		if line.From != FromSystem || line.Text != "Paused: the judge has no new points" || line.Pause == nil {
+			t.Fatalf("last line = %+v", line)
+		}
+		got := *line.Pause
+		if got.Reason != StopNoNewPoints || got.Summary != "D1 is agreed, O2 is open, A3 waits on you." {
+			t.Fatalf("pause = %+v", got)
+		}
+		if len(got.Decided.Agreed) != 1 || len(got.Decided.Open) != 1 || len(got.Decided.Asks) != 1 || got.Decided.Asks[0].Num != 3 {
+			t.Fatalf("decided = %+v", got.Decided)
+		}
+		if !reflect.DeepEqual(got.Decided, view.Decided) {
+			t.Fatalf("the snapshot %+v is not the lists at that moment %+v", got.Decided, view.Decided)
+		}
+		if back := r.manager().mustGet(t, v.Id); lastLine(back).Pause == nil || !reflect.DeepEqual(*lastLine(back).Pause, got) {
+			t.Fatalf("the file holds %+v, want %+v", lastLine(back).Pause, got)
+		}
+
+		// a later list does not move an older pause's snapshot
+		r.reply("w", "More.\n"+pairBlock("D1 threshold first", "D2 pilot split", "A3 Is 50% fine? [Yes | No]", "O4 new thing"))
+		later := r.view(v.Id)
+		if len(later.Decided.Agreed) != 2 {
+			t.Fatalf("decided = %+v", later.Decided)
+		}
+		for _, m := range later.Messages {
+			if m.Pause != nil && !reflect.DeepEqual(*m.Pause, got) {
+				t.Fatalf("the pause now reads %+v, want the snapshot %+v", *m.Pause, got)
+			}
+		}
+	})
+
+	t.Run("both agree", func(t *testing.T) {
+		r := newRig(t)
+		v := r.paired("All settled.\n" + pairBlock("D1 threshold first"))
+		r.reply("j1", "> All settled.\nAgreed.\n```arc-judge\nsummary: nothing is open.\n```")
+		line := lastLine(r.view(v.Id))
+		if line.Text != "Paused: both agree" || line.Pause == nil || line.Pause.Reason != StopSettled || line.Pause.Summary != "nothing is open." ||
+			len(line.Pause.Decided.Agreed) != 1 {
+			t.Fatalf("last line = %+v / %+v", line, line.Pause)
+		}
+	})
+
+	// the cap is hit at the worker's turn end: no judge message follows its newest, so there is no summary, even though an
+	// older judge message wrote one
+	t.Run("token cap", func(t *testing.T) {
+		r := newRig(t)
+		r.link.agent("w").tokens, r.link.agent("j1").tokens = 600_000, 500_000
+		r.link.give("w", workerPlan)
+		v := r.start(wshrpc.CommandPairStartData{TokenCap: 2_000_000})
+		r.link.setState("j1", "idle")
+		r.reply("j1", "> Plan v1.\nOne finding.\n"+judgeBlock("summary: an older summary", "new: a"))
+		r.link.agent("w").tokens = 1_500_000
+		r.reply("w", "More.\n"+pairBlock("O1 a"))
+		line := lastLine(r.view(v.Id))
+		if line.Text != "Paused: token cap reached (2.0M)" || line.Pause == nil || line.Pause.Reason != StopTokenCap || line.Pause.Summary != "" {
+			t.Fatalf("last line = %+v / %+v", line, line.Pause)
+		}
+		if len(line.Pause.Decided.Open) != 1 {
+			t.Fatalf("decided = %+v", line.Pause.Decided)
+		}
+	})
+
+	// the summary is the newest judge message's after the worker's newest, whatever the reason: here the cap came with the
+	// judge's reply
+	t.Run("token cap at a judge's reply", func(t *testing.T) {
+		r := newRig(t)
+		r.link.give("w", workerPlan)
+		v := r.start(wshrpc.CommandPairStartData{})
+		r.link.setState("j1", "idle")
+		r.link.agent("w").tokens = 3_500_000 // over the default cap by the time the judge's reply is counted
+		r.reply("j1", "> Plan v1.\nA finding.\n"+judgeBlock("summary: the budget is spent", "new: a"))
+		line := lastLine(r.view(v.Id))
+		if line.Pause == nil || line.Pause.Reason != StopTokenCap || line.Pause.Summary != "the budget is spent" {
+			t.Fatalf("last line = %+v / %+v", line, line.Pause)
+		}
+	})
+
+	// no list at all: the snapshot's lists are empty slices, so the wire carries [] and not null
+	t.Run("no judge is left", func(t *testing.T) {
+		r := newRig(t)
+		v := r.paired("A plan with no list.")
+		delete(r.link.agents, "j1")
+		r.reply("w", "Again, still none.")
+		line := lastLine(r.view(v.Id))
+		if line.Text != "Paused: no judge is left" || line.Pause == nil || line.Pause.Reason != StopJudgesGone || line.Pause.Summary != "" {
+			t.Fatalf("last line = %+v / %+v", line, line.Pause)
+		}
+		data, err := json.Marshal(line.Pause)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if bytes.Contains(data, []byte("null")) {
+			t.Fatalf("the snapshot holds a null: %s", data)
+		}
+	})
 }
 
 func TestManagerTokenCapStopsTheExchange(t *testing.T) {
@@ -705,8 +1010,14 @@ func TestManagerResumeNotByAWorkerReplyAfterTheTokenCap(t *testing.T) {
 	if got := r.link.sent("j1"); len(got) != 1 {
 		t.Fatalf("the judge was sent %d prompts", len(got))
 	}
+	// the pair does not follow the worker while it is stopped at the cap: the reply is not in the conversation
+	for _, m := range view.Messages {
+		if strings.Contains(m.Text, "Another reply.") {
+			t.Fatalf("the worker's reply after the cap is in the conversation: %+v", m)
+		}
+	}
 	if r.published() == pubs {
-		t.Fatal("the worker's reply changed the pair and published nothing")
+		t.Fatal("the worker's reply moved the seen mark and published nothing")
 	}
 
 	// the person resumes it; the cap counts again from now
@@ -718,14 +1029,192 @@ func TestManagerResumeNotByAWorkerReplyAfterTheTokenCap(t *testing.T) {
 	if view.State != StateRelaying || view.StopReason != "" || view.Tokens != 0 {
 		t.Fatalf("state %s / %s, tokens %d after the person's message", view.State, view.StopReason, view.Tokens)
 	}
+	person := lastLine(view)
 	if in := r.internal(v.Id); in.CapFromTs <= in.CreatedTs {
 		t.Fatalf("the cap counts from %d, pairing was at %d", in.CapFromTs, in.CreatedTs)
 	}
+	// the worker gets the judge's finding and the person's message; the judge nothing yet, because the person's message
+	// waits for the worker's answer
+	if w := r.link.sent("w"); len(w) != 1 {
+		t.Fatalf("the worker was sent %d prompts: want the judge's finding and the person's message in one", len(w))
+	} else {
+		contains(t, "the worker's prompt", w[0], "A finding.", "Spend a bit more.")
+		if strings.Contains(w[0], "Another reply.") {
+			t.Fatal("the worker was sent its own reply")
+		}
+	}
+	if got := r.link.sent("j1"); len(got) != 1 {
+		t.Fatalf("the judge was sent %d prompts: the person's message waits for the worker's answer", len(got))
+	}
+
+	// it reaches the judge with the worker's next answer, in one prompt
+	r.reply("w", "Noted, spending more.\n"+pairBlock("O1 a"))
 	j := r.link.sent("j1")
 	if len(j) != 2 {
-		t.Fatalf("the judge was sent %d prompts: want the held reply and the person's message in one", len(j))
+		t.Fatalf("the judge was sent %d prompts: want the person's message and the worker's answer", len(j))
 	}
-	contains(t, "the judge's prompt", j[1], "Another reply.", "Spend a bit more.")
+	contains(t, "the judge's prompt", j[1], "Spend a bit more.", "Noted, spending more.")
+	if strings.Contains(j[1], "Another reply.") {
+		t.Fatal("the reply after the cap reached the judge")
+	}
+	if got := r.view(v.Id); !hasMessage(got, FromWorker, "Noted, spending more.") || lastWorkerMsg(got).ReplyTo != person.Id {
+		t.Fatalf("the worker's answer = %+v, want it to answer the person's message %s", lastWorkerMsg(got), person.Id)
+	}
+}
+
+// hasMessage reports whether the conversation holds a message of the author whose shown text starts with text.
+func hasMessage(v *wshrpc.PairView, from, text string) bool {
+	for _, m := range v.Messages {
+		if m.From == from && strings.HasPrefix(m.Text, text) {
+			return true
+		}
+	}
+	return false
+}
+
+// a pair stopped at the token cap does not follow the worker: its turns are not recorded, not queued for the judge and do not
+// take the held commands, but the pair marks them seen so they are not taken as new once it resumes
+func TestWorkerAfterTokenCapNotFollowed(t *testing.T) {
+	r := newRig(t)
+	r.link.agent("w").tokens = 3_500_000
+	r.link.give("w", workerPlan)
+	v := r.start(wshrpc.CommandPairStartData{})
+	r.link.setState("j1", "idle")
+	r.reply("j1", "> Plan v1.\nA finding.\n"+judgeBlock("new: a"))
+	if view := r.view(v.Id); view.StopReason != StopTokenCap {
+		t.Fatalf("stop = %q", view.StopReason)
+	}
+	r.m.mu.Lock()
+	r.m.pairs[v.Id].Held = []wshrpc.PairHeld{{Command: "go test ./...", Ts: 1}}
+	r.m.mu.Unlock()
+	before := r.internal(v.Id)
+	count, seenBefore := len(before.Messages), before.Seen["w"]
+	pendingBefore := map[string][]string{}
+	for tab, ids := range before.Pending { // internal copies the struct, not its maps
+		pendingBefore[tab] = slices.Clone(ids)
+	}
+
+	// two turns the person started in the worker's own Chat
+	r.reply("w", "Off-topic one.\n"+pairBlock("O1 a"))
+	r.reply("w", "Off-topic two.\n"+pairBlock("O1 a"))
+
+	after := r.internal(v.Id)
+	if len(after.Messages) != count {
+		t.Fatalf("the conversation holds %d messages, had %d: a worker turn after the cap is not recorded", len(after.Messages), count)
+	}
+	if !reflect.DeepEqual(after.Pending, pendingBefore) {
+		t.Fatalf("pending = %v, was %v: the turns are not queued for the judge", after.Pending, pendingBefore)
+	}
+	if !reflect.DeepEqual(after.Held, before.Held) || len(after.Held) != 1 {
+		t.Fatalf("held = %+v, was %+v: the held commands wait for a message that is recorded", after.Held, before.Held)
+	}
+	if after.State != StateStopped || after.StopReason != StopTokenCap {
+		t.Fatalf("state %s / %s", after.State, after.StopReason)
+	}
+	if after.Seen["w"] <= seenBefore {
+		t.Fatalf("seen mark %d, was %d: the turns are marked seen", after.Seen["w"], seenBefore)
+	}
+	if got := r.link.sent("j1"); len(got) != 1 {
+		t.Fatalf("the judge was sent %d prompts", len(got))
+	}
+	// the mark is saved: the file a fresh manager reads holds it
+	fresh := r.manager()
+	fresh.mustGet(t, v.Id)
+	fresh.mu.Lock()
+	savedSeen := fresh.pairs[v.Id].Seen["w"]
+	fresh.mu.Unlock()
+	if savedSeen != after.Seen["w"] {
+		t.Fatalf("the file holds seen mark %d, want %d", savedSeen, after.Seen["w"])
+	}
+
+	// the pair follows again once it resumes, and the turns it passed are not taken then
+	r.link.agent("w").tokens = 0
+	if err := r.m.Say(ctx, wshrpc.CommandPairSayData{PairId: v.Id, Text: "Go on.", To: ToWorker}); err != nil {
+		t.Fatal(err)
+	}
+	r.m.TurnEnded(ctx, "w")
+	if view := r.view(v.Id); hasMessage(view, FromWorker, "Off-topic") {
+		t.Fatalf("a turn passed during the stop was taken after the resume: %+v", view.Messages)
+	}
+	r.reply("w", "Back on topic.\n"+pairBlock("O1 a"))
+	if view := r.view(v.Id); !hasMessage(view, FromWorker, "Back on topic.") {
+		t.Fatalf("the worker's first turn after the resume is not recorded: %+v", view.Messages)
+	}
+}
+
+// a reply never quotes a message its author has already answered: a second turn of the worker after one that answered the
+// person's message has no ReplyTo, and the view draws no quote for it
+func TestReplyNeverQuotesAnAnsweredMessage(t *testing.T) {
+	r := newRig(t)
+	v := pausedByNoNewPoints(t, r)
+	if err := r.m.Say(ctx, wshrpc.CommandPairSayData{PairId: v.Id, Text: "Why is the threshold 50%?"}); err != nil {
+		t.Fatal(err)
+	}
+	person := lastLine(r.view(v.Id))
+
+	r.reply("w", "Because the pilot says so.\n"+pairBlock("O1 pilot"))
+	first := lastWorkerMsg(r.view(v.Id))
+	if first.ReplyTo != person.Id || first.Quote != "Why is the threshold 50%?" {
+		t.Fatalf("the first answer = %+v, want it to answer and quote the person's message %s", first, person.Id)
+	}
+
+	// a turn of its own, started in the worker's Chat: nothing it was sent is left to answer. The judge's reply behind the
+	// earlier stop was never sent to it, and it must not be quoted either.
+	r.reply("w", "An aside, on something else.\n"+pairBlock("O1 pilot", "O2 aside"))
+	second := lastWorkerMsg(r.view(v.Id))
+	if second.Id == first.Id || second.ReplyTo != "" || second.Quote != "" {
+		t.Fatalf("the second turn = %+v, want no ReplyTo and no quote", second)
+	}
+
+	// the same rule for a judge. It was sent the person's message and the first answer together, and its reply answers the
+	// newest of them; the aside was sent after, and its next reply answers that
+	r.reply("j1", "> Because the pilot says so.\nFine.")
+	if got := lastLine(r.view(v.Id)); got.From != FromJudge || got.ReplyTo != first.Id {
+		t.Fatalf("the judge's reply = %+v, want it to answer the worker's first answer %s", got, first.Id)
+	}
+	r.reply("j1", "Now the aside.")
+	if got := lastLine(r.view(v.Id)); got.From != FromJudge || got.ReplyTo != second.Id {
+		t.Fatalf("the judge's reply = %+v, want it to answer the aside %s", got, second.Id)
+	}
+	// a turn of its own: the aside is answered, and neither is the person's message that came in with the first answer
+	r.reply("j1", "One more thought of mine.")
+	if got := lastLine(r.view(v.Id)); got.From != FromJudge || got.ReplyTo != "" || got.Quote != "" {
+		t.Fatalf("the judge's own turn = %+v, want no ReplyTo and no quote", got)
+	}
+}
+
+// after a stop that is not the cap, a worker's answer still resumes the pair and is recorded and passed to the judge
+func TestWorkerAnswerResumesNoNewPoints(t *testing.T) {
+	cases := map[string]struct {
+		worker, judge, reason string
+	}{
+		"no new points": {workerPlan, judgeBlock("no new points"), StopNoNewPoints},
+		"both agree":    {"Settled.\n" + pairBlock("D1 a"), "```arc-judge\n```", StopSettled},
+	}
+	for name, c := range cases {
+		t.Run(name, func(t *testing.T) {
+			r := newRig(t)
+			v := r.paired(c.worker)
+			r.reply("j1", "> Plan v1.\nNothing to add.\n"+c.judge)
+			if view := r.view(v.Id); view.State != StateStopped || view.StopReason != c.reason {
+				t.Fatalf("state %s / %s, want a %s stop", view.State, view.StopReason, c.reason)
+			}
+
+			r.reply("w", "One more thing the person asked me.\n"+pairBlock("O1 more"))
+			view := r.view(v.Id)
+			if view.State != StateRelaying || view.StopReason != "" {
+				t.Fatalf("state %s / %s after the worker's answer", view.State, view.StopReason)
+			}
+			if !hasMessage(view, FromWorker, "One more thing the person asked me.") {
+				t.Fatalf("the worker's answer is not recorded: %+v", view.Messages)
+			}
+			j := r.link.sent("j1")
+			if len(j) != 2 {
+				t.Fatalf("the judge was sent %d prompts: the worker's new answer passes on", len(j))
+			}
+			contains(t, "the judge's prompt", j[1], "One more thing the person asked me.")
+		})
+	}
 }
 
 func countSystem(v *wshrpc.PairView, text string) int {

@@ -85,7 +85,7 @@ type BlockItem struct {
 	Chips []string // an A item's answer chips: [a | b]
 }
 
-// The line patterns below (itemLine, chipsTail, reopenLine, newLine, noNewLine) are mirrored in
+// The line patterns below (itemLine, chipsTail, reopenLine, newLine, summaryLine, noNewLine) are mirrored in
 // frontend/app/view/agents/pairblocks.ts, which draws the blocks as cards in Chat: keep the two sides identical.
 // `D1 text`, `O2: text`, `A3 text`; a Markdown bullet before it is read past, as parseSteps does for arc-steps
 var itemLine = regexp.MustCompile(`^\s*(?:[-*+]\s+)?([DOAdoa])(\d+):?\s+(\S.*?)\s*$`)
@@ -161,25 +161,30 @@ type Reopen struct {
 }
 
 // Marks is what a judge's arc-judge fence says: the items it reopens, the points it raises that the working agent has
-// not listed, and whether it has nothing to add.
+// not listed, whether it has nothing to add, and the few sentences it sums the pair up with for the person (the last
+// `summary:` line; "" when it wrote none).
 type Marks struct {
 	Reopen      []Reopen
 	New         []string
 	NoNewPoints bool
+	Summary     string
 }
 
-// raises reports whether the marks hold something the working agent has to answer.
+// raises reports whether the marks hold something the working agent has to answer. A summary is for the person, so it
+// raises nothing.
 func (m Marks) raises() bool { return len(m.Reopen) > 0 || len(m.New) > 0 }
 
 var (
-	reopenLine = regexp.MustCompile(`(?i)^\s*(?:[-*+]\s+)?reopen\s+d?(\d+)\s*(?::\s*(.*?))?\s*$`)
-	newLine    = regexp.MustCompile(`(?i)^\s*(?:[-*+]\s+)?new\s*:\s*(\S.*?)\s*$`)
-	noNewLine  = regexp.MustCompile(`(?i)^\s*(?:[-*+]\s+)?no\s+new\s+points?\b`)
+	reopenLine  = regexp.MustCompile(`(?i)^\s*(?:[-*+]\s+)?reopen\s+d?(\d+)\s*(?::\s*(.*?))?\s*$`)
+	newLine     = regexp.MustCompile(`(?i)^\s*(?:[-*+]\s+)?new\s*:\s*(\S.*?)\s*$`)
+	summaryLine = regexp.MustCompile(`(?i)^\s*(?:[-*+]\s+)?summary\s*:\s*(\S.*?)\s*$`)
+	noNewLine   = regexp.MustCompile(`(?i)^\s*(?:[-*+]\s+)?no\s+new\s+points?\b`)
 )
 
 // JudgeMarks reads a judge's marks from the last top-level arc-judge fence of its reply: `reopen D2: why` (or
-// `reopen 2: why`), `new: point`, `no new points`, in any case. A line that does not parse is skipped. ok is true when
-// the reply has the fence, even an empty one: a judge that wrote it looked at the list and had nothing to mark.
+// `reopen 2: why`), `new: point`, `summary: a few sentences` (the last one counts), `no new points`, in any case. A
+// line that does not parse is skipped. ok is true when the reply has the fence, even an empty one: a judge that wrote it
+// looked at the list and had nothing to mark.
 func JudgeMarks(raw string) (m Marks, ok bool) {
 	f, found := lastFence(raw, judgeLang)
 	if !found {
@@ -192,6 +197,8 @@ func JudgeMarks(raw string) (m Marks, ok bool) {
 			}
 		} else if n := newLine.FindStringSubmatch(line); n != nil {
 			m.New = append(m.New, n[1])
+		} else if s := summaryLine.FindStringSubmatch(line); s != nil {
+			m.Summary = s[1]
 		} else if noNewLine.MatchString(line) {
 			m.NoNewPoints = true
 		}

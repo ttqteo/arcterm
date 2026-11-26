@@ -46,7 +46,11 @@ func JudgeBrief(in JudgeBriefInput) string {
 		"```\n\n" +
 		"- `reopen D2: why` (or `reopen 2: why`) moves an agreed item back to open until the agent changes it in its next block.\n" +
 		"- `new: point` raises something the agent's block does not list yet.\n" +
-		"- `no new points` on a line of its own says you have nothing to add. The exchange pauses when every judge says it.\n\n" +
+		"- `no new points` on a line of its own says you have nothing to add. The exchange pauses when every judge says it. " +
+		"When you write it, put a `summary: ` line above it in the same block: a few sentences, on one line, that sum the pair up for the person " +
+		"(what is agreed, what is still open, what waits on them), in the person's language.\n\n" +
+		"A message from the person can reach you together with the agent's answer to it. Then judge that answer: " +
+		"check it against what the person asked, and do not answer the person yourself. A message that reaches you with no answer of the agent's is yours to answer.\n\n" +
 		"Start your reply with `> ` and the line you answer, so the conversation can quote it.\n")
 	if reply := strings.TrimSpace(in.Reply); reply != "" {
 		b.WriteString("\n--- the agent's latest reply ---\n" + reply + "\n--- end of the reply ---\n")

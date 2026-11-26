@@ -42,6 +42,33 @@ func TestJudgeBriefHoldsWhatTheSpecSays(t *testing.T) {
 	}
 }
 
+// at no new points the judge first sums the pair up for the person, in a summary line of the same block; a message of the
+// person that arrives with the agent's answer is judged through that answer
+func TestJudgeBriefAsksForASummaryAtNoNewPoints(t *testing.T) {
+	got := JudgeBrief(JudgeBriefInput{WorkerName: "w", WorkerTab: "t"})
+	for _, want := range []string{
+		"a few sentences",
+		"the person's language",
+		"agent's answer to it", // a person's message reaches the judge with the answer
+		"judge that answer",
+		"do not answer the person yourself",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("the brief does not hold %q:\n%s", want, got)
+		}
+	}
+	// the summary line is asked for in the bullet that explains no new points, above that line
+	var bullet string
+	for line := range strings.SplitSeq(got, "\n") {
+		if strings.HasPrefix(line, "- `no new points`") {
+			bullet = line
+		}
+	}
+	if bullet == "" || !strings.Contains(bullet, "`summary: ") || !strings.Contains(bullet, "above it") {
+		t.Errorf("the no-new-points bullet does not ask for a summary line above it: %q", bullet)
+	}
+}
+
 // the example fence of the brief is a block arcterm reads, and it reads it the way the brief says
 func TestJudgeBriefExampleFenceParses(t *testing.T) {
 	brief := JudgeBrief(JudgeBriefInput{WorkerName: "w", WorkerTab: "t"})

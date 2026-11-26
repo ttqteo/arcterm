@@ -472,6 +472,27 @@ func (m *Manager) addSystem(p *Pair, text string) {
 	p.Messages = append(p.Messages, Message{Id: nextId(p), From: FromSystem, Ts: m.nowMs(), Raw: text})
 }
 
+// addPause writes the system message that says the pair paused. Its Raw is the "Paused: …" line, so a reader that knows
+// no Pause (wsh read, an old frontend) still reads a line. Its Pause keeps the moment: why, the judge's summary and the
+// Decided lists then, so the card is drawn from the file and a later list never shows on an older pause.
+func (m *Manager) addPause(p *Pair, text, reason string) {
+	pause := &wshrpc.PairPause{Reason: reason, Summary: pauseSummary(p), Decided: Decided(p)}
+	p.Messages = append(p.Messages, Message{Id: nextId(p), From: FromSystem, Ts: m.nowMs(), Raw: text, Pause: pause})
+}
+
+// pauseSummary is the `summary:` line of the newest judge message after the working agent's newest one, the reply that
+// caused the pause; "" when there is no such message or it wrote none. Whatever the pause's reason, this is the one place
+// the summary is read.
+func pauseSummary(p *Pair) string {
+	for i := len(p.Messages) - 1; i > newestWorker(p); i-- {
+		if p.Messages[i].From == FromJudge {
+			marks, _ := JudgeMarks(p.Messages[i].Raw)
+			return marks.Summary
+		}
+	}
+	return ""
+}
+
 // resume puts a stopped pair back to relaying. After a token-cap stop the cap counts again from now.
 func resume(p *Pair, now int64) {
 	if p.StopReason == StopTokenCap {
@@ -527,11 +548,37 @@ func enqueue(p *Pair, msg Message) {
 // callsFor reports whether a message asks the agent at tab to answer. A working agent answers a judge or the person; a
 // judge answers the working agent or the person. Another judge's message is context for its next prompt: two judges
 // answering each other would talk past the working agent for good.
+//
+// A person's message to both calls a judge only once the working agent has answered it. Until then the judge holds it as
+// context, and it comes with the worker's answer in one prompt: the judge judges that answer and does not answer the
+// person alongside it. A message to the judge alone (`@judge`, or its tab) calls at once.
 func callsFor(p *Pair, tab string, msg Message) bool {
 	if tab == p.Worker.Tab {
 		return msg.From == FromJudge || msg.From == FromPerson
 	}
-	return msg.From == FromWorker || msg.From == FromPerson
+	switch msg.From {
+	case FromWorker:
+		return true
+	case FromPerson:
+		return !toBoth(msg) || workerAnswered(p, msg)
+	}
+	return false
+}
+
+// toBoth reports whether the person's message goes to every member, as recipients reads it: no To is both.
+func toBoth(msg Message) bool { return msg.To == ToBoth || msg.To == "" }
+
+// workerAnswered reports whether the working agent has answered a message: it has been taken out of the agent's queue (it
+// was sent) and a message of the agent's comes after it.
+func workerAnswered(p *Pair, msg Message) bool {
+	i := messageIndex(p, msg.Id)
+	return i >= 0 && !slices.Contains(p.Pending[p.Worker.Tab], msg.Id) && newestWorker(p) > i
+}
+
+// waitsForAnswer reports whether a message in tab's queue is only context for now: the person's message to both, that the
+// working agent has not answered yet and so does not call the judge. It stays in the queue when the queue is sent.
+func waitsForAnswer(p *Pair, tab string, msg Message) bool {
+	return msg.From == FromPerson && !callsFor(p, tab, msg)
 }
 
 func callsForAnswer(p *Pair, tab string) bool {
@@ -556,15 +603,25 @@ func removeIds(p *Pair, tab string, ids []string) {
 	p.Pending[tab] = left
 }
 
-// answeredBy is the message a reply from tab answers: the newest one relayed to it that called for an answer.
+// answeredBy is the message a reply from tab answers: the newest one that was sent to it and called for an answer. A reply
+// never quotes a message its author has already answered: when the newest one was, the reply answers nothing (a turn of
+// the agent's own), and it does not fall back to an older one, which came in the same batch or was never sent.
 func answeredBy(p *Pair, tab string) string {
 	for i := len(p.Messages) - 1; i >= 0; i-- {
 		msg := p.Messages[i]
 		if callsFor(p, tab, msg) && slices.Contains(recipients(p, msg), tab) && !slices.Contains(p.Pending[tab], msg.Id) {
+			if answeredAlready(p, tab, msg.Id) {
+				return ""
+			}
 			return msg.Id
 		}
 	}
 	return ""
+}
+
+// answeredAlready reports whether a message from tab already replies to the message.
+func answeredAlready(p *Pair, tab, id string) bool {
+	return slices.ContainsFunc(p.Messages, func(m Message) bool { return m.Tab == tab && m.ReplyTo == id })
 }
 
 // TurnEnded is a member of a pair reporting idle: take what it answered, count tokens, run the stop rule and deliver
@@ -666,7 +723,9 @@ func (m *Manager) catchUp(ctx context.Context, id string, tabs []string, trustGo
 
 // takeAnswer adds the agent's latest answer to the conversation when the pair has not taken it yet, and says whose it
 // was (FromWorker, FromJudge, or "" when there was nothing new). It resumes a stopped pair when the working agent's
-// reply is the new one, except after a token-cap stop: spending more is the person's call.
+// reply is the new one, except after a token-cap stop: spending more is the person's call, so the pair does not follow
+// the working agent then. Its turn is neither recorded nor queued for the judge and leaves the held commands alone, but
+// it is marked seen (and saved), so it is not taken as new once the pair resumes.
 func (m *Manager) takeAnswer(ctx context.Context, id, tab string) string {
 	text, ts, err := m.Link.LastAnswer(ctx, tab)
 	if err != nil {
@@ -688,6 +747,10 @@ func (m *Manager) takeAnswer(ctx context.Context, id, tab string) string {
 		case !isJudge(p, tab):
 			return false
 		}
+		if from == FromWorker && p.State == StateStopped && p.StopReason == StopTokenCap {
+			p.Seen[tab] = ts
+			return true
+		}
 		msg := Message{Id: nextId(p), From: from, Tab: tab, Ts: ts, Raw: text, ReplyTo: answeredBy(p, tab)}
 		if from == FromWorker {
 			msg.Held, p.Held = p.Held, nil // the heavy commands refused since its last message hang on this one
@@ -695,7 +758,7 @@ func (m *Manager) takeAnswer(ctx context.Context, id, tab string) string {
 		p.Seen[tab] = ts
 		p.Messages = append(p.Messages, msg)
 		enqueue(p, msg)
-		if from == FromWorker && p.State == StateStopped && p.StopReason != StopTokenCap {
+		if from == FromWorker && p.State == StateStopped {
 			resume(p, m.nowMs())
 		}
 		took = from
@@ -766,20 +829,21 @@ func setSideTokens(s *Side, counts map[string]int64) int64 {
 	return s.Tokens
 }
 
-// stop pauses the pair and says why in one system line. The judge replies behind a no-new-points or a settled stop ask
-// nothing of the working agent, and delivering them would start a turn that restarts the exchange: they leave its
-// queue. Every other queue is kept.
+// stop pauses the pair and says why in one system message: the "Paused: …" line as its text, and a snapshot of the moment
+// as its Pause (see addPause). The judge replies behind a no-new-points or a settled stop ask nothing of the working
+// agent, and delivering them would start a turn that restarts the exchange: they leave its queue. Every other queue is
+// kept.
 func (m *Manager) stop(p *Pair, reason string) {
 	p.State, p.StopReason = StateStopped, reason
 	switch reason {
 	case StopNoNewPoints:
-		m.addSystem(p, "Paused: the judge has no new points")
+		m.addPause(p, "Paused: the judge has no new points", reason)
 	case StopSettled:
-		m.addSystem(p, "Paused: both agree")
+		m.addPause(p, "Paused: both agree", reason)
 	case StopTokenCap:
-		m.addSystem(p, fmt.Sprintf("Paused: token cap reached (%.1fM)", float64(p.TokenCap)/1e6))
+		m.addPause(p, fmt.Sprintf("Paused: token cap reached (%.1fM)", float64(p.TokenCap)/1e6), reason)
 	case StopJudgesGone:
-		m.addSystem(p, "Paused: no judge is left")
+		m.addPause(p, "Paused: no judge is left", reason)
 	}
 	if reason == StopNoNewPoints || reason == StopSettled {
 		var behind []string
@@ -851,7 +915,9 @@ func (m *Manager) deliver(ctx context.Context, id, tab string, trustGone bool) {
 }
 
 // buildPrompt is tab's queue as one prompt, the ids it holds and whether it opens with the worker brief. It is empty
-// when the queue stopped calling for an answer meanwhile.
+// when the queue stopped calling for an answer meanwhile. A person's message to both that does not call the judge yet
+// stays in the queue, out of the prompt and out of the ids: it goes with the worker's answer to it, so the judge never
+// reads it ahead of the answer it is to judge.
 func (m *Manager) buildPrompt(id, tab string) (prompt string, ids []string, briefed bool) {
 	m.lock()
 	defer m.mu.Unlock()
@@ -861,8 +927,12 @@ func (m *Manager) buildPrompt(id, tab string) (prompt string, ids []string, brie
 	}
 	var items []RelayItem
 	for _, mid := range p.Pending[tab] {
+		i := messageIndex(p, mid)
+		if i >= 0 && waitsForAnswer(p, tab, p.Messages[i]) {
+			continue
+		}
 		ids = append(ids, mid)
-		if i := messageIndex(p, mid); i >= 0 {
+		if i >= 0 {
 			items = append(items, relayItem(p, p.Messages[i]))
 		}
 	}
