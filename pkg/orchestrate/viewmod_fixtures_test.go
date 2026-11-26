@@ -10,8 +10,10 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/wavetermdev/waveterm/pkg/agentmsg"
+	"github.com/wavetermdev/waveterm/pkg/agentpair"
 	"github.com/wavetermdev/waveterm/pkg/brainstormcheck"
 	"github.com/wavetermdev/waveterm/pkg/jarvis"
 	"github.com/wavetermdev/waveterm/pkg/waveobj"
@@ -135,6 +137,36 @@ func TestViewModFixtures(t *testing.T) {
 	// what the cockpit sends over the mod's stream
 	checkViewModFixture(t, "agent-message", agentmsg.Envelope("design lead", "tab-1234", "rename the helper\nand rerun the tests"))
 	checkViewModFixture(t, "pair-message", agentmsg.PairEnvelope("From the judge \"review\", 14:02:\n> lock the threshold first\nThe pilot measures before the threshold is locked: swap the two steps."))
+	// a pair's texts (pkg/agentpair): Chat reads them back as the sender's turn (frontend/app/view/agents/pairrelay.ts).
+	// relayHead formats a time in the local zone, so the times are made in it and read back the same anywhere
+	at := func(h, m int) int64 { return time.Date(2026, 11, 26, h, m, 0, 0, time.Local).UnixMilli() }
+	judgeReply := "> then I lock the 0.8 threshold and run the full set\n" +
+		"The pilot measures before the threshold is locked: swap the two steps.\n\n" +
+		"```arc-judge\nreopen D2: the threshold is picked after the pilot measures, so it is tuned to the pilot\n" +
+		"new: the pilot cases overlap the test split\n```"
+	workerReply := "> reopen D2: the threshold is picked after the pilot measures, so it is tuned to the pilot\n" +
+		"Swapped: O2 now locks the threshold from the labelled set before the pilot runs.\n\n" +
+		"```arc-pair\nD1 Pilot on 40 transcripts\nO2 Lock the threshold from the labelled set — before the pilot runs\n" +
+		"A3 Keep the 0.8 threshold? [Yes | No, change it]\n```"
+	checkViewModFixture(t, "pair-relay-first", agentmsg.PairEnvelope(agentpair.RelayPrompt([]agentpair.RelayItem{
+		{From: agentpair.FromJudge, Name: "mit-thesis", Tab: "tab-judge", Ts: at(14, 2), Text: judgeReply},
+	}, agentpair.WorkerBrief([]string{"mit-thesis"}))))
+	checkViewModFixture(t, "pair-relay-batch", agentmsg.PairEnvelope(agentpair.RelayPrompt([]agentpair.RelayItem{
+		{From: agentpair.FromJudge, Name: "mit-thesis", Tab: "tab-judge", Ts: at(14, 9), Text: "> O2 now locks the threshold from the earlier labelled set\n" +
+			"Agreed on the order. Two things before D2 can close:\n\n" +
+			"- the labelled set in `data/labels-v2.csv` has 212 rows, 31 of them from the pilot's own sources\n" +
+			"- section 4.2 still reads \"tuned on the pilot\"\n\n" +
+			"O4 can close once the 31 rows are out."},
+		{From: agentpair.FromPerson, Ts: at(14, 10), Text: "Answer to A3: Keep 0.8."},
+	}, "")))
+	checkViewModFixture(t, "pair-relay-worker", agentmsg.PairEnvelope(agentpair.RelayPrompt([]agentpair.RelayItem{
+		{From: agentpair.FromWorker, Name: "thesis-draft", Tab: "tab-worker", Ts: at(14, 5), Text: workerReply},
+	}, "")))
+	checkViewModFixture(t, "pair-judge-brief", agentmsg.PairEnvelope(agentpair.JudgeBrief(agentpair.JudgeBriefInput{
+		WorkerName: "thesis-draft", WorkerTab: "tab-worker", Reply: workerReply,
+		Docs: []string{"docs/superpowers/plans/2026-11-26-pilot.md"},
+	})))
+	checkViewModFixture(t, "pair-ended", agentmsg.PairEnvelope(agentpair.EndedNotice([]string{"task build:backend", "npm test"})))
 	child := &waveobj.Run{ID: "run-77", ParentLeadORef: "tab:t1", Goal: "split the channel blob into per-run records", Status: jarvis.RunStatus_Done,
 		Evidence: &waveobj.RunEvidence{Files: make([]waveobj.EvidenceFile, 3), AddTotal: 40, DelTotal: 2}}
 	childLine, _ := jarvis.ParentNotifyLine(child)

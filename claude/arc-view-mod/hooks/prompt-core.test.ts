@@ -58,6 +58,11 @@ const RUN_FIXTURES = [
 const STREAM_FIXTURES = [
     "agent-message",
     "pair-message",
+    "pair-relay-first",
+    "pair-relay-batch",
+    "pair-relay-worker",
+    "pair-judge-brief",
+    "pair-ended",
     "child-done",
     "child-cancelled",
     "builder-questions",

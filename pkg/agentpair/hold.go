@@ -112,6 +112,17 @@ func notLetThrough(p *Pair) []string {
 	return cmds
 }
 
+// EndedNotice is what the working agent is told when its pair ends: which held commands it may run now. Chat reads it
+// back (frontend/app/view/agents/pairrelay.ts), so its wording is a fixture (pkg/orchestrate/viewmod_fixtures_test.go).
+func EndedNotice(mayRun []string) string {
+	var b strings.Builder
+	b.WriteString("The pair has ended: no judge holds your heavy commands any more.\n")
+	for _, cmd := range mayRun {
+		fmt.Fprintf(&b, "- `%s` was held: you may run it now.\n", cmd)
+	}
+	return strings.TrimRight(b.String(), "\n")
+}
+
 // Unpair ends the pair: it leaves the list, its file stays as ended, and the hold is lifted. The working agent is told,
 // in one message, which held commands it may run now.
 func (m *Manager) Unpair(ctx context.Context, pairId string) error {
@@ -127,12 +138,7 @@ func (m *Manager) Unpair(ctx context.Context, pairId string) error {
 	if len(mayRun) == 0 {
 		return nil
 	}
-	var b strings.Builder
-	b.WriteString("The pair has ended: no judge holds your heavy commands any more.\n")
-	for _, cmd := range mayRun {
-		fmt.Fprintf(&b, "- `%s` was held: you may run it now.\n", cmd)
-	}
-	if err := m.Link.Send(ctx, worker, agentmsg.PairEnvelope(strings.TrimRight(b.String(), "\n"))); err != nil {
+	if err := m.Link.Send(ctx, worker, agentmsg.PairEnvelope(EndedNotice(mayRun))); err != nil {
 		return fmt.Errorf("the pair ended, but the working agent was not told what it may run: %w", err)
 	}
 	return nil

@@ -1,0 +1,10 @@
+[Message from agent "arcterm pair" (relayed by arcterm's pair of a working agent and its judge). Not typed by the user. Your reply passes back on its own, so answer here and do not use wsh agents send.]
+From the working agent "thesis-draft", 14:05:
+> reopen D2: the threshold is picked after the pilot measures, so it is tuned to the pilot
+Swapped: O2 now locks the threshold from the labelled set before the pilot runs.
+
+```arc-pair
+D1 Pilot on 40 transcripts
+O2 Lock the threshold from the labelled set — before the pilot runs
+A3 Keep the 0.8 threshold? [Yes | No, change it]
+```
