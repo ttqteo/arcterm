@@ -1567,6 +1567,12 @@ func PairListCommand(w *wshutil.WshRpc, opts *wshrpc.RpcOpts) (*wshrpc.CommandPa
 	return resp, err
 }
 
+// command "pairresume", wshserver.PairResumeCommand
+func PairResumeCommand(w *wshutil.WshRpc, data wshrpc.CommandPairGetData, opts *wshrpc.RpcOpts) error {
+	_, err := sendRpcRequestCallHelper[any](w, "pairresume", data, opts)
+	return err
+}
+
 // command "pairrunnow", wshserver.PairRunNowCommand
 func PairRunNowCommand(w *wshutil.WshRpc, data wshrpc.CommandPairRunNowData, opts *wshrpc.RpcOpts) error {
 	_, err := sendRpcRequestCallHelper[any](w, "pairrunnow", data, opts)

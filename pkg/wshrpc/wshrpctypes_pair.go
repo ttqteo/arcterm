@@ -17,6 +17,7 @@ type PairCommands interface {
 	PairSayCommand(ctx context.Context, data CommandPairSayData) error                                    // the person's message or answer chip
 	PairRunNowCommand(ctx context.Context, data CommandPairRunNowData) error                              // let a held command through
 	PairUnpairCommand(ctx context.Context, data CommandPairGetData) error
+	PairResumeCommand(ctx context.Context, data CommandPairGetData) error // put a stopped pair back to relaying and deliver what is queued
 }
 
 // PairSide is one agent of a pair, by its tab (the cockpit agent id, which survives sleep and an app restart).
@@ -64,8 +65,19 @@ type PairHeld struct {
 	RunTs   int64  `json:"runts,omitempty"`
 }
 
+// PairPause is what a pause message keeps of the moment the pair stopped, so the conversation and the Library page draw
+// the same card from the file: Reason is the StopReason (no-new-points | settled | token-cap | judges-gone), Summary the
+// newest judge message's `summary:` line after the working agent's newest message ("" when none), Decided the lists at
+// that moment.
+type PairPause struct {
+	Reason  string      `json:"reason"`
+	Summary string      `json:"summary"`
+	Decided PairDecided `json:"decided"`
+}
+
 // PairMessage is one message of the conversation. From: worker | judge | person | system. Text is the shown body: the
-// arc-pair / arc-judge fence and the leading quote line are taken out (the file keeps the raw text).
+// arc-pair / arc-judge fence and the leading quote line are taken out (the file keeps the raw text). Pause is set on the
+// system message that says the pair paused; a pause message from before it existed has none and reads as a line.
 type PairMessage struct {
 	Id      string     `json:"id"`
 	From    string     `json:"from"`
@@ -76,6 +88,7 @@ type PairMessage struct {
 	ReplyTo string     `json:"replyto"` // the id of the message it answers
 	To      string     `json:"to"`      // a person's message: both | worker | judge | a judge's tab
 	Held    []PairHeld `json:"held"`
+	Pause   *PairPause `json:"pause,omitempty"`
 }
 
 // PairItem is one line of the Decided view. Kind: agreed | open | asks. Num is 0 for a judge's new point.
@@ -97,7 +110,9 @@ type PairDecided struct {
 	Open   []PairItem `json:"open"`
 }
 
-// PairView is one pair in full: its info, the hold's settings, the conversation and the Decided lists.
+// PairView is one pair in full: its info, the hold's settings, the conversation and the Decided lists. CanResume says
+// that PairResume would deliver something: the pair is stopped (not by judges-gone) and some member's queue still calls
+// for an answer; a pair read from a file, a synced one included, never says it.
 type PairView struct {
 	PairInfo
 	HoldHeavy bool          `json:"holdheavy"`
@@ -107,6 +122,7 @@ type PairView struct {
 	CreatedTs int64         `json:"createdts"`
 	Messages  []PairMessage `json:"messages"`
 	Decided   PairDecided   `json:"decided"`
+	CanResume bool          `json:"canresume,omitempty"`
 }
 
 type CommandPairBriefData struct {

@@ -282,7 +282,7 @@ func firstLine(s string) string {
 }
 
 // View is the pair in full, as the frontend draws it. A message with no quote line of its own, but that answers
-// another, quotes the first line of the one it answers.
+// another, quotes the first line of the one it answers. A pause message carries its snapshot through as it is stored.
 func View(p *Pair) *wshrpc.PairView {
 	texts := make(map[string]string, len(p.Messages))
 	for _, m := range p.Messages {
@@ -308,6 +308,7 @@ func View(p *Pair) *wshrpc.PairView {
 			ReplyTo: m.ReplyTo,
 			To:      to,
 			Held:    append([]wshrpc.PairHeld{}, m.Held...),
+			Pause:   m.Pause,
 		})
 	}
 	return &wshrpc.PairView{
@@ -319,5 +320,6 @@ func View(p *Pair) *wshrpc.PairView {
 		CreatedTs: p.CreatedTs,
 		Messages:  messages,
 		Decided:   Decided(p),
+		CanResume: canResume(p),
 	}
 }
