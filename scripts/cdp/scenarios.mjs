@@ -61237,7 +61237,9 @@ const settingsStorage = {
             // a second scan at once, so the wait covers the rest of the first and all of the second. A scan walks the
             // build output of every folder an agent worked in (also the real ones: this app reads ~/.claude): about 15 s
             // on an idle machine, 7 to 40 minutes on a loaded one ("storage scan took" in waveapp.log). So it waits while
-            // a scan runs, for up to 180 s, and says how long it waited.
+            // a scan runs, for up to 180 s (ARC_STORAGE_SCAN_WAIT_S raises it for a run on a loaded machine), and says how
+            // long it waited.
+            const scanWaitSecs = Number(process.env.ARC_STORAGE_SCAN_WAIT_S) > 0 ? Number(process.env.ARC_STORAGE_SCAN_WAIT_S) : 180;
             ctx.scanFrom = Date.now();
             await h.rpc("rescanstorage", null);
             const askedAt = Date.now();
@@ -61250,7 +61252,7 @@ const settingsStorage = {
                 if (!started && waited > 30) {
                     throw new Error(`no scan started within ${waited} s of rescanstorage (last scan ${r?.scannedts}, asked at ${ctx.scanFrom})`);
                 }
-                if (waited > 180) throw new Error(`the scan of the fixtures was still running after ${waited} s`);
+                if (waited > scanWaitSecs) throw new Error(`the scan of the fixtures was still running after ${waited} s`);
                 await polishNap(500);
             }
             ctx.scanSecs = Math.round((Date.now() - askedAt) / 1000);
