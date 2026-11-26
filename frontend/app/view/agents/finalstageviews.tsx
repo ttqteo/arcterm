@@ -85,8 +85,10 @@ function StepLabel({ step, className }: { step: FinalStep; className?: string })
 
 function StepText({ step }: { step: FinalStep }) {
     return (
+        // a failed Final's tally ("2 of 29 failed · 2m 05s") is wider than a narrow cell: it truncates, whole in its title
         <span
-            className={cn("flex-none whitespace-nowrap text-[10.5px] tabular-nums font-medium", STATE_INK[step.tone])}
+            title={step.text}
+            className={cn("min-w-0 truncate text-[10.5px] tabular-nums font-medium", STATE_INK[step.tone])}
         >
             {step.text}
         </span>

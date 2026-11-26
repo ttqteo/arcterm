@@ -23,6 +23,12 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
 
 ## 2026-11-26
 
+- [ ] (arcterm) **A failed Final counts its failed steps.** After a build, open run 4287b55b's Final verification row
+  (or any run whose Final failed on CDP steps) → the Agent tree row reads "Final: 1 of 51 steps failed · round 2", the
+  Final step reads "1 of 51 failed · 3m 22s", the stage header and the DAG node read "round 2 · Final: paired-button
+  failed", and each shows its whole text on hover when cut short. Narrow the window until the step cells are tight: the
+  Final cell's text truncates inside its border. `task verify:ui -- final-stage` (B4, B5) checks the end state; neither
+  was run. Branch `final-step-tally`.
 - [ ] (arcterm) **Council Figures: sources once per file, labels not repeated.** Open a council report whose Số liệu has
   a comparison with labels sharing their opening words (e.g. the secbench audit one, "submit secbench đậu tier-1 trên
   ca …"): the shared words sit once above the bars and each row shows only `blocked_clean`, `crash_before_sink`, …

@@ -291,6 +291,48 @@ function span(from: number | undefined, to: number | undefined): number | undefi
     return from && to && to >= from ? to - from : undefined;
 }
 
+// the Final command's CDP steps, from the shots.json manifest the engine copied onto the stage: how many ran (skips
+// left out, as roundTally counts them) and which failed. undefined without a manifest or with no failed step, where
+// the stage reads "failed at Final" as before
+type FinalTally = { ran: number; failed: { scenario: string; step: string }[] };
+
+function finalTally(stage: FinalStage | undefined): FinalTally | undefined {
+    if (!stage?.shotsmanifest) {
+        return undefined;
+    }
+    let ran = 0;
+    const failed: FinalTally["failed"] = [];
+    for (const shot of stage.shots ?? []) {
+        for (const st of shot.steps ?? []) {
+            if (st.state === "skip") {
+                continue;
+            }
+            ran++;
+            if (st.state === "fail") {
+                failed.push({ scenario: shot.name, step: st.step || shot.name });
+            }
+        }
+    }
+    return failed.length > 0 ? { ran, failed } : undefined;
+}
+
+// the tally of a stage whose Final command is the step that failed
+function failedFinalTally(stage: FinalStage | undefined, steps: FinalStep[]): FinalTally | undefined {
+    const failed = steps.find((s) => s.state === "failed");
+    return failed?.key === "final" ? finalTally(stage) : undefined;
+}
+
+// "Final: paired-button failed", "Final: 3 steps failed in pair-header", "Final: 3 steps failed"
+function failedStepsText(tally: FinalTally): string {
+    const { failed } = tally;
+    if (failed.length === 1) {
+        return `Final: ${failed[0].step} failed`;
+    }
+    const scenarios = new Set(failed.map((f) => f.scenario));
+    const where = scenarios.size === 1 ? ` in ${failed[0].scenario}` : "";
+    return `Final: ${failed.length} steps failed${where}`;
+}
+
 function buildSteps(
     stage: FinalStage | undefined,
     group: Commands,
@@ -300,6 +342,7 @@ function buildSteps(
 ): FinalStep[] {
     const keys = stepKeys(group, stage);
     const states = allStepStates(stage, group, keys, evs);
+    const tally = finalTally(stage);
     // startedts is the verifier session's start only once there is one
     const verifierStart = stage?.verifierrunid ? stage.startedts : undefined;
     return keys.map((key, i) => {
@@ -324,27 +367,37 @@ function buildSteps(
             ended && stage?.outdir && KEPT_STEPS.has(key)
                 ? { path: finalStepOutputPath(stage.outdir, key), ts: ended.ts }
                 : undefined;
+        // "1 of 51 failed · 3m 22s": a Final that failed on its CDP steps says how many
+        const text =
+            key === "final" && state === "failed" && tally
+                ? withTime(`${tally.failed.length} of ${tally.ran} failed`, ms, " · ")
+                : withTime(STEP_WORDS[state], ms);
         return {
             key,
             label: LABELS[key],
             state,
             tone: STEP_TONES[state],
             ms,
-            text: withTime(STEP_WORDS[state], ms),
+            text,
             command: WHAT_IT_DOES[key] ?? commandOf(group, key),
             kept,
         };
     });
 }
 
-// how an ended stage reads in a line: "failed at Final", "unverified", "passed"
-function outcomeText(stage: FinalStage, steps: FinalStep[]): string {
+// how an ended stage reads in a line: "failed at Final", "unverified", "passed". A Final that failed on its CDP steps
+// gives their count ("Final: 1 of 51 steps failed"), or with named, the steps themselves ("Final: paired-button failed")
+function outcomeText(stage: FinalStage, steps: FinalStep[], named = false): string {
     if (stage.state !== "failed") {
         return stage.state;
     }
     const stopped = steps.find((s) => s.state === "stopped");
     if (stopped) {
         return `failed, stopped at ${stopped.label}`;
+    }
+    const tally = failedFinalTally(stage, steps);
+    if (tally) {
+        return named ? failedStepsText(tally) : `Final: ${tally.failed.length} of ${plural(tally.ran, "step")} failed`;
     }
     const failed = steps.find((s) => s.state === "failed");
     return failed ? `failed at ${failed.label}` : "failed";
@@ -455,7 +508,7 @@ export function finalStageView(
         nodeMeta = headline = joinDot([roundText, "starting"]);
     } else if (state === "failed") {
         subline = joinDot([outcome, roundText]);
-        nodeMeta = headline = joinDot([roundText, outcome]);
+        nodeMeta = headline = joinDot([roundText, outcomeText(stage, steps, true)]);
     } else if (state === "unverified") {
         subline = joinDot(["unverified", reasons.length > 0 ? plural(reasons.length, "reason") : undefined]);
         nodeMeta = headline = joinDot([roundText, "unverified"]);

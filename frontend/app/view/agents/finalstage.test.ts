@@ -145,6 +145,81 @@ describe("finalStageView, the States board", () => {
         expect(v.steps[4].text).toBe("not run");
     });
 
+    describe("a Final that failed on its CDP steps", () => {
+        const events = [ev("tree", 41 * S), ev("check", 18 * S), ev("verify", 300 * S), ev("final", 202 * S, false, 2)];
+        const step = (name: string, state = "pass") => ({ step: name, state });
+        const passing = (n: number) => Array.from({ length: n }, (_, i) => step(`s${i}`));
+        const failedAt = (shots: FinalShot[], over: Partial<FinalStage> = {}) =>
+            finalStageView(
+                dag({
+                    state: "failed",
+                    round: 2,
+                    detail: "Final `x` failed (exit 1)",
+                    shots,
+                    shotsmanifest: true,
+                    ...over,
+                }),
+                events,
+                NOW
+            );
+
+        it("one step: the count on the tile and row, the step's name in the header", () => {
+            const v = failedAt([
+                { name: "pair-tree", files: [], steps: passing(30) },
+                {
+                    name: "pair-header",
+                    files: [],
+                    steps: [...passing(20), step("paired-button", "fail"), step("x", "skip")],
+                },
+            ]);
+            expect(v.steps[3].text).toBe("1 of 51 failed · 3m 22s");
+            expect(v.subline).toBe("Final: 1 of 51 steps failed · round 2");
+            expect(v.headline).toBe("round 2 · Final: paired-button failed");
+            expect(v.nodeMeta).toBe(v.headline);
+            expect(v.tone).toBe("fail");
+        });
+
+        it("several steps in one scenario name it; across scenarios only the count", () => {
+            const one = failedAt([{ name: "pair-header", files: [], steps: [step("a", "fail"), step("b", "fail")] }]);
+            expect(one.headline).toBe("round 2 · Final: 2 steps failed in pair-header");
+            const two = failedAt([
+                { name: "pair-header", files: [], steps: [step("a", "fail")] },
+                { name: "pair-tree", files: [], steps: [step("b", "fail"), step("c")] },
+            ]);
+            expect(two.headline).toBe("round 2 · Final: 2 steps failed");
+            expect(two.subline).toBe("Final: 2 of 3 steps failed · round 2");
+        });
+
+        it("no manifest, or a manifest with no failed step, reads as before", () => {
+            for (const v of [
+                failedAt([{ name: "a.png", files: ["a.png"] }], { shotsmanifest: false }),
+                failedAt([{ name: "pair-header", files: [], steps: passing(3) }]),
+            ]) {
+                expect(v.subline).toBe("failed at Final · round 2");
+                expect(v.headline).toBe("round 2 · failed at Final");
+                expect(v.steps[3].text).toBe("failed 3m 22s");
+            }
+        });
+
+        it("an earlier round's line gives its count", () => {
+            const r1 = {
+                state: "failed",
+                round: 1,
+                detail: "Final `x` failed (exit 1)",
+                shotsmanifest: true,
+                shots: [
+                    { name: "pair-header", files: [], steps: [...passing(49), step("a", "fail"), step("b", "fail")] },
+                ],
+            };
+            const v = finalStageView(
+                dag({ state: "", round: 2 }, { pastfinals: [r1] }),
+                [...events, ev("final", 100 * S, false, 1)],
+                NOW
+            );
+            expect(v.past).toEqual([{ round: 1, tone: "fail", text: "round 1 · Final: 2 of 51 steps failed" }]);
+        });
+    });
+
     it("fix round under way", () => {
         const tasks = [...sevenDone, task("t-8", "running"), task("t-9", "pending")];
         const v = finalStageView(dag({ state: "", round: 2 }, { status: "running", tasks }), [], NOW);

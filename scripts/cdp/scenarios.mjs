@@ -25282,8 +25282,13 @@ const FST_DETAIL = [
     `Final \`${FINAL_SHOTS_CMD}\` failed (exit 1):`,
     "FAIL jarvis-peek 4. the narrow panel stays bounded with a pinned header, no horizontal overflow, and an unclipped harness picker",
     "FAIL jarvis-peek 5. attention expands the card and keyboard navigation moves the cursor then focuses the composer",
-    "2 of 43 steps failed across 5 scenarios",
+    "2 of 29 steps failed across 5 scenarios",
 ].join("\n");
+// the failed round 1 as its manifest (finalShotsManifest(1)) counts it: 29 steps ran, 2 failed, both in jarvis-peek
+const FST_FAILED_SUB = "Final: 2 of 29 steps failed · round 1";
+const FST_FAILED_META = "round 1 · Final: 2 steps failed in jarvis-peek";
+const FST_FAILED_PAST = "round 1 · Final: 2 of 29 steps failed";
+const FST_FAILED_TILE = "2 of 29 failed · 2m 05s";
 const FST_UNVERIFIED =
     "verifier: the narrow jarvis-peek panel could not be compared with its board, because the board has no artboard at 440px wide";
 const FST_REASON =
@@ -25875,7 +25880,7 @@ const finalStageScenario = {
                 /^verifier reviewing · 4m \d\ds$/.test(a.rows[0].sub) &&
                 fstSame(fstStates(a.pane.steps), [...fstRepeat("passed", 4), "running"]) &&
                 a.pane.output == null &&
-                fstSame(a.stage.past, [{ round: "1", text: "round 1 · failed at Final" }]) &&
+                fstSame(a.stage.past, [{ round: "1", text: FST_FAILED_PAST }]) &&
                 /^round 2 · verifier · 4m \d\ds$/.test(d.node.meta) &&
                 fstSame(d.node.strip, [...fstRepeat("passed", 4), "running"]) &&
                 d.peek.open === false,
@@ -25889,25 +25894,26 @@ const finalStageScenario = {
         await finalShotsClick(h, `${FST_PANE}?.querySelector("[data-final-shots-link]")`);
         const paneViewer = (await fstUntil(h, FST_AGENT, (s) => s.viewer))?.viewer;
         await closeViewer();
-        d = await fstDag(h, ctx, (s) => s.node.meta === "round 1 · failed at Final", wait);
+        d = await fstDag(h, ctx, (s) => s.node.meta === FST_FAILED_META, wait);
         await shot("b5-failed-dag");
         await finalShotsClick(h, `${FST_DAG_PEEK}?.querySelector("[data-final-shots-link]")`);
         const peekViewer = (await fstUntil(h, FST_DAG, (s) => s.viewer))?.viewer;
         await shot("b5-failed-viewer");
         await closeViewer();
         rec(
-            "B5. failed at Final in round 1: the detail whole, the Verifier not run, the lead has it, and the screenshots open the viewer from the pane and the DAG peek card",
+            "B5. failed at Final in round 1: the row and the Final tile count the failed CDP steps and the DAG node names their scenario, the detail whole, the Verifier not run, the lead has it, and the screenshots open the viewer from the pane and the DAG peek card",
             () =>
-                a.rows[0].sub === "failed at Final · round 1" &&
+                a.rows[0].sub === FST_FAILED_SUB &&
                 a.rows[0].tone === "fail" &&
                 a.slot === "failed" &&
                 fstSame(fstStates(a.pane.steps), [...fstRepeat("passed", 3), "failed", "notrun"]) &&
+                a.pane.steps[3].text === FST_FAILED_TILE &&
                 a.pane.text.includes(fstFlat(FST_DETAIL)) &&
                 a.pane.text.includes("The lead has this failure") &&
                 !a.pane.end &&
                 a.pane.shots != null &&
                 paneViewer &&
-                d.node.meta === "round 1 · failed at Final" &&
+                d.node.meta === FST_FAILED_META &&
                 fstSame(d.node.strip, [...fstRepeat("passed", 3), "failed", "notrun"]) &&
                 d.peek.text.includes(fstFlat(FST_DETAIL)) &&
                 d.peek.shots != null &&
@@ -25941,7 +25947,7 @@ const finalStageScenario = {
         await finalShotsClick(h, `${FST_RAIL}?.querySelector('[data-final-rail] [data-final-step="check"]')`);
         const keptRail = await fstUntil(h, keptRead, (s) => s.rail.includes(FST_KEPT_MARK));
         await shot("b5b-kept-rail");
-        await fstDag(h, ctx, (s) => s.node.meta === "round 1 · failed at Final", wait);
+        await fstDag(h, ctx, (s) => s.node.meta === FST_FAILED_META, wait);
         const dagCell = `${FST_DAG_PEEK}?.querySelector('[data-final-step="check"]')`;
         const dagRead = `(() => ({
             text: (${FST_DAG_PEEK}?.textContent ?? "").replace(/\\s+/g, " ").trim(),
@@ -25983,10 +25989,10 @@ const finalStageScenario = {
                 a.rows[0].sub === "round 2 after 3 fix tasks" &&
                 a.rows[0].tone === "wait" &&
                 fstSame(fstStates(a.pane.steps), fstRepeat("waiting", 5)) &&
-                fstSame(a.stage.past, [{ round: "1", text: "round 1 · failed at Final" }]) &&
+                fstSame(a.stage.past, [{ round: "1", text: FST_FAILED_PAST }]) &&
                 d.node.meta === "round 2 waits on t-1, t-2, t-3" &&
                 fstSame(d.node.strip, fstRepeat("waiting", 5)) &&
-                fstSame(d.peek.past, [{ round: "1", text: "round 1 · failed at Final" }]),
+                fstSame(d.peek.past, [{ round: "1", text: FST_FAILED_PAST }]),
             { row: a?.rows, pane: a?.pane, past: a?.stage?.past, node: d?.node, peek: d?.peek, reselected: ctx.reselected }
         );
         await shot("b6-fixing-dag");
@@ -26068,7 +26074,7 @@ const finalStageScenario = {
                 fstSame(d.node.strip, [...fstRepeat("passed", 4), "unverified"]) &&
                 d.peek.text.includes(FST_UNVERIFIED) &&
                 !d.peek.end &&
-                fstSame(d.peek.past, [{ round: "1", text: "round 1 · failed at Final" }]),
+                fstSame(d.peek.past, [{ round: "1", text: FST_FAILED_PAST }]),
             { row: a?.rows, slot: a?.slot, stage: a?.stage, node: d?.node, peek: d?.peek }
         );
         await shot("b8-unverified-dag");
