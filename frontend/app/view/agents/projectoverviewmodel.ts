@@ -36,14 +36,19 @@ export interface OverviewRows {
 
 // a run's workers and stage sessions have a worktree for their project, so the Agent tree puts a run where its lead
 // stands (its worktree project when it started there), or where the run is when it has no lead in the roster; the run's
-// members follow. Everything else goes by its own project.
+// members follow. Everything else goes by its own project. `order` is the Agent tree's saved order: a run with two
+// leads, neither the current one, is led by the first in it (groupRunAgents), so the Overview names the tree's lead.
 export function overviewRows(
     agents: readonly AgentVM[],
     terminals: readonly AgentVM[],
     project: string,
-    lineage: Lineage = NO_LINEAGE
+    lineage: Lineage = NO_LINEAGE,
+    order: readonly string[] = []
 ): OverviewRows {
-    const roster = agents.filter((a) => a.kind !== "terminal");
+    const rank = new Map(order.map((id, i) => [id, i] as const));
+    const roster = agents
+        .filter((a) => a.kind !== "terminal")
+        .sort((x, y) => (rank.get(x.id) ?? Number.POSITIVE_INFINITY) - (rank.get(y.id) ?? Number.POSITIVE_INFINITY));
     const groups = groupRunAgents(roster, lineage);
     // the run an agent is part of; a second lead of one run is a plain agent, as in the tree
     const runOf = (a: AgentVM): RunInfo | undefined => {

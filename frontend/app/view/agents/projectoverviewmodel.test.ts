@@ -181,6 +181,24 @@ describe("overviewRows with runs", () => {
         expect(overviewRows(asking, [], "arc", lineage).asking.map((x) => x.id)).toEqual(["w2"]);
     });
 
+    // two tabs stamped as r1's lead and neither the current one: the tree takes the first in its saved order, so the
+    // Overview, given that order, takes the same one whatever the roster's order
+    it("picks the lead the tree picks when a run has two", () => {
+        const twoLeads: Lineage = {
+            roles: { ...lineage.roles, lead2: { kind: "lead", runId: "r1" } },
+            runs: lineage.runs,
+        };
+        const roster = [
+            a({ id: "lead", state: "idle" }),
+            a({ id: "lead2", state: "idle" }),
+            a({ id: "w2", project: "r1-t-2" }),
+        ];
+        const order = ["lead2", "lead", "w2"];
+        const treeLead = buildAgentTree(roster, order, twoLeads).find((r) => r.kind === "lead");
+        expect(treeLead?.kind === "lead" ? treeLead.agent.id : null).toBe("lead2");
+        expect(overviewRows(roster, [], "arc", twoLeads, order).runs[0]?.lead?.id).toBe("lead2");
+    });
+
     it("places a run by its lead's project, as the tree does, not by the run's", () => {
         const moved: Lineage = {
             roles: { lead: lineage.roles.lead, w2: lineage.roles.w2 },
