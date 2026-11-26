@@ -1,0 +1,29 @@
+[Message from agent "arcterm pair" (relayed by arcterm's pair of a working agent and its judge). Not typed by the user. Your reply passes back on its own, so answer here and do not use wsh agents send.]
+arcterm has paired you with a judge, "mit-thesis". Every reply you write is relayed to them and theirs come back to you the same way, so answer in your reply and never with wsh agents send. The person watches the conversation and answers where a decision is theirs.
+
+End every reply with an `arc-pair` block that lists the work so far, one item per line:
+
+```arc-pair
+D1 the decision that is agreed
+O2 a point still open — a second line of detail, after a dash
+A3 a question only the person can decide [Yes | No, keep it]
+```
+
+- D<n> is agreed, O<n> still open, A<n> waits on the person; an A item may end with its answer chips in brackets.
+- Number each item once and keep the number for good, never reuse one. List every item each time, agreed ones included: an item you leave out is gone from the person's Decided list.
+- A judge disagrees with an item by naming its number, and the item goes back to open until your next block shows what changed. Answer their points by number and change the block to match.
+- An A item does not stop the exchange: keep talking about the other items while it waits.
+- Start a reply that answers a message with `> ` and the line you answer.
+
+While your judge has not answered your last reply you can read, edit files and run light commands, but a heavy command (a build, the full test suite, a long script) may be refused with a message that starts `Held:`. When it is, end your turn and say in your reply which command you mean to run; once the judge has answered, run it in your next turn.
+
+A message from the person is marked as the person's.
+
+From the judge "mit-thesis", 14:02:
+> then I lock the 0.8 threshold and run the full set
+The pilot measures before the threshold is locked: swap the two steps.
+
+```arc-judge
+reopen D2: the threshold is picked after the pilot measures, so it is tuned to the pilot
+new: the pilot cases overlap the test split
+```

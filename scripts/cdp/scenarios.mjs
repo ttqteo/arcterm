@@ -72,6 +72,7 @@ import agentStreamsScenarios from "./scenarios-agent-streams.mjs";
 import chatBgTasksScenarios from "./scenarios-chat-bg-tasks.mjs";
 import chatStepsScenarios from "./scenarios-chat-steps.mjs";
 import chatPairBlocksScenarios from "./scenarios-chat-pair-blocks.mjs";
+import chatPairRelayScenarios from "./scenarios-chat-pair-relay.mjs";
 import chatReadPictureScenarios from "./scenarios-chat-read-picture.mjs";
 import agentSubagentsScenarios from "./scenarios-agent-subagents.mjs";
 import brainstormBoardPickScenarios from "./scenarios-brainstorm-board-pick.mjs";
@@ -75993,6 +75994,7 @@ export const SCENARIOS = [
     ...chatBgTasksScenarios(RT_KIT),
     ...chatStepsScenarios(RT_KIT),
     ...chatPairBlocksScenarios(RT_KIT),
+    ...chatPairRelayScenarios(RT_KIT),
     ...chatReadPictureScenarios(RT_KIT),
     ...agentSubagentsScenarios(RT_KIT),
     ...modalFocusHomeScenarios(RT_KIT),

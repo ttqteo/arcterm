@@ -9,6 +9,7 @@
 
 import type { ChatItem } from "./chatmodel";
 import { stepsPartKey, topFencesOf } from "./chatsteplist";
+import { relayWorkerTexts } from "./pairrelay";
 import { openReason } from "./raildecided";
 
 export const PAIR_LANG = "arc-pair";
@@ -161,25 +162,36 @@ export function pairBlockKey(partKey: string, items: readonly PairBlockItem[]): 
     return `${partKey}\u0000${pairItemsKey(items)}`;
 }
 
+// the prose a conversation item holds, keyed as Chat draws it: an agent's prose parts, and the working agent's replies a
+// pair relayed into this conversation (the judge's Chat gets the lists only that way)
+function proseOf(item: ChatItem): { key: string; text: string; live: boolean }[] {
+    if (item.kind === "agent") {
+        return item.parts.flatMap((part, p) =>
+            part.kind === "prose" ? [{ key: stepsPartKey(item.key, p), text: part.text, live: part.live === true }] : []
+        );
+    }
+    if (item.kind === "sent" && item.relay != null) {
+        return relayWorkerTexts(item.key, item.relay).map((t) => ({ ...t, live: false }));
+    }
+    return [];
+}
+
 /**
- * Pure: every arc-pair list of a conversation that lists an item, keyed by pairBlockKey, in order; the last is the
- * newest. A fence still open in a reply being written is left out (chatlive.ts tidyLiveText does not draw it), so the
- * newest drawn list stays the newest until the new one closes.
+ * Pure: every arc-pair list of a conversation, in an agent's reply or a working agent's reply a pair relayed, that lists
+ * an item, keyed by pairBlockKey, in order; the last is the newest. A fence still open in a reply being written is left
+ * out (chatlive.ts tidyLiveText does not draw it), so the newest drawn list stays the newest until the new one closes.
  */
 export function placePairLists(items: readonly ChatItem[]): Map<string, PlacedPair> {
     const out = new Map<string, PlacedPair>();
     let previous: PairBlockItem[] | null = null;
     let last: PlacedPair | null = null;
     for (const item of items) {
-        if (item.kind !== "agent") {
-            continue;
-        }
-        for (const [p, part] of item.parts.entries()) {
-            if (part.kind !== "prose" || !part.text.includes(PAIR_LANG)) {
+        for (const { key, text, live } of proseOf(item)) {
+            if (!text.includes(PAIR_LANG)) {
                 continue;
             }
-            for (const fence of topFencesOf(part.text)) {
-                if (fence.lang !== PAIR_LANG || (part.live && !fence.closed)) {
+            for (const fence of topFencesOf(text)) {
+                if (fence.lang !== PAIR_LANG || (live && !fence.closed)) {
                     continue;
                 }
                 const listed = parsePairItems(fence.body);
@@ -187,7 +199,7 @@ export function placePairLists(items: readonly ChatItem[]): Map<string, PlacedPa
                     continue;
                 }
                 last = { latest: false, previous };
-                out.set(pairBlockKey(stepsPartKey(item.key, p), listed), last);
+                out.set(pairBlockKey(key, listed), last);
                 previous = listed;
             }
         }

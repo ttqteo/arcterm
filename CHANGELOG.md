@@ -67,6 +67,9 @@ and a picture given to a line that is not big.
 
 ### Changed
 
+- A pair's relayed reply now reads in Chat as the sender's own turn, whole: the judge's in the working agent's Chat and
+  the working agent's in the judge's. Its name opens its conversation, the line it answers shows above it, and its
+  marks or list draw as cards; the pair brief folds to one line.
 - Chat's Judge it button under a suggested answer is now Read the code and pick (Đọc code rồi chọn), with a magnifier
   in place of the scales, so it no longer looks like a pair's judge; Alt+J is the same, and the answer it gives reads
   Read the code: picks.

@@ -118,6 +118,7 @@ import {
     type ChatMarker,
 } from "./chatmodel";
 import { ChatPairHost } from "./chatpairblock";
+import { PairRelayView } from "./chatpairrelay";
 import { btwQuestion } from "./chatpending";
 import { ChatRunCard } from "./chatruncard";
 import {
@@ -1738,7 +1739,17 @@ export function ChatConversation({
                 );
             }
             case "sent":
-                return <SentCard item={item} model={model} />;
+                return item.relay != null ? (
+                    <PairRelayView
+                        relay={item.relay}
+                        itemKey={item.key}
+                        model={model}
+                        agentTabId={agent?.id ?? null}
+                        proseClass={PROSE}
+                    />
+                ) : (
+                    <SentCard item={item} model={model} />
+                );
             case "agent": {
                 // a finished turn (not the live last one) ends in a card of the files its edits changed (chatturnfiles.tsx)
                 const files = active && last ? [] : turnFiles(item.parts);
