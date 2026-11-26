@@ -222,7 +222,13 @@ func treeTarget(ctx context.Context, tree, path string) (string, error) {
 	}
 	rel, err := filepath.Rel(filepath.FromSlash(top), path)
 	if err != nil || !filepath.IsLocal(rel) {
-		return "", fmt.Errorf("%s is outside its repository root %s", path, top)
+		// git names its root by the real path, so a path reached through a symlink or a junction is not under it by
+		// name: git's own prefix for the folder says where it is in the repository
+		prefix, perr := git(ctx, dir, "rev-parse", "--show-prefix")
+		rel = filepath.Join(filepath.FromSlash(prefix), filepath.Base(path))
+		if perr != nil || !filepath.IsLocal(rel) {
+			return "", fmt.Errorf("%s is outside its repository root %s", path, top)
+		}
 	}
 	return filepath.Join(tree, rel), nil
 }
