@@ -234,6 +234,13 @@ export function blockLoginEmail(block: Block | null | undefined): string {
     return typeof email === "string" ? normalizeEmail(email) : "";
 }
 
+// The account a claude launch picked, as its block's agent:claudeaccount holds it (an id, or "login" for Default); ""
+// when the launch picked none and the agent follows the active account.
+export function blockAccountPick(block: Block | null | undefined): string {
+    const pick = block?.meta?.["agent:claudeaccount"];
+    return typeof pick === "string" ? pick : "";
+}
+
 // The saved key for a provider's windows: claude's are per account, every other provider's are not.
 export function rateLimitKey(
     provider: string,

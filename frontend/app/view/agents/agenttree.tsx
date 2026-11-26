@@ -83,6 +83,7 @@ import { DRAFT_TITLE, draftAgentIdsAtom } from "./draftmarks";
 import { LandedClose } from "./landedclose";
 import { fallAsleepLabel, fallingAsleepOf } from "./fallasleepstore";
 import { beginAgentDrag, endAgentDrag } from "./agentdragstore";
+import { useAccountBadge } from "./agentaccountstore";
 import { shortTabId } from "./agentrowmodel";
 import type { AgentsViewModel } from "./agents";
 import {
@@ -1350,6 +1351,8 @@ function ParentRow({
     const fields = useAtomValue(rowFieldsAtom);
     const shownBranch = fields.branch ? notableBranch(branch) : undefined;
     const shownModel = fields.model ? agent.model : undefined;
+    // the Claude account it runs on, only while the open agents run on more than one (agentaccountbadge.ts)
+    const account = useAccountBadge(agent.id);
     // what its processes hold now (agentram.ts); an asleep agent has none, whatever a reading still names
     const ownRam = useAtomValue(agentRamAtom(agent.sleeping != null ? undefined : agent.blockId));
     // a lead's row stands for its run, so it shows what the whole run holds: the lead, its workers, reviewers and
@@ -1746,6 +1749,16 @@ function ParentRow({
                             />
                         ) : (
                             <>
+                                {account ? (
+                                    <span data-row-account className="min-w-0 max-w-[45%] truncate" title={account.title}>
+                                        {account.text}
+                                    </span>
+                                ) : null}
+                                {account && (shownModel || shownBranch) ? (
+                                    <span aria-hidden className="flex-none text-ink-faint">
+                                        ·
+                                    </span>
+                                ) : null}
                                 {shownModel ? <span className="min-w-0 truncate">{shownModel}</span> : null}
                                 {shownModel && shownBranch ? (
                                     <span aria-hidden className="flex-none text-ink-faint">

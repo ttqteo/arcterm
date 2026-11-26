@@ -32,6 +32,12 @@ and a picture given to a line that is not big.
 
 ## Unreleased
 
+### Added
+
+- When your open Claude agents run on more than one Claude account, each one names its account: left of the model
+  under the chat box, and before the model under its row in the sidebar. With every agent on one account nothing
+  changes.
+
 ### Fixed
 
 - A diagram opened full size no longer stutters when you scroll it: a two-finger swipe or a mouse wheel scrolls it the
