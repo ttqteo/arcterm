@@ -290,15 +290,14 @@ Go through N with an agent, `OnlyButton` `:280`). The scanned line names the las
   `FirstScanDone: false`, no ideas); scanning; stopped part way; leaving-soon line; Since you looked's Sessions row.
 
 ### Task 9: Sprout's popup line, its chips, and Jarvis's prompt
-**Depends on:** Task 6 (the store, `chipsFor`, `ideaChipLogLine`, the launches), Task 7 (its scenario shows Task 7's
-Waiting line and acts)
+**Depends on:** Task 6 (the store, `chipsFor`, `ideaChipLogLine`, the launches), Task 7 (uses the `sessionideas` address it adds for Review in Jarvis, and writes the Waiting line step its For later note names)
 **Chunk:** Sprout popup: the ideas line and its fixed chips (What's waiting, Go through, Discuss, Leaving soon) with a log line per press; ideas in buildRoutePrompt for typed questions
 **Files:** `frontend/app/view/jarvis/petideas.tsx`, `frontend/app/view/jarvis/petpeek.tsx`, `frontend/app/view/jarvis/petview.tsx`, `frontend/app/view/jarvis/jarvisroute.ts`, `frontend/app/view/jarvis/jarvisroute.test.ts`, `frontend/app/view/jarvis/jarvisroutestore.ts`, `scripts/cdp/sessionideas-pet-scenarios.mjs`
 
 Board `Jarvis-Ask`.
 
 - `petideas.tsx`: under the updates strip (`petpeek.tsx:598`), "N ideas from your sessions to review · Review in
-  Jarvis", then the chips from `chipsFor`; What's waiting? and Which lose their transcript soon? open the list in place
+  Jarvis" (Review in Jarvis opens the `sessionideas` address Task 7 adds), then the chips from `chipsFor`; What's waiting? and Which lose their transcript soon? open the list in place
   (springReveal), Go through and Discuss launch (Task 6) and show the started line with Go to agent. Each press sends
   `ideaChipLogLine` with `getApi().sendLog`. Not a queue row: no badge. Hidden with nothing in review.
 - `petview.tsx` calls `ensureSessionIdeasFeed()` (the pet is always mounted, so the toast fires on any surface).
