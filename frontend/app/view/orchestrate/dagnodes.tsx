@@ -218,7 +218,9 @@ export function DagFinalNode({ data }: NodeProps) {
                         Final verification
                     </span>
                 </div>
-                <span className={`truncate leading-[14px] ${META_TEXT}`}>{view.nodeMeta}</span>
+                <span title={view.nodeMeta} className={`truncate leading-[14px] ${META_TEXT}`}>
+                    {view.nodeMeta}
+                </span>
                 <FinalStepStrip view={view} />
             </div>
             <span className="absolute left-0 top-full mt-[7px] whitespace-nowrap text-[10.5px] text-muted">

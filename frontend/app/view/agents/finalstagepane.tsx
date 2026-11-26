@@ -60,7 +60,9 @@ export function FinalStagePane({ model, run }: { model: AgentsViewModel; run: Ru
                     )}
                 />
                 <span className="flex-none text-[13px] font-semibold text-foreground">{stageLabel("verifier")}</span>
-                <span className="min-w-0 truncate text-[10.5px] tabular-nums text-ink-mid">{view.headline}</span>
+                <span title={view.headline} className="min-w-0 truncate text-[10.5px] tabular-nums text-ink-mid">
+                    {view.headline}
+                </span>
                 <span className="flex-1" />
                 <EndFinalStage group={run.dag} channelId={run.channelId} runId={run.runId} />
                 <RerunFinalStage

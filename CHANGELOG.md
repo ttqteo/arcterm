@@ -67,6 +67,8 @@ and a picture given to a line that is not big.
 
 ### Changed
 
+- A run's Final that fails on its screen checks says how many: "1 of 51 failed" on its Final step, "Final: 1 of 51 steps
+  failed" on the run's row and on earlier rounds, and the failed step's name in the stage's header and on the DAG.
 - A pair's relayed reply now reads in Chat as the sender's own turn, whole: the judge's in the working agent's Chat and
   the working agent's in the judge's. Its name opens its conversation, the line it answers shows above it, and its
   marks or list draw as cards; the pair brief folds to one line.
