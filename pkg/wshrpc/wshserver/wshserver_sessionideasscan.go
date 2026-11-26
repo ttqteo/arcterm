@@ -6,11 +6,23 @@ package wshserver
 import (
 	"context"
 	"errors"
+	"fmt"
+	"io/fs"
 	"log"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
 	"sync"
+	"time"
 
+	"github.com/wavetermdev/waveterm/pkg/agentsessions"
+	"github.com/wavetermdev/waveterm/pkg/consult"
+	"github.com/wavetermdev/waveterm/pkg/effortstore"
 	"github.com/wavetermdev/waveterm/pkg/panichandler"
 	"github.com/wavetermdev/waveterm/pkg/sessionideas"
+	"github.com/wavetermdev/waveterm/pkg/wavebase"
+	"github.com/wavetermdev/waveterm/pkg/wconfig"
 	"github.com/wavetermdev/waveterm/pkg/wshrpc"
 )
 
@@ -87,7 +99,176 @@ func setSessionIdeasFixture(seed *wshrpc.CommandSessionIdeasSeedData) {
 	sessionIdeasFixtureData = &c
 }
 
-// sessionIdeasScanDeps is what a scan reaches outside pkg/sessionideas for.
+// sessionIdeasScanDeps is what a scan reaches outside pkg/sessionideas for: the real ones, or while fixture mode is on the
+// seeded sessions and the seeded reply, which read nothing under ~/.claude and call no model.
 func sessionIdeasScanDeps() sessionideas.Deps {
-	return sessionideas.Deps{}
+	if fx, on := sessionIdeasFixture(); on {
+		return fixtureSessionIdeasDeps(fx)
+	}
+	return realSessionIdeasDeps()
+}
+
+// realSessionIdeasDeps is a seam, so a test can tell that fixture mode never reaches it.
+var realSessionIdeasDeps = func() sessionideas.Deps {
+	return sessionideas.Deps{
+		Run:            runSessionIdeasModel,
+		ProjectContext: sessionIdeasProjectContext,
+		Candidates: func() []agentsessions.DigestSession {
+			return agentsessions.ClaudeDigestCandidates(agentsessions.DigestWindowDays)
+		},
+		Read: agentsessions.ReadDigestFor,
+		Now:  time.Now,
+	}
+}
+
+// runSessionIdeasModel is one haiku call on a session's digest, with no tools, no settings and nothing kept of the
+// session (the flags pkg/chatsuggest passes). The tokens are what the call's result event reported, cache included, as
+// the Complete event's Tokens are (pkg/consult/consult.go:150).
+func runSessionIdeasModel(ctx context.Context, prompt string) (string, int64, error) {
+	reply, usage, err := consult.RunClaude(ctx, wavebase.HeadlessAgentCwd(), prompt, consult.CallOpts{
+		Model:     "haiku",
+		ExtraArgs: []string{"--setting-sources=", "--no-session-persistence", "--disable-slash-commands"},
+	}, nil)
+	return reply, int64(usage.TotalTokens), err
+}
+
+// fixtureSessionIdeasDeps is a scan over the seeded sessions: each reads as one canned prompt, the model answers the
+// seeded Reply (an empty list by default) for 1000 tokens, and the project holds nothing.
+func fixtureSessionIdeasDeps(fx *wshrpc.CommandSessionIdeasSeedData) sessionideas.Deps {
+	reply := fx.Reply
+	if reply == "" {
+		reply = "[]"
+	}
+	candidate := func(s wshrpc.SessionIdeasSession) agentsessions.DigestSession {
+		return agentsessions.DigestSession{Path: s.TranscriptPath, Stem: s.SessionID, Mtime: time.UnixMilli(s.LastWriteTs), Size: s.Size}
+	}
+	return sessionideas.Deps{
+		Run: func(context.Context, string) (string, int64, error) { return reply, 1000, nil },
+		ProjectContext: func(context.Context, string) (sessionideas.ProjectContext, error) {
+			return sessionideas.ProjectContext{}, nil
+		},
+		Candidates: func() []agentsessions.DigestSession {
+			out := make([]agentsessions.DigestSession, len(fx.Sessions))
+			for i, s := range fx.Sessions {
+				out[i] = candidate(s)
+			}
+			return out
+		},
+		Read: func(path string) (agentsessions.DigestSession, error) {
+			d := agentsessions.DigestSession{Path: path, Stem: path}
+			for _, s := range fx.Sessions {
+				if s.TranscriptPath == path {
+					d = candidate(s)
+					d.Session = &agentsessions.SessionInfo{ID: s.SessionID, Task: s.Title, ProjectName: s.Project, ProjectPath: s.Project}
+					break
+				}
+			}
+			d.Turns = []agentsessions.Turn{{Speaker: "user", Text: "A canned prompt from a fixture session.", Ts: d.Mtime.UnixMilli()}}
+			return d, nil
+		},
+		Now: time.Now,
+	}
+}
+
+const (
+	projectDocTimeout = 10 * time.Second
+	// A project with hundreds of specs would make every session's prompt big. The names start with their date, so the
+	// last ones are the newest.
+	maxDocNames = 100
+)
+
+// sessionIdeasProjectContext is what the project of a session's folder already holds: its initiatives and ideas, the
+// names in its specs and plans folders, the headings of docs/deferred.md and its last 200 commit subjects. A session in a
+// linked worktree reads the main checkout's project. A part that cannot be read is left out and joined into the error
+// that comes back with the rest.
+func sessionIdeasProjectContext(ctx context.Context, cwd string) (sessionideas.ProjectContext, error) {
+	if strings.TrimSpace(cwd) == "" {
+		return sessionideas.ProjectContext{}, nil
+	}
+	root, ok := mainCheckoutPath(cwd)
+	if !ok {
+		root = repoRootOf(cwd)
+	}
+	home, _ := os.UserHomeDir()
+	name, kw, registered := wconfig.ProjectForDir(root, wconfig.GetWatcher().GetFullConfig().Projects, home)
+	dir := root
+	if p := strings.TrimSpace(kw.Path); registered && p != "" {
+		dir = p
+		if rest, isHome := strings.CutPrefix(p, "~"); isHome {
+			dir = filepath.Join(home, rest)
+		}
+	}
+
+	var errs []error
+	var efforts []sessionideas.EffortFacts
+	if registered {
+		all, err := effortstore.GetAll(ctx)
+		if err != nil {
+			errs = append(errs, fmt.Errorf("initiatives: %w", err))
+		}
+		for _, e := range all {
+			if e.Project != name || e.Status == "archived" {
+				continue
+			}
+			labels := make([]string, len(e.Chunks))
+			for i, c := range e.Chunks {
+				labels[i] = c.Label
+			}
+			efforts = append(efforts, sessionideas.EffortFacts{OID: e.OID, Title: e.Title, Chunks: labels})
+		}
+	}
+	docs, err := readProjectDocs(ctx, dir)
+	errs = append(errs, err)
+	pc := sessionideas.BuildProjectContext(efforts, docs.specs, docs.plans, docs.deferred, docs.gitLog)
+	pc.Name, pc.Root = name, dir
+	return pc, errors.Join(errs...)
+}
+
+// projectDocs is what a project's folder says about what is decided.
+type projectDocs struct {
+	specs, plans []string // file names, the newest maxDocNames
+	deferred     string   // docs/deferred.md
+	gitLog       string   // git log -200 --format=%s
+}
+
+// readProjectDocs reads the specs and plans folders, docs/deferred.md and the commit subjects of a project folder. What
+// the folder does not have (no docs, no .git) is no error; anything else that fails is, with the rest still read.
+func readProjectDocs(ctx context.Context, dir string) (projectDocs, error) {
+	var docs projectDocs
+	var errs []error
+	names := func(sub string) []string {
+		entries, err := os.ReadDir(filepath.Join(dir, "docs", "superpowers", sub))
+		if err != nil {
+			if !errors.Is(err, fs.ErrNotExist) {
+				errs = append(errs, err)
+			}
+			return nil
+		}
+		var out []string
+		for _, e := range entries {
+			if !e.IsDir() {
+				out = append(out, e.Name())
+			}
+		}
+		if len(out) > maxDocNames {
+			out = out[len(out)-maxDocNames:]
+		}
+		return out
+	}
+	docs.specs, docs.plans = names("specs"), names("plans")
+	if raw, err := os.ReadFile(filepath.Join(dir, "docs", "deferred.md")); err == nil {
+		docs.deferred = string(raw)
+	} else if !errors.Is(err, fs.ErrNotExist) {
+		errs = append(errs, err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, ".git")); err == nil {
+		gctx, cancel := context.WithTimeout(ctx, projectDocTimeout)
+		defer cancel()
+		out, err := exec.CommandContext(gctx, "git", "-c", "core.quotePath=false", "-C", dir, "log", "-200", "--format=%s").Output()
+		if err != nil {
+			errs = append(errs, fmt.Errorf("git log in %s: %w", dir, err))
+		}
+		docs.gitLog = string(out)
+	}
+	return docs, errors.Join(errs...)
 }
