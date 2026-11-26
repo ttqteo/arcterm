@@ -4,6 +4,7 @@
 import { describe, expect, it } from "vitest";
 import {
     composerTarget,
+    hiddenJudgesOf,
     liveName,
     newCount,
     pairButtonLabel,
@@ -284,7 +285,7 @@ describe("pausedStateText", () => {
         const words = (stopreason: string) => pausedStateText(info({ state: "stopped", stopreason }));
         expect(words("no-new-points")).toBe("Paused: the judge has no new points");
         expect(words("settled")).toBe("Paused: both agree");
-        expect(words("token-cap")).toBe("Paused: token cap reached");
+        expect(words("token-cap")).toBe("Paused: judge token cap reached");
         expect(words("judges-gone")).toBe("Paused: no judge is left");
     });
 
@@ -347,5 +348,43 @@ describe("pairOf", () => {
         expect(pairOf(pairs, "somebody")).toBeNull();
         expect(pairOf(pairs, null)).toBeNull();
         expect(pairOf(pairs, "")).toBeNull();
+    });
+});
+
+describe("hiddenJudgesOf", () => {
+    const resting = (tab: string, workertab: string): PairResting => ({
+        tab,
+        name: "Judge: " + tab.slice(0, 4),
+        workertab,
+        pairid: "ended-" + tab.slice(0, 4),
+    });
+    const asleep = { since: 1, freedBytes: 0 };
+    const row = (id: string, sleeping?: { since: number; freedBytes: number }) => ({ id, sleeping });
+
+    it("is the worker's resting judges that are on the roster and asleep, in the list's order", () => {
+        const list = [resting(JUDGE, WORKER), resting(JUDGE2, WORKER)];
+        const roster = [row(WORKER), row(JUDGE, asleep), row(JUDGE2, asleep)];
+        expect(hiddenJudgesOf(WORKER, list, roster)).toEqual([list[0], list[1]]);
+    });
+
+    it("leaves out a judge something woke: it shows as a plain row, so nothing closes it", () => {
+        const list = [resting(JUDGE, WORKER), resting(JUDGE2, WORKER)];
+        const roster = [row(WORKER), row(JUDGE), row(JUDGE2, asleep)];
+        expect(hiddenJudgesOf(WORKER, list, roster)).toEqual([list[1]]);
+    });
+
+    it("leaves out a resting judge that is off the roster: there is no tab to close", () => {
+        const list = [resting(JUDGE, WORKER)];
+        expect(hiddenJudgesOf(WORKER, list, [row(WORKER)])).toEqual([]);
+    });
+
+    it("leaves out another worker's resting judge", () => {
+        const list = [resting(JUDGE, "someone-else"), resting(JUDGE2, WORKER)];
+        const roster = [row(WORKER), row(JUDGE, asleep), row(JUDGE2, asleep)];
+        expect(hiddenJudgesOf(WORKER, list, roster)).toEqual([list[1]]);
+    });
+
+    it("is empty with no resting judge at all", () => {
+        expect(hiddenJudgesOf(WORKER, [], [row(WORKER)])).toEqual([]);
     });
 });

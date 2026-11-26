@@ -512,7 +512,7 @@ const LP_CAP = "lp-cap"; // stopped at the token cap with something queued: Resu
 const LP_SYNC_STOP = "lp-sync-stop"; // the token-cap pair as the other machine's sync left it: neither button
 const PAUSE_SUMMARY = "Both sides agree the amendment is ready; only the 50% threshold waits on you.";
 const CHIP_TEXT = "50%, go on";
-const RESUME_LABEL = "Resume · 3.0M more";
+const RESUME_LABEL = "Resume · judge +3.0M";
 
 // the three stopped pairs: R1's exchange with its pause message last (pausedPairView), each given the time of its last save
 function stoppedPairs(now) {
@@ -1145,7 +1145,7 @@ function libraryPairs(kit) {
                     return true;`
                 );
 
-                // 14. resume: a pair stopped at the token cap with something queued has "Resume · 3.0M more" in its header (no Judge
+                // 14. resume: a pair stopped at the token cap with something queued has "Resume · judge +3.0M" in its header (no Judge
                 // again); a press records exactly one PairResumeCommand for the pair, and once the flipped view draws the button is
                 // gone and no error shows
                 await seedPair(h, all());
@@ -1161,7 +1161,7 @@ function libraryPairs(kit) {
                 const afterResume = await h.ev(pauseView(LP_CAP));
                 await lpShot(h, "14-resume-after");
                 rec(
-                    "resume: the token-cap pair's header holds an enabled \"Resume · 3.0M more\" button (no Judge again, no error, the card reads \"Paused: token cap reached (3.0M)\" with no button of its own); a press records exactly one PairResumeCommand for the pair, and once the flipped view draws the Resume button is gone, the header line reads Relaying since, and no error shows",
+                    "resume: the token-cap pair's header holds an enabled \"Resume · judge +3.0M\" button (no Judge again, no error, the card reads \"Paused: judge token cap reached (3.0M)\" with no button of its own); a press records exactly one PairResumeCommand for the pair, and once the flipped view draws the Resume button is gone, the header line reads Relaying since, and no error shows",
                     openCap &&
                         cap?.resume?.text === RESUME_LABEL &&
                         cap.resume.tag === "BUTTON" &&
@@ -1169,7 +1169,7 @@ function libraryPairs(kit) {
                         cap.resume.disabled === false &&
                         cap.judgeAgain === null &&
                         cap.error === null &&
-                        cap.card?.head === "Paused: token cap reached (3.0M)" &&
+                        cap.card?.head === "Paused: judge token cap reached (3.0M)" &&
                         cap.card.buttons === 0 &&
                         /^Stopped /.test(cap.line) &&
                         resumed.length === 1 &&
@@ -1203,7 +1203,7 @@ function libraryPairs(kit) {
                     `document.querySelector("[data-library] [data-pair-read-resume]") == null && document.querySelector("[data-library] [data-pair-read-resume-error]") == null`
                 );
                 rec(
-                    "resume fails: with the stub failing, one press records one PairResumeCommand and the alert \"Resume failed: " + RESUME_ERROR + "\" shows under the header while \"Resume · 3.0M more\" stays, enabled; once the stub works a second press takes the line and the button away",
+                    "resume fails: with the stub failing, one press records one PairResumeCommand and the alert \"Resume failed: " + RESUME_ERROR + "\" shows under the header while \"Resume · judge +3.0M\" stays, enabled; once the stub works a second press takes the line and the button away",
                     failedCalls === 1 &&
                         failed?.error?.text === `Resume failed: ${RESUME_ERROR}` &&
                         failed.error.role === "alert" &&

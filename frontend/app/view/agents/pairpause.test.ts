@@ -71,12 +71,12 @@ describe("pauseHead", () => {
         expect(pauseHead("judges-gone", true)).toBe("Tạm dừng: không còn judge");
     });
 
-    it("names the cap on a token-cap head only when given one", () => {
-        expect(pauseHead("token-cap", false, "3.0M")).toBe("Paused: token cap reached (3.0M)");
-        expect(pauseHead("token-cap", true, "3.0M")).toBe("Tạm dừng: chạm trần token (3.0M)");
-        expect(pauseHead("token-cap", false)).toBe("Paused: token cap reached");
-        expect(pauseHead("token-cap", true)).toBe("Tạm dừng: chạm trần token");
-        expect(pauseHead("token-cap", false, "")).toBe("Paused: token cap reached");
+    it("names the cap on a token-cap head only when given one, and says it is the judge's cap", () => {
+        expect(pauseHead("token-cap", false, "3.0M")).toBe("Paused: judge token cap reached (3.0M)");
+        expect(pauseHead("token-cap", true, "3.0M")).toBe("Tạm dừng: judge chạm trần token (3.0M)");
+        expect(pauseHead("token-cap", false)).toBe("Paused: judge token cap reached");
+        expect(pauseHead("token-cap", true)).toBe("Tạm dừng: judge chạm trần token");
+        expect(pauseHead("token-cap", false, "")).toBe("Paused: judge token cap reached");
     });
 
     it("ignores a cap on any other reason", () => {
@@ -129,7 +129,7 @@ describe("pauseCardOf", () => {
             const card = pauseCardOf(view({ stopreason: reason }), pauseMsg("m9", reason));
             expect(card?.head).toBe(pauseHead(reason, false, reason === "token-cap" ? "3.0M" : undefined));
         }
-        expect(pauseCardOf(view(), pauseMsg("m9", "token-cap"))?.head).toBe("Paused: token cap reached (3.0M)");
+        expect(pauseCardOf(view(), pauseMsg("m9", "token-cap"))?.head).toBe("Paused: judge token cap reached (3.0M)");
     });
 
     it("reads the head from the message's own reason, not the pair's present one", () => {
@@ -264,20 +264,20 @@ describe("pauseActions", () => {
         expect(pauseActions(view({ stopreason: "judges-gone", canresume: true }), local)).toEqual(none);
     });
 
-    it("offers Resume with the cap after a token cap when something would be delivered", () => {
+    it("offers Resume with the judge's cap after a token cap when something would be delivered", () => {
         expect(pauseActions(view({ stopreason: "token-cap", canresume: true }), local)).toEqual({
-            resume: "Resume · 3.0M more",
+            resume: "Resume · judge +3.0M",
             judgeAgain: null,
             hint: null,
         });
         const vi = view({ stopreason: "token-cap", canresume: true, messages: [person("m1", "ừ")] });
-        expect(pauseActions(vi, local).resume).toBe("Chạy tiếp · thêm 3.0M");
+        expect(pauseActions(vi, local).resume).toBe("Chạy tiếp · judge thêm 3.0M");
     });
 
     it("words the token-cap Resume with the pair's own cap, and plainly with no cap", () => {
         expect(
             pauseActions(view({ stopreason: "token-cap", canresume: true, tokencap: 1_500_000 }), local).resume
-        ).toBe("Resume · 1.5M more");
+        ).toBe("Resume · judge +1.5M");
         expect(pauseActions(view({ stopreason: "token-cap", canresume: true, tokencap: 0 }), local).resume).toBe(
             "Resume"
         );

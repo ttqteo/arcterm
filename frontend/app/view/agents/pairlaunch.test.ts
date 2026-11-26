@@ -47,6 +47,8 @@ import {
     openNewJudge,
     pairStartData,
     pickJudge,
+    restingJudgeOf,
+    wakeJudge,
 } from "./pairlaunch";
 import { canPair } from "./pairmodel";
 import { railCwdsAtom } from "./railstore";
@@ -188,20 +190,105 @@ describe("judgeChoices", () => {
     });
 });
 
+describe("restingJudgeOf", () => {
+    const asleep = { since: 1, freedBytes: 0 };
+    const RESTING: PairResting = {
+        tab: JUDGE,
+        name: "Judge: Plan oracle-tightening",
+        workertab: WORKER,
+        pairid: "old-1",
+    };
+    const sleepingJudge = agent({ id: JUDGE, name: "Judge: Plan oracle-tightening", sleeping: asleep });
+
+    it("is the worker's resting judge when it is on the roster and asleep", () => {
+        expect(restingJudgeOf([RESTING], [WORKER_VM, sleepingJudge], WORKER)).toStrictEqual(RESTING);
+    });
+
+    it("is null for a judge that is awake (something woke it: it is a plain agent again)", () => {
+        expect(restingJudgeOf([RESTING], [WORKER_VM, JUDGE_VM], WORKER)).toBeNull();
+    });
+
+    it("is null for a judge that is off the roster", () => {
+        expect(restingJudgeOf([RESTING], [WORKER_VM], WORKER)).toBeNull();
+    });
+
+    it("is null for another worker's resting judge", () => {
+        const other = { ...RESTING, workertab: OTHER };
+        expect(restingJudgeOf([other], [WORKER_VM, sleepingJudge], WORKER)).toBeNull();
+    });
+
+    it("is null with no resting judge, and takes the first of the worker's when there are several (the list is newest first)", () => {
+        expect(restingJudgeOf([], [WORKER_VM, sleepingJudge], WORKER)).toBeNull();
+        const second = agent({ id: OTHER, name: "Judge: an older round", sleeping: asleep });
+        const older: PairResting = { tab: OTHER, name: second.name, workertab: WORKER, pairid: "old-0" };
+        expect(restingJudgeOf([RESTING, older], [WORKER_VM, sleepingJudge, second], WORKER)).toStrictEqual(RESTING);
+        // the newest one awake: the next one that is asleep is offered
+        expect(restingJudgeOf([RESTING, older], [WORKER_VM, JUDGE_VM, second], WORKER)).toStrictEqual(older);
+    });
+});
+
+describe("judgeChoices with a resting judge", () => {
+    const asleep = { since: 1, freedBytes: 0 };
+    const RESTING: PairResting = {
+        tab: JUDGE,
+        name: "Judge: Plan oracle-tightening",
+        workertab: WORKER,
+        pairid: "old-1",
+    };
+    const sleepingJudge = agent({ id: JUDGE, name: "Judge: Plan oracle-tightening", sleeping: asleep });
+
+    it("leaves the resting judge out of the live list: the menu offers it first, as Wake", () => {
+        const agents = [WORKER_VM, sleepingJudge, agent({ id: OTHER, name: "Pull history and sync" })];
+        expect(judgeChoices(agents, WORKER, "mit-thesis", [], [RESTING])).toStrictEqual([
+            { id: OTHER, name: "Pull history and sync", short: "9e0f1a2b", state: "idle" },
+        ]);
+    });
+
+    it("keeps a judge that is not the one offered: an awake resting judge is a plain agent, another worker's is another's", () => {
+        const awake = [WORKER_VM, JUDGE_VM];
+        expect(judgeChoices(awake, WORKER, "mit-thesis", [], [RESTING]).map((c) => c.id)).toStrictEqual([JUDGE]);
+        const other = { ...RESTING, workertab: OTHER };
+        expect(
+            judgeChoices([WORKER_VM, sleepingJudge], WORKER, "mit-thesis", [], [other]).map((c) => c.id)
+        ).toStrictEqual([JUDGE]);
+    });
+
+    it("lists every agent as before when no resting list is given", () => {
+        expect(judgeChoices([WORKER_VM, sleepingJudge], WORKER, "mit-thesis", []).map((c) => c.id)).toStrictEqual([
+            JUDGE,
+        ]);
+    });
+});
+
 describe("pairStartData", () => {
     it("holds heavy commands and takes the default cap (0 is wavesrv's 3,000,000)", () => {
-        expect(pairStartData(WORKER, JUDGE, false)).toStrictEqual({
+        expect(pairStartData(WORKER, JUDGE, false, false)).toStrictEqual({
             workertab: WORKER,
             judgetab: JUDGE,
             holdheavy: true,
             tokencap: 0,
             note: "",
             briefed: false,
+            launched: false,
         });
     });
 
     it("says briefed for a judge arcterm launched with the brief as its task", () => {
-        expect(pairStartData(WORKER, JUDGE, true).briefed).toBe(true);
+        expect(pairStartData(WORKER, JUDGE, true, true).briefed).toBe(true);
+    });
+
+    it("says launched for a judge arcterm launched for the job or woke from rest, and not for a picked agent", () => {
+        expect(pairStartData(WORKER, JUDGE, true, true).launched).toBe(true);
+        expect(pairStartData(WORKER, JUDGE, false, true)).toStrictEqual({
+            workertab: WORKER,
+            judgetab: JUDGE,
+            holdheavy: true,
+            tokencap: 0,
+            note: "",
+            briefed: false,
+            launched: true,
+        });
+        expect(pairStartData(WORKER, JUDGE, false, false).launched).toBe(false);
     });
 });
 
@@ -289,7 +376,9 @@ describe("openNewJudge", () => {
             projectName: "mit-thesis",
             label: "Judge: Plan oracle-tightening",
         });
-        expect(mocks.start).toHaveBeenCalledWith({}, pairStartData(WORKER, JUDGE, true));
+        // a judge arcterm launched for the job: briefed, and launched, so it rests when the round ends
+        expect(mocks.start).toHaveBeenCalledWith({}, pairStartData(WORKER, JUDGE, true, true));
+        expect(mocks.start.mock.calls[0][1]).toMatchObject({ briefed: true, launched: true });
         // back on the worker, showing the conversation
         expect(focused(model)).toBe(WORKER);
         expect(mocks.showPair).toHaveBeenCalledWith(PAIR_ID);
@@ -448,9 +537,10 @@ describe("pickJudge", () => {
         mocks.showPair.mockReset();
     });
 
-    it("pairs with the live agent (hold on, default cap, not briefed) and opens the conversation", async () => {
+    it("pairs with the live agent (hold on, default cap, not briefed, not launched) and opens the conversation", async () => {
         await pickJudge(WORKER_VM, JUDGE);
-        expect(mocks.start).toHaveBeenCalledWith({}, pairStartData(WORKER, JUDGE, false));
+        expect(mocks.start).toHaveBeenCalledWith({}, pairStartData(WORKER, JUDGE, false, false));
+        expect(mocks.start.mock.calls[0][1]).toMatchObject({ briefed: false, launched: false });
         expect(mocks.showPair).toHaveBeenCalledWith(PAIR_ID);
     });
 
@@ -463,6 +553,41 @@ describe("pickJudge", () => {
                 level: "error",
                 title: "Couldn't add a judge to Plan oracle-tightening",
                 message: "an agent is in at most one pair",
+            })
+        );
+    });
+});
+
+describe("wakeJudge", () => {
+    beforeEach(() => {
+        mocks.start.mockReset().mockResolvedValue({ id: PAIR_ID });
+        mocks.toast.mockReset();
+        mocks.showPair.mockReset();
+    });
+
+    it("pairs with the resting judge, unbriefed (the send of the brief wakes it) and launched (it rests again after this round), and opens the conversation", async () => {
+        await wakeJudge(WORKER_VM, JUDGE);
+        expect(mocks.start).toHaveBeenCalledTimes(1);
+        expect(mocks.start).toHaveBeenCalledWith({}, pairStartData(WORKER, JUDGE, false, true));
+        expect(mocks.start.mock.calls[0][1]).toMatchObject({
+            workertab: WORKER,
+            judgetab: JUDGE,
+            briefed: false,
+            launched: true,
+        });
+        expect(mocks.showPair).toHaveBeenCalledWith(PAIR_ID);
+        expect(mocks.toast).not.toHaveBeenCalled();
+    });
+
+    it("shows the error and opens nothing when PairStart refuses", async () => {
+        mocks.start.mockReset().mockRejectedValue(new Error("that agent is gone"));
+        await wakeJudge(WORKER_VM, JUDGE);
+        expect(mocks.showPair).not.toHaveBeenCalled();
+        expect(mocks.toast).toHaveBeenCalledWith(
+            expect.objectContaining({
+                level: "error",
+                title: "Couldn't add a judge to Plan oracle-tightening",
+                message: "that agent is gone",
             })
         );
     });

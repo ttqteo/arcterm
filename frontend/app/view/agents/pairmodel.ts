@@ -160,7 +160,8 @@ export function waitingOnJudge(info: PairInfo): boolean {
 }
 
 /** The working agent's idle state line while its pair is stopped: the pause card's head words (pauseHead), in English as the
- *  header's state words are everywhere, and with no cap, since a PairInfo carries none. null on a pair that is not stopped. */
+ *  header's state words are everywhere, and with no cap, since a PairInfo carries none ("Paused: judge token cap reached":
+ *  the cap counts the judges' tokens). null on a pair that is not stopped. */
 export function pausedStateText(info: PairInfo): string | null {
     return info.state === "stopped" ? pauseHead(info.stopreason, false) : null;
 }
@@ -197,4 +198,16 @@ export function pairOf(pairs: readonly PairInfo[], tabId: string | null): { pair
         }
     }
     return null;
+}
+
+/** The resting judges of `workerTab` that are hidden: on the roster and asleep, in the list's order (the server lists the
+ *  newest first). A resting judge that something woke is a plain row the person can see, and one off the roster has no tab
+ *  left, so neither is here. The one rule behind Add judge's "Wake" entry (restingJudgeOf) and the close of a worker, which
+ *  closes these with it (closetab.ts). */
+export function hiddenJudgesOf(
+    workerTab: string,
+    resting: readonly PairResting[],
+    roster: readonly Pick<AgentVM, "id" | "sleeping">[]
+): PairResting[] {
+    return resting.filter((r) => r.workertab === workerTab && roster.some((a) => a.id === r.tab && a.sleeping != null));
 }

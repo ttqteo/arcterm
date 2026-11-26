@@ -618,7 +618,7 @@ export default function (kit) {
                     { cardIds, older, newest }
                 );
 
-                // resume: after a token cap with something queued the card offers "Resume · 3.0M more" (no hint, no Judge again); a
+                // resume: after a token cap with something queued the card offers "Resume · judge +3.0M" (no hint, no Judge again); a
                 // press records one PairResumeCommand, and once the view comes back relaying the button is gone and the card stays
                 const tokenCap = { reason: "token-cap", canresume: true };
                 await seedPaused(tokenCap);
@@ -634,9 +634,9 @@ export default function (kit) {
                 const afterResume = await readCard(h, PAUSE_IDS.newest);
                 await shot(h, "11-resume-after");
                 rec(
-                    "resume: a token-cap card with canresume reads \"Paused: token cap reached (3.0M)\" and offers \"Resume · 3.0M more\" (no hint, no Judge again); a press records exactly one PairResumeCommand for the pair, and after the flipped view draws the button is gone, with no button left on the card",
-                    capCard?.head === "Paused: token cap reached (3.0M)" &&
-                        capCard.resume?.text === "Resume · 3.0M more" &&
+                    "resume: a token-cap card with canresume reads \"Paused: judge token cap reached (3.0M)\" and offers \"Resume · judge +3.0M\" (no hint, no Judge again); a press records exactly one PairResumeCommand for the pair, and after the flipped view draws the button is gone, with no button left on the card",
+                    capCard?.head === "Paused: judge token cap reached (3.0M)" &&
+                        capCard.resume?.text === "Resume · judge +3.0M" &&
                         capCard.resume.tag === "BUTTON" &&
                         capCard.hint === null &&
                         capCard.judgeAgain === null &&
@@ -668,10 +668,10 @@ export default function (kit) {
                 await click(h, `document.querySelector("[data-pair-resume]")`);
                 const retried = await polishWaitFor(h, `!document.querySelector("[data-pair-resume]") && !document.querySelector("[data-pair-error]")`, WAIT_MS);
                 rec(
-                    "resume-fails: with the resume stub failing, one press records one PairResumeCommand and shows the error line \"Resume failed: " + RESUME_ERROR + "\" while the card keeps an enabled \"Resume · 3.0M more\" button; once the stub works a second press takes the line and the button away",
+                    "resume-fails: with the resume stub failing, one press records one PairResumeCommand and shows the error line \"Resume failed: " + RESUME_ERROR + "\" while the card keeps an enabled \"Resume · judge +3.0M\" button; once the stub works a second press takes the line and the button away",
                     failedCalls === 1 &&
                         errorText === `Resume failed: ${RESUME_ERROR}` &&
-                        stays?.resume?.text === "Resume · 3.0M more" &&
+                        stays?.resume?.text === "Resume · judge +3.0M" &&
                         stays.resume.disabled === false &&
                         retried === true,
                     { failedCalls, errorText, stays, retried }
@@ -742,9 +742,9 @@ export default function (kit) {
                 await polishNap(300);
                 states.relaying = await headerState(h);
                 rec(
-                    "header-paused: the working agent's header state line reads \"Paused: the judge has no new points\", \"Paused: token cap reached\" and \"Paused: no judge is left\" on a stopped pair even when the judge owes an answer, and \"waiting on judge\" again once the pair relays",
+                    "header-paused: the working agent's header state line reads \"Paused: the judge has no new points\", \"Paused: judge token cap reached\" and \"Paused: no judge is left\" on a stopped pair even when the judge owes an answer, and \"waiting on judge\" again once the pair relays",
                     states["no-new-points"] === "Paused: the judge has no new points" &&
-                        states["token-cap"] === "Paused: token cap reached" &&
+                        states["token-cap"] === "Paused: judge token cap reached" &&
                         states["judges-gone"] === "Paused: no judge is left" &&
                         states.relaying === "waiting on judge",
                     states

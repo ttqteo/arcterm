@@ -2,10 +2,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // The agent header's pair controls (board K2, and board C of the tree-and-toggle follow-up): an unpaired agent's Add judge
-// button and its menu (Open a new judge, then the project's live agents that are in no pair), a paired worker's Pair
-// button beside a small + (another judge for the same pair), and a judge's Pair button beside a link to the agent it
-// judges. Pair toggles the centre into the conversation and back. What picking an entry does is pairlaunch.ts; what the
-// labels say is pairmodel.ts.
+// button and its menu (Wake the judge of the earlier rounds when one rests asleep, Open a new judge, then the project's
+// live agents that are in no pair), a paired worker's Pair button beside a small + (another judge for the same pair), and
+// a judge's Pair button beside a link to the agent it judges. Pair toggles the centre into the conversation and back. What
+// picking an entry does is pairlaunch.ts; what the labels say is pairmodel.ts.
 
 import { PopoverReveal } from "@/app/element/popoverreveal";
 import { globalStore } from "@/app/store/jotaiStore";
@@ -26,10 +26,10 @@ import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react"
 import { centerModeAtom, pairSelAtom, showTerminal } from "./agentcenter";
 import type { AgentsViewModel } from "./agents";
 import type { AgentVM } from "./agentsviewmodel";
-import { judgeChoices, openNewJudge, pickJudge } from "./pairlaunch";
+import { judgeChoices, openNewJudge, pickJudge, restingJudgeOf, wakeJudge } from "./pairlaunch";
 import { liveName, newCount, pairButtonLabel, type PairRole } from "./pairmodel";
 import { pairOnScreen, togglePairOf } from "./pairopen";
-import { pairSeenAtom, usePairs, usePairView } from "./pairstore";
+import { pairSeenAtom, usePairs, usePairView, useRestingJudges } from "./pairstore";
 
 // keyboard focus on these buttons draws as the accent ring, as it does on the run link's × in the same header
 const FOCUS_RING = "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent";
@@ -43,6 +43,7 @@ function MenuBody({
     project,
     onNew,
     onPick,
+    onWake,
     onClose,
 }: {
     model: AgentsViewModel;
@@ -50,13 +51,23 @@ function MenuBody({
     project: string;
     onNew: () => void;
     onPick: (judgeTab: string) => void;
+    onWake: (judgeTab: string) => void;
     onClose: () => void;
 }) {
     const agents = useAtomValue(model.agentsAtom);
     const pairs = usePairs();
-    const choices = useMemo(() => judgeChoices(agents, worker.id, project, pairs), [agents, worker.id, project, pairs]);
+    const restingJudges = useRestingJudges();
+    // the judge of the earlier rounds, asleep and hidden from the tree: the menu's first entry, so a new round keeps what it read
+    const wake = useMemo(() => restingJudgeOf(restingJudges, agents, worker.id), [restingJudges, agents, worker.id]);
+    // the roster's name for it (its title as the tree shows it), else the one the server stored
+    const wakeName = wake != null ? agents.find((a) => a.id === wake.tab)?.name || wake.name : "";
+    const choices = useMemo(
+        () => judgeChoices(agents, worker.id, project, pairs, restingJudges),
+        [agents, worker.id, project, pairs, restingJudges]
+    );
     const rootRef = useRef<HTMLDivElement>(null);
-    // the keys live in the menu from the moment it opens: the first row (Open a new judge) is under the cursor, as K2 draws it
+    // the keys live in the menu from the moment it opens: the first row (Wake the resting judge, else Open a new judge) is
+    // under the cursor, as K2 draws it
     useEffect(() => {
         rootRef.current?.querySelector<HTMLElement>("[role=menuitem]")?.focus({ preventScroll: true });
     }, []);
@@ -86,6 +97,21 @@ function MenuBody({
             onKeyDown={onKeyDown}
             className="frost flex w-[320px] flex-col rounded-[8px] border border-edge-strong p-[5px] shadow-popover-lg outline-none"
         >
+            {wake != null ? (
+                <button
+                    type="button"
+                    role="menuitem"
+                    data-pair-wake-judge={wake.tab}
+                    onClick={() => onWake(wake.tab)}
+                    title={wakeName}
+                    className={cn(ITEM, "flex-col items-start gap-[2px] py-[8px]")}
+                >
+                    <span className="max-w-full truncate">Wake {wakeName}</span>
+                    <span className="text-[11.5px] text-muted">
+                        judge of your earlier rounds, keeps what it read · asleep
+                    </span>
+                </button>
+            ) : null}
             <button
                 type="button"
                 role="menuitem"
@@ -237,6 +263,10 @@ function AddJudgeButton({
                 onPick={(judgeTab) => {
                     close(false);
                     fireAndForget(() => pickJudge(agent, judgeTab));
+                }}
+                onWake={(judgeTab) => {
+                    close(false);
+                    fireAndForget(() => wakeJudge(agent, judgeTab));
                 }}
                 onClose={() => close(true)}
             />

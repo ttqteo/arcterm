@@ -55,7 +55,8 @@ export function pauseHead(reason: string, vietnamese: boolean, cap?: string): st
         case "settled":
             return vietnamese ? "Tạm dừng: hai bên đã thống nhất" : "Paused: both agree";
         case "token-cap": {
-            const head = vietnamese ? "Tạm dừng: chạm trần token" : "Paused: token cap reached";
+            // the cap counts the judges' tokens only (the worker's do not count), so the words say whose cap it is
+            const head = vietnamese ? "Tạm dừng: judge chạm trần token" : "Paused: judge token cap reached";
             return cap != null && cap !== "" ? `${head} (${cap})` : head;
         }
         case "judges-gone":
@@ -119,7 +120,8 @@ export function pauseCardOf(
 /** What a pair offers the person: only a stopped pair of this machine offers anything (not an ended, a relaying or a
  *  synced one, and `local` false when the page knows the pair is not this machine's); a "no judge is left" pause offers
  *  nothing but its card's note.
- *  - Resume, when `canresume` says something would be delivered; after a token cap it names the cap that counts again.
+ *  - Resume, when `canresume` says something would be delivered; after a token cap it names the judge's cap that counts
+ *    again ("Resume · judge +3.0M").
  *  - Judge again, after no new points or both agree.
  *  - The hint, when nothing would be delivered, since a message from the person already resumes the pair. */
 export function pauseActions(view: PairView, opts: { local: boolean }): PauseActions {
@@ -133,7 +135,7 @@ export function pauseActions(view: PairView, opts: { local: boolean }): PauseAct
     const canResume = view.canresume === true;
     const plain = vi ? "Chạy tiếp" : "Resume";
     return {
-        resume: canResume ? (cap !== "" ? `${plain} · ${vi ? "thêm " : ""}${cap}${vi ? "" : " more"}` : plain) : null,
+        resume: canResume ? (cap !== "" ? `${plain} · ${vi ? `judge thêm ${cap}` : `judge +${cap}`}` : plain) : null,
         judgeAgain: reason === "no-new-points" || reason === "settled" ? (vi ? "Judge tiếp" : "Judge again") : null,
         hint: canResume ? null : vi ? "Nhắn để bàn tiếp" : "Message to go on",
     };
