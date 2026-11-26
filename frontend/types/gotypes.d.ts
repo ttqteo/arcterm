@@ -2683,6 +2683,7 @@ declare global {
     // wshrpc.CommandPairBriefData
     type CommandPairBriefData = {
         workertab: string;
+        from?: string;
     };
 
     // wshrpc.CommandPairBriefRtnData
@@ -2731,6 +2732,7 @@ declare global {
         note: string;
         briefed: boolean;
         launched?: boolean;
+        from?: string;
     };
 
     // wshrpc.CommandPauseRunData

@@ -46,7 +46,7 @@ type PairInfo struct {
 }
 
 // PairResting is a judge arcterm launched for a job whose newest pair has ended: it rests (asleep, or about to be) and
-// is hidden under its worker's row while that worker is on the roster, until Add judge wakes it for a new round.
+// is hidden under its worker's row while that worker is on the roster, until ⚖ under a reply wakes it for a new round.
 type PairResting struct {
 	Tab       string `json:"tab"`       // the judge's tab
 	Name      string `json:"name"`      // as the roster names it ("Judge: <worker>")
@@ -140,6 +140,8 @@ type PairView struct {
 
 type CommandPairBriefData struct {
 	WorkerTab string `json:"workertab"`
+	// From is the transcript record uuid of the reply the pair starts from; "" is the agent's latest reply.
+	From string `json:"from,omitempty"`
 }
 
 type CommandPairBriefRtnData struct {
@@ -154,6 +156,8 @@ type CommandPairStartData struct {
 	Note      string `json:"note"`
 	Briefed   bool   `json:"briefed"`            // the judge was launched with PairBrief's text as its task
 	Launched  bool   `json:"launched,omitempty"` // the judge is a tab arcterm launched for the job: a new "Judge: <worker>" tab, or a resting judge woken
+	// From is the transcript record uuid of the reply the pair starts from; "" is the agent's latest reply.
+	From string `json:"from,omitempty"`
 }
 
 // CommandPairSayData is the person's message. To: both | worker | judge | a judge's tab ("" is both). ReplyTo names the

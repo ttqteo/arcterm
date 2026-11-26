@@ -34,6 +34,10 @@ and a picture given to a line that is not big.
 
 ### Added
 
+- A judge round's mark in the working agent's Chat: a ⚖ line under the reply the round started from ("The judge is
+  reading this reply · 12 s", then "The judge round starts here" with Open pair) and a bar along the turns it covers,
+  accent while the round lives and grey once it ended, when the line reads the round's times and what it settled and
+  opens its page in Library. A reply that started two rounds carries both. <!-- big --> <!-- shot: none -->
 - A finished council's Discussion ends on a closing card: the council's answer in one sentence, what it settled
   (agreed, still open, ruled out) and Open Report.
 - Tidy on a board: the button beside Edit lays the drawing in view out again, its boxes in rows along the way its arrows
@@ -75,6 +79,10 @@ and a picture given to a line that is not big.
 
 ### Changed
 
+- Add judge moved from the agent's header onto each reply: ⚖ under a reply in Chat (beside Copy and Fork, on hover)
+  pairs a judge, and an older reply can be judged, not only the latest. The judge reads that reply and, where it is
+  older, is told where the agent's transcript is to see what it did since; the agent is told which reply is being
+  judged. The header keeps Pair and + once a pair exists.
 - Opening an agent in Chat with unread turns takes you to the oldest of them, under an "N new turns" rule, and its
   blue count drops by one for each turn you scroll to the end of, instead of going to 0 at once. In Terminal it still
   clears at once.

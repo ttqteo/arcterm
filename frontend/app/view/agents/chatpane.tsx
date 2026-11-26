@@ -1323,6 +1323,7 @@ function ChatPaneBody({ model, agent, barred }: { model: AgentsViewModel; agent:
                                     }}
                                     model={model}
                                     agent={agent}
+                                    ownTranscript={!readsFork}
                                     cwd={cwd}
                                     liveJudgeKey={liveJudgeKey}
                                     unread={unread}

@@ -30,6 +30,34 @@ func LastAnswer(path, runtime string) (text string, ts int64) {
 	return "", 0
 }
 
+// AnswerAt returns one reply of a claude session by the uuid of its transcript record, in full, and its transcript time
+// (UnixMilli): the reply LastAnswer would give had the session stopped there. A record that has no text (a tool call, a
+// user turn), a subagent's record, a uuid no record has, any other runtime and a file that cannot be read are not found.
+func AnswerAt(path, runtime, uuid string) (text string, ts int64, found bool) {
+	if runtime != "claude" || uuid == "" {
+		return "", 0, false
+	}
+	return claudeAnswerAt(transcriptLines(path), uuid)
+}
+
+func claudeAnswerAt(lines []string, uuid string) (string, int64, bool) {
+	for _, line := range lines {
+		// the uuid also names a record as its parent, so the line is parsed to check it is the record's own
+		if !strings.Contains(line, uuid) || !strings.Contains(line, `"type":"assistant"`) {
+			continue
+		}
+		var rec claudeLine
+		if json.Unmarshal([]byte(line), &rec) != nil || rec.UUID != uuid {
+			continue
+		}
+		if text := claudeReplyText(rec); text != "" {
+			return text, parseTs(rec.Timestamp), true
+		}
+		return "", 0, false
+	}
+	return "", 0, false
+}
+
 func claudeLastAnswer(lines []string) (string, int64) {
 	for i := len(lines) - 1; i >= 0; i-- {
 		if !strings.Contains(lines[i], `"type":"assistant"`) {

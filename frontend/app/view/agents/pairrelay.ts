@@ -6,6 +6,11 @@
 // agentmsg.PairEnvelope: RelayPrompt's parts under relayHead lines and WorkerBrief's opening (brief.go), JudgeBrief, and
 // EndedNotice (hold.go). Go writes them as fixtures (pkg/orchestrate/viewmod_fixtures_test.go) and pairrelay.test.ts
 // parses those, so a wording change there fails here.
+//
+// A pair that started from an older reply (docs/superpowers/specs/2026-11-26-judge-on-reply-design.md) changes two texts:
+// the working agent's first prompt holds OlderReplyNote after WorkerBrief, before the first head, so it folds into the
+// same brief; and JudgeBrief pastes the reply between `--- the agent's reply ---` and `--- end of the reply ---` (the
+// latest reply's are `--- the agent's latest reply ---` and the same end), with a paragraph above it that stays in the brief.
 
 export type RelayFrom = "judge" | "worker" | "person" | "arcterm";
 
@@ -36,7 +41,7 @@ const WORKER_BRIEF = "arcterm has paired you with ";
 const JUDGE_BRIEF = new RegExp(
     String.raw`^You are the judge of another agent's work\. arcterm pairs the two of you: the agent is ${QUOTED} \(tab (\S+)\)\.`
 );
-const REPLY = /\n?--- the agent's latest reply ---\n([\s\S]*?)\n--- end of the reply ---\n?/;
+const REPLY = /\n?--- the agent's (?:latest )?reply ---\n([\s\S]*?)\n--- end of the reply ---\n?/;
 const ENDED = "The pair has ended:";
 const HELD = /^- `(.+)` was held: you may run it now\.$/;
 const ANSWER = /^Answer to A(\d+): /;

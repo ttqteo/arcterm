@@ -29,6 +29,7 @@ import { judgeAgainOf } from "./pairopen";
 import {
     devMockPairsAtom,
     devMockRestingAtom,
+    ensurePair,
     loadPair,
     loadPairHistory,
     loadPairs,
@@ -110,6 +111,26 @@ describe("reading pairs", () => {
         late(view("v3", 1));
         await slow;
         expect(globalStore.get(pairViewAtom("v3"))?.messages).toHaveLength(3);
+    });
+});
+
+describe("ensurePair", () => {
+    it("reads a pair once however many ask, and leaves it to the events after that", async () => {
+        get.mockResolvedValue(view("e1", 1));
+        ensurePair("e1");
+        ensurePair("e1");
+        await vi.waitFor(() => expect(globalStore.get(pairViewAtom("e1"))?.messages).toHaveLength(1));
+        ensurePair("e1");
+        ensurePair("");
+        expect(get).toHaveBeenCalledTimes(1);
+        expect(get).toHaveBeenCalledWith({}, { pairid: "e1" });
+    });
+
+    it("does not read again a pair something else already read", async () => {
+        get.mockResolvedValue(view("e2", 2));
+        await loadPair("e2");
+        ensurePair("e2");
+        expect(get).toHaveBeenCalledTimes(1);
     });
 });
 

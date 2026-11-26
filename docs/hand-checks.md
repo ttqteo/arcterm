@@ -23,6 +23,25 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
 
 ## 2026-11-26
 
+- [ ] (arcterm) make the judge mark's What's new shot with `node scripts/whatsnew-shot.mjs judge-mark` and put it on the
+  CHANGELOG line: with a dev app showing a judge round's mark in an agent's Chat (a pair started from an older reply: the
+  ⚖ line under that reply and the accent bar beside the turns after it), run the command and replace the
+  `<!-- shot: none -->` of the "judge round's mark" line under Unreleased → Added with the comment it prints.
+  `whatsnew.test.ts` then checks the file. (`CHANGELOG.md`)
+- [ ] (arcterm) **The ⚖ menu grows from its button.** In an agent's Chat, hover a reply and press ⚖ (Judge this reply):
+  the menu fades in and scales up from its top-left corner, the corner at the button (not from its middle and not from
+  the header), and Escape takes it back the same way into the button's corner; two quick presses end closed, never a
+  second copy. With reduced motion on it comes and goes at once. (`pairjudgemenu.tsx` JudgeReplyMenu; the `pair-header`
+  scenario's menu-motion step samples the opacity over frames, not where the scale starts.)
+- [ ] (arcterm) **A judge round's mark: the motions the Final does not sample.** Start a pair from ⚖ under a reply of a
+  working agent's Chat: while the ⚖ line ("The judge is reading this reply · N s" with a spinner) opens under that
+  reply, the rows above it do not shove. When the judge answers, the line's words cross-fade to "The judge round
+  starts here" in about 140 ms and its height follows on the spring. Send the agent another message while the round
+  lives: the bar reaches the new row once that row has opened (the clip of a row that is arriving hides it until then).
+  The `chat-judge-reply` scenario's `motion` step samples the rest in the Final, on frames: the line's own height and
+  opacity as it opens under a drawn reply, the bar's colour easing from the accent to grey, the ended line's words
+  cross-fading, and the reduced-motion end states. It does not sample the rows above the line, and it goes from
+  reading straight to ended, so the live state's cross-fade is not seen. (`chatpairmark.tsx`, `chatconversation.tsx`)
 - [ ] (arcterm) **A slow-ending sleep still sleeps.** Next time waveapp.log shows `agent sleep: … is asleep, but pids …
   had not ended`, that agent's row reads asleep (not exited), and Wake or a Chat message brings it back on its
   conversation, the log showing `agent wake: block …: ending pids … left from its sleep` first when they still ran. A
@@ -59,11 +78,11 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
   pushes the value column out. `councilreporttablesview.tsx`; `task verify:ui -- council-report-tables` for the end
   state.
 - [ ] (arcterm) **The ⚖ line grows in with a pair and folds away when its round ends.** In the Agent tree, pair two live
-  agents (Add judge on the working agent): the line under the working agent's name ("judge reviewing · 1.2M", the new
+  agents (⚖ under a reply of the working agent's Chat): the line under the working agent's name ("judge reviewing · 1.2M", the new
   count at its end) grows in on the spring (height 0 → auto, the opacity on the micro ease) and the rows below it slide
   down with it, and the judge never has a row of its own. Let the pair stop, then type in the working agent's own Chat:
   the line folds away on the same spring, the judge's tab goes to sleep and does not show as a row, and Library lists
-  the ended pair. Wake the judge (a message to its tab, or Add judge → Wake): it is a plain row again, with no line.
+  the ended pair. Wake the judge (a message to its tab, or ⚖ under a reply → Wake): it is a plain row again, with no line.
   With reduced motion on, the line comes and goes at once. (`pairjudgelineview.tsx` PairJudgeLineSlot; the `pair-tree`
   scenario's line-live and round-ended steps read the end states, not the motion.)
 - [ ] (arcterm) **A pair's relayed reply in Chat: the two disclosures, and the name that opens the sender.** In a live
@@ -290,10 +309,11 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
   longer than six lines: its bubble shows six lines fading out. Show more grows the bubble onto the whole text (no jump);
   Show less shrinks it back to six lines and the fade comes back as it lands. Click Show less mid-open: it turns back
   from where it was. Under reduced motion both jump. `narrationtimeline.tsx` PromptText; no scenario.
-- [ ] (arcterm) **Pair two live agents and watch a full exchange end on a stop** (`pkg/agentpair`, the Add judge menu in
-  an agent's header, `docs/guide/agent-pair.md`). The pair scenarios run on seeded pairs, so no agent has ever run one.
-  With a Claude agent that has a plan open, Add judge → Open a new judge: a judge tab boots on Opus in the same folder,
-  the working agent's header gets a Pair button beside Chat / Terminal, and it opens the conversation. Watch the judge
+- [ ] (arcterm) **Pair two live agents and watch a full exchange end on a stop** (`pkg/agentpair`, the menu of ⚖ under
+  a reply in an agent's Chat, `docs/guide/agent-pair.md`). The pair scenarios run on seeded pairs, so no agent has ever
+  run one. With a Claude agent that has a plan open, ⚖ under a reply → Open a new judge: a judge tab boots on Opus in
+  the same folder, the working agent's header gets a Pair button beside Chat / Terminal, and it opens the conversation.
+  Watch the judge
   answer, its reply (with a `> ` quote line) reach the working agent as a prompt, and the working agent end its reply
   with an `arc-pair` block that fills the rail's Decided tab. Let it run until a
   stop line reads "Paused: …" (no new points, both agree, or the token cap set low on the sheet); after it, nothing is

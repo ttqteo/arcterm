@@ -13,9 +13,14 @@
 // replies as its cards, the newest list in full: it is the seeded pair's anchor list (the same items and text as its fence), so
 // its A item keeps the answer chips and a press answers through the pair (the stubbed PairSayCommand records it). Nothing runs
 // and nothing is written into ~/.claude/projects.
+// Step 7 ("older reply", docs/superpowers/specs/2026-11-26-judge-on-reply-design.md) comes last: a pair that started from a
+// reply the working agent had gone on from sends two prompts a little different (pair-relay-first-older.txt,
+// pair-judge-brief-older.txt). They are appended to the two transcripts after the steps above, so those keep what they read.
+// The first relay's brief is still one folded line, and the note "judging your reply from" is in the text it opens; the
+// judge's brief is still one line, and the reply it pastes is the working agent's card.
 // kit is scenarios.mjs's RT_KIT (polishWaitFor, polishNap, waveService).
 
-import { readFileSync, mkdtempSync, rmSync } from "node:fs";
+import { appendFileSync, readFileSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import * as AC from "./agent-page-fixtures.mjs";
@@ -54,6 +59,16 @@ function writeFixtures(dir, workerTab) {
             AC.assistantText("> Swapped …\nNo new points.", at(37 * 60_000)),
             AC.userText(fixture("pair-relay-worker"), at(25 * 60_000)),
         ]),
+    };
+}
+
+// the prompts of a pair that started from an older reply, as records to append: the judge's brief names the working agent's
+// tab like the one above
+function olderRecords(dir, workerTab) {
+    const at = (agoMs) => ({ cwd: dir, ts: new Date(Date.now() - agoMs).toISOString() });
+    return {
+        worker: [AC.userText(fixture("pair-relay-first-older"), at(10 * 60_000))],
+        judge: [AC.userText(fixture("pair-judge-brief-older").replace("tab-worker", workerTab), at(8 * 60_000))],
     };
 }
 
@@ -161,14 +176,15 @@ export default function (kit) {
     const { polishWaitFor, polishNap } = kit;
     const { makeTab, closeTabs } = AC.tabFixtures(kit);
 
-    const roster = (ctx, paths) => [
+    // fresh: a turn that ended after the first roster, so Chat reads the transcripts again
+    const roster = (ctx, paths, fresh = false) => [
         {
             id: ctx.workerTab,
             name: WORKER_NAME,
             project: "fx-chat-pair-relay",
             task: "",
             state: "idle",
-            idleSince: Date.now() - 30_000,
+            idleSince: fresh ? Date.now() + 1000 : Date.now() - 30_000,
             agent: "claude",
             model: "opus",
             blockId: ctx.workerBlock,
@@ -180,7 +196,7 @@ export default function (kit) {
             project: "fx-chat-pair-relay",
             task: "",
             state: "idle",
-            idleSince: Date.now() - 40_000,
+            idleSince: fresh ? Date.now() + 1000 : Date.now() - 40_000,
             agent: "claude",
             model: "opus",
             blockId: ctx.judgeBlock,
@@ -203,6 +219,7 @@ export default function (kit) {
                     ctx.judgeTab = judge.tabId;
                     ctx.judgeBlock = judge.blockId;
                     const paths = writeFixtures(ctx.dir, ctx.workerTab);
+                    ctx.paths = paths;
                     await AC.setRoster(h, roster(ctx, paths));
                     await stubPairRpc(h);
                     await seedPair(h, [pairOf(ctx.workerTab, ctx.judgeTab, Date.now())]);
@@ -391,6 +408,77 @@ export default function (kit) {
                         `${name}: folding the brief runs on the spring, not at once: its box's height at 0, 60, 120, 240 and 400 ms only falls and passes through values between full and gone, and the box is gone when it settles`,
                         fold.full > 1 && shown[0] > 1 && falling && between && fold.gone,
                         fold
+                    );
+                });
+
+                // the n-th relay of a kind in an agent's Chat: scroll to its brief's line and press it
+                const pressBrief = (id, kind, n) =>
+                    h.ev(`(() => {
+                        const rel = [...(${layerOf(id)}?.querySelectorAll('[data-chat-relay="${kind}"]') ?? [])][${n}];
+                        const el = rel?.querySelector("[data-chat-relay-brief-toggle]");
+                        el?.scrollIntoView({ block: "center" });
+                        el?.click();
+                        return !!el;
+                    })()`);
+                const briefsOf = `s.relays.filter((r) => r.kind === "judgeBrief")`;
+                let appended = false;
+                const appendOlder = async () => {
+                    if (appended) return;
+                    appended = true;
+                    const more = olderRecords(ctx.dir, w);
+                    appendFileSync(ctx.paths.worker, more.worker.join("\n") + "\n");
+                    appendFileSync(ctx.paths.judge, more.judge.join("\n") + "\n");
+                    await AC.setRoster(h, roster(ctx, ctx.paths, true));
+                };
+
+                await run("7. older reply: worker", async (name) => {
+                    await appendOlder();
+                    await AC.focusAgent(h, w);
+                    await until(w, `s.layer && s.relays.length >= 3`);
+                    const folded = (await h.ev(seen(w))).relays[2];
+                    const pressed = await pressBrief(w, "relay", 2);
+                    const ok = await until(w, `s.relays[2]?.brief?.open === true && s.relays[2].brief.text != null`);
+                    await polishNap(700);
+                    const s = await h.ev(seen(w));
+                    await shot(h, "7-older-reply-worker");
+                    const r = s.relays[2];
+                    const t = r?.brief?.text;
+                    const m = msgOf(r, "judge");
+                    rec(
+                        `${name}: the first relay of a pair that started from an older reply folds its brief into one line "arcterm paired this agent with ${JUDGE_NAME} ${DOT} 14:02" (the pair's own relay, no extra card), and pressing it opens the brief with the note "judging your reply from 13:40" in it, after the worker brief ("arcterm has paired you with"); the judge's card follows as before`,
+                        folded?.kind === "relay" && folded.brief != null && folded.brief.open === false &&
+                            folded.brief.line.includes(`arcterm paired this agent with ${JUDGE_NAME} ${DOT} 14:02`) &&
+                            pressed === true && ok && t != null &&
+                            t.text.includes("arcterm has paired you with") && t.text.includes("judging your reply from 13:40") &&
+                            t.text.indexOf("arcterm has paired you with") < t.text.indexOf("judging your reply from 13:40") &&
+                            m != null && m.name === JUDGE_NAME && m.text.includes("14:02") && m.marks && s.generic === 0,
+                        { folded: folded?.brief, text: t?.text, judge: m?.text, generic: s.generic }
+                    );
+                });
+
+                await run("7b. older reply: judge", async (name) => {
+                    await appendOlder();
+                    await AC.focusAgent(h, j);
+                    await until(j, `s.layer && ${briefsOf}.length >= 2`);
+                    const folded = ((await h.ev(seen(j))).relays.filter((r) => r.kind === "judgeBrief"))[1];
+                    const pressed = await pressBrief(j, "judgeBrief", 1);
+                    const ok = await until(j, `${briefsOf}[1]?.brief?.open === true && ${briefsOf}[1].brief.text != null`);
+                    await polishNap(700);
+                    const s = await h.ev(seen(j));
+                    await shot(h, "7b-older-reply-judge");
+                    const older = s.relays.filter((r) => r.kind === "judgeBrief")[1];
+                    const t = older?.brief?.text;
+                    const card = msgOf(older, "worker");
+                    rec(
+                        `${name}: the brief of an older reply is one line "arcterm made this agent the judge of ${WORKER_NAME}" and the reply it pastes is the working agent's card from ${WORKER_NAME} (it opens its conversation, no "--- the agent's reply ---" left in the text); pressing the line opens the brief with its paragraph "The agent has gone on since this reply" and the transcript path in it`,
+                        folded?.brief != null && folded.brief.open === false &&
+                            folded.brief.line.includes(`arcterm made this agent the judge of ${WORKER_NAME}`) &&
+                            older.msgs.length === 1 && card != null && card.name === WORKER_NAME && card.link &&
+                            card.text.includes("Swapped: O2 now locks the threshold") &&
+                            pressed === true && ok && t != null &&
+                            t.text.includes("The agent has gone on since this reply") && t.text.includes(".jsonl") &&
+                            !t.text.includes("--- the agent's reply ---") && !t.text.includes("--- end of the reply ---"),
+                        { folded: folded?.brief, text: t?.text, card: card?.text, msgs: older?.msgs.length }
                     );
                 });
                 return steps;

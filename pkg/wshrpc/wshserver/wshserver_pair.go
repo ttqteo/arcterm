@@ -101,7 +101,7 @@ func (ws *WshServer) PairGetCommand(ctx context.Context, data wshrpc.CommandPair
 }
 
 func (ws *WshServer) PairBriefCommand(ctx context.Context, data wshrpc.CommandPairBriefData) (*wshrpc.CommandPairBriefRtnData, error) {
-	text, err := getPairManager().Brief(ctx, data.WorkerTab)
+	text, err := getPairManager().Brief(ctx, data.WorkerTab, data.From)
 	if err != nil {
 		return nil, err
 	}
@@ -266,6 +266,25 @@ func (l livePairLink) LastAnswer(ctx context.Context, tab string) (string, int64
 	}
 	text, ts := agentsessions.LastAnswer(tpath, row.Harness)
 	return text, ts, nil
+}
+
+// AnswerAt is the agent's reply in the transcript record uuid, and its time. Only a claude transcript is read: a uuid that
+// is no reply of it (no such record, a record with no text, a pi agent) is an error, never the latest reply in its place.
+func (l livePairLink) AnswerAt(ctx context.Context, tab, uuid string) (string, int64, error) {
+	_, row, err := l.find(ctx, tab)
+	if err != nil {
+		return "", 0, err
+	}
+	tpath, err := agentTranscriptPath(ctx, row)
+	if err != nil {
+		return "", 0, err
+	}
+	if tpath != "" {
+		if text, ts, found := agentsessions.AnswerAt(tpath, row.Harness, uuid); found {
+			return text, ts, nil
+		}
+	}
+	return "", 0, fmt.Errorf("no reply %s in the transcript of %s (only a claude agent's replies can be chosen)", uuid, tab)
 }
 
 // Tokens is what the agent's session spent since sinceMs, counted from its transcript.

@@ -33,11 +33,18 @@ type fakeAgent struct {
 	answerTs               int64
 	tokens                 int64
 	texts                  []string
-	sent                   []string // what the pair sent it, in order
-	lastSince              int64    // the sinceMs of the last Tokens call
-	transcript             string   // the transcript path Agent reports; add sets "/t/<tab>", so the session id is the tab
-	agentReads             int      // how many times Agent was asked for it
-	slept                  int      // how many times the pair put it to sleep
+	sent                   []string             // what the pair sent it, in order
+	lastSince              int64                // the sinceMs of the last Tokens call
+	transcript             string               // the transcript path Agent reports; add sets "/t/<tab>", so the session id is the tab
+	agentReads             int                  // how many times Agent was asked for it
+	slept                  int                  // how many times the pair put it to sleep
+	replies                map[string]fakeReply // the replies giveAt recorded, by the uuid of their record
+}
+
+// fakeReply is one reply of an agent's transcript, as AnswerAt reads it.
+type fakeReply struct {
+	text string
+	ts   int64
 }
 
 // fakeLink is a Link over a map of agents. A send starts a turn, as it does on the real roster.
@@ -98,6 +105,20 @@ func (l *fakeLink) LastAnswer(_ context.Context, tab string) (string, int64, err
 		return "", 0, fmt.Errorf("no agent %s", tab)
 	}
 	return a.answer, a.answerTs, nil
+}
+
+// AnswerAt is a reply giveAt recorded; a uuid it did not is an error, as the live link's is.
+func (l *fakeLink) AnswerAt(_ context.Context, tab, uuid string) (string, int64, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	a := l.agents[tab]
+	if a == nil {
+		return "", 0, fmt.Errorf("no agent %s", tab)
+	}
+	if r, ok := a.replies[uuid]; ok {
+		return r.text, r.ts, nil
+	}
+	return "", 0, fmt.Errorf("no reply %s in the transcript of %s", uuid, tab)
 }
 
 func (l *fakeLink) Tokens(_ context.Context, tab string, sinceMs int64) (int64, error) {
@@ -179,6 +200,19 @@ func (l *fakeLink) give(tab, text string) {
 	l.clock += 1000
 	a := l.agents[tab]
 	a.answer, a.answerTs = text, l.clock
+}
+
+// giveAt is give for a reply with a record uuid: it becomes the agent's latest answer and AnswerAt finds it by uuid. A
+// reply given after it is the latest, and this one an older reply.
+func (l *fakeLink) giveAt(tab, uuid, text string) {
+	l.give(tab, text)
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	a := l.agents[tab]
+	if a.replies == nil {
+		a.replies = map[string]fakeReply{}
+	}
+	a.replies[uuid] = fakeReply{text: text, ts: a.answerTs}
 }
 
 func (l *fakeLink) setState(tab, state string) {
@@ -930,7 +964,7 @@ func TestRoundEndSleepIsDroppedWhenTheJudgeJoinsANewRound(t *testing.T) {
 	}
 
 	r.link.give("w", workerPlan)
-	v := r.start(wshrpc.CommandPairStartData{Launched: true}) // Add judge wakes it for the next round: PairStart, not briefed
+	v := r.start(wshrpc.CommandPairStartData{Launched: true}) // ⚖ under a reply wakes it for the next round: PairStart, not briefed
 	r.link.setState("j1", "idle")
 	r.m.TurnEnded(ctx, "j1")
 	if r.link.slept("j1") != 0 || r.link.agent("j1").state != "idle" {
@@ -1763,13 +1797,199 @@ func TestManagerStartBriefNamesTheWorkersPlan(t *testing.T) {
 	r := newRig(t)
 	r.link.agent("w").texts = []string{"old turn", "see docs/superpowers/plans/2026-11-25-x.md first"}
 	r.link.give("w", "Latest reply.")
-	text, err := r.m.Brief(ctx, "w")
+	text, err := r.m.Brief(ctx, "w", "")
 	if err != nil {
 		t.Fatal(err)
 	}
 	contains(t, "the brief", text, "Plan oracle", "Latest reply.", "docs/superpowers/plans/2026-11-25-x.md", "arc-judge")
-	if _, err := r.m.Brief(ctx, "nobody"); err == nil {
+	if _, err := r.m.Brief(ctx, "nobody", ""); err == nil {
 		t.Fatal("Brief took a tab that is no agent")
+	}
+}
+
+const olderPlan = "Older plan.\n\n```arc-pair\nO1 pick the split\n```"
+
+// a reply the person chose is the pair's first message with its own time, the relay starts with the agent's next turn,
+// and the brief points the judge at the transcript for what happened since
+func TestManagerStartFromAnOlderReplyStartsTheRoundThere(t *testing.T) {
+	r := newRig(t)
+	r.link.giveAt("w", "u-old", olderPlan)
+	r.link.giveAt("w", "u-new", "Newest reply, after the work went on.")
+	older := r.link.agent("w").replies["u-old"]
+	latestTs := r.link.agent("w").answerTs
+
+	v := r.start(wshrpc.CommandPairStartData{HoldHeavy: true, From: "u-old"})
+	if len(v.Messages) != 1 || v.Messages[0].From != FromWorker || v.Messages[0].Text != "Older plan." || v.Messages[0].Ts != older.ts {
+		t.Fatalf("messages = %+v: want the chosen reply as the first message, with its own time %d", v.Messages, older.ts)
+	}
+	if !v.Owed {
+		t.Fatal("the judge owes an answer to the chosen reply")
+	}
+	in := r.internal(v.Id)
+	if in.Seen["w"] != latestTs || !in.Later {
+		t.Fatalf("seen %v, later %v: the worker is seen up to its latest answer (%d), and the pair is of an older reply", in.Seen, in.Later, latestTs)
+	}
+	sent := r.link.sent("j1")
+	if len(sent) != 1 {
+		t.Fatalf("the judge got %q", sent)
+	}
+	contains(t, "the judge's brief", sent[0], "The agent has gone on since this reply", "/t/w", "u-old", "--- the agent's reply ---\n"+olderPlan+"\n--- end of the reply ---")
+	for _, absent := range []string{"Newest reply", "latest reply"} {
+		if strings.Contains(sent[0], absent) {
+			t.Fatalf("the judge's brief holds %q:\n%s", absent, sent[0])
+		}
+	}
+
+	// the later flag is stored: a restarted wavesrv still tells the worker
+	fresh := r.manager()
+	fresh.Paired("w")
+	fresh.mu.Lock()
+	reloaded := fresh.pairs[v.Id].Later
+	fresh.mu.Unlock()
+	if !reloaded {
+		t.Fatal("a reloaded pair lost its Later flag")
+	}
+
+	// the relay starts with the worker's next turn: the newest reply above was never recorded
+	r.reply("w", "Next turn.\n"+pairBlock("O1 x"))
+	if got := r.view(v.Id).Messages; len(got) != 2 || got[1].Text != "Next turn." {
+		t.Fatalf("messages = %+v: want the chosen reply, then the worker's next turn", got)
+	}
+
+	// the worker's first prompt says whose reply the judge judges and from when; its later prompts do not
+	r.reply("j1", "> Older plan.\nPick the split before the pilot.\n"+judgeBlock("new: the split overlaps"))
+	w := r.link.sent("w")
+	if len(w) != 1 {
+		t.Fatalf("the worker was sent %q", w)
+	}
+	note := OlderReplyNote(older.ts)
+	contains(t, "the worker's first prompt", w[0], "arcterm has paired you", note, `From the judge "Judge one"`)
+	if strings.Index(w[0], "arcterm has paired you") > strings.Index(w[0], note) || strings.Index(w[0], note) > strings.Index(w[0], "From the judge") {
+		t.Fatalf("the note must follow the worker brief and come before the first message:\n%s", w[0])
+	}
+	r.reply("w", "Fixed.\n"+pairBlock("O1 x"))
+	r.reply("j1", "> Fixed.\nGood.\n"+judgeBlock("new: one more"))
+	if w = r.link.sent("w"); len(w) != 2 || strings.Contains(w[1], "judging your reply from") {
+		t.Fatalf("the worker's second prompt = %q: the note belongs to the first only", w[1:])
+	}
+}
+
+// a launched judge is briefed before the pair exists: the pair still starts from the chosen reply
+func TestManagerStartFromAnOlderReplyWithABriefedJudge(t *testing.T) {
+	r := newRig(t)
+	r.link.giveAt("w", "u-old", olderPlan)
+	r.link.giveAt("w", "u-new", "Newest reply.")
+	v := r.start(wshrpc.CommandPairStartData{Briefed: true, From: "u-old"})
+	if len(v.Messages) != 1 || v.Messages[0].Text != "Older plan." || !r.internal(v.Id).Later {
+		t.Fatalf("messages = %+v, later %v: want the chosen reply as the first message", v.Messages, r.internal(v.Id).Later)
+	}
+	if got := r.link.sent("j1"); len(got) != 0 {
+		t.Fatalf("a briefed judge was sent %q", got)
+	}
+}
+
+// the newest reply chosen by its uuid is today's start: the same brief and no note, as with no From at all
+func TestManagerStartFromTheLatestReplyIsTodaysStart(t *testing.T) {
+	var briefs [2]string
+	for i, from := range []string{"", "u-new"} {
+		r := newRig(t)
+		r.link.giveAt("w", "u-old", olderPlan)
+		r.link.giveAt("w", "u-new", workerPlan)
+		v := r.start(wshrpc.CommandPairStartData{From: from})
+		if in := r.internal(v.Id); in.Later {
+			t.Fatalf("From %q: the pair is marked Later", from)
+		}
+		if len(v.Messages) != 1 || v.Messages[0].Text != "Plan v1." {
+			t.Fatalf("From %q: messages = %+v", from, v.Messages)
+		}
+		briefs[i] = r.link.sent("j1")[0]
+		contains(t, "the judge's brief", briefs[i], "--- the agent's latest reply ---\n"+workerPlan)
+		if strings.Contains(briefs[i], "gone on since") || strings.Contains(briefs[i], "u-new") {
+			t.Fatalf("From %q: the brief holds the transcript paragraph:\n%s", from, briefs[i])
+		}
+		r.reply("j1", "> Plan v1.\nOne point.\n"+judgeBlock("new: a"))
+		if w := r.link.sent("w"); len(w) != 1 || strings.Contains(w[0], "judging your reply from") {
+			t.Fatalf("From %q: the worker's first prompt = %q: no note for the latest reply", from, w)
+		}
+	}
+	if briefs[0] != briefs[1] {
+		t.Fatalf("a brief of the latest reply by uuid differs from the one with no From:\n%s\n---\n%s", briefs[0], briefs[1])
+	}
+}
+
+// a uuid that is not in the transcript is an error, never the latest reply in its place, and leaves no pair
+func TestManagerStartFromAnUnknownReplyErrorsAndMakesNoPair(t *testing.T) {
+	r := newRig(t)
+	r.link.giveAt("w", "u-new", workerPlan)
+	_, err := r.m.Start(ctx, wshrpc.CommandPairStartData{WorkerTab: "w", JudgeTab: "j1", From: "u-gone"})
+	if err == nil || !strings.Contains(err.Error(), "u-gone") {
+		t.Fatalf("Start = %v, want an error that names the reply", err)
+	}
+	if len(r.m.List()) != 0 || r.m.Paired("w") || r.m.Paired("j1") {
+		t.Fatalf("List = %+v: the refused start left a pair", r.m.List())
+	}
+	if got := r.link.sent("j1"); len(got) != 0 {
+		t.Fatalf("the judge was sent %q", got)
+	}
+	r.start(wshrpc.CommandPairStartData{}) // nothing was left behind: the same two can pair
+}
+
+// the judge that joins a pair finds its first message made: From names no reply to start from
+func TestManagerStartFromIsIgnoredWhenAJudgeJoinsAPair(t *testing.T) {
+	r := newRig(t)
+	r.link.add("j2", "Judge two")
+	r.link.add("j3", "Judge three")
+	r.link.giveAt("w", "u-old", olderPlan)
+	r.link.giveAt("w", "u-new", workerPlan)
+	r.start(wshrpc.CommandPairStartData{})
+	for _, c := range []struct{ judge, from string }{{"j2", "u-old"}, {"j3", "u-gone"}} {
+		v := r.start(wshrpc.CommandPairStartData{JudgeTab: c.judge, From: c.from})
+		if len(v.Messages) != 1 || v.Messages[0].Text != "Plan v1." || r.internal(v.Id).Later {
+			t.Fatalf("From %q: messages = %+v: the pair keeps the first message it has", c.from, v.Messages)
+		}
+		sent := r.link.sent(c.judge)
+		if len(sent) != 1 {
+			t.Fatalf("%s got %q", c.judge, sent)
+		}
+		contains(t, "the new judge's brief", sent[0], "Plan v1.")
+		if strings.Contains(sent[0], "gone on since") {
+			t.Fatalf("the brief of a judge that joins holds the transcript paragraph:\n%s", sent[0])
+		}
+	}
+}
+
+// the launch task of a new judge for an older reply holds the same paragraph a started pair's brief does
+func TestManagerBriefFromAnOlderReplyNamesTheTranscript(t *testing.T) {
+	r := newRig(t)
+	r.link.giveAt("w", "u-old", "Older reply.")
+	r.link.giveAt("w", "u-new", "Latest reply.")
+
+	older, err := r.m.Brief(ctx, "w", "u-old")
+	if err != nil {
+		t.Fatal(err)
+	}
+	contains(t, "the brief of the older reply", older, "--- the agent's reply ---\nOlder reply.\n--- end of the reply ---", "The agent has gone on since this reply", "/t/w", "u-old")
+	if strings.Contains(older, "Latest reply.") {
+		t.Fatalf("the brief of the older reply holds the latest:\n%s", older)
+	}
+
+	latest, err := r.m.Brief(ctx, "w", "u-new")
+	if err != nil {
+		t.Fatal(err)
+	}
+	none, _ := r.m.Brief(ctx, "w", "")
+	if latest != none || strings.Contains(latest, "gone on since") {
+		t.Fatalf("the brief of the latest reply by uuid differs from the one with no From:\n%s\n---\n%s", latest, none)
+	}
+	if _, err := r.m.Brief(ctx, "w", "u-gone"); err == nil || !strings.Contains(err.Error(), "u-gone") {
+		t.Fatalf("Brief of an unknown reply = %v, want an error that names it", err)
+	}
+
+	// a worker already in a pair: a judge that joins finds its first message made, so From is not read, as Start does
+	r.start(wshrpc.CommandPairStartData{})
+	joined, err := r.m.Brief(ctx, "w", "u-gone")
+	if err != nil || joined != none {
+		t.Fatalf("Brief of a paired worker with From = %q, %v; want the brief with no From", joined, err)
 	}
 }
 

@@ -11,7 +11,7 @@ import type { AgentVM } from "./agentsviewmodel";
 import { pauseHead } from "./pairpause";
 
 /** An agent a pair can take on either side: claude or pi (the harnesses whose reply wavesrv reads), a real tab. The one
- *  rule: the header's Add judge, its judge menu and the tree's Pair: worker + judge all ask it. */
+ *  rule: ⚖ Judge this reply under a reply in Chat, the judge menu and the tree's Pair: worker + judge all ask it. */
 export function canPair(agent: Pick<AgentVM, "agent" | "kind" | "blockId">): boolean {
     return (
         (agent.agent === "claude" || agent.agent === "pi") &&
@@ -202,8 +202,8 @@ export function pairOf(pairs: readonly PairInfo[], tabId: string | null): { pair
 
 /** The resting judges of `workerTab` that are hidden: on the roster and asleep, in the list's order (the server lists the
  *  newest first). A resting judge that something woke is a plain row the person can see, and one off the roster has no tab
- *  left, so neither is here. The one rule behind Add judge's "Wake" entry (restingJudgeOf) and the close of a worker, which
- *  closes these with it (closetab.ts). */
+ *  left, so neither is here. The one rule behind the "Wake" entry of the ⚖ menu under a reply (restingJudgeOf) and the close
+ *  of a worker, which closes these with it (closetab.ts). */
 export function hiddenJudgesOf(
     workerTab: string,
     resting: readonly PairResting[],

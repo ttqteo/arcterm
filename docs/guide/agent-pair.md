@@ -12,8 +12,15 @@ Pair dùng được với agent Claude và pi. Một agent nằm trong nhiều n
 
 ## Bắt đầu một pair
 
-**Cách chính: nút Add judge trong header của working agent.** Dùng khi bạn đọc đến một tin nhắn muốn có người chấm.
-Menu của nút có:
+**Cách chính: nút ⚖ Judge this reply dưới một câu trả lời của working agent, ngay trong Chat.** Nút nằm trong hàng nút dưới
+câu trả lời (cùng hàng với Copy và Fork), hiện khi rê chuột hay focus, kể cả ở câu trả lời mới nhất. Dùng khi bạn đọc đến
+một câu trả lời muốn có người chấm, **kể cả câu cũ hơn**: judge chấm đúng câu bạn bấm, không phải câu mới nhất. Chỉ câu
+đã xong mới có nút, và chỉ ở câu cuối của mỗi lượt (đoạn chữ giữa hai lần gọi tool trong cùng lượt thì không), trong Chat
+của một agent Claude hay pi đang chạy. Với Claude, câu nào của session hiện tại cũng có nút; với pi chỉ câu mới nhất có
+(pi không lưu id của từng câu). Header của agent chưa ghép không còn nút Add judge. Khi agent đang nằm trong một pair
+chưa kết thúc, ⚖ dưới mọi câu bị mờ và không làm gì (chú thích ghi rằng một vòng judge đang chạy: Unpair hoặc chờ vòng
+kết thúc); muốn thêm judge thì dùng nút **+** ở header.
+Menu của ⚖ mở ngay tại nút và có:
 
 - **Wake <tên>**, mục đầu và chỉ có khi working agent này có một judge đang nghỉ từ vòng trước (xem [Judge nghỉ giữa các
   vòng](#judge-nghỉ-giữa-các-vòng)): đánh thức judge đó và ghép một pair mới với nó. Judge giữ những gì nó đã đọc ở các
@@ -22,6 +29,17 @@ Menu của nút có:
   của nó nếu có, để judge đọc đúng code đang sửa). Judge nhận brief gồm plan hay spec đang dùng, câu trả lời mới nhất của
   working agent, và dặn "đọc code thật trước khi kết luận".
 - Hoặc một agent Claude hay pi đang chạy trong project mà chưa nằm trong pair nào; agent đó nhận brief làm prompt đầu tiên.
+
+**Chấm một câu cũ hơn.** Tin đầu của pair là chính câu bạn bấm (với giờ của nó), và judge nợ một câu trả lời cho tin đó.
+Brief của judge dán câu đó vào, kèm đường dẫn transcript của working agent, id bản ghi của câu, và một câu dặn: agent đã
+làm tiếp sau câu này; nếu cần cho nhận xét thì đọc những gì nó làm sau đó trong transcript, và chấm code như nó đang là
+bây giờ. Không dán các lượt ở giữa và không tóm tắt chúng. Lời nhắn đầu tiên arcterm gửi cho working agent, sau phần
+brief của nó, nói thêm rằng judge đang chấm câu trả lời của nó từ HH:MM, và nên cân nhận xét của judge với những gì nó đã
+làm từ đó. Các lượt nằm giữa câu được chọn và lúc ghép đôi **không** được chuyển và không vào cuộc trò chuyện của pair;
+việc chuyển tin bắt đầu từ lượt kế tiếp của working agent. Bấm ⚖ dưới câu mới nhất thì y như trước đây: brief không có
+đoạn transcript và working agent không nhận thêm câu nào. Không tìm thấy bản ghi của câu (transcript đã đổi) thì
+arcterm báo lỗi "Couldn't add a judge to <tên>", không lặng lẽ chấm câu mới nhất. Bấm **+** trên header của một pair
+đang chạy thì thêm judge vào pair đó, tin đầu của pair không đổi.
 
 Khi pair đã thành, header có nút **Pair** ngay cạnh Chat / Terminal, kèm số tin mới (từ lần cuối bạn mở cuộc trò
 chuyện). Pair là nút bật tắt: bấm thì cột giữa thành cuộc trò chuyện của pair và nút sáng lên, bấm lại (hoặc Chat,
@@ -36,6 +54,24 @@ tiêu và số tin mới. Bấm vào dòng ⚖ thì mở cuộc trò chuyện c�
 Judge không có dòng riêng. Có nhiều judge thì dòng ghi "2 judge" và trạng thái của judge cần bạn nhất (đang hỏi, rồi
 đang làm, rồi còn lại). Một pair đang dừng có thêm nút ở cuối dòng ⚖, hiện khi rê chuột hay focus: **Resume** hoặc
 **Judge again** (xem [Khi nào pair dừng](#khi-nào-pair-dừng)).
+
+**Dấu của vòng trong Chat.** Trong Chat của working agent, câu mà một vòng judge bắt đầu từ đó có một dòng ⚖ ngay dưới
+nó (mảnh, chữ xám nhỏ, không có khung), và các lượt thuộc về vòng có một **thanh 2px** bên trái, kéo từ câu đó xuống
+cuối Chat khi vòng còn sống:
+
+- Trong lúc judge chưa trả lời lần đầu: một vòng quay và "The judge is reading this reply · N s" ("Judge đang chấm reply
+  này · N s", số giây chạy lên), cuối dòng là **Open pair**, mở cuộc trò chuyện của pair như nút Pair ở header.
+- Sau khi judge đã trả lời, vòng còn sống: "⚖ The judge round starts here" ("⚖ Vòng judge bắt đầu ở đây"), vẫn có
+  **Open pair**; thanh vẫn màu nhấn.
+- Vòng đã kết thúc (cả khi bạn bấm Unpair): dòng thành một nút, "⚖ Judge round 13:40–13:52 · 3 agreed, 0 open" ("⚖ Vòng
+  judge 13:40–13:52 · 3 chốt, 0 còn mở"), thanh chuyển **xám** và dừng ở tin cuối của working agent trong pair. Bấm dòng
+  đó thì mở trang của pair trong Library.
+- Một câu đã bắt đầu hai vòng thì có cả hai dòng, vòng cũ ở trên. Chỗ hai thanh chồng lên nhau chỉ vẽ thanh của vòng mới.
+- Chat tìm câu của vòng bằng nội dung tin đầu của pair; tin đó không có trong Chat đã tải (câu của một session trước)
+  thì vòng không có dấu, và không có lỗi nào.
+- Dòng và thanh bằng tiếng Việt khi bạn viết tiếng Việt, ngược lại bằng tiếng Anh. Dòng mở ra bằng chuyển động lò xo
+  và chữ đổi trạng thái mờ dần sang chữ mới; thanh đổi màu từ màu nhấn sang xám khi vòng kết thúc. Bật reduced motion
+  thì mọi thứ về thẳng trạng thái cuối.
 
 **Cách thứ hai: cây Agent.** Chọn hai agent (Ctrl hoặc Shift+click), bấm chuột phải, chọn **Pair: worker + judge**, nằm
 trên **Discuss together** (mục này vẫn mở Setup của council). Agent chọn đầu tiên là working agent. Một sheet nhỏ hiện ra:
@@ -192,7 +228,7 @@ máy này.
 - Resume **chỉ hiện khi có gì để giao**, nghĩa là hàng đợi của một bên còn một tin đòi câu trả lời. Trên thực tế đó là
   sau token cap. Sau "no new points" hay "both agree" hàng đợi trống, nên chạy tiếp cũng không ai làm gì: thẻ ghi
   "Message to go on" ("Nhắn để bàn tiếp"), vì một tin của bạn đã chạy tiếp pair rồi. Resume cũng không hiện khi không
-  còn judge (thẻ nói rằng nút **Add judge** ở đầu trang ghép một judge mới), khi pair đã kết thúc, hay khi pair được
+  còn judge (thẻ nói rằng **⚖ dưới một câu trả lời** ghép một judge mới), khi pair đã kết thúc, hay khi pair được
   đồng bộ từ máy kia: agent của nó không ở máy này.
 - **Judge again** ("Judge tiếp") có ở lần dừng "no new points" và "both agree" của một pair ở máy này (không có khi
   pair đã kết thúc hay được đồng bộ từ máy kia). Nó mở ô soạn của pair với `@judge ` đã gõ sẵn; bạn viết điều judge nên
@@ -244,8 +280,8 @@ gì nó đã biết cho vòng sau, và chạy dù cài đặt tự ngủ đang t
   working agent đã mất, judge ở lại cây như agent bình thường để bạn vẫn với tới nó.
 - Khởi động lại arcterm giữa lúc một judge bận thì lần ngủ chờ đó mất; luật tự ngủ khi rảnh lâu lo cho judge ấy.
 
-**Vòng sau:** mục đầu của Add judge trên working agent đó là **Wake <tên>**: đánh thức judge đã nghỉ và ghép một pair mới
-với nó. Pair mới ghi judge ấy là judge do arcterm mở, nên nó lại nghỉ sau vòng này.
+**Vòng sau:** mục đầu của menu ⚖ (dưới một câu trả lời của working agent đó) là **Wake <tên>**: đánh thức judge đã nghỉ
+và ghép một pair mới với nó, từ câu bạn bấm. Pair mới ghi judge ấy là judge do arcterm mở, nên nó lại nghỉ sau vòng này.
 
 ## Giữ lệnh nặng và Run now
 
