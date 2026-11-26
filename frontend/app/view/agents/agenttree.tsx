@@ -1374,8 +1374,8 @@ function ParentRow({
     // the row shows no "n/m" part an agent stopped on: read off its last message, it caught any n/m in the prose
     // ("steps 14/14a" drew a 14/14 chip); an agent asking you is seen by its breathing row (.asking-tint) instead
     const unread = unreadCount > 0;
-    // a message you began in its box and left unsent (draftmarks.ts); not on the row you are on, whose box is in view
-    const drafted = useAtomValue(draftAgentIdsAtom).has(agent.id) && focusId !== agent.id;
+    // a message you began in its box and left unsent (draftmarks.ts), on the row you are on too
+    const drafted = useAtomValue(draftAgentIdsAtom).has(agent.id);
     const asking = agent.state === "asking";
     const review = asking ? parseDocReview(agent.ask) : null;
     // the roster overlay already turned a question the file asks, or a design waiting on confirms, into state "asking";
@@ -2875,7 +2875,7 @@ function SplitCell({
     const renaming = useAtomValue(renamingRowAtom) === vm.id;
     const digit = useHeldDigit(navDigit);
     const unreadCount = useAtomValue(unreadAgentsAtom).get(vm.id) ?? 0;
-    const drafted = useAtomValue(draftAgentIdsAtom).has(vm.id) && !selected;
+    const drafted = useAtomValue(draftAgentIdsAtom).has(vm.id);
     const bgTasks = useAtomValue(backgroundTasksByIdAtom)[vm.id];
     const machineServers = useAtomValue(machineServersReadingAtom).servers;
     const laterAt = laterSince(useAtomValue(laterMarksAtom), vm.transcriptPath);
